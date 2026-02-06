@@ -100,33 +100,13 @@ Squad proposes a team. You say **yes**. They're ready.
 
 Squad agents aren't stateless assistants. They accumulate project-specific knowledge over time.
 
-```mermaid
-graph TB
-    subgraph W1 ["🌱 Week 1"]
-        K1["⚛️ Kai knows: React project structure"]
-        R1["🔧 River knows: Express + Postgres stack"]
-        A1["🏗️ Alex knows: Project scope, team roster"]
-        C1["🧪 Casey knows: Test framework chosen"]
-    end
-    subgraph W4 ["🌿 Week 4"]
-        K4["⚛️ Kai knows: Component library, routing, state patterns"]
-        R4["🔧 River knows: Auth with JWT, rate limiting, raw SQL preference"]
-        A4["🏗️ Alex knows: Architecture decisions, trade-offs made"]
-        C4["🧪 Casey knows: Integration test patterns, edge cases found"]
-    end
-    subgraph W12 ["🌳 Week 12"]
-        K12["⚛️ Kai knows: Design system, performance patterns, accessibility"]
-        R12["🔧 River knows: Caching, migrations, monitoring, 47 team decisions"]
-        A12["🏗️ Alex knows: Full project history, risk areas, tech debt"]
-        C12["🧪 Casey knows: Regression patterns, CI pipeline, coverage gaps"]
-    end
-
-    W1 --> W4 --> W12
-
-    style W1 fill:#dbeafe,color:#000
-    style W4 fill:#93c5fd,color:#000
-    style W12 fill:#3b82f6,color:#fff
-```
+| | 🌱 Week 1 | 🌿 Week 4 | 🌳 Week 12 |
+|---|-----------|-----------|------------|
+| ⚛️ **Kai** | React project structure | + Component library, routing, state patterns | + Design system, perf patterns, a11y |
+| 🔧 **River** | Express + Postgres stack | + JWT auth, rate limiting, SQL preferences | + Caching, migrations, monitoring |
+| 🏗️ **Alex** | Project scope, team roster | + Architecture decisions, trade-offs | + Full project history, risk areas, tech debt |
+| 🧪 **Casey** | Test framework chosen | + Integration test patterns, edge cases | + Regression patterns, CI pipeline, coverage gaps |
+| 📋 **Scribe** | First session logged | 12 sessions, 8 decisions | 47 decisions, full searchable archive |
 
 **How it works:**
 
