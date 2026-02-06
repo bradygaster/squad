@@ -27,19 +27,19 @@ No team exists yet. Build one.
 ```
 
 3. Ask: *"Look right? Say **yes**, **add someone**, or **change a role**."*
-4. On confirmation, create these files (use `templates/` in this repo as format guides):
+4. On confirmation, create these files. If `.ai-team-templates/` exists, use those as format guides. Otherwise, use the formats shown below:
 
 ```
 .ai-team/
-├── team.md                    # Roster (from templates/roster.md)
-├── routing.md                 # Routing (from templates/routing.md)
+├── team.md                    # Roster
+├── routing.md                 # Routing
 ├── decisions.md               # Empty, Scribe will maintain
 ├── agents/
 │   ├── {name}/
-│   │   ├── charter.md         # Identity (from templates/charter.md)
-│   │   └── history.md         # Empty, seeded with project context (from templates/history.md)
+│   │   ├── charter.md         # Identity
+│   │   └── history.md         # Seeded with project context
 │   └── scribe/
-│       └── charter.md         # From templates/scribe-charter.md
+│       └── charter.md         # Silent memory manager
 └── log/                       # Scribe writes session logs here
 ```
 

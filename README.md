@@ -4,17 +4,39 @@ Squad gives you an AI team through GitHub Copilot. One file, one click, a workin
 
 ## Quick Start
 
+### 1. Set up your project
+
 ```bash
 mkdir my-project && cd my-project
 git init
-mkdir -p .github/agents
-# Copy squad.agent.md into .github/agents/
 ```
 
-Open Copilot, pick **Squad** from the `/agents` list, and tell it what you're building:
+### 2. Install Squad
+
+**macOS/Linux:**
+```bash
+gh repo clone bradygaster/squad /tmp/squad -- --depth 1 \
+  && mkdir -p .github/agents \
+  && cp /tmp/squad/.github/agents/squad.agent.md .github/agents/ \
+  && cp -r /tmp/squad/templates .ai-team-templates \
+  && rm -rf /tmp/squad
+```
+
+**Windows (PowerShell):**
+```powershell
+gh repo clone bradygaster/squad $env:TEMP\squad -- --depth 1; mkdir -Force .github\agents | Out-Null; Copy-Item $env:TEMP\squad\.github\agents\squad.agent.md .github\agents\; Copy-Item -Recurse $env:TEMP\squad\templates .ai-team-templates; Remove-Item -Recurse -Force $env:TEMP\squad
+```
+
+### 3. Open Copilot and go
 
 ```
-> I'm building a REST API with Node and Postgres.
+copilot
+```
+
+Select **Squad** from the `/agents` list, then paste:
+
+```
+I'm starting a new project. Set up the team. Here's what I'm building: [describe your project in one sentence].
 ```
 
 Squad proposes a team. You say yes. They're ready.
@@ -69,9 +91,11 @@ Squad generates a new agent, seeds them with project context, and adds them to t
 
 ## Install
 
-One file: [`squad.agent.md`](.github/agents/squad.agent.md)
+Clone the repo, copy two things into your project:
+1. `.github/agents/squad.agent.md` — the agent
+2. `templates/` → `.ai-team-templates/` — format guides for team generation
 
-Drop it in `.github/agents/` in any repo. Works with Copilot CLI and VS Code.
+See [Quick Start](#quick-start) for the one-liner.
 
 ## Status
 
