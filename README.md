@@ -1,15 +1,9 @@
-<div align="center">
-
 # Squad
 
-**AI agent teams for any project.**
+**AI agent teams for any project.** A team that grows with your code.
 
-One file. One click. A team that grows with your code.
-
-[![Status](https://img.shields.io/badge/status-early%20access-blueviolet)](#status)
+[![Status](https://img.shields.io/badge/status-experimental-blueviolet)](#status)
 [![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#how-it-works)
-
-</div>
 
 ---
 
@@ -20,24 +14,46 @@ Squad gives you an AI development team through GitHub Copilot. Describe what you
 It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned.
 
 ```mermaid
-graph LR
+graph TB
     U["🧑‍💻 You"] -->|"Team, build the login page"| C["GitHub Copilot"]
-    C -->|routes| K["⚛️ Kai — Frontend"]
-    C -->|routes| R["🔧 River — Backend"]
-    C -->|routes| A["🏗️ Alex — Lead"]
-    C -->|routes| T["🧪 Casey — Tester"]
-    C -->|silent| S["📋 Scribe"]
-    K -->|writes| HK["kai/history.md"]
-    R -->|writes| HR["river/history.md"]
-    K & R -->|decisions| D["decisions.md"]
-    S -->|logs| L["log/"]
+
+    subgraph team [" 🏢 The Team "]
+        direction LR
+        A["🏗️ Lead"]
+        K["⚛️ Frontend"]
+        R["🔧 Backend"]
+        T["🧪 Tester"]
+    end
+
+    C -->|spawns| A
+    C -->|spawns| K
+    C -->|spawns| R
+    C -->|spawns| T
+    C -.->|silent| S["📋 Scribe"]
+
+    subgraph memory [" 🧠 Shared Memory "]
+        direction LR
+        D["decisions.md"]
+        L["log/"]
+    end
+
+    A & K & R & T -->|read & write| D
+    S -->|merges & logs| D
+    S -->|writes| L
+
+    A -->|learns| HA["history.md"]
+    K -->|learns| HK["history.md"]
+    R -->|learns| HR["history.md"]
+    T -->|learns| HT["history.md"]
 
     style C fill:#6366f1,color:#fff
+    style A fill:#3b82f6,color:#fff
     style K fill:#3b82f6,color:#fff
     style R fill:#3b82f6,color:#fff
-    style A fill:#3b82f6,color:#fff
     style T fill:#3b82f6,color:#fff
     style S fill:#6b7280,color:#fff
+    style team fill:none,stroke:#3b82f6,stroke-width:2px,stroke-dasharray:5 5
+    style memory fill:none,stroke:#8b5cf6,stroke-width:2px,stroke-dasharray:5 5
 ```
 
 ---
@@ -70,7 +86,7 @@ I'm starting a new project. Set up the team.
 Here's what I'm building: a recipe sharing app with React and Node.
 ```
 
-Squad proposes a team. You say **yes**. They're ready.
+Squad proposes a team — each member named from a persistent thematic cast. You say **yes**. They're ready.
 
 ---
 
@@ -80,18 +96,19 @@ Squad agents aren't stateless assistants. They accumulate project-specific knowl
 
 | | 🌱 Week 1 | 🌿 Week 4 | 🌳 Week 12 |
 |---|-----------|-----------|------------|
-| ⚛️ **Kai** | React project structure | + Component library, routing, state patterns | + Design system, perf patterns, a11y |
-| 🔧 **River** | Express + Postgres stack | + JWT auth, rate limiting, SQL preferences | + Caching, migrations, monitoring |
-| 🏗️ **Alex** | Project scope, team roster | + Architecture decisions, trade-offs | + Full project history, risk areas, tech debt |
-| 🧪 **Casey** | Test framework chosen | + Integration test patterns, edge cases | + Regression patterns, CI pipeline, coverage gaps |
+| ⚛️ **Frontend** | React project structure | + Component library, routing, state patterns | + Design system, perf patterns, a11y |
+| 🔧 **Backend** | Express + Postgres stack | + JWT auth, rate limiting, SQL preferences | + Caching, migrations, monitoring |
+| 🏗️ **Lead** | Project scope, team roster | + Architecture decisions, trade-offs | + Full project history, risk areas, tech debt |
+| 🧪 **Tester** | Test framework chosen | + Integration test patterns, edge cases | + Regression patterns, CI pipeline, coverage gaps |
 | 📋 **Scribe** | First session logged | 12 sessions, 8 decisions | 47 decisions, full searchable archive |
 
 **How it works:**
 
 - Every time an agent does work, it writes lasting learnings to its `history.md`
-- A silent **Scribe** propagates cross-team decisions — when River chooses JWT, Kai finds out
+- A silent **Scribe** propagates cross-team decisions — when one agent chooses JWT, the others find out
 - `decisions.md` is the shared brain — every agent reads it before working
 - Session logs in `log/` create a searchable archive of everything that happened
+- Each agent gets a **persistent name** from a thematic cast — names stick across sessions and clones
 
 By week 4, your agents know your conventions, your preferences, your architecture. They stop asking questions they've already answered. They start making suggestions informed by your project's actual history.
 
@@ -137,17 +154,15 @@ The coordinator uses 1.5% of context. A 12-week veteran agent uses 4.4%. That le
 ├── team.md              # Roster — who's on the team
 ├── routing.md           # Routing — who handles what
 ├── decisions.md         # Shared brain — team decisions
+├── casting/
+│   ├── policy.json      # Casting configuration
+│   ├── registry.json    # Persistent name registry
+│   └── history.json     # Universe usage history
 ├── agents/
-│   ├── alex/
+│   ├── {name}/          # Each agent gets a persistent cast name
 │   │   ├── charter.md   # Identity, expertise, voice
-│   │   └── history.md   # What Alex knows about YOUR project
-│   ├── kai/
-│   │   ├── charter.md
-│   │   └── history.md
-│   ├── river/
-│   │   ├── charter.md
-│   │   └── history.md
-│   ├── casey/
+│   │   └── history.md   # What they know about YOUR project
+│   ├── {name}/
 │   │   ├── charter.md
 │   │   └── history.md
 │   └── scribe/
@@ -155,7 +170,7 @@ The coordinator uses 1.5% of context. A 12-week veteran agent uses 4.4%. That le
 └── log/                 # Session history
 ```
 
-**Commit this folder.** Your team persists. Anyone who clones gets the team.
+**Commit this folder.** Your team persists. Names persist. Anyone who clones gets the team — with the same cast.
 
 ---
 
@@ -202,6 +217,6 @@ See [Quick Start](#quick-start) for the full walkthrough.
 
 ## Status
 
-🟣 **Early access.** Private. Actively building.
+🟣 **Experimental.** Contributors welcome.
 
 Conceived by [@bradygaster](https://github.com/bradygaster).

@@ -35,11 +35,13 @@ if (fs.existsSync(agentDest)) {
   console.log(`${GREEN}✓${RESET} .github/agents/squad.agent.md`);
 }
 
-// Pre-create drop-box and orchestration-log directories
+// Pre-create drop-box, orchestration-log, and casting directories
 const inboxDir = path.join(dest, '.ai-team', 'decisions', 'inbox');
 const orchLogDir = path.join(dest, '.ai-team', 'orchestration-log');
+const castingDir = path.join(dest, '.ai-team', 'casting');
 fs.mkdirSync(inboxDir, { recursive: true });
 fs.mkdirSync(orchLogDir, { recursive: true });
+fs.mkdirSync(castingDir, { recursive: true });
 
 // Copy templates
 const templatesSrc = path.join(root, 'templates');
