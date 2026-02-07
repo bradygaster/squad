@@ -13,49 +13,6 @@ Squad gives you an AI development team through GitHub Copilot. Describe what you
 
 It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned.
 
-```mermaid
-graph TB
-    U["🧑‍💻 You"] -->|"Team, build the login page"| C["GitHub Copilot"]
-
-    subgraph team [" 🏢 The Team "]
-        direction LR
-        A["🏗️ Lead"]
-        K["⚛️ Frontend"]
-        R["🔧 Backend"]
-        T["🧪 Tester"]
-    end
-
-    C -->|spawns| A
-    C -->|spawns| K
-    C -->|spawns| R
-    C -->|spawns| T
-    C -.->|silent| S["📋 Scribe"]
-
-    subgraph memory [" 🧠 Shared Memory "]
-        direction LR
-        D["decisions.md"]
-        L["log/"]
-    end
-
-    A & K & R & T -->|read & write| D
-    S -->|merges & logs| D
-    S -->|writes| L
-
-    A -->|learns| HA["history.md"]
-    K -->|learns| HK["history.md"]
-    R -->|learns| HR["history.md"]
-    T -->|learns| HT["history.md"]
-
-    style C fill:#6366f1,color:#fff
-    style A fill:#3b82f6,color:#fff
-    style K fill:#3b82f6,color:#fff
-    style R fill:#3b82f6,color:#fff
-    style T fill:#3b82f6,color:#fff
-    style S fill:#6b7280,color:#fff
-    style team fill:none,stroke:#3b82f6,stroke-width:2px,stroke-dasharray:5 5
-    style memory fill:none,stroke:#8b5cf6,stroke-width:2px,stroke-dasharray:5 5
-```
-
 ---
 
 ## Quick Start
@@ -131,6 +88,49 @@ Each agent's knowledge is personal — stored in its own `history.md`. Team-wide
 ### The Key Insight
 
 Each agent gets its **own context window**. The coordinator is thin. Each agent loads only its charter + history. No shared bloat.
+
+```mermaid
+graph TB
+    U["🧑‍💻 You"] -->|"Team, build the login page"| C["GitHub Copilot"]
+
+    subgraph team [" 🏢 The Team "]
+        direction LR
+        A["🏗️ Lead"]
+        K["⚛️ Frontend"]
+        R["🔧 Backend"]
+        T["🧪 Tester"]
+    end
+
+    C -->|spawns| A
+    C -->|spawns| K
+    C -->|spawns| R
+    C -->|spawns| T
+    C -.->|silent| S["📋 Scribe"]
+
+    subgraph memory [" 🧠 Shared Memory "]
+        direction LR
+        D["decisions.md"]
+        L["log/"]
+    end
+
+    A & K & R & T -->|read & write| D
+    S -->|merges & logs| D
+    S -->|writes| L
+
+    A -->|learns| HA["history.md"]
+    K -->|learns| HK["history.md"]
+    R -->|learns| HR["history.md"]
+    T -->|learns| HT["history.md"]
+
+    style C fill:#6366f1,color:#fff
+    style A fill:#3b82f6,color:#fff
+    style K fill:#3b82f6,color:#fff
+    style R fill:#3b82f6,color:#fff
+    style T fill:#3b82f6,color:#fff
+    style S fill:#6b7280,color:#fff
+    style team fill:none,stroke:#3b82f6,stroke-width:2px,stroke-dasharray:5 5
+    style memory fill:none,stroke:#8b5cf6,stroke-width:2px,stroke-dasharray:5 5
+```
 
 ### Context Window Budget
 
