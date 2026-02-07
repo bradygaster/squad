@@ -43,6 +43,16 @@ fs.mkdirSync(inboxDir, { recursive: true });
 fs.mkdirSync(orchLogDir, { recursive: true });
 fs.mkdirSync(castingDir, { recursive: true });
 
+// Copy default ceremonies config
+const ceremoniesDest = path.join(dest, '.ai-team', 'ceremonies.json');
+if (!fs.existsSync(ceremoniesDest)) {
+  const ceremoniesSrc = path.join(root, 'templates', 'ceremonies.json');
+  fs.copyFileSync(ceremoniesSrc, ceremoniesDest);
+  console.log(`${GREEN}✓${RESET} .ai-team/ceremonies.json`);
+} else {
+  console.log(`${DIM}ceremonies.json already exists — skipping${RESET}`);
+}
+
 // Append merge=union rules for append-only .ai-team/ files
 const gitattributes = path.join(dest, '.gitattributes');
 const unionRules = [

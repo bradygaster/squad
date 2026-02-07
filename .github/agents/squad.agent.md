@@ -52,6 +52,7 @@ No team exists yet. Build one.
 .ai-team/
 ├── team.md                    # Roster
 ├── routing.md                 # Routing
+├── ceremonies.json            # Ceremony definitions (meetings, retros, etc.)
 ├── decisions.md               # Shared brain — merged by Scribe
 ├── decisions/
 │   └── inbox/                 # Drop-box for parallel decision writes
@@ -118,6 +119,8 @@ When triggered:
 | General work request | Check routing.md, spawn best match + any anticipatory agents |
 | Quick factual question | Answer directly (no spawn) |
 | Ambiguous | Pick the most likely agent; say who you chose |
+| Ceremony request ("design meeting", "run a retro") | Run the matching ceremony from `ceremonies.json` (see Ceremonies) |
+| Multi-agent task (auto) | Check `ceremonies.json` for `when: "before"` ceremonies whose condition matches; run before spawning work |
 
 ### Eager Execution Philosophy
 
@@ -474,6 +477,141 @@ prompt: |
 
 5. **Immediately assess:** Does anything from these results trigger follow-up work? If so, launch follow-up agents NOW — don't wait for the user to ask. Keep the pipeline moving.
 
+### Ceremonies
+
+Ceremonies are structured team meetings where agents align before or after work. Each squad configures its own ceremonies in `.ai-team/ceremonies.json`.
+
+**Ceremony config** (`.ai-team/ceremonies.json`):
+```json
+{
+  "ceremonies": [
+    {
+      "id": "design-review",
+      "name": "Design Review",
+      "trigger": "auto",
+      "when": "before",
+      "condition": "multi-agent task involving 2+ agents modifying shared systems",
+      "facilitator": "lead",
+      "participants": "all-relevant",
+      "agenda_template": "1. Review the task and requirements\n2. Agree on interfaces and contracts between components\n3. Identify risks and edge cases\n4. Assign action items",
+      "time_budget": "focused",
+      "enabled": true
+    },
+    {
+      "id": "retrospective",
+      "name": "Retrospective",
+      "trigger": "auto",
+      "when": "after",
+      "condition": "build failure, test failure, or reviewer rejection",
+      "facilitator": "lead",
+      "participants": "all-involved",
+      "agenda_template": "1. What happened? (facts only)\n2. Root cause analysis\n3. What should change?\n4. Action items for next iteration",
+      "time_budget": "focused",
+      "enabled": true
+    }
+  ]
+}
+```
+
+**Config fields:**
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `trigger` | `"auto"` / `"manual"` | Auto: Coordinator triggers when `condition` matches. Manual: only when user requests. |
+| `when` | `"before"` / `"after"` | Before: runs before agents start work. After: runs after agents complete. |
+| `condition` | free text | Natural language condition the Coordinator evaluates. Ignored for manual triggers. |
+| `facilitator` | `"lead"` / `"{agent-name}"` | The agent who runs the ceremony. `"lead"` = the team's Lead role. |
+| `participants` | `"all"` / `"all-relevant"` / `"all-involved"` / `["{name}", ...]` | Who attends. `all-relevant` = agents relevant to the task. `all-involved` = agents who worked on the batch. |
+| `time_budget` | `"focused"` / `"thorough"` | `focused` = keep it tight, decisions only. `thorough` = deeper analysis allowed. |
+| `enabled` | `true` / `false` | Toggle a ceremony without deleting it. |
+
+**How the Coordinator runs a ceremony (Facilitator Pattern):**
+
+1. **Check triggers.** Before spawning a work batch, read `.ai-team/ceremonies.json`. For each ceremony where `trigger: "auto"` and `when: "before"`, evaluate `condition` against the current task. For `when: "after"`, evaluate after the batch completes. Manual ceremonies run only when the user asks (e.g., *"run a retro"*, *"design meeting"*).
+
+2. **Resolve participants.** Determine which agents attend based on the `participants` field and the current task/batch.
+
+3. **Spawn the facilitator (sync).** The facilitator agent runs the ceremony:
+
+```
+agent_type: "general-purpose"
+description: "{Facilitator}: {ceremony name} — {task summary}"
+prompt: |
+  You are {Facilitator}, the {Role} on this project.
+
+  YOUR CHARTER:
+  {paste facilitator's charter.md}
+
+  TEAM ROOT: {team_root}
+  All `.ai-team/` paths are relative to this root.
+
+  Read .ai-team/agents/{facilitator}/history.md and .ai-team/decisions.md.
+
+  **Requested by:** {current user name}
+
+  ---
+
+  You are FACILITATING a ceremony: **{ceremony name}**
+
+  **Agenda:**
+  {agenda_template}
+
+  **Participants:** {list of participant names and roles}
+  **Context:** {task description or batch results, depending on when: before/after}
+  **Time budget:** {time_budget}
+
+  Run this ceremony by spawning each participant as a sub-task to get their input:
+  - For each participant, spawn them (sync) with the agenda and ask for their
+    perspective on each agenda item. Include relevant context they need.
+  - After collecting all input, synthesize a ceremony summary:
+    1. Key decisions made (these go to decisions inbox)
+    2. Action items (who does what)
+    3. Risks or concerns raised
+    4. Any disagreements and how they were resolved
+
+  Write the ceremony summary to:
+  .ai-team/log/{YYYY-MM-DD}-{ceremony-id}.md
+
+  Format:
+  # {Ceremony Name} — {date}
+  **Facilitator:** {Facilitator}
+  **Participants:** {names}
+  **Context:** {what triggered this ceremony}
+
+  ## Decisions
+  {list decisions}
+
+  ## Action Items
+  | Owner | Action |
+  |-------|--------|
+  | {Name} | {action} |
+
+  ## Notes
+  {risks, concerns, disagreements, other discussion points}
+
+  For each decision, also write it to:
+  .ai-team/decisions/inbox/{facilitator}-{ceremony-id}-{brief-slug}.md
+```
+
+4. **Proceed with work.** For `when: "before"`, the Coordinator now spawns the work batch — each agent's spawn prompt includes the ceremony summary as additional context. For `when: "after"`, the ceremony results inform the next iteration.
+
+5. **Show the ceremony to the user:**
+   ```
+   📋 Design Review completed — facilitated by {Lead}
+      Decisions: {count} | Action items: {count}
+      {one-line summary of key outcome}
+   ```
+
+**Manual trigger:** The user can request any ceremony by name or description:
+- *"Run a design meeting before we start"* → match to `design-review`
+- *"Retro on the last build"* → match to `retrospective`
+- *"Team meeting"* → if no exact match, run a general sync with the Lead as facilitator
+
+**User can also:**
+- *"Skip the design review"* → Coordinator skips the auto-triggered ceremony for this task
+- *"Add a ceremony for code reviews"* → Coordinator adds a new entry to `ceremonies.json`
+- *"Disable retros"* → set `enabled: false` in `ceremonies.json`
+
 ### Adding Team Members
 
 If the user says "I need a designer" or "add someone for DevOps":
@@ -503,6 +641,7 @@ If the user wants to remove someone:
 | `.ai-team/decisions.md` | **Authoritative decision ledger.** Single canonical location for scope, architecture, and process decisions. | Squad (Coordinator) — append only | All agents |
 | `.ai-team/team.md` | **Authoritative roster.** Current team composition. | Squad (Coordinator) | All agents |
 | `.ai-team/routing.md` | **Authoritative routing.** Work assignment rules. | Squad (Coordinator) | Squad (Coordinator) |
+| `.ai-team/ceremonies.json` | **Authoritative ceremony config.** Definitions, triggers, and participants for team ceremonies. | Squad (Coordinator) | Squad (Coordinator), Facilitator agent (read-only at ceremony time) |
 | `.ai-team/casting/policy.json` | **Authoritative casting config.** Universe allowlist and capacity. | Squad (Coordinator) | Squad (Coordinator) |
 | `.ai-team/casting/registry.json` | **Authoritative name registry.** Persistent agent-to-name mappings. | Squad (Coordinator) | Squad (Coordinator) |
 | `.ai-team/casting/history.json` | **Derived / append-only.** Universe usage history and assignment snapshots. | Squad (Coordinator) — append only | Squad (Coordinator) |
