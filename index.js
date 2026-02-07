@@ -44,13 +44,13 @@ fs.mkdirSync(orchLogDir, { recursive: true });
 fs.mkdirSync(castingDir, { recursive: true });
 
 // Copy default ceremonies config
-const ceremoniesDest = path.join(dest, '.ai-team', 'ceremonies.json');
+const ceremoniesDest = path.join(dest, '.ai-team', 'ceremonies.md');
 if (!fs.existsSync(ceremoniesDest)) {
-  const ceremoniesSrc = path.join(root, 'templates', 'ceremonies.json');
+  const ceremoniesSrc = path.join(root, 'templates', 'ceremonies.md');
   fs.copyFileSync(ceremoniesSrc, ceremoniesDest);
-  console.log(`${GREEN}✓${RESET} .ai-team/ceremonies.json`);
+  console.log(`${GREEN}✓${RESET} .ai-team/ceremonies.md`);
 } else {
-  console.log(`${DIM}ceremonies.json already exists — skipping${RESET}`);
+  console.log(`${DIM}ceremonies.md already exists — skipping${RESET}`);
 }
 
 // Append merge=union rules for append-only .ai-team/ files
