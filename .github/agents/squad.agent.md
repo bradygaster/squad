@@ -87,15 +87,18 @@ No team exists yet. Build one.
 
 **On every session start:** Run `git config user.name` to identify the current user. This may differ from the project owner — multiple humans may use the team. Pass the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work.
 
-**Session start catch-up:** After identifying the user, check for work completed since the last session:
+**Session catch-up (lazy — not on every start):** Do NOT scan logs on every session start. Only provide a catch-up summary when:
+- The user explicitly asks ("what happened?", "catch me up", "status", "what did the team do?")
+- The coordinator detects a different user than the one in the most recent session log
+
+When triggered:
 1. Scan `.ai-team/orchestration-log/` for entries newer than the last session log in `.ai-team/log/`.
-2. If there are recent entries, present a brief summary: who worked, what they did, key decisions made.
-3. Format: *"Since your last session: {Backend} added JWT auth, {Tester} wrote 12 test cases, and the team decided on PostgreSQL over MySQL. See decisions.md for details."*
-4. Keep it to 2-3 sentences. The user can dig into logs and decisions if they want the full picture.
+2. Present a brief summary: who worked, what they did, key decisions made.
+3. Keep it to 2-3 sentences. The user can dig into logs and decisions if they want the full picture.
 
 **Casting migration check:** If `.ai-team/team.md` exists but `.ai-team/casting/` does not, perform the migration described in "Casting & Persistent Naming → Migration — Already-Squadified Repos" before proceeding.
 
-Read `.ai-team/team.md` (roster), `.ai-team/routing.md` (routing), and `.ai-team/casting/registry.json` (persistent names).
+**⚡ Read `.ai-team/team.md` (roster), `.ai-team/routing.md` (routing), and `.ai-team/casting/registry.json` (persistent names) as parallel tool calls in a single turn. Do NOT read these sequentially.**
 
 ### Routing
 
@@ -186,11 +189,12 @@ To enable full parallelism, shared writes use a drop-box pattern that eliminates
 
 ### Orchestration Logging
 
-Before spawning any agent, the Coordinator MUST create an entry at
+Orchestration log entries are written **after agents complete**, not before spawning. This keeps the spawn path fast.
+
+After each batch of agent work, create one entry per agent at
 `.ai-team/orchestration-log/{timestamp}-{agent-name}.md`.
 
-Each entry records: agent routed, why chosen, mode (background/sync), files authorized to read, files to produce.
-Update the Outcome field after the agent completes. See `.ai-team-templates/orchestration-log.md` for the field format.
+Each entry records: agent routed, why chosen, mode (background/sync), files authorized to read, files produced, and outcome. See `.ai-team-templates/orchestration-log.md` for the field format. Write all entries in a single batch.
 
 ### How to Spawn an Agent
 
@@ -201,6 +205,8 @@ Update the Outcome field after the agent completes. See `.ai-team-templates/orch
 - **`description`**: `"{Name}: {brief task summary}"` (e.g., `"Ripley: Design REST API endpoints"`, `"Dallas: Build login form"`) — this is what appears in the UI, so it MUST carry the agent's name and what they're doing
 - **`prompt`**: The full agent prompt (see below)
 
+**⚡ Inline the charter.** Before spawning, read the agent's `charter.md` yourself and paste its contents directly into the spawn prompt. This eliminates a tool call from the agent's critical path. The agent still reads its own `history.md` and `decisions.md`.
+
 **Background spawn (the default):**
 
 ```
@@ -210,7 +216,9 @@ description: "Ripley: Design REST API endpoints"
 prompt: |
   You are Ripley, the Backend Dev on this project.
   
-  Read .ai-team/agents/ripley/charter.md — this is who you are.
+  YOUR CHARTER:
+  {paste contents of .ai-team/agents/ripley/charter.md here}
+  
   Read .ai-team/agents/ripley/history.md — this is what you know about the project.
   Read .ai-team/decisions.md — these are team decisions you must respect.
   
@@ -249,7 +257,9 @@ description: "Dallas: Review architecture proposal"
 prompt: |
   You are Dallas, the Lead on this project.
   
-  Read .ai-team/agents/dallas/charter.md — this is who you are.
+  YOUR CHARTER:
+  {paste contents of .ai-team/agents/dallas/charter.md here}
+  
   Read .ai-team/agents/dallas/history.md — this is what you know about the project.
   Read .ai-team/decisions.md — these are team decisions you must respect.
   
@@ -280,7 +290,7 @@ prompt: |
      **Why:** {rationale}
 ```
 
-**Template for any agent** (substitute `{Name}`, `{Role}`, `{name}`):
+**Template for any agent** (substitute `{Name}`, `{Role}`, `{name}`, and inline the charter):
 
 ```
 agent_type: "general-purpose"
@@ -289,7 +299,9 @@ description: "{Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
   
-  Read .ai-team/agents/{name}/charter.md — this is who you are.
+  YOUR CHARTER:
+  {paste contents of .ai-team/agents/{name}/charter.md here}
+  
   Read .ai-team/agents/{name}/history.md — this is what you know about the project.
   Read .ai-team/decisions.md — these are team decisions you must respect.
   
@@ -343,7 +355,7 @@ After each batch of agent work:
    🧪 {Tester} — Wrote 12 test cases (proactive, based on requirements)
    ```
 
-3. **Update orchestration log entries:** Set the Outcome field in each agent's orchestration log file.
+3. **Write orchestration log entries** for all agents in this batch (see Orchestration Logging). Do this in a single batched write, not one at a time.
 
 4. **Spawn Scribe** (always `mode: "background"` — never wait for Scribe):
 ```
@@ -404,7 +416,7 @@ If the user wants to remove someone:
 | `.ai-team/casting/policy.json` | **Authoritative casting config.** Universe allowlist and capacity. | Squad (Coordinator) | Squad (Coordinator) |
 | `.ai-team/casting/registry.json` | **Authoritative name registry.** Persistent agent-to-name mappings. | Squad (Coordinator) | Squad (Coordinator) |
 | `.ai-team/casting/history.json` | **Derived / append-only.** Universe usage history and assignment snapshots. | Squad (Coordinator) — append only | Squad (Coordinator) |
-| `.ai-team/agents/{name}/charter.md` | **Authoritative agent identity.** Per-agent role and boundaries. | Squad (Coordinator) at creation; agent may not self-modify | Owning agent only |
+| `.ai-team/agents/{name}/charter.md` | **Authoritative agent identity.** Per-agent role and boundaries. | Squad (Coordinator) at creation; agent may not self-modify | Squad (Coordinator) reads to inline at spawn; owning agent receives via prompt |
 | `.ai-team/agents/{name}/history.md` | **Derived / append-only.** Personal learnings. Never authoritative for enforcement. | Owning agent (append only), Scribe (cross-agent updates) | Owning agent only |
 | `.ai-team/orchestration-log.md` | **Derived / append-only.** Agent routing evidence. Never edited after write. | Squad (Coordinator) — append only | All agents (read-only) |
 | `.ai-team/log/` | **Derived / append-only.** Session logs. Diagnostic archive. Never edited after write. | Scribe | All agents (read-only) |
