@@ -53,3 +53,39 @@ Brady directed the team to plan Squad v1. Three major feature directions emerged
 2 additional inbox decisions merged:
 - Kujan: P0 silent success bug mitigation (Proposal 015)
 - Kujan: Adopt Agent Skills Open Standard with MCP tool declarations (Proposal 012 Revision 2)
+
+## The Self-Repair Loop (Brady: "this feels sort of gold")
+
+### What happened
+
+During this session, ~40% of background agent spawns completed all work (files written, histories updated, decisions logged) but the `task` tool returned "General-purpose agent did not produce a response." The coordinator and human saw apparent failure when there was actual success.
+
+### The self-repair sequence
+
+1. **Bug surfaces organically.** Agents Fenster, Kujan, and Hockney complete proposals 011, 012, and 013 — each writes 15-46KB of structured analysis — but the coordinator reports "no response" for all three. Brady sees failure messages for work that actually succeeded.
+
+2. **Coordinator detects the pattern.** Instead of accepting the failure, the coordinator checks file existence and discovers all three proposals were written successfully. Reports the discrepancy to Brady.
+
+3. **Brady reports external feedback.** "it seems later on, the agents get in the way more than they help" — this is the user-facing symptom of the same underlying trust problem.
+
+4. **Kujan diagnosed his own bug.** The Copilot SDK expert — himself a victim of the silent success bug earlier in the session — was tasked with root-causing it. He identified the smoking gun: agents whose final LLM turn is a tool call (writing to history.md) instead of text get their response dropped by the platform.
+
+5. **The diagnosis demonstrated the bug.** While Kujan (agent-25) successfully returned his response AND wrote Proposal 015, Verbal (agent-26) and Scribe (agent-27) — spawned in the same batch — completed their work (016-the-squad-paper.md at 34KB, this session log at 3.8KB) but reported "no response." The bug occurred while being documented.
+
+6. **Three mitigations proposed.** All zero-risk, shippable immediately:
+   - Response order guidance in spawn prompts (end with text, not tool calls)
+   - Silent success detection in coordinator (verify files exist before reporting failure)
+   - Generous timeouts on `read_agent` calls
+
+### Why this matters
+
+The team didn't just find a bug. It:
+- Experienced the bug as victims (agents losing responses)
+- Diagnosed the root cause (a platform behavior, not a Squad bug)
+- Proposed mitigations (changes to squad.agent.md prompts)
+- Documented the entire loop (this log entry)
+- Used the bug as evidence for the value paper (Proposal 016)
+
+This is a self-repairing system. The agents identified a reliability problem, traced it to root cause, proposed fixes, and will implement those fixes — all within the same session, all while continuing to produce substantive work despite the bug's presence.
+
+Brady called this "gold." He's right. This is the strongest possible demonstration of why multi-agent teams work: the team can diagnose and fix its own infrastructure problems while simultaneously delivering on its primary mission.

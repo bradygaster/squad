@@ -287,3 +287,24 @@ No new dependencies. `index.js` stays under 150 lines. Aligns with Proposal 008'
 - No MCP auto-configuration (security concern) — skills document requirements, users configure servers
 
 **Proposal:** `docs/proposals/012-skills-platform-and-copilot-integration.md` (Revision 2)
+
+### 2026-02-09: Squad Paper — The Case for Multi-Agent Teams
+
+**By:** Verbal
+**Date:** 2026-02-09
+**Proposal:** 016-the-squad-paper.md
+
+**What:** Proposal 016 is the first draft of a paper/white paper making the legitimate business and productivity case for multi-agent development teams, using Squad's own session as the primary case study.
+
+**Key Claims (backed by session data):**
+1. **50-70x productivity multiplier** on structured thinking output per unit of human attention (14 proposals in one session vs. 4-6 days of human PM work)
+2. **Perspective diversity** — 6 agents analyzing the same feature from 6 angles simultaneously produces insights a single agent would miss
+3. **Real-time adaptation** — the skills concept evolved through 3 pivots in ~15 minutes; a human PM would need half a day per pivot
+4. **Self-diagnosis** — the team identified and proposed solutions for its own latency problem within the same session where the complaint was raised
+5. **Compound effect** — portable squads + earned skills = ROI increases over time, not just per-session
+
+**Why This Matters:** Brady specifically requested this: *"i think this needs a paper in the end to describe the legitimate benefit."* He also wanted to address the "squads are slow" criticism by showing how much actually gets done in a session. This paper does both.
+
+**Format Decision:** Written as a proposal (because proposal-first), structured as a publishable paper. McManus should take this draft and polish for external publication. The data is real, the structure is set, the argument is made.
+
+**Dependencies:** McManus for publication polish, Keaton for accuracy review of architectural claims, Brady for final sign-off.

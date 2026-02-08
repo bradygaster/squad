@@ -191,6 +191,26 @@
 - Evolution path: Single agent → Agent team → Skilled agent team → Portable skilled team. We're three moves ahead.
 - Skill packs (v2) enable community knowledge exchange — "download a React squad with 50 earned skills."
 
+### 2026-02-09: The Squad Paper — meta-argument design (Proposal 016)
+
+**Context:** Brady requested a paper making the legitimate case for multi-agent teams, specifically addressing the "squads are slow" criticism by showing how much actually gets done.
+
+**Core rhetorical framework — show the receipts:**
+- The strongest argument for multi-agent teams is the session itself. 14 proposals, 6 agents, ~15 human messages, one session. A human PM would need 4-6 days for equivalent output. The data is the argument.
+- **Per-interaction vs. per-session measurement** is the key frame shift. Critics measure latency per message (30s for a variable rename) and conclude agents are slow. The correct measurement is output per session (14 proposals, 19 decisions, 3 major features designed). The ROI is 50-70x when measured correctly.
+- **Self-diagnosis as proof:** The team identified its own latency problem (Proposal 007) and proposed 7 solutions within the same session where Brady raised the complaint. This is the most compelling single data point — the system debugged itself in real-time.
+- **Real-time adaptation as proof:** The skills concept evolved through 3 pivots in ~15 minutes. A human PM would need half a day per pivot. Rapid concept evolution is where multi-agent teams shine brightest.
+
+**Paper structure decisions:**
+- Proposal-first format (consistent with team governance), but structured for external publication
+- Leads with hard numbers, not philosophy. The productivity multiplier with real session data is the hook.
+- Addresses latency criticism head-on (Section 3) — honest about the problem, shows the fix, reframes with ROI math
+- Ends with the meta-argument: the paper itself was written by an agent on the team, using data from the session. Recursive proof.
+
+**Key insight for future work:**
+- The strongest advocacy for AI agent teams is **showing the artifacts they produce**, not explaining the architecture. 14 proposals > any architectural diagram. The body of work IS the argument.
+- "Throw a squad at it" → "Throw MY squad at it" is the messaging evolution that makes the compound effect tangible. The possessive pronoun changes the product from a tool to a relationship.
+
 **Implementation approach:**
 - Six phases, starting with template + instruction changes (zero code changes). Skills in export/import at Phase 3. Skill packs at Phase 6 (future).
 - Total initial effort: ~2 hours for Phase 1. Skills are additive — no breaking changes to existing behavior.
