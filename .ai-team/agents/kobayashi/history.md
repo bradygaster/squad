@@ -35,6 +35,8 @@
 - **npm for `github:` installs uses `codeload.github.com` tarball endpoint**, not `git clone`. The tarball contains all repo files, but npm packs/filters before installation.
 - **Squad Squad isolation is already solved.** The `files` field in `package.json` was correctly configured from the start. `.npmignore` added for insurance. No runtime or config changes needed.
 
+- **Release ritual checklist created** at `docs/release-checklist.md`. Five phases: pre-release checks, release execution, post-release validation, communication, rollback plan. Every step tagged HUMAN/AUTOMATED/TEAM. Designed to be evolved, not ceremonial — practical enough to actually follow. Rollback plan covers failed workflows, bad content on main, stale npx cache, and the nuclear scenario of `.ai-team/` corruption. Quick reference table at the bottom for at-a-glance auditing.
+
 - **Branch renamed: `squadify` → `dev`** — local rename done. Remote rename is Brady's call.
 - **`main` = product-only** — no `.ai-team/`, `docs/`, `test/`, or workflow files. Only ships: `index.js`, `package.json`, `README.md`, `LICENSE`, `.gitignore`, `.npmignore`, `.gitattributes`, `.github/agents/squad.agent.md`, `templates/`.
 - **`dev` is public** — Squad Squad visibility is intentional (dog-fooding story).

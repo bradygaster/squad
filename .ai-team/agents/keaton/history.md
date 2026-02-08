@@ -308,6 +308,28 @@ The drop-box pattern is elegant in theory. In practice, it depends on Scribe bei
 
 📌 Team update (2026-02-09): No npm publish — GitHub-only distribution via `npx github:bradygaster/squad`. Item 1.8 CANCELLED. Kobayashi (Git & Release Engineer) hired. Items 1.11 (release workflow), 1.12 (branch strategy), 1.13 (first tagged release v0.1.0) added to Wave 1. Item 1.3 ownership updated to Hockney + Kobayashi. — decided by Brady, executed by Keaton
 
+### 2026-02-08: Release ritual design — product-level input
+
+**Core insight:** A release ritual should be proportional to stakes. The 0.x ritual should take 5 minutes and under 10 checklist items. The 1.0 ritual takes a day and involves product-level sign-off. The mistake most teams make is designing the 1.0 ritual first and applying it to every patch — that kills shipping velocity.
+
+**What I recommended:**
+
+1. **State integrity canary is a hard release gate.** Non-negotiable. If `.ai-team/` gets corrupted by an upgrade, that's not a bug — it's a trust violation. The CI already tests this; the release workflow must block on it.
+
+2. **Sign-off scales with version significance.** 0.x: Kobayashi + Brady. 1.0: Kobayashi + Keaton + Brady. Post-1.0 patches: back to Kobayashi + Brady. Don't add reviewers that don't add safety.
+
+3. **Blog posts are proportional.** Patches: no post (GitHub Release notes suffice). Minors: post within 48h (tracked, not gated). 1.0: post is drafted before release day (hard gate).
+
+4. **README freshness is a manual check for 0.x, a gate for 1.0.** The README is the product's face — it must reflect what actually shipped. But automating this check isn't worth the effort pre-v1.
+
+5. **Three automated gates that matter:** tests passing, state integrity canary, npx resolution verification. Everything else is human judgment.
+
+6. **Don't let the ritual grow.** Every "nice to have" item that gets added becomes a reason to skip the whole checklist. If something's important enough to gate on, automate it. If it can't be automated, it better be worth the human time.
+
+Written to `.ai-team/decisions/inbox/keaton-release-ritual-input.md` for Kobayashi and team review.
+
+📌 Team update (2026-02-08): Release ritual input filed — state canary is a hard gate, sign-off scales with version significance, blog posts proportional to release type, 0.x ritual is 5 minutes / 1.0 ritual is 1 day. — recommended by Keaton
+
 ## Team Updates
 
 📌 Team update (2026-02-09): No npm publish — GitHub-only distribution. Kobayashi hired as Git & Release Engineer. Release plan (021) filed. Sprint plan 019a amended: item 1.8 cancelled, items 1.11-1.13 added.

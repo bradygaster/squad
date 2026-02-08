@@ -1688,3 +1688,133 @@ Proposal status should be updated when work state changes — not accumulated in
 - **Wave 3 name "Magical"** — internal sprint name. Changing it would break cross-references across 4+ files for no reason.
 
 **Principle applied:** Light touch. Brady said "don't go overboard." Each agent should still sound like themselves — Verbal is edgy, McManus is polished, Fenster is blunt. The goal was to sand off the "we're so incredible" peaks, not flatten the voice.
+
+
+### 2026-02-08: Release ritual checklist established
+
+**By:** Kobayashi
+**What:** Created `docs/release-checklist.md` — a five-phase release ritual covering pre-release checks, release execution, post-release validation, communication, and rollback. Every step is tagged HUMAN (requires judgment), AUTOMATED (handled by `.github/workflows/release.yml`), or TEAM (owned by another agent). Includes rollback procedures for failed workflows, bad releases, stale npx cache, and `.ai-team/` corruption scenarios.
+**Why:** Brady requested a codified release checklist — a ritual we evolve but don't break. Without a written process, releases depend on tribal knowledge. This checklist makes the release process reproducible by anyone on the team, documents what the automation handles vs. what requires human judgment, and establishes a rollback playbook before we need one. Derived from the release workflow in `.github/workflows/release.yml` and the distribution strategy in Proposal 021.
+
+### 2026-02-08: Release ritual — Lead recommendations
+
+**By:** Keaton
+**What:** Product-level input on what a release ritual should contain for Squad, from 0.x through 1.0.
+**Why:** Brady wants a release ritual that becomes team DNA — codified but not bureaucratic. This is my input as Lead so Kobayashi has product context when designing the actual checklist, and the team has a record of the reasoning.
+
+---
+
+#### 1. What gates matter for a product like Squad?
+
+Tests are table stakes. For Squad specifically, three more gates matter:
+
+1. **State integrity canary.** This is the single most important gate beyond tests. Squad's entire value proposition rests on `.ai-team/` being user-owned, untouchable state. If an upgrade corrupts user state, we don't have a bug — we have a trust violation. The CI already runs this (init → write sentinel → upgrade → assert sentinel survives). It MUST be a hard release gate. Not optional. Not "nice to have." Binary pass/fail, and a fail blocks the release.
+
+2. **`npx` resolution smoke test.** Our distribution model is unusual — GitHub-only, no npm registry. The release workflow already verifies `npx github:bradygaster/squad --version` resolves correctly post-release. Keep this. A release that passes tests but can't be installed by users is not a release.
+
+3. **Version coherence check.** `package.json` version, git tag, and `--version` CLI output must all agree. The release workflow validates tag-to-package.json already. Good. This stays.
+
+What I'd skip as a gate: changelog completeness, documentation coverage, lint rules. Those matter but they shouldn't block a patch release at 3am when something's broken.
+
+#### 2. Sign-off: who needs to approve?
+
+**For 0.x:** Kobayashi + Brady is sufficient. Kobayashi owns the release mechanics, Brady owns the product. Two-person sign-off is fast and accountable. Adding more reviewers at this stage adds latency without adding safety — we're pre-v1, moving fast, and the automated gates (tests, state canary, npx verification) catch the things humans miss anyway.
+
+**For 1.0:** I want Lead sign-off (me) added. The 1.0 release is a product statement, not just a code artifact. Architecture, messaging, feature completeness — those are product decisions that need a product eye. 1.0 should require Kobayashi (release mechanics) + Keaton (product readiness) + Brady (final call).
+
+**Post-1.0:** Return to Kobayashi + Brady for patches and minors. Lead sign-off only for major versions.
+
+#### 3. State integrity canary — is it a release gate?
+
+Yes. Unambiguously yes. See point 1 above.
+
+To be explicit: if the state integrity canary fails, the release does not ship. Period. No overrides, no "we'll fix it in the next patch." This is the one gate where I'd rather be too strict than too lenient. Users who lose their `.ai-team/` state lose their team identity, their decision history, their casting — everything that makes Squad *theirs*. That's not a recoverable failure.
+
+The canary should test:
+- Files in `.ai-team/decisions/inbox/` survive upgrade
+- Subdirectory structure in `.ai-team/agents/` survives upgrade
+- Nested content (files inside agent directories) survives upgrade
+- Squad-owned files (`.github/agents/squad.agent.md`, `.ai-team-templates/`) ARE updated
+
+#### 4. Blog post per release — required or optional?
+
+**Optional for patches, strongly encouraged for minors, required for milestones.**
+
+Here's my reasoning: a blog post for every `v0.1.1` bugfix patch is performative — it creates noise that dilutes the signal of real releases. But a minor version (`v0.2.0`, `v0.3.0`) represents a wave gate passing, new capabilities shipping, real product evolution. Those deserve a post. McManus should write it, and it should be part of the release ritual as a post-release task — not a gate, but a tracked follow-up.
+
+For 1.0: the blog post IS the release. That one's mandatory and should be drafted before the release is cut.
+
+**Practical distinction:**
+- Patch: no blog post required. Release notes on GitHub are sufficient.
+- Minor: blog post within 48 hours of release. Not a gate, but tracked.
+- Major (1.0): blog post drafted and reviewed before release day. Gate.
+
+#### 5. README freshness — should we verify the README matches the release?
+
+Yes, but with nuance.
+
+The README is a living document (decided in 019a). It should reflect current capabilities truthfully. A release that ships a new subcommand but doesn't mention it in the README is shipping a lie of omission.
+
+**For 0.x:** Add a manual checklist item: "README reflects new capabilities in this release." It's a review step, not an automated gate. The person cutting the release eyeballs it.
+
+**For 1.0:** README review becomes a gate. The README IS the product's face at launch. It must be accurate, complete, and polished. McManus reviews before release.
+
+**What to check specifically:**
+- New subcommands are documented
+- `--version` output in examples matches the release version
+- "Known Limitations" section is current
+- Install/upgrade commands are correct
+- CI badge is green (links to real passing workflow)
+
+#### 6. Minimum viable release ritual: 0.x vs 1.0
+
+**0.x — The "Ship It" Ritual (5 minutes):**
+
+Pre-release:
+- [ ] All tests pass on `dev` (`npm test`)
+- [ ] State integrity canary passes (CI green)
+- [ ] Version bumped in `package.json`
+- [ ] README reflects new capabilities (eyeball check)
+
+Release:
+- [ ] Trigger release workflow (tag push or workflow_dispatch)
+- [ ] Workflow completes: tests → filtered copy → main commit → tag → GitHub Release → npx verify
+
+Post-release:
+- [ ] Verify `npx github:bradygaster/squad --version` shows new version
+- [ ] Verify `npx github:bradygaster/squad#v{tag} --version` works
+- [ ] For minor releases: blog post within 48 hours (McManus, tracked not gated)
+
+Sign-off: Kobayashi + Brady
+
+**1.0 — The "This Is It" Ritual (1 day):**
+
+Pre-release (day before):
+- [ ] All tests pass on `dev` (`npm test`)
+- [ ] State integrity canary passes
+- [ ] Full upgrade path tested: v0.1.0 → v0.x.x → v1.0.0, `.ai-team/` intact at each step
+- [ ] Version bumped in `package.json`
+- [ ] README reviewed by McManus — accurate, complete, polished
+- [ ] Blog post drafted and reviewed
+- [ ] Demo script verified against actual product behavior
+- [ ] Keaton (Lead) signs off on product readiness
+
+Release:
+- [ ] Trigger release workflow
+- [ ] Workflow completes successfully
+- [ ] GitHub Release marked as `prerelease: false` (first non-prerelease!)
+
+Post-release:
+- [ ] Verify npx resolution (both untagged and tagged)
+- [ ] Run full upgrade path one more time from a clean directory
+- [ ] Blog post published
+- [ ] Demo video reflects 1.0 capabilities
+- [ ] Announce in all channels
+
+Sign-off: Kobayashi + Keaton + Brady
+
+---
+
+**The principle:** The ritual should be proportional to the stakes. A patch fix shouldn't require a ceremony. A major release shouldn't ship without one. The automated gates (tests, state canary, npx verify) do the heavy lifting — the human steps are about product judgment, not mechanical verification.
+
+**What I'd warn against:** Don't let the ritual grow. Every "nice to have" checklist item that gets added becomes a reason to skip the whole checklist. Keep the 0.x ritual under 10 items. If something's important enough to be a gate, automate it. If it can't be automated, it better be worth the human time.
