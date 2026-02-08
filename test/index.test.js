@@ -452,3 +452,156 @@ describe('edge cases', () => {
     assert.equal(result.exitCode, 0, 're-init should exit 0');
   });
 });
+
+// --- squad.agent.md prompt content validation (PR #2 features) ---
+
+describe('squad.agent.md prompt content', () => {
+  const agentMd = fs.readFileSync(path.join(ROOT, '.github', 'agents', 'squad.agent.md'), 'utf8');
+
+  describe('GitHub Issues Mode', () => {
+    it('contains the GitHub Issues Mode section', () => {
+      assert.ok(agentMd.includes('## GitHub Issues Mode'), 'missing ## GitHub Issues Mode section');
+    });
+
+    it('contains prerequisites for gh CLI', () => {
+      assert.ok(agentMd.includes('gh --version'), 'missing gh CLI detection');
+      assert.ok(agentMd.includes('gh auth status'), 'missing gh auth check');
+    });
+
+    it('contains issue trigger table', () => {
+      assert.ok(agentMd.includes('"pull issues from {owner/repo}"'), 'missing pull issues trigger');
+      assert.ok(agentMd.includes('"work on issue #N"'), 'missing work on issue trigger');
+      assert.ok(agentMd.includes('"merge PR #N"'), 'missing merge PR trigger');
+    });
+
+    it('contains Issue Source storage format', () => {
+      assert.ok(agentMd.includes('## Issue Source'), 'missing ## Issue Source section in team.md format');
+    });
+
+    it('documents the branch naming convention', () => {
+      assert.ok(agentMd.includes('squad/{issue-number}-{slug}'), 'missing branch naming convention');
+    });
+
+    it('documents PR submission with issue linking', () => {
+      assert.ok(agentMd.includes('Closes #'), 'missing Closes # issue linking in PR flow');
+    });
+
+    it('documents PR review handling', () => {
+      assert.ok(agentMd.includes('PR REVIEW FEEDBACK'), 'missing PR review feedback spawn prompt');
+    });
+
+    it('documents PR merge flow', () => {
+      assert.ok(agentMd.includes('gh pr merge'), 'missing gh pr merge command');
+    });
+
+    it('references standard After Agent Work flow', () => {
+      assert.ok(agentMd.includes('After Agent Work flow'), 'missing reference to standard After Agent Work flow in issue lifecycle');
+    });
+
+    it('mentions worktree interaction for parallel issues', () => {
+      assert.ok(agentMd.includes('worktree') || agentMd.includes('Worktree'), 'missing worktree guidance in issue lifecycle');
+    });
+  });
+
+  describe('PRD Mode', () => {
+    it('contains the PRD Mode section', () => {
+      assert.ok(agentMd.includes('## PRD Mode'), 'missing ## PRD Mode section');
+    });
+
+    it('contains PRD trigger table', () => {
+      assert.ok(agentMd.includes('"here\'s the PRD"'), 'missing PRD trigger phrase');
+      assert.ok(agentMd.includes('"read the PRD at {path}"'), 'missing file path trigger');
+    });
+
+    it('documents PRD storage in team.md', () => {
+      assert.ok(agentMd.includes('## PRD'), 'missing ## PRD section in team.md format');
+    });
+
+    it('documents Lead agent decomposition', () => {
+      assert.ok(agentMd.includes('Decompose PRD into work items'), 'missing PRD decomposition prompt');
+    });
+
+    it('documents work item format', () => {
+      assert.ok(agentMd.includes('WI-{number}'), 'missing work item ID format');
+    });
+
+    it('includes decomposition guidelines', () => {
+      assert.ok(agentMd.includes('Decomposition guidelines'), 'missing decomposition guidelines');
+    });
+
+    it('documents mid-project PRD updates', () => {
+      assert.ok(agentMd.includes('Mid-Project PRD Updates'), 'missing mid-project PRD update section');
+    });
+  });
+
+  describe('Human Team Members', () => {
+    it('contains the Human Team Members section', () => {
+      assert.ok(agentMd.includes('## Human Team Members'), 'missing ## Human Team Members section');
+    });
+
+    it('contains human trigger table', () => {
+      assert.ok(agentMd.includes('"add {Name} as {role}"'), 'missing add human trigger');
+      assert.ok(agentMd.includes('"I\'m on the team as {role}"'), 'missing self-add trigger');
+    });
+
+    it('documents the human badge', () => {
+      assert.ok(agentMd.includes('👤 Human'), 'missing 👤 Human badge');
+    });
+
+    it('documents differences from AI agents', () => {
+      assert.ok(agentMd.includes('How Humans Differ from AI Agents'), 'missing human vs AI comparison');
+    });
+
+    it('documents routing to humans with pause behavior', () => {
+      assert.ok(agentMd.includes("This one's for {Name}"), 'missing human routing pause message');
+    });
+
+    it('documents non-dependent work continues', () => {
+      assert.ok(agentMd.includes('Non-dependent work continues'), 'missing continuation guidance for human blocks');
+    });
+
+    it('documents stale reminder', () => {
+      assert.ok(agentMd.includes('Still waiting on {Name}'), 'missing stale reminder message');
+    });
+
+    it('documents human reviewer integration', () => {
+      assert.ok(agentMd.includes('Human Members and the Reviewer Rejection Protocol'), 'missing human reviewer integration section');
+    });
+
+    it('shows multiple humans example', () => {
+      assert.ok(agentMd.includes('Multiple Humans'), 'missing multiple humans section');
+    });
+  });
+
+  describe('Init Mode integration', () => {
+    it('asks about PRD after team setup', () => {
+      assert.ok(agentMd.includes('Do you have a PRD or spec document?'), 'missing PRD question');
+    });
+
+    it('asks about GitHub issues after team setup', () => {
+      assert.ok(agentMd.includes('Is there a GitHub repo with issues I should pull from?'), 'missing issues question');
+    });
+
+    it('asks about human members after team setup', () => {
+      assert.ok(agentMd.includes('Are any humans joining the team?'), 'missing humans question');
+    });
+
+    it('documents post-setup input sources', () => {
+      assert.ok(agentMd.includes('Post-setup input sources'), 'missing post-setup input sources step');
+    });
+  });
+
+  describe('Routing table integration', () => {
+    it('includes GitHub Issues routing signal', () => {
+      assert.ok(agentMd.includes('Follow GitHub Issues Mode'), 'missing issues routing signal');
+    });
+
+    it('includes PRD routing signal', () => {
+      assert.ok(agentMd.includes('Follow PRD Mode'), 'missing PRD routing signal');
+    });
+
+    it('includes Human Members routing signal', () => {
+      assert.ok(agentMd.includes('Follow Human Team Members'), 'missing human members routing signal');
+    });
+  });
+});
