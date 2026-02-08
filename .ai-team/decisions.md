@@ -1361,3 +1361,17 @@ npx github:bradygaster/squad
 - Release authority model?
 - When to merge `squadify` → `main` for the first time?
 
+
+### 2026-02-09: Kobayashi's open questions — Brady deferred to team judgment
+
+**By:** Squad (Coordinator) — Brady said "use your best judgment" on all 4
+
+**Decisions:**
+
+1. **First release timing:** Tag `v0.1.0` now on current state. Version 0.x signals "early." Don't wait for perfection before first tag.
+
+2. **Repo visibility:** Design for public from day one. No secrets in branch protection assumptions.
+
+3. **Release authority:** Kobayashi proposes + prepares draft GitHub Release. Brady reviews and publishes. Automation without losing control.
+
+4. **`squadify` → `main` merge:** After Wave 1 gate passes. First merge to main = first release-worthy state. `squadify` remains the working branch until then.
