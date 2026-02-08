@@ -229,3 +229,25 @@ px create-squad upgrade now overwrites Squad-owned files. Consider adding npm te
 
 2026-02-09: Tone governance established — SFW, kind, dry humor, no AI-flowery talk. 25 proposals audited (status fields updated). Tone audit: 16 edits across 8 files. Blog post #2 shipped.
 📌 Team update (2026-02-08): Release ritual — state integrity canary is a hard release gate. Tests + state canary + npx verify are automated gates. All must pass before release ships. — decided by Keaton
+
+### CI Pipeline Shipped (Sprint Task 1.3)
+
+**What I Did:**
+- Created `.github/workflows/ci.yml` — GitHub Actions CI workflow named "CI"
+- Triggers: push to `main` and `dev`, pull_request to `main`
+- Runs on `ubuntu-latest` with Node.js 22.x matrix (single version — we require Node 22+)
+- Steps: checkout (v4), setup-node (v4), `npm test`
+- Added CI status badge to README.md, directly after the `# Squad` heading
+- Verified all 12 existing tests pass before creating the workflow
+
+**CI Configuration Decisions:**
+- Minimal workflow — no caching, no artifacts, no coverage uploads. Ship the floor, add bells later.
+- Node 22.x only in the matrix — aligns with `node:test` requirement and team decision to target Node 22+
+- No `npm install` step needed — zero dependencies, `node:test` + `node:assert` are built-in
+- Used `actions/checkout@v4` and `actions/setup-node@v4` — current stable versions
+- Workflow triggers match branch strategy: `main` (product) and `dev` (development), PRs to `main` (gate)
+
+**Badge Placement:**
+- CI badge placed on line 3, immediately after the `# Squad` heading, before the tagline
+- Positioned above the existing Status and Platform badges (those are on line 5)
+- Standard GitHub Actions badge format: links to the workflow runs page

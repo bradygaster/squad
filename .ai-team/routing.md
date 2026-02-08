@@ -13,6 +13,7 @@ How to decide who handles what.
 | Testing, quality, edge cases | Hockney | Breaking parallel spawning, reviewer gates, casting overflow scenarios |
 | Copilot SDK optimization, platform alignment | Kujan | Copilot CLI patterns, tool usage, SDK opportunity assessment |
 | Git, releases, CI/CD, distribution, versioning | Kobayashi | GitHub Releases, Actions, tags, branch strategy, npx distribution, state integrity |
+| Visual identity, logos, brand assets, design | Redfoot | Logo design, icons, brand guidelines, visual consistency |
 | Code review | Keaton | Review PRs, check quality, architectural consistency |
 | Session logging | Scribe | Automatic — never needs routing |
 

@@ -6,19 +6,20 @@
 
 | Name | Role | Notes |
 |------|------|-------|
-| Squad | Coordinator | Routes work, enforces handoffs and reviewer gates. Does not generate domain artifacts. |
+| Copilot | Coordinator | Routes work, enforces handoffs and reviewer gates. Does not generate domain artifacts. |
 
 ## Members
 
 | Name | Role | Charter | Status |
 |------|------|---------|--------|
-| Keaton | Lead | `.ai-team/agents/keaton/charter.md` | ✅ Active |
-| Verbal | Prompt Engineer | `.ai-team/agents/verbal/charter.md` | ✅ Active |
-| McManus | DevRel | `.ai-team/agents/mcmanus/charter.md` | ✅ Active |
-| Fenster | Core Dev | `.ai-team/agents/fenster/charter.md` | ✅ Active |
-| Hockney | Tester | `.ai-team/agents/hockney/charter.md` | ✅ Active |
-| Kujan | Copilot SDK Expert | `.ai-team/agents/kujan/charter.md` | ✅ Active |
-| Kobayashi | Git & Release Engineer | `.ai-team/agents/kobayashi/charter.md` | ✅ Active |
+| [Keaton](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Lead | `.ai-team/agents/keaton/charter.md` | ✅ Active |
+| [Verbal](https://en.wikipedia.org/wiki/Keyser_S%C3%B6ze) | Prompt Engineer | `.ai-team/agents/verbal/charter.md` | ✅ Active |
+| [McManus](https://en.wikipedia.org/wiki/The_Usual_Suspects) | DevRel | `.ai-team/agents/mcmanus/charter.md` | ✅ Active |
+| [Fenster](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Core Dev | `.ai-team/agents/fenster/charter.md` | ✅ Active |
+| [Hockney](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Tester | `.ai-team/agents/hockney/charter.md` | ✅ Active |
+| [Kujan](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Copilot SDK Expert | `.ai-team/agents/kujan/charter.md` | ✅ Active |
+| [Kobayashi](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Git & Release Engineer | `.ai-team/agents/kobayashi/charter.md` | ✅ Active |
+| [Redfoot](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Graphic Designer | `.ai-team/agents/redfoot/charter.md` | ✅ Active |
 | Scribe | Session Logger | `.ai-team/agents/scribe/charter.md` | 📋 Silent |
 
 ## Project Context

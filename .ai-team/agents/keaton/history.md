@@ -225,6 +225,19 @@ The drop-box pattern is elegant in theory. In practice, it depends on Scribe bei
 
 3. **Export before import.** Fenster estimated 11-14h for full portability. Splitting export (Wave 2, ~4h) from import (Wave 3, ~5-6h) is the right cut. Export is useful standalone (backup, sharing, diffing). Import builds on it.
 
+### Character links in team.md
+
+**Date:** 2026-02-09
+**Trigger:** Brady requested links to relevant pages about each character in the team roster.
+
+**Decision:** Inline Wikipedia links on agent names in the Members table. Most agents link to the film's Wikipedia article (`The_Usual_Suspects`); Verbal links to the dedicated `Keyser_Söze` character page since it's the most informative page for that character. Scribe gets no link — not from the film.
+
+**Key considerations:**
+- No fandom wiki exists for the film. IMDB blocks programmatic access and character-specific IMDB URLs are fragile.
+- Individual character Wikipedia pages don't exist (except Keyser Söze). Actor pages would work but Brady asked for character pages, not actor pages.
+- The film's Wikipedia article has the best character descriptions in its Cast section — stable URL, detailed, and free.
+- Kept it subtle: no extra columns, no "Namesake" labels, no explanatory text. The links are there for people who notice. Easter egg preserved.
+
 4. **Skills Phase 1 is template-only.** Full skills system is too big for one wave. Phase 1 (Wave 2): add the SKILL.md format to templates and teach agents to read skills. Phase 2 (Wave 3): earned skills, confidence lifecycle, MCP declarations. Each phase is independently useful.
 
 5. **Squad DM deferred to Wave 4+.** Proposal 017 is architecturally sound but it's a second product surface. Building it before the core CLI is bulletproof creates two half-finished products. Quality first means the terminal experience ships complete before we open new surfaces.

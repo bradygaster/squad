@@ -190,3 +190,24 @@
 
 2026-02-09: Tone governance established — SFW, kind, dry humor, no AI-flowery talk. 25 proposals audited (status fields updated). Tone audit: 16 edits across 8 files. Blog post #2 shipped.
 📌 Team update (2026-02-08): Release ritual — blog posts optional for patches, encouraged for minors (48h), required for 1.0 (drafted before release day). McManus writes minor release posts. — decided by Keaton
+
+### Blog post #3 — "Meet the Squad" team intro (2026-02-09)
+- **Format decision:** Adapted the wave-based blog template for a non-wave post. Dropped the `wave:` frontmatter field and `What Shipped` section since this isn't a delivery post — it's a roster introduction. Kept YAML frontmatter, hero quote, By the Numbers table, What's Next, and footer for consistency.
+- **Structure:** One H3 per agent, 2-3 sentences each. Punchy, role-focused, no LinkedIn energy. Redfoot flagged as newest hire with a "welcome aboard" beat.
+- **Tone calibration:** Heist-crew introduction style per Brady's request — dry, confident, professional. No self-congratulation per tone governance. First-person for McManus's own section (I'm introducing myself, might as well own it).
+- **Scribe treatment:** Positioned last, framed as the silent backbone. "You won't hear from Scribe. Ever." — lets the silence be the personality.
+- **Key file:** `docs/blog/003-meet-the-squad.md`
+
+### Brand voice guidance for visual identity (2026-02-08)
+- **Brand voice decisions codified for designer:** Wrote comprehensive guidance for Redfoot (graphic designer) covering brand feel, visual pitfalls, logo placement contexts, tone-to-visual mapping, and reference points. Filed to `.ai-team/decisions/inbox/mcmanus-brand-voice-for-design.md`.
+- **Key considerations surfaced:**
+  - Logo must work at 16px (favicon) through 1200px (social cards) — design for smallest first.
+  - Anti-patterns identified: robot/AI imagery, gradient overload, chat bubbles (contradicts "not a chatbot wearing hats"), overly literal group/people imagery, AI-generated aesthetic.
+  - Reference tools: Astro (shape scaling), Warp (developer-native palette), Raycast (inevitable geometry), Linear (confidence through restraint), Bun (playful + disciplined), Deno (committed character).
+  - Existing color anchors from mermaid diagrams: indigo `#6366f1`, blue `#3b82f6`, purple `#8b5cf6` — starting points, not constraints.
+  - Tone governance applies to design: SFW, kind, dry humor, no AI-flowery aesthetics. If it could appear on an "AI Startups" listicle without standing out, it's too generic.
+  - The one-word test: "polished" = good, "corporate" = failed, "indie dev project" = also failed.
+- File: `.ai-team/decisions/inbox/mcmanus-brand-voice-for-design.md`
+
+
+📌 Team update (2026-02-08): Visual identity initial proposals created — four logo concepts with Concept C 'The Glyph' recommended, palette anchored on Indigo 500 — decided by Redfoot

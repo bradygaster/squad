@@ -136,3 +136,10 @@
 2026-02-09: Branch strategy — squadify renamed to dev, main is product-only (no .ai-team/), release workflow (.github/workflows/release.yml) uses filtered-copy from dev→main.
 
 2026-02-09: Tone governance established — SFW, kind, dry humor, no AI-flowery talk. 25 proposals audited (status fields updated). Tone audit: 16 edits across 8 files. Blog post #2 shipped.
+
+### Version Stamping Phase 1 (Sprint Task 1.4)
+
+- **`engines` field added to package.json** — `"node": ">=22.0.0"` declares the Node 22+ requirement explicitly. This is needed because `node:test` (used by the test suite) is a Node 22+ feature. The engines field gives clear errors on older runtimes instead of cryptic module-not-found failures.
+- **`--version` flag already correct** — `index.js` lines 13, 17-19 read `pkg.version` from `package.json` at runtime. Single source of truth, no duplication. No changes needed to index.js.
+- **package.json is the version authority** — version (`0.1.0`), engine constraint (`>=22.0.0`), and the `--version` CLI flag all derive from package.json. No separate version file, no frontmatter, no build step. This aligns with Proposal 011's version detection strategy (package.json as primary source).
+- **All 12 tests pass** after adding `engines` field. Zero test changes needed.

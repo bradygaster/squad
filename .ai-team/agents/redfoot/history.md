@@ -1,0 +1,28 @@
+# Project Context
+
+- **Owner:** bradygaster (bradygaster@users.noreply.github.com)
+- **Project:** Squad — multi-agent orchestration for GitHub Copilot CLI. One command gives developers a persistent AI team with memory, personality, and parallel execution.
+- **Stack:** Node.js, GitHub Copilot CLI, zero dependencies
+- **Created:** 2026-02-07
+- **Design context:** Squad's brand universe is The Usual Suspects — dry, understated, pressure-oriented. The product is CLI-first but renders in GitHub markdown, VS Code, and web contexts. Tone governance: no AI-flowery language, dry humor, growth-attitude, kindness first.
+
+## Learnings
+
+<!-- Append new learnings below. Each entry is something lasting about the project. -->
+
+- **Brand register is "quiet confidence."** Squad's tone governance (The Usual Suspects, dry, understated) demands a visual identity that conveys competence without flash. No gradients, no mascots, no startup energy. The logo should feel like a tool stamp, not a poster.
+- **Existing color precedent: Indigo.** The README's Mermaid diagrams already use `#6366F1` (Indigo 500) for the coordinator and `#3b82f6` (Blue 500) for agents. The brand palette must harmonize with these — not replace them.
+- **Rendering constraints are severe.** The logo must work at 16px (favicon), in monochrome (terminal), in circle crop (GitHub avatar), in dark AND light mode, and in markdown. Any concept that depends on color, gradient, or fine detail fails these constraints.
+- **Typography: Inter + JetBrains Mono.** Two typefaces cover every context. Inter for brand/UI, JetBrains Mono for code/CLI. Both open source, both widely installed in the target audience's environment.
+- **Recommended concept: "The Glyph" — diamond outline with inner solid diamond.** Chosen for constraint performance: single-color, scalable, monochrome-native, distinctive at every size. SVG at `docs/assets/squad-logo-proposal.svg`.
+- **Key files:** Proposal at `docs/proposals/022-squad-visual-identity.md`. SVG at `docs/assets/squad-logo-proposal.svg`. Brand palette defined in the proposal (Section 4).
+- **SVG rebuild (first version had wrong geometry).** The original SVG used arbitrary coordinates that didn't match Proposal 022's specification. Problems: (1) outer square was 100×100 units instead of side=42.426 (for 60×60 AABB), (2) stroke width was 5 instead of 3, (3) inner diamond was 30×30 instead of side=12.728 (for 18×18 AABB / 30% of outer), (4) corner radius was a round `6` instead of 6% of side length (2.55), (5) inner diamond was not mathematically positioned — it floated in roughly the right area but wasn't tangent to the outer edges, (6) wordmark was off-center relative to the mark. Fix: rebuilt from first principles using diamond-space coordinates. Inner diamond center placed at (-9, 12) relative to outer center, making its left vertex (-18, 12) and bottom vertex (-9, 21) both satisfy |x|+|y|=30, tangent to the outer diamond's two left-side edges. Verified all coordinates through rotation math.
+- **Wordmark changed to lowercase "squad".** Per Brady's request, replaced all five uppercase letter paths (S, Q, U, A, D) with lowercase letterforms (s, q, u, a, d). Metrics: baseline=171, x-height=159 (12 units), ascender=152 (for d), descender=178 (for q). Round letters (q, a, d) use consistent 6-unit radius ellipses. The s uses a stroke-only double-curve path. The u uses a stroke-only open curve. Diamond mark unchanged. ViewBox extended to accommodate q descender.
+- **Concept C variants created.** Split the existing `squad-logo-proposal.svg` into `squad-logo-c.svg` (with wordmark, identical copy) and `squad-logo-c-mark.svg` (diamond glyph only, no letter paths, viewBox tightened to 66 66 68 68 to fit just the mark).
+- **Concept E: "The Collective" designed and implemented.** Brady's brief: "GitHub Copilot logo but a bunch of them, each with slight variation — collaborative intelligent agents." Design: five rounded squares in organic cluster formation, each varied in size (13–18u), rotation (-10° to +12°), and opacity (0.7–1.0). Lead agent largest/full opacity at front, others arranged behind in flowing formation. Overlapping edges create cohesion. Files: `squad-logo-e.svg` (with wordmark), `squad-logo-e-mark.svg` (mark only). Wordmark reuses same lowercase stroke-based letterforms from Concept C. Concept E description added to Proposal 022 after Concept D, and recommendation table updated to include Concept E column.
+
+
+📌 Team update (2026-02-08): Brand voice guidance for visual identity — design should feel competent, dry, developer-native; avoid AI imagery, gradients, chat bubbles — decided by McManus
+
+
+📌 Team update (2026-02-08): Team introduction blog post (003) published — Redfoot welcomed as newest team member — decided by McManus
