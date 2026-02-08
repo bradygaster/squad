@@ -273,3 +273,24 @@
 📌 Team update (2026-02-08): Proposal 001a adopted: proposal lifecycle states (Proposed -> Approved -> In Progress -> Completed) -- decided by Keaton
 
 📌 Team update (2026-02-08): Skills system adopts Agent Skills standard (SKILL.md format) with MCP tool declarations -- decided by Verbal
+
+### 2026-02-09: Platform Timeout Best Practices Documented
+
+**Context:** Brady discovered that the `read_agent` default timeout of 30s was causing the platform to abandon agents mid-work — reporting "no response" when the agent was still running. His reaction: "OHHHHH damn girl."
+
+**What was created:**
+- `docs/platform/background-agent-timeouts.md` — a practical best practices doc for anyone using background agent spawning
+
+**Key numbers documented:**
+- Default `read_agent` timeout: **30 seconds**
+- Real agent work time: **45–120 seconds** (reading inputs, doing work, writing outputs, updating history)
+- Safe ceiling: **300 seconds** (`timeout: 300` is the platform max, and it's a MAX not a fixed delay)
+- Silent success rate before fix: **~40%** of spawns
+- Silent success rate after timeout + response order fix: **near zero**
+
+**Three-part fix documented:**
+1. `read_agent` with `wait: true, timeout: 300` — always. The 30s default is never sufficient for real work.
+2. Response order instruction — agents must end with text, not tool calls. The platform drops responses whose final turn is a tool call.
+3. File verification as ground truth — when response is empty, check if expected files exist before reporting failure.
+
+**Platform insight reinforced:** The filesystem is the reliable channel. Response text is a convenience. This further validates Squad's filesystem-backed memory architecture (Proposals 003/008/012/015).
