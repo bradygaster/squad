@@ -136,3 +136,5 @@ The rest of the plan holds: Sprint 1 (fast) → Sprint 2 (yours, smart) → Spri
 📌 Team update (2026-02-08): Testing must start Sprint 1, not Sprint 3. Top 3 non-negotiable tests: init happy path, init idempotency, export/import round-trip -- decided by Hockney
 
 📌 Team update (2026-02-08): Skills system adopts Agent Skills standard (SKILL.md format) in .ai-team/skills/. MCP tool dependencies declared in metadata.mcp-tools -- decided by Verbal
+
+📌 Team update (2026-02-08): Sprint 0 story arc identified: self-repair under fire narrative for launch content. Lead with output (16 proposals), not the bug -- decided by McManus

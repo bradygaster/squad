@@ -248,3 +248,5 @@
 📌 Team update (2026-02-08): Testing must start Sprint 1, not Sprint 3 -- decided by Hockney
 
 📌 Team update (2026-02-08): Proposal 001a adopted: proposal lifecycle states (Proposed -> Approved -> In Progress -> Completed) -- decided by Keaton
+
+📌 Team update (2026-02-08): Sprint 0 story arc identified: self-repair under fire narrative for launch content. Lead with output (16 proposals), not the bug -- decided by McManus
