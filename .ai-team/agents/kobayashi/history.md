@@ -12,7 +12,13 @@
 
 _Summarized from sessions through 2026-02-09. Full entries in `history-archive.md`._
 
-
+- **GitHub-only distribution** — `npx github:bradygaster/squad` for install, `#v0.2.0` (not `@`) for version pinning. Brady explicitly rejected npm publish. `npx github:` pulls default branch HEAD unless `#ref` specified.
+- **Branch strategy**: `main` is release-only (product files only, no `.ai-team/`), `dev` is development. Releases use filtered-copy (not git merge) from dev→main via `.github/workflows/release.yml`.
+- **Three-layer distribution protection**: `package.json` `files` allowlist (primary gate), `.npmignore` (defense-in-depth), `.gitignore` (runtime state). `files` field IS respected by `npx github:` installs. `.gitattributes` `export-ignore` does NOT work for `npx github:`.
+- **State integrity is CI-enforced** — upgrade test writes sentinel to `.ai-team/` and verifies survival. Tests are minimum release gate.
+- **Release workflow**: tag push triggers CI → test → GitHub Release creation → verification. Pre-v1 releases marked `prerelease: true`. Tag format: `v{MAJOR}.{MINOR}.{PATCH}`.
+- **Release ritual checklist** at `docs/release-checklist.md` — five phases (pre-release, execution, post-release, communication, rollback). Every step tagged HUMAN/AUTOMATED/TEAM.
+- **Release process documented** at `team-docs/release-process.md` — branch flow, workflow mechanics, file filtering, npx distribution model.
 
 ## Recent Updates
 
