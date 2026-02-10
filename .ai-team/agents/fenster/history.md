@@ -65,3 +65,23 @@ _Summarized from initial architecture review (2026-02-07). Full entries in `hist
 
 
 📌 Team update (2026-02-10): Async comms strategy decided — two-tier MVP: CCA-as-squad-member (2-4h, prompt-only) + Telegram bridge (8-16h, conditional on SDK spike). CCA is the floor. — decided by Kujan
+
+## Learnings
+
+- **Provider abstraction belongs at the prompt level, not in index.js.** The coordinator is a prompt that executes shell commands. A JavaScript provider module would require index.js to be a runtime (it's an installer) and would double the maintenance surface. Command templates in squad.agent.md are the correct abstraction layer.
+- **index.js has near-zero GitHub-platform coupling.** The `.github/agents/` path is a Copilot CLI convention, not GitHub-the-platform. The only GitHub-specific code is the `npx github:bradygaster/squad` usage string (cosmetic). All real platform coupling is in squad.agent.md.
+- **Capability negotiation is critical for multi-provider support.** ADO has no labels (uses Tags), no reactions, and requires work item types. GitLab has no sub-issues. The provider interface must declare what's available so the coordinator can adapt.
+- **Two-channel pattern (MCP read, gh CLI write) is GitHub-specific, not universal.** Future providers will likely be CLI-only. The MCP fallback logic should be inside the GitHub provider, not in the generic interface.
+- **Git remote URL parsing covers 95% of provider detection.** `github.com` → GitHub, `dev.azure.com`/`visualstudio.com` → ADO, `gitlab.com` → GitLab. Self-hosted instances need CLI-based detection (is `glab` configured?). Generic is the fallback.
+- **ADO is the hardest provider.** WIQL for search, Tags for labels, Iterations for milestones, Work Item Types for issues — every concept has an impedance mismatch. GitLab is the easiest (glab mirrors gh closely). Estimate: ADO 23h, GitLab 12h, GitHub reorganization 9h.
+
+
+📌 Team update (2026-02-10): v0.3.0 is ONE feature — proposals as GitHub Issues. All other items deferred. — decided by bradygaster
+
+📌 Team update (2026-02-10): Actions automation ships as opt-in templates in templates/workflows/, 3 workflows in v0.3.0. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-10): Label taxonomy (39 labels, 7 namespaces) drives entire GitHub-native workflow. — decided by bradygaster, Verbal
+
+📌 Team update (2026-02-10): CCA governance must be self-contained in squad.agent.md (cannot read .ai-team/). — decided by Kujan
+
+📌 Team update (2026-02-10): Proposal migration uses three-wave approach — active first, shipped second, superseded/deferred last. — decided by Keaton

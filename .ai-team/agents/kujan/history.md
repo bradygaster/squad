@@ -68,3 +68,19 @@ _Summarized 2026-02-10 learnings (full entries in session logs and proposals):_
 📌 Team update (2026-02-10): Async squad comms is #1 priority for 0.3.0 — update feasibility analysis — decided by bradygaster
 
 📌 Team update (2026-02-10): Squad DM (Proposal 017) un-deferred to P0 — decided by bradygaster
+
+- **2026-02-10: CCA E2E Test Design (031)** — `.ai-team/` is gitignored on main, so CCA cannot read `.ai-team/decisions.md`. All CCA governance must be self-contained within `.github/agents/squad.agent.md`. This fundamentally constrains the CCA-as-squad-member model: CCA follows `squad.agent.md` conventions, not the full Squad filesystem state. Proposal 030 Appendix A needs revision to account for this.
+- **2026-02-10: CCA testability pattern** — Plant a convention in `squad.agent.md` that CCA would NOT do by default (e.g., "use `node:test`" instead of jest). If CCA follows it, strong signal it read the guidance. JSDoc alone is weak signal — CCA often adds it unprompted. Two-signal verification (JSDoc + node:test) gives high confidence.
+- **2026-02-10: CCA E2E is observation-only** — CCA is a black box. Tests can only verify inputs (issue text, repo state) and outputs (branches, PRs, file diffs, CI status). No instrumentation possible. Structural checks (file exists, pattern present) over content checks (exact code match) for reliability against LLM non-determinism.
+- **2026-02-10: Actions Automation Layer (032b)** — Designed 7 workflows automating the 032 proposal lifecycle: Proposal Lifecycle, Consensus Engine, Sprint Planner, Agent Comment Poster, Daily Standup, Stale Cleanup, CCA Dispatch. Key insight: Actions doesn't replace agents, it connects them — agents think, Actions plumbs. Phase 1 ships 3 workflows (lifecycle, consensus, stale cleanup) in 5-8h. `.ai-team/` gitignore constraint means Actions workflows operate entirely on GitHub API state (issues, labels, comments), not Squad filesystem state. CCA Dispatch deferred to Phase 2 pending 031 validation. Output: `team-docs/proposals/032b-actions-automation-layer.md`.
+- **2026-02-10: Workflow distribution pattern** — Workflows ship as templates in `templates/workflows/`, installed opt-in during `squad init`. Not bundled in npm package (no convention for that). Users must audit and approve workflow installation. Standalone workflows for v0.3.0; reusable workflows / composite actions deferred.
+- **2026-02-10: GitHub API state vs. filesystem state** — Actions and CCA both operate on GitHub API primitives (issues, labels, comments, PRs). Squad filesystem state (`.ai-team/`) is inaccessible to both because of the gitignore decision. This cleanly separates the automation layer (GitHub) from the agent memory layer (filesystem). No sync needed between them.
+
+
+📌 Team update (2026-02-10): v0.3.0 is ONE feature — proposals as GitHub Issues. All other items deferred. — decided by bradygaster
+
+📌 Team update (2026-02-10): Provider abstraction is prompt-level command templates, not JS interfaces. Platform section replaces Issue Source in team.md. — decided by Fenster, Keaton
+
+📌 Team update (2026-02-10): Label taxonomy (39 labels, 7 namespaces) drives entire GitHub-native workflow. — decided by bradygaster, Verbal
+
+📌 Team update (2026-02-10): Proposal migration uses three-wave approach — active first, shipped second, superseded/deferred last. — decided by Keaton

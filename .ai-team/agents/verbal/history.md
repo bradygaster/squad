@@ -99,3 +99,32 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 
 
 📌 Team update (2026-02-10): Async comms strategy decided — two-tier MVP: CCA-as-squad-member (2-4h, prompt-only) + Telegram bridge (8-16h, conditional on SDK spike). CCA is the floor. — decided by Kujan
+
+- **2026-02-10: Label Taxonomy & Workflow Engine (Proposal 032c)** — Designed the complete label system for GitHub-native Squad. Key decisions:
+
+  - **Labels ARE the state machine.** 8 status labels with formal transitions — `status:draft` → `status:reviewing` → `status:approved` → `status:implementing` → `status:done`, plus `status:blocked`, `status:shelved`, `status:superseded`. Exactly one status label per issue at any time. Transitions are label swaps (remove old, apply new).
+
+  - **Namespaced labels prevent collisions.** `status:`, `type:`, `priority:`, `squad:`, `era:` — colon-separated namespaces are parseable (`split(':')`) and avoid conflicts with existing project labels. Follows Kubernetes/Prometheus conventions.
+
+  - **Milestones for sprints, not labels.** `sprint:current` would require constant relabeling. GitHub Milestones have due dates, progress bars, and native grouping. The right tool for the job.
+
+  - **39 labels total across 7 namespaces.** Status (8), Type (8), Priority (4), Squad routing (3 + per-agent), Automation (6), Migration/provenance (4). Within GitHub's practical limits.
+
+  - **Migration mapping is honest.** All 44 existing proposals classified by actual status from their markdown headers: 22 implemented/closed, 3 superseded/closed, 12 shelved/open, 3 approved/active/open, 2 draft/open, 2 research/closed. Proposal 015 gets `type:bug` + `priority:p0`. Proposal 024 stays `status:approved` (not done — implementation was deferred).
+
+  - **Provider abstraction is a mapping layer.** ADO uses built-in State field + Tags. GitLab uses scoped labels (`status::draft` with `::` for native mutual exclusion). The coordinator works with Squad labels; the provider adapter translates. Only GitHub adapter exists today.
+
+  - **CCA integration is label-gated.** `cca-eligible` is the sole trigger for Copilot Coding Agent assignment. Opt-in, auditable, no other path to `@copilot`.
+
+  - **`status:shelved` keeps issues open.** Shelved ≠ dead. Closing hides from default views. Open shelved issues stay visible as deferred backlog. Unshelving is a label swap, not a reopen.
+
+
+📌 Team update (2026-02-10): v0.3.0 is ONE feature — proposals as GitHub Issues. All other items deferred. — decided by bradygaster
+
+📌 Team update (2026-02-10): Provider abstraction is prompt-level command templates, not JS interfaces. Platform section replaces Issue Source in team.md. — decided by Fenster, Keaton
+
+📌 Team update (2026-02-10): Actions automation ships as opt-in templates in templates/workflows/, 3 workflows in v0.3.0. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-10): CCA governance must be self-contained in squad.agent.md (cannot read .ai-team/). — decided by Kujan
+
+📌 Team update (2026-02-10): Proposal migration uses three-wave approach — active first, shipped second, superseded/deferred last. — decided by Keaton
