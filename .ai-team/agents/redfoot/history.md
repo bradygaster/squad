@@ -58,3 +58,6 @@
 📌 Team update (2026-02-09): Preview branch added to release pipeline — two-phase workflow: preview then ship. Brady eyeballs preview before anything hits main. — decided by Kobayashi
 
 📌 Team update (2026-02-10): Per-agent model selection approved for v0.3.0 — Designer role maps to Opus for vision capabilities. — decided by Keaton
+
+
+📌 Team update (2026-02-10): Clean branch config at init time — impacts release workflows — decided by bradygaster

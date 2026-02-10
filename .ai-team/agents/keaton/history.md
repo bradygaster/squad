@@ -107,3 +107,19 @@ _Summarized from initial architecture review and proposal-first design (2026-02-
 
 📌 Team update (2026-02-10): GitHub Issues/PR integration must not break CLI conversations — CLI is primary surface, GitHub integration is additive only. — decided by bradygaster
 📌 Team update (2026-02-10): Tone directive consolidated — all public-facing material must be straight facts only. No editorial voice, sales language, or narrative framing. Stacks on existing banned-words and tone governance rules. — decided by bradygaster, McManus
+
+- **2026-02-10: Proposal 028 updated with spboyer/slidemaker reference implementation**
+  - **Shayne Boyer (@spboyer) validated 028's design patterns end-to-end** using Squad to decompose a PRD into 9 GitHub Issues on [spboyer/slidemaker](https://github.com/spboyer/slidemaker). 8 of 9 completed and closed. This is the first external validation of the PRD→Issues pipeline.
+  - **Formalized the `squad:` label convention:** Two-tier labeling — `squad` base label on every squad-managed issue, `squad:{agent-name}` for per-agent routing (e.g., `squad:verbal`, `squad:mcmanus`, `squad:fenster`). Validated with 9 issues across 3 agents in slidemaker. Updated both 028 and 028a to use this convention instead of the old `squad-agent` label.
+  - **Standardized issue template:** User story format ("As a {persona}, I want {capability}, so that {benefit}") with checkbox acceptance criteria and agent metadata (Squad member, Primary work files, Dependencies) in a Notes section. All 9 slidemaker issues follow this pattern.
+  - **Key architectural insight:** Agent metadata injection in issue bodies (Squad member name, role, file paths) eliminates the need for external routing logic. The issue IS the assignment. Labels handle filtering; body handles context.
+  - **Key file paths:** `team-docs/proposals/028-github-native-team-planning.md` (Reference Implementation section added), `team-docs/proposals/028a-github-api-capabilities.md` (prerequisites label list updated).
+
+
+📌 Team update (2026-02-10): 0.3.0 top priorities set — (1) async squad comms, (2) GitHub-native integration, (3) CCA squad adoption — decided by bradygaster
+
+📌 Team update (2026-02-10): Squad DM (Proposal 017) un-deferred to P0 for 0.3.0 — decided by bradygaster
+
+📌 Team update (2026-02-10): `squad:` label convention standardized (consolidated Keaton + McManus) — decided by Keaton, McManus
+
+📌 Team update (2026-02-10): Clean branch config at init time — repo owners choose protected branches — decided by bradygaster

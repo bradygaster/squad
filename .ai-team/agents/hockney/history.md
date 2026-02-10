@@ -50,3 +50,6 @@ _Summarized from initial assessment (2026-02-07). Full entries in `history-archi
 📌 Team update (2026-02-10): v0.3.0 sprint plan approved — per-agent model selection, team backlog, Demo 1. — decided by Keaton
 
 📌 Team update (2026-02-10): Tone directive consolidated — all public-facing material must be straight facts only. No editorial voice, sales language, or narrative framing. Stacks on existing banned-words and tone governance rules. — decided by bradygaster, McManus
+
+
+📌 Team update (2026-02-10): `squad:` label convention standardized — test coverage may be needed — decided by Keaton, McManus

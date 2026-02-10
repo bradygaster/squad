@@ -80,3 +80,8 @@ _Summarized from initial platform assessment and deep onboarding (2026-02-07). F
   - Output: `team-docs/proposals/028a-github-api-capabilities.md` and `.ai-team/decisions/inbox/kujan-github-api-assessment.md`.
 
 📌 Team update (2026-02-10): v0.3.0 sprint plan approved — your model catalog research (024a) and GitHub API assessment (028a) are foundational inputs. — decided by Keaton
+
+
+📌 Team update (2026-02-10): Async squad comms is #1 priority for 0.3.0 — update feasibility analysis — decided by bradygaster
+
+📌 Team update (2026-02-10): Squad DM (Proposal 017) un-deferred to P0 — decided by bradygaster

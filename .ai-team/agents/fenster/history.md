@@ -55,3 +55,10 @@ _Summarized from initial architecture review (2026-02-07). Full entries in `hist
 
 📌 Team update (2026-02-10): Marketing site architecture consolidated — Jekyll on GitHub Pages, docs/ is source root, blog from team-docs/blog/, no content reproduction. McManus (content) + Fenster (infrastructure) for Phase 1. — decided by bradygaster, Keaton, McManus
 📌 Team update (2026-02-10): GitHub Issues/PR integration must not break CLI conversations — CLI is primary surface, GitHub integration is additive only. — decided by bradygaster
+
+
+📌 Team update (2026-02-10): 0.3.0 priorities: async comms > GitHub-native > CCA adoption — decided by bradygaster
+
+📌 Team update (2026-02-10): Clean branch config at init time — filter squad state from designated branches — decided by bradygaster
+
+📌 Team update (2026-02-10): `squad:` label convention standardized for GitHub Issues — decided by Keaton, McManus

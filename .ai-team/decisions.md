@@ -2644,3 +2644,52 @@ The model selection algorithm (sprint item 4.1) must consider all 16 available m
 - First application: Blog post `005-v030-give-it-a-brain.md` rewritten under this directive
 
 **Why:** Brady's tone governance (02-09) established the baseline: honest, respectful, no self-congratulation. The facts-only directive (02-10) tightened this further: no editorial voice at all, just factual statements. McManus recorded and applied the detailed rules. These stack — Phase 2 is a strict subset of Phase 1.
+
+### 2026-02-10: 0.3.0 priority — GitHub-native integration + CCA squad adoption
+**By:** bradygaster (via Copilot)
+**What:** Two priorities for 0.3.0: (1) Lean into GitHub Issues, PRs, and Discussions as drivers of Squad behavior — Squad reads from and responds to these native surfaces, not just CLI. (2) Copilot Coding Agent (CCA) should use the repo's existing Squad team instead of operating as a generic agent — CCA discovers .ai-team/, reads squad.agent.md, and works as a team member under Squad governance. This makes Squad the governance layer for CCA.
+**Why:** User request — these are the top priorities for the sprint. Validated by Shayne's slidemaker deployment proving the GitHub Issues pattern works.
+
+
+
+### 2026-02-10: Async squad communication — top personal priority
+**By:** bradygaster (via Copilot)
+**What:** Brady wants to communicate with his squads (per repo) asynchronously — from his phone, away from the PC. One chat channel per repo. Mediums to evaluate: Telegram (existing proposal), Microsoft Teams (ideal — especially per-repo chat), Discord, others. The goal: keep squads rolling when you're not at your desk. Brady says he wants THIS more than anything.
+**Why:** User request — this is the highest-priority feature request from the product owner. Changes Squad from a dev-time tool to an always-available team.
+
+
+
+### 2026-02-10: Clean branch configuration at init time
+**By:** bradygaster (via Copilot)
+**What:** During Squad init, offer repo owners a config option: "Which branch(es) should squad team files never land in?" (e.g., main, release). Squad state (.ai-team/, team-docs/, proposals, etc.) is filtered out of those branches automatically — Scribe and release workflows respect the list. This is a per-repo consideration, not a global default. Supersedes the earlier clean-main directive.
+**Why:** User request — repo owners should control which branches stay product-only. Generalizes the existing KEEP_FILES/KEEP_DIRS release pattern for any Squad-powered repo.
+
+
+
+### 2026-02-10: Contributors include non-code contributions
+**By:** bradygaster (via Copilot)
+**What:** Contributors to Squad include people who validate patterns, test in the wild, and drive product design — not just code commits. Shayne Boyer (spboyer) is a contributor: his slidemaker repo (spboyer/slidemaker) validated PRD-to-issues flow, invented the squad: label convention, and proved the GitHub Issues Mode design. Reference his work explicitly in proposals and docs. Credit where credit is due.
+**Why:** User request — contribution recognition is a team value, not just a git metric.
+
+
+
+### 2026-02-10: `squad:` label convention standardized (consolidated)
+
+**By:** Keaton, McManus
+**Date:** 2026-02-10
+**Affects:** All agents creating GitHub Issues, coordinator prompt for Phase 1 (028)
+
+**What:** The `squad:` prefix label convention is the standard for all squad-managed GitHub Issues. Two-tier system:
+1. **`squad`** — base label on every squad-managed issue. Enables `gh issue list --label squad` to show all squad work.
+2. **`squad:{agent-name}`** — per-agent routing label (e.g., `squad:verbal`, `squad:mcmanus`, `squad:fenster`). Enables per-agent backlog filtering.
+
+Replaces the old `squad-agent` label proposed in 028a §7.
+
+**Origin:** Shayne Boyer invented this pattern during his slidemaker deployment (spboyer/slidemaker, issues #1–#9). He needed per-agent filtering in GitHub's native UI and created the prefix convention independently. Validated in production before the Squad team designed it.
+
+**Issue template:** Squad-generated issues must follow user story format with agent metadata (persona, capability, benefit, acceptance criteria, squad member, primary work, dependencies).
+
+**Why:** Uses GitHub's existing label infrastructure — no external tooling. Simple enough to document in one sentence. Production-validated by an external user. Keaton standardized the convention; McManus recommended documenting it and auto-creating labels at GitHub Issues Mode init.
+
+**Next:** Document in Squad's GitHub Issues Mode docs. Credit Shayne Boyer as origin. Consider auto-creating labels on init.
+
