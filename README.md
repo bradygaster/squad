@@ -1,7 +1,5 @@
 # Squad
 
-[![CI](https://github.com/bradygaster/squad/actions/workflows/ci.yml/badge.svg)](https://github.com/bradygaster/squad/actions/workflows/ci.yml)
-
 **AI agent teams for any project.** A team that grows with your code.
 
 [![Status](https://img.shields.io/badge/status-experimental-blueviolet)](#status)
@@ -238,6 +236,52 @@ The Coordinator enforces this. No self-review of rejected work.
 
 ---
 
+## Issue Assignment & Triage
+
+Squad integrates with GitHub Issues. Label an issue with `squad` to trigger triage, or assign directly to a member with `squad:{name}`.
+
+### How It Works
+
+1. **Label an issue `squad`** — the Lead auto-triages it: reads the issue, determines who should handle it, applies the right `squad:{member}` label, and comments with triage notes.
+
+2. **`squad:{member}` label applied** — the assigned member picks up the issue in their next Copilot session (or automatically if Copilot coding agent is enabled).
+
+3. **Reassign** — remove the current `squad:*` label and add a different member's label.
+
+### Labels
+
+Labels are auto-created from your team roster via the `sync-squad-labels` workflow:
+
+| Label | Purpose |
+|-------|---------|
+| `squad` | Triage inbox — Lead reviews and assigns |
+| `squad:{name}` | Assigned to a specific squad member |
+
+Labels sync automatically when `.ai-team/team.md` changes, or you can trigger the workflow manually.
+
+### Workflows
+
+Squad installs three GitHub Actions workflows:
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `sync-squad-labels.yml` | Push to `.ai-team/team.md`, manual | Creates/updates `squad:*` labels from roster |
+| `squad-triage.yml` | `squad` label added to issue | Lead triages and assigns `squad:{member}` label |
+| `squad-issue-assign.yml` | `squad:{member}` label added | Acknowledges assignment, queues for member |
+
+### Prerequisites
+
+- GitHub Actions must be enabled on the repository
+- The `GITHUB_TOKEN` needs `issues: write` and `contents: read` permissions
+- For automated issue work: [Copilot coding agent](https://docs.github.com/en/copilot) must be enabled on the repo
+
+### Session Awareness
+
+The coordinator checks for open `squad:{member}` issues at session start and will mention them: *"Hey {user}, {AgentName} has an open issue — #42: Fix auth endpoint timeout. Want them to pick it up?"*
+
+---
+
+
 ## Install
 
 ```bash
@@ -254,7 +298,7 @@ Already have Squad? Update Squad-owned files to the latest version without touch
 npx github:bradygaster/squad upgrade
 ```
 
-This overwrites `squad.agent.md` and `.ai-team-templates/`. It never touches `.ai-team/` — your team's knowledge, decisions, and casting are safe.
+This overwrites `squad.agent.md`, `.ai-team-templates/`, and squad workflow files in `.github/workflows/`. It never touches `.ai-team/` — your team's knowledge, decisions, and casting are safe.
 
 ---
 

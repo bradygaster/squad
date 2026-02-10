@@ -512,6 +512,38 @@ if (isUpgrade) {
   console.log(`${GREEN}✓${RESET} .ai-team-templates/`);
 }
 
+// Copy workflow templates (Squad-owned — overwrite on upgrade)
+const workflowsSrc = path.join(root, 'templates', 'workflows');
+const workflowsDest = path.join(dest, '.github', 'workflows');
+
+if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
+  const workflowFiles = fs.readdirSync(workflowsSrc).filter(f => f.endsWith('.yml'));
+
+  if (isUpgrade) {
+    fs.mkdirSync(workflowsDest, { recursive: true });
+    for (const file of workflowFiles) {
+      fs.copyFileSync(path.join(workflowsSrc, file), path.join(workflowsDest, file));
+    }
+    console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflow files (${workflowFiles.length} workflows)`);
+  } else {
+    fs.mkdirSync(workflowsDest, { recursive: true });
+    let copied = 0;
+    for (const file of workflowFiles) {
+      const destFile = path.join(workflowsDest, file);
+      if (fs.existsSync(destFile)) {
+        console.log(`${DIM}${file} already exists — skipping (run 'upgrade' to update)${RESET}`);
+      } else {
+        fs.copyFileSync(path.join(workflowsSrc, file), destFile);
+        console.log(`${GREEN}✓${RESET} .github/workflows/${file}`);
+        copied++;
+      }
+    }
+    if (copied === 0 && workflowFiles.length > 0) {
+      console.log(`${DIM}all squad workflows already exist — skipping${RESET}`);
+    }
+  }
+}
+
 if (isUpgrade) {
   console.log(`\n${DIM}.ai-team/ untouched — your team state is safe${RESET}`);
 }

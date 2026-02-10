@@ -1,0 +1,109 @@
+name: Sync Squad Labels
+
+on:
+  push:
+    paths:
+      - '.ai-team/team.md'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  sync-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse roster and sync labels
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const teamFile = '.ai-team/team.md';
+
+            if (!fs.existsSync(teamFile)) {
+              core.info('No .ai-team/team.md found — skipping label sync');
+              return;
+            }
+
+            const content = fs.readFileSync(teamFile, 'utf8');
+            const lines = content.split('\n');
+
+            // Parse the Members table for agent names
+            const members = [];
+            let inMembersTable = false;
+            for (const line of lines) {
+              if (line.startsWith('## Members')) {
+                inMembersTable = true;
+                continue;
+              }
+              if (inMembersTable && line.startsWith('## ')) {
+                break;
+              }
+              if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
+                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+                if (cells.length >= 2 && cells[0] !== 'Scribe') {
+                  members.push({
+                    name: cells[0],
+                    role: cells[1]
+                  });
+                }
+              }
+            }
+
+            core.info(`Found ${members.length} squad members: ${members.map(m => m.name).join(', ')}`);
+
+            // Define label color palette for squad labels
+            const SQUAD_COLOR = '6366f1';
+            const MEMBER_COLOR = '3b82f6';
+
+            // Ensure the base "squad" triage label exists
+            const labels = [
+              { name: 'squad', color: SQUAD_COLOR, description: 'Squad triage inbox — Lead will assign to a member' }
+            ];
+
+            for (const member of members) {
+              labels.push({
+                name: `squad:${member.name.toLowerCase()}`,
+                color: MEMBER_COLOR,
+                description: `Assigned to ${member.name} (${member.role})`
+              });
+            }
+
+            // Sync labels (create or update)
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name
+                });
+                // Label exists — update it
+                await github.rest.issues.updateLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+                core.info(`Updated label: ${label.name}`);
+              } catch (err) {
+                if (err.status === 404) {
+                  // Label doesn't exist — create it
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label.name,
+                    color: label.color,
+                    description: label.description
+                  });
+                  core.info(`Created label: ${label.name}`);
+                } else {
+                  throw err;
+                }
+              }
+            }
+
+            core.info(`Label sync complete: ${labels.length} labels synced`);

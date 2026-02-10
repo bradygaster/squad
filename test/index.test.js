@@ -144,12 +144,12 @@ describe('init into empty directory', () => {
     const templatesDir = path.join(tmpDir, '.ai-team-templates');
     assert.ok(fs.existsSync(templatesDir), '.ai-team-templates/ should exist');
 
-    // Every entry in templates/ should be copied
+    // Every file/dir in templates/ should be copied
     const sourceFiles = fs.readdirSync(path.join(ROOT, 'templates'));
     const destFiles = fs.readdirSync(templatesDir);
     assert.deepEqual(destFiles.sort(), sourceFiles.sort());
 
-    // Spot-check: content matches for template files (skip directories)
+    // Spot-check: content matches for files (skip directories)
     for (const file of sourceFiles) {
       const srcPath = path.join(ROOT, 'templates', file);
       if (fs.statSync(srcPath).isDirectory()) continue;
@@ -347,14 +347,16 @@ describe('upgrade subcommand', () => {
     fs.writeFileSync(agentFile, '---\nversion: "0.0.1"\n---\nold');
 
     const templatesDir = path.join(tmpDir, '.ai-team-templates');
-    // Modify a template to simulate old version
-    const templateFiles = fs.readdirSync(templatesDir);
+    // Modify a template file (not a directory) to simulate old version
+    const templateFiles = fs.readdirSync(templatesDir).filter(f =>
+      fs.statSync(path.join(templatesDir, f)).isFile()
+    );
     assert.ok(templateFiles.length > 0, 'should have template files');
     fs.writeFileSync(path.join(templatesDir, templateFiles[0]), 'old template content');
 
     runCmd(tmpDir, 'upgrade');
 
-    // All templates should match source (skip directories)
+    // All template files should match source (skip directories)
     const sourceFiles = fs.readdirSync(path.join(ROOT, 'templates'));
     for (const file of sourceFiles) {
       const srcPath = path.join(ROOT, 'templates', file);
@@ -465,6 +467,83 @@ describe('error handling', () => {
     runInit(tmpDir);
     const result = runCmdStatus(tmpDir, 'upgrade');
     assert.equal(result.exitCode, 0, 'upgrade should exit 0 on success');
+  });
+});
+
+// --- Workflow copy tests ---
+
+describe('squad workflow files', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-workflows-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates squad workflow files in .github/workflows/ on init', () => {
+    runInit(tmpDir);
+    const workflowsDir = path.join(tmpDir, '.github', 'workflows');
+    assert.ok(fs.existsSync(workflowsDir), '.github/workflows/ should exist');
+
+    const expectedWorkflows = ['sync-squad-labels.yml', 'squad-triage.yml', 'squad-issue-assign.yml'];
+    for (const file of expectedWorkflows) {
+      assert.ok(fs.existsSync(path.join(workflowsDir, file)), `${file} should exist`);
+    }
+  });
+
+  it('workflow file contents match source templates', () => {
+    runInit(tmpDir);
+    const workflowsDir = path.join(tmpDir, '.github', 'workflows');
+    const sourceDir = path.join(ROOT, 'templates', 'workflows');
+
+    const sourceFiles = fs.readdirSync(sourceDir).filter(f => f.endsWith('.yml'));
+    for (const file of sourceFiles) {
+      const expected = fs.readFileSync(path.join(sourceDir, file), 'utf8');
+      const actual = fs.readFileSync(path.join(workflowsDir, file), 'utf8');
+      assert.equal(actual, expected, `workflow ${file} content should match source`);
+    }
+  });
+
+  it('skips existing workflow files on re-init', () => {
+    runInit(tmpDir);
+    const workflowFile = path.join(tmpDir, '.github', 'workflows', 'sync-squad-labels.yml');
+    fs.writeFileSync(workflowFile, 'user-customized workflow');
+
+    const output = runInit(tmpDir);
+    assert.ok(output.includes('already exists'), 'should report skipping');
+
+    const content = fs.readFileSync(workflowFile, 'utf8');
+    assert.equal(content, 'user-customized workflow', 'should NOT overwrite user workflow');
+  });
+
+  it('overwrites workflow files on upgrade', () => {
+    runInit(tmpDir);
+    const workflowFile = path.join(tmpDir, '.github', 'workflows', 'sync-squad-labels.yml');
+    fs.writeFileSync(workflowFile, 'old workflow content');
+
+    // Simulate an older installed version so upgrade doesn't short-circuit
+    const agentFile = path.join(tmpDir, '.github', 'agents', 'squad.agent.md');
+    fs.writeFileSync(agentFile, 'version: "0.0.1"\nold agent content');
+
+    runCmd(tmpDir, 'upgrade');
+
+    const expected = fs.readFileSync(path.join(ROOT, 'templates', 'workflows', 'sync-squad-labels.yml'), 'utf8');
+    const actual = fs.readFileSync(workflowFile, 'utf8');
+    assert.equal(actual, expected, 'workflow should match source after upgrade');
+  });
+
+  it('upgrade output mentions workflow files', () => {
+    runInit(tmpDir);
+
+    // Simulate an older installed version so upgrade doesn't short-circuit
+    const agentFile = path.join(tmpDir, '.github', 'agents', 'squad.agent.md');
+    fs.writeFileSync(agentFile, 'version: "0.0.1"\nold agent content');
+
+    const output = runCmd(tmpDir, 'upgrade');
+    assert.ok(output.includes('workflow'), 'should mention workflows in upgrade output');
   });
 });
 

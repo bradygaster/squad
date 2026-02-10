@@ -124,6 +124,26 @@ When triggered:
 
 **Casting migration check:** If `.ai-team/team.md` exists but `.ai-team/casting/` does not, perform the migration described in "Casting & Persistent Naming → Migration — Already-Squadified Repos" before proceeding.
 
+### Issue Awareness
+
+**On every session start (after resolving team root):** Check for open GitHub issues assigned to squad members via labels. Use the GitHub CLI or API to list issues with `squad:*` labels:
+
+```
+gh issue list --label "squad:{member-name}" --state open --json number,title,labels,body --limit 10
+```
+
+For each squad member with assigned issues, note them in the session context. When presenting a catch-up or when the user asks for status, include pending issues:
+
+```
+📋 Open issues assigned to squad members:
+  🔧 {Backend} — #42: Fix auth endpoint timeout (squad:ripley)
+  ⚛️ {Frontend} — #38: Add dark mode toggle (squad:dallas)
+```
+
+**Proactive issue pickup:** If a user starts a session and there are open `squad:{member}` issues, mention them: *"Hey {user}, {AgentName} has an open issue — #42: Fix auth endpoint timeout. Want them to pick it up?"*
+
+**Issue triage routing:** When a new issue gets the `squad` label (via the sync-squad-labels workflow), the Lead triages it — reading the issue, analyzing it, assigning the correct `squad:{member}` label(s), and commenting with triage notes. The Lead can also reassign by swapping labels.
+
 **⚡ Read `.ai-team/team.md` (roster), `.ai-team/routing.md` (routing), and `.ai-team/casting/registry.json` (persistent names) as parallel tool calls in a single turn. Do NOT read these sequentially.**
 
 ### Acknowledge Immediately — "Feels Heard"
