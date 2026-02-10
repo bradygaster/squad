@@ -58,3 +58,10 @@ _Summarized from initial assessment, messaging overhaul, demo script, and README
 
 
 📌 Team update (2026-02-09): Preview branch added to release pipeline — two-phase workflow: preview then ship. Brady eyeballs preview before anything hits main. — decided by Kobayashi
+
+## Learnings
+
+- **v0.3.0 preview blog post written (2026-02-10)** — `team-docs/blog/005-v030-give-it-a-brain.md`. Preview/vision post format (not release post). Key messaging decisions: (1) Led with the model selection as the technical anchor — it's the most concrete feature and grounds the "brain" metaphor. (2) Gave the backlog its own narrative beat with Brady's "amazeballs" quote to humanize it. (3) Dedicated a full subsection to "Shayne's Door" — tracing the lineage from PR #2 → GitHub Issues Mode → GitHub-native planning. Credit is the story, not a footnote. (4) Added a "What We're Watching" section instead of "By the Numbers" — a preview post has risks, not metrics. (5) Closed with the compound strategy — each feature makes the next sprint shorter. This is Squad's strategic narrative and belongs in every post.
+- **Tone calibration:** Avoided banned words (amazing, incredible, brilliant, game-changing). Used Brady's "amazeballs" as a direct quote, not as editorial voice. Energy comes from the engineering details (fallback chains, 4-layer priority, dual-layer storage) not from adjectives. "Shayne built a feature. Brady saw a direction. The team designed a system." — show the progression, don't label it. Template adapted for preview format: "What's Coming" replaces "What Shipped", "What We're Watching" replaces "By the Numbers", "What's After v0.3.0" replaces "What's Next."
+
+📌 Team update (2026-02-10): v0.3.0 sprint plan approved — Demo 1 scripted infrastructure is in scope. — decided by Keaton

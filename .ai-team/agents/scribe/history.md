@@ -60,3 +60,5 @@
 
 📌 Team update (2026-02-09): Contribution blog policy consolidated — retroactive PR #1 blog (001c) added. All contributions get a blog post, late is OK. — decided by McManus
 
+
+📌 Team update (2026-02-10): v0.3.0 sprint plan approved — Scribe merge is Wave 2 integration item. — decided by Keaton

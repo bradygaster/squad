@@ -53,3 +53,30 @@ _Summarized from initial platform assessment and deep onboarding (2026-02-07). F
 
 
 📌 Team update (2026-02-09): Preview branch added to release pipeline — two-phase workflow: preview then ship. Brady eyeballs preview before anything hits main. — decided by Kobayashi
+
+## Learnings
+
+- **2026-02-10: Full Model Catalog Research (Proposal 024a)** — Researched and documented all 16 models available via the `task` tool's `model` parameter across 3 providers (Anthropic: 6 models, OpenAI: 9 models, Google: 1 model) and 3 tiers (premium, standard, fast/cheap). Key findings:
+  - The platform offers far more diversity than Proposal 024's original 3-model mapping (Opus/Sonnet/Haiku). Brady was right to push back.
+  - OpenAI Codex variants (GPT-5.2-Codex, GPT-5.1-Codex-Max) are genuinely strong contenders for code-heavy tasks — may outperform Claude Sonnet for pure code generation.
+  - Gemini 3 Pro (Preview) offers cognitive diversity value for reviews/audits — different training yields different perspectives, which is signal not noise.
+  - Provider diversity is a resilience play, not just a quality play. Single-provider dependency is a real operational risk for multi-agent systems.
+  - Anthropic remains the safest default family (best instruction following, proven in agent workflows), with OpenAI as specialist for code and Google as specialist for diversity.
+  - Opus 4.6 fast mode is an underappreciated option — premium quality at reduced latency for time-sensitive decisions (reviewer gates).
+  - The expanded role-to-model mapping covers 11 roles × 2 models (default + specialist) with clear switching criteria.
+  - Honest about knowledge gaps: Gemini 3 Pro Preview behavior may change, cross-provider prompt portability is untested, exact cost ratios unknown on the platform.
+  - Output: `team-docs/proposals/024a-model-catalog.md` — reference document for Verbal's selection algorithm (sprint item 4.1).
+- **2026-02-10: GitHub API Capabilities Assessment (Proposal 028a)** — Empirically tested all GitHub MCP server tools, `gh` CLI commands, and agent access patterns for Issues and Projects management. Key findings:
+  - MCP tools are **read-only for Issues** — no create/update/close. All writes must go through `gh` CLI.
+  - **Zero MCP tools exist for GitHub Projects V2** — entire Projects workflow depends on `gh project` commands.
+  - `task` and `general-purpose` sub-agents **CAN** access MCP tools AND `gh` CLI — they can self-serve GitHub operations without coordinator mediation.
+  - `explore` sub-agents have **NO MCP or shell access** — local filesystem only (grep/glob/view).
+  - GitHub Projects is **blocked by missing token scope** (`project`). Fix: Brady runs `gh auth refresh -s project` once.
+  - Current token scopes: `gist`, `read:org`, `repo`, `workflow` — sufficient for Issues, insufficient for Projects.
+  - Rate limits are generous: 5,000 REST/hour, 5,000 GraphQL/hour, 30 searches/minute. Normal Squad operations use <5% capacity.
+  - Only real rate limit risk: Search API (30/min) during batch operations — prefer list operations over search.
+  - Recommended two-channel pattern: MCP for reads (structured data), `gh` CLI for writes (only option).
+  - Full issue lifecycle verified: create → label → comment → close → read back via MCP. All working.
+  - Output: `team-docs/proposals/028a-github-api-capabilities.md` and `.ai-team/decisions/inbox/kujan-github-api-assessment.md`.
+
+📌 Team update (2026-02-10): v0.3.0 sprint plan approved — your model catalog research (024a) and GitHub API assessment (028a) are foundational inputs. — decided by Keaton

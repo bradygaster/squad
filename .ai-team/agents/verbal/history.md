@@ -62,3 +62,28 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 
 
 📌 Team update (2026-02-09): Preview branch added to release pipeline — two-phase workflow: preview then ship. Brady eyeballs preview before anything hits main. — decided by Kobayashi
+
+## Learnings
+
+- **2026-02-10: Model Selection Algorithm Design (Proposal 024b)** — Designed the full model selection algorithm for the coordinator. Key decisions:
+
+  - **4-layer priority is the right abstraction.** User override → charter preference → task-aware auto-selection → default fallback. Each layer is self-contained and testable independently. The coordinator stops at the first match — no cascading complexity.
+
+  - **Fallback chains must be cross-provider.** Single-provider chains are fragile to provider outages. The chains alternate: Anthropic → OpenAI → Anthropic → OpenAI → nuclear. This handles both single-model issues and provider-wide failures.
+
+  - **3-retry maximum before nuclear fallback.** Walking a 5-model chain with API timeouts could add 30-60 seconds of invisible latency. Three retries handles transient issues; after that, the nuclear fallback is faster.
+
+  - **Nuclear fallback = omit model param entirely.** This is the only option guaranteed to work regardless of plan tier, org policy, or platform state. It's backward-compatible — Squad worked this way before model selection existed.
+
+  - **Silent fallback is UX, not laziness.** Users don't care which model runs their agent. Narrating "tried X, failed, trying Y" creates anxiety and slows acknowledgment. Fallbacks are logged for debugging, never surfaced to the user.
+
+  - **Provider diversity is optional, not forced.** Charters are Anthropic-optimized. Cross-provider execution risks prompt portability issues. Diversity is a tool for reviews and code gen, not a mandate for every spawn.
+
+  - **Task complexity overrides apply at most ONE bump.** No cascading upgrades. An architecture proposal gets bumped to premium — it doesn't get bumped again because it's also multi-file.
+
+  - **Design tension resolved — charter vs. algorithm authority.** The charter's `Preferred` field is a preference, not a command. The coordinator respects it but the user can override. The auto-selection algorithm runs only when the charter says `auto` or omits the section entirely. This keeps agents self-documenting without making them rigid.
+
+  - **Design tension resolved — when to cross providers.** Trigger-based, not role-based. A reviewer doesn't always use Gemini — only when the coordinator detects that cognitive diversity adds value (e.g., second-opinion review after a rejection). Provider diversity is situational, not structural.
+
+📌 Team update (2026-02-10): Model catalog expanded to 16 models across 3 providers — selection algorithm must consider full catalog, not just 3 Anthropic models. — decided by Kujan
+📌 Team update (2026-02-10): v0.3.0 sprint plan approved — model selection (024 Phases 1-2), team backlog (023 Phases 1-2), Demo 1 infrastructure. Two waves, 28-39h. — decided by Keaton

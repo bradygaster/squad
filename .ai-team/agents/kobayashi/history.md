@@ -37,3 +37,5 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 📌 Team update (2026-02-09): Release ritual consolidated — checklist and lead recommendations merged — decided by Keaton, Kobayashi
 📌 Team update (2026-02-09): docs/ and CHANGELOG.md now included in release pipeline (KEEP_FILES, KEEP_DIRS, package.json files, .npmignore updated). Brady's directive. — decided by Kobayashi
 📌 Team update (2026-02-09): Release workflow split into two-phase pipeline — preview (builds `preview` branch for human review) and ship (pushes to main, tags, creates GitHub Release). Single workflow with `action` choice input (preview/ship). KEEP_FILES/KEEP_DIRS DRY via workflow-level env vars. Ship phase validates preview branch contains only product files before pushing to main. — decided by Kobayashi
+
+📌 Team update (2026-02-10): v0.3.0 sprint plan approved — per-agent model selection, team backlog, Demo 1. — decided by Keaton
