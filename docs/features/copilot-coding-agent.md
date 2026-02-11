@@ -12,7 +12,7 @@ Squad asks if you want to include the coding agent during init. Say **yes** and 
 
 ### In conversation (existing teams)
 
-Say **"squad add-copilot"** in a Squad session. The coordinator will add @copilot to the roster and ask about auto-assign.
+Say **`/squad-bot`** in a Squad session. The coordinator will add @copilot to the roster and ask about auto-assign.
 
 ### Via CLI
 
