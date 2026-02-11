@@ -436,6 +436,104 @@ describe('error handling', () => {
   });
 });
 
+// --- Ralph tests ---
+
+describe('Ralph — Work Monitor', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-ralph-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('roster template includes Ralph', () => {
+    const roster = fs.readFileSync(path.join(ROOT, 'templates', 'roster.md'), 'utf8');
+    assert.ok(roster.includes('Ralph'), 'roster template should include Ralph');
+    assert.ok(roster.includes('Work Monitor'), 'roster template should include Work Monitor role');
+    assert.ok(roster.includes('🔄'), 'roster template should include 🔄 badge');
+  });
+
+  it('init creates team.md with Ralph on roster', () => {
+    runInit(tmpDir);
+    const teamFile = path.join(tmpDir, '.ai-team', 'team.md');
+    // team.md is created from roster template which now includes Ralph
+    const templateContent = fs.readFileSync(path.join(ROOT, 'templates', 'roster.md'), 'utf8');
+    assert.ok(templateContent.includes('Ralph'), 'roster template should have Ralph');
+  });
+
+  it('heartbeat workflow is copied on init', () => {
+    runInit(tmpDir);
+    const heartbeatPath = path.join(tmpDir, '.github', 'workflows', 'squad-heartbeat.yml');
+    assert.ok(fs.existsSync(heartbeatPath), 'squad-heartbeat.yml should be created on init');
+  });
+
+  it('heartbeat workflow contains Ralph reference', () => {
+    const heartbeat = fs.readFileSync(
+      path.join(ROOT, 'templates', 'workflows', 'squad-heartbeat.yml'), 'utf8'
+    );
+    assert.ok(heartbeat.includes('Ralph'), 'heartbeat workflow should reference Ralph');
+    assert.ok(heartbeat.includes('Auto-Triage'), 'heartbeat workflow should have auto-triage');
+  });
+
+  it('heartbeat workflow has schedule trigger', () => {
+    const heartbeat = fs.readFileSync(
+      path.join(ROOT, 'templates', 'workflows', 'squad-heartbeat.yml'), 'utf8'
+    );
+    assert.ok(heartbeat.includes('schedule'), 'heartbeat should have schedule trigger');
+    assert.ok(heartbeat.includes('cron'), 'heartbeat should have cron expression');
+  });
+
+  it('heartbeat workflow has event triggers', () => {
+    const heartbeat = fs.readFileSync(
+      path.join(ROOT, 'templates', 'workflows', 'squad-heartbeat.yml'), 'utf8'
+    );
+    assert.ok(heartbeat.includes('issues'), 'heartbeat should trigger on issues');
+    assert.ok(heartbeat.includes('pull_request'), 'heartbeat should trigger on PRs');
+    assert.ok(heartbeat.includes('workflow_dispatch'), 'heartbeat should support manual trigger');
+  });
+
+  it('upgrade refreshes heartbeat workflow', () => {
+    runInit(tmpDir);
+    const heartbeatPath = path.join(tmpDir, '.github', 'workflows', 'squad-heartbeat.yml');
+    // Write a dummy to simulate old version
+    fs.writeFileSync(heartbeatPath, '# old heartbeat');
+    runCmd(tmpDir, 'upgrade');
+    const content = fs.readFileSync(heartbeatPath, 'utf8');
+    assert.ok(content.includes('Ralph'), 'upgrade should refresh heartbeat workflow');
+  });
+
+  it('agent.md includes Ralph section', () => {
+    const agentMd = fs.readFileSync(
+      path.join(ROOT, '.github', 'agents', 'squad.agent.md'), 'utf8'
+    );
+    assert.ok(agentMd.includes('Ralph — Work Monitor'), 'agent.md should have Ralph section');
+    assert.ok(agentMd.includes('Ralph is always "Ralph"'), 'agent.md should exempt Ralph from casting');
+  });
+
+  it('agent.md includes Ralph in routing signals', () => {
+    const agentMd = fs.readFileSync(
+      path.join(ROOT, '.github', 'agents', 'squad.agent.md'), 'utf8'
+    );
+    assert.ok(
+      agentMd.includes('Ralph commands'),
+      'routing signals should include Ralph commands'
+    );
+  });
+
+  it('agent.md includes Ralph check after follow-up work', () => {
+    const agentMd = fs.readFileSync(
+      path.join(ROOT, '.github', 'agents', 'squad.agent.md'), 'utf8'
+    );
+    assert.ok(
+      agentMd.includes('Ralph check'),
+      'agent.md should have Ralph check after agent work completes'
+    );
+  });
+});
+
 // --- Workflow copy tests ---
 
 describe('squad workflow files', () => {

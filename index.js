@@ -415,6 +415,27 @@ if (isUpgrade) {
   if (isAlreadyCurrent) {
     // Still run missing migrations in case a prior upgrade was interrupted
     runMigrations(dest, oldVersion);
+
+    // Refresh squad-owned files even when version matches
+    const workflowsSrc = path.join(root, 'templates', 'workflows');
+    const workflowsDest = path.join(dest, '.github', 'workflows');
+    if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
+      fs.mkdirSync(workflowsDest, { recursive: true });
+      const wfFiles = fs.readdirSync(workflowsSrc).filter(f => f.endsWith('.yml'));
+      for (const file of wfFiles) {
+        fs.copyFileSync(path.join(workflowsSrc, file), path.join(workflowsDest, file));
+      }
+    }
+
+    // Refresh squad.agent.md
+    try {
+      fs.mkdirSync(path.dirname(agentDest), { recursive: true });
+      fs.copyFileSync(agentSrc, agentDest);
+      stampVersion(agentDest);
+    } catch (err) {
+      // Non-fatal — version already matches
+    }
+
     console.log(`${GREEN}✓${RESET} Already up to date (v${pkg.version})`);
     process.exit(0);
   }

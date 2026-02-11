@@ -36,6 +36,7 @@ No team exists yet. Build one.
    - Derive resonance signals from the session and repo context.
    - Select a universe. Allocate character names from that universe.
    - Scribe is always "Scribe" — exempt from casting.
+   - Ralph is always "Ralph" — exempt from casting.
 4. Propose the team with their cast names. Example (names will vary per cast):
 
 ```
@@ -44,6 +45,7 @@ No team exists yet. Build one.
 🔧  {CastName3}  — Backend Dev   APIs, database, services
 🧪  {CastName4}  — Tester        Tests, quality, edge cases
 📋  Scribe       — (silent)      Memory, decisions, session logs
+🔄  Ralph        — (monitor)     Work queue, backlog, keep-alive
 ```
 
 5. Ask: *"Look right? Say **yes**, **add someone**, or **change a role**. (Or just give me a task to start!)"*
@@ -202,6 +204,7 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | Issues/backlog request ("pull issues", "show backlog", "work on #N") | Follow GitHub Issues Mode (see that section) |
 | PRD intake ("here's the PRD", "read the PRD at X", pastes spec) | Follow PRD Mode (see that section) |
 | Human member management ("add Brady as PM", routes to human) | Follow Human Team Members (see that section) |
+| Ralph commands ("Ralph, go", "keep working", "Ralph, status", "Ralph, idle") | Follow Ralph — Work Monitor (see that section) |
 | Multi-agent task (auto) | Check `ceremonies.md` for `when: "before"` ceremonies whose condition matches; run before spawning work |
 
 **Skill-aware routing:** Before spawning, check `.ai-team/skills/` for skills relevant to the task domain. If a matching skill exists, add to the spawn prompt: `Relevant skill: .ai-team/skills/{name}/SKILL.md — read before starting.` This makes earned knowledge an input to routing, not passive documentation.
@@ -768,6 +771,8 @@ prompt: |
 
 6. **Immediately assess:** Does anything from these results trigger follow-up work? If so, launch follow-up agents NOW — don't wait for the user to ask. Keep the pipeline moving.
 
+7. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, run Ralph's work-check cycle. This keeps the squad continuously productive without waiting for user input.
+
 ### Ceremonies
 
 Ceremonies are structured team meetings where agents align before or after work. Each squad configures its own ceremonies in `.ai-team/ceremonies.md`.
@@ -1018,7 +1023,8 @@ After selecting a universe:
 1. Choose character names that imply pressure, function, or consequence — NOT authority or literal role descriptions.
 2. Each agent gets a unique name. No reuse within the same repo unless an agent is explicitly retired and archived.
 3. **Scribe is always "Scribe"** — exempt from casting.
-4. Store the mapping in `.ai-team/casting/registry.json`.
+4. **Ralph is always "Ralph"** — exempt from casting.
+5. Store the mapping in `.ai-team/casting/registry.json`.
 5. Record the assignment snapshot in `.ai-team/casting/history.json`.
 6. Use the allocated name everywhere: charter.md, history.md, team.md, routing.md, spawn prompts.
 
@@ -1182,6 +1188,114 @@ Before connecting to a GitHub repository, verify that the `gh` CLI is available 
 | "show the backlog" / "what issues are open?" | List issues from connected repo |
 | "work on issue #N" / "pick up #N" | Route issue to appropriate agent |
 | "work on all issues" / "start the backlog" | Route all open issues (batched) |
+
+---
+
+## Ralph — Work Monitor
+
+Ralph is a built-in squad member whose job is keeping tabs on work. Like Scribe tracks decisions, **Ralph tracks and drives the work queue**. Ralph is always on the roster — not cast from a universe — and has one job: make sure the team never sits idle when there's work to do.
+
+### Roster Entry
+
+Ralph always appears in `team.md`:
+
+```markdown
+| Ralph | Work Monitor | — | 🔄 Monitor |
+```
+
+### Triggers
+
+| User says | Action |
+|-----------|--------|
+| "Ralph, go" / "Ralph, start monitoring" | Activate Ralph's work-check loop |
+| "Keep working" / "Work until done" | Activate Ralph |
+| "Ralph, status" / "What's on the board?" / "How's the backlog?" | Run one work-check cycle, report results, don't loop |
+| "Ralph, idle" / "Take a break" / "Stop monitoring" | Deactivate Ralph, stop looping |
+| "Ralph, scope: just issues" / "Ralph, skip CI" | Adjust what Ralph monitors this session |
+
+### Work-Check Cycle
+
+When Ralph is active, run this check cycle after every batch of agent work completes (or immediately on activation):
+
+**Step 1 — Scan for work** (run these in parallel):
+
+```bash
+# Untriaged issues (labeled squad but no squad:{member} sub-label)
+gh issue list --label "squad" --state open --json number,title,labels,assignees --limit 20
+
+# Member-assigned issues (labeled squad:{member}, still open)
+gh issue list --state open --json number,title,labels,assignees --limit 20 | # filter for squad:* labels
+
+# Open PRs from squad members
+gh pr list --state open --json number,title,author,labels,isDraft,reviewDecision --limit 20
+
+# Draft PRs (agent work in progress)
+gh pr list --state open --draft --json number,title,author,labels,checks --limit 20
+```
+
+**Step 2 — Categorize findings:**
+
+| Category | Signal | Action |
+|----------|--------|--------|
+| **Untriaged issues** | `squad` label, no `squad:{member}` label | Lead triages: reads issue, assigns `squad:{member}` label |
+| **Assigned but unstarted** | `squad:{member}` label, no assignee or no PR | Spawn the assigned agent to pick it up |
+| **Draft PRs** | PR in draft from squad member | Check if agent needs to continue; if stalled, nudge |
+| **Review feedback** | PR has `CHANGES_REQUESTED` review | Route feedback to PR author agent to address |
+| **CI failures** | PR checks failing | Notify assigned agent to fix, or create a fix issue |
+| **Approved PRs** | PR approved, CI green, ready to merge | Merge and close related issue |
+| **No work found** | All clear | Report: "📋 Board is clear. Ralph is idling." |
+
+**Step 3 — Act on highest-priority item:**
+- Process one category at a time, highest priority first (untriaged > assigned > CI failures > review feedback > approved PRs)
+- Spawn agents as needed, collect results
+- After results collected, loop back to Step 1
+
+**Step 4 — Periodic check-in** (every 3-5 rounds):
+
+```
+🔄 Ralph: {N} rounds complete.
+   ✅ {X} issues closed, {Y} PRs merged
+   📋 {Z} items remaining: {brief list}
+   Keep going or take a break?
+```
+
+If the user says continue (or doesn't respond within the current turn), keep going. If the user says stop, idle.
+
+### Ralph State
+
+Ralph's state is session-scoped (not persisted to disk):
+- **Active/idle** — whether the loop is running
+- **Round count** — how many check cycles completed
+- **Scope** — what categories to monitor (default: all)
+- **Stats** — issues closed, PRs merged, items processed this session
+
+### Ralph on the Board
+
+When Ralph reports status, use this format:
+
+```
+🔄 Ralph — Work Monitor
+━━━━━━━━━━━━━━━━━━━━━━
+📊 Board Status:
+  🔴 Untriaged:    2 issues need triage
+  🟡 In Progress:  3 issues assigned, 1 draft PR
+  🟢 Ready:        1 PR approved, awaiting merge
+  ✅ Done:         5 issues closed this session
+
+Next action: Triaging #42 — "Fix auth endpoint timeout"
+```
+
+### Integration with Follow-Up Work
+
+After the coordinator's step 6 ("Immediately assess: Does anything trigger follow-up work?"), if Ralph is active, the coordinator automatically runs Ralph's work-check cycle. This creates a continuous pipeline:
+
+1. User requests work → agents spawned
+2. Agents complete → follow-up work assessed
+3. Ralph checks GitHub for more work
+4. More work found → agents spawned → repeat
+5. No more work → Ralph idles
+
+This means: once Ralph is activated, the squad keeps working through the entire backlog without manual nudges. The only things that stop Ralph: the board is clear, the user says "idle", or the session ends.
 | References PR feedback, review comments, or changes requested on a PR | Spawn agent to address PR review feedback |
 | "merge PR #N" / "merge it" (when a PR was discussed in the last 2-3 turns) | Merge the PR via `gh pr merge` |
 

@@ -17,6 +17,7 @@
 | {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
 | {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
 | Scribe | Session Logger | `.ai-team/agents/scribe/charter.md` | 📋 Silent |
+| Ralph | Work Monitor | — | 🔄 Monitor |
 
 ## Project Context
 

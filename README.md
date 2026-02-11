@@ -76,6 +76,7 @@ When agents finish, the coordinator immediately chains follow-up work — tests 
 | 🏗️ **Lead** | Scope, team roster, first decisions | Architecture trade-offs, risk register | Full project history, tech debt map |
 | 🧪 **Tester** | Test framework, first test cases | Integration patterns, edge case catalog | Regression patterns, coverage gaps, CI pipeline |
 | 📋 **Scribe** | First session logged | Cross-team decisions propagated | Full searchable archive of every session and decision |
+| 🔄 **Ralph** | Board check after first batch | Auto-triage, CI monitoring | Continuous backlog processing, zero idle time |
 
 Each agent's knowledge is personal — stored in its own `history.md`. Team-wide decisions live in `decisions.md`, where every agent reads before working. The more you use Squad, the less context you have to repeat.
 
@@ -106,6 +107,7 @@ graph TB
     C -->|spawns| R
     C -->|spawns| T
     C -.->|silent| S["📋 Scribe"]
+    C -.->|monitors| RL["🔄 Ralph"]
 
     subgraph memory [" 🧠 Shared Memory "]
         direction LR
@@ -233,6 +235,7 @@ The Coordinator enforces this. No self-review of rejected work.
 - [**Skills System**](docs/features/skills.md) — Earned knowledge with confidence lifecycle
 - [**Tiered Response Modes**](docs/features/response-modes.md) — Direct/Lightweight/Standard/Full response depth
 - [**Smart Upgrade**](docs/scenarios/upgrading.md) — Version-aware upgrades with migrations
+- [**Ralph — Work Monitor**](docs/features/ralph.md) — Built-in squad member that keeps the team working through backlogs autonomously
 
 ---
 
