@@ -19,7 +19,6 @@ jobs:
       - name: Identify assigned member and trigger work
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const issue = context.payload.issue;
@@ -43,17 +42,7 @@ jobs:
 
             let assignedMember = null;
             if (isCopilotAssignment) {
-              // @copilot is the GitHub Copilot coding agent — always valid, no roster lookup needed
               assignedMember = { name: '@copilot', role: 'Coding Agent' };
-
-              // Assign copilot-swe-agent via REST API (requires PAT — COPILOT_ASSIGN_TOKEN)
-              await github.rest.issues.addAssignees({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                assignees: ['copilot-swe-agent']
-              });
-              core.info(`Assigned copilot-swe-agent to issue #${issue.number}`);
             } else {
               let inMembersTable = false;
               for (const line of lines) {
@@ -120,3 +109,18 @@ jobs:
             });
 
             core.info(`Issue #${issue.number} assigned to ${assignedMember.name} (${assignedMember.role})`);
+
+      # Separate step: assign @copilot using PAT (required for coding agent)
+      - name: Assign @copilot coding agent
+        if: github.event.label.name == 'squad:copilot'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
+          script: |
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              assignees: ['copilot-swe-agent']
+            });
+            core.info(`Assigned copilot-swe-agent to issue #${context.payload.issue.number}`);
