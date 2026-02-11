@@ -880,7 +880,7 @@ describe('squad.agent.md prompt content', () => {
     });
 
     it('documents the human badge', () => {
-      assert.ok(agentMd.includes('≡ƒæñ Human'), 'missing ≡ƒæñ Human badge');
+      assert.ok(agentMd.includes('👤 Human'), 'missing 👤 Human badge');
     });
 
     it('documents differences from AI agents', () => {
@@ -1083,7 +1083,7 @@ describe('import subcommand', () => {
       agents: {
         fenster: {
           charter: '# Fenster Charter\nCore developer.',
-          history: '# Project Context\n\n## Learnings\n\n### Runtime Architecture\n- No runtime\n\n### Key File Paths\n- index.js\n\n≡ƒôî Team update: something happened'
+          history: '# Project Context\n\n## Learnings\n\n### Runtime Architecture\n- No runtime\n\n### Key File Paths\n- index.js\n\n📌 Team update: something happened'
         },
         keaton: {
           charter: '# Keaton Charter\nLead architect.',
@@ -1237,7 +1237,7 @@ describe('import subcommand', () => {
     const history = fs.readFileSync(path.join(targetDir, '.ai-team', 'agents', 'fenster', 'history.md'), 'utf8');
 
     // Should have import marker
-    assert.ok(history.includes('≡ƒôî Imported from'), 'should have import marker');
+    assert.ok(history.includes('📌 Imported from'), 'should have import marker');
     assert.ok(history.includes('Portable knowledge carried over'), 'should mention portable knowledge');
 
     // Portable content should be present
@@ -1305,11 +1305,11 @@ describe('copilot subcommand', () => {
     initWithTeam(tmpDir);
     runCmd(tmpDir, 'copilot');
     const teamMd = fs.readFileSync(path.join(tmpDir, '.ai-team', 'team.md'), 'utf8');
-    assert.ok(teamMd.includes('≡ƒñû Coding Agent'), 'should have coding agent badge');
+    assert.ok(teamMd.includes('🤖 Coding Agent'), 'should have coding agent badge');
     assert.ok(teamMd.includes('@copilot'), 'should have @copilot name');
-    assert.ok(teamMd.includes('≡ƒƒó Good fit'), 'should have capability profile');
-    assert.ok(teamMd.includes('≡ƒƒí Needs review'), 'should have needs-review tier');
-    assert.ok(teamMd.includes('≡ƒö┤ Not suitable'), 'should have not-suitable tier');
+    assert.ok(teamMd.includes('🟢 Good fit'), 'should have capability profile');
+    assert.ok(teamMd.includes('🟡 Needs review'), 'should have needs-review tier');
+    assert.ok(teamMd.includes('🔴 Not suitable'), 'should have not-suitable tier');
   });
 
   it('creates .github/copilot-instructions.md', () => {
@@ -1356,7 +1356,7 @@ describe('copilot subcommand', () => {
     runCmd(tmpDir, 'copilot');
     runCmd(tmpDir, 'copilot --off');
     const teamMd = fs.readFileSync(path.join(tmpDir, '.ai-team', 'team.md'), 'utf8');
-    assert.ok(!teamMd.includes('≡ƒñû Coding Agent'), 'should remove coding agent');
+    assert.ok(!teamMd.includes('🤖 Coding Agent'), 'should remove coding agent');
   });
 
   it('does not overwrite copilot-instructions.md on upgrade when @copilot is not enabled', () => {
