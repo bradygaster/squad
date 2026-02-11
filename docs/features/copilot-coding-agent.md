@@ -65,7 +65,18 @@ The profile is editable. The Lead can suggest updates based on experience:
 
 When enabled, the `squad-issue-assign` workflow automatically assigns `@copilot` on the GitHub issue when work is routed to it — so the coding agent picks it up without manual intervention.
 
-Enable it:
+### Setup
+
+Auto-assign requires a **classic Personal Access Token** (PAT) stored as a repo secret:
+
+1. Create a classic PAT at https://github.com/settings/tokens/new with `repo` scope
+2. Add it as a repo secret named `COPILOT_ASSIGN_TOKEN`:
+   ```bash
+   gh secret set COPILOT_ASSIGN_TOKEN --repo owner/repo
+   ```
+
+### Enable
+
 ```bash
 npx github:bradygaster/squad copilot --auto-assign
 ```
