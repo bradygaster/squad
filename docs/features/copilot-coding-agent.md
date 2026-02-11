@@ -6,19 +6,11 @@ Add the GitHub Copilot coding agent to your Squad as an autonomous team member. 
 
 ## Enabling @copilot
 
-### In conversation (recommended)
+### During team setup (new projects)
 
-During team setup, Squad asks if you want to include the coding agent. Say **yes**.
+Squad asks if you want to include the coding agent during init. Say **yes** and it's added to the roster with a capability profile.
 
-For existing teams, say:
-
-```
-> add team member copilot
-```
-
-Squad will add @copilot to the roster with a capability profile and ask about auto-assign.
-
-### Via CLI
+### For existing teams (CLI)
 
 ```bash
 # Add @copilot to the team
