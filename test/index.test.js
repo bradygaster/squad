@@ -544,8 +544,17 @@ describe('edge cases', () => {
   });
 });
 
-describe('copilot-instructions.md', () => {
+describe('copilot subcommand', () => {
   let tmpDir;
+
+  function initWithTeam(dir) {
+    runInit(dir);
+    // Init creates directories but not team.md (coordinator does that)
+    // Create a minimal team.md so the copilot subcommand can proceed
+    const teamDir = path.join(dir, '.ai-team');
+    fs.mkdirSync(teamDir, { recursive: true });
+    fs.writeFileSync(path.join(teamDir, 'team.md'), '# The Squad\n\n## Project Context\n\nNo context yet.\n');
+  }
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-copilot-'));
@@ -555,29 +564,73 @@ describe('copilot-instructions.md', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('creates .github/copilot-instructions.md on init', () => {
-    runInit(tmpDir);
+  it('fails when no squad exists', () => {
+    const { status } = runCmdStatus(tmpDir, 'copilot');
+    assert.notEqual(status, 0, 'should fail without a squad');
+  });
+
+  it('adds @copilot to team.md with capability profile', () => {
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
+    const teamMd = fs.readFileSync(path.join(tmpDir, '.ai-team', 'team.md'), 'utf8');
+    assert.ok(teamMd.includes('🤖 Coding Agent'), 'should have coding agent badge');
+    assert.ok(teamMd.includes('@copilot'), 'should have @copilot name');
+    assert.ok(teamMd.includes('🟢 Good fit'), 'should have capability profile');
+    assert.ok(teamMd.includes('🟡 Needs review'), 'should have needs-review tier');
+    assert.ok(teamMd.includes('🔴 Not suitable'), 'should have not-suitable tier');
+  });
+
+  it('creates .github/copilot-instructions.md', () => {
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
     const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
     assert.ok(fs.existsSync(dest), 'copilot-instructions.md should be created');
     const content = fs.readFileSync(dest, 'utf8');
     assert.ok(content.includes('Squad'), 'should reference Squad');
     assert.ok(content.includes('.ai-team/team.md'), 'should reference team.md');
-    assert.ok(content.includes('Capability Self-Check'), 'should include capability self-check');
   });
 
-  it('skips copilot-instructions.md when it already exists', () => {
-    // Create the file first
-    fs.mkdirSync(path.join(tmpDir, '.github'), { recursive: true });
-    fs.writeFileSync(path.join(tmpDir, '.github', 'copilot-instructions.md'), 'custom content');
-    runInit(tmpDir);
-    const content = fs.readFileSync(path.join(tmpDir, '.github', 'copilot-instructions.md'), 'utf8');
-    assert.equal(content, 'custom content', 'should not overwrite existing file');
+  it('sets auto-assign when --auto-assign flag is used', () => {
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot --auto-assign');
+    const teamMd = fs.readFileSync(path.join(tmpDir, '.ai-team', 'team.md'), 'utf8');
+    assert.ok(teamMd.includes('<!-- copilot-auto-assign: true -->'), 'should have auto-assign enabled');
+  });
+
+  it('defaults auto-assign to false without flag', () => {
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
+    const teamMd = fs.readFileSync(path.join(tmpDir, '.ai-team', 'team.md'), 'utf8');
+    assert.ok(teamMd.includes('<!-- copilot-auto-assign: false -->'), 'should have auto-assign disabled');
+  });
+
+  it('reports already on team if run twice', () => {
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
+    const out = runCmd(tmpDir, 'copilot');
+    assert.ok(out.includes('already on the team'), 'should note already added');
+  });
+
+  it('enables auto-assign on existing copilot member', () => {
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
+    runCmd(tmpDir, 'copilot --auto-assign');
+    const teamMd = fs.readFileSync(path.join(tmpDir, '.ai-team', 'team.md'), 'utf8');
+    assert.ok(teamMd.includes('<!-- copilot-auto-assign: true -->'), 'should update to auto-assign');
+  });
+
+  it('removes @copilot with --off flag', () => {
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
+    runCmd(tmpDir, 'copilot --off');
+    const teamMd = fs.readFileSync(path.join(tmpDir, '.ai-team', 'team.md'), 'utf8');
+    assert.ok(!teamMd.includes('🤖 Coding Agent'), 'should remove coding agent');
   });
 
   it('does not overwrite copilot-instructions.md on upgrade when @copilot is not enabled', () => {
-    runInit(tmpDir);
-    // Customize the file
+    initWithTeam(tmpDir);
     const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, 'user customized');
     runCmd(tmpDir, 'upgrade');
     const content = fs.readFileSync(dest, 'utf8');
@@ -585,12 +638,8 @@ describe('copilot-instructions.md', () => {
   });
 
   it('upgrades copilot-instructions.md when @copilot is enabled on the team', () => {
-    runInit(tmpDir);
-    // Simulate @copilot being enabled in team.md
-    const teamDir = path.join(tmpDir, '.ai-team');
-    fs.mkdirSync(teamDir, { recursive: true });
-    fs.writeFileSync(path.join(teamDir, 'team.md'), '| @copilot | Coding Agent | — | 🤖 Coding Agent |');
-    // Customize the instructions file
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
     const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
     fs.writeFileSync(dest, 'old version');
     runCmd(tmpDir, 'upgrade');
@@ -600,11 +649,12 @@ describe('copilot-instructions.md', () => {
   });
 
   it('copilot-instructions.md content matches source template', () => {
-    runInit(tmpDir);
+    initWithTeam(tmpDir);
+    runCmd(tmpDir, 'copilot');
     const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
     const src = path.join(ROOT, 'templates', 'copilot-instructions.md');
     const destContent = fs.readFileSync(dest, 'utf8');
     const srcContent = fs.readFileSync(src, 'utf8');
-    assert.equal(destContent, srcContent, 'init should copy template exactly');
+    assert.equal(destContent, srcContent, 'should copy template exactly');
   });
 });

@@ -6,38 +6,27 @@ Add the GitHub Copilot coding agent to your Squad as an autonomous team member. 
 
 ## Enabling @copilot
 
-### New projects (during init)
-
-Squad asks during team setup:
-
-```
-> Want to include the Copilot coding agent (@copilot)?
-> It can pick up issues autonomously — bug fixes, tests, small features.
-```
-
-Say **yes**, and @copilot is added to the roster with a default capability profile.
-
-### Existing projects (after upgrade)
-
-1. Run the upgrade to get the latest Squad:
+### Add to an existing Squad
 
 ```bash
-npx github:bradygaster/squad upgrade
+# Add @copilot to the team
+npx github:bradygaster/squad copilot
+
+# Add with auto-assign enabled
+npx github:bradygaster/squad copilot --auto-assign
 ```
 
-2. Open a Copilot session with Squad and say:
+This adds @copilot to your roster with a default capability profile and creates `.github/copilot-instructions.md`.
 
-```
-> add copilot agent
-```
-
-3. Copy the instructions template so the coding agent knows about your Squad:
+### Remove from the team
 
 ```bash
-cp .ai-team-templates/copilot-instructions.md .github/copilot-instructions.md
+npx github:bradygaster/squad copilot --off
 ```
 
-Squad will set up the roster entry, capability profile, and routing.
+### During init
+
+Squad mentions the option during team setup. Run the `copilot` subcommand after init to add it.
 
 ---
 
@@ -78,16 +67,11 @@ The profile is editable. The Lead can suggest updates based on experience:
 When enabled, the `squad-issue-assign` workflow automatically assigns `@copilot` on the GitHub issue when work is routed to it — so the coding agent picks it up without manual intervention.
 
 Enable it:
-```
-> copilot agent auto-assign
-```
-
-Disable it:
-```
-> stop copilot agent auto-assign
+```bash
+npx github:bradygaster/squad copilot --auto-assign
 ```
 
-The setting is stored in `team.md` as `<!-- copilot-auto-assign: true -->`.
+Or set it manually in `team.md` by changing `<!-- copilot-auto-assign: false -->` to `<!-- copilot-auto-assign: true -->`.
 
 ---
 
