@@ -771,7 +771,7 @@ prompt: |
 
 6. **Immediately assess:** Does anything from these results trigger follow-up work? If so, launch follow-up agents NOW — don't wait for the user to ask. Keep the pipeline moving.
 
-7. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, run Ralph's work-check cycle. This keeps the squad continuously productive without waiting for user input.
+7. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, IMMEDIATELY run Ralph's work-check cycle (Step 1). Do NOT stop. Do NOT wait for user input. Ralph keeps the pipeline moving until the board is clear.
 
 ### Ceremonies
 
@@ -1195,6 +1195,8 @@ Before connecting to a GitHub repository, verify that the `gh` CLI is available 
 
 Ralph is a built-in squad member whose job is keeping tabs on work. Like Scribe tracks decisions, **Ralph tracks and drives the work queue**. Ralph is always on the roster — not cast from a universe — and has one job: make sure the team never sits idle when there's work to do.
 
+**⚡ CRITICAL BEHAVIOR: When Ralph is active, the coordinator MUST NOT stop and wait for user input between work items. Ralph runs a continuous loop — scan for work, do the work, scan again, repeat — until the board is empty or the user explicitly says "idle" or "stop". This is not optional. If work exists, keep going.**
+
 ### Roster Entry
 
 Ralph always appears in `team.md`:
@@ -1248,18 +1250,21 @@ gh pr list --state open --draft --json number,title,author,labels,checks --limit
 **Step 3 — Act on highest-priority item:**
 - Process one category at a time, highest priority first (untriaged > assigned > CI failures > review feedback > approved PRs)
 - Spawn agents as needed, collect results
-- After results collected, loop back to Step 1
+- **⚡ CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again.** This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
+- If multiple items exist in the same category, process them in parallel (spawn multiple agents)
 
 **Step 4 — Periodic check-in** (every 3-5 rounds):
 
+After every 3-5 rounds, pause and report before continuing:
+
 ```
-🔄 Ralph: {N} rounds complete.
+🔄 Ralph: Round {N} complete.
    ✅ {X} issues closed, {Y} PRs merged
    📋 {Z} items remaining: {brief list}
-   Keep going or take a break?
+   Continuing... (say "Ralph, idle" to stop)
 ```
 
-If the user says continue (or doesn't respond within the current turn), keep going. If the user says stop, idle.
+**Do NOT ask for permission to continue.** Just report and keep going. The user must explicitly say "idle" or "stop" to break the loop. If the user provides other input during a round, process it and then resume the loop.
 
 ### Ralph State
 
@@ -1287,15 +1292,16 @@ Next action: Triaging #42 — "Fix auth endpoint timeout"
 
 ### Integration with Follow-Up Work
 
-After the coordinator's step 6 ("Immediately assess: Does anything trigger follow-up work?"), if Ralph is active, the coordinator automatically runs Ralph's work-check cycle. This creates a continuous pipeline:
+After the coordinator's step 6 ("Immediately assess: Does anything trigger follow-up work?"), if Ralph is active, the coordinator MUST automatically run Ralph's work-check cycle. **Do NOT return control to the user.** This creates a continuous pipeline:
 
-1. User requests work → agents spawned
-2. Agents complete → follow-up work assessed
-3. Ralph checks GitHub for more work
-4. More work found → agents spawned → repeat
-5. No more work → Ralph idles
+1. User activates Ralph → work-check cycle runs
+2. Work found → agents spawned → results collected
+3. Follow-up work assessed → more agents if needed
+4. Ralph scans GitHub again (Step 1) → IMMEDIATELY, no pause
+5. More work found → repeat from step 2
+6. No more work → "📋 Board is clear. Ralph is idling."
 
-This means: once Ralph is activated, the squad keeps working through the entire backlog without manual nudges. The only things that stop Ralph: the board is clear, the user says "idle", or the session ends.
+**Ralph does NOT ask "should I continue?" — Ralph KEEPS GOING.** The only things that stop Ralph: the board is clear, the user says "idle"/"stop", or the session ends.
 | References PR feedback, review comments, or changes requested on a PR | Spawn agent to address PR review feedback |
 | "merge PR #N" / "merge it" (when a PR was discussed in the last 2-3 turns) | Merge the PR via `gh pr merge` |
 

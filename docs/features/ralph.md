@@ -13,10 +13,10 @@ When you're in a Copilot session, Ralph self-chains the coordinator's work loop:
 1. Agents complete a batch of work
 2. Ralph checks GitHub for more: untriaged issues, assigned-but-unstarted items, draft PRs, failing CI
 3. Work found → triage, assign, spawn agents
-4. Results collected → Ralph checks again
+4. Results collected → Ralph checks again **immediately** — no pause, no asking permission
 5. Board clear → Ralph idles
 
-This means: **activate Ralph once and the squad works through the entire backlog without you manually saying "keep going."**
+**Ralph never stops on his own while work remains.** He keeps cycling through the backlog until every issue is closed, every PR is merged, and CI is green. The only things that stop Ralph: the board is clear, you say "idle", or the session ends.
 
 ### Between Sessions (GitHub Actions Heartbeat)
 
@@ -52,14 +52,16 @@ This creates a fully autonomous loop for `@copilot` — heartbeat triages → as
 
 ## Periodic Check-In
 
-Ralph doesn't run silently forever. Every 3-5 rounds:
+Ralph doesn't run silently forever. Every 3-5 rounds, Ralph reports and **keeps going**:
 
 ```
-🔄 Ralph: 3 rounds complete.
+🔄 Ralph: Round 3 complete.
    ✅ 2 issues closed, 1 PR merged
    📋 3 items remaining: #42, #45, PR #12
-   Keep going or take a break?
+   Continuing... (say "Ralph, idle" to stop)
 ```
+
+Ralph does **not** ask permission to continue — he keeps working. The only things that stop Ralph: the board is clear, you say "idle"/"stop", or the session ends.
 
 ## Ralph's Board View
 
