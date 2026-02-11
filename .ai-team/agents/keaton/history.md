@@ -152,3 +152,6 @@ _Summarized 2026-02-10 learnings (full entries available in session logs):_
 
 
 📌 Team update (2026-02-11): Project boards consolidated — v0.4.0 target confirmed, gh CLI (not npm), opt-in only, labels authoritative over boards. Community triage responses must use substantive technical detail. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-11): Fritz video analysis merged — product signal: v0.2.0 features (skills, export, triage) not discovered in demo, parallel execution not visually apparent, iteration loop not demoed — decided by McManus
+

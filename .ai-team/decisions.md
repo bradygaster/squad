@@ -2741,3 +2741,114 @@ Brady is the user. DM is the feature that makes Squad irreplaceable. GitHub inte
 **By:** Keaton, Kujan
 **What:** Label changes drive board column positions. Board UI changes do NOT propagate back to labels. One-way sync: labels -> board. Label changes trigger Actions workflows; board column moves do not. Board mirrors label state but is not the source of truth. Aligns with existing `label-driven-workflow` skill anti-pattern guidance.
 **Why:** Two-way sync creates state conflicts. Labels are the state machine (032c). If someone moves a card on the board, it creates a label/board mismatch — but the label is correct. Reverse sync would require conflict resolution not yet designed. Two-way sync is a future consideration, not a v0.4.0 concern.
+
+### 2026-02-11: Blog post for first video coverage
+**By:** McManus
+**What:** Wrote blog post 007 acknowledging Jeff Fritz's Squad video — first public video coverage
+**Why:** Community milestones get documented. This is the first time Squad appeared on video to an external audience.
+
+### 2026-02-11: Fritz video analysis — messaging insights and community reference
+
+**By:** McManus
+**What:** Analysis of Jeff Fritz's Squad demo video with messaging takeaways, product signal, and draft community reference
+**Why:** External community coverage is a key signal — captures what resonates with real developers seeing Squad for the first time
+
+---
+
+## 1. Messaging Insights — What Jeff Highlighted
+
+#### What resonated (things Jeff chose to emphasize)
+
+1. **"These are all markdown files"** — Jeff called this out twice. The fact that Squad is markdown files, not proprietary config, clearly registers as a trust signal. This is something we should lead with more prominently in docs. Developers distrust magic; markdown is the opposite of magic.
+
+2. **Design review ceremony** — Jeff narrated the delegation to Banner, Romanoff, and Barton (his Avengers cast) and specifically pointed out the design review step. The ceremony — agents planning before coding — landed as a differentiator, not overhead.
+
+3. **131 tests in one shot** — This was Jeff's proof point. He mentioned the test count, the build verification, and the fact it happened from a single prompt. Quantifiable output from a single interaction is the strongest demo beat.
+
+4. **Everything saved in Markdown and JSON** — Jeff showed the `.ai-team/` folder and explicitly told viewers to "spend some time taking a look at what was decided." The transparency of decisions and logs registered as a feature, not implementation detail.
+
+5. **Cast system worked naturally** — Jeff used the Avengers theme. He referenced Banner, Romanoff, and Barton by name without explaining the cast system. It just worked. This validates the design decision to make casting feel native, not gimmicky.
+
+6. **Sprint planning and iteration** — Jeff described asking the squad to "design and figure out what the sprints should be" and then working through them with GitHub Issues and PRs. This positions Squad as a workflow tool, not a one-shot generator.
+
+7. **"All of our code... and the prompts... are saved in this folder"** — Team knowledge persistence landed. Jeff framed it as collaborative — "all members of our development team get access to the same agents."
+
+#### What Jeff skipped or didn't mention
+
+1. **Install process** — No `npx` command shown or discussed. The demo started post-install. We don't know if install was smooth or if Jeff edited it out.
+
+2. **Parallel execution** — Jeff didn't explicitly call out agents running in parallel, though the delegation was visible. Our README leads with this; it may not be as visible in practice as we think.
+
+3. **Skills system, tiered response modes, export/import** — None of the v0.2.0 features were mentioned. Jeff's demo was focused on core loop: prompt → team → output.
+
+4. **Context window efficiency** — No mention of the architecture that keeps agents in separate context windows. This is an engineering differentiator we care about; end users may not.
+
+5. **Scribe / decision logging mechanics** — Jeff showed the folder but didn't explain the Scribe role or how decisions propagate. The output was visible; the mechanism was invisible.
+
+6. **Reviewer protocol / rejection flow** — Not shown. The demo was a greenfield build, not an iteration cycle.
+
+#### What would strengthen the story
+
+- **"Markdown, not magic"** could be a documentation header or tagline for the architecture section. Jeff's emphasis on "these are markdown files" was the strongest trust-building moment in the video.
+- **Test count as proof** — Sample prompts or docs could suggest users check test output as a validation step. Quantifiable results make demos land.
+- **Cast system deserves a one-liner in Quick Start** — Jeff used it without explanation. A single sentence ("Your team gets persistent names from a thematic cast — Avengers, heist crews, whatever fits") would give new users the same confidence.
+
+---
+
+## 2. Product Signal
+
+#### What worked well
+
+| Signal | Evidence |
+|--------|----------|
+| Single-prompt to working app | Jeff went from one prompt to a running text adventure with 131 tests |
+| Cast system adoption | Jeff chose Avengers, referenced agents by cast name naturally |
+| Design review ceremony | Jeff highlighted it as a feature, not friction |
+| Transparent artifacts | Jeff browsed `.ai-team/` and found the decision log useful |
+| Multi-session continuity | Jeff described agents "learning, growing, and discovering" across sessions |
+
+#### Potential friction points
+
+| Area | Observation |
+|------|-------------|
+| Install visibility | Install was not shown — unclear if it was trivial or edited out for time |
+| Parallel execution UX | Delegation was shown but parallelism wasn't called out — the visual signal may need strengthening |
+| Feature discovery | v0.2.0 features (skills, export, triage) were not discovered or used — these may need better surfacing |
+| Iteration loop | Jeff mentioned sprint planning but didn't demo the iteration → review → revision cycle — this is a gap in demo coverage, not necessarily a product gap |
+
+#### Opportunities
+
+1. **Cyberpunk text adventure as a sample prompt** — Jeff's prompt was detailed and produced a strong demo. A version of this prompt could go in `sample-prompts.md` as a "build something fun in 5 minutes" entry.
+2. **"What just happened?" summary** — Jeff had to scroll back to narrate what the agents did. A post-run summary (already partially handled by the coordinator) could be more prominent.
+3. **Video/demo section in README** — Jeff's video is the first external demo of Squad. A community section in the README linking to it gives social proof.
+
+---
+
+## 3. Draft Community Reference (for README or docs)
+
+**Proposed addition — a "Community" or "In the Wild" section for the README:**
+
+```markdown
+## Community
+
+| What | Who | Link |
+|------|-----|------|
+| "Introducing your AI Dev Team Squad with GitHub Copilot" — full demo building a cyberpunk text adventure with an Avengers-themed squad | Jeff Fritz ([@csharpfritz](https://github.com/csharpfritz)) | [Watch on YouTube](https://www.youtube.com/watch?v=TXcL-te7ByY) |
+```
+
+**Alternate inline version (if a table feels heavy):**
+
+```markdown
+## Community
+
+- 📺 [Introducing your AI Dev Team Squad with GitHub Copilot](https://www.youtube.com/watch?v=TXcL-te7ByY) — Jeff Fritz ([@csharpfritz](https://github.com/csharpfritz)) demos Squad building a cyberpunk text adventure with a custom Avengers cast. Covers team setup, design review, automated testing, and the `.ai-team/` knowledge folder.
+```
+
+---
+
+## 4. Recommendations
+
+1. **Add a Community section to the README** with Jeff's video as the first entry. Place it after "Status" and before any footer. Use the inline format above.
+2. **Consider adding Jeff's text adventure prompt** (or a variation) to `sample-prompts.md` — it's a strong "wow" demo.
+3. **Surface the cast system earlier in docs** — Jeff's natural use of Avengers names validates that casting is intuitive, but new users reading the README don't encounter it until deep in the page.
+4. **No changes to product roadmap needed** — Jeff's demo validated the core loop. Feature gaps he didn't surface (skills, export) are discoverable features, not blockers.

@@ -131,3 +131,6 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 
 
 📌 Team update (2026-02-11): Project boards consolidated — v0.4.0 target confirmed, gh CLI (not npm), opt-in only, labels authoritative over boards. Community triage responses must use substantive technical detail. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-11): Fritz video analysis merged — messaging takeaways: 'Markdown, not magic' as trust signal, surface cast system earlier in docs, quantifiable output is strongest demo beat — decided by McManus
+
