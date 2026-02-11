@@ -47,19 +47,6 @@ jobs:
             if (isCopilotAssignment) {
               // @copilot is the GitHub Copilot coding agent — always valid, no roster lookup needed
               assignedMember = { name: '@copilot', role: 'Coding Agent' };
-
-              // Assign @copilot via REST API
-              try {
-                await github.rest.issues.addAssignees({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issue.number,
-                  assignees: ['copilot']
-                });
-                core.info(`Assigned @copilot to issue #${issue.number}`);
-              } catch (err) {
-                core.warning(`Could not assign @copilot: ${err.message}`);
-              }
             } else {
               let inMembersTable = false;
               for (const line of lines) {
@@ -99,9 +86,13 @@ jobs:
                 '',
                 `**Issue:** #${issue.number} — ${issue.title}`,
                 '',
-                `@copilot has been assigned and will pick this up automatically.`,
+                `To start autonomous work, assign @copilot to this issue:`,
+                '```',
+                `gh issue edit ${issue.number} --add-assignee copilot`,
+                '```',
+                `Or use the **Assignees** sidebar on the right →`,
                 '',
-                `> The coding agent will create a \`copilot/*\` branch and open a draft PR.`,
+                `> Once assigned, the coding agent will create a \`copilot/*\` branch and open a draft PR.`,
                 `> Review the PR as you would any team member's work.`,
               ].join('\n');
             } else {
