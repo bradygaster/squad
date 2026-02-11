@@ -544,6 +544,27 @@ if (isUpgrade) {
       console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} .github/copilot-instructions.md`);
     }
 
+    // Always update squad-owned workflows even when version matches
+    const workflowsSrcEarly = path.join(root, 'templates', 'workflows');
+    const workflowsDestEarly = path.join(dest, '.github', 'workflows');
+    if (fs.existsSync(workflowsSrcEarly) && fs.statSync(workflowsSrcEarly).isDirectory()) {
+      const wfFiles = fs.readdirSync(workflowsSrcEarly).filter(f => f.endsWith('.yml'));
+      fs.mkdirSync(workflowsDestEarly, { recursive: true });
+      for (const file of wfFiles) {
+        fs.copyFileSync(path.join(workflowsSrcEarly, file), path.join(workflowsDestEarly, file));
+      }
+      console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflows (${wfFiles.length} files)`);
+    }
+
+    // Always refresh squad.agent.md (may have changed on same version via branch)
+    try {
+      fs.mkdirSync(path.dirname(agentDest), { recursive: true });
+      fs.copyFileSync(agentSrc, agentDest);
+      stampVersion(agentDest);
+    } catch (err) {
+      // Non-fatal in early-exit path
+    }
+
     console.log(`${GREEN}✓${RESET} Already up to date (v${pkg.version})`);
     process.exit(0);
   }
