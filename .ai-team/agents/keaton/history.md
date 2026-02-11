@@ -142,3 +142,13 @@ _Summarized 2026-02-10 learnings (full entries available in session logs):_
   - **Provider abstraction matters here.** ADO has native boards. GitLab has label-driven boards. GitHub Projects V2 is GraphQL-only. The capability negotiation pattern (032a §2.8) handles this — `projectBoards: boolean` in getCapabilities().
   - **Key learning: community contributions validate the direction.** An external contributor independently proposed the same GitHub-native surface strategy we've been designing. This confirms the v0.3.0 bet — making GitHub the collaboration surface is what people want.
   - **Key file paths:** `team-docs/proposals/033-project-boards.md`, `.ai-team/decisions/inbox/keaton-project-boards.md`
+
+- **2026-02-10: Community Issue Triage — Issues #6 and #8**
+  - **Triaged two community feature requests** and posted substantive follow-up comments via `gh issue comment`.
+  - **Issue #8 (@essenbee2): Provider abstraction.** Request to not lock Squad into GitHub. Posted a comment referencing the provider abstraction architecture (032a), capability negotiation, local-mode fallback, Day 1/Day 2 strategy, and cross-platform label mapping. Applied `enhancement` label.
+  - **Issue #6 (@londospark): Project boards.** Request for GitHub Projects V2 integration. Posted a comment referencing Proposal 033 (project boards), 033a (feasibility), the "labels are the state machine, boards are the dashboard" architecture, the `gh project` CLI approach (zero dependencies), 5-column mapping, opt-in design, and v0.4.0 timeline. Applied `enhancement` label.
+  - **Key decision: community engagement tone.** Both comments follow Brady's tone directive — straight facts, no hype, no editorial voice. Referenced specific internal design work to show depth of thought without overpromising.
+  - **Key learning:** Community contributors are independently requesting features we've already designed. This validates the product direction. The team's proposal-first workflow means we have substantive technical details to share, not just "great idea, we'll look into it."
+
+
+📌 Team update (2026-02-11): Project boards consolidated — v0.4.0 target confirmed, gh CLI (not npm), opt-in only, labels authoritative over boards. Community triage responses must use substantive technical detail. — decided by Keaton, Kujan
