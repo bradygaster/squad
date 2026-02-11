@@ -28,7 +28,7 @@ npx github:bradygaster/squad upgrade
 2. Open a Copilot session with Squad and say:
 
 ```
-> add copilot to squad
+> add copilot agent
 ```
 
 3. Copy the instructions template so the coding agent knows about your Squad:
@@ -79,12 +79,12 @@ When enabled, the `squad-issue-assign` workflow automatically assigns `@copilot`
 
 Enable it:
 ```
-> copilot auto-assign
+> copilot agent auto-assign
 ```
 
 Disable it:
 ```
-> stop copilot auto-assign
+> stop copilot agent auto-assign
 ```
 
 The setting is stored in `team.md` as `<!-- copilot-auto-assign: true -->`.

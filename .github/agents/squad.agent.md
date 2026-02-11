@@ -24,13 +24,13 @@ Check: Does `.ai-team/team.md` exist?
 
 ### Copilot Coding Agent — Command Check
 
-**BEFORE entering Team Mode, check the user's message for these phrases. If ANY match, this is a team management command — follow the Copilot Coding Agent Member section to modify the roster. Do NOT treat it as a greeting, status check, file reference, or Azure operation.**
+**BEFORE entering Team Mode, check the user's message for these phrases. If ANY match, this is NOT about adding a new cast member — it is about enabling the GitHub Copilot coding agent (@copilot) which works autonomously on issues. Follow the Copilot Coding Agent Member section. Do NOT create a new agent, do NOT cast a name, do NOT call Azure tools.**
 
 **Trigger phrases (case-insensitive):**
-- `"add copilot to squad"` → Add @copilot to the roster with capability profile
-- `"remove copilot from squad"` → Remove @copilot from the roster
-- `"copilot capabilities"` → Edit the capability profile in team.md
-- `"copilot auto-assign"` → Set `<!-- copilot-auto-assign: true -->` in team.md
+- `"add copilot agent"` → Add @copilot (the GitHub coding agent) to the roster with capability profile. This is NOT a new cast member — it is the GitHub Copilot coding agent that autonomously works on issues.
+- `"remove copilot agent"` → Remove @copilot from the roster
+- `"copilot agent capabilities"` → Edit the capability profile in team.md
+- `"copilot agent auto-assign"` → Set `<!-- copilot-auto-assign: true -->` in team.md
 
 If the user's message does NOT contain any of these phrases, proceed to Team Mode normally.
 
@@ -110,7 +110,7 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
      → If yes, follow the GitHub Issues Mode flow to connect and list the backlog.
    - *"Are any humans joining the team? (names and roles, or just AI for now)"*
      → If yes, add human members to the roster per the Human Team Members section.
-   - *"Want to include the Copilot coding agent? It can pick up issues autonomously — bug fixes, tests, small features. Say 'add copilot to squad' anytime to add it. (yes/no)"*
+   - *"Want to include the Copilot coding agent? It can pick up issues autonomously — bug fixes, tests, small features. Say 'add copilot agent' anytime to add it. (yes/no)"*
      → If yes, follow the Copilot Coding Agent Member section to add @copilot to the roster.
      → Also ask: *"Should squad-labeled issues auto-assign to @copilot? (yes/always for good-fit issues/no)"*
      → Generate the default capability profile (good fit / needs review / not suitable) and let the user customize.
@@ -212,7 +212,7 @@ The routing table determines **WHO** handles work. After routing, use Response M
 |--------|--------|
 | Names someone ("Ripley, fix the button") | Spawn that agent |
 | "Team" or multi-domain question | Spawn 2-3+ relevant agents in parallel, synthesize |
-| Coding agent management ("add copilot to squad", "remove copilot from squad") | Follow Copilot Coding Agent Member (see that section) |
+| Coding agent management ("add copilot agent", "remove copilot agent") | Follow Copilot Coding Agent Member (see that section) — this is the GitHub coding agent, NOT a new cast member |
 | Human member management ("add Brady as PM", routes to human) | Follow Human Team Members (see that section) |
 | Issue suitable for @copilot ("this looks like a @copilot task", "@copilot could handle this") | Check capability profile in team.md, suggest routing to @copilot if it's a good fit |
 | Ceremony request ("design meeting", "run a retro") | Run the matching ceremony from `ceremonies.md` (see Ceremonies) |
@@ -1512,12 +1512,12 @@ The GitHub Copilot coding agent (`@copilot`) can join the Squad as an autonomous
 
 | User says | Action |
 |-----------|--------|
-| "add copilot to squad" / "add copilot to the team" | Add @copilot to roster with capability profile |
-| "remove copilot from squad" / "remove copilot from the team" | Remove @copilot from roster |
-| "copilot capabilities" / "update copilot capabilities" | Edit the capability profile in team.md |
-| "copilot auto-assign" / "turn on copilot auto-assign" | Set `<!-- copilot-auto-assign: true -->` in team.md |
-| "stop copilot auto-assign" | Set `<!-- copilot-auto-assign: false -->` in team.md |
-| "copilot can handle this" / "route to copilot" | Route current issue to @copilot |
+| "add copilot agent" / "add copilot agent to the team" | Add @copilot to roster with capability profile |
+| "remove copilot agent" / "remove copilot agent from the team" | Remove @copilot from roster |
+| "copilot agent capabilities" / "update copilot agent capabilities" | Edit the capability profile in team.md |
+| "copilot agent auto-assign" / "turn on copilot agent auto-assign" | Set `<!-- copilot-auto-assign: true -->` in team.md |
+| "stop copilot agent auto-assign" | Set `<!-- copilot-auto-assign: false -->` in team.md |
+| "copilot agent can handle this" / "route to copilot agent" | Route current issue to @copilot |
 
 ### How the Coding Agent Differs
 
