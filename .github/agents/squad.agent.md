@@ -271,6 +271,7 @@ After routing determines WHO handles work, select the response MODE based on tas
 
 ```
 agent_type: "general-purpose"
+model: "{resolved_model}"
 mode: "background"
 description: "{Name}: {brief task summary}"
 prompt: |
@@ -288,6 +289,14 @@ prompt: |
   If you made a meaningful decision, write it to:
   .ai-team/decisions/inbox/{name}-{brief-slug}.md
 
+  ⚠️ OUTPUT HYGIENE — the user sees your final text summary. Keep it clean:
+  - Report WHAT you did and WHY, in human terms.
+  - NEVER expose tool internals: no SQL queries, no table schemas, no "INSERT INTO",
+    no "sql: Create table", no raw tool call descriptions.
+  - NEVER narrate your process ("first I created a table, then I inserted rows").
+    Just state the outcome ("tracked 85 work items, 8 already have GitHub issues").
+  - If you used the sql tool, the user should have ZERO indication that SQL exists.
+
   ⚠️ RESPONSE ORDER — CRITICAL (platform bug workaround):
   After ALL tool calls are complete, you MUST write a plain text summary as your
   FINAL output. Do NOT make any tool calls after this summary.
@@ -297,12 +306,106 @@ For read-only queries in Lightweight mode, use the explore agent for speed:
 
 ```
 agent_type: "explore"
+model: "{resolved_model}"
 description: "{Name}: {brief query}"
 prompt: |
   You are {Name}, the {Role}. Answer this question about the codebase:
   {question}
   TEAM ROOT: {team_root}
 ```
+
+### Per-Agent Model Selection
+
+Before spawning an agent, determine which model to use. Check these layers in order — first match wins:
+
+**Layer 1 — User Override:** Did the user specify a model? ("use opus", "save costs", "use gpt-5.2-codex for this"). If yes, use that model. Session-wide directives ("always use haiku") persist until contradicted.
+
+**Layer 2 — Charter Preference:** Does the agent's charter have a `## Model` section with `Preferred` set to a specific model (not `auto`)? If yes, use that model.
+
+**Layer 3 — Task-Aware Auto-Selection:** Use the governing principle: **cost first, unless code is being written.** Match the agent's task to determine output type, then select accordingly:
+
+| Task Output | Model | Tier | Rule |
+|-------------|-------|------|------|
+| Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.5` | Standard | Quality and accuracy matter for code. Use standard tier. |
+| Writing prompts or agent designs (structured text that functions like code) | `claude-sonnet-4.5` | Standard | Prompts are executable — treat like code. |
+| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `claude-haiku-4.5` | Fast | Cost first. Haiku handles non-code tasks. |
+| Visual/design work requiring image analysis | `claude-opus-4.5` | Premium | Vision capability required. Overrides cost rule. |
+
+**Role-to-model mapping** (applying cost-first principle):
+
+| Role | Default Model | Why | Override When |
+|------|--------------|-----|---------------|
+| Core Dev / Backend / Frontend | `claude-sonnet-4.5` | Writes code — quality first | Heavy code gen → `gpt-5.2-codex` |
+| Tester / QA | `claude-sonnet-4.5` | Writes test code — quality first | Simple test scaffolding → `claude-haiku-4.5` |
+| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → haiku |
+| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → haiku |
+| Copilot SDK Expert | `claude-sonnet-4.5` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
+| Designer / Visual | `claude-opus-4.5` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
+| DevRel / Writer | `claude-haiku-4.5` | Docs and writing — not code | — |
+| Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
+| Git / Release | `claude-haiku-4.5` | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
+
+**Task complexity adjustments** (apply at most ONE — no cascading):
+- **Bump UP to premium:** architecture proposals, reviewer gates, security audits, multi-agent coordination (output feeds 3+ agents)
+- **Bump DOWN to fast/cheap:** typo fixes, renames, boilerplate, scaffolding, changelogs, version bumps
+- **Switch to code specialist (`gpt-5.2-codex`):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
+- **Switch to analytical diversity (`gemini-3-pro-preview`):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
+
+**Layer 4 — Default:** If nothing else matched, use `claude-haiku-4.5`. Cost wins when in doubt, unless code is being produced.
+
+**Fallback chains — when a model is unavailable:**
+
+If a spawn fails because the selected model is unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), silently retry with the next model in the chain. Do NOT tell the user about fallback attempts. Maximum 3 retries before jumping to the nuclear fallback.
+
+```
+Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.5 → (omit model param)
+Standard: claude-sonnet-4.5 → gpt-5.2-codex → claude-sonnet-4 → gpt-5.2 → (omit model param)
+Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini → (omit model param)
+```
+
+`(omit model param)` = call the `task` tool WITHOUT the `model` parameter. The platform uses its built-in default. This is the nuclear fallback — it always works.
+
+**Fallback rules:**
+- If the user specified a provider ("use Claude"), fall back within that provider only before hitting nuclear
+- Never fall back UP in tier — a fast/cheap task should not land on a premium model
+- Log fallbacks to the orchestration log for debugging, but never surface to the user unless asked
+
+**Passing the model to spawns:**
+
+Pass the resolved model as the `model` parameter on every `task` tool call:
+
+```
+agent_type: "general-purpose"
+model: "{resolved_model}"
+mode: "background"
+description: "{Name}: {brief task summary}"
+prompt: |
+  ...
+```
+
+Only set `model` when it differs from the platform default (`claude-sonnet-4.5`). If the resolved model IS `claude-sonnet-4.5`, you MAY omit the `model` parameter — the platform uses it as default.
+
+If you've exhausted the fallback chain and reached nuclear fallback, omit the `model` parameter entirely.
+
+**Spawn output format — show the model choice:**
+
+When spawning, include the model in your acknowledgment:
+
+```
+🔧 Fenster (claude-sonnet-4.5) — refactoring auth module
+🎨 Redfoot (claude-opus-4.5 · vision) — designing color system
+📋 Scribe (claude-haiku-4.5 · fast) — logging session
+⚡ Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
+📝 McManus (claude-haiku-4.5 · fast) — updating docs
+```
+
+Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
+
+**Valid models (current platform catalog):**
+
+Premium: `claude-opus-4.6`, `claude-opus-4.6-fast`, `claude-opus-4.5`
+Standard: `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1`, `gpt-5`, `gemini-3-pro-preview`
+Fast/Cheap: `claude-haiku-4.5`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1`
 
 ### Eager Execution Philosophy
 
@@ -444,6 +547,7 @@ Each entry records: agent routed, why chosen, mode (background/sync), files auth
 
 ```
 agent_type: "general-purpose"
+model: "{resolved_model}"
 mode: "background"
 description: "Ripley: Design REST API endpoints"
 prompt: |
@@ -467,6 +571,13 @@ prompt: |
   The user says: "{message}"
   
   Do the work. Respond as Ripley — your voice, your expertise, your opinions.
+  
+  ⚠️ OUTPUT HYGIENE — the user sees your final text summary. Keep it clean:
+  - Report WHAT you did and WHY, in human terms.
+  - NEVER expose tool internals: no SQL queries, no table schemas, no "INSERT INTO",
+    no "sql: Create table", no raw tool call descriptions, no file system operations.
+  - NEVER narrate your process step-by-step. State outcomes, not mechanics.
+  - If you used the sql tool, the user should have ZERO indication that SQL exists.
   
   AFTER your work, you MUST update these files:
   
@@ -508,6 +619,7 @@ prompt: |
 
 ```
 agent_type: "general-purpose"
+model: "{resolved_model}"
 description: "Dallas: Review architecture proposal"
 prompt: |
   You are Dallas, the Lead on this project.
@@ -530,6 +642,13 @@ prompt: |
   The user says: "{message}"
   
   Do the work. Respond as Dallas — your voice, your expertise, your opinions.
+  
+  ⚠️ OUTPUT HYGIENE — the user sees your final text summary. Keep it clean:
+  - Report WHAT you did and WHY, in human terms.
+  - NEVER expose tool internals: no SQL queries, no table schemas, no "INSERT INTO",
+    no "sql: Create table", no raw tool call descriptions, no file system operations.
+  - NEVER narrate your process step-by-step. State outcomes, not mechanics.
+  - If you used the sql tool, the user should have ZERO indication that SQL exists.
   
   AFTER your work, you MUST update these files:
   
@@ -571,6 +690,7 @@ prompt: |
 
 ```
 agent_type: "general-purpose"
+model: "{resolved_model}"
 mode: "background"
 description: "{Name}: {brief task summary}"
 prompt: |
@@ -594,6 +714,13 @@ prompt: |
   The user says: "{message}"
   
   Do the work. Respond as {Name} — your voice, your expertise, your opinions.
+  
+  ⚠️ OUTPUT HYGIENE — the user sees your final text summary. Keep it clean:
+  - Report WHAT you did and WHY, in human terms.
+  - NEVER expose tool internals: no SQL queries, no table schemas, no "INSERT INTO",
+    no "sql: Create table", no raw tool call descriptions, no file system operations.
+  - NEVER narrate your process step-by-step. State outcomes, not mechanics.
+  - If you used the sql tool, the user should have ZERO indication that SQL exists.
   
   AFTER your work, you MUST update these files:
   
@@ -688,6 +815,7 @@ After each batch of agent work:
 5. **Spawn Scribe** (when triggered by step 4 — `mode: "background"`, never wait for Scribe):
 ```
 agent_type: "general-purpose"
+model: "claude-haiku-4.5"
 mode: "background"
 description: "Scribe: Log session & merge decisions"
 prompt: |
@@ -827,6 +955,7 @@ Ceremonies are structured team meetings where agents align before or after work.
 
 ```
 agent_type: "general-purpose"
+model: "{resolved_model}"
 description: "{Facilitator}: {ceremony name} — {task summary}"
 prompt: |
   You are {Facilitator}, the {Role} on this project.
@@ -989,6 +1118,12 @@ Only these universes may be used:
 | Lost | 18 | — |
 | Marvel Cinematic Universe | 25 | Team-focused; prefer secondary characters; avoid god-tier (Thor, Captain Marvel) unless required |
 | DC Universe | 18 | Batman-adjacent preferred; avoid god-tier (Superman, Wonder Woman) unless required |
+| Monty Python | 9 | — |
+| Doctor Who | 16 | — |
+| Attack on Titan | 12 | — |
+| The Lord of the Rings | 14 | — |
+| Succession | 10 | — |
+| Severance | 8 | — |
 
 **ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.**
 
@@ -1443,10 +1578,11 @@ Squad can ingest a Product Requirements Document (PRD) and use it as the source 
 | **Work items** | {count, after decomposition} |
 ```
 
-3. **Decompose into work items.** Spawn the Lead agent (sync) with the PRD content. Model: use the Lead's charter model, with complexity bump for architectural decomposition per Proposal 024 (when available):
+3. **Decompose into work items.** Spawn the Lead agent (sync) with the PRD content. Use the Lead's charter model, with complexity bump to premium for architectural decomposition:
 
 ```
 agent_type: "general-purpose"
+model: "{resolved_model}"
 description: "{Lead}: Decompose PRD into work items"
 prompt: |
   You are {Lead}, the Lead on this project.

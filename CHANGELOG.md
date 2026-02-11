@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.0] — 2026-02-11
+
+### Added
+
+- **Per-agent model selection** — Cost-first model routing with 16-model catalog, role-to-model mapping, task-aware auto-selection, fallback chains, user overrides
+- **Ralph — Work Monitor** (PR #15 by @spboyer) — Built-in squad member with self-chaining work loop, heartbeat workflow (`squad-heartbeat.yml`), board status reporting, never-stop semantics
+- **@copilot Coding Agent integration** (PR #13 by @spboyer) — Three-tier capability profile, auto-assign workflow, `squad copilot` CLI subcommand
+- **Universe expansion** — Casting universe allowlist expanded from 14 to 20 (added Succession, Severance, Lord of the Rings, Attack on Titan, Doctor Who, Monty Python)
+- **"Milestones" rename** — Release planning units renamed from "sprints" to "milestones", aligning with GitHub Milestones
+
+### Changed
+
+- Test suite expanded from 92 to 118 tests
+- Emoji encoding fixes in test suite (8 mojibake strings corrected)
+- `squad.agent.md` significantly expanded with model selection, Ralph, @copilot sections
+- `index.js` updated with upgrade early-exit fix (refreshes workflows and agent.md)
+
+### Community
+
+- Two PRs from @spboyer (Shayne Boyer): Ralph work monitor (#15) and @copilot coding agent (#13)
+- New issues from @csharpfritz (#11 MCP, #16 user docs), @essenbee2 (#8 platform lock-in), @miketsui3a (#9 task tool naming), @londospark (#6 project boards)
+
 ## [0.2.0] — 2026-02-09
 
 ### Added

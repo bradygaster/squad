@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/create-squad",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Add an AI agent team to any project",
   "bin": {
     "create-squad": "./index.js"

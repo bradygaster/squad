@@ -226,17 +226,27 @@ The Coordinator enforces this. No self-review of rejected work.
 
 ---
 
+## What's New in v0.3.0
+
+- [**Per-Agent Model Selection**](docs/features/model-selection.md) — Cost-first routing: code work gets standard-tier models (claude-sonnet-4.5), non-code tasks use fast/cheap models (claude-haiku-4.5). 16-model catalog with fallback chains.
+- [**Ralph — Work Monitor**](docs/features/ralph.md) — Built-in squad member that autonomously processes backlogs. Self-chaining work loop: scan GitHub → spawn agents → collect results → repeat.
+- [**@copilot Coding Agent**](docs/features/copilot-coding-agent.md) — GitHub's Copilot agent as a squad member. Three-tier capability profile. Auto-assign with workflow.
+- **Universe Expansion** — 14 → 20 casting universes (Succession, Severance, Lord of the Rings, Attack on Titan, Doctor Who, Monty Python)
+- **Milestones Rename** — "Sprints" → "Milestones" (GitHub-native alignment)
+- **Test Growth** — 92 → 118 tests
+- **Emoji Fixes** — Test suite encoding standardized
+
+---
+
 ## What's New in v0.2.0
 
 - [**Export & Import CLI**](docs/features/export-import.md) — Portable team snapshots for moving squads between repos
 - [**GitHub Issues Mode**](docs/features/github-issues.md) — Issue-driven development with `gh` CLI integration
 - [**PRD Mode**](docs/features/prd-mode.md) — Product requirements decomposition into work items
 - [**Human Team Members**](docs/features/human-team-members.md) — Mixed AI/human teams with routing
-- [**Copilot Coding Agent**](docs/features/copilot-coding-agent.md) — Add @copilot for autonomous issue work with capability-based routing
 - [**Skills System**](docs/features/skills.md) — Earned knowledge with confidence lifecycle
 - [**Tiered Response Modes**](docs/features/response-modes.md) — Direct/Lightweight/Standard/Full response depth
 - [**Smart Upgrade**](docs/scenarios/upgrading.md) — Version-aware upgrades with migrations
-- [**Ralph — Work Monitor**](docs/features/ralph.md) — Built-in squad member that keeps the team working through backlogs autonomously
 
 ---
 
@@ -287,6 +297,7 @@ The coordinator checks for open `squad:{member}` issues at session start and wil
 
 ---
 
+
 ## Install
 
 ```bash
@@ -318,6 +329,6 @@ This overwrites `squad.agent.md`, `.ai-team-templates/`, and squad workflow file
 
 ## Status
 
-🟣 **Experimental** — v0.2.0. Contributors welcome.
+🟣 **Experimental** — v0.3.0. Contributors welcome.
 
 Conceived by [@bradygaster](https://github.com/bradygaster).
