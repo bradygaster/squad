@@ -543,3 +543,68 @@ describe('edge cases', () => {
     assert.equal(result.exitCode, 0, 're-init should exit 0');
   });
 });
+
+describe('copilot-instructions.md', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-copilot-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates .github/copilot-instructions.md on init', () => {
+    runInit(tmpDir);
+    const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
+    assert.ok(fs.existsSync(dest), 'copilot-instructions.md should be created');
+    const content = fs.readFileSync(dest, 'utf8');
+    assert.ok(content.includes('Squad'), 'should reference Squad');
+    assert.ok(content.includes('.ai-team/team.md'), 'should reference team.md');
+    assert.ok(content.includes('Capability Self-Check'), 'should include capability self-check');
+  });
+
+  it('skips copilot-instructions.md when it already exists', () => {
+    // Create the file first
+    fs.mkdirSync(path.join(tmpDir, '.github'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, '.github', 'copilot-instructions.md'), 'custom content');
+    runInit(tmpDir);
+    const content = fs.readFileSync(path.join(tmpDir, '.github', 'copilot-instructions.md'), 'utf8');
+    assert.equal(content, 'custom content', 'should not overwrite existing file');
+  });
+
+  it('does not overwrite copilot-instructions.md on upgrade when @copilot is not enabled', () => {
+    runInit(tmpDir);
+    // Customize the file
+    const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
+    fs.writeFileSync(dest, 'user customized');
+    runCmd(tmpDir, 'upgrade');
+    const content = fs.readFileSync(dest, 'utf8');
+    assert.equal(content, 'user customized', 'upgrade should not touch copilot-instructions.md when @copilot is not enabled');
+  });
+
+  it('upgrades copilot-instructions.md when @copilot is enabled on the team', () => {
+    runInit(tmpDir);
+    // Simulate @copilot being enabled in team.md
+    const teamDir = path.join(tmpDir, '.ai-team');
+    fs.mkdirSync(teamDir, { recursive: true });
+    fs.writeFileSync(path.join(teamDir, 'team.md'), '| @copilot | Coding Agent | — | 🤖 Coding Agent |');
+    // Customize the instructions file
+    const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
+    fs.writeFileSync(dest, 'old version');
+    runCmd(tmpDir, 'upgrade');
+    const content = fs.readFileSync(dest, 'utf8');
+    assert.notEqual(content, 'old version', 'upgrade should overwrite copilot-instructions.md when @copilot is enabled');
+    assert.ok(content.includes('Squad'), 'should contain latest template content');
+  });
+
+  it('copilot-instructions.md content matches source template', () => {
+    runInit(tmpDir);
+    const dest = path.join(tmpDir, '.github', 'copilot-instructions.md');
+    const src = path.join(ROOT, 'templates', 'copilot-instructions.md');
+    const destContent = fs.readFileSync(dest, 'utf8');
+    const srcContent = fs.readFileSync(src, 'utf8');
+    assert.equal(destContent, srcContent, 'init should copy template exactly');
+  });
+});

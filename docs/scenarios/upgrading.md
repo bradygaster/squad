@@ -33,6 +33,8 @@ That's it.
 |------|----------|-------|
 | `.github/agents/squad.agent.md` | ✅ Yes | Overwritten with latest coordinator logic |
 | `.ai-team-templates/` | ✅ Yes | Overwritten with latest templates |
+| `.github/workflows/squad-*.yml` | ✅ Yes | Overwritten with latest squad workflows |
+| `.github/copilot-instructions.md` | ⚡ Conditional | Updated only if @copilot is enabled on the team |
 | `.ai-team/` | ❌ Never | Your team's knowledge, decisions, casting state, skills |
 
 Squad-owned files (`squad.agent.md` and `.ai-team-templates/`) are replaced entirely. Don't put custom changes in them — they'll be lost on upgrade.

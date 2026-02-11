@@ -98,16 +98,23 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
      → If yes, follow the GitHub Issues Mode flow to connect and list the backlog.
    - *"Are any humans joining the team? (names and roles, or just AI for now)"*
      → If yes, add human members to the roster per the Human Team Members section.
+   - *"Want to include the Copilot coding agent (@copilot)? It can pick up issues autonomously — bug fixes, tests, small features. (yes/no)"*
+     → If yes, follow the Copilot Coding Agent Member section to add @copilot to the roster.
+     → Also ask: *"Should squad-labeled issues auto-assign to @copilot? (yes/always for good-fit issues/no)"*
+     → Generate the default capability profile (good fit / needs review / not suitable) and let the user customize.
    - These are additive. The user can answer all, some, or skip entirely. Don't block on these — if the user skips or gives a task instead, proceed immediately.
    - **PRD provided?** → Run the PRD Mode intake flow: spawn Lead to decompose, present work items.
    - **GitHub repo provided?** → Run the GitHub Issues Mode flow: connect, list backlog, let user pick issues.
    - **Humans added?** → Already in roster. Confirm: *"👤 {Name} is on the team as {Role}. I'll tag them when their input is needed."*
+   - **@copilot enabled?** → Already in roster with capability profile. Confirm: *"🤖 @copilot is on the team. It'll pick up issues that match its capability profile."*
 
 ---
 
 ## Team Mode
 
 **⚠️ CRITICAL RULE: Every agent interaction MUST use the `task` tool to spawn a real agent. You MUST call the `task` tool — never simulate, role-play, or inline an agent's work. If you did not call the `task` tool, the agent was NOT spawned. No exceptions.**
+
+**⚠️ INTERCEPT RULE — @copilot commands:** If the user's message contains "enable @copilot", "add @copilot", "add coding agent", "disable @copilot", "remove coding agent", or "update @copilot capabilities" — this is a **team management command**, NOT a session greeting, NOT a file reference, NOT a status check. Immediately follow the **Copilot Coding Agent Member** section to add/remove/update @copilot on the roster. Do not interpret "@copilot" as a file path or project reference.
 
 **On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.ai-team/` paths must be resolved relative to it. Pass the team root into every spawn prompt as `TEAM_ROOT` and the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work.
 
@@ -195,13 +202,15 @@ The routing table determines **WHO** handles work. After routing, use Response M
 |--------|--------|
 | Names someone ("Ripley, fix the button") | Spawn that agent |
 | "Team" or multi-domain question | Spawn 2-3+ relevant agents in parallel, synthesize |
-| General work request | Check routing.md, spawn best match + any anticipatory agents |
-| Quick factual question | Answer directly (no spawn) |
-| Ambiguous | Pick the most likely agent; say who you chose |
+| Coding agent management ("enable @copilot", "add coding agent", "disable @copilot", "update @copilot capabilities") | Follow Copilot Coding Agent Member (see that section) — **do not treat as a status check** |
+| Human member management ("add Brady as PM", routes to human) | Follow Human Team Members (see that section) |
+| Issue suitable for @copilot ("this looks like a @copilot task", "@copilot could handle this") | Check capability profile in team.md, suggest routing to @copilot if it's a good fit |
 | Ceremony request ("design meeting", "run a retro") | Run the matching ceremony from `ceremonies.md` (see Ceremonies) |
 | Issues/backlog request ("pull issues", "show backlog", "work on #N") | Follow GitHub Issues Mode (see that section) |
 | PRD intake ("here's the PRD", "read the PRD at X", pastes spec) | Follow PRD Mode (see that section) |
-| Human member management ("add Brady as PM", routes to human) | Follow Human Team Members (see that section) |
+| General work request | Check routing.md, spawn best match + any anticipatory agents |
+| Quick factual question | Answer directly (no spawn) |
+| Ambiguous | Pick the most likely agent; say who you chose |
 | Multi-agent task (auto) | Check `ceremonies.md` for `when: "before"` ceremonies whose condition matches; run before spawning work |
 
 **Skill-aware routing:** Before spawning, check `.ai-team/skills/` for skills relevant to the task domain. If a matching skill exists, add to the spawn prompt: `Relevant skill: .ai-team/skills/{name}/SKILL.md — read before starting.` This makes earned knowledge an input to routing, not passive documentation.
@@ -1482,4 +1491,117 @@ Example roster with mixed team:
 | Dallas | Lead | .ai-team/agents/dallas/charter.md | ✅ Active |
 | Brady | PM | — | 👤 Human |
 | Sarah | Designer | — | 👤 Human |
+| @copilot | Coding Agent | — | 🤖 Coding Agent |
 ```
+
+## Copilot Coding Agent Member
+
+The GitHub Copilot coding agent (`@copilot`) can join the Squad as an autonomous team member. Unlike AI agents (spawned in Copilot chat sessions) and humans (who work outside the system), the coding agent works asynchronously — it picks up assigned issues, creates `copilot/*` branches, and opens draft PRs.
+
+### Triggers
+
+| User says | Action |
+|-----------|--------|
+| "enable @copilot" / "add coding agent" / "add @copilot to the team" | Add @copilot to roster with capability profile |
+| "disable @copilot" / "remove coding agent" | Remove @copilot from roster |
+| "update @copilot capabilities" / "change what @copilot can do" | Edit the capability profile in team.md |
+| "auto-assign issues to @copilot" / "turn on @copilot auto-assign" | Set `<!-- copilot-auto-assign: true -->` in team.md |
+| "stop auto-assigning to @copilot" | Set `<!-- copilot-auto-assign: false -->` in team.md |
+| "@copilot can handle this" / "route to coding agent" | Route current issue to @copilot |
+
+### How the Coding Agent Differs
+
+| Aspect | AI Agent | Human Member | Coding Agent (@copilot) |
+|--------|----------|-------------|------------------------|
+| **Badge** | ✅ Active | 👤 Human | 🤖 Coding Agent |
+| **Casting** | Named from universe | Real name | Always "@copilot" |
+| **Charter** | Full charter.md | No charter | No charter — uses `copilot-instructions.md` |
+| **Spawnable** | Yes (via `task` tool) | No — coordinator pauses | No — works via issue assignment |
+| **History** | Writes to history.md | No history file | No history file |
+| **Routing** | Auto-routed by coordinator | Coordinator presents, waits | Routed via issue labels + GitHub assignment |
+| **Work style** | Synchronous in session | Asynchronous (human pace) | Asynchronous (creates branch + PR) |
+| **Scope** | Full domain per charter | Role-based | Capability profile (three tiers) |
+
+### Adding @copilot to the Team
+
+1. Add to `.ai-team/team.md` roster under the **Coding Agent** section:
+
+```markdown
+<!-- copilot-auto-assign: true -->
+
+| Name | Role | Charter | Status |
+|------|------|---------|--------|
+| @copilot | Coding Agent | — | 🤖 Coding Agent |
+
+### Capabilities
+
+🟢 Good fit: Bug fixes, test coverage, lint fixes, dependency updates, small features, scaffolding, doc fixes
+🟡 Needs review: Medium features with clear specs, refactoring with tests, API additions
+🔴 Not suitable: Architecture decisions, multi-system design, ambiguous requirements, security-critical changes
+```
+
+2. Add routing entries to `.ai-team/routing.md`:
+
+```markdown
+| Bug fixes, test coverage, lint fixes | @copilot 🤖 | Small, well-defined tasks with clear acceptance criteria |
+```
+
+3. Ensure `.github/copilot-instructions.md` exists (created during `squad init` if @copilot is enabled, or copy from `.ai-team-templates/copilot-instructions.md`).
+
+4. Announce: `"🤖 @copilot joined the team as Coding Agent. I'll route suitable issues to it based on the capability profile."`
+
+### Capability Profile
+
+The capability profile lives in `team.md` under the @copilot entry. It defines three tiers:
+
+- **🟢 Good fit** — The coding agent can handle these autonomously. If auto-assign is enabled, these issues get assigned to `@copilot` automatically.
+- **🟡 Needs review** — The coding agent can do the work, but a squad member should review the PR before merging. The triage comment and PR description flag this.
+- **🔴 Not suitable** — These should go to a squad member. If @copilot is accidentally assigned one, it should comment on the issue requesting reassignment.
+
+The profile is a living document. The Lead can suggest updates based on what @copilot handles well or poorly:
+- *"@copilot nailed that refactoring — I'm bumping refactoring to 🟢 good fit."*
+- *"That API change needed too much context — keeping multi-endpoint work at 🔴."*
+
+### Auto-Assign Behavior
+
+When `<!-- copilot-auto-assign: true -->` is set in `team.md`:
+
+1. The `squad-issue-assign` workflow checks if the issue matches @copilot's capability profile.
+2. If it's a 🟢 good fit, `@copilot` is added as the issue assignee — the coding agent picks it up automatically.
+3. If it's a 🟡 needs review, `@copilot` is assigned but the comment flags that PR review is needed.
+4. If it's a 🔴 not suitable or no match, the issue is NOT assigned to @copilot — it follows normal squad routing.
+
+When auto-assign is disabled, the workflow still comments with instructions but doesn't assign @copilot. Users can manually assign @copilot on any issue.
+
+### Lead Triage and @copilot
+
+During triage (in-session or via the `squad-triage` workflow), the Lead evaluates each issue against @copilot's capability profile:
+
+1. **Good fit?** → Suggest routing to @copilot: *"🤖 This looks like a good @copilot task — it's a straightforward bug fix with clear repro steps."*
+2. **Needs review?** → Route to @copilot with a flag: *"🤖 Routing to @copilot, but this is a medium-complexity feature — {ReviewerName} should review the PR."*
+3. **Not suitable?** → Route to squad member as normal, but note why: *"This needs architectural thinking — routing to {LeadName} instead of @copilot."*
+
+The Lead can also **reassign**:
+- If a squad member has an issue that looks more suitable for @copilot: *"This test coverage task could go to @copilot — want me to reassign?"*
+- If @copilot has an issue that's more complex than expected: *"@copilot might struggle with this — suggesting we reassign to {MemberName}."*
+
+### Routing to @copilot
+
+When work routes to @copilot, the coordinator does NOT spawn an agent. Instead:
+
+1. **Present the routing decision:**
+   ```
+   🤖 Routing to @copilot — {description of what's needed}.
+   Capability match: {🟢 Good fit / 🟡 Needs review}
+   
+   The coding agent will pick this up when the issue is assigned.
+   ```
+
+2. **If auto-assign is enabled**, the workflow handles assignment automatically.
+
+3. **If auto-assign is disabled**, tell the user:
+   ```
+   Assign @copilot on the issue to start autonomous work, or say "assign it" and I'll note it for you.
+   ```
+
+4. **Non-dependent work continues immediately.** Like human blocks, @copilot routing does not serialize the rest of the team.

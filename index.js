@@ -415,6 +415,19 @@ if (isUpgrade) {
   if (isAlreadyCurrent) {
     // Still run missing migrations in case a prior upgrade was interrupted
     runMigrations(dest, oldVersion);
+
+    // Even if already current, update copilot-instructions.md if @copilot is enabled
+    const copilotInstructionsSrc = path.join(root, 'templates', 'copilot-instructions.md');
+    const copilotInstructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
+    const teamMd = path.join(dest, '.ai-team', 'team.md');
+    const copilotEnabled = fs.existsSync(teamMd)
+      && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
+    if (copilotEnabled && fs.existsSync(copilotInstructionsSrc)) {
+      fs.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
+      fs.copyFileSync(copilotInstructionsSrc, copilotInstructionsDest);
+      console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} .github/copilot-instructions.md`);
+    }
+
     console.log(`${GREEN}✓${RESET} Already up to date (v${pkg.version})`);
     process.exit(0);
   }
@@ -473,6 +486,32 @@ if (!fs.existsSync(ceremoniesDest)) {
   console.log(`${GREEN}✓${RESET} .ai-team/ceremonies.md`);
 } else {
   console.log(`${DIM}ceremonies.md already exists — skipping${RESET}`);
+}
+
+// Copy copilot-instructions.md (user-owned on init, upgraded if @copilot is enabled)
+const copilotInstructionsSrc = path.join(root, 'templates', 'copilot-instructions.md');
+const copilotInstructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
+
+if (!isUpgrade) {
+  if (fs.existsSync(copilotInstructionsSrc)) {
+    if (!fs.existsSync(copilotInstructionsDest)) {
+      fs.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
+      fs.copyFileSync(copilotInstructionsSrc, copilotInstructionsDest);
+      console.log(`${GREEN}✓${RESET} .github/copilot-instructions.md`);
+    } else {
+      console.log(`${DIM}copilot-instructions.md already exists — skipping${RESET}`);
+    }
+  }
+} else {
+  // On upgrade, update copilot-instructions.md if @copilot is enabled on the team
+  const teamMd = path.join(dest, '.ai-team', 'team.md');
+  const copilotEnabled = fs.existsSync(teamMd)
+    && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
+  if (copilotEnabled && fs.existsSync(copilotInstructionsSrc)) {
+    fs.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
+    fs.copyFileSync(copilotInstructionsSrc, copilotInstructionsDest);
+    console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} .github/copilot-instructions.md`);
+  }
 }
 
 // Append merge=union rules for append-only .ai-team/ files
@@ -546,6 +585,15 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
 
 if (isUpgrade) {
   console.log(`\n${DIM}.ai-team/ untouched — your team state is safe${RESET}`);
+
+  // Hint about new features available after upgrade
+  const teamMd = path.join(dest, '.ai-team', 'team.md');
+  const copilotEnabled = fs.existsSync(teamMd)
+    && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
+  if (!copilotEnabled) {
+    console.log(`\n${BOLD}New:${RESET} @copilot coding agent support is now available.`);
+    console.log(`  Say ${BOLD}"enable @copilot"${RESET} in your next Squad session to add it to your team.`);
+  }
 }
 
 console.log();
