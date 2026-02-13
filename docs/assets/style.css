@@ -16,7 +16,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Noto Sans,Helveti
   position:fixed; top:0; left:0; bottom:0; overflow-y:auto; z-index:100; display:flex; flex-direction:column; }
 .sidebar-header { padding:20px 16px 12px; border-bottom:1px solid var(--border);
   display:flex; align-items:center; justify-content:space-between; }
-.sidebar-header .logo { font-size:20px; font-weight:700; color:var(--text); text-decoration:none; }
+.sidebar-header .logo { display:flex; align-items:center; text-decoration:none; }
+.sidebar-logo-img { max-width:100%; height:auto; padding:4px 0; }
 .sidebar-close { display:none; background:none; border:none; font-size:20px; color:var(--muted); cursor:pointer; }
 .sidebar-content { padding:12px 0; flex:1; overflow-y:auto; }
 .sidebar-content>a, .nav-section a { display:block; padding:6px 16px; color:var(--muted);

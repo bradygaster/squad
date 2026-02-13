@@ -81,7 +81,7 @@ function buildNav(files, currentRel) {
   }
   var sectionLabels = { features: 'Features', scenarios: 'Scenarios', blog: 'Blog' };
   var nav = '<nav class="sidebar" id="sidebar">\n';
-  nav += '  <div class="sidebar-header"><a href="' + BASE_PATH + '/index.html" class="logo">Squad</a>';
+  nav += '  <div class="sidebar-header"><a href="' + BASE_PATH + '/index.html" class="logo"><img src="' + BASE_PATH + '/assets/squad-logo.png" alt="Squad" class="sidebar-logo-img"></a>';
   nav += '<button class="sidebar-close" onclick="toggleSidebar()">X</button></div>\n';
   nav += '  <div class="sidebar-content">\n';
   topLevel.sort(fileSorter);
