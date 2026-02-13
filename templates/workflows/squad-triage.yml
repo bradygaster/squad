@@ -193,6 +193,14 @@ jobs:
               labels: [assignLabel]
             });
 
+            // Apply default triage verdict
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: ['go:needs-research']
+            });
+
             // Auto-assign @copilot if enabled
             if (isCopilot && copilotAutoAssign) {
               try {

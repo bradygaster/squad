@@ -181,3 +181,35 @@ This file is **upgraded automatically** when you run `squad upgrade` and `@copil
 - Use auto-assign for repos where you want fully autonomous issue processing.
 - The coding agent works great alongside [issue-driven development](../scenarios/issue-driven-dev.md) — label issues `squad` and the Lead + @copilot handle the rest.
 - @copilot's PRs go through normal review — treat them like any team member's work.
+
+## Sample Prompts
+
+```
+add copilot to the squad with auto-assign enabled
+```
+
+Adds @copilot to the roster and configures automatic issue assignment.
+
+```
+what's copilot's capability profile?
+```
+
+Shows which task types are marked as good fit, needs review, or not suitable for @copilot.
+
+```
+reassign issue #42 from copilot to Kane
+```
+
+Routes an issue away from @copilot to a different squad member.
+
+```
+bump refactoring to good fit for copilot
+```
+
+Updates the capability profile to mark refactoring tasks as automatically routable to @copilot.
+
+```
+review copilot's PR on #56
+```
+
+Spawns the appropriate squad member to review @copilot's pull request.

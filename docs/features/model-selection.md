@@ -59,3 +59,35 @@ Tell the coordinator what you want:
 - `"use opus for this"` — one-off premium
 - `"always use haiku"` — session-wide cost savings
 - `"use gpt-5.2-codex for Fenster"` — agent-specific override
+
+## Sample Prompts
+
+```
+use opus for this architecture work
+```
+
+Override to premium model for a single high-stakes task.
+
+```
+always use haiku to save costs
+```
+
+Set session-wide preference for the cheapest model tier.
+
+```
+what model did Kane use for that last task?
+```
+
+Check which model was actually used for a completed task.
+
+```
+use gpt-5.2-codex for all backend work
+```
+
+Set a specific model for tasks in a particular domain.
+
+```
+switch back to automatic model selection
+```
+
+Clear any session-wide overrides and return to task-aware auto-selection.

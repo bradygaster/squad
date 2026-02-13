@@ -1,0 +1,7 @@
+### 2026-02-13: Context window optimization — spawn template dedup and Init Mode compression
+
+**By:** Keaton
+
+**What:** Applied two surgical optimizations to squad.agent.md (Issue #37): (1) Removed two redundant spawn templates (Background and Sync), replaced with single generic template plus mode selection notes. Saved ~3,600 tokens. (2) Compressed Init Mode from 84 lines to ~48 lines by replacing file tree example with one-liner reference, condensing post-setup input sources to bulleted list, tightening casting state init. Saved ~670 tokens. Total savings: ~4,270 tokens per coordinator message.
+
+**Why:** squad.agent.md is loaded on every coordinator spawn (every user message). Init Mode occupies context space on all messages but is only used once per repo lifetime (when .ai-team/team.md doesn't exist). The three spawn templates were 95% identical — same sections (charter, history, decisions, OUTPUT HYGIENE, RESPONSE ORDER, skill extraction), differing only in mode parameter and example agent names (Ripley, Dallas, {Name}). This redundancy consumed context window space without adding value — developers only need one reference template with mode selection guidance, not three full examples. Init Mode's file tree example (lines 55-75) duplicated .ai-team-templates/ content. Post-setup input sources (lines 97-111) repeated the same "If yes, follow..." pattern 4 times. Both optimizations preserve all behavior and all required sections while eliminating prose redundancy.

@@ -89,3 +89,35 @@ The ceremony remains enabled for future tasks.
 - Retros produce decisions that get written to `decisions.md` — they improve future work, not just diagnose the current failure.
 - Ceremony config lives in `.ai-team/ceremonies.md`. You can edit it directly if you prefer.
 - Ceremonies work well with [human team members](human-team-members.md) — add a human as a participant for approval gates.
+
+## Sample Prompts
+
+```
+run a design review before we start
+```
+
+Manually triggers a design review ceremony for the current task.
+
+```
+run a retro on why those tests failed
+```
+
+Starts a retrospective to analyze test failures and capture learnings.
+
+```
+add a ceremony for security reviews
+```
+
+Creates a custom ceremony type with its own triggers and participants.
+
+```
+skip the design review for this quick fix
+```
+
+Bypasses the design review ceremony for the current task only.
+
+```
+disable automatic retros
+```
+
+Turns off auto-triggering for retrospectives while keeping the ceremony defined.

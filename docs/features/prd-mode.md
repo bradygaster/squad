@@ -71,3 +71,35 @@ Work already completed isn't undone. Only the remaining backlog changes.
 - The Lead handles decomposition — you don't need to break down the spec yourself.
 - Dependencies are respected automatically. You won't see an agent start on a dependent task before its prerequisite is done.
 - Combine with [GitHub Issues Mode](github-issues.md) to create GitHub issues from work items.
+
+## Sample Prompts
+
+```
+read the PRD at docs/product-spec.md and break it into work items
+```
+
+Ingests a product requirements document and creates a prioritized, dependency-tracked backlog.
+
+```
+show me the work items
+```
+
+Displays the current backlog with priorities, assignments, and dependencies.
+
+```
+the PRD has been updated — re-read docs/product-spec.md
+```
+
+Re-ingests the PRD and adjusts the backlog based on changes without undoing completed work.
+
+```
+start working on approved P0 items
+```
+
+Begins parallel execution of all high-priority work items with no blockers.
+
+```
+which work items are blocked right now?
+```
+
+Shows which tasks are waiting on dependencies or other blocking conditions.

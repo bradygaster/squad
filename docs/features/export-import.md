@@ -76,3 +76,35 @@ Imported agents bring their skills and general knowledge without assuming your p
 - The export file is JSON — you can inspect it to see exactly what your team knows.
 - Imported agents retain their names and universe. They won't be renamed.
 - Commit your `.ai-team/` directory after importing so the team is available to everyone who clones the repo.
+
+## Sample Prompts
+
+```
+export the current team
+```
+
+Creates a `squad-export.json` snapshot of the entire team in the current directory.
+
+```
+import squad-export.json into this repo
+```
+
+Imports a team snapshot into the current project's `.ai-team/` directory.
+
+```
+what was included in that export?
+```
+
+Shows a summary of what data was captured in the most recent export file.
+
+```
+export just the team state, not the full history
+```
+
+Creates a lightweight export with agent charters and skills but minimal history.
+
+```
+import with --force and archive the current team
+```
+
+Overwrites the existing `.ai-team/` directory after archiving it as a backup.

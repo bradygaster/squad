@@ -2,6 +2,42 @@
 
 Ralph is a built-in squad member whose job is keeping tabs on work. Like Scribe tracks decisions, **Ralph tracks and drives the work queue**. He's always on the roster — not cast from a universe — and has one job: make sure the team never sits idle when there's work to do.
 
+## Prerequisites
+
+Ralph requires access to GitHub Issues and Pull Requests via the `gh` CLI. **A GitHub PAT (Personal Access Token) with Classic scope is required.**
+
+### Why PAT Classic?
+
+The default `GITHUB_TOKEN` provided by Copilot does not have sufficient scopes to read and write GitHub Issues and PRs. Ralph needs to:
+- List and read issues
+- Create and update issue labels and assignments
+- Read and interact with pull requests
+- Report on CI status
+
+### Setup
+
+1. **Create a PAT Classic token:**
+   - Go to https://github.com/settings/tokens
+   - Click "Generate new token (classic)"
+   - Select scopes: `repo` and `project` (full access to repositories and projects)
+   - Copy the token
+
+2. **Authenticate with `gh`:**
+   ```bash
+   gh auth login
+   ```
+   - Select "GitHub.com"
+   - Select "HTTPS" for protocol
+   - When asked "Authenticate Git with your GitHub credentials?", answer "Yes"
+   - Choose "Paste an authentication token" and paste your PAT Classic token
+
+3. **Verify authentication:**
+   ```bash
+   gh auth status
+   ```
+
+Once authenticated, Ralph can monitor your repository's issues and PRs.
+
 ## How It Works
 
 Once activated, Ralph continuously checks for pending work — open issues, draft PRs, review feedback, CI failures — and keeps the squad moving through the backlog without manual nudges.
@@ -141,3 +177,35 @@ on:
 - Ralph appears on the roster like Scribe: `| Ralph | Work Monitor | — | 🔄 Monitor |`
 - Ralph is exempt from universe casting — always "Ralph"
 - The heartbeat workflow is the between-session complement to in-session Ralph
+
+## Sample Prompts
+
+```
+Ralph, go — start monitoring and process the backlog until it's clear
+```
+
+Activates Ralph's self-chaining work loop to continuously process all pending work.
+
+```
+Ralph, status
+```
+
+Runs a single check cycle and shows the current board state without activating the work loop.
+
+```
+Ralph, check every 5 minutes
+```
+
+Changes the idle-watch polling interval from the default 10 minutes to 5 minutes.
+
+```
+Ralph, scope: just issues
+```
+
+Configures Ralph to monitor only issues and skip PRs and CI status checks.
+
+```
+Ralph, idle
+```
+
+Fully stops Ralph's work loop and idle-watch polling until manually reactivated.

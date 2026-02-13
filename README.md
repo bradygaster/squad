@@ -5,6 +5,8 @@
 [![Status](https://img.shields.io/badge/status-experimental-blueviolet)](#status)
 [![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#how-it-works)
 
+📣 **[Join the Squad Community](docs/community.md)** — meet contributors, see deployments, share your work.
+
 ---
 
 ## What is Squad?
@@ -30,7 +32,19 @@ git init
 npx github:bradygaster/squad
 ```
 
-### 3. Open Copilot and go
+### 3. Authenticate with GitHub (for Issues, PRs, and Ralph)
+
+```bash
+gh auth login
+```
+
+If you plan to use [Project Boards](docs/features/project-boards.md), add the `project` scope:
+
+```bash
+gh auth refresh -s project
+```
+
+### 4. Open Copilot and go
 
 ```
 copilot
@@ -143,19 +157,28 @@ graph TB
 
 ### Context Window Budget
 
-Real numbers. No hand-waving.
+Real numbers. No hand-waving. Updated as the project grows.
 
 Both Claude Sonnet 4 and Claude Opus 4 have a **200K token** standard context window. Each agent runs in its own window, so the coordinator is the only shared overhead.
 
 | What | Tokens | % of 200K context | When |
 |------|--------|--------------------|------|
-| **Coordinator** (squad.agent.md) | ~13,200 | 6.6% | Every message |
-| **Agent at Week 1** (charter + seed history + decisions) | ~1,250 | 0.6% | When spawned |
-| **Agent at Week 4** (+ 15 learnings, 8 decisions) | ~3,300 | 1.7% | When spawned |
-| **Agent at Week 12** (+ 50 learnings, 47 decisions) | ~9,000 | 4.5% | When spawned |
-| **Remaining for actual work** | **~187,000** | **93%+** | Always |
+| **Coordinator** (squad.agent.md) | ~26,300 | 13.2% | Every message |
+| **Agent spawn overhead** (charter ~750 + inlined in prompt) | ~750 | 0.4% | When spawned |
+| **decisions.md** (shared brain — read by every agent) | ~32,600 | 16.3% | When spawned |
+| **Agent history** (varies: 1K fresh → 12K veteran) | ~1,000–12,000 | 0.5–6.0% | When spawned |
+| **Total agent load** (charter + decisions + history) | ~34,000–45,000 | 17–23% | When spawned |
+| **Remaining for actual work** | **~155,000–166,000** | **78–83%** | Always |
 
-The coordinator uses 6.6% of context. A 12-week veteran agent uses 4.5% — but in **its own window**, not yours. That leaves **93%+ of the coordinator's context for reasoning about your code**, and each spawned agent gets nearly its entire 200K window for the actual task. Fan out to 5 agents and you're working with **~1M tokens** of total reasoning capacity — without paying for a larger model.
+**v0.4.0 context optimization (Feb 2026):** We ran a context budget audit and found `decisions.md` had ballooned to ~80K tokens (40% of context) after 250+ accumulated decision blocks. Combined with spawn template duplication in the coordinator, agents were working with barely half a context window. Three targeted optimizations shipped:
+
+1. **decisions.md pruning** — 251 blocks → 78 active decisions. Stale sprint artifacts, completed analysis docs, and one-time planning fragments archived to `decisions-archive.md`. Nothing deleted — full history preserved.
+2. **Spawn template deduplication** — Three near-identical templates (background, sync, generic) collapsed to one. Saved ~3,600 tokens in the coordinator prompt.
+3. **Init Mode compression** — 84 lines of first-run-only instructions compressed to 48 lines. Same behavior, less prose.
+
+**Result:** Per-agent spawn cost dropped from 41–46% to 17–23% of context. Agents now have ~78–83% of their context window for actual work, up from ~54–59%. As your squad runs more sessions and accumulates more decisions, Scribe's history summarization keeps per-agent history bounded. For decisions.md, a Scribe-driven automated pruning system is planned for v0.5.0 (see issue #37) — until then, the archive pattern keeps the shared brain lean.
+
+**The architecture still wins.** Each agent runs in **its own** 200K window. The coordinator's window is separate from every agent's window. Fan out to 5 agents and you're working with **~1M tokens** of total reasoning capacity. The per-agent overhead is real but bounded — and the pruning system ensures it stays that way as your project grows.
 
 ### Memory Architecture
 
@@ -223,6 +246,22 @@ Team members with review authority (Tester, Lead) can **reject** work. On reject
 - A **new specialist** is spawned for the task
 
 The Coordinator enforces this. No self-review of rejected work.
+
+---
+
+## What's New in v0.4.0
+
+- [**Client Compatibility**](docs/scenarios/client-compatibility.md) — Full platform support matrix. Squad now works on CLI and VS Code with graceful degradation.
+- [**VS Code Support**](docs/features/vscode.md) — First-class VS Code guide. `runSubagent` parallel spawning, platform detection, feature degradation table.
+- [**Project Boards**](docs/features/project-boards.md) — GitHub Projects V2 integration. Board + Kanban views synced from labels. `gh auth refresh -s project` required.
+- [**Label Taxonomy**](docs/features/labels.md) — 7-namespace label system (status:, type:, priority:, squad:, go:, release:, era:). Labels are the state machine; boards are projections.
+- [**Notifications**](docs/features/notifications.md) — Your squad pings you on Teams, iMessage, or Discord when they need input. Zero infrastructure in Squad — bring your own MCP notification server.
+- [**MCP Setup Guide**](docs/features/mcp.md) — Step-by-step MCP configuration for CLI and VS Code. Examples: GitHub, Trello, Aspire dashboard.
+- [**Plugin Marketplace**](docs/features/plugins.md) — Discover and install curated agent templates and skills from community repositories. Auto-recommend plugins when adding team members.
+- **Universe Expansion** — 20 → 33 casting universes (MCU, DC, Stranger Things, The Expanse, Arcane, Ted Lasso, Dune, Cowboy Bebop, Fullmetal Alchemist, Seinfeld, The Office, Adventure Time, Futurama, + 2 more)
+- **Docs Growth** — 49 docs across features, scenarios, and guides
+- **Context Optimization** — decisions.md pruned from ~80K to ~33K tokens (251 → 78 blocks). Spawn templates deduplicated. Per-agent context usage dropped from 41–46% to 17–23%. Agents now have 78–83% of their context window for actual work.
+- **Core Growth** — squad.agent.md: 1,100 → 1,771 lines; index.js: 654 lines; 188+ total commits
 
 ---
 
@@ -304,6 +343,8 @@ The coordinator checks for open `squad:{member}` issues at session start and wil
 npx github:bradygaster/squad
 ```
 
+> **Appears to hang?** npm resolves `github:` packages via `git+ssh://`. If no SSH agent is running, git prompts for your key passphrase — but npm's progress spinner hides the prompt. Fix: start your SSH agent first (`ssh-add`), or run with `npx --progress=false github:bradygaster/squad` to reveal the prompt. See [Troubleshooting](docs/scenarios/troubleshooting.md) for more.
+
 See [Quick Start](#quick-start) for the full walkthrough.
 
 ### Upgrade
@@ -322,13 +363,15 @@ This overwrites `squad.agent.md`, `.ai-team-templates/`, and squad workflow file
 
 - **Experimental** — API and file formats may change between versions
 - **Node 22+** — requires Node.js 22.0.0 or later (`engines` field enforced)
-- **GitHub Copilot CLI** — Squad runs on GitHub Copilot; no other runtimes are supported
+- **GitHub Copilot CLI & VS Code** — Squad is fully supported on CLI and VS Code (v0.4.0+). For platform-specific feature support (model selection, background mode, SQL tool access), see [Client Compatibility Matrix](docs/scenarios/client-compatibility.md)
+- **`gh` CLI required** — GitHub Issues, PRs, Ralph, and Project Boards all need `gh auth login`. Project Boards additionally require `gh auth refresh -s project`
 - **Knowledge grows with use** — the first session is the least capable; agents improve as they accumulate history
+- **SSH agent required for install** — `npx github:bradygaster/squad` resolves via `git+ssh://`. If no SSH agent is running, npm's progress spinner hides git's passphrase prompt, making install appear frozen. Fix: start your SSH agent first (`ssh-add`), or use `npx --progress=false github:bradygaster/squad`. See [#30](https://github.com/bradygaster/squad/issues/30)
 
 ---
 
 ## Status
 
-🟣 **Experimental** — v0.3.0. Contributors welcome.
+🟣 **Experimental** — v0.4.0-dev. Contributors welcome.
 
 Conceived by [@bradygaster](https://github.com/bradygaster).

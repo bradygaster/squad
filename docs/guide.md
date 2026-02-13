@@ -8,6 +8,19 @@ It is not a chatbot wearing hats. Each team member is spawned as a real sub-agen
 
 ---
 
+## Supported Platforms
+
+Squad is designed for **GitHub Copilot CLI** and ships with full support. **VS Code is now fully supported with zero code changes** — agents work identically on both platforms.
+
+**Current state:**
+- ✅ **GitHub Copilot CLI** — fully supported. This is the primary platform. Uses the stable `task` tool for sub-agent spawning, per-spawn model selection, and background mode.
+- ✅ **VS Code Copilot** — fully supported (v0.4.0+). VS Code uses `runSubagent` for parallel execution and supports full `.ai-team/` read/write. See [Client Compatibility Matrix](scenarios/client-compatibility.md) for details.
+- ❌ **Other platforms** — JetBrains IDEs and other runtimes are untested. GitHub.com web-based Copilot is untested.
+
+For a detailed feature comparison across platforms (model selection, background execution, file access, etc.), see [Client Compatibility Matrix](scenarios/client-compatibility.md).
+
+---
+
 ## Installation
 
 ```bash
@@ -18,10 +31,45 @@ npx github:bradygaster/squad
 - Node.js 22+
 - GitHub Copilot (CLI, VS Code, Visual Studio, or Coding Agent)
 - A git repository (Squad stores team state in `.ai-team/`)
+- **`gh` CLI** — required for GitHub Issues, PRs, Ralph, and Project Boards ([install](https://cli.github.com/))
 
 This copies `squad.agent.md` into `.github/agents/` and installs templates into `.ai-team-templates/`. Your actual team (`.ai-team/`) is created at runtime when you first talk to Squad.
 
 **Note:** When you select Squad from the agent picker, you'll see the version number in the name (e.g., "Squad (v0.3.0)"). This helps you confirm which version is installed.
+
+### GitHub CLI Authentication
+
+Squad uses the `gh` CLI for all GitHub API operations — issues, PRs, labels, project boards, and Ralph's work monitoring. You must authenticate before using any of these features.
+
+**Quick start:**
+
+```bash
+gh auth login
+```
+
+Choose **GitHub.com**, **HTTPS**, and authenticate with your browser or a Personal Access Token (PAT Classic).
+
+**Verify it worked:**
+
+```bash
+gh auth status
+```
+
+**Additional scopes** — some features require scopes beyond the default:
+
+| Feature | Required Scope | Command |
+|---------|---------------|---------|
+| Issues, PRs, Ralph | `repo` (included by default) | — |
+| Project Boards | `project` | `gh auth refresh -s project` |
+
+The `gh auth refresh` command adds scopes to your existing token — it takes about 10 seconds and you only need to do it once.
+
+**Troubleshooting:**
+
+- **"gh: command not found"** — Install the GitHub CLI from https://cli.github.com/
+- **"HTTP 401" or "authentication required"** — Run `gh auth login` to re-authenticate
+- **Project board commands fail** — Run `gh auth refresh -s project` to add the `project` scope
+- **"Resource not accessible by integration"** — Your token may lack the `repo` scope. Re-authenticate with a PAT Classic that has `repo` and `project` scopes
 
 ---
 
@@ -295,6 +343,16 @@ Human team members appear in the roster with a distinct badge. When work is rout
 - Humans can serve as **reviewers** in the reviewer protocol
 
 This is useful for teams where certain decisions (design sign-off, security review, product approval) require a real person.
+
+---
+
+## Notifications
+
+Your squad can notify you when they need input — send instant pings to Teams, Discord, iMessage, or any webhook. Agents trigger notifications when they're blocked, need a decision, hit an error, or complete important work.
+
+**Setup is quick:** Configure an MCP notification server (takes 5 minutes), and agents automatically know when to ping you.
+
+See [Notifications Guide](features/notifications.md) for platform-specific setup and examples. For MCP configuration details, see [MCP Setup Guide](features/mcp.md).
 
 ---
 

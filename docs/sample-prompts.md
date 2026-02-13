@@ -725,3 +725,201 @@ Create a custom ceremony called "Demo Day" where each agent presents what they b
 ```
 Schedule a retro after every third session automatically.
 ```
+
+---
+
+## v0.3.0 Feature Prompts
+
+Quick prompts that exercise specific v0.3.0 features. Use these to try out individual capabilities.
+
+---
+
+### Ralph — Work Monitor
+
+```
+Enable Ralph to watch the team's work. Start monitoring background task execution.
+```
+
+```
+Check Ralph's status — show me what the team is currently working on and task queue depth.
+```
+
+```
+Ralph, configure idle-watch mode. Alert me if an agent hasn't made progress for more than 10 minutes.
+```
+
+```
+Scope Ralph's monitoring to just the backend agent. Ignore frontend for now.
+```
+
+```
+Show me Ralph's activity log for the past hour — what tasks completed, what failed, what's queued?
+```
+
+---
+
+### Per-Agent Model Selection
+
+```
+Override the model for the backend agent — use Claude Opus for complex database design instead of the default.
+```
+
+```
+Run this feature with a cheaper model to save costs. Use GPT-4 Mini for the frontend work.
+```
+
+```
+Bump the Lead's model to Claude Opus for this session. We need better reasoning for architecture decisions.
+```
+
+```
+The frontend agent just used Haiku for the styling work. Show me what model was used.
+```
+
+```
+Set up model rotation: use Opus for design reviews, Sonnet for implementation, Haiku for tests.
+```
+
+---
+
+### @copilot Coding Agent
+
+```
+Add @copilot to the team as the coding specialist. Auto-assign code generation and refactoring to them.
+```
+
+```
+Configure @copilot to handle all TypeScript work. Route TypeScript issues directly to them.
+```
+
+```
+Show me @copilot's capabilities. What can they do and what do they need human review on?
+```
+
+```
+@copilot just finished the component refactor. Review their work before I merge.
+```
+
+```
+Remove @copilot from the team. We're doing code review manually going forward.
+```
+
+---
+
+### Labels & Triage
+
+```
+Add priority labels to all open issues. What's critical vs. nice-to-have?
+```
+
+```
+Show me the triage status for issue #42. Who said what about the verdict?
+```
+
+```
+Change the verdict on issue #8 from "blocked" to "ready-to-start" — the dependency is resolved.
+```
+
+```
+Tag issues for the v1.0 release. Show me what's targeted for the next milestone.
+```
+
+```
+Set priority: mark frontend bugs as P1, documentation updates as P3.
+```
+
+---
+
+### Directives
+
+```
+Set a coding style preference: prefer functional components over class components in React.
+```
+
+```
+Add a scope constraint: don't touch authentication logic without explicit approval from the Lead.
+```
+
+```
+Set a process rule: all pull requests must have a code review before merging.
+```
+
+```
+Show me the team's current directives. What rules are we following?
+```
+
+```
+Update the documentation preference: use JSDoc for all public functions with @param and @return tags.
+```
+
+---
+
+### Parallel Execution
+
+```
+Start these three tasks in parallel: implement the API endpoint, write tests, and update docs.
+```
+
+```
+Run this work in sync mode — I want real-time output instead of background execution.
+```
+
+```
+Check the status of my background agents. Which tasks completed and which are still running?
+```
+
+```
+The frontend and backend agents are working in parallel. Show me their progress separately.
+```
+
+```
+Cancel the background task for the database migration — we're taking a different approach.
+```
+
+---
+
+### Reviewer Protocol
+
+```
+Request a code review from Alex before this PR merges. They're our database expert.
+```
+
+```
+The reviewer rejected my changes. Show me their feedback and what needs to be fixed.
+```
+
+```
+Reassign the PR review to Jordan — the original reviewer is busy with another task.
+```
+
+```
+I've addressed the review feedback. Re-request approval from the reviewer.
+```
+
+```
+Show me all PRs waiting for review. Who's blocking and when did they last respond?
+```
+
+---
+
+### Worktree Awareness
+
+```
+I'm working in a git worktree. Update the team root path so commands run in the right directory.
+```
+
+```
+Switch to a different worktree strategy — we're rotating who works on what branch.
+```
+
+```
+Show me the team root location. Confirm we're pointing at the right working directory.
+```
+
+```
+The worktree was deleted. Recover the team state and pick a new working directory.
+```
+
+```
+I need to work on multiple features in parallel using worktrees. Help me set up the team for that workflow.
+```

@@ -111,3 +111,35 @@ Squad refreshes the backlog and shows remaining open issues.
 - You don't need to assign issues to specific agents — Squad routes based on domain expertise.
 - If `gh` isn't authenticated, Squad will tell you. Run `gh auth login` first.
 - See [GitHub Issues Walkthrough](../tour-github-issues.md) for a step-by-step tour.
+
+## Sample Prompts
+
+```
+connect to bradygaster/squad
+```
+
+Links Squad to a GitHub repository for issue-driven development.
+
+```
+show the backlog
+```
+
+Fetches and displays all open issues from the connected repository.
+
+```
+work on issue #23
+```
+
+Routes the issue to the appropriate agent who creates a branch, implements, and opens a PR.
+
+```
+work on all issues labeled "bug"
+```
+
+Processes multiple issues in parallel based on label filtering.
+
+```
+what's left in the backlog?
+```
+
+Refreshes the issue list and shows remaining open work items.

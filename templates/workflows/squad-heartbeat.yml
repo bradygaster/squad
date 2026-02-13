@@ -113,7 +113,25 @@ jobs:
               }
             }
 
-            // 3. Find open PRs that need attention
+            // 3. Find squad issues missing triage verdict (no go:* label)
+            const missingVerdict = squadIssues.filter(issue => {
+              const labels = issue.labels.map(l => l.name);
+              return !labels.some(l => l.startsWith('go:'));
+            });
+
+            // 4. Find go:yes issues missing release target
+            const goYesIssues = squadIssues.filter(issue => {
+              const labels = issue.labels.map(l => l.name);
+              return labels.includes('go:yes') && !labels.some(l => l.startsWith('release:'));
+            });
+
+            // 4b. Find issues missing type: label
+            const missingType = squadIssues.filter(issue => {
+              const labels = issue.labels.map(l => l.name);
+              return !labels.some(l => l.startsWith('type:'));
+            });
+
+            // 5. Find open PRs that need attention
             const { data: openPRs } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -132,6 +150,15 @@ jobs:
             }
             if (unstarted.length > 0) {
               summary.push(`🟡 **${unstarted.length} assigned issue(s)** have no assignee`);
+            }
+            if (missingVerdict.length > 0) {
+              summary.push(`⚪ **${missingVerdict.length} issue(s)** missing triage verdict (no \`go:\` label)`);
+            }
+            if (goYesIssues.length > 0) {
+              summary.push(`⚪ **${goYesIssues.length} approved issue(s)** missing release target (no \`release:\` label)`);
+            }
+            if (missingType.length > 0) {
+              summary.push(`⚪ **${missingType.length} issue(s)** missing \`type:\` label`);
             }
             if (squadPRs.length > 0) {
               const drafts = squadPRs.filter(pr => pr.draft).length;

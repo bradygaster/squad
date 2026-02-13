@@ -80,3 +80,35 @@ After successfully setting up a CI pipeline, an agent might create:
 - Starter skills (`squad-*`) are overwritten on upgrade. Earned skills are never touched.
 - Skills are shared across the whole team — any agent can read any skill.
 - You can manually edit skill files if you want to seed knowledge (e.g., paste your team's existing conventions into a `SKILL.md`).
+
+## Sample Prompts
+
+```
+list all skills
+```
+
+Shows all skill files in `.ai-team/skills/` with confidence levels for earned skills.
+
+```
+what's the confidence level for the CI skill?
+```
+
+Checks how battle-tested a specific earned skill is.
+
+```
+create a skill for our deployment process
+```
+
+Manually creates a new skill file and guides you through documenting the pattern.
+
+```
+which skills have low confidence?
+```
+
+Finds recently-created skills that haven't been validated across multiple contexts yet.
+
+```
+bump the testing skill to high confidence
+```
+
+Manually increases the confidence level after successful repeated use.

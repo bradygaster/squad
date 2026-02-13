@@ -63,6 +63,36 @@ jobs:
             const MEMBER_COLOR = '3b82f6';
             const COPILOT_COLOR = '10b981';
 
+            // Define go: and release: labels (static)
+            const GO_LABELS = [
+              { name: 'go:yes', color: '0E8A16', description: 'Ready to implement' },
+              { name: 'go:no', color: 'B60205', description: 'Not pursuing' },
+              { name: 'go:needs-research', color: 'FBCA04', description: 'Needs investigation' }
+            ];
+
+            const RELEASE_LABELS = [
+              { name: 'release:v0.4.0', color: '0052CC', description: 'Targeted for v0.4.0' },
+              { name: 'release:v0.5.0', color: '1D76DB', description: 'Targeted for v0.5.0' },
+              { name: 'release:v0.6.0', color: '5319E7', description: 'Targeted for v0.6.0' },
+              { name: 'release:v1.0.0', color: '6F42C1', description: 'Targeted for v1.0.0' },
+              { name: 'release:backlog', color: 'C5DEF5', description: 'Not yet targeted' }
+            ];
+
+            const TYPE_LABELS = [
+              { name: 'type:feature', color: 'D4C5F9', description: 'New capability' },
+              { name: 'type:bug', color: 'D73A4A', description: 'Something broken' },
+              { name: 'type:spike', color: 'F9D0C4', description: 'Research/investigation — produces a plan, not code' },
+              { name: 'type:docs', color: 'C5DEF5', description: 'Documentation work' },
+              { name: 'type:chore', color: 'BFD4F2', description: 'Maintenance, refactoring, cleanup' },
+              { name: 'type:epic', color: 'B60205', description: 'Parent issue that decomposes into sub-issues' }
+            ];
+
+            const PRIORITY_LABELS = [
+              { name: 'priority:p0', color: 'B60205', description: 'Blocking release' },
+              { name: 'priority:p1', color: 'D93F0B', description: 'This sprint' },
+              { name: 'priority:p2', color: 'FBCA04', description: 'Next sprint' }
+            ];
+
             // Ensure the base "squad" triage label exists
             const labels = [
               { name: 'squad', color: SQUAD_COLOR, description: 'Squad triage inbox — Lead will assign to a member' }
@@ -84,6 +114,12 @@ jobs:
                 description: 'Assigned to @copilot (Coding Agent) for autonomous work'
               });
             }
+
+            // Add go:, release:, type:, and priority: labels
+            labels.push(...GO_LABELS);
+            labels.push(...RELEASE_LABELS);
+            labels.push(...TYPE_LABELS);
+            labels.push(...PRIORITY_LABELS);
 
             // Sync labels (create or update)
             for (const label of labels) {

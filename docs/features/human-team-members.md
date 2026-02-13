@@ -69,3 +69,35 @@ Their entry moves to `.ai-team/agents/_alumni/`. They can be re-added later.
 - Use human members for approval gates — design review, compliance, final sign-off.
 - Human members work well alongside [ceremonies](ceremonies.md) — add a human as a required participant in a design review ceremony.
 - You're the relay. Squad can't message humans directly — it tells you, and you coordinate.
+
+## Sample Prompts
+
+```
+add Maria as security reviewer
+```
+
+Adds a human team member with a specific review responsibility.
+
+```
+route this auth work to Jordan for approval
+```
+
+Assigns a task to a human team member for external handling.
+
+```
+Jordan approved the design — we can proceed
+```
+
+Unblocks work that was waiting on human input.
+
+```
+who's on the roster?
+```
+
+Shows all team members including both AI agents and human members.
+
+```
+remove Sarah from the team
+```
+
+Moves a human team member to the alumni list.

@@ -83,3 +83,35 @@ You don't need to specify a mode. When uncertain, the coordinator biases toward 
 - "Team, ..." prompts typically trigger Full mode.
 - Direct-named agent prompts ("Kane, ...") typically trigger Standard mode.
 - Response times depend on the Copilot platform. The numbers above are approximate.
+
+## Sample Prompts
+
+```
+force lightweight mode for this quick fix
+```
+
+Explicitly requests a reduced-context spawn for a simple task.
+
+```
+what port does the API run on?
+```
+
+Quick factual question that triggers Direct mode with no agent spawn.
+
+```
+Kane, do a thorough analysis of the auth system
+```
+
+Requests Standard mode with full context load for complex work.
+
+```
+what response mode was used for that last task?
+```
+
+Checks which mode the coordinator selected for the previous request.
+
+```
+Team, rebuild the authentication system end-to-end
+```
+
+Multi-domain prompt that triggers Full mode with parallel agent spawns.
