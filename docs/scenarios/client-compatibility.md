@@ -263,7 +263,7 @@ This document is based on active research spikes (#32, #33, #34) conducted in Fe
 
 ## See Also
 
-- [Squad in VS Code](../features/vscode.md) _(documentation forthcoming)_
+- [Squad in VS Code](../features/vscode.md) — Getting started with VS Code, what's different from CLI
 - [Model Selection](../features/model-selection.md) — Cost-first routing across agents
 - [Parallel Execution](../features/parallel-execution.md) — Background and sync patterns
 - [Worktrees](../features/worktrees.md) — Multi-branch isolation

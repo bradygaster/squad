@@ -157,19 +157,24 @@ graph TB
 
 ### Context Window Budget
 
-Real numbers. No hand-waving.
+Real numbers. No hand-waving. Updated as the project grows.
 
 Both Claude Sonnet 4 and Claude Opus 4 have a **200K token** standard context window. Each agent runs in its own window, so the coordinator is the only shared overhead.
 
 | What | Tokens | % of 200K context | When |
 |------|--------|--------------------|------|
-| **Coordinator** (squad.agent.md) | ~13,200 | 6.6% | Every message |
-| **Agent at Week 1** (charter + seed history + decisions) | ~1,250 | 0.6% | When spawned |
-| **Agent at Week 4** (+ 15 learnings, 8 decisions) | ~3,300 | 1.7% | When spawned |
-| **Agent at Week 12** (+ 50 learnings, 47 decisions) | ~9,000 | 4.5% | When spawned |
-| **Remaining for actual work** | **~187,000** | **93%+** | Always |
+| **Coordinator** (squad.agent.md) | ~28,800 | 14.4% | Every message |
+| **Agent spawn overhead** (charter ~750 + inlined in prompt) | ~750 | 0.4% | When spawned |
+| **decisions.md** (shared brain — read by every agent) | ~80,200 | 40.1% | When spawned |
+| **Agent history** (varies: 1K fresh → 12K veteran) | ~1,000–12,000 | 0.5–6.0% | When spawned |
+| **Total agent load** (charter + decisions + history) | ~82,000–93,000 | 41–46% | When spawned |
+| **Remaining for actual work** | **~107,000–118,000** | **54–59%** | Always |
 
-The coordinator uses 6.6% of context. A 12-week veteran agent uses 4.5% — but in **its own window**, not yours. That leaves **93%+ of the coordinator's context for reasoning about your code**, and each spawned agent gets nearly its entire 200K window for the actual task. Fan out to 5 agents and you're working with **~1M tokens** of total reasoning capacity — without paying for a larger model.
+**What changed since v0.3.0:** The coordinator prompt grew from ~13K to ~29K tokens as we added client compatibility, VS Code support, Ralph, ceremonies, and the full casting system. More significantly, `decisions.md` grew to ~80K tokens after 100+ sessions of accumulated team decisions. This is the honest cost of persistent memory at scale.
+
+**What this means:** The coordinator uses 14.4% of context — up from 6.6%. But the real pressure is `decisions.md`. Each spawned agent reads the full shared brain, which now consumes ~40% of its context window. History summarization (Scribe compresses entries older than 2 weeks) helps with per-agent history, but decisions.md needs the same treatment. This is a known scaling concern for v0.5.0.
+
+**The architecture still wins.** Each agent runs in **its own** 200K window. The coordinator's window is separate from every agent's window. Fan out to 5 agents and you're working with **~1M tokens** of total reasoning capacity. The per-agent overhead is real but bounded — and most of it is shared context (decisions) that agents genuinely need to make consistent choices.
 
 ### Memory Architecture
 
@@ -237,6 +242,18 @@ Team members with review authority (Tester, Lead) can **reject** work. On reject
 - A **new specialist** is spawned for the task
 
 The Coordinator enforces this. No self-review of rejected work.
+
+---
+
+## What's New in v0.4.0
+
+- [**Client Compatibility**](docs/scenarios/client-compatibility.md) — Full platform support matrix. Squad now works on CLI and VS Code with graceful degradation.
+- [**VS Code Support**](docs/features/vscode.md) — First-class VS Code guide. `runSubagent` parallel spawning, platform detection, feature degradation table.
+- [**Project Boards**](docs/features/project-boards.md) — GitHub Projects V2 integration. Board + Kanban views synced from labels. `gh auth refresh -s project` required.
+- [**Label Taxonomy**](docs/features/labels.md) — 7-namespace label system (status:, type:, priority:, squad:, go:, release:, era:). Labels are the state machine; boards are projections.
+- **Universe Expansion** — 20 → 33 casting universes (MCU, DC, Stranger Things, The Expanse, Arcane, Ted Lasso, Dune, Cowboy Bebop, Fullmetal Alchemist, Seinfeld, The Office, Adventure Time, Futurama, + 2 more)
+- **Docs Growth** — 49 docs across features, scenarios, and guides
+- **Core Growth** — squad.agent.md: 1,100 → 1,529 lines; index.js: 654 lines; 188 total commits
 
 ---
 
@@ -347,6 +364,6 @@ This overwrites `squad.agent.md`, `.ai-team-templates/`, and squad workflow file
 
 ## Status
 
-🟣 **Experimental** — v0.3.0. Contributors welcome.
+🟣 **Experimental** — v0.4.0-dev. Contributors welcome.
 
 Conceived by [@bradygaster](https://github.com/bradygaster).
