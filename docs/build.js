@@ -13,6 +13,11 @@ const OUT_DIR = process.argv.includes('--out')
   ? path.resolve(process.argv[process.argv.indexOf('--out') + 1])
   : path.join(__dirname, '..', '_site');
 
+// Base path prefix for deployment under a subpath (e.g., /squad for GitHub Pages)
+const BASE_PATH = process.argv.includes('--base')
+  ? process.argv[process.argv.indexOf('--base') + 1].replace(/\/+$/, '')
+  : '';
+
 const md = markdownIt({ html: true, linkify: true, typographer: true })
   .use(markdownItAnchor, { permalink: false });
 
@@ -76,13 +81,13 @@ function buildNav(files, currentRel) {
   }
   var sectionLabels = { features: 'Features', scenarios: 'Scenarios', blog: 'Blog' };
   var nav = '<nav class="sidebar" id="sidebar">\n';
-  nav += '  <div class="sidebar-header"><a href="/index.html" class="logo">Squad</a>';
+  nav += '  <div class="sidebar-header"><a href="' + BASE_PATH + '/index.html" class="logo">Squad</a>';
   nav += '<button class="sidebar-close" onclick="toggleSidebar()">X</button></div>\n';
   nav += '  <div class="sidebar-content">\n';
   topLevel.sort(fileSorter);
   for (var j = 0; j < topLevel.length; j++) {
     var tf = topLevel[j];
-    var href = '/' + toHtmlPath(tf.rel);
+    var href = BASE_PATH + '/' + toHtmlPath(tf.rel);
     var title = extractTitle(tf.abs) || nameFromFile(tf.rel);
     var active = tf.rel === currentRel ? ' class="active"' : '';
     nav += '    <a href="' + href + '"' + active + '>' + escapeHtml(title) + '</a>\n';
@@ -100,7 +105,7 @@ function buildNav(files, currentRel) {
     sections[sec].sort(fileSorter);
     for (var m = 0; m < sections[sec].length; m++) {
       var sf = sections[sec][m];
-      var shref = '/' + toHtmlPath(sf.rel);
+      var shref = BASE_PATH + '/' + toHtmlPath(sf.rel);
       var stitle = extractTitle(sf.abs) || nameFromFile(sf.rel);
       var sactive = sf.rel === currentRel ? ' class="active"' : '';
       nav += '      <a href="' + shref + '"' + sactive + '>' + escapeHtml(stitle) + '</a>\n';
@@ -135,7 +140,7 @@ function build() {
     var raw = fs.readFileSync(f.abs, 'utf8');
     var title = extractTitle(f.abs) || nameFromFile(f.rel);
     var preview = raw.replace(/^---[\s\S]*?---\n?/, '').replace(/[#*`>\[\]|_~\-]/g, '').replace(/\n+/g, ' ').trim().substring(0, 200);
-    return { title: title, href: '/' + toHtmlPath(f.rel), preview: preview };
+    return { title: title, href: BASE_PATH + '/' + toHtmlPath(f.rel), preview: preview };
   });
   for (var i = 0; i < files.length; i++) {
     var f = files[i];

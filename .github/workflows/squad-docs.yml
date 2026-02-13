@@ -1,6 +1,7 @@
 name: Squad Docs — Build & Deploy
 
 on:
+  workflow_dispatch:
   push:
     branches: [preview]
     paths:
@@ -30,7 +31,7 @@ jobs:
         run: npm install --no-save markdown-it markdown-it-anchor
 
       - name: Build docs site
-        run: node docs/build.js --out _site
+        run: node docs/build.js --out _site --base /squad
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
