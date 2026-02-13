@@ -4645,3 +4645,13 @@ GitHub Projects V2 board operations are fully implementable using gh project * C
 **What:** Added a "Client Compatibility" coordinator instruction section to `.github/agents/squad.agent.md` as the v0.4.0 deliverable for issue #10. The section includes platform detection logic (CLI/VS Code/fallback), VS Code spawn adaptations (9 behavioral changes), a feature degradation table (6 rows), and a SQL tool caveat. Both Background and Sync spawn templates were annotated with VS Code equivalents via blockquote callouts. Source data from proposals 032a, 032b, 033a, 034a and the compatibility matrix at `docs/scenarios/client-compatibility.md`.
 **Why:** The coordinator needs actionable instructions for cross-platform spawning. Without this section, `squad.agent.md` only knows CLI patterns — a VS Code coordinator would attempt `task` tool calls, fail, and have no fallback. The section is placed between Per-Agent Model Selection and Eager Execution Philosophy because platform detection logically gates how spawning, model selection, and parallelism work. Prompt-level conditional instructions (not a code abstraction layer) is the team-agreed approach from proposal 032b §8.
 
+### 2026-02-13: User directive
+**By:** Brady (via Copilot)
+**What:** In VS Code, individual squad agents should show up with different emoticons in the agent picker. When generating per-agent .agent.md files (Phase 2 of client parity), include role-specific emoji in the agent name field (e.g., name: "🔧 Fenster", "🧪 Hockney").
+**Why:** User request — captured for team memory. This makes the VS Code experience feel more alive and distinguishable when multiple agents are available.
+
+### 2026-02-13: User directive — Emoji identity in CLI spawn descriptions
+**By:** Brady (via Copilot)
+**What:** Agent role emoji should be prepended to the `description` field in CLI `task` tool spawns. E.g., `"🔧 Fenster: refactoring auth module"` instead of `"Fenster: refactoring auth module"`. The roster already maps emoji to roles (🏗️ Lead, 🔧 Core Dev, ⚛️ Frontend, 🧪 Tester, 📝 DevRel, ✏️ Prompt Engineer, 📋 Scribe, 🔄 Ralph). Carry them into spawn descriptions.
+**Why:** User request — captured for team memory. Extends the VS Code emoji directive to CLI. Both platforms should show agent identity with role emoji.
+
