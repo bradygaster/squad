@@ -417,6 +417,66 @@ When in VS Code mode, the coordinator changes behavior in these ways:
 
 The `sql` tool is **CLI-only**. It does not exist on VS Code, JetBrains, or GitHub.com. Any coordinator logic or agent workflow that depends on SQL (todo tracking, batch processing, session state) will silently fail on non-CLI surfaces. Cross-platform code paths must not depend on SQL. Use filesystem-based state (`.ai-team/` files) for anything that must work everywhere.
 
+### MCP Integration
+
+MCP (Model Context Protocol) servers extend Squad with tools for external services — Trello, Aspire dashboards, Azure, Notion, and more. The user configures MCP servers in their environment; Squad discovers and uses them.
+
+> **Full patterns:** Read `.ai-team/skills/mcp-tool-discovery/SKILL.md` for discovery patterns, domain-specific usage, graceful degradation, and config examples.
+
+#### Detection
+
+At task start, scan your available tools list for known MCP prefixes:
+- `github-mcp-server-*` → GitHub API (issues, PRs, code search, actions)
+- `trello_*` → Trello boards, cards, lists
+- `aspire_*` → Aspire dashboard (metrics, logs, health)
+- `azure_*` → Azure resource management
+- `notion_*` → Notion pages and databases
+
+If tools with these prefixes exist, they are available. If not, fall back to CLI equivalents or inform the user.
+
+#### Passing MCP Context to Spawned Agents
+
+When spawning agents, include an `MCP TOOLS AVAILABLE` block in the prompt (see spawn template below). This tells agents what's available without requiring them to discover tools themselves. Only include this block when MCP tools are actually detected — omit it entirely when none are present.
+
+#### Routing MCP-Dependent Tasks
+
+- **Coordinator handles directly** when the MCP operation is simple (a single read, a status check) and doesn't need domain expertise.
+- **Spawn with context** when the task needs agent expertise AND MCP tools. Include the MCP block in the spawn prompt so the agent knows what's available.
+- **Explore agents never get MCP** — they have read-only local file access. Route MCP work to `general-purpose` or `task` agents, or handle it in the coordinator.
+
+#### Graceful Degradation
+
+Never crash or halt because an MCP tool is missing. MCP tools are enhancements, not dependencies.
+
+1. **CLI fallback** — GitHub MCP missing → use `gh` CLI. Azure MCP missing → use `az` CLI.
+2. **Inform the user** — "Trello integration requires the Trello MCP server. Add it to `.copilot/mcp-config.json`."
+3. **Continue without** — Log what would have been done, proceed with available tools.
+
+#### Config File Locations
+
+Users configure MCP servers at these locations (checked in priority order):
+1. **Repository-level:** `.copilot/mcp-config.json` (team-shared, committed to repo)
+2. **Workspace-level:** `.vscode/mcp.json` (VS Code workspaces)
+3. **User-level:** `~/.copilot/mcp-config.json` (personal)
+4. **CLI override:** `--additional-mcp-config` flag (session-specific)
+
+#### Sample Config — Trello
+
+```json
+{
+  "mcpServers": {
+    "trello": {
+      "command": "npx",
+      "args": ["-y", "@trello/mcp-server"],
+      "env": {
+        "TRELLO_API_KEY": "${TRELLO_API_KEY}",
+        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
+      }
+    }
+  }
+}
+```
+
 ### Eager Execution Philosophy
 
 The Coordinator's default mindset is **launch aggressively, collect results later.**
@@ -578,6 +638,13 @@ prompt: |
   Read .ai-team/agents/{name}/history.md — this is what you know about the project.
   Read .ai-team/decisions.md — these are team decisions you must respect.
   If .ai-team/skills/ exists and contains SKILL.md files, read relevant ones before working.
+  
+  {if MCP tools detected in coordinator session, include this block — omit entirely if none:}
+  MCP TOOLS AVAILABLE IN THIS SESSION:
+  - {service}: ✅ ({tool names}) | ❌ (not configured)
+  Use available MCP tools when they serve your task. Fall back to CLI equivalents when not available.
+  Refer to .ai-team/skills/mcp-tool-discovery/SKILL.md for usage patterns.
+  {end MCP block}
   
   **Requested by:** {current user name}
   
@@ -923,11 +990,12 @@ prompt: |
 
 If the user says "I need a designer" or "add someone for DevOps":
 1. **Allocate a name** from the current assignment's universe (read from `.ai-team/casting/history.json`). If the universe is exhausted, apply overflow handling (see Casting & Persistent Naming → Overflow Handling).
-2. Generate a new charter.md + history.md (seeded with project context from team.md), using the cast name.
-3. **Update `.ai-team/casting/registry.json`** with the new agent entry.
-4. Add to team.md roster.
-5. Add routing entries to routing.md.
-6. Say: *"✅ {CastName} joined the team as {Role}."*
+2. **Check plugin marketplaces.** If `.ai-team/plugins/marketplaces.json` exists and contains registered sources, browse each marketplace for plugins matching the new member's role or domain (e.g., "azure-cloud-development" for an Azure DevOps role). Use the CLI: `squad plugin marketplace browse {marketplace-name}` or read the marketplace repo's directory listing directly. If matches are found, present them: *"Found '{plugin-name}' in {marketplace} — want me to install it as a skill for {CastName}?"* If the user accepts, copy the plugin content into `.ai-team/skills/{plugin-name}/SKILL.md` or merge relevant instructions into the agent's charter. If no marketplaces are configured, skip silently. If a marketplace is unreachable, warn (*"⚠ Couldn't reach {marketplace} — continuing without it"*) and continue.
+3. Generate a new charter.md + history.md (seeded with project context from team.md), using the cast name. If a plugin was installed in step 2, incorporate its guidance into the charter.
+4. **Update `.ai-team/casting/registry.json`** with the new agent entry.
+5. Add to team.md roster.
+6. Add routing entries to routing.md.
+7. Say: *"✅ {CastName} joined the team as {Role}."*
 
 ### Removing Team Members
 
@@ -937,6 +1005,53 @@ If the user wants to remove someone:
 3. Update routing.md
 4. **Update `.ai-team/casting/registry.json`**: set the agent's `status` to `"retired"`. Do NOT delete the entry — the name remains reserved.
 5. Their knowledge is preserved, just inactive.
+
+### Plugin Marketplace
+
+Plugins are curated agent templates, skills, instructions, and prompts shared by the community via GitHub repositories (e.g., `github/awesome-copilot`, `anthropics/skills`). They provide ready-made expertise for common domains — cloud platforms, frameworks, testing strategies, etc.
+
+#### Marketplace State
+
+Registered marketplace sources are stored in `.ai-team/plugins/marketplaces.json`:
+
+```json
+{
+  "marketplaces": [
+    {
+      "name": "awesome-copilot",
+      "source": "github/awesome-copilot",
+      "added_at": "2026-02-14T00:00:00Z"
+    }
+  ]
+}
+```
+
+Users manage marketplaces via the CLI:
+- `squad plugin marketplace add {owner/repo}` — Register a GitHub repo as a marketplace source
+- `squad plugin marketplace remove {name}` — Remove a registered marketplace
+- `squad plugin marketplace list` — List registered marketplaces
+- `squad plugin marketplace browse {name}` — List available plugins in a marketplace
+
+#### When to Browse
+
+During the **Adding Team Members** flow, AFTER allocating a name but BEFORE generating the charter:
+1. Read `.ai-team/plugins/marketplaces.json`. If the file doesn't exist or `marketplaces` is empty, skip silently.
+2. For each registered marketplace, search for plugins whose name or description matches the new member's role or domain keywords.
+3. Present matching plugins to the user: *"Found '{plugin-name}' in {marketplace} marketplace — want me to install it as a skill for {CastName}?"*
+4. If the user accepts, install the plugin (see below). If they decline or skip, proceed without it.
+
+#### How to Install a Plugin
+
+1. Read the plugin content from the marketplace repository (the plugin's `SKILL.md` or equivalent).
+2. Copy it into the agent's skills directory: `.ai-team/skills/{plugin-name}/SKILL.md`
+3. If the plugin includes charter-level instructions (role boundaries, tool preferences), merge those into the agent's `charter.md`.
+4. Log the installation in the agent's `history.md`: *"📦 Plugin '{plugin-name}' installed from {marketplace}."*
+
+#### Graceful Degradation
+
+- **No marketplaces configured:** Skip the marketplace check entirely. No warning, no prompt.
+- **Marketplace unreachable:** Warn the user (*"⚠ Couldn't reach {marketplace} — continuing without it"*) and proceed with team member creation normally.
+- **No matching plugins:** Inform the user (*"No matching plugins found in configured marketplaces"*) and proceed.
 
 ---
 
@@ -958,6 +1073,7 @@ If the user wants to remove someone:
 | `.ai-team/orchestration-log.md` | **Derived / append-only.** Agent routing evidence. Never edited after write. | Squad (Coordinator) — append only | All agents (read-only) |
 | `.ai-team/log/` | **Derived / append-only.** Session logs. Diagnostic archive. Never edited after write. | Scribe | All agents (read-only) |
 | `.ai-team-templates/` | **Reference.** Format guides for runtime files. Not authoritative for enforcement. | Squad (Coordinator) at init | Squad (Coordinator) |
+| `.ai-team/plugins/marketplaces.json` | **Authoritative plugin config.** Registered marketplace sources. | Squad CLI (`squad plugin marketplace`) | Squad (Coordinator) |
 
 **Rules:**
 1. If this file (`squad.agent.md`) and any other file conflict, this file wins.

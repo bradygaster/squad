@@ -39,6 +39,8 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`             Never touches: .ai-team/ (your team state)`);
   console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
   console.log(`             Usage: copilot [--off] [--auto-assign]`);
+  console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
+  console.log(`             Usage: plugin marketplace add|remove|list|browse`);
   console.log(`  ${BOLD}export${RESET}     Export squad to a portable JSON snapshot`);
   console.log(`             Default: squad-export.json (use --out <path> to override)`);
   console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
@@ -182,6 +184,125 @@ if (cmd === 'copilot') {
   console.log(`  2. Set secret:    ${DIM}gh secret set COPILOT_ASSIGN_TOKEN${RESET}`);
   console.log();
   process.exit(0);
+}
+
+// --- Plugin marketplace subcommand ---
+if (cmd === 'plugin') {
+  const subCmd = process.argv[3];
+  const action = process.argv[4];
+
+  if (subCmd !== 'marketplace' || !action) {
+    fatal('Usage: squad plugin marketplace add|remove|list|browse');
+  }
+
+  const pluginsDir = path.join(dest, '.ai-team', 'plugins');
+  const marketplacesFile = path.join(pluginsDir, 'marketplaces.json');
+
+  function readMarketplaces() {
+    if (!fs.existsSync(marketplacesFile)) return { marketplaces: [] };
+    try {
+      return JSON.parse(fs.readFileSync(marketplacesFile, 'utf8'));
+    } catch {
+      return { marketplaces: [] };
+    }
+  }
+
+  function writeMarketplaces(data) {
+    fs.mkdirSync(pluginsDir, { recursive: true });
+    fs.writeFileSync(marketplacesFile, JSON.stringify(data, null, 2) + '\n');
+  }
+
+  if (action === 'add') {
+    const source = process.argv[5];
+    if (!source || !source.includes('/')) {
+      fatal('Usage: squad plugin marketplace add <owner/repo>');
+    }
+    const data = readMarketplaces();
+    const name = source.split('/').pop();
+    if (data.marketplaces.some(m => m.source === source)) {
+      console.log(`${DIM}${source} is already registered${RESET}`);
+      process.exit(0);
+    }
+    data.marketplaces.push({
+      name,
+      source,
+      added_at: new Date().toISOString()
+    });
+    writeMarketplaces(data);
+    console.log(`${GREEN}✓${RESET} Registered marketplace: ${BOLD}${name}${RESET} (${source})`);
+    process.exit(0);
+  }
+
+  if (action === 'remove') {
+    const name = process.argv[5];
+    if (!name) {
+      fatal('Usage: squad plugin marketplace remove <name>');
+    }
+    const data = readMarketplaces();
+    const before = data.marketplaces.length;
+    data.marketplaces = data.marketplaces.filter(m => m.name !== name);
+    if (data.marketplaces.length === before) {
+      fatal(`Marketplace "${name}" not found`);
+    }
+    writeMarketplaces(data);
+    console.log(`${GREEN}✓${RESET} Removed marketplace: ${BOLD}${name}${RESET}`);
+    process.exit(0);
+  }
+
+  if (action === 'list') {
+    const data = readMarketplaces();
+    if (data.marketplaces.length === 0) {
+      console.log(`${DIM}No marketplaces registered${RESET}`);
+      console.log(`\nAdd one with: ${BOLD}squad plugin marketplace add <owner/repo>${RESET}`);
+      process.exit(0);
+    }
+    console.log(`\n${BOLD}Registered marketplaces:${RESET}\n`);
+    for (const m of data.marketplaces) {
+      const date = m.added_at ? ` ${DIM}(added ${m.added_at.split('T')[0]})${RESET}` : '';
+      console.log(`  ${BOLD}${m.name}${RESET}  →  ${m.source}${date}`);
+    }
+    console.log();
+    process.exit(0);
+  }
+
+  if (action === 'browse') {
+    const name = process.argv[5];
+    if (!name) {
+      fatal('Usage: squad plugin marketplace browse <name>');
+    }
+    const data = readMarketplaces();
+    const marketplace = data.marketplaces.find(m => m.name === name);
+    if (!marketplace) {
+      fatal(`Marketplace "${name}" not found. Run "squad plugin marketplace list" to see registered marketplaces.`);
+    }
+
+    // Browse the marketplace repo for plugins using gh CLI
+    const { execSync } = require('child_process');
+    let entries;
+    try {
+      const output = execSync(
+        `gh api repos/${marketplace.source}/contents --jq "[.[] | select(.type == \\"dir\\") | .name]"`,
+        { encoding: 'utf8', timeout: 15000 }
+      ).trim();
+      entries = JSON.parse(output);
+    } catch (err) {
+      fatal(`Could not browse ${marketplace.source} — is the GitHub CLI installed and authenticated?\n  ${err.message}`);
+    }
+
+    if (!entries || entries.length === 0) {
+      console.log(`${DIM}No plugins found in ${marketplace.source}${RESET}`);
+      process.exit(0);
+    }
+
+    console.log(`\n${BOLD}Plugins in ${marketplace.name}${RESET} (${marketplace.source}):\n`);
+    for (const entry of entries) {
+      console.log(`  📦 ${entry}`);
+    }
+    console.log(`\n${DIM}${entries.length} plugin(s) available${RESET}\n`);
+    process.exit(0);
+  }
+
+  fatal(`Unknown action: ${action}. Usage: squad plugin marketplace add|remove|list|browse`);
 }
 
 // --- Export subcommand ---
@@ -509,6 +630,14 @@ const migrations = [
       const skillsDir = path.join(dest, '.ai-team', 'skills');
       fs.mkdirSync(skillsDir, { recursive: true });
     }
+  },
+  {
+    version: '0.4.0',
+    description: 'Create .ai-team/plugins/ directory',
+    run(dest) {
+      const pluginsDir = path.join(dest, '.ai-team', 'plugins');
+      fs.mkdirSync(pluginsDir, { recursive: true });
+    }
   }
 ];
 
@@ -601,16 +730,18 @@ if (isUpgrade) {
   console.log(`${GREEN}✓${RESET} .github/agents/squad.agent.md (v${pkg.version})`);
 }
 
-// Pre-create drop-box, orchestration-log, casting, and skills directories (additive-only)
+// Pre-create drop-box, orchestration-log, casting, skills, and plugins directories (additive-only)
 const inboxDir = path.join(dest, '.ai-team', 'decisions', 'inbox');
 const orchLogDir = path.join(dest, '.ai-team', 'orchestration-log');
 const castingDir = path.join(dest, '.ai-team', 'casting');
 const skillsDir = path.join(dest, '.ai-team', 'skills');
+const pluginsDir = path.join(dest, '.ai-team', 'plugins');
 try {
   fs.mkdirSync(inboxDir, { recursive: true });
   fs.mkdirSync(orchLogDir, { recursive: true });
   fs.mkdirSync(castingDir, { recursive: true });
   fs.mkdirSync(skillsDir, { recursive: true });
+  fs.mkdirSync(pluginsDir, { recursive: true });
 } catch (err) {
   fatal(`Failed to create .ai-team/ directories: ${err.message}`);
 }
@@ -621,6 +752,36 @@ if (!isUpgrade) {
   if (fs.existsSync(skillsSrc) && fs.readdirSync(skillsDir).length === 0) {
     copyRecursive(skillsSrc, skillsDir);
     console.log(`${GREEN}✓${RESET} .ai-team/skills/ (starter skills)`);
+  }
+}
+
+
+// Create sample MCP config (skip if .copilot/mcp-config.json already exists)
+if (!isUpgrade) {
+  const mcpDir = path.join(dest, '.copilot');
+  const mcpConfigPath = path.join(mcpDir, 'mcp-config.json');
+  if (!fs.existsSync(mcpConfigPath)) {
+    try {
+      fs.mkdirSync(mcpDir, { recursive: true });
+      const mcpSample = {
+        mcpServers: {
+          "EXAMPLE-trello": {
+            command: "npx",
+            args: ["-y", "@trello/mcp-server"],
+            env: {
+              TRELLO_API_KEY: "${TRELLO_API_KEY}",
+              TRELLO_TOKEN: "${TRELLO_TOKEN}"
+            }
+          }
+        }
+      };
+      fs.writeFileSync(mcpConfigPath, JSON.stringify(mcpSample, null, 2) + '\n');
+      console.log(`${GREEN}✓${RESET} .copilot/mcp-config.json (MCP sample — rename EXAMPLE-trello to enable)`);
+    } catch (err) {
+      // Non-fatal — MCP config is optional
+    }
+  } else {
+    console.log(`${DIM}mcp-config.json already exists — skipping${RESET}`);
   }
 }
 
