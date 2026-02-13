@@ -209,6 +209,7 @@ _Summarized 2026-02-10+ learnings (full entries available in session logs):_
 📌 Team update (2026-02-12): Release process hardened with branch protection rules and CI/CD-only writes to preview/main — decided by Kobayashi and Brady
 
 📌 Team update (2026-02-12): Issue #6 (Project Boards) approved for v0.4.0. GO (Conditional) — pending Brady's project token scope grant. 3-phase implementation plan (17-26 squad-hours), agent assignments finalized. — decided by Keaton
+📌 Team update (2026-02-13): go:/release: label automation shipped — Four-workflow system enforces label namespace integrity (go:* triage verdicts, release:* version targets). Mutual exclusivity at runtime, special cases (go:yes auto-adds release:backlog), heartbeat detects label hygiene gaps. Labels-as-state-machine is now foundational to GitHub-native workflow. — decided by Fenster
 
 - **2026-02-11: Proposal 034 — Squad Pings You (Notification Architecture)**
   - **Brady's vision:** "It needs to feel like I'm not in the team room, they are, and they need me so they pinged me." He wants notifications on his phone (Teams or iMessage) when squad agents hit a wall requiring human input.
