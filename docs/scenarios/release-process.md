@@ -60,9 +60,8 @@ Before pushing to `preview`, remove forbidden paths that the guard workflow will
 # Remove .ai-team/ (keep local copy via .gitignore)
 git rm --cached -r .ai-team/
 
-# Remove team-docs/ except blog/
+# Remove team-docs/
 git rm --cached -r team-docs/
-git checkout HEAD -- team-docs/blog/
 ```
 
 If nothing was removed, that's fine:
@@ -288,7 +287,6 @@ git checkout release/preview
 git reset --hard origin/dev
 git rm --cached -r .ai-team/ 2>/dev/null
 git rm --cached -r team-docs/ 2>/dev/null
-git checkout HEAD -- team-docs/blog/
 git commit -m "chore: remove forbidden paths for preview" 2>/dev/null
 git push -f origin release/preview
 # Wait for guard workflow to pass
@@ -401,7 +399,7 @@ The repository enforces protection rules on `main` and `preview` to prevent acci
 ```javascript
 // Forbidden on main and preview:
 ✗ .ai-team/**          (zero exceptions — team state never ships)
-✗ team-docs/**         (except team-docs/blog/**)
+✗ team-docs/**         (zero exceptions — internal team docs never ship)
 
 // Allowed everywhere:
 ✓ index.js             (distribution)
@@ -422,7 +420,7 @@ The repository enforces protection rules on `main` and `preview` to prevent acci
 
 The following files must NOT be merged into `main`.
 `.ai-team/` is runtime team state — it belongs on dev branches only.
-`team-docs/` internal content should stay on dev (only `team-docs/blog/` is allowed on main).
+`team-docs/` is internal team content — it belongs on dev branches only.
 
 ### Forbidden files found:
 - `.ai-team/agents/neo/history.md`
@@ -432,7 +430,6 @@ The following files must NOT be merged into `main`.
 ### How to fix:
 git rm --cached -r .ai-team/
 git rm --cached -r team-docs/
-git checkout HEAD -- team-docs/blog/
 git commit -m "chore: remove forbidden paths from PR"
 git push
 ```
@@ -544,32 +541,32 @@ Expected: ✅ Guard passes.
 gh pr close --delete-branch
 ```
 
-### Test 3: Verify Guard Allows team-docs/blog/
+### Test 3: Verify Guard Blocks team-docs/
 
 1. **Create a test branch:**
 
 ```bash
-git checkout -b test/guard-allows-blog
+git checkout -b test/guard-blocks-team-docs
 ```
 
-2. **Add a blog file:**
+2. **Add a team-docs file:**
 
 ```bash
-mkdir -p team-docs/blog
-echo "# My Blog Post" > team-docs/blog/my-post.md
-git add team-docs/blog/my-post.md
-git commit -m "test: add blog post (should be allowed)"
-git push -u origin test/guard-allows-blog
+mkdir -p team-docs
+echo "# Internal Notes" > team-docs/notes.md
+git add team-docs/notes.md
+git commit -m "test: add team-docs file (should be blocked)"
+git push -u origin test/guard-blocks-team-docs
 ```
 
 3. **Create PR to main:**
 
 ```bash
-gh pr create --base main --title "test: guard should allow team-docs/blog/" \
-  --body "This PR tests that blog files are allowed"
+gh pr create --base main --title "test: guard should block team-docs/" \
+  --body "This PR tests that all team-docs files are blocked"
 ```
 
-Expected: ✅ Guard passes. `team-docs/blog/` is allowed on main.
+Expected: ❌ Guard fails. ALL `team-docs/` content is blocked on main and preview.
 
 4. **Delete the branch:**
 
@@ -593,9 +590,8 @@ gh pr close --delete-branch
 # Remove .ai-team/ (keeps local copy)
 git rm --cached -r .ai-team/
 
-# Remove internal team-docs/ (keeps blog)
+# Remove team-docs/
 git rm --cached -r team-docs/
-git checkout HEAD -- team-docs/blog/
 
 # Commit and push
 git commit -m "chore: remove forbidden paths"
@@ -780,10 +776,9 @@ Kobayashi, test the guard workflow:
 Kobayashi, fix this blocked PR:
 1. Fetch the current PR state
 2. Remove all .ai-team/ and team-docs/ files
-3. Keep team-docs/blog/ if it exists
-4. Commit the removal
-5. Push to update the PR
-6. Wait for guard to pass
+3. Commit the removal
+4. Push to update the PR
+5. Wait for guard to pass
 ```
 
 ---

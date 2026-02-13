@@ -102,10 +102,9 @@ These files are **runtime team state** and live on `dev` and feature branches. T
 | Path | Reason | Committed to `dev`? | Merged to `main`/`preview`? |
 |------|--------|---------------------|---------------------------|
 | **`.ai-team/**`** | Agent charters, routing, decisions, history, casting registry | ✅ YES | ❌ NEVER — guard blocks |
-| **`team-docs/` (except `team-docs/blog/`** | Internal team documentation, sprint plans, notes | ✅ YES | ❌ NEVER — guard blocks |
-| **`team-docs/blog/**`** | Public blog content | ✅ YES | ✅ YES |
+| **`team-docs/**`** | Internal team documentation, sprint plans, notes | ✅ YES | ❌ NEVER — guard blocks |
 
-**Why?** `.ai-team/` contains persistent agent knowledge, routing rules, and decision history. It's internal infrastructure that belongs on development branches — not in production. The guard workflow is the enforcement mechanism, not `.gitignore`. `.ai-team/` is NOT in `.gitignore` — it's a normal part of the `dev` branch. The `.npmignore` file ensures it's excluded from the published npm package.
+**Why?** `.ai-team/` contains persistent agent knowledge, routing rules, and decision history. `team-docs/` contains internal proposals, sprint plans, and working notes. Both are internal infrastructure that belongs on development branches — not in production. The guard workflow is the enforcement mechanism, not `.gitignore`. `.ai-team/` is NOT in `.gitignore` — it's a normal part of the `dev` branch. The `.npmignore` file ensures both are excluded from the published npm package. Blog posts live in `docs/blog/` and flow freely to all branches.
 
 ### ✅ Files That Flow Freely
 
@@ -114,10 +113,9 @@ These files move between `dev` → `preview` → `main` with no restrictions:
 - `index.js` — CLI entry point
 - `squad.agent.md` — Squad coordinator
 - `templates/` — Agent templates
-- `docs/` — Public documentation
+- `docs/` — Public documentation (including `docs/blog/`)
 - `test/` — Test suite
 - `.github/workflows/` — GitHub Actions workflows
-- `team-docs/blog/` — Blog posts
 - `package.json` — Dependencies
 - `README.md`, `LICENSE` — Project metadata
 - `CHANGELOG.md` — Release history
@@ -174,9 +172,8 @@ If the guard blocks your PR because it contains `.ai-team/` or `team-docs/` file
 # Remove .ai-team/ from this PR (keeps local copies and dev branch copies safe)
 git rm --cached -r .ai-team/
 
-# Remove team-docs/ except blog/
+# Remove team-docs/ from this PR
 git rm --cached -r team-docs/
-git checkout HEAD -- team-docs/blog/
 
 # Commit and push
 git commit -m "chore: remove internal team files from PR"
@@ -336,7 +333,7 @@ When you open a PR to `main` or `preview`, the workflow `.github/workflows/squad
 1. **Fetches all files changed in your PR** (paginated for large PRs)
 2. **Checks each file against forbidden path rules:**
    - If filename starts with `.ai-team/` → BLOCKED
-   - If filename starts with `team-docs/` AND not `team-docs/blog/` → BLOCKED
+   - If filename starts with `team-docs/` → BLOCKED
    - Otherwise → ALLOWED
 3. **Reports results:**
    - ✅ **Pass:** "No forbidden paths found" — you're good to merge
@@ -370,7 +367,7 @@ git push
 
 ### Q: I want to commit `team-docs/sprint-plan.md` — can I do that?
 
-**A:** Not to `main` or `preview` — it's internal. Commit it to `dev` and feature branches, and the guard will block it if you accidentally PR it to `main`. If it's public content (blog, guides, etc.), put it in `team-docs/blog/` and it flows freely.
+**A:** Not to `main` or `preview` — it's internal. Commit it to `dev` and feature branches, and the guard will block it if you accidentally PR it to `main`. If it's public content (blog, guides, etc.), put it in `docs/blog/` and it flows freely.
 
 ### Q: What if I disagree with the branch protection?
 

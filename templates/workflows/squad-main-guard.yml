@@ -41,11 +41,8 @@ jobs:
               .filter(f => {
                 // .ai-team/** — ALL team state files, zero exceptions
                 if (f === '.ai-team' || f.startsWith('.ai-team/')) return true;
-                // team-docs/** EXCEPT team-docs/blog/** — blog content is allowed
-                if (f.startsWith('team-docs/')) {
-                  if (f.startsWith('team-docs/blog/')) return false;
-                  return true;
-                }
+                // team-docs/** — ALL internal team docs, zero exceptions
+                if (f.startsWith('team-docs/')) return true;
                 return false;
               });
 
@@ -60,7 +57,7 @@ jobs:
               '',
               'The following files must NOT be merged into `main`.',
               '`.ai-team/` is runtime team state — it belongs on dev branches only.',
-              '`team-docs/` internal content should stay on dev (only `team-docs/blog/` is allowed on main).',
+              '`team-docs/` is internal team content — it belongs on dev branches only.',
               '',
               '### Forbidden files found:',
               '',
@@ -72,9 +69,8 @@ jobs:
               '# Remove tracked .ai-team/ files (keeps local copies):',
               'git rm --cached -r .ai-team/',
               '',
-              '# Remove tracked team-docs/ files (except blog/):',
+              '# Remove tracked team-docs/ files:',
               'git rm --cached -r team-docs/',
-              'git checkout HEAD -- team-docs/blog/',
               '',
               '# Commit the removal and push:',
               'git commit -m "chore: remove forbidden paths from PR"',

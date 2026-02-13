@@ -10,6 +10,9 @@ Thumbs.db
 # Node (if we add tooling later)
 node_modules/
 
+# Built docs site (generated, not committed)
+_site/
+
 # Squad team state — committed on dev and feature branches,
 # blocked from main/preview by squad-main-guard.yml workflow.
 # ⚠️ NEVER merge .ai-team/ into main or preview.
