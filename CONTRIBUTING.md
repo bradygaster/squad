@@ -1,0 +1,397 @@
+# Contributing to Squad
+
+Squad is built by contributors who believe in democratizing multi-agent development. We're excited to have you join us — and we want to make contributing as smooth as possible.
+
+This guide covers everything you need to know: how to set up your environment, the branch model that keeps us sane, what files go where, and how to submit your work. **Pay special attention to the branch protection rules** — we protect `main` and `preview` aggressively, and it's easier to get it right the first time.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Node.js 22.0.0 or later** — required by the `engines` field in package.json
+- **Git** — for cloning and branching
+- **GitHub CLI (`gh`)** — for interactions with Issues, PRs, and (optionally) Project Boards
+
+### 1. Fork and Clone
+
+```bash
+# Fork on GitHub, then clone your fork
+git clone https://github.com/{your-username}/squad.git
+cd squad
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install
+```
+
+### 3. Run Tests
+
+```bash
+npm test
+# Or explicitly:
+node --test test/*.test.js
+```
+
+All tests should pass. If anything fails, [open an issue](https://github.com/bradygaster/squad/issues).
+
+---
+
+## Branch Model
+
+Squad uses a three-tier branch structure to protect production and staging while keeping development flexible.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                       │
+│  dev ── Feature branches ──→ dev ── (merge/rebase) ──→ preview      │
+│         (squad/{issue}-{slug})    ╲                       │          │
+│                                    └──→ Release tagged ───→ main     │
+│                                                              │        │
+│  ✅ ALL files allowed              🚫 .ai-team/ BLOCKED   🚫 BLOCKED │
+│  (dev branch = safe sandbox)       team-docs/ BLOCKED     (except   │
+│                                    (except blog/)          tagged    │
+│                                                            releases) │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Branch Purposes
+
+| Branch | Purpose | Protection | Files Allowed |
+|--------|---------|------------|---------------|
+| **`dev`** | Development & integration | None | ✅ Everything |
+| **`feature/squad/{issue}-{slug}`** | Feature work | None — merge to dev | ✅ Everything |
+| **`preview`** | Staging & release candidate | Guard checks for `.ai-team/`, `team-docs/` (except blog/) | ✅ Most files — see [Protected Files](#whats-protected) |
+| **`main`** | Production & releases | Guard checks for `.ai-team/`, `team-docs/` (except blog/) | ✅ Most files — see [Protected Files](#whats-protected) |
+
+### Creating a Feature Branch
+
+Create branches from `dev` using the naming convention `squad/{issue-number}-{slug}`:
+
+```bash
+# Check out dev and get latest
+git checkout dev
+git pull origin dev
+
+# Create feature branch
+git checkout -b squad/42-auth-refresh
+# Or for fixes without an issue:
+git checkout -b squad/fix-silent-success-on-sync
+```
+
+### Merging to dev
+
+When your work is ready, create a PR **targeting `dev`** (not `main` or `preview`). No guard checks apply to `dev` — it's a safe sandbox for any changes.
+
+```bash
+git push origin squad/42-auth-refresh
+# Then open PR on GitHub, targeting dev
+```
+
+---
+
+## What's Protected
+
+### 🚫 CRITICAL: Files Blocked from `main` and `preview`
+
+These files are **runtime team state** and belong on development branches only:
+
+| Path | Reason | Merged to main? |
+|------|--------|-----------------|
+| **`.ai-team/**`** | Agent charters, routing, decisions, history, casting registry | ❌ NEVER |
+| **`team-docs/` (except `team-docs/blog/`** | Internal team documentation, sprint plans, notes | ❌ NEVER |
+| **`team-docs/blog/**`** | Public blog content | ✅ YES — blog posts are public |
+
+**Why?** `.ai-team/` contains persistent agent knowledge, routing rules, and decision history. It's internal infrastructure. If it leaks to `main`, you're shipping developer metadata as product. `team-docs/` is working notes — only blog content is publication-ready.
+
+### ✅ Files That Flow Freely
+
+These files move between `dev` → `preview` → `main` with no restrictions:
+
+- `index.js` — CLI entry point
+- `squad.agent.md` — Squad coordinator
+- `templates/` — Agent templates
+- `docs/` — Public documentation
+- `test/` — Test suite
+- `.github/workflows/` — GitHub Actions workflows
+- `team-docs/blog/` — Blog posts
+- `package.json` — Dependencies
+- `README.md`, `LICENSE` — Project metadata
+- `CHANGELOG.md` — Release history
+- `.gitignore`, `.gitattributes`, `.npmignore` — Git configuration
+
+---
+
+## PR Process
+
+### Step 1: Create Feature Branch from `dev`
+
+```bash
+git checkout dev
+git pull origin dev
+git checkout -b squad/123-your-feature
+```
+
+### Step 2: Make Changes, Commit, Push
+
+```bash
+# Edit files...
+git add .
+git commit -m "feat: add feature description"
+git push origin squad/123-your-feature
+```
+
+Follow [commit message conventions](#commit-message-convention) (below).
+
+### Step 3: Open PR Targeting `dev`
+
+On GitHub, create a PR with:
+- **Base branch:** `dev` ← **Always target dev first**
+- **Title:** Follows conventional commits (e.g., `feat: add auth refresh`, `fix: silent success bug`)
+- **Description:** What changed, why, and any testing notes
+
+### Step 4: Guard Checks (if targeting `preview` or `main`)
+
+If you accidentally (or intentionally) target `preview` or `main`, the **guard workflow** (`squad-main-guard.yml`) runs:
+
+```yaml
+✅ If no forbidden files detected:
+   PR checks pass, you can merge.
+
+❌ If forbidden files detected (.ai-team/, team-docs/ except blog/):
+   Workflow fails with actionable error message.
+   You must remove the files before merging.
+```
+
+### Step 5: Fixing a Blocked PR
+
+If the guard blocks your PR because it contains `.ai-team/` or `team-docs/` files:
+
+```bash
+# Remove .ai-team/ from git (keeps local copies safe)
+git rm --cached -r .ai-team/
+
+# Remove team-docs/ except blog/
+git rm --cached -r team-docs/
+git checkout HEAD -- team-docs/blog/
+
+# Commit and push
+git commit -m "chore: remove internal team files from PR"
+git push
+```
+
+The workflow will re-run and pass. Your local `.ai-team/` and `team-docs/` files remain untouched.
+
+---
+
+## Running Tests
+
+Squad uses Node's built-in test runner. No external dependencies.
+
+```bash
+# Run all tests
+npm test
+
+# Or explicitly:
+node --test test/*.test.js
+```
+
+Tests should pass before you open a PR. If a test fails, check if it's related to your changes. If you're fixing a known failing test as part of your work, that's fine — but don't introduce new failures.
+
+---
+
+## Commit Message Convention
+
+Squad follows [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+### Types
+
+- **`feat`** — New feature
+- **`fix`** — Bug fix
+- **`docs`** — Documentation changes (README, guides, etc.)
+- **`ci`** — CI/CD changes (workflows, actions)
+- **`chore`** — Maintenance, dependencies, build changes
+- **`refactor`** — Code restructuring without behavior change
+- **`test`** — Adding or fixing tests
+
+### Examples
+
+```bash
+git commit -m "feat: add history summarization for agents"
+git commit -m "fix: silent success on async spawn"
+git commit -m "docs: clarify branch protection in CONTRIBUTING.md"
+git commit -m "chore: upgrade node engine requirement to 22.0.0"
+git commit -m "ci: add PR guard workflow"
+```
+
+Scope is optional but helpful for clarity:
+
+```bash
+git commit -m "feat(spawn): parallel agent launch"
+git commit -m "fix(history): truncate at 12K tokens"
+```
+
+---
+
+## Code Style
+
+Squad doesn't use a linter. Keep it consistent with the existing codebase:
+
+- **Indentation:** 2 spaces (see `index.js`, `squad.agent.md`)
+- **Naming:** camelCase for variables/functions, UPPER_CASE for constants
+- **Strings:** Single quotes preferred (consistent with Node style)
+- **Comments:** Only where logic needs clarification, not for obvious code
+- **Functions:** Descriptive names; if it needs a comment to explain, rename it
+
+### Example
+
+```javascript
+// ✅ Good
+const calculateContextUsage = (agentCount, decisionSize) => {
+  return Math.min(agentCount * 45000, 200000 - decisionSize);
+};
+
+// ❌ Avoid
+const calc = (a, b) => Math.min(a * 45000, 200000 - b); // calc context
+```
+
+---
+
+## Labels
+
+Squad uses a structured label system to organize work. When you open a PR or issue, use these namespaces:
+
+| Label | Purpose | Examples |
+|-------|---------|----------|
+| **`squad:{name}`** | Assigned to a team member | `squad:Keaton`, `squad:Hockney` |
+| **`type:*`** | Work category | `type:feature`, `type:bug`, `type:refactor`, `type:docs` |
+| **`priority:*`** | Urgency | `priority:critical`, `priority:high`, `priority:low` |
+| **`status:*`** | Progress | `status:blocked`, `status:in-progress`, `status:ready` |
+| **`go:*`** | Release target | `go:v0.4.1`, `go:v0.5.0` |
+| **`release:*`** | Release metadata | `release:major`, `release:minor`, `release:patch` |
+
+You don't need to add these yourself — the Lead will triage and label issues. But knowing the taxonomy helps you understand what's happening.
+
+---
+
+## What Files Go Where: Quick Reference
+
+```
+squad/
+├── .ai-team/                  🚫 BLOCKED from main/preview
+│   ├── agents/
+│   │   ├── {name}/charter.md  🚫 BLOCKED
+│   │   └── {name}/history.md  🚫 BLOCKED
+│   ├── team.md                🚫 BLOCKED
+│   ├── routing.md             🚫 BLOCKED
+│   ├── decisions.md           🚫 BLOCKED
+│   └── ...
+│
+├── team-docs/                 🚫 BLOCKED (except blog/)
+│   ├── sprint-plan.md         🚫 BLOCKED
+│   ├── roadmap.md             🚫 BLOCKED
+│   └── blog/                  ✅ ALLOWED (public content)
+│       └── 001-launch.md      ✅ ALLOWED
+│
+├── index.js                   ✅ Flows freely
+├── squad.agent.md             ✅ Flows freely
+├── README.md                  ✅ Flows freely
+├── CONTRIBUTING.md            ✅ Flows freely (this file)
+├── CHANGELOG.md               ✅ Flows freely
+├── package.json               ✅ Flows freely
+├── LICENSE                    ✅ Flows freely
+│
+├── docs/                      ✅ Flows freely
+│   ├── community.md           ✅ Flows freely
+│   ├── features/              ✅ Flows freely
+│   └── scenarios/             ✅ Flows freely
+│
+├── templates/                 ✅ Flows freely
+├── test/                      ✅ Flows freely
+├── .github/workflows/         ✅ Flows freely
+│   └── squad-main-guard.yml   ✅ Flows freely
+│
+├── .gitignore                 ✅ Flows freely
+├── .gitattributes             ✅ Flows freely
+└── .npmignore                 ✅ Flows freely
+```
+
+---
+
+## How the Guard Works
+
+When you open a PR to `main` or `preview`, the workflow `.github/workflows/squad-main-guard.yml` automatically runs. It:
+
+1. **Fetches all files changed in your PR** (paginated for large PRs)
+2. **Checks each file against forbidden path rules:**
+   - If filename starts with `.ai-team/` → BLOCKED
+   - If filename starts with `team-docs/` AND not `team-docs/blog/` → BLOCKED
+   - Otherwise → ALLOWED
+3. **Reports results:**
+   - ✅ **Pass:** "No forbidden paths found" — you're good to merge
+   - ❌ **Fail:** Lists forbidden files and shows `git rm --cached` fix
+
+The guard is **not a suggestion** — it's a hard stop. But it's easy to fix if it blocks you (see [Fixing a Blocked PR](#fixing-a-blocked-pr)).
+
+---
+
+## FAQ
+
+### Q: I accidentally committed `.ai-team/` to my feature branch. Do I have to delete it?
+
+**A:** No! `.ai-team/` is in `.gitignore`, so it won't push to GitHub unless you force-add it. Just keep your feature branch clean:
+
+```bash
+git rm --cached -r .ai-team/  # Untrack if force-added
+git checkout dev              # Switch back to dev
+# Your local .ai-team/ remains untouched
+```
+
+### Q: Can I PR to `main` directly?
+
+**A:** Technically yes, but don't. Always target `dev` first. Releases flow dev → preview → main via controlled releases, not ad-hoc PRs. This keeps `main` a stable mirror of what's deployed.
+
+### Q: The guard blocked my PR. What now?
+
+**A:** Your PR contains `.ai-team/` or `team-docs/` files that shouldn't be in `main`/`preview`. Follow [Fixing a Blocked PR](#fixing-a-blocked-pr) — it's three `git rm --cached` commands and a push. The workflow will re-run and pass.
+
+### Q: I want to commit `team-docs/sprint-plan.md` — can I do that?
+
+**A:** Not to `main` or `preview` — it's internal. Commit it to `dev` and feature branches, and the guard will block it if you accidentally PR it to `main`. If it's public content (blog, guides, etc.), put it in `team-docs/blog/` and it flows freely.
+
+### Q: What if I disagree with the branch protection?
+
+**A:** [Open a discussion](https://github.com/bradygaster/squad/discussions). These rules exist because `.ai-team/` leaking to `main` has bitten us. But design decisions are made by consensus.
+
+---
+
+## Need Help?
+
+- **Issues & Bugs:** [Open an issue](https://github.com/bradygaster/squad/issues)
+- **Questions & Discussions:** [GitHub Discussions](https://github.com/bradygaster/squad/discussions)
+- **Security Issues:** Report privately via [GitHub Security Advisory](https://github.com/bradygaster/squad/security/advisories)
+
+Welcome aboard. Make Squad better. 🚀
+
+---
+
+## Summary: What You Need to Know
+
+1. **Clone from `dev`, create `squad/{issue}-{slug}` branch, PR back to `dev`**
+2. **Never commit `.ai-team/` or internal `team-docs/` to `main` or `preview` — the guard will block it**
+3. **Run `npm test` before pushing**
+4. **Follow conventional commits (feat:, fix:, docs:, etc.)**
+5. **If the guard blocks your PR, run `git rm --cached` and push again**
+
+That's it. Happy contributing.

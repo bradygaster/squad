@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.0] — 2026-02-15
+
+### Added
+
+- **MCP tool discovery and use** (PR #11 by @csharpfritz) — Auto-discover available MCP tools, graceful degradation if service unavailable, tool usage in agent workflows
+- **User documentation improvements** (PR #16 by @csharpfritz) — Expanded guides, sample prompts, troubleshooting sections, release process documentation
+- **VS Code client compatibility** (PR #17 by @spboyer) — Full support for VS Code Copilot without code changes; runSubagent parallel execution, zero-change deployment
+- **Plugin marketplace concept** — Community skills from GitHub repos, auto-discover plugins, sandbox isolation
+- **Agent notifications system** — Trello cards, Teams webhooks, GitHub Discussions posts; agents can emit lifecycle events
+- **MCP integration for external services** — Auto-discover and integrate Trello, Azure, Notion, GitHub, Slack MCP tools; graceful degradation
+- **Progress signals for long-running work** — `[MILESTONE]` markers in agent output, coordinator relays progress to user
+- **Notification channels** — Trello cards for work items, Teams webhooks for milestones, GitHub Discussions for team updates
+- **Earned skills improvements** — Better confidence scoring, export/import polish, skill discovery from real work
+- **Universe expansion** — 11 new universes (Futurama, Seinfeld, The Office, Cowboy Bebop, FMA, Stranger Things, The Expanse, Arcane, Ted Lasso, Dune, Adventure Time); casting universe now 31 total (up from 20)
+- **Branch protection guard** (squad-main-guard.yml) — Prevents `.ai-team/` and internal `team-docs/` from shipping on main and preview branches
+- **Release process documentation** (docs/scenarios/release-process.md) — Complete step-by-step guide for maintainers: preview builds, PR workflows, full release lifecycle, guard testing, troubleshooting
+
+### Changed
+
+- VS Code is now fully compatible — zero code changes required; agents run identically on CLI and VS Code
+- Agent progress signals use `[MILESTONE]` markers for coordinator relay
+- 6 new GitHub Actions workflows added: squad-main-guard.yml, squad-heartbeat.yml, squad-issue-assign.yml, squad-label-enforce.yml, squad-triage.yml, sync-squad-labels.yml
+- Universe count: 20 → 31 (added 11 new universes)
+
+### Community
+
+- @csharpfritz: MCP tool discovery (#11), user documentation improvements (#16)
+- @spboyer: VS Code client compatibility (#17)
+- @essenbee2, @miketsui3a, @londospark: Issue contributions and feedback
+- External universe contributions: Futurama, Seinfeld, The Office, Cowboy Bebop, Full Metal Alchemist, Stranger Things, The Expanse, Arcane, Ted Lasso, Dune, Adventure Time casting universes
+
 ## [0.3.0] — 2026-02-11
 
 ### Added
