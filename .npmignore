@@ -1,6 +1,6 @@
 # Squad Squad — team state and development files
 # These are excluded from the distributed package.
-# The product ships: index.js, templates/, docs/, CHANGELOG.md, .github/agents/squad.agent.md
+# The product ships: index.js, templates/, CHANGELOG.md, .github/agents/squad.agent.md
 # (also enforced by package.json "files" field)
 
 # Squad Squad (the AI team that builds Squad)
@@ -10,12 +10,19 @@
 # Internal team docs (proposals, sprint plans — never shipped)
 team-docs/
 
+# Public docs (read on GitHub, not needed at runtime)
+docs/
+
 # Tests
 test/
 
 # Git/repo config not needed at runtime
+.gitignore
 .gitattributes
 .github/workflows/
+
+# Repo contributor docs (not needed by users)
+CONTRIBUTING.md
 
 # Editor / OS
 .vscode/

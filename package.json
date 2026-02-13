@@ -9,7 +9,6 @@
     "index.js",
     ".github/agents/squad.agent.md",
     "templates/**/*",
-    "docs/**/*",
     "CHANGELOG.md"
   ],
   "scripts": {
