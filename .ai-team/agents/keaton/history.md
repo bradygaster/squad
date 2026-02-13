@@ -272,3 +272,6 @@ _Summarized 2026-02-10+ learnings (full entries available in session logs):_
 📌 Team update (2026-02-13): Agent Progress Updates (Proposal 022a) designed and proposed — Milestone signals + coordinator polling (30s intervals). Recommended for v0.4.0 after Project Boards. Addresses user uncertainty during long-running work. Zero additional API cost. Preserves agent personality. — designed by Keaton
 📌 Team update (2026-02-15): Client Parity Compatibility Matrix — Created docs/scenarios/client-compatibility.md as single source of truth. CLI primary (full support), VS Code works with adaptations (session model, sync subagents, workspace-scoped files), JetBrains/GitHub untested. Phase 2 (v0.5.0): generate custom agent files. — decided by McManus
 
+
+📌 Team update (2026-02-13): Client Compatibility section added to squad.agent.md with platform detection logic, VS Code spawn adaptations, and feature degradation table — decided by Verbal
+

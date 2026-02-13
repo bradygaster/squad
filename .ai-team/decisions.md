@@ -4639,3 +4639,9 @@ GitHub Projects V2 board operations are fully implementable using gh project * C
 - WI-3: Board initialization flow (Verbal)
 - WI-4: Label-to-board sync workflow (Fenster)
 - WI-5: Board query & display (Verbal)
+
+### 2026-02-15: Client Compatibility section added to squad.agent.md
+**By:** Verbal
+**What:** Added a "Client Compatibility" coordinator instruction section to `.github/agents/squad.agent.md` as the v0.4.0 deliverable for issue #10. The section includes platform detection logic (CLI/VS Code/fallback), VS Code spawn adaptations (9 behavioral changes), a feature degradation table (6 rows), and a SQL tool caveat. Both Background and Sync spawn templates were annotated with VS Code equivalents via blockquote callouts. Source data from proposals 032a, 032b, 033a, 034a and the compatibility matrix at `docs/scenarios/client-compatibility.md`.
+**Why:** The coordinator needs actionable instructions for cross-platform spawning. Without this section, `squad.agent.md` only knows CLI patterns — a VS Code coordinator would attempt `task` tool calls, fail, and have no fallback. The section is placed between Per-Agent Model Selection and Eager Execution Philosophy because platform detection logically gates how spawning, model selection, and parallelism work. Prompt-level conditional instructions (not a code abstraction layer) is the team-agreed approach from proposal 032b §8.
+

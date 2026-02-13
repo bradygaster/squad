@@ -182,3 +182,18 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 
 
 📌 Team update (2026-02-13): Projects V2 Phase 1 validation complete — all gh project * commands validated live, no npm dependencies needed. Unblocks WI-3 (board init), WI-4 (label-to-board sync), WI-5 (board query). — decided by Fenster
+
+- **2026-02-15: Client Compatibility Section — squad.agent.md (Issue #10, v0.4.0)** — Added the "Client Compatibility" coordinator section to squad.agent.md, synthesizing findings from proposals 032a, 032b, 033a, and 034a. Key decisions:
+
+  - **Placement: after model selection, before eager execution.** Platform detection logically gates spawning behavior — the coordinator needs to know its surface before it picks modes, models, or parallelism patterns. Placing it after model selection means the model rules are already defined; the compatibility section just says "on VS Code, skip the per-spawn model stuff." Placing it before eager execution means the coordinator reads platform constraints before it starts launching aggressively.
+
+  - **Capability probe is the right detection pattern.** Check for `task` (CLI) vs `runSubagent`/`agent` (VS Code) vs neither (fallback). Tool availability is the most reliable signal — no environment variables, no file sniffing, no fragile heuristics. The coordinator's system prompt already lists available tools, so this is a natural conditional.
+
+  - **Feature degradation table is a quick-reference, not a duplicate.** The full compatibility matrix lives in `docs/scenarios/client-compatibility.md`. The coordinator section has a 6-row table covering the operational differences that affect spawn logic. This avoids bloating the prompt while giving the coordinator enough to act.
+
+  - **SQL caveat is its own subsection.** SQL is the only tool that affects coordinator logic AND is CLI-only. Calling it out explicitly prevents subtle bugs where a VS Code coordinator tries to track todos in SQL and silently fails.
+
+  - **Spawn template annotations are blockquote callouts.** Both Background and Sync spawn templates got a one-line VS Code equivalent note. Blockquote format (`>`) keeps it visually distinct without breaking the code block structure. The note is terse — just enough for the coordinator to know what to swap.
+
+📌 Team update (2026-02-13): Client Compatibility section added to squad.agent.md with platform detection logic, VS Code spawn adaptations, and feature degradation table — decided by Verbal
+
