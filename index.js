@@ -509,6 +509,18 @@ const migrations = [
       const skillsDir = path.join(dest, '.ai-team', 'skills');
       fs.mkdirSync(skillsDir, { recursive: true });
     }
+  },
+  {
+    version: '0.4.0',
+    description: 'Create sample .copilot/mcp-config.json',
+    run(dest) {
+      const mcpDest = path.join(dest, '.copilot', 'mcp-config.json');
+      if (!fs.existsSync(mcpDest)) {
+        fs.mkdirSync(path.join(dest, '.copilot'), { recursive: true });
+        const sample = { mcpServers: { "EXAMPLE-trello": { command: "npx", args: ["-y", "@trello/mcp-server"], env: { TRELLO_API_KEY: "${TRELLO_API_KEY}", TRELLO_TOKEN: "${TRELLO_TOKEN}" } } } };
+        fs.writeFileSync(mcpDest, JSON.stringify(sample, null, 2) + '\n');
+      }
+    }
   }
 ];
 
@@ -621,6 +633,34 @@ if (!isUpgrade) {
   if (fs.existsSync(skillsSrc) && fs.readdirSync(skillsDir).length === 0) {
     copyRecursive(skillsSrc, skillsDir);
     console.log(`${GREEN}✓${RESET} .ai-team/skills/ (starter skills)`);
+  }
+}
+
+// Create sample MCP config (skip if .copilot/mcp-config.json already exists)
+if (!isUpgrade) {
+  const mcpDir = path.join(dest, '.copilot');
+  const mcpConfigPath = path.join(mcpDir, 'mcp-config.json');
+  if (!fs.existsSync(mcpConfigPath)) {
+    try {
+      fs.mkdirSync(mcpDir, { recursive: true });
+      fs.writeFileSync(mcpConfigPath, JSON.stringify({
+        mcpServers: {
+          "EXAMPLE-trello": {
+            command: "npx",
+            args: ["-y", "@trello/mcp-server"],
+            env: {
+              TRELLO_API_KEY: "${TRELLO_API_KEY}",
+              TRELLO_TOKEN: "${TRELLO_TOKEN}"
+            }
+          }
+        }
+      }, null, 2) + '\n');
+      console.log(`${GREEN}✓${RESET} .copilot/mcp-config.json (MCP sample — rename EXAMPLE-trello to enable)`);
+    } catch (err) {
+      // Non-fatal — MCP config is optional
+    }
+  } else {
+    console.log(`${DIM}mcp-config.json already exists — skipping${RESET}`);
   }
 }
 

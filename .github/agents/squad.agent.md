@@ -417,6 +417,66 @@ When in VS Code mode, the coordinator changes behavior in these ways:
 
 The `sql` tool is **CLI-only**. It does not exist on VS Code, JetBrains, or GitHub.com. Any coordinator logic or agent workflow that depends on SQL (todo tracking, batch processing, session state) will silently fail on non-CLI surfaces. Cross-platform code paths must not depend on SQL. Use filesystem-based state (`.ai-team/` files) for anything that must work everywhere.
 
+### MCP Integration
+
+MCP (Model Context Protocol) servers extend Squad with tools for external services — Trello, Aspire dashboards, Azure, Notion, and more. The user configures MCP servers in their environment; Squad discovers and uses them.
+
+> **Full patterns:** Read `.ai-team/skills/mcp-tool-discovery/SKILL.md` for discovery patterns, domain-specific usage, graceful degradation, and config examples.
+
+#### Detection
+
+At task start, scan your available tools list for known MCP prefixes:
+- `github-mcp-server-*` → GitHub API (issues, PRs, code search, actions)
+- `trello_*` → Trello boards, cards, lists
+- `aspire_*` → Aspire dashboard (metrics, logs, health)
+- `azure_*` → Azure resource management
+- `notion_*` → Notion pages and databases
+
+If tools with these prefixes exist, they are available. If not, fall back to CLI equivalents or inform the user.
+
+#### Passing MCP Context to Spawned Agents
+
+When spawning agents, include an `MCP TOOLS AVAILABLE` block in the prompt (see spawn template below). This tells agents what's available without requiring them to discover tools themselves. Only include this block when MCP tools are actually detected — omit it entirely when none are present.
+
+#### Routing MCP-Dependent Tasks
+
+- **Coordinator handles directly** when the MCP operation is simple (a single read, a status check) and doesn't need domain expertise.
+- **Spawn with context** when the task needs agent expertise AND MCP tools. Include the MCP block in the spawn prompt so the agent knows what's available.
+- **Explore agents never get MCP** — they have read-only local file access. Route MCP work to `general-purpose` or `task` agents, or handle it in the coordinator.
+
+#### Graceful Degradation
+
+Never crash or halt because an MCP tool is missing. MCP tools are enhancements, not dependencies.
+
+1. **CLI fallback** — GitHub MCP missing → use `gh` CLI. Azure MCP missing → use `az` CLI.
+2. **Inform the user** — "Trello integration requires the Trello MCP server. Add it to `.copilot/mcp-config.json`."
+3. **Continue without** — Log what would have been done, proceed with available tools.
+
+#### Config File Locations
+
+Users configure MCP servers at these locations (checked in priority order):
+1. **Repository-level:** `.copilot/mcp-config.json` (team-shared, committed to repo)
+2. **Workspace-level:** `.vscode/mcp.json` (VS Code workspaces)
+3. **User-level:** `~/.copilot/mcp-config.json` (personal)
+4. **CLI override:** `--additional-mcp-config` flag (session-specific)
+
+#### Sample Config — Trello
+
+```json
+{
+  "mcpServers": {
+    "trello": {
+      "command": "npx",
+      "args": ["-y", "@trello/mcp-server"],
+      "env": {
+        "TRELLO_API_KEY": "${TRELLO_API_KEY}",
+        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
+      }
+    }
+  }
+}
+```
+
 ### Eager Execution Philosophy
 
 The Coordinator's default mindset is **launch aggressively, collect results later.**
@@ -578,6 +638,13 @@ prompt: |
   Read .ai-team/agents/{name}/history.md — this is what you know about the project.
   Read .ai-team/decisions.md — these are team decisions you must respect.
   If .ai-team/skills/ exists and contains SKILL.md files, read relevant ones before working.
+  
+  {if MCP tools detected in coordinator session, include this block — omit entirely if none:}
+  MCP TOOLS AVAILABLE IN THIS SESSION:
+  - {service}: ✅ ({tool names}) | ❌ (not configured)
+  Use available MCP tools when they serve your task. Fall back to CLI equivalents when not available.
+  Refer to .ai-team/skills/mcp-tool-discovery/SKILL.md for usage patterns.
+  {end MCP block}
   
   **Requested by:** {current user name}
   
