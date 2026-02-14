@@ -39,6 +39,9 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`             Never touches: .ai-team/ (your team state)`);
   console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
   console.log(`             Usage: copilot [--off] [--auto-assign]`);
+  console.log(`  ${BOLD}watch${RESET}      Run Ralph's work monitor as a local polling process`);
+  console.log(`             Usage: watch [--interval <minutes>]`);
+  console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
   console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
   console.log(`             Usage: plugin marketplace add|remove|list|browse`);
   console.log(`  ${BOLD}export${RESET}     Export squad to a portable JSON snapshot`);
@@ -66,6 +69,168 @@ function copyRecursive(src, target) {
   } catch (err) {
     fatal(`Failed to copy ${path.relative(root, src)}: ${err.message}`);
   }
+}
+
+// --- Watch subcommand (Ralph local watchdog) ---
+if (cmd === 'watch') {
+  const { execSync } = require('child_process');
+
+  const teamMd = path.join(dest, '.ai-team', 'team.md');
+  if (!fs.existsSync(teamMd)) {
+    fatal('No squad found — run init first.');
+  }
+
+  // Verify gh CLI is available
+  try {
+    execSync('gh --version', { stdio: 'pipe' });
+  } catch {
+    fatal('gh CLI not found — install from https://cli.github.com');
+  }
+
+  // Parse --interval flag (default: 10 minutes)
+  const intervalIdx = process.argv.indexOf('--interval');
+  const intervalMin = (intervalIdx !== -1 && process.argv[intervalIdx + 1])
+    ? parseInt(process.argv[intervalIdx + 1], 10)
+    : 10;
+
+  if (isNaN(intervalMin) || intervalMin < 1) {
+    fatal('--interval must be a positive number of minutes');
+  }
+
+  const content = fs.readFileSync(teamMd, 'utf8');
+
+  // Parse members from roster
+  function parseMembers(text) {
+    const lines = text.split('\n');
+    const members = [];
+    let inMembersTable = false;
+    for (const line of lines) {
+      if (line.startsWith('## Members')) { inMembersTable = true; continue; }
+      if (inMembersTable && line.startsWith('## ')) break;
+      if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
+        const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+        if (cells.length >= 2 && !['Scribe', 'Ralph'].includes(cells[0])) {
+          members.push({ name: cells[0], role: cells[1], label: `squad:${cells[0].toLowerCase()}` });
+        }
+      }
+    }
+    return members;
+  }
+
+  const members = parseMembers(content);
+  if (members.length === 0) {
+    fatal('No squad members found in team.md');
+  }
+
+  const hasCopilot = content.includes('🤖 Coding Agent') || content.includes('@copilot');
+  const autoAssign = content.includes('<!-- copilot-auto-assign: true -->');
+
+  console.log(`\n${BOLD}🔄 Ralph — Watch Mode${RESET}`);
+  console.log(`${DIM}Polling every ${intervalMin} minute(s) for squad work. Ctrl+C to stop.${RESET}\n`);
+
+  function runCheck() {
+    const timestamp = new Date().toLocaleTimeString();
+    try {
+      // Fetch open issues with squad label
+      const issuesJson = execSync(
+        'gh issue list --label "squad" --state open --json number,title,labels,assignees --limit 20',
+        { stdio: 'pipe', encoding: 'utf8' }
+      );
+      const issues = JSON.parse(issuesJson || '[]');
+
+      const memberLabels = members.map(m => m.label);
+      const untriaged = issues.filter(issue => {
+        const issueLabels = issue.labels.map(l => l.name);
+        return !memberLabels.some(ml => issueLabels.includes(ml));
+      });
+
+      // Find unassigned squad:copilot issues
+      let unassignedCopilot = [];
+      if (hasCopilot && autoAssign) {
+        try {
+          const copilotJson = execSync(
+            'gh issue list --label "squad:copilot" --state open --json number,title,assignees --limit 10',
+            { stdio: 'pipe', encoding: 'utf8' }
+          );
+          const copilotIssues = JSON.parse(copilotJson || '[]');
+          unassignedCopilot = copilotIssues.filter(i => !i.assignees || i.assignees.length === 0);
+        } catch { /* label may not exist */ }
+      }
+
+      if (untriaged.length === 0 && unassignedCopilot.length === 0) {
+        console.log(`${DIM}[${timestamp}]${RESET} 📋 Board is clear — no pending work`);
+        return;
+      }
+
+      // Triage untriaged issues
+      for (const issue of untriaged) {
+        const issueText = `${issue.title}`.toLowerCase();
+        let assignedMember = null;
+        let reason = '';
+
+        for (const member of members) {
+          const role = member.role.toLowerCase();
+          if ((role.includes('frontend') || role.includes('ui')) &&
+              (issueText.includes('ui') || issueText.includes('frontend') || issueText.includes('css'))) {
+            assignedMember = member; reason = 'frontend/UI domain'; break;
+          }
+          if ((role.includes('backend') || role.includes('api') || role.includes('server')) &&
+              (issueText.includes('api') || issueText.includes('backend') || issueText.includes('database'))) {
+            assignedMember = member; reason = 'backend/API domain'; break;
+          }
+          if ((role.includes('test') || role.includes('qa')) &&
+              (issueText.includes('test') || issueText.includes('bug') || issueText.includes('fix'))) {
+            assignedMember = member; reason = 'testing/QA domain'; break;
+          }
+        }
+
+        if (!assignedMember) {
+          const lead = members.find(m =>
+            m.role.toLowerCase().includes('lead') || m.role.toLowerCase().includes('architect')
+          );
+          if (lead) { assignedMember = lead; reason = 'no domain match — routed to Lead'; }
+        }
+
+        if (assignedMember) {
+          try {
+            execSync(`gh issue edit ${issue.number} --add-label "${assignedMember.label}"`, { stdio: 'pipe' });
+            console.log(`${GREEN}✓${RESET} [${timestamp}] Triaged #${issue.number} "${issue.title}" → ${assignedMember.name} (${reason})`);
+          } catch (e) {
+            console.error(`${RED}✗${RESET} [${timestamp}] Failed to label #${issue.number}: ${e.message}`);
+          }
+        }
+      }
+
+      // Assign @copilot to unassigned copilot issues
+      for (const issue of unassignedCopilot) {
+        try {
+          execSync(
+            `gh issue edit ${issue.number} --add-assignee copilot-swe-agent`,
+            { stdio: 'pipe' }
+          );
+          console.log(`${GREEN}✓${RESET} [${timestamp}] Assigned @copilot to #${issue.number} "${issue.title}"`);
+        } catch (e) {
+          console.error(`${RED}✗${RESET} [${timestamp}] Failed to assign @copilot to #${issue.number}: ${e.message}`);
+        }
+      }
+
+    } catch (e) {
+      console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${e.message}`);
+    }
+  }
+
+  // Run immediately, then on interval
+  runCheck();
+  setInterval(runCheck, intervalMin * 60 * 1000);
+
+  // Handle Ctrl+C gracefully
+  process.on('SIGINT', () => {
+    console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
+    process.exit(0);
+  });
+
+  // Prevent fall-through to init/upgrade logic
+  return;
 }
 
 // --- Copilot subcommand ---
@@ -888,7 +1053,7 @@ if (isUpgrade) {
     && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
   if (!copilotEnabled) {
     console.log(`\n${BOLD}New:${RESET} @copilot coding agent support is now available.`);
-    console.log(`  Run ${BOLD}npx squad copilot${RESET} to add it to your team.`);
+    console.log(`  Run ${BOLD}npx github:bradygaster/squad copilot${RESET} to add it to your team.`);
   }
 }
 
