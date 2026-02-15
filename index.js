@@ -590,21 +590,24 @@ const isUpgrade = cmd === 'upgrade';
 // Stamp version into squad.agent.md after copying
 function stampVersion(filePath) {
   let content = fs.readFileSync(filePath, 'utf8');
-  // Replace version field
-  content = content.replace(/^version:\s*"[^"]*"/m, `version: "${pkg.version}"`);
-  // Replace version in name field to show in agent picker UI
-  // Handles both "Squad" and "Squad (vX.Y.Z)" formats
-  content = content.replace(/^name:\s*Squad(?:\s*\([^)]*\))?$/m, `name: Squad (v${pkg.version})`);
+  // Replace version in HTML comment (must come immediately after frontmatter closing ---)
+  content = content.replace(/<!-- version: [^>]+ -->/m, `<!-- version: ${pkg.version} -->`);
+  // Replace version in the Identity section's Version line
+  content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/m, `- **Version:** ${pkg.version}`);
   fs.writeFileSync(filePath, content);
 }
 
-// Read version from squad.agent.md frontmatter
+// Read version from squad.agent.md HTML comment
 function readInstalledVersion(filePath) {
   try {
     if (!fs.existsSync(filePath)) return null;
     const content = fs.readFileSync(filePath, 'utf8');
-    const match = content.match(/^version:\s*"([^"]+)"/m);
-    return match ? match[1] : '0.0.0';
+    // Try to read from HTML comment first (new format)
+    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+)?) -->/);
+    if (commentMatch) return commentMatch[1];
+    // Fallback: try old frontmatter format for backward compatibility during upgrade
+    const frontmatterMatch = content.match(/^version:\s*"([^"]+)"/m);
+    return frontmatterMatch ? frontmatterMatch[1] : '0.0.0';
   } catch {
     return '0.0.0';
   }
