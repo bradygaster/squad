@@ -59,8 +59,8 @@ jobs:
             const hasCopilot = content.includes('🤖 Coding Agent');
 
             // Define label color palette for squad labels
-            const SQUAD_COLOR = '6366f1';
-            const MEMBER_COLOR = '3b82f6';
+            const SQUAD_COLOR = '9B8FCC';
+            const MEMBER_COLOR = '9B8FCC';
             const COPILOT_COLOR = '10b981';
 
             // Define go: and release: labels (static)
@@ -71,20 +71,26 @@ jobs:
             ];
 
             const RELEASE_LABELS = [
-              { name: 'release:v0.4.0', color: '0052CC', description: 'Targeted for v0.4.0' },
-              { name: 'release:v0.5.0', color: '1D76DB', description: 'Targeted for v0.5.0' },
-              { name: 'release:v0.6.0', color: '5319E7', description: 'Targeted for v0.6.0' },
-              { name: 'release:v1.0.0', color: '6F42C1', description: 'Targeted for v1.0.0' },
-              { name: 'release:backlog', color: 'C5DEF5', description: 'Not yet targeted' }
+              { name: 'release:v0.4.0', color: '6B8EB5', description: 'Targeted for v0.4.0' },
+              { name: 'release:v0.5.0', color: '6B8EB5', description: 'Targeted for v0.5.0' },
+              { name: 'release:v0.6.0', color: '8B7DB5', description: 'Targeted for v0.6.0' },
+              { name: 'release:v1.0.0', color: '8B7DB5', description: 'Targeted for v1.0.0' },
+              { name: 'release:backlog', color: 'D4E5F7', description: 'Not yet targeted' }
             ];
 
             const TYPE_LABELS = [
-              { name: 'type:feature', color: 'D4C5F9', description: 'New capability' },
-              { name: 'type:bug', color: 'D73A4A', description: 'Something broken' },
-              { name: 'type:spike', color: 'F9D0C4', description: 'Research/investigation — produces a plan, not code' },
-              { name: 'type:docs', color: 'C5DEF5', description: 'Documentation work' },
-              { name: 'type:chore', color: 'BFD4F2', description: 'Maintenance, refactoring, cleanup' },
-              { name: 'type:epic', color: 'B60205', description: 'Parent issue that decomposes into sub-issues' }
+              { name: 'type:feature', color: 'DDD1F2', description: 'New capability' },
+              { name: 'type:bug', color: 'FF0422', description: 'Something broken' },
+              { name: 'type:spike', color: 'F2DDD4', description: 'Research/investigation — produces a plan, not code' },
+              { name: 'type:docs', color: 'D4E5F7', description: 'Documentation work' },
+              { name: 'type:chore', color: 'D4E5F7', description: 'Maintenance, refactoring, cleanup' },
+              { name: 'type:epic', color: 'CC4455', description: 'Parent issue that decomposes into sub-issues' }
+            ];
+
+            // High-signal labels — these MUST visually dominate all others
+            const SIGNAL_LABELS = [
+              { name: 'bug', color: 'FF0422', description: 'Something isn\'t working' },
+              { name: 'feedback', color: '00E5FF', description: 'User feedback — high signal, needs attention' }
             ];
 
             const PRIORITY_LABELS = [
@@ -115,11 +121,12 @@ jobs:
               });
             }
 
-            // Add go:, release:, type:, and priority: labels
+            // Add go:, release:, type:, priority:, and high-signal labels
             labels.push(...GO_LABELS);
             labels.push(...RELEASE_LABELS);
             labels.push(...TYPE_LABELS);
             labels.push(...PRIORITY_LABELS);
+            labels.push(...SIGNAL_LABELS);
 
             // Sync labels (create or update)
             for (const label of labels) {
