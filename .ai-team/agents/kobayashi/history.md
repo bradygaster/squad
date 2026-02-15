@@ -70,3 +70,6 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 
 📌 Team update (2026-02-12):Cross-client sub-agent API research complete — squad.agent.md uses task tool exclusively for CLI platform, VS Code uses runSubagent, no unification planned — research by Kujan
 📌 Team update (2026-02-13): go:/release: label automation shipped — Four-workflow system enforces label namespace integrity (go:* triage verdicts, release:* version targets). Workflows: squad-label-enforce.yml (mutual exclusivity), sync-squad-labels.yml (sync 8 static labels), squad-triage.yml (default go:needs-research), squad-heartbeat.yml (detect label gaps). Labels-as-state-machine is foundational to GitHub-native workflow. — decided by Fenster
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+

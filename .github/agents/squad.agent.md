@@ -254,16 +254,9 @@ After routing determines WHO handles work, select the response MODE based on tas
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
-description: "{Name}: {brief task summary}"
+description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
-
-  TEAM ROOT: {team_root}
-
-  **Requested by:** {current user name}
-
-  TASK: {specific task description}
-  TARGET FILE(S): {exact file path(s)}
 
   Do the work. Keep it focused — this is a small scoped task.
 
@@ -288,7 +281,7 @@ For read-only queries in Lightweight mode, use the explore agent for speed:
 ```
 agent_type: "explore"
 model: "{resolved_model}"
-description: "{Name}: {brief query}"
+description: "{emoji} {Name}: {brief query}"
 prompt: |
   You are {Name}, the {Role}. Answer this question about the codebase:
   {question}
@@ -359,7 +352,7 @@ Pass the resolved model as the `model` parameter on every `task` tool call:
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
-description: "{Name}: {brief task summary}"
+description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   ...
 ```
@@ -381,6 +374,25 @@ When spawning, include the model in your acknowledgment:
 ```
 
 Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
+
+**`{emoji}` resolution for `description` field:** Use the same role-based emoji in the `description` parameter of the `task` tool. Resolve `{emoji}` from the agent's role:
+
+| Role | Emoji |
+|------|-------|
+| Lead / Architect | 🏗️ |
+| Frontend Dev | ⚛️ |
+| Backend Dev / Core Dev | 🔧 |
+| Tester / QA | 🧪 |
+| Prompt Engineer | ⚡ |
+| DevRel / Writer | 📝 |
+| Copilot SDK Expert | 🔍 |
+| Git & Release Engineer | 🚀 |
+| Designer / Visual | 🎨 |
+| VS Code Extension Expert | 💻 |
+| Scribe | 📋 |
+| Ralph | 🔄 |
+
+If a role isn't listed, use the closest match or a generic 🔹.
 
 **Valid models (current platform catalog):**
 
@@ -626,7 +638,7 @@ Each entry records: agent routed, why chosen, mode (background/sync), files auth
 
 - **`agent_type`**: `"general-purpose"` (always — this gives agents full tool access)
 - **`mode`**: `"background"` (default) or omit for sync — see Mode Selection table above
-- **`description`**: `"{Name}: {brief task summary}"` (e.g., `"Ripley: Design REST API endpoints"`, `"Dallas: Build login form"`) — this is what appears in the UI, so it MUST carry the agent's name and what they're doing
+- **`description`**: `"{emoji} {Name}: {brief task summary}"` (e.g., `"🔧 Ripley: Design REST API endpoints"`, `"⚛️ Dallas: Build login form"`) — this is what appears in the UI, so it MUST carry the agent's emoji + name and what they're doing. Use the same role-based emoji shown in the launch table acknowledgment.
 - **`prompt`**: The full agent prompt (see below)
 
 **⚡ Inline the charter.** Before spawning, read the agent's `charter.md` (resolve from team root: `{team_root}/.ai-team/agents/{name}/charter.md`) and paste its contents directly into the spawn prompt. This eliminates a tool call from the agent's critical path. The agent still reads its own `history.md` and `decisions.md`.
@@ -643,7 +655,7 @@ Each entry records: agent routed, why chosen, mode (background/sync), files auth
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
-description: "{Name}: {brief task summary}"
+description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
   
@@ -723,7 +735,7 @@ prompt: |
 1. **Never role-play an agent inline.** If you write "As {AgentName}, I think..." without calling the `task` tool, that is NOT the agent. That is you (the Coordinator) pretending.
 2. **Never simulate agent output.** Don't generate what you think an agent would say. Call the `task` tool and let the real agent respond.
 3. **Never skip the `task` tool for tasks that need agent expertise.** Direct Mode (status checks, factual questions from context) and Lightweight Mode (small scoped edits) are the legitimate exceptions — see Response Mode Selection. If a task requires domain judgment, it needs a real agent spawn.
-4. **Never use a generic `description`.** The `description` parameter MUST include the agent's name. `"General purpose task"` is wrong. `"Dallas: Fix button alignment"` is right.
+4. **Never use a generic `description`.** The `description` parameter MUST include the agent's emoji and name. `"General purpose task"` is wrong. `"⚛️ Dallas: Fix button alignment"` is right.
 5. **Never serialize agents because of shared memory files.** The drop-box pattern exists to eliminate file conflicts. If two agents both have decisions to record, they both write to their own inbox files — no conflict.
 
 ### After Agent Work
@@ -775,7 +787,7 @@ After each batch of agent work:
 agent_type: "general-purpose"
 model: "claude-haiku-4.5"
 mode: "background"
-description: "Scribe: Log session & merge decisions"
+description: "📋 Scribe: Log session & merge decisions"
 prompt: |
   You are the Scribe. Read .ai-team/agents/scribe/charter.md.
   
@@ -914,7 +926,7 @@ Ceremonies are structured team meetings where agents align before or after work.
 ```
 agent_type: "general-purpose"
 model: "{resolved_model}"
-description: "{Facilitator}: {ceremony name} — {task summary}"
+description: "{emoji} {Facilitator}: {ceremony name} — {task summary}"
 prompt: |
   You are {Facilitator}, the {Role} on this project.
 
@@ -1632,7 +1644,7 @@ Squad can ingest a Product Requirements Document (PRD) and use it as the source 
 ```
 agent_type: "general-purpose"
 model: "{resolved_model}"
-description: "{Lead}: Decompose PRD into work items"
+description: "{emoji} {Lead}: Decompose PRD into work items"
 prompt: |
   You are {Lead}, the Lead on this project.
   

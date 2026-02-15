@@ -67,3 +67,6 @@
 
 📌 Team update (2026-02-13): CI/CD workflows and team branching infrastructure consolidated — Three workflows shipped (squad-ci.yml, squad-preview.yml, squad-release.yml), CI guard added (squad-main-guard.yml) to block .ai-team/** and internal team-docs/** from main/preview, release process documented comprehensively in docs/scenarios/release-process.md. CONTRIBUTING.md guide created for external contributors (branch model, protected files, guard explanation, PR process). All enforcements via GitHub Actions CI gates, not just .gitignore. — decided by Kobayashi and McManus
 
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+

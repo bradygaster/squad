@@ -203,3 +203,6 @@ _Summarized from initial assessment, messaging overhaul, demo script, and README
 
 - **CONTRIBUTING.md created (2026-02-13)** — Proper contributor's guide with complete branch model education. Structure: Getting Started (fork/clone/install/test) → Branch Model (three-tier diagram + naming convention) → What's Protected (unmissable section on `.ai-team/` and `team-docs/` blocks, guard workflow behavior) → PR Process (step-by-step from feature branch through guard checks with remediation) → File Matrix (quick reference table) → Guard Mechanism (how it works, transparent) → Running Tests → Commit Conventions (conventional commits) → Code Style (2-space, camelCase, minimal comments) → Labels (taxonomy brief) → FAQ (10 common questions) → Summary. Key strategy: make `.ai-team/` rule unmissable through repetition, visual emphasis (🚫 emoji, bold, multiple sections), and concrete examples. Guard workflow is explained as a helper not a blocker. Branch protection motivated by "keeps biting us" — human reason, not dogma. Updated `docs/community.md` "How to Contribute" section with prominent CONTRIBUTING.md link.
 
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+

@@ -86,3 +86,6 @@ _Summarized from initial assessment (2026-02-07). Full entries in `history-archi
     - **FAIL: "ask_user referenced in Init Mode"** — The prompt never mentions `ask_user` or any explicit tool for getting confirmation. Without this, the LLM has no mechanism to yield control back to the user.
   - **Pattern: Prompt structure testing.** These are not runtime LLM behavior tests — they verify the text content of generated prompt files. The pattern is: run `node index.js` in a temp dir, read the generated `.github/agents/squad.agent.md`, extract sections by heading, assert on text patterns (regex + string search). This catches prompt regressions without needing an LLM in the loop.
   - **Key insight:** The current prompt relies on step numbering alone to create a pause point. Step 5 says "Ask: Look right?" and step 6 says "On confirmation, create..." — but without an explicit STOP instruction or ask_user reference, LLMs treat steps 4-6 as a single execution block. The fix needs both: (a) an explicit STOP/WAIT directive, and (b) an ask_user tool reference to force the LLM to yield.
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+

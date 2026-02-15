@@ -42,3 +42,6 @@
 - Multi-root workspaces have known bugs with path resolution and `grep_search` (vscode#264837, vscode#293428). Single-root is the supported configuration
 - VS Code's silent success bug on `editFiles` (vscode#253561) mirrors Squad's P0 bug — keep Response Order workaround in spawn prompts
 - **Key architectural insight:** Squad's instruction-level abstraction (describing operations, not tool names) is the correct pattern. It naturally works across both CLI and VS Code because the agent maps operation descriptions to available tools
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+

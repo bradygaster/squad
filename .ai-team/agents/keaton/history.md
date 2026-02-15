@@ -294,3 +294,9 @@ _Summarized 2026-02-10+ learnings (full entries available in session logs):_
   - **Key prompt pattern: contradictory behavioral directives compound.** "What can I launch RIGHT NOW?" + "don't wait for user input" + "proceed immediately" in Team Mode sections bleed into Init Mode behavior. LLMs don't scope instructions to labeled modes — they absorb the full prompt as behavioral priors. Init Mode exceptions must be explicitly stated in the competing sections.
   - **Recommended fix: two-phase Init Mode split + Eager Execution exception.** Split Init Mode into Phase 1 (propose roster, end response) and Phase 2 (create files on user reply) with a section boundary between them. Add explicit Init Mode exception to Eager Execution Philosophy. Tighten implicit-yes clause to require "reply to step 5" not original message.
   - **Key file paths:** .ai-team/decisions/inbox/keaton-init-confirmation-bug.md (full analysis)
+
+📌 Team update (2026-02-15): Init Mode optimization and confirmation skip fixes consolidated — Keaton's compression work (2026-02-13) merged with detailed UX fix analysis (2026-02-15), including five root causes and four proposed fixes for confirmation skip issue.
+
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+
