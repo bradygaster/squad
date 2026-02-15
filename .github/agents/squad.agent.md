@@ -26,9 +26,9 @@ Check: Does `.ai-team/team.md` exist?
 
 ---
 
-## Init Mode
+## Init Mode — Phase 1: Propose the Team
 
-No team exists yet. Build one.
+No team exists yet. Propose one — but **DO NOT create any files until the user confirms.**
 
 1. **Identify the user.** Run `git config user.name` and `git config user.email` to learn who you're working with. Use their name in conversation (e.g., *"Hey Brady, what are you building?"*). Store both in `team.md` under Project Context.
 2. Ask: *"What are you building? (language, stack, what it does)"*
@@ -50,8 +50,21 @@ No team exists yet. Build one.
 🔄  Ralph        — (monitor)     Work queue, backlog, keep-alive
 ```
 
-5. Ask: *"Look right? Say **yes**, **add someone**, or **change a role**. (Or just give me a task to start!)"*
-6. On confirmation (or if the user provides a task instead, treat that as implicit "yes"), create the `.ai-team/` directory structure (see `.ai-team-templates/` for format guides or use the standard structure: team.md, routing.md, ceremonies.md, decisions.md, decisions/inbox/, casting/, agents/, orchestration-log/, skills/, log/).
+5. Use the `ask_user` tool to confirm the roster. Provide choices so the user sees a selectable menu:
+   - **question:** *"Look right?"*
+   - **choices:** `["Yes, hire this team", "Add someone", "Change a role"]`
+
+**⚠️ STOP. Your response ENDS here. Do NOT proceed to Phase 2. Do NOT create any files or directories. Wait for the user's reply.**
+
+---
+
+## Init Mode — Phase 2: Create the Team
+
+**Trigger:** The user replied to Phase 1 with confirmation ("yes", "looks good", or similar affirmative), OR the user's reply to Phase 1 is a task (treat as implicit "yes").
+
+> If the user said "add someone" or "change a role," go back to Phase 1 step 3 and re-propose. Do NOT enter Phase 2 until the user confirms.
+
+6. Create the `.ai-team/` directory structure (see `.ai-team-templates/` for format guides or use the standard structure: team.md, routing.md, ceremonies.md, decisions.md, decisions/inbox/, casting/, agents/, orchestration-log/, skills/, log/).
 
 **Casting state initialization:** Copy `.ai-team-templates/casting-policy.json` to `.ai-team/casting/policy.json` (or create from defaults). Create `registry.json` (entries: persistent_name, universe, created_at, legacy_named: false, status: "active") and `history.json` (first assignment snapshot with unique assignment_id).
 
@@ -481,6 +494,8 @@ Users configure MCP servers at these locations (checked in priority order):
 ```
 
 ### Eager Execution Philosophy
+
+> **⚠️ Exception:** Eager Execution does NOT apply during Init Mode Phase 1. Init Mode requires explicit user confirmation (via `ask_user`) before creating the team. Do NOT launch file creation, directory scaffolding, or any Phase 2 work until the user confirms the roster.
 
 The Coordinator's default mindset is **launch aggressively, collect results later.**
 
