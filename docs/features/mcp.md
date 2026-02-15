@@ -1,5 +1,15 @@
 # MCP Setup Guide for Squad
 
+> **Try this:**  
+> `"Show me which MCP servers are available"`  
+> `"Configure the GitHub MCP server"`
+
+MCP (Model Context Protocol) servers extend Squad with external services — GitHub, notifications, deployments, Trello, and more. Agents discover and use MCP tools automatically.
+
+---
+
+## What MCP Means for Squad
+
 **MCP (Model Context Protocol) servers extend your Squad environment.** Agents use MCP tools to send notifications, query GitHub, monitor deployments, integrate with Trello, and more. This guide walks you through configuring MCP services step-by-step.
 
 ---

@@ -1,10 +1,16 @@
 # Squad in CI/CD Pipelines
 
-Using Squad with GitHub Actions. Label-driven automation, heartbeat workflows, and autonomous issue processing.
+> **Try this:**  
+> `"Set up GitHub Actions to run tests on every PR and deploy to staging on merge to main"`  
+> `"Enable Ralph's heartbeat workflow to triage issues automatically"`
+
+Ralph runs periodically via GitHub Actions to handle housekeeping between Copilot sessions — triage new issues, apply squad labels, check stale branches, archive old decisions.
 
 ---
 
 ## 1. The Heartbeat Workflow — Ralph Between Sessions
+
+Using Squad with GitHub Actions. Label-driven automation, heartbeat workflows, and autonomous issue processing.
 
 Ralph (the manager agent) runs periodically via GitHub Actions to handle housekeeping between Copilot sessions:
 

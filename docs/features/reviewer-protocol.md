@@ -1,5 +1,15 @@
 # Reviewer Rejection Protocol
 
+> **Try this:**  
+> `"Review the changes in src/auth/ and check for security issues"`  
+> `"Lead, review the PR from Fenster"`
+
+When a reviewer (Lead, Tester) rejects work, the original agent is locked out from self-revision. This prevents endless fix-retry loops and forces human oversight or reassignment.
+
+---
+
+## How It Works
+
 When a reviewer (Lead, Tester) rejects an agent's work, the agent is **locked out** from self-revising. This prevents endless fix-retry loops and forces human oversight or escalation. The protocol ensures rejected work doesn't slip through without proper review.
 
 ## How It Works

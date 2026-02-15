@@ -1,6 +1,10 @@
 # Ceremonies
 
-Ceremonies are structured team meetings that happen at key moments — before multi-agent work begins, or after something goes wrong. They're configured in `.ai-team/ceremonies.md`.
+> **Try this:**  
+> `"Schedule a daily standup at 9am and a sprint retro every Friday"`  
+> `"Run a design review before we start the authentication rebuild"`
+
+Ceremonies are structured team meetings that happen at key moments — before multi-agent work begins, or after something goes wrong. Squad runs them automatically when needed.
 
 ---
 

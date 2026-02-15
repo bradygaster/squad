@@ -1,10 +1,16 @@
 # Adding Squad Mid-Project
 
-Never too late to add Squad. Agents discover what's there, learn your patterns, and get up to speed in 2–3 sessions.
+> **Try this:**  
+> `"This project is already in progress — catch me up on what's been built and what's in the backlog"`  
+> `"We're 3 months into development — help us add Squad"`
+
+Never too late to add Squad. Agents discover what's there, learn your patterns, and get up to speed in 2–3 sessions. No rewrite needed.
 
 ---
 
 ## 1. You're Halfway Through — Is It Too Late?
+
+Never too late to add Squad. Agents discover what's there, learn your patterns, and get up to speed in 2–3 sessions.
 
 No. Squad is designed for **existing codebases**. Whether you're 3 weeks in or 3 years in, agents adapt.
 

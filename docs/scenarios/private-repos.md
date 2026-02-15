@@ -1,5 +1,15 @@
 # Squad on Private Repositories — Privacy & Security
 
+> **Try this:**  
+> `"Set up Squad for a private repo with GitHub Enterprise"`  
+> `"I need to know Squad's data security model"`
+
+Squad runs entirely in your Copilot session. Nothing leaves your machine except what Copilot already does. Code stays local, no Squad-specific telemetry.
+
+---
+
+## 1. Where Squad Runs
+
 Squad runs entirely in your Copilot session. Nothing leaves your machine except what Copilot already does.
 
 ---

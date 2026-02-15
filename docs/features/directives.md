@@ -1,5 +1,16 @@
 # Directives
 
+> **Try this:**  
+> `"From now on, all tests must use Jest instead of Mocha"`  
+> `"Always use single quotes in TypeScript"`  
+> `"Never commit directly to main"`
+
+Directives are team rules that persist across sessions. When you say "always" or "never", Squad captures it and writes it to the team's permanent memory. Every agent reads these before working.
+
+---
+
+## How Directives Work
+
 A directive is a preference, rule, or constraint the team remembers across sessions. When you say "always do X" or "never do Y", Squad captures it as a directive, writes it to the decisions inbox, and the Scribe merges it into `.ai-team/decisions.md` — the team's permanent memory.
 
 ## How Directives Work

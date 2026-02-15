@@ -1,5 +1,15 @@
 # Squad Pings You
 
+> **Try this:**  
+> `"Notify me when the build finishes"`  
+> `"Ping me on Teams when you need my input"`
+
+Your squad sends you instant messages when they need input, hit an error, or complete work. Works with Teams, Discord, Slack, webhooks — whatever you configure.
+
+---
+
+## How It Works
+
 Your squad can send you instant messages when they need your input. Leave your terminal, get pinged on your phone.
 
 ---

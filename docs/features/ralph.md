@@ -1,5 +1,16 @@
 # Ralph — Work Monitor
 
+> **Try this:**  
+> `"Ralph, show me what everyone is working on"`  
+> `"Ralph, what's blocking progress on issue #42?"`  
+> `"Ralph, assign the next high-priority issue"`
+
+Ralph tracks the work queue, monitors CI status, and ensures the team never sits idle when there's work to do. He's always on the roster and requires GitHub CLI access.
+
+---
+
+## What Ralph Does
+
 Ralph is a built-in squad member whose job is keeping tabs on work. Like Scribe tracks decisions, **Ralph tracks and drives the work queue**. He's always on the roster — not cast from a universe — and has one job: make sure the team never sits idle when there's work to do.
 
 ## Prerequisites

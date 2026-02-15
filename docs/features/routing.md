@@ -1,5 +1,16 @@
 # Work Routing
 
+> **Try this:**  
+> `"Route all database-related work to Basher"`  
+> `"Fenster, fix the login validation bug"`  
+> `"Who handles src/api/ changes?"`
+
+The coordinator routes work to the right agent using named routing (explicit), domain routing (pattern matching), and skill-aware routing (capability checking). No manual triage needed.
+
+---
+
+## Routing Strategies
+
 The coordinator decides who handles each piece of work using a three-layer routing system: named routing (explicit assignments), domain routing (pattern matching), and skill-aware routing (capability checking). The goal: get work to the right agent without manual triage overhead.
 
 ## Routing Strategies

@@ -1,10 +1,17 @@
 # Squad for Open Source Projects
 
-Autonomous issue triage, community contributor support, and architectural knowledge sharing.
+> **Try this:**  
+> `"Help me contribute to this open source project — review their CONTRIBUTING.md and set up a team"`  
+> `"Enable auto-triage for incoming issues on my OSS repo"`  
+> `"Handle good-first-issue #42 autonomously"`
+
+Squad helps OSS maintainers with autonomous issue triage, contributor guidance, and architectural knowledge sharing. Reduces maintainer burden while keeping quality high.
 
 ---
 
 ## 1. The Open Source Maintainer Problem
+
+Autonomous issue triage, community contributor support, and architectural knowledge sharing.
 
 You maintain an open source project. Issues pile up. PRs from new contributors need guidance. Questions repeat. Triaging takes hours.
 

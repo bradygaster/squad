@@ -1,6 +1,10 @@
 # Starting a New Project with Squad
 
-Start from zero: new directory, new repo, full team in under a minute.
+> **Try this:**  
+> `"Set up Squad for a new React + Node.js app"`  
+> `"Initialize a team for a task management app that can run in Azure Web App PaaS"`
+
+Start from zero: new directory, new repo, full team in under a minute. Squad analyzes your description and assembles the right specialists.
 
 ---
 

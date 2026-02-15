@@ -1,6 +1,10 @@
 # Release Process for Squad Maintainers
 
-Complete step-by-step guide for the Squad development team: from feature development through to production release.
+> **Try this:**  
+> `"We're ready to ship v1.2.0 — run the release process: changelog, tags, and publish"`  
+> `"Merge preview to main and cut a production release"`
+
+Complete step-by-step guide for Squad maintainers: three-branch model (dev/preview/main), guard workflows, PR merging, and production release procedures.
 
 ---
 

@@ -1,6 +1,11 @@
 # Skills System
 
-Skills are reusable knowledge files that agents read before working. They encode patterns, conventions, and techniques learned from real work.
+> **Try this:**  
+> `"Show me what skills this team has learned"`  
+> `"List all skills"`  
+> `"Create a skill for our deployment process"`
+
+Agents learn from real work and write skill files — reusable patterns, conventions, and techniques. Skills compound over time, making your team smarter with each project.
 
 ---
 

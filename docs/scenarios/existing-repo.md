@@ -1,10 +1,17 @@
 # Adding Squad to an Existing Repo
 
-You have a project with code, conventions, and history. Squad discovers what's already there.
+> **Try this:**  
+> `"This is a SaaS app with React frontend, Node.js API, and PostgreSQL — set up Squad"`  
+> `"Team, review the codebase and tell me what you find"`  
+> `"We always use Zod for API validation and Prisma for database queries"`
+
+Squad discovers your existing project — stack, patterns, conventions — and proposes a team that fits. Agents explore the codebase first, then start working with full context.
 
 ---
 
 ## 1. Install Squad
+
+You have a project with code, conventions, and history. Squad discovers what's already there.
 
 Navigate to your existing repo and run:
 

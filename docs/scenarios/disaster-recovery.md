@@ -1,10 +1,17 @@
 # Disaster Recovery — When Things Go Wrong
 
-Recovery scenarios: deleted `.ai-team/`, bad agent code, confused squad, upgrade issues.
+> **Try this:**  
+> `"My .ai-team/ directory was deleted — help me recover the team state"`  
+> `"An agent wrote bad code — how do I revert it?"`  
+> `"The squad is confused — reset their context"`
+
+Recovery procedures for deleted `.ai-team/`, bad agent code, confused squads, and upgrade issues. Most problems are fixable with Git or re-init.
 
 ---
 
 ## 1. "I accidentally deleted `.ai-team/`"
+
+Recovery scenarios: deleted `.ai-team/`, bad agent code, confused squad, upgrade issues.
 
 **Solution:** It's in Git. Restore it.
 

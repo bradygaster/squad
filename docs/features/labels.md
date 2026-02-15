@@ -1,6 +1,13 @@
 # Label Taxonomy
 
-Squad uses a structured, namespaced label system to drive workflow automation. Labels are not just tags — they're the state machine. Five namespaces define issue lifecycle, priority, ownership, and release targeting.
+> **Try this:**  
+> `"Apply the go:yes label to issue #42 and target it for v0.5.0"`  
+> `"Show me all issues with priority:p0"`  
+> `"Add squad:fenster to issue #23"`
+
+Squad uses structured, namespaced labels as the state machine. Labels drive workflow automation — not just tags. Five namespaces control lifecycle, priority, ownership, and release targeting.
+
+---
 
 ## The Five Namespaces
 

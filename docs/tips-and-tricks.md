@@ -1,5 +1,11 @@
 # Tips and Tricks for Managing Your Squad
 
+> **Quick Start Prompts:**  
+> `"Team, build the login feature — include UI, API endpoints, and tests"`  
+> `"Always use TypeScript strict mode and named exports"`  
+> `"Ralph, start monitoring — handle the backlog while I work on urgent tasks"`  
+> `"What did the team accomplish last session?"`
+
 Real patterns from using Squad effectively. These are techniques that work.
 
 ---

@@ -1,10 +1,17 @@
 # Keeping Your Squad Across Many Projects
 
-Squad persistence and portability. Your squad remembers skills, casting, and knowledge. Take them everywhere.
+> **Try this:**  
+> `"I want to keep my current team — don't cast a new one for this project"`  
+> `"Export my squad so I can use them on another repo"`  
+> `"Import the team from squad-export.json"`
+
+Your squad remembers skills, casting, and knowledge. Export them from one project, import into another. They bring all their accumulated expertise with them.
 
 ---
 
 ## 1. Your Squad Remembers
+
+Squad persistence and portability. Your squad remembers skills, casting, and knowledge. Take them everywhere.
 
 After working on a project for a few weeks, your squad has learned:
 

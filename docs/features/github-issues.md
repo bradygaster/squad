@@ -1,6 +1,11 @@
 # GitHub Issues Mode
 
-Drive development from your GitHub Issues backlog. Squad connects to a repo, picks up issues, creates branches, implements work, and opens PRs.
+> **Try this:**  
+> `"Show me the open issues for this repo"`  
+> `"Work on issue #42"`  
+> `"There's review feedback on PR #24"`
+
+Squad connects to your GitHub repository, fetches issues from the backlog, routes work to the right agents, creates branches, implements changes, and opens PRs — all from natural language requests.
 
 ---
 

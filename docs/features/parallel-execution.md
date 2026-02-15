@@ -1,5 +1,16 @@
 # Parallel Execution
 
+> **Try this:**  
+> `"Have three agents work on this in parallel: UI mockups, API spec, and database schema"`  
+> `"Work on issues #12, #15, and #18 at the same time"`  
+> `"Run at most 2 agents at once to save costs"`
+
+Squad launches independent work in parallel by default — multiple agents work simultaneously, no waiting. You control concurrency limits and can force sequential execution when needed.
+
+---
+
+## How Parallel Execution Works
+
 Squad runs agents in parallel whenever possible. The fan-out pattern launches all independent agents simultaneously, waits for results, then proceeds — no sequential bottlenecks unless data dependencies or reviewer gates require them.
 
 ## How Parallel Execution Works

@@ -1,10 +1,16 @@
 # Moving a Team Between Repos
 
-Export a trained team from one repo and import it into another. Agents carry their skills and portable knowledge — project-specific learnings stay tagged so they don't bleed into the new project.
+> **Try this:**  
+> `"Export my team from project-a so I can import it into project-b"`  
+> `"Import the alpha-team.json into this new repo"`
+
+Export trained agents from one repo, import into another. They bring skills and portable knowledge — project-specific learnings stay tagged so they don't bleed.
 
 ---
 
 ## 1. Export from the Source Repo
+
+Export a trained team from one repo and import it into another. Agents carry their skills and portable knowledge — project-specific learnings stay tagged so they don't bleed into the new project.
 
 In the repo where your team currently lives:
 

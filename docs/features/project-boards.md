@@ -1,6 +1,12 @@
 # Project Boards
 
-Squad integrates with GitHub Projects V2 for visual workflow tracking. Boards are **one-way projections** of the label-based state machine — labels are the source of truth, boards visualize it. Squad uses the `gh project` CLI (GraphQL-only) for board operations.
+> **Try this:**  
+> `"Create a project board for v0.5.0 with columns for each workflow stage"`  
+> `"Sync issue #42 to the project board"`
+
+Squad integrates with GitHub Projects V2 for visual workflow tracking. Labels are the source of truth, boards are one-way projections that visualize the state machine.
+
+---
 
 ## Prerequisites
 
