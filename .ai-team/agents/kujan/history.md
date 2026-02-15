@@ -119,3 +119,6 @@ _Summarized 2026-02-10 learnings (full entries in session logs and proposals):_
   - **Output:** `team-docs/proposals/034a-model-background-parity.md`, commented on Issue #34.
 📌 Team update (2026-02-14): VS Code Model & Background Parity — Phase 1 (v0.4.0): accept session model, use runSubagent. Phase 2 (v0.5.0): generate model-tier agent files. runSubagent lacks model param; use prompt-level detection in squad.agent.md. — decided by Kujan
 
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+
