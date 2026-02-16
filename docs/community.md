@@ -22,7 +22,7 @@ Found a bug, have a feature request, or want to discuss an idea? [Open an issue]
 Ready to contribute code? [Check out the open issues](https://github.com/bradygaster/squad/issues) and submit a PR. See [CONTRIBUTING.md](../CONTRIBUTING.md) for branch protection rules and the branch model.
 
 ### Join the Discussion
-Have questions, want to share how you're using Squad, or discuss the roadmap? [Open an issue](https://github.com/bradygaster/squad/issues).
+Have questions, want to share how you're using Squad, or discuss the roadmap? [Start a discussion](https://github.com/bradygaster/squad/discussions).
 
 ### External Deployments & Case Studies
 Deploy Squad on your project and share your experience. These real-world deployments inform our roadmap and help the community learn from each other.
@@ -65,5 +65,5 @@ If you're using Squad, consider:
 ## Contact & Support
 
 - **Issues & Feature Requests:** [GitHub Issues](https://github.com/bradygaster/squad/issues)
-- **Discussion & Questions:** [GitHub Issues](https://github.com/bradygaster/squad/issues)
+- **Discussion & Questions:** [GitHub Discussions](https://github.com/bradygaster/squad/discussions)
 - **Security Issues:** Report privately via GitHub Security Advisory
