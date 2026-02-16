@@ -17,6 +17,3 @@ _site/
 # blocked from main/preview by squad-main-guard.yml workflow.
 # ⚠️ NEVER merge .ai-team/ into main or preview.
 # The guard workflow will fail the PR if you try.
-
-# Squad Squad templates (internal, not distributed)
-.ai-team-templates/

@@ -4,6 +4,8 @@ on:
   pull_request:
     branches: [main, preview]
     types: [opened, synchronize, reopened]
+  push:
+    branches: [main, preview]
 
 permissions:
   contents: read
@@ -43,6 +45,8 @@ jobs:
               .filter(f => {
                 // .ai-team/** — ALL team state files, zero exceptions
                 if (f === '.ai-team' || f.startsWith('.ai-team/')) return true;
+                // .ai-team-templates/** — Squad's own templates, stay on dev
+                if (f === '.ai-team-templates' || f.startsWith('.ai-team-templates/')) return true;
                 // team-docs/** — ALL internal team docs, zero exceptions
                 if (f.startsWith('team-docs/')) return true;
                 return false;
@@ -59,6 +63,7 @@ jobs:
               '',
               'The following files must NOT be merged into `main`.',
               '`.ai-team/` is runtime team state — it belongs on dev branches only.',
+              '`.ai-team-templates/` is Squad\'s internal planning — it belongs on dev branches only.',
               '`team-docs/` is internal team content — it belongs on dev branches only.',
               '',
               '### Forbidden files found:',
