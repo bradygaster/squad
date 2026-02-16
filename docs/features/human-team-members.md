@@ -1,8 +1,14 @@
 # Human Team Members
 
-> **Try this:**  
-> `"Add Sarah (sarah@example.com) as a frontend developer to the team"`  
-> `"Add Jordan as design reviewer"`
+**Try this to add a human specialist:**
+```
+Add Sarah (sarah@example.com) as a frontend developer to the team
+```
+
+**Try this to add a human reviewer:**
+```
+Add Jordan as design reviewer
+```
 
 Not every team member needs to be AI. Add real people to the roster for decisions that require a human — design sign-off, security review, product approval.
 

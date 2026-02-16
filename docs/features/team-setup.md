@@ -1,9 +1,19 @@
 # Team Setup & Init Mode
 
-> **Try this:**  
-> `"Set up a team for a React + Node.js API with PostgreSQL"`  
-> `"Add a security specialist to the team"`  
-> `"Show me the current team roster"`
+**Try this to initialize for a specific stack:**
+```
+Set up a team for a React + Node.js API with PostgreSQL
+```
+
+**Try this to expand capabilities:**
+```
+Add a security specialist to the team
+```
+
+**Try this to view the roster:**
+```
+Show me the current team roster
+```
 
 Squad analyzes your project and proposes a team roster with 3-7 members tailored to your stack. You can accept as-is, customize during setup, or modify the team anytime after.
 

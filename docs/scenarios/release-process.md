@@ -1,8 +1,14 @@
 # Release Process for Squad Maintainers
 
-> **Try this:**  
-> `"We're ready to ship v1.2.0 — run the release process: changelog, tags, and publish"`  
-> `"Merge preview to main and cut a production release"`
+**Try this to ship a new version:**
+```
+We're ready to ship v1.2.0 — run the release process: changelog, tags, and publish
+```
+
+**Try this to promote to production:**
+```
+Merge preview to main and cut a production release
+```
 
 Complete step-by-step guide for Squad maintainers: three-branch model (dev/preview/main), guard workflows, PR merging, and production release procedures.
 

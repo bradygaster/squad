@@ -1,8 +1,14 @@
 # Reviewer Rejection Protocol
 
-> **Try this:**  
-> `"Review the changes in src/auth/ and check for security issues"`  
-> `"Lead, review the PR from Fenster"`
+**Try this to request a code review:**
+```
+Review the changes in src/auth/ and check for security issues
+```
+
+**Try this to trigger peer review:**
+```
+Lead, review the PR from Fenster
+```
 
 When a reviewer (Lead, Tester) rejects work, the original agent is locked out from self-revision. This prevents endless fix-retry loops and forces human oversight or reassignment.
 

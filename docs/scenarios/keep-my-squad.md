@@ -1,9 +1,19 @@
 # Keeping Your Squad Across Many Projects
 
-> **Try this:**  
-> `"I want to keep my current team — don't cast a new one for this project"`  
-> `"Export my squad so I can use them on another repo"`  
-> `"Import the team from squad-export.json"`
+**Try this to prevent re-casting:**
+```
+I want to keep my current team — don't cast a new one for this project
+```
+
+**Try this to save your team:**
+```
+Export my squad so I can use them on another repo
+```
+
+**Try this to load a saved team:**
+```
+Import the team from squad-export.json
+```
 
 Your squad remembers skills, casting, and knowledge. Export them from one project, import into another. They bring all their accumulated expertise with them.
 

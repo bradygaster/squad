@@ -1,8 +1,14 @@
 # Git Worktree Awareness
 
-> **Try this:**  
-> `"Use worktree-local mode — I want each branch to have its own team state"`  
-> `"Share the team across all worktrees — use main-checkout mode"`
+**Try this to enable branch-specific state:**
+```
+Use worktree-local mode — I want each branch to have its own team state
+```
+
+**Try this to share state across branches:**
+```
+Share the team across all worktrees — use main-checkout mode
+```
 
 Squad supports git worktrees with two strategies: **worktree-local** (each worktree has its own `.ai-team/` state) and **main-checkout** (shared state across all worktrees).
 

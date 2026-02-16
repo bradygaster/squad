@@ -1,9 +1,19 @@
 # Squad Alongside a Team of Human Developers
 
-> **Try this:**  
-> `"My team is all human devs — I just want Squad to help with coordination and memory"`  
-> `"Add Sarah (senior backend engineer) and Jamal (frontend lead) as human members"`  
-> `"Route security decisions to Sarah, she's the expert"`
+**Try this to use Squad for coordination:**
+```
+My team is all human devs — I just want Squad to help with coordination and memory
+```
+
+**Try this to add human team members:**
+```
+Add Sarah (senior backend engineer) and Jamal (frontend lead) as human members
+```
+
+**Try this to route critical decisions:**
+```
+Route security decisions to Sarah, she's the expert
+```
 
 Mixed AI + human teams: AI agents handle implementation, humans review and make critical decisions. Route work to humans just like AI agents.
 

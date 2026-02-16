@@ -1,8 +1,14 @@
 # Plugin Marketplace Guide
 
-> **Try this:**  
-> `"Install the AWS deployment plugin"`  
-> `"Show me available plugins for React development"`
+**Try this to add instant expertise:**
+```
+Install the AWS deployment plugin
+```
+
+**Try this to discover community bundles:**
+```
+Show me available plugins for React development
+```
 
 Plugins are community-curated bundles of agent templates, skills, and best practices. Install plugins to give your squad instant expertise in React, Azure, security, testing, and more.
 

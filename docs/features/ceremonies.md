@@ -1,8 +1,14 @@
 # Ceremonies
 
-> **Try this:**  
-> `"Schedule a daily standup at 9am and a sprint retro every Friday"`  
-> `"Run a design review before we start the authentication rebuild"`
+**Try this to schedule team ceremonies:**
+```
+Schedule a daily standup at 9am and a sprint retro every Friday
+```
+
+**Try this to trigger a pre-work design review:**
+```
+Run a design review before we start the authentication rebuild
+```
 
 Ceremonies are structured team meetings that happen at key moments — before multi-agent work begins, or after something goes wrong. Squad runs them automatically when needed.
 

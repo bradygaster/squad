@@ -1,9 +1,19 @@
 # Directives
 
-> **Try this:**  
-> `"From now on, all tests must use Jest instead of Mocha"`  
-> `"Always use single quotes in TypeScript"`  
-> `"Never commit directly to main"`
+**Try this to establish team coding standards:**
+```
+From now on, all tests must use Jest instead of Mocha
+```
+
+**Try this to set formatting rules:**
+```
+Always use single quotes in TypeScript
+```
+
+**Try this to enforce workflow policies:**
+```
+Never commit directly to main
+```
 
 Directives are team rules that persist across sessions. When you say "always" or "never", Squad captures it and writes it to the team's permanent memory. Every agent reads these before working.
 

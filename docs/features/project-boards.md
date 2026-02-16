@@ -1,8 +1,14 @@
 # Project Boards
 
-> **Try this:**  
-> `"Create a project board for v0.5.0 with columns for each workflow stage"`  
-> `"Sync issue #42 to the project board"`
+**Try this to visualize workflow tracking:**
+```
+Create a project board for v0.5.0 with columns for each workflow stage
+```
+
+**Try this to link issues to a board:**
+```
+Sync issue #42 to the project board
+```
 
 Squad integrates with GitHub Projects V2 for visual workflow tracking. Labels are the source of truth, boards are one-way projections that visualize the state machine.
 

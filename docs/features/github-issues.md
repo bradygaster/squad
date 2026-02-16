@@ -1,9 +1,19 @@
 # GitHub Issues Mode
 
-> **Try this:**  
-> `"Show me the open issues for this repo"`  
-> `"Work on issue #42"`  
-> `"There's review feedback on PR #24"`
+**Try this to connect to your backlog:**
+```
+Show me the open issues for this repo
+```
+
+**Try this to start work on a specific issue:**
+```
+Work on issue #42
+```
+
+**Try this to handle PR review feedback:**
+```
+There's review feedback on PR #24
+```
 
 Squad connects to your GitHub repository, fetches issues from the backlog, routes work to the right agents, creates branches, implements changes, and opens PRs — all from natural language requests.
 

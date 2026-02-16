@@ -1,9 +1,19 @@
 # Per-Agent Model Selection
 
-> **Try this:**  
-> `"Have all agents use Opus for the rest of this session"`  
-> `"Switch to Haiku — I'm trying to save costs"`  
-> `"Use Sonnet for code, Haiku for everything else"`
+**Try this to prioritize quality for the session:**
+```
+Have all agents use Opus for the rest of this session
+```
+
+**Try this to optimize costs:**
+```
+Switch to Haiku — I'm trying to save costs
+```
+
+**Try this to balance quality and budget:**
+```
+Use Sonnet for code, Haiku for everything else
+```
 
 Squad adjusts model selection based on your directive. Agents writing code get quality models (Sonnet/Opus), agents doing docs/logs get cost-optimized models (Haiku). You can override anytime.
 

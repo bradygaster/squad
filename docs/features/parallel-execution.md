@@ -1,9 +1,19 @@
 # Parallel Execution
 
-> **Try this:**  
-> `"Have three agents work on this in parallel: UI mockups, API spec, and database schema"`  
-> `"Work on issues #12, #15, and #18 at the same time"`  
-> `"Run at most 2 agents at once to save costs"`
+**Try this to launch concurrent work streams:**
+```
+Have three agents work on this in parallel: UI mockups, API spec, and database schema
+```
+
+**Try this to work multiple issues simultaneously:**
+```
+Work on issues #12, #15, and #18 at the same time
+```
+
+**Try this to control concurrency for cost savings:**
+```
+Run at most 2 agents at once to save costs
+```
 
 Squad launches independent work in parallel by default — multiple agents work simultaneously, no waiting. You control concurrency limits and can force sequential execution when needed.
 

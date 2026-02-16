@@ -1,8 +1,14 @@
 # Adding Squad Mid-Project
 
-> **Try this:**  
-> `"This project is already in progress — catch me up on what's been built and what's in the backlog"`  
-> `"We're 3 months into development — help us add Squad"`
+**Try this to catch up on current state:**
+```
+This project is already in progress — catch me up on what's been built and what's in the backlog
+```
+
+**Try this to onboard Squad late:**
+```
+We're 3 months into development — help us add Squad
+```
 
 Never too late to add Squad. Agents discover what's there, learn your patterns, and get up to speed in 2–3 sessions. No rewrite needed.
 

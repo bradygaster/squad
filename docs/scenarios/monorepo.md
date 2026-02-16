@@ -1,8 +1,14 @@
 # Squad in Monorepos
 
-> **Try this:**  
-> `"I'm building a microservices platform in a monorepo with 8 services — set up specialists for each domain"`  
-> `"Add a payments specialist who knows Stripe integration"`
+**Try this to set up domain specialists:**
+```
+I'm building a microservices platform in a monorepo with 8 services — set up specialists for each domain
+```
+
+**Try this to add targeted expertise:**
+```
+Add a payments specialist who knows Stripe integration
+```
 
 One squad per monorepo, not per service. Squad adds specialists per domain and routes work to the right agent based on which service is being modified.
 

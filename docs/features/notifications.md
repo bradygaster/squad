@@ -1,8 +1,14 @@
 # Squad Pings You
 
-> **Try this:**  
-> `"Notify me when the build finishes"`  
-> `"Ping me on Teams when you need my input"`
+**Try this to get notified on completion:**
+```
+Notify me when the build finishes
+```
+
+**Try this to stay in the loop:**
+```
+Ping me on Teams when you need my input
+```
 
 Your squad sends you instant messages when they need input, hit an error, or complete work. Works with Teams, Discord, Slack, webhooks — whatever you configure.
 

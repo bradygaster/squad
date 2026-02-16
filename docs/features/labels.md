@@ -1,9 +1,19 @@
 # Label Taxonomy
 
-> **Try this:**  
-> `"Apply the go:yes label to issue #42 and target it for v0.5.0"`  
-> `"Show me all issues with priority:p0"`  
-> `"Add squad:fenster to issue #23"`
+**Try this to apply workflow labels:**
+```
+Apply the go:yes label to issue #42 and target it for v0.5.0
+```
+
+**Try this to filter by priority:**
+```
+Show me all issues with priority:p0
+```
+
+**Try this to route work to a specific agent:**
+```
+Add squad:fenster to issue #23
+```
 
 Squad uses structured, namespaced labels as the state machine. Labels drive workflow automation — not just tags. Five namespaces control lifecycle, priority, ownership, and release targeting.
 

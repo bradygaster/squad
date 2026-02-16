@@ -1,9 +1,19 @@
 # Ralph — Work Monitor
 
-> **Try this:**  
-> `"Ralph, show me what everyone is working on"`  
-> `"Ralph, what's blocking progress on issue #42?"`  
-> `"Ralph, assign the next high-priority issue"`
+**Try this to see active work:**
+```
+Ralph, show me what everyone is working on
+```
+
+**Try this to identify blockers:**
+```
+Ralph, what's blocking progress on issue #42?
+```
+
+**Try this to auto-assign work:**
+```
+Ralph, assign the next high-priority issue
+```
 
 Ralph tracks the work queue, monitors CI status, and ensures the team never sits idle when there's work to do. He's always on the roster and requires GitHub CLI access.
 

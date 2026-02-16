@@ -1,8 +1,14 @@
 # Combining Knowledge from Multiple Squads
 
-> **Try this:**  
-> `"I have two teams — one on frontend, one on backend. How do I coordinate work between them?"`  
-> `"Export skills from my React project and import them into this new project"`
+**Try this to coordinate cross-team work:**
+```
+I have two teams — one on frontend, one on backend. How do I coordinate work between them?
+```
+
+**Try this to share skills across projects:**
+```
+Export skills from my React project and import them into this new project
+```
 
 You can import one full squad at a time, but you can cherry-pick skills from multiple exports manually. Best practice: merge teams, don't run parallel squads.
 

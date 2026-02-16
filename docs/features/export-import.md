@@ -1,8 +1,14 @@
 # Export & Import
 
-> **Try this:**  
-> `"Export my team to a file — I want to use them on another project"`  
-> `"Import the team from squad-export.json"`
+**Try this to make your team portable:**
+```
+Export my team to a file — I want to use them on another project
+```
+
+**Try this to bring a trained team to a new repo:**
+```
+Import the team from squad-export.json
+```
 
 Squad teams are portable. Export your trained agents, casting state, skills, and decisions to a single JSON file. Import them into any repo and they bring all their knowledge with them.
 

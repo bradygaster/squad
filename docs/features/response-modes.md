@@ -1,8 +1,14 @@
 # Response Modes
 
-> **Try this:**  
-> `"Respond in terse mode — just the facts"`  
-> `"Use lightweight mode for quick fixes"`
+**Try this to get concise answers:**
+```
+Respond in terse mode — just the facts
+```
+
+**Try this to speed up simple tasks:**
+```
+Use lightweight mode for quick fixes
+```
 
 Squad automatically picks the right response mode based on complexity — from instant direct answers (2s) to full multi-agent parallel work (60s). You can override anytime.
 

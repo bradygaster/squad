@@ -1,9 +1,19 @@
 # Adding Squad to an Existing Repo
 
-> **Try this:**  
-> `"This is a SaaS app with React frontend, Node.js API, and PostgreSQL — set up Squad"`  
-> `"Team, review the codebase and tell me what you find"`  
-> `"We always use Zod for API validation and Prisma for database queries"`
+**Try this to initialize Squad on your project:**
+```
+This is a SaaS app with React frontend, Node.js API, and PostgreSQL — set up Squad
+```
+
+**Try this to get an architecture overview:**
+```
+Team, review the codebase and tell me what you find
+```
+
+**Try this to establish coding standards:**
+```
+We always use Zod for API validation and Prisma for database queries
+```
 
 Squad discovers your existing project — stack, patterns, conventions — and proposes a team that fits. Agents explore the codebase first, then start working with full context.
 

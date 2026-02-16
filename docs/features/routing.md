@@ -1,9 +1,19 @@
 # Work Routing
 
-> **Try this:**  
-> `"Route all database-related work to Basher"`  
-> `"Fenster, fix the login validation bug"`  
-> `"Who handles src/api/ changes?"`
+**Try this to set domain-specific routing:**
+```
+Route all database-related work to Basher
+```
+
+**Try this to direct work explicitly:**
+```
+Fenster, fix the login validation bug
+```
+
+**Try this to check routing logic:**
+```
+Who handles src/api/ changes?
+```
 
 The coordinator routes work to the right agent using named routing (explicit), domain routing (pattern matching), and skill-aware routing (capability checking). No manual triage needed.
 

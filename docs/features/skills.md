@@ -1,9 +1,19 @@
 # Skills System
 
-> **Try this:**  
-> `"Show me what skills this team has learned"`  
-> `"List all skills"`  
-> `"Create a skill for our deployment process"`
+**Try this to see what your team learned:**
+```
+Show me what skills this team has learned
+```
+
+**Try this to list all accumulated knowledge:**
+```
+List all skills
+```
+
+**Try this to document a reusable pattern:**
+```
+Create a skill for our deployment process
+```
 
 Agents learn from real work and write skill files — reusable patterns, conventions, and techniques. Skills compound over time, making your team smarter with each project.
 

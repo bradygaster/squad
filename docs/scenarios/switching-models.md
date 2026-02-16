@@ -1,9 +1,19 @@
 # Switching AI Models — Budget vs Quality
 
-> **Try this:**  
-> `"Switch everyone to Haiku — I'm trying to save costs this sprint"`  
-> `"Use Opus for all agents — quality over cost for this session"`  
-> `"Reset to default model strategy"`
+**Try this to reduce costs temporarily:**
+```
+Switch everyone to Haiku — I'm trying to save costs this sprint
+```
+
+**Try this to maximize quality:**
+```
+Use Opus for all agents — quality over cost for this session
+```
+
+**Try this to restore defaults:**
+```
+Reset to default model strategy
+```
 
 Squad supports 16 models across three tiers. Switch the entire team, set per-agent preferences, or let Squad auto-route based on task type.
 

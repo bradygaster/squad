@@ -1,9 +1,19 @@
 # Squad for Open Source Projects
 
-> **Try this:**  
-> `"Help me contribute to this open source project — review their CONTRIBUTING.md and set up a team"`  
-> `"Enable auto-triage for incoming issues on my OSS repo"`  
-> `"Handle good-first-issue #42 autonomously"`
+**Try this to onboard as a contributor:**
+```
+Help me contribute to this open source project — review their CONTRIBUTING.md and set up a team
+```
+
+**Try this to automate maintainer tasks:**
+```
+Enable auto-triage for incoming issues on my OSS repo
+```
+
+**Try this to handle contributor-friendly tasks:**
+```
+Handle good-first-issue #42 autonomously
+```
 
 Squad helps OSS maintainers with autonomous issue triage, contributor guidance, and architectural knowledge sharing. Reduces maintainer burden while keeping quality high.
 

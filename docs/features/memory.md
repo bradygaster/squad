@@ -1,9 +1,19 @@
 # Memory System
 
-> **Try this:**  
-> `"What decisions has the team made about testing strategy?"`  
-> `"Always use single quotes in TypeScript"`  
-> `"What does Kane remember about the authentication system?"`
+**Try this to query team decisions:**
+```
+What decisions has the team made about testing strategy?
+```
+
+**Try this to establish a new rule:**
+```
+Always use single quotes in TypeScript
+```
+
+**Try this to check agent knowledge:**
+```
+What does Kane remember about the authentication system?
+```
 
 Squad remembers everything — decisions, conventions, architecture patterns, and individual agent learnings. Memory grows with every session, making agents smarter over time.
 
