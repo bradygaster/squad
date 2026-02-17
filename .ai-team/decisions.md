@@ -2125,4 +2125,370 @@ Changed `.sidebar-logo-img` from `max-width:100%; height:auto` to `height:40px; 
 **What:** v0.4.1 tag was created with 129+ forbidden files (.ai-team/, .ai-team-templates/, team-docs/). Deleted release+tag, cleaned main branch (146 files removed), re-tagged from clean main. 6-minute contamination window (21:40-21:46 UTC) where `npx github:bradygaster/squad@v0.4.1` delivered contaminated state. Recovery: Release deleted, tags deleted locally+remotely, main verified clean, new v0.4.1 tag created from clean commit, release recreated, distribution tested.
 **Why:** Guard workflows are detective (post-commit), not preventive. Direct push to main bypassed the intended preview→main PR flow. Branch protection rules are mandatory to enforce PR reviews and prevent contamination.
 
+### 2026-02-16: Insider-specific installation flow
+**By:** Kobayashi
+**What:** Branch-based installation via `npx github:bradygaster/squad#insider` with isolated state directory (`.squad-insider/`) and version identification (`v0.5.0-insider+{commit}`). Honor-system access control with public insider list in CONTRIBUTORS.md.
+**Why:** Brady requested insiders have a DIFFERENT installation mechanism than public pre-releases. Standard beta tags (`v0.5.0-beta.1`) are version-pinned and stable; insiders need continuous access to bleeding-edge builds. Branch-based distribution is the npx-native solution that makes insiders feel special while staying simple for a solo maintainer.
+
+---
+
+## Recommendation: Branch-Based Insider Access
+
+### 1. Branch Strategy
+
+**Use an `insider` branch for continuous insider builds.**
+
+- `insider` branch tracks bleeding-edge changes as they land on `dev`
+- Separate from `dev` (which may have broken WIP) and `preview` (which is release prep)
+- Periodically synced from `dev` when changes are ready for insider testing (manual push by Brady or automated workflow)
+- When a build graduates to public beta, tag it from `insider` → `v0.5.0-beta.1`
+
+**Branch flow:**
+```
+dev → insider (continuous) → v0.5.0-beta.1 (tag) → main (release)
+```
+
+**Why not tags?**
+- `v0.5.0-insider.1`, `v0.5.0-insider.2`, etc. require Brady to cut a new tag for every insider build
+- Insiders would have to **pin to specific tags** (`#v0.5.0-insider.3`), which defeats the "always latest" goal
+- Branch-based: insiders re-run `npx` and automatically get latest build on `insider` branch
+
+**Why not a separate repo?**
+- Too heavy — private fork requires separate GitHub repo, separate issues, separate CI
+- Doubles Brady's maintenance burden
+- Breaks the dogfooding story (Squad Squad would need TWO repos)
+
+---
+
+### 2. Installation Command
+
+**Insiders install via:**
+```bash
+npx github:bradygaster/squad#insider
+```
+
+**Public users install via:**
+```bash
+npx github:bradygaster/squad
+```
+(pulls from `main`)
+
+**Public beta testers install via:**
+```bash
+npx github:bradygaster/squad#v0.5.0-beta.1
+```
+(version-pinned for stability)
+
+**Distinction is clear:**
+- `#insider` = bleeding edge, continuous updates, you're testing IN PRODUCTION
+- `#v0.5.0-beta.1` = stable snapshot, version-pinned, public pre-release
+- No tag = stable release from `main`
+
+---
+
+### 3. Access Control
+
+**Honor system + public insider list.**
+
+GitHub repo is public, so technical enforcement is impossible without a private fork. Instead:
+- Document insider status as **"testing in production — not for general use"**
+- Add `[INSIDER]` badge next to names in `CONTRIBUTORS.md`
+- Insider agreement: "You're testing unstable builds. Don't share the install command with non-insiders."
+- If insiders share the command, the worst that happens is more testers (acceptable risk)
+
+**No technical gate because:**
+- Branch protection can't restrict read access on a public repo
+- GitHub Teams would require making the repo private (breaks dogfooding story)
+- OAuth apps/tokens add infrastructure Brady doesn't want to maintain
+
+**Why this works:**
+- Insider status is a **privilege, not a secret**
+- Insiders want to test early and provide feedback — sharing the command doesn't benefit them
+- If it becomes a problem, Brady can move `insider` branch to a private fork later (reversible)
+
+---
+
+### 4. Version Identification
+
+**Insiders see a distinct version string:**
+
+```bash
+$ npx github:bradygaster/squad#insider --version
+Squad v0.5.0-insider+abc1234 (built 2026-02-16 14:32 UTC)
+⚠️  INSIDER BUILD — NOT FOR PRODUCTION
+```
+
+**Format:** `v{NEXT_VERSION}-insider+{COMMIT_SHA}`
+
+**Implementation:**
+- `index.js` reads git ref at install time: `git rev-parse --short HEAD`
+- Stamps `squad.agent.md` frontmatter with: `version: "0.5.0-insider+abc1234"`
+- Adds build timestamp to version display
+- Adds warning banner to `--version` output
+
+**Why `+{COMMIT_SHA}`?**
+- Insiders can report bugs with exact commit: "v0.5.0-insider+abc1234 breaks on Windows"
+- Brady can bisect issues: "This worked at `+abc1234` but broke at `+def5678`"
+- Makes version distinct from public builds (no confusion with `v0.5.0` or `v0.5.0-beta.1`)
+
+---
+
+### 5. Update Flow
+
+**Insiders update by re-running the install command:**
+```bash
+npx github:bradygaster/squad#insider
+```
+
+**npx behavior:**
+- Downloads latest commit from `insider` branch
+- Runs `index.js` from that commit
+- Overwrites Squad-owned files (`.github/agents/squad.agent.md`, `templates/`)
+- Preserves user state (`.squad-insider/` or `.squad/`)
+
+**Notification:**
+- When Brady pushes a new insider build, post in GitHub Discussions: "Insider build `+abc1234` is live"
+- Insiders can opt in to watch the repo for updates
+- No auto-update (risky for testing — insiders should consciously update)
+
+**Cadence:**
+- No fixed schedule — Brady pushes to `insider` when a batch of changes is ready
+- Could be daily, could be weekly, depends on dev velocity
+- Insiders check Discussions or re-run `npx` whenever they want the latest
+
+---
+
+### 6. Transition to Public Beta
+
+**When an insider build is stable enough for public beta:**
+
+1. Brady tags the insider build:
+   ```bash
+   git checkout insider
+   git tag v0.5.0-beta.1
+   git push origin v0.5.0-beta.1
+   ```
+
+2. Announcement in GitHub Discussions:
+   > **Insider build `+abc1234` is now public beta v0.5.0-beta.1.**
+   >
+   > If you're an insider, you can:
+   > - Stay on `#insider` branch (bleeding edge, continuous updates)
+   > - Switch to `#v0.5.0-beta.1` (stable snapshot, no surprises)
+   >
+   > Public testers: Install with `npx github:bradygaster/squad#v0.5.0-beta.1`
+
+3. Insiders decide:
+   - **Stay on `insider`:** Keep getting latest changes (most will do this)
+   - **Pin to beta tag:** Test the exact build that public beta users see
+
+**Key insight:** Insiders aren't PROMOTED to beta users — they're a **parallel track** that keeps testing beyond what public beta users see.
+
+---
+
+### 7. Safety Mechanisms
+
+**Separate state directory:**
+
+Insider builds use `.squad-insider/` instead of `.squad/`:
+
+```
+.squad/          ← stable releases (0.4.1, 0.5.0, etc.)
+.squad-insider/  ← insider builds (continuous, may break)
+```
+
+**Why separate state?**
+- Prevents insider builds from corrupting production state
+- Insiders can run BOTH stable and insider builds on the same repo
+- Rollback is trivial: delete `.squad-insider/`, reinstall from `main`
+
+**Implementation:**
+- `index.js` detects insider build via `git symbolic-ref --short HEAD` → `insider`
+- Uses `.squad-insider/` instead of `.squad/` for all team state
+- Coordinator reads from `.squad-insider/team.md` when running from insider build
+
+**Warning banner:**
+- Every `--version` call shows: `⚠️ INSIDER BUILD — NOT FOR PRODUCTION`
+- Coordinator first response includes: `[Running insider build +abc1234]`
+- README.md for insider branch warns: "You're testing in production. Expect breakage."
+
+**Backup strategy:**
+- Before installing insider build, `index.js` creates `.squad-insider-backup-{timestamp}/`
+- If something catastrophic happens, user can restore from backup
+- Backup is automatic, user doesn't have to remember
+
+**Rollback flow:**
+1. User hits a critical bug on insider build
+2. Uninstall insider: remove `.squad-insider/`
+3. Reinstall stable: `npx github:bradygaster/squad` (pulls from `main`)
+4. Report bug in Discussions with commit SHA from `squad --version`
+
+---
+
+## Summary Table
+
+| Aspect | Public Users | Public Beta | Insiders |
+|--------|-------------|-------------|----------|
+| **Install command** | `npx github:bradygaster/squad` | `npx github:bradygaster/squad#v0.5.0-beta.1` | `npx github:bradygaster/squad#insider` |
+| **Source** | `main` branch (tagged release) | Tag (stable snapshot) | `insider` branch (continuous) |
+| **Version string** | `v0.5.0` | `v0.5.0-beta.1` | `v0.5.0-insider+abc1234` |
+| **State directory** | `.squad/` | `.squad/` | `.squad-insider/` |
+| **Update frequency** | Stable releases (weeks/months) | Beta cycles (weeks) | Continuous (days) |
+| **Access control** | Public | Public | Honor system + docs |
+| **Risk level** | Low (stable) | Medium (pre-release) | High (bleeding edge) |
+| **Purpose** | Production use | Public testing | Early feedback |
+
+---
+
+## Implementation Checklist
+
+### Phase 1: Branch Setup (15 minutes)
+- [ ] Create `insider` branch from current `dev`
+- [ ] Add branch protection rules (Brady-only push, no direct commits)
+- [ ] Update `insider` branch README with warning banner
+- [ ] Add insider install command to README
+
+### Phase 2: Version Stamping (1 hour, Fenster)
+- [ ] Modify `index.js` to detect `insider` branch at install time
+- [ ] Read commit SHA via `git rev-parse --short HEAD`
+- [ ] Stamp `squad.agent.md` with `version: "X.Y.Z-insider+{sha}"`
+- [ ] Add build timestamp to version metadata
+- [ ] Add `--version` flag handler with warning banner
+
+### Phase 3: State Isolation (1.5 hours, Fenster)
+- [ ] Modify `index.js` to use `.squad-insider/` on insider builds
+- [ ] Update coordinator to read from `.squad-insider/team.md`
+- [ ] Create automatic backup on insider install
+- [ ] Test: install stable, install insider, verify both work in parallel
+
+### Phase 4: Documentation (1 hour, McManus)
+- [ ] Add "Insider Program" section to README.md
+- [ ] Document install command, update flow, rollback process
+- [ ] Add insider badge convention to CONTRIBUTORS.md
+- [ ] Create GitHub Discussions template for insider announcements
+
+### Phase 5: First Insider Build (30 minutes, Brady)
+- [ ] Sync `dev` → `insider` (first time)
+- [ ] Post announcement in Discussions: "Insider program is live"
+- [ ] Invite first batch of insiders (existing contributors)
+- [ ] Test: install insider build, verify version string, run basic commands
+
+---
+
+## Open Questions for Brady
+
+1. **Sync frequency:** Should `dev` → `insider` sync be manual (Brady pushes when ready) or automated (GitHub Action on every `dev` push)?
+   - **Recommendation:** Manual. Brady controls when builds are "insider-ready."
+
+2. **Insider list visibility:** Should `CONTRIBUTORS.md` show `[INSIDER]` badge, or should insider status be private?
+   - **Recommendation:** Public. Makes insider status a visible privilege, no secrets to keep.
+
+3. **Beta graduation criteria:** What makes an insider build "ready" for public beta?
+   - **Recommendation:** Time-based (e.g., 1 week on `insider` with no critical bugs) or feature-based (all milestone work complete).
+
+4. **State directory naming:** Is `.squad-insider/` the right name, or prefer `.ai-team-insider/`?
+   - **Recommendation:** `.squad-insider/`. Aligns with Squad branding, shorter to type.
+
+5. **First insiders:** Who gets invited first? All current contributors, or selective invite?
+   - Brady already answered: Yes, invite contributors retroactively.
+
+---
+
+## Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|-----------|
+| **Insider build breaks prod** | Medium | High | Separate state directory (`.squad-insider/`), backup on install |
+| **Insiders share install command** | Medium | Low | Honor system + docs, acceptable if more testers join |
+| **Version confusion** | Low | Medium | Distinct version string (`+commit`), warning banner |
+| **Brady overwhelmed by feedback** | Medium | Medium | Set expectations: "Not all feedback will be acted on immediately" |
+| **Insider builds diverge from beta** | Low | Low | Tag from `insider` when graduating to beta (same source) |
+| **npx caching issues** | Low | Medium | Document: `npx --yes github:bradygaster/squad#insider` (force fresh) |
+
+---
+
+## Why This Design Wins
+
+1. **Zero new infrastructure:** Uses existing GitHub branches, npx distribution, git refs. No servers, no auth, no databases.
+
+2. **Simple for Brady:** Push to `insider` branch when ready. No tag management for every build. Insiders auto-get latest.
+
+3. **Feels special:** 
+   - Different install command (`#insider`)
+   - Different version string (`-insider+commit`)
+   - Different state directory (`.squad-insider/`)
+   - Public badge in CONTRIBUTORS.md
+
+4. **Safe by default:** 
+   - Separate state prevents corruption
+   - Automatic backups on install
+   - Warning banners everywhere
+   - Easy rollback (delete `.squad-insider/`, reinstall stable)
+
+5. **Scales to future needs:**
+   - If insider program grows, can add automated sync or private fork
+   - If access control needed, can switch to GitHub Teams + private repo
+   - If cadence needed, can add automated `dev` → `insider` workflow
+
+6. **Aligns with Squad's architecture:**
+   - Filesystem-authoritative (state in `.squad-insider/`)
+   - Git-native (branch-based distribution)
+   - Zero-dependency (no new npm packages)
+   - npx-from-GitHub (existing install mechanism)
+
+---
+
+## Alternatives Considered (and rejected)
+
+### Alternative A: Pre-release tags with naming convention
+**Approach:** `v0.5.0-insider.1`, `v0.5.0-insider.2`, etc.
+
+**Why rejected:**
+- Requires Brady to cut a new tag for every insider build (manual overhead)
+- Insiders must pin to specific tags (`#v0.5.0-insider.3`), not "always latest"
+- Tag proliferation (insider builds are frequent, public betas are not)
+- Feels too similar to beta tags (same mechanism, just different name)
+
+### Alternative B: Private fork with insider-only access
+**Approach:** `bradygaster/squad-insider` repo, invite collaborators
+
+**Why rejected:**
+- Doubles Brady's maintenance (two repos, two CI pipelines, two issue trackers)
+- Breaks dogfooding story (Squad Squad would live in private repo)
+- Insider feedback wouldn't be visible to community (closed development)
+- Heavy infrastructure for a solo maintainer
+
+### Alternative C: npm pre-release channel
+**Approach:** Publish `@bradygaster/squad-insider` to npm
+
+**Why rejected:**
+- Brady explicitly rejected npm distribution (Decision 2026-02-09)
+- Requires npm account, publish workflow, package management
+- Doesn't align with GitHub-only distribution model
+
+### Alternative D: Discord-gated access
+**Approach:** Private Discord channel, share install command there
+
+**Why rejected:**
+- Brady chose GitHub Discussions as primary communication (answered question #1)
+- Discord requires separate platform, moderation, invite management
+- Doesn't solve the technical access problem (public repo = anyone can install)
+
+---
+
+## Next Steps
+
+1. **Brady approves this design** (or requests changes)
+2. **Fenster implements Phase 2-3** (version stamping, state isolation)
+3. **McManus implements Phase 4** (documentation)
+4. **Brady implements Phase 1 + 5** (branch setup, first build)
+5. **Test with 2-3 initial insiders** (smoke test before broad invite)
+6. **Public announcement** in GitHub Discussions
+7. **Invite all current contributors** (retroactive insider access)
+
+### 2026-02-16: v0.5.0 scope update — Issue #88 resolved by community
+**By:** Squad (Coordinator)
+**What:** Issue #88 (Discord docs outdated) resolved via PR #89 by @digitaldrummerj. Removed from v0.6.0 deferred list. Two enhancements now ship with v0.5.0: PR #80 (llms.txt support) and PR #89 (MCP Discord docs fix).
+**Why:** Community contributions closed a deferred issue and enhanced docs discoverability. Both are low-risk, already merged and tested - safe to include in v0.5.0 release notes.
+
 
