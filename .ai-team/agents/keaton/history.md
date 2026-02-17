@@ -300,3 +300,176 @@ _Summarized 2026-02-10+ learnings (full entries available in session logs):_
 
 📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
 
+### 2026-02-16: PR #74 Investigation — Emoji Changes Already Merged
+
+**Context:** Brady asked the team to determine if PR #74's changes are already on dev. PR #74 ("feat: add emoji icons to task tool description field") was opened to close issue #73, adding role emoji to spawn template `description` fields in squad.agent.md.
+
+**What I learned:**
+
+1. **Issue #73 is closed** (closed 2026-02-16T19:38:59Z) and **PR #74 is still open** — this is the first signal that something landed via a different path.
+
+2. **Commit b97eaa0 on dev** ("feat: add role emoji to task descriptions (#73)") contains the emoji changes:
+   - Added "Role Emoji in Task Descriptions" section with 11-role mapping table
+   - Updated 6 spawn templates to include `{emoji}` in description field
+   - 41 insertions, 7 deletions in squad.agent.md
+   - This commit **closed issue #73**
+
+3. **The PR branch (squad/73-emoji-description-field) is the parent of b97eaa0**:
+   - Commit 7ec1b83 on the PR branch: "feat: add emoji icons to task tool description field (#73)"
+   - Commit b97eaa0 on dev references #73 and comes AFTER 7ec1b83
+   - **The work was done on the PR branch, then a similar/refined commit was pushed directly to dev instead of merging the PR**
+
+4. **PR #74 is orphaned** — the issue it closes is already resolved, and the functionality is already on dev. The PR was never merged but the work landed via direct commit.
+
+**How the changes got there:**
+Someone (likely Brady) pushed commit b97eaa0 directly to dev instead of merging PR #74. This is a legitimate path — the PR branch work informed the final commit, but the commit that landed was made directly on dev rather than via PR merge.
+
+**Verdict: CLOSE PR #74**
+- Issue #73: ✅ Closed (via b97eaa0)
+- Functionality: ✅ On dev (commit b97eaa0, confirmed with grep showing emoji patterns in squad.agent.md)
+- CHANGELOG v0.4.1: ✅ Documents "Role emoji in task spawns" as shipped
+- Action: Close PR #74 with explanation that changes landed via commit b97eaa0
+
+The gap identified (CHANGELOG claimed the feature but code was missing) does NOT exist — the feature IS in the code on dev. PR #74 is legitimately redundant.
+
+### 2026-02-16: Issue #69 Assessment — Rename .ai-team/ to .squad/ (Keaton decision)
+
+**Context:** Brady asked the team to assess whether renaming `.ai-team/` to `.squad/` is worth the cost RIGHT NOW (v0.5.0) vs later. He says it "feels like a gigantic diversion" but also committed that it must happen before v1.0.
+
+**Verdict: Ship it in v0.5.0.** This is the right change at the right time, despite being a "gigantic diversion."
+
+**Product identity:** `.ai-team` is generic and forgettable. `.squad` is branded (our product name), shorter (6 vs 8 chars), and conventional (follows `.github/`, `.vscode/` patterns). Every customer repo is a billboard for the product — the directory name should be obvious and ownable. This affects:
+- Every `ls -la` in every customer repo
+- Every onboarding moment ("what's this folder?")
+- Every screenshot, tutorial, blog post
+- Brand clarity that compounds with adoption
+
+**Timing is optimal NOW:** At v0.4.1, user base is small enough that migration pain is bounded. Every version we delay multiplies the customer repos we need to migrate. Brady said "while growth is still in its infancy" — that window is closing. By v0.8.0, we'd have 3-4x more migrations to support. This is the inflection point where delaying becomes irrational.
+
+**The cost only grows:** 745 occurrences across 123 files in the source repo PLUS every customer repo that has run `squad init`. Each new install that creates `.ai-team/` adds to the migration burden. The technical debt payment gets exponentially more expensive every sprint we defer it. At current growth, v0.6.0 could have 2x the repos, v0.7.0 could have 4x.
+
+**Migration path is sound:** Two-phase approach is the right pattern we already use for other breaking changes:
+- **v0.5.0:** Dual-path support (detect both `.squad/` and `.ai-team/`, warn on old, migrate via `squad upgrade --migrate-directory`)
+- **v1.0.0:** Remove legacy support entirely, error if `.ai-team/` exists without `.squad/`
+- Deprecation period (v0.5.0 → v1.0.0) gives customers time to adapt without being blocked
+
+**No half-measures work:**
+- "New repos only" creates documentation hell — which path do I document? Half the screenshots show `.ai-team/`, half show `.squad/`. Support burden doubles.
+- "Grandfather existing" means maintaining dual-path logic forever — every file operation checks both paths, every workflow handles both, technical debt never retires.
+- This is all-or-nothing by nature. The proposal's acceptance criteria are complete.
+
+**Trade-offs:**
+- **Give up:** v0.5.0 feature velocity — this consumes real bandwidth (745 occurrences, every workflow, every template, every doc, migration testing on real repos)
+- **Get:** Brand clarity in every customer repo, shorter paths, product identity that scales from v0.5.0 to v10.0
+- **Risk:** Migration friction (customers must run `squad upgrade --migrate-directory`), but deprecation warnings + good docs + thorough testing mitigate this
+
+**Brady's "gigantic diversion" concern is valid but doesn't change the answer:** It IS a distraction from feature work. But it's a ONE-TIME tax that gets exponentially more expensive as the user base grows. At v0.4.1, we're at the sweet spot where:
+1. We have enough users to validate the need (brand confusion is real)
+2. We have few enough users that migration won't overwhelm support
+3. We have time before v1.0 to complete the deprecation cycle
+
+**Alternative considered and rejected:** Delay to v0.6.0 or v0.7.0. Rejected because:
+1. Brady already committed to pre-1.0, so the question is "which pre-1.0 version," not "whether"
+2. Every sprint delay adds customer repos to migrate — this is compounding cost, not fixed cost
+3. Brand clarity affects adoption TODAY, not just at v1.0 — every new user forms first impressions now
+4. Delaying "to avoid disruption" just moves the disruption to a moment when it's MORE disruptive
+
+**Scope recommendation:** Full scope in v0.5.0, no adjustment. The proposal's acceptance criteria are already minimal viable — dual-path support, migration command, deprecation warning, source repo update, test on real repos. The only optimization: aggressive testing on 3-5 real repos with existing `.ai-team/` state before release to validate the migration command doesn't leave broken state.
+
+**Key learning:** When a change is inevitable (Brady committed "must happen before 1.0") and the cost compounds with scale (more users = more migrations), ship it at the earliest viable moment. That's v0.5.0. Delaying "to avoid disruption" is a cognitive trap — the disruption is coming either way, and it gets worse with time. Pay the debt when it's cheapest, not when it's most expensive.
+
+### 2026-02-16: Issue #69 Reassessment — No-Backport Constraint Strengthens v0.5.0 Case
+
+**Context:** Brady eliminated backport requirement ("we won't backport. sorry. team - please use this in your review and recommendations. this is a forward-only thing."). Kobayashi had recommended v0.4.2 backport + 4-week timeline as risk mitigation. I previously recommended v0.5.0. Now reassessing with forward-only constraint.
+
+**Updated verdict: v0.5.0 — EVEN STRONGER with no backport.**
+
+**Confidence: HIGH** (upgraded from previous recommendation).
+
+**What changed:**
+- **Scope reduced ~30%** — No v0.4.2 to coordinate, no dual-version testing, no backport implementation
+- **Architecture simplified** — One migration path. Documentation shows ONE directory name post-v0.5.0. No "which version am I on?" confusion.
+- **Cleaner user story** — "Upgrade to v0.5.0 or stay on v0.4.1" is trivially clear vs "v0.4.2 has detection, v0.5.0 has migration, pick your timing"
+- **Risk profile improved** — Kobayashi's #1 concern (version skew / cross-version confusion) is ELIMINATED rather than mitigated
+
+**Does no-backport make v0.5.0 MORE achievable or LESS safe?**
+
+MORE achievable:
+- Cuts coordination overhead Kobayashi flagged (maintaining dual-version support)
+- Testing burden reduced (one path to validate, not two)
+- No "which version am I fixing?" maintenance tax
+- Moves from "gigantic diversion" to "significant but bounded"
+
+LESS safe:
+- Users who skip v0.5.0 entirely (v0.4.1 → v0.6.0 jump) could hit issues
+- No escape hatch if v0.5.0 has critical migration bug
+
+But Brady's acceptance is explicit: "i don't know how someone would throw 050 at 041, so let's not worry about it." He's consciously choosing simplicity over backward compatibility safety net. This is correct for Squad's maturity stage (hundreds of users, not thousands; dev teams who upgrade frequently, not enterprises with 6-month cycles).
+
+**Is Brady's linear upgrade assumption realistic?**
+
+YES, for Squad's distribution model:
+- GitHub-distributed (npx github:bradygaster/squad) — users naturally pull latest
+- No LTS support model
+- User base is dev teams (upgrade-aware), not enterprises (change-averse)
+- Community size bounded (~hundreds)
+- Early adopter profile (people who upgrade frequently)
+
+The edge case (someone on v0.4.1 for 6 months, then tries v0.6.0) is Brady's explicit trade-off. If it happens, we fix forward with better migration error messaging. This is standard OSS.
+
+**With Kobayashi's remaining risks, is v0.5.0 still right?**
+
+Kobayashi identified three risk vectors:
+1. **Version skew** — ELIMINATED by no-backport (only one post-v0.5.0 version exists at any time)
+2. **State corruption during migration** — UNCHANGED (atomic migration + rollback still required)
+3. **Workflow failures** — UNCHANGED (745 occurrences + 6 workflows still need exhaustive audit)
+
+Net effect: Risk surface REDUCED in one dimension (confusion) without growth in others (technical failure modes). The remaining risks must still be mitigated (atomic migration, pre-flight checks, workflow audit), but the coordination complexity is gone.
+
+**Alternative considered: Three-phase approach (McManus pattern)**
+- v0.5.0: New installs use `.squad/`, existing stay `.ai-team/`, migration optional
+- v0.6.0: Force migration (error if `.ai-team/` without `.squad/`)
+- v1.0.0: Drop legacy support
+
+REJECTED because it creates the exact dual-path problem Brady's "forward-only" stance eliminates:
+- Documentation must show BOTH directory names (which path do I document?)
+- Support burden doubles (users ask "which one do I have?")
+- Screenshots/tutorials show inconsistent paths (half `.ai-team/`, half `.squad/`)
+- Workflows must handle both paths with conditional logic
+- Product identity benefit (`.squad/` branding) is diluted if half the base uses old name
+
+Brady's directive is incompatible with dual-path support. He wants ONE directory name post-v0.5.0, period.
+
+**Timing argument unchanged:**
+
+Pay the debt when it's cheapest:
+- At v0.4.1, user base small enough that migration pain is bounded
+- Every version delay multiplies the repos with `.ai-team/` we must migrate
+- By v0.6.0, could have 2-3x more usersdding (making this exponentially more expensive)
+- Brand clarity affects adoption TODAY — every new user forms first impression now, not at v1.0
+- This is a ONE-TIME tax that compounds in cost with growth
+
+**Trade-offs accepted:**
+
+Give up:
+- v0.5.0 feature velocity (745 occurrences + 6 workflows + migration tool + testing is real work)
+- Backward compatibility escape hatch (if v0.5.0 migration has bug, users on v0.4.1 wait for v0.5.1)
+- Safety of "try it, roll back to v0.4.2 if broken" (no v0.4.2 exists)
+
+Get:
+- Brand clarity in every customer repo (`.squad/` is product-name-obvious vs generic `.ai-team/`)
+- Shorter paths (6 chars vs 8, follows `.github/` `.vscode/` convention)
+- Simpler architecture (one directory name, not conditional dual-path logic in perpetuity)
+- Cleaner long-term maintenance (no "grandfather existing installs" technical debt)
+- ONE-TIME disruption at optimal moment (small user base, pre-1.0 expectations)
+
+**Final recommendation:**
+
+Ship the rename in v0.5.0. The no-backport constraint REDUCES scope and complexity without increasing user-facing risk. Kobayashi's legitimate concern (version skew) is eliminated by the constraint, not worsened. The remaining technical risks (atomic migration, workflow audit) must still be mitigated, but the coordination complexity is gone.
+
+This is the right change at the right time. Delaying to v0.6.0 or later makes it more expensive (more repos to migrate) and more disruptive (larger user base, higher expectations). v0.5.0 is the inflection point where delaying becomes irrational.
+
+Brady's "forward-only" philosophy is correct for this stage of product maturity. Users who don't upgrade immediately accept the trade-off that new features require new versions. That's standard OSS evolution.
+
+**Confidence: HIGH.** The decision is cleaner and simpler with no backport than with it.
+

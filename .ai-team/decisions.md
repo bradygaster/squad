@@ -2080,5 +2080,49 @@ Changed `.sidebar-logo-img` from `max-width:100%; height:auto` to `height:40px; 
 **What:** The team state directory will be renamed from `.ai-team/` to `.squad/` starting in v0.5.0, with a backward-compatible migration path. Full legacy removal in v1.0.0.
 **Why:** `.squad/` is branded, shorter, follows conventions like `.github/` and `.vscode/`, and eliminates ambiguity about which tool owns the directory.
 
+### 2026-02-16: Insider Program structure
+**By:** Keaton
+**What:** Established Squad Insider Program — a permanent testing cohort for pre-release validation, community feedback, and contributor pipeline (5-10 early adopters → 15-25 active members → 30 capacity cap). Three entry pathways (invitation, application, auto-qualify). Recognition via CONTRIBUTORS.md credits, Discord #insiders channel, release notes, blog posts. Responsibilities: validate exit criteria (1-2 criteria/release, 2-4h commitment), test within 48-72h, file detailed bugs. Governance by Lead (Keaton) + DevRel (McManus). Graceful exits (alumni tier), natural graduation (insider → contributor → maintainer). v0.5.0 beta cohort becomes inaugural insiders.
+**Why:** v0.5.0's ad-hoc beta (5-10 power users, 7 exit criteria, manual recruitment) is a prototype for permanent infrastructure. Squad needs continuous pre-release validation with predictable release cadence. Program creates compound value: early testers → engaged contributors → maintainers → ambassadors.
+
+### 2026-02-16: Insider Program community engagement
+**By:** McManus
+**What:** Community engagement and recruitment strategy for Squad's permanent Insider Program — seed cohort recruitment (spboyer, londospark, miketsui3a, csharpfritz first targets), public application flow via GitHub Discussions, recognition system (community docs, release notes, Discord badge, blog posts), exclusive access (#squad-insiders Discord channel, preview branch, monthly AMA, quarterly retrospective), communication channels (Discord for real-time, GitHub Discussions for formal threads), onboarding welcome package (playbook, core team intros, first mission), ongoing engagement (pre-release cadence, monthly check-ins, quarterly retros), anti-churn measures (alumni tier, low friction, clear asks).
+**Why:** v0.5.0's mandatory beta program needs transition from ad-hoc manual outreach to permanent infrastructure. Developer psychology: recognition is currency, access is valuable (shape product before it ships), community is sticky (relationships keep people engaged).
+
+### 2026-02-16: Release cadence & testing automation
+**By:** Kobayashi
+**What:** Designed repeatable release cadence, pre-release testing process, and automation roadmap. Pre-1.0: milestone-driven with 4-6 week time caps (wave completion triggers release). Post-1.0: biweekly time-based (every 2 weeks on Fridays, milestone overflow to next release). Three-tier testing: patches (1-3 days, CI + smoke), minor releases (1 week beta, 6 exit criteria), breaking changes (2+ weeks beta, 7 exit criteria). Automation roadmap: Phase 1 (v0.5.0) pre-release tags + Discord webhooks + exit criteria template; Phase 2 (v0.6.0) migration smoke tests + multi-repo matrix + feedback bot; Phase 3 (v1.0.0) automated release notes + beta promotion + health dashboard. v0.5.0 beta as prototype: keep pre-release tags, exit criteria checklist, Discussions feedback; automate tag creation, Discord webhooks, checklist updates.
+**Why:** v0.5.0 beta (manual, 5-10 users, 7 exit criteria) proves the manual process works but doesn't scale. Brady is solo maintainer. Fast patches need express lanes. Breaking changes need validation. System must handle both velocity (patches in 1-3 days) and safety (breaking changes validated for weeks).
+
+### 2026-02-16: `.ai-team-templates/` Guard Protection — APPROVED
+**By:** Kobayashi (Git & Release Engineer)  
+**What:** Verified two changes to protect `.ai-team-templates/` runtime artifacts: (1) Removed from `.gitignore` (now tracked in git on dev branches), (2) Added to guard workflow (blocks `.ai-team-templates/**` from main/preview with same enforcement as `.ai-team/`). Three-layer defense intact: package.json files array (primary), .npmignore (secondary), guard workflow (tertiary).
+**Why:** `.ai-team-templates/` is runtime artifact created by `index.js` during install (copies `templates/` → `.ai-team-templates/`). Should be visible in git for upgrade tracking but must never reach production branches. Changes implement correct enforcement.
+
+### 2026-02-16: Branch protection on main
+**By:** Kobayashi
+**What:** Enabled comprehensive branch protection on `main` branch: required status checks (Squad Main Guard workflow strict mode), minimum 1 PR approval, stale review dismissal, conversation resolution required, no direct pushes, force push disabled, branch deletion disabled. Admin bypass available but policy encourages PR review.
+**Why:** Main branch previously had no protection rules, allowing direct pushes and merges without review. Creates risk of untested or unreviewed code entering primary branch.
+
+### 2026-02-16: Release Process Hardening — Guard and Gitignore Audit
+**By:** Kobayashi
+**What:** Three findings from preview branch audit: (1) Preview branch verified CLEAN (zero .ai-team/ files, zero team-docs/ files), (2) Guard workflow incomplete (triggers on `pull_request` only, missing `push` trigger means direct pushes bypass validation), (3) `.gitignore` entry for `.ai-team-templates/` incorrect (blocks dogfooding artifacts, tells users to ignore Squad-owned files that should be committed). Recommended fixes: add push trigger to guard workflow, remove `.ai-team-templates/` from .gitignore.
+**Why:** Guard is defense-in-depth (package.json "files" is primary gate), but direct pushes create incident risk. The `.gitignore` entry serves no purpose — Squad's templates are already tracked in `templates/`.
+
+### 2026-02-16: Guard workflow push trigger added
+**By:** Kobayashi
+**What:** Added `push` trigger to `.github/workflows/squad-main-guard.yml` to catch direct pushes to main and preview branches, not just PRs. Updated error message to mention `.ai-team-templates/` alongside `.ai-team/` and `team-docs/` as forbidden paths.
+**Why:** The guard's validation logic already handles both `pull_request` and `push` events, but the workflow trigger was incomplete. Without the push trigger, a maintainer could accidentally `git push origin main` with forbidden files and the guard would not run.
+
+### 2026-02-16: Pre-release checklist formalized
+**By:** Kobayashi
+**What:** Added README "What's New" section check to pre-release validation. Formalized 9-item release checklist: CHANGELOG updated, package.json version, README "What's New" section, branch protection enabled, guard workflow passing, dev/preview/main branch hygiene, tests passing, distribution safety verified (package.json files array + .npmignore).
+**Why:** v0.4.1 shipped without README update highlighting new features (role emoji, squad upgrade --self, deprecation banner). Users reading README had no visibility into what changed. Release checklist prevents these gaps.
+
+### 2026-02-16: v0.4.1 release contamination and recovery
+**By:** Kobayashi
+**What:** v0.4.1 tag was created with 129+ forbidden files (.ai-team/, .ai-team-templates/, team-docs/). Deleted release+tag, cleaned main branch (146 files removed), re-tagged from clean main. 6-minute contamination window (21:40-21:46 UTC) where `npx github:bradygaster/squad@v0.4.1` delivered contaminated state. Recovery: Release deleted, tags deleted locally+remotely, main verified clean, new v0.4.1 tag created from clean commit, release recreated, distribution tested.
+**Why:** Guard workflows are detective (post-commit), not preventive. Direct push to main bypassed the intended preview→main PR flow. Branch protection rules are mandatory to enforce PR reviews and prevent contamination.
 
 
