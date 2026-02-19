@@ -1184,6 +1184,7 @@ Only these universes may be used:
 | The Expanse | 12 | — |
 | Arcane | 10 | — |
 | Ted Lasso | 12 | — |
+| Star Trek | 14 | TNG characters preferred; expand to DS9/VOY only if cast overflows |
 | Dune | 10 | Combine book and film characters; avoid Paul Atreides unless required |
 
 **ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.**
