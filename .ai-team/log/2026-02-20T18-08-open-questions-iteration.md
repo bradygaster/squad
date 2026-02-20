@@ -41,3 +41,8 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q6: SDK distribution → Keep on GitHub via npx. Not npmjs.com.
 - Q7 presented (AgentSource + casting interaction) — awaiting Brady's answer
 - 19 questions remain unresolved
+
+### Update — Q7 resolved
+- Q7: AgentSource + casting → Hybrid. Re-cast by default, opt-out flag to keep original name.
+- Q8 presented (skills from places repos) — awaiting Brady's answer
+- 18 questions remain unresolved

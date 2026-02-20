@@ -1288,3 +1288,8 @@ The registry format is identical — any repo with a \places.json\ and \gents/\
 **What:** Name collisions on import are DISALLOWED. If an incoming agent has the same name as a local agent, the import must be blocked. Best case: the incoming agent is renamed on the way in. Never silently overwrite, never auto-namespace, never allow ambiguity.
 **Why:** User request — explicit safety rule for agent repository imports
 
+
+### 2026-02-20T10-22: User directive — AgentSource + casting interaction
+**By:** Brady (via Copilot)
+**What:** Hybrid approach for imported agents and casting. By default, imported agents get re-cast into the local squad's universe. Users can opt out with a flag to keep the original name. This preserves casting consistency while allowing flexibility.
+**Why:** User request — resolves open question #7 (Architecture)
