@@ -274,3 +274,17 @@ px github:bradygaster/squad#insider), expectations (continuous updates, rough ed
 - Release note frequency (5 releases in 6 days: v0.4.0→v0.4.1→v0.4.2→v0.5.0→v0.5.1→v0.5.2) requires bulk README/docs updates. Adding per-version sections all at once is less disruptive than incremental updates. Readers see the full release arc in one place.
 - Migration docs serve dual purpose: user-facing (how to migrate) and reference (backward compatibility policy, timeline). Bridge both with clear cross-references from upgrading.md → migration guide.
 - Insider program needs both shallow entry (README link + command) and deep dive (full docs guide) for different audience tiers. Updated install/upgrade section to be crystal clear on command parity.
+
+### 2026-02-20: Release History Archive (docs/whatsnew.md) Created
+
+**Task:** Implement Brady's architecture decision to separate README release notes (latest only) from docs/whatsnew.md (full history).
+
+**What changed:**
+1. **Created docs/whatsnew.md** — New file with full release history (v0.1.0–v0.5.2) in descending chronological order. Each section extracted from README.md or synthesized from CHANGELOG.md (v0.1.0). Maintains consistent formatting: feature names linked where docs exist, concise bullet points, shared voice with existing docs. Relative link structure accounts for whatsnew.md depth (requires `../` prefix for links to docs/).
+
+2. **Trimmed README.md** — Removed 7 obsolete What's New sections (v0.5.1, v0.5.0, v0.4.2, v0.4.1, v0.4.0, v0.3.0, v0.2.0), keeping only v0.5.2. Inserted link line: `_See [full release history](docs/whatsnew.md) for all previous versions._` Maintains README focus on latest release while preserving discoverability of full history.
+
+**Learnings:**
+- **Archive pattern keeps README scannable.** Developers landing on README need to know "what changed recently" not "every change ever." Separating latest-release (README) from full-history (archive file) respects attention budgets. Users who want deep history get a single discoverable link; casual visitors see focused content. Pattern works: one link, findable.
+- **Release note frequency (5 releases in 6 days) compounds documentation burden.** Bulk What's New sections added incrementally to README become noise. Archive pattern solves this: new releases always go to whatsnew.md immediately; only latest gets promoted to README at release time (one update per release vs. incremental pollution).
+- **Relative link structure matters in multi-level docs.** whatsnew.md lives in docs/ but links to docs/features/ and docs/scenarios/. Relative path handling: `[title](../docs/features/X.md)` from whatsnew.md vs. `[title](docs/features/X.md)` from README. One mistake cascades across 20+ links. Consistency check in git diff is essential.
