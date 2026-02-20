@@ -1,6 +1,14 @@
 # Changelog
 
-## [0.5.0] — Unreleased
+## [0.5.1] — 2026-02-20
+
+### Added
+
+- **`squad watch` command** — Ralph local watchdog for persistent polling. Run `npx github:bradygaster/squad watch` to poll GitHub every 10 minutes for untriaged squad work, auto-triage, and assign @copilot to `squad:copilot` issues. Use `--interval` flag to customize polling interval (e.g., `squad watch --interval 5` for 5-minute polling). Runs until Ctrl+C.
+- **Project type detection** — Squad now detects your project's language and stack (JavaScript, Python, Java, Go, Rust, etc.)
+- **Git safety rules** — Enforces guardrails based on detected project type to prevent common mistakes and state corruption
+
+## [0.5.0] — 2026-02-20
 
 ### Added
 

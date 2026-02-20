@@ -64,6 +64,9 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`             Flags: --migrate-directory (rename .ai-team/ → .squad/)`);
   console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
   console.log(`             Usage: copilot [--off] [--auto-assign]`);
+  console.log(`  ${BOLD}watch${RESET}      Run Ralph's work monitor as a local polling process`);
+  console.log(`             Usage: watch [--interval <minutes>]`);
+  console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
   console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
   console.log(`             Usage: plugin marketplace add|remove|list|browse`);
   console.log(`  ${BOLD}export${RESET}     Export squad to a portable JSON snapshot`);
@@ -94,6 +97,171 @@ function copyRecursive(src, target) {
   } catch (err) {
     fatal(`Failed to copy ${path.relative(root, src)}: ${err.message}`);
   }
+}
+
+
+// --- Watch subcommand (Ralph local watchdog) ---
+if (cmd === 'watch') {
+  const { execSync } = require('child_process');
+
+  const squadDirInfo = detectSquadDir(dest);
+  if (squadDirInfo.isLegacy) showDeprecationWarning();
+  const teamMd = path.join(squadDirInfo.path, 'team.md');
+  if (!fs.existsSync(teamMd)) {
+    fatal('No squad found — run init first.');
+  }
+
+  // Verify gh CLI is available
+  try {
+    execSync('gh --version', { stdio: 'pipe' });
+  } catch {
+    fatal('gh CLI not found — install from https://cli.github.com');
+  }
+
+  // Parse --interval flag (default: 10 minutes)
+  const intervalIdx = process.argv.indexOf('--interval');
+  const intervalMin = (intervalIdx !== -1 && process.argv[intervalIdx + 1])
+    ? parseInt(process.argv[intervalIdx + 1], 10)
+    : 10;
+
+  if (isNaN(intervalMin) || intervalMin < 1) {
+    fatal('--interval must be a positive number of minutes');
+  }
+
+  const content = fs.readFileSync(teamMd, 'utf8');
+
+  // Parse members from roster
+  function parseMembers(text) {
+    const lines = text.split('\n');
+    const members = [];
+    let inMembersTable = false;
+    for (const line of lines) {
+      if (line.startsWith('## Members')) { inMembersTable = true; continue; }
+      if (inMembersTable && line.startsWith('## ')) break;
+      if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
+        const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+        if (cells.length >= 2 && !['Scribe', 'Ralph'].includes(cells[0])) {
+          members.push({ name: cells[0], role: cells[1], label: `squad:${cells[0].toLowerCase()}` });
+        }
+      }
+    }
+    return members;
+  }
+
+  const members = parseMembers(content);
+  if (members.length === 0) {
+    fatal('No squad members found in team.md');
+  }
+
+  const hasCopilot = content.includes('🤖 Coding Agent') || content.includes('@copilot');
+  const autoAssign = content.includes('<!-- copilot-auto-assign: true -->');
+
+  console.log(`\n${BOLD}🔄 Ralph — Watch Mode${RESET}`);
+  console.log(`${DIM}Polling every ${intervalMin} minute(s) for squad work. Ctrl+C to stop.${RESET}\n`);
+
+  function runCheck() {
+    const timestamp = new Date().toLocaleTimeString();
+    try {
+      // Fetch open issues with squad label
+      const issuesJson = execSync(
+        'gh issue list --label "squad" --state open --json number,title,labels,assignees --limit 20',
+        { stdio: 'pipe', encoding: 'utf8' }
+      );
+      const issues = JSON.parse(issuesJson || '[]');
+
+      const memberLabels = members.map(m => m.label);
+      const untriaged = issues.filter(issue => {
+        const issueLabels = issue.labels.map(l => l.name);
+        return !memberLabels.some(ml => issueLabels.includes(ml));
+      });
+
+      // Find unassigned squad:copilot issues
+      let unassignedCopilot = [];
+      if (hasCopilot && autoAssign) {
+        try {
+          const copilotJson = execSync(
+            'gh issue list --label "squad:copilot" --state open --json number,title,assignees --limit 10',
+            { stdio: 'pipe', encoding: 'utf8' }
+          );
+          const copilotIssues = JSON.parse(copilotJson || '[]');
+          unassignedCopilot = copilotIssues.filter(i => !i.assignees || i.assignees.length === 0);
+        } catch { /* label may not exist */ }
+      }
+
+      if (untriaged.length === 0 && unassignedCopilot.length === 0) {
+        console.log(`${DIM}[${timestamp}]${RESET} 📋 Board is clear — no pending work`);
+        return;
+      }
+
+      // Triage untriaged issues
+      for (const issue of untriaged) {
+        const issueText = `${issue.title}`.toLowerCase();
+        let assignedMember = null;
+        let reason = '';
+
+        for (const member of members) {
+          const role = member.role.toLowerCase();
+          if ((role.includes('frontend') || role.includes('ui')) &&
+              (issueText.includes('ui') || issueText.includes('frontend') || issueText.includes('css'))) {
+            assignedMember = member; reason = 'frontend/UI domain'; break;
+          }
+          if ((role.includes('backend') || role.includes('api') || role.includes('server')) &&
+              (issueText.includes('api') || issueText.includes('backend') || issueText.includes('database'))) {
+            assignedMember = member; reason = 'backend/API domain'; break;
+          }
+          if ((role.includes('test') || role.includes('qa')) &&
+              (issueText.includes('test') || issueText.includes('bug') || issueText.includes('fix'))) {
+            assignedMember = member; reason = 'testing/QA domain'; break;
+          }
+        }
+
+        if (!assignedMember) {
+          const lead = members.find(m =>
+            m.role.toLowerCase().includes('lead') || m.role.toLowerCase().includes('architect')
+          );
+          if (lead) { assignedMember = lead; reason = 'no domain match — routed to Lead'; }
+        }
+
+        if (assignedMember) {
+          try {
+            execSync(`gh issue edit ${issue.number} --add-label "${assignedMember.label}"`, { stdio: 'pipe' });
+            console.log(`${GREEN}✓${RESET} [${timestamp}] Triaged #${issue.number} "${issue.title}" → ${assignedMember.name} (${reason})`);
+          } catch (e) {
+            console.error(`${RED}✗${RESET} [${timestamp}] Failed to label #${issue.number}: ${e.message}`);
+          }
+        }
+      }
+
+      // Assign @copilot to unassigned copilot issues
+      for (const issue of unassignedCopilot) {
+        try {
+          execSync(
+            `gh issue edit ${issue.number} --add-assignee copilot-swe-agent`,
+            { stdio: 'pipe' }
+          );
+          console.log(`${GREEN}✓${RESET} [${timestamp}] Assigned @copilot to #${issue.number} "${issue.title}"`);
+        } catch (e) {
+          console.error(`${RED}✗${RESET} [${timestamp}] Failed to assign @copilot to #${issue.number}: ${e.message}`);
+        }
+      }
+
+    } catch (e) {
+      console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${e.message}`);
+    }
+  }
+
+  // Run immediately, then on interval
+  runCheck();
+  setInterval(runCheck, intervalMin * 60 * 1000);
+
+  // Handle Ctrl+C gracefully
+  process.on('SIGINT', () => {
+    console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
+    process.exit(0);
+  });
+
+  // Prevent fall-through to init/upgrade logic
+  return;
 }
 
 // Scrub email addresses from Squad state files
@@ -213,6 +381,191 @@ function scrubEmailsFromDirectory(dirPath) {
   return scrubbedFiles;
 }
 
+// Detect project type by checking for marker files in the target directory
+function detectProjectType(dir) {
+  if (fs.existsSync(path.join(dir, 'package.json'))) return 'npm';
+  if (fs.existsSync(path.join(dir, 'go.mod'))) return 'go';
+  if (fs.existsSync(path.join(dir, 'requirements.txt')) ||
+      fs.existsSync(path.join(dir, 'pyproject.toml'))) return 'python';
+  if (fs.existsSync(path.join(dir, 'pom.xml')) ||
+      fs.existsSync(path.join(dir, 'build.gradle')) ||
+      fs.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
+  try {
+    const entries = fs.readdirSync(dir);
+    if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln'))) return 'dotnet';
+  } catch {}
+  return 'unknown';
+}
+
+// Workflows that contain Node.js/npm-specific commands and need project-type adaptation
+const PROJECT_TYPE_SENSITIVE_WORKFLOWS = new Set([
+  'squad-ci.yml',
+  'squad-release.yml',
+  'squad-preview.yml',
+  'squad-insider-release.yml',
+  'squad-docs.yml',
+]);
+
+// Generate a stub workflow for non-npm projects so no broken npm commands run
+function generateProjectWorkflowStub(workflowFile, projectType) {
+  const typeLabel = projectType === 'unknown'
+    ? 'Project type was not detected'
+    : projectType + ' project';
+  const todoBuildCmd = projectType === 'unknown'
+    ? '# TODO: Project type was not detected — add your build/test commands here'
+    : '# TODO: Add your ' + projectType + ' build/test commands here';
+  const buildHints = [
+    '          # Go:            go test ./...',
+    '          # Python:        pip install -r requirements.txt && pytest',
+    '          # .NET:          dotnet test',
+    '          # Java (Maven):  mvn test',
+    '          # Java (Gradle): ./gradlew test',
+  ].join('\n');
+
+  if (workflowFile === 'squad-ci.yml') {
+    return 'name: Squad CI\n' +
+      '# ' + typeLabel + ' — configure build/test commands below\n\n' +
+      'on:\n' +
+      '  pull_request:\n' +
+      '    branches: [dev, preview, main, insider]\n' +
+      '    types: [opened, synchronize, reopened]\n' +
+      '  push:\n' +
+      '    branches: [dev, insider]\n\n' +
+      'permissions:\n' +
+      '  contents: read\n\n' +
+      'jobs:\n' +
+      '  test:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-ci.yml"\n';
+  }
+
+  if (workflowFile === 'squad-release.yml') {
+    return 'name: Squad Release\n' +
+      '# ' + typeLabel + ' — configure build, test, and release commands below\n\n' +
+      'on:\n' +
+      '  push:\n' +
+      '    branches: [main]\n\n' +
+      'permissions:\n' +
+      '  contents: write\n\n' +
+      'jobs:\n' +
+      '  release:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n' +
+      '        with:\n' +
+      '          fetch-depth: 0\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-release.yml"\n\n' +
+      '      - name: Create release\n' +
+      '        env:\n' +
+      '          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n' +
+      '        run: |\n' +
+      '          # TODO: Add your release commands here (e.g., git tag, gh release create)\n' +
+      '          echo "No release commands configured — update squad-release.yml"\n';
+  }
+
+  if (workflowFile === 'squad-preview.yml') {
+    return 'name: Squad Preview Validation\n' +
+      '# ' + typeLabel + ' — configure build, test, and validation commands below\n\n' +
+      'on:\n' +
+      '  push:\n' +
+      '    branches: [preview]\n\n' +
+      'permissions:\n' +
+      '  contents: read\n\n' +
+      'jobs:\n' +
+      '  validate:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-preview.yml"\n\n' +
+      '      - name: Validate\n' +
+      '        run: |\n' +
+      '          # TODO: Add pre-release validation commands here\n' +
+      '          echo "No validation commands configured — update squad-preview.yml"\n';
+  }
+
+  if (workflowFile === 'squad-insider-release.yml') {
+    return 'name: Squad Insider Release\n' +
+      '# ' + typeLabel + ' — configure build, test, and insider release commands below\n\n' +
+      'on:\n' +
+      '  push:\n' +
+      '    branches: [insider]\n\n' +
+      'permissions:\n' +
+      '  contents: write\n\n' +
+      'jobs:\n' +
+      '  release:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n' +
+      '        with:\n' +
+      '          fetch-depth: 0\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-insider-release.yml"\n\n' +
+      '      - name: Create insider release\n' +
+      '        env:\n' +
+      '          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n' +
+      '        run: |\n' +
+      '          # TODO: Add your insider/pre-release commands here\n' +
+      '          echo "No release commands configured — update squad-insider-release.yml"\n';
+  }
+
+  if (workflowFile === 'squad-docs.yml') {
+    return 'name: Squad Docs — Build & Deploy\n' +
+      '# ' + typeLabel + ' — configure documentation build commands below\n\n' +
+      'on:\n' +
+      '  workflow_dispatch:\n' +
+      '  push:\n' +
+      '    branches: [preview]\n' +
+      '    paths:\n' +
+      "      - 'docs/**'\n" +
+      "      - '.github/workflows/squad-docs.yml'\n\n" +
+      'permissions:\n' +
+      '  contents: read\n' +
+      '  pages: write\n' +
+      '  id-token: write\n\n' +
+      'jobs:\n' +
+      '  build:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n\n' +
+      '      - name: Build docs\n' +
+      '        run: |\n' +
+      '          # TODO: Add your documentation build commands here\n' +
+      '          # This workflow is optional — remove or customize it for your project\n' +
+      '          echo "No docs build commands configured — update or remove squad-docs.yml"\n';
+  }
+
+  return null;
+}
+
+// Write a workflow file: verbatim copy for npm projects, stub for others
+function writeWorkflowFile(file, srcPath, destPath, projectType) {
+  if (projectType !== 'npm' && PROJECT_TYPE_SENSITIVE_WORKFLOWS.has(file)) {
+    const stub = generateProjectWorkflowStub(file, projectType);
+    if (stub) {
+      fs.writeFileSync(destPath, stub);
+      return;
+    }
+  }
+  fs.copyFileSync(srcPath, destPath);
+}
+
 // --- Email scrubbing subcommand ---
 if (cmd === 'scrub-emails') {
   const targetDir = process.argv[3] || path.join(dest, '.ai-team');
@@ -238,6 +591,7 @@ if (cmd === 'scrub-emails') {
   }
   console.log();
   process.exit(0);
+
 }
 
 // --- Copilot subcommand ---
@@ -957,6 +1311,9 @@ if (isSelfUpgrade) {
   process.exit(0);
 }
 
+// Detect project type once for use throughout init/upgrade workflow generation
+const projectType = detectProjectType(dest);
+
 // Capture old version BEFORE any writes (used for delta reporting + migration filtering)
 const oldVersion = isUpgrade ? readInstalledVersion(agentDest) : null;
 
@@ -986,7 +1343,7 @@ if (isUpgrade) {
       const wfFiles = fs.readdirSync(workflowsSrc).filter(f => f.endsWith('.yml'));
       fs.mkdirSync(workflowsDest, { recursive: true });
       for (const file of wfFiles) {
-        fs.copyFileSync(path.join(workflowsSrc, file), path.join(workflowsDest, file));
+        writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
       }
       console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflows (${wfFiles.length} files)`);
     }
@@ -1222,7 +1579,7 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
   if (isUpgrade) {
     fs.mkdirSync(workflowsDest, { recursive: true });
     for (const file of workflowFiles) {
-      fs.copyFileSync(path.join(workflowsSrc, file), path.join(workflowsDest, file));
+      writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
     }
     console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflow files (${workflowFiles.length} workflows)`);
   } else {
@@ -1233,7 +1590,7 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
       if (fs.existsSync(destFile)) {
         console.log(`${DIM}${file} already exists — skipping (run 'upgrade' to update)${RESET}`);
       } else {
-        fs.copyFileSync(path.join(workflowsSrc, file), destFile);
+        writeWorkflowFile(file, path.join(workflowsSrc, file), destFile, projectType);
         console.log(`${GREEN}✓${RESET} .github/workflows/${file}`);
         copied++;
       }

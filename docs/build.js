@@ -232,7 +232,7 @@ function generateLlmsTxt(files) {
 
 function generateLlmsFullTxt(files) {
   var parts = [];
-  parts.push('# Squad — Complete Documentation');
+  parts.push('# Squad ΓÇö Complete Documentation');
   parts.push('');
 
   var included = files.slice();
