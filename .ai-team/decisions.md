@@ -528,6 +528,301 @@ All Squad code imports from `src/adapter/`, never from `@github/copilot-sdk` dir
 
 **Testing:**
 - Version stamping verified: stampVersion() replaces `Squad v{version}` with literal string
+
+---
+
+### 2026-02-20: Edie — TypeScript Engineer Onboarding Assessment
+
+**By:** Edie (TypeScript Engineer) [NEW HIRE]
+
+**Date:** 2026-02-20
+
+**Status:** Assessment & Recommendation
+
+**Overview:** Comprehensive SDK type quality review and Squad stub analysis. Verdict: SDK is well-typed (8/10), Squad stubs are structurally sound but type-misaligned (5/10). **Replatform is feasible and safer than prompt-only architecture.**
+
+**SDK Assessment (8/10):**
+- ✅ Strengths: `strict: true` enabled, zero `any` outside justified use, zero `as` casts, discriminated unions for events, generic inference through `defineTool<T>()`, generated code from JSON schemas, hooks fully typed per hook-type
+- ⚠️ Weaknesses: Missing `noUncheckedIndexedAccess`, JSON-RPC responses cast with `as`, no branded types for session IDs, `moduleResolution: "node"` instead of `"NodeNext"`
+- Key insight: SDK is better-typed than most Node.js libraries, especially for Technical Preview
+
+**Squad Stub Assessment (5/10):**
+- ✅ What's good: Module structure matches PRD architecture, stricter tsconfig than SDK, EventBus actually implemented, SessionPool has correct shape
+- ⚠️ Critical fixes needed: `CustomAgentConfig` diverges from SDK type, `McpServerConfig` missing discriminated union, `ToolRegistry.getTools()` returns `unknown[]`, Hook types don't match SDK signatures, `SquadEvent.payload: unknown` too loose
+- Missing: `noUncheckedIndexedAccess: true`, Zod dependency, adapter layer pattern
+
+**PRD Feasibility:**
+- PRD 1 (SDK Orchestration): ✅ Highly feasible — adapter pattern works, SDK's public API is clean
+- PRD 2 (Custom Tools): ✅ Feasible — `defineTool<T>()` with Zod is the right pattern
+- PRD 14 (Clean-Slate): ⚠️ Feasible but significant API surface exposure — requires careful config type design
+
+**Recommendations (Pre-Implementation):**
+1. Add `noUncheckedIndexedAccess: true` to tsconfig
+2. Add `zod` as production dependency (v4.x, matching SDK)
+3. Fix `CustomAgentConfig` to match SDK (optional displayName/description, correct mcpServers type)
+4. Fix `McpServerConfig` as discriminated union
+5. Type ToolRegistry as `Map<string, Tool<any>>`
+6. Define `SquadEvent` as discriminated union
+7. Align `@types/node` with SDK (^25.0.0)
+8. Build adapter layer using mapped types (not independent interface duplication)
+9. Add branded types for session/tool call IDs
+10. Wrap `ToolResult` in builder pattern
+
+**Conclusion:** SDK is a solid foundation. Type safety actually IMPROVES during replatform. Priority: fix type mismatches before implementation starts, commit to adapter-with-mapped-types pattern from day one.
+
+**Next Step:** Team to incorporate type recommendations into Phase 1 architecture. Edie to lead TypeScript architecture review.
+
+---
+
+### 2026-02-20: Fortier — Node.js Runtime Dev Onboarding Assessment
+
+**By:** Fortier (Node.js Runtime Dev) [NEW HIRE]
+
+**Date:** 2026-02-20
+
+**Status:** Assessment & Green Light
+
+**Overview:** SDK runtime quality review. Verdict: **Solid foundation, a few watch-outs. Green light on replatforming.**
+
+**SDK Runtime Quality:**
+- ✅ Event model is discriminated unions generated from schema (~35 event types) — excellent for exhaustive switching
+- ✅ Handler pattern: `session.on()` returns `() => void` disposer — idiomatic, no leaks
+- ✅ Event dispatch silently catches handler errors (prevents event loop crashes)
+- ✅ Tool result normalization robust: handles undefined, null, string, object, duck-typing
+- ⚠️ Concern: Handler errors swallowed silently with NO logging — adapter must wrap handlers
+- ⚠️ Concern: Tool failures return generic message ("Detailed information not available") — security decision but debugging harder
+
+**Connection Lifecycle (Reasonably Robust):**
+- Startup: `start()` → spawn child process → stdio/TCP connection → version check
+- Reconnection logic exists but dangerously simple: fire-and-forget with no backoff/retry limit
+- `forceStop()` well-designed: SIGKILL + socket.destroy() — good escape hatch
+- Startup timeout: 10s hardcoded — may be tight in CI; recommend adapter retry logic
+
+**Concurrent Sessions (Architecture Supports It):**
+- All sessions share single CLI child process + MessageConnection (JSON-RPC multiplexing)
+- Sessions logically independent: separate event handlers, registries, permission handlers
+- **Bottleneck:** Single CLI process is throughput limiter. 8-10 concurrent sessions easily feasible from SDK perspective.
+- **Critical:** All handlers must be non-blocking; one blocked handler blocks ALL session events
+- **Risk:** CLI process crash = ALL sessions fail simultaneously. SessionPool needs crash recovery with `handleProcessCrash()` + reconnect logic
+
+**Streaming Patterns (Excellent for Observability):**
+- Events via JSON-RPC notification (fire-and-forget, no backpressure)
+- `session.idle` is completion signal — no polling needed
+- `assistant.usage` includes `cost` field — SDK computes cost for PRD 6
+- `session.shutdown` provides rich per-session summary (totalPremiumRequests, apiDurationMs, modelMetrics, codeChanges)
+- **Performance note:** 8 sessions × ~50 deltas × 3-5 tool calls = 1200-2000 events/batch; handler efficiency matters; no synchronous I/O
+
+**Session Pool Feasibility (Yes, with Modifications):**
+- Current stubs correct but incomplete:
+  1. EventBus `Promise.all()` → must be `Promise.allSettled()` (P0 bug)
+  2. SessionPool lacks SDK lifecycle event integration — should subscribe to `client.on("session.created" | "session.deleted")`
+  3. `findByAgent()` linear scan acceptable for 8-10 sessions; optimize if >50
+  4. `add()` must enforce capacity limits (currently caller's responsibility)
+  5. Restructure needed: `src/adapter/` (SDK isolation) + `src/runtime/` (pool, bus, config) separation
+
+**Performance Concerns (Yellow Flags, Not Blockers):**
+1. Single CLI bottleneck — monitor via `session.shutdown.totalApiDurationMs` vs. wall clock
+2. `sendAndWait()` default 60s timeout — PRD 1 uses 300s; consider event-based completion detection for long-running agents
+3. `listModels()` cache lock pattern unusual — adapter should call once at startup, cache result ourselves
+4. Session conversation history accumulates in CLI; compaction at 80% context; in-process memory minimal
+
+**Specific Runtime Recommendations:**
+- R1: Wrap event handlers with error logging (adapter responsibility)
+- R2: Add connection health monitor (ping every 15s, track latency, force reconnect on 3 failures)
+- R3: Use `send()` + events for agents (not `sendAndWait()`) — keeps coordinator responsive
+- R4: Restructure to adapter/runtime split for SDK isolation
+- R5: EventBus must use `Promise.allSettled()` (P0 before production)
+- R6: Prepare CLI crash recovery: mark all sessions errored, emit `connection.lost`, wait for reconnect
+- R7: Token budget enforcement via `onPostToolUse` hook — abort if cost threshold exceeded
+
+**Conclusion:** SDK runtime is solid. JSON-RPC transport mature. Event model rich and well-typed. Main risks mitigable through adapter layer: (1) silent error swallowing, (2) simplistic reconnection, (3) single-process bottleneck for 50+ sessions (not a concern at 8-10).
+
+**Action Items:**
+1. Fix EventBus error isolation (P0)
+2. Implement connection health monitor (P0)
+3. Restructure to adapter/runtime split (P1)
+4. Wrap all event handlers (P1)
+5. Build process crash recovery (P1)
+
+**Status:** Draft recommendations. Ready for team integration into Phase 1 architecture.
+
+---
+
+### 2026-02-20: Kujan — Feature Risk Assessment Findings
+
+**By:** Kujan (Copilot SDK Expert)
+
+**Date:** 2026-02-20
+
+**Status:** Assessment — Pending Brady Checkpoint
+
+**Scope:** Comprehensive audit of current Squad features against 14 replatform PRDs.
+
+**Finding:** **14 features at GRAVE risk** (zero PRD coverage) and **12 features AT RISK** (partial coverage/degradation potential).
+
+**Three Alarming Gaps:**
+
+1. **Export/Import — Zero Coverage:** `squad export` and `squad import` (including history-splitting logic for portable knowledge vs. project learnings) have NO PRD coverage. This is Squad's entire portability story — how teams move between projects. It will vanish silently if not explicitly preserved.
+
+2. **Workflow Templates — No Migration Plan:** 12 GitHub Actions workflow templates (heartbeat, triage, issue-assign, label-enforce, main-guard, sync-labels, CI, release, preview, insider-release, docs, promote) are backbone of GitHub integration. No PRD inventories them, and PRD 14's clean-slate architecture doesn't address path migration from `.ai-team/` to `.squad/`.
+
+3. **Coordinator Transparency — Existential UX Risk:** Today, `squad.agent.md` IS the product — 32KB prompt users can read/customize. PRD 5 moves logic to TypeScript, shrinking prompt to ~12KB. Users who built mental models by reading the prompt will lose visibility. Not a bug but a UX regression NO PRD acknowledges or mitigates.
+
+**Risk Quantification:**
+- GRAVE (no PRD): 14 features at unmitigated risk
+- AT RISK (partial coverage): 12 features at degradation risk
+- COVERED (PRD exists): 28 features tracked
+- INTENTIONAL (no coverage needed): 5 features
+
+**Recommended Actions:**
+
+1. **Brady checkpoint needed before Phase 1 continues** — decide which GRAVE items get PRDs vs. intentional drops
+2. **PRD 14 needs appendix** inventorying all 12 workflows + 18 template files with keep/modify/drop decisions
+3. **PRD 5 needs "Customization Parity" section** documenting what levers users retain when logic moves to code
+4. **New PRD needed for export/import/portability** — distinct capability not fitting existing PRDs
+
+**Impact If Ignored:** GRAVE risk features silently lost. User asks "how do I export squad to new project?" → answer: "you can't anymore."
+
+**Next Steps:**
+- Full punch list: `.ai-team/docs/feature-risk-punchlist.md`
+- Await Brady decision on GRAVE items
+- Integrate decisions into Phase 1-3 planning
+
+**Status:** Assessment complete. Blocked on Brady prioritization checkpoint.
+
+---
+
+### 2026-02-20: Rabin — Distribution Engineer Onboarding Assessment
+
+**By:** Rabin (Distribution Engineer) [NEW HIRE]
+
+**Date:** 2026-02-20
+
+**Status:** Assessment & Feasibility Analysis
+
+**Scope:** Current distribution model, SDK impact, Brady's global install directive, agent repositories, in-Copilot install path.
+
+**Current Distribution Model:**
+- Ships as `@bradygaster/create-squad` v0.5.3 on npm
+- Users hit `npx github:bradygaster/squad` (GitHub tarball, not npm registry)
+- Single `index.js` (1,662 lines, CommonJS) + `templates/` (33 files, ~94 KB)
+- **Zero runtime dependencies** — install fast, no supply chain risk, rare asset
+- Handles: init, upgrade, watch, copilot, plugins, export/import, email scrubbing, directory migration
+
+**What Works:**
+- ✅ Zero-dependency model is major asset
+- ✅ Copy-based installer is dead simple
+- ✅ Version migration well-designed (migrations array, compareSemver)
+- ✅ `.ai-team/` → `.squad/` migration solid (detectSquadDir, --migrate-directory)
+- ✅ Project type detection prevents broken workflows
+
+**What's Friction:**
+- ⚠️ GitHub-tarball distribution invisible (no `npm search`, no download stats)
+- ⚠️ No auto-update mechanism
+- ⚠️ CommonJS in 2026 (not ESM like SDK + new repo)
+- ⚠️ Single-file CLI will hit wall with SDK runtime (1,662 lines won't scale)
+
+**Global Install Feasibility (Brady's Directive):**
+
+**Assessment:** Feasible with caveats.
+
+**What needs to change:**
+1. Publish to npm registry (`npm publish --access public`)
+2. Add `"squad"` bin entry alongside `"create-squad"`
+3. Handle `create-squad` → `squad` transition (both entry points)
+4. Template resolution works via `__dirname` — no change needed
+5. Implement auto-update check (24h cache, 3s timeout, silent on failure)
+
+**Problems:**
+- Global install locks to one version; `npx` more flexible
+- Global + SDK runtime = Node.js version coupling (system Node vs. project .nvmrc)
+- Permissions issues on some systems (Linux/Mac without nvm)
+
+**Verdict:** Global install feasible with minimal changes. Bigger risk is version drift + Node.js coupling. Recommend `npx` as primary, global as power-user option.
+
+**SDK Bundling Reality:**
+- Current Squad: ~158 KB (zero deps)
+- SDK source: ~130 KB, compiles to ~390 KB bundled
+- `@github/copilot` size/availability: **UNKNOWN** (not published publicly; likely host-provided vs. bundled)
+- `vscode-jsonrpc`: ~200 KB
+- `zod` v4: ~500-800 KB
+- squad-sdk `node_modules`: 59.82 MB (but 90%+ is devDeps)
+
+**Critical Unknown:** Is `@github/copilot` published to public npm or only available in VS Code extension context? This affects distribution strategy.
+
+**Two-Entry-Point Model (PRD 12) is Correct:**
+- `dist/cli.js` — scaffolding, zero SDK deps, stays small (~200-300 KB bundled)
+- `dist/runtime.js` — SDK orchestrator, heavier (~2-5 MB), only for `squad orchestrate`
+
+**Zero-Config Assessment (Brady's Directive):**
+
+**For init:** ✅ Already works. `npx @bradygaster/squad init` → detects project type, creates `.squad/`, copies workflows. User answers zero questions.
+
+**For runtime:** Gotchas.
+1. Copilot must be available (SDK prerequisite, not configurable)
+2. Auth required (`gh auth login` for CLI, automatic for VS Code)
+3. Model selection must be sensible — default model must exist on user's Copilot plan; zero-config means auto-detecting available models
+4. Agent charters — Starter (3 agents) with no questions; additional via `squad add agent`
+
+**Verdict:** Zero-config achievable for scaffolding. For runtime: sensible defaults, graceful model fallback, clear prerequisite error messages needed. Biggest gotcha: model availability per Copilot plan tier.
+
+**Agent Repository Distribution (Brady's Directive):**
+
+**Paradigm shift:** Squad moves from self-contained installer to package manager.
+
+**Phase 1 (Local):** Agents from `.squad/agents/{name}/charter.md`. Minimal distribution change.
+
+**Phase 2 (Remote):** Pulling from GitHub repos (`bradygaster/squad-agents/security-specialist`). Requires: network requests, version pinning, caching, conflict resolution.
+
+**Recommendations:**
+1. Don't bundle agents in main package — keep npm lean
+2. Use GitHub API for remote agents
+3. Cache fetched agents in `.squad/.cache/agents/`
+4. Pin agent versions via `squad.config.ts` or lockfile
+5. First impl: just copy charter.md from path (`squad add agent --from ~/shared-agents/security/`)
+
+**In-Copilot Install Path (Brady's Directive: "Would SERIOUSLY increase adoption"):**
+
+**Realistic Approach:** Custom agent self-installer pattern (`.github/agents/install-squad.agent.md`).
+
+**Chicken-and-Egg Problem:** User needs agent file to install, but installing creates agent file.
+
+**Workarounds:**
+1. GitHub template repo (`bradygaster/squad-template` with install agent pre-included; user clicks "Use this template")
+2. Copilot CLI `--agent` flag (speculative; depends on GitHub roadmap)
+3. Organization-wide agent registration (org-level `.github/agents/`; speculative)
+
+**In-Copilot Update Path:** ✅ Works. Agent runs `npx @bradygaster/squad@latest upgrade` → shows changelog. Auto-update check can prompt: "Squad v0.7.0 available."
+
+**What's NOT realistic:**
+- Installing Squad without prior file in repo (Copilot agents require `.github/agents/` files)
+- Running `squad orchestrate` from within chat (SDK runtime doesn't fit request/response model; this is `squad start` command)
+
+**Verdict:** In-Copilot install realistic via self-installer agent. Chicken-and-egg mitigated by template repos. Update is straightforward.
+
+**Immediate Recommendations (v0.5.x → v0.6.0):**
+1. Publish to npm registry now (`npm publish --access public`)
+2. Add `"squad"` bin entry alongside `"create-squad"`
+3. Split CLI from runtime early (dist/cli.js vs. dist/runtime.js per PRD 12)
+4. Implement auto-update check (24h cache, 3s timeout)
+
+**Architecture (v0.6.0+):**
+5. Keep scaffolding dependency-free as long as possible (zero-dep model is superpower; only `squad orchestrate` needs SDK)
+6. Use esbuild for bundling (templates as text, single-file outputs, <2s build)
+7. Resolve `@github/copilot` question before committing (if host-provided only, global `squad orchestrate` outside VS Code won't work)
+8. Agent repositories pull-on-demand model (agents are content, not code)
+
+**Concerns:**
+- SDK is Technical Preview (v0.1.x) — breaking changes could break all global installs simultaneously
+- `@github/copilot` dependency is opaque — can't assess distribution impact without knowing size/availability/host requirements
+- `squad-sdk` uses `file:../copilot-sdk/nodejs` locally; must become real npm dependency before publishing
+- Need `npm pack --dry-run` analysis for production dependency chain
+
+**Conclusion:** Zero-dep scaffolding CLI is strongest distribution asset. Protect it. Global install feasible but requires careful Node.js version management and update strategy.
+
+**Status:** Assessment complete. Awaiting Brady input on: npm package name, in-Copilot install timing, global install priority vs. `npx`.
+
+---
 - compareSemver() handles pre-release suffixes correctly
 - Workflow syntax validated (YAML parse successful)
 

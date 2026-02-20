@@ -31,6 +31,8 @@ _Summarized from initial architecture review (2026-02-07). Full entries in `hist
 
 ## Recent Updates
 
+📌 Team update (2026-02-20): Recruitment wave complete. Three new team members hired: Edie (TypeScript Engineer), Rabin (Distribution Engineer), Fortier (Node.js Runtime Dev). All onboarded with assessments. Keaton created 19 issues, 3 milestones, 12 labels on bradygaster/squad-pr. Kujan delivered feature risk punch list (14 GRAVE, 12 AT RISK, 28 COVERED, 5 INTENTIONAL). — decided by Keaton, Kujan, Edie, Rabin, Fortier
+
 📌 Team update (2026-02-13): VS Code runSubagent spawning — platform parity and adaptation strategy (consolidated). runSubagent viable with platform detection and custom .agent.md files. Spawn patterns all map 1:1; model selection is the gap; recommendation: prompt-level platform detection, no abstraction layer. Unblocks #32-35. — decided by Keaton, Strausz, Kujan
 📌 Team update (2026-02-13): MCP integration — coordinator awareness and CLI config generation. Added MCP Integration section to squad.agent.md, MCP context block to spawn template, and `.copilot/mcp-config.json` sample generation to `squad init` and `squad upgrade`. Issue #11 resolved. — decided by Fenster
 📌 Team update (2026-02-09): No npm publish — GitHub-only distribution. Kobayashi hired as Git & Release Engineer. Release plan (021) filed. Sprint plan 019a amended: item 1.8 cancelled, items 1.11-1.13 added.

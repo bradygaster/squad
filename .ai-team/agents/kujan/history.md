@@ -35,6 +35,8 @@ _Summarized from initial platform assessment and deep onboarding (2026-02-07). F
 
 ## Recent Updates
 
+📌 Team update (2026-02-20): Recruitment wave complete. Three new team members hired: Edie (TypeScript Engineer), Rabin (Distribution Engineer), Fortier (Node.js Runtime Dev). All onboarded with assessments. Keaton created 19 issues, 3 milestones, 12 labels on bradygaster/squad-pr. Kujan delivered feature risk punch list (14 GRAVE, 12 AT RISK, 28 COVERED, 5 INTENTIONAL). — decided by Keaton, Kujan, Edie, Rabin, Fortier
+
 📌 Team update (2026-02-09): No npm publish — GitHub-only distribution. Kobayashi hired as Git & Release Engineer. Release plan (021) filed. Sprint plan 019a amended: item 1.8 cancelled, items 1.11-1.13 added.
 📌 Team update (2026-02-08): CI pipeline created — GitHub Actions runs tests on push/PR to main/dev. PRs now have automated quality gate. — decided by Hockney
 📌 Team update (2026-02-08): Coordinator must acknowledge user requests with brief text before spawning agents. Single agent gets a sentence; multi-agent gets a launch table. — decided by Verbal

@@ -51,7 +51,7 @@
     "kobayashi": {
       "persistent_name": "Kobayashi",
       "universe": "The Usual Suspects",
-      "created_at": "2026-02-08T16:31:00.000Z",
+      "created_at": "2026-02-08T16:31:00Z",
       "legacy_named": false,
       "status": "active",
       "model": "claude-haiku-4.5"
@@ -59,7 +59,7 @@
     "redfoot": {
       "persistent_name": "Redfoot",
       "universe": "The Usual Suspects",
-      "created_at": "2026-02-08T17:58:00.000Z",
+      "created_at": "2026-02-08T17:58:00Z",
       "legacy_named": false,
       "status": "active",
       "model": "claude-opus-4.5"
@@ -67,7 +67,7 @@
     "strausz": {
       "persistent_name": "Strausz",
       "universe": "The Usual Suspects",
-      "created_at": "2026-02-13T08:28:00.000Z",
+      "created_at": "2026-02-13T08:28:00Z",
       "legacy_named": false,
       "status": "active",
       "model": "claude-sonnet-4.5"
@@ -75,10 +75,34 @@
     "baer": {
       "persistent_name": "Baer",
       "universe": "The Usual Suspects",
-      "created_at": "2026-02-20T05:50:00.000Z",
+      "created_at": "2026-02-20T05:50:00Z",
       "legacy_named": false,
       "status": "active",
       "model": "auto"
+    },
+    "rabin": {
+      "status": "active",
+      "persistent_name": "Rabin",
+      "model": "claude-sonnet-4.5",
+      "created_at": "2026-02-20T17:34:00.000Z",
+      "legacy_named": false,
+      "universe": "The Usual Suspects"
+    },
+    "fortier": {
+      "status": "active",
+      "persistent_name": "Fortier",
+      "model": "claude-sonnet-4.5",
+      "created_at": "2026-02-20T17:34:00.000Z",
+      "legacy_named": false,
+      "universe": "The Usual Suspects"
+    },
+    "edie": {
+      "status": "active",
+      "persistent_name": "Edie",
+      "model": "claude-sonnet-4.5",
+      "created_at": "2026-02-20T17:34:00.000Z",
+      "legacy_named": false,
+      "universe": "The Usual Suspects"
     }
   }
 }

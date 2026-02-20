@@ -13,6 +13,9 @@ How to decide who handles what.
 | Testing | {Name} | Write tests, find edge cases, verify fixes |
 | Scope & priorities | {Name} | What to build next, trade-offs, decisions |
 | Security, privacy, compliance, PII review | Baer 🔒 | Privacy policy review, PII audits, GitHub compliance, API data rules, security-sensitive code review |
+| TypeScript architecture, types, build tooling | Edie 👩‍💻 | TS generics, ESM module design, tsconfig, esbuild config, strict mode, declaration files |
+| Distribution, npm, bundling, global install | Rabin 📦 | npm publish, global install, bundling, package.json, Copilot Extensions marketplace |
+| Node.js runtime, streaming, performance | Fortier ⚡ | Event loop, SDK sessions, streaming, memory profiling, process lifecycle |
 | Async issue work (bugs, tests, small features) | @copilot 🤖 | Well-defined tasks matching capability profile |
 | Session logging | Scribe | Automatic — never needs routing |
 

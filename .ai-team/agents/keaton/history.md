@@ -34,6 +34,8 @@ _Summarized from 2026-02-07 through 2026-02-15. Full entries in session logs._
 - Export+Import CLI shipped — squads fully portable, 100% fidelity round-trip.
 - Universe expansion completed (4→20 universes, filling coverage gaps in geography/genre/size/resonance).
 
+📌 Team update (2026-02-20): Recruitment wave complete. Three new team members hired: Edie (TypeScript Engineer), Rabin (Distribution Engineer), Fortier (Node.js Runtime Dev). All onboarded with assessments. Keaton created 19 issues, 3 milestones, 12 labels on bradygaster/squad-pr. Kujan delivered feature risk punch list (14 GRAVE, 12 AT RISK, 28 COVERED, 5 INTENTIONAL). — decided by Keaton, Kujan, Edie, Rabin, Fortier
+
 📌 Team update (2026-02-20): SDK replatform 14 PRDs documented + master index completed. Phase architecture finalized (Phase 1 v0.6.0 7–9w, Phase 2 v0.7.x 6–10w, Phase 3 v0.8+). TypeScript/Node.js locked as go-forward language. Brady's green-field directive: rebuild clean, rethink architecture/directory/naming from scratch. — decided by Keaton with Fenster, Verbal, Kujan, Baer
 
 📌 Team update (2026-02-13): Agent Progress Updates (Proposal 022a) designed and proposed — Milestone signals + coordinator polling (30s intervals). Recommended for v0.4.0 after Project Boards. Addresses user uncertainty during long-running work. Zero additional API cost. Preserves agent personality. — designed by Keaton

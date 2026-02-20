@@ -22,6 +22,9 @@
 | [Redfoot](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Graphic Designer | `.ai-team/agents/redfoot/charter.md` | ✅ Active |
 | [Strausz](https://en.wikipedia.org/wiki/The_Usual_Suspects) | VS Code Extension Expert | `.ai-team/agents/strausz/charter.md` | ✅ Active |
 | [Baer](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Security Specialist | `.ai-team/agents/baer/charter.md` | ✅ Active |
+| [Edie](https://en.wikipedia.org/wiki/The_Usual_Suspects) | TypeScript Engineer | `.ai-team/agents/edie/charter.md` | ✅ Active |
+| [Rabin](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Distribution Engineer | `.ai-team/agents/rabin/charter.md` | ✅ Active |
+| [Fortier](https://en.wikipedia.org/wiki/The_Usual_Suspects) | Node.js Runtime Dev | `.ai-team/agents/fortier/charter.md` | ✅ Active |
 | Scribe | Session Logger | `.ai-team/agents/scribe/charter.md` | 📋 Silent |
 | Ralph | Work Monitor | — | 🔄 Monitor |
 
