@@ -5,6 +5,48 @@
 
 ---
 
+### 2026-02-20: Documentation Content Architecture (consolidated)
+
+**By:** Brady, Keaton
+
+**What:** What's New documentation structure — only the latest release's "What's New" block belongs in README.md. All release-by-release What's New blocks are archived in docs/whatsnew.md. README links to it.
+
+**Why:** Prevents README from growing unbounded as releases accumulate. Keeps README focused on current state. Release history is preserved and discoverable.
+
+**Implementation (docs/whatsnew.md):**
+- Title: "What's New"
+- Intro: one sentence explaining full release history
+- Sections in reverse-chron order: v0.5.2, v0.5.1, v0.5.0, v0.4.2, v0.4.1, v0.4.0, v0.3.0, v0.2.0, v0.1.0
+- Each section: same format as README What's New blocks (linked feature names, brief bullets)
+- Source of truth: CHANGELOG.md
+
+**README changes:**
+- Keep ONLY latest release What's New block (v0.5.2)
+- Add: "_See [full release history](docs/whatsnew.md) for all previous versions._"
+- Remove all older What's New blocks
+
+**Status:** ✅ Implemented by McManus. docs/whatsnew.md created, README trimmed.
+
+---
+
+### 2026-02-20: PR #123 — Project Type Detection & Git Safety
+
+**By:** Kobayashi (Git & Release Engineer)
+
+**What:** PR #123 opened against `dev` branch to merge fixes for issues #86 and #87:
+- **Issue #86:** Squad undid its own uncommitted changes (git safety regression)
+- **Issue #87:** Squad workflows assume npm project type (project type detection)
+
+**Details:**
+- **Source:** `squad/87-project-type-detection` branch
+- **Tests:** 64+ pass; `test/git-safety.test.js` validates both features
+- **Scope:** Project type detection (`detectProjectType()`, `generateProjectWorkflowStub()`) + Git safety rules in spawn template
+- **URL:** https://github.com/bradygaster/squad/pull/123
+
+**Status:** Awaiting review and merge approval from Brady.
+
+---
+
 ### 2026-02-20: Project Type Detection for Workflow Generation
 
 **By:** Fenster (Core Developer)  
