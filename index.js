@@ -213,6 +213,191 @@ function scrubEmailsFromDirectory(dirPath) {
   return scrubbedFiles;
 }
 
+// Detect project type by checking for marker files in the target directory
+function detectProjectType(dir) {
+  if (fs.existsSync(path.join(dir, 'package.json'))) return 'npm';
+  if (fs.existsSync(path.join(dir, 'go.mod'))) return 'go';
+  if (fs.existsSync(path.join(dir, 'requirements.txt')) ||
+      fs.existsSync(path.join(dir, 'pyproject.toml'))) return 'python';
+  if (fs.existsSync(path.join(dir, 'pom.xml')) ||
+      fs.existsSync(path.join(dir, 'build.gradle')) ||
+      fs.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
+  try {
+    const entries = fs.readdirSync(dir);
+    if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln'))) return 'dotnet';
+  } catch {}
+  return 'unknown';
+}
+
+// Workflows that contain Node.js/npm-specific commands and need project-type adaptation
+const PROJECT_TYPE_SENSITIVE_WORKFLOWS = new Set([
+  'squad-ci.yml',
+  'squad-release.yml',
+  'squad-preview.yml',
+  'squad-insider-release.yml',
+  'squad-docs.yml',
+]);
+
+// Generate a stub workflow for non-npm projects so no broken npm commands run
+function generateProjectWorkflowStub(workflowFile, projectType) {
+  const typeLabel = projectType === 'unknown'
+    ? 'Project type was not detected'
+    : projectType + ' project';
+  const todoBuildCmd = projectType === 'unknown'
+    ? '# TODO: Project type was not detected — add your build/test commands here'
+    : '# TODO: Add your ' + projectType + ' build/test commands here';
+  const buildHints = [
+    '          # Go:            go test ./...',
+    '          # Python:        pip install -r requirements.txt && pytest',
+    '          # .NET:          dotnet test',
+    '          # Java (Maven):  mvn test',
+    '          # Java (Gradle): ./gradlew test',
+  ].join('\n');
+
+  if (workflowFile === 'squad-ci.yml') {
+    return 'name: Squad CI\n' +
+      '# ' + typeLabel + ' — configure build/test commands below\n\n' +
+      'on:\n' +
+      '  pull_request:\n' +
+      '    branches: [dev, preview, main, insider]\n' +
+      '    types: [opened, synchronize, reopened]\n' +
+      '  push:\n' +
+      '    branches: [dev, insider]\n\n' +
+      'permissions:\n' +
+      '  contents: read\n\n' +
+      'jobs:\n' +
+      '  test:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-ci.yml"\n';
+  }
+
+  if (workflowFile === 'squad-release.yml') {
+    return 'name: Squad Release\n' +
+      '# ' + typeLabel + ' — configure build, test, and release commands below\n\n' +
+      'on:\n' +
+      '  push:\n' +
+      '    branches: [main]\n\n' +
+      'permissions:\n' +
+      '  contents: write\n\n' +
+      'jobs:\n' +
+      '  release:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n' +
+      '        with:\n' +
+      '          fetch-depth: 0\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-release.yml"\n\n' +
+      '      - name: Create release\n' +
+      '        env:\n' +
+      '          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n' +
+      '        run: |\n' +
+      '          # TODO: Add your release commands here (e.g., git tag, gh release create)\n' +
+      '          echo "No release commands configured — update squad-release.yml"\n';
+  }
+
+  if (workflowFile === 'squad-preview.yml') {
+    return 'name: Squad Preview Validation\n' +
+      '# ' + typeLabel + ' — configure build, test, and validation commands below\n\n' +
+      'on:\n' +
+      '  push:\n' +
+      '    branches: [preview]\n\n' +
+      'permissions:\n' +
+      '  contents: read\n\n' +
+      'jobs:\n' +
+      '  validate:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-preview.yml"\n\n' +
+      '      - name: Validate\n' +
+      '        run: |\n' +
+      '          # TODO: Add pre-release validation commands here\n' +
+      '          echo "No validation commands configured — update squad-preview.yml"\n';
+  }
+
+  if (workflowFile === 'squad-insider-release.yml') {
+    return 'name: Squad Insider Release\n' +
+      '# ' + typeLabel + ' — configure build, test, and insider release commands below\n\n' +
+      'on:\n' +
+      '  push:\n' +
+      '    branches: [insider]\n\n' +
+      'permissions:\n' +
+      '  contents: write\n\n' +
+      'jobs:\n' +
+      '  release:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n' +
+      '        with:\n' +
+      '          fetch-depth: 0\n\n' +
+      '      - name: Build and test\n' +
+      '        run: |\n' +
+      '          ' + todoBuildCmd + '\n' +
+      buildHints + '\n' +
+      '          echo "No build commands configured — update squad-insider-release.yml"\n\n' +
+      '      - name: Create insider release\n' +
+      '        env:\n' +
+      '          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n' +
+      '        run: |\n' +
+      '          # TODO: Add your insider/pre-release commands here\n' +
+      '          echo "No release commands configured — update squad-insider-release.yml"\n';
+  }
+
+  if (workflowFile === 'squad-docs.yml') {
+    return 'name: Squad Docs — Build & Deploy\n' +
+      '# ' + typeLabel + ' — configure documentation build commands below\n\n' +
+      'on:\n' +
+      '  workflow_dispatch:\n' +
+      '  push:\n' +
+      '    branches: [preview]\n' +
+      '    paths:\n' +
+      "      - 'docs/**'\n" +
+      "      - '.github/workflows/squad-docs.yml'\n\n" +
+      'permissions:\n' +
+      '  contents: read\n' +
+      '  pages: write\n' +
+      '  id-token: write\n\n' +
+      'jobs:\n' +
+      '  build:\n' +
+      '    runs-on: ubuntu-latest\n' +
+      '    steps:\n' +
+      '      - uses: actions/checkout@v4\n\n' +
+      '      - name: Build docs\n' +
+      '        run: |\n' +
+      '          # TODO: Add your documentation build commands here\n' +
+      '          # This workflow is optional — remove or customize it for your project\n' +
+      '          echo "No docs build commands configured — update or remove squad-docs.yml"\n';
+  }
+
+  return null;
+}
+
+// Write a workflow file: verbatim copy for npm projects, stub for others
+function writeWorkflowFile(file, srcPath, destPath, projectType) {
+  if (projectType !== 'npm' && PROJECT_TYPE_SENSITIVE_WORKFLOWS.has(file)) {
+    const stub = generateProjectWorkflowStub(file, projectType);
+    if (stub) {
+      fs.writeFileSync(destPath, stub);
+      return;
+    }
+  }
+  fs.copyFileSync(srcPath, destPath);
+}
+
 // --- Email scrubbing subcommand ---
 if (cmd === 'scrub-emails') {
   const targetDir = process.argv[3] || path.join(dest, '.ai-team');
@@ -957,6 +1142,9 @@ if (isSelfUpgrade) {
   process.exit(0);
 }
 
+// Detect project type once for use throughout init/upgrade workflow generation
+const projectType = detectProjectType(dest);
+
 // Capture old version BEFORE any writes (used for delta reporting + migration filtering)
 const oldVersion = isUpgrade ? readInstalledVersion(agentDest) : null;
 
@@ -986,7 +1174,7 @@ if (isUpgrade) {
       const wfFiles = fs.readdirSync(workflowsSrc).filter(f => f.endsWith('.yml'));
       fs.mkdirSync(workflowsDest, { recursive: true });
       for (const file of wfFiles) {
-        fs.copyFileSync(path.join(workflowsSrc, file), path.join(workflowsDest, file));
+        writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
       }
       console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflows (${wfFiles.length} files)`);
     }
@@ -1222,7 +1410,7 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
   if (isUpgrade) {
     fs.mkdirSync(workflowsDest, { recursive: true });
     for (const file of workflowFiles) {
-      fs.copyFileSync(path.join(workflowsSrc, file), path.join(workflowsDest, file));
+      writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
     }
     console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflow files (${workflowFiles.length} workflows)`);
   } else {
@@ -1233,7 +1421,7 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
       if (fs.existsSync(destFile)) {
         console.log(`${DIM}${file} already exists — skipping (run 'upgrade' to update)${RESET}`);
       } else {
-        fs.copyFileSync(path.join(workflowsSrc, file), destFile);
+        writeWorkflowFile(file, path.join(workflowsSrc, file), destFile, projectType);
         console.log(`${GREEN}✓${RESET} .github/workflows/${file}`);
         copied++;
       }

@@ -149,6 +149,10 @@ describe('CI/CD workflow templates (squad-ci, squad-preview, squad-release)', ()
         return;
       }
 
+      // Simulate an npm project so project-type detection returns 'npm' and
+      // workflows are copied verbatim (matching the template byte-for-byte).
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test","version":"1.0.0"}\n');
+
       initSquad(tmpDir);
       const dest = path.join(tmpDir, '.github', 'workflows', firstTemplate);
 
@@ -262,6 +266,10 @@ describe('CI/CD workflow templates (squad-ci, squad-preview, squad-release)', ()
       if (allTemplates.length === 0) {
         return;
       }
+
+      // Simulate an npm project so project-type detection returns 'npm' and
+      // project-type-sensitive workflows are copied verbatim from templates.
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), '{"name":"test","version":"1.0.0"}\n');
 
       initSquad(tmpDir);
 
