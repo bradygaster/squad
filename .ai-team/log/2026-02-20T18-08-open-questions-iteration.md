@@ -51,3 +51,8 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q8: Skills from places → Yes, independently importable. Like awesome-copilot lists.
 - Q9 presented (cloud-hosted repo auth) — awaiting Brady's answer
 - 17 questions remain unresolved
+
+### Update — Q9 resolved
+- Q9: Cloud repo auth → GitHub auth (gh CLI token), consistent with places.
+- Q10 presented (caching strategy for remote agents) — awaiting Brady's answer
+- 16 questions remain unresolved

@@ -1300,3 +1300,10 @@ The registry format is identical — any repo with a \places.json\ and \gents/\
 **By:** Brady (via Copilot)
 **What:** Yes — skills are independently importable from places repos, not just bundled with agents. Like awesome-copilot curated lists. Standalone skills (e.g., "azure-deployment-patterns") can be shared, discovered, and imported from agent repositories without importing a full agent.
 **Why:** User request — resolves open question #8 (Architecture). Extends the places ecosystem beyond agents to reusable knowledge.
+
+---
+
+### 2026-02-20T10-25: User directive — cloud-hosted repo auth
+**By:** Brady (via Copilot)
+**What:** GitHub auth (gh CLI token) for cloud-hosted agent repositories too. Consistent with the places auth decision (Q2). No separate auth model for different hosting providers — GitHub auth is the single auth story.
+**Why:** User request — resolves open question #9 (Architecture). Simplicity and consistency over flexibility.
