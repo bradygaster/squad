@@ -56,3 +56,9 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q9: Cloud repo auth → GitHub auth (gh CLI token), consistent with places.
 - Q10 presented (caching strategy for remote agents) — awaiting Brady's answer
 - 16 questions remain unresolved
+
+### Update — Q10 resolved, Q11 auto-resolved
+- Q10: Caching → Aggressively cached. Local copy is source of truth until explicit upgrade.
+- Q11: Version pinning → Auto-resolved as duplicate of Q4 (pin to SHA).
+- Q12 presented (multi-source conflict resolution) — awaiting Brady's answer
+- 14 questions remain unresolved

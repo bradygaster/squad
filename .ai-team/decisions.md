@@ -1,5 +1,14 @@
 # Team Decisions
 
+> Historical decisions archived in decisions/archive/. Recent 30 days and permanent decisions stay here.
+> **Q1 2026 archive:** decisions/archive/2026-Q1.md
+
+---
+
+---
+
+# Team Decisions
+
 > Historical decisions archived in `decisions/archive/`. Recent 30 days and permanent decisions stay here.
 > **Q1 2026 archive:** `decisions/archive/2026-Q1.md`
 
@@ -1307,3 +1316,4 @@ The registry format is identical — any repo with a \places.json\ and \gents/\
 **By:** Brady (via Copilot)
 **What:** GitHub auth (gh CLI token) for cloud-hosted agent repositories too. Consistent with the places auth decision (Q2). No separate auth model for different hosting providers — GitHub auth is the single auth story.
 **Why:** User request — resolves open question #9 (Architecture). Simplicity and consistency over flexibility.
+
