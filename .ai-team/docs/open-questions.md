@@ -5,6 +5,13 @@
 
 ## Unresolved
 
+### Agent Repository Backend
+- [ ] What's the directory convention for the places repo? (agents/{name}/ vs flat?)
+- [ ] How does auth work for private places repos? (gh CLI token? SSH?)
+- [ ] Should teams (pre-built rosters) be first-class in places, or agents-only for v1?
+- [ ] How does versioning work when a places agent is updated upstream?
+- [ ] What happens on import conflict — local agent same name as places agent?
+
 ### Architecture
 - [ ] Is `@github/copilot` npm-published or host-provided only? (Rabin flagged — blocks global install outside VS Code)
 - [ ] How does the AgentSource interface interact with the casting system when agents come from remote repositories?
