@@ -79,7 +79,7 @@ If below v22, upgrade Node.js:
 
 ## Squad agent not appearing in Copilot
 
-**Problem:** After install, `squad` doesn't show up in the `/agents` list in GitHub Copilot.
+**Problem:** After install, `squad` doesn't show up in the `/agent` (CLI) or `/agents` (VS Code) list in GitHub Copilot.
 
 **Cause:** The `.github/agents/squad.agent.md` file may not have been created, or Copilot hasn't refreshed its agent list.
 

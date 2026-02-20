@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.5.0] — 2026-02-20
+
+### Added
+
+- **`.ai-team/` renamed to `.squad/`** — Full directory rename with backward-compatible migration utilities for existing installations
+- **Decision lifecycle management** — Archival and versioning support for design decisions across the agent lifecycle
+- **Identity layer** — New `wisdom.md` and `now.md` files for agent context and temporal awareness
+- **ISO 8601 UTC timestamps** — Standardized timestamp format throughout (decision dates, agent updates, metadata)
+- **Cold-path extraction** — Refactored `squad.agent.md` to separate active decision paths from historical logic
+- **Skills export/import verification** — Enhanced import/export validation and documentation for agent skill extension
+- **Email scrubbing** — Automatic email removal during migration to prevent accidental PII commits
+
+## [0.4.2] — 2026-02-20
+
+### Fixed
+
+- **`/agents` vs `/agent` CLI command** (#93) — README and install output now correctly reference `/agent` (the actual CLI command) instead of `/agents` (PR #100)
+
+### Added
+
+- **Insider Program infrastructure** (#94) — `insider` branch created with guard workflow enforcement; forbidden paths (`.ai-team/`, `.ai-team-templates/`, `team-docs/`, `docs/proposals/`) blocked from protected branches
+- **Branch content policy** — Formal decision document defining which files belong on main, preview, and insider branches; includes 5-step branch creation checklist
+- **Guard workflow update** — Added `docs/proposals/` to forbidden paths in `squad-main-guard.yml` (both `.github/workflows/` and `templates/workflows/`)
+- **Custom universe support** (#97) — Star Trek universe added by community contributor @codebytes
+
+## [0.4.1] — 2026-02-16
+
+### Fixed
+
+- **Ralph heartbeat workflow syntax** (#78) — Removed duplicate `issues:` trigger keys in `squad-heartbeat.yml`; combined into single trigger with both `closed` and `labeled` event types
+- **Community page links** (#77) — Fixed broken GitHub Discussions links (Discussions now enabled on repo)
+- **Task spawn UI** (#73) — Added role emoji to task description fields for visual consistency; 11 role patterns mapped to emoji (🏗️ Lead, 🔧 Backend, ⚛️ Frontend, 🧪 Tester, etc.)
+- **Stale workflow references in docs** — Updated all documentation to reference correct `squad-heartbeat.yml` filename (previously `ralph-heartbeat.yml`)
+- **Source repo .ai-team/ refreshed** (#67) — Squad's own team state updated to match current templates
+
+### Added
+
+- **Role emoji mapping** — Coordinator now includes role-based emoji in task descriptions for at-a-glance task list scanning
+- **Deprecation banner for .ai-team/ → .squad/ rename** (#70) — CLI and coordinator now warn users that v0.5.0 will rename `.ai-team/` to `.squad/`; links to migration tracking issue #69
+- **`squad upgrade --self` command** (#68) — New flag for refreshing squad repo's own `.ai-team/` from templates; preserves agent history, updates templates and skills
+
 ## [0.4.0] — 2026-02-15
 
 ### Added

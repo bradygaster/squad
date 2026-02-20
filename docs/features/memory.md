@@ -1,5 +1,26 @@
 # Memory System
 
+**Try this to query team decisions:**
+```
+What decisions has the team made about testing strategy?
+```
+
+**Try this to establish a new rule:**
+```
+Always use single quotes in TypeScript
+```
+
+**Try this to check agent knowledge:**
+```
+What does Kane remember about the authentication system?
+```
+
+Squad remembers everything — decisions, conventions, architecture patterns, and individual agent learnings. Memory grows with every session, making agents smarter over time.
+
+---
+
+## Memory Layers
+
 Squad's memory is layered. Each layer serves a different purpose, and knowledge grows with every session.
 
 ---

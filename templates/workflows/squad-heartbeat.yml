@@ -5,15 +5,11 @@ on:
     # Every 30 minutes — adjust or remove if not needed
     - cron: '*/30 * * * *'
 
-  # React to completed work
+  # React to completed work or new squad work
   issues:
-    types: [closed]
+    types: [closed, labeled]
   pull_request:
     types: [closed]
-
-  # React to new squad work
-  issues:
-    types: [labeled]
 
   # Manual trigger
   workflow_dispatch:
@@ -35,10 +31,13 @@ jobs:
           script: |
             const fs = require('fs');
 
-            // Read team roster
-            const teamFile = '.ai-team/team.md';
+            // Read team roster — check .squad/ first, fall back to .ai-team/
+            let teamFile = '.squad/team.md';
             if (!fs.existsSync(teamFile)) {
-              core.info('No .ai-team/team.md found — Ralph has nothing to monitor');
+              teamFile = '.ai-team/team.md';
+            }
+            if (!fs.existsSync(teamFile)) {
+              core.info('No .squad/team.md or .ai-team/team.md found — Ralph has nothing to monitor');
               return;
             }
 
@@ -55,7 +54,7 @@ jobs:
             const members = [];
             let inMembersTable = false;
             for (const line of lines) {
-              if (line.startsWith('## Members')) {
+              if (line.match(/^##\s+(Members|Team Roster)/i)) {
                 inMembersTable = true;
                 continue;
               }
@@ -255,7 +254,10 @@ jobs:
           script: |
             const fs = require('fs');
 
-            const teamFile = '.ai-team/team.md';
+            let teamFile = '.squad/team.md';
+            if (!fs.existsSync(teamFile)) {
+              teamFile = '.ai-team/team.md';
+            }
             if (!fs.existsSync(teamFile)) return;
 
             const content = fs.readFileSync(teamFile, 'utf8');
@@ -300,7 +302,7 @@ jobs:
                     agent_assignment: {
                       target_repo: `${context.repo.owner}/${context.repo.repo}`,
                       base_branch: repoData.default_branch,
-                      custom_instructions: `Read .ai-team/team.md for team context and .ai-team/routing.md for routing rules.`
+                      custom_instructions: `Read .squad/team.md (or .ai-team/team.md) for team context and .squad/routing.md (or .ai-team/routing.md) for routing rules.`
                     }
                   });
                   core.info(`Assigned copilot-swe-agent[bot] to #${issue.number}`);

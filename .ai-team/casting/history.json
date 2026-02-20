@@ -1,0 +1,25 @@
+{
+  "universe_usage_history": [
+    {
+      "assignment_id": "2026-02-07T23-18-squad",
+      "universe": "The Usual Suspects",
+      "timestamp": "2026-02-07T23:18:31.762Z"
+    }
+  ],
+  "assignment_cast_snapshots": {
+    "2026-02-07T23-18-squad": {
+      "universe": "The Usual Suspects",
+      "agent_map": {
+        "keaton": "Keaton",
+        "verbal": "Verbal",
+        "mcmanus": "McManus",
+        "fenster": "Fenster",
+        "hockney": "Hockney",
+        "kujan": "Kujan",
+        "kobayashi": "Kobayashi",
+        "redfoot": "Redfoot"
+      },
+      "created_at": "2026-02-07T23:18:31.762Z"
+    }
+  }
+}

@@ -1,5 +1,21 @@
 # Squad for Solo Developers
 
+**Try this to get a lean team:**
+```
+I'm working alone on a side project — set up a minimal squad to help with code review and testing
+```
+
+**Try this to start with essentials:**
+```
+Give me a 3-agent team: Lead for review, backend dev, and tester
+```
+
+Squad is great for solo devs: you get code review, test coverage, and architectural second opinions you'd never have otherwise. Start with 3 agents instead of 5.
+
+---
+
+## 1. Why Squad Works for Solo Devs
+
 Squad is actually GREAT for solo devs. You get a code reviewer, tester, and architect you'd never have otherwise.
 
 ---

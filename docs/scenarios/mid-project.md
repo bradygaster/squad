@@ -1,10 +1,22 @@
 # Adding Squad Mid-Project
 
-Never too late to add Squad. Agents discover what's there, learn your patterns, and get up to speed in 2–3 sessions.
+**Try this to catch up on current state:**
+```
+This project is already in progress — catch me up on what's been built and what's in the backlog
+```
+
+**Try this to onboard Squad late:**
+```
+We're 3 months into development — help us add Squad
+```
+
+Never too late to add Squad. Agents discover what's there, learn your patterns, and get up to speed in 2–3 sessions. No rewrite needed.
 
 ---
 
 ## 1. You're Halfway Through — Is It Too Late?
+
+Never too late to add Squad. Agents discover what's there, learn your patterns, and get up to speed in 2–3 sessions.
 
 No. Squad is designed for **existing codebases**. Whether you're 3 weeks in or 3 years in, agents adapt.
 
@@ -37,7 +49,7 @@ Squad is ready.
 copilot
 ```
 
-Select **Squad** from `/agents`. Describe the project **as it is today**, not as you originally planned it:
+Select **Squad** from `/agent` (CLI) or `/agents` (VS Code). Describe the project **as it is today**, not as you originally planned it:
 
 ```
 > This is an e-commerce platform. We're 4 months into development.

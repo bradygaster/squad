@@ -1,5 +1,21 @@
 # Squad on Private Repositories — Privacy & Security
 
+**Try this to use Squad with enterprise:**
+```
+Set up Squad for a private repo with GitHub Enterprise
+```
+
+**Try this to learn about data handling:**
+```
+I need to know Squad's data security model
+```
+
+Squad runs entirely in your Copilot session. Nothing leaves your machine except what Copilot already does. Code stays local, no Squad-specific telemetry.
+
+---
+
+## 1. Where Squad Runs
+
 Squad runs entirely in your Copilot session. Nothing leaves your machine except what Copilot already does.
 
 ---
@@ -14,7 +30,7 @@ When you run:
 copilot
 ```
 
-And select **Squad** from the `/agents` list, Squad runs **on your machine** using Copilot's infrastructure.
+And select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code), Squad runs **on your machine** using Copilot's infrastructure.
 
 **What this means:**
 - Your code stays local

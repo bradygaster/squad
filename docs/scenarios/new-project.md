@@ -1,6 +1,16 @@
 # Starting a New Project with Squad
 
-Start from zero: new directory, new repo, full team in under a minute.
+**Try this to bootstrap a modern web app:**
+```
+Set up Squad for a new React + Node.js app
+```
+
+**Try this to initialize with deployment target:**
+```
+Initialize a team for a task management app that can run in Azure Web App PaaS
+```
+
+Start from zero: new directory, new repo, full team in under a minute. Squad analyzes your description and assembles the right specialists.
 
 ---
 
@@ -21,6 +31,7 @@ npx github:bradygaster/squad
 
 ```
 ✅ .github/agents/squad.agent.md (v0.2.0)
+✅ .github/workflows/ (10 workflows)
 ✅ .ai-team-templates/
 ✅ .ai-team/skills/ (starter skills)
 ✅ .ai-team/ceremonies.md
@@ -30,7 +41,7 @@ Squad is ready.
 
 Next steps:
   1. Open Copilot:  copilot
-  2. Select Squad from the /agents list
+  2. Select Squad from the /agent list (CLI) or /agents (VS Code)
   3. Tell it what you're building
 ```
 
@@ -42,7 +53,7 @@ Next steps:
 copilot
 ```
 
-Select **Squad** from the `/agents` list. Squad greets you:
+Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). Squad greets you:
 
 ```
 Hey Jordan, what are you building?

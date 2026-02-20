@@ -33,7 +33,7 @@ npx github:bradygaster/squad
 - A git repository (Squad stores team state in `.ai-team/`)
 - **`gh` CLI** — required for GitHub Issues, PRs, Ralph, and Project Boards ([install](https://cli.github.com/))
 
-This copies `squad.agent.md` into `.github/agents/` and installs templates into `.ai-team-templates/`. Your actual team (`.ai-team/`) is created at runtime when you first talk to Squad.
+This copies `squad.agent.md` into `.github/agents/`, installs 10 GitHub Actions workflows into `.github/workflows/`, and adds templates to `.ai-team-templates/`. Your actual team (`.ai-team/`) is created at runtime when you first talk to Squad.
 
 **Note:** When you select Squad from the agent picker, you'll see the version number in the name (e.g., "Squad (v0.3.0)"). This helps you confirm which version is installed.
 

@@ -1,10 +1,27 @@
 # Adding Squad to an Existing Repo
 
-You have a project with code, conventions, and history. Squad discovers what's already there.
+**Try this to initialize Squad on your project:**
+```
+This is a SaaS app with React frontend, Node.js API, and PostgreSQL — set up Squad
+```
+
+**Try this to get an architecture overview:**
+```
+Team, review the codebase and tell me what you find
+```
+
+**Try this to establish coding standards:**
+```
+We always use Zod for API validation and Prisma for database queries
+```
+
+Squad discovers your existing project — stack, patterns, conventions — and proposes a team that fits. Agents explore the codebase first, then start working with full context.
 
 ---
 
 ## 1. Install Squad
+
+You have a project with code, conventions, and history. Squad discovers what's already there.
 
 Navigate to your existing repo and run:
 
@@ -15,6 +32,7 @@ npx github:bradygaster/squad
 
 ```
 ✅ .github/agents/squad.agent.md (v0.2.0)
+✅ .github/workflows/ (10 workflows)
 ✅ .ai-team-templates/
 ✅ .ai-team/skills/ (starter skills)
 ✅ .ai-team/ceremonies.md
@@ -24,7 +42,7 @@ Squad is ready.
 
 Next steps:
   1. Open Copilot:  copilot
-  2. Select Squad from the /agents list
+  2. Select Squad from the /agent list (CLI) or /agents (VS Code)
   3. Tell it what you're building
 ```
 
@@ -38,7 +56,7 @@ If you already have a `.gitattributes` file, Squad appends `merge=union` rules f
 copilot
 ```
 
-Select **Squad** from the `/agents` list. When Squad asks what you're building, describe the project as it exists today:
+Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). When Squad asks what you're building, describe the project as it exists today:
 
 ```
 > This is a SaaS invoicing app. React frontend, Node.js/Express API,

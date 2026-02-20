@@ -1,10 +1,27 @@
 # Switching AI Models — Budget vs Quality
 
-Model selection strategies for different needs. Squad supports 16 models with fallback chains.
+**Try this to reduce costs temporarily:**
+```
+Switch everyone to Haiku — I'm trying to save costs this sprint
+```
+
+**Try this to maximize quality:**
+```
+Use Opus for all agents — quality over cost for this session
+```
+
+**Try this to restore defaults:**
+```
+Reset to default model strategy
+```
+
+Squad supports 16 models across three tiers. Switch the entire team, set per-agent preferences, or let Squad auto-route based on task type.
 
 ---
 
 ## 1. The Default: Cost-First Strategy
+
+Model selection strategies for different needs. Squad supports 16 models with fallback chains.
 
 Squad's default model configuration prioritizes cost-effectiveness:
 

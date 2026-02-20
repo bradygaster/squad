@@ -48,6 +48,13 @@ function extractTitle(filePath) {
   return null;
 }
 
+function extractDate(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  const fmMatch = content.match(/^---\s*\n[\s\S]*?date:\s*(\d{4}-\d{2}-\d{2})/);
+  if (fmMatch) return fmMatch[1];
+  return null;
+}
+
 function nameFromFile(rel) {
   const base = path.basename(rel, '.md');
   if (base.toLowerCase() === 'readme') return 'Overview';
@@ -60,6 +67,14 @@ function fileSorter(a, b) {
   if (nameA === 'readme.md') return -1;
   if (nameB === 'readme.md') return 1;
   return nameA.localeCompare(nameB);
+}
+
+function stripFrontmatter(raw) {
+  return raw.replace(/^---\s*\n[\s\S]*?---\s*\n/, '');
+}
+
+function toMarkdownCompanionPath(rel) {
+  return toHtmlPath(rel) + '.md';
 }
 
 function escapeHtml(s) {
@@ -81,7 +96,7 @@ function buildNav(files, currentRel) {
   }
   var sectionLabels = { features: 'Features', scenarios: 'Scenarios', blog: 'Blog' };
   var nav = '<nav class="sidebar" id="sidebar">\n';
-  nav += '  <div class="sidebar-header"><a href="' + BASE_PATH + '/index.html" class="logo">Squad</a>';
+  nav += '  <div class="sidebar-header"><a href="' + BASE_PATH + '/index.html" class="logo"><img src="' + BASE_PATH + '/assets/squad-logo.png" alt="Squad" class="sidebar-logo-img"></a>';
   nav += '<button class="sidebar-close" onclick="toggleSidebar()">X</button></div>\n';
   nav += '  <div class="sidebar-content">\n';
   topLevel.sort(fileSorter);
@@ -108,6 +123,11 @@ function buildNav(files, currentRel) {
       var shref = BASE_PATH + '/' + toHtmlPath(sf.rel);
       var stitle = extractTitle(sf.abs) || nameFromFile(sf.rel);
       var sactive = sf.rel === currentRel ? ' class="active"' : '';
+      // Show date for blog posts
+      if (sec === 'blog') {
+        var sdate = extractDate(sf.abs);
+        if (sdate) stitle += ' (' + sdate + ')';
+      }
       nav += '      <a href="' + shref + '"' + sactive + '>' + escapeHtml(stitle) + '</a>\n';
     }
     nav += '    </details>\n';
@@ -133,6 +153,117 @@ function copyDir(src, dest) {
   }
 }
 
+function extractFirstLine(abs) {
+  var raw = fs.readFileSync(abs, 'utf8');
+  var body = stripFrontmatter(raw);
+  var lines = body.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    if (line.startsWith('#') || line.startsWith('---') || line.startsWith('!') || line.startsWith('[')) continue;
+    if (line.startsWith('|') || line.startsWith('```')) continue;
+
+    line = line
+      .replace(/^>\s*/, '')
+      .replace(/^[-*+]\s+/, '')
+      .replace(/^\d+\.\s+/, '')
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[*_`~]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (line) {
+      if (line.length > 200) return line.substring(0, 197).trimEnd() + '...';
+      return line;
+    }
+  }
+  return '';
+}
+
+function generateLlmsTxt(files) {
+  var lines = [];
+  lines.push('# Squad');
+  lines.push('');
+  lines.push('> AI agent teams for any project. A team that grows with your code.');
+  lines.push('');
+  lines.push('Squad gives you an AI development team through GitHub Copilot. Describe what you\'re building. Get a team of specialists that live in your repo as files, persist across sessions, learn your codebase, and share decisions.');
+  lines.push('');
+
+  var sections = { guides: [], features: [], scenarios: [], blog: [] };
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var rel = f.rel.replace(/\\/g, '/');
+    if (rel.startsWith('features/')) sections.features.push(f);
+    else if (rel.startsWith('scenarios/')) sections.scenarios.push(f);
+    else if (rel.startsWith('blog/')) sections.blog.push(f);
+    else sections.guides.push(f);
+  }
+
+  var sectionDefs = [
+    { key: 'guides', label: 'Guides' },
+    { key: 'features', label: 'Features' },
+    { key: 'scenarios', label: 'Scenarios' },
+    { key: 'blog', label: 'Optional' }
+  ];
+
+  for (var s = 0; s < sectionDefs.length; s++) {
+    var sec = sectionDefs[s];
+    var items = sections[sec.key];
+    if (!items.length) continue;
+    items.sort(fileSorter);
+    lines.push('## ' + sec.label);
+    lines.push('');
+    for (var j = 0; j < items.length; j++) {
+      var item = items[j];
+      var title = extractTitle(item.abs) || nameFromFile(item.rel);
+      var mdPath = toMarkdownCompanionPath(item.rel);
+      var url = BASE_PATH + '/' + mdPath;
+      var desc = extractFirstLine(item.abs);
+      var entry = '- [' + title + '](' + url + ')';
+      if (desc) entry += ': ' + desc;
+      lines.push(entry);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function generateLlmsFullTxt(files) {
+  var parts = [];
+  parts.push('# Squad ΓÇö Complete Documentation');
+  parts.push('');
+
+  var included = files.slice();
+  included.sort(fileSorter);
+
+  for (var i = 0; i < included.length; i++) {
+    var f = included[i];
+    var raw = fs.readFileSync(f.abs, 'utf8');
+    var body = stripFrontmatter(raw).trim();
+    parts.push('---');
+    parts.push('');
+    parts.push('Source: ' + f.rel.replace(/\\/g, '/'));
+    parts.push('');
+    parts.push(body);
+    parts.push('');
+  }
+
+  return parts.join('\n');
+}
+
+function copyMarkdownFiles(files) {
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var raw = fs.readFileSync(f.abs, 'utf8');
+    var body = stripFrontmatter(raw);
+    var companionPath = path.join(OUT_DIR, toMarkdownCompanionPath(f.rel));
+    fs.mkdirSync(path.dirname(companionPath), { recursive: true });
+    fs.writeFileSync(companionPath, body);
+  }
+}
+
 function build() {
   var files = walk(DOCS_DIR);
   console.log('Found ' + files.length + ' markdown files');
@@ -145,7 +276,7 @@ function build() {
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
     var raw = fs.readFileSync(f.abs, 'utf8');
-    var stripped = raw.replace(/^---\s*\n[\s\S]*?---\s*\n/, '');
+    var stripped = stripFrontmatter(raw);
     var rendered = md.render(stripped);
     var rewritten = rewriteLinks(rendered);
     var title = extractTitle(f.abs) || nameFromFile(f.rel);
@@ -155,6 +286,10 @@ function build() {
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, html);
   }
+  fs.writeFileSync(path.join(OUT_DIR, 'llms.txt'), generateLlmsTxt(files));
+  fs.writeFileSync(path.join(OUT_DIR, 'llms-full.txt'), generateLlmsFullTxt(files));
+  copyMarkdownFiles(files);
+  console.log('Generated llms.txt, llms-full.txt, and markdown companions');
   var assetsDir = path.join(DOCS_DIR, 'assets');
   if (fs.existsSync(assetsDir)) copyDir(assetsDir, path.join(OUT_DIR, 'assets'));
   console.log('Built ' + files.length + ' pages to ' + OUT_DIR);

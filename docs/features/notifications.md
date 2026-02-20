@@ -1,5 +1,21 @@
 # Squad Pings You
 
+**Try this to get notified on completion:**
+```
+Notify me when the build finishes
+```
+
+**Try this to stay in the loop:**
+```
+Ping me on Teams when you need my input
+```
+
+Your squad sends you instant messages when they need input, hit an error, or complete work. Works with Teams, Discord, Slack, webhooks — whatever you configure.
+
+---
+
+## How It Works
+
 Your squad can send you instant messages when they need your input. Leave your terminal, get pinged on your phone.
 
 ---
@@ -135,27 +151,45 @@ Discord is flexible and works everywhere (web, mobile, desktop).
 
 ### Option A: Using mcp-notifications (Simplest)
 
-https://github.com/zudsniper/mcp-notifications supports Discord, Slack, Teams, and custom webhooks.
+https://www.npmjs.com/package/mcp-notifications supports Discord, Slack, Teams, and custom webhooks.
+
+1. Install mcp-notifications
+
+   ```bash
+   npm install -g mcp-notifications
+   ```
 
 1. **Get your Discord webhook:**
    - In Discord, right-click a channel → "Edit channel" → "Integrations" → "Webhooks"
    - "New Webhook" → name it "Squad"
    - Copy the webhook URL
 
-2. **Configure Squad:**
-   ```json
-   {
-     "mcpServers": {
-       "notifications": {
-         "command": "node",
-         "args": ["path/to/mcp-notifications.js"],
-         "env": {
-           "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/..."
-         }
-       }
-     }
-   }
-   ```
+#### Add MCP Server for Github Copilot CLI
+
+1. **Configure Squad from Github Copilot CLI:**
+
+    ```bash
+    /mcp add notifications
+    ```
+
+    * Server Type: [2] stdio
+    * Command: `npx -y mcp-notifications`
+    * Environment Variables: `{ "WEBHOOK_URL": "https://discord.com/api/webhooks/...", "WEBHOOK_TYPE": "discord" }`
+
+#### Add MCP Server in VSCode
+
+1. From the command palette, search for MCP: Add Server
+1. When you run MCP: Add Server, enter the following information
+
+    * Type: Command (stdio)
+    * Command: `npx -y mcp-notifications`
+    * Server Id: notifications
+    * Configuration target: Global
+    * When the mcp.json file in your user profile opens, add the following to the mcp server configuration
+
+        ```bash
+        "env": { "WEBHOOK_URL": "https://discord.com/api/webhooks/...", "WEBHOOK_TYPE": "discord" }
+        ```
 
 ### Option B: Using Discord Official MCP
 

@@ -1,5 +1,26 @@
 # Team Setup & Init Mode
 
+**Try this to initialize for a specific stack:**
+```
+Set up a team for a React + Node.js API with PostgreSQL
+```
+
+**Try this to expand capabilities:**
+```
+Add a security specialist to the team
+```
+
+**Try this to view the roster:**
+```
+Show me the current team roster
+```
+
+Squad analyzes your project and proposes a team roster with 3-7 members tailored to your stack. You can accept as-is, customize during setup, or modify the team anytime after.
+
+---
+
+## How Init Works
+
 When you first run Squad in a repository, it doesn't impose a team — it proposes one. The init flow analyzes your project, suggests roles and members, waits for your confirmation, then creates the `.ai-team/` directory structure and installs the crew.
 
 ## How Init Works

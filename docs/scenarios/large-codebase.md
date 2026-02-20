@@ -1,10 +1,22 @@
 # Squad on Large Codebases
 
-How Squad handles scale. Agents work in their own 200K context windows. Routing ensures only the right agent looks at code.
+**Try this to understand before changing:**
+```
+This is a 200k line codebase — help me understand the architecture before we start making changes
+```
+
+**Try this to set up domain routing:**
+```
+Route all payment code work to the specialist who knows that domain
+```
+
+Squad handles scale: each agent gets their own 200K context window, routing ensures only the right agent looks at relevant code. No loading everything — just what's needed.
 
 ---
 
 ## 1. The Scale Problem
+
+How Squad handles scale. Agents work in their own 200K context windows. Routing ensures only the right agent looks at code.
 
 Large codebases overwhelm most AI tools:
 

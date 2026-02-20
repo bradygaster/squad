@@ -1,6 +1,21 @@
 # Issue-Driven Development with Squad
 
-End-to-end workflow: connect to a repo, pick issues from the backlog, let agents create branches, implement, open PRs, handle review feedback, and close issues.
+**Try this to link to your repo:**
+```
+Connect to myorg/recipe-app
+```
+
+**Try this to see your backlog:**
+```
+Show the backlog
+```
+
+**Try this to start implementation:**
+```
+Work on issue #7
+```
+
+End-to-end workflow: connect to a repo, pick issues from backlog, let agents create branches, implement, open PRs, handle review feedback, and close issues.
 
 **Prerequisite:** The `gh` CLI must be installed and authenticated (`gh auth login`).
 

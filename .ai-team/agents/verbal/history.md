@@ -1,0 +1,210 @@
+# Project Context
+
+- **Owner:** bradygaster
+- **Project:** Squad — AI agent teams that grow with your code. Democratizing multi-agent development on GitHub Copilot. Mission: beat the industry to what customers need next.
+- **Stack:** Node.js, GitHub Copilot CLI, multi-agent orchestration
+- **Created:** 2026-02-07
+
+## Core Context
+
+_Summarized from sessions through 2026-02-09. Full entries in `history-archive.md`._
+
+
+
+### Session Summaries
+
+- **Messaging as product strategy (2026-02-07)**
+- **2026-02-07: Proposal-first as agent discipline** — **Core insight:** Agents can participate in meta-work (defining team process), not just execution. Proposals force agents to articulate trade-offs, al
+- **2026-02-07: Video content strategy as first-mover play** — 📌 Team update (2026-02-08): Proposal-first workflow adopted — all meaningful changes require proposals before execution. Write to `docs/proposals/`, r
+- **2026-02-08: Agent Persistence & Latency — Experience Design (Proposal 007)** — **Context:** Brady's feedback — "later on, the agents get in the way more than they help." Collaborated with Kujan on diagnosis and solutions.
+- **2026-02-08: Portable Squads — Experience Design (Proposal 008)** — **Context:** Brady's "HOLY CRAP" moment — export your squad, take them to the next project. The biggest feature idea yet.
+- **2026-02-08: Skills System — Agent Competence as Portable Knowledge (Proposal 010)** — **Context:** Brady dropped the word "skills" — *"the more skills we can build as a team. GIRL. you see where i'm going."* He sees the convergence: por
+- **2026-02-09: The Squad Paper — meta-argument design (Proposal 016)** — **Context:** Brady requested a paper making the legitimate case for multi-agent teams, specifically addressing the "squads are slow" criticism by show
+- **2026-02-09: Skills System Revision — Agent Skills Standard + MCP (Proposal 010 R2)** — **Context:** Brady clarified his skills vision: *"claude-and-copilot-compliant skills that adhere to the anthropic 'skills.md' way"* and *"could we al
+- **2026-02-09: Scribe spawn cascade fix — inbox-driven resilience** — **Problem:** The coordinator only spawned Scribe after successful agent responses. The silent success bug (~40% drop rate) causes agent responses to b
+- **2026-02-09: Silent success bug audit — findings from self-inspection** — **Three issues found during P0 bug hunt:**
+- **2026-02-09: Squad DM — Experience Design for Messaging Interfaces (Proposal 017)** — **Context:** Brady wants to interact with his squad from Telegram/Slack/SMS when away from the terminal. Referenced MOLTS as inspiration. Prefers dev 
+- **2026-02-08: Per-Agent Model Selection — Proposal 024** — **File path:** `docs/proposals/024-per-agent-model-selection.md`
+- **2026-02-09: Tone audit — what counts as a violation** — **Context:** Brady's tone governance directive. Full audit of all public-facing content.
+- **2026-02-09: "Feels Heard" — Immediate acknowledgment as UX requirement** — **Insight — blank screens kill trust:**
+- **2026-02-09: Silent success deeper mitigation — Sprint Task 1.5** — **Context:** The P0 silent success bug (~7-10% of spawns) causes agents to complete all file writes but return no text response. The existing mitigati
+- **2026-02-09: Incoming Queue — Coordinator as Message Processor (Proposal 023)** — **Context:** Brady's insight — *"copilot itSELF has built-in 'todo list' capability"* — the coordinator should do useful work before agents start, not
+- **2026-02-09: Code-level leak audit for v0.2.0** — **Audit scope:** Full review of `index.js`, all `templates/` files, `.github/agents/squad.agent.md`, and `package.json` for internal state leakage vec
+- **Docs content audit for shipping (2026-02-08)** — **Context:** Release pipeline updated to include `docs/` and `CHANGELOG.md` in the npm package. Full audit of every file in docs/ for internal state l
+- **2026-02-09: Proposal 023 v2 — SQL hot layer, backlog elevation, agent cloning** — **Key architecture evolution — SQL as cache, not storage:**
+- **2026-02-08: v0.1.0 Postmortem — State Leak Incident**
+- **2026-02-08: Per-Agent Model Selection Design**
+- **2026-02-09: PR #2 Prompt Review — GitHub Issues, PRD Mode, Human Members** — 📌 Team update (2026-02-09): If ask_user returns < 10 characters, treat as ambiguous and re-confirm — platform may fabricate default responses from bla
+- **2026-02-09: Tiered Response Modes — Implementation (Wave 2, Item 2.1)** — **What was built:**
+- **2026-02-10: Skills Phase 1 — Template + Read (Wave 2, Item 2.3)** — **What was built:**
+- **2026-02-10: Skills Phase 2 — Earned Skills (Wave 3, Item 3.2)** — **What was built:**
+- **Progressive history summarization (Wave 3)** — 📌 Team update (2026-02-09): Tiered response modes shipped — Direct/Lightweight/Standard/Full modes replace uniform spawn overhead. Agents may now be s
+- **Scripted demo pipeline design (2026-02-09)**
+- **2025-07-15: User-Facing Documentation — Product Guide, First Session Tour, GitHub Issues Tour** — **Context:** Created comprehensive user-facing documentation as three documents in docs/.
+
+## Recent Updates
+
+📌 Team update (2026-02-13): VS Code runSubagent spawning — platform parity and adaptation strategy (consolidated). runSubagent viable with platform detection and custom .agent.md files. Spawn patterns all map 1:1; model selection is the gap; recommendation: prompt-level platform detection, no abstraction layer. Unblocks #32-35. — decided by Keaton, Strausz, Kujan
+📌 Team update (2026-02-08): CI pipeline created — GitHub Actions runs tests on push/PR to main/dev. PRs now have automated quality gate. — decided by Hockney
+📌 Team update (2026-02-08): Coordinator now captures user directives to decisions inbox before routing work. Directives persist to decisions.md via Scribe. — decided by Kujan
+📌 Team update (2026-02-08): Silent success mitigation strengthened in all spawn templates — 6-line RESPONSE ORDER block + filesystem-based detection. — decided by Verbal
+📌 Team update (2026-02-08): Incoming queue architecture direction — SQL as hot working layer, filesystem as durable store, team backlog as key feature, agents can clone across worktrees — decided by Brady
+📌 Team update (2026-02-08): Platform assessment confirms SQL todos table is session-scoped only, filesystem is sole durable cross-session state, Option A (broaden directive capture) recommended — decided by Kujan
+📌 Team update (2026-02-09): If ask_user returns < 10 characters, treat as ambiguous and re-confirm — platform may fabricate default responses from blank input. — decided by Brady
+📌 Team update (2026-02-09): PR #2 integrated — GitHub Issues Mode, PRD Mode, Human Team Members added to coordinator with review fixes (gh CLI detection, post-setup questions, worktree guidance). — decided by Fenster
+📌 Team update (2026-02-09): Documentation structure formalized — docs/ is user-facing only, team-docs/ for internal, .ai-team/ is runtime state. Three-tier separation is permanent. — decided by Kobayashi
+📌 Team update (2026-02-09): Tiered response modes shipped — Direct/Lightweight/Standard/Full modes replace uniform spawn overhead. Agents may now be spawned with lightweight template (no charter/history/decisions reads) for simple tasks. — decided by Verbal
+📌 Team update (2026-02-09): Skills Phase 1 + Phase 2 shipped — agents now read SKILL.md files before working and can write SKILL.md files from real work. Skills live in .ai-team/skills/{name}/SKILL.md. Confidence lifecycle: low→medium→high. — decided by Verbal
+📌 Team update (2026-02-09): Export + Import CLI shipped — squads are now fully portable via squad-export.json. Round-trip at 100% fidelity. History split is pattern-based. — decided by Fenster
+📌 Team update (2026-02-09): Celebration blog conventions established — wave:null frontmatter, parallel narrative structure, stats in tables, tone ceiling applies. — decided by McManus
+📌 Team update (2026-02-09): Portable Squads consolidated — architecture, platform, and experience merged into single decision — decided by Keaton, Kujan, Verbal
+📌 Team update (2026-02-09): Skills system consolidated — open standard with MCP tool declarations, merging 4 independent analyses — decided by Kujan, Verbal
+📌 Team update (2026-02-09): Squad DM consolidated — architecture and experience design merged — decided by Keaton, Verbal
+
+
+📌 Team update (2026-02-09): Preview branch added to release pipeline — two-phase workflow: preview then ship. Brady eyeballs preview before anything hits main. — decided by Kobayashi
+
+## Learnings
+
+- **2026-02-10: Model Selection Algorithm Design (Proposal 024b)** — Designed the full model selection algorithm for the coordinator. Key decisions:
+
+  - **4-layer priority is the right abstraction.** User override → charter preference → task-aware auto-selection → default fallback. Each layer is self-contained and testable independently. The coordinator stops at the first match — no cascading complexity.
+
+  - **Fallback chains must be cross-provider.** Single-provider chains are fragile to provider outages. The chains alternate: Anthropic → OpenAI → Anthropic → OpenAI → nuclear. This handles both single-model issues and provider-wide failures.
+
+  - **3-retry maximum before nuclear fallback.** Walking a 5-model chain with API timeouts could add 30-60 seconds of invisible latency. Three retries handles transient issues; after that, the nuclear fallback is faster.
+
+  - **Nuclear fallback = omit model param entirely.** This is the only option guaranteed to work regardless of plan tier, org policy, or platform state. It's backward-compatible — Squad worked this way before model selection existed.
+
+  - **Silent fallback is UX, not laziness.** Users don't care which model runs their agent. Narrating "tried X, failed, trying Y" creates anxiety and slows acknowledgment. Fallbacks are logged for debugging, never surfaced to the user.
+
+  - **Provider diversity is optional, not forced.** Charters are Anthropic-optimized. Cross-provider execution risks prompt portability issues. Diversity is a tool for reviews and code gen, not a mandate for every spawn.
+
+  - **Task complexity overrides apply at most ONE bump.** No cascading upgrades. An architecture proposal gets bumped to premium — it doesn't get bumped again because it's also multi-file.
+
+  - **Design tension resolved — charter vs. algorithm authority.** The charter's `Preferred` field is a preference, not a command. The coordinator respects it but the user can override. The auto-selection algorithm runs only when the charter says `auto` or omits the section entirely. This keeps agents self-documenting without making them rigid.
+
+  - **Design tension resolved — when to cross providers.** Trigger-based, not role-based. A reviewer doesn't always use Gemini — only when the coordinator detects that cognitive diversity adds value (e.g., second-opinion review after a rejection). Provider diversity is situational, not structural.
+
+📌 Team update (2026-02-10): Model catalog expanded to 16 models across 3 providers — selection algorithm must consider full catalog, not just 3 Anthropic models. — decided by Kujan
+📌 Team update (2026-02-10): v0.3.0 sprint plan approved — model selection (024 Phases 1-2), team backlog (023 Phases 1-2), Demo 1 infrastructure. Two waves, 28-39h. — decided by Keaton
+
+
+📌 Team update (2026-02-10): Marketing site architecture consolidated — Jekyll on GitHub Pages, docs/ is source root, blog from team-docs/blog/, no content reproduction. McManus (content) + Fenster (infrastructure) for Phase 1. — decided by bradygaster, Keaton, McManus
+📌 Team update (2026-02-10): Tone directive consolidated — all public-facing material must be straight facts only. No editorial voice, sales language, or narrative framing. Stacks on existing banned-words and tone governance rules. — decided by bradygaster, McManus
+
+
+📌 Team update (2026-02-10): 0.3.0 priorities: async comms > GitHub-native > CCA adoption — decided by bradygaster
+
+📌 Team update (2026-02-10): `squad:` label convention standardized — update coordinator prompts — decided by Keaton, McManus
+
+
+📌 Team update (2026-02-10): Async comms strategy decided — two-tier MVP: CCA-as-squad-member (2-4h, prompt-only) + Telegram bridge (8-16h, conditional on SDK spike). CCA is the floor. — decided by Kujan
+
+- **2026-02-10: Label Taxonomy & Workflow Engine (Proposal 032c)** — Designed the complete label system for GitHub-native Squad. Key decisions:
+
+  - **Labels ARE the state machine.** 8 status labels with formal transitions — `status:draft` → `status:reviewing` → `status:approved` → `status:implementing` → `status:done`, plus `status:blocked`, `status:shelved`, `status:superseded`. Exactly one status label per issue at any time. Transitions are label swaps (remove old, apply new).
+
+  - **Namespaced labels prevent collisions.** `status:`, `type:`, `priority:`, `squad:`, `era:` — colon-separated namespaces are parseable (`split(':')`) and avoid conflicts with existing project labels. Follows Kubernetes/Prometheus conventions.
+
+  - **Milestones for sprints, not labels.** `sprint:current` would require constant relabeling. GitHub Milestones have due dates, progress bars, and native grouping. The right tool for the job.
+
+  - **39 labels total across 7 namespaces.** Status (8), Type (8), Priority (4), Squad routing (3 + per-agent), Automation (6), Migration/provenance (4). Within GitHub's practical limits.
+
+  - **Migration mapping is honest.** All 44 existing proposals classified by actual status from their markdown headers: 22 implemented/closed, 3 superseded/closed, 12 shelved/open, 3 approved/active/open, 2 draft/open, 2 research/closed. Proposal 015 gets `type:bug` + `priority:p0`. Proposal 024 stays `status:approved` (not done — implementation was deferred).
+
+  - **Provider abstraction is a mapping layer.** ADO uses built-in State field + Tags. GitLab uses scoped labels (`status::draft` with `::` for native mutual exclusion). The coordinator works with Squad labels; the provider adapter translates. Only GitHub adapter exists today.
+
+  - **CCA integration is label-gated.** `cca-eligible` is the sole trigger for Copilot Coding Agent assignment. Opt-in, auditable, no other path to `@copilot`.
+
+  - **`status:shelved` keeps issues open.** Shelved ≠ dead. Closing hides from default views. Open shelved issues stay visible as deferred backlog. Unshelving is a label swap, not a reopen.
+
+
+📌 Team update (2026-02-10): v0.3.0 is ONE feature — proposals as GitHub Issues. All other items deferred. — decided by bradygaster
+
+📌 Team update (2026-02-10): Provider abstraction is prompt-level command templates, not JS interfaces. Platform section replaces Issue Source in team.md. — decided by Fenster, Keaton
+
+📌 Team update (2026-02-10): Actions automation ships as opt-in templates in templates/workflows/, 3 workflows in v0.3.0. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-10): CCA governance must be self-contained in squad.agent.md (cannot read .ai-team/). — decided by Kujan
+
+📌 Team update (2026-02-10): Proposal migration uses three-wave approach — active first, shipped second, superseded/deferred last. — decided by Keaton
+
+
+📌 Team update (2026-02-11): Project boards consolidated — v0.4.0 target confirmed, gh CLI (not npm), opt-in only, labels authoritative over boards. Community triage responses must use substantive technical detail. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-11): Fritz video analysis merged — messaging takeaways: 'Markdown, not magic' as trust signal, surface cast system earlier in docs, quantifiable output is strongest demo beat — decided by McManus
+
+- **2026-02-11: Per-Agent Model Selection — Implementation (Proposal 024 Phases 1-2)** — Implemented Brady's cost-first directive across the full model selection system. Key decisions:
+
+  - **Brady's directive supersedes Proposal 024's role-based defaults.** Original design had Tester on haiku, DevRel on sonnet. Brady's rule is simpler: writing code → quality first (sonnet), not writing code → cost first (haiku). This changed Tester from haiku to sonnet (writes test code) and DevRel from sonnet to haiku (writes docs, not code).
+
+  - **Layer 4 default changed from sonnet to haiku.** "When in doubt, cost over quality unless code is being written." The fallback for unknown agents/tasks should be cheap, not expensive.
+
+  - **"auto" for mixed agents.** Keaton and Verbal do both code-adjacent work and non-code work. Setting them to "auto" lets the coordinator pick per-task rather than locking to one tier. Registry stores "auto" — coordinator decides at spawn time.
+
+  - **Scribe template hardcoded to haiku.** Scribe always gets `model: "claude-haiku-4.5"` directly in the template — no resolution needed. Scribe is always mechanical, always cheap.
+
+  - **All 9 spawn templates updated with `model` parameter.** Background, sync, generic, lightweight, explore, Scribe, ceremony facilitator, PRD decomposition — every `task` tool call now includes `model: "{resolved_model}"`.
+
+  - **Files modified:** `.github/agents/squad.agent.md` (model selection section + all spawn templates), `templates/charter.md` (## Model template), `.ai-team/casting/registry.json` (model fields), all 9 agent charters in `.ai-team/agents/*/charter.md`.
+
+
+📌 Team update (2026-02-11): Per-agent model selection implemented with cost-first directive (optimize cost unless writing code) — decided by Brady and Verbal
+
+📌 Team update (2026-02-11): Discord is the v0.3.0 MVP messaging connector. Gateway must be platform-agnostic with zero GitHub-specific imports. — decided by Keaton
+
+
+📌 Team update (2026-02-11): MCP Integration Direction for Squad approved — Option B (Awareness Layer) chosen. Phase 1 spike (WI-1) validates platform MCP support. See decisions.md for rationale and timeline. — decided by Keaton
+
+📌 Team update (2026-02-12): Issue #6 (Project Boards) approved for v0.4.0 implementation. Verbal assigned Phase 2 (WI-3: board init prompts) and Phase 3 (WI-5: board query/display). Fenster leads Phase 1 validation. — decided by Keaton
+📌 Team update (2026-02-13): MCP integration architecture merged from inbox — Awareness layer (discovery skill) + coordinator context injection. Sub-agent MCP inheritance is a platform constraint (workaround: coordinator handles directly). Graceful degradation mandatory. Scales to all MCP servers. — decided by Verbal
+
+- **2026-02-13: MCP Integration Design — Discovery Skill + Architecture (Issue #11)** — Full research and design for Fritz's MCP integration request. Key findings:
+
+  - **Sub-agent MCP inheritance is the critical constraint.** Sub-agents spawned via the `task` tool may NOT inherit MCP tools from the parent session. This is a platform-level limitation tracked upstream. Squad must design around this — coordinator handles MCP calls directly or pre-fetches data before spawning. This constraint will likely be resolved by platform updates, at which point the skill patterns work unchanged.
+
+  - **Squad doesn't own MCP — it teaches awareness.** Same pattern as human-notification: Squad teaches agents when and how to use MCP tools, users bring the MCP servers. Zero dependencies, zero runtime changes. The skill system is the perfect vehicle for this.
+
+  - **Three-layer architecture is the right abstraction.** Layer 1 (discovery skill) teaches patterns. Layer 2 (coordinator context injection) tells agents what's available at spawn time. Layer 3 (documentation) helps users set up their MCP servers. Each layer is independent and shippable.
+
+  - **MCP config lives in three places.** `.copilot/mcp-config.json` (CLI, team-shared), `.vscode/mcp.json` (VS Code workspace), `~/.copilot/mcp-config.json` (user personal). The platform merges these — Squad never parses them directly.
+
+  - **Auth is a real blocker for some MCP servers.** Fritz flagged it: Copilot CLI auth ≠ GitHub MCP auth. Users need separate tokens for GitHub MCP, Azure MCP, Trello MCP, etc. This is a documentation problem, not a code problem.
+
+  - **Graceful degradation is non-negotiable.** If an MCP tool isn't available, agents fall back to CLI equivalents (`gh`, `az`), inform the user what's needed, or continue without the integration. MCP is always an enhancement, never a dependency.
+
+  - **The skill scales with the ecosystem.** Every new MCP server that ships becomes automatically usable by Squad agents — no Squad release required. The discovery skill teaches the general pattern; domain-specific skills can be added later for Trello workflows, Aspire monitoring, etc.
+
+  **Files created:** `.ai-team/skills/mcp-tool-discovery/SKILL.md` (discovery skill), `.ai-team/decisions/inbox/verbal-mcp-integration.md` (architectural decision). Design posted to Issue #11.
+📌 Team update (2026-02-13): Agent Progress Updates — Milestone Signals + Coordinator Polling mechanism. 30s polling loop extracts [MILESTONE] markers from agent output. No agent code changes. Backward compatible. Unlocks notifications + Squad DM integration. — decided by Keaton
+📌 Team update (2026-02-14): VS Code Model & Background Parity — Phase 1 (v0.4.0): accept session model, use runSubagent. Phase 2 (v0.5.0): generate model-tier agent files. runSubagent lacks model param; use prompt-level detection in squad.agent.md. — decided by Kujan
+
+
+📌 Team update (2026-02-13): Projects V2 Phase 1 validation complete — all gh project * commands validated live, no npm dependencies needed. Unblocks WI-3 (board init), WI-4 (label-to-board sync), WI-5 (board query). — decided by Fenster
+
+- **2026-02-15: Client Compatibility Section — squad.agent.md (Issue #10, v0.4.0)** — Added the "Client Compatibility" coordinator section to squad.agent.md, synthesizing findings from proposals 032a, 032b, 033a, and 034a. Key decisions:
+
+  - **Placement: after model selection, before eager execution.** Platform detection logically gates spawning behavior — the coordinator needs to know its surface before it picks modes, models, or parallelism patterns. Placing it after model selection means the model rules are already defined; the compatibility section just says "on VS Code, skip the per-spawn model stuff." Placing it before eager execution means the coordinator reads platform constraints before it starts launching aggressively.
+
+  - **Capability probe is the right detection pattern.** Check for `task` (CLI) vs `runSubagent`/`agent` (VS Code) vs neither (fallback). Tool availability is the most reliable signal — no environment variables, no file sniffing, no fragile heuristics. The coordinator's system prompt already lists available tools, so this is a natural conditional.
+
+  - **Feature degradation table is a quick-reference, not a duplicate.** The full compatibility matrix lives in `docs/scenarios/client-compatibility.md`. The coordinator section has a 6-row table covering the operational differences that affect spawn logic. This avoids bloating the prompt while giving the coordinator enough to act.
+
+  - **SQL caveat is its own subsection.** SQL is the only tool that affects coordinator logic AND is CLI-only. Calling it out explicitly prevents subtle bugs where a VS Code coordinator tries to track todos in SQL and silently fails.
+
+  - **Spawn template annotations are blockquote callouts.** Both Background and Sync spawn templates got a one-line VS Code equivalent note. Blockquote format (`>`) keeps it visually distinct without breaking the code block structure. The note is terse — just enough for the coordinator to know what to swap.
+
+📌 Team update (2026-02-13): Client Compatibility section added to squad.agent.md with platform detection logic, VS Code spawn adaptations, and feature degradation table — decided by Verbal
+
+
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+
+📌 Team update (2026-02-20): Issues #86 & #87 sprint complete. Git Checkout Safety (Verbal): Added Git Safety rules to spawn templates and Fenster charter. Hockney: Wrote 8 regression tests for uncommitted-change protection. Project Type Detection (Fenster): Implemented `detectProjectType()` in index.js with marker file detection; workflow generation now stubs non-npm types with helpful TODO comments. All 72 tests pass. — decided by Verbal, Hockney, Fenster
+
+## Learnings
+
+### 2026-02-19: GitHub Issue #102 — squad.agent.md path migration complete
+Updated all `.ai-team/` and `.ai-team-templates/` path references to `.squad/` and `.squad/templates/` in the coordinator prompt and all templates. 93 references migrated in squad.agent.md (reduced to 4 backward-compat fallback mentions). Updated deprecation banner to Migration Banner (v0.5.0) to reflect that the migration IS happening now. Preserved all backward-compatibility language for legacy repo detection. Updated `.gitattributes` examples and git commit message prefixes from `ai-team` to `squad`. All template files and 6 workflow YAMLs migrated. PR #113 opened to dev branch. Tests: 52/53 passing (1 pre-existing failure in marketplace test — `index.js` still writes to `.ai-team/`, fixed in Fenster's #101).
+

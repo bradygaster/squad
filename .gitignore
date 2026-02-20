@@ -13,10 +13,10 @@ node_modules/
 # Built docs site (generated, not committed)
 _site/
 
-# Squad team state — committed on dev and feature branches,
+# Squad team state ΓÇö committed on dev and feature branches,
 # blocked from main/preview by squad-main-guard.yml workflow.
-# ⚠️ NEVER merge .ai-team/ into main or preview.
+# ΓÜá∩╕Å NEVER merge .ai-team/ into main or preview.
 # The guard workflow will fail the PR if you try.
 
-# Squad Squad templates (internal, not distributed)
+# Squad internal templates (not distributed)
 .ai-team-templates/

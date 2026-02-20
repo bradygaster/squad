@@ -1,10 +1,22 @@
 # Combining Knowledge from Multiple Squads
 
-You have 3 repos with trained squads. You're starting a new project and want the best of all of them.
+**Try this to coordinate cross-team work:**
+```
+I have two teams — one on frontend, one on backend. How do I coordinate work between them?
+```
+
+**Try this to share skills across projects:**
+```
+Export skills from my React project and import them into this new project
+```
+
+You can import one full squad at a time, but you can cherry-pick skills from multiple exports manually. Best practice: merge teams, don't run parallel squads.
 
 ---
 
 ## 1. The Reality: One Full Squad at a Time
+
+You have 3 repos with trained squads. You're starting a new project and want the best of all of them.
 
 Squad's import system brings in a complete team — roster, charters, histories, skills, decisions. You can only import one full squad cleanly.
 

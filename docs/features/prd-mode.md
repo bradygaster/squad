@@ -1,5 +1,21 @@
 # PRD Mode
 
+**Try this to generate a requirements document:**
+```
+Write a PRD for a user authentication system with OAuth support
+```
+
+**Try this to break down product specs into work items:**
+```
+Read the PRD at docs/product-spec.md and break it into work items
+```
+
+Give Squad a product requirements document and the Lead breaks it into prioritized work items, assigns them to the team, and tracks progress with dependency management.
+
+---
+
+## How to Use
+
 Give Squad a product requirements document. The Lead agent breaks it into work items, assigns them to the team, and tracks progress.
 
 ---

@@ -1,10 +1,27 @@
 # Squad for Open Source Projects
 
-Autonomous issue triage, community contributor support, and architectural knowledge sharing.
+**Try this to onboard as a contributor:**
+```
+Help me contribute to this open source project — review their CONTRIBUTING.md and set up a team
+```
+
+**Try this to automate maintainer tasks:**
+```
+Enable auto-triage for incoming issues on my OSS repo
+```
+
+**Try this to handle contributor-friendly tasks:**
+```
+Handle good-first-issue #42 autonomously
+```
+
+Squad helps OSS maintainers with autonomous issue triage, contributor guidance, and architectural knowledge sharing. Reduces maintainer burden while keeping quality high.
 
 ---
 
 ## 1. The Open Source Maintainer Problem
+
+Autonomous issue triage, community contributor support, and architectural knowledge sharing.
 
 You maintain an open source project. Issues pile up. PRs from new contributors need guidance. Questions repeat. Triaging takes hours.
 
@@ -26,8 +43,8 @@ npx github:bradygaster/squad
 Enable the Ralph heartbeat workflow:
 
 ```bash
-cp .ai-team-templates/ralph-heartbeat.yml .github/workflows/
-git add .github/workflows/ralph-heartbeat.yml
+cp .ai-team-templates/squad-heartbeat.yml .github/workflows/
+git add .github/workflows/squad-heartbeat.yml
 git commit -m "Enable Squad auto-triage"
 git push
 ```

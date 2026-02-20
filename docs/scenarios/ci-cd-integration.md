@@ -1,10 +1,22 @@
 # Squad in CI/CD Pipelines
 
-Using Squad with GitHub Actions. Label-driven automation, heartbeat workflows, and autonomous issue processing.
+**Try this to automate deployment pipelines:**
+```
+Set up GitHub Actions to run tests on every PR and deploy to staging on merge to main
+```
+
+**Try this to enable periodic housekeeping:**
+```
+Enable Ralph's heartbeat workflow to triage issues automatically
+```
+
+Ralph runs periodically via GitHub Actions to handle housekeeping between Copilot sessions — triage new issues, apply squad labels, check stale branches, archive old decisions.
 
 ---
 
 ## 1. The Heartbeat Workflow — Ralph Between Sessions
+
+Using Squad with GitHub Actions. Label-driven automation, heartbeat workflows, and autonomous issue processing.
 
 Ralph (the manager agent) runs periodically via GitHub Actions to handle housekeeping between Copilot sessions:
 
@@ -13,9 +25,9 @@ Ralph (the manager agent) runs periodically via GitHub Actions to handle houseke
 - Check for stale branches
 - Archive old decisions
 
-The workflow is in `.github/workflows/ralph-heartbeat.yml` and runs every 6 hours.
+The workflow is in `.github/workflows/squad-heartbeat.yml` and runs every 6 hours.
 
-**You don't have to do anything** — it's installed automatically when you run `npx github:bradygaster/squad`.
+**You don't have to do anything** — it's installed automatically (along with 9 other workflows) when you run `npx github:bradygaster/squad`.
 
 ```yaml
 name: Ralph Heartbeat
@@ -155,7 +167,7 @@ Steps 2, 4, 5, 6, 7 are **automated**. You only do steps 3 and 8.
 
 When you run `npx github:bradygaster/squad`, these workflow templates are installed:
 
-- `.ai-team-templates/ralph-heartbeat.yml` → Ralph runs every 6 hours
+- `.ai-team-templates/squad-heartbeat.yml` → Ralph runs every 6 hours
 - `.ai-team-templates/copilot-auto-assign.yml` → Triggers Copilot on `go:*` labels
 - `.ai-team-templates/pr-review-reminder.yml` → Reminds you of open PRs needing review
 
@@ -208,4 +220,4 @@ npx github:bradygaster/squad heartbeat --dry-run
 - **`go:*` labels mean "approved to proceed."** Don't add them to every issue — only the ones you've reviewed and want agents to handle autonomously.
 - **Agents still need human review.** PRs created by agents should be reviewed by a human before merging.
 - **Workflows are templates.** Customize `.ai-team-templates/` to match your CI/CD setup, then copy to `.github/workflows/`.
-- **Heartbeat frequency is configurable.** Edit `ralph-heartbeat.yml` to change from every 6 hours to daily, hourly, etc.
+- **Heartbeat frequency is configurable.** Edit `squad-heartbeat.yml` to change from every 6 hours to daily, hourly, etc.
