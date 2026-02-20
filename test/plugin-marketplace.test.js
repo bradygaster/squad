@@ -151,12 +151,12 @@ describe('Plugin marketplace subcommands (#29)', () => {
   });
 
   describe('marketplace state persistence', () => {
-    it('marketplace state persists in .ai-team/plugins/marketplaces.json', (t) => {
+    it('marketplace state persists in .squad/plugins/marketplaces.json', (t) => {
       const addResult = runSquad(['plugin', 'marketplace', 'add', 'github/awesome-copilot'], tmpDir);
       if (skipIfNotImplemented(t, addResult)) return;
       assert.equal(addResult.exitCode, 0);
 
-      const stateFile = path.join(tmpDir, '.ai-team', 'plugins', 'marketplaces.json');
+      const stateFile = path.join(tmpDir, '.squad', 'plugins', 'marketplaces.json');
       assert.ok(fs.existsSync(stateFile), 'marketplaces.json should be created after add');
 
       const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
@@ -175,7 +175,7 @@ describe('Plugin marketplace subcommands (#29)', () => {
 
       runSquad(['plugin', 'marketplace', 'remove', 'awesome-copilot'], tmpDir);
 
-      const stateFile = path.join(tmpDir, '.ai-team', 'plugins', 'marketplaces.json');
+      const stateFile = path.join(tmpDir, '.squad', 'plugins', 'marketplaces.json');
       if (fs.existsSync(stateFile)) {
         assert.doesNotThrow(() => {
           JSON.parse(fs.readFileSync(stateFile, 'utf8'));

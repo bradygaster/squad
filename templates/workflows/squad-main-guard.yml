@@ -2,8 +2,10 @@ name: Squad Protected Branch Guard
 
 on:
   pull_request:
-    branches: [main, preview]
+    branches: [main, preview, insider]
     types: [opened, synchronize, reopened]
+  push:
+    branches: [main, preview, insider]
 
 permissions:
   contents: read
@@ -19,20 +21,51 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Fetch all files changed in this PR (paginated)
-            const files = [];
-            let page = 1;
-            while (true) {
-              const resp = await github.rest.pulls.listFiles({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
-                per_page: 100,
-                page
-              });
-              files.push(...resp.data);
-              if (resp.data.length < 100) break;
-              page++;
+            // Fetch all files changed - handles both PR and push events
+            let files = [];
+            
+            if (context.eventName === 'pull_request') {
+              // PR event: use pulls.listFiles API
+              let page = 1;
+              while (true) {
+                const resp = await github.rest.pulls.listFiles({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  per_page: 100,
+                  page
+                });
+                files.push(...resp.data);
+                if (resp.data.length < 100) break;
+                page++;
+              }
+            } else if (context.eventName === 'push') {
+              // Push event: compare against base branch
+              const base = context.payload.before;
+              const head = context.payload.after;
+              
+              // If this is not a force push and base exists, compare commits
+              if (base && base !== '0000000000000000000000000000000000000000') {
+                const comparison = await github.rest.repos.compareCommits({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  base,
+                  head
+                });
+                files = comparison.data.files || [];
+              } else {
+                // Force push or initial commit: list all files in the current tree
+                core.info('Force push detected or initial commit, checking tree state');
+                const { data: tree } = await github.rest.git.getTree({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tree_sha: head,
+                  recursive: 'true'
+                });
+                files = tree.tree
+                  .filter(item => item.type === 'blob')
+                  .map(item => ({ filename: item.path, status: 'added' }));
+              }
             }
 
             // Check each file against forbidden path rules
@@ -41,10 +74,14 @@ jobs:
               .filter(f => f.status !== 'removed')
               .map(f => f.filename)
               .filter(f => {
-                // .ai-team/** — ALL team state files, zero exceptions
-                if (f === '.ai-team' || f.startsWith('.ai-team/')) return true;
+                // .ai-team/** and .squad/** — ALL team state files, zero exceptions
+                if (f === '.ai-team' || f.startsWith('.ai-team/') || f === '.squad' || f.startsWith('.squad/')) return true;
+                // .ai-team-templates/** — Squad's own templates, stay on dev
+                if (f === '.ai-team-templates' || f.startsWith('.ai-team-templates/')) return true;
                 // team-docs/** — ALL internal team docs, zero exceptions
                 if (f.startsWith('team-docs/')) return true;
+                // docs/proposals/** — internal design proposals, stay on dev
+                if (f.startsWith('docs/proposals/')) return true;
                 return false;
               });
 
@@ -58,8 +95,10 @@ jobs:
               '## 🚫 Forbidden files detected in PR to main',
               '',
               'The following files must NOT be merged into `main`.',
-              '`.ai-team/` is runtime team state — it belongs on dev branches only.',
+              '`.ai-team/` and `.squad/` are runtime team state — they belong on dev branches only.',
+              '`.ai-team-templates/` is Squad\'s internal planning — it belongs on dev branches only.',
               '`team-docs/` is internal team content — it belongs on dev branches only.',
+              '`docs/proposals/` is internal design proposals — it belongs on dev branches only.',
               '',
               '### Forbidden files found:',
               '',
@@ -71,6 +110,9 @@ jobs:
               '# Remove tracked .ai-team/ files (keeps local copies):',
               'git rm --cached -r .ai-team/',
               '',
+              '# Remove tracked .squad/ files (keeps local copies):',
+              'git rm --cached -r .squad/',
+              '',
               '# Remove tracked team-docs/ files:',
               'git rm --cached -r team-docs/',
               '',
@@ -79,7 +121,7 @@ jobs:
               'git push',
               '```',
               '',
-              '> ⚠️ `.ai-team/` is committed on `dev` and feature branches by design.',
+              '> ⚠️ `.ai-team/` and `.squad/` are committed on `dev` and feature branches by design.',
               '> The guard workflow is the enforcement mechanism that keeps these files off `main` and `preview`.',
               '> `git rm --cached` untracks them from this PR without deleting your local copies.',
             ];

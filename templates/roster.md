@@ -12,11 +12,11 @@
 
 | Name | Role | Charter | Status |
 |------|------|---------|--------|
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| Scribe | Session Logger | `.ai-team/agents/scribe/charter.md` | 📋 Silent |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
 | Ralph | Work Monitor | — | 🔄 Monitor |
 
 ## Coding Agent
@@ -54,7 +54,7 @@
 
 ## Project Context
 
-- **Owner:** {user name} ({user email})
+- **Owner:** {user name}
 - **Stack:** {languages, frameworks, tools}
 - **Description:** {what the project does, in one sentence}
-- **Created:** {date}
+- **Created:** {timestamp}

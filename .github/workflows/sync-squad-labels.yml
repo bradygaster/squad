@@ -3,6 +3,7 @@ name: Sync Squad Labels
 on:
   push:
     paths:
+      - '.squad/team.md'
       - '.ai-team/team.md'
   workflow_dispatch:
 
@@ -21,10 +22,13 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const teamFile = '.ai-team/team.md';
+            let teamFile = '.squad/team.md';
+            if (!fs.existsSync(teamFile)) {
+              teamFile = '.ai-team/team.md';
+            }
 
             if (!fs.existsSync(teamFile)) {
-              core.info('No .ai-team/team.md found — skipping label sync');
+              core.info('No .squad/team.md or .ai-team/team.md found — skipping label sync');
               return;
             }
 

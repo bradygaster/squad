@@ -49,7 +49,7 @@ Squad is ready.
 copilot
 ```
 
-Select **Squad** from `/agents`. Describe the project **as it is today**, not as you originally planned it:
+Select **Squad** from `/agent` (CLI) or `/agents` (VS Code). Describe the project **as it is today**, not as you originally planned it:
 
 ```
 > This is an e-commerce platform. We're 4 months into development.

@@ -24,12 +24,12 @@ All user-facing errors use the `fatal(msg)` function which prints a red `✗` pr
 Colors are defined as constants at the top of `index.js`: `GREEN`, `RED`, `DIM`, `BOLD`, `RESET`. Use these constants — do not inline ANSI escape codes.
 
 ### File Structure
-- `.ai-team/` — Team state (user-owned, never overwritten by upgrades)
-- `.ai-team-templates/` — Template files copied from `templates/` (Squad-owned, overwritten on upgrade)
+- `.squad/` — Team state (user-owned, never overwritten by upgrades)
+- `.squad/templates/` — Template files copied from `templates/` (Squad-owned, overwritten on upgrade)
 - `.github/agents/squad.agent.md` — Coordinator prompt (Squad-owned, overwritten on upgrade)
 - `templates/` — Source templates shipped with the npm package
-- `.ai-team/skills/` — Team skills in SKILL.md format (user-owned)
-- `.ai-team/decisions/inbox/` — Drop-box for parallel decision writes
+- `.squad/skills/` — Team skills in SKILL.md format (user-owned)
+- `.squad/decisions/inbox/` — Drop-box for parallel decision writes
 
 ### Windows Compatibility
 Always use `path.join()` for file paths — never hardcode `/` or `\` separators. Squad must work on Windows, macOS, and Linux. All tests must pass on all platforms.
@@ -55,7 +55,7 @@ const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
 // Skip-if-exists pattern
 if (!fs.existsSync(ceremoniesDest)) {
   fs.copyFileSync(ceremoniesSrc, ceremoniesDest);
-  console.log(`${GREEN}✓${RESET} .ai-team/ceremonies.md`);
+  console.log(`${GREEN}✓${RESET} .squad/ceremonies.md`);
 } else {
   console.log(`${DIM}ceremonies.md already exists — skipping${RESET}`);
 }

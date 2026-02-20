@@ -1,9 +1,9 @@
 # Project Context
 
-- **Owner:** {user name} ({user email})
+- **Owner:** {user name}
 - **Project:** {project description}
 - **Stack:** {languages, frameworks, tools}
-- **Created:** {date}
+- **Created:** {timestamp}
 
 ## Learnings
 

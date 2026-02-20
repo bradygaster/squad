@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.5.0] — Unreleased
+
+### Added
+
+- **`.ai-team/` renamed to `.squad/`** — Full directory rename with backward-compatible migration utilities for existing installations
+- **Decision lifecycle management** — Archival and versioning support for design decisions across the agent lifecycle
+- **Identity layer** — New `wisdom.md` and `now.md` files for agent context and temporal awareness
+- **ISO 8601 UTC timestamps** — Standardized timestamp format throughout (decision dates, agent updates, metadata)
+- **Cold-path extraction** — Refactored `squad.agent.md` to separate active decision paths from historical logic
+- **Skills export/import verification** — Enhanced import/export validation and documentation for agent skill extension
+- **Email scrubbing** — Automatic email removal during migration to prevent accidental PII commits
+
+## [0.4.2] — 2026-02-20
+
+### Fixed
+
+- **`/agents` vs `/agent` CLI command** (#93) — README and install output now correctly reference `/agent` (the actual CLI command) instead of `/agents` (PR #100)
+
+### Added
+
+- **Insider Program infrastructure** (#94) — `insider` branch created with guard workflow enforcement; forbidden paths (`.ai-team/`, `.ai-team-templates/`, `team-docs/`, `docs/proposals/`) blocked from protected branches
+- **Branch content policy** — Formal decision document defining which files belong on main, preview, and insider branches; includes 5-step branch creation checklist
+- **Guard workflow update** — Added `docs/proposals/` to forbidden paths in `squad-main-guard.yml` (both `.github/workflows/` and `templates/workflows/`)
+- **Custom universe support** (#97) — Star Trek universe added by community contributor @codebytes
+
 ## [0.4.1] — 2026-02-16
 
 ### Fixed

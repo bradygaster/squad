@@ -51,8 +51,8 @@ Squad uses a three-tier branch structure to protect production and staging while
 │         (squad/{issue}-{slug})    ╲                       │          │
 │                                    └──→ Release tagged ───→ main     │
 │                                                              │        │
-│  ✅ ALL files allowed              🚫 .ai-team/ BLOCKED   🚫 BLOCKED │
-│  (dev branch = safe sandbox)       team-docs/ BLOCKED     (except   │
+│  ✅ ALL files allowed              🚫 .squad/ BLOCKED     🚫 BLOCKED │
+│  (dev branch = safe sandbox)       team-docs/ BLOCKED     (except    │
 │                                    (except blog/)          tagged    │
 │                                                            releases) │
 └─────────────────────────────────────────────────────────────────────┘
@@ -62,10 +62,10 @@ Squad uses a three-tier branch structure to protect production and staging while
 
 | Branch | Purpose | Protection | Files Allowed |
 |--------|---------|------------|---------------|
-| **`dev`** | Development & integration | None | ✅ Everything (including `.ai-team/`) |
-| **`feature/squad/{issue}-{slug}`** | Feature work | None — merge to dev | ✅ Everything (including `.ai-team/`) |
-| **`preview`** | Staging & release candidate | Guard checks for `.ai-team/`, `team-docs/` (except blog/) | ✅ Most files — see [Protected Files](#whats-protected) |
-| **`main`** | Production & releases | Guard checks for `.ai-team/`, `team-docs/` (except blog/) | ✅ Most files — see [Protected Files](#whats-protected) |
+| **`dev`** | Development & integration | None | ✅ Everything (including `.squad/`) |
+| **`feature/squad/{issue}-{slug}`** | Feature work | None — merge to dev | ✅ Everything (including `.squad/`) |
+| **`preview`** | Staging & release candidate | Guard checks for `.squad/`, `team-docs/` (except blog/) | ✅ Most files — see [Protected Files](#whats-protected) |
+| **`main`** | Production & releases | Guard checks for `.squad/`, `team-docs/` (except blog/) | ✅ Most files — see [Protected Files](#whats-protected) |
 
 ### Creating a Feature Branch
 
@@ -101,10 +101,10 @@ These files are **runtime team state** and live on `dev` and feature branches. T
 
 | Path | Reason | Committed to `dev`? | Merged to `main`/`preview`? |
 |------|--------|---------------------|---------------------------|
-| **`.ai-team/**`** | Agent charters, routing, decisions, history, casting registry | ✅ YES | ❌ NEVER — guard blocks |
+| **`.squad/**`** | Agent charters, routing, decisions, history, casting registry | ✅ YES | ❌ NEVER — guard blocks |
 | **`team-docs/**`** | Internal team documentation, sprint plans, notes | ✅ YES | ❌ NEVER — guard blocks |
 
-**Why?** `.ai-team/` contains persistent agent knowledge, routing rules, and decision history. `team-docs/` contains internal proposals, sprint plans, and working notes. Both are internal infrastructure that belongs on development branches — not in production. The guard workflow is the enforcement mechanism, not `.gitignore`. `.ai-team/` is NOT in `.gitignore` — it's a normal part of the `dev` branch. The `.npmignore` file ensures both are excluded from the published npm package. Blog posts live in `docs/blog/` and flow freely to all branches.
+**Why?** `.squad/` contains persistent agent knowledge, routing rules, and decision history. `team-docs/` contains internal proposals, sprint plans, and working notes. Both are internal infrastructure that belongs on development branches — not in production. The guard workflow is the enforcement mechanism, not `.gitignore`. `.squad/` is NOT in `.gitignore` — it's a normal part of the `dev` branch. The `.npmignore` file ensures both are excluded from the published npm package. Blog posts live in `docs/blog/` and flow freely to all branches.
 
 ### ✅ Files That Flow Freely
 
@@ -159,18 +159,18 @@ If you accidentally (or intentionally) target `preview` or `main`, the **guard w
 ✅ If no forbidden files detected:
    PR checks pass, you can merge.
 
-❌ If forbidden files detected (.ai-team/, team-docs/ except blog/):
+❌ If forbidden files detected (.squad/, team-docs/ except blog/):
    Workflow fails with actionable error message.
    You must remove the files before merging.
 ```
 
 ### Step 5: Fixing a Blocked PR
 
-If the guard blocks your PR because it contains `.ai-team/` or `team-docs/` files:
+If the guard blocks your PR because it contains `.squad/` or `team-docs/` files:
 
 ```bash
-# Remove .ai-team/ from this PR (keeps local copies and dev branch copies safe)
-git rm --cached -r .ai-team/
+# Remove .squad/ from this PR (keeps local copies and dev branch copies safe)
+git rm --cached -r .squad/
 
 # Remove team-docs/ from this PR
 git rm --cached -r team-docs/
@@ -180,7 +180,7 @@ git commit -m "chore: remove internal team files from PR"
 git push
 ```
 
-The workflow will re-run and pass. Your local `.ai-team/` and `team-docs/` files remain untouched, and they continue to exist on `dev` normally.
+The workflow will re-run and pass. Your local `.squad/` and `team-docs/` files remain untouched, and they continue to exist on `dev` normally.
 
 ---
 
@@ -286,7 +286,7 @@ You don't need to add these yourself — the Lead will triage and label issues. 
 
 ```
 squad/
-├── .ai-team/                  ✅ Committed on dev & feature branches
+├── .squad/                    ✅ Committed on dev & feature branches
 │   ├── agents/                🚫 Guard blocks from main/preview
 │   │   ├── {name}/charter.md  🚫 Guard blocks from main/preview
 │   │   └── {name}/history.md  🚫 Guard blocks from main/preview
@@ -332,28 +332,28 @@ When you open a PR to `main` or `preview`, the workflow `.github/workflows/squad
 
 1. **Fetches all files changed in your PR** (paginated for large PRs)
 2. **Checks each file against forbidden path rules:**
-   - If filename starts with `.ai-team/` → BLOCKED
+   - If filename starts with `.squad/` → BLOCKED
    - If filename starts with `team-docs/` → BLOCKED
    - Otherwise → ALLOWED
 3. **Reports results:**
    - ✅ **Pass:** "No forbidden paths found" — you're good to merge
    - ❌ **Fail:** Lists forbidden files and shows `git rm --cached` fix
 
-The guard is **not a suggestion** — it's a hard stop. This is the primary enforcement mechanism that keeps `.ai-team/` and internal `team-docs/` off `main` and `preview`. But it's easy to fix if it blocks you (see [Fixing a Blocked PR](#fixing-a-blocked-pr)).
+The guard is **not a suggestion** — it's a hard stop. This is the primary enforcement mechanism that keeps `.squad/` and internal `team-docs/` off `main` and `preview`. But it's easy to fix if it blocks you (see [Fixing a Blocked PR](#fixing-a-blocked-pr)).
 
 ---
 
 ## FAQ
 
-### Q: I accidentally committed `.ai-team/` to my feature branch. Do I have to delete it?
+### Q: I accidentally committed `.squad/` to my feature branch. Do I have to delete it?
 
-**A:** Nope — `.ai-team/` files are **supposed** to be committed on `dev` and feature branches! They're part of the normal development workflow. The guard workflow (`squad-main-guard.yml`) prevents them from reaching `main` or `preview`. Just don't PR them to those branches.
+**A:** Nope — `.squad/` files are **supposed** to be committed on `dev` and feature branches! They're part of the normal development workflow. The guard workflow (`squad-main-guard.yml`) prevents them from reaching `main` or `preview`. Just don't PR them to those branches.
 
 If you're creating a PR to `main` or `preview` and the guard blocks it, remove the files from that PR only:
 
 ```bash
-git rm --cached -r .ai-team/  # Untrack from this PR
-git commit -m "chore: remove .ai-team/ from release PR"
+git rm --cached -r .squad/  # Untrack from this PR
+git commit -m "chore: remove .squad/ from release PR"
 git push
 ```
 
@@ -363,7 +363,7 @@ git push
 
 ### Q: The guard blocked my PR. What now?
 
-**A:** Your PR targets `main` or `preview` and contains `.ai-team/` or `team-docs/` files. These files live on `dev` and feature branches but must not reach production. Follow [Fixing a Blocked PR](#fixing-a-blocked-pr) — it's three `git rm --cached` commands and a push. The workflow will re-run and pass.
+**A:** Your PR targets `main` or `preview` and contains `.squad/` or `team-docs/` files. These files live on `dev` and feature branches but must not reach production. Follow [Fixing a Blocked PR](#fixing-a-blocked-pr) — it's three `git rm --cached` commands and a push. The workflow will re-run and pass.
 
 ### Q: I want to commit `team-docs/sprint-plan.md` — can I do that?
 
@@ -372,6 +372,12 @@ git push
 ### Q: What if I disagree with the branch protection?
 
 **A:** [Open a discussion](https://github.com/bradygaster/squad/discussions). These rules exist because `.ai-team/` leaking to `main` has bitten us. But design decisions are made by consensus.
+
+---
+
+## Insider Program
+
+Interested in cutting-edge builds? See [CONTRIBUTORS.md](CONTRIBUTORS.md#insider-program) for the Insider Program — early access to development builds and a chance to shape Squad's future.
 
 ---
 
@@ -388,7 +394,7 @@ Welcome aboard. Make Squad better. 🚀
 ## Summary: What You Need to Know
 
 1. **Clone from `dev`, create `squad/{issue}-{slug}` branch, PR back to `dev`**
-2. **`.ai-team/` files are committed on `dev` and feature branches — the guard workflow blocks them from `main`/`preview`**
+2. **`.squad/` files are committed on `dev` and feature branches — the guard workflow blocks them from `main`/`preview`**
 3. **Run `npm test` before pushing**
 4. **Follow conventional commits (feat:, fix:, docs:, etc.)**
 5. **If the guard blocks your PR to `main`/`preview`, run `git rm --cached` and push again**
