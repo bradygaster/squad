@@ -53,6 +53,7 @@ _Summarized from initial platform assessment and deep onboarding (2026-02-07). F
 
 
 📌 Team update (2026-02-09): Preview branch added to release pipeline — two-phase workflow: preview then ship. Brady eyeballs preview before anything hits main. — decided by Kobayashi
+📌 Team update (2026-02-20): SDK replatform 14 PRDs grounded in verified SDK source. Cost data native in SDK. JSONL for event persistence. Tier-based model aliases (fast/standard/premium). Per-agent MCP via SDK customAgents[]. esbuild bundling. In-Copilot install Phase 1, Marketplace Phase 2. Brady pending: package name, fallback chains, provider override, quota routing, OTLP export. — decided by Kujan with Keaton, Fenster, Verbal, Baer
 
 ## Learnings
 
@@ -152,3 +153,18 @@ _Summarized 2026-02-10 learnings (full entries in session logs and proposals):_
   - **What Squad keeps:** Casting system (persistent names, universe allocation), filesystem memory (`.ai-team/` source of truth), coordinator orchestration logic (which agents, when, dependencies), decision governance (proposals, voting, lifecycle), Scribe pattern (dedicated documentation agent).
   - **Recommendation:** YES — replatform in two phases. Phase 1 (v0.6.0, 3-5 weeks): SDK as infrastructure, coordinator as agent.md, hybrid with custom tools (`squad_spawn_agent`). Phase 2 (v0.7.0, 8-12 weeks): coordinator as Node.js process using SDK client, full programmatic control. Adapter pattern required (SDK is preview, breaking changes expected). Migration path: dual-mode coordinator (SDK opt-in v0.6.0, default v0.7.0, only v1.0.0), zero downtime.
   - **Output:** `.ai-team/docs/sdk-opportunity-analysis.md` (61KB, exhaustive capability inventory + gap analysis + architecture + migration), `.ai-team/decisions/inbox/kujan-sdk-analysis.md` (decision record for Brady review).
+
+- **2026-02-20: SDK Replatform PRDs (4 documents)** — Wrote four PRDs grounded in actual SDK source code review:
+  - **PRD 6: Streaming Observability** — SDK has 30+ event types including `assistant.usage` with `cost` field (corrects earlier gap analysis that said SDK lacks cost data). `session.shutdown` event provides per-model `modelMetrics` with full token/cost breakdown. JSONL event logs + live CLI display + export format for external dashboards. Phase 2 (v0.7.0).
+  - **PRD 9: BYOK & Multi-Provider** — SDK `ProviderConfig` supports `openai|azure|anthropic` types with `apiKey` or `bearerToken`. Provider config is per-session (no client-level default). Tier-based model aliases (`fast`/`standard`/`premium`) decouple charters from providers. Fallback chains with health caching. Phase 1 (v0.6.0).
+  - **PRD 10: MCP Server Integration** — SDK `CustomAgentConfig.mcpServers` enables per-agent MCP routing natively. Squad as MCP server exposes roster/decisions/backlog as standard MCP resources. Tool filtering via `tools` array is include-list only (exclude must be resolved). Phase 1 per-agent config, Phase 2 Squad MCP server.
+  - **PRD 12: Distribution & In-Copilot Install** — esbuild bundling with embedded templates via text loader. In-Copilot install via custom agent file (Phase 1), marketplace (Phase 2 when available). npm publishing as `@bradygaster/squad`. Auto-update check (24h cache, 3s timeout, silent fail). SDK as external dep (not bundled).
+  - **Key SDK source findings during PRD writing:**
+    - `assistant.usage` event includes `cost` field — SDK computes per-call cost. No external pricing data needed.
+    - `session.shutdown` event has `modelMetrics` map with per-model request counts, costs, and token breakdowns.
+    - `session.usage_info` provides `tokenLimit` and `currentTokens` for context pressure gauge.
+    - `ProviderConfig.bearerToken` takes precedence over `apiKey` — useful for enterprise SSO tokens.
+    - `MCPServerConfig.tools` is include-list only — SDK doesn't support exclude patterns.
+    - `CustomAgentConfig.mcpServers` confirmed for per-agent MCP routing.
+    - `SessionConfig.streaming` enables `assistant.message_delta` and `assistant.reasoning_delta` events.
+  - **Output:** `.ai-team/docs/prds/06-streaming-observability.md`, `09-byok-multi-provider.md`, `10-mcp-server-integration.md`, `12-distribution-install.md`, `.ai-team/decisions/inbox/kujan-prd-platform.md`.

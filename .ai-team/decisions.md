@@ -267,3 +267,287 @@ If POC succeeds: migrate incrementally, maintain CLI-spawn fallback until SDK pa
 
 **Next steps (if approved):** Brady reviews all analyses. If approved, Keaton scopes POC: Scribe session + onPostToolUse hook.
 
+---
+
+### 2026-02-20: SDK Replatform PRD Plan — 14 PRDs Documented
+
+**By:** Keaton (Lead)
+
+**What:** Documented the full SDK replatform plan as 14 PRDs across 3 phases. Three documents written to `.ai-team/docs/prds/`:
+
+1. **`00-index.md`** — Master PRD index with all 14 PRDs, owners, dependencies, phase assignments, dependency graph, execution timeline, and de-risking strategy.
+2. **`05-coordinator-replatform.md`** — PRD 5: Coordinator moves from 32KB prompt to TypeScript orchestrator. Routing becomes code (hybrid deterministic + LLM fallback). Policy enforcement moves to hooks. Session pool replaces spawn-per-request.
+3. **`14-clean-slate-architecture.md`** — PRD 14: Ground-zero redesign. New `.squad/` directory structure with `.state/` (git-ignored) and `.cache/` (derived). TypeScript config. esbuild bundling. Tiered init (5 files, not 30).
+
+**Phase Summary:**
+- **Phase 1 (v0.6.0, 7–9 weeks):** PRDs 1→2→3+4→5. SDK runtime, tools, hooks, sessions, coordinator.
+- **Phase 2 (v0.7.x, 6–10 weeks):** PRDs 6–10 in parallel. Streaming, skills, Ralph, BYOK, MCP.
+- **Phase 3 (v0.8+):** PRDs 11–14. Casting v2, distribution, A2A, clean-slate.
+
+**Key Architectural Decisions:**
+- PRD 1 is the gate — everything depends on it. If it fails, Squad continues as-is.
+- Coordinator prompt shrinks from ~32KB to ~12-15KB. Deterministic logic moves to code. Enforcement moves to hooks.
+- Clean-slate introduces `squad.config.ts` (TypeScript config with `defineSquadConfig()`), replacing markdown-as-config.
+- `.state/` and `.cache/` directories are git-ignored, separating runtime state from committed config.
+
+**Pending Decisions (Need Brady Input):**
+- Entry point: new `squad orchestrate` subcommand vs. replace `squad watch`?
+- Do we keep `team.md` as human-readable roster alongside `squad.config.ts`?
+- Should `squad.agent.md` still exist in clean-slate?
+- Backward compat: `squad migrate` command or auto-detect?
+
+**Status:** All three documents are **Draft** — ready for team review and Brady's input on pending decisions.
+
+---
+
+### 2026-02-20: SDK Replatform PRDs — Runtime, Tools, Ralph
+
+**By:** Fenster (Core Developer)
+
+**What:** Wrote three PRDs for the SDK replatform:
+
+1. **PRD 1: SDK Orchestration Runtime** (`01-sdk-orchestration-runtime.md`) — Foundation layer. SquadClient/SquadSession adapters wrapping CopilotClient/CopilotSession. SessionPool for multi-agent lifecycle. EventBus for cross-session events. Configuration management. TypeScript project setup alongside existing JS installer.
+
+2. **PRD 2: Custom Tools API** (`02-custom-tools-api.md`) — Five tools (`squad_route`, `squad_decide`, `squad_memory`, `squad_status`, `squad_skill`) using SDK's `defineTool()` with Zod schemas. Typed interfaces to existing file-based patterns (drop-box, history, skills).
+
+3. **PRD 8: Ralph SDK Migration** (`08-ralph-sdk-migration.md`) — Ralph becomes a persistent SDK session with `resumeSession()`. Accumulates knowledge across cycles. Event-driven agent tracking. Three monitoring layers preserved.
+
+**Key Architectural Decision: Adapter Layer for SDK Isolation**
+
+All Squad code imports from `src/adapter/`, never from `@github/copilot-sdk` directly. If SDK ships breaking changes, we update one adapter file — not every consumer. This was identified as the critical mitigation for Technical Preview coupling risk.
+
+**Decisions Needing Brady's Input:**
+- `squad orchestrate` CLI entry point design (new subcommand vs. replacement)
+- Coordinator session model for Phase 1 (keep .agent.md, SDK for spawned agents)
+- Graceful degradation strategy (fall back to task tool if SDK fails)
+
+**Status:** Draft — ready for Brady and team review.
+
+---
+
+### 2026-02-20: SDK Replatform PRDs — Agent Experience Layer
+
+**By:** Verbal (Prompt Engineer & AI Strategist)
+
+**What:** Four PRDs define the agent experience layer:
+
+1. **PRD 4: Agent Session Lifecycle (Phase 1)** — Charters compile to `CustomAgentConfig`. Dynamic context injected via `onSessionStart` hook + `systemMessage` append mode. Core agents get persistent sessions; specialists get on-demand sessions. Response modes (lightweight/standard/full) map to distinct `SessionConfig` profiles. `resumeSession()` for crash recovery. Infinite sessions for long-running work.
+
+2. **PRD 7: Skills Migration (Phase 2)** — Skills load via SDK `skillDirectories` at session creation. `manifest.json` adds confidence/authorship metadata. Low-confidence skills excluded from auto-loading. Confidence lifecycle preserved: low → medium (2+ uses) → high (5+ uses). Imported skills always start at low confidence per security policy.
+
+3. **PRD 11: Casting System v2 (Phase 2)** — Casting becomes a typed TypeScript module. Universe selection is deterministic (pure function, alphabetical tiebreak). Overflow strategies codified as typed functions. Names are immutable once assigned (append-only registry). Three-phase migration from JSON to TypeScript. 100% test coverage requirement.
+
+4. **PRD 13: A2A Agent Communication (Phase 3)** — Hub-and-spoke architecture (coordinator as broker). Two custom tools: `squad_discover` + `squad_route`. Synchronous handoffs via `sendAndWait()`. Rate limiting + circular route detection. NOT implementing Google A2A protocol — Squad agents are same-team.
+
+**Key Decisions:**
+- Session lifecycle: CustomAgentConfig compilation at spawn time. Response modes map to SessionConfig profiles. resumeSession() for crash recovery.
+- Skills with confidence: Low → medium (2+ uses) → high (5+ uses). Imported skills start at low per security.
+- Casting v2: Typed TypeScript module. Deterministic universe selection. Immutable names. Three-phase migration. 100% test coverage.
+- A2A communication: Hub-and-spoke via coordinator. Synchronous handoffs. NOT Google A2A protocol.
+
+**Open Questions:**
+- Session ID format (stable vs. timestamped)?
+- Idle timeout duration?
+- Session pool max size?
+- Skill promotion timing (team load vs. session idle)?
+- Skill content size limits?
+- Character trait depth?
+- Multi-universe teams support?
+- Rate limit tuning for A2A?
+
+**Dependency:** All four PRDs depend on PRD 4 (session lifecycle) shipping first. PRD 13 (A2A) is Phase 3 — only built after Phases 1-2 prove SDK sessions work.
+
+**Status:** Draft — ready for team review and Brady input.
+
+---
+
+### 2026-02-20: SDK Replatform PRDs — Platform Capabilities & Integration
+
+**By:** Kujan (Copilot SDK Expert)
+
+**What:** Four PRDs grounded in verified SDK source code (`nodejs/src/types.ts`, `session.ts`, `client.ts`, `generated/session-events.ts`):
+
+1. **PRD 6: Streaming Observability** — Cost data native in assistant.usage (cost field) and session.shutdown (modelMetrics). JSONL format for event persistence (append-only log, streamable, greppable). Event aggregator + live display for human oversight.
+
+2. **PRD 9: BYOK Multi-Provider** — Tier-based model aliases (fast/standard/premium) instead of model names. SDK resolution at spawn time. Same charter works across Copilot, Azure, Anthropic. Fallback chains. Health cache for provider status.
+
+3. **PRD 10: MCP Server Integration** — Per-agent MCP via SDK's `customAgents[].mcpServers`. Zero custom Squad code. Tool filtering via include-list. Squad as MCP server (Phase 2).
+
+4. **PRD 12: Distribution & Install** — esbuild bundling with embedded templates (text loader, single-file dist, no templates/ in npm). In-Copilot install via .agent.md (Phase 1). Marketplace registration (Phase 2).
+
+**Key Decisions Made:**
+
+1. **SDK provides cost data natively** — The `assistant.usage` event includes a `cost` field; the SDK computes per-call cost. PRD 6 (Observability) relies on this instead of external pricing tables.
+
+2. **JSONL for event persistence** — Event logs use JSONL format (one JSON object per line). Streamable, greppable, no dependencies. Rejected SQLite (overkill) and plain text (not queryable).
+
+3. **`${VAR}` syntax for all secrets** — Consistent with Baer's existing security policy for MCP configs. `providers.json` and `mcp-config.json` both use `${VAR}` references resolved from `process.env` at runtime. Files are safe to commit.
+
+4. **Tier-based model aliases** — Charters use `fast`/`standard`/`premium` instead of model names. Squad resolves to provider-specific model at spawn time. Same charter works on Copilot, Azure, and Anthropic.
+
+5. **Per-agent MCP via SDK's customAgents[].mcpServers** — SDK natively supports per-agent MCP server configuration. Zero custom Squad code needed for routing. Tool filtering uses the `tools` include-list array.
+
+6. **esbuild bundling with embedded templates** — Templates embedded as strings via esbuild `text` loader. Single-file distribution. No `templates/` directory in npm package.
+
+7. **In-Copilot install via custom agent file (Phase 1)** — Most feasible approach today. User adds one `.agent.md` file → tells Copilot "install Squad" → agent runs `npx`.
+
+**Decisions Pending Brady:**
+
+1. npm package name: `@bradygaster/squad` vs. `create-squad` vs. `@squad/cli`?
+2. Fallback chain behavior: config-driven explicit vs. automatic provider failure detection?
+3. Per-agent provider override: allow charters to specify preferred provider?
+4. Quota-aware routing: auto-switch provider when Copilot quota drops below threshold?
+5. OpenTelemetry export: add OTLP for enterprise dashboards, or JSONL-only for now?
+
+**Status:** Draft — awaiting Brady review.
+
+---
+
+### 2026-02-20: PRD 3 — Hooks & Policy Enforcement
+
+**By:** Baer (Security Specialist)
+
+**What:** Authored PRD 3: Hooks & Policy Enforcement at `.ai-team/docs/prds/03-hooks-policy-enforcement.md`. This is the governance-as-code transformation plan for moving prompt-level security policies to programmatic SDK hook enforcement.
+
+**Key Decisions Made:**
+
+1. `onPreToolUse` with `permissionDecision: "deny"` is the primary enforcement mechanism (hard block, model receives reason)
+2. Policies compose via middleware pipeline — each policy is a pure function, first deny short-circuits, independently testable
+3. Hybrid prompt+hook approach: hooks enforce what they can, prompts guide model behavior that hooks can't intercept
+4. PII scrubbing runs in `onPostToolUse` (can't scrub output before tool runs)
+5. Shell blocklist uses `onPermissionRequest` (SDK provides raw command string for `kind: "shell"`)
+6. Policy configuration is user-editable JSON in `.squad/config/policies.json` — teams can tune risk tolerance
+7. Denial reasons must be actionable guidance ("Write to inbox/ instead"), not error messages
+
+**Policy Inventory:**
+- Hook-enforceable policies (P1–P18): 18
+- Prompt-only policies (B1–B17): 17
+- Hybrid policies (H1–H5): 5
+- **Total:** 40 security policies
+- **Estimated prompt reduction:** ~2.5–6KB (~800–1,800 tokens)
+
+**Decisions Needing Brady/Team Input:**
+- N1: Hook denial visibility in user chat (recommendation: silent unless stuck after 2 attempts)
+- N2: PII scrubbing scope — all tools vs. shell+read only (recommendation: all tools)
+- N3: Lockout registry persistence — in-memory vs. `.squad/lockout.json` (recommendation: persistent file)
+- N4: `--force-with-lease` default — allowed or blocked (recommendation: allowed)
+
+**Status:** Draft — awaiting team review and Phase 1 POC verification of hook firing behavior.
+
+---
+
+### 2026-02-20: Brady's Replatform Design Directives
+
+**By:** Brady (via Copilot)
+
+**What:** Strategic directives shaping the SDK replatform design:
+
+1. **Casting system must harden and evolve** — not just port from JS. This is Squad's identity. Enhance it during replatform.
+2. **Agent-to-agent communication** — explore agent framework / A2A protocol for inter-agent comms. May be overkill, but if it works with the SDK, huge win.
+3. **Ralph keeps** — SDK has explicit ralph-loop samples in every language. Maintain and evolve Ralph.
+4. **Distribution flexibility** — open to methods beyond npx (but npx is super simple, not opposed to keeping it). Replatform frees us from being npx-only.
+5. **Language decision: if it works, keep using it** — Node.js/TypeScript confirmed as go-forward unless evidence changes.
+6. **Embedded resources pattern** — .NET can embed markdown/static files as resources (in-memory, less file I/O). If staying Node/TS, explore equivalent bundling (esbuild, pkg, or similar) to reduce file scatter.
+
+**Context:** User feedback on sdk-technical-mapping.md review. These shape Phase 1 architecture.
+
+---
+
+### 2026-02-20: Language Decision — TypeScript (Final)
+
+**By:** Brady (via Copilot)
+
+**What:** TypeScript/Node.js is the locked-in language for the SDK replatform. Decision final after brutally honest 4-language comparison (TypeScript, Go, Python, .NET). All kill shots reviewed; TypeScript's is the only mitigable one (adapter layer + version pinning).
+
+**Why:** User decision after thorough team analysis. Reference implementation status on Copilot SDK, ecosystem alignment, prompt iteration speed, mitigable TP coupling risk.
+
+**Status:** ✅ FINAL — No further language evaluation needed.
+
+---
+
+### 2026-02-20: Brady's Green-Field Mindset Directive
+
+**By:** Brady (via Copilot)
+
+**What:** If we replatform on the SDK, everything is on the table. This is a chance to start from ground zero — take all the learnings from the current Squad and rebuild clean. No legacy baggage, no "we already have this so keep it." Super-duper clean.
+
+**Why:** User request — green-field mindset for the replatforming proposal. The team should treat this as an opportunity to rethink the entire architecture, directory structure, naming, ceremony system, etc. with the benefit of hindsight.
+
+**Impact:** PRD 14 (Clean-Slate Architecture) fully embodies this directive. Recommends ground-zero redesign of `.squad/` structure, TypeScript config, esbuild bundling.
+
+---
+
+### 2026-02-20: Fix compareSemver to Handle Pre-Release Suffixes
+
+**By:** Fenster (Core Developer)
+
+**Status:** ✅ Implemented
+
+**What:** The `compareSemver` function in `index.js` was breaking for versions with pre-release suffixes like `0.5.3-insiders`. The original implementation used `.split('.').map(Number)`, which produced `NaN` for components like `'3-insiders'`, causing incorrect version comparisons.
+
+**Decision:** Fixed `compareSemver` to:
+1. Strip pre-release suffix (everything after first `-`) before numeric comparison
+2. Compare base version numbers normally
+3. When base versions are equal, apply semver ordering: pre-release < release
+4. When both have pre-releases, use lexicographic string comparison
+
+**Implementation:** 17-line pure function in index.js (no external dependencies).
+
+**Consequences:**
+- ✅ Correct version ordering for insider releases
+- ✅ All existing semver comparisons unchanged
+- ✅ All 86 tests pass
+- ✅ Enables upgrade checks to correctly handle pre-release versions
+- ✅ Version bumped from 0.5.2 → 0.5.3
+
+---
+
+### 2026-02-20: Insider Version Scheme 0.5.3-insiders
+
+**By:** Kobayashi (Git & Release Engineer)
+
+**Status:** ✅ Implemented
+
+**What:** Insider builds are now versioned with the `-insiders` pre-release suffix baked into `package.json` on the `insider` branch.
+
+**Version Scheme:**
+- **Production (main):** `0.5.3` → GitHub Release `v0.5.3` (stable)
+- **Insider (dev channel):** `0.5.3-insiders` → GitHub Release `v0.5.3-insiders` (pre-release)
+
+**Rationale:**
+1. Single source of truth — Version lives in `package.json`, no computed suffixes.
+2. Semantic versioning compliance — Pre-release suffix `-insiders` follows semver rules.
+3. Reduced release workflow complexity — Removed short SHA suffix computation.
+4. Clear distribution signal — Install path `npx github:bradygaster/squad#v0.5.3-insiders` is unambiguous.
+5. GitHub Release API — Insider releases marked as `--prerelease`, so they don't surface as "latest".
+
+**Implementation:**
+- `package.json` on insider: version = `"0.5.3-insiders"`
+- Workflow reads pkg.version directly, creates tag `v${VERSION}`
+- On dev branch: version = `"0.5.3"` (stable version)
+
+**Testing:**
+- Version stamping verified: stampVersion() replaces `Squad v{version}` with literal string
+- compareSemver() handles pre-release suffixes correctly
+- Workflow syntax validated (YAML parse successful)
+
+---
+
+### 2026-02-20: v0.5.3 Release Milestone & Issue
+
+**By:** Kobayashi (Git & Release Engineer)
+
+**Status:** ✅ Completed
+
+**What:** Created GitHub artifacts for v0.5.3 patch release:
+- **Milestone:** #3 — "0.5.3" (Patch release: version indicator fix and pre-release semver support)
+- **Issue:** #128 — "Version indicator missing from coordinator greeting after install/upgrade" (CLOSED)
+
+**Problem:** After `npx create-squad upgrade`, the coordinator's first greeting should include `Squad v{version}` but the version was missing.
+
+**Fix:**
+1. `stampVersion()` in `index.js` now also replaces the `` `Squad v{version}` `` placeholder with the literal version string
+2. `compareSemver()` correctly handles pre-release version suffixes
+
+**Status:** ✅ Ready for v0.5.3 release cycle. Include this issue in v0.5.3 release notes and CHANGELOG.md.
+

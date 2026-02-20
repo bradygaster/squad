@@ -40,4 +40,14 @@
 - Email regex: `/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g` — careful to preserve emails in URLs, code blocks, example.com contexts
 - Git history caveat documented — scrubber only touches working tree, git history requires `git-filter-repo` for complete removal
 - Fixed unfinished squadInfo/detectSquadDir implementation — dev branch had broken references causing 43 test failures
-
+- PRD 3 (Hooks & Policy Enforcement) written at `.ai-team/docs/prds/03-hooks-policy-enforcement.md` — comprehensive governance-as-code transformation plan
+- Inventoried 18 hook-enforceable policies (P1–P18) and 17 prompt-only behavioral policies (B1–B17) from squad.agent.md
+- SDK hook system has 6 hooks (preToolUse, postToolUse, userPromptSubmitted, sessionStart, sessionEnd, errorOccurred) + 2 handlers (onPermissionRequest, onUserInputRequest)
+- `onPreToolUse` with `permissionDecision: "deny"` is the primary enforcement primitive — hard blocks the tool call, model receives denial reason as context
+- Policy composition uses middleware pipeline pattern — multiple policies per hook, first deny wins, each independently testable
+- Hybrid approach required: some policies need both prompt guidance (model understands why) and hook enforcement (system guarantees it)
+- Prompt size reduction estimated at ~2.5–6KB (~800–1,800 tokens) from always-loaded governance section — percentage is against governance portion, not full prompt
+- Key open question: does `onPreToolUse` fire for ALL built-in tools? Must verify in Phase 1 POC. If not, `onPermissionRequest` is the fallback layer
+- PII scrubbing in `onPostToolUse` is defense-in-depth — catches secrets in tool outputs that prompt-level rules cannot prevent
+- Lockout registry needs persistent storage (`.squad/lockout.json`) to survive session restarts — Scribe as sole writer (single-writer pattern)
+📌 Team update (2026-02-20): SDK replatform PRD 3 (Hooks & Policy Enforcement) documented. 18 hook-enforceable policies (P1–P18), 17 prompt-only policies (B1–B17), 5 hybrid (H1–H5). Primary enforcement: onPreToolUse with permissionDecision: "deny". Middleware pipeline composition. PII scrubbing in onPostToolUse. Policy config in .squad/config/policies.json. Brady pending: denial visibility, scrubbing scope, lockout persistence, force-with-lease default. — decided by Baer with Keaton, Fenster, Verbal, Kujan

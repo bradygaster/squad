@@ -58,6 +58,7 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 📌 Team update (2026-02-09): Export + Import CLI shipped — squads are now fully portable via squad-export.json. Round-trip at 100% fidelity. History split is pattern-based. — decided by Fenster
 📌 Team update (2026-02-09): Celebration blog conventions established — wave:null frontmatter, parallel narrative structure, stats in tables, tone ceiling applies. — decided by McManus
 📌 Team update (2026-02-09): Portable Squads consolidated — architecture, platform, and experience merged into single decision — decided by Keaton, Kujan, Verbal
+📌 Team update (2026-02-20): SDK replatform 14 PRDs documented. Casting system must harden and evolve. A2A agent communication framework designed (hub-and-spoke, not Google protocol). Ralph persistence via SDK sessions. Distribution flexibility beyond npx. TypeScript/Node.js locked. Green-field rebuild mindset — rethink architecture, directory, naming from scratch. — decided by Brady directives + Keaton, Fenster, Verbal, Kujan, Baer
 📌 Team update (2026-02-09): Skills system consolidated — open standard with MCP tool declarations, merging 4 independent analyses — decided by Kujan, Verbal
 📌 Team update (2026-02-09): Squad DM consolidated — architecture and experience design merged — decided by Keaton, Verbal
 
@@ -240,4 +241,29 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 
 ### 2026-02-19: GitHub Issue #102 — squad.agent.md path migration complete
 Updated all `.ai-team/` and `.ai-team-templates/` path references to `.squad/` and `.squad/templates/` in the coordinator prompt and all templates. 93 references migrated in squad.agent.md (reduced to 4 backward-compat fallback mentions). Updated deprecation banner to Migration Banner (v0.5.0) to reflect that the migration IS happening now. Preserved all backward-compatibility language for legacy repo detection. Updated `.gitattributes` examples and git commit message prefixes from `ai-team` to `squad`. All template files and 6 workflow YAMLs migrated. PR #113 opened to dev branch. Tests: 52/53 passing (1 pre-existing failure in marketplace test — `index.js` still writes to `.ai-team/`, fixed in Fenster's #101).
+
+### 2026-02-20: SDK Replatform PRDs — Agent Lifecycle, Skills, Casting v2, A2A
+
+**Context:** Brady approved SDK replatform (unanimous team recommendation). Wrote four PRDs documenting the full agent experience layer of the rebuild.
+
+**Key design decisions across PRDs:**
+
+- **Agent sessions replace spawns (PRD 4).** Charters compile to `CustomAgentConfig` at team load. Dynamic context (history, decisions) injects via `onSessionStart` hook and `systemMessage` append mode — no more string template surgery. Core agents get persistent sessions (pre-warmed pool); specialists get on-demand sessions. Lightweight/standard/full response modes map to distinct `SessionConfig` profiles. `resumeSession()` enables crash recovery. Infinite sessions with auto-compaction at 80% threshold solve context pressure for long-running agents.
+
+- **Skills load at session creation via SDK `skillDirectories` (PRD 7).** Current runtime file reads become compile-time config. `manifest.json` adds Squad metadata (confidence, authorship, version) that the SDK doesn't model. Low-confidence skills excluded from auto-loading — agents can still read them manually. Confidence lifecycle preserved: low (unvalidated) → medium (2+ uses, auto-loaded) → high (5+ uses, loaded for all agents). Imported skills from external repos always start at low confidence per security policy. Hybrid approach: compile-time loading for known skills, runtime writing for earned skills (available next session).
+
+- **Casting becomes a typed TypeScript module (PRD 11).** Universe selection is a pure deterministic function with alphabetical tiebreak. Overflow handling (diegetic expansion, thematic promotion, structural mirroring) codified as typed functions, not prompt instructions. Name persistence guaranteed via append-only registry with immutability checks. Cast identity injected into SDK sessions via `displayName` and `systemMessage` context. Three-phase migration: parallel (TS reads JSON) → primary (TS is source, JSON generated) → sole (JSON removed). 100% test coverage requirement on casting module. New capabilities: user-defined universes, cross-repo casting awareness.
+
+- **A2A is hub-and-spoke, not peer-to-peer (PRD 13).** Coordinator retains full authority as message broker. Two custom tools (`squad_discover` for agent discovery, `squad_route` for message delivery) plus one `onPostToolUse` hook for logging = minimal A2A. Synchronous handoffs via `sendAndWait()` for review/implementation requests. Fire-and-forget for informational messages. Rate limiting (5 msgs/agent/min) and circular route detection prevent message storms. Explicitly NOT implementing Google's full A2A protocol — it's designed for cross-org agents; Squad agents are same-team with shared trust.
+
+**SDK API surface confirmed from source review (`copilot-sdk/nodejs/src/`):**
+- `SessionConfig`: `sessionId`, `model`, `customAgents`, `systemMessage`, `availableTools`, `excludedTools`, `skillDirectories`, `disabledSkills`, `infiniteSessions`, `hooks`, `tools`, `mcpServers`, `streaming`, `provider`, `workingDirectory`
+- `ResumeSessionConfig`: Same as `SessionConfig` minus `sessionId`, plus `disableResume`
+- `SessionHooks`: `onPreToolUse`, `onPostToolUse`, `onUserPromptSubmitted`, `onSessionStart` (with `source: "startup" | "resume" | "new"`), `onSessionEnd` (with `reason`), `onErrorOccurred`
+- `InfiniteSessionConfig`: `enabled`, `backgroundCompactionThreshold` (default 0.80), `bufferExhaustionThreshold` (default 0.95)
+- `CustomAgentConfig`: `name`, `displayName`, `description`, `prompt`, `tools`, `mcpServers`, `infer`
+- `CopilotSession`: `send()`, `sendAndWait()`, `on()`, `abort()`, `destroy()`, `getMessages()`, `workspacePath`
+- `CopilotClient`: `createSession()`, `resumeSession()`, `listSessions()`, `deleteSession()`
+
+**Files created:** `.ai-team/docs/prds/04-agent-session-lifecycle.md`, `.ai-team/docs/prds/07-skills-migration.md`, `.ai-team/docs/prds/11-casting-system-v2.md`, `.ai-team/docs/prds/13-a2a-agent-communication.md`, `.ai-team/decisions/inbox/verbal-prd-agents.md`
 

@@ -28,6 +28,8 @@ _Summarized from initial architecture review and proposal-first design (2026-02-
 - **2026-02-09: Sprint plan amendments — Brady's session 5 directives (Proposal 019a)** — **Core insight:** Brady's session 5 directives are mostly about the human experience of using Squad — not features, not architecture, but *how it feel
 - **2026-02-09: No npm — GitHub-only distribution, release process, Kobayashi hired** — **Core insight:** Brady killed the npm publish model entirely. Squad is GitHub-only: `npx github:bradygaster/squad`. This is simpler than dual-publish
 - **2026-02-08: Release ritual design — product-level input** — **Core insight:** A release ritual should be proportional to stakes. The 0.x ritual should take 5 minutes and under 10 checklist items. The 1.0 ritual
+
+📌 Team update (2026-02-20): SDK replatform 14 PRDs documented + master index completed. Phase architecture finalized (Phase 1 v0.6.0 7–9w, Phase 2 v0.7.x 6–10w, Phase 3 v0.8+). TypeScript/Node.js locked as go-forward language. Brady's green-field directive: rebuild clean, rethink architecture/directory/naming from scratch. — decided by Keaton with Fenster, Verbal, Kujan, Baer
 - **Stale proposals audit** — **Date:** Session post-019a
 - **2026-02-08: PR #2 review — GitHub Issues mode, PRD mode, Human team members** — 📌 Team update (2026-02-09): If ask_user returns < 10 characters, treat as ambiguous and re-confirm — platform may fabricate default responses from bla
 - **2026-02-10: Comprehensive Proposal Status Audit** — **What:** Audited all 25+ proposals in `team-docs/proposals/` and updated every status to match what actually shipped. 18 proposals marked "Approved ✅
@@ -512,3 +514,13 @@ Brady's "forward-only" philosophy is correct for this stage of product maturity.
   - **Strategic position:** Being an early, sophisticated SDK consumer positions Squad as the reference multi-agent implementation on Copilot. Competitive moat vs. AutoGen/CrewAI/LangGraph — only native GitHub integration.
 
 📌 Team update (2026-02-20): SDK Replatforming — Conditional Go. Replatform Squad orchestration on @github/copilot-sdk. Phased migration: Phase 1 proves viability, Phase 2 adds hooks/tools, Phase 3 multi-session orchestration, Phase 4 template migration. Template engine stays. Brady approval required before Phase 2. Full proposal in .ai-team/docs/sdk-replatforming-proposal.md. — decided by Keaton
+
+
+- **2026-02-20: SDK Replatform PRD Plan — 14 PRDs across 3 phases**
+  - **Context:** Brady approved SDK replatforming. Team analysis complete (4 docs). Task: document full plan as PRDs.
+  - **Core insight — PRD 1 is the gate.** Everything depends on SDK Orchestration Runtime proving viable. If it fails, Squad continues on prompt-only architecture with ~2 days sunk cost.
+  - **14 PRDs across 3 phases:** Phase 1 (Core, v0.6.0, PRDs 1-5) — critical path. Phase 2 (Extensions, v0.7.x, PRDs 6-10) — parallel. Phase 3 (Identity, PRDs 11-14) — reshapes Squad.
+  - **PRD 5 (Coordinator Replatform):** 32KB prompt becomes TypeScript orchestrator. Hybrid routing. Hooks for policy. System prompt shrinks to ~12-15KB.
+  - **PRD 14 (Clean-Slate Architecture):** Brady's ground-zero directive. New .squad/ with .state/+.cache/ dirs. TypeScript config. esbuild bundling. Tiered init.
+  - **Key learning: PRDs are compound.** Each references 2-4 others. The dependency graph IS the architecture.
+  - **Artifacts:** `.ai-team/docs/prds/00-index.md`, `.ai-team/docs/prds/05-coordinator-replatform.md`, `.ai-team/docs/prds/14-clean-slate-architecture.md`
