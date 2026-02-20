@@ -96,7 +96,7 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **⚠️ CRITICAL RULE: Every agent interaction MUST use the `task` tool to spawn a real agent. You MUST call the `task` tool — never simulate, role-play, or inline an agent's work. If you did not call the `task` tool, the agent was NOT spawned. No exceptions.**
 
-**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Pass the team root into every spawn prompt as `TEAM_ROOT` and the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work.
+**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Pass the team root into every spawn prompt as `TEAM_ROOT` and the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
 
 **⚡ Context caching:** After the first message in a session, `team.md`, `routing.md`, and `registry.json` are already in your context. Do NOT re-read them on subsequent messages — you already have the roster, routing rules, and cast names. Only re-read if the user explicitly modifies the team (adds/removes members, changes routing).
 
@@ -641,6 +641,8 @@ prompt: |
   
   Read .squad/agents/{name}/history.md (your project knowledge).
   Read .squad/decisions.md (team decisions to respect).
+  If .squad/identity/wisdom.md exists, read it before starting work.
+  If .squad/identity/now.md exists, read it at spawn time.
   If .squad/skills/ has relevant SKILL.md files, read them before working.
   
   {only if MCP tools detected — omit entirely if none:}

@@ -247,3 +247,67 @@ describe('Init Mode prompt structure (#66)', () => {
     });
   });
 });
+
+describe('Identity layer files (now.md, wisdom.md) — #107', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = makeTempDir();
+  });
+
+  afterEach(() => {
+    cleanDir(tmpDir);
+  });
+
+  it('init creates .squad/identity/now.md', () => {
+    initSquad(tmpDir);
+    const nowPath = path.join(tmpDir, '.squad', 'identity', 'now.md');
+    assert.ok(fs.existsSync(nowPath), '.squad/identity/now.md should exist after init');
+    
+    const content = fs.readFileSync(nowPath, 'utf8');
+    assert.ok(content.includes('updated_at:'), 'now.md should contain updated_at field');
+    assert.ok(content.includes('focus_area:'), 'now.md should contain focus_area field');
+    assert.ok(content.includes('What We\'re Focused On'), 'now.md should contain heading');
+  });
+
+  it('init creates .squad/identity/wisdom.md', () => {
+    initSquad(tmpDir);
+    const wisdomPath = path.join(tmpDir, '.squad', 'identity', 'wisdom.md');
+    assert.ok(fs.existsSync(wisdomPath), '.squad/identity/wisdom.md should exist after init');
+    
+    const content = fs.readFileSync(wisdomPath, 'utf8');
+    assert.ok(content.includes('last_updated:'), 'wisdom.md should contain last_updated field');
+    assert.ok(content.includes('Team Wisdom'), 'wisdom.md should contain heading');
+    assert.ok(content.includes('## Patterns'), 'wisdom.md should contain Patterns section');
+    assert.ok(content.includes('## Anti-Patterns'), 'wisdom.md should contain Anti-Patterns section');
+  });
+
+  it('upgrade creates missing identity files', () => {
+    // First init
+    initSquad(tmpDir);
+    
+    // Modify squad.agent.md to simulate an old version
+    const agentPath = path.join(tmpDir, '.github', 'agents', 'squad.agent.md');
+    let agentContent = fs.readFileSync(agentPath, 'utf8');
+    agentContent = agentContent.replace(/<!-- version: [^>]+ -->/, '<!-- version: 0.4.0 -->');
+    agentContent = agentContent.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/, '- **Version:** 0.4.0');
+    fs.writeFileSync(agentPath, agentContent);
+    
+    // Delete identity files to simulate old installation
+    const identityDir = path.join(tmpDir, '.squad', 'identity');
+    fs.rmSync(identityDir, { recursive: true, force: true });
+    
+    // Run upgrade
+    const result = runSquad(['upgrade'], tmpDir);
+    assert.equal(result.exitCode, 0, `upgrade should succeed: ${result.stdout}`);
+    
+    // Check files were created - upgrade creates them because directory creation happens every time
+    const nowPath = path.join(tmpDir, '.squad', 'identity', 'now.md');
+    const wisdomPath = path.join(tmpDir, '.squad', 'identity', 'wisdom.md');
+    
+    // The directory is created, and files are scaffolded if missing
+    assert.ok(fs.existsSync(identityDir), 'upgrade should create identity directory');
+    assert.ok(fs.existsSync(nowPath), 'upgrade should create missing now.md');
+    assert.ok(fs.existsSync(wisdomPath), 'upgrade should create missing wisdom.md');
+  });
+});

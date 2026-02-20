@@ -804,6 +804,15 @@ if (isMigrateDirectory) {
       }
     }
     
+    // Scrub email addresses from migrated files
+    console.log(`${DIM}Scrubbing email addresses from .squad/ files...${RESET}`);
+    const scrubbedFiles = scrubEmailsFromDirectory(squadDir);
+    if (scrubbedFiles.length > 0) {
+      console.log(`${GREEN}✓${RESET} Scrubbed email addresses from ${scrubbedFiles.length} file(s)`);
+    } else {
+      console.log(`${GREEN}✓${RESET} No email addresses found`);
+    }
+    
     console.log();
     console.log(`${BOLD}Migration complete.${RESET}`);
     console.log(`${DIM}Commit the change:${RESET}`);
@@ -1039,18 +1048,20 @@ if (squadInfo.isLegacy) {
   showDeprecationWarning();
 }
 
-// Pre-create drop-box, orchestration-log, casting, skills, and plugins directories (additive-only)
+// Pre-create drop-box, orchestration-log, casting, skills, plugins, and identity directories (additive-only)
 const inboxDir = path.join(squadInfo.path, 'decisions', 'inbox');
 const orchLogDir = path.join(squadInfo.path, 'orchestration-log');
 const castingDir = path.join(squadInfo.path, 'casting');
 const skillsDir = path.join(squadInfo.path, 'skills');
 const pluginsDir = path.join(squadInfo.path, 'plugins');
+const identityDir = path.join(squadInfo.path, 'identity');
 try {
   fs.mkdirSync(inboxDir, { recursive: true });
   fs.mkdirSync(orchLogDir, { recursive: true });
   fs.mkdirSync(castingDir, { recursive: true });
   fs.mkdirSync(skillsDir, { recursive: true });
   fs.mkdirSync(pluginsDir, { recursive: true });
+  fs.mkdirSync(identityDir, { recursive: true });
 } catch (err) {
   fatal(`Failed to create ${squadInfo.name}/ directories: ${err.message}`);
 }
@@ -1064,6 +1075,51 @@ if (!isUpgrade) {
   }
 }
 
+// Scaffold identity files (now.md, wisdom.md) — both init and upgrade
+const nowMdPath = path.join(identityDir, 'now.md');
+const wisdomMdPath = path.join(identityDir, 'wisdom.md');
+
+if (!fs.existsSync(nowMdPath)) {
+  const nowTemplate = `---
+updated_at: ${new Date().toISOString()}
+focus_area: Initial setup
+active_issues: []
+---
+
+# What We're Focused On
+
+Getting started. Updated by coordinator at session start.
+`;
+  fs.mkdirSync(identityDir, { recursive: true });
+  fs.writeFileSync(nowMdPath, nowTemplate);
+  console.log(`${GREEN}✓${RESET} ${squadInfo.name}/identity/now.md`);
+} else if (isUpgrade) {
+  console.log(`${DIM}identity/now.md already exists — skipping${RESET}`);
+}
+
+if (!fs.existsSync(wisdomMdPath)) {
+  const wisdomTemplate = `---
+last_updated: ${new Date().toISOString()}
+---
+
+# Team Wisdom
+
+Reusable patterns and heuristics learned through work. NOT transcripts — each entry is a distilled, actionable insight.
+
+## Patterns
+
+<!-- Append entries below. Format: **Pattern:** description. **Context:** when it applies. -->
+
+## Anti-Patterns
+
+<!-- Things we tried that didn't work. **Avoid:** description. **Why:** reason. -->
+`;
+  fs.mkdirSync(identityDir, { recursive: true });
+  fs.writeFileSync(wisdomMdPath, wisdomTemplate);
+  console.log(`${GREEN}✓${RESET} ${squadInfo.name}/identity/wisdom.md`);
+} else if (isUpgrade) {
+  console.log(`${DIM}identity/wisdom.md already exists — skipping${RESET}`);
+}
 
 // Create sample MCP config (skip if .copilot/mcp-config.json already exists)
 if (!isUpgrade) {
@@ -1189,6 +1245,15 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
 }
 
 if (isUpgrade) {
+  // Scrub email addresses from existing squad directory
+  console.log(`${DIM}Scrubbing email addresses from ${squadInfo.name}/ files...${RESET}`);
+  const scrubResult = scrubEmailsFromDirectory(squadInfo.path);
+  if (scrubResult.filesModified > 0) {
+    console.log(`${GREEN}✓${RESET} Scrubbed ${scrubResult.replacements} email address(es) from ${scrubResult.filesModified} file(s)`);
+  } else {
+    console.log(`${GREEN}✓${RESET} No email addresses found (scanned ${scrubResult.filesScanned} files)`);
+  }
+  
   console.log(`\n${DIM}${squadInfo.name}/ untouched — your team state is safe${RESET}`);
 
   // Hint about new features available after upgrade
