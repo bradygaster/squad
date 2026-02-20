@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.2] — 2026-02-20
+
+### Fixed
+
+- **`/agents` vs `/agent` CLI command** (#93) — README and install output now correctly reference `/agent` (the actual CLI command) instead of `/agents` (PR #100)
+
+### Added
+
+- **Insider Program infrastructure** (#94) — `insider` branch created with guard workflow enforcement; forbidden paths (`.ai-team/`, `.ai-team-templates/`, `team-docs/`, `docs/proposals/`) blocked from protected branches
+- **Branch content policy** — Formal decision document defining which files belong on main, preview, and insider branches; includes 5-step branch creation checklist
+- **Guard workflow update** — Added `docs/proposals/` to forbidden paths in `squad-main-guard.yml` (both `.github/workflows/` and `templates/workflows/`)
+- **Custom universe support** (#97) — Star Trek universe added by community contributor @codebytes
+
 ## [0.4.1] — 2026-02-16
 
 ### Fixed
