@@ -25,7 +25,9 @@ Agents learn from real work and write skill files — reusable patterns, convent
 .ai-team/skills/{skill-name}/SKILL.md
 ```
 
-Each skill is a directory containing a `SKILL.md` file.
+Each skill is a directory containing a `SKILL.md` file. Skills are **team-wide knowledge** — not tied to individual agents. All agents can read and use any skill.
+
+> **Portable across projects**: Skills export and import with your team. When you move a trained team to a new repo, all their earned knowledge comes with them.
 
 ---
 
@@ -93,8 +95,9 @@ After successfully setting up a CI pipeline, an agent might create:
 
 - Skills compound over time. A mature project has skills covering testing patterns, deployment procedures, API conventions, and more.
 - Starter skills (`squad-*`) are overwritten on upgrade. Earned skills are never touched.
-- Skills are shared across the whole team — any agent can read any skill.
+- **Skills are shared across the whole team** — any agent can read any skill. They're stored in a flat `.ai-team/skills/` directory, not per-agent files.
 - You can manually edit skill files if you want to seed knowledge (e.g., paste your team's existing conventions into a `SKILL.md`).
+- **Skills survive export/import** — your team's accumulated knowledge is fully portable across projects.
 
 ## Sample Prompts
 

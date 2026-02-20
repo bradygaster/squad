@@ -35,8 +35,10 @@ npx github:bradygaster/squad export --out ./backups/my-team.json
 | Agent charters | ✅ |
 | Agent histories | ✅ (split into portable vs project-specific) |
 | Casting state | ✅ |
-| Skills | ✅ |
+| **Skills** | ✅ **All earned skills export with the team** |
 | Decisions | ✅ |
+
+> **Skills are portable**: When you export a team, all earned skills from `.ai-team/skills/` are included in the JSON manifest. After importing, skills are immediately available to all agents — no loss of knowledge.
 
 ---
 
@@ -74,8 +76,8 @@ Imported agents bring their skills and general knowledge without assuming your p
 | Scenario | Command |
 |----------|---------|
 | Back up before a major refactor | `npx github:bradygaster/squad export --out ./backup.json` |
-| Share a trained team with a colleague | Export, send the JSON, they import |
-| Move a team to a different repo | Export from old repo, import into new repo |
+| Share a trained team with a colleague | Export, send the JSON, they import — **skills included** |
+| Move a team to a different repo | Export from old repo, import into new repo — **skills travel with agents** |
 | Reset and start fresh | Export as backup, delete `.ai-team/`, re-init |
 
 ---
@@ -86,6 +88,7 @@ Imported agents bring their skills and general knowledge without assuming your p
 - The export file is JSON — you can inspect it to see exactly what your team knows.
 - Imported agents retain their names and universe. They won't be renamed.
 - Commit your `.ai-team/` directory after importing so the team is available to everyone who clones the repo.
+- **Skills are fully portable** — all earned skills export and import with perfect fidelity. No manual copying needed.
 
 ## Sample Prompts
 
