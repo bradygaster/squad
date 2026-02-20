@@ -67,3 +67,8 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q12: Multi-source conflict → Config order wins, first-listed takes priority, last in loses.
 - Q13 presented (history shadows for remote agents) — awaiting Brady's answer
 - 13 questions remain unresolved
+
+### Update — Q13 resolved
+- Q13: History shadows → Yes, remote agents get local history for project-specific learnings.
+- Q14 presented (offline mode / unreachable sources) — awaiting Brady's answer
+- 12 questions remain unresolved

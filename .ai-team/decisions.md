@@ -1324,4 +1324,11 @@ The registry format is identical — any repo with a \places.json\ and \gents/\
 **What:** If the same agent name exists in two places sources, the first-listed source in config wins. Last in loses. Config order determines priority — no prompts, no ambiguity.
 **Why:** User request — resolves open question #12 (Architecture). Deterministic, predictable, consistent with Q5's no-ambiguity principle.
 
+---
+
+### 2026-02-20T10-30: User directive — local history shadows for remote agents
+**By:** Brady (via Copilot)
+**What:** Yes — create local history shadows for remote agents. Remote agents get a local .squad/agents/{name}/history.md just like local agents, so they accumulate project-specific learnings over time. The remote source provides the charter/config; the local shadow provides project memory.
+**Why:** User request — resolves open question #13 (Architecture). Remote agents should feel like first-class team members.
+
 
