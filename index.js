@@ -804,6 +804,15 @@ if (isMigrateDirectory) {
       }
     }
     
+    // Scrub email addresses from migrated files
+    console.log(`${DIM}Scrubbing email addresses from .squad/ files...${RESET}`);
+    const scrubbedFiles = scrubEmailsFromDirectory(squadDir);
+    if (scrubbedFiles.length > 0) {
+      console.log(`${GREEN}✓${RESET} Scrubbed email addresses from ${scrubbedFiles.length} file(s)`);
+    } else {
+      console.log(`${GREEN}✓${RESET} No email addresses found`);
+    }
+    
     console.log();
     console.log(`${BOLD}Migration complete.${RESET}`);
     console.log(`${DIM}Commit the change:${RESET}`);
@@ -989,6 +998,16 @@ if (isUpgrade) {
       stampVersion(agentDest);
     } catch (err) {
       // Non-fatal in early-exit path
+    }
+
+    // Scrub email addresses even when already up to date
+    const squadDir = detectSquadDir(dest);
+    console.log(`${DIM}Scrubbing email addresses from ${squadDir.name}/ files...${RESET}`);
+    const scrubbedFiles = scrubEmailsFromDirectory(squadDir.path);
+    if (scrubbedFiles.length > 0) {
+      console.log(`${GREEN}✓${RESET} Scrubbed email addresses from ${scrubbedFiles.length} file(s)`);
+    } else {
+      console.log(`${GREEN}✓${RESET} No email addresses found`);
     }
 
     console.log(`${GREEN}✓${RESET} Already up to date (v${pkg.version})`);
@@ -1189,6 +1208,15 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
 }
 
 if (isUpgrade) {
+  // Scrub email addresses from existing squad directory
+  console.log(`${DIM}Scrubbing email addresses from ${squadInfo.name}/ files...${RESET}`);
+  const scrubbedFiles = scrubEmailsFromDirectory(squadInfo.path);
+  if (scrubbedFiles.length > 0) {
+    console.log(`${GREEN}✓${RESET} Scrubbed email addresses from ${scrubbedFiles.length} file(s)`);
+  } else {
+    console.log(`${GREEN}✓${RESET} No email addresses found`);
+  }
+  
   console.log(`\n${DIM}${squadInfo.name}/ untouched — your team state is safe${RESET}`);
 
   // Hint about new features available after upgrade
