@@ -673,3 +673,123 @@ These are marginal gains (~4-5KB total). The real solution for #76 is architectu
 
 **No urgent action needed.** The extraction work is solid. Squad works fine on CLI and VS Code Copilot (no char limits there). Enterprise customers hit the limit, but that's a v0.5.0 problem with a clear architectural path forward.
 
+
+
+# Decision: CLI Dual-Path Support for .squad/ Migration
+
+**Date:** 2026-02-19  
+**By:** Fenster (Core Developer)  
+**Issue:** #101  
+**PR:** #111  
+**Status:** Implemented
+
+## Context
+
+Issue #101 required implementing dual-path directory support for the v0.5.0 migration from `.ai-team/` to `.squad/`. The goal was backward compatibility during the transition period, with a clear migration path for users.
+
+## Decision
+
+Implemented a three-tier approach:
+
+### 1. Directory Detection (`detectSquadDir`)
+- Check `.squad/` first (new standard)
+- Fall back to `.ai-team/` if present (backward compat)
+- Default to `.squad/` for new installations
+- Return object: `{ path, name, isLegacy }`
+
+### 2. New Installations
+- `squad init` creates `.squad/` (not `.ai-team/`)
+- No deprecation warning on fresh installs
+- .gitattributes uses `.squad/` paths
+
+### 3. Existing Installations
+- Continue using `.ai-team/` until manually migrated
+- Show deprecation warning on every CLI invocation
+- Provide opt-in migration command: `squad upgrade --migrate-directory`
+
+### 4. Migration Command
+When run:
+- Renames `.ai-team/` → `.squad/`
+- Updates `.gitattributes` (union merge rules)
+- Updates `.gitignore`
+- Shows commit instructions
+- Validates preconditions (source exists, target doesn't)
+
+## Implementation Details
+
+**File:** `index.js`
+
+**Key Functions:**
+- `detectSquadDir(dest)` — Returns directory info object
+- `showDeprecationWarning()` — Displays migration prompt
+
+**Updated Sections:**
+- All hardcoded `.ai-team/` paths replaced with `squadInfo.path`
+- Directory creation uses `squadInfo.path`
+- copilot, plugin, export, scrub-emails commands updated
+- Migrations updated to use detectSquadDir
+
+**Help Text:**
+```
+squad upgrade --migrate-directory    Rename .ai-team/ → .squad/
+```
+
+## Critical Bugs Fixed During Implementation
+
+1. **Duplicate `squadInfo` declaration** — Caused syntax error. Removed inline IIFE in favor of single declaration at line 965.
+
+2. **Default return value** — Initially returned `.ai-team/` as default for new installs, causing new projects to create the legacy directory. Fixed to return `.squad/`.
+
+3. **Function definition order** — `detectSquadDir` called before defined. Moved to top of file after `fatal()`.
+
+## Testing
+
+**Manual:**
+- ✓ New install creates `.squad/`
+- ✓ Upgrade with existing `.ai-team/` shows warning
+- ✓ Migration command works end-to-end
+- ✓ .gitattributes and .gitignore updated correctly
+
+**Automated:**
+- ✓ All 53 tests pass (no test changes required — tests are directory-agnostic)
+
+## Rationale
+
+**Why dual-path instead of forced migration?**
+- Users may have uncommitted work in `.ai-team/`
+- Git history contains `.ai-team/` paths
+- Gradual transition reduces support burden
+- Opt-in gives users control over timing
+
+**Why detect at runtime instead of config file?**
+- Simpler implementation (no config to manage)
+- Instant feedback on which directory is active
+- No risk of config/filesystem mismatch
+
+**Why `.squad/` instead of `.ai-team/`?**
+- Product name alignment (Squad, not "AI Team")
+- Shorter, clearer naming
+- Removes "AI" prefix bias
+
+## Migration Timeline
+
+- **v0.5.0** — Dual-path support ships, new installs use `.squad/`
+- **v0.6.0–v0.9.0** — Deprecation warning continues
+- **v1.0.0** — Remove `.ai-team/` support, error if detected
+
+## Lessons Learned
+
+1. **Test default paths manually** — Automated tests may not catch wrong default return values if they don't assert specific directory names.
+
+2. **Function hoisting matters** — JavaScript doesn't hoist `const` declarations. Helper functions must be defined before use.
+
+3. **Edit session state can be lost** — Switching git branches discards unstaged changes. Always commit or stash before branch operations.
+
+4. **Path separator consistency** — Windows path handling with `path.join()` throughout prevented cross-platform issues.
+
+## References
+
+- Issue #101: https://github.com/bradygaster/squad/issues/101
+- PR #111: https://github.com/bradygaster/squad/pull/111
+- Original proposal: Issue #69 (renamed to .squad/)
+
