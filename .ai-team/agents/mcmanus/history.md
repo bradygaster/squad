@@ -16,6 +16,7 @@ _Summarized from initial assessment, messaging overhaul, demo script, and README
 - **Casting is a competitive moat** — thematic persistent names make agents memorable and referenceable, unlike generic labels. Elevated from Easter egg to headline feature.
 - **Demo script uses beat format** (ON SCREEN / VOICEOVER / WHAT TO DO) — README order is non-negotiable for demos. Payoff at end, not beginning.
 - **README rewrite (Proposal 006)**: Hero → Quick Start → Why Squad? → Parallel Work → How It Works → Cast System → What Gets Created → Growing the Team → Reviewer Protocol → Install → Troubleshooting → Status.
+- **CLI vs VS Code command parity (2026-02-19)** — Copilot CLI uses `/agent` (singular), VS Code uses `/agents` (plural). Documentation must reference both forms explicitly, not assume one platform. (#93)
 
 ### Session Summaries
 
@@ -38,6 +39,7 @@ _Summarized from initial assessment, messaging overhaul, demo script, and README
 - **Super Bowl Weekend post — edit pass and honest assessment (2026-02-09)**
 - **v0.2.0 release blog post (2026-02-09)**
 - **Executive summary research section (2026-02-14)** — Added "Research Opportunities" section to `docs/squad-executive-summary.md` before Caveats. Four hypotheses (H1–H4) addressing: task completion speed, accessibility, retention via lock-in, complexity scaling + ROI threshold. Synthesized from Keaton's research framework.
+- **CLI vs VS Code command documentation fix (2026-02-19)** — Fixed #93: Updated 6 doc files to reference both `/agent` (CLI) and `/agents` (VS Code). Users on either platform now get the correct command without confusion. PR #100.
 
 ## Learnings
 
