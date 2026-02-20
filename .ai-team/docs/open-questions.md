@@ -31,7 +31,7 @@
 - [x] ~~Should `squad init` remain SDK-free (scaffolding only) while `squad orchestrate` uses the SDK?~~ → RESOLVED: SDK-free init by default. `--include-sdk` flag for users who want the full package upfront. SDK loads only when orchestration begins. (Brady, 2026-02-20)
 
 ### SDK
-- [ ] SDK is Technical Preview (v0.1.x) — what's our pinning and upgrade strategy when breaking changes land?
+- [x] ~~SDK is Technical Preview (v0.1.x) — what's our pinning and upgrade strategy when breaking changes land?~~ → RESOLVED: Pin exact version in package.json. Manual upgrade via `squad upgrade --sdk`. Relax to ~ or ^ when SDK hits stable (v1.0). (Brady, 2026-02-20)
 - [ ] Does `resumeSession()` actually work for Ralph's persistent monitoring use case?
 - [ ] Can multiple concurrent sessions share a single CopilotClient connection?
 
@@ -70,3 +70,6 @@
 - [x] **Global CLI:** GitHub Copilot CLI is P0 (hard dependency). VS Code is very close P1. Fix existing VS Code extensions. No standalone outside Copilot for now. (Brady, 2026-02-20)
 - [x] **Bundle size:** Lean target (~5MB). Stay close to current footprint. Single-install priority — tree-shake aggressively, minimal deps. (Brady, 2026-02-20)
 - [x] **SDK-free init:** `squad init` stays SDK-free by default. `--include-sdk` flag available. SDK loads only at orchestration time. (Brady, 2026-02-20)
+
+### SDK
+- [x] **SDK pinning:** Pin exact version during Technical Preview. Manual upgrade via `squad upgrade --sdk`. Relax to ~ or ^ at v1.0 stable. (Brady, 2026-02-20)
