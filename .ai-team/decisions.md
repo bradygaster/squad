@@ -531,6 +531,26 @@ All Squad code imports from `src/adapter/`, never from `@github/copilot-sdk` dir
 
 ---
 
+### 2026-02-20T17:50: User directive — Agent repositories non-negotiable
+
+**By:** Brady (via Copilot)
+
+**What:** Agent repositories MUST be factored into the PRD plan. This is non-negotiable. The concept of pulling agents/team members from pluggable sources (disk, cloud, API, other repos) must be integrated into existing PRDs, not treated as a nice-to-have addon.
+
+**Why:** User request — elevated from directive to hard requirement. Must be reflected in PRD dependencies and milestone planning.
+
+---
+
+### 2026-02-20T17:50: User directive — Open questions tracker
+
+**By:** Brady (via Copilot)
+
+**What:** Scribe must maintain an internal doc of all open questions. Keep it updated as questions arise and get resolved across sessions.
+
+**Why:** User request — ensures nothing falls through the cracks during the replatform.
+
+---
+
 ### 2026-02-20: Edie — TypeScript Engineer Onboarding Assessment
 
 **By:** Edie (TypeScript Engineer) [NEW HIRE]
