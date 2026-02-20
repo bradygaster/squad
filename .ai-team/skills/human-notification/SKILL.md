@@ -267,7 +267,7 @@ send_teams_message({
 **Tool call:**
 ```
 send_imessage({
-  recipient: "brady@example.com",
+  recipient: "+15551234567",
   message: "⚠️ ERROR — McManus encountered a problem\n\nDeployment to production failed: DATABASE_URL environment variable is not set.\n\nPlease add DATABASE_URL to the production environment configuration or verify deployment secrets.\n\n— McManus 🔧 (Backend Dev) · Squad · squad/squad"
 })
 ```
