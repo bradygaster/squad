@@ -46,3 +46,8 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q7: AgentSource + casting → Hybrid. Re-cast by default, opt-out flag to keep original name.
 - Q8 presented (skills from places repos) — awaiting Brady's answer
 - 18 questions remain unresolved
+
+### Update — Q8 resolved
+- Q8: Skills from places → Yes, independently importable. Like awesome-copilot lists.
+- Q9 presented (cloud-hosted repo auth) — awaiting Brady's answer
+- 17 questions remain unresolved

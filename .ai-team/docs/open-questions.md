@@ -15,7 +15,7 @@
 ### Architecture
 - [x] ~~Is `@github/copilot` npm-published or host-provided only? (Rabin flagged — blocks global install outside VS Code)~~ → RESOLVED: Keep distributing via GitHub + npx (npx github:bradygaster/squad). SDK stays on GitHub, not npmjs.com. (Brady, 2026-02-20)
 - [x] ~~How does the AgentSource interface interact with the casting system when agents come from remote repositories?~~ → RESOLVED: Hybrid — re-cast into local universe by default, allow opt-out flag to keep original name. (Brady, 2026-02-20)
-- [ ] Should skills also be pullable from agent repositories, or only agent configs?
+- [x] ~~Should skills also be pullable from agent repositories, or only agent configs?~~ → RESOLVED: Yes — skills are independently importable from places repos. Like awesome-copilot lists. Standalone shareable knowledge units. (Brady, 2026-02-20)
 - [ ] What's the authentication model for cloud-hosted agent repositories?
 - [ ] **Agent Repository — caching strategy:** How aggressively should remote agents be cached? Per-session? Per-day? Invalidation via webhooks?
 - [ ] **Agent Repository — version pinning:** When pulling agents from a GitHub repo, should we pin to a commit SHA, tag, or branch? What happens when the remote agent updates?
@@ -56,3 +56,4 @@
 ### Architecture
 - [x] **SDK distribution:** Keep on GitHub via npx (npx github:bradygaster/squad). Not npmjs.com. (Brady, 2026-02-20)
 - [x] **AgentSource + casting:** Hybrid — imported agents re-cast into local universe by default. Opt-out flag to keep original name. (Brady, 2026-02-20)
+- [x] **Skills from places:** Yes — skills are independently importable from places repos. Like awesome-copilot curated lists. (Brady, 2026-02-20)

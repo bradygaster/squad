@@ -1293,3 +1293,10 @@ The registry format is identical — any repo with a \places.json\ and \gents/\
 **By:** Brady (via Copilot)
 **What:** Hybrid approach for imported agents and casting. By default, imported agents get re-cast into the local squad's universe. Users can opt out with a flag to keep the original name. This preserves casting consistency while allowing flexibility.
 **Why:** User request — resolves open question #7 (Architecture)
+
+---
+
+### 2026-02-20T10-23: User directive — skills importable from places repos
+**By:** Brady (via Copilot)
+**What:** Yes — skills are independently importable from places repos, not just bundled with agents. Like awesome-copilot curated lists. Standalone skills (e.g., "azure-deployment-patterns") can be shared, discovered, and imported from agent repositories without importing a full agent.
+**Why:** User request — resolves open question #8 (Architecture). Extends the places ecosystem beyond agents to reusable knowledge.
