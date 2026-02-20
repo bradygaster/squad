@@ -26,15 +26,10 @@ jobs:
         id: version
         run: |
           VERSION=$(node -e "console.log(require('./package.json').version)")
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          INSIDER_VERSION="${VERSION}-insider+${SHORT_SHA}"
-          INSIDER_TAG="v${INSIDER_VERSION}"
+          INSIDER_TAG="v${VERSION}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
-          echo "insider_version=$INSIDER_VERSION" >> "$GITHUB_OUTPUT"
           echo "insider_tag=$INSIDER_TAG" >> "$GITHUB_OUTPUT"
-          echo "📦 Base Version: $VERSION (Short SHA: $SHORT_SHA)"
-          echo "🏷️ Insider Version: $INSIDER_VERSION"
+          echo "📦 Insider Version: $VERSION"
           echo "🔖 Insider Tag: $INSIDER_TAG"
 
       - name: Create git tag
@@ -51,7 +46,8 @@ jobs:
           gh release create "${{ steps.version.outputs.insider_tag }}" \
             --title "${{ steps.version.outputs.insider_tag }}" \
             --notes "This is an insider/development build of Squad. Install with:\`\`\`bash\nnpx github:bradygaster/squad#${{ steps.version.outputs.insider_tag }}\n\`\`\`\n\n**Note:** Insider builds may be unstable and are intended for early adopters and testing only." \
-            --prerelease
+            --prerelease \
+            --no-fail-on-empty-changeset || true
 
       - name: Verify release
         env:
