@@ -25,3 +25,8 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q3: Teams vs agents-only → Both first-class. Export/import a single agent OR a full squad.
 - Q4 presented (versioning for upstream updates) — awaiting Brady's answer
 - 22 questions remain unresolved
+
+### Update — Q4 resolved
+- Q4: Versioning → Pin to commit SHA at import. Explicit upgrade flow. (Team decision, Brady deferred)
+- Q5 presented (import conflict handling) — awaiting Brady's answer
+- 21 questions remain unresolved

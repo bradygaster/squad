@@ -9,7 +9,7 @@
 - [x] ~~What's the directory convention for the places repo?~~ → RESOLVED: `agents/{github_username}/{squad_name}/{agent_name}/`
 - [x] ~~How does auth work for private places repos?~~ → RESOLVED: gh CLI token (already authenticated, zero extra config). (Brady, 2026-02-20)
 - [x] ~~Should teams (pre-built rosters) be first-class in places, or agents-only for v1?~~ → RESOLVED: Both — export/import a single agent OR a full squad. Both first-class from day one. (Brady, 2026-02-20)
-- [ ] How does versioning work when a places agent is updated upstream?
+- [x] ~~How does versioning work when a places agent is updated upstream?~~ → RESOLVED: Pin to commit SHA at import. `squad places check` for updates, `squad places upgrade` to pull. No auto-refresh. (Team decision, Brady deferred, 2026-02-20)
 - [ ] What happens on import conflict — local agent same name as places agent?
 
 ### Architecture
@@ -48,4 +48,6 @@
 
 ### Agent Repository Backend
 - [x] **Directory convention:** `agents/{github_username}/{squad_name}/{agent_name}/` — supports multiple agents and multiple teams per user. (Brady, 2026-02-20)
+- [x] **Auth model:** gh CLI token — already authenticated, zero extra config. (Brady, 2026-02-20)
 - [x] **Import/export granularity:** Both agent-level and squad-level are first-class. Users can export/import a single agent OR a full squad. (Brady, 2026-02-20)
+- [x] **Versioning:** Pin to commit SHA at import. `squad places check` shows updates, `squad places upgrade {agent}` pulls latest. No auto-refresh. (Team decision, 2026-02-20)

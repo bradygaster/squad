@@ -864,6 +864,16 @@ All Squad code imports from `src/adapter/`, never from `@github/copilot-sdk` dir
 1. `stampVersion()` in `index.js` now also replaces the `` `Squad v{version}` `` placeholder with the literal version string
 2. `compareSemver()` correctly handles pre-release version suffixes
 
+---
+
+### 2026-02-20T10-13: Team decision — places versioning model
+
+**By:** Squad team (Brady deferred — "do what you think you'd like best as a customer")
+
+**What:** Pin to commit SHA at import time. Explicit squad places check to see available updates, squad places upgrade {agent} to pull latest. No auto-refresh, no surprise breakage. Mirrors package manager semantics.
+
+**Why:** Stability by default, upgradeable on demand. Resolves open question #4 (Agent Repository Backend)
+
 **Status:** ✅ Ready for v0.5.3 release cycle. Include this issue in v0.5.3 release notes and CHANGELOG.md.
 
 
