@@ -2027,3 +2027,33 @@ When we shift to the new repo (squad-sdk), create a fresh squad. Take names, per
 **Directive 4 — Team Picks Their Own Universe at Crossover**  
 When the crossover happens, the team gets to pick their own universe(s) for casting. Each agent should document where we're headed and how they envision carving out new personalities.
 
+### 2026-02-20: User directive — .squad/ always gitignored
+**By:** Brady (via Copilot)
+**What:** .squad/ must be in .gitignore from day one in squad-sdk. No guard workflows, no forbidden-path enforcement. One line in .gitignore, one in .npmignore. Stop worrying about keeping team state out of main.
+**Why:** User request — captured for team memory
+
+### 2026-02-20: User directive — All implementation work in squad-sdk
+**By:** Brady (via Copilot)
+**What:** All issues, PRs, and milestone work for the SDK replatform happen in the private squad-sdk repo (C:\src\squad-sdk), not in this source repo (C:\src\squad). This repo stays as-is until cutover at M3 feature parity.
+**Why:** User request — captured for team memory
+
+### 2026-02-20: User directive — Init command auto-adds .gitignore entry
+**By:** Brady (via Copilot)
+**What:** The new CLI init command must automatically add .squad/ to .gitignore if not already present. Users should never have to think about it.
+**Why:** User request — captured for team memory
+
+### 2026-02-20: User directive — v1 content in squad-pr only
+**By:** Brady (via Copilot)
+**What:** All v1 planning content (docs, blogs, milestones, PRDs, feature comparison, etc.) belongs in the squad-pr repo, NOT in the source repo (squad). Don't write anything about v1 in the beta source repo. The other repos (squad-places-pr, etc.) won't be getting content for a while.
+**Why:** User request — captured for team memory. Clear separation: squad repo = current beta product, squad-pr repo = v1 SDK replatform planning and content.
+
+### 2026-02-20: M4 Blog Work Item Added
+**By:** Keaton (Lead)
+**Status:** Completed
+**What:** Added M4-14: Blog Post — "How Squad Ships: Packaging & Distribution" to milestones.md. Renumbered old M4-14 (carry-forward) → M4-15. Updated blog cadence mapping.
+**Why:** Brady's v1 Content Strategy directive: "docs and blogs are a part of all of it" — every milestone must include both documentation and a blog post. M4 (Distribution) was missing its blog work item.
+**Changes:**
+- New M4-14 blog post (2d effort, Kujan owner)
+- Content: bundling strategy, npm + GitHub dual distribution, upgrade mechanics
+- Marked v1-content: true per McManus strategy
+- Updated blog cadence: M4 (Week 22): How Squad Ships (M4-14)

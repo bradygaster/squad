@@ -51,6 +51,8 @@ Establish the TypeScript project infrastructure alongside existing `index.js` in
 | M0-8 | Health monitor & diagnostics | PRD 1 | Implement `src/runtime/health.ts` — monitors CopilotClient connection state, logs diagnostics on failure. Provides `check()` API for startup validation. | Fenster | 2d |
 | M0-9 | SDK integration tests | PRD 1 | Write tests against real SDK (if available in CI) or mocks. Verify: connection lifecycle, session CRUD, event streaming, protocol version validation. Minimum 80% coverage on adapter layer. | Fenster | 4d |
 | M0-10 | Documentation: SDK Integration Guide | PRD 1 | Write `.ai-team/docs/sdk-integration-guide.md` — explains adapter pattern, how Squad code depends on stable interfaces, how to upgrade SDK safely. | Fenster | 2d |
+| M0-11 | Blog Post: Foundation Spike Results | McManus Strategy | Write internal tech post: "Building the Foundations — SDK Spike Results." Audience: team + SDK adopters. Topics: SDK architecture choices, why TypeScript, initial performance metrics. Published to `.ai-team/blog/`. | Verbal | 2d |
+| M0-12 | Carry-forward Inventory: Foundation Learning | Cross-Cutting | Document what M0 team learns: SDK viability assessment, adapter pattern validation, session pool assumptions proven/disproven. Capture decisions made (PRD 1 viability criteria met). Record which agents (Fenster primarily) built what, and what patterns proved essential. Archive to `.ai-team/decisions/archive/`. | Keaton | 1d |
 
 **Exit Criteria:**
 - `SquadClient` initializes in < 2 seconds with real Copilot CLI connection
@@ -97,6 +99,8 @@ Implement the SDK's custom tools (squad_route, squad_decide, squad_memory, squad
 | M1-11 | Session history shadows for remote agents | PRD 7, 15 | When importing agents (PRD 15), create local history shadow at `.squad/agents/{name}/history.md` to capture project-specific learnings. Separate from portable agent definition. | Verbal | 2d |
 | M1-12 | Integration tests: tools + hooks + lifecycle | PRD 2, 3, 4 | Test tool execution, hook enforcement, session creation, lifecycle. Verify custom tools work end-to-end with hooks. Minimum 75% coverage. | Fenster | 4d |
 | M1-13 | Documentation: Custom Tools & Hooks Guide | PRD 2, 3 | Write docs explaining tool contract, hook points, governance model. Examples: routing decisions, policy enforcement. Includes troubleshooting. | Verbal | 2d |
+| M1-14 | Blog Post: Agent Lifecycle Redesigned | McManus Strategy (Week 8) | Write post: "Agent Lifecycle Redesigned — how v1 agents run differently, benefits." Audience: current Squad users. Content: reliability, session recovery, isolation improvements. v1-content: true. | Verbal | 2d |
+| M1-15 | Carry-forward Inventory: Core Runtime Learning | Cross-Cutting | Document M1 learnings: which tools proved essential, hook patterns that work, session lifecycle gotchas. Record agent contributions (Fenster on tools, Baer on hooks, Verbal on lifecycle). Note patterns for v1 SDK agents. | Keaton | 1d |
 
 **Exit Criteria:**
 - All 4 custom tools execute correctly and return expected values
@@ -145,6 +149,8 @@ Extract all customizable behavior from prompt into config files (JSON/YAML). Def
 | M2-12 | squad.agent.md as reference doc (not runtime) | PRD 5, 14 | Mark squad.agent.md as "documentation only" post-migration. Include migration guide explaining which behaviors moved where (config vs. code vs. hooks). Explains customization paths. | Verbal | 2d |
 | M2-13 | Integration tests: config loading & migration | PRD 14, 15 | Test config parsing, validation, migration pipeline. Verify: new init flow, config override, multi-source resolution, migration preserves user customizations. 70%+ coverage. | Fenster | 4d |
 | M2-14 | Documentation: Configuration Guide | PRD 14, 15 | Write `.ai-team/docs/configuration-guide.md` — schema reference, customization examples, migration instructions, troubleshooting. | Keaton, Verbal | 3d |
+| M2-15 | Blog Post: Configuring Your Squad in v1 | McManus Strategy (Week 12) | Write post: "Configuring Your Squad in v1 — new config.json, migration path." Audience: users ready to upgrade from v0.5.2. Content: step-by-step config migration, backward compat promise. v1-content: true. | Verbal | 2d |
+| M2-16 | Carry-forward Inventory: Config Architecture Learning | Cross-Cutting | Document M2 learnings: config schema decisions, migration strategy effectiveness, agent source abstraction design. Record which agents shaped config design (Keaton on schema, Fenster on loading, Verbal on init flow). Archive patterns for future squads. | Keaton | 1d |
 
 **Exit Criteria:**
 - `squad.config.ts` schema is complete, typed, validated, documented
@@ -194,6 +200,9 @@ Migrate all features currently in `squad.agent.md` to SDK runtime. This includes
 | M3-12 | Compatibility tests vs. v0.4.1 | PRD 5 | Create test suite: run identical scenarios (same team, same user input) against v0.4.1 coordinator and new SDK coordinator. Compare routing decisions, agent selections, response structure. Document any behavioral changes. | Fenster | 4d |
 | M3-13 | Feature risk punch list (resolution) | Kujan's List | Address Kujan's 14 GRAVE items + 12 AT RISK items from feature risk punch list. Ensure every current feature has explicit coverage in this milestone or flagged as intentional drop. | Keaton | 3d |
 | M3-14 | Documentation: Feature Migration Guide | PRD 5, 7, 11 | Write detailed guide explaining where each feature went: routing (config), casting (TypeScript), skills (config), model selection (config+code). Troubleshooting section for common regressions. | Verbal | 2d |
+| M3-15 | Blog Post: Routing Redone — SDK-Native Policy Engine | McManus Strategy (Week 16) | Write post: "Routing Redone: SDK-native Policy Engine" — how SDK routing improves reliability vs. prompt-based routing. Audience: operators, team leads. v1-content: true. | Fenster | 2d |
+| M3-16 | Blog Post: Squad Goes Universal — Multi-Language Support | McManus Strategy (Week 20) | Write post: "Squad Goes Universal" — multi-language support, project detection. Audience: non-Node.js users (Python, Go, .NET teams). v1-content: true. | Verbal | 2d |
+| M3-17 | Carry-forward Inventory: Feature Parity Achievement | Cross-Cutting | Document M3 learnings: which features translated cleanly to SDK, which required design evolution, casting/skills patterns proven. Record agent contributions (Fenster on routing/coordinator, Verbal on casting/skills, Kujan on migration registry). Note technical decisions for v1 design. | Keaton | 1d |
 
 **Exit Criteria:**
 - Coordinator runs as TypeScript program on SDK, not as 32KB prompt
@@ -244,6 +253,8 @@ Package Squad as a single installable artifact. Implement install/update mechani
 | M4-11 | Migration for install path changes | PRD 14 | If moving from GitHub-only to npm registry, implement seamless migration. Old `npx github:...` still works, points to npm registry. | Kujan | 2d |
 | M4-12 | Download & install tests (real artifacts) | PRD 12 | Test suite: `npm install create-squad` → `npx create-squad` → init flow. `squad upgrade` → new version running. Test on real machines (macOS, Linux, Windows). | Kujan | 3d |
 | M4-13 | Documentation: Installation & Distribution Guide | PRD 12, 14 | Write: installation methods (npm, GitHub, Copilot Extensions), `squad upgrade` process, troubleshooting. Include system requirements, bandwidth needs. | Kujan | 2d |
+| M4-14 | Blog Post: How Squad Ships — Packaging & Distribution | McManus Strategy | Write post: "How Squad Ships" — bundling strategy, npm + GitHub dual distribution, upgrade mechanics. Audience: contributors, maintainers, users curious about internals. v1-content: true. | Kujan | 2d |
+| M4-15 | Carry-forward Inventory: Distribution Validation | Cross-Cutting | Document M4 learnings: bundling strategy effectiveness, install path resilience, upgrade mechanism reliability. Record agent work (Kujan on all distro items). Note gotchas for future squads adopting distribution model. | Kujan | 1d |
 
 **Exit Criteria:**
 - Bundle size is ~5MB (lean target from Q30)
@@ -297,6 +308,8 @@ Implement the agent repository system: export/import for portable squads, histor
 | M5-14 | Offline mode graceful degradation | PRD 24 (Q11) | Implement: if agent repository unreachable, use cache if available (log warning). If no cache, fail gracefully with helpful error (not hard fail, not silent). | Kujan | 2d |
 | M5-15 | Integration tests: export/import/marketplace | PRD 16, 24 | Test suite: export round-trip (export → import → export = identical), history splitting, remote agent loading, marketplace search, conflict detection. 70%+ coverage. | Fenster | 4d |
 | M5-16 | Documentation: Agent Repository & Marketplace Guide | PRD 16, 24 | Write: export/import workflow, remote agent setup, marketplace publishing (for authors), security considerations, caching behavior. Examples: importing from awesome-copilot. | Verbal | 2d |
+| M5-17 | Blog Post: Agent Marketplace Preview | McManus Strategy (Week 24) | Write post: "Agent Marketplace Preview" — export/import, sharing agents, marketplace vision. Audience: community, early adopters building reusable agents. v1-content: true. | Verbal | 2d |
+| M5-18 | Carry-forward Inventory: Repository & Marketplace Learning | Cross-Cutting | Document M5 learnings: export/import round-trip patterns, remote agent loading reliability, marketplace schema decisions. Record agent work (Fenster on export/import, Verbal on marketplace, Kujan on sources/caching). Archive for distributed squad adoption. | Fenster | 1d |
 
 **Exit Criteria:**
 - `squad export` produces valid portable JSON
@@ -348,6 +361,10 @@ Final polish before v0.6.0 release. Comprehensive documentation, migration guide
 | M6-12 | Accessibility & internationalization review | Docs | Review: docs accessibility (screen reader friendly), no hard-coded UI strings in code. Prepare for future i18n (identify translatable strings). | Verbal | 2d |
 | M6-13 | Release candidate build & validation | PRD 12 | Build v0.6.0-rc.1, test on real machines (macOS, Linux, Windows). Run full test suite + migration test against v0.5.1. Brady final approval. | Kujan | 2d |
 | M6-14 | v0.6.0 launch & communication | PRD 12 | Publish v0.6.0 to npm + GitHub. Announce on community channels (if applicable). Direct message to early users with migration guide. | Keaton | 1d |
+| M6-15 | Blog Post: v0.6.0 — The Replatform | McManus Strategy (Week 29) | Write launch announcement: what changed, what didn't, why it matters, migration path (optional), zero-friction promise. Audience: all Squad users. v1-content: true. | Keaton | 2d |
+| M6-16 | Blog Post: Migration Guide for v0.6.0 | McManus Strategy (Week 30) | Write pinned post (also in docs/): step-by-step upgrade, rollback plan, FAQ. Audience: v0.5.2 users. v1-content: true (framed for easy downgrade). | Verbal | 2d |
+| M6-17 | Blog Post: What's Next for Squad | McManus Strategy (Week 31) | Write: v0.7.0 preview, roadmap, next challenges. Audience: contributors, team members. v1-content: true. | Verbal | 2d |
+| M6-18 | Carry-forward Inventory: Launch Execution & v1 Foundation | Cross-Cutting | Final carry-forward doc: all learnings from M0-M6, decisions made, patterns proven, agent contributions across entire replatform journey. This is the seed document for v1 Squad templates and future squads. Archive as `.ai-team/docs/v1-foundation-learnings.md`. | Keaton | 2d |
 
 **Exit Criteria:**
 - Comprehensive documentation covers all major topics
@@ -436,6 +453,61 @@ Weeks 28–32:   M6 Polish & Launch (Keaton, Verbal, Kujan) — docs, migration 
 ```
 
 **Total duration:** ~32 weeks (7.5 months) from start to v0.6.0 release.
+
+---
+
+## Cross-Cutting Concerns: Docs, Blogs & Carry-Forward
+
+Brady's directive: "Docs and blogs are a part of all of it." These are non-negotiable requirements that apply to **every milestone** (M0–M6).
+
+### Documentation Requirements (Every Milestone)
+
+Every milestone MUST include at least one documentation work item that covers:
+- **Architecture changes** — What changed in the system, why, how it impacts users
+- **Configuration** — How to configure new features (if applicable)
+- **Migration** — For existing users, how to adopt new capability without breaking changes
+- **Troubleshooting** — Common issues, root causes, solutions
+
+**Mapping:**
+- **M0:** SDK Integration Guide (M0-10) — Foundation concepts
+- **M1:** Custom Tools & Hooks Guide (M1-13) — Policy enforcement, tool contract
+- **M2:** Configuration Guide (M2-14) — Schema, migration, examples
+- **M3:** Feature Migration Guide (M3-14) — Where features live, compatibility
+- **M4:** Installation & Distribution Guide (M4-13) — Install paths, upgrade process
+- **M5:** Agent Repository & Marketplace Guide (M5-16) — Export/import, sharing
+- **M6:** Deep Dive + Comprehensive Migration Guide (M6-1, M6-2) — Full user guide + technical deep dive
+
+### Blog Cadence (per McManus v1 Content Strategy)
+
+Every milestone ships with a blog post (or multiple, in M3 and M6). All posts carry `v1-content: true` (except M0, which is internal).
+
+**Mapping:**
+- **M0 (Week 4):** "Building the Foundations — SDK Spike Results" (M0-11) — internal, team audience
+- **M1 (Week 8):** "Agent Lifecycle Redesigned" (M1-14) — current users
+- **M2 (Week 12):** "Configuring Your Squad in v1" (M2-15) — users ready to upgrade
+- **M3 (Weeks 16, 20):** "Routing Redone" (M3-15) + "Squad Goes Universal" (M3-16) — operators, non-Node users
+- **M4 (Week 22):** "How Squad Ships" (M4-14) — contributors, maintainers, curious users
+- **M5 (Week 24):** "Agent Marketplace Preview" (M5-17) — community, early adopters
+- **M6 (Weeks 29–31):** "v0.6.0 — The Replatform" (M6-15) + "Migration Guide" (M6-16) + "What's Next" (M6-17) — all users, transition focus
+
+### Carry-Forward Inventory (Every Milestone)
+
+Every milestone MUST include a "Carry-forward Inventory" work item that explicitly documents:
+1. **Learnings & Patterns** — What worked, what didn't, what surprised us, what we'd do differently
+2. **Agent Contributions** — Which agents built what, their key contributions, their learnings (feeds crossover-vision-{agent}.md)
+3. **Decisions Made** — Explicit architectural choices, trade-offs, alternatives considered
+4. **Technical Debt or Wins** — Patterns to replicate, gotchas to avoid, technical wins to carry forward
+
+**Mapping:**
+- **M0:** M0-12 — SDK viability, adapter pattern, session pooling assumptions
+- **M1:** M1-15 — Tools, hooks, lifecycle patterns, session management
+- **M2:** M2-16 — Config schema, migration strategy, agent source abstraction
+- **M3:** M3-17 — Feature parity, routing decisions, casting/skills redesign
+- **M4:** M4-14 — Bundling, distribution, upgrade resilience
+- **M5:** M5-18 — Export/import patterns, marketplace schema, multi-source loading
+- **M6:** M6-18 — **Final carry-forward:** comprehensive v1 foundation doc (`.ai-team/docs/v1-foundation-learnings.md`) that seeds all future Squad templates
+
+**Output Archive:** All carry-forward documents go to `.ai-team/decisions/archive/` during M6 cleanup, and are synthesized into the final `.ai-team/docs/v1-foundation-learnings.md` document that becomes the reference for creating new Squads.
 
 ---
 
