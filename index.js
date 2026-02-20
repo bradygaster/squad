@@ -1196,6 +1196,8 @@ function stampVersion(filePath) {
   content = content.replace(/<!-- version: [^>]+ -->/m, `<!-- version: ${pkg.version} -->`);
   // Replace version in the Identity section's Version line
   content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/m, `- **Version:** ${pkg.version}`);
+  // Replace {version} placeholder in the greeting instruction so it's unambiguous
+  content = content.replace(/`Squad v\{version\}`/g, `\`Squad v${pkg.version}\``);
   fs.writeFileSync(filePath, content);
 }
 
@@ -1217,12 +1219,19 @@ function readInstalledVersion(filePath) {
 
 // Compare semver strings: -1 (a<b), 0 (a==b), 1 (a>b)
 function compareSemver(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  const stripPre = v => v.split('-')[0];
+  const pa = stripPre(a).split('.').map(Number);
+  const pb = stripPre(b).split('.').map(Number);
   for (let i = 0; i < 3; i++) {
     if ((pa[i] || 0) < (pb[i] || 0)) return -1;
     if ((pa[i] || 0) > (pb[i] || 0)) return 1;
   }
+  // Base versions equal — pre-release is less than release
+  const aPre = a.includes('-');
+  const bPre = b.includes('-');
+  if (aPre && !bPre) return -1;
+  if (!aPre && bPre) return 1;
+  if (aPre && bPre) return a < b ? -1 : a > b ? 1 : 0;
   return 0;
 }
 

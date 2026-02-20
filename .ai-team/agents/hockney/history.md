@@ -89,3 +89,10 @@ _Summarized from initial assessment (2026-02-07). Full entries in `history-archi
 
 📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
 
+- **Version Stamping & compareSemver Tests (2026-02-15)** — **What I Did:**
+  - Created `test/version-stamping.test.js` — 9 tests across 2 describe blocks covering two recent changes to `index.js`.
+  - **Tests cover:** (1) `stampVersion()` replaces `{version}` placeholder with actual package version in all three locations (HTML comment, Identity section, greeting instruction), verified on both `init` and `upgrade` commands. (2) `compareSemver()` pre-release handling — verifies upgrade correctly detects version differences including pre-release suffixes like `0.5.3-insiders` vs `0.5.2` and `0.5.3`.
+  - **Patterns used:** Same integration test pattern as existing test files — spawn `index.js` in isolated temp dirs via `execFileSync`, read generated files, assert on content. For semver tests, simulate old installations by manually rewriting version comments in `squad.agent.md`, then run upgrade and assert on output behavior ("Already up to date" vs upgrade proceeds).
+  - **Key design choices:** (1) Tests read actual package.json version dynamically so they stay green across version bumps. (2) Pre-release tests focus on observable upgrade behavior rather than direct function testing (since `compareSemver` is internal to index.js). (3) Tests verify both the absence of `{version}` placeholder and presence of actual version string.
+  - All 9 new tests pass. Full suite now at 95 tests, all green.
+

@@ -146,3 +146,5 @@ _Summarized from initial architecture review (2026-02-07). Full entries in `hist
 
 
 📌 Team update (2026-02-20): Kobayashi merged all 5 v0.5.0 PRs (#109–#113) into dev in dependency order. All tests pass (53/53). Migration infrastructure (dual-path CLI/workflows, email scrubbing, docs) ready for v0.5.0 release. — Scribe
+
+- **compareSemver pre-release suffix handling (v0.5.3, 2026-02-20).** The `compareSemver` function in index.js (around line 1220) used `.split('.').map(Number)` which broke for versions with pre-release suffixes like `0.5.3-insiders` because `Number('3-insiders')` returns `NaN`, causing incorrect version comparisons. Fixed by stripping pre-release suffix (everything after first `-`) before numeric comparison, then applying semver ordering rules when base versions are equal: pre-release < release. New logic: (1) extract base version via `v.split('-')[0]`, (2) compare numeric parts, (3) if equal, pre-release < release, (4) if both pre-release, use lexicographic string comparison. This enables correct insider release version comparisons during upgrade checks. Version bumped from 0.5.2 → 0.5.3. All 86 tests pass.
