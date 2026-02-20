@@ -34,3 +34,10 @@
 - MCP data flow: user request → coordinator → agent → MCP server → third-party API. Users may not realize project data flows to Trello/Notion/Azure when MCP tools are configured
 - Committed MCP config files (`.copilot/mcp-config.json`, `.vscode/mcp.json`) use `${VAR}` references — correct pattern, but no guardrail prevents hardcoded secrets
 - Security audit v1 findings written to `.ai-team/decisions/inbox/baer-security-audit-v1.md` — 12 findings across PII, compliance, third-party data, git history, and threat model
+- Issue #108: Built email scrubber for migration flow — scans team.md, history.md, decisions.md, logs for `name (email)` and bare emails, replaces with `[email scrubbed]`
+- Email scrubbing integrated as v0.5.0 migration — runs automatically during `squad upgrade` and reports files cleaned
+- `squad scrub-emails` command added for manual scrubbing — defaults to .ai-team/ directory
+- Email regex: `/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g` — careful to preserve emails in URLs, code blocks, example.com contexts
+- Git history caveat documented — scrubber only touches working tree, git history requires `git-filter-repo` for complete removal
+- Fixed unfinished squadInfo/detectSquadDir implementation — dev branch had broken references causing 43 test failures
+

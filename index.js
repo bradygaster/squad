@@ -759,6 +759,63 @@ try {
 
 const isUpgrade = cmd === 'upgrade';
 const isSelfUpgrade = isUpgrade && process.argv.includes('--self');
+const isMigrateDirectory = isUpgrade && process.argv.includes('--migrate-directory');
+
+// Handle --migrate-directory flag: rename .ai-team/ to .squad/
+if (isMigrateDirectory) {
+  const aiTeamDir = path.join(dest, '.ai-team');
+  const squadDir = path.join(dest, '.squad');
+  
+  if (!fs.existsSync(aiTeamDir)) {
+    fatal('No .ai-team/ directory found — nothing to migrate.');
+  }
+  
+  if (fs.existsSync(squadDir)) {
+    fatal('.squad/ directory already exists — migration appears to be complete.');
+  }
+  
+  console.log(`${DIM}Migrating .ai-team/ → .squad/...${RESET}`);
+  
+  try {
+    // Rename directory
+    fs.renameSync(aiTeamDir, squadDir);
+    console.log(`${GREEN}✓${RESET} Renamed .ai-team/ → .squad/`);
+    
+    // Update .gitattributes
+    const gitattributes = path.join(dest, '.gitattributes');
+    if (fs.existsSync(gitattributes)) {
+      let content = fs.readFileSync(gitattributes, 'utf8');
+      const updated = content.replace(/\.ai-team\//g, '.squad/');
+      if (content !== updated) {
+        fs.writeFileSync(gitattributes, updated);
+        console.log(`${GREEN}✓${RESET} Updated .gitattributes`);
+      }
+    }
+    
+    // Update .gitignore if it exists
+    const gitignore = path.join(dest, '.gitignore');
+    if (fs.existsSync(gitignore)) {
+      let content = fs.readFileSync(gitignore, 'utf8');
+      const updated = content.replace(/\.ai-team\//g, '.squad/');
+      if (content !== updated) {
+        fs.writeFileSync(gitignore, updated);
+        console.log(`${GREEN}✓${RESET} Updated .gitignore`);
+      }
+    }
+    
+    console.log();
+    console.log(`${BOLD}Migration complete.${RESET}`);
+    console.log(`${DIM}Commit the change:${RESET}`);
+    console.log(`  git add -A`);
+    console.log(`  git commit -m "chore: migrate .ai-team/ → .squad/"`);
+    console.log();
+    
+  } catch (err) {
+    fatal(`Migration failed: ${err.message}`);
+  }
+  
+  process.exit(0);
+}
 
 // Stamp version into squad.agent.md after copying
 function stampVersion(filePath) {
@@ -886,7 +943,7 @@ if (isSelfUpgrade) {
   console.log(`${BOLD}Squad repo refreshed.${RESET}`);
   console.log(`${DIM}Agent histories preserved — only templates and skills updated${RESET}`);
   console.log();
-  showDeprecationBanner();
+  showDeprecationWarning();
   process.exit(0);
 }
 
@@ -973,12 +1030,12 @@ const squadInfo = (() => {
     return { path: aiTeamDir, name: '.ai-team', isLegacy: true };
   }
   // Default for new installations
-  return { path: aiTeamDir, name: '.ai-team', isLegacy: true };
+  return { path: squadDir, name: '.squad', isLegacy: false };
 })();
 
-// Show deprecation warning if using .ai-team/
-if (squadInfo.isLegacy && !isUpgrade) {
-  showDeprecationBanner();
+// Show deprecation warning if using .ai-team/ (but not on new installs)
+if (squadInfo.isLegacy) {
+  showDeprecationWarning();
 }
 
 // Pre-create drop-box, orchestration-log, casting, skills, and plugins directories (additive-only)
@@ -1147,7 +1204,7 @@ console.log();
 console.log(`${BOLD}Squad is ${isUpgrade ? 'upgraded' : 'ready'}.${RESET}${isUpgrade ? ` (v${pkg.version})` : ''}`);
 console.log();
 if (squadInfo.isLegacy) {
-  showDeprecationBanner();
+  showDeprecationWarning();
 }
 if (!isUpgrade) {
   console.log(`Next steps:`);
