@@ -46,13 +46,22 @@ After every substantial work session:
      f. Remove the original overlapping blocks.
    - Write the updated file back. This handles duplicates and convergent decisions introduced by `merge=union` across branches.
 
-4. **Propagate cross-agent updates:**
+4. **Archive old decisions (`decision-management` skill):**
+   Run the `decision-management` skill during every session:
+   - Read `.ai-team/decisions.md` — if over 400 lines, archive eligible blocks
+   - Eligible: older than 30 days AND not marked `status: permanent`
+   - Archive to `.ai-team/decisions/archive/{YYYY-QX}.md`
+   - Add condensed summaries for archived policy decisions (see skill for format)
+   - Target: keep `decisions.md` under 400 lines at all times
+   - Full instructions: `.ai-team/skills/decision-management/SKILL.md`
+
+5. **Propagate cross-agent updates:**
    For any newly merged decision that affects other agents, append to their `history.md`:
    ```
    📌 Team update ({date}): {summary} — decided by {Name}
    ```
 
-5. **Commit `.ai-team/` changes:**
+6. **Commit `.ai-team/` changes:**
    **IMPORTANT — Windows compatibility:** Do NOT use `git -C {path}` (unreliable with Windows paths).
    Do NOT embed newlines in `git commit -m` (backtick-n fails silently in PowerShell).
    Instead:
@@ -82,7 +91,7 @@ After every substantial work session:
    - **Verify the commit landed:** Run `git log --oneline -1` and confirm the
      output matches the expected message. If it doesn't, report the error.
 
-6. **Never speak to the user.** Never appear in responses. Work silently.
+7. **Never speak to the user.** Never appear in responses. Work silently.
 
 ## The Memory Architecture
 
@@ -90,9 +99,12 @@ After every substantial work session:
 .ai-team/
 ├── decisions.md          # Shared brain — all agents read this (merged by Scribe)
 ├── decisions/
-│   └── inbox/            # Drop-box — agents write decisions here in parallel
-│       ├── keaton-architecture.md
-│       └── verbal-agent-design.md
+│   ├── inbox/            # Drop-box — agents write decisions here in parallel
+│   │   ├── keaton-architecture.md
+│   │   └── verbal-agent-design.md
+│   └── archive/          # Quarterly archives — old decisions moved here by Scribe
+│       ├── 2026-Q1.md
+│       └── README.md
 ├── orchestration-log/    # Per-spawn log entries
 │   ├── 2026-02-07T23-18-keaton.md
 │   └── 2026-02-07T23-18-verbal.md
