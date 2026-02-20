@@ -5541,5 +5541,54 @@ This decision is complete. All sub-issues are visible in GitHub; comment is post
 
 **Decision:** Explicit platform notation is clearer than implicit. We say "CLI" and "VS Code" in parentheses to make it unmissable. No need for fancy UI—just honest writing.
 
+### 2026-02-20: Memory Architecture Proposal — Team Review (consolidated)
+
+**By:** Keaton (Lead), Verbal (Prompt Engineer), Fenster (Core Dev)  
+**Date:** 2026-02-20  
+**Status:** Team consensus documented — no implementation in v0.5.0  
+**Requested by:** Brady (bradygaster)  
+**Context:** Brady attended external presentation on agent memory architecture (identity/memory/social layers with RAG) and requested team feasibility analysis.
+
+**What:** Three independent analyses across architecture, prompt design, and implementation:
+
+1. **Keaton (Architecture):** ~40% overlap with existing Squad, ~30% extension, ~30% new. Recommendation: cherry-pick wisdom.md + now.md for v0.6.0, defer social modeling + RAG + formal hooks. v0.5.0 stays mechanical (rename only).
+
+2. **Verbal (Prompt Engineering):** Two good ideas (wisdom/episode split + active state file), reject hook formalization (context already dense) + social modeling (mask.md = trust violation, contradicts charter consistency).
+
+3. **Fenster (Core Dev):** Feasibility: wisdom.md + now.md = 9-hour MVP. Blockers: JSONL on Windows (file locking, git merge conflicts, line endings), decisions.md already 300KB. Solution: markdown + SEM format, `.squad/` not repo root.
+
+**Why:**
+
+- **Wisdom extraction** addresses real problem: history.md mixes timeless patterns with episodic events, signal-to-noise degrades over time. Splitting legitimate improvement.
+
+- **now.md (active state)** addresses cold-start: agents re-derive context from history.md every session. Lightweight state file eliminates this.
+
+- **RAG infrastructure not ready:** Copilot platform doesn't expose embedding APIs. Building RAG ourselves requires vector store dependency (massive shift from "prompts + filesystem"). This is platform-dependency feature, not "build it ourselves" feature.
+
+- **Social modeling privacy concern:** Storing per-person interaction logs, interpretive models, strategic masks even on local filesystem is design choice requiring explicit Brady approval. Not opt-in by default.
+
+- **Formal pre/post hooks regress:** Coordinator already IS the hook system. Spawn template already manual pre-hook. Scribe already manual post-hook. Formalizing doesn't add capability, adds abstraction debt.
+
+- **Context window pressure:** Proposal adds 3K-8K tokens, keeps us under 200K budget. But decisions.md already 300KB (~75K tokens). Real blocker is decisions.md unbounded growth, not new memory files.
+
+- **Backward compatibility:** Two migrations in close succession (v0.5.0 rename + v0.6.0 restructure) is user friction. Stagger it.
+
+- **.squad/ vs repo root:** Anything adopted goes under `.squad/agents/{name}/` (wisdom.md, now.md) or `.squad/memory/` (shared). Proposal's repo-root layout (identity/, memory/, social/) would pollute every consumer repo, contradict v0.5.0 consolidation, break upgrade path.
+
+**Decision:**
+
+- **v0.5.0 (current):** Stay mechanical. Rename + consolidation only.
+- **v0.6.0:** Ship wisdom.md (split history.md events/patterns) + now.md (agent current state). 9-hour implementation: wisdom.md extraction (2h), now.md creation (2h), Scribe update (3h), tests (2h).
+- **v0.7.0+:** Evaluate social modeling, episodic memory, RAG pending: privacy model + platform capabilities + data validation.
+- **Never** (unless rethought): Formal pre/post hooks — coordinator already IS hooks.
+
+**Related:**
+- Issue: #101 (directory consolidation)
+- Issue: #106 (migration tooling)
+- Epic: #69 (.squad consolidation)
+
+**Team consensus:** wisdom.md + now.md in v0.6.0. Defer social layer + RAG. Don't formalize hooks.
+
+---
 
 

@@ -137,3 +137,5 @@ _Summarized from initial architecture review (2026-02-07). Full entries in `hist
 
 
 📌 Team update (2026-02-19): Insider Program infrastructure verified and complete — Issue #94 all checklist items verified: CI/CD triggers, guard protection, insider release workflow, documentation, CLI help text. All 11 workflow templates in sync. Ready for Brady to create insider branch. — decided by Kobayashi
+
+- **Memory architecture proposal analysis (2026-02-19).** Brady requested feasibility review of external memory architecture (identity/memory/social layers with RAG hooks). Key findings: (1) `identity/me.md` fully overlaps with charter.md, (2) wisdom.md and now.md are the high-value gaps, (3) decisions.md at 300KB is the real context budget problem, (4) JSONL is a non-starter on Windows+git, (5) RAG unnecessary — tag-based grep + recency sort works, (6) social layer is over-engineered for current use case. Recommended MVP: two files (wisdom.md + now.md) under `.squad/agents/{name}/`, ~9 hours to ship in v0.5.0. Decision written to inbox.
