@@ -2719,3 +2719,19 @@ as a convenience feature (prompt isolation), not as the unit of agent identity. 
 
 **Status:** Findings ready for Brady triage + spike prioritization.
 
+
+
+### 2026-02-20T15-51: User directive — V1 Launch Sprint
+**By:** Brady (via Copilot)
+**What:** 
+1. File all remaining issues on squad-pr until team is confident 80%+ of work is captured
+2. Launch Ralph and work continuously until blocked or stopped
+3. Test obsessively as we go — customer behavior must match or exceed current experience
+4. Account for ALL shortcomings and missed features during iteration
+5. By Monday: parity or better in customer experience atop the SDK
+6. Create a project board on squad-pr with issues and PRs visible
+7. If inventing a TUI, adhere to Copilot docs guidance
+8. Don't blow the context window — be smart about context management
+9. Test ugly UI nuances
+**Why:** Brady's v1 launch directive — "take squad v1 to neptune"
+
