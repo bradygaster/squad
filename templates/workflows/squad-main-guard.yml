@@ -80,6 +80,8 @@ jobs:
                 if (f === '.ai-team-templates' || f.startsWith('.ai-team-templates/')) return true;
                 // team-docs/** — ALL internal team docs, zero exceptions
                 if (f.startsWith('team-docs/')) return true;
+                // docs/proposals/** — internal design proposals, stay on dev
+                if (f.startsWith('docs/proposals/')) return true;
                 return false;
               });
 
@@ -96,6 +98,7 @@ jobs:
               '`.ai-team/` is runtime team state — it belongs on dev branches only.',
               '`.ai-team-templates/` is Squad\'s internal planning — it belongs on dev branches only.',
               '`team-docs/` is internal team content — it belongs on dev branches only.',
+              '`docs/proposals/` is internal design proposals — it belongs on dev branches only.',
               '',
               '### Forbidden files found:',
               '',
