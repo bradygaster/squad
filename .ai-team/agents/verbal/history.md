@@ -198,7 +198,10 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 📌 Team update (2026-02-13): Client Compatibility section added to squad.agent.md with platform detection logic, VS Code spawn adaptations, and feature degradation table — decided by Verbal
 
 
+
 📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+
+📌 Team update (2026-02-20): Issues #86 & #87 sprint complete. Git Checkout Safety (Verbal): Added Git Safety rules to spawn templates and Fenster charter. Hockney: Wrote 8 regression tests for uncommitted-change protection. Project Type Detection (Fenster): Implemented `detectProjectType()` in index.js with marker file detection; workflow generation now stubs non-npm types with helpful TODO comments. All 72 tests pass. — decided by Verbal, Hockney, Fenster
 
 ## Learnings
 

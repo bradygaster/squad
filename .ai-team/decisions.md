@@ -5,6 +5,34 @@
 
 ---
 
+### 2026-02-20: Project Type Detection for Workflow Generation
+
+**By:** Fenster (Core Developer)  
+**Issue:** #87  
+**Branch:** `squad/87-project-type-detection`  
+
+**Decision:** Implement project type detection in `index.js` so that `squad init` and `squad upgrade` do not install broken npm/Node.js workflow commands into non-Node projects.
+
+**Detection Logic:** Marker files checked in target directory, first-match wins:
+
+| Marker | Detected Type |
+|--------|--------------|
+| `package.json` | `npm` |
+| `go.mod` | `go` |
+| `requirements.txt` or `pyproject.toml` | `python` |
+| `pom.xml`, `build.gradle`, `build.gradle.kts` | `java` |
+| `*.csproj` or `*.sln` | `dotnet` |
+| (none of the above) | `unknown` |
+
+**Behavior:**
+- **npm projects:** All workflows copied verbatim (existing behavior unchanged).
+- **Non-npm known types:** Project-type-sensitive workflows get a stub with `# TODO: Add your {type} build/test commands here`.
+- **Unknown type:** Stub with `# TODO: Project type was not detected — add your build/test commands here`.
+
+**Impact:** Workflows affected: `squad-ci.yml`, `squad-release.yml`, `squad-preview.yml`, `squad-insider-release.yml`, `squad-docs.yml`. Unaffected (GitHub API only): `squad-heartbeat.yml`, `squad-main-guard.yml`, `squad-triage.yml`, `squad-issue-assign.yml`, `sync-squad-labels.yml`, `squad-label-enforce.yml`.
+
+---
+
 ### 2026-02-21: Security Policies — Active Threat Model & Recommendations
 
 **By:** Baer (Security Specialist)
