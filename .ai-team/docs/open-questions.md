@@ -41,7 +41,7 @@
 - [x] ~~12 workflow templates need path migration (.ai-team/ → .squad/) — who owns this?~~ → RESOLVED: Kobayashi owns it (Git/Release). Mechanical path find-and-replace across all workflow files. Add to his queue. (Brady, 2026-02-20)
 
 ### Process
-- [ ] Should we init a Squad team in the new repo (squad-sdk) or keep coordinating from source repo?
+- [x] ~~Should we init a Squad team in the new repo (squad-sdk) or keep coordinating from source repo?~~ → RESOLVED: Single team, single repo (status quo). This team in C:\src\squad coordinates all work across all three repos. Agents reach into squad-sdk and squad-places-pr as needed. (Brady, 2026-02-20)
 - [ ] When does Brady want to start implementing PRD 1?
 
 ## Resolved
@@ -80,3 +80,6 @@
 - [x] **Coordinator customizability:** Config-driven architecture — extract all customizable behavior into config files (JSON/YAML) that TypeScript runtime reads. squad.agent.md becomes reference doc only. Users customize via config, not code. (Brady, 2026-02-20)
 - [x] **Export/import PRD:** Yes — write PRD-16. Factor into agent/skill marketplace. Build our own marketplace adhering to same conventions as existing ones we connect to. Export/import is part of the marketplace ecosystem, not a standalone feature. (Brady, 2026-02-20)
 - [x] **Workflow path migration:** Kobayashi (Git/Release) owns it. Mechanical .ai-team/ → .squad/ path migration across 12 workflow templates. (Brady, 2026-02-20)
+
+### Process
+- [x] **Team coordination:** Single team, single repo (status quo). This team coordinates all work across squad, squad-sdk, and squad-places-pr. No separate Squad init in squad-sdk. (Brady, 2026-02-20)
