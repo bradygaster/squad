@@ -42,7 +42,7 @@
 
 ### Process
 - [x] ~~Should we init a Squad team in the new repo (squad-sdk) or keep coordinating from source repo?~~ → RESOLVED: Single team, single repo (status quo). This team in C:\src\squad coordinates all work across all three repos. Agents reach into squad-sdk and squad-places-pr as needed. (Brady, 2026-02-20)
-- [ ] When does Brady want to start implementing PRD 1?
+- [ ] When does Brady want to start implementing PRD 1? *(Pending — Brady to answer when available. Team recommends: review feature risk punchlist first.)*
 
 ## Resolved
 
