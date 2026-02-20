@@ -42,6 +42,33 @@ _Summarized from 2026-02-07 through 2026-02-15. Full entries in session logs._
 
 ## Learnings
 
+- **2026-02-21: Pre-Implementation Readiness Assessment (Brady gate-check question)**
+  - **What created:** `.ai-team/docs/pre-implementation-readiness.md` — comprehensive assessment of architectural assumptions that need validation before M0 implementation begins. Plus decision doc: `.ai-team/decisions/inbox/keaton-pre-implementation-spikes.md`.
+  - **Brady's question:** "Are there any architectural tests or explorations that need to take place before we dive in?" This is a critical gate-check. We've made 27 decisions and resolved 27 questions, but several are based on ASSUMPTIONS about SDK behavior that haven't been validated.
+  - **Key finding:** 5 targeted spikes can validate the highest-risk assumptions in just 1.3 days of work. Each spike is 1.5-3 hours and produces working test code + reference implementation.
+  - **The 5 spikes (in priority order):**
+    1. **Concurrent sessions + shared CopilotClient** (2h) — Assumption: multiple agents can safely share one client. Spike: spawn 3 sessions, verify no crosstalk. This is foundational — if it fails, entire session pooling breaks. MUST-have spike.
+    2. **Adapter pattern + tool routing** (3h) — Assumption: we can route tools correctly when multiple agents share one session. Spike: build Squad adapter, spawn 2 agents, verify tool calls don't interfere. Blocks M0 coordinator implementation. MUST-have spike.
+    3. **MCP passthrough + namespacing** (2h) — Assumption: MCP tools can be namespaced without collision. Spike: bind MCP server to agent, test namespaced tool names, test offline graceful degradation. Blocks marketplace in M2. SHOULD-have spike.
+    4. **gh CLI auth + export/import** (1.5h) — Assumption: SDK reads gh auth; export/import round-trips cleanly. Spike: verify gh token flows through SDK; test JSON round-trip. Blocks init + marketplace. SHOULD-have spike.
+    5. **resumeSession() for Ralph** (2h) — Assumption: persistent monitoring works with session resumption. Spike: create session, resume it, verify checkpoints restore. Blocks Ralph in M1. SHOULD-have spike.
+  - **Risk matrix:** If spike 1 fails, we mitigate with session pooling (+3 days). If spike 2 fails, we use pre-allocated namespaces (+5 days). If spike 3-5 fail, we defer features (no M0 delay). All mitigable.
+  - **Success criteria:** All 5 spikes produce passing tests + working reference code that becomes M0 starting material.
+  - **Green light condition:** Present this assessment to Brady; if he approves, assign spike work immediately. Target: spikes complete within 2 days, M0 implementation green-light by end of Feb 23.
+  - **Why this matters:** Better to spend 2 days validating assumptions than 2 weeks on rework after we've committed to an approach. This is exactly the kind of gate-check that prevents technical debt from baking into the foundation.
+  - **Deliverables:** 5 working test files (test-concurrent-sessions.ts, test-adapter.ts, test-mcp-passthrough.ts, test-gh-auth.ts, test-resume-session.ts) + 5 reference implementations that become M0 source code.
+
+- **2026-02-22: Import/Export Flow Analysis & Crack Identification (Brady request)**
+  - **What created:** `.ai-team/docs/import-export-flow.md` — comprehensive mapping of all import/export paths and 14 customer risk points.
+  - **Scope:** 5 actor types (individual developer, team lead, publisher, consumer, registry maintainer), 4 artifact types (agents, skills, squads, individual agent definitions), 5 primary flow paths (local export → registry, registry import → local, local direct sharing, registry-to-registry sync, upgrade/update flows), plus recovery flows.
+  - **Key finding: 14 identified cracks** where customers "fall through" — 4 HIGH severity (broken MCP silent, history lost, collision bypass, auth failure), 8 MEDIUM (stale cache, version drift, MCP override mismatch, offline ambiguity, circular dependency, skill conflicts, permission denied, confusing states), 2 LOW (missing feedback, export validation).
+  - **Most critical crack:** Stale cached agents with no indication of update availability. Aggressive caching (decision Q10) + no TTL means consumer could run 4-week-old agent unaware. Recommendation: log on every coordinator session "Agent 'baer' imported 4 weeks ago. Update available: def456. Run: squad places upgrade baer"
+  - **Silent failure pattern:** MCP server validation is not required on import (decision Q26 only validates structure, not dependencies). Agent loads successfully with incomplete MCP config. User discovers failure at runtime, not import time.
+  - **Import collision fix:** Current decision (Q5) blocks collision correctly. But no tracking of imports means user can accidentally re-import same agent and get confused. Solution: `.squad/.cache/imports.json` manifest tracking all imports (original name, commit SHA, rename if any).
+  - **Categorization:** Quick wins (export feedback, pre-flight validation, error messages), medium effort (history preservation, import manifest, charter validation), strategic (charter dependency scanning, skill manifest, resume capability).
+  - **Decision reference:** Embedded all 9 relevant decisions (Q1, Q2, Q3, Q4, Q5, Q10, Q14, Q23, Q24, Q25, Q26) in the analysis. This document is the source of truth for import/export failure modes going forward.
+  - **Next step:** Use this analysis as PRD 16 input (export/import & marketplace feature). Each recommendation becomes a story in the milestone.
+
 - **2026-02-21: SDK Replatform Milestones & Work Items (Planning Gate)**
   - **What changed:** Created comprehensive milestones document (`.ai-team/docs/milestones.md`) organizing the 14-PRD SDK replatform into 6 shippable milestones across 3 phases (~32 weeks).
   - **Why:** Brady required complete planning before implementation begins. The milestones document is the planning gate — no code changes until Brady approves.
