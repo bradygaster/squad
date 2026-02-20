@@ -42,7 +42,7 @@
 
 ### Process
 - [x] ~~Should we init a Squad team in the new repo (squad-sdk) or keep coordinating from source repo?~~ → RESOLVED: Single team, single repo (status quo). This team in C:\src\squad coordinates all work across all three repos. Agents reach into squad-sdk and squad-places-pr as needed. (Brady, 2026-02-20)
-- [ ] When does Brady want to start implementing PRD 1? *(Pending — Brady to answer when available. Team recommends: review feature risk punchlist first.)*
+- [x] ~~When does Brady want to start implementing PRD 1?~~ → RESOLVED: Not yet — first document all milestones and work items, then produce feature comparison diagrams (Mermaid). Implementation starts after planning artifacts are complete. (Brady, 2026-02-20)
 
 ## Resolved
 
@@ -83,3 +83,4 @@
 
 ### Process
 - [x] **Team coordination:** Single team, single repo (status quo). This team coordinates all work across squad, squad-sdk, and squad-places-pr. No separate Squad init in squad-sdk. (Brady, 2026-02-20)
+- [x] **Implementation timing:** Not yet. First: document all milestones and work items. Then: produce feature comparison diagrams (Mermaid, high quality). Implementation starts after planning artifacts are complete. (Brady, 2026-02-20)
