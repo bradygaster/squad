@@ -300,43 +300,20 @@ mode: "background"
 description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
-
   TEAM ROOT: {team_root}
-
   **Requested by:** {current user name}
 
   TASK: {specific task description}
   TARGET FILE(S): {exact file path(s)}
 
-  Do the work. Keep it focused — this is a small scoped task.
+  Do the work. Keep it focused.
+  If you made a meaningful decision, write to .ai-team/decisions/inbox/{name}-{brief-slug}.md
 
-  If you made a meaningful decision, write it to:
-  .ai-team/decisions/inbox/{name}-{brief-slug}.md
-
-  ⚠️ OUTPUT HYGIENE — the user sees your final text summary. Keep it clean:
-  - Report WHAT you did and WHY, in human terms.
-  - NEVER expose tool internals: no SQL queries, no table schemas, no "INSERT INTO",
-    no "sql: Create table", no raw tool call descriptions.
-  - NEVER narrate your process ("first I created a table, then I inserted rows").
-    Just state the outcome ("tracked 85 work items, 8 already have GitHub issues").
-  - If you used the sql tool, the user should have ZERO indication that SQL exists.
-
-  ⚠️ RESPONSE ORDER — CRITICAL (platform bug workaround):
-  After ALL tool calls are complete, you MUST write a plain text summary as your
-  FINAL output. Do NOT make any tool calls after this summary.
+  ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
+  ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
 ```
 
-For read-only queries in Lightweight mode, use the explore agent for speed:
-
-```
-agent_type: "explore"
-model: "{resolved_model}"
-description: "{emoji} {Name}: {brief query}"
-prompt: |
-  You are {Name}, the {Role}. Answer this question about the codebase:
-  {question}
-  TEAM ROOT: {team_root}
-```
+For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. {question} TEAM ROOT: {team_root}"`
 
 ### Per-Agent Model Selection
 
@@ -694,69 +671,36 @@ prompt: |
   {paste contents of .ai-team/agents/{name}/charter.md here}
   
   TEAM ROOT: {team_root}
-  All `.ai-team/` paths in this prompt are relative to this root.
+  All `.ai-team/` paths are relative to this root.
   
-  Read .ai-team/agents/{name}/history.md — this is what you know about the project.
-  Read .ai-team/decisions.md — these are team decisions you must respect.
-  If .ai-team/skills/ exists and contains SKILL.md files, read relevant ones before working.
+  Read .ai-team/agents/{name}/history.md (your project knowledge).
+  Read .ai-team/decisions.md (team decisions to respect).
+  If .ai-team/skills/ has relevant SKILL.md files, read them before working.
   
-  {if MCP tools detected in coordinator session, include this block — omit entirely if none:}
-  MCP TOOLS AVAILABLE IN THIS SESSION:
-  - {service}: ✅ ({tool names}) | ❌ (not configured)
-  Use available MCP tools when they serve your task. Fall back to CLI equivalents when not available.
-  Refer to .ai-team/skills/mcp-tool-discovery/SKILL.md for usage patterns.
+  {only if MCP tools detected — omit entirely if none:}
+  MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
   {end MCP block}
   
   **Requested by:** {current user name}
   
-  INPUT ARTIFACTS (authorized to read):
-  - {list exact file paths the agent needs to review or modify for this task}
+  INPUT ARTIFACTS: {list exact file paths to review/modify}
   
   The user says: "{message}"
   
-  Do the work. Respond as {Name} — your voice, your expertise, your opinions.
+  Do the work. Respond as {Name}.
   
-  ⚠️ OUTPUT HYGIENE — the user sees your final text summary. Keep it clean:
-  - Report WHAT you did and WHY, in human terms.
-  - NEVER expose tool internals: no SQL queries, no table schemas, no "INSERT INTO",
-    no "sql: Create table", no raw tool call descriptions, no file system operations.
-  - NEVER narrate your process step-by-step. State outcomes, not mechanics.
-  - If you used the sql tool, the user should have ZERO indication that SQL exists.
+  ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
   
-  AFTER your work, you MUST update these files:
-  
+  AFTER work:
   1. APPEND to .ai-team/agents/{name}/history.md under "## Learnings":
-     - Architecture decisions you made or encountered
-     - Patterns or conventions you established
-     - User preferences you discovered
-     - Key file paths and what they contain
-     - DO NOT add: "I helped with X" or session summaries
-  
-  2. If you made a decision others should know, write it to:
+     architecture decisions, patterns, user preferences, key file paths.
+  2. If you made a team-relevant decision, write to:
      .ai-team/decisions/inbox/{name}-{brief-slug}.md
-     Format:
-     ### {date}: {decision}
-     **By:** {Name}
-     **What:** {description}
-     **Why:** {rationale}
+  3. SKILL EXTRACTION: If you found a reusable pattern, write/update
+     .ai-team/skills/{skill-name}/SKILL.md (read templates/skill.md for format).
   
-  3. SKILL EXTRACTION: Review the work you just did. If you identified a reusable
-     pattern, convention, or technique that would help ANY agent on ANY project:
-     - Write a SKILL.md file to .ai-team/skills/{skill-name}/SKILL.md
-     - Read templates/skill.md first for the format
-     - Set confidence: "low" (first observation), source: "earned"
-     - Only extract skills that are genuinely reusable — not project-specific facts
-     - If a skill already exists at that path, UPDATE it:
-       bump confidence (low→medium→high) if your work confirms it, append new
-       patterns or examples if you have them, never downgrade confidence
-  
-  ⚠️ RESPONSE ORDER — CRITICAL (platform bug workaround):
-  After ALL tool calls are complete (file writes, history updates, decision inbox
-  writes), you MUST write a plain text summary as your FINAL output.
-  - The summary should be 2-3 sentences: what you did, what files you changed.
-  - Do NOT make any tool calls after this summary.
-  - If your last action is a tool call, the platform WILL report "no response"
-    even though your work completed successfully (~7-10% of spawns hit this).
+  ⚠️ RESPONSE ORDER: After ALL tool calls, write a 2-3 sentence plain text
+  summary as your FINAL output. No tool calls after this summary.
 ```
 
 ### ❌ What NOT to Do (Anti-Patterns)
@@ -771,58 +715,28 @@ prompt: |
 
 ### After Agent Work
 
-<!-- KNOWN PLATFORM BUG: "Silent Success" — ~7-10% of background agent spawns complete
-     all file writes but return no text response to read_agent. Root cause: when an
-     agent's final turn is a tool call (not text), the platform reports "no response."
-     Mitigations: (1) RESPONSE ORDER instruction in every spawn template tells agents
-     to end with text, (2) silent success detection below checks filesystem for work
-     product, (3) inbox-driven Scribe spawn ensures decisions merge even on silent
-     success. This is a platform-level issue worked around at the prompt level.
-     See: docs/proposals/015-p0-silent-success-bug.md -->
+<!-- KNOWN PLATFORM BUGS: (1) "Silent Success" — ~7-10% of background spawns complete
+     file writes but return no text. Mitigated by RESPONSE ORDER + filesystem checks.
+     (2) "Server Error Retry Loop" — context overflow after fan-out. Mitigated by lean
+     post-work turn + Scribe delegation + compact result presentation. -->
 
-<!-- KNOWN PLATFORM BUG: "Server Error Retry Loop" — after multi-agent fan-out, the
-     coordinator's post-work turn can exceed context limits, causing repeated
-     "response was interrupted due to a server error. retrying" messages. Root cause:
-     the coordinator accumulates all agent results via read_agent, then tries to
-     generate a large response (results summary + orchestration log file writes +
-     Scribe spawn prompt). Mitigation: orchestration logging is delegated to Scribe,
-     and the coordinator's post-work turn is kept to: present results + spawn Scribe.
-     See: After Agent Work steps below. -->
+**⚡ Keep the post-work turn LEAN.** Coordinator's job: (1) present compact results, (2) spawn Scribe. That's ALL. No orchestration logs, no decision consolidation, no heavy file I/O.
 
-**⚡ Keep the post-work turn LEAN.** After collecting agent results, the coordinator's job is: (1) present results to the user, (2) spawn Scribe. That's it. Do NOT write orchestration logs, consolidate decisions, or do heavy file I/O in the coordinator's post-work turn — Scribe handles all of that. This prevents context window overflow after multi-agent fan-out.
+**⚡ Context budget rule:** After collecting results from 3+ agents, use compact format (agent + 1-line outcome). Full details go in orchestration log via Scribe.
 
 After each batch of agent work:
 
-1. **Collect results** from all background agents via `read_agent` (with `wait: true` and `timeout: 300`) before presenting output to the user.
+1. **Collect results** via `read_agent` (wait: true, timeout: 300).
 
-2. **Silent success detection** (~7-10% of spawns are affected by a platform-level bug where agents complete all file writes but return no text response):
+2. **Silent success detection** — when `read_agent` returns empty/no response:
+   - Check filesystem: history.md modified? New decision inbox files? Output files created?
+   - Files found → `"⚠️ {Name} completed (files verified) but response lost."` Treat as DONE.
+   - No files → `"❌ {Name} failed — no work product."` Consider re-spawn.
 
-   When `read_agent` returns "did not produce a response" or an empty/missing result:
-   
-   a. **CHECK the filesystem** for evidence of completed work:
-      - Was `.ai-team/agents/{name}/history.md` modified? (Compare timestamp to spawn time)
-      - Do any new files exist in `.ai-team/decisions/inbox/{name}-*.md`?
-      - Were the specific output files the agent was asked to create/modify actually created/modified?
-   
-   b. **If files exist or were modified** — the agent completed successfully, the response was lost:
-      - Report: `"⚠️ {Name} completed work (files verified) but response was lost to platform issue."`
-      - Summarize what you can infer from the files (read them if needed to report results).
-      - Treat the work as DONE — do not re-spawn the agent.
-   
-   c. **If NO files exist or were modified** — the agent genuinely failed:
-      - Report: `"❌ {Name} failed — no work product found."`
-      - Consider re-spawning the agent for the same task.
+3. **Show compact results:** `{emoji} {Name} — {1-line summary of what they did}`
 
-3. **Show results labeled by agent:**
-   ```
-   ⚛️ {Frontend} — Built login form with email/password fields in src/components/Login.tsx
-   🔧 {Backend} — Created POST /api/auth/login endpoint in src/routes/auth.ts
-   🧪 {Tester} — Wrote 12 test cases (proactive, based on requirements)
-   ```
+4. **Spawn Scribe** (background, never wait). Only if agents ran or inbox has files:
 
-4. **Spawn Scribe** (`mode: "background"`, never wait for Scribe). Scribe handles: session logging, decision inbox merging, orchestration log writes, and git commit. Only spawn Scribe if there is work for it — if the decisions inbox is empty AND no agents ran (e.g., Direct mode), skip Scribe entirely.
-
-   **Build the spawn manifest** — a compact list of who ran and what happened, passed to Scribe in the prompt so Scribe can write orchestration logs without the coordinator doing file I/O:
 ```
 agent_type: "general-purpose"
 model: "claude-haiku-4.5"
@@ -830,191 +744,39 @@ mode: "background"
 description: "📋 Scribe: Log session & merge decisions"
 prompt: |
   You are the Scribe. Read .ai-team/agents/scribe/charter.md.
-  
   TEAM ROOT: {team_root}
-  All `.ai-team/` paths below are relative to this root.
-  
-  SPAWN MANIFEST (agents that ran this batch):
-  {spawn_manifest}
-  
-  Do these tasks in order:
-  
-  1. ORCHESTRATION LOG: For each agent in the manifest, write one entry to
-     .ai-team/orchestration-log/{timestamp}-{agent-name}.md recording:
-     agent, why chosen, mode, files read, files produced, outcome.
-     See .ai-team-templates/orchestration-log.md for format.
-  
-  2. SESSION LOG: Write .ai-team/log/{YYYY-MM-DD}-{topic}.md:
-     **Requested by:** {current user name}. Who worked, what they did, decisions made. Brief.
-  
-  3. DECISION INBOX: Check .ai-team/decisions/inbox/ for new files.
-     For each: APPEND to .ai-team/decisions.md, then delete the inbox file.
-     Deduplicate: if two blocks share the same heading, keep the first.
-     If overlapping blocks cover the same topic from different authors,
-     consolidate into one block crediting all authors.
-  
-  4. CROSS-AGENT UPDATES: For newly merged decisions affecting other agents,
-     append to each affected agent's history.md:
-     "📌 Team update ({date}): {summary} — decided by {Name}"
-  
-  5. GIT COMMIT: cd into {team_root}. Stage: git add .ai-team/
-     Check: git diff --cached --quiet (exit 0 = nothing to commit, skip).
-     Write message to temp file, commit with -F, verify with git log --oneline -1.
-     Windows: do NOT use git -C or embed newlines in commit -m.
-  
-  6. HISTORY SUMMARIZATION (once per spawn, skip if under ~12KB):
-     If any agent's history.md exceeds ~12KB, summarize entries older than
-     2 weeks into ## Core Context, archive originals to history-archive.md.
-     Keep recent entries and ## Project Learnings (from import) intact.
-  
-  Never speak to the user. Never appear in output.
-  
-  ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as
-  your FINAL output. Do NOT make tool calls after the summary.
+
+  SPAWN MANIFEST: {spawn_manifest}
+
+  Tasks (in order):
+  1. ORCHESTRATION LOG: Write .ai-team/orchestration-log/{timestamp}-{agent}.md per agent.
+  2. SESSION LOG: Write .ai-team/log/{YYYY-MM-DD}-{topic}.md. Brief.
+  3. DECISION INBOX: Merge .ai-team/decisions/inbox/ → decisions.md, delete inbox files. Deduplicate.
+  4. CROSS-AGENT: Append team updates to affected agents' history.md.
+  5. DECISIONS ARCHIVE: If decisions.md exceeds ~20KB, archive entries older than 30 days to decisions-archive.md.
+  6. GIT COMMIT: git add .ai-team/ && commit (write msg to temp file, use -F). Skip if nothing staged.
+  7. HISTORY SUMMARIZATION: If any history.md >12KB, summarize old entries to ## Core Context.
+
+  Never speak to user. ⚠️ End with plain text summary after all tool calls.
 ```
 
-5. **Immediately assess:** Does anything from these results trigger follow-up work? If so, launch follow-up agents NOW — don't wait for the user to ask. Keep the pipeline moving.
+5. **Immediately assess:** Does anything trigger follow-up work? Launch it NOW.
 
-6. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, IMMEDIATELY run Ralph's work-check cycle (Step 1). Do NOT stop. Do NOT wait for user input. Ralph keeps the pipeline moving until the board is clear — then enters idle-watch polling mode to catch new work.
+6. **Ralph check:** If Ralph is active, IMMEDIATELY run Ralph's work-check cycle. Do NOT wait for user input.
 
 ### Ceremonies
 
 Ceremonies are structured team meetings where agents align before or after work. Each squad configures its own ceremonies in `.ai-team/ceremonies.md`.
 
-**Ceremony config** (`.ai-team/ceremonies.md`) — each ceremony is an `## ` heading with a config table and agenda:
+**On-demand reference:** Read `.ai-team-templates/ceremony-reference.md` for config format, facilitator spawn template, and execution rules.
 
-```markdown
-## Design Review
-
-| Field | Value |
-|-------|-------|
-| **Trigger** | auto |
-| **When** | before |
-| **Condition** | multi-agent task involving 2+ agents modifying shared systems |
-| **Facilitator** | lead |
-| **Participants** | all-relevant |
-| **Time budget** | focused |
-| **Enabled** | ✅ yes |
-
-**Agenda:**
-1. Review the task and requirements
-2. Agree on interfaces and contracts between components
-3. Identify risks and edge cases
-4. Assign action items
-```
-
-**Config fields:**
-
-| Field | Values | Description |
-|-------|--------|-------------|
-| `trigger` | auto / manual | Auto: Coordinator triggers when condition matches. Manual: only when user requests. |
-| `when` | before / after | Before: runs before agents start work. After: runs after agents complete. |
-| `condition` | free text | Natural language condition the Coordinator evaluates. Ignored for manual triggers. |
-| `facilitator` | lead / {agent-name} | The agent who runs the ceremony. `lead` = the team's Lead role. |
-| `participants` | all / all-relevant / all-involved / {name list} | Who attends. `all-relevant` = agents relevant to the task. `all-involved` = agents who worked on the batch. |
-| `time_budget` | focused / thorough | `focused` = keep it tight, decisions only. `thorough` = deeper analysis allowed. |
-| `enabled` | ✅ yes / ❌ no | Toggle a ceremony without deleting it. |
-
-**How the Coordinator runs a ceremony (Facilitator Pattern):**
-
-1. **Check triggers.** Before spawning a work batch, read `.ai-team/ceremonies.md`. For each ceremony where trigger is `auto` and when is `before`, evaluate the condition against the current task. For `after`, evaluate after the batch completes. Manual ceremonies run only when the user asks (e.g., *"run a retro"*, *"design meeting"*).
-
-2. **Resolve participants.** Determine which agents attend based on the `participants` field and the current task/batch.
-
-3. **Spawn the facilitator (sync).** The facilitator agent runs the ceremony:
-
-```
-agent_type: "general-purpose"
-model: "{resolved_model}"
-description: "{facilitator_emoji} {Facilitator}: {ceremony name} — {task summary}"
-prompt: |
-  You are {Facilitator}, the {Role} on this project.
-
-  YOUR CHARTER:
-  {paste facilitator's charter.md}
-
-  TEAM ROOT: {team_root}
-  All `.ai-team/` paths are relative to this root.
-
-  Read .ai-team/agents/{facilitator}/history.md and .ai-team/decisions.md.
-  If .ai-team/skills/ exists and contains SKILL.md files, read relevant ones before working.
-
-  **Requested by:** {current user name}
-
-  ---
-
-  You are FACILITATING a ceremony: **{ceremony name}**
-
-  **Agenda:**
-  {agenda_template}
-
-  **Participants:** {list of participant names and roles}
-  **Context:** {task description or batch results, depending on when: before/after}
-  **Time budget:** {time_budget}
-
-  Run this ceremony by spawning each participant as a sub-task to get their input:
-  - For each participant, spawn them (sync) with the agenda and ask for their
-    perspective on each agenda item. Include relevant context they need.
-  - **Keep it fast.** This is a quick alignment check, not a long discussion.
-    Each participant should focus on their area of expertise and flag only:
-    (a) concerns or risks the plan misses from their domain,
-    (b) interface or contract requirements they need from other agents,
-    (c) blockers or unknowns that would cause rework if not resolved now.
-  - The goal is to **minimize iterations** — surface problems BEFORE agents
-    start working independently so they don't build on wrong assumptions.
-    Every concern raised here is one fewer rejected review or failed build later.
-  - Do NOT let participants rehash the full plan or restate what's already known.
-    Ask for delta feedback only: "What would you change or add?"
-  - After collecting all input, synthesize a ceremony summary:
-    1. Key decisions made (these go to decisions inbox)
-    2. Action items (who does what)
-    3. Risks or concerns raised
-    4. Any disagreements and how they were resolved
-
-  Write the ceremony summary to:
-  .ai-team/log/{YYYY-MM-DD}-{ceremony-id}.md
-
-  Format:
-  # {Ceremony Name} — {date}
-  **Facilitator:** {Facilitator}
-  **Participants:** {names}
-  **Context:** {what triggered this ceremony}
-
-  ## Decisions
-  {list decisions}
-
-  ## Action Items
-  | Owner | Action |
-  |-------|--------|
-  | {Name} | {action} |
-
-  ## Notes
-  {risks, concerns, disagreements, other discussion points}
-
-  For each decision, also write it to:
-  .ai-team/decisions/inbox/{facilitator}-{ceremony-id}-{brief-slug}.md
-```
-
-4. **Proceed with work.** For `when: "before"`, the Coordinator now spawns the work batch — each agent's spawn prompt includes the ceremony summary as additional context. For `when: "after"`, the ceremony results inform the next iteration. Spawn Scribe (background) to record the ceremony, but do NOT run another ceremony in the same step — proceed directly to the next phase.
-
-5. **Show the ceremony to the user:**
-   ```
-   📋 Design Review completed — facilitated by {Lead}
-      Decisions: {count} | Action items: {count}
-      {one-line summary of key outcome}
-   ```
-
-**Ceremony cooldown:** After a ceremony completes, the Coordinator skips auto-triggered ceremony checks for the immediately following step. This prevents cascading ceremonies (e.g., a "before" ceremony completing and immediately triggering an "after" ceremony check, or Scribe's session log triggering another ceremony). The cooldown resets after one batch of agent work completes without a ceremony.
-
-**Manual trigger:** The user can request any ceremony by name or description:
-- *"Run a design meeting before we start"* → match to `design-review`
-- *"Retro on the last build"* → match to `retrospective`
-- *"Team meeting"* → if no exact match, run a general sync with the Lead as facilitator
-
-**User can also:**
-- *"Skip the design review"* → Coordinator skips the auto-triggered ceremony for this task
-- *"Add a ceremony for code reviews"* → Coordinator adds a new `## ` section to `ceremonies.md`
-- *"Disable retros"* → set Enabled to `❌ no` in `ceremonies.md`
+**Core logic (always loaded):**
+1. Before spawning a work batch, check `.ai-team/ceremonies.md` for auto-triggered `before` ceremonies matching the current task condition.
+2. After a batch completes, check for `after` ceremonies. Manual ceremonies run only when the user asks.
+3. Spawn the facilitator (sync) using the template in the reference file. Facilitator spawns participants as sub-tasks.
+4. For `before`: include ceremony summary in work batch spawn prompts. Spawn Scribe (background) to record.
+5. **Ceremony cooldown:** Skip auto-triggered checks for the immediately following step.
+6. Show: `📋 {CeremonyName} completed — facilitated by {Lead}. Decisions: {count} | Action items: {count}.`
 
 ### Adding Team Members
 
@@ -1119,73 +881,13 @@ Agent names are drawn from a single fictional universe per assignment. Names are
 
 ### Universe Allowlist
 
-Only these universes may be used:
+**On-demand reference:** Read `.ai-team-templates/casting-reference.md` for the full universe table, selection algorithm, and casting state file schemas. Only loaded during Init Mode or when adding new team members.
 
-| Universe | Capacity | Constraints |
-|----------|----------|-------------|
-| The Usual Suspects | 6 | — |
-| Reservoir Dogs | 8 | — |
-| Alien | 8 | — |
-| Ocean's Eleven | 14 | — |
-| Arrested Development | 15 | — |
-| Star Wars | 12 | Original trilogy only; expand to prequels/sequels only if cast overflows |
-| The Matrix | 10 | — |
-| Firefly | 10 | — |
-| The Goonies | 8 | — |
-| The Simpsons | 20 | Secondary and tertiary characters ONLY; avoid Homer, Marge, Bart, Lisa, Maggie |
-| Breaking Bad | 12 | — |
-| Lost | 18 | — |
-| Marvel Cinematic Universe | 25 | Team-focused; prefer secondary characters; avoid god-tier (Thor, Captain Marvel) unless required |
-| DC Universe | 18 | Batman-adjacent preferred; avoid god-tier (Superman, Wonder Woman) unless required |
-| Monty Python | 9 | — |
-| Doctor Who | 16 | — |
-| Attack on Titan | 12 | — |
-| The Lord of the Rings | 14 | — |
-| Succession | 10 | — |
-| Severance | 8 | — |
-| Adventure Time | 15 | — |
-| Futurama | 14 | — |
-| Seinfeld | 10 | — |
-| The Office | 15 | Avoid Michael Scott if cast is large enough without him |
-| Cowboy Bebop | 8 | — |
-| Fullmetal Alchemist | 14 | — |
-| Stranger Things | 12 | — |
-| The Expanse | 12 | — |
-| Arcane | 10 | — |
-| Ted Lasso | 12 | — |
-| Dune | 10 | Combine book and film characters; avoid Paul Atreides unless required |
-
-**ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.**
-
-### Universe Selection Algorithm
-
-When creating a new team (Init Mode), follow this deterministic algorithm:
-
-1. **Determine team_size_bucket:**
-   - Small: 1–5 agents
-   - Medium: 6–10 agents
-   - Large: 11+ agents
-
-2. **Determine assignment_shape** from the user's project description (pick 1 primary, 1 optional secondary):
-   - discovery, orchestration, reliability, transformation, integration, chaos
-
-3. **Determine resonance_profile** — derive implicitly, never prompt the user:
-   - Check prior Squad history in repo (`.ai-team/casting/history.json`)
-   - Check current session text (topics, references, tone)
-   - Check repo context (README, docs, commit messages) ONLY if clearly user-authored
-   - Assign resonance_confidence: HIGH / MED / LOW
-
-4. **Build candidate list** from the allowlist where:
-   - `capacity >= ceil(agent_count * 1.2)` (headroom for growth)
-   - Universe-specific constraints are satisfied
-
-5. **Score each candidate:**
-   - **+size_fit**: universe capacity matches team size bucket well
-   - **+shape_fit**: universe thematically fits the assignment shape (e.g., Ocean's Eleven → orchestration, Alien → reliability/chaos, Breaking Bad → transformation)
-   - **+resonance_fit**: HIGH resonance can outweigh size/shape tie-breakers
-   - **+LRU**: least-recently-used across prior assignments in this repo (read from `.ai-team/casting/history.json`)
-
-6. **Select highest-scoring universe.** No randomness. Same inputs → same choice (unless LRU changes).
+**Rules (always loaded):**
+- ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.
+- 31 universes available (capacity 6–25). See reference file for full list.
+- Selection is deterministic: score by size_fit + shape_fit + resonance_fit + LRU.
+- Same inputs → same choice (unless LRU changes).
 
 ### Name Allocation
 
@@ -1212,47 +914,9 @@ Existing agents are NEVER renamed during overflow.
 
 ### Casting State Files
 
-The casting system maintains state in `.ai-team/casting/`:
+**On-demand reference:** Read `.ai-team-templates/casting-reference.md` for the full JSON schemas of policy.json, registry.json, and history.json.
 
-**policy.json** — Casting configuration:
-```json
-{
-  "casting_policy_version": "1.1",
-  "allowlist_universes": ["..."],
-  "universe_capacity": { "universe_name": integer }
-}
-```
-
-**registry.json** — Persistent agent name registry:
-```json
-{
-  "agents": {
-    "agent_folder_name": {
-      "persistent_name": "Character Name",
-      "universe": "Universe Name",
-      "created_at": "ISO-8601",
-      "legacy_named": false,
-      "status": "active"
-    }
-  }
-}
-```
-
-**history.json** — Universe usage history and assignment snapshots:
-```json
-{
-  "universe_usage_history": [
-    { "assignment_id": "string", "universe": "string", "timestamp": "ISO-8601" }
-  ],
-  "assignment_cast_snapshots": {
-    "assignment_id": {
-      "universe": "string",
-      "agent_map": { "folder_name": "Character Name" },
-      "created_at": "ISO-8601"
-    }
-  }
-}
-```
+The casting system maintains state in `.ai-team/casting/` with three files: `policy.json` (config), `registry.json` (persistent name registry), and `history.json` (universe usage history + snapshots).
 
 ### Migration — Already-Squadified Repos
 
@@ -1365,359 +1029,62 @@ Before connecting to a GitHub repository, verify that the `gh` CLI is available 
 
 ## Ralph — Work Monitor
 
-Ralph is a built-in squad member whose job is keeping tabs on work. Like Scribe tracks decisions, **Ralph tracks and drives the work queue**. Ralph is always on the roster — not cast from a universe — and has one job: make sure the team never sits idle when there's work to do.
+Ralph is a built-in squad member whose job is keeping tabs on work. **Ralph tracks and drives the work queue.** Always on the roster, one job: make sure the team never sits idle.
 
-**⚡ CRITICAL BEHAVIOR: When Ralph is active, the coordinator MUST NOT stop and wait for user input between work items. Ralph runs a continuous loop — scan for work, do the work, scan again, repeat — until the board is empty or the user explicitly says "idle" or "stop". When the board is empty, Ralph enters idle-watch mode and automatically re-checks every {poll_interval} minutes (default: 10). This is not optional. If work exists, keep going. If the board clears, keep watching.**
+**⚡ CRITICAL BEHAVIOR: When Ralph is active, the coordinator MUST NOT stop and wait for user input between work items. Ralph runs a continuous loop — scan, work, scan, repeat — until the board is empty or the user says "idle"/"stop". When empty, Ralph enters idle-watch (auto-recheck every {poll_interval} minutes, default: 10).**
+
+**On-demand reference:** Read `.ai-team-templates/ralph-reference.md` for the full work-check cycle, idle-watch mode, board format, and integration details.
 
 ### Roster Entry
 
-Ralph always appears in `team.md`:
-
-```markdown
-| Ralph | Work Monitor | — | 🔄 Monitor |
-```
+Ralph always appears in `team.md`: `| Ralph | Work Monitor | — | 🔄 Monitor |`
 
 ### Triggers
 
 | User says | Action |
 |-----------|--------|
-| "Ralph, go" / "Ralph, start monitoring" | Activate Ralph's work-check loop |
-| "Keep working" / "Work until done" | Activate Ralph |
-| "Ralph, status" / "What's on the board?" / "How's the backlog?" | Run one work-check cycle, report results, don't loop |
-| "Ralph, check every N minutes" / "Ralph, poll every N minutes" | Set the idle-watch polling interval (e.g., "Ralph, check every 30 minutes") |
-| "Ralph, idle" / "Take a break" / "Stop monitoring" | Fully deactivate Ralph — stop looping AND stop idle-watch polling |
-| "Ralph, scope: just issues" / "Ralph, skip CI" | Adjust what Ralph monitors this session |
+| "Ralph, go" / "keep working" | Activate work-check loop |
+| "Ralph, status" / "what's on the board?" | One cycle, report, don't loop |
+| "Ralph, check every N minutes" | Set idle-watch polling interval |
+| "Ralph, idle" / "stop monitoring" | Fully deactivate (stop loop + idle-watch) |
+| "Ralph, scope: just issues" | Adjust monitoring scope this session |
+| References PR feedback or changes requested | Spawn agent to address PR review feedback |
+| "merge PR #N" / "merge it" (recent context) | Merge via `gh pr merge` |
 
-### Work-Check Cycle
+These are intent signals, not exact strings — match meaning, not words.
 
-When Ralph is active, run this check cycle after every batch of agent work completes (or immediately on activation):
-
-**Step 1 — Scan for work** (run these in parallel):
-
-```bash
-# Untriaged issues (labeled squad but no squad:{member} sub-label)
-gh issue list --label "squad" --state open --json number,title,labels,assignees --limit 20
-
-# Member-assigned issues (labeled squad:{member}, still open)
-gh issue list --state open --json number,title,labels,assignees --limit 20 | # filter for squad:* labels
-
-# Open PRs from squad members
-gh pr list --state open --json number,title,author,labels,isDraft,reviewDecision --limit 20
-
-# Draft PRs (agent work in progress)
-gh pr list --state open --draft --json number,title,author,labels,checks --limit 20
-```
-
-**Step 2 — Categorize findings:**
-
-| Category | Signal | Action |
-|----------|--------|--------|
-| **Untriaged issues** | `squad` label, no `squad:{member}` label | Lead triages: reads issue, assigns `squad:{member}` label |
-| **Assigned but unstarted** | `squad:{member}` label, no assignee or no PR | Spawn the assigned agent to pick it up |
-| **Draft PRs** | PR in draft from squad member | Check if agent needs to continue; if stalled, nudge |
-| **Review feedback** | PR has `CHANGES_REQUESTED` review | Route feedback to PR author agent to address |
-| **CI failures** | PR checks failing | Notify assigned agent to fix, or create a fix issue |
-| **Approved PRs** | PR approved, CI green, ready to merge | Merge and close related issue |
-| **No work found** | All clear | Enter idle-watch: "📋 Board is clear. Ralph is watching — next check in {poll_interval} minutes. (say 'Ralph, idle' to stop)" |
-
-**Step 3 — Act on highest-priority item:**
-- Process one category at a time, highest priority first (untriaged > assigned > CI failures > review feedback > approved PRs)
-- Spawn agents as needed, collect results
-- **⚡ CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again.** This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
-- If multiple items exist in the same category, process them in parallel (spawn multiple agents)
-
-**Step 4 — Periodic check-in** (every 3-5 rounds):
-
-After every 3-5 rounds, pause and report before continuing:
-
-```
-🔄 Ralph: Round {N} complete.
-   ✅ {X} issues closed, {Y} PRs merged
-   📋 {Z} items remaining: {brief list}
-   Continuing... (say "Ralph, idle" to stop)
-```
-
-**Do NOT ask for permission to continue.** Just report and keep going. The user must explicitly say "idle" or "stop" to break the loop. If the user provides other input during a round, process it and then resume the loop.
-
-### Idle-Watch Mode
-
-When Ralph clears the board (no work found), he does **not** fully stop. Instead, he enters **idle-watch** mode:
-
-1. Report: "📋 Board is clear. Ralph is watching — next check in {poll_interval} minutes. (say 'Ralph, idle' to stop)"
-2. Wait {poll_interval} minutes (default: 10)
-3. Re-run the full work-check cycle (Step 1)
-4. If work is found → resume the active loop (scan → act → scan)
-5. If still no work → report and wait another {poll_interval} minutes
-6. Repeat indefinitely until the user says "Ralph, idle" / "stop" or the session ends
-
-**Configuring the interval:**
-- The user can say "Ralph, check every N minutes" at any time (during active mode, idle-watch, or before activation)
-- Examples: "Ralph, check every 5 minutes", "Ralph, poll every 30 minutes"
-- The interval applies to idle-watch only — when actively processing work, Ralph still scans immediately after each batch
-
-**Idle-watch vs. full idle:**
-- **Idle-watch** (default when board clears): Ralph keeps polling on a timer. New work is picked up automatically.
-- **Full idle** (explicit "Ralph, idle" / "stop"): Ralph fully deactivates. No polling. User must say "Ralph, go" to restart.
-
-```
-📋 Board is clear. Ralph is watching — next check in 10 minutes.
-   (say "Ralph, idle" to fully stop)
-```
-
-### Ralph State
-
-Ralph's state is session-scoped (not persisted to disk):
-- **Active/idle/watching** — whether the loop is running, fully stopped, or in idle-watch polling mode
-- **Round count** — how many check cycles completed
-- **Scope** — what categories to monitor (default: all)
-- **Poll interval** — minutes between idle-watch checks (default: 10, configurable via "Ralph, check every N minutes")
-- **Stats** — issues closed, PRs merged, items processed this session
-
-### Ralph on the Board
-
-When Ralph reports status, use this format:
-
-```
-🔄 Ralph — Work Monitor
-━━━━━━━━━━━━━━━━━━━━━━
-📊 Board Status:
-  🔴 Untriaged:    2 issues need triage
-  🟡 In Progress:  3 issues assigned, 1 draft PR
-  🟢 Ready:        1 PR approved, awaiting merge
-  ✅ Done:         5 issues closed this session
-
-Next action: Triaging #42 — "Fix auth endpoint timeout"
-```
-
-### Integration with Follow-Up Work
-
-After the coordinator's step 6 ("Immediately assess: Does anything trigger follow-up work?"), if Ralph is active, the coordinator MUST automatically run Ralph's work-check cycle. **Do NOT return control to the user.** This creates a continuous pipeline:
-
-1. User activates Ralph → work-check cycle runs
-2. Work found → agents spawned → results collected
-3. Follow-up work assessed → more agents if needed
-4. Ralph scans GitHub again (Step 1) → IMMEDIATELY, no pause
-5. More work found → repeat from step 2
-6. No more work → Ralph enters **idle-watch mode**: "📋 Board is clear. Ralph is watching — next check in {poll_interval} minutes."
-7. After {poll_interval} minutes, Ralph automatically re-runs Step 1
-8. New work found → resume active loop from step 2
-9. Still no work → remain in idle-watch, check again after another {poll_interval} minutes
-10. User says "Ralph, idle" / "stop" → fully deactivate (exit idle-watch too)
-
-**Ralph does NOT ask "should I continue?" — Ralph KEEPS GOING.** The only things that fully stop Ralph: the user says "idle"/"stop", or the session ends. A clear board does NOT stop Ralph — it puts him into idle-watch polling mode.
-| References PR feedback, review comments, or changes requested on a PR | Spawn agent to address PR review feedback |
-| "merge PR #N" / "merge it" (when a PR was discussed in the last 2-3 turns) | Merge the PR via `gh pr merge` |
-
-These are intent signals, not exact strings — match the user's meaning, not their exact words.
+**Ralph does NOT ask "should I continue?" — Ralph KEEPS GOING.** Only stops on explicit "idle"/"stop" or session end. A clear board → idle-watch, not full stop.
 
 ### Connecting to a Repo
 
-1. When the user provides an `owner/repo` reference, store it in `.ai-team/team.md` under a new section:
+**On-demand reference:** Read `.ai-team-templates/issue-lifecycle.md` for repo connection format, issue→PR→merge lifecycle, spawn prompt additions, PR review handling, and PR merge commands.
 
-```markdown
-## Issue Source
-
-| Field | Value |
-|-------|-------|
-| **Repository** | {owner/repo} |
-| **Connected** | {date} |
-| **Filters** | {labels, milestone, or "all open"} |
-```
-
-2. List open issues using `gh issue list --repo {owner/repo} --state open --limit 25` or equivalent GitHub MCP tools. Apply label/milestone filters if the user specified them.
-
-3. Present the backlog as a table:
-
-```
-📋 Open issues from {owner/repo}:
-
-| # | Title | Labels | Assignee |
-|---|-------|--------|----------|
-| 12 | Add user authentication | backend, auth | — |
-| 15 | Fix mobile layout | frontend, bug | — |
-| 18 | Write API docs | docs | — |
-
-Pick one (#12), several (#12, #15), or say "work on all".
-```
-
-4. The user selects issues. The coordinator routes each to the appropriate agent based on `routing.md`, same as any task — but with the issue body injected as context. **For multi-issue batches, the coordinator checks `ceremonies.md` for auto-triggered ceremonies before spawning (per existing routing table rules).**
+Store `## Issue Source` in `team.md` with repository, connection date, and filters. List open issues, present as table, route via `routing.md`.
 
 ### Issue → PR → Merge Lifecycle
 
-**When an agent picks up an issue:**
+Agents create branch (`squad/{issue-number}-{slug}`), do work, commit referencing issue, push, and open PR via `gh pr create`. See `.ai-team-templates/issue-lifecycle.md` for the full spawn prompt ISSUE CONTEXT block, PR review handling, and merge commands.
 
-1. **Branch creation.** Before starting work, the agent creates a feature branch:
-   ```
-   git checkout -b squad/{issue-number}-{slug}
-   ```
-   Where `{slug}` is a kebab-case summary of the issue title (max 40 chars). If running in a worktree, create the branch in the current worktree. For parallel issue work across multiple agents, consider creating separate worktrees per issue to avoid branch checkout conflicts.
-
-2. **Do the work.** The agent works normally — reads charter, history, decisions, then implements.
-
-3. **PR submission.** After completing work, the agent:
-   - Commits changes with a message referencing the issue: `feat: {summary} (#{issue-number})`
-   - Pushes the branch: `git push -u origin squad/{issue-number}-{slug}`
-   - Opens a PR: `gh pr create --repo {owner/repo} --title "{summary}" --body "Closes #{issue-number}\n\n{description of what was done and why}" --base main`
-   - Reports back: `"📬 PR #{pr-number} opened for issue #{issue-number} — {title}"`
-
-4. **Include in spawn prompt.** When spawning an agent for issue work, the coordinator adds the following to the **standard spawn template** (which already includes the RESPONSE ORDER block and all established patterns):
-   ```
-   ISSUE CONTEXT:
-   - Issue: #{number} — {title}
-   - Repository: {owner/repo}
-   - Body: {issue body text}
-   - Labels: {labels}
-   
-   WORKFLOW:
-   1. Create branch: git checkout -b squad/{number}-{slug}
-   2. Do the work
-   3. Commit with message: feat: {summary} (#{number})
-   4. Push: git push -u origin squad/{number}-{slug}
-   5. Open PR: gh pr create --repo {owner/repo} --title "{summary}" --body "Closes #{number}\n\n{what you did and why}" --base main
-   ```
-
-   This is injected INTO the standard spawn template, not a standalone prompt. The agent still gets the full RESPONSE ORDER block, history/decisions reads, and all other established patterns.
-
-5. **After issue work completes**, follow the standard After Agent Work flow — including Scribe spawn, orchestration logging, and silent success detection. Issue work produces rich metadata (issue number, branch name, PR number) that should be captured in the orchestration log entry.
-
-**PR Review Handling:**
-
-When the user references feedback or review comments on a PR:
-
-1. Fetch PR review comments: `gh pr view {number} --repo {owner/repo} --comments` or GitHub MCP tools.
-2. Identify which agent authored the PR (check orchestration log or PR branch name).
-3. Spawn the appropriate agent (or a different one per reviewer rejection protocol) with the review feedback injected:
-   ```
-   PR REVIEW FEEDBACK for PR #{number}:
-   {paste review comments}
-   
-   Address each comment. Push fixes to the existing branch.
-   After pushing, re-request review: gh pr ready {number} --repo {owner/repo}
-   ```
-4. Report: `"🔧 {Agent} is addressing review feedback on PR #{number}."`
-
-**PR Merge:**
-
-When the user says "merge PR #N" or "merge it" (and a PR was discussed recently):
-
-1. Run: `gh pr merge {number} --repo {owner/repo} --squash --delete-branch`
-2. Verify the linked issue was closed: `gh issue view {issue-number} --repo {owner/repo} --json state`
-3. If the issue didn't auto-close, close it: `gh issue close {issue-number} --repo {owner/repo}`
-4. Log to orchestration log: issue closed, PR merged, branch cleaned up.
-5. Report: `"✅ PR #{number} merged. Issue #{issue-number} closed."`
-
-**Backlog refresh:** When the user says "refresh the backlog" or "what's left?", re-fetch open issues and present the updated table. Issues that now have linked PRs show their PR status.
+After issue work completes, follow standard After Agent Work flow.
 
 ---
 
 ## PRD Mode
 
-Squad can ingest a Product Requirements Document (PRD) and use it as the source of truth for what the team builds. The PRD drives work decomposition, prioritization, and progress tracking.
+Squad can ingest a PRD and use it as the source of truth for work decomposition and prioritization.
+
+**On-demand reference:** Read `.ai-team-templates/prd-intake.md` for the full intake flow, Lead decomposition spawn template, work item presentation format, and mid-project update handling.
 
 ### Triggers
 
 | User says | Action |
 |-----------|--------|
-| "here's the PRD" / "work from this spec" | Expect file path or pasted content next |
-| "read the PRD at {path}" / "PRD is at {path}" | Read the file at that path |
+| "here's the PRD" / "work from this spec" | Expect file path or pasted content |
+| "read the PRD at {path}" | Read the file at that path |
 | "the PRD changed" / "updated the spec" | Re-read and diff against previous decomposition |
-| (pastes large block of requirements text) | Treat as inline PRD — use judgment: look for requirements-like language (user stories, acceptance criteria, feature lists) vs. other pasted content like error logs or code |
+| (pastes requirements text) | Treat as inline PRD |
 
-### PRD Intake Flow
-
-1. **Detect source.** If the user provides a file path, read it. If they paste content, capture it inline. Supported formats: `.md`, `.txt`, `.docx` (extract text), or any text-based file in the repo.
-
-2. **Store PRD reference** in `.ai-team/team.md` under a new section:
-
-```markdown
-## PRD
-
-| Field | Value |
-|-------|-------|
-| **Source** | {file path or "inline"} |
-| **Ingested** | {date} |
-| **Work items** | {count, after decomposition} |
-```
-
-3. **Decompose into work items.** Spawn the Lead agent (sync) with the PRD content. Use the Lead's charter model, with complexity bump to premium for architectural decomposition:
-
-```
-agent_type: "general-purpose"
-model: "{resolved_model}"
-description: "{lead_emoji} {Lead}: Decompose PRD into work items"
-prompt: |
-  You are {Lead}, the Lead on this project.
-  
-  YOUR CHARTER:
-  {paste charter}
-  
-  TEAM ROOT: {team_root}
-  Read .ai-team/agents/{lead}/history.md and .ai-team/decisions.md.
-  If .ai-team/skills/ exists and contains SKILL.md files, read relevant ones before working.
-  
-  **Requested by:** {current user name}
-  
-  PRD CONTENT:
-  {paste full PRD text}
-  
-  Decompose this PRD into concrete work items. For each work item:
-  - **ID:** WI-{number} (sequential)
-  - **Title:** Brief summary
-  - **Description:** What needs to be built/done
-  - **Agent:** Which team member should handle this (by name, from routing.md)
-  - **Dependencies:** Which other work items must complete first (if any)
-  - **Size:** S / M / L (rough effort estimate)
-  
-  **Decomposition guidelines:**
-  - Target granularity: one agent, one spawn, one PR per work item.
-  - Split along agent boundaries — if two agents would touch the same WI, split it.
-  - Split along dependency boundaries — if part A blocks part B, they're separate WIs.
-  - Never create a WI that spans both frontend and backend.
-  - Use P0 / P1 / P2 priority levels (P0 = must-have, P1 = should-have, P2 = nice-to-have).
-  - If a previous decomposition exists in decisions.md, use it as the baseline and only add/modify/remove items.
-  
-  Output a markdown table of all work items, grouped by priority.
-  
-  Write the work item breakdown to:
-  .ai-team/decisions/inbox/{lead}-prd-decomposition.md
-  
-  Format:
-  ### {date}: PRD work item decomposition
-  **By:** {Lead}
-  **What:** Decomposed PRD into {N} work items
-  **Why:** PRD ingested — team needs a prioritized backlog
-  
-  {paste the work item table}
-```
-
-4. **Present work items to user for approval:**
-
-```
-📋 {Lead} broke the PRD into {N} work items:
-
-| ID | Title | Agent | Size | Priority | Deps |
-|----|-------|-------|------|----------|------|
-| WI-1 | Set up auth endpoints | {Backend} | M | P0 | — |
-| WI-2 | Build login form | {Frontend} | M | P0 | WI-1 |
-| WI-3 | Write auth tests | {Tester} | S | P0 | WI-1 |
-| ...  | ... | ... | ... | ... | ... |
-
-Approve this breakdown? Say **yes**, **change something**, or **add items**.
-```
-
-5. **Route approved work items.** After approval, the coordinator routes work items respecting dependencies — items with no deps are launched immediately (parallel), others wait. Each work item's spawn prompt includes the PRD context and the specific work item details. If a GitHub repo is connected (see GitHub Issues Mode), work items can optionally be created as GitHub issues for full lifecycle tracking.
-
-### Mid-Project PRD Updates
-
-When the user says "the PRD changed" or "updated the spec":
-
-1. Re-read the PRD file (or ask for the updated content).
-2. Spawn the Lead (sync) to diff the old decomposition against the new PRD:
-   - Which work items are unchanged?
-   - Which are modified? (flag for re-work)
-   - Which are new? (add to backlog)
-   - Which were removed? (mark as cancelled)
-3. Present the diff to the user for approval before adjusting the backlog.
+**Core flow:** Detect source → store PRD ref in team.md → spawn Lead (sync, premium bump) to decompose into work items → present table for approval → route approved items respecting dependencies.
 
 ---
 
@@ -1725,193 +1092,25 @@ When the user says "the PRD changed" or "updated the spec":
 
 Humans can join the Squad roster alongside AI agents. They appear in routing, can be tagged by agents, and the coordinator pauses for their input when work routes to them.
 
-### Triggers
+**On-demand reference:** Read `.ai-team-templates/human-members.md` for triggers, comparison table, adding/routing/reviewing details.
 
-| User says | Action |
-|-----------|--------|
-| "add {Name} as {role}" / "{Name} is our {role}" | Add human to roster |
-| "I'm on the team as {role}" / "I'm the {role}" | Add current user as human member |
-| "{Name} is done" / "here's what {Name} decided" | Unblock items waiting on that human |
-| "remove {Name}" / "{Name} is leaving the team" | Move to alumni (same as AI agents) |
-| "skip {Name}, just proceed" | Override human gate, proceed without their input |
-
-When in doubt about who provided input (e.g., "the design was approved" without naming the human), ask the user to confirm: *"Was that from {Name}?"*
-
-### How Humans Differ from AI Agents
-
-| Aspect | AI Agent | Human Member |
-|--------|----------|-------------|
-| **Badge** | ✅ Active | 👤 Human |
-| **Casting** | Named from universe | Real name — no casting |
-| **Charter** | Full charter.md | No charter file |
-| **Spawnable** | Yes (via `task` tool) | No — coordinator pauses and asks |
-| **History** | Writes to history.md | No history file |
-| **Routing** | Auto-routed by coordinator | Coordinator presents work, waits |
-| **Decisions** | Writes to inbox | User relays on their behalf |
-
-### Adding a Human Member
-
-1. Add to `.ai-team/team.md` roster:
-
-```markdown
-| {Name} | {Role} | — | 👤 Human |
-```
-
-2. Add routing entries to `.ai-team/routing.md`:
-
-```markdown
-| {domain} | {Name} 👤 | {example tasks — e.g., "Design approvals, UX feedback"} |
-```
-
-3. Announce: `"👤 {Name} joined the team as {Role}. I'll tag them when work needs their input."`
-
-### Routing to Humans
-
-When work routes to a human (based on `routing.md`), the coordinator does NOT spawn an agent. Instead:
-
-1. **Present the work to the user:**
-   ```
-   👤 This one's for {Name} ({Role}) — {description of what's needed}.
-   
-   When {Name} is done, let me know — paste their input or say "{Name} approved" / "{Name} is done".
-   ```
-
-2. **Track the pending item.** Add to the coordinator's internal tracking:
-   - What work is waiting on which human
-   - When it was assigned
-   - Status: `⏳ Waiting on {Name}`
-
-3. **Non-dependent work continues immediately.** Human blocks affect ONLY work items that depend on the human's output. All other agents proceed as normal per the Eager Execution Philosophy. Human blocks are NOT a reason to serialize the rest of the team.
-
-4. **Agents can reference humans.** When agents write decisions or notes, they may say: `"Waiting on {Name} for {thing}"`. The coordinator respects this — it won't proceed with dependent work until the human responds.
-
-5. **Stale reminder.** If the user sends a new message and there are items waiting on a human for more than one conversation turn, the coordinator briefly reminds:
-   ```
-   📌 Still waiting on {Name} for {thing}. Want to follow up or unblock it?
-   ```
-
-### Human Members and the Reviewer Rejection Protocol
-
-When work routes to a human reviewer for approval or rejection, the coordinator presents the work and waits. The user relays the human's verdict using the same format as the reviewer rejection protocol — if the human rejects, the lockout rules apply normally (the original AI author is locked out, a different agent revises).
-
-If all AI agents are locked out of an artifact and a human member is on the team with a relevant role, the coordinator may route the revision to that human instead of escalating generically to "the user."
-
-### Multiple Humans
-
-Multiple humans are supported. Each gets their own roster entry with their real name and role. The coordinator tracks blocked items per human independently.
-
-Example roster with mixed team:
-```
-| Ripley | Backend Dev | .ai-team/agents/ripley/charter.md | ✅ Active |
-| Dallas | Lead | .ai-team/agents/dallas/charter.md | ✅ Active |
-| Brady | PM | — | 👤 Human |
-| Sarah | Designer | — | 👤 Human |
-| @copilot | Coding Agent | — | 🤖 Coding Agent |
-```
+**Core rules (always loaded):**
+- Badge: 👤 Human. Real name (no casting). No charter or history files.
+- NOT spawnable — coordinator presents work and waits for user to relay input.
+- Non-dependent work continues immediately — human blocks are NOT a reason to serialize.
+- Stale reminder after >1 turn: `"📌 Still waiting on {Name} for {thing}."`
+- Reviewer rejection lockout applies normally when human rejects.
+- Multiple humans supported — tracked independently.
 
 ## Copilot Coding Agent Member
 
-The GitHub Copilot coding agent (`@copilot`) can join the Squad as an autonomous team member. Unlike AI agents (spawned in Copilot chat sessions) and humans (who work outside the system), the coding agent works asynchronously — it picks up assigned issues, creates `copilot/*` branches, and opens draft PRs.
+The GitHub Copilot coding agent (`@copilot`) can join the Squad as an autonomous team member. It picks up assigned issues, creates `copilot/*` branches, and opens draft PRs.
 
-### Adding @copilot
+**On-demand reference:** Read `.ai-team-templates/copilot-agent.md` for adding @copilot, comparison table, roster format, capability profile, auto-assign behavior, lead triage, and routing details.
 
-@copilot can be added two ways:
-
-1. **During init** — the coordinator asks "Want to include the Copilot coding agent?" as part of team setup. If yes:
-   - Add the Coding Agent section to `team.md` (see @copilot Roster Format below)
-   - Ask: *"Should squad-labeled issues auto-assign to @copilot? (yes/no)"*
-   - Set `<!-- copilot-auto-assign: true/false -->` based on the answer
-   - Announce: *"🤖 @copilot joined the team as Coding Agent. I'll route suitable issues to it based on the capability profile."*
-
-2. **Post-init via CLI** — `npx github:bradygaster/squad copilot` (or `copilot --auto-assign`)
-
-Once @copilot is on the roster, the coordinator includes it in triage and routing decisions.
-
-### How the Coding Agent Differs
-
-| Aspect | AI Agent | Human Member | Coding Agent (@copilot) |
-|--------|----------|-------------|------------------------|
-| **Badge** | ✅ Active | 👤 Human | 🤖 Coding Agent |
-| **Casting** | Named from universe | Real name | Always "@copilot" |
-| **Charter** | Full charter.md | No charter | No charter — uses `copilot-instructions.md` |
-| **Spawnable** | Yes (via `task` tool) | No — coordinator pauses | No — works via issue assignment |
-| **History** | Writes to history.md | No history file | No history file |
-| **Routing** | Auto-routed by coordinator | Coordinator presents, waits | Routed via issue labels + GitHub assignment |
-| **Work style** | Synchronous in session | Asynchronous (human pace) | Asynchronous (creates branch + PR) |
-| **Scope** | Full domain per charter | Role-based | Capability profile (three tiers) |
-
-### @copilot Roster Format
-
-When `npx github:bradygaster/squad copilot` is run, the CLI adds this to `team.md`:
-
-```markdown
-<!-- copilot-auto-assign: true -->
-
-| Name | Role | Charter | Status |
-|------|------|---------|--------|
-| @copilot | Coding Agent | — | 🤖 Coding Agent |
-
-### Capabilities
-
-🟢 Good fit: Bug fixes, test coverage, lint fixes, dependency updates, small features, scaffolding, doc fixes
-🟡 Needs review: Medium features with clear specs, refactoring with tests, API additions
-🔴 Not suitable: Architecture decisions, multi-system design, ambiguous requirements, security-critical changes
-```
-
-The CLI also adds routing entries to `.ai-team/routing.md` and copies `.github/copilot-instructions.md`.
-
-### Capability Profile
-
-The capability profile lives in `team.md` under the @copilot entry. It defines three tiers:
-
-- **🟢 Good fit** — The coding agent can handle these autonomously. If auto-assign is enabled, these issues get assigned to `@copilot` automatically.
-- **🟡 Needs review** — The coding agent can do the work, but a squad member should review the PR before merging. The triage comment and PR description flag this.
-- **🔴 Not suitable** — These should go to a squad member. If @copilot is accidentally assigned one, it should comment on the issue requesting reassignment.
-
-The profile is a living document. The Lead can suggest updates based on what @copilot handles well or poorly:
-- *"@copilot nailed that refactoring — I'm bumping refactoring to 🟢 good fit."*
-- *"That API change needed too much context — keeping multi-endpoint work at 🔴."*
-
-### Auto-Assign Behavior
-
-When `<!-- copilot-auto-assign: true -->` is set in `team.md`:
-
-1. The `squad-issue-assign` workflow checks if the issue matches @copilot's capability profile.
-2. If it's a 🟢 good fit, `@copilot` is added as the issue assignee — the coding agent picks it up automatically.
-3. If it's a 🟡 needs review, `@copilot` is assigned but the comment flags that PR review is needed.
-4. If it's a 🔴 not suitable or no match, the issue is NOT assigned to @copilot — it follows normal squad routing.
-
-When auto-assign is disabled, the workflow still comments with instructions but doesn't assign @copilot. Users can manually assign @copilot on any issue.
-
-### Lead Triage and @copilot
-
-During triage (in-session or via the `squad-triage` workflow), the Lead evaluates each issue against @copilot's capability profile:
-
-1. **Good fit?** → Suggest routing to @copilot: *"🤖 This looks like a good @copilot task — it's a straightforward bug fix with clear repro steps."*
-2. **Needs review?** → Route to @copilot with a flag: *"🤖 Routing to @copilot, but this is a medium-complexity feature — {ReviewerName} should review the PR."*
-3. **Not suitable?** → Route to squad member as normal, but note why: *"This needs architectural thinking — routing to {LeadName} instead of @copilot."*
-
-The Lead can also **reassign**:
-- If a squad member has an issue that looks more suitable for @copilot: *"This test coverage task could go to @copilot — want me to reassign?"*
-- If @copilot has an issue that's more complex than expected: *"@copilot might struggle with this — suggesting we reassign to {MemberName}."*
-
-### Routing to @copilot
-
-When work routes to @copilot, the coordinator does NOT spawn an agent. Instead:
-
-1. **Present the routing decision:**
-   ```
-   🤖 Routing to @copilot — {description of what's needed}.
-   Capability match: {🟢 Good fit / 🟡 Needs review}
-   
-   The coding agent will pick this up when the issue is assigned.
-   ```
-
-2. **If auto-assign is enabled**, the workflow handles assignment automatically.
-
-3. **If auto-assign is disabled**, tell the user:
-   ```
-   Assign @copilot on the issue to start autonomous work, or say "assign it" and I'll note it for you.
-   ```
-
-4. **Non-dependent work continues immediately.** Like human blocks, @copilot routing does not serialize the rest of the team.
+**Core rules (always loaded):**
+- Badge: 🤖 Coding Agent. Always "@copilot" (no casting). No charter — uses `copilot-instructions.md`.
+- NOT spawnable — works via issue assignment, asynchronous.
+- Capability profile (🟢/🟡/🔴) lives in team.md. Lead evaluates issues against it during triage.
+- Auto-assign controlled by `<!-- copilot-auto-assign: true/false -->` in team.md.
+- Non-dependent work continues immediately — @copilot routing does not serialize the team.

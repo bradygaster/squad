@@ -364,13 +364,31 @@ This overwrites `squad.agent.md`, `.ai-team-templates/`, and squad workflow file
 
 ### Insider Program
 
-Want the absolute latest features? Install from the **insider branch** for continuous development builds:
+Want the absolute latest features before they ship? Join the **Insider Program** to run pre-release builds from the `dev` branch.
+
+**Install the insider build:**
 
 ```bash
 npx github:bradygaster/squad#insider
 ```
 
-Insiders get new features as they ship, but they may have rough edges. See [Insider Program](docs/insider-program.md) for details — or [CONTRIBUTORS.md](CONTRIBUTORS.md) to learn how to report bugs.
+**Upgrade an existing squadified repo to insiders:**
+
+```bash
+npx github:bradygaster/squad#insider upgrade
+```
+
+The upgrade command updates Squad-owned files (`squad.agent.md`, workflows, templates) to the latest insider build. Your team state — `.ai-team/` including `team.md`, agents, decisions, and casting configuration — is always preserved.
+
+**What to expect:** Insider builds may be unstable. They're intended for early adopters, testing, and feedback. New features ship as you code; breaking changes are rare but possible.
+
+**Releases:** The insider release workflow creates GitHub Releases with pre-release tags (e.g., `v0.4.2-insider+abc1234`). To pin a specific tagged version:
+
+```bash
+npx github:bradygaster/squad#v0.4.2-insider+<sha>
+```
+
+**Learn more:** See the [insider branch](https://github.com/bradygaster/squad/tree/insider) for the latest code. Report bugs in [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ---
 
@@ -382,6 +400,22 @@ Insiders get new features as they ship, but they may have rough edges. See [Insi
 - **`gh` CLI required** — GitHub Issues, PRs, Ralph, and Project Boards all need `gh auth login`. Project Boards additionally require `gh auth refresh -s project`
 - **Knowledge grows with use** — the first session is the least capable; agents improve as they accumulate history
 - **SSH agent required for install** — `npx github:bradygaster/squad` resolves via `git+ssh://`. If no SSH agent is running, npm's progress spinner hides git's passphrase prompt, making install appear frozen. Fix: start your SSH agent first (`ssh-add`), or use `npx --progress=false github:bradygaster/squad`. See [#30](https://github.com/bradygaster/squad/issues/30)
+
+---
+
+## Known Issues
+
+These are known platform-level issues affecting the Squad experience. They're not Squad bugs — they originate in the Copilot CLI runtime — but Squad includes mitigations.
+
+| Issue | Symptom | Status |
+|-------|---------|--------|
+| **`--no-warnings` error** | `error: unknown option '--no-warnings'` appears during agent sessions | Platform bug — the Copilot CLI passes `--no-warnings` to a subprocess that doesn't recognize it. Cosmetic only; does not affect functionality. |
+| **Server error retry loop** | `"response was interrupted due to a server error. retrying"` followed by `"failed to get response from the AI model"` | Context overflow during multi-agent fan-out. Squad v0.5.0 reduces governance prompt size by ~35% and adds compact result presentation to mitigate. |
+| **Silent success** (~7-10% of spawns) | Agent completes all file writes but returns no text response | Platform bug — agent's final turn is a tool call, not text. Squad detects this via filesystem checks and reports `"⚠️ completed (files verified) but response lost."` |
+
+**Workarounds:**
+- If you hit the server error loop, start a new session. The work likely completed — check `.ai-team/` for recent changes.
+- The `--no-warnings` error is cosmetic and can be safely ignored.
 
 ---
 
