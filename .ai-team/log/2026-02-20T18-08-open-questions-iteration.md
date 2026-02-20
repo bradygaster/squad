@@ -30,3 +30,9 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q4: Versioning → Pin to commit SHA at import. Explicit upgrade flow. (Team decision, Brady deferred)
 - Q5 presented (import conflict handling) — awaiting Brady's answer
 - 21 questions remain unresolved
+
+### Update — Q5 resolved, Agent Repo Backend complete
+- Q5: Import conflict → DISALLOWED. Block + require rename. Never overwrite.
+- All 5 Agent Repository Backend questions now resolved
+- Q6 presented (SDK npm availability) — awaiting Brady's answer
+- 20 questions remain unresolved

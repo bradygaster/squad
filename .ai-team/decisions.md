@@ -1269,3 +1269,12 @@ The registry format is identical — any repo with a \places.json\ and \gents/\
 **By:** Brady (via Copilot)
 **What:** Places supports both granularities: export/import a single agent OR a full squad (team). Both are first-class from day one.
 **Why:** User request — resolves open question #3 (Agent Repository Backend)
+
+
+---
+
+### 2026-02-20T10-16: User directive — import conflict handling
+**By:** Brady (via Copilot)
+**What:** Name collisions on import are DISALLOWED. If an incoming agent has the same name as a local agent, the import must be blocked. Best case: the incoming agent is renamed on the way in. Never silently overwrite, never auto-namespace, never allow ambiguity.
+**Why:** User request — explicit safety rule for agent repository imports
+
