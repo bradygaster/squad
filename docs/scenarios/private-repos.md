@@ -30,7 +30,7 @@ When you run:
 copilot
 ```
 
-And select **Squad** from the `/agents` list, Squad runs **on your machine** using Copilot's infrastructure.
+And select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code), Squad runs **on your machine** using Copilot's infrastructure.
 
 **What this means:**
 - Your code stays local

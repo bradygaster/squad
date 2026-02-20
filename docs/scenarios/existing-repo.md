@@ -42,7 +42,7 @@ Squad is ready.
 
 Next steps:
   1. Open Copilot:  copilot
-  2. Select Squad from the /agents list
+  2. Select Squad from the /agent list (CLI) or /agents (VS Code)
   3. Tell it what you're building
 ```
 
@@ -56,7 +56,7 @@ If you already have a `.gitattributes` file, Squad appends `merge=union` rules f
 copilot
 ```
 
-Select **Squad** from the `/agents` list. When Squad asks what you're building, describe the project as it exists today:
+Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). When Squad asks what you're building, describe the project as it exists today:
 
 ```
 > This is a SaaS invoicing app. React frontend, Node.js/Express API,

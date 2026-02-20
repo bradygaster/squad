@@ -41,7 +41,7 @@ Squad is ready.
 
 Next steps:
   1. Open Copilot:  copilot
-  2. Select Squad from the /agents list
+  2. Select Squad from the /agent list (CLI) or /agents (VS Code)
   3. Tell it what you're building
 ```
 
@@ -53,7 +53,7 @@ Next steps:
 copilot
 ```
 
-Select **Squad** from the `/agents` list. Squad greets you:
+Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). Squad greets you:
 
 ```
 Hey Jordan, what are you building?
