@@ -21,7 +21,7 @@
 - [x] ~~**Agent Repository — version pinning:** When pulling agents from a GitHub repo, should we pin to a commit SHA, tag, or branch? What happens when the remote agent updates?~~ → RESOLVED: Duplicate of Q4. Pin to commit SHA. Explicit upgrade. (2026-02-20)
 - [x] ~~**Agent Repository — conflict resolution:** If the same agent name exists in two sources, which takes priority? Config order? Explicit override?~~ → RESOLVED: Config order — first-listed source wins, last in loses. No prompts, no ambiguity. (Brady, 2026-02-20)
 - [x] ~~**Agent Repository — history for remote agents:** Local agents have `.squad/agents/{name}/history.md`. Remote agents don't have writable history paths. Do we create local history shadows for remote agents?~~ → RESOLVED: Yes — create local history shadows. Remote agents accumulate project-specific knowledge just like local ones. (Brady, 2026-02-20)
-- [ ] **Agent Repository — offline mode:** If a remote source is unreachable at startup, do we use cached versions? Fail? Degrade gracefully?
+- [x] ~~**Agent Repository — offline mode:** If a remote source is unreachable at startup, do we use cached versions? Fail? Degrade gracefully?~~ → RESOLVED: If cached, use cached + warn. If no cache, fail gracefully with a friendly error message. Never hard-fail, never silent. (Brady, 2026-02-20)
 - [ ] **Agent Repository — security model:** Remote agents inject prompts into our runtime. What validation/sandboxing is needed? Should remote agents run with restricted tool access by default?
 - [ ] **SkillSource parity:** Should `SkillSource` be a separate interface or a specialization of `AgentSource`? Skills and agents have different metadata shapes but similar resolution patterns.
 
@@ -62,3 +62,4 @@
 - [x] **Version pinning:** Duplicate of Q4 — pin to SHA, explicit upgrade. (2026-02-20)
 - [x] **Multi-source conflict:** Config order — first-listed source wins, last in loses. (Brady, 2026-02-20)
 - [x] **History shadows:** Yes — remote agents get local history shadows for project-specific learnings. (Brady, 2026-02-20)
+- [x] **Offline mode:** If cached, use cached + warn. If no cache, fail gracefully with a friendly error message. Never hard-fail, never silent. (Brady, 2026-02-20)
