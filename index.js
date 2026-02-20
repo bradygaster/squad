@@ -392,7 +392,7 @@ function detectProjectType(dir) {
       fs.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
   try {
     const entries = fs.readdirSync(dir);
-    if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln'))) return 'dotnet';
+    if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln') || e.endsWith('.slnx') || e.endsWith('.fsproj') || e.endsWith('.vbproj'))) return 'dotnet';
   } catch {}
   return 'unknown';
 }
@@ -1177,8 +1177,8 @@ if (isMigrateDirectory) {
   } catch (err) {
     fatal(`Migration failed: ${err.message}`);
   }
-  
-  process.exit(0);
+
+  // Migration complete — continue with upgrade below
 }
 
 // Stamp version into squad.agent.md after copying
@@ -1222,27 +1222,27 @@ function compareSemver(a, b) {
 const migrations = [
   {
     version: '0.2.0',
-    description: 'Create .ai-team/skills/ directory',
-    run(dest) {
-      const skillsDir = path.join(dest, '.ai-team', 'skills');
+    description: 'Create skills/ directory',
+    run(dest, squadDir) {
+      const skillsDir = path.join(squadDir || path.join(dest, '.ai-team'), 'skills');
       fs.mkdirSync(skillsDir, { recursive: true });
     }
   },
   {
     version: '0.4.0',
-    description: 'Create .ai-team/plugins/ directory',
-    run(dest) {
-      const pluginsDir = path.join(dest, '.ai-team', 'plugins');
+    description: 'Create plugins/ directory',
+    run(dest, squadDir) {
+      const pluginsDir = path.join(squadDir || path.join(dest, '.ai-team'), 'plugins');
       fs.mkdirSync(pluginsDir, { recursive: true });
     }
   },
   {
     version: '0.5.0',
     description: 'Scrub email addresses from Squad state files (privacy fix)',
-    run(dest) {
-      const aiTeamDir = path.join(dest, '.ai-team');
-      if (fs.existsSync(aiTeamDir)) {
-        const scrubbedFiles = scrubEmailsFromDirectory(aiTeamDir);
+    run(dest, squadDir) {
+      const targetDir = squadDir || path.join(dest, '.ai-team');
+      if (fs.existsSync(targetDir)) {
+        const scrubbedFiles = scrubEmailsFromDirectory(targetDir);
         if (scrubbedFiles.length > 0) {
           console.log(`${GREEN}✓${RESET} Privacy migration: scrubbed email addresses from ${scrubbedFiles.length} file(s)`);
         }
@@ -1252,13 +1252,14 @@ const migrations = [
 ];
 
 // Run migrations applicable for upgrading from oldVersion to newVersion
-function runMigrations(dest, oldVersion) {
+// squadDir: the actual squad directory path (.squad/ or .ai-team/) — migrations write here
+function runMigrations(dest, oldVersion, squadDir) {
   const applicable = migrations
     .filter(m => compareSemver(m.version, oldVersion) > 0)
     .sort((a, b) => compareSemver(a.version, b.version));
   for (const m of applicable) {
     try {
-      m.run(dest);
+      m.run(dest, squadDir);
     } catch (err) {
       console.error(`${RED}✗${RESET} Migration failed (${m.version}: ${m.description}): ${err.message}`);
     }
@@ -1322,12 +1323,14 @@ if (isUpgrade) {
 
   if (isAlreadyCurrent) {
     // Still run missing migrations in case a prior upgrade was interrupted
-    runMigrations(dest, oldVersion);
+    const currentSquadDir = fs.existsSync(path.join(dest, '.squad'))
+      ? path.join(dest, '.squad') : path.join(dest, '.ai-team');
+    runMigrations(dest, oldVersion, currentSquadDir);
 
     // Even if already current, update copilot-instructions.md if @copilot is enabled
     const copilotInstructionsSrc = path.join(root, 'templates', 'copilot-instructions.md');
     const copilotInstructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
-    const teamMd = path.join(dest, '.ai-team', 'team.md');
+    const teamMd = path.join(currentSquadDir, 'team.md');
     const copilotEnabled = fs.existsSync(teamMd)
       && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
     if (copilotEnabled && fs.existsSync(copilotInstructionsSrc)) {
@@ -1532,13 +1535,13 @@ if (isUpgrade) {
   }
 }
 
-// Append merge=union rules for append-only .ai-team/ files
+// Append merge=union rules for append-only squad state files
 const gitattributes = path.join(dest, '.gitattributes');
 const unionRules = [
-  '.ai-team/decisions.md merge=union',
-  '.ai-team/agents/*/history.md merge=union',
-  '.ai-team/log/** merge=union',
-  '.ai-team/orchestration-log/** merge=union',
+  `${squadInfo.name}/decisions.md merge=union`,
+  `${squadInfo.name}/agents/*/history.md merge=union`,
+  `${squadInfo.name}/log/** merge=union`,
+  `${squadInfo.name}/orchestration-log/** merge=union`,
 ];
 const existing = fs.existsSync(gitattributes) ? fs.readFileSync(gitattributes, 'utf8') : '';
 const missing = unionRules.filter(rule => !existing.includes(rule));
@@ -1561,7 +1564,7 @@ if (isUpgrade) {
   console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} .ai-team-templates/`);
 
   // Run migrations applicable for this version jump
-  runMigrations(dest, oldVersion || '0.0.0');
+  runMigrations(dest, oldVersion || '0.0.0', squadInfo.path);
 } else if (fs.existsSync(templatesDest)) {
   console.log(`${DIM}.ai-team-templates/ already exists — skipping (run 'upgrade' to update)${RESET}`);
 } else {

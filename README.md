@@ -360,7 +360,37 @@ Already have Squad? Update Squad-owned files to the latest version without touch
 npx github:bradygaster/squad upgrade
 ```
 
-This overwrites `squad.agent.md`, `.ai-team-templates/`, and squad workflow files in `.github/workflows/`. It never touches `.squad/` — your team's knowledge, decisions, and casting are safe.
+This overwrites `squad.agent.md`, `.ai-team-templates/`, and squad workflow files in `.github/workflows/`. It never touches `.squad/` (or `.ai-team/` for repos that haven't migrated yet) — your team's knowledge, decisions, and casting are safe.
+
+### Migrating to `.squad/`
+
+In v0.5.0, Squad renamed its team state directory from `.ai-team/` to `.squad/`. Existing repos using `.ai-team/` continue to work — Squad detects both and shows a deprecation warning if you're still on `.ai-team/`.
+
+**To migrate (two steps):**
+
+```bash
+# Step 1: Upgrade to get the migration command
+npx github:bradygaster/squad upgrade
+
+# Step 2: Rename the directory
+npx github:bradygaster/squad upgrade --migrate-directory
+```
+
+Then commit your changes:
+
+```bash
+git add -A
+git commit -m "chore: migrate .ai-team/ → .squad/"
+```
+
+**What the migration does:**
+- Renames `.ai-team/` → `.squad/`
+- Updates `.gitignore` and `.gitattributes` references
+- Scrubs email addresses from migrated files (PII cleanup)
+
+**Timeline:** `.ai-team/` is supported through v0.6.0. Migration becomes required in v1.0.0.
+
+**Safety:** Migration is safe and reversible with `git revert`. Full details in [Migration Guide](docs/migration/v0.5.0-squad-rename.md).
 
 ### Insider Program
 
