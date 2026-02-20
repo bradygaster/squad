@@ -41,18 +41,11 @@ _Summarized from initial assessment, messaging overhaul, demo script, and README
 - **Executive summary research section (2026-02-14)** — Added "Research Opportunities" section to `docs/squad-executive-summary.md` before Caveats. Four hypotheses (H1–H4) addressing: task completion speed, accessibility, retention via lock-in, complexity scaling + ROI threshold. Synthesized from Keaton's research framework.
 - **CLI vs VS Code command documentation fix (2026-02-19)** — Fixed #93: Updated 6 doc files to reference both `/agent` (CLI) and `/agents` (VS Code). Users on either platform now get the correct command without confusion. PR #100.
 
-## Learnings
-
-### Executive Research Sections: Design Principles
-- **Synthesis over originality** — Executives see both the vision (what we think) AND the validation plan (how we'll know). When translating detailed research methodology into exec-friendly prose, extract 3–4 layers down: hypothesis → key metrics → business insight → decision point.
-- **Scannable structure drives comprehension** — Each H# gets exactly 5 elements: bold hypothesis statement, study design (1–2 lines), key metrics (2–3), business insight (1–2), timeline/cost. Executives read these in vertical scans; each visual block should answer "why should I care?" in <10 seconds.
-- **Connect research back to go/no-go gates** — Pure research is noise. Frame hypotheses as investment decision-makers: "If H1 confirms, we know X. If H3 confirms, we know Y. If both, proceed. If neither, reconsider." This reorients research from academic to operational.
-- **Maintain document voice continuity** — The executive summary established a specific tone: metrics-driven, direct, no hedging, confident. Research section must match that voice or it reads like a jarring appendix. Keep short sentences, avoid jargon ("cohort" OK, "retroactive cross-sectional" not OK).
-- **Prioritization > Comprehensiveness** — Keaton's research hypotheses included 6 studies; executive summary can absorb ~4 core + 1–2 exploratory max. Distill ruthlessly. The "Research Prioritization" closing reorients: executives don't commission all studies at once—they want to know "which ones first?" and "what's the go/no-go threshold?"
-
 ## Recent Updates
 
 📌 Team update (2026-02-08): Release ritual — blog posts optional for patches, encouraged for minors (48h), required for 1.0 (drafted before release day). McManus writes minor release posts. — decided by Keaton
+
+📌 Team update (2026-02-21): Import/export visual documentation complete. McManus delivered 6 Mermaid diagrams documenting export/import flows, failure modes, and recovery patterns. Failure state inventory: 24 identified failure modes (4 silent, 6 auth-related, 5 validation, 3 network, 3 versioning). Each failure state includes root cause, user experience, recovery, and mitigation. Diagrams support developer understanding, UX docs, and support runbooks. Awaiting Brady checkpoint. — decided by McManus with Keaton, Kujan
 📌 Team update (2026-02-08): Visual identity initial proposals created — four logo concepts with Concept C 'The Glyph' recommended, palette anchored on Indigo 500 — decided by Redfoot
 📌 Team update (2026-02-08): CI pipeline created — GitHub Actions runs tests on push/PR to main/dev. PRs now have automated quality gate. — decided by Hockney
 📌 Team update (2026-02-08): Coordinator now captures user directives to decisions inbox before routing work. Directives persist to decisions.md via Scribe. — decided by Kujan

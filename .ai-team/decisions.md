@@ -1539,3 +1539,196 @@ Completed exhaustive feature comparison of current Squad (62 features) vs. SDK-r
 5. OTLP export for observability dashboards
 6. PRD 16 scope — export/import only, or combined with agent marketplace?
 
+---
+
+### 2026-02-21: Import/Export Failure Mode Mitigation
+
+**By:** Keaton (Lead)
+
+**Status:** PROPOSED
+
+**What:** 14 customer risk points identified in import/export flows where failures are silent or confusing. Comprehensive mitigation framework proposed.
+
+**Risk Severity:**
+- 4 HIGH: data loss, silent failures, auth confusion
+- 8 MEDIUM: stale cache, version drift, validation gaps
+- 2 LOW: missing feedback, edge cases
+
+**Key Findings:**
+1. **Silent Failures** — Broken MCP config, stale agent unaware (no update notification), history shadow lost on re-import
+2. **Confusing States** — SDK version drift (partial failure), MCP override mismatch, collision detection bypassed
+3. **Missing Feedback** — Export success unknown, import progress hidden, offline mode error ambiguous
+4. **Edge Cases** — Circular dependencies, conflicting skills, large-file timeout, permission auth failure
+
+**Most Critical:** Aggressive caching (Decision Q10, no auto-refresh) + no update notification = consumer runs stale agent unaware for weeks. Combined with MCP validation gaps (Decision Q26) = silent partial failures.
+
+**7 Proposed Mitigations:**
+1. **Pre-flight validation on import** — Validate charter syntax, MCP servers, SDK compatibility, auth
+2. **Separate definition cache from history shadow** — History is append-only, never overwritten on re-import
+3. **Implement import manifest** — `.squad/.cache/imports.json` tracks imports, prevents duplicates
+4. **Stale cache warning** — Every coordinator session: log if agent cached >7 days, suggest upgrade
+5. **Export validation & feedback** — Validate Markdown syntax, warn on size >50MB, success summary
+6. **Detailed error messages** — Every error includes: what happened, root cause, recovery options, help link
+7. **MCP validation framework** — Charter documents requirements; import generates validation report
+
+**Implementation Timeline:**
+- Quick wins (before M5): Export feedback, pre-flight validation, error messages — 4 weeks
+- M5 work items: History preservation, manifest, cache indicator, charter validation, MCP validation — 2 weeks
+- Phase 2+: Dependency scanning, skill conflicts, resume capability — 3 weeks
+
+**Open Questions:**
+1. History shadow merge strategy: merge by default or user choice?
+2. Cache staleness TTL: 7 days or configurable?
+3. MCP validation strictness: warn or block on missing servers?
+4. Backward compatibility: how to migrate existing users?
+
+**Next:** Incorporate into M5 work items. Each recommendation becomes a story.
+
+---
+
+### 2026-02-21: SDK Import/Export Constraints Analysis
+
+**By:** Kujan (Copilot SDK Expert)
+
+**Status:** ANALYSIS FOR REVIEW
+
+**What:** Comprehensive audit of SDK support/constraints for import/export of agents and skills.
+
+**Key Findings:**
+
+**Portable (SDK enables):**
+- ✅ Agent prompts, tool definitions, MCP server configs (CustomAgentConfig format)
+- ✅ Session metadata (name, role, version)
+
+**Not Portable (SDK limitation):**
+- ❌ Session state (conversation history, learned preferences)
+- ❌ Tool handlers (functions can't serialize)
+- ❌ Session-scoped hooks
+- ❌ Tool filtering/namespacing (all agents in session see all tools)
+
+**Critical Constraints:**
+
+1. **Tool Registration Conflict** — SDK has no per-agent tool filtering. Multiple agents defining same tool → silent collision, wrong handler invoked.
+   - **Solution:** Export as `squad-{agent}:{tool}`, update prompts, validate collisions on import.
+
+2. **Version Mismatch Risk** — SDK is Technical Preview (v0.1.x). CustomAgentConfig has no version marker. Breaking schema changes expected.
+   - **Solution:** Record `sdk_version` in manifest. Warn on mismatch. Support ≥2 major versions with adapters.
+
+3. **Authentication Friction** — GitHub API: 5K req/hr authenticated, 60 req/hr unauth. Token expiry mid-import leaves partial state with no rollback.
+   - **Solution:** Pre-flight token validation. Implement retry + backoff for 429s. Archive on conflict for recovery.
+
+4. **Platform Constraints:**
+   - File size: Prompts >100KB cause latency. Export manifest >5MB may exceed JSON protocol limits.
+   - Paths: Windows backslashes vs Unix forward slashes. Normalize to POSIX in JSON; resolve native on import.
+   - Encoding: Non-UTF8 breaks JSON parsing. Validate on export.
+   - MCP: Localhost URLs not portable across environments. Embedded credentials are security risk.
+
+**SDK Help vs. Squad Must Build:**
+
+| Area | SDK Provides | Squad Must Build |
+|------|-------------|------------------|
+| Serialization | CustomAgentConfig format | Tool namespacing, tool conflict detection |
+| Tools | Tool definitions | Tool handler isolation, version adapters |
+| Auth | Token priority logic | Pre-flight validation, retry/backoff |
+| Versioning | None | Schema adapters, version markers, compatibility checks |
+| MCP | Config support | Validation, reference-only export, test connectivity |
+
+**Recommendations (9 total):**
+
+**Immediate (v0.4.0 replatform prep):**
+1. Version-pin exports: Add `sdk_version`, warn on mismatch
+2. Tool namespacing: Export as `squad-{agent}:{tool}`
+3. Pre-flight auth: Validate token + test connectivity
+4. Path normalization: JSON ← forward slashes → native on import
+
+**Medium-term (v0.5.0+):**
+5. MCP validation: Test connectivity post-import, warn on localhost/creds
+6. Schema adapters: Support import across ±1 major SDK version
+7. History truncation: Warn if >5MB, configurable depth
+8. Tool conflict detection: Check collisions on import
+
+**Messaging to Customers:**
+- No session state migration (imported agents start cold)
+- Tool dependencies need compatibility matrix
+- MCP setup is manual (environ-specific)
+- Rate limits: auth required for bulk imports
+- Version windows: portable within ±1 major SDK version
+
+**Decision Points for Brady:**
+1. Commit to tool namespacing in export? (impacts prompt modifications)
+2. How many SDK major versions support simultaneously?
+3. Transaction safety: atomic import or acceptable partial state?
+4. MCP reference-only export or auto-provision known servers?
+
+**Status:** Analysis complete. Awaiting Brady review and decision checkpoint.
+
+---
+
+### 2026-02-21: Pre-Implementation Spike Plan (Gate-Check)
+
+**By:** Keaton (Lead)
+
+**Status:** PROPOSED — Awaiting Brady approval
+
+**What:** Before M0 implementation begins, run 5 targeted architectural spikes to validate critical SDK assumptions (10.5 hours, ~1.3 days).
+
+**Why:** Team made 27 decisions + 27 question resolutions, but several rest on SDK behavior assumptions never validated:
+- ❓ Do concurrent sessions work safely on one CopilotClient?
+- ❓ Can tools route correctly with multiple agents?
+- ❓ Does resumeSession() work for persistent monitoring?
+- ❓ Does gh CLI auth work as documented?
+- ❓ Can MCP servers bind per-agent without collision?
+
+If ANY assumption is wrong, weeks of rework after M0 commits.
+
+**The 5 Spikes (Sequential/Parallel):**
+
+| # | Name | Hours | Blocks | Failure Impact | Fallback | Acceptable? |
+|---|------|-------|--------|---|---------|---|
+| 1 | Concurrent sessions + CopilotClient | 2h | All agent spawning | Entire session pooling breaks | Session-per-agent, +3d | ✅ Yes |
+| 2 | Adapter pattern + tool routing | 3h | Coordinator | Tool routing impossible | Pre-allocate namespaces, +5d | ⚠️ Maybe |
+| 3 | MCP passthrough + namespacing | 2h | Marketplace MCP | MCP import broken | Defer to M3, +0d | ✅ Yes |
+| 4 | gh CLI auth + export/import | 1.5h | Init + marketplace | Import fails on auth | Explicit GH_TOKEN, +1d | ✅ Yes |
+| 5 | resumeSession for Ralph | 2h | Persistent monitoring | Ralph can't persist | Polling pattern, +0d | ✅ Yes |
+
+**Execution Plan:**
+1. Run Spike 1 **serially** (foundational)
+2. Run Spikes 2+3+4 **in parallel**
+3. Run Spike 5 **after parallel batch**
+
+**Total:** 10.5 hours across 1.3 days wall-clock.
+
+**What Gets Delivered:**
+- `test-concurrent-sessions.ts` — regression suite
+- `src/coordinator/adapter.ts` — starter code for M0
+- `test-mcp-passthrough.ts` — reference for MCP binding
+- `test-gh-auth.ts` + `test-export-import.ts` — regression tests
+- `test-resume-session.ts` — reference for Ralph
+
+**Parallel Work During Spikes (Don't Wait):**
+- ✅ CLI scaffold (init, upgrade, basic commands)
+- ✅ Agent registry + config schema
+- ✅ Casting system (TypeScript logic)
+- ✅ Tests + CI setup
+
+**Blocked (Wait for Spike Results):**
+- ⏸️ Coordinator bootstrap
+- ⏸️ Marketplace import
+- ⏸️ MCP integration
+- ⏸️ Ralph heartbeat
+
+**Success Criteria:**
+- ✅ Spike 1: CopilotClient singleton; 3 concurrent sessions; no crosstalk
+- ✅ Spike 2: Adapter wraps client; tool routing works; two agents don't interfere
+- ✅ Spike 3: MCP tool invokes; namespaced tool works; offline fails gracefully
+- ✅ Spike 4: gh auth reads token; export/import round-trip succeeds
+- ✅ Spike 5: Session resumes; checkpoints work; tool handlers in resumed session
+
+**Approval Chain:**
+- [ ] Brady — approves spike plan and timeline (GATE)
+- [ ] Kujan (SDK expert) — owns Spikes 1, 2, 5
+- [ ] Fenster (Core dev) — owns Spike 4
+- [ ] Baer (Security/Integration) — owns Spike 3
+
+**Status:** ⏳ Awaiting Brady approval. Implementation does NOT begin until Brady signals "Go implement M0."
+

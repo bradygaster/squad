@@ -34,8 +34,10 @@ _Summarized from initial platform assessment and deep onboarding (2026-02-07). F
 - **2026-02-09: Incoming Queue Platform Assessment** — **Context:** Brady asked whether Copilot's built-in TODO capability could serve as an "incoming queue" for user messages — capturing requests while ag
 
 ## Recent Updates
-
+
 📌 Team update (2026-02-20): Recruitment wave complete. Three new team members hired: Edie (TypeScript Engineer), Rabin (Distribution Engineer), Fortier (Node.js Runtime Dev). All onboarded with assessments. Keaton created 19 issues, 3 milestones, 12 labels on bradygaster/squad-pr. Kujan delivered feature risk punch list (14 GRAVE, 12 AT RISK, 28 COVERED, 5 INTENTIONAL). — decided by Keaton, Kujan, Edie, Rabin, Fortier
+
+📌 Team update (2026-02-21): Import/export readiness analysis complete. Kujan delivered SDK constraints audit (7-section analysis of portability limits, tool conflicts, auth, versioning, platform constraints). 9 recommendations categorized as immediate vs. medium-term. Identified areas where SDK helps vs. Squad must build (tool namespacing, conflict detection, MCP validation). Full feature comparison completed (62 features, 8 GRAVE gaps, 8 new SDK-enabled capabilities). Awaiting Brady checkpoint. — decided by Kujan with Keaton, McManus
 
 📌 Team update (2026-02-09): No npm publish — GitHub-only distribution. Kobayashi hired as Git & Release Engineer. Release plan (021) filed. Sprint plan 019a amended: item 1.8 cancelled, items 1.11-1.13 added.
 📌 Team update (2026-02-08): CI pipeline created — GitHub Actions runs tests on push/PR to main/dev. PRs now have automated quality gate. — decided by Hockney
