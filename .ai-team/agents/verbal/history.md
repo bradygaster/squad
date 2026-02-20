@@ -200,3 +200,8 @@ _Summarized from sessions through 2026-02-09. Full entries in `history-archive.m
 
 📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
 
+## Learnings
+
+### 2026-02-19: GitHub Issue #102 — squad.agent.md path migration complete
+Updated all `.ai-team/` and `.ai-team-templates/` path references to `.squad/` and `.squad/templates/` in the coordinator prompt and all templates. 93 references migrated in squad.agent.md (reduced to 4 backward-compat fallback mentions). Updated deprecation banner to Migration Banner (v0.5.0) to reflect that the migration IS happening now. Preserved all backward-compatibility language for legacy repo detection. Updated `.gitattributes` examples and git commit message prefixes from `ai-team` to `squad`. All template files and 6 workflow YAMLs migrated. PR #113 opened to dev branch. Tests: 52/53 passing (1 pre-existing failure in marketplace test — `index.js` still writes to `.ai-team/`, fixed in Fenster's #101).
+
