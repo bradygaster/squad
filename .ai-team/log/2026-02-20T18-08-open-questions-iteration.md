@@ -62,3 +62,8 @@ Resume open questions iteration at Q3 when Brady returns.
 - Q11: Version pinning → Auto-resolved as duplicate of Q4 (pin to SHA).
 - Q12 presented (multi-source conflict resolution) — awaiting Brady's answer
 - 14 questions remain unresolved
+
+### Update — Q12 resolved
+- Q12: Multi-source conflict → Config order wins, first-listed takes priority, last in loses.
+- Q13 presented (history shadows for remote agents) — awaiting Brady's answer
+- 13 questions remain unresolved

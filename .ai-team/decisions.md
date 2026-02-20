@@ -1317,3 +1317,11 @@ The registry format is identical — any repo with a \places.json\ and \gents/\
 **What:** GitHub auth (gh CLI token) for cloud-hosted agent repositories too. Consistent with the places auth decision (Q2). No separate auth model for different hosting providers — GitHub auth is the single auth story.
 **Why:** User request — resolves open question #9 (Architecture). Simplicity and consistency over flexibility.
 
+---
+
+### 2026-02-20T10-28: User directive — multi-source conflict resolution
+**By:** Brady (via Copilot)
+**What:** If the same agent name exists in two places sources, the first-listed source in config wins. Last in loses. Config order determines priority — no prompts, no ambiguity.
+**Why:** User request — resolves open question #12 (Architecture). Deterministic, predictable, consistent with Q5's no-ambiguity principle.
+
+
