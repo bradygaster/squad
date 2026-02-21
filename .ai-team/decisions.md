@@ -2735,3 +2735,960 @@ as a convenience feature (prompt isolation), not as the unit of agent identity. 
 9. Test ugly UI nuances
 **Why:** Brady's v1 launch directive — "take squad v1 to neptune"
 
+
+
+# SDK Spike: Per-Agent Model Selection Architecture
+
+**Date:** 2026-02-21  
+**By:** Kujan (Copilot SDK Expert)  
+**Spike:** Issue #66 (bradygaster/squad-pr)  
+**Status:** ✅ Complete — Findings posted
+
+---
+
+## Decision: Multi-Session Architecture for Per-Agent Models
+
+**Finding:** The Copilot SDK `CustomAgentConfig` has NO `model` field. Model selection is session-scoped only.
+
+**Source Evidence:**
+- `C:\src\copilot-sdk\nodejs\src\types.ts:548-579` — `CustomAgentConfig` interface
+- `C:\src\copilot-sdk\nodejs\src\types.ts:613-733` — `SessionConfig.model` is session-level
+
+**Constraint:** Agents within a session inherit the session's model. Per-agent models require multiple sessions.
+
+---
+
+## Recommended Architecture
+
+### Option A: Multi-Session by Tier (Recommended)
+Create one session per model tier:
+- **Opus session:** Lead, PM, Architect
+- **Sonnet session:** Core specialists (Kobayashi, Fenster, McManus, Baer)
+- **Haiku session:** Scribe, lightweight assistants
+
+**Pros:**
+- Direct SDK support, no workarounds
+- Clean model isolation
+- Session state persists per tier
+
+**Cons:**
+- Multiple session objects to manage
+- Cross-session coordination needed
+- Workspace state fragmented
+
+---
+
+## Implementation Pattern
+
+```typescript
+class SquadSessionManager {
+    sessions: {
+        opus: CopilotSession,
+        sonnet: CopilotSession,
+        haiku: CopilotSession
+    };
+    
+    async init(client: CopilotClient, roster: AgentConfig[]) {
+        this.sessions.opus = await client.createSession({
+            model: "claude-opus-4.6",
+            customAgents: groupAgentsByTier(roster, "opus"),
+            configDir: ".ai-team/sessions/opus"
+        });
+        
+        this.sessions.sonnet = await client.createSession({
+            model: "claude-sonnet-4.6",
+            customAgents: groupAgentsByTier(roster, "sonnet"),
+            configDir: ".ai-team/sessions/sonnet"
+        });
+        
+        this.sessions.haiku = await client.createSession({
+            model: "claude-haiku-4.5",
+            customAgents: groupAgentsByTier(roster, "haiku"),
+            configDir: ".ai-team/sessions/haiku"
+        });
+    }
+    
+    getSessionForAgent(agentName: string): CopilotSession {
+        const tier = this.getAgentTier(agentName);
+        return this.sessions[tier];
+    }
+}
+```
+
+---
+
+## Related Findings
+
+- **No agent-to-agent handoff across models:** Requires cross-session coordination
+- **Session model is immutable:** Cannot change mid-session (only on resume)
+- **Workspace isolation:** Each session has its own workspace directory
+
+---
+
+## Next Steps
+
+- [ ] Design `SquadSessionManager` class
+- [ ] Map agents to model tiers in roster
+- [ ] Implement cross-session state coordination via `.ai-team/` files
+- [ ] Test multi-session agent handoffs
+
+---
+
+**Full Analysis:** https://github.com/bradygaster/squad-pr/issues/66#issuecomment-3938162383
+
+
+---
+
+# SDK Spike: Compaction Behavior and Workspace Persistence
+
+**Date:** 2026-02-21  
+**By:** Kujan (Copilot SDK Expert)  
+**Spike:** Issue #67 (bradygaster/squad-pr)  
+**Status:** ✅ Complete — Findings posted
+
+---
+
+## Decision: Checkpoints and Workspace Files Survive Compaction
+
+**Finding:** Infinite sessions trigger background compaction at 80% context. Checkpoints, `plan.md`, and `files/` directory are preserved.
+
+**Source Evidence:**
+- `C:\src\copilot-sdk\nodejs\src\types.ts:582-606` — `InfiniteSessionConfig` thresholds
+- `C:\src\copilot-sdk\nodejs\src\generated\session-events.ts:264-283` — `session.compaction_complete` event
+- `C:\src\copilot-sdk\nodejs\src\session.ts:92-99` — Workspace directory structure
+
+---
+
+## Compaction Thresholds
+
+```typescript
+export interface InfiniteSessionConfig {
+    enabled?: boolean;  // Default: true
+    backgroundCompactionThreshold?: number;  // Default: 0.80 (80%)
+    bufferExhaustionThreshold?: number;      // Default: 0.95 (95%)
+}
+```
+
+**Behavior:**
+- **80% threshold:** Background compaction starts (non-blocking)
+- **95% threshold:** Session blocks until compaction completes (emergency brake)
+
+---
+
+## What Survives Compaction
+
+### Workspace Structure:
+```
+.copilot/sessions/{sessionId}/
+├── checkpoints/
+│   ├── checkpoint-001.json  ← Created during compaction
+│   ├── checkpoint-002.json
+│   └── checkpoint-NNN.json
+├── plan.md                   ← Survives compaction
+└── files/                    ← Survives compaction
+    └── (agent-created files)
+```
+
+**Preserved:**
+- ✅ All checkpoint files (accumulate, never deleted)
+- ✅ `plan.md` (workspace-persistent)
+- ✅ `files/` directory (workspace-persistent)
+- ✅ Recent messages (post-compaction)
+
+**Lost:**
+- ❌ Old message details (replaced by summary)
+- ❌ Tool execution details (unless summarized)
+- ❌ Intermediate reasoning steps
+
+---
+
+## Compaction Event Data
+
+```typescript
+{
+    type: "session.compaction_complete",
+    data: {
+        success: boolean;
+        preCompactionTokens?: number;
+        postCompactionTokens?: number;
+        messagesRemoved?: number;
+        tokensRemoved?: number;
+        summaryContent?: string;          // Model-generated summary
+        checkpointNumber?: number;        // Sequential checkpoint ID
+        checkpointPath?: string;          // Path to checkpoint file
+        compactionTokensUsed?: {          // Cost of compaction
+            input: number;
+            output: number;
+            cachedInput: number;
+        };
+    };
+}
+```
+
+**Analysis:**
+- Checkpoints are additive (never deleted)
+- Compaction cost is tracked separately
+- Summary content is the actual summarized text
+
+---
+
+## Compaction Cost Example
+
+**Session:**
+- Context window: 100K tokens
+- Background threshold: 80% = 80K tokens
+- Compaction input: 80K tokens
+- Compaction output: 2K tokens (summary)
+- Cost per compaction: ~$0.10 (model-dependent)
+
+**High-frequency scenario:**
+- 10 compactions per session: $1.00 compaction cost
+- Plus user interaction costs: $5.00
+- Total session cost: $6.00
+
+**Mitigation:** Increase threshold to reduce compaction frequency.
+
+---
+
+## Recommendations for Squad
+
+### 1. Monitor Compaction Frequency
+```typescript
+session.on("session.compaction_complete", (event) => {
+    console.log(`Compaction ${event.data.checkpointNumber} completed`);
+    console.log(`Removed ${event.data.messagesRemoved} messages`);
+    console.log(`Compaction cost: ${event.data.compactionTokensUsed?.input} tokens`);
+    
+    if (event.data.checkpointNumber > 10) {
+        console.warn("High compaction frequency — consider increasing threshold");
+    }
+});
+```
+
+---
+
+### 2. Adjust Thresholds for Long Sessions
+```typescript
+const session = await client.createSession({
+    model: "claude-sonnet-4.6",
+    infiniteSessions: {
+        enabled: true,
+        backgroundCompactionThreshold: 0.85,  // Delay compaction
+        bufferExhaustionThreshold: 0.97       // More headroom
+    }
+});
+```
+
+---
+
+### 3. Persist Critical State in Workspace Files
+```typescript
+// BAD: State only in conversation history
+await session.send({ prompt: "Remember: budget is $10,000" });
+
+// GOOD: State in workspace file (survives compaction)
+await session.rpc.setWorkspaceFile("project-budget.txt", "$10,000");
+```
+
+---
+
+## Related Findings
+
+- **No checkpoint pruning:** Old checkpoints never auto-delete (manual cleanup needed)
+- **No compaction progress events:** Only start and complete
+- **No compaction cancellation:** Once started, cannot be aborted
+
+---
+
+## Testing Requirements
+
+1. Simulate long-running session (100+ messages)
+2. Verify `plan.md` survives multiple compactions
+3. Validate checkpoint replay from earlier state
+4. Profile compaction costs over time
+
+---
+
+## Next Steps
+
+- [ ] Test compaction with 5+ concurrent agents
+- [ ] Implement compaction monitoring dashboard
+- [ ] Document workspace file patterns for agents
+- [ ] Profile compaction costs for Squad use cases
+
+---
+
+**Full Analysis:** https://github.com/bradygaster/squad-pr/issues/67#issuecomment-3938162385
+
+
+---
+
+# SDK Spike: Rate Limiting and Backpressure Architecture
+
+**Date:** 2026-02-21  
+**By:** Kujan (Copilot SDK Expert)  
+**Spike:** Issue #70 (bradygaster/squad-pr)  
+**Status:** ✅ Complete — Findings posted
+
+---
+
+## Decision: Implement Application-Level Rate Limiting
+
+**Finding:** The Copilot SDK has ZERO built-in rate limiting, retry logic, or backpressure mechanisms.
+
+**Source Evidence:**
+- `C:\src\copilot-sdk\nodejs\src\client.ts` — No rate limiting code found
+- `C:\src\copilot-sdk\nodejs\src\types.ts` — No `retryPolicy` in `SessionConfig`
+- Error handling is event-based only (`session.error` events)
+
+**Constraint:** Squad must implement its own rate limiting layer for 5+ concurrent agents.
+
+---
+
+## What Happens on 429 (Rate Limit)
+
+1. CLI makes API request → API returns 429
+2. CLI emits `session.error` event with `statusCode: 429`
+3. **NO automatic retry** — session goes idle
+4. Caller must detect 429 and retry manually
+
+---
+
+## Recommended Architecture
+
+### Global Rate Limiter (Cross-Session)
+
+```typescript
+class GlobalRateLimiter {
+    private globalInFlight = 0;
+    private globalMaxConcurrent = 5;  // Across all sessions
+    private retryAfter = 0;
+    private waiters: Array<() => void> = [];
+    
+    async acquire(): Promise<() => void> {
+        await this.waitForCapacity();
+        this.globalInFlight++;
+        
+        return () => {
+            this.globalInFlight--;
+            this.notifyWaiters();
+        };
+    }
+    
+    reportRateLimit(retryAfterSeconds: number = 60) {
+        this.retryAfter = Date.now() + retryAfterSeconds * 1000;
+    }
+    
+    private async waitForCapacity() {
+        while (this.globalInFlight >= this.globalMaxConcurrent) {
+            await new Promise(r => this.waiters.push(r));
+        }
+        
+        const now = Date.now();
+        if (now < this.retryAfter) {
+            await new Promise(r => setTimeout(r, this.retryAfter - now));
+        }
+    }
+}
+```
+
+**Usage:**
+```typescript
+const rateLimiter = new GlobalRateLimiter();
+
+async function sendWithRateLimit(session: CopilotSession, options: MessageOptions) {
+    const release = await rateLimiter.acquire();
+    try {
+        return await session.send(options);
+    } catch (err) {
+        if (err.statusCode === 429) {
+            rateLimiter.reportRateLimit(60);
+        }
+        throw err;
+    } finally {
+        release();
+    }
+}
+```
+
+---
+
+## Alternative: Session-Level Wrapper
+
+```typescript
+class RateLimitedSession {
+    private session: CopilotSession;
+    private inFlight = 0;
+    private maxConcurrent = 3;
+    private retryAfter = 0;
+    
+    constructor(session: CopilotSession) {
+        this.session = session;
+        
+        session.on("session.error", (event) => {
+            if (event.data.statusCode === 429) {
+                this.retryAfter = Date.now() + 60_000;
+            }
+        });
+    }
+    
+    async send(options: MessageOptions): Promise<string> {
+        await this.waitForCapacity();
+        return this.sendWithRetry(options);
+    }
+}
+```
+
+---
+
+## Metrics to Track
+
+- **Per-session:** Total requests, 429 errors, retry attempts, backoff time
+- **Global:** Concurrent sessions, aggregate 429 rate, queue depth, throughput
+
+---
+
+## Testing Requirements
+
+1. Load test with 5+ concurrent sessions
+2. Inject 429 errors and validate retry behavior
+3. Measure queue latency under load
+4. Validate backoff recovery
+
+---
+
+## Related Findings
+
+- **No circuit breaker:** SDK never stops making requests after repeated failures
+- **No request deduplication:** Identical concurrent requests are not deduplicated
+- **Only retry in SDK:** Session cleanup during client shutdown (exponential backoff)
+
+---
+
+## Next Steps
+
+- [ ] Implement `GlobalRateLimiter` class
+- [ ] Wrap all Squad session operations
+- [ ] Add telemetry for 429 tracking
+- [ ] Load test with concurrent agents
+
+---
+
+**Full Analysis:** https://github.com/bradygaster/squad-pr/issues/70#issuecomment-3938162388
+
+
+---
+
+# SDK Spike: Usage Telemetry and Real-Time Event Capture
+
+**Date:** 2026-02-21  
+**By:** Kujan (Copilot SDK Expert)  
+**Spike:** Issue #71 (bradygaster/squad-pr)  
+**Status:** ✅ Complete — Findings posted
+
+---
+
+## Decision: Implement Real-Time Telemetry Capture Layer
+
+**Finding:** `assistant.usage` events are `ephemeral: true` (NOT persisted in session history). Must be captured in real-time via event listeners.
+
+**Source Evidence:**
+- `C:\src\copilot-sdk\nodejs\src\generated\session-events.ts:430-459` — `assistant.usage` event
+- `C:\src\copilot-sdk\nodejs\src\generated\session-events.ts:196-225` — `session.shutdown` event
+- Both are ephemeral (not included in `session.getMessages()`)
+
+**Constraint:** Squad must capture usage events in real-time. No retroactive retrieval possible.
+
+---
+
+## Usage Event Data Model
+
+```typescript
+{
+    ephemeral: true,
+    type: "assistant.usage",
+    data: {
+        model: string;
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+        cost?: number;
+        duration?: number;
+        initiator?: string;
+        apiCallId?: string;
+        providerCallId?: string;
+        parentToolCallId?: string;
+        quotaSnapshots?: {
+            [quotaType: string]: {
+                isUnlimitedEntitlement: boolean;
+                entitlementRequests: number;
+                usedRequests: number;
+                remainingPercentage: number;
+                resetDate?: string;
+            };
+        };
+    };
+}
+```
+
+**Analysis:**
+- Full token breakdown (input, output, cache read/write)
+- Pre-calculated cost (no manual computation needed)
+- Duration tracking (latency analysis)
+- Quota snapshots (real-time quota state)
+- Full traceability (call IDs, initiator)
+
+---
+
+## Shutdown Event Aggregate Metrics
+
+```typescript
+{
+    ephemeral: true,
+    type: "session.shutdown",
+    data: {
+        totalPremiumRequests: number;
+        totalApiDurationMs: number;
+        codeChanges: {
+            linesAdded: number;
+            linesRemoved: number;
+            filesModified: string[];
+        };
+        modelMetrics: {
+            [modelId: string]: {
+                requests: { count: number; cost: number; };
+                usage: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens };
+            };
+        };
+    };
+}
+```
+
+**Analysis:**
+- Aggregate metrics across entire session
+- Per-model breakdown (useful for multi-model sessions)
+- Code changes tracked automatically
+- Also ephemeral (must capture on event)
+
+---
+
+## Recommended Telemetry Persistence
+
+### Schema: Usage Events Table
+```sql
+CREATE TABLE usage_events (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cache_read_tokens INTEGER,
+    cache_write_tokens INTEGER,
+    cost REAL,
+    duration_ms INTEGER,
+    initiator TEXT,
+    api_call_id TEXT,
+    provider_call_id TEXT,
+    quota_snapshot_json TEXT
+);
+
+CREATE INDEX idx_usage_session ON usage_events(session_id);
+CREATE INDEX idx_usage_timestamp ON usage_events(timestamp);
+```
+
+---
+
+### Schema: Session Summaries Table
+```sql
+CREATE TABLE session_summaries (
+    session_id TEXT PRIMARY KEY,
+    shutdown_type TEXT,
+    total_premium_requests INTEGER,
+    total_api_duration_ms INTEGER,
+    lines_added INTEGER,
+    lines_removed INTEGER,
+    files_modified_json TEXT,
+    model_metrics_json TEXT
+);
+```
+
+---
+
+## Implementation: Telemetry Capture Class
+
+```typescript
+class SquadTelemetry {
+    private db: Database;
+    
+    attachToSession(session: CopilotSession) {
+        session.on("assistant.usage", (event) => {
+            this.recordUsage(session.sessionId, event);
+        });
+        
+        session.on("session.shutdown", (event) => {
+            this.recordShutdown(session.sessionId, event);
+        });
+    }
+    
+    private recordUsage(sessionId: string, event: any) {
+        this.db.run(`
+            INSERT INTO usage_events (
+                id, session_id, timestamp, model,
+                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                cost, duration_ms, initiator, api_call_id, provider_call_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [ /* ... event data ... */ ]);
+    }
+    
+    getSessionCost(sessionId: string): number {
+        return this.db.query(
+            `SELECT SUM(cost) as total FROM usage_events WHERE session_id = ?`,
+            [sessionId]
+        ).rows[0].total ?? 0;
+    }
+}
+```
+
+---
+
+## Real-Time Telemetry Patterns
+
+### Cost Budgeting:
+```typescript
+const MAX_SESSION_COST = 5.00;
+let sessionCost = 0;
+
+session.on("assistant.usage", (event) => {
+    sessionCost += event.data.cost ?? 0;
+    if (sessionCost > MAX_SESSION_COST) {
+        session.abort();
+    }
+});
+```
+
+### Quota Monitoring:
+```typescript
+session.on("assistant.usage", (event) => {
+    const quotas = event.data.quotaSnapshots;
+    for (const [type, quota] of Object.entries(quotas ?? {})) {
+        if (quota.remainingPercentage < 10) {
+            console.warn(`Quota ${type} at ${quota.remainingPercentage.toFixed(1)}%`);
+        }
+    }
+});
+```
+
+### Cache Efficiency:
+```typescript
+session.on("assistant.usage", (event) => {
+    const { inputTokens, cacheReadTokens } = event.data;
+    if (cacheReadTokens && inputTokens) {
+        const cacheHitRate = (cacheReadTokens / inputTokens) * 100;
+        console.log(`Cache hit rate: ${cacheHitRate.toFixed(1)}%`);
+    }
+});
+```
+
+---
+
+## Related Findings
+
+- **No retroactive retrieval:** `session.getMessages()` excludes ephemeral events
+- **No batch event API:** Cannot fetch multiple ephemeral events retroactively
+- **No event replay:** No way to re-emit historical events
+
+---
+
+## Testing Requirements
+
+1. Verify `assistant.usage` is NOT in `getMessages()`
+2. Test telemetry persistence (capture → query)
+3. Stress test high-frequency API calls (no dropped events)
+4. Validate shutdown event timing (before session destruction)
+
+---
+
+## Next Steps
+
+- [ ] Implement `SquadTelemetry` class with SQLite
+- [ ] Attach telemetry to all Squad sessions
+- [ ] Build real-time cost dashboard
+- [ ] Generate post-session reports
+
+---
+
+**Full Analysis:** https://github.com/bradygaster/squad-pr/issues/71#issuecomment-3938162390
+
+
+---
+
+# Config Schema Expressiveness Validation
+
+**Decision:** Config (JSON/YAML) CAN express routing rules and model fallback chains with zero information loss.
+
+**Context:**
+- Issue #72: Can JSON/YAML config replace squad.agent.md's 32KB prompt?
+- Validated: Routing rules (.ai-team/routing.md) + Model fallback chains (squad.agent.md lines 309-442)
+- Method: Built TypeScript schema, serialized Squad's own config, verified completeness
+
+**Key Findings:**
+
+1. **Full expressiveness validated:**
+   - 4-layer model selection hierarchy (user override, charter, task-aware, default)
+   - 3 fallback chains (premium/standard/fast) with provider preference + tier ceiling
+   - Task output type → model mapping (9 rules)
+   - Role → model mapping with override conditions (8 roles)
+   - Complexity adjustments (7 bump/downgrade/specialist triggers)
+   - Work routing table (9 routes: code-review → Kujan, testing → Hockney, etc.)
+   - Issue label routing (squad, squad:{name}, squad:copilot)
+   - @copilot capability evaluation (good fit / needs review / not suitable criteria)
+   - Casting policy (31 universes, capacity map, overflow strategy)
+
+2. **Information loss:** NONE. All dimensions from prompt → config without semantic gaps.
+
+3. **Human readability:** High. Type safety + JSDoc comments + rationale fields guide users.
+
+4. **Config vs. Code boundary:**
+   - Config = POLICY (rules, mappings, thresholds, preferences)
+   - Code = EXECUTION (retry loops, LLM routing, prompt assembly, runtime state)
+
+5. **Size breakdown:**
+   - squad.agent.md: ~32KB total
+   - Config-expressible content: ~15KB (model + routing + casting)
+   - Remaining ~17KB: spawn templates, client compatibility, algorithm descriptions, init flow
+
+**Deliverables:**
+- `squad.config.schema.ts` — Full TypeScript schema (270 lines, 10KB)
+- `squad.config.example.ts` — Squad's own config serialized (real data, 15KB)
+- Findings posted to issue #72
+
+**Recommendation:**
+✅ Proceed with config-first architecture for routing + model selection.
+- Migrate routing logic to config table lookups
+- Migrate model selection to 4-layer config hierarchy
+- Keep spawn templates, client compat, execution logic in squad.agent.md
+
+**Gate:** Schema expressiveness validation — **PASSED**
+
+**Next steps:**
+1. Implement JSON Schema version for YAML validation
+2. Add config loader to coordinator (read + validate + merge defaults)
+3. Migrate routing engine to config lookups
+4. Migrate model selection to config queries
+5. Document config hot-reloading strategy
+
+**Open questions:**
+- Config hot-reloading (per-spawn vs. session start)?
+- User config overrides (repo-level .squad/config.yaml)?
+- Config versioning (breaking schema changes)?
+
+**Files:** C:\Users\brady\AppData\Local\Temp\squad-spike-72\
+- `squad.config.schema.ts` — TypeScript schema
+- `squad.config.example.ts` — Squad's config serialized
+- `FINDINGS.md` — Full validation report (posted to #72)
+
+**Confidence:** High. Config schema covers 100% of routing + model selection with zero information loss.
+
+---
+
+**Decided by:** Fenster  
+**Date:** 2026-02-20
+
+
+---
+
+# Decision: SDK Replatforming Requires Dual Implementation
+
+**Date:** 2026-02-15  
+**Author:** Strausz (VS Code Extension Expert)  
+**Context:** Spike #68 — Platform Surface Differences (CLI vs VS Code)  
+**Status:** Proposed
+
+---
+
+## Problem
+
+Squad is replatforming from raw CLI tool spawning to the Copilot SDK (`CopilotClient` + `CustomAgentConfig`). The SDK spawns a CLI subprocess via stdio/TCP, which is **fundamentally incompatible with VS Code's extension host**. If Squad becomes SDK-only, it becomes **CLI-only**, losing 50%+ of the user base (VS Code is the #1 Copilot client by volume).
+
+---
+
+## Investigation Summary
+
+### Key Findings
+
+1. **`CustomAgentConfig` is CLI-only**
+   - It's a `SessionConfig` property passed to `CopilotClient.createSession()`
+   - VS Code doesn't use `CopilotClient` — it uses native language model APIs
+   - VS Code agents are defined via `.github/agents/*.agent.md` files with frontmatter
+
+2. **SDK spawns CLI subprocess**
+   - Default transport: stdio pipes (`stdin`/`stdout` for JSON-RPC)
+   - Alternative transport: TCP socket
+   - Extension host **cannot spawn processes or use stdio pipes**
+
+3. **MCP tool inheritance is opposite**
+   - **CLI:** Sub-agents do NOT inherit parent's MCP tools (isolated toolsets)
+   - **VS Code:** Sub-agents inherit ALL parent tools by default (including MCP)
+
+4. **Model selection mechanisms differ**
+   - **CLI:** Per-spawn dynamic via `SessionConfig.model` (4-layer hierarchy with fallback chains)
+   - **VS Code Phase 1:** Session model only (user picker)
+   - **VS Code Phase 2:** Static `.agent.md` frontmatter (experimental, requires `chat.customAgentInSubagent.enabled: true`)
+
+5. **Agent spawning uses different tools**
+   - **CLI:** `task` tool with `agent_type`, `mode`, `model`, `description`, `prompt` parameters
+   - **VS Code:** `runSubagent` or `agent` tool with `prompt` only (config lives in `.agent.md` files)
+
+---
+
+## Recommendation: Dual Implementation
+
+### Architecture
+
+**CLI path:** Use SDK with `CustomAgentConfig`
+- `squad init` generates `customAgents` config passed to `createSession()`
+- Dynamic agent roster loaded from `.ai-team/team.md` at runtime
+- Per-spawn model selection with 4-layer hierarchy and fallback chains
+- Background mode + `read_agent` for parallel execution
+
+**VS Code path:** Use `.agent.md` files (current approach)
+- `squad init` generates `.github/agents/{role}.agent.md` files (one per role)
+- Static model selection via frontmatter (`model: "Claude Haiku 4.5 (copilot)"`)
+- Parallel spawning via multiple `runSubagent` calls in one turn
+- Tool inheritance by default (no need to specify tools unless restricting)
+
+**Shared state:** Both paths read/write `.ai-team/` files
+- `team.md` — agent roster and charters
+- `routing.md` — task routing rules
+- `decisions.md` — team decisions
+- `agents/{name}/history.md` — agent-specific learnings
+
+### Platform Detection (Coordinator Logic)
+
+```plaintext
+1. Check if `task` tool is available → CLI mode
+2. Check if `runSubagent` or `agent` tool is available → VS Code mode
+3. Neither available → Fallback mode (work inline, no delegation)
+```
+
+### Feature Degradation on VS Code
+
+| Feature | CLI | VS Code | Mitigation |
+|---------|-----|---------|------------|
+| Per-spawn model selection | ✅ Full | ⚠️ Session model only | Accept session model; document cost optimization loss |
+| Fire-and-forget (Scribe) | ✅ Background, never read | ❌ Not available | Batch Scribe as last subagent in parallel groups |
+| SQL tool | ✅ Available | ❌ Not available | Avoid SQL in cross-platform code paths |
+| Launch table UX | ✅ Show → results later | ⚠️ Skip → results with response | UX difference only; results are correct |
+
+---
+
+## Alternatives Considered
+
+### Option B: CLI-Only (Not Recommended)
+
+**Pros:**
+- Simpler implementation (SDK-only)
+- Full feature surface (model selection, background mode, SQL tool)
+
+**Cons:**
+- **Loses 50%+ of users** (VS Code is #1 Copilot client)
+- Alienates primary IDE integration audience
+- GitHub.com support impossible
+
+**Verdict:** Unacceptable user impact
+
+### Option C: VS Code-Only (Not Recommended)
+
+**Pros:**
+- Simpler implementation (`.agent.md`-only)
+- Reaches largest audience
+
+**Cons:**
+- Loses SDK benefits (session management, event streaming, tool control, MCP config)
+- No programmatic control or automation workflows
+- Harder to extend/test
+
+**Verdict:** Loses SDK value proposition
+
+---
+
+## Migration Path
+
+### Phase 1: CLI SDK Integration (M2-7, M2-8)
+1. Implement `CopilotClient` wrapper in Squad's CLI
+2. Generate `CustomAgentConfig[]` from `.ai-team/team.md`
+3. Replace `task` tool calls with SDK `createSession()` + agent routing
+4. Test on CLI only
+
+### Phase 2: VS Code Compatibility Layer (M2-9)
+1. Add platform detection to coordinator (check `task` vs `runSubagent` availability)
+2. CLI: Use SDK path
+3. VS Code: Generate `.agent.md` files during `squad init`
+4. Coordinator adapts spawning logic based on detected platform
+
+### Phase 3: GitHub.com Investigation (v0.5.0+)
+1. Research GitHub Copilot's agent spawning capabilities
+2. Determine if `.agent.md` discovery works on web
+3. Adapt or document limitations
+
+---
+
+## Impact
+
+**Users:**
+- CLI users: Unchanged workflow, improved reliability (SDK session management)
+- VS Code users: Unchanged workflow, continued support
+- GitHub.com users: Deferred to v0.5.0+ investigation
+
+**Development:**
+- Dual implementation adds complexity (maintain both SDK and `.agent.md` paths)
+- Coordinator must detect platform and adapt spawning logic
+- Cross-platform testing required (CLI + VS Code)
+
+**Documentation:**
+- Update `docs/scenarios/client-compatibility.md` with SDK findings
+- Document feature degradation on VS Code (model selection, fire-and-forget)
+- Update `squad init` docs to explain `.agent.md` generation on VS Code
+
+---
+
+## Testing Checklist
+
+- [ ] Verify `CustomAgentConfig` works on CLI (spawn 3 agents with different tools)
+- [ ] Confirm `CustomAgentConfig` does NOT surface in VS Code (expected: agents invisible)
+- [ ] Test `.agent.md` files in VS Code (expected: auto-discovery, spawnable via `runSubagent`)
+- [ ] Validate MCP tool inheritance difference (CLI: isolated, VS Code: inherited)
+- [ ] Confirm session model selection on CLI (`SessionConfig.model`)
+- [ ] Confirm session model limitation on VS Code (user picker or `.agent.md` frontmatter)
+- [ ] Test parallel spawning on both platforms (CLI: background mode, VS Code: parallel sync)
+- [ ] Verify cross-platform state sharing (`.ai-team/` files accessible on both)
+
+---
+
+## Decision
+
+**Proposed:** Implement **dual implementation** (Option A) to preserve Squad's multi-platform promise while leveraging SDK capabilities where available.
+
+**Next Steps:**
+1. Brady reviews and approves/rejects this proposal
+2. If approved, update M2-7 (SDK integration) to include VS Code compatibility layer design
+3. Coordinate with Kujan (SDK/CLI patterns) on SDK usage best practices
+
+---
+
+## References
+
+- Spike #68: bradygaster/squad-pr#68
+- SDK source: `C:\src\copilot-sdk\nodejs\src\client.ts` (lines 1042-1113, spawn logic)
+- SDK types: `C:\src\copilot-sdk\nodejs\src\types.ts` (lines 548-579, CustomAgentConfig)
+- SDK README: `C:\src\copilot-sdk\nodejs\README.md` (lines 95-111, session config)
+- SDK docs: `C:\src\copilot-sdk\docs\compatibility.md` (CLI-only vs SDK features)
+- Squad compat: `docs/scenarios/client-compatibility.md` (existing VS Code research)
+- Strausz history: `.ai-team/agents/strausz/history.md` (VS Code integration learnings)
+
+
+---
+
+
