@@ -268,11 +268,11 @@ export const AgentPanel = ({ agentRegistry }) => {
 
 ### Impact on Existing Waves/Milestones
 
-**This becomes Wave 0 (Foundation).**
+**This becomes Wave 2 (after SDK Distribution).**
 
-Current structure assumes Copilot CLI integration. Interactive shell invalidates that assumption. Restructure as:
+SDK work (Wave 1) must complete first — the shell depends on a clean npm-publishable SDK. Restructure as:
 
-#### **Wave 0: Interactive Shell (NEW — P0, blocks all other waves)**
+#### **Wave 2: Interactive Shell (after SDK ships)**
 - **Scope:**
   - `squad` command enters REPL
   - Terminal UI with ink (agent panel, message stream, input prompt)
@@ -288,21 +288,21 @@ Current structure assumes Copilot CLI integration. Interactive shell invalidates
   - Integration tests: `test/cli/shell/` (REPL startup, agent spawn, session cleanup)
 - **Dependencies:** SDK APIs (already available), ink (new dependency)
 
-#### **Wave 1: npm Distribution (ADJUSTED)**
+#### **Wave 1: npm Distribution (UNCHANGED — completes first)**
 - **Changes:**
   - Shell is bundled in `cli.js` (ink bundled via esbuild)
   - `npx github:bradygaster/squad` still works (shell is opt-in via `squad` with no args)
   - Insider branch testing includes shell UX validation
 - **No scope change** — distribution mechanics stay the same
 
-#### **Wave 2: SquadUI SDK Proposal (DEFERRED)**
+#### **Wave 3: SquadUI SDK Proposal (DEFERRED)**
 - **Changes:**
   - SquadUI integration now targets Squad shell, not Copilot CLI
   - Web-based UI communicates with Squad shell via WebSocket or IPC
   - SquadUI becomes a frontend for the shell, not a standalone runtime
 - **Timeline impact:** Deferred until Wave 0 completes (shell is the UX foundation)
 
-#### **Wave 3: Public Docs (ADJUSTED)**
+#### **Wave 4: Public Docs (LAST)**
 - **Changes:**
   - Docs now explain `squad` shell as primary interface
   - Copilot CLI integration documented as "VS Code mode" (via `squad.agent.md`)
@@ -505,38 +505,38 @@ Routing rules, response tiers, agent selection — same algorithms. Only the spa
 
 ## Implementation Plan (High-Level)
 
-**Wave 0 Milestones:**
+**Wave 2 Sub-milestones:**
 
-### **M0.1: Shell Scaffolding**
+### **M2.1: Shell Scaffolding**
 - Create `src/cli/shell/` module
 - Add ink to `package.json` (`npm install ink`)
 - Implement `runShell()` entry point (loads ink, renders placeholder UI)
 - Wire up `src/index.ts` to call `runShell()` when no args
 - **Deliverable:** `squad` enters shell, shows static UI, `Ctrl+C` exits
 
-### **M0.2: SDK Integration**
+### **M2.2: SDK Integration**
 - Implement `src/cli/shell/spawn.ts` (agent spawning via SDK)
 - Wire up `StreamingPipeline` to ink render loop
 - Add session registry (`src/cli/shell/session-registry.ts`)
 - **Deliverable:** Shell can spawn agent, stream output, track session
 
-### **M0.3: Agent Panel UI**
+### **M2.3: Agent Panel UI**
 - Implement `AgentPanel` component (shows agent list + status)
 - Add status update logic (listen to session events, update registry)
 - **Deliverable:** Agent panel shows live status (idle, working, background)
 
-### **M0.4: Input Prompt**
+### **M2.4: Input Prompt**
 - Implement `InputPrompt` component (readline-based input)
 - Add message routing (coordinator, direct messages, slash commands)
 - **Deliverable:** User can type messages, see responses
 
-### **M0.5: Testing & Polish**
+### **M2.5: Testing & Polish**
 - Write integration tests (shell lifecycle, agent spawn, cleanup)
 - Test on macOS, Windows, Linux
 - Fix bugs, handle edge cases (session crashes, network failures)
 - **Deliverable:** Shell works reliably across platforms
 
-### **M0.6: Documentation**
+### **M2.6: Documentation**
 - Update README (add "Interactive Shell" section)
 - Write `docs/guide/shell.md` (shell commands, agent panel, status codes)
 - **Deliverable:** Users know how to use shell
