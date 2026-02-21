@@ -267,3 +267,62 @@ Updated all `.ai-team/` and `.ai-team-templates/` path references to `.squad/` a
 
 **Files created:** `.ai-team/docs/prds/04-agent-session-lifecycle.md`, `.ai-team/docs/prds/07-skills-migration.md`, `.ai-team/docs/prds/11-casting-system-v2.md`, `.ai-team/docs/prds/13-a2a-agent-communication.md`, `.ai-team/decisions/inbox/verbal-prd-agents.md`
 
+
+
+### 2026-02-24: M1-8 Charter Compilation + M1-9 Per-Agent Model Selection (Issues #122, #125)
+
+**Context:** Implementing core SDK agent module for charter compilation and model resolution. Part of Wave 1 SDK replatform work.
+
+**M1-8 Charter Compilation:** Created src/agents/charter-compiler.ts with compileCharter() function that transforms agent charter markdown into SquadCustomAgentConfig for SDK registration. The compiler:
+  - Parses charter.md sections: Identity (name/role/expertise/style), What I Own, Boundaries, Model preferences, Collaboration
+  - Builds composite prompt by assembling: charter content + team context + routing rules + relevant decisions
+  - Extracts model preference from ## Model section's Preferred field
+  - Generates displayName from role (e.g., 'Verbal — Prompt Engineer') and description from expertise
+  - Throws ConfigurationError (from dapter/errors.ts) on malformed charters with full error context
+  - Returns typed SquadCustomAgentConfig ready for SessionConfig.customAgents array
+
+**M1-9 Per-Agent Model Selection:** Created src/agents/model-selector.ts implementing the 4-layer priority resolution:
+  1. **User Override** — Explicit model from user request (highest priority)
+  2. **Charter Preference** — Agent's ## Model > Preferred field (skips if 'auto')
+  3. **Task-Aware Auto-Selection** — Maps task type to model tier:
+     - Code/prompt → claude-sonnet-4.5 (standard)
+     - Visual → claude-opus-4.5 (premium)
+     - Docs/planning/mechanical → claude-haiku-4.5 (fast)
+  4. **Default Fallback** — claude-haiku-4.5 (cost-first)
+
+**Fallback chains by tier:**
+  - Premium: opus-4.6 → opus-4.6-fast → opus-4.5 → sonnet-4.5
+  - Standard: sonnet-4.5 → gpt-5.2-codex → sonnet-4 → gpt-5.2
+  - Fast: haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini
+
+**Testing:** 30 comprehensive tests in 	est/agents.test.ts covering:
+  - Charter compilation with various context combinations (team/routing/decisions)
+  - Model resolution through all 4 priority layers
+  - Task type → model tier mapping
+  - Fallback chain generation for all tiers
+  - Edge cases (empty strings, undefined preferences, auto-selection)
+  - Priority chain validation (user > charter > task-auto > default)
+
+**Files created:**
+  - src/agents/charter-compiler.ts (193 lines)
+  - src/agents/model-selector.ts (172 lines)
+  - 	est/agents.test.ts (405 lines)
+
+**Files modified:**
+  - src/agents/index.ts — Added exports for charter-compiler and model-selector modules
+
+**Build status:** ✅ All 30 agents tests passing (100%)
+**Overall test status:** 210/213 tests passing (3 pre-existing failures in hooks.test.ts, unrelated)
+
+## Learnings
+
+  - **Charter compilation is mechanical, but context composition matters.** The compileCharter() function is straightforward markdown parsing, but the real value is in assembling the complete prompt from multiple sources (charter + team + routing + decisions). This pattern (static charter + dynamic context injection) will extend to the onSessionStart hook in the full agent session lifecycle.
+
+  - **Model selection priority is governance by design.** The 4-layer system creates clear accountability: user controls everything (layer 1), agents self-declare needs (layer 2), system provides smart defaults (layer 3), cost-efficiency fallback (layer 4). The 'auto' keyword in charter preferences explicitly delegates to the auto-selection algorithm — agents opt-in to smart defaults rather than hardcoding models.
+
+  - **Fallback chains prevent catastrophic failure.** Each tier has a 4-model fallback sequence that handles API unavailability, rate limits, or policy restrictions. The chains prefer same-tier alternatives before degrading to lower tiers (e.g., premium stays in premium: opus-4.6 → opus-4.6-fast → opus-4.5 before dropping to sonnet-4.5).
+
+  - **Task-type mapping is prompt engineering by code.** Codifying task-to-model rules in TypeScript (rather than in agent prompts) means the logic is centralized, testable, and auditable. Future work could make this configurable per-repo (e.g., override standard tier for code tasks to use a local fine-tuned model).
+
+  - **Test coverage as specification.** The 30 tests in gents.test.ts serve as executable documentation of the module's contract. Testing all 4 priority layers + all 6 task types + all 3 tiers + edge cases = high confidence in the resolution logic, which is critical since model selection affects both cost and capability.
+
