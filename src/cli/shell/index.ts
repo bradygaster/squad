@@ -7,6 +7,7 @@
 
 import { createRequire } from 'node:module';
 import * as readline from 'node:readline/promises';
+import { createCompleter } from './autocomplete.js';
 
 export { SessionRegistry } from './sessions.js';
 export { StreamBridge } from './stream-bridge.js';
@@ -22,6 +23,12 @@ export { parseInput } from './router.js';
 export type { MessageType, ParsedInput } from './router.js';
 export { executeCommand } from './commands.js';
 export type { CommandContext, CommandResult } from './commands.js';
+export { MemoryManager, DEFAULT_LIMITS } from './memory.js';
+export type { MemoryLimits } from './memory.js';
+export { detectTerminal, safeChar, boxChars } from './terminal.js';
+export type { TerminalCapabilities } from './terminal.js';
+export { createCompleter } from './autocomplete.js';
+export type { CompleterFunction, CompleterResult } from './autocomplete.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../../package.json') as { version: string };
@@ -49,9 +56,14 @@ export async function runShell(): Promise<void> {
 
   printHeader();
 
+  // Agent names will be populated from team discovery; empty for now
+  const agentNames: string[] = [];
+  const completer = createCompleter(agentNames);
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
+    completer,
   });
 
   try {

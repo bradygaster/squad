@@ -82,6 +82,61 @@ Squad proposes a team — each member named from a persistent thematic cast. You
 | `squad import <file>` | Import squad from an export file |
 | `squad scrub-emails` | Remove email addresses from Squad state files |
 
+---
+
+## Interactive Shell
+
+Tired of typing `squad` followed by a command every time? Enter the interactive shell.
+
+### Entering the Shell
+
+```bash
+squad
+```
+
+No arguments. Just `squad`. You'll get a prompt:
+
+```
+squad >
+```
+
+You're now connected to your team. Talk to them.
+
+### Shell Commands
+
+All shell commands start with `/`:
+
+| Command | What it does |
+|---------|-------------|
+| `/status` | Show active agents, sessions, and recent work |
+| `/history` | View session log and recent decisions |
+| `/agents` | List team members, expertise, and activity |
+| `/clear` | Clear the terminal screen |
+| `/help` | Show this reference |
+| `/quit` | Exit the shell (or Ctrl+C) |
+
+### Talking to Agents
+
+Use `@AgentName` or natural language with a comma:
+
+```
+squad > @Keaton, analyze the architecture of this project
+squad > McManus, write a blog post about our new feature
+squad > Build the login page
+```
+
+The coordinator routes messages to the right agents. Multiple agents can work in parallel—you'll see progress in real-time.
+
+### What the Shell Does
+
+- **Real-time visibility:** See agents working, decisions being recorded, blockers as they happen
+- **Message routing:** Describe what you need; the coordinator figures out who should do it
+- **Parallel execution:** Multiple agents work simultaneously on independent tasks
+- **Session persistence:** If an agent crashes, it resumes from checkpoint; you never lose context
+- **Decision logging:** Every decision is recorded in `.squad/decisions.md` for the whole team to see
+
+For a comprehensive guide, see [docs/guide/shell.md](docs/guide/shell.md).
+
 ### Insider Channel
 
 Want the latest features before they ship?
