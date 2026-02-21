@@ -163,3 +163,113 @@ _Summarized from initial architecture review (2026-02-07). Full entries in `hist
 - **M0 Session Pool Implementation (Issues #76, #83, #75 — 2026-02-22).** Completed three foundational M0 work items for squad-sdk: (1) **SessionPool** — Added capacity limit enforcement (throws at maxConcurrent), event emission (session.added, session.removed, session.status_changed, pool.at_capacity, pool.health_check), health check interval timer, idle session cleanup timer, graceful shutdown with timer cleanup. Pool now tracks session status changes via updateStatus() method. (2) **HealthMonitor** — Created `src/runtime/health.ts` with check() for startup validation, uses SquadClient's getState()/isConnected()/ping() methods, includes timeout handling, diagnostics logging on failures, exposes health status (healthy/degraded/unhealthy) for external monitoring. (3) **Client Consolidation** — Refactored `src/client/index.ts` from stub to thin re-export layer: exports core types from adapter/types.ts and SquadClient from adapter/client.ts, adds SquadClientWithPool as high-level API that integrates SessionPool + EventBus + base SquadClient. All pool events wire to EventBus automatically. Tests updated with SDK mock to avoid import.meta.resolve runtime issues. Build passes, 123/126 tests pass (3 failures are pre-existing adapter test issues, not related to M0 work). Key architectural insight: **Adapter pattern isolates SDK coupling** — all Squad code imports from `src/adapter/` or `src/client/`, never from `@github/copilot-sdk` directly. This protects us from Technical Preview breaking changes.
 
 - **M1-1 & M1-2 ToolRegistry Implementation (Issues #88, #92 — 2026-02-22).** Completed Custom Tools API Foundation and squad_route tool. Implemented ToolRegistry with `defineTool()` pattern that creates typed SquadTool objects compatible with adapter types. All five squad tools registered: (1) **squad_route** — Routes tasks to target agents, validates agent exists, returns RouteRequest for session creation (wired later). Priority defaults to 'normal'. Session lifecycle integration pending. (2) **squad_decide** — Writes decisions to `.squad/decisions/inbox/{uuid}.md` with author, summary, body, references. Creates directory structure if missing. (3) **squad_memory** — Appends to agent history files under Learnings/Updates/Sessions sections. Creates section if missing, validates history file exists. (4) **squad_status** — Placeholder for session pool state queries, returns telemetry with filter params. (5) **squad_skill** — Read/write SKILL.md files in `.squad/skills/{name}/`. Read returns content, write creates structured markdown with confidence metadata. All tools have JSON schema parameters. ToolRegistry provides `getTools()`, `getToolsForAgent(allowedTools?)`, `getTool(name)` methods. Test suite: 27 tests covering registration, lookup, filtering, and all handler behaviors (route validation, decide file writing, memory appending, status placeholder, skill read/write). All tests pass. Build successful. Key insight: **Tools are Squad's IPC layer** — squad_route creates work requests, squad_decide writes to drop-box, squad_memory persists learnings, squad_skill manages knowledge base. This decouples orchestration from SDK session creation — tools define the contract, runtime wires it later.
+
+### 2026-02-21T03:40:41
+Completed M1-3, M1-4, and M1-10 (Issues #99, #109, #130):
+
+**M1-3 - squad_decide Tool Completion (#99):**
+- Updated filename format to {agent-name}-{slug}.md instead of UUID
+- Changed markdown structure to use ### {timestamp}: {summary}, **By:**, **What:**, **Why:** format
+- Maintained inbox directory creation and decision ID tracking
+- All 30 tools tests passing
+
+**M1-4 - squad_memory & squad_status Tools (#109):**
+- squad_memory already correctly implemented with section management (learnings/updates/sessions)
+- Updated squad_status to integrate with SessionPool:
+  - Added sessionPoolGetter parameter to ToolRegistry constructor
+  - Returns real pool metrics: size, capacity, active sessions, uptime
+  - Supports filtering by agent name and status
+  - Verbose mode includes per-session details with uptime
+  - Handles gracefully when pool unavailable (e.g., in unit tests)
+
+**M1-10 - Parallel Fan-Out Session Spawning (#130):**
+- Created src/coordinator/fan-out.ts with spawnParallel() function
+- Implements Promise.allSettled for concurrent agent spawning
+- Each spawn: compile charter → resolve model → create session → send initial message
+- Error isolation: one session failure doesn't block others
+- Event aggregation via coordinator's event bus
+- Returns SpawnResult[] with session IDs and outcomes
+- Created comprehensive test suite: test/fan-out.test.ts (13 tests)
+- Tests cover: parallel spawning, error isolation, event aggregation, timing, edge cases
+
+**Build & Test Results:**
+- TypeScript compilation: ✓ success
+- test/tools.test.ts: ✓ 30/30 tests passing
+- test/fan-out.test.ts: ✓ 13/13 tests passing
+- Total: 253/270 tests passing (17 failures are pre-existing in integration.test.ts)
+
+**Trade-offs:**
+- squad_status uses ny type for pool sessions to avoid circular dependencies
+- Event types cast to ny in fan-out.ts to match EventBus's limited type set
+- Model override skips resolveModel call entirely for performance
+
+
+---
+
+## 2026-02-21 - M2-2/M2-3/M2-4: Configuration Loader, Routing Config, Model Registry (#91, #93, #95)
+
+**Task:** Enhance existing config loader and create routing + model configuration modules for the SDK replatform.
+
+**M2-2 - Configuration Loader Enhancement:**
+- Enhanced src/runtime/config.ts with config file discovery (walks up directory tree)
+- Added support for squad.config.js, .squad/config.json in addition to .ts/.json
+- Implemented validateConfigDetailed() function returning ValidationResult with errors/warnings
+- Added comprehensive validation for all config sections: models, routing, agents, casting, platforms
+- Config discovery checks: squad.config.ts → squad.config.js → squad.config.json → .squad/config.json → walk up
+- Validates: agent name uniqueness, work type duplicates (warning), issue routing actions, agent sources, casting policies
+
+**M2-3 - Routing Configuration Module:**
+- Created src/config/routing.ts with routing.md markdown parser
+- parseRoutingMarkdown(): extracts routing table from markdown format into typed RoutingConfig
+- compileRoutingRules(): compiles rules with regex patterns and priority scoring (specificity-based)
+- matchRoute(): fast pattern matching against compiled rules, returns agents + confidence + reason
+- matchIssueLabels(): matches GitHub issue labels to routing rules with required/excluded label logic
+- Supports both markdown (legacy) and typed config (new)
+- Priority system: longer/more-specific work types rank higher in matching
+
+**M2-4 - Model Configuration & Registry:**
+- Created src/config/models.ts with full model catalog from squad.agent.md
+- MODEL_CATALOG: 17 models across 3 tiers (premium: 3, standard: 10, fast: 4)
+- Providers: Anthropic (Claude), OpenAI (GPT), Google (Gemini)
+- ModelRegistry class: lookups, tier/provider filtering, fallback chains, recommendations
+- getFallbackChain(): returns tier-appropriate fallback sequence, optionally prefers same provider
+- getNextFallback(): chain iteration with attempted-model tracking
+- getRecommendedModels(): use-case-based model selection
+- Convenience functions: getModelInfo(), isModelAvailable(), getFallbackChain()
+
+**Test Coverage:**
+- test/routing.test.ts: 16 tests (parseRoutingMarkdown, compileRoutingRules, matchRoute, matchIssueLabels)
+- test/models.test.ts: 34 tests (catalog, fallback chains, ModelRegistry methods, convenience functions)
+- test/config.test.ts: Enhanced with 8 new tests (validateConfigDetailed, discoverConfigFile)
+- All 405 tests pass
+
+**Build & Test Results:**
+- TypeScript compilation: ✓ success
+- npm test: ✓ 405/405 tests passing (15/15 test files)
+- Routing tests: ✓ 16/16 passing
+- Models tests: ✓ 34/34 passing
+- Config tests: ✓ 22/22 passing
+
+**Implementation Notes:**
+- Built on existing src/runtime/config.ts (619 lines) rather than duplicating
+- Config discovery uses dirname() iteration, stops at root
+- Routing patterns use regex generation from work type + examples
+- Model catalog matches squad.agent.md spec exactly (lines 398-400)
+- Fallback chains default to DEFAULT_FALLBACK_CHAINS but support provider preference
+- ValidationResult separates errors (blocking) from warnings (non-blocking)
+
+**Files Modified:**
+- src/runtime/config.ts (enhanced validation + discovery)
+- src/config/index.ts (added exports)
+
+**Files Created:**
+- src/config/routing.ts (358 lines)
+- src/config/models.ts (452 lines)
+- test/routing.test.ts (252 lines)
+- test/models.test.ts (321 lines)
+
+**Trade-offs:**
+- Discovery walks up from CWD but stops before filesystem root to avoid excessive searching
+- Routing pattern matching uses lookahead regex for work type words, simple alternation for examples
+- Priority calculation is heuristic-based (length + word count + pattern count) rather than ML-based
+- Model catalog is hardcoded rather than fetched from API (matches coordinator's static approach)

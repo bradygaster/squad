@@ -326,3 +326,88 @@ Updated all `.ai-team/` and `.ai-team-templates/` path references to `.squad/` a
 
   - **Test coverage as specification.** The 30 tests in gents.test.ts serve as executable documentation of the module's contract. Testing all 4 priority layers + all 6 task types + all 3 tiers + edge cases = high confidence in the resolution logic, which is critical since model selection affects both cost and capability.
 
+### 2026-02-21
+
+**M1-7 (#121) Agent Session Lifecycle + M1-11 (#137) History Shadows — Complete**
+
+Built agent lifecycle orchestration system with project-specific history tracking:
+
+**Lifecycle (M1-7):**
+- Created src/agents/lifecycle.ts with AgentLifecycleManager class
+- Full spawn pipeline: charter read → compilation → model resolution → session creation → event handlers
+- AgentHandle interface for control: sendMessage(), destroy(), status tracking
+- Idle timeout (5 min default, configurable)
+- SessionPool integration for tracking active agents
+- Graceful shutdown with history persistence
+
+**History Shadows (M1-11):**
+- Created src/agents/history-shadow.ts for local agent history at .squad/agents/{name}/history.md
+- Separate from portable charter — captures project-specific learnings
+- CRUD operations: createHistoryShadow(), appendToHistory(), readHistory()
+- Structured sections: Context, Learnings, Decisions, Patterns, Issues, References
+- Timestamped entries with automatic section creation
+
+**Testing:**
+- Comprehensive test coverage in 	est/lifecycle.test.ts (17 tests)
+- All 287 tests pass across full suite
+- Mock client handles session creation/destruction
+- Temp directory isolation for shadow file tests
+
+**Integration:**
+- Updated src/agents/index.ts to export new lifecycle & history APIs
+- Built on existing charter compilation (M1-8) and model selection (M1-9)
+- Uses SessionLifecycleError for proper error handling
+
+Charter → Model → Session → Handle flow now complete and tested. Next: coordinator integration.
+
+### 2026-02-21: M2-6 Squad Init Replatform + M2-10 Agent Onboarding (#98, #111)
+
+**Context:** Brady requested typed config initialization and runtime agent onboarding for squad-sdk. Replaces markdown-first initialization with typed squad.config.ts/json generation.
+
+**What was built:**
+
+- `src/config/init.ts` — Full initialization module:
+  - `initSquad()` creates .squad/ directory structure, generates config (TS or JSON), creates agent folders with charter.md/history.md
+  - TypeScript config with ESM imports, JSON config with validated schema
+  - Default agent templates for 5 standard roles (lead, developer, tester, scribe, ralph)
+  - .gitattributes for merge drivers (history.md, decisions.md)
+  - Initial decisions.md, empty casting/skills/decisions directories
+  - Routing rules auto-generated for common agent roles
+
+- `src/agents/onboarding.ts` — Runtime agent onboarding:
+  - `onboardAgent()` creates agent directory, generates charter from role template + project context, seeds history.md with day-1 context
+  - Charter templates for 7 standard roles (lead, developer, tester, scribe, ralph, designer, architect)
+  - Generic charter fallback for unknown roles
+  - Name normalization (kebab-case), context injection, display name handling
+  - `addAgentToConfig()` helper for TypeScript config updates (adds routing rules)
+
+- `test/init.test.ts` — Comprehensive test coverage (25 tests, all passing):
+  - Config generation (TS and JSON)
+  - Directory structure creation
+  - Agent charter/history generation
+  - Multiple agents, same-role handling
+  - Custom templates, role fallbacks
+  - Config auto-update
+  - Full integration: init + onboard flow
+
+**Key design decisions:**
+
+- **Two config formats, one validation.** TypeScript configs import SquadConfig type; JSON configs validate at load. Both share DEFAULT_CONFIG merge for sensible defaults.
+- **Charter templates are functions, not strings.** Each role template is `(displayName, projectContext) => string` — injectable context, composable patterns.
+- **History seeding gives agents day-1 context.** New agents get project name, description, user name, and onboard date in their history — no blank slate starts.
+- **addAgentToConfig is best-effort only.** Updating TypeScript configs programmatically is fragile. Function tries simple heuristic (work type mapping), returns false if it can't. JSON configs require manual edit.
+- **Exports consolidated, conflicts resolved.** src/config/schema.ts and src/runtime/config.ts both export SquadConfig — selective re-exports prevent ambiguity.
+
+**Test results:** 25/25 passing. Full suite: 404/405 passing (1 pre-existing routing.test.ts failure unrelated to this work).
+
+**Files created:**
+- `C:\src\squad-sdk\src\config\init.ts` (408 lines)
+- `C:\src\squad-sdk\src\agents\onboarding.ts` (419 lines)
+- `C:\src\squad-sdk\test\init.test.ts` (554 lines)
+
+**Files modified:**
+- `C:\src\squad-sdk\src\config\index.ts` (added init.js export)
+- `C:\src\squad-sdk\src\index.ts` (added selective exports, updated help text)
+
+**What's next:** M2-6 and M2-10 complete. Typed config initialization and agent onboarding are SDK-ready. Integration with squad CLI (`squad init`, `squad onboard`) deferred to command routing implementation.
+
