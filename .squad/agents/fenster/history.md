@@ -37,10 +37,8 @@ Recommend renaming `squad watch` to `squad triage` (40% better semantic accuracy
 - All changes in `src/index.ts` only — no modifications to resolution.ts, init.ts, or upgrade.ts needed
 - PR on branch `squad/212-213-global-flag-status` → `bradygaster/dev`
 
-### 📌 #273: ensureSquadPath() guard — no repo root clutter — implemented
-- Added `ensureSquadPath(filePath, squadRoot)` to `src/resolution.ts` — validates write targets are inside `.squad/` or system temp dir, throws otherwise
-- Exported from `src/index.ts` public API
-- 5 tests in `test/resolution.test.ts`: valid .squad/ path, .squad/ root itself, system temp allowed, repo root rejected, arbitrary path rejected
-- PR #279 on branch `squad/273-no-root-clutter` → `bradygaster/dev`
-- This is a guard utility — does not change existing write behavior, provides a function future code should call before writing scratch/temp/state files
-- Audit finding: 30+ `writeFileSync`/`writeFile` calls exist in src/ — most write into .squad/ subdirs or user-requested paths, but the guard is now available to enforce the policy programmatically
+### 📌 Team update (2026-02-21T22:25Z): Decision inbox merged — decided by Fenster, Hockney
+- ensureSquadPath() guard (#273): validation function for .squad/ paths, testable composition pattern for routing logic
+- CLI integration tests: direct logic testing instead of process spawning (sets pattern for future CLI tests)
+
+

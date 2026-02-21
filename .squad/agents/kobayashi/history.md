@@ -28,3 +28,6 @@
 - --global flag (#212) + squad status (#213): routing in src/index.ts, composable resolution pattern, PR #277 merged
 - Decision consolidation: changesets config and --global pattern appended to decisions.md
 
+### 📌 Team update (2026-02-21T22:25Z): M5 round complete — decided by Scribe
+- Decision inbox merged: ensureSquadPath() guard (#273), CLI routing testability pattern
+- Status: Two PRs merged (#280, #279); one issue blocked (#209 needs GitHub Pro)

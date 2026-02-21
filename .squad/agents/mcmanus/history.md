@@ -42,3 +42,8 @@
 - README maintains historical context by keeping GitHub-native option visible but secondary, per decision #2026-02-21
 - CONTRIBUTING.md focuses on development experience, not user experience (kept separate from README per v1 internal-only docs decision)
 
+### 📌 Team update (2026-02-21T22:25Z): Decision inbox merged — decided by Scribe
+- M5 round complete: McManus (docs PR #280), Fenster (guard PR #279), Kobayashi (blocked #209)
+- Decisions merged: ensureSquadPath() guard, CLI routing testability pattern
+
+
