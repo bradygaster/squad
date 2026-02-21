@@ -1,3 +1,21 @@
+> ⚠️ **This repo is entering archive mode.** The Squad project has moved to a new home with a full TypeScript SDK runtime.
+> 
+> **New repo:** [bradygaster/squad-pr](https://github.com/bradygaster/squad-pr) (private during development)
+> 
+> The CLI you know and love (`npx github:bradygaster/squad`) continues to work from this repo.
+> For the v1 SDK with typed hooks, session management, and crash recovery, see the new repo.
+
+---
+
+> ⚠️ **This repo is entering archive mode.** The Squad project has moved to a new home with a full TypeScript SDK runtime.
+> 
+> **New repo:** [bradygaster/squad-pr](https://github.com/bradygaster/squad-pr) (private during development)
+> 
+> The CLI you know and love (`npx github:bradygaster/squad`) continues to work from this repo.
+> For the v1 SDK with typed hooks, session management, and crash recovery, see the new repo.
+
+---
+
 # Squad
 
 **AI agent teams for any project.** A team that grows with your code.
