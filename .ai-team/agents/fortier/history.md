@@ -60,3 +60,22 @@
 4. EventBus `Promise.all` bug (mitigate: fix to `Promise.allSettled` immediately)
 
 **Verdict:** Green light on SDK replatforming. Runtime supports our session pool, streaming observability, and persistent session designs.
+
+## Recent Updates
+
+### 2026-02-21: PRD 18 — Watch Command Implementation
+
+Reviewed and verified the watch command implementation for Ralph's standalone polling process. The implementation follows the beta CLI pattern and includes:
+- `src/cli/commands/watch.ts` — Main watch loop with interval-based polling
+- `src/cli/core/gh-cli.ts` — Typed GitHub CLI wrappers (ghAvailable, ghAuthenticated, ghIssueList, ghIssueEdit)
+- Auto-triage based on role keywords (frontend/UI, backend/API, test/QA)
+- @copilot auto-assignment support when enabled
+- Graceful shutdown handling (SIGINT/SIGTERM)
+
+Architecture decisions respected:
+- Zero runtime deps for CLI layer (uses Node.js child_process for gh CLI)
+- execFile (not exec) for safety
+- TypeScript strict mode, ESM-only
+- Proper error handling with helpful messages for missing/unauthenticated gh CLI
+
+The implementation is already present on master branch in squad-sdk. Build and tests pass (1,551 tests green).

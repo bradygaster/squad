@@ -31,6 +31,8 @@ _Summarized from initial architecture review (2026-02-07). Full entries in `hist
 
 ## Recent Updates
 
+📌 **Team update (2026-02-22):** PRD 16 shipped — Full init command implementation ported from beta CLI to squad-sdk TypeScript. Copies 34 template files, installs squad.agent.md with version stamping, detects project type (npm/go/python/java/dotnet), generates workflows (project-type-aware stubs for non-npm), creates directory structure (.squad/ with .ai-team/ legacy support), copies starter skills, scaffolds identity files (now.md, wisdom.md), appends .gitattributes merge=union rules and .gitignore log exclusions. Zero-dep, async/await, idempotent (never overwrites user state), Windows-compatible. PR #175 opened. — Fenster
+
 📌 **Team update (2026-02-21):** PRD 15 shipped — CLI entry point with full subcommand routing implemented in squad-sdk. Zero-dep color/emoji output utilities, error handling (fatal), squad directory detection (.squad/ with .ai-team/ legacy fallback), and subcommand stubs for all 9 commands (init, upgrade, watch, export, import, plugin, copilot, scrub-emails). Each stub prints helpful placeholder message with PRD reference. PR #173 opened on bradygaster/squad-pr. — Fenster
 
 📌 Team update (2026-02-20): Recruitment wave complete. Three new team members hired: Edie (TypeScript Engineer), Rabin (Distribution Engineer), Fortier (Node.js Runtime Dev). All onboarded with assessments. Keaton created 19 issues, 3 milestones, 12 labels on bradygaster/squad-pr. Kujan delivered feature risk punch list (14 GRAVE, 12 AT RISK, 28 COVERED, 5 INTENTIONAL). — decided by Keaton, Kujan, Edie, Rabin, Fortier

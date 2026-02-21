@@ -51,3 +51,22 @@
 - User-owned: ceremonies.md, routing.md, identity/, agent-specific files
 - Exported via cli/index.ts barrel, build verified
 - PR #172 created: https://github.com/bradygaster/squad-pr/pull/172
+
+### PRD 17: Upgrade Command (2026-02-21)
+- Implemented full upgrade command from beta CLI (1,500+ LOC port)
+- Created `src/cli/core/upgrade.ts` — main upgrade logic with version comparison
+- Created `src/cli/core/migrations.ts` — version-based additive migration runner
+- Created `src/cli/core/email-scrub.ts` — PII cleanup utility (scrubs email addresses)
+- Created `src/cli/core/migrate-directory.ts` — .ai-team/ → .squad/ migration
+- Zero-dep implementation using Node.js stdlib only (fs, path)
+- Squad-owned file overwrite (uses TEMPLATE_MANIFEST.overwriteOnUpgrade flags)
+- Project-type detection (npm/go/python/java/dotnet/unknown)
+- Workflow generation (project-type-aware stubs for non-npm projects)
+- Version stamping on squad.agent.md (HTML comment + Identity section)
+- Migration registry: v0.2.0 (skills/), v0.4.0 (plugins/), v0.5.0 (email scrub)
+- --migrate-directory flag: renames .ai-team/ → .squad/, updates .gitattributes/.gitignore
+- Wired into CLI router (src/index.ts) — async main() function
+- Fixed type conflicts between cli/core/upgrade.ts and cli/upgrade.ts (SDK stub)
+- Fixed stampVersion export conflict (build/versioning.ts vs cli/core/version.ts)
+- Build passes, tests pass (43/43 in cli.test.ts, 2 unrelated failures elsewhere)
+- PR #174 created: https://github.com/bradygaster/squad-pr/pull/174
