@@ -1,0 +1,140 @@
+name: Publish to npm and Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.8.0)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  publish-sdk:
+    name: Publish @bradygaster/squad-sdk
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build squad-sdk
+        run: npm -w packages/squad-sdk run build
+
+      - name: Publish squad-sdk to npm
+        run: npm -w packages/squad-sdk publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-cli:
+    name: Publish @bradygaster/squad-cli
+    needs: publish-sdk
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build squad-cli
+        run: npm -w packages/squad-cli run build
+
+      - name: Publish squad-cli to npm
+        run: npm -w packages/squad-cli publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    name: Create GitHub Release
+    needs: publish-cli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version and tag
+        id: version_info
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${{ github.ref }}"
+            TAG="${TAG#refs/tags/}"
+            VERSION="${TAG#v}"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "📦 Triggered by tag push: ${TAG}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            TAG="v${VERSION}"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "📦 Triggered by workflow_dispatch: ${TAG}"
+          fi
+
+      - name: Check if release already exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ steps.version_info.outputs.tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Release ${{ steps.version_info.outputs.tag }} already exists"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "🆕 Release ${{ steps.version_info.outputs.tag }} will be created"
+          fi
+
+      - name: Create git tag (if needed)
+        if: steps.check_release.outputs.exists == 'false' && github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse "refs/tags/${{ steps.version_info.outputs.tag }}" >/dev/null 2>&1; then
+            git tag -a "${{ steps.version_info.outputs.tag }}" -m "Release ${{ steps.version_info.outputs.tag }}"
+            git push origin "${{ steps.version_info.outputs.tag }}"
+            echo "✅ Created tag: ${{ steps.version_info.outputs.tag }}"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version_info.outputs.tag }}" \
+            --title "${{ steps.version_info.outputs.tag }}" \
+            --generate-notes \
+            --latest
+
+      - name: Verify release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${{ steps.version_info.outputs.tag }}"
+          echo "✅ Release ${{ steps.version_info.outputs.tag }} created and verified"
