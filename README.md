@@ -66,6 +66,45 @@ Squad proposes a team — each member named from a persistent thematic cast. You
 
 ---
 
+## Squad Desktop (UI)
+
+Squad Desktop is an Electron app that provides a visual interface for monitoring and controlling your AI agent team.
+
+### Features
+
+- **Agent Panel** — see all agents, their status (idle/busy/blocked), and live output
+- **Terminal View** — scrolling log of all agent activity with timestamps
+- **Command Queue** — send commands to specific agents or broadcast to the team, track execution
+- **Roster Manager** — add/remove agents on the fly
+- **Standalone Mode** — works without the Copilot CLI; commands are processed locally
+
+### Run from Source
+
+```bash
+cd ui
+npm install
+npm run build
+npm run dev
+```
+
+### Build Portable Exe (Windows)
+
+```bash
+cd ui
+npm run build
+npx electron-builder --win --config electron-builder.json
+# Output: ui/dist-packaged/Squad Desktop 0.1.0.exe
+```
+
+### Layout
+
+| Left | Center | Right |
+|------|--------|-------|
+| Agent list with status | Terminal output log | Command queue |
+| Bottom: Command input bar with agent selector |
+
+---
+
 ## Agents Work in Parallel — You Catch Up When You're Ready
 
 Squad doesn't work on a human schedule. When you give a task, the coordinator launches every agent that can usefully start — simultaneously. Frontend, backend, tests, architecture — all at once.
