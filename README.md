@@ -26,20 +26,12 @@ git init
 
 ### 2. Install Squad
 
-#### Option A: npm (Recommended)
-
 ```bash
 npm install --save-dev @bradygaster/squad-cli
 npx squad init
 ```
 
-#### Option B: Legacy (GitHub-native)
-
-```bash
-npx github:bradygaster/squad-pr
-```
-
-This installs the Squad CLI, GitHub Actions workflows for automation (Ralph heartbeat, CI, triage, etc.), templates, and starter skills.
+**Prefer GitHub-native?** You can still use `npx github:bradygaster/squad-pr`, though npm is recommended for faster installs and better dependency management. See [Migration Guide](docs/migration-github-to-npm.md) for context.
 
 ### 3. Authenticate with GitHub (for Issues, PRs, and Ralph)
 
@@ -145,23 +137,21 @@ Want the latest features before they ship?
 npm install --save-dev @bradygaster/squad-cli@insider
 ```
 
-Or with legacy distribution:
+Or with legacy GitHub-native distribution:
 
 ```bash
-npx github:bradygaster/squad-sdk#insider
+npx github:bradygaster/squad-pr#insider
 ```
 
-### Legacy Distribution
+### Legacy: GitHub-native Distribution
 
-The original GitHub-native distribution is still available:
+If you prefer not to use npm, the original GitHub-native distribution is still available:
 
 ```bash
 npx github:bradygaster/squad-pr
 ```
 
-This resolves the package from the repository directly via git+ssh. Use this if you prefer not to depend on npm registry.
-
-**Migrating from GitHub-native?** See [Migration Guide: GitHub-native to npm](docs/migration-github-to-npm.md).
+This resolves the package directly via git+ssh. Most users should prefer the npm approach above for faster installs and simpler dependency management. See [Migration Guide: GitHub-native to npm](docs/migration-github-to-npm.md) for more details.
 
 ---
 

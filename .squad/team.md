@@ -66,7 +66,7 @@
 - **Owner:** Brady
 - **Stack:** TypeScript (strict mode, ESM-only), Node.js ≥20, @github/copilot-sdk, Vitest, esbuild
 - **Description:** The programmable multi-agent runtime for GitHub Copilot — v1 replatform of Squad beta
-- **Distribution:** GitHub-native (`npx github:bradygaster/squad`) — NOT npmjs.com
+- **Distribution:** npm (`npm install -g @bradygaster/squad-cli` for CLI, `npm install @bradygaster/squad-sdk` for SDK)
 - **Created:** 2026-02-21
 
 ## Issue Source

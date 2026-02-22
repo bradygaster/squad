@@ -13,13 +13,14 @@
     "README.md"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build",
     "build": "tsc -p tsconfig.json"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@bradygaster/squad-sdk": "0.8.0",
+    "@bradygaster/squad-sdk": "workspace:*",
     "ink": "^6.8.0",
     "react": "^19.2.4"
   },

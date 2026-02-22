@@ -4,7 +4,10 @@
  * CLI entry point lives in src/cli-entry.ts.
  */
 
-export const VERSION = '0.8.0';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+export const VERSION: string = pkg.version;
 
 // Export public API
 export { resolveSquad, resolveGlobalSquadPath, ensureSquadPath } from './resolution.js';
