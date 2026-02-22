@@ -1,0 +1,14 @@
+{
+  "appId": "com.squad.desktop",
+  "productName": "Squad Desktop",
+  "directories": {
+    "output": "dist-packaged"
+  },
+  "files": [
+    "dist/**/*",
+    "package.json"
+  ],
+  "win": {
+    "target": "portable"
+  }
+}
