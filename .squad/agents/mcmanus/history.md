@@ -7,6 +7,60 @@
 
 ## Learnings
 
+### 2026-02-24: Issue #338 — Copy polish: human, fun, action-oriented
+**Status:** Complete. PR #358 created.
+**Changes made:**
+1. **packages/squad-cli/src/cli-entry.ts** — 16 user-facing message rewrites:
+   - Help text: "Add an AI agent team..." → "Team of AI agents at your fingertips"
+   - Command descriptions simplified: e.g., "Create .squad/ in this repo" (was "Initialize Squad")
+   - Triage message: removed corporate "Squad triage — scanning" → "Scanning issues and categorizing"
+   - Loop message: "Squad loop starting..." → "Starting work loop (Ralph mode)..."
+   - Hire message: "Team creation wizard starting..." → "Building your team..."
+   - Status output: "Active squad" label → "Here: " + human-centered output
+   - Error hint: "Hint: Run 'squad doctor'..." → "Tip: Run 'squad doctor'..."
+   - All imports/exports copy shortened and action-focused
+   - Scrub-emails output: "(email) address(es)" → human pluralization
+
+2. **packages/squad-cli/src/cli/shell/commands.ts** — Slash command rewrites:
+   - /help: 10 lines → 6 lines. "Available commands" → "Commands:". Removed verbose examples.
+   - /status: "Squad Status" → "Your Team:". Labels: "Registered agents" → "Size:", "Active" → "Active now:"
+   - /history: "Recent messages (N)" → "Last N message(s)"
+   - /agents: "No agents registered" → "No team members yet"
+   - Unknown command: "Unknown command: /X" → "Hmm, /X? Type /help for commands." (more conversational)
+
+3. **packages/squad-cli/src/cli/shell/components/AgentPanel.tsx** — 2 message updates:
+   - Empty state: "Type a message to start, or run /help for commands" → "Send a message to start. /help for commands."
+   - Idle state: "all idle" label removed (was redundant)
+
+4. **packages/squad-cli/src/cli/shell/components/InputPrompt.tsx** — Placeholder text:
+   - Hint: "Type a message or @agent-name..." → "Type a message or @agent..."
+
+5. **packages/squad-cli/src/cli/shell/components/App.tsx** — 2 UX messages:
+   - Setup hint: "Run 'squad init' to set up your team" → "Run 'squad init' to get started"
+   - Instructions: 2 lines → 1 line: "↑↓ history · @Agent to direct · /help · Ctrl+C exit"
+   - SDK error: "SDK not connected — agent routing unavailable" → "SDK not connected. Check your setup."
+
+6. **test/cli-shell-comprehensive.test.ts** — Updated 9 test assertions to match new copy
+7. **test/ux-gates.test.ts** — Updated 2 UX gate assertions to match new copy
+
+**Build:** SDK + CLI built successfully. All 125 tests passed (11 tests updated to match new copy).
+**Tone applied:** Every message is now:
+   - **Human:** No corporate speak, no "squad" as a formal noun in every sentence
+   - **Fun:** "Hmm, /X?" instead of "Unknown command", "Tip:" instead of "Hint:", professional warmth
+   - **Action-oriented:** Messages guide users to their next step (run squad init, check setup, use /help)
+   - **Short:** One line when possible, no redundant status labels
+
+**Key rewrites exemplify the goal:**
+- Before: "No message history yet" → After: "No messages yet" (3 words saved, same meaning)
+- Before: "Unknown command: /foobar. Type /help for available commands" → After: "Hmm, /foobar? Type /help for commands." (more conversational, same info)
+- Before: "Squad Status\n  Active squad: repo\n  Reason: Found .squad/ in repo tree" → After: "Squad Status\n  Here: repo (in .squad/)" (cleaner structure, less explanation noise)
+
+**PR:** https://github.com/bradygaster/squad-pr/pull/358
+**Notes:**
+- All changes backward-compatible; no API breaking changes
+- Test updates validate that new copy passes UX gates (width, structure, completeness)
+- Ready to merge and deploy—no documentation changes needed (copy IS the docs)
+
 ### 2026-02-23: Personal Squad tutorial — docs/guide/personal-squad.md
 **Status:** Complete.
 **Changes made:**
