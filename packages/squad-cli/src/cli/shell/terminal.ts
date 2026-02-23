@@ -1,4 +1,5 @@
 import { platform } from 'node:os';
+import { useState, useEffect } from 'react';
 
 export interface TerminalCapabilities {
   supportsColor: boolean;
@@ -10,6 +11,29 @@ export interface TerminalCapabilities {
   isTTY: boolean;
   /** True when NO_COLOR=1, TERM=dumb, or color is otherwise suppressed. */
   noColor: boolean;
+}
+
+/** Current terminal width, clamped to a minimum of 40. */
+export function getTerminalWidth(): number {
+  return Math.max(process.stdout.columns || 80, 40);
+}
+
+/** React hook — returns live terminal width, updates on resize. */
+export function useTerminalWidth(): number {
+  const [width, setWidth] = useState(getTerminalWidth());
+
+  useEffect(() => {
+    const onResize = () => setWidth(getTerminalWidth());
+    // Avoid MaxListenersExceededWarning in test environments with many renders
+    const prev = process.stdout.getMaxListeners?.() ?? 10;
+    if (prev <= 20) process.stdout.setMaxListeners?.(prev + 10);
+    process.stdout.on('resize', onResize);
+    return () => {
+      process.stdout.off('resize', onResize);
+    };
+  }, []);
+
+  return width;
 }
 
 /**

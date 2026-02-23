@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { isNoColor } from '../terminal.js';
+import { isNoColor, useTerminalWidth } from '../terminal.js';
 
 interface InputPromptProps {
   onSubmit: (value: string) => void;
@@ -16,6 +16,8 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   disabled = false 
 }) => {
   const noColor = isNoColor();
+  const width = useTerminalWidth();
+  const narrow = width < 60;
   const [value, setValue] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -79,12 +81,12 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       <Box marginTop={1}>
         {noColor ? (
           <>
-            <Text bold>◆ squad </Text>
+            <Text bold>{narrow ? 'sq ' : '◆ squad '}</Text>
             <Text>[working...]</Text>
           </>
         ) : (
           <>
-            <Text color="cyan" bold>◆ squad </Text>
+            <Text color="cyan" bold>{narrow ? 'sq ' : '◆ squad '}</Text>
             <Text color="cyan">{SPINNER_FRAMES[spinFrame]}</Text>
             <Text color="cyan" bold>{'> '}</Text>
           </>
@@ -95,11 +97,11 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
   return (
     <Box marginTop={1}>
-      <Text color={noColor ? undefined : 'cyan'} bold>◆ squad{'> '}</Text>
+      <Text color={noColor ? undefined : 'cyan'} bold>{narrow ? 'sq> ' : '◆ squad> '}</Text>
       <Text>{value}</Text>
       <Text color={noColor ? undefined : 'cyan'} bold>▌</Text>
       {!value && (
-        <Text dimColor> Type a message or @agent...</Text>
+        <Text dimColor>{narrow ? ' @agent...' : ' Type a message or @agent...'}</Text>
       )}
     </Box>
   );

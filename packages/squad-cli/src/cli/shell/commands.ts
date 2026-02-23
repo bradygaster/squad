@@ -1,5 +1,6 @@
 import { SessionRegistry } from './sessions.js';
 import { ShellRenderer } from './render.js';
+import { getTerminalWidth } from './terminal.js';
 import type { ShellMessage } from './types.js';
 
 export interface CommandContext {
@@ -81,6 +82,23 @@ function handleClear(): CommandResult {
 }
 
 function handleHelp(): CommandResult {
+  const width = getTerminalWidth();
+  if (width < 80) {
+    // Single-column compact help for narrow terminals
+    return {
+      handled: true,
+      output: [
+        'Commands:',
+        '/status — Check your team',
+        '/history — Recent messages',
+        '/agents — List team members',
+        '/clear — Clear screen',
+        '/quit — Exit',
+        '',
+        '@Agent message — Direct',
+      ].join('\n'),
+    };
+  }
   return {
     handled: true,
     output: [

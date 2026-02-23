@@ -13,7 +13,8 @@ import { InputPrompt } from './InputPrompt.js';
 import { parseInput, type ParsedInput } from '../router.js';
 import { executeCommand } from '../commands.js';
 import { loadWelcomeData } from '../lifecycle.js';
-import { isNoColor } from '../terminal.js';
+import { isNoColor, useTerminalWidth } from '../terminal.js';
+import { useTypewriter, useFadeIn } from '../useAnimation.js';
 import type { WelcomeData } from '../lifecycle.js';
 import type { SessionRegistry } from '../sessions.js';
 import type { ShellRenderer } from '../render.js';
@@ -153,32 +154,42 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
   const activeCount = agents.filter(a => a.status === 'streaming' || a.status === 'working').length;
 
   const noColor = isNoColor();
+  const width = useTerminalWidth();
+  const compact = width <= 60;
+  const wide = width >= 100;
+
+  // Welcome animation: typewriter on title, fade-in on rest of banner
+  const titleRevealed = useTypewriter(welcome ? '◆ SQUAD' : '', 500);
+  const bannerReady = titleRevealed.length >= 7; // '◆ SQUAD'.length
+  const bannerDim = useFadeIn(bannerReady, 300);
 
   return (
     <Box flexDirection="column">
       <Box flexDirection="column" borderStyle="round" borderColor={noColor ? undefined : 'cyan'} paddingX={1}>
         <Box gap={1}>
-          <Text bold color={noColor ? undefined : 'cyan'}>◆ SQUAD</Text>
-          <Text dimColor>v{version}</Text>
-          {welcome?.description ? (
+          <Text bold color={noColor ? undefined : 'cyan'}>{welcome ? titleRevealed : '◆ SQUAD'}</Text>
+          {bannerReady && <Text dimColor>v{version}</Text>}
+          {!compact && welcome?.description ? (
             <>
               <Text dimColor>—</Text>
-              <Text dimColor>{welcome.description}</Text>
+              <Text dimColor wrap="wrap">{welcome.description}</Text>
             </>
           ) : null}
         </Box>
-        <Text>{' '}</Text>
-        {rosterText ? (
+        {!compact && <Text>{' '}</Text>}
+        {!compact && rosterText ? (
           <>
             <Text wrap="wrap">{rosterText}</Text>
             <Text dimColor>  {agentCount} agent{agentCount !== 1 ? 's' : ''} ready · {activeCount} active</Text>
           </>
-        ) : (
+        ) : compact && agentCount > 0 ? (
+          <Text dimColor>{agentCount} agent{agentCount !== 1 ? 's' : ''} · {activeCount} active</Text>
+        ) : !rosterText ? (
           <Text dimColor>{"  Run 'squad init' to get started"}</Text>
-        )}
-        <Text>{' '}</Text>
-        {welcome?.focus ? <Text dimColor>📍 {welcome.focus}</Text> : null}
-        <Text dimColor>↑↓ history · @Agent to direct · /help · Ctrl+C exit</Text>
+        ) : null}
+        {!compact && <Text>{' '}</Text>}
+        {wide && welcome?.focus ? <Text dimColor>📍 {welcome.focus}</Text> : null}
+        <Text dimColor>{compact ? '/help · Ctrl+C exit' : '↑↓ history · @Agent to direct · /help · Ctrl+C exit'}</Text>
       </Box>
 
       <AgentPanel agents={agents} streamingContent={streamingContent} />
