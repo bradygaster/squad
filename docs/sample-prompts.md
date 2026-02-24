@@ -214,10 +214,10 @@ Read the Copilot Extensions SDK docs and examples carefully. One agent should ow
 
 ---
 
-### 9. .NET Aspire Cloud-Native App
+### 9. Aspire Cloud-Native App
 
 ```
-Build a cloud-native application using .NET Aspire. Read https://learn.microsoft.com/en-us/dotnet/aspire/ for the Aspire programming model.
+Build a cloud-native application using Aspire. Read https://aspire.dev/docs for the Aspire programming model. Install the Aspire CLI and use `aspire agent init` to configure an agent ready environment. 
 
 The app is a real-time weather dashboard:
 - AppHost project orchestrating all services
