@@ -211,16 +211,19 @@ export async function runShell(): Promise<void> {
       debugLog,
       promptPreview,
       onRetry: (attempt, max) => {
+        const totalAttempts = max + 1; // max is retry count, +1 for initial attempt
+        const currentAttempt = attempt + 1; // attempt is retry number, +1 for total attempt number
         shellApi?.addMessage({
           role: 'system',
-          content: `⚠ No response received. Retrying (attempt ${attempt}/${max})...`,
+          content: `⚠ Empty response detected. Retrying... (attempt ${currentAttempt}/${totalAttempts})`,
           timestamp: new Date(),
         });
       },
       onExhausted: (max) => {
+        const totalAttempts = max + 1;
         shellApi?.addMessage({
           role: 'system',
-          content: `❌ Agent did not respond after ${max} attempts. Try again or run \`squad doctor\`.`,
+          content: `❌ Agent did not respond after ${totalAttempts} attempts. Try again or run \`squad doctor\`.`,
           timestamp: new Date(),
         });
       },

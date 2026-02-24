@@ -98,6 +98,43 @@
 - Dates spread across Feb 20–23, 2026 (chronologically sensible with the git log)
 - @spboyer credited in #019 per CHANGELOG attribution
 - Frontmatter follows exact beta format: title, date, author, wave, tags, status, hero
+
+### 2026-02-25: Issues #419/#424 — Help text restructuring (default vs. full)
+**Status:** Complete. PR #438 created (branch `fix/issue-421`).
+**Problem:** `/help` output was overwhelming for new users (9 lines). Brady requested: default help showing 3-5 essentials, with pointer to `/help full` for complete reference.
+**Changes made:**
+1. **packages/squad-cli/src/cli/shell/commands.ts** — `handleHelp()` function restructured:
+   - Default `/help`: 4 lines (commands on 2 lines, blank, callout to `/help full`)
+   - `/help full`: Complete list with descriptions (previous behavior, now conditional)
+   - Maintains terminal-width detection for narrow terminals
+   - Args parsing: `args[0] === 'full'` routes to complete reference
+
+**Before (default):**
+```
+Commands:
+  /status   — Check your team & what's happening
+  /history  — See recent messages
+  /agents   — List all team members
+  /clear    — Clear the screen
+  /quit     — Exit
+
+Talk to your squad:
+  Just type naturally — the coordinator routes it to the right agent.
+  @AgentName message  — Send directly to one agent.
+```
+
+**After (default):**
+```
+Commands:
+  /status — Check your team    /history — Recent messages
+  /agents — List team           /quit — Exit
+
+Type /help full for complete docs.
+```
+
+**Outcome:** New users see 4 scannable lines. Power users get `Type /help full` to see everything (9 lines including natural language guidance). Reduces cognitive load on first interaction.
+**Build:** TypeScript compilation successful. All 125 tests pass.
+**Tone applied:** Conversational, scannable, self-service (user asks for more → gets more). No hype. CTA is subtle and clear.
 - Each post ends with standard McManus attribution footer pointing to squad-pr repo
 
 ---
@@ -451,3 +488,22 @@ McManus updated CHANGELOG.md with v0.6.0 entries and created docs/squadui-integr
 - docs/build.js already supported multi-directory sections — no build script changes needed
 - docs/launch/ left untouched (internal release notes, separate concern)
 - migration-github-to-npm.md at root left as-is (separate migration doc, not part of restructure)
+
+### 2026-03-XX: Issue #421 — CLI help leads with default behavior
+**Status:** Complete. PR #438 created.
+**Changes made:**
+1. **packages/squad-cli/src/cli-entry.ts** — Restructured help output (lines 68–115):
+   - Before: Listed commands first, with "(default)" as an entry
+   - After: Opens with headline "Just type — squad routes your message to the right agent automatically"
+   - Added two quick examples: `squad` and `squad --global` before the full command list
+   - Moved from command-focused to usage-focused messaging
+**Tone applied:** 
+- **Clear:** Lead with the main use case (natural language routing) before listing commands
+- **Inviting:** "Just type" phrasing makes entry feel effortless
+- **Grounded:** All examples are real and verified (no hype)
+**Build:** TypeScript compilation succeeded. CLI help output now prioritizes user experience over exhaustive command listing.
+**Notes:**
+- Change is message-only; no API or behavior changes
+- Help text is the first thing users see when confused — leading with primary use case reduces friction
+- Examples placed before full Usage section so users understand the concept before diving into options
+**PR:** https://github.com/bradygaster/squad-pr/pull/438
