@@ -1,0 +1,106 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior in Squad
+title: "[Bug]: "
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below so we can reproduce and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug.
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Run `npx github:bradygaster/squad ...`
+        2. Open Copilot and type `...`
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened? Include error messages or screenshots if available.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Run `node --version` to find this.
+      placeholder: "v22.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: squad-version
+    attributes:
+      label: Squad version
+      description: Check `squad.agent.md` for the version number, or run `npx github:bradygaster/squad --version`.
+      placeholder: "0.5.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client
+      description: Where are you using Squad?
+      options:
+        - GitHub Copilot CLI
+        - VS Code
+        - GitHub.com (Copilot coding agent)
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots or logs
+      description: If applicable, add screenshots or paste relevant log output.
+    validations:
+      required: false
+
+  - type: input
+    id: related
+    attributes:
+      label: Related issues
+      description: Link any related issues (e.g., `#42`).
+      placeholder: "#"
+    validations:
+      required: false

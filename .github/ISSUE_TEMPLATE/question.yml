@@ -1,0 +1,42 @@
+name: ❓ Question
+description: Ask a question about using or configuring Squad
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Need help with Squad? Ask here. For general discussion, consider using [GitHub Discussions](https://github.com/bradygaster/squad/discussions).
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What are you trying to do? Describe the scenario so we can give a relevant answer.
+    validations:
+      required: true
+
+  - type: input
+    id: squad-version
+    attributes:
+      label: Squad version
+      description: Check `squad.agent.md` for the version number, or run `npx github:bradygaster/squad --version`.
+      placeholder: "0.5.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Describe any solutions you've already attempted.
+    validations:
+      required: false

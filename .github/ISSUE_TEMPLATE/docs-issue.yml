@@ -1,0 +1,34 @@
+name: 📄 Documentation Issue
+description: Report incorrect, missing, or unclear documentation
+title: "[Docs]: "
+labels: ["type:docs"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found something wrong or missing in the docs? Let us know so we can improve them.
+
+  - type: input
+    id: page
+    attributes:
+      label: Page or section
+      description: Which doc page, README section, or file has the issue?
+      placeholder: "e.g., README.md > Quick Start, docs/features/project-boards.md"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing?
+      description: Describe the documentation issue — is something incorrect, outdated, unclear, or missing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: If you have a fix or improvement in mind, describe it here.
+    validations:
+      required: false
