@@ -29,7 +29,7 @@ import {
   formatConversationContext,
 } from '../packages/squad-cli/src/cli/shell/coordinator.js';
 import { ShellLifecycle } from '../packages/squad-cli/src/cli/shell/lifecycle.js';
-import { parseInput } from '../packages/squad-cli/src/cli/shell/router.js';
+import { parseInput, parseDispatchTargets } from '../packages/squad-cli/src/cli/shell/router.js';
 import { executeCommand } from '../packages/squad-cli/src/cli/shell/commands.js';
 import { MemoryManager, DEFAULT_LIMITS } from '../packages/squad-cli/src/cli/shell/memory.js';
 import { createCompleter } from '../packages/squad-cli/src/cli/shell/autocomplete.js';
@@ -560,6 +560,65 @@ describe('router.ts — parseInput', () => {
       expect(parsed.content).toContain('line1');
       expect(parsed.content).toContain('line2');
     });
+  });
+});
+
+// ============================================================================
+// 7b. router.ts — parseDispatchTargets() for multi-agent mentions
+// ============================================================================
+
+describe('router.ts — parseDispatchTargets', () => {
+  const knownAgents = ['Fenster', 'Hockney', 'Edie'];
+
+  it('extracts multiple @agent mentions', () => {
+    const result = parseDispatchTargets('@Fenster @Hockney fix and test', knownAgents);
+    expect(result.agents).toEqual(['Fenster', 'Hockney']);
+    expect(result.content).toBe('fix and test');
+  });
+
+  it('returns empty agents for plain text', () => {
+    const result = parseDispatchTargets('just a plain message', knownAgents);
+    expect(result.agents).toEqual([]);
+    expect(result.content).toBe('just a plain message');
+  });
+
+  it('deduplicates repeated mentions', () => {
+    const result = parseDispatchTargets('@Fenster @fenster do it', knownAgents);
+    expect(result.agents).toEqual(['Fenster']);
+  });
+
+  it('ignores unknown agent mentions', () => {
+    const result = parseDispatchTargets('@Fenster @Nobody test', knownAgents);
+    expect(result.agents).toEqual(['Fenster']);
+  });
+
+  it('handles single mention', () => {
+    const result = parseDispatchTargets('@Edie write docs', knownAgents);
+    expect(result.agents).toEqual(['Edie']);
+    expect(result.content).toBe('write docs');
+  });
+
+  it('is case-insensitive for mentions', () => {
+    const result = parseDispatchTargets('@FENSTER @hockney go', knownAgents);
+    expect(result.agents).toEqual(['Fenster', 'Hockney']);
+  });
+
+  it('extracts mentions from mid-sentence', () => {
+    const result = parseDispatchTargets('ask @Fenster and @Hockney to collaborate', knownAgents);
+    expect(result.agents).toEqual(['Fenster', 'Hockney']);
+    expect(result.content).toBe('ask and to collaborate');
+  });
+
+  it('handles all three agents', () => {
+    const result = parseDispatchTargets('@Fenster @Hockney @Edie full team task', knownAgents);
+    expect(result.agents).toEqual(['Fenster', 'Hockney', 'Edie']);
+    expect(result.content).toBe('full team task');
+  });
+
+  it('handles empty input', () => {
+    const result = parseDispatchTargets('', knownAgents);
+    expect(result.agents).toEqual([]);
+    expect(result.content).toBe('');
   });
 });
 

@@ -17,10 +17,12 @@ import { StreamBridge } from './stream-bridge.js';
 import { ShellLifecycle } from './lifecycle.js';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
+import type { ShellMessage } from './types.js';
 import { initSquadTelemetry, TIMEOUTS } from '@bradygaster/squad-sdk';
 import { buildCoordinatorPrompt, parseCoordinatorResponse } from './coordinator.js';
 import { loadAgentCharter, buildAgentPrompt } from './spawn.js';
-import type { ParsedInput } from './router.js';
+import { createSession, saveSession, loadLatestSession, type SessionData } from './session-store.js';
+import { parseDispatchTargets, type ParsedInput } from './router.js';
 
 export { SessionRegistry } from './sessions.js';
 export { StreamBridge } from './stream-bridge.js';
@@ -32,8 +34,8 @@ export { spawnAgent, loadAgentCharter, buildAgentPrompt } from './spawn.js';
 export type { SpawnOptions, SpawnResult, ToolDefinition } from './spawn.js';
 export { buildCoordinatorPrompt, parseCoordinatorResponse, formatConversationContext } from './coordinator.js';
 export type { CoordinatorConfig, RoutingDecision } from './coordinator.js';
-export { parseInput } from './router.js';
-export type { MessageType, ParsedInput } from './router.js';
+export { parseInput, parseDispatchTargets } from './router.js';
+export type { MessageType, ParsedInput, DispatchTargets } from './router.js';
 export { executeCommand } from './commands.js';
 export type { CommandContext, CommandResult } from './commands.js';
 export { MemoryManager, DEFAULT_LIMITS } from './memory.js';
@@ -42,6 +44,8 @@ export { detectTerminal, safeChar, boxChars } from './terminal.js';
 export type { TerminalCapabilities } from './terminal.js';
 export { createCompleter } from './autocomplete.js';
 export type { CompleterFunction, CompleterResult } from './autocomplete.js';
+export { createSession, saveSession, loadLatestSession, listSessions, loadSessionById } from './session-store.js';
+export type { SessionData, SessionSummary } from './session-store.js';
 export { App } from './components/App.js';
 export type { ShellApi, AppProps } from './components/App.js';
 export { ErrorBoundary } from './components/ErrorBoundary.js';
@@ -113,6 +117,14 @@ export async function runShell(): Promise<void> {
   const registry = new SessionRegistry();
   const renderer = new ShellRenderer();
   const teamRoot = process.cwd();
+
+  // Session persistence — create or resume a previous session
+  let persistedSession: SessionData = createSession();
+  const recentSession = loadLatestSession(teamRoot);
+  if (recentSession) {
+    persistedSession = recentSession;
+    debugLog('resuming recent session', persistedSession.id);
+  }
 
   // Initialize OpenTelemetry if endpoint is configured (e.g. Aspire dashboard)
   const telemetry = initSquadTelemetry({ serviceName: 'squad-cli', mode: 'cli' });
@@ -521,9 +533,41 @@ export async function runShell(): Promise<void> {
   async function handleDispatch(parsed: ParsedInput): Promise<void> {
     messageCount++;
     try {
-      if (parsed.type === 'direct_agent' && parsed.agentName) {
+      // Check for multiple @agent mentions for parallel dispatch
+      const knownAgents = registry.getAll().map(s => s.name);
+      const targets = parseDispatchTargets(parsed.raw, knownAgents);
+
+      if (targets.agents.length > 1) {
+        debugLog('handleDispatch: multi-agent dispatch detected', {
+          agents: targets.agents,
+          contentPreview: targets.content.slice(0, 80),
+        });
+        for (const agent of targets.agents) {
+          shellApi?.addMessage({
+            role: 'system',
+            content: `📌 Dispatching to ${agent} (parallel)`,
+            timestamp: new Date(),
+          });
+        }
+        const results = await Promise.allSettled(
+          targets.agents.map(agent => dispatchToAgent(agent, targets.content || parsed.raw))
+        );
+        for (let i = 0; i < results.length; i++) {
+          const r = results[i]!;
+          if (r.status === 'rejected') {
+            debugLog('handleDispatch: parallel agent failed', targets.agents[i], r.reason);
+            shellApi?.addMessage({
+              role: 'system',
+              content: `⚠ ${targets.agents[i]} failed: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`,
+              timestamp: new Date(),
+            });
+          }
+        }
+      } else if (parsed.type === 'direct_agent' && parsed.agentName) {
+        debugLog('handleDispatch: single agent dispatch', { agent: parsed.agentName });
         await dispatchToAgent(parsed.agentName, parsed.content ?? parsed.raw);
       } else if (parsed.type === 'coordinator') {
+        debugLog('handleDispatch: routing through coordinator');
         await dispatchToCoordinator(parsed.content ?? parsed.raw);
       }
     } catch (err) {

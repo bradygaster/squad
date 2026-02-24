@@ -70,3 +70,40 @@ export function parseInput(input: string, knownAgents: string[]): ParsedInput {
     content: trimmed,
   };
 }
+
+/** Result of extracting multiple @agent mentions from a message. */
+export interface DispatchTargets {
+  agents: string[];
+  content: string;
+}
+
+/**
+ * Extract multiple @agent mentions from a message for parallel dispatch.
+ * Returns all matched agent names (de-duplicated, case-insensitive) and
+ * the remaining message content with mentions stripped out.
+ *
+ * Examples:
+ *   "@Fenster @Hockney fix and test" → { agents: ['Fenster','Hockney'], content: 'fix and test' }
+ *   "plain message" → { agents: [], content: 'plain message' }
+ */
+export function parseDispatchTargets(input: string, knownAgents: string[]): DispatchTargets {
+  const trimmed = input.trim();
+  const mentionRegex = /@(\w+)/g;
+  const matched: string[] = [];
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+
+  while ((m = mentionRegex.exec(trimmed)) !== null) {
+    const name = m[1]!;
+    const agent = knownAgents.find(a => a.toLowerCase() === name.toLowerCase());
+    if (agent && !seen.has(agent.toLowerCase())) {
+      seen.add(agent.toLowerCase());
+      matched.push(agent);
+    }
+  }
+
+  // Strip all @mentions (known or unknown) from the content
+  const content = trimmed.replace(/@\w+/g, '').replace(/\s+/g, ' ').trim();
+
+  return { agents: matched, content };
+}
