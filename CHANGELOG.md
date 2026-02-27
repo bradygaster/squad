@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.3] — 2026-02-22
+
+### Fixed
+
+- **Windows EPERM fallback during migrate-directory** (#135) — `safeRename()` catches EPERM/EACCES errors (VS Code file watchers hold handles on Windows), falls back to copy+delete (PR #149)
+- **`--version` now shows installed version** (#137) — `squad --version` displays both the package version and the installed coordinator version (PR #149)
+- **Content replacement in migrate-directory** (#134) — When migrating from `.ai-team/` to `.squad/`, file contents now get `.ai-team/` references replaced with `.squad/` (PR #151)
+- **compareSemver pre-release handling** — Versions with pre-release suffixes (e.g., `0.5.3-insiders`) now compare correctly during upgrade checks
+
+### Changed
+
+- **Guard workflow removed** (#150) — The `squad-main-guard.yml` workflow that blocked `.squad/` files from reaching main/preview has been removed; `.squad/` files now flow freely to all branches. Existing installations get the guard auto-deleted on next upgrade via a v0.5.4 migration (PR #152)
+
 ## [0.5.2] — 2026-02-20
 
 ### Fixed

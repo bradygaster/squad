@@ -49,7 +49,15 @@ const cmd = process.argv[2];
 
 // --version / --help
 if (cmd === '--version' || cmd === '-v') {
-  console.log(pkg.version);
+  console.log(`Package: ${pkg.version}`);
+  const agentMdPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
+  let installedVersion = 'not installed';
+  if (fs.existsSync(agentMdPath)) {
+    const content = fs.readFileSync(agentMdPath, 'utf8');
+    const match = content.match(/<!-- version: ([^\s]+) -->/);
+    if (match) installedVersion = match[1];
+  }
+  console.log(`Installed: ${installedVersion}`);
   process.exit(0);
 }
 
@@ -379,6 +387,41 @@ function scrubEmailsFromDirectory(dirPath) {
   }
   
   return scrubbedFiles;
+}
+
+// Replace legacy .ai-team/ path references inside .md and .json files
+function replaceAiTeamReferences(dirPath) {
+  const updatedFiles = [];
+  const replacements = [
+    [/\.ai-team-templates\//g, '.squad-templates/'],
+    [/\.ai-team\//g, '.squad/']
+  ];
+
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile() && (entry.name.endsWith('.md') || entry.name.endsWith('.json'))) {
+        try {
+          let content = fs.readFileSync(full, 'utf8');
+          const original = content;
+          for (const [pattern, replacement] of replacements) {
+            content = content.replace(pattern, replacement);
+          }
+          if (content !== original) {
+            fs.writeFileSync(full, content);
+            updatedFiles.push(path.relative(dirPath, full));
+          }
+        } catch (err) {
+          // skip unreadable files
+        }
+      }
+    }
+  }
+
+  walk(dirPath);
+  return updatedFiles;
 }
 
 // Detect project type by checking for marker files in the target directory
@@ -1129,11 +1172,25 @@ if (isMigrateDirectory) {
     fatal('.squad/ directory already exists — migration appears to be complete.');
   }
   
+  // Safe rename that falls back to copy+delete on Windows EPERM/EACCES
+  function safeRename(source, target) {
+    try {
+      fs.renameSync(source, target);
+    } catch (err) {
+      if (err.code === 'EPERM' || err.code === 'EACCES') {
+        fs.cpSync(source, target, { recursive: true });
+        fs.rmSync(source, { recursive: true, force: true });
+      } else {
+        throw err;
+      }
+    }
+  }
+
   console.log(`${DIM}Migrating .ai-team/ → .squad/...${RESET}`);
   
   try {
     // Rename directory
-    fs.renameSync(aiTeamDir, squadDir);
+    safeRename(aiTeamDir, squadDir);
     console.log(`${GREEN}✓${RESET} Renamed .ai-team/ → .squad/`);
     
     // Update .gitattributes
@@ -1167,11 +1224,20 @@ if (isMigrateDirectory) {
       console.log(`${GREEN}✓${RESET} No email addresses found`);
     }
 
+    // Replace .ai-team/ path references inside migrated file content
+    console.log(`${DIM}Replacing .ai-team/ references in .squad/ files...${RESET}`);
+    const referencesUpdated = replaceAiTeamReferences(squadDir);
+    if (referencesUpdated.length > 0) {
+      console.log(`${GREEN}✓${RESET} Updated .ai-team/ references in ${referencesUpdated.length} file(s)`);
+    } else {
+      console.log(`${GREEN}✓${RESET} No .ai-team/ references found`);
+    }
+
     // Rename .ai-team-templates/ → .squad-templates/ if it exists
     const aiTeamTemplatesDir = path.join(dest, '.ai-team-templates');
     const squadTemplatesDir = path.join(dest, '.squad-templates');
     if (fs.existsSync(aiTeamTemplatesDir)) {
-      fs.renameSync(aiTeamTemplatesDir, squadTemplatesDir);
+      safeRename(aiTeamTemplatesDir, squadTemplatesDir);
       console.log(`${GREEN}✓${RESET} Renamed .ai-team-templates/ → .squad-templates/`);
     }
 
@@ -1196,6 +1262,8 @@ function stampVersion(filePath) {
   content = content.replace(/<!-- version: [^>]+ -->/m, `<!-- version: ${pkg.version} -->`);
   // Replace version in the Identity section's Version line
   content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/m, `- **Version:** ${pkg.version}`);
+  // Replace {version} placeholder in the greeting instruction so it's unambiguous
+  content = content.replace(/`Squad v\{version\}`/g, `\`Squad v${pkg.version}\``);
   fs.writeFileSync(filePath, content);
 }
 
@@ -1217,12 +1285,19 @@ function readInstalledVersion(filePath) {
 
 // Compare semver strings: -1 (a<b), 0 (a==b), 1 (a>b)
 function compareSemver(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  const stripPre = v => v.split('-')[0];
+  const pa = stripPre(a).split('.').map(Number);
+  const pb = stripPre(b).split('.').map(Number);
   for (let i = 0; i < 3; i++) {
     if ((pa[i] || 0) < (pb[i] || 0)) return -1;
     if ((pa[i] || 0) > (pb[i] || 0)) return 1;
   }
+  // Base versions equal — pre-release is less than release
+  const aPre = a.includes('-');
+  const bPre = b.includes('-');
+  if (aPre && !bPre) return -1;
+  if (!aPre && bPre) return 1;
+  if (aPre && bPre) return a < b ? -1 : a > b ? 1 : 0;
   return 0;
 }
 
@@ -1254,6 +1329,17 @@ const migrations = [
         if (scrubbedFiles.length > 0) {
           console.log(`${GREEN}✓${RESET} Privacy migration: scrubbed email addresses from ${scrubbedFiles.length} file(s)`);
         }
+      }
+    }
+  },
+  {
+    version: '0.5.4',
+    description: 'Remove squad-main-guard.yml workflow',
+    run(dest) {
+      const guardPath = path.join(dest, '.github', 'workflows', 'squad-main-guard.yml');
+      if (fs.existsSync(guardPath)) {
+        fs.unlinkSync(guardPath);
+        console.log(`${GREEN}✓${RESET} Removed squad-main-guard.yml — .squad/ files can now flow freely to all branches`);
       }
     }
   }

@@ -1,0 +1,302 @@
+# Project Context
+
+- **Owner:** bradygaster
+- **Project:** Squad — AI agent teams that grow with your code. Democratizing multi-agent development on GitHub Copilot. Mission: beat the industry to what customers need next.
+- **Stack:** Node.js, GitHub Copilot CLI, multi-agent orchestration
+- **Created:** 2026-02-07
+
+## Core Context
+
+_Summarized from initial architecture review (2026-02-07). Full entries in `history-archive.md`._
+
+- **Squad is a markdown-as-runtime system** — the entire orchestration is a 32KB `.github/agents/squad.agent.md` file interpreted by the LLM. `index.js` is a minimal installer (~65 lines initially) that copies the coordinator manifest and templates.
+- **File system is the IPC layer** — agents write decisions to `.ai-team/decisions/inbox/`, Scribe merges to canonical `decisions.md`. This drop-box pattern eliminates write conflicts during parallel spawns.
+- **File ownership model is foundational** — Squad-owned files (squad.agent.md, templates) are safe to overwrite on upgrade. User-owned files (.ai-team/) are never touched. This classification drives the entire forwardability strategy.
+- **Upgrade architecture uses version-keyed idempotent migrations** — version detection via frontmatter parsing, backup before overwrite, `process.argv[2]` subcommand routing with no external dependencies.
+- **Windows path safety is non-negotiable** — all file operations use `path.join()`, no hardcoded separators, no symlinks, pure `fs` operations only.
+- **Key file paths**: `squad.agent.md` (coordinator), `index.js` (installer), `.ai-team/casting/` (registry/history/policy JSONs), `.ai-team/decisions/inbox/` (drop-box), `templates/` (format guides).
+
+### Session Summaries
+
+- **Sprint Plan 009 — Feasibility Review (2026-02-09)** — 📌 Team update (2026-02-08): Fenster revised sprint estimates: forwardability 6h (not 4h), export/import 11-14h (not 6h). Recommends export Sprint 2, i
+- **File System Integrity Audit (2026-02-09)**
+- **Upgrade Subcommand Implementation (2026-02-09)** — 📌 Team update (2026-02-08): V1 test suite shipped by Hockney — 12 tests pass. Action: when require.main guard is added to index.js, update test/index.
+- **GitHub-Only Distribution (2026-02-09)** — ## Team Updates
+- **Error Handling Implementation (Sprint Task 1.1)**
+- **Version Stamping Phase 1 (Sprint Task 1.4)** — 📌 Team update (2026-02-08): CI pipeline created — GitHub Actions runs tests on push/PR to main/dev. PRs now have automated quality gate. — decided by 
+- **PR #2 Integration (2026-02-09)** — 📌 Team update (2026-02-09): If ask_user returns < 10 characters, treat as ambiguous and re-confirm — platform may fabricate default responses from bla
+- **Smart Upgrade with Migration Registry (Sprint Task 2.2)**
+- **Export CLI Implementation (Sprint Task 2.4)**
+- **Import CLI Implementation (Sprint Task 3.1)** — 📌 Team update (2026-02-09): Tiered response modes shipped — Direct/Lightweight/Standard/Full modes replace uniform spawn overhead. Agents may now be s
+
+## Recent Updates
+
+📌 **Team update (2026-02-22):** PRD 16 shipped — Full init command implementation ported from beta CLI to squad-sdk TypeScript. Copies 34 template files, installs squad.agent.md with version stamping, detects project type (npm/go/python/java/dotnet), generates workflows (project-type-aware stubs for non-npm), creates directory structure (.squad/ with .ai-team/ legacy support), copies starter skills, scaffolds identity files (now.md, wisdom.md), appends .gitattributes merge=union rules and .gitignore log exclusions. Zero-dep, async/await, idempotent (never overwrites user state), Windows-compatible. PR #175 opened. — Fenster
+
+📌 **Team update (2026-02-21):** PRD 15 shipped — CLI entry point with full subcommand routing implemented in squad-sdk. Zero-dep color/emoji output utilities, error handling (fatal), squad directory detection (.squad/ with .ai-team/ legacy fallback), and subcommand stubs for all 9 commands (init, upgrade, watch, export, import, plugin, copilot, scrub-emails). Each stub prints helpful placeholder message with PRD reference. PR #173 opened on bradygaster/squad-pr. — Fenster
+
+📌 Team update (2026-02-20): Recruitment wave complete. Three new team members hired: Edie (TypeScript Engineer), Rabin (Distribution Engineer), Fortier (Node.js Runtime Dev). All onboarded with assessments. Keaton created 19 issues, 3 milestones, 12 labels on bradygaster/squad-pr. Kujan delivered feature risk punch list (14 GRAVE, 12 AT RISK, 28 COVERED, 5 INTENTIONAL). — decided by Keaton, Kujan, Edie, Rabin, Fortier
+
+📌 Team update (2026-02-13): VS Code runSubagent spawning — platform parity and adaptation strategy (consolidated). runSubagent viable with platform detection and custom .agent.md files. Spawn patterns all map 1:1; model selection is the gap; recommendation: prompt-level platform detection, no abstraction layer. Unblocks #32-35. — decided by Keaton, Strausz, Kujan
+📌 Team update (2026-02-13): MCP integration — coordinator awareness and CLI config generation. Added MCP Integration section to squad.agent.md, MCP context block to spawn template, and `.copilot/mcp-config.json` sample generation to `squad init` and `squad upgrade`. Issue #11 resolved. — decided by Fenster
+📌 Team update (2026-02-09): No npm publish — GitHub-only distribution. Kobayashi hired as Git & Release Engineer. Release plan (021) filed. Sprint plan 019a amended: item 1.8 cancelled, items 1.11-1.13 added.
+📌 Team update (2026-02-08): CI pipeline created — GitHub Actions runs tests on push/PR to main/dev. PRs now have automated quality gate. — decided by Hockney
+📌 Team update (2026-02-08): Coordinator now captures user directives to decisions inbox before routing work. Directives persist to decisions.md via Scribe. — decided by Kujan
+📌 Team update (2026-02-08): Coordinator must acknowledge user requests with brief text before spawning agents. Single agent gets a sentence; multi-agent gets a launch table. — decided by Verbal
+📌 Team update (2026-02-08): Hockney expanded tests to 27 (7 suites), including coverage for fatal(), error handling, and validation. — decided by Hockney
+📌 Team update (2026-02-08): Silent success mitigation strengthened in all spawn templates — 6-line RESPONSE ORDER block + filesystem-based detection. — decided by Verbal
+📌 Team update (2026-02-08): .ai-team/ must NEVER be tracked in git on main. Three-layer protection: .gitignore, package.json files allowlist, .npmignore. — decided by Verbal
+📌 Team update (2026-02-08): Incoming queue architecture finalized — SQL hot layer + filesystem durable store, team backlog as third memory channel, agent cloning ready. — decided by Verbal
+📌 Team update (2026-02-09): If ask_user returns < 10 characters, treat as ambiguous and re-confirm — platform may fabricate default responses from blank input. — decided by Brady
+📌 Team update (2026-02-09): PR #2 architectural review completed — 3 must-fixes, 5 should-fixes. All must-fixes applied during integration. — decided by Keaton
+📌 Team update (2026-02-09): Documentation structure formalized — docs/ is user-facing only, team-docs/ for internal, .ai-team/ is runtime state. Three-tier separation is permanent. — decided by Kobayashi
+📌 Team update (2026-02-09): Per-agent model selection designed — 4-layer priority (user override → charter → registry → auto-select). Role-to-model mapping: Designer→Opus, Tester/Scribe→Haiku, Lead/Dev→Sonnet. — decided by Verbal
+📌 Team update (2026-02-09): Tiered response modes shipped — Direct/Lightweight/Standard/Full modes replace uniform spawn overhead. Agents may now be spawned with lightweight template (no charter/history/decisions reads) for simple tasks. — decided by Verbal
+📌 Team update (2026-02-09): Skills Phase 1 + Phase 2 shipped — agents now read SKILL.md files before working and can write SKILL.md files from real work. Skills live in .ai-team/skills/{name}/SKILL.md. Confidence lifecycle: low→medium→high. — decided by Verbal
+📌 Team update (2026-02-09): docs/ and CHANGELOG.md now included in release pipeline (KEEP_FILES, KEEP_DIRS, package.json files, .npmignore updated). Brady's directive. — decided by Kobayashi
+📌 Team update (2026-02-20): SDK replatform 14 PRDs documented + master index. Adapter layer isolates SDK coupling. PRD 1 (runtime) is the gate. Coordinator shrinks to 12-15KB. compareSemver() fixed for pre-release suffixes (0.5.3-insiders). — decided by Keaton, Fenster, Verbal, Kujan, Baer
+
+
+📌 Team update (2026-02-09): Preview branch added to release pipeline — two-phase workflow: preview then ship. Brady eyeballs preview before anything hits main. — decided by Kobayashi
+
+📌 Team update (2026-02-10): v0.3.0 sprint plan approved — per-agent model selection, team backlog, Demo 1. — decided by Keaton
+
+📌 Team update (2026-02-13): SSH workaround documentation pattern merged to decisions.md — inline README workarounds + troubleshooting.md guide, no code workarounds. — decided by Fenster
+
+
+📌 Team update (2026-02-10): Marketing site architecture consolidated — Jekyll on GitHub Pages, docs/ is source root, blog from team-docs/blog/, no content reproduction. McManus (content) + Fenster (infrastructure) for Phase 1. — decided by bradygaster, Keaton, McManus
+📌 Team update (2026-02-10): GitHub Issues/PR integration must not break CLI conversations — CLI is primary surface, GitHub integration is additive only. — decided by bradygaster
+
+
+📌 Team update (2026-02-10): 0.3.0 priorities: async comms > GitHub-native > CCA adoption — decided by bradygaster
+
+📌 Team update (2026-02-10): Clean branch config at init time — filter squad state from designated branches — decided by bradygaster
+
+📌 Team update (2026-02-10): `squad:` label convention standardized for GitHub Issues — decided by Keaton, McManus
+
+
+📌 Team update (2026-02-10): Async comms strategy decided — two-tier MVP: CCA-as-squad-member (2-4h, prompt-only) + Telegram bridge (8-16h, conditional on SDK spike). CCA is the floor. — decided by Kujan
+
+## Learnings
+
+- **Provider abstraction belongs at the prompt level, not in index.js.** The coordinator is a prompt that executes shell commands. A JavaScript provider module would require index.js to be a runtime (it's an installer) and would double the maintenance surface. Command templates in squad.agent.md are the correct abstraction layer.
+- **index.js has near-zero GitHub-platform coupling.** The `.github/agents/` path is a Copilot CLI convention, not GitHub-the-platform. The only GitHub-specific code is the `npx github:bradygaster/squad` usage string (cosmetic). All real platform coupling is in squad.agent.md.
+- **Capability negotiation is critical for multi-provider support.** ADO has no labels (uses Tags), no reactions, and requires work item types. GitLab has no sub-issues. The provider interface must declare what's available so the coordinator can adapt.
+- **Two-channel pattern (MCP read, gh CLI write) is GitHub-specific, not universal.** Future providers will likely be CLI-only. The MCP fallback logic should be inside the GitHub provider, not in the generic interface.
+- **Git remote URL parsing covers 95% of provider detection.** `github.com` → GitHub, `dev.azure.com`/`visualstudio.com` → ADO, `gitlab.com` → GitLab. Self-hosted instances need CLI-based detection (is `glab` configured?). Generic is the fallback.
+- **ADO is the hardest provider.** WIQL for search, Tags for labels, Iterations for milestones, Work Item Types for issues — every concept has an impedance mismatch. GitLab is the easiest (glab mirrors gh closely). Estimate: ADO 23h, GitLab 12h, GitHub reorganization 9h.
+- **Project type detection via marker files (issue #87).** `detectProjectType(dir)` checks for `package.json` (npm), `go.mod` (go), `requirements.txt`/`pyproject.toml` (python), `pom.xml`/`build.gradle` (java), `*.csproj`/`*.sln` (dotnet), falling back to `unknown`. Five project-type-sensitive workflows (`squad-ci`, `squad-release`, `squad-preview`, `squad-insider-release`, `squad-docs`) get stubs with TODO comments for non-npm projects. Six GitHub-API-only workflows always copy verbatim. Tests updated to add `package.json` in temp dirs where byte-for-byte template match is asserted (that test is semantically "npm project gets verbatim copy"). All 72 tests pass.
+
+📌 Team update (2026-02-20): Issues #86 & #87 sprint complete. Git Checkout Safety (Verbal): Added Git Safety rules to spawn templates and Fenster charter. Hockney: Wrote 8 regression tests for uncommitted-change protection. Project Type Detection (Fenster): Implemented `detectProjectType()` in index.js with marker file detection; workflow generation now stubs non-npm types with helpful TODO comments. All 72 tests pass. — decided by Verbal, Hockney, Fenster
+
+📌 Team update (2026-02-10): v0.3.0 is ONE feature — proposals as GitHub Issues. All other items deferred. — decided by bradygaster
+
+📌 Team update (2026-02-10): Actions automation ships as opt-in templates in templates/workflows/, 3 workflows in v0.3.0. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-10): Label taxonomy (39 labels, 7 namespaces) drives entire GitHub-native workflow. — decided by bradygaster, Verbal
+
+📌 Team update (2026-02-10): CCA governance must be self-contained in squad.agent.md (cannot read .ai-team/). — decided by Kujan
+
+📌 Team update (2026-02-10): Proposal migration uses three-wave approach — active first, shipped second, superseded/deferred last. — decided by Keaton
+
+
+📌 Team update (2026-02-11): Project boards consolidated — v0.4.0 target confirmed, gh CLI (not npm), opt-in only, labels authoritative over boards. Community triage responses must use substantive technical detail. — decided by Keaton, Kujan
+
+📌 Team update (2026-02-11): Per-agent model selection implemented with cost-first directive (optimize cost unless writing code) — decided by Brady and Verbal
+
+📌 Team update (2026-02-11): Discord is the v0.3.0 MVP messaging connector. Gateway must be platform-agnostic with zero GitHub-specific imports. — decided by Keaton
+
+- **UTF-8 emoji mojibake in test file.** `test/index.test.js` had 8 instances of garbled emoji strings (e.g. `≡ƒæñ` instead of `👤`, `≡ƒôî` instead of `📌`, `≡ƒñû` instead of `🤖`, `≡ƒƒó`/`≡ƒƒí`/`≡ƒö┤` instead of `🟢`/`🟡`/`🔴`). Root cause: file was likely saved or transferred through a system that re-encoded UTF-8 multibyte sequences as Latin-1/CP1252. Fixed all 8 instances to use real Unicode codepoints matching what `index.js` and `squad.agent.md` produce. All 118 tests pass.
+
+- **Universe allowlist expansion (issue #21).** Added Adventure Time (community request from Gabe) plus 10 new universes to the allowlist in both `.github/agents/squad.agent.md` and `.ai-team/casting/policy.json`. New universes: Futurama, Seinfeld, The Office, Cowboy Bebop, Fullmetal Alchemist, Stranger Things, The Expanse, Arcane, Ted Lasso, Dune. Selection rationale: filled genre gaps (sitcom, anime, animation, workplace comedy, hard sci-fi, sports/comedy). Total universes went from 20 → 31. Constraints added for The Office (avoid Michael Scott at scale) and Dune (combine book/film, avoid Paul unless required). Closed issue #21.
+
+
+📌 Team update (2026-02-12): Universe expansion complete — 11 new universes (Adventure Time, Futurama, Seinfeld, The Office, Cowboy Bebop, Fullmetal Alchemist, Stranger Things, The Expanse, Arcane, Ted Lasso, Dune) added to casting allowlist. Issue #21 closed. — decided by Fenster
+
+- **SSH agent / npm spinner hang documented (issue #30).** `npx github:bradygaster/squad` resolves via `git+ssh://`. When no SSH agent is running, git prompts for a passphrase but npm's progress spinner overwrites the TTY prompt, making it look frozen. This is an npm bug, not ours. Documented workarounds in README (Install section note + Known Limitations bullet) and created `docs/scenarios/troubleshooting.md` with problem→cause→fix format covering SSH hang, gh auth, Node version, agent visibility, upgrade cache, and Windows paths. The troubleshooting doc pattern is reusable for future community-reported issues.
+
+- **Label automation for go: and release: namespaces.** Created `squad-label-enforce.yml` workflow to enforce mutual exclusivity on `go:*` (triage verdict) and `release:*` (version target) labels. When a new label is applied, conflicting labels in the same namespace are auto-removed and a comment is posted (only if a change was made). Special cases: applying `go:yes` auto-adds `release:backlog` if no release target exists; applying `go:no` removes all release labels. Updated `sync-squad-labels.yml` to sync 3 go: labels (go:yes, go:no, go:needs-research) and 5 release: labels (release:v0.4.0, v0.5.0, v0.6.0, v1.0.0, release:backlog). Updated `squad-triage.yml` to apply `go:needs-research` as default verdict after triage assigns a squad member. Updated `squad-heartbeat.yml` to add two new checks: issues missing go: labels and go:yes issues missing release: labels. This implements "agentic DevOps" — labels drive automation, automation enforces label integrity.
+📌 Team update (2026-02-13): Agent Progress Updates — Milestone Signals + Coordinator Polling mechanism. 30s polling loop extracts [MILESTONE] markers from agent output. No agent code changes. Backward compatible. Unlocks notifications + Squad DM integration. — decided by Keaton
+📌 Team update (2026-02-14): VS Code Model & Background Parity — Phase 1 (v0.4.0): accept session model, use runSubagent. Phase 2 (v0.5.0): generate model-tier agent files. runSubagent lacks model param; use prompt-level detection in squad.agent.md. — decided by Kujan
+📌 Team update (2026-02-15): VS Code File Discovery — Works with zero code changes. Instruction-level abstraction naturally cross-platform. Constraints: single-root workspaces only, workspace trust required, tool approval UX on first write. — decided by Strausz
+
+- **GitHub Projects V2 — Phase 1 validation complete (WI-1 + WI-2, Issue #6).** All `gh project *` CLI commands validated live against bradygaster/squad. Created test board, discovered field IDs, added issue #6, moved between all status columns (Todo→In Progress→Done), archived, linked to repo, deleted. Key findings: (1) Zero dependencies confirmed — no GraphQL client needed, `gh project` wraps everything. (2) `project` scope already present on token. (3) 4-step field discovery pipeline works — field IDs are project-specific but stable. (4) `item-add` is idempotent. (5) `item-edit` requires 4 opaque IDs (project, item, field, option) — most complex command. (6) Windows works via PowerShell `ConvertFrom-Json` instead of `jq`. Created SKILL.md at `.ai-team/skills/github-projects-v2-commands/SKILL.md` and implementation proposal at `team-docs/proposals/006a-project-board-implementation.md`. Provider abstraction documented: GitHub (implemented), ADO/GitLab (stubbed). Phase 1 gate passed — Phase 2 unblocked. Posted findings to issue #6.
+
+📌 Team update (2026-02-15): Projects V2 Phase 1 validated — `gh project *` CLI commands work for all board operations. SKILL.md + implementation proposal shipped. Phase 2 (coordinator prompts + label sync workflow) unblocked. — decided by Fenster
+
+
+📌 Team update (2026-02-13): Projects V2 Phase 1 validation complete — all gh project * commands validated live, no npm dependencies needed. Unblocks WI-3 (board init), WI-4 (label-to-board sync), WI-5 (board query). — decided by Fenster
+
+- **MCP integration shipped (#11).** Added MCP Integration section to squad.agent.md (after Client Compatibility, before Eager Execution): detection via tool prefix scanning, routing rules (coordinator direct vs spawn with context), graceful degradation (CLI fallback → inform user → continue without), config file locations, Trello sample config. References the existing MCP skill at `.ai-team/skills/mcp-tool-discovery/SKILL.md` instead of duplicating it. Updated spawn template with optional MCP TOOLS AVAILABLE block. Added MCP config generation to `squad init` (creates `.copilot/mcp-config.json` sample with `EXAMPLE-trello` prefix pattern). Added 0.4.0 upgrade migration so existing installs get the sample config on `squad upgrade`. Both init and migration are idempotent (skip if file exists).
+
+- **Docs template extraction — inline→external files.** Refactored `docs/build.js` to read HTML template, CSS, and JS from external files instead of generating them inline via `getCSS()`, `getJS()`, and `getTemplate()` string-building functions. Created `docs/assets/template.html` (HTML shell with `{{title}}`, `{{nav}}`, `{{content}}`, `{{searchIndex}}`, `{{basePath}}` placeholders), `docs/assets/style.css`, and `docs/assets/script.js`. Build reads template once at startup, does placeholder replacement per page. CSS/JS are linked externally (`<link>` / `<script src>`), search index remains inlined as page-specific `<script>` block. The existing `copyDir` of `docs/assets/` → `_site/assets/` handles deploying CSS/JS automatically. Key paths: `docs/assets/template.html`, `docs/assets/style.css`, `docs/assets/script.js`.
+
+- **Copilot CLI agent manifest YAML frontmatter validation (issue #59).** The `version` field in squad.agent.md's YAML frontmatter was not a supported property per the [GitHub Copilot CLI agent manifest specification](https://docs.github.com/en/copilot/reference/custom-agents-configuration). Supported properties are: `name`, `description`, `tools`, and `mcp-servers` (org/enterprise only). Unsupported properties like `version`, `model`, `argument-hint`, and `handoffs` cause the Copilot CLI parser to throw "error: too many arguments" because it interprets them as command-line arguments. Fixed by moving version tracking from YAML frontmatter to an HTML comment (`<!-- version: X.Y.Z -->`) immediately after the frontmatter closing `---`. Updated `stampVersion()` and `readInstalledVersion()` in index.js to work with the new HTML comment format (with backward compatibility fallback for upgrade scenarios). The agent name was also simplified from `Squad (v0.0.0-source)` to just `Squad` in the frontmatter. This pattern applies to all custom agent manifests — only use officially supported YAML properties to avoid parser errors.
+
+📌 Team update (2026-02-15): YAML frontmatter validation — unsupported properties removed from squad.agent.md, version moved to HTML comment. Sidebar logo sized to 40px. Docs build templates extracted to external files (template.html, style.css, script.js) for editor support — Fenster
+
+
+📌 Team update (2026-02-15): Directory structure rename planned — .ai-team/ → .squad/ starting v0.5.0 with backward-compatible migration; full removal in v1.0.0 — Brady
+
+- **Post-install output: /agent vs /agents (#93).** The post-install "Next steps" output told users to select Squad from "/agents list" but the Copilot CLI uses `/agent` (singular). Updated line 957 in index.js to show both: `/agent` (CLI) and `/agents` (VS Code). Only one place in index.js referenced this — the post-install "Next steps" block.
+
+- **Insider install path in help text (#94 Phase 3).** Added `Insider channel: npx github:bradygaster/squad#insider` to the `--help` output in index.js, after the Flags section. One line, minimal footprint.
+
+📌 Team update (2026-02-19): CLI output updated for #93 and #94 Phase 3. Post-install "Next steps" now shows both `/agent` (CLI) and `/agents` (VS Code). Help text now includes insider install path (`npx github:bradygaster/squad#insider`). Changes are index.js only — McManus owns README/docs updates. — decided by Fenster
+
+
+📌 Team update (2026-02-19): Insider Program infrastructure verified and complete — Issue #94 all checklist items verified: CI/CD triggers, guard protection, insider release workflow, documentation, CLI help text. All 11 workflow templates in sync. Ready for Brady to create insider branch. — decided by Kobayashi
+
+- **Memory architecture proposal analysis (2026-02-19).** Brady requested feasibility review of external memory architecture (identity/memory/social layers with RAG hooks). Key findings: (1) `identity/me.md` fully overlaps with charter.md, (2) wisdom.md and now.md are the high-value gaps, (3) decisions.md at 300KB is the real context budget problem, (4) JSONL is a non-starter on Windows+git, (5) RAG unnecessary — tag-based grep + recency sort works, (6) social layer is over-engineered for current use case. Recommended MVP: two files (wisdom.md + now.md) under `.squad/agents/{name}/`, ~9 hours to ship in v0.5.0. Decision written to inbox.
+
+- **CLI dual-path support for .squad/ migration (#101, 2026-02-19).** Implemented backward-compatible directory detection for the .squad/ → .ai-team/ rename in v0.5.0. Key components: (1) detectSquadDir() checks .squad/ first, falls back to .ai-team/; (2) New installations create .squad/, existing installations continue using .ai-team/ until manually migrated; (3) `squad upgrade --migrate-directory` renames the directory and updates .gitattributes/.gitignore; (4) Deprecation warning shown only when .ai-team/ is detected (not on new installs); (5) All directory references updated to use squadInfo.path instead of hardcoded paths. Critical lessons: (a) Function declaration order matters — helpers must be defined before use, (b) Dual const declaration causes immediate syntax error — careful with refactoring across edit sessions, (c) Default return value in detectSquadDir determines new-install behavior — returning .ai-team/ was a subtle bug that took manual testing to catch. All 53 tests pass. PR #111 to dev branch.
+
+
+📌 Team update (2026-02-20): Kobayashi merged all 5 v0.5.0 PRs (#109–#113) into dev in dependency order. All tests pass (53/53). Migration infrastructure (dual-path CLI/workflows, email scrubbing, docs) ready for v0.5.0 release. — Scribe
+
+- **compareSemver pre-release suffix handling (v0.5.3, 2026-02-20).** The `compareSemver` function in index.js (around line 1220) used `.split('.').map(Number)` which broke for versions with pre-release suffixes like `0.5.3-insiders` because `Number('3-insiders')` returns `NaN`, causing incorrect version comparisons. Fixed by stripping pre-release suffix (everything after first `-`) before numeric comparison, then applying semver ordering rules when base versions are equal: pre-release < release. New logic: (1) extract base version via `v.split('-')[0]`, (2) compare numeric parts, (3) if equal, pre-release < release, (4) if both pre-release, use lexicographic string comparison. This enables correct insider release version comparisons during upgrade checks. Version bumped from 0.5.2 → 0.5.3. All 86 tests pass.
+
+- **SDK Replatform PRDs (2026-02-20).** Wrote three PRDs to `.ai-team/docs/prds/`: (1) `01-sdk-orchestration-runtime.md` — Foundation runtime: SquadClient adapter wrapping CopilotClient with reconnection, SquadSession adapter, SessionPool, EventBus, config loader, TypeScript project setup. Adapter layer is the kill-shot mitigation for SDK Technical Preview coupling — all Squad code imports from `src/adapter/`, never from `@github/copilot-sdk` directly. (2) `02-custom-tools-api.md` — Five custom tools via SDK's `defineTool()` + Zod: `squad_route` (agent-to-agent work routing via session pool), `squad_decide` (typed drop-box writes), `squad_memory` (append-only history), `squad_status` (session pool query), `squad_skill` (skill CRUD). Tools return structured `ToolResultObject` for LLM error handling. (3) `08-ralph-sdk-migration.md` — Ralph's ephemeral spawns become a persistent SDK session with `resumeSession("squad-ralph")`. Accumulates knowledge across cycles via infinite sessions. Event-driven agent tracking via EventBus replaces polling. Three monitoring layers preserved (in-session, watchdog, cloud heartbeat). State persisted to `state.json` for crash recovery.
+
+- **Squad SDK Repository Created (2026-02-20).** Created `C:\src\squad-sdk` — clean-slate TypeScript repository for the SDK replatform. Structure: `src/client/` (SquadClient adapter, SessionPool, EventBus — PRD 1), `src/tools/` (ToolRegistry — PRD 2), `src/hooks/` (HookPipeline — PRD 3), `src/agents/` (AgentSessionManager, CharterCompiler — PRD 4), `src/coordinator/` (Coordinator — PRD 5), `src/casting/` (CastingRegistry — PRD 11), `src/ralph/` (RalphMonitor — PRD 8). ESM TypeScript with strict mode, NodeNext module resolution, vitest for testing. SDK dependency via `file:../copilot-sdk/nodejs` (local reference — SDK is not published to npm). All stubs define public API shapes with TODO markers referencing their PRDs. 7 tests pass. Initial commit: `f4830e4`.
+
+- **Copilot SDK Technical Mapping (2026-02-20).** Brady requested evaluation of replatforming Squad on @github/copilot-sdk v0.1.8. Completed deep analysis of SDK architecture: read client.ts (1,554 lines), session.ts (553 lines), types.ts (1,055 lines), package.json, compatibility docs, hooks docs, skills docs, generated RPC types, samples. Key findings: (1) 75% direct mapping — agent spawning (customAgents + createCustomAgentSession), system message (append/replace modes), tool control (availableTools/excludedTools), MCP integration (mcpServers config), infinite sessions (auto-compaction), hooks (pre/post tool, lifecycle), skills (skillDirectories). (2) Squad-specific features with no SDK equivalent (intentionally) — casting system, decision inbox drop-box pattern, Ralph's monitor loop, template installer, tier-based response modes, worktree-local state. (3) SDK unlocks we don't have today — multi-session management (listSessions), session resumption (resumeSession), streaming deltas, protocol version negotiation, BYOK (custom providers), per-agent working directory, foreground/background session control (TUI+server mode). (4) One blocker — SDK's createCustomAgentSession doesn't accept model parameter (current gap); workaround is prompt-level model detection until SDK adds param. (5) Hooks system is biggest new capability — onPreToolUse can enforce "coordinator may not spawn recursively" at runtime (move from LLM memory to SDK enforcement), onPostToolUse can inject role-aware context breadcrumbs. Recommendation: **Proceed with replatforming** — type safety, protocol versioning, new capabilities, maintainability. Migration path: 5 phases (19-26h total) — SDK client wrapper (2-3h), migrate agent spawning (6-8h), session management (4-6h), adopt hooks (3-4h), skills migration (4-5h optional). Feature-flag SDK path, keep task tool as fallback. Ship phases 1-3 as v0.6.0. Wrote comprehensive analysis to .ai-team/docs/sdk-technical-mapping.md (24KB). Decision inbox entry written separately for Brady's architectural review.
+
+## Learnings
+
+- **M0 Session Pool Implementation (Issues #76, #83, #75 — 2026-02-22).** Completed three foundational M0 work items for squad-sdk: (1) **SessionPool** — Added capacity limit enforcement (throws at maxConcurrent), event emission (session.added, session.removed, session.status_changed, pool.at_capacity, pool.health_check), health check interval timer, idle session cleanup timer, graceful shutdown with timer cleanup. Pool now tracks session status changes via updateStatus() method. (2) **HealthMonitor** — Created `src/runtime/health.ts` with check() for startup validation, uses SquadClient's getState()/isConnected()/ping() methods, includes timeout handling, diagnostics logging on failures, exposes health status (healthy/degraded/unhealthy) for external monitoring. (3) **Client Consolidation** — Refactored `src/client/index.ts` from stub to thin re-export layer: exports core types from adapter/types.ts and SquadClient from adapter/client.ts, adds SquadClientWithPool as high-level API that integrates SessionPool + EventBus + base SquadClient. All pool events wire to EventBus automatically. Tests updated with SDK mock to avoid import.meta.resolve runtime issues. Build passes, 123/126 tests pass (3 failures are pre-existing adapter test issues, not related to M0 work). Key architectural insight: **Adapter pattern isolates SDK coupling** — all Squad code imports from `src/adapter/` or `src/client/`, never from `@github/copilot-sdk` directly. This protects us from Technical Preview breaking changes.
+
+- **M1-1 & M1-2 ToolRegistry Implementation (Issues #88, #92 — 2026-02-22).** Completed Custom Tools API Foundation and squad_route tool. Implemented ToolRegistry with `defineTool()` pattern that creates typed SquadTool objects compatible with adapter types. All five squad tools registered: (1) **squad_route** — Routes tasks to target agents, validates agent exists, returns RouteRequest for session creation (wired later). Priority defaults to 'normal'. Session lifecycle integration pending. (2) **squad_decide** — Writes decisions to `.squad/decisions/inbox/{uuid}.md` with author, summary, body, references. Creates directory structure if missing. (3) **squad_memory** — Appends to agent history files under Learnings/Updates/Sessions sections. Creates section if missing, validates history file exists. (4) **squad_status** — Placeholder for session pool state queries, returns telemetry with filter params. (5) **squad_skill** — Read/write SKILL.md files in `.squad/skills/{name}/`. Read returns content, write creates structured markdown with confidence metadata. All tools have JSON schema parameters. ToolRegistry provides `getTools()`, `getToolsForAgent(allowedTools?)`, `getTool(name)` methods. Test suite: 27 tests covering registration, lookup, filtering, and all handler behaviors (route validation, decide file writing, memory appending, status placeholder, skill read/write). All tests pass. Build successful. Key insight: **Tools are Squad's IPC layer** — squad_route creates work requests, squad_decide writes to drop-box, squad_memory persists learnings, squad_skill manages knowledge base. This decouples orchestration from SDK session creation — tools define the contract, runtime wires it later.
+
+### 2026-02-21T03:40:41
+Completed M1-3, M1-4, and M1-10 (Issues #99, #109, #130):
+
+**M1-3 - squad_decide Tool Completion (#99):**
+- Updated filename format to {agent-name}-{slug}.md instead of UUID
+- Changed markdown structure to use ### {timestamp}: {summary}, **By:**, **What:**, **Why:** format
+- Maintained inbox directory creation and decision ID tracking
+- All 30 tools tests passing
+
+**M1-4 - squad_memory & squad_status Tools (#109):**
+- squad_memory already correctly implemented with section management (learnings/updates/sessions)
+- Updated squad_status to integrate with SessionPool:
+  - Added sessionPoolGetter parameter to ToolRegistry constructor
+  - Returns real pool metrics: size, capacity, active sessions, uptime
+  - Supports filtering by agent name and status
+  - Verbose mode includes per-session details with uptime
+  - Handles gracefully when pool unavailable (e.g., in unit tests)
+
+**M1-10 - Parallel Fan-Out Session Spawning (#130):**
+- Created src/coordinator/fan-out.ts with spawnParallel() function
+- Implements Promise.allSettled for concurrent agent spawning
+- Each spawn: compile charter → resolve model → create session → send initial message
+- Error isolation: one session failure doesn't block others
+- Event aggregation via coordinator's event bus
+- Returns SpawnResult[] with session IDs and outcomes
+- Created comprehensive test suite: test/fan-out.test.ts (13 tests)
+- Tests cover: parallel spawning, error isolation, event aggregation, timing, edge cases
+
+**Build & Test Results:**
+- TypeScript compilation: ✓ success
+- test/tools.test.ts: ✓ 30/30 tests passing
+- test/fan-out.test.ts: ✓ 13/13 tests passing
+- Total: 253/270 tests passing (17 failures are pre-existing in integration.test.ts)
+
+**Trade-offs:**
+- squad_status uses ny type for pool sessions to avoid circular dependencies
+- Event types cast to ny in fan-out.ts to match EventBus's limited type set
+- Model override skips resolveModel call entirely for performance
+
+
+---
+
+## 2026-02-21 - M2-2/M2-3/M2-4: Configuration Loader, Routing Config, Model Registry (#91, #93, #95)
+
+**Task:** Enhance existing config loader and create routing + model configuration modules for the SDK replatform.
+
+**M2-2 - Configuration Loader Enhancement:**
+- Enhanced src/runtime/config.ts with config file discovery (walks up directory tree)
+- Added support for squad.config.js, .squad/config.json in addition to .ts/.json
+- Implemented validateConfigDetailed() function returning ValidationResult with errors/warnings
+- Added comprehensive validation for all config sections: models, routing, agents, casting, platforms
+- Config discovery checks: squad.config.ts → squad.config.js → squad.config.json → .squad/config.json → walk up
+- Validates: agent name uniqueness, work type duplicates (warning), issue routing actions, agent sources, casting policies
+
+**M2-3 - Routing Configuration Module:**
+- Created src/config/routing.ts with routing.md markdown parser
+- parseRoutingMarkdown(): extracts routing table from markdown format into typed RoutingConfig
+- compileRoutingRules(): compiles rules with regex patterns and priority scoring (specificity-based)
+- matchRoute(): fast pattern matching against compiled rules, returns agents + confidence + reason
+- matchIssueLabels(): matches GitHub issue labels to routing rules with required/excluded label logic
+- Supports both markdown (legacy) and typed config (new)
+- Priority system: longer/more-specific work types rank higher in matching
+
+**M2-4 - Model Configuration & Registry:**
+- Created src/config/models.ts with full model catalog from squad.agent.md
+- MODEL_CATALOG: 17 models across 3 tiers (premium: 3, standard: 10, fast: 4)
+- Providers: Anthropic (Claude), OpenAI (GPT), Google (Gemini)
+- ModelRegistry class: lookups, tier/provider filtering, fallback chains, recommendations
+- getFallbackChain(): returns tier-appropriate fallback sequence, optionally prefers same provider
+- getNextFallback(): chain iteration with attempted-model tracking
+- getRecommendedModels(): use-case-based model selection
+- Convenience functions: getModelInfo(), isModelAvailable(), getFallbackChain()
+
+**Test Coverage:**
+- test/routing.test.ts: 16 tests (parseRoutingMarkdown, compileRoutingRules, matchRoute, matchIssueLabels)
+- test/models.test.ts: 34 tests (catalog, fallback chains, ModelRegistry methods, convenience functions)
+- test/config.test.ts: Enhanced with 8 new tests (validateConfigDetailed, discoverConfigFile)
+- All 405 tests pass
+
+**Build & Test Results:**
+- TypeScript compilation: ✓ success
+- npm test: ✓ 405/405 tests passing (15/15 test files)
+- Routing tests: ✓ 16/16 passing
+- Models tests: ✓ 34/34 passing
+- Config tests: ✓ 22/22 passing
+
+**Implementation Notes:**
+- Built on existing src/runtime/config.ts (619 lines) rather than duplicating
+- Config discovery uses dirname() iteration, stops at root
+- Routing patterns use regex generation from work type + examples
+- Model catalog matches squad.agent.md spec exactly (lines 398-400)
+- Fallback chains default to DEFAULT_FALLBACK_CHAINS but support provider preference
+- ValidationResult separates errors (blocking) from warnings (non-blocking)
+
+**Files Modified:**
+- src/runtime/config.ts (enhanced validation + discovery)
+- src/config/index.ts (added exports)
+
+**Files Created:**
+- src/config/routing.ts (358 lines)
+- src/config/models.ts (452 lines)
+- test/routing.test.ts (252 lines)
+- test/models.test.ts (321 lines)
+
+**Trade-offs:**
+- Discovery walks up from CWD but stops before filesystem root to avoid excessive searching
+- Routing pattern matching uses lookahead regex for work type words, simple alternation for examples
+- Priority calculation is heuristic-based (length + word count + pattern count) rather than ML-based
+- Model catalog is hardcoded rather than fetched from API (matches coordinator's static approach)
+
+### CLI Bug Fixes — #135 Windows EPERM, #137 --version (PR #149)
+
+- **Windows EPERM on migrate-directory (#135):** `fs.renameSync()` fails when VS Code holds file handles on `.ai-team/` files. Added `safeRename()` helper inside the migration block that catches EPERM/EACCES and falls back to `fs.cpSync()` + `fs.rmSync()`. Applied to both renames (`.ai-team/` → `.squad/` and `.ai-team-templates/` → `.squad-templates/`). `fs.cpSync` requires Node 16.7+ — fine since Squad requires 18+.
+- **--version shows installed version (#137):** `--version` now prints both `Package:` (npx-fetched) and `Installed:` (from `squad.agent.md` HTML comment `<!-- version: X.X.X -->`). Shows "not installed" when file doesn't exist. Updated one test assertion in `mcp-config.test.js` for the new output format. All 95 tests pass.
+
+
+### Content Reference Replacement in migrate-directory — #134 (PR #151)
+- **Problem:** `--migrate-directory` renamed `.ai-team/` → `.squad/` but left stale `.ai-team/` path references inside the migrated files (routing.md, decisions.md, agent histories, etc.).
+- **Fix:** Added `replaceAiTeamReferences(dirPath)` — walks all `.md` and `.json` files recursively, replaces `.ai-team/` → `.squad/` and `.ai-team-templates/` → `.squad-templates/` in file content. Runs after the email scrub step. Reusable function following `scrubEmailsFromDirectory` pattern.
+- **Key decisions:** Replacement order matters — `.ai-team-templates/` must be replaced before `.ai-team/` to avoid partial matches. Function is top-level (not nested inside migration block) for reuse.
+
+### Remove squad-main-guard.yml — #150
+- **Problem:** The guard workflow blocked .squad/ files from reaching main/preview branches. Users should control what gets committed via .gitignore, not a CI guard.
+- **Fix:** Deleted templates/workflows/squad-main-guard.yml (stops distribution to new installs), deleted .github/workflows/squad-main-guard.yml (this repo's copy), added v0.5.4 migration that deletes the guard from existing consumer repos on next `squad upgrade`.
+- **Key pattern:** Workflow loop at line ~1664 reads templates/workflows/ dynamically — deleting the template file is sufficient, no hardcoded references existed.
+
+### v0.5.3 Release Verification (2026-02-22)
+- **package.json:** version `0.5.3` ✅
+- **index.js:** version read dynamically via `require('./package.json').version` (line 47). No hardcoded version strings. `stampVersion()` and `readInstalledVersion()` use HTML comment pattern. v0.5.4 migration (line 1336, guard removal) correctly tagged as forward-looking.
+- **Tests:** 95/95 pass, 41 suites, 0 failures ✅
+- **CHANGELOG.md:** Added v0.5.3 entry (was missing — latest was v0.5.2). Covers #135 Windows EPERM, #137 --version, #134 content replacement, compareSemver pre-release fix, #150 guard removal.
+- **Status:** Release-ready pending McManus README completion.

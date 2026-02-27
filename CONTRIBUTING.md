@@ -64,8 +64,8 @@ Squad uses a three-tier branch structure to protect production and staging while
 |--------|---------|------------|---------------|
 | **`dev`** | Development & integration | None | Γ£à Everything (including `.squad/`) |
 | **`feature/squad/{issue}-{slug}`** | Feature work | None ΓÇö merge to dev | Γ£à Everything (including `.squad/`) |
-| **`preview`** | Staging & release candidate | Guard checks for `.squad/`, `team-docs/` (except blog/) | Γ£à Most files ΓÇö see [Protected Files](#whats-protected) |
-| **`main`** | Production & releases | Guard checks for `.squad/`, `team-docs/` (except blog/) | Γ£à Most files ΓÇö see [Protected Files](#whats-protected) |
+| **`preview`** | Staging & release candidate | None | Γ£à All files |
+| **`main`** | Production & releases | None | Γ£à All files |
 
 ### Creating a Feature Branch
 
@@ -95,16 +95,16 @@ git push origin squad/42-auth-refresh
 
 ## What's Protected
 
-### ≡ƒÜ½ CRITICAL: Files Blocked from `main` and `preview`
+### Team State Files
 
-These files are **runtime team state** and live on `dev` and feature branches. They are committed to git and flow freely between `dev` and feature branches, but the **guard workflow** (`squad-main-guard.yml`) blocks them from reaching `main` or `preview`:
+`.squad/` and `team-docs/` are **runtime team state** committed to all branches:
 
-| Path | Reason | Committed to `dev`? | Merged to `main`/`preview`? |
-|------|--------|---------------------|---------------------------|
-| **`.squad/**`** | Agent charters, routing, decisions, history, casting registry | Γ£à YES | Γ¥î NEVER ΓÇö guard blocks |
-| **`team-docs/**`** | Internal team documentation, sprint plans, notes | Γ£à YES | Γ¥î NEVER ΓÇö guard blocks |
+| Path | Reason | Committed Everywhere? |
+|------|--------|----------------------|
+| **`.squad/**`** | Agent charters, routing, decisions, history, casting registry | Γ£à YES |
+| **`team-docs/**`** | Internal team documentation, sprint plans, notes | Γ£à YES |
 
-**Why?** `.squad/` contains persistent agent knowledge, routing rules, and decision history. `team-docs/` contains internal proposals, sprint plans, and working notes. Both are internal infrastructure that belongs on development branches ΓÇö not in production. The guard workflow is the enforcement mechanism, not `.gitignore`. `.squad/` is NOT in `.gitignore` ΓÇö it's a normal part of the `dev` branch. The `.npmignore` file ensures both are excluded from the published npm package. Blog posts live in `docs/blog/` and flow freely to all branches.
+**How to exclude them:** `.squad/` and `team-docs/` are not in `.gitignore` by default. If you want to keep them local and prevent accidental commits, add them to your local `.gitignore` or use `git update-index --assume-unchanged`. The `.npmignore` file ensures both are excluded from the published npm package, so they never reach users of the CLI.
 
 ### Γ£à Files That Flow Freely
 
@@ -151,36 +151,9 @@ On GitHub, create a PR with:
 - **Title:** Follows conventional commits (e.g., `feat: add auth refresh`, `fix: silent success bug`)
 - **Description:** What changed, why, and any testing notes
 
-### Step 4: Guard Checks (if targeting `preview` or `main`)
+### Step 4: PR Checks
 
-If you accidentally (or intentionally) target `preview` or `main`, the **guard workflow** (`squad-main-guard.yml`) runs:
-
-```yaml
-Γ£à If no forbidden files detected:
-   PR checks pass, you can merge.
-
-Γ¥î If forbidden files detected (.squad/, team-docs/ except blog/):
-   Workflow fails with actionable error message.
-   You must remove the files before merging.
-```
-
-### Step 5: Fixing a Blocked PR
-
-If the guard blocks your PR because it contains `.squad/` or `team-docs/` files:
-
-```bash
-# Remove .squad/ from this PR (keeps local copies and dev branch copies safe)
-git rm --cached -r .squad/
-
-# Remove team-docs/ from this PR
-git rm --cached -r team-docs/
-
-# Commit and push
-git commit -m "chore: remove internal team files from PR"
-git push
-```
-
-The workflow will re-run and pass. Your local `.squad/` and `team-docs/` files remain untouched, and they continue to exist on `dev` normally.
+Standard branch protection and CI checks apply. No workflow guards block specific files anymore ΓÇö you control what gets committed via `.gitignore` and your own development practices.
 
 ---
 
@@ -286,60 +259,46 @@ You don't need to add these yourself ΓÇö the Lead will triage and label issue
 
 ```
 squad/
-Γö£ΓöÇΓöÇ .squad/                    Γ£à Committed on dev & feature branches
-Γöé   Γö£ΓöÇΓöÇ agents/                ≡ƒÜ½ Guard blocks from main/preview
-Γöé   Γöé   Γö£ΓöÇΓöÇ {name}/charter.md  ≡ƒÜ½ Guard blocks from main/preview
-Γöé   Γöé   ΓööΓöÇΓöÇ {name}/history.md  ≡ƒÜ½ Guard blocks from main/preview
-Γöé   Γö£ΓöÇΓöÇ team.md                ≡ƒÜ½ Guard blocks from main/preview
-Γöé   Γö£ΓöÇΓöÇ routing.md             ≡ƒÜ½ Guard blocks from main/preview
-Γöé   Γö£ΓöÇΓöÇ decisions.md           ≡ƒÜ½ Guard blocks from main/preview
+Γö£ΓöÇΓöÇ .squad/                    Γ£à Committed everywhere
+Γöé   Γö£ΓöÇΓöÇ agents/
+Γöé   Γöé   Γö£ΓöÇΓöÇ {name}/charter.md
+Γöé   Γöé   ΓööΓöÇΓöÇ {name}/history.md
+Γöé   Γö£ΓöÇΓöÇ team.md
+Γöé   Γö£ΓöÇΓöÇ routing.md
+Γöé   Γö£ΓöÇΓöÇ decisions.md
 Γöé   ΓööΓöÇΓöÇ ...
 Γöé
-Γö£ΓöÇΓöÇ team-docs/                 ≡ƒÜ½ Guard blocks from main/preview (except blog/)
-Γöé   Γö£ΓöÇΓöÇ sprint-plan.md         ≡ƒÜ½ Guard blocks from main/preview
-Γöé   Γö£ΓöÇΓöÇ roadmap.md             ≡ƒÜ½ Guard blocks from main/preview
-Γöé   ΓööΓöÇΓöÇ blog/                  Γ£à ALLOWED (public content)
-Γöé       ΓööΓöÇΓöÇ 001-launch.md      Γ£à ALLOWED
+Γö£ΓöÇΓöÇ team-docs/                 Γ£à Committed everywhere
+Γöé   Γö£ΓöÇΓöÇ sprint-plan.md
+Γöé   Γö£ΓöÇΓöÇ roadmap.md
+Γöé   ΓööΓöÇΓöÇ blog/                  Γ£à Public content
+Γöé       ΓööΓöÇΓöÇ 001-launch.md
 Γöé
-Γö£ΓöÇΓöÇ index.js                   Γ£à Flows freely
-Γö£ΓöÇΓöÇ squad.agent.md             Γ£à Flows freely
-Γö£ΓöÇΓöÇ README.md                  Γ£à Flows freely
-Γö£ΓöÇΓöÇ CONTRIBUTING.md            Γ£à Flows freely (this file)
-Γö£ΓöÇΓöÇ CHANGELOG.md               Γ£à Flows freely
-Γö£ΓöÇΓöÇ package.json               Γ£à Flows freely
-Γö£ΓöÇΓöÇ LICENSE                    Γ£à Flows freely
+Γö£ΓöÇΓöÇ index.js
+Γö£ΓöÇΓöÇ squad.agent.md
+Γö£ΓöÇΓöÇ README.md
+Γö£ΓöÇΓöÇ CONTRIBUTING.md            (this file)
+Γö£ΓöÇΓöÇ CHANGELOG.md
+Γö£ΓöÇΓöÇ package.json
+Γö£ΓöÇΓöÇ LICENSE
 Γöé
-Γö£ΓöÇΓöÇ docs/                      Γ£à Flows freely
-Γöé   Γö£ΓöÇΓöÇ community.md           Γ£à Flows freely
-Γöé   Γö£ΓöÇΓöÇ features/              Γ£à Flows freely
-Γöé   ΓööΓöÇΓöÇ scenarios/             Γ£à Flows freely
+Γö£ΓöÇΓöÇ docs/
+Γöé   Γö£ΓöÇΓöÇ community.md
+Γöé   Γö£ΓöÇΓöÇ features/
+Γöé   ΓööΓöÇΓöÇ scenarios/
 Γöé
-Γö£ΓöÇΓöÇ templates/                 Γ£à Flows freely
-Γö£ΓöÇΓöÇ test/                      Γ£à Flows freely
-Γö£ΓöÇΓöÇ .github/workflows/         Γ£à Flows freely
-Γöé   ΓööΓöÇΓöÇ squad-main-guard.yml   Γ£à Flows freely
+Γö£ΓöÇΓöÇ templates/
+Γö£ΓöÇΓöÇ test/
+Γö£ΓöÇΓöÇ .github/workflows/
 Γöé
-Γö£ΓöÇΓöÇ .gitignore                 Γ£à Flows freely
-Γö£ΓöÇΓöÇ .gitattributes             Γ£à Flows freely
-ΓööΓöÇΓöÇ .npmignore                 Γ£à Flows freely
+Γö£ΓöÇΓöÇ .gitignore
+Γö£ΓöÇΓöÇ .gitattributes
+ΓööΓöÇΓöÇ .npmignore
 ```
 
 ---
 
-## How the Guard Works
 
-When you open a PR to `main` or `preview`, the workflow `.github/workflows/squad-main-guard.yml` automatically runs. It:
-
-1. **Fetches all files changed in your PR** (paginated for large PRs)
-2. **Checks each file against forbidden path rules:**
-   - If filename starts with `.squad/` ΓåÆ BLOCKED
-   - If filename starts with `team-docs/` ΓåÆ BLOCKED
-   - Otherwise ΓåÆ ALLOWED
-3. **Reports results:**
-   - Γ£à **Pass:** "No forbidden paths found" ΓÇö you're good to merge
-   - Γ¥î **Fail:** Lists forbidden files and shows `git rm --cached` fix
-
-The guard is **not a suggestion** ΓÇö it's a hard stop. This is the primary enforcement mechanism that keeps `.squad/` and internal `team-docs/` off `main` and `preview`. But it's easy to fix if it blocks you (see [Fixing a Blocked PR](#fixing-a-blocked-pr)).
 
 ---
 
@@ -347,23 +306,13 @@ The guard is **not a suggestion** ΓÇö it's a hard stop. This is the primary e
 
 ### Q: I accidentally committed `.squad/` to my feature branch. Do I have to delete it?
 
-**A:** Nope ΓÇö `.squad/` files are **supposed** to be committed on `dev` and feature branches! They're part of the normal development workflow. The guard workflow (`squad-main-guard.yml`) prevents them from reaching `main` or `preview`. Just don't PR them to those branches.
-
-If you're creating a PR to `main` or `preview` and the guard blocks it, remove the files from that PR only:
-
-```bash
-git rm --cached -r .squad/  # Untrack from this PR
-git commit -m "chore: remove .squad/ from release PR"
-git push
-```
+**A:** Nope ΓÇö `.squad/` files are **supposed** to be committed on all branches! They're part of the normal development workflow. If you don't want them in your local repo, add `.squad/` to your personal `.gitignore`. Or use `git update-index --assume-unchanged .squad/` to keep them committed on the repo but not tracked locally.
 
 ### Q: Can I PR to `main` directly?
 
 **A:** Technically yes, but don't. Always target `dev` first. Releases flow dev ΓåÆ preview ΓåÆ main via controlled releases, not ad-hoc PRs. This keeps `main` a stable mirror of what's deployed.
 
-### Q: The guard blocked my PR. What now?
 
-**A:** Your PR targets `main` or `preview` and contains `.squad/` or `team-docs/` files. These files live on `dev` and feature branches but must not reach production. Follow [Fixing a Blocked PR](#fixing-a-blocked-pr) ΓÇö it's three `git rm --cached` commands and a push. The workflow will re-run and pass.
 
 ### Q: I want to commit `team-docs/sprint-plan.md` ΓÇö can I do that?
 
@@ -394,9 +343,8 @@ Welcome aboard. Make Squad better. ≡ƒÜÇ
 ## Summary: What You Need to Know
 
 1. **Clone from `dev`, create `squad/{issue}-{slug}` branch, PR back to `dev`**
-2. **`.squad/` files are committed on `dev` and feature branches ΓÇö the guard workflow blocks them from `main`/`preview`**
+2. **`.squad/` files are committed everywhere by default. Use `.gitignore` to exclude them locally if you prefer**
 3. **Run `npm test` before pushing**
 4. **Follow conventional commits (feat:, fix:, docs:, etc.)**
-5. **If the guard blocks your PR to `main`/`preview`, run `git rm --cached` and push again**
 
 That's it. Happy contributing.
