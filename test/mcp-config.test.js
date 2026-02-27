@@ -146,7 +146,7 @@ describe('MCP config handling (#11)', () => {
     it('squad --version works regardless of MCP config presence', () => {
       const result = runSquad(['--version'], tmpDir);
       assert.equal(result.exitCode, 0);
-      assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+$/, 'should output semver');
+      assert.match(result.stdout.trim(), /^Package: \d+\.\d+\.\d+/, 'should output package version');
     });
   });
 });
