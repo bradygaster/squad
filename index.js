@@ -49,7 +49,15 @@ const cmd = process.argv[2];
 
 // --version / --help
 if (cmd === '--version' || cmd === '-v') {
-  console.log(pkg.version);
+  console.log(`Package: ${pkg.version}`);
+  const agentMdPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
+  let installedVersion = 'not installed';
+  if (fs.existsSync(agentMdPath)) {
+    const content = fs.readFileSync(agentMdPath, 'utf8');
+    const match = content.match(/<!-- version: ([^\s]+) -->/);
+    if (match) installedVersion = match[1];
+  }
+  console.log(`Installed: ${installedVersion}`);
   process.exit(0);
 }
 
@@ -1129,11 +1137,25 @@ if (isMigrateDirectory) {
     fatal('.squad/ directory already exists — migration appears to be complete.');
   }
   
+  // Safe rename that falls back to copy+delete on Windows EPERM/EACCES
+  function safeRename(source, target) {
+    try {
+      fs.renameSync(source, target);
+    } catch (err) {
+      if (err.code === 'EPERM' || err.code === 'EACCES') {
+        fs.cpSync(source, target, { recursive: true });
+        fs.rmSync(source, { recursive: true, force: true });
+      } else {
+        throw err;
+      }
+    }
+  }
+
   console.log(`${DIM}Migrating .ai-team/ → .squad/...${RESET}`);
   
   try {
     // Rename directory
-    fs.renameSync(aiTeamDir, squadDir);
+    safeRename(aiTeamDir, squadDir);
     console.log(`${GREEN}✓${RESET} Renamed .ai-team/ → .squad/`);
     
     // Update .gitattributes
@@ -1171,7 +1193,7 @@ if (isMigrateDirectory) {
     const aiTeamTemplatesDir = path.join(dest, '.ai-team-templates');
     const squadTemplatesDir = path.join(dest, '.squad-templates');
     if (fs.existsSync(aiTeamTemplatesDir)) {
-      fs.renameSync(aiTeamTemplatesDir, squadTemplatesDir);
+      safeRename(aiTeamTemplatesDir, squadTemplatesDir);
       console.log(`${GREEN}✓${RESET} Renamed .ai-team-templates/ → .squad-templates/`);
     }
 
