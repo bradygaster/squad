@@ -389,6 +389,41 @@ function scrubEmailsFromDirectory(dirPath) {
   return scrubbedFiles;
 }
 
+// Replace legacy .ai-team/ path references inside .md and .json files
+function replaceAiTeamReferences(dirPath) {
+  const updatedFiles = [];
+  const replacements = [
+    [/\.ai-team-templates\//g, '.squad-templates/'],
+    [/\.ai-team\//g, '.squad/']
+  ];
+
+  function walk(dir) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile() && (entry.name.endsWith('.md') || entry.name.endsWith('.json'))) {
+        try {
+          let content = fs.readFileSync(full, 'utf8');
+          const original = content;
+          for (const [pattern, replacement] of replacements) {
+            content = content.replace(pattern, replacement);
+          }
+          if (content !== original) {
+            fs.writeFileSync(full, content);
+            updatedFiles.push(path.relative(dirPath, full));
+          }
+        } catch (err) {
+          // skip unreadable files
+        }
+      }
+    }
+  }
+
+  walk(dirPath);
+  return updatedFiles;
+}
+
 // Detect project type by checking for marker files in the target directory
 function detectProjectType(dir) {
   if (fs.existsSync(path.join(dir, 'package.json'))) return 'npm';
@@ -1187,6 +1222,15 @@ if (isMigrateDirectory) {
       console.log(`${GREEN}✓${RESET} Scrubbed email addresses from ${scrubbedFiles.length} file(s)`);
     } else {
       console.log(`${GREEN}✓${RESET} No email addresses found`);
+    }
+
+    // Replace .ai-team/ path references inside migrated file content
+    console.log(`${DIM}Replacing .ai-team/ references in .squad/ files...${RESET}`);
+    const referencesUpdated = replaceAiTeamReferences(squadDir);
+    if (referencesUpdated.length > 0) {
+      console.log(`${GREEN}✓${RESET} Updated .ai-team/ references in ${referencesUpdated.length} file(s)`);
+    } else {
+      console.log(`${GREEN}✓${RESET} No .ai-team/ references found`);
     }
 
     // Rename .ai-team-templates/ → .squad-templates/ if it exists
