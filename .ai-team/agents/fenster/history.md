@@ -282,3 +282,9 @@ Completed M1-3, M1-4, and M1-10 (Issues #99, #109, #130):
 
 - **Windows EPERM on migrate-directory (#135):** `fs.renameSync()` fails when VS Code holds file handles on `.ai-team/` files. Added `safeRename()` helper inside the migration block that catches EPERM/EACCES and falls back to `fs.cpSync()` + `fs.rmSync()`. Applied to both renames (`.ai-team/` → `.squad/` and `.ai-team-templates/` → `.squad-templates/`). `fs.cpSync` requires Node 16.7+ — fine since Squad requires 18+.
 - **--version shows installed version (#137):** `--version` now prints both `Package:` (npx-fetched) and `Installed:` (from `squad.agent.md` HTML comment `<!-- version: X.X.X -->`). Shows "not installed" when file doesn't exist. Updated one test assertion in `mcp-config.test.js` for the new output format. All 95 tests pass.
+
+
+### Content Reference Replacement in migrate-directory — #134 (PR #151)
+- **Problem:** `--migrate-directory` renamed `.ai-team/` → `.squad/` but left stale `.ai-team/` path references inside the migrated files (routing.md, decisions.md, agent histories, etc.).
+- **Fix:** Added `replaceAiTeamReferences(dirPath)` — walks all `.md` and `.json` files recursively, replaces `.ai-team/` → `.squad/` and `.ai-team-templates/` → `.squad-templates/` in file content. Runs after the email scrub step. Reusable function following `scrubEmailsFromDirectory` pattern.
+- **Key decisions:** Replacement order matters — `.ai-team-templates/` must be replaced before `.ai-team/` to avoid partial matches. Function is top-level (not nested inside migration block) for reuse.

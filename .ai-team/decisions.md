@@ -4498,3 +4498,33 @@ git checkout -b squad/issue-N-description
 ## Tags
 
 `git`, `cleanup`, `branching`, `dev-workflow`
+# Decision: Content replacement pass in migrate-directory
+
+**Date:** 2025-02-27
+**Author:** Fenster
+**Issue:** #134
+**PR:** #151
+
+## Context
+
+The `--migrate-directory` command renames `.ai-team/` → `.squad/` at the filesystem level but doesn't update path references inside the migrated files. This leaves stale `.ai-team/` paths in routing rules, decisions, agent histories, and JSON configs.
+
+## Decision
+
+Added a new `replaceAiTeamReferences(dirPath)` function that recursively walks `.md` and `.json` files and replaces `.ai-team/` → `.squad/` and `.ai-team-templates/` → `.squad-templates/` in content. It runs after the email scrub step during migration.
+
+## Rationale
+
+- Follows the established pattern of `scrubEmailsFromDirectory()` — reusable, top-level function returning list of updated files
+- Replacement order: `.ai-team-templates/` before `.ai-team/` to prevent partial-match corruption
+- Scoped to `.md` and `.json` only — these are the file types Squad manages; binary files and other formats are untouched
+- Function is reusable for future migration tooling if needed
+
+
+---
+
+### 2026-02-27T01:40Z: User directive
+**By:** Brady (via Copilot)
+**What:** Fully remove the guards preventing people from committing their squads. The squad-main-guard.yml workflow that blocks .squad/ from reaching main/preview must be removed from templates/workflows/ and from this repo's own .github/workflows/. Users should use .gitignore themselves if they want their squad excluded from the repo. CONTRIBUTING.md references to the guard workflow must be updated. The team collectively decided they dislike the guard approach.
+**Why:** User request — captured for team memory
+
