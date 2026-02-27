@@ -254,11 +254,22 @@ The Coordinator enforces this. No self-review of rejected work.
 
 ---
 
-## What's New in v0.5.2
+## What's New in v0.5.3
 
-- **`upgrade --migrate-directory` exits early fix** — The directory rename step no longer calls `process.exit(0)`, so the full upgrade (squad.agent.md, workflows, .ai-team-templates) now runs after migration in one command
-- **`.slnx`, `.fsproj`, `.vbproj` not detected as .NET** — Proper Visual Studio solution files and F#/VB.NET project files now detected; repos using these get proper dotnet stub CI workflows
-- **Migrations use detected squad directory** — Migration steps and `.gitattributes` rules now use the detected squad directory (`.squad/` or `.ai-team/`) so they work correctly after `--migrate-directory` runs
+### Bug Fixes
+- **Windows EPERM fallback** — `safeRename()` catches EPERM/EACCES errors (VS Code file watchers hold handles on Windows), falls back to copy+delete. Fixes #135, PR #149.
+- **`--version` now shows installed version** — `npx github:bradygaster/squad --version` now shows both the installed Squad version AND the Copilot CLI version on separate lines. Fixes #137, PR #149.
+- **Content replacement in migrate-directory** — When migrating from `.ai-team/` to `.squad/`, file contents (not just paths) now get `.ai-team/` references replaced with `.squad/`. Fixes #134, PR #151.
+
+### Behavior Change
+- **Guard workflow removed** — The `squad-main-guard.yml` workflow that blocked `.squad/` files from reaching main/preview has been removed. `.squad/` files now flow freely to all branches. Users who want to exclude `.squad/` can use `.gitignore`. Existing installations get the guard auto-deleted on next `squad upgrade` (v0.5.4 migration). Fixes #150, PR #152.
+
+### Community
+- Responded to and closed community issues #146, #145, #139
+- Filed 4 port issues on squad-pr (#548-551) for cross-repo parity
+
+### Looking Ahead
+The next release of Squad will be more significant than prior releases, bringing Squad to NPM for easier installation. The package will still ship from this repository, so existing users will see a transparent change. Issues or PRs filed between now and that release may be held until the next update is complete. We appreciate the community's continued support and look forward to sharing what's coming.
 
 _See [full release history](docs/whatsnew.md) for all previous versions._
 
