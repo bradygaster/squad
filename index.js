@@ -1331,6 +1331,17 @@ const migrations = [
         }
       }
     }
+  },
+  {
+    version: '0.5.4',
+    description: 'Remove squad-main-guard.yml workflow',
+    run(dest) {
+      const guardPath = path.join(dest, '.github', 'workflows', 'squad-main-guard.yml');
+      if (fs.existsSync(guardPath)) {
+        fs.unlinkSync(guardPath);
+        console.log(`${GREEN}✓${RESET} Removed squad-main-guard.yml — .squad/ files can now flow freely to all branches`);
+      }
+    }
   }
 ];
 
