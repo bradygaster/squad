@@ -293,3 +293,10 @@ Completed M1-3, M1-4, and M1-10 (Issues #99, #109, #130):
 - **Problem:** The guard workflow blocked .squad/ files from reaching main/preview branches. Users should control what gets committed via .gitignore, not a CI guard.
 - **Fix:** Deleted templates/workflows/squad-main-guard.yml (stops distribution to new installs), deleted .github/workflows/squad-main-guard.yml (this repo's copy), added v0.5.4 migration that deletes the guard from existing consumer repos on next `squad upgrade`.
 - **Key pattern:** Workflow loop at line ~1664 reads templates/workflows/ dynamically — deleting the template file is sufficient, no hardcoded references existed.
+
+### v0.5.3 Release Verification (2026-02-22)
+- **package.json:** version `0.5.3` ✅
+- **index.js:** version read dynamically via `require('./package.json').version` (line 47). No hardcoded version strings. `stampVersion()` and `readInstalledVersion()` use HTML comment pattern. v0.5.4 migration (line 1336, guard removal) correctly tagged as forward-looking.
+- **Tests:** 95/95 pass, 41 suites, 0 failures ✅
+- **CHANGELOG.md:** Added v0.5.3 entry (was missing — latest was v0.5.2). Covers #135 Windows EPERM, #137 --version, #134 content replacement, compareSemver pre-release fix, #150 guard removal.
+- **Status:** Release-ready pending McManus README completion.
