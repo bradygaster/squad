@@ -1,17 +1,17 @@
 ---
-updated_at: 2026-02-24T20:34:00Z
-focus_area: Public Release Preparation — Blockers Fixed, Ready for Alpha
-issues_open: ["#324"]
+updated_at: 2026-02-27T23:18:00Z
+focus_area: Replatform Launch — Final Gate
+issues_open: ["#532", "#542"]
 issues_closed_prd: 30
-tests_passing: 2930
+tests_passing: 2944
 prd_location: .squad/identity/prd-next-waves.md
-current_phase: Public Alpha Readiness — 3 Must-Fix Blockers Resolved
+current_phase: Replatform Launch Gate — Close #532, Merge #552, Ship Alpha
 process: All work through PRs with squad member review before merge
 ---
 
 # What We're Focused On
 
-**Status:** Public readiness assessment COMPLETE. 7/7 agents voted 🟡 Ready with Caveats. All 3 must-fix blockers resolved. 2930 tests passing. Ready to ship as experimental alpha.
+**Status:** Replatform launch APPROVED by Keaton. One blocker remaining: #532 (dogfood REPL against real repos). 2944 tests passing. Build clean. On `dev` branch, repo cleaned up.
 
 ## Public Readiness Assessment (2026-02-24)
 

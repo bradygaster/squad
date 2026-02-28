@@ -213,3 +213,16 @@ Kobayashi aligned all version strings to 0.8.0 (SDK package, CLI package, VERSIO
 
 ### 2026-02-24T17-25-08Z : Team consensus on public readiness
 📌 Full team assessment complete. All 7 agents: 🟡 Ready with caveats. Consensus: ship after 3 must-fixes (LICENSE, CI workflow, debug console.logs). No blockers to public source release. See .squad/log/2026-02-24T17-25-08Z-public-readiness-assessment.md and .squad/decisions.md for details.
+
+### 2026-02-26: Branch cleanup and dev branch setup — Brady requested
+**Status:** EXECUTED
+- **Remote pruning:** `git remote prune origin` executed. 57 stale remote-tracking refs removed (branches deleted on GitHub).
+- **Remote merged branches identified (20 found):** 
+  - Fix branches (2): origin/fix/critical-ux-batch-1, origin/fix/issue-419
+  - Squad branches (18): origin/squad/265-268-aspire-and-watcher, origin/squad/331-thinking-feedback, origin/squad/488-unified-status, origin/squad/489-adaptive-hints, origin/squad/490-error-recovery, origin/squad/491-message-history-cap, origin/squad/492-per-agent-streaming, origin/squad/493-streambuffer-cleanup, origin/squad/514-docs-consistency, origin/squad/519-cli-preview, origin/squad/cli-fixes-431-429, origin/squad/hockney-fix-test-vocab, origin/squad/kovash-cancel-ops-434, origin/squad/repl-fix-402, origin/squad/tui-fixes-405-404-407, origin/squad/wave1-remaining, origin/squad/wave2-repl-polish-cleanup, origin/squad/wave3-docs-migration
+  - These are fully merged into origin/main but remain on remote. Brady to decide deletion.
+- **Remaining remote branches (22 active):** bradygaster/dev, fix/issue-428, insider, and 19 squad branches not yet merged (325-fix-timeout, 326-e2e-coverage, 327-hostile-qa, 328-accessibility-audit, 329-p0-ux-blockers, 330-p1-ux-polish, 332-ghost-response, 333-fix-p0-bugs, 334-error-hardening, 343-dual-telemetry, 368-fix-stale-tests, 513-ux-improvements, 514-docs-batch, 517-help-ux, 518-naming-consistency, 525-help-surfaces-mcmanus, kovash-status-style-390-v2).
+- **Dev branch:** Created from main, currently checked out. `git checkout -b dev main` executed successfully.
+- **Local branches:** 97 local branches remain (many not yet fully merged). Pattern observed: squad/* and fix/* branches in flight for active work. Deletions will be selective once those PRs merge.
+
+**Key Learning:** Repository maintains high branch volume during active squad development. Remote pruning revealed a 20-branch cleanup opportunity (merged but not deleted). Local branch strategy deferred to Brady for active work assessment.
