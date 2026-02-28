@@ -21,4 +21,5 @@ _site/
 # Squad internal templates (not distributed)
 .ai-team-templates/
 
-daily_squad_report_*
+# Local report artifacts (daily reports, feasibility studies, etc.)
+reports/

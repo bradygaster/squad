@@ -15,6 +15,9 @@ Squad gives you an AI development team through GitHub Copilot. Describe what you
 
 It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned.
 
+> [!IMPORTANT]
+> **Ralph's Heartbeat & GitHub Actions Minutes** — We're optimizing Ralph's heartbeat Action so it won't use as many GitHub Actions minutes. During this first month of testing we've realized it consumes more minutes than expected. **If you have repos with Squads where you're NOT actively using Ralph's heartbeat, please disable the heartbeat workflow or disable Actions altogether on those repositories.** We'll ship an update today that mitigates this, but please make sure you're not inadvertently burning through Actions minutes on Ralph-enabled repos you're not actively working on.
+
 ---
 
 ## Quick Start
