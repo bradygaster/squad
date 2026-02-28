@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.4 — 2026-02-28
+
+### Bug Fixes
+- **Ralph heartbeat cron disabled by default** — The 30-minute cron schedule in `squad-heartbeat.yml` consumed excessive GitHub Actions minutes for users with multiple Squad-enabled repos. Cron is now commented out by default. The heartbeat still triggers on issue/PR events for reactive triage. Users who need proactive polling can uncomment the cron or use `npx github:bradygaster/squad watch` locally. Fixes #158.
+
+### Upgrade Path
+- Run `npx github:bradygaster/squad upgrade` to get the updated heartbeat workflow. Existing cron schedules will be replaced with the disabled-by-default version.
+
 ## [0.5.3] — 2026-02-22
 
 ### Fixed
