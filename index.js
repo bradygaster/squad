@@ -15,19 +15,43 @@ function fatal(msg) {
   process.exit(1);
 }
 
-// Detect squad directory — .squad/ first, fall back to .ai-team/
-function detectSquadDir(dest) {
-  const squadDir = path.join(dest, '.squad');
-  const aiTeamDir = path.join(dest, '.ai-team');
-  
+function resolveSquadPaths(projectDir) {
+  const squadDir = path.join(projectDir, '.squad');
+  const aiTeamDir = path.join(projectDir, '.ai-team');
+  const configPath = path.join(squadDir, 'config.json');
+
+  let config = null;
+  if (fs.existsSync(configPath)) {
+    try {
+      config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (config && typeof config.teamRoot === 'string' && config.teamRoot.trim()) {
+        return {
+          mode: 'remote',
+          projectDir: squadDir,
+          teamDir: path.resolve(projectDir, config.teamRoot),
+          config,
+          name: '.squad',
+          isLegacy: false
+        };
+      }
+    } catch {
+      config = null;
+    }
+  }
+
   if (fs.existsSync(squadDir)) {
-    return { path: squadDir, name: '.squad', isLegacy: false };
+    return { mode: 'local', projectDir: squadDir, teamDir: squadDir, config, name: '.squad', isLegacy: false };
   }
   if (fs.existsSync(aiTeamDir)) {
-    return { path: aiTeamDir, name: '.ai-team', isLegacy: true };
+    return { mode: 'local', projectDir: aiTeamDir, teamDir: aiTeamDir, config, name: '.ai-team', isLegacy: true };
   }
-  // Default for new installations
-  return { path: squadDir, name: '.squad', isLegacy: false };
+  return { mode: 'local', projectDir: squadDir, teamDir: squadDir, config, name: '.squad', isLegacy: false };
+}
+
+// Backward-compatible wrapper for legacy call sites that only need team directory metadata
+function detectSquadDir(dest) {
+  const resolved = resolveSquadPaths(dest);
+  return { path: resolved.teamDir, name: resolved.name, isLegacy: resolved.isLegacy };
 }
 
 function showDeprecationWarning() {
@@ -45,7 +69,8 @@ process.on('uncaughtException', (err) => {
 const root = __dirname;
 const dest = process.cwd();
 const pkg = require(path.join(root, 'package.json'));
-const cmd = process.argv[2];
+const args = process.argv.slice(2);
+const cmd = args[0];
 
 // --version / --help
 if (cmd === '--version' || cmd === '-v') {
@@ -81,12 +106,21 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`             Default: squad-export.json (use --out <path> to override)`);
   console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
   console.log(`             Usage: import <file> [--force]`);
+  console.log(`  ${BOLD}doctor${RESET}     Validate squad setup integrity`);
+  console.log(`  ${BOLD}hub${RESET}        Manage Company of Squads hub workspaces`);
+  console.log(`             Usage: hub init | hub add <project-name> | hub list`);
+  console.log(`  ${BOLD}link${RESET}       Link current project to a remote squad team root`);
+  console.log(`             Usage: link --team-root <path>`);
+  console.log(`  ${BOLD}repo${RESET}       Manage standalone squad repos`);
+  console.log(`             Usage: repo init | repo link <squad-repo-path>`);
   console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
   console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
   console.log(`  ${BOLD}help${RESET}       Show this help message`);
   console.log(`\nFlags:`);
   console.log(`  ${BOLD}--version, -v${RESET}  Print version`);
   console.log(`  ${BOLD}--help, -h${RESET}     Show help`);
+  console.log(`  ${BOLD}--mode${RESET}         Init mode: local (default) or remote`);
+  console.log(`  ${BOLD}--team-root${RESET}    Team root path for remote mode/linking`);
   console.log(`\nInsider channel: npx github:bradygaster/squad#insider\n`);
   process.exit(0);
 }
@@ -107,14 +141,50 @@ function copyRecursive(src, target) {
   }
 }
 
+function getFlagValue(flagName) {
+  const idx = process.argv.indexOf(flagName);
+  return (idx !== -1 && process.argv[idx + 1]) ? process.argv[idx + 1] : null;
+}
+
+function writeRemoteConfig(projectSquadDir, teamRootPath) {
+  const relativeTeamRoot = path.relative(dest, teamRootPath) || '.';
+  fs.mkdirSync(projectSquadDir, { recursive: true });
+  fs.writeFileSync(path.join(projectSquadDir, 'config.json'), JSON.stringify({
+    version: 1,
+    teamRoot: relativeTeamRoot,
+    projectKey: null
+  }, null, 2) + '\n');
+}
+
+function ensureProjectLocalArtifacts(projectSquadDir) {
+  fs.mkdirSync(path.join(projectSquadDir, 'decisions', 'inbox'), { recursive: true });
+  fs.mkdirSync(path.join(projectSquadDir, 'log'), { recursive: true });
+  fs.mkdirSync(path.join(projectSquadDir, 'orchestration-log'), { recursive: true });
+  const decisionsPath = path.join(projectSquadDir, 'decisions.md');
+  if (!fs.existsSync(decisionsPath)) {
+    fs.writeFileSync(decisionsPath, '');
+  }
+}
+
+function ensureTeamIdentityArtifacts(teamRootPath) {
+  fs.mkdirSync(path.join(teamRootPath, 'agents'), { recursive: true });
+  fs.mkdirSync(path.join(teamRootPath, 'casting'), { recursive: true });
+  fs.mkdirSync(path.join(teamRootPath, 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(teamRootPath, 'identity'), { recursive: true });
+  fs.mkdirSync(path.join(teamRootPath, 'plugins'), { recursive: true });
+  if (!fs.existsSync(path.join(teamRootPath, 'team.md'))) fs.writeFileSync(path.join(teamRootPath, 'team.md'), '## Members\n');
+  if (!fs.existsSync(path.join(teamRootPath, 'routing.md'))) fs.writeFileSync(path.join(teamRootPath, 'routing.md'), '');
+  if (!fs.existsSync(path.join(teamRootPath, 'ceremonies.md'))) fs.writeFileSync(path.join(teamRootPath, 'ceremonies.md'), '');
+}
+
 
 // --- Watch subcommand (Ralph local watchdog) ---
 if (cmd === 'watch') {
   const { execSync } = require('child_process');
 
-  const squadDirInfo = detectSquadDir(dest);
-  if (squadDirInfo.isLegacy) showDeprecationWarning();
-  const teamMd = path.join(squadDirInfo.path, 'team.md');
+  const squadPaths = resolveSquadPaths(dest);
+  if (squadPaths.isLegacy) showDeprecationWarning();
+  const teamMd = path.join(squadPaths.teamDir, 'team.md');
   if (!fs.existsSync(teamMd)) {
     fatal('No squad found — run init first.');
   }
@@ -764,8 +834,8 @@ if (cmd === 'plugin') {
     fatal('Usage: squad plugin marketplace add|remove|list|browse');
   }
 
-  const squadDirInfo = detectSquadDir(dest);
-  const pluginsDir = path.join(squadDirInfo.path, 'plugins');
+  const squadPaths = resolveSquadPaths(dest);
+  const pluginsDir = path.join(squadPaths.teamDir, 'plugins');
   const marketplacesFile = path.join(pluginsDir, 'marketplaces.json');
 
   function readMarketplaces() {
@@ -1072,6 +1142,501 @@ if (cmd === 'import') {
   process.exit(0);
 }
 
+// --- Hub subcommand ---
+if (cmd === 'hub') {
+  const subCmd = args[1];
+  const hubFile = path.join(dest, 'squad-hub.json');
+  const squadsDir = path.join(dest, 'squads');
+
+  function readHub() {
+    try {
+      const hub = JSON.parse(fs.readFileSync(hubFile, 'utf8'));
+      if (!Array.isArray(hub.squads)) hub.squads = [];
+      return hub;
+    } catch (err) {
+      fatal(`Invalid hub config: ${err.message}`);
+    }
+  }
+
+  function writeHub(hub) {
+    fs.writeFileSync(hubFile, JSON.stringify(hub, null, 2) + '\n');
+  }
+
+  function countMembers(teamMdPath) {
+    if (!fs.existsSync(teamMdPath)) return 0;
+    const lines = fs.readFileSync(teamMdPath, 'utf8').split('\n');
+    let inMembers = false;
+    let count = 0;
+    for (const line of lines) {
+      if (line.startsWith('## Members')) { inMembers = true; continue; }
+      if (inMembers && line.startsWith('## ')) break;
+      if (!inMembers) continue;
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|')) continue;
+      if (trimmed.includes('---') || /^(\|\s*Name\s*\|)/i.test(trimmed)) continue;
+      const cells = trimmed.split('|').map(c => c.trim()).filter(Boolean);
+      if (cells.length > 0) count++;
+    }
+    return count;
+  }
+
+  if (subCmd === 'init') {
+    fs.mkdirSync(squadsDir, { recursive: true });
+    writeHub({
+      version: 1,
+      name: 'Squad Hub',
+      created_at: new Date().toISOString(),
+      squads: []
+    });
+    console.log(`${GREEN}✅${RESET} Hub initialized. Add a squad with: npx github:bradygaster/squad hub add <project-name>`);
+    process.exit(0);
+  }
+
+  if (subCmd === 'add') {
+    const projectName = args[2];
+    if (!projectName) {
+      fatal('Usage: squad hub add <project-name>');
+    }
+    if (!fs.existsSync(hubFile)) {
+      fatal('No hub found — run hub init first.');
+    }
+
+    const hub = readHub();
+    if (hub.squads.some(s => s.key === projectName)) {
+      fatal(`Squad '${projectName}' already exists.`);
+    }
+
+    const squadRoot = path.join(squadsDir, projectName);
+    fs.mkdirSync(path.join(squadRoot, 'decisions', 'inbox'), { recursive: true });
+    fs.mkdirSync(path.join(squadRoot, 'agents'), { recursive: true });
+    fs.mkdirSync(path.join(squadRoot, 'casting'), { recursive: true });
+    fs.mkdirSync(path.join(squadRoot, 'skills'), { recursive: true });
+    fs.mkdirSync(path.join(squadRoot, 'identity'), { recursive: true });
+    fs.mkdirSync(path.join(squadRoot, 'log'), { recursive: true });
+    fs.mkdirSync(path.join(squadRoot, 'orchestration-log'), { recursive: true });
+
+    const teamMd = path.join(squadRoot, 'team.md');
+    const routingMd = path.join(squadRoot, 'routing.md');
+    const ceremoniesMd = path.join(squadRoot, 'ceremonies.md');
+    const decisionsMd = path.join(squadRoot, 'decisions.md');
+    if (!fs.existsSync(teamMd)) fs.writeFileSync(teamMd, '## Members\n');
+    if (!fs.existsSync(routingMd)) fs.writeFileSync(routingMd, '');
+    if (!fs.existsSync(ceremoniesMd)) fs.writeFileSync(ceremoniesMd, '');
+    if (!fs.existsSync(decisionsMd)) fs.writeFileSync(decisionsMd, '');
+
+    hub.squads.push({
+      key: projectName,
+      created_at: new Date().toISOString(),
+      linked_project: null
+    });
+    writeHub(hub);
+
+    console.log(`${GREEN}✅${RESET} Squad '${projectName}' created at squads/${projectName}/`);
+    console.log(`   Link a project with: npx github:bradygaster/squad link --team-root <path>/squads/${projectName}`);
+    process.exit(0);
+  }
+
+  if (subCmd === 'list') {
+    if (!fs.existsSync(hubFile)) {
+      fatal('No hub found — run hub init first.');
+    }
+
+    const hub = readHub();
+    const squads = Array.isArray(hub.squads) ? hub.squads : [];
+    console.log(`📊 Squad Hub — ${squads.length} squads`);
+    console.log();
+    console.log(`  ${'Name'.padEnd(18)}${'Members'.padEnd(10)}Linked Project`);
+    console.log(`  ${'────'.padEnd(18)}${'───────'.padEnd(10)}──────────────`);
+    for (const squad of squads) {
+      const key = squad.key || '(unknown)';
+      const members = countMembers(path.join(squadsDir, key, 'team.md'));
+      const membersLabel = members > 0 ? `${members} agents` : '(empty)';
+      const linkedProject = squad.linked_project || '(unlinked)';
+      console.log(`  ${key.padEnd(18)}${membersLabel.padEnd(10)}${linkedProject}`);
+    }
+    console.log();
+    process.exit(0);
+  }
+
+  fatal('Usage: squad hub init | hub add <project-name> | hub list');
+}
+
+// --- Doctor subcommand ---
+if (cmd === 'doctor') {
+  const checks = [];
+  let passed = 0;
+  let failed = 0;
+  let warnings = 0;
+
+  const squadDir = path.join(dest, '.squad');
+  const legacyDir = path.join(dest, '.ai-team');
+  const hubFile = path.join(dest, 'squad-hub.json');
+  const squadsDir = path.join(dest, 'squads');
+  const squadPaths = resolveSquadPaths(dest);
+  const configCandidates = [
+    path.join(squadPaths.projectDir, 'config.json'),
+    path.join(squadDir, 'config.json'),
+    path.join(legacyDir, 'config.json')
+  ];
+  const configPath = configCandidates.find(p => fs.existsSync(p));
+
+  function existsDir(p) {
+    return fs.existsSync(p) && fs.statSync(p).isDirectory();
+  }
+
+  function addPass(message) {
+    checks.push(`${GREEN}✅${RESET} ${message}`);
+    passed++;
+  }
+
+  function addFail(message) {
+    checks.push(`${RED}❌${RESET} ${message}`);
+    failed++;
+  }
+
+  function addWarning(message) {
+    checks.push(`${YELLOW}⚠️${RESET}  ${message}`);
+    warnings++;
+  }
+
+  function parseJson(filePath) {
+    try {
+      return { ok: true, data: JSON.parse(fs.readFileSync(filePath, 'utf8')) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  }
+
+  function hasMembersHeader(filePath) {
+    if (!fs.existsSync(filePath)) return false;
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      return /^##\s+Members\b/m.test(content);
+    } catch {
+      return false;
+    }
+  }
+
+  function countAgentDirs(agentsPath) {
+    if (!existsDir(agentsPath)) return 0;
+    try {
+      return fs.readdirSync(agentsPath)
+        .filter(entry => existsDir(path.join(agentsPath, entry))).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  const hasHubFile = fs.existsSync(hubFile);
+  const mode = hasHubFile ? 'hub' : (configPath ? 'remote' : 'local');
+  const hasSquadDir = existsDir(squadDir);
+  const hasLegacyDir = existsDir(legacyDir);
+  const activeLocalDir = hasSquadDir ? squadDir : (hasLegacyDir ? legacyDir : squadDir);
+
+  console.log(`\n${BOLD}🩺 Squad Doctor${RESET}`);
+  console.log('═══════════════');
+  console.log();
+  console.log(`Mode: ${mode}`);
+  console.log();
+
+  if (mode === 'hub') {
+    if (!fs.existsSync(hubFile)) {
+      addFail('squad-hub.json — file not found');
+    } else {
+      const hubParsed = parseJson(hubFile);
+      let manifestKeys = [];
+
+      if (hubParsed.ok) {
+        addPass('squad-hub.json is valid JSON');
+        const hub = hubParsed.data;
+        if (Array.isArray(hub.squads)) {
+          manifestKeys = hub.squads
+            .map(s => typeof s === 'string' ? s : s && s.key)
+            .filter(Boolean);
+        } else if (hub.squads && typeof hub.squads === 'object') {
+          manifestKeys = Object.keys(hub.squads);
+        }
+      } else {
+        addFail(`squad-hub.json — invalid JSON (${hubParsed.error})`);
+      }
+
+      if (existsDir(squadsDir)) {
+        addPass('squads/ directory exists');
+      } else {
+        addFail('squads/ directory — not found');
+      }
+
+      for (const key of manifestKeys) {
+        const squadPath = path.join(squadsDir, key);
+        const teamPath = path.join(squadPath, 'team.md');
+        if (existsDir(squadPath)) {
+          addPass(`squads/${key}/ directory exists`);
+        } else {
+          addFail(`squads/${key}/ directory — not found`);
+        }
+        if (fs.existsSync(teamPath)) {
+          addPass(`squads/${key}/team.md found`);
+        } else {
+          addFail(`squads/${key}/team.md — file not found`);
+        }
+      }
+
+      if (existsDir(squadsDir)) {
+        const extraDirs = fs.readdirSync(squadsDir)
+          .filter(entry => existsDir(path.join(squadsDir, entry)))
+          .filter(entry => !manifestKeys.includes(entry));
+        for (const extra of extraDirs) {
+          addWarning(`squads/${extra}/ exists but is not in squad-hub.json`);
+        }
+      }
+    }
+  } else if (mode === 'remote') {
+    if (hasSquadDir || hasLegacyDir) {
+      addPass('.squad/ or .ai-team/ directory exists');
+    } else {
+      addFail('.squad/ or .ai-team/ directory — not found');
+    }
+
+    const localDecisions = path.join(activeLocalDir, 'decisions.md');
+    const localLogDir = path.join(activeLocalDir, 'log');
+    const localOrchDir = path.join(activeLocalDir, 'orchestration-log');
+    if (fs.existsSync(localDecisions)) {
+      addPass('decisions.md found');
+    } else {
+      addFail('decisions.md — file not found');
+    }
+    if (existsDir(localLogDir)) {
+      addPass('log/ directory exists');
+    } else {
+      addFail('log/ directory — not found');
+    }
+    if (existsDir(localOrchDir)) {
+      addPass('orchestration-log/ directory exists');
+    } else {
+      addFail('orchestration-log/ directory — not found');
+    }
+
+    let remoteTeamRoot = null;
+    if (!configPath) {
+      addFail('config.json — file not found');
+    } else {
+      const parsed = parseJson(configPath);
+      if (!parsed.ok) {
+        addFail(`config.json — invalid JSON (${parsed.error})`);
+      } else if (!parsed.data.teamRoot || typeof parsed.data.teamRoot !== 'string') {
+        addFail('config.json — missing "teamRoot" field');
+      } else {
+        addPass('config.json is valid JSON with teamRoot');
+        remoteTeamRoot = path.isAbsolute(parsed.data.teamRoot)
+          ? parsed.data.teamRoot
+          : path.resolve(path.dirname(configPath), parsed.data.teamRoot);
+        if (path.isAbsolute(parsed.data.teamRoot)) {
+          addWarning('teamRoot is an absolute path — less portable');
+        }
+      }
+    }
+
+    if (remoteTeamRoot && existsDir(remoteTeamRoot)) {
+      addPass('teamRoot path resolves to an existing directory');
+    } else {
+      addFail('teamRoot path resolves to an existing directory — not found');
+    }
+
+    if (remoteTeamRoot) {
+      const remoteTeamMd = path.join(remoteTeamRoot, 'team.md');
+      const remoteAgentsDir = path.join(remoteTeamRoot, 'agents');
+      const remoteRegistryPath = path.join(remoteTeamRoot, 'casting', 'registry.json');
+
+      if (fs.existsSync(remoteTeamMd)) {
+        addPass('teamRoot/team.md found');
+      } else {
+        addFail('teamRoot/team.md — file not found');
+      }
+
+      const remoteAgentCount = countAgentDirs(remoteAgentsDir);
+      if (remoteAgentCount > 0) {
+        addPass('teamRoot/agents/ directory exists with at least one agent');
+      } else {
+        addFail('teamRoot/agents/ directory with at least one agent — not found');
+      }
+
+      if (!fs.existsSync(remoteRegistryPath)) {
+        addFail('teamRoot/casting/registry.json — file not found');
+      } else {
+        const parsedRegistry = parseJson(remoteRegistryPath);
+        if (parsedRegistry.ok) {
+          addPass('teamRoot/casting/registry.json found and valid JSON');
+        } else {
+          addFail(`teamRoot/casting/registry.json — invalid JSON (${parsedRegistry.error})`);
+        }
+      }
+    } else {
+      addFail('teamRoot/team.md — cannot validate without a valid teamRoot');
+      addFail('teamRoot/agents/ directory with at least one agent — cannot validate without a valid teamRoot');
+      addFail('teamRoot/casting/registry.json — cannot validate without a valid teamRoot');
+    }
+  } else {
+    if (hasSquadDir || hasLegacyDir) {
+      addPass('.squad/ or .ai-team/ directory exists');
+    } else {
+      addFail('.squad/ or .ai-team/ directory — not found');
+    }
+
+    const teamMd = path.join(activeLocalDir, 'team.md');
+    const routingMd = path.join(activeLocalDir, 'routing.md');
+    const ceremoniesMd = path.join(activeLocalDir, 'ceremonies.md');
+    const decisionsMd = path.join(activeLocalDir, 'decisions.md');
+    const agentsDir = path.join(activeLocalDir, 'agents');
+    const registryPath = path.join(activeLocalDir, 'casting', 'registry.json');
+
+    if (!fs.existsSync(teamMd)) {
+      addFail('team.md — file not found');
+    } else if (hasMembersHeader(teamMd)) {
+      addPass('team.md found with ## Members header');
+    } else {
+      addFail('team.md found but missing ## Members header');
+    }
+
+    if (fs.existsSync(routingMd)) {
+      addPass('routing.md found');
+    } else {
+      addFail('routing.md — file not found');
+    }
+    if (fs.existsSync(ceremoniesMd)) {
+      addPass('ceremonies.md found');
+    } else {
+      addFail('ceremonies.md — file not found');
+    }
+    if (fs.existsSync(decisionsMd)) {
+      addPass('decisions.md found');
+    } else {
+      addFail('decisions.md — file not found');
+    }
+
+    const agentCount = countAgentDirs(agentsDir);
+    if (agentCount > 0) {
+      addPass('agents/ directory exists with at least one agent');
+    } else {
+      addFail('agents/ directory with at least one agent — not found');
+    }
+
+    if (!fs.existsSync(registryPath)) {
+      addFail('casting/registry.json — file not found');
+    } else {
+      const parsedRegistry = parseJson(registryPath);
+      if (parsedRegistry.ok) {
+        addPass('casting/registry.json found and valid JSON');
+      } else {
+        addFail(`casting/registry.json — invalid JSON (${parsedRegistry.error})`);
+      }
+    }
+
+    if (hasLegacyDir) {
+      addWarning('.ai-team/ exists — consider running: npx github:bradygaster/squad upgrade --migrate-directory');
+    }
+  }
+
+  for (const line of checks) {
+    console.log(line);
+  }
+  console.log();
+  console.log(`Summary: ${passed} passed, ${failed} failed, ${warnings} warning${warnings === 1 ? '' : 's'}`);
+  process.exit(0);
+}
+
+// --- Link subcommand ---
+if (cmd === 'link') {
+  const teamRootArg = getFlagValue('--team-root');
+  if (!teamRootArg) {
+    fatal('Usage: squad link --team-root <path>');
+  }
+
+  const teamRootPath = path.resolve(teamRootArg);
+  if (!fs.existsSync(teamRootPath) || !fs.statSync(teamRootPath).isDirectory()) {
+    fatal(`Team root not found or not a directory: ${teamRootArg}`);
+  }
+  if (!fs.existsSync(path.join(teamRootPath, 'team.md'))) {
+    fatal(`Invalid team root: missing team.md at ${teamRootPath}`);
+  }
+
+  const projectSquadDir = path.join(dest, '.squad');
+  const configPath = path.join(projectSquadDir, 'config.json');
+  if (fs.existsSync(configPath)) {
+    fatal('.squad/config.json already exists — refusing to overwrite existing link.');
+  }
+
+  writeRemoteConfig(projectSquadDir, teamRootPath);
+  ensureProjectLocalArtifacts(projectSquadDir);
+
+  console.log(`${GREEN}✅${RESET} Linked to team at ${teamRootPath}.`);
+  console.log(`   Project decisions and logs stay in .squad/ (local).`);
+  process.exit(0);
+}
+
+// --- Repo subcommand ---
+if (cmd === 'repo') {
+  const subCmd = args[1];
+
+  if (subCmd === 'init') {
+    ensureTeamIdentityArtifacts(dest);
+    ensureProjectLocalArtifacts(dest);
+    const manifestPath = path.join(dest, 'squad-manifest.json');
+    const manifest = {
+      version: 1,
+      projects: [],
+      created_at: new Date().toISOString()
+    };
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    console.log(`${GREEN}✅${RESET} Squad repo initialized.`);
+    console.log(`   Link a project with: npx github:bradygaster/squad repo link <this-path> (from the project dir)`);
+    process.exit(0);
+  }
+
+  if (subCmd === 'link') {
+    const squadRepoArg = args[2];
+    if (!squadRepoArg) {
+      fatal('Usage: squad repo link <squad-repo-path>');
+    }
+
+    const squadRepoPath = path.resolve(squadRepoArg);
+    if (!fs.existsSync(squadRepoPath) || !fs.statSync(squadRepoPath).isDirectory()) {
+      fatal(`Squad repo path not found or not a directory: ${squadRepoArg}`);
+    }
+
+    const manifestPath = path.join(squadRepoPath, 'squad-manifest.json');
+    if (!fs.existsSync(manifestPath)) {
+      fatal(`Invalid squad repo: missing squad-manifest.json at ${squadRepoPath}`);
+    }
+
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch (err) {
+      fatal(`Invalid squad-manifest.json: ${err.message}`);
+    }
+    if (!Array.isArray(manifest.projects)) manifest.projects = [];
+
+    const projectSquadDir = path.join(dest, '.squad');
+    writeRemoteConfig(projectSquadDir, squadRepoPath);
+    ensureProjectLocalArtifacts(projectSquadDir);
+
+    const projectRef = path.relative(squadRepoPath, dest) || '.';
+    const alreadyLinked = manifest.projects.some(p => {
+      if (typeof p === 'string') return p === projectRef;
+      return p && typeof p === 'object' && p.path === projectRef;
+    });
+    if (!alreadyLinked) {
+      manifest.projects.push({ path: projectRef, linked_at: new Date().toISOString() });
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    }
+
+    console.log(`${GREEN}✅${RESET} Project linked to squad repo at ${squadRepoPath}.`);
+    process.exit(0);
+  }
+
+  fatal('Usage: squad repo init | repo link <squad-repo-path>');
+}
+
 // Split history into portable knowledge and project learnings
 function splitHistory(history, sourceProject) {
   const lines = history.split('\n');
@@ -1158,6 +1723,33 @@ try {
 const isUpgrade = cmd === 'upgrade';
 const isSelfUpgrade = isUpgrade && process.argv.includes('--self');
 const isMigrateDirectory = isUpgrade && process.argv.includes('--migrate-directory');
+const initMode = getFlagValue('--mode') || 'local';
+const initTeamRootArg = getFlagValue('--team-root');
+
+if (!isUpgrade && initMode !== 'local' && initMode !== 'remote') {
+  fatal(`Unsupported --mode value: ${initMode}. Use 'local' or 'remote'.`);
+}
+
+if (!isUpgrade && initMode === 'remote') {
+  if (!initTeamRootArg) {
+    fatal('Remote mode requires --team-root <path>');
+  }
+
+  const teamRootPath = path.resolve(initTeamRootArg);
+  if (!fs.existsSync(teamRootPath) || !fs.statSync(teamRootPath).isDirectory()) {
+    fatal(`Team root not found or not a directory: ${initTeamRootArg}`);
+  }
+
+  const projectSquadDir = path.join(dest, '.squad');
+  writeRemoteConfig(projectSquadDir, teamRootPath);
+  ensureProjectLocalArtifacts(projectSquadDir);
+  ensureTeamIdentityArtifacts(teamRootPath);
+
+  console.log(`${GREEN}✅${RESET} Squad initialized in remote mode.`);
+  console.log(`   Team state: ${teamRootPath}`);
+  console.log(`   Project artifacts: .squad/ (local)`);
+  process.exit(0);
+}
 
 // Handle --migrate-directory flag: rename .ai-team/ to .squad/
 if (isMigrateDirectory) {
@@ -1417,14 +2009,13 @@ if (isUpgrade) {
 
   if (isAlreadyCurrent) {
     // Still run missing migrations in case a prior upgrade was interrupted
-    const currentSquadDir = fs.existsSync(path.join(dest, '.squad'))
-      ? path.join(dest, '.squad') : path.join(dest, '.ai-team');
-    runMigrations(dest, oldVersion, currentSquadDir);
+    const currentSquad = resolveSquadPaths(dest);
+    runMigrations(dest, oldVersion, currentSquad.teamDir);
 
     // Even if already current, update copilot-instructions.md if @copilot is enabled
     const copilotInstructionsSrc = path.join(root, 'templates', 'copilot-instructions.md');
     const copilotInstructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
-    const teamMd = path.join(currentSquadDir, 'team.md');
+    const teamMd = path.join(currentSquad.teamDir, 'team.md');
     const copilotEnabled = fs.existsSync(teamMd)
       && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
     if (copilotEnabled && fs.existsSync(copilotInstructionsSrc)) {
@@ -1481,21 +2072,7 @@ if (isUpgrade) {
   console.log(`${GREEN}✓${RESET} .github/agents/squad.agent.md (v${pkg.version})`);
 }
 
-// Detect or determine squad directory (.squad/ for new, detect for upgrades)
-// Detect squad directory for dual-path support (.squad/ or .ai-team/)
-const squadInfo = (() => {
-  const squadDir = path.join(dest, '.squad');
-  const aiTeamDir = path.join(dest, '.ai-team');
-  
-  if (fs.existsSync(squadDir)) {
-    return { path: squadDir, name: '.squad', isLegacy: false };
-  }
-  if (fs.existsSync(aiTeamDir)) {
-    return { path: aiTeamDir, name: '.ai-team', isLegacy: true };
-  }
-  // Default for new installations
-  return { path: squadDir, name: '.squad', isLegacy: false };
-})();
+const squadInfo = resolveSquadPaths(dest);
 
 // Show deprecation warning if using .ai-team/ (but not on new installs)
 if (squadInfo.isLegacy) {
@@ -1503,12 +2080,12 @@ if (squadInfo.isLegacy) {
 }
 
 // Pre-create drop-box, orchestration-log, casting, skills, plugins, and identity directories (additive-only)
-const inboxDir = path.join(squadInfo.path, 'decisions', 'inbox');
-const orchLogDir = path.join(squadInfo.path, 'orchestration-log');
-const castingDir = path.join(squadInfo.path, 'casting');
-const skillsDir = path.join(squadInfo.path, 'skills');
-const pluginsDir = path.join(squadInfo.path, 'plugins');
-const identityDir = path.join(squadInfo.path, 'identity');
+const inboxDir = path.join(squadInfo.projectDir, 'decisions', 'inbox');
+const orchLogDir = path.join(squadInfo.projectDir, 'orchestration-log');
+const castingDir = path.join(squadInfo.teamDir, 'casting');
+const skillsDir = path.join(squadInfo.teamDir, 'skills');
+const pluginsDir = path.join(squadInfo.teamDir, 'plugins');
+const identityDir = path.join(squadInfo.teamDir, 'identity');
 try {
   fs.mkdirSync(inboxDir, { recursive: true });
   fs.mkdirSync(orchLogDir, { recursive: true });
@@ -1605,7 +2182,7 @@ if (!isUpgrade) {
 }
 
 // Copy default ceremonies config
-const ceremoniesDest = path.join(squadInfo.path, 'ceremonies.md');
+const ceremoniesDest = path.join(squadInfo.teamDir, 'ceremonies.md');
 if (!fs.existsSync(ceremoniesDest)) {
   const ceremoniesSrc = path.join(root, 'templates', 'ceremonies.md');
   fs.copyFileSync(ceremoniesSrc, ceremoniesDest);
@@ -1619,7 +2196,7 @@ if (!fs.existsSync(ceremoniesDest)) {
 const copilotInstructionsSrc = path.join(root, 'templates', 'copilot-instructions.md');
 const copilotInstructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
 if (isUpgrade) {
-  const teamMd = path.join(squadInfo.path, 'team.md');
+  const teamMd = path.join(squadInfo.teamDir, 'team.md');
   const copilotEnabled = fs.existsSync(teamMd)
     && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
   if (copilotEnabled && fs.existsSync(copilotInstructionsSrc)) {
@@ -1659,7 +2236,7 @@ if (isUpgrade) {
   console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} ${templatesDestName}/`);
 
   // Run migrations applicable for this version jump
-  runMigrations(dest, oldVersion || '0.0.0', squadInfo.path);
+  runMigrations(dest, oldVersion || '0.0.0', squadInfo.teamDir);
 } else if (fs.existsSync(templatesDest)) {
   console.log(`${DIM}${templatesDestName}/ already exists — skipping (run 'upgrade' to update)${RESET}`);
 } else {
@@ -1702,7 +2279,7 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
 if (isUpgrade) {
   // Scrub email addresses from existing squad directory
   console.log(`${DIM}Scrubbing email addresses from ${squadInfo.name}/ files...${RESET}`);
-  const scrubResult = scrubEmailsFromDirectory(squadInfo.path);
+  const scrubResult = scrubEmailsFromDirectory(squadInfo.teamDir);
   const scrubbed = Array.isArray(scrubResult) ? scrubResult : [];
   if (scrubbed.length > 0) {
     console.log(`${GREEN}✓${RESET} Scrubbed email addresses from ${scrubbed.length} file(s)`);
@@ -1713,7 +2290,7 @@ if (isUpgrade) {
   console.log(`\n${DIM}${squadInfo.name}/ untouched — your team state is safe${RESET}`);
 
   // Hint about new features available after upgrade
-  const teamMd = path.join(squadInfo.path, 'team.md');
+  const teamMd = path.join(squadInfo.teamDir, 'team.md');
   const copilotEnabled = fs.existsSync(teamMd)
     && fs.readFileSync(teamMd, 'utf8').includes('🤖 Coding Agent');
   if (!copilotEnabled) {
