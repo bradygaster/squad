@@ -16,7 +16,7 @@ Squad gives you an AI development team through GitHub Copilot. Describe what you
 It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned.
 
 > [!IMPORTANT]
-> **Ralph's Heartbeat & GitHub Actions Minutes** — We're optimizing Ralph's heartbeat Action so it won't use as many GitHub Actions minutes. During this first month of testing we've realized it consumes more minutes than expected. **If you have repos with Squads where you're NOT actively using Ralph's heartbeat, please disable the heartbeat workflow or disable Actions altogether on those repositories.** We'll ship an update today that mitigates this, but please make sure you're not inadvertently burning through Actions minutes on Ralph-enabled repos you're not actively working on.
+> **Ralph's Heartbeat & GitHub Actions Minutes** — We identified that Ralph's heartbeat Action was consuming more GitHub Actions minutes than expected due to its 30-minute cron schedule. **This is now fixed in v0.5.4** — the cron is disabled by default. Run `npx github:bradygaster/squad upgrade` to get the fix. If you have repos where you haven't upgraded yet, please disable the heartbeat workflow or Actions on those repositories until you do. See [#158](https://github.com/bradygaster/squad/issues/158) for details.
 
 ---
 
@@ -257,7 +257,13 @@ The Coordinator enforces this. No self-review of rejected work.
 
 ---
 
-## What's New in v0.5.3
+## What's New in v0.5.4
+
+### Bug Fixes
+- **Ralph heartbeat cron disabled by default** — The 30-minute cron schedule in `squad-heartbeat.yml` was consuming excessive GitHub Actions minutes for users with multiple Squad-enabled repos. The cron is now disabled by default. Ralph still auto-triages on issue close/label and PR close events (zero extra cost). For proactive polling, uncomment the cron in your workflow or use `npx github:bradygaster/squad watch` locally. Run `npx github:bradygaster/squad upgrade` to get the fix. Fixes [#158](https://github.com/bradygaster/squad/issues/158).
+
+<details>
+<summary>Previous: v0.5.3</summary>
 
 ### Bug Fixes
 - **Windows EPERM fallback** — `safeRename()` catches EPERM/EACCES errors (VS Code file watchers hold handles on Windows), falls back to copy+delete. Fixes #135, PR #149.
@@ -273,6 +279,8 @@ The Coordinator enforces this. No self-review of rejected work.
 
 ### Looking Ahead
 The next release of Squad will be more significant than prior releases, bringing Squad to NPM for easier installation. The package will still ship from this repository, so existing users will see a transparent change. Issues or PRs filed between now and that release may be held until the next update is complete. We appreciate the community's continued support and look forward to sharing what's coming.
+
+</details>
 
 _See [full release history](docs/whatsnew.md) for all previous versions._
 
@@ -437,6 +445,6 @@ These are known platform-level issues affecting the Squad experience. They're no
 
 ## Status
 
-🟣 **Experimental** — v0.5.2. Contributors welcome.
+🟣 **Experimental** — v0.5.4. Contributors welcome.
 
 Conceived by [@bradygaster](https://github.com/bradygaster).
