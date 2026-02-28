@@ -1,9 +1,10 @@
 name: Squad Heartbeat (Ralph)
 
 on:
-  schedule:
-    # Every 30 minutes — adjust or remove if not needed
-    - cron: '*/30 * * * *'
+  # schedule:
+    # Cron disabled by default — runs too many Actions minutes across repos.
+    # Uncomment below (and the 'schedule:' key) for proactive 30-min polling:
+    # - cron: '*/30 * * * *'
 
   # React to completed work or new squad work
   issues:
