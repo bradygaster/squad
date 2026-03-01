@@ -619,6 +619,7 @@ export async function runShell(): Promise<void> {
    */
   async function handleInitCast(parsed: ParsedInput, skipConfirmation?: boolean): Promise<void> {
     debugLog('handleInitCast: entering Init Mode');
+    shellApi?.setProcessing(true);
 
     // Check for a stored init prompt (from `squad init "prompt"`)
     const initPromptFile = join(teamRoot, '.squad', '.init-prompt');
@@ -711,6 +712,7 @@ export async function runShell(): Promise<void> {
         });
         pendingCastConfirmation = { proposal, parsed };
         shellApi?.setActivityHint(undefined);
+        shellApi?.setProcessing(false);
         return;
       }
 
@@ -731,6 +733,7 @@ export async function runShell(): Promise<void> {
       }
       activeInitSession = null;
       shellApi?.setActivityHint(undefined);
+      shellApi?.setProcessing(false);
     }
   }
 

@@ -107,4 +107,10 @@
 - **Build:** TypeScript compiles cleanly. Commit 044ec20 on branch `squad/640-auto-cast-polish`.
 - **Pattern learned:** When a slash command needs to trigger async work, return a signal object in CommandResult. The caller (App.tsx handleSubmit) checks for signals and dispatches appropriately. Keeps command handler synchronous while enabling async workflows.
 
+### Init auto-cast spinner fix (processing state)
+- **Root cause:** `handleInitCast` called via `setTimeout` in the `onReady` auto-cast path bypassed `handleSubmit` in App.tsx, so `setProcessing(true)` was never called. The `activityHint` was set to "Casting your team..." but `ThinkingIndicator` requires `processing=true` to render, so spinner was invisible.
+- **Fix:** Exposed `setProcessing` on `ShellApi` interface (App.tsx). Called `shellApi?.setProcessing(true)` at the top of `handleInitCast` and `shellApi?.setProcessing(false)` in the `finally` block and the `pendingCastConfirmation` early return. All exit paths covered: success → finally clears, error → finally clears, confirmation prompt → early return clears.
+- **Key insight:** Any code path that bypasses `handleSubmit` (which owns `setProcessing(true)`) must manage processing state itself. The auto-cast setTimeout path and `/init` command's `triggerInitCast` path were both affected — `/init` was already handled in App.tsx line 208, but `handleInitCast` itself wasn't.
+- **Pattern:** When adding new async dispatch paths to the shell, always ensure `setProcessing(true/false)` brackets the async work. The `ShellApi.setProcessing` method now makes this possible from index.ts without coupling to React state.
+
 

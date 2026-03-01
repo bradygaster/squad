@@ -30,6 +30,7 @@ export interface ShellApi {
   clearAgentStream: (agentName: string) => void;
   setActivityHint: (hint: string | undefined) => void;
   setAgentActivity: (agentName: string, activity: string | undefined) => void;
+  setProcessing: (processing: boolean) => void;
   refreshAgents: () => void;
 }
 
@@ -129,6 +130,7 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
           return next;
         });
       },
+      setProcessing,
       refreshAgents: () => {
         setAgents([...registry.getAll()]);
       },
