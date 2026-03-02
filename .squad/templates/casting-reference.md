@@ -50,7 +50,7 @@ When creating a new team (Init Mode), follow this deterministic algorithm:
 1. **Determine team_size_bucket:** Small (1–5), Medium (6–10), Large (11+)
 2. **Determine assignment_shape** from the user's project description (pick 1 primary, 1 optional secondary): discovery, orchestration, reliability, transformation, integration, chaos
 3. **Determine resonance_profile** — derive implicitly, never prompt the user:
-   - Check prior Squad history in repo (`.ai-team/casting/history.json`)
+   - Check prior Squad history in repo (`.squad/casting/history.json`)
    - Check current session text (topics, references, tone)
    - Check repo context (README, docs, commit messages) ONLY if clearly user-authored
    - Assign resonance_confidence: HIGH / MED / LOW
@@ -60,7 +60,7 @@ When creating a new team (Init Mode), follow this deterministic algorithm:
 
 ## Casting State Files
 
-The casting system maintains state in `.ai-team/casting/`:
+The casting system maintains state in `.squad/casting/`:
 
 **policy.json** — Casting configuration:
 ```json

@@ -4,7 +4,7 @@
 
 ## Connecting to a Repo
 
-1. Store in `.ai-team/team.md` under `## Issue Source`:
+1. Store in `.squad/team.md` under `## Issue Source`:
 
 ```markdown
 ## Issue Source

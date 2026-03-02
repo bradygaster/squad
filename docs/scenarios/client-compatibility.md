@@ -12,8 +12,8 @@ Squad runs on multiple Copilot surfaces — each with its own agent spawning mec
 | **Background/async execution** | ✅ `mode: "background"` (fire-and-forget) | ⚠️ Sync only (parallel concurrent) | ? | ? |
 | **Parallel fan-out** | ✅ Background tasks + `read_agent` | ✅ Multiple subagents in one turn | ? | ? |
 | **File discovery (.github/agents/)** | ✅ Automatic | ✅ Automatic | ? | ? |
-| **`.ai-team/` file access (read)** | ✅ Full | ✅ Full (workspace-scoped) | ? | ? |
-| **`.ai-team/` file access (write)** | ✅ Full | ✅ Full (with approval prompt) | ? | ? |
+| **`.squad/` file access (read)** | ✅ Full | ✅ Full (workspace-scoped) | ? | ? |
+| **`.squad/` file access (write)** | ✅ Full | ✅ Full (with approval prompt) | ? | ? |
 | **SQL tool** | ✅ Available | ❌ Not available | ❌ Not available | ❌ Not available |
 | **MCP server access** | ✅ Full | ✅ Full (inherited) | ⚠️ Limited | ⚠️ Limited |
 
@@ -67,7 +67,7 @@ Squad's **primary platform**. All features are fully supported.
 ### File Discovery & Access
 
 - **Auto-discovery:** `.github/agents/squad.agent.md` is discovered automatically
-- **`.ai-team/` access:** Unrestricted (full filesystem)
+- **`.squad/` access:** Unrestricted (full filesystem)
 - **Parallel reads:** Multiple file operations in one turn supported
 - **Parallel writes:** Multiple file creates/edits in one turn supported
 
@@ -121,8 +121,8 @@ Squad runs on VS Code with **conditional support**. Key differences from CLI:
 
 - **Auto-discovery:** `.github/agents/squad.agent.md` auto-discovered from workspace on load (file watchers enabled — no restart needed on changes)
 - **Scope:** Workspace-scoped (cannot access outside workspace directory)
-- **`.ai-team/` read:** ✅ Full access via `readFile` tool
-- **`.ai-team/` write:** ✅ Full access via `createFile` / `editFiles` tools
+- **`.squad/` read:** ✅ Full access via `readFile` tool
+- **`.squad/` write:** ✅ Full access via `createFile` / `editFiles` tools
 - **First-time approval:** VS Code may prompt for file modification approval on first write (security feature)
   - **User experience:** "Always allow in this workspace" option available
   - Subsequent writes in same workspace are automatic
@@ -158,7 +158,7 @@ Squad runs on VS Code with **conditional support**. Key differences from CLI:
 ### Questions to Answer
 
 - Does JetBrains Copilot support agent spawning via a tool equivalent to `task` or `runSubagent`?
-- Can agents access workspace files and `.ai-team/` directories?
+- Can agents access workspace files and `.squad/` directories?
 - What model selection mechanisms exist?
 - Is there a background/async mode?
 
@@ -177,7 +177,7 @@ Squad runs on VS Code with **conditional support**. Key differences from CLI:
 ### Questions to Answer
 
 - Can GitHub Copilot spawn agents for background work?
-- Can agents read `.ai-team/` files from the repository?
+- Can agents read `.squad/` files from the repository?
 - Is there a GitHub-specific command protocol for delegation?
 
 ---
@@ -201,7 +201,7 @@ Squad runs on VS Code with **conditional support**. Key differences from CLI:
 **Using Both:**
 - CLI is recommended for initial Squad setup and learning
 - VS Code works for day-to-day development once Squad is established
-- They share the same `.ai-team/` state — both can read/write the same team files
+- They share the same `.squad/` state — both can read/write the same team files
 - Team state is portable — init in CLI, use in VS Code, export/import across repos
 
 ### For Squad Developers
@@ -250,7 +250,7 @@ This document is based on active research spikes (#32, #33, #34) conducted in Fe
 
 - **Proposal 032a** (Strausz): `runSubagent` API research — agent spawning mechanics on VS Code
 - **Proposal 032b** (Kujan): CLI spawn parity analysis — all 5 Squad spawn patterns mapped
-- **Proposal 033a** (Strausz): VS Code file discovery — `.ai-team/` access and workspace scoping
+- **Proposal 033a** (Strausz): VS Code file discovery — `.squad/` access and workspace scoping
 - **Proposal 034a** (Kujan): Model selection & background mode — per-agent model routing and async execution
 
 **Next steps:**

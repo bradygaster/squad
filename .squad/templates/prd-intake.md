@@ -6,7 +6,7 @@
 
 1. **Detect source.** File path → read it. Pasted content → capture inline. Formats: .md, .txt, .docx, any text-based file.
 
-2. **Store PRD reference** in `.ai-team/team.md`:
+2. **Store PRD reference** in `.squad/team.md`:
 
 ```markdown
 ## PRD
@@ -31,7 +31,7 @@ prompt: |
   {paste charter}
 
   TEAM ROOT: {team_root}
-  Read .ai-team/agents/{lead}/history.md and .ai-team/decisions.md.
+  Read .squad/agents/{lead}/history.md and .squad/decisions.md.
 
   **Requested by:** {current user name}
 
@@ -49,7 +49,7 @@ prompt: |
   - If previous decomposition exists in decisions.md, use as baseline
 
   Write breakdown to:
-  .ai-team/decisions/inbox/{lead}-prd-decomposition.md
+  .squad/decisions/inbox/{lead}-prd-decomposition.md
 ```
 
 4. **Present for approval:**

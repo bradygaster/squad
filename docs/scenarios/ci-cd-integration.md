@@ -45,7 +45,7 @@ jobs:
         run: npx github:bradygaster/squad heartbeat
 ```
 
-Ralph reads `.ai-team/routing.md`, looks at open issues, and applies labels:
+Ralph reads `.squad/routing.md`, looks at open issues, and applies labels:
 
 ```
 Issue #42: "Add Stripe payment integration"
@@ -167,14 +167,14 @@ Steps 2, 4, 5, 6, 7 are **automated**. You only do steps 3 and 8.
 
 When you run `npx github:bradygaster/squad`, these workflow templates are installed:
 
-- `.ai-team-templates/squad-heartbeat.yml` → Ralph runs every 6 hours
-- `.ai-team-templates/copilot-auto-assign.yml` → Triggers Copilot on `go:*` labels
-- `.ai-team-templates/pr-review-reminder.yml` → Reminds you of open PRs needing review
+- `.squad-templates/squad-heartbeat.yml` → Ralph runs every 6 hours
+- `.squad-templates/copilot-auto-assign.yml` → Triggers Copilot on `go:*` labels
+- `.squad-templates/pr-review-reminder.yml` → Reminds you of open PRs needing review
 
 To activate them:
 
 ```bash
-cp .ai-team-templates/*.yml .github/workflows/
+cp .squad-templates/*.yml .github/workflows/
 git add .github/workflows/
 git commit -m "Enable Squad workflows"
 git push
@@ -219,5 +219,5 @@ npx github:bradygaster/squad heartbeat --dry-run
 - **Ralph is your assistant between sessions.** It triages issues, applies labels, and keeps things organized while you're not in Copilot.
 - **`go:*` labels mean "approved to proceed."** Don't add them to every issue — only the ones you've reviewed and want agents to handle autonomously.
 - **Agents still need human review.** PRs created by agents should be reviewed by a human before merging.
-- **Workflows are templates.** Customize `.ai-team-templates/` to match your CI/CD setup, then copy to `.github/workflows/`.
+- **Workflows are templates.** Customize `.squad-templates/` to match your CI/CD setup, then copy to `.github/workflows/`.
 - **Heartbeat frequency is configurable.** Edit `squad-heartbeat.yml` to change from every 6 hours to daily, hourly, etc.

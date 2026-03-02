@@ -70,7 +70,7 @@ Same as removing any team member — they move to alumni:
 > Remove Sarah from the team
 ```
 
-Their entry moves to `.ai-team/agents/_alumni/`. They can be re-added later.
+Their entry moves to `.squad/agents/_alumni/`. They can be re-added later.
 
 ---
 

@@ -14,7 +14,7 @@ Squad is designed for **GitHub Copilot CLI** and ships with full support. **VS C
 
 **Current state:**
 - ✅ **GitHub Copilot CLI** — fully supported. This is the primary platform. Uses the stable `task` tool for sub-agent spawning, per-spawn model selection, and background mode.
-- ✅ **VS Code Copilot** — fully supported (v0.4.0+). VS Code uses `runSubagent` for parallel execution and supports full `.ai-team/` read/write. See [Client Compatibility Matrix](scenarios/client-compatibility.md) for details.
+- ✅ **VS Code Copilot** — fully supported (v0.4.0+). VS Code uses `runSubagent` for parallel execution and supports full `.squad/` read/write. See [Client Compatibility Matrix](scenarios/client-compatibility.md) for details.
 - ❌ **Other platforms** — JetBrains IDEs and other runtimes are untested. GitHub.com web-based Copilot is untested.
 
 For a detailed feature comparison across platforms (model selection, background execution, file access, etc.), see [Client Compatibility Matrix](scenarios/client-compatibility.md).
@@ -30,10 +30,10 @@ npx github:bradygaster/squad
 **Requirements:**
 - Node.js 22+
 - GitHub Copilot (CLI, VS Code, Visual Studio, or Coding Agent)
-- A git repository (Squad stores team state in `.ai-team/`)
+- A git repository (Squad stores team state in `.squad/`)
 - **`gh` CLI** — required for GitHub Issues, PRs, Ralph, and Project Boards ([install](https://cli.github.com/))
 
-This copies `squad.agent.md` into `.github/agents/`, installs 10 GitHub Actions workflows into `.github/workflows/`, and adds templates to `.ai-team-templates/`. Your actual team (`.ai-team/`) is created at runtime when you first talk to Squad.
+This copies `squad.agent.md` into `.github/agents/`, installs 10 GitHub Actions workflows into `.github/workflows/`, and adds templates to `.squad-templates/`. Your actual team (`.squad/`) is created at runtime when you first talk to Squad.
 
 **Note:** When you select Squad from the agent picker, you'll see the version number in the name (e.g., "Squad (v0.3.0)"). This helps you confirm which version is installed.
 
@@ -92,12 +92,12 @@ When you open Copilot and select **Squad** for the first time in a repo, there's
 
 5. **You confirm** — say "yes", adjust roles, add someone, or just give a task (which counts as implicit yes).
 
-Squad then creates the `.ai-team/` directory structure with charters, histories, routing rules, casting state, and ceremony config. Each agent's `history.md` is seeded with your project description and tech stack so they have day-1 context.
+Squad then creates the `.squad/` directory structure with charters, histories, routing rules, casting state, and ceremony config. Each agent's `history.md` is seeded with your project description and tech stack so they have day-1 context.
 
 ### What gets created
 
 ```
-.ai-team/
+.squad/
 ├── team.md                    # Roster — who's on the team
 ├── routing.md                 # Who handles what
 ├── ceremonies.md              # Team meeting definitions
@@ -192,19 +192,19 @@ Squad's memory is layered. Knowledge grows with use.
 
 ### Personal memory: `history.md`
 
-Each agent has its own `history.md` in `.ai-team/agents/{name}/`. After every session, agents append what they learned — architecture decisions, conventions, user preferences, key file paths. This file is read only by that agent.
+Each agent has its own `history.md` in `.squad/agents/{name}/`. After every session, agents append what they learned — architecture decisions, conventions, user preferences, key file paths. This file is read only by that agent.
 
 After a few sessions, agents stop asking questions they've already answered.
 
 ### Shared memory: `decisions.md`
 
-Team-wide decisions live in `.ai-team/decisions.md`. Every agent reads this before working. Decisions are captured in three ways:
+Team-wide decisions live in `.squad/decisions.md`. Every agent reads this before working. Decisions are captured in three ways:
 
-1. **From agent work** — agents write decisions to `.ai-team/decisions/inbox/{name}-{slug}.md`
+1. **From agent work** — agents write decisions to `.squad/decisions/inbox/{name}-{slug}.md`
 2. **From user directives** — when you say "always use..." or "never do..."
 3. **Scribe merges** — the Scribe agent consolidates inbox entries into the canonical file, deduplicates, and propagates updates to affected agents
 
-### Skills: `.ai-team/skills/`
+### Skills: `.squad/skills/`
 
 Skill files (`SKILL.md`) encode reusable knowledge. They come in two varieties:
 
@@ -399,7 +399,7 @@ You can also create, disable, or skip ceremonies:
 > Skip the design review for this task
 ```
 
-Ceremony configuration lives in `.ai-team/ceremonies.md`.
+Ceremony configuration lives in `.squad/ceremonies.md`.
 
 ---
 
@@ -411,9 +411,9 @@ Already have Squad installed? Update to the latest version:
 npx github:bradygaster/squad upgrade
 ```
 
-This overwrites `squad.agent.md` and `.ai-team-templates/` with the latest versions. It **never touches `.ai-team/`** — your team's knowledge, decisions, casting state, and skills are safe.
+This overwrites `squad.agent.md` and `.squad-templates/` with the latest versions. It **never touches `.squad/`** — your team's knowledge, decisions, casting state, and skills are safe.
 
-Smart upgrade detects your installed version, reports what changed, and runs any needed migrations (e.g., creating `.ai-team/skills/` if it didn't exist). Migrations are additive and idempotent — safe to re-run.
+Smart upgrade detects your installed version, reports what changed, and runs any needed migrations (e.g., creating `.squad/skills/` if it didn't exist). Migrations are additive and idempotent — safe to re-run.
 
 ---
 
@@ -460,7 +460,7 @@ Squad allocates a name from the current universe, generates a charter and histor
 > Remove the designer — we're past that phase
 ```
 
-Agents are never deleted. Their charter and history move to `.ai-team/agents/_alumni/`. Knowledge is preserved. If you need them back later, they remember everything.
+Agents are never deleted. Their charter and history move to `.squad/agents/_alumni/`. Knowledge is preserved. If you need them back later, they remember everything.
 
 ---
 
@@ -484,8 +484,8 @@ Squad maintains a clear ownership model:
 | What | Owner | Safe to edit? |
 |------|-------|--------------|
 | `.github/agents/squad.agent.md` | Squad (overwritten on upgrade) | No — your changes will be lost |
-| `.ai-team-templates/` | Squad (overwritten on upgrade) | No |
-| `.ai-team/` | You and your team | Yes — this is your team's state |
+| `.squad-templates/` | Squad (overwritten on upgrade) | No |
+| `.squad/` | You and your team | Yes — this is your team's state |
 | Everything else | You | Yes |
 
 ---

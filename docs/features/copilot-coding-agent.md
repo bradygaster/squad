@@ -27,7 +27,7 @@ npx github:bradygaster/squad copilot --auto-assign
 gh secret set COPILOT_ASSIGN_TOKEN
 
 # 4. Commit and push
-git add .github/ .ai-team/ && git commit -m "feat: add copilot to squad" && git push
+git add .github/ .squad/ && git commit -m "feat: add copilot to squad" && git push
 
 # 5. Test — label any issue with squad:copilot
 ```

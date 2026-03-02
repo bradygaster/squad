@@ -320,7 +320,7 @@ If Frontend does something one way and Backend does it another way, the decision
 Agent A: "I used kebab-case for the file names"
 Agent B: "I used PascalCase for the file names"
 
-[You check .ai-team/decisions.md]
+[You check .squad/decisions.md]
 [No decision about file naming conventions]
 
 > Here's the permanent rule: all component files are PascalCase.
@@ -332,7 +332,7 @@ Now it's in the shared brain. Next agent to work on components will see this.
 
 When a decision no longer applies, move it to a "Superseded" section.
 
-You can edit `.ai-team/decisions.md` directly:
+You can edit `.squad/decisions.md` directly:
 
 ```markdown
 ## Superseded Decisions
@@ -366,7 +366,7 @@ This happens automatically in mature teams, but you can force it anytime.
 
 ### 6. Personal History Files Build Over Time
 
-Each agent's `.ai-team/agents/{name}/history.md` grows with every session. Check it when an agent seems lost.
+Each agent's `.squad/agents/{name}/history.md` grows with every session. Check it when an agent seems lost.
 
 ```
 [Dallas's history shows]
@@ -449,14 +449,14 @@ Ralph handles the backlog, you handle the critical path.
 ❌ "I want Lead, Frontend, Backend, Tester, DevOps, Data Engineer, Designer, and a Scribe."
 ```
 
-### Pitfall 6: Lost Work Because You Didn't Commit `.ai-team/`
+### Pitfall 6: Lost Work Because You Didn't Commit `.squad/`
 
 **Problem:** You deleted the repo and lost all your team knowledge.
 
-**Solution:** **Commit `.ai-team/` to git.** It's permanent team memory.
+**Solution:** **Commit `.squad/` to git.** It's permanent team memory.
 
 ```bash
-git add .ai-team/
+git add .squad/
 git commit -m "Add squad team state"
 git push
 ```
@@ -518,7 +518,7 @@ Squad 1: "Team A, build the admin dashboard. You own features/admin/."
 Squad 2: "Team B, build the mobile app. You own features/mobile/."
 
 [Both teams work in parallel]
-[Shared decisions in .ai-team/decisions.md prevent conflicts]
+[Shared decisions in .squad/decisions.md prevent conflicts]
 ```
 
 Requires good routing rules and clear ownership, but it works.
@@ -616,7 +616,7 @@ A typical high-performing session:
 3. **Parallel execution:** Let agents work (don't interrupt)
 4. **Check logs:** Ask Scribe what happened while you were reading code
 5. **Next round:** Based on what Scribe told you, give follow-up work or start Ralph
-6. **Wrap up:** Ask Ralph for status, commit `.ai-team/`, go home
+6. **Wrap up:** Ask Ralph for status, commit `.squad/`, go home
 
 **Time to productive work: usually < 2 minutes.**
 
