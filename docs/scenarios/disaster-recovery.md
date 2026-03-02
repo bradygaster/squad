@@ -2,7 +2,7 @@
 
 **Try this to recover from data loss:**
 ```
-My .ai-team/ directory was deleted — help me recover the team state
+My .squad/ directory was deleted — help me recover the team state
 ```
 
 **Try this to revert bad code:**
@@ -15,21 +15,21 @@ An agent wrote bad code — how do I revert it?
 The squad is confused — reset their context
 ```
 
-Recovery procedures for deleted `.ai-team/`, bad agent code, confused squads, and upgrade issues. Most problems are fixable with Git or re-init.
+Recovery procedures for deleted `.squad/`, bad agent code, confused squads, and upgrade issues. Most problems are fixable with Git or re-init.
 
 ---
 
-## 1. "I accidentally deleted `.ai-team/`"
+## 1. "I accidentally deleted `.squad/`"
 
-Recovery scenarios: deleted `.ai-team/`, bad agent code, confused squad, upgrade issues.
+Recovery scenarios: deleted `.squad/`, bad agent code, confused squad, upgrade issues.
 
 **Solution:** It's in Git. Restore it.
 
 ```bash
-git checkout .ai-team/
+git checkout .squad/
 ```
 
-If you haven't committed `.ai-team/` yet, it's gone. Rebuild:
+If you haven't committed `.squad/` yet, it's gone. Rebuild:
 
 ```bash
 npx github:bradygaster/squad
@@ -41,7 +41,7 @@ Start from scratch. If you exported your squad before, import the export:
 npx github:bradygaster/squad import squad-export-2025-07-15.zip
 ```
 
-**Prevention:** Commit `.ai-team/` early. Don't let it stay uncommitted for long.
+**Prevention:** Commit `.squad/` early. Don't let it stay uncommitted for long.
 
 ---
 
@@ -85,7 +85,7 @@ Sonny reads the code, fixes the issue, commits.
 
 ## 3. "An agent made a wrong decision"
 
-**What happened:** Neo decided to use REST when GraphQL was the better choice. The decision is logged in `.ai-team/decisions.md`.
+**What happened:** Neo decided to use REST when GraphQL was the better choice. The decision is logged in `.squad/decisions.md`.
 
 **Solution:** Add a directive to override it.
 
@@ -125,7 +125,7 @@ Agents now read the new decision and build accordingly.
 ```
 📋 Scribe — archiving recent session histories
 
-Moved to .ai-team/history-archive/:
+Moved to .squad/history-archive/:
   - Neo's session from 2025-07-14
   - Morpheus's session from 2025-07-14
   - Trinity's session from 2025-07-14
@@ -141,10 +141,10 @@ Agents **forget** the bad session. They still have their long-term skills and de
 
 ## 5. "I want to start over completely"
 
-**Solution:** Delete `.ai-team/` and reinstall.
+**Solution:** Delete `.squad/` and reinstall.
 
 ```bash
-rm -rf .ai-team/
+rm -rf .squad/
 npx github:bradygaster/squad
 ```
 
@@ -162,11 +162,11 @@ You're back to day one. Clean slate.
 
 **What happened:** You upgraded Squad to a new version, and now something doesn't work.
 
-**Solution:** Squad upgrades **never touch** `.ai-team/`. The issue is likely in:
+**Solution:** Squad upgrades **never touch** `.squad/`. The issue is likely in:
 
-1. **Workflow templates** — check `.ai-team-templates/`
+1. **Workflow templates** — check `.squad-templates/`
 2. **Squad agent definition** — check `.github/agents/squad.agent.md`
-3. **Model configuration** — check `.ai-team/model-config.json`
+3. **Model configuration** — check `.squad/model-config.json`
 
 Roll back the Squad agent definition:
 
@@ -180,7 +180,7 @@ Or reinstall the previous version:
 npx github:bradygaster/squad@0.1.5
 ```
 
-**Your team's knowledge is safe.** `.ai-team/` is untouched.
+**Your team's knowledge is safe.** `.squad/` is untouched.
 
 **Prevention:** Check the CHANGELOG before upgrading. If the upgrade is major, test in a branch first.
 
@@ -211,17 +211,17 @@ Or just close the Copilot session (Ctrl+C) and start a new one.
 
 ## 8. "Skills are outdated or wrong"
 
-**What happened:** A skill file in `.ai-team/skills/` contains outdated information. Agents are following bad advice.
+**What happened:** A skill file in `.squad/skills/` contains outdated information. Agents are following bad advice.
 
 **Solution:** Edit or delete the skill file.
 
 ```bash
 # Edit the skill
-code .ai-team/skills/auth-rate-limiting.md
+code .squad/skills/auth-rate-limiting.md
 
 # Or delete it
-rm .ai-team/skills/auth-rate-limiting.md
-git add .ai-team/skills/
+rm .squad/skills/auth-rate-limiting.md
+git add .squad/skills/
 git commit -m "Remove outdated auth rate limiting skill"
 ```
 
@@ -231,13 +231,13 @@ git commit -m "Remove outdated auth rate limiting skill"
 
 ## 9. "Decisions.md is a mess"
 
-**What happened:** `.ai-team/decisions.md` has 200 entries and it's hard to find anything.
+**What happened:** `.squad/decisions.md` has 200 entries and it's hard to find anything.
 
 **Solution:** Archive old decisions.
 
 ```
 > Scribe, archive decisions older than 3 months. Move them to
-> .ai-team/decisions-archive.md.
+> .squad/decisions-archive.md.
 ```
 
 ```
@@ -284,10 +284,10 @@ Each agent logs what they did in their `history.md`.
 
 ## Tips
 
-- **`.ai-team/` is in Git.** If you delete it, restore from Git. If it's uncommitted, it's gone.
+- **`.squad/` is in Git.** If you delete it, restore from Git. If it's uncommitted, it's gone.
 - **Code review catches bad agent code.** Use the Lead to review before merging.
 - **Override bad decisions with directives.** If an agent made the wrong call, tell the team the correct one.
 - **Archive confused histories.** If a session went badly, archive the learnings so agents forget.
-- **Upgrades don't touch `.ai-team/`.** Your team's knowledge is safe across upgrades.
+- **Upgrades don't touch `.squad/`.** Your team's knowledge is safe across upgrades.
 - **Edit skill files directly.** They're just markdown. If a skill is wrong, fix it or delete it.
 - **Agent histories are the audit log.** Check them to see what each agent did.

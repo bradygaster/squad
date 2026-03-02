@@ -117,7 +117,7 @@ Want to go back to stable releases?
 npx github:bradygaster/squad
 ```
 
-This installs the latest stable version. Your `.ai-team/` state is safe — it'll work with any version.
+This installs the latest stable version. Your `.squad/` state is safe — it'll work with any version.
 
 ---
 
@@ -129,7 +129,7 @@ This installs the latest stable version. Your `.ai-team/` state is safe — it'l
 
 ### Q: Can I switch between insider and stable builds?
 
-**A:** Yes. Insider builds are backward compatible with stable installs. Your `.ai-team/` directory works with any version.
+**A:** Yes. Insider builds are backward compatible with stable installs. Your `.squad/` directory works with any version.
 
 ### Q: How often do insider builds update?
 
@@ -137,7 +137,7 @@ This installs the latest stable version. Your `.ai-team/` state is safe — it'l
 
 ### Q: Will my team state be preserved?
 
-**A:** Yes. `.ai-team/` is never overwritten on upgrade. All your agents, decisions, and histories are safe.
+**A:** Yes. `.squad/` is never overwritten on upgrade. All your agents, decisions, and histories are safe.
 
 ### Q: What if an insider build has a bad bug?
 

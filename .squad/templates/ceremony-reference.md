@@ -4,7 +4,7 @@
 
 ## Ceremony Config Format
 
-Each ceremony in `.ai-team/ceremonies.md` is an `## ` heading with a config table and agenda:
+Each ceremony in `.squad/ceremonies.md` is an `## ` heading with a config table and agenda:
 
 ```markdown
 ## Design Review
@@ -51,10 +51,10 @@ prompt: |
   {paste facilitator's charter.md}
 
   TEAM ROOT: {team_root}
-  All `.ai-team/` paths are relative to this root.
+  All `.squad/` paths are relative to this root.
 
-  Read .ai-team/agents/{facilitator}/history.md and .ai-team/decisions.md.
-  If .ai-team/skills/ exists and contains SKILL.md files, read relevant ones before working.
+  Read .squad/agents/{facilitator}/history.md and .squad/decisions.md.
+  If .squad/skills/ exists and contains SKILL.md files, read relevant ones before working.
 
   **Requested by:** {current user name}
 
@@ -80,7 +80,7 @@ prompt: |
   - Synthesize ceremony summary: decisions, action items, risks, disagreements.
 
   Write the ceremony summary to:
-  .ai-team/log/{YYYY-MM-DD}-{ceremony-id}.md
+  .squad/log/{YYYY-MM-DD}-{ceremony-id}.md
 
   Format:
   # {Ceremony Name} — {date}
@@ -100,12 +100,12 @@ prompt: |
   {risks, concerns, disagreements, other discussion points}
 
   For each decision, also write to:
-  .ai-team/decisions/inbox/{facilitator}-{ceremony-id}-{brief-slug}.md
+  .squad/decisions/inbox/{facilitator}-{ceremony-id}-{brief-slug}.md
 ```
 
 ## Ceremony Execution Rules
 
-1. **Check triggers.** Before spawning a work batch, read `.ai-team/ceremonies.md`. For auto/before ceremonies, evaluate condition against current task. For after, evaluate after batch completes. Manual runs only when user asks.
+1. **Check triggers.** Before spawning a work batch, read `.squad/ceremonies.md`. For auto/before ceremonies, evaluate condition against current task. For after, evaluate after batch completes. Manual runs only when user asks.
 2. **Resolve participants.** Determine which agents attend based on the `participants` field and current task/batch.
 3. **Spawn the facilitator (sync)** using the template above.
 4. **Proceed with work.** For before: spawn work batch with ceremony summary as context. For after: results inform next iteration. Spawn Scribe (background) to record, but do NOT chain another ceremony.

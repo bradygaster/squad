@@ -12,11 +12,11 @@
 
 | Name | Role | Charter | Status |
 |------|------|---------|--------|
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| {Name} | {Role} | `.ai-team/agents/{name}/charter.md` | ✅ Active |
-| Scribe | Session Logger | `.ai-team/agents/scribe/charter.md` | 📋 Silent |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| {Name} | {Role} | `.squad/agents/{name}/charter.md` | ✅ Active |
+| Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |
 
 ## Project Context
 
