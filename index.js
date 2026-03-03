@@ -81,6 +81,7 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`             Default: squad-export.json (use --out <path> to override)`);
   console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
   console.log(`             Usage: import <file> [--force]`);
+  console.log(`  ${BOLD}doctor${RESET}     Check your Squad setup for common issues`);
   console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
   console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
   console.log(`  ${BOLD}help${RESET}       Show this help message`);
@@ -637,9 +638,124 @@ if (cmd === 'scrub-emails') {
 
 }
 
+// --- Doctor subcommand ---
+if (cmd === 'doctor') {
+  const { execSync } = require('child_process');
+
+  console.log(`\n${BOLD}Squad Doctor${RESET} — checking your setup\n`);
+
+  let passed = 0;
+  let failed = 0;
+  let warned = 0;
+
+  function pass(msg) { console.log(`  ${GREEN}✓${RESET} ${msg}`); passed++; }
+  function fail(msg, fix) { console.log(`  ${RED}✗${RESET} ${msg}`); if (fix) console.log(`    ${DIM}Fix: ${fix}${RESET}`); failed++; }
+  function warn(msg, fix) { console.log(`  ${YELLOW}⚠${RESET} ${msg}`); if (fix) console.log(`    ${DIM}${fix}${RESET}`); warned++; }
+
+  // 1. Git repo
+  if (fs.existsSync(path.join(dest, '.git'))) {
+    pass('Git repository');
+  } else {
+    fail('Not a git repository', 'git init');
+  }
+
+  // 2. Node.js version
+  const nodeVersion = process.versions.node;
+  const nodeMajor = parseInt(nodeVersion.split('.')[0], 10);
+  if (nodeMajor >= 22) {
+    pass(`Node.js v${nodeVersion}`);
+  } else {
+    fail(`Node.js v${nodeVersion} (need ≥22)`, 'nvm install 22');
+  }
+
+  // 3. Agent file
+  const agentMdPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
+  if (fs.existsSync(agentMdPath)) {
+    const agentContent = fs.readFileSync(agentMdPath, 'utf8');
+    const versionMatch = agentContent.match(/<!-- version: ([^\s]+) -->/);
+    const ver = versionMatch ? ` (v${versionMatch[1]})` : '';
+    pass(`Agent file found${ver}`);
+  } else {
+    fail('Agent file missing (.github/agents/squad.agent.md)', 'npx github:bradygaster/squad');
+  }
+
+  // 4. Squad state directory
+  const squadDirInfo = detectSquadDir(dest);
+  if (fs.existsSync(squadDirInfo.path)) {
+    if (squadDirInfo.isLegacy) {
+      warn(`Using legacy ${squadDirInfo.name}/`, 'npx github:bradygaster/squad upgrade --migrate-directory');
+    } else {
+      pass(`Squad state: ${squadDirInfo.name}/`);
+    }
+  } else {
+    fail('Squad state directory not found', 'npx github:bradygaster/squad');
+  }
+
+  // 5. Team initialized
+  const teamMdPath = path.join(squadDirInfo.path, 'team.md');
+  if (fs.existsSync(teamMdPath)) {
+    const teamContent = fs.readFileSync(teamMdPath, 'utf8');
+    const memberCount = (teamContent.match(/^## /gm) || []).length;
+    pass(`Team initialized (${memberCount} section${memberCount !== 1 ? 's' : ''})`);
+  } else {
+    fail('Team not initialized', 'Open Copilot → /agent → Squad → describe your project');
+  }
+
+  // 6. Decisions file
+  const decisionsPath = path.join(squadDirInfo.path, 'decisions.md');
+  if (fs.existsSync(decisionsPath)) {
+    pass('Shared brain ready (decisions.md)');
+  } else {
+    warn('decisions.md not found — will be created on first team session');
+  }
+
+  // 7. gh CLI
+  let ghVersion = null;
+  try {
+    ghVersion = execSync('gh --version', { stdio: 'pipe' }).toString().trim().split('\n')[0];
+    pass(`gh CLI (${ghVersion.replace(/^gh version /, 'v')})`);
+  } catch {
+    const ghFix = process.platform === 'win32' ? 'winget install GitHub.cli' : 'brew install gh';
+    fail('gh CLI not found', ghFix);
+  }
+
+  // 8. gh auth
+  if (ghVersion) {
+    try {
+      const authOutput = execSync('gh auth status 2>&1', { stdio: 'pipe' }).toString();
+      const userMatch = authOutput.match(/Logged in to .* account (\S+)/);
+      const user = userMatch ? ` as ${userMatch[1]}` : '';
+      pass(`Authenticated${user}`);
+    } catch {
+      fail('Not authenticated with GitHub', 'gh auth login');
+    }
+  }
+
+  // 9. Copilot CLI
+  try {
+    const copilotVer = execSync('copilot --version', { stdio: 'pipe' }).toString().trim();
+    pass(`Copilot CLI (${copilotVer})`);
+  } catch {
+    const copilotFix = process.platform === 'win32' ? 'winget install GitHub.Copilot' : 'npm install -g @github/copilot';
+    fail('Copilot CLI not found', copilotFix);
+  }
+
+  // Summary
+  console.log();
+  const parts = [`${passed} passed`];
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (warned > 0) parts.push(`${warned} warning${warned !== 1 ? 's' : ''}`);
+  const color = failed > 0 ? RED : warned > 0 ? YELLOW : GREEN;
+  console.log(`${color}${parts.join(', ')}${RESET}`);
+  console.log();
+  process.exit(failed > 0 ? 1 : 0);
+}
+
 // --- Copilot subcommand ---
 if (cmd === 'copilot') {
-  const teamMd = path.join(dest, '.ai-team', 'team.md');
+  const squadDirInfo = detectSquadDir(dest);
+  if (squadDirInfo.isLegacy) showDeprecationWarning();
+  const teamMd = path.join(squadDirInfo.path, 'team.md');
   if (!fs.existsSync(teamMd)) {
     fatal('No squad found — run init first, then add the copilot agent.');
   }
