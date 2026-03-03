@@ -19,7 +19,8 @@ Public-facing documentation for Squad. GitHub Pages ready.
 - [Reviewer Protocol](features/reviewer-protocol.md) — Rejection lockout and revision routing
 
 ### Workflow
-- [GitHub Issues Mode](features/github-issues.md) — Issue-driven development
+- [GitHub Issues Mode](features/github-issues.md) — GitHub issue-driven development
+- [GitLab Issues Mode](features/gitlab-issues.md) — 🧪 *Experimental* — GitLab issue-driven development
 - [PRD Mode](features/prd-mode.md) — Product requirements decomposition
 - [Labels & Triage](features/labels.md) — go:/release:/type:/priority: taxonomy
 - [Ralph — Work Monitor](features/ralph.md) — Autonomous backlog processing
@@ -40,7 +41,8 @@ Public-facing documentation for Squad. GitHub Pages ready.
 ## Walkthroughs
 
 - [First Session](tour-first-session.md) — Your first time using Squad
-- [GitHub Issues](tour-github-issues.md) — Issue-driven development walkthrough
+- [GitHub Issues](tour-github-issues.md) — GitHub issue-driven development walkthrough
+- [GitLab Issues](tour-gitlab-issues.md) — 🧪 *Experimental* — GitLab issue-driven development walkthrough 
 
 ## Scenarios
 
