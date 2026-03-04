@@ -958,6 +958,61 @@ Before connecting to a GitHub repository, verify that the `gh` CLI is available 
 
 ---
 
+## Platform Detection
+
+On session start, detect the platform from git remote:
+- `github.com` → Use GitHub commands (`gh` CLI)
+- `dev.azure.com` or `*.visualstudio.com` → Use Azure DevOps commands (`az` CLI)
+
+If `squad.config.ts` specifies `workItems: 'planner'`, use Microsoft Planner for work items regardless of where the repo lives.
+
+### Azure DevOps Mode
+
+If the git remote points to Azure DevOps:
+
+| GitHub concept | Azure DevOps equivalent | Command change |
+|---|---|---|
+| `gh issue list` | WIQL query via `az boards query` | `az boards query --wiql "SELECT ... FROM WorkItems WHERE ..."` |
+| `gh pr list` | `az repos pr list` | `az repos pr list --status active` |
+| `gh pr create` | `az repos pr create` | `az repos pr create --source-branch ... --target-branch ...` |
+| `gh pr merge` | `az repos pr update --status completed` | Set PR status to completed |
+| Issue labels | Work Item tags | `az boards work-item update --fields "System.Tags=..."` |
+| `squad:{member}` label | `squad:{member}` tag on work items | Tags use `;` separator |
+
+**Prerequisites for Azure DevOps:**
+1. Run `az --version`. If missing: *"Azure DevOps mode requires the Azure CLI. Install from https://aka.ms/install-az-cli"*
+2. Run `az extension show --name azure-devops`. If missing: *"Run `az extension add --name azure-devops`"*
+3. Run `az account show`. If not logged in: *"Run `az login` to authenticate"*
+4. Verify defaults: `az devops configure --list` — org and project must be set
+
+**Ralph on Azure DevOps:**
+- Replace `gh issue list --label "squad:untriaged"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:untriaged'"`
+- Replace `gh issue list --label "squad:{member}"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:{member}'"`
+- Replace `gh pr list` with `az repos pr list`
+- Branch naming stays the same: `squad/{issue-number}-{slug}`
+
+### Microsoft Planner Mode (Hybrid)
+
+If work items are in Microsoft Planner (configured via `squad.config.ts` with `workItems: 'planner'`):
+- Ralph scans Planner tasks via Microsoft Graph API
+- Buckets map to squad member assignments (squad:riker, squad:data, etc.)
+- The "squad:untriaged" bucket = triage inbox
+- Moving a task between buckets = assigning to a team member
+- Task completion = move to "Done" bucket
+- PRs and branches still use the repo adapter (GitHub or Azure DevOps)
+
+**Prerequisites for Planner:**
+1. Run `az login` to authenticate
+2. Ensure `az account get-access-token --resource-type ms-graph` succeeds
+3. Set `workItems: 'planner'` and `planId` in `squad.config.ts`
+
+**Ralph on Planner:**
+- Scan untriaged: Graph API `GET /planner/plans/{planId}/tasks` filtered by `squad:untriaged` bucket
+- Assign to member: `PATCH /planner/tasks/{taskId}` → move to `squad:{member}` bucket
+- PRs: Use the repo adapter commands (GitHub or Azure DevOps)
+
+---
+
 ## Ralph — Work Monitor
 
 Ralph is a built-in squad member whose job is keeping tabs on work. **Ralph tracks and drives the work queue.** Always on the roster, one job: make sure the team never sits idle.

@@ -74,3 +74,4 @@ export type {
   SkillTool as BuilderSkillTool,
   SquadSDKConfig,
 } from './builders/index.js';
+export * from './platform/index.js';
