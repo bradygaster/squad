@@ -136,11 +136,11 @@ describe('upgrade --migrate-directory: full upgrade runs (no early exit)', () =>
     assert.ok(files.length > 0, 'workflow files should be written after migrate+upgrade');
   });
 
-  it('.squad-templates/ is created/updated after migration (not .ai-team-templates/)', () => {
+  it('.squad/templates/ is created/updated after migration (not .ai-team-templates/)', () => {
     runSquad(['upgrade', '--migrate-directory'], tmpDir);
     assert.ok(
-      fs.existsSync(path.join(tmpDir, '.squad-templates')),
-      '.squad-templates/ should exist after migrate+upgrade'
+      fs.existsSync(path.join(tmpDir, '.squad', 'templates')),
+      '.squad/templates/ should exist after migrate+upgrade'
     );
     assert.ok(
       !fs.existsSync(path.join(tmpDir, '.ai-team-templates')),
@@ -374,7 +374,7 @@ describe('templates directory migration', () => {
   let tmpDir;
   afterEach(() => cleanDir(tmpDir));
 
-  it('.ai-team-templates/ is renamed to .squad-templates/ during --migrate-directory', () => {
+  it('.ai-team-templates/ is renamed to .squad/templates/ during --migrate-directory', () => {
     tmpDir = makeTempDir();
     makeOldSquadRepo(tmpDir);
     // Create .ai-team-templates/ with a dummy file
@@ -385,8 +385,8 @@ describe('templates directory migration', () => {
     const result = runSquad(['upgrade', '--migrate-directory'], tmpDir);
     assert.equal(result.exitCode, 0, `expected exit 0: ${result.stdout}`);
     assert.ok(
-      fs.existsSync(path.join(tmpDir, '.squad-templates')),
-      '.squad-templates/ should exist after migration'
+      fs.existsSync(path.join(tmpDir, '.squad', 'templates')),
+      '.squad/templates/ should exist after migration'
     );
     assert.ok(
       !fs.existsSync(path.join(tmpDir, '.ai-team-templates')),
@@ -394,7 +394,7 @@ describe('templates directory migration', () => {
     );
   });
 
-  it('.squad-templates/ contents are preserved after rename', () => {
+  it('.squad/templates/ contents are preserved after rename', () => {
     tmpDir = makeTempDir();
     makeOldSquadRepo(tmpDir);
     const aiTeamTemplates = path.join(tmpDir, '.ai-team-templates');
@@ -402,10 +402,10 @@ describe('templates directory migration', () => {
     fs.writeFileSync(path.join(aiTeamTemplates, 'my-template.md'), '# preserved\n');
 
     runSquad(['upgrade', '--migrate-directory'], tmpDir);
-    const preservedFile = path.join(tmpDir, '.squad-templates', 'my-template.md');
+    const preservedFile = path.join(tmpDir, '.squad', 'templates', 'my-template.md');
     assert.ok(
       fs.existsSync(preservedFile),
-      'my-template.md should be in .squad-templates/ after rename'
+      'my-template.md should be in .squad/templates/ after rename'
     );
     const content = fs.readFileSync(preservedFile, 'utf8');
     assert.equal(content, '# preserved\n', 'file contents should be unchanged after rename');
@@ -424,7 +424,7 @@ describe('templates directory migration', () => {
     );
   });
 
-  it('after migration, upgrade writes templates to .squad-templates/ not .ai-team-templates/', () => {
+  it('after migration, upgrade writes templates to .squad/templates/ not .ai-team-templates/', () => {
     tmpDir = makeTempDir();
     // Set up a fully migrated state: .squad/ exists, no .ai-team/
     const squadDir = path.join(tmpDir, '.squad');
@@ -447,8 +447,8 @@ describe('templates directory migration', () => {
     const result = runSquad(['upgrade'], tmpDir);
     assert.equal(result.exitCode, 0, `upgrade from migrated state should succeed: ${result.stdout}`);
     assert.ok(
-      fs.existsSync(path.join(tmpDir, '.squad-templates')),
-      '.squad-templates/ should be created/updated by upgrade on migrated repo'
+      fs.existsSync(path.join(tmpDir, '.squad', 'templates')),
+      '.squad/templates/ should be created/updated by upgrade on migrated repo'
     );
     assert.ok(
       !fs.existsSync(path.join(tmpDir, '.ai-team-templates')),

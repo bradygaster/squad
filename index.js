@@ -19,7 +19,7 @@ function fatal(msg) {
 function detectSquadDir(dest) {
   const squadDir = path.join(dest, '.squad');
   const aiTeamDir = path.join(dest, '.ai-team');
-  
+
   if (fs.existsSync(squadDir)) {
     return { path: squadDir, name: '.squad', isLegacy: false };
   }
@@ -67,7 +67,7 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`Commands:`);
   console.log(`  ${BOLD}(default)${RESET}  Initialize Squad (skip files that already exist)`);
   console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
-  console.log(`             Overwrites: squad.agent.md, templates dir (.squad-templates/ or .ai-team-templates/)`);
+  console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/ or .ai-team-templates/)`);
   console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
   console.log(`             Flags: --migrate-directory (rename .ai-team/ → .squad/)`);
   console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
@@ -210,15 +210,15 @@ if (cmd === 'watch') {
         for (const member of members) {
           const role = member.role.toLowerCase();
           if ((role.includes('frontend') || role.includes('ui')) &&
-              (issueText.includes('ui') || issueText.includes('frontend') || issueText.includes('css'))) {
+            (issueText.includes('ui') || issueText.includes('frontend') || issueText.includes('css'))) {
             assignedMember = member; reason = 'frontend/UI domain'; break;
           }
           if ((role.includes('backend') || role.includes('api') || role.includes('server')) &&
-              (issueText.includes('api') || issueText.includes('backend') || issueText.includes('database'))) {
+            (issueText.includes('api') || issueText.includes('backend') || issueText.includes('database'))) {
             assignedMember = member; reason = 'backend/API domain'; break;
           }
           if ((role.includes('test') || role.includes('qa')) &&
-              (issueText.includes('test') || issueText.includes('bug') || issueText.includes('fix'))) {
+            (issueText.includes('test') || issueText.includes('bug') || issueText.includes('fix'))) {
             assignedMember = member; reason = 'testing/QA domain'; break;
           }
         }
@@ -276,7 +276,7 @@ if (cmd === 'watch') {
 function scrubEmailsFromDirectory(dirPath) {
   const EMAIL_PATTERN = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
   const NAME_WITH_EMAIL_PATTERN = /([a-zA-Z0-9_-]+)\s*\(([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\)/g;
-  
+
   const scrubbedFiles = [];
   const filesToScrub = [
     'team.md',
@@ -284,7 +284,7 @@ function scrubEmailsFromDirectory(dirPath) {
     'routing.md',
     'ceremonies.md'
   ];
-  
+
   // Scrub root-level files
   for (const file of filesToScrub) {
     const filePath = path.join(dirPath, file);
@@ -292,19 +292,19 @@ function scrubEmailsFromDirectory(dirPath) {
       try {
         let content = fs.readFileSync(filePath, 'utf8');
         let modified = false;
-        
+
         // Replace "name (email)" → "name"
         const beforeNameEmail = content;
         content = content.replace(NAME_WITH_EMAIL_PATTERN, '$1');
         if (content !== beforeNameEmail) modified = true;
-        
+
         // Replace bare emails in identity contexts (but preserve in URLs and code examples)
         const lines = content.split('\n');
         const scrubbed = lines.map(line => {
           // Skip lines that look like URLs, code blocks, or examples
-          if (line.includes('http://') || line.includes('https://') || 
-              line.includes('```') || line.includes('example.com') ||
-              line.trim().startsWith('//') || line.trim().startsWith('#')) {
+          if (line.includes('http://') || line.includes('https://') ||
+            line.includes('```') || line.includes('example.com') ||
+            line.trim().startsWith('//') || line.trim().startsWith('#')) {
             return line;
           }
           // Scrub emails from identity/attribution contexts
@@ -313,7 +313,7 @@ function scrubEmailsFromDirectory(dirPath) {
           if (before !== after) modified = true;
           return after;
         });
-        
+
         if (modified) {
           fs.writeFileSync(filePath, scrubbed.join('\n'));
           scrubbedFiles.push(path.relative(dirPath, filePath));
@@ -323,7 +323,7 @@ function scrubEmailsFromDirectory(dirPath) {
       }
     }
   }
-  
+
   // Scrub agent history files
   const agentsDir = path.join(dirPath, 'agents');
   if (fs.existsSync(agentsDir)) {
@@ -333,19 +333,19 @@ function scrubEmailsFromDirectory(dirPath) {
         if (fs.existsSync(historyPath)) {
           let content = fs.readFileSync(historyPath, 'utf8');
           let modified = false;
-          
+
           // Replace "name (email)" → "name"
           const beforeNameEmail = content;
           content = content.replace(NAME_WITH_EMAIL_PATTERN, '$1');
           if (content !== beforeNameEmail) modified = true;
-          
+
           // Scrub bare emails carefully
           const lines = content.split('\n');
           const scrubbed = lines.map(line => {
             // Skip URLs, code, examples
-            if (line.includes('http://') || line.includes('https://') || 
-                line.includes('```') || line.includes('example.com') ||
-                line.trim().startsWith('//') || line.trim().startsWith('#')) {
+            if (line.includes('http://') || line.includes('https://') ||
+              line.includes('```') || line.includes('example.com') ||
+              line.trim().startsWith('//') || line.trim().startsWith('#')) {
               return line;
             }
             const before = line;
@@ -353,7 +353,7 @@ function scrubEmailsFromDirectory(dirPath) {
             if (before !== after) modified = true;
             return after;
           });
-          
+
           if (modified) {
             fs.writeFileSync(historyPath, scrubbed.join('\n'));
             scrubbedFiles.push(path.relative(dirPath, historyPath));
@@ -364,7 +364,7 @@ function scrubEmailsFromDirectory(dirPath) {
       console.error(`${RED}✗${RESET} Failed to scrub agent histories: ${err.message}`);
     }
   }
-  
+
   // Scrub log files
   const logDir = path.join(dirPath, 'log');
   if (fs.existsSync(logDir)) {
@@ -385,7 +385,7 @@ function scrubEmailsFromDirectory(dirPath) {
       console.error(`${RED}✗${RESET} Failed to scrub log files: ${err.message}`);
     }
   }
-  
+
   return scrubbedFiles;
 }
 
@@ -393,7 +393,7 @@ function scrubEmailsFromDirectory(dirPath) {
 function replaceAiTeamReferences(dirPath) {
   const updatedFiles = [];
   const replacements = [
-    [/\.ai-team-templates\//g, '.squad-templates/'],
+    [/\.ai-team-templates\//g, '.squad/templates/'],
     [/\.ai-team\//g, '.squad/']
   ];
 
@@ -429,14 +429,14 @@ function detectProjectType(dir) {
   if (fs.existsSync(path.join(dir, 'package.json'))) return 'npm';
   if (fs.existsSync(path.join(dir, 'go.mod'))) return 'go';
   if (fs.existsSync(path.join(dir, 'requirements.txt')) ||
-      fs.existsSync(path.join(dir, 'pyproject.toml'))) return 'python';
+    fs.existsSync(path.join(dir, 'pyproject.toml'))) return 'python';
   if (fs.existsSync(path.join(dir, 'pom.xml')) ||
-      fs.existsSync(path.join(dir, 'build.gradle')) ||
-      fs.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
+    fs.existsSync(path.join(dir, 'build.gradle')) ||
+    fs.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
   try {
     const entries = fs.readdirSync(dir);
     if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln') || e.endsWith('.slnx') || e.endsWith('.fsproj') || e.endsWith('.vbproj'))) return 'dotnet';
-  } catch {}
+  } catch { }
   return 'unknown';
 }
 
@@ -612,14 +612,14 @@ function writeWorkflowFile(file, srcPath, destPath, projectType) {
 // --- Email scrubbing subcommand ---
 if (cmd === 'scrub-emails') {
   const targetDir = process.argv[3] || path.join(dest, '.ai-team');
-  
+
   if (!fs.existsSync(targetDir)) {
     fatal(`Directory not found: ${targetDir}`);
   }
-  
+
   console.log(`${DIM}Scanning ${path.relative(dest, targetDir)} for email addresses...${RESET}`);
   const scrubbedFiles = scrubEmailsFromDirectory(targetDir);
-  
+
   if (scrubbedFiles.length === 0) {
     console.log(`${GREEN}✓${RESET} No email addresses found — all clean`);
   } else {
@@ -1163,15 +1163,15 @@ const isMigrateDirectory = isUpgrade && process.argv.includes('--migrate-directo
 if (isMigrateDirectory) {
   const aiTeamDir = path.join(dest, '.ai-team');
   const squadDir = path.join(dest, '.squad');
-  
+
   if (!fs.existsSync(aiTeamDir)) {
     fatal('No .ai-team/ directory found — nothing to migrate.');
   }
-  
+
   if (fs.existsSync(squadDir)) {
     fatal('.squad/ directory already exists — migration appears to be complete.');
   }
-  
+
   // Safe rename that falls back to copy+delete on Windows EPERM/EACCES
   function safeRename(source, target) {
     try {
@@ -1187,12 +1187,12 @@ if (isMigrateDirectory) {
   }
 
   console.log(`${DIM}Migrating .ai-team/ → .squad/...${RESET}`);
-  
+
   try {
     // Rename directory
     safeRename(aiTeamDir, squadDir);
     console.log(`${GREEN}✓${RESET} Renamed .ai-team/ → .squad/`);
-    
+
     // Update .gitattributes
     const gitattributes = path.join(dest, '.gitattributes');
     if (fs.existsSync(gitattributes)) {
@@ -1203,7 +1203,7 @@ if (isMigrateDirectory) {
         console.log(`${GREEN}✓${RESET} Updated .gitattributes`);
       }
     }
-    
+
     // Update .gitignore if it exists
     const gitignore = path.join(dest, '.gitignore');
     if (fs.existsSync(gitignore)) {
@@ -1214,7 +1214,7 @@ if (isMigrateDirectory) {
         console.log(`${GREEN}✓${RESET} Updated .gitignore`);
       }
     }
-    
+
     // Scrub email addresses from migrated files
     console.log(`${DIM}Scrubbing email addresses from .squad/ files...${RESET}`);
     const scrubbedFiles = scrubEmailsFromDirectory(squadDir);
@@ -1233,12 +1233,12 @@ if (isMigrateDirectory) {
       console.log(`${GREEN}✓${RESET} No .ai-team/ references found`);
     }
 
-    // Rename .ai-team-templates/ → .squad-templates/ if it exists
+    // Rename .ai-team-templates/ → .squad/templates/ if it exists
     const aiTeamTemplatesDir = path.join(dest, '.ai-team-templates');
-    const squadTemplatesDir = path.join(dest, '.squad-templates');
+    const squadTemplatesDir = path.join(dest, '.squad', 'templates');
     if (fs.existsSync(aiTeamTemplatesDir)) {
       safeRename(aiTeamTemplatesDir, squadTemplatesDir);
-      console.log(`${GREEN}✓${RESET} Renamed .ai-team-templates/ → .squad-templates/`);
+      console.log(`${GREEN}✓${RESET} Renamed .ai-team-templates/ → .squad/templates/`);
     }
 
     console.log();
@@ -1247,7 +1247,7 @@ if (isMigrateDirectory) {
     console.log(`  git add -A`);
     console.log(`  git commit -m "chore: migrate .ai-team/ → .squad/"`);
     console.log();
-    
+
   } catch (err) {
     fatal(`Migration failed: ${err.message}`);
   }
@@ -1340,6 +1340,21 @@ const migrations = [
       if (fs.existsSync(guardPath)) {
         fs.unlinkSync(guardPath);
         console.log(`${GREEN}✓${RESET} Removed squad-main-guard.yml — .squad/ files can now flow freely to all branches`);
+      }
+    }
+  },
+  {
+    version: '0.5.5',
+    description: 'Move .squad-templates/ into .squad/templates/',
+    run(dest, squadDir) {
+      const oldPath = path.join(dest, '.squad-templates');
+      const newPath = path.join(squadDir || path.join(dest, '.squad'), 'templates');
+      if (fs.existsSync(oldPath) && !fs.existsSync(newPath)) {
+        safeRename(oldPath, newPath);
+        console.log(`${GREEN}✓${RESET} Moved .squad-templates/ → .squad/templates/`);
+      } else if (fs.existsSync(oldPath) && fs.existsSync(newPath)) {
+        fs.rmSync(oldPath, { recursive: true });
+        console.log(`${GREEN}✓${RESET} Removed redundant .squad-templates/ (already have .squad/templates/)`);
       }
     }
   }
@@ -1486,7 +1501,7 @@ if (isUpgrade) {
 const squadInfo = (() => {
   const squadDir = path.join(dest, '.squad');
   const aiTeamDir = path.join(dest, '.ai-team');
-  
+
   if (fs.existsSync(squadDir)) {
     return { path: squadDir, name: '.squad', isLegacy: false };
   }
@@ -1651,20 +1666,22 @@ if (missing.length) {
 
 // Copy templates (Squad-owned — overwrite on upgrade)
 const templatesSrc = path.join(root, 'templates');
-const templatesDestName = squadInfo.isLegacy ? '.ai-team-templates' : '.squad-templates';
-const templatesDest = path.join(dest, templatesDestName);
+const templatesDest = squadInfo.isLegacy
+  ? path.join(dest, '.ai-team-templates')
+  : path.join(dest, '.squad', 'templates');
+const templatesDestDisplay = squadInfo.isLegacy ? '.ai-team-templates/' : '.squad/templates/';
 
 if (isUpgrade) {
   copyRecursive(templatesSrc, templatesDest);
-  console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} ${templatesDestName}/`);
+  console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} ${templatesDestDisplay}`);
 
   // Run migrations applicable for this version jump
   runMigrations(dest, oldVersion || '0.0.0', squadInfo.path);
 } else if (fs.existsSync(templatesDest)) {
-  console.log(`${DIM}${templatesDestName}/ already exists — skipping (run 'upgrade' to update)${RESET}`);
+  console.log(`${DIM}${templatesDestDisplay} already exists — skipping (run 'upgrade' to update)${RESET}`);
 } else {
   copyRecursive(templatesSrc, templatesDest);
-  console.log(`${GREEN}✓${RESET} ${templatesDestName}/`);
+  console.log(`${GREEN}✓${RESET} ${templatesDestDisplay}`);
 }
 
 // Copy workflow templates (Squad-owned — overwrite on upgrade)
@@ -1709,7 +1726,7 @@ if (isUpgrade) {
   } else {
     console.log(`${GREEN}✓${RESET} No email addresses found`);
   }
-  
+
   console.log(`\n${DIM}${squadInfo.name}/ untouched — your team state is safe${RESET}`);
 
   // Hint about new features available after upgrade
