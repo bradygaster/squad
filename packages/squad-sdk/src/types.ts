@@ -57,3 +57,12 @@ export type { SquadCustomAgentConfig } from './adapter/types.js';
 export type { SquadEntry } from './multi-squad.js';
 export type { MultiSquadConfig } from './multi-squad.js';
 export type { SquadInfo } from './multi-squad.js';
+
+// --- Platform types (platform/types.ts) ---
+export type { PlatformType } from './platform/types.js';
+export type { WorkItem } from './platform/types.js';
+export type { PullRequest } from './platform/types.js';
+export type { PlatformAdapter } from './platform/types.js';
+export type { RalphCommands } from './platform/ralph-commands.js';
+export type { GitHubRemoteInfo } from './platform/detect.js';
+export type { AzureDevOpsRemoteInfo } from './platform/detect.js';

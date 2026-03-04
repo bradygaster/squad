@@ -33,35 +33,24 @@ async function main(): Promise<void> {
   // --help / -h / help
   if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
     console.log(`\n${BOLD}squad${RESET} v${VERSION} — Add an AI agent team to any project\n`);
-    console.log(`Usage: squad [command] [options]\n`);
-    console.log(`Commands:`);
-    console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
-    console.log(`             Flags: --global (init in personal squad directory)`);
+    console.log(`Usage: squad [command] [options]`);
+    console.log(`       squad <command> --help\n`);
+    console.log(`Getting Started:`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (skip files that already exist)`);
     console.log(`             Flags: --global (init in personal squad directory)`);
-    console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
-    console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
-    console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
-    console.log(`             Flags: --global (upgrade personal squad), --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
+    console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
+    console.log(`  ${BOLD}help${RESET}       Show this help message`);
+    console.log(`\nDevelopment:`);
+    console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
+    console.log(`             Flags: --global (init in personal squad directory)`);
+    console.log(`  ${BOLD}consult${RESET}    Enter consult mode with your personal squad`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
     console.log(`  ${BOLD}loop${RESET}       Continuous work loop (Ralph mode)`);
     console.log(`             Usage: loop [--filter <label>] [--interval <minutes>]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
-    console.log(`  ${BOLD}hire${RESET}       Team creation wizard`);
-    console.log(`             Usage: hire [--name <name>] [--role <role>]`);
-    console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
-    console.log(`             Usage: copilot [--off] [--auto-assign]`);
-    console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
-    console.log(`             Usage: plugin marketplace add|remove|list|browse`);
-    console.log(`  ${BOLD}export${RESET}     Export squad to a portable JSON snapshot`);
-    console.log(`             Default: squad-export.json (use --out <path> to override)`);
-    console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
-    console.log(`             Usage: import <file> [--force]`);
-    console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
-    console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
     console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser`);
     console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>] [copilot flags...]`);
     console.log(`             Examples: start --tunnel --yolo`);
@@ -70,8 +59,24 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
-    console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
-    console.log(`  ${BOLD}help${RESET}       Show this help message`);
+    console.log(`\nTeam Management:`);
+    console.log(`  ${BOLD}hire${RESET}       Team creation wizard`);
+    console.log(`             Usage: hire [--name <name>] [--role <role>]`);
+    console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
+    console.log(`             Usage: copilot [--off] [--auto-assign]`);
+    console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
+    console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
+    console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
+    console.log(`             Flags: --global (upgrade personal squad), --migrate-directory (rename .ai-team/ → .squad/)`);
+    console.log(`\nUtilities:`);
+    console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
+    console.log(`             Usage: plugin marketplace add|remove|list|browse`);
+    console.log(`  ${BOLD}export${RESET}     Export squad to a portable JSON snapshot`);
+    console.log(`             Default: squad-export.json (use --out <path> to override)`);
+    console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
+    console.log(`             Usage: import <file> [--force]`);
+    console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
+    console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
     console.log(`\nFlags:`);
     console.log(`  ${BOLD}--version, -v${RESET}  Print version`);
     console.log(`  ${BOLD}--help, -h${RESET}     Show help`);
@@ -256,6 +261,12 @@ async function main(): Promise<void> {
     const dryRun = args.includes('--dry-run');
     const result = await runNap({ squadDir, deep, dryRun });
     console.log(formatNapReport(result, !!process.env['NO_COLOR']));
+    return;
+  }
+
+  if (cmd === 'consult') {
+    const { runConsult } = await import('./cli/commands/consult.js');
+    await runConsult(process.cwd(), args.slice(1));
     return;
   }
 
