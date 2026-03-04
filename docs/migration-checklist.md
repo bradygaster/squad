@@ -48,12 +48,12 @@ If NOT checked, STOP. Do not proceed.
 ---
 
 ## Phase 3: Push origin/migration to beta/migration
-- [ ] Verify migration branch HEAD: `git rev-parse migration` → `b3a39bc`
-- [ ] Ensure beta remote exists: `git remote -v | grep beta`
-- [ ] If missing: `git remote add beta https://github.com/bradygaster/squad.git`
-- [ ] Fetch beta: `git fetch beta`
-- [ ] Push migration branch to beta: `git push beta migration:migration`
-- [ ] Verify on beta: `gh repo view bradygaster/squad --branch migration`
+- [x] Verify migration branch HEAD: `git rev-parse migration` → `c1dd9b22d3a6b97dcab49ab47ad98d7c7e300249`
+- [x] Ensure beta remote exists: `git remote -v | grep beta` ✅ (found)
+- [x] If missing: `git remote add beta https://github.com/bradygaster/squad.git` (N/A - already exists)
+- [x] Fetch beta: `git fetch beta` ✅
+- [x] Push migration branch to beta: `git push beta migration:migration` ✅
+- [x] Verify on beta: `git --no-pager log beta/migration -3 --oneline` ✅ HEAD at c1dd9b2
 
 ---
 
@@ -228,7 +228,7 @@ If NOT checked, STOP. Do not proceed.
 
 ## Final Checklist
 - [ ] **v0.8.18 tag exists on beta** (public repo migration marker at merge commit)
-- [ ] **origin/migration pushed to beta/migration**
+- [x] **origin/migration pushed to beta/migration**
 - [ ] **beta/migration merged to beta/main**
 - [ ] **Both npm packages published: squad-cli@0.8.18, squad-sdk@0.8.18**
 - [ ] **GitHub Release v0.8.18 created on beta repo** (public release marker)
