@@ -5,8 +5,10 @@
  * @module platform/planner
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { PlatformType, WorkItem } from './types.js';
+
+const EXEC_OPTS: { encoding: 'utf-8'; stdio: ['pipe', 'pipe', 'pipe'] } = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] };
 
 /** Planner task shape from Graph API */
 interface PlannerTask {
@@ -29,9 +31,10 @@ interface PlannerBucket {
  */
 function getGraphToken(): string {
   try {
-    const output = execSync(
-      'az account get-access-token --resource-type ms-graph --query accessToken -o tsv',
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+    const output = execFileSync(
+      'az',
+      ['account', 'get-access-token', '--resource-type', 'ms-graph', '--query', 'accessToken', '-o', 'tsv'],
+      EXEC_OPTS,
     ).trim();
     return output;
   } catch {
@@ -43,8 +46,18 @@ function getGraphToken(): string {
   }
 }
 
+/** Safely parse JSON output, including raw text in error messages */
+function parseJson<T>(raw: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    throw new Error(`Failed to parse JSON from CLI output: ${(err as Error).message}\nRaw output: ${raw}`);
+  }
+}
+
 /**
  * Map a Planner task + bucket name to a normalized WorkItem.
+ * The original Planner task ID is stored in the url field so it can be recovered.
  */
 export function mapPlannerTaskToWorkItem(
   task: PlannerTask,
@@ -85,20 +98,17 @@ export class PlannerAdapter {
   private graphFetch(path: string, method = 'GET', body?: string): string {
     const token = getGraphToken();
     const curlArgs = [
-      'curl', '-s',
+      '-s',
       '-X', method,
-      '-H', `"Authorization: Bearer ${token}"`,
-      '-H', '"Content-Type: application/json"',
+      '-H', `Authorization: Bearer ${token}`,
+      '-H', 'Content-Type: application/json',
     ];
     if (body) {
-      curlArgs.push('-d', `'${body}'`);
+      curlArgs.push('-d', body);
     }
-    curlArgs.push(`"https://graph.microsoft.com/v1.0${path}"`);
+    curlArgs.push(`https://graph.microsoft.com/v1.0${path}`);
 
-    return execSync(curlArgs.join(' '), {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
+    return execFileSync('curl', curlArgs, EXEC_OPTS).trim();
   }
 
   /** Fetch and cache buckets for this plan */
@@ -106,7 +116,7 @@ export class PlannerAdapter {
     if (this.bucketCache) return this.bucketCache;
 
     const output = this.graphFetch(`/planner/plans/${this.planId}/buckets`);
-    const data = JSON.parse(output) as { value: PlannerBucket[] };
+    const data = parseJson<{ value: PlannerBucket[] }>(output);
     this.bucketCache = data.value;
     return this.bucketCache;
   }
@@ -129,7 +139,7 @@ export class PlannerAdapter {
     limit?: number;
   }): Promise<WorkItem[]> {
     const output = this.graphFetch(`/planner/plans/${this.planId}/tasks`);
-    const data = JSON.parse(output) as { value: PlannerTask[] };
+    const data = parseJson<{ value: PlannerTask[] }>(output);
     const buckets = await this.getBuckets();
     const bucketMap = new Map(buckets.map((b) => [b.id, b.name]));
 
@@ -188,7 +198,7 @@ export class PlannerAdapter {
     }
 
     const output = this.graphFetch('/planner/tasks', 'POST', JSON.stringify(taskBody));
-    const task = JSON.parse(output) as PlannerTask;
+    const task = parseJson<PlannerTask>(output);
 
     // Add description if provided
     if (options.description) {

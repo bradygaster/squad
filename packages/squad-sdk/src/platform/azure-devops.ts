@@ -4,13 +4,15 @@
  * @module platform/azure-devops
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import type { PlatformAdapter, PlatformType, WorkItem, PullRequest } from './types.js';
+
+const EXEC_OPTS: { encoding: 'utf-8'; stdio: ['pipe', 'pipe', 'pipe'] } = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] };
 
 /** Check whether the az CLI with devops extension is available */
 function assertAzCliAvailable(): void {
   try {
-    execSync('az devops -h', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    execSync('az devops -h', EXEC_OPTS);
   } catch {
     throw new Error(
       'Azure DevOps CLI not found. Install it with:\n' +
@@ -19,6 +21,15 @@ function assertAzCliAvailable(): void {
       '  3. Login: az login\n' +
       '  4. Set defaults: az devops configure --defaults organization=https://dev.azure.com/YOUR_ORG project=YOUR_PROJECT',
     );
+  }
+}
+
+/** Safely parse JSON output, including raw text in error messages */
+function parseJson<T>(raw: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    throw new Error(`Failed to parse JSON from CLI output: ${(err as Error).message}\nRaw output: ${raw}`);
   }
 }
 
@@ -37,12 +48,13 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     return `https://dev.azure.com/${this.org}`;
   }
 
-  private get defaults(): string {
-    return `--org "${this.orgUrl}" --project "${this.project}"`;
+  /** Common az CLI default args */
+  private get defaultArgs(): string[] {
+    return ['--org', this.orgUrl, '--project', this.project];
   }
 
-  private exec(cmd: string): string {
-    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  private az(args: string[]): string {
+    return execFileSync('az', args, EXEC_OPTS).trim();
   }
 
   async listWorkItems(options: { tags?: string[]; state?: string; limit?: number }): Promise<WorkItem[]> {
@@ -61,10 +73,10 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     const top = options.limit ?? 50;
     const wiql = `SELECT [System.Id] FROM WorkItems WHERE ${where} ORDER BY [System.CreatedDate] DESC`;
 
-    const output = this.exec(
-      `az boards query --wiql "${wiql}" ${this.defaults} --output json`,
-    );
-    const items = JSON.parse(output) as Array<{ id: number; fields?: Record<string, unknown> }>;
+    const output = this.az([
+      'boards', 'query', '--wiql', wiql, ...this.defaultArgs, '--output', 'json',
+    ]);
+    const items = parseJson<Array<{ id: number; fields?: Record<string, unknown> }>>(output);
 
     // Fetch full details for each work item (limited by top)
     const results: WorkItem[] = [];
@@ -76,15 +88,15 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
   }
 
   async getWorkItem(id: number): Promise<WorkItem> {
-    const output = this.exec(
-      `az boards work-item show --id ${id} ${this.defaults} --output json`,
-    );
-    const wi = JSON.parse(output) as {
+    const output = this.az([
+      'boards', 'work-item', 'show', '--id', String(id), ...this.defaultArgs, '--output', 'json',
+    ]);
+    const wi = parseJson<{
       id: number;
       fields: Record<string, unknown>;
       url: string;
       _links?: { html?: { href?: string } };
-    };
+    }>(output);
 
     const fields = wi.fields;
     const tags = typeof fields['System.Tags'] === 'string'
@@ -105,27 +117,27 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
   async createWorkItem(options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string }): Promise<WorkItem> {
     const wiType = options.type ?? 'User Story';
     const fields: string[] = [
-      `"System.Title=${options.title.replace(/"/g, '\\"')}"`,
+      `System.Title=${options.title}`,
     ];
     if (options.description) {
-      fields.push(`"System.Description=${options.description.replace(/"/g, '\\"')}"`);
+      fields.push(`System.Description=${options.description}`);
     }
     if (options.tags?.length) {
-      fields.push(`"System.Tags=${options.tags.join('; ')}"`);
+      fields.push(`System.Tags=${options.tags.join('; ')}`);
     }
     if (options.assignedTo) {
-      fields.push(`"System.AssignedTo=${options.assignedTo}"`);
+      fields.push(`System.AssignedTo=${options.assignedTo}`);
     }
 
-    const output = this.exec(
-      `az boards work-item create --type "${wiType}" --fields ${fields.join(' ')} ${this.defaults} --output json`,
-    );
-    const created = JSON.parse(output) as {
+    const output = this.az([
+      'boards', 'work-item', 'create', '--type', wiType, '--fields', ...fields, ...this.defaultArgs, '--output', 'json',
+    ]);
+    const created = parseJson<{
       id: number;
       fields: Record<string, unknown>;
       url: string;
       _links?: { html?: { href?: string } };
-    };
+    }>(output);
 
     const createdFields = created.fields;
     const tags = typeof createdFields['System.Tags'] === 'string'
@@ -147,39 +159,41 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     const currentTags = wi.tags.filter((t) => t !== tag);
     currentTags.push(tag);
     const tagsStr = currentTags.join('; ');
-    this.exec(
-      `az boards work-item update --id ${workItemId} --fields "System.Tags=${tagsStr}" ${this.defaults} --output json`,
-    );
+    this.az([
+      'boards', 'work-item', 'update', '--id', String(workItemId),
+      '--fields', `System.Tags=${tagsStr}`, ...this.defaultArgs, '--output', 'json',
+    ]);
   }
 
   async removeTag(workItemId: number, tag: string): Promise<void> {
     const wi = await this.getWorkItem(workItemId);
     const updatedTags = wi.tags.filter((t) => t !== tag);
     const tagsStr = updatedTags.join('; ');
-    this.exec(
-      `az boards work-item update --id ${workItemId} --fields "System.Tags=${tagsStr}" ${this.defaults} --output json`,
-    );
+    this.az([
+      'boards', 'work-item', 'update', '--id', String(workItemId),
+      '--fields', `System.Tags=${tagsStr}`, ...this.defaultArgs, '--output', 'json',
+    ]);
   }
 
   async addComment(workItemId: number, comment: string): Promise<void> {
-    // az boards work-item update --id ID --discussion "comment"
-    this.exec(
-      `az boards work-item update --id ${workItemId} --discussion "${comment.replace(/"/g, '\\"')}" ${this.defaults} --output json`,
-    );
+    this.az([
+      'boards', 'work-item', 'update', '--id', String(workItemId),
+      '--discussion', comment, ...this.defaultArgs, '--output', 'json',
+    ]);
   }
 
   async listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]> {
     const args = [
-      'az', 'repos', 'pr', 'list',
-      '--repository', `"${this.repo}"`,
-      this.defaults,
+      'repos', 'pr', 'list',
+      '--repository', this.repo,
+      ...this.defaultArgs,
       '--output', 'json',
     ];
     if (options.status) args.push('--status', options.status);
     if (options.limit) args.push('--top', String(options.limit));
 
-    const output = this.exec(args.join(' '));
-    const prs = JSON.parse(output) as Array<{
+    const output = this.az(args);
+    const prs = parseJson<Array<{
       pullRequestId: number;
       title: string;
       sourceRefName: string;
@@ -190,7 +204,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
       createdBy: { displayName: string; uniqueName: string };
       url: string;
       repository?: { webUrl?: string };
-    }>;
+    }>>(output);
 
     return prs.map((pr) => ({
       id: pr.pullRequestId,
@@ -213,20 +227,20 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     description?: string;
   }): Promise<PullRequest> {
     const args = [
-      'az', 'repos', 'pr', 'create',
-      '--repository', `"${this.repo}"`,
+      'repos', 'pr', 'create',
+      '--repository', this.repo,
       '--source-branch', options.sourceBranch,
       '--target-branch', options.targetBranch,
-      '--title', `"${options.title.replace(/"/g, '\\"')}"`,
-      this.defaults,
+      '--title', options.title,
+      ...this.defaultArgs,
       '--output', 'json',
     ];
     if (options.description) {
-      args.push('--description', `"${options.description.replace(/"/g, '\\"')}"`);
+      args.push('--description', options.description);
     }
 
-    const output = this.exec(args.join(' '));
-    const pr = JSON.parse(output) as {
+    const output = this.az(args);
+    const pr = parseJson<{
       pullRequestId: number;
       title: string;
       sourceRefName: string;
@@ -236,7 +250,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
       reviewers: Array<{ vote: number }>;
       createdBy: { displayName: string; uniqueName: string };
       url: string;
-    };
+    }>(output);
 
     return {
       id: pr.pullRequestId,
@@ -251,14 +265,17 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
   }
 
   async mergePullRequest(id: number): Promise<void> {
-    this.exec(
-      `az repos pr update --id ${id} --status completed ${this.defaults} --output json`,
-    );
+    this.az([
+      'repos', 'pr', 'update', '--id', String(id),
+      '--status', 'completed', ...this.defaultArgs, '--output', 'json',
+    ]);
   }
 
   async createBranch(name: string, fromBranch?: string): Promise<void> {
     const base = fromBranch ?? 'main';
-    this.exec(`git checkout ${base} && git pull && git checkout -b ${name}`);
+    execFileSync('git', ['checkout', base], EXEC_OPTS);
+    execFileSync('git', ['pull'], EXEC_OPTS);
+    execFileSync('git', ['checkout', '-b', name], EXEC_OPTS);
   }
 }
 

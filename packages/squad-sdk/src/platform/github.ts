@@ -4,8 +4,19 @@
  * @module platform/github
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { PlatformAdapter, PlatformType, WorkItem, PullRequest } from './types.js';
+
+const EXEC_OPTS: { encoding: 'utf-8'; stdio: ['pipe', 'pipe', 'pipe'] } = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] };
+
+/** Safely parse JSON output, including raw text in error messages */
+function parseJson<T>(raw: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    throw new Error(`Failed to parse JSON from CLI output: ${(err as Error).message}\nRaw output: ${raw}`);
+  }
+}
 
 export class GitHubAdapter implements PlatformAdapter {
   readonly type: PlatformType = 'github';
@@ -19,12 +30,12 @@ export class GitHubAdapter implements PlatformAdapter {
     return `${this.owner}/${this.repo}`;
   }
 
-  private exec(cmd: string): string {
-    return execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  private gh(args: string[]): string {
+    return execFileSync('gh', args, EXEC_OPTS).trim();
   }
 
   async listWorkItems(options: { tags?: string[]; state?: string; limit?: number }): Promise<WorkItem[]> {
-    const args = ['gh', 'issue', 'list', '--repo', this.repoFlag, '--json', 'number,title,state,labels,assignees,url'];
+    const args = ['issue', 'list', '--repo', this.repoFlag, '--json', 'number,title,state,labels,assignees,url'];
     if (options.state) args.push('--state', options.state);
     if (options.limit) args.push('--limit', String(options.limit));
     if (options.tags?.length) {
@@ -33,15 +44,15 @@ export class GitHubAdapter implements PlatformAdapter {
       }
     }
 
-    const output = this.exec(args.join(' '));
-    const issues = JSON.parse(output) as Array<{
+    const output = this.gh(args);
+    const issues = parseJson<Array<{
       number: number;
       title: string;
       state: string;
       labels: Array<{ name: string }>;
       assignees: Array<{ login: string }>;
       url: string;
-    }>;
+    }>>(output);
 
     return issues.map((issue) => ({
       id: issue.number,
@@ -54,17 +65,18 @@ export class GitHubAdapter implements PlatformAdapter {
   }
 
   async getWorkItem(id: number): Promise<WorkItem> {
-    const output = this.exec(
-      `gh issue view ${id} --repo ${this.repoFlag} --json number,title,state,labels,assignees,url`,
-    );
-    const issue = JSON.parse(output) as {
+    const output = this.gh([
+      'issue', 'view', String(id), '--repo', this.repoFlag,
+      '--json', 'number,title,state,labels,assignees,url',
+    ]);
+    const issue = parseJson<{
       number: number;
       title: string;
       state: string;
       labels: Array<{ name: string }>;
       assignees: Array<{ login: string }>;
       url: string;
-    };
+    }>(output);
 
     return {
       id: issue.number,
@@ -78,32 +90,32 @@ export class GitHubAdapter implements PlatformAdapter {
 
   async createWorkItem(options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string }): Promise<WorkItem> {
     const args = [
-      'gh', 'issue', 'create',
+      'issue', 'create',
       '--repo', this.repoFlag,
-      '--title', `"${options.title.replace(/"/g, '\\"')}"`,
+      '--title', options.title,
       '--json', 'number,title,state,labels,assignees,url',
     ];
     if (options.description) {
-      args.push('--body', `"${options.description.replace(/"/g, '\\"')}"`);
+      args.push('--body', options.description);
     }
     if (options.tags?.length) {
       for (const tag of options.tags) {
-        args.push('--label', `"${tag}"`);
+        args.push('--label', tag);
       }
     }
     if (options.assignedTo) {
       args.push('--assignee', options.assignedTo);
     }
 
-    const output = this.exec(args.join(' '));
-    const issue = JSON.parse(output) as {
+    const output = this.gh(args);
+    const issue = parseJson<{
       number: number;
       title: string;
       state: string;
       labels: Array<{ name: string }>;
       assignees: Array<{ login: string }>;
       url: string;
-    };
+    }>(output);
 
     return {
       id: issue.number,
@@ -116,24 +128,24 @@ export class GitHubAdapter implements PlatformAdapter {
   }
 
   async addTag(workItemId: number, tag: string): Promise<void> {
-    this.exec(`gh issue edit ${workItemId} --repo ${this.repoFlag} --add-label "${tag}"`);
+    this.gh(['issue', 'edit', String(workItemId), '--repo', this.repoFlag, '--add-label', tag]);
   }
 
   async removeTag(workItemId: number, tag: string): Promise<void> {
-    this.exec(`gh issue edit ${workItemId} --repo ${this.repoFlag} --remove-label "${tag}"`);
+    this.gh(['issue', 'edit', String(workItemId), '--repo', this.repoFlag, '--remove-label', tag]);
   }
 
   async addComment(workItemId: number, comment: string): Promise<void> {
-    this.exec(`gh issue comment ${workItemId} --repo ${this.repoFlag} --body "${comment.replace(/"/g, '\\"')}"`);
+    this.gh(['issue', 'comment', String(workItemId), '--repo', this.repoFlag, '--body', comment]);
   }
 
   async listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]> {
-    const args = ['gh', 'pr', 'list', '--repo', this.repoFlag, '--json', 'number,title,headRefName,baseRefName,state,isDraft,reviewDecision,author,url'];
+    const args = ['pr', 'list', '--repo', this.repoFlag, '--json', 'number,title,headRefName,baseRefName,state,isDraft,reviewDecision,author,url'];
     if (options.status) args.push('--state', options.status);
     if (options.limit) args.push('--limit', String(options.limit));
 
-    const output = this.exec(args.join(' '));
-    const prs = JSON.parse(output) as Array<{
+    const output = this.gh(args);
+    const prs = parseJson<Array<{
       number: number;
       title: string;
       headRefName: string;
@@ -143,7 +155,7 @@ export class GitHubAdapter implements PlatformAdapter {
       reviewDecision: string;
       author: { login: string };
       url: string;
-    }>;
+    }>>(output);
 
     return prs.map((pr) => ({
       id: pr.number,
@@ -164,19 +176,19 @@ export class GitHubAdapter implements PlatformAdapter {
     description?: string;
   }): Promise<PullRequest> {
     const args = [
-      'gh', 'pr', 'create',
+      'pr', 'create',
       '--repo', this.repoFlag,
       '--head', options.sourceBranch,
       '--base', options.targetBranch,
-      '--title', `"${options.title.replace(/"/g, '\\"')}"`,
+      '--title', options.title,
       '--json', 'number,title,headRefName,baseRefName,state,isDraft,reviewDecision,author,url',
     ];
     if (options.description) {
-      args.push('--body', `"${options.description.replace(/"/g, '\\"')}"`);
+      args.push('--body', options.description);
     }
 
-    const output = this.exec(args.join(' '));
-    const pr = JSON.parse(output) as {
+    const output = this.gh(args);
+    const pr = parseJson<{
       number: number;
       title: string;
       headRefName: string;
@@ -186,7 +198,7 @@ export class GitHubAdapter implements PlatformAdapter {
       reviewDecision: string;
       author: { login: string };
       url: string;
-    };
+    }>(output);
 
     return {
       id: pr.number,
@@ -201,12 +213,14 @@ export class GitHubAdapter implements PlatformAdapter {
   }
 
   async mergePullRequest(id: number): Promise<void> {
-    this.exec(`gh pr merge ${id} --repo ${this.repoFlag} --merge`);
+    this.gh(['pr', 'merge', String(id), '--repo', this.repoFlag, '--merge']);
   }
 
   async createBranch(name: string, fromBranch?: string): Promise<void> {
     const base = fromBranch ?? 'main';
-    this.exec(`git checkout ${base} && git pull && git checkout -b ${name}`);
+    execFileSync('git', ['checkout', base], EXEC_OPTS);
+    execFileSync('git', ['pull'], EXEC_OPTS);
+    execFileSync('git', ['checkout', '-b', name], EXEC_OPTS);
   }
 }
 
