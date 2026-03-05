@@ -392,20 +392,27 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     await mkdir(agentDir, { recursive: true });
 
     const charterPath = join(agentDir, 'charter.md');
-    let charter: string;
-    if (member.name === 'Scribe' && !hasScribe) {
-      charter = scribeCharter();
-    } else if (member.name === 'Ralph' && !hasRalph) {
-      charter = ralphCharter();
-    } else {
-      charter = generateCharter(member);
+    // Protect existing charter files — only write if absent or truly empty
+    // (i.e., previous /init or migrate left a real charter in place)
+    if (!existsSync(charterPath) || (await readFile(charterPath, 'utf8')).trim().length === 0) {
+      let charter: string;
+      if (member.name === 'Scribe' && !hasScribe) {
+        charter = scribeCharter();
+      } else if (member.name === 'Ralph' && !hasRalph) {
+        charter = ralphCharter();
+      } else {
+        charter = generateCharter(member);
+      }
+      await writeFile(charterPath, charter);
+      filesCreated.push(charterPath);
     }
-    await writeFile(charterPath, charter);
-    filesCreated.push(charterPath);
 
     const historyPath = join(agentDir, 'history.md');
-    await writeFile(historyPath, generateHistory(member, proposal.projectDescription));
-    filesCreated.push(historyPath);
+    // Protect existing history — only write if absent or empty
+    if (!existsSync(historyPath) || (await readFile(historyPath, 'utf8')).trim().length === 0) {
+      await writeFile(historyPath, generateHistory(member, proposal.projectDescription));
+      filesCreated.push(historyPath);
+    }
 
     membersCreated.push(member.name);
   }

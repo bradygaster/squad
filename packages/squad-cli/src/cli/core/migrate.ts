@@ -238,8 +238,21 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
         version,
       });
       success('Scaffolded fresh .squad/ directory.');
+
+      // Clean up first-run markers so the shell doesn't treat the migrated
+      // install as a brand-new setup. If these exist, the shell shows "no team
+      // yet" hints — which would be wrong after a migration that restores a
+      // full team roster.
+      for (const marker of ['.first-run', '.init-prompt']) {
+        const markerPath = path.join(cwd, '.squad', marker);
+        if (fs.existsSync(markerPath)) {
+          fs.unlinkSync(markerPath);
+        }
+      }
     } else {
       console.log(`${prefix}Would run: sdkInitSquad (fresh scaffold)`);
+      console.log(`${prefix}Would remove: .squad/.first-run (if present)`);
+      console.log(`${prefix}Would remove: .squad/.init-prompt (if present)`);
     }
 
     // Step 4: Restore user-owned files
