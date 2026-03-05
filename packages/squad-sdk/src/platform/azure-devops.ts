@@ -102,6 +102,45 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     };
   }
 
+  async createWorkItem(options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string }): Promise<WorkItem> {
+    const wiType = options.type ?? 'User Story';
+    const fields: string[] = [
+      `"System.Title=${options.title.replace(/"/g, '\\"')}"`,
+    ];
+    if (options.description) {
+      fields.push(`"System.Description=${options.description.replace(/"/g, '\\"')}"`);
+    }
+    if (options.tags?.length) {
+      fields.push(`"System.Tags=${options.tags.join('; ')}"`);
+    }
+    if (options.assignedTo) {
+      fields.push(`"System.AssignedTo=${options.assignedTo}"`);
+    }
+
+    const output = this.exec(
+      `az boards work-item create --type "${wiType}" --fields ${fields.join(' ')} ${this.defaults} --output json`,
+    );
+    const created = JSON.parse(output) as {
+      id: number;
+      fields: Record<string, unknown>;
+      url: string;
+      _links?: { html?: { href?: string } };
+    };
+
+    const createdFields = created.fields;
+    const tags = typeof createdFields['System.Tags'] === 'string'
+      ? (createdFields['System.Tags'] as string).split(';').map((t) => t.trim()).filter(Boolean)
+      : [];
+
+    return {
+      id: created.id,
+      title: (createdFields['System.Title'] as string) ?? '',
+      state: (createdFields['System.State'] as string) ?? '',
+      tags,
+      url: created._links?.html?.href ?? created.url,
+    };
+  }
+
   async addTag(workItemId: number, tag: string): Promise<void> {
     // Get current tags, append the new one
     const wi = await this.getWorkItem(workItemId);

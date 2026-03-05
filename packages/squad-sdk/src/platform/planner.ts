@@ -161,6 +161,47 @@ export class PlannerAdapter {
     );
   }
 
+  async createWorkItem(options: { title: string; description?: string; tags?: string[] }): Promise<WorkItem> {
+    // Resolve target bucket from tags (first squad: tag), default to untriaged
+    let bucketId: string | undefined;
+    let bucketName = 'squad:untriaged';
+    if (options.tags?.length) {
+      for (const tag of options.tags) {
+        const bid = await this.getBucketId(tag);
+        if (bid) {
+          bucketId = bid;
+          bucketName = tag;
+          break;
+        }
+      }
+    }
+    if (!bucketId) {
+      bucketId = await this.getBucketId('squad:untriaged');
+    }
+
+    const taskBody: Record<string, unknown> = {
+      planId: this.planId,
+      title: options.title,
+    };
+    if (bucketId) {
+      taskBody.bucketId = bucketId;
+    }
+
+    const output = this.graphFetch('/planner/tasks', 'POST', JSON.stringify(taskBody));
+    const task = JSON.parse(output) as PlannerTask;
+
+    // Add description if provided
+    if (options.description) {
+      this.graphFetch(
+        `/planner/tasks/${task.id}/details`,
+        'PATCH',
+        JSON.stringify({ description: options.description, previewType: 'description' }),
+      );
+    }
+
+    return mapPlannerTaskToWorkItem(task, bucketName);
+  }
+
   async addTag(taskId: string, bucketName: string): Promise<void> {
     const bucketId = await this.getBucketId(bucketName);
     if (!bucketId) {

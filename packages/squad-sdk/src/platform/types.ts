@@ -45,6 +45,7 @@ export interface PlatformAdapter {
   // Work Items / Issues
   listWorkItems(options: { tags?: string[]; state?: string; limit?: number }): Promise<WorkItem[]>;
   getWorkItem(id: number): Promise<WorkItem>;
+  createWorkItem(options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string }): Promise<WorkItem>;
   addTag(workItemId: number, tag: string): Promise<void>;
   removeTag(workItemId: number, tag: string): Promise<void>;
   addComment(workItemId: number, comment: string): Promise<void>;

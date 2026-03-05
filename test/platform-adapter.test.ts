@@ -11,7 +11,7 @@ import {
 import { detectWorkItemSource } from '../packages/squad-sdk/src/platform/detect.js';
 import { getRalphScanCommands } from '../packages/squad-sdk/src/platform/ralph-commands.js';
 import { mapPlannerTaskToWorkItem } from '../packages/squad-sdk/src/platform/planner.js';
-import type { PlatformType, WorkItem, PullRequest, WorkItemSource, HybridPlatformConfig } from '../packages/squad-sdk/src/platform/types.js';
+import type { PlatformType, WorkItem, PullRequest, WorkItemSource, HybridPlatformConfig, PlatformAdapter } from '../packages/squad-sdk/src/platform/types.js';
 
 // ─── Platform Detection from URL ───────────────────────────────────────
 
@@ -197,6 +197,94 @@ describe('WorkItem type', () => {
   });
 });
 
+// ─── PlatformAdapter createWorkItem Interface ─────────────────────────
+
+describe('PlatformAdapter createWorkItem interface', () => {
+  it('createWorkItem is part of the PlatformAdapter interface', () => {
+    // Verify the method signature exists in the type
+    const mockAdapter: PlatformAdapter = {
+      type: 'github' as PlatformType,
+      listWorkItems: async () => [],
+      getWorkItem: async (id: number) => ({ id, title: '', state: '', tags: [], url: '' }),
+      createWorkItem: async (options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string }) => ({
+        id: 1,
+        title: options.title,
+        state: 'new',
+        tags: options.tags ?? [],
+        url: 'https://example.com/1',
+      }),
+      addTag: async () => {},
+      removeTag: async () => {},
+      addComment: async () => {},
+      listPullRequests: async () => [],
+      createPullRequest: async () => ({ id: 1, title: '', sourceBranch: '', targetBranch: '', status: 'active' as const, author: '', url: '' }),
+      mergePullRequest: async () => {},
+      createBranch: async () => {},
+    };
+    expect(typeof mockAdapter.createWorkItem).toBe('function');
+  });
+
+  it('createWorkItem returns a WorkItem with correct fields', async () => {
+    const mockAdapter: PlatformAdapter = {
+      type: 'azure-devops' as PlatformType,
+      listWorkItems: async () => [],
+      getWorkItem: async (id: number) => ({ id, title: '', state: '', tags: [], url: '' }),
+      createWorkItem: async (options) => ({
+        id: 99,
+        title: options.title,
+        state: 'New',
+        tags: options.tags ?? [],
+        assignedTo: options.assignedTo,
+        url: 'https://dev.azure.com/org/proj/_workitems/edit/99',
+      }),
+      addTag: async () => {},
+      removeTag: async () => {},
+      addComment: async () => {},
+      listPullRequests: async () => [],
+      createPullRequest: async () => ({ id: 1, title: '', sourceBranch: '', targetBranch: '', status: 'active' as const, author: '', url: '' }),
+      mergePullRequest: async () => {},
+      createBranch: async () => {},
+    };
+
+    const wi = await mockAdapter.createWorkItem({
+      title: 'New feature request',
+      description: 'Build the thing',
+      tags: ['squad', 'squad:untriaged'],
+      type: 'User Story',
+    });
+    expect(wi.id).toBe(99);
+    expect(wi.title).toBe('New feature request');
+    expect(wi.tags).toEqual(['squad', 'squad:untriaged']);
+  });
+
+  it('createWorkItem works with minimal options (title only)', async () => {
+    const mockAdapter: PlatformAdapter = {
+      type: 'github' as PlatformType,
+      listWorkItems: async () => [],
+      getWorkItem: async (id: number) => ({ id, title: '', state: '', tags: [], url: '' }),
+      createWorkItem: async (options) => ({
+        id: 10,
+        title: options.title,
+        state: 'open',
+        tags: [],
+        url: 'https://github.com/owner/repo/issues/10',
+      }),
+      addTag: async () => {},
+      removeTag: async () => {},
+      addComment: async () => {},
+      listPullRequests: async () => [],
+      createPullRequest: async () => ({ id: 1, title: '', sourceBranch: '', targetBranch: '', status: 'active' as const, author: '', url: '' }),
+      mergePullRequest: async () => {},
+      createBranch: async () => {},
+    };
+
+    const wi = await mockAdapter.createWorkItem({ title: 'Quick fix' });
+    expect(wi.id).toBe(10);
+    expect(wi.title).toBe('Quick fix');
+    expect(wi.tags).toEqual([]);
+  });
+});
+
 // ─── PullRequest Type Shape ────────────────────────────────────────────
 
 describe('PullRequest type', () => {
@@ -282,6 +370,11 @@ describe('getRalphScanCommands', () => {
     it('returns git checkout for createBranch', () => {
       expect(cmds.createBranch).toContain('git checkout');
     });
+
+    it('returns gh issue create for createWorkItem', () => {
+      expect(cmds.createWorkItem).toContain('gh issue create');
+      expect(cmds.createWorkItem).toContain('{title}');
+    });
   });
 
   describe('azure-devops', () => {
@@ -316,6 +409,12 @@ describe('getRalphScanCommands', () => {
 
     it('returns git checkout for createBranch', () => {
       expect(cmds.createBranch).toContain('git checkout');
+    });
+
+    it('returns az boards work-item create for createWorkItem', () => {
+      expect(cmds.createWorkItem).toContain('az boards work-item create');
+      expect(cmds.createWorkItem).toContain('{title}');
+      expect(cmds.createWorkItem).toContain('{workItemType}');
     });
   });
 
@@ -378,6 +477,10 @@ describe('edge cases', () => {
     // mergePR should have {id}
     expect(ghCmds.mergePR).toContain('{id}');
     expect(adoCmds.mergePR).toContain('{id}');
+
+    // createWorkItem should have {title}
+    expect(ghCmds.createWorkItem).toContain('{title}');
+    expect(adoCmds.createWorkItem).toContain('{title}');
   });
 });
 
@@ -568,5 +671,11 @@ describe('getRalphScanCommands planner', () => {
 
   it('indicates PRs are not managed for mergePR', () => {
     expect(cmds.mergePR).toContain('does not manage PRs');
+  });
+
+  it('returns Graph API curl for createWorkItem', () => {
+    expect(cmds.createWorkItem).toContain('graph.microsoft.com');
+    expect(cmds.createWorkItem).toContain('planner/tasks');
+    expect(cmds.createWorkItem).toContain('{title}');
   });
 });

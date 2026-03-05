@@ -76,6 +76,45 @@ export class GitHubAdapter implements PlatformAdapter {
     };
   }
 
+  async createWorkItem(options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string }): Promise<WorkItem> {
+    const args = [
+      'gh', 'issue', 'create',
+      '--repo', this.repoFlag,
+      '--title', `"${options.title.replace(/"/g, '\\"')}"`,
+      '--json', 'number,title,state,labels,assignees,url',
+    ];
+    if (options.description) {
+      args.push('--body', `"${options.description.replace(/"/g, '\\"')}"`);
+    }
+    if (options.tags?.length) {
+      for (const tag of options.tags) {
+        args.push('--label', `"${tag}"`);
+      }
+    }
+    if (options.assignedTo) {
+      args.push('--assignee', options.assignedTo);
+    }
+
+    const output = this.exec(args.join(' '));
+    const issue = JSON.parse(output) as {
+      number: number;
+      title: string;
+      state: string;
+      labels: Array<{ name: string }>;
+      assignees: Array<{ login: string }>;
+      url: string;
+    };
+
+    return {
+      id: issue.number,
+      title: issue.title,
+      state: issue.state.toLowerCase(),
+      tags: issue.labels.map((l) => l.name),
+      assignedTo: issue.assignees[0]?.login,
+      url: issue.url,
+    };
+  }
+
   async addTag(workItemId: number, tag: string): Promise<void> {
     this.exec(`gh issue edit ${workItemId} --repo ${this.repoFlag} --add-label "${tag}"`);
   }

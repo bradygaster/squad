@@ -14,6 +14,7 @@ export interface RalphCommands {
   createBranch: string;
   createPR: string;
   mergePR: string;
+  createWorkItem: string;
 }
 
 /**
@@ -51,6 +52,8 @@ export function getPlannerRalphCommands(): RalphCommands {
       'echo "Planner does not manage PRs — use the repo adapter (GitHub or Azure DevOps)"',
     mergePR:
       'echo "Planner does not manage PRs — use the repo adapter (GitHub or Azure DevOps)"',
+    createWorkItem:
+      `curl -s -X POST -H "Authorization: Bearer $(az account get-access-token --resource-type ms-graph --query accessToken -o tsv)" -H "Content-Type: application/json" -d '{"planId":"{planId}","title":"{title}","bucketId":"{bucketId}"}' "https://graph.microsoft.com/v1.0/planner/tasks"`,
   };
 }
 
@@ -70,6 +73,8 @@ function getGitHubRalphCommands(): RalphCommands {
       'gh pr create --title "{title}" --body "{description}" --head {sourceBranch} --base {targetBranch}',
     mergePR:
       'gh pr merge {id} --merge',
+    createWorkItem:
+      'gh issue create --title "{title}" --body "{description}" --label "{tags}"',
   };
 }
 
@@ -89,5 +94,7 @@ function getAzureDevOpsRalphCommands(): RalphCommands {
       'az repos pr create --title "{title}" --description "{description}" --source-branch {sourceBranch} --target-branch {targetBranch}',
     mergePR:
       'az repos pr update --id {id} --status completed',
+    createWorkItem:
+      'az boards work-item create --type "{workItemType}" --title "{title}" --description "{description}" --fields "System.Tags={tags}"',
   };
 }
