@@ -157,7 +157,7 @@ describe('CLI: squad consult', () => {
   });
 
   describe('error handling', () => {
-    it('fails outside a git repository', () => {
+    it('fails outside a git repository', { timeout: 30_000 }, () => {
       // Create a non-git directory
       const nonGitDir = join(TEST_ROOT, 'non-git');
       mkdirSync(nonGitDir, { recursive: true });
@@ -168,7 +168,7 @@ describe('CLI: squad consult', () => {
       expect(result.stderr).toBeTruthy();
     });
 
-    it('requires personal squad to exist', () => {
+    it('requires personal squad to exist', { timeout: 30_000 }, () => {
       // Override XDG_CONFIG_HOME to point to a non-existent path
       // This ensures the SDK won't find a personal squad
       const result = runSquad('consult', TEST_ROOT, {

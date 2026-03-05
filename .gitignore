@@ -11,3 +11,6 @@ coverage/
 .test-cli-*
 # Docs site generated files
 docs/dist/
+
+.squad/.first-run
+.squad/config.json
