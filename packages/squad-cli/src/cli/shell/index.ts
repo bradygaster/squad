@@ -21,7 +21,7 @@ import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import type { ShellMessage } from './types.js';
-import { initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus } from '@bradygaster/squad-sdk';
+import { initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { buildCoordinatorPrompt, buildInitModePrompt, parseCoordinatorResponse, hasRosterEntries } from './coordinator.js';
@@ -164,7 +164,24 @@ export async function runShell(): Promise<void> {
 
   const registry = new SessionRegistry();
   const renderer = new ShellRenderer();
-  const teamRoot = process.cwd();
+
+  // Resolve teamRoot: local .squad/ → global squad → cwd (init mode)
+  const teamRoot = (() => {
+    const cwd = process.cwd();
+    // 1. Walk up from cwd looking for a local .squad/
+    const localSquad = resolveSquad(cwd);
+    if (localSquad) {
+      return pathResolve(localSquad, '..');
+    }
+    // 2. Fall back to global (personal) squad path
+    const globalPath = resolveGlobalSquadPath();
+    const globalSquadDir = join(globalPath, '.squad');
+    if (existsSync(globalSquadDir)) {
+      return globalPath;
+    }
+    // 3. No squad found — use cwd (triggers init mode)
+    return cwd;
+  })();
 
   // Session persistence — create or resume a previous session
   // Skip resume on first run (no team.md or .first-run marker present)
