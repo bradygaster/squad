@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { existsSync, cpSync, statSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs';
 import { MODELS } from '../runtime/constants.js';
 import type { SquadConfig, ModelSelectionConfig, RoutingConfig } from '../runtime/config.js';
+import type { WorkstreamDefinition } from '../streams/types.js';
 
 // ============================================================================
 // Template Resolution
@@ -109,6 +110,8 @@ export interface InitOptions {
   prompt?: string;
   /** If true, disable extraction from consult sessions (read-only consultations) */
   extractionDisabled?: boolean;
+  /** Optional workstream definitions — generates .squad/workstreams.json when provided */
+  streams?: WorkstreamDefinition[];
 }
 
 /**
@@ -844,6 +847,38 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     }
   }
   
+  // -------------------------------------------------------------------------
+  // Generate .squad/workstreams.json (when streams provided)
+  // -------------------------------------------------------------------------
+
+  if (options.streams && options.streams.length > 0) {
+    const workstreamsConfig = {
+      workstreams: options.streams,
+      defaultWorkflow: 'branch-per-issue',
+    };
+    const workstreamsPath = join(squadDir, 'workstreams.json');
+    await writeIfNotExists(workstreamsPath, JSON.stringify(workstreamsConfig, null, 2) + '\n');
+  }
+
+  // -------------------------------------------------------------------------
+  // Add .squad-workstream to .gitignore
+  // -------------------------------------------------------------------------
+
+  {
+    const workstreamIgnoreEntry = '.squad-workstream';
+    let currentIgnore = '';
+    if (existsSync(gitignorePath)) {
+      currentIgnore = readFileSync(gitignorePath, 'utf-8');
+    }
+    if (!currentIgnore.includes(workstreamIgnoreEntry)) {
+      const block = (currentIgnore && !currentIgnore.endsWith('\n') ? '\n' : '')
+        + '# Squad: workstream activation file (local to this machine)\n'
+        + workstreamIgnoreEntry + '\n';
+      await appendFile(gitignorePath, block);
+      createdFiles.push(toRelativePath(gitignorePath));
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Create .first-run marker
   // -------------------------------------------------------------------------

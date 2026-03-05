@@ -3,7 +3,7 @@ Feature: Init command
   Scenario: Init in existing project shows ready message
     Given the current directory has a ".squad" directory
     When I run "squad init"
-    Then the output contains "Scaffold ready"
+    Then the output contains "Your team is ready"
     And the output contains "already exists"
     And the exit code is 0
 
