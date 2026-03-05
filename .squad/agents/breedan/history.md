@@ -175,8 +175,6 @@ What a real user would encounter that no test catches:
 
 ### Squad Migrate E2E Tests — 2025-03-05
 
-**Requested by:** William Hallatt — test coverage for `squad migrate` command and shell reinit guard bug fix from branch `williamhallatt/197-migration-experience`.
-
 **Context:** The migrate command was added to safely upgrade .squad/ directories (backup → clean → reinit → restore). A critical bug where re-launching shell after migrate would trigger re-initialization (overwriting agent files) was fixed by cleaning up `.first-run` and `.init-prompt` markers after migration.
 
 **Tests created:** `test/migrate-e2e.test.ts` — 23 tests, all passing.

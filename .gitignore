@@ -8,6 +8,7 @@ coverage/
 # Squad: ignore generated logs
 .squad/orchestration-log/
 .squad/log/
+.squad/config.json
 .test-cli-*
 # Docs site generated files
 docs/dist/

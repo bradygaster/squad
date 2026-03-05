@@ -804,7 +804,7 @@ All labeled squad:hockney for routing. Each issue includes: what's missing, why 
 - **Pre-existing failure:** Line 94 gitattributes content mismatch (unrelated, not introduced by this change).
 - **Lesson:** On Windows, use `join(root, '.squad', 'templates')` not `join(root, '.squad/templates')` — forward-slash segments in `join` args work on Node but it's better practice to use separate args.
 
-### Migration command test coverage — branch williamhallatt/197-migration-experience (2026-03-05)
+### Migration command test coverage (2026-03-05)
 **Status:** Complete — 30 tests added, all pass.
 - **Files created:**
   - `test/migrate-command.test.ts` (19 tests for `runMigrate`)
