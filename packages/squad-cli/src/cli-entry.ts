@@ -43,6 +43,8 @@ async function main(): Promise<void> {
     console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
     console.log(`             Flags: --global (upgrade personal squad), --migrate-directory (rename .ai-team/ → .squad/)`);
+    console.log(`  ${BOLD}migrate${RESET}    Back up, clean, and reinitialize .squad/ (version migration helper)`);
+    console.log(`             Flags: --dry-run (preview), --backup-dir <path> (custom backup location)`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>]`);
@@ -61,7 +63,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
     console.log(`             Usage: import <file> [--force]`);
     console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
-    console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
+    console.log(`             Usage: scrub-emails [directory] (default: .squad/)`);
     console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser`);
     console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>] [copilot flags...]`);
     console.log(`             Examples: start --tunnel --yolo`);
@@ -191,13 +193,22 @@ async function main(): Promise<void> {
 
   if (cmd === 'scrub-emails') {
     const { scrubEmails } = await import('./cli/core/email-scrub.js');
-    const targetDir = args[1] || '.ai-team';
+    const targetDir = args[1] || '.squad';
     const count = await scrubEmails(targetDir);
     if (count > 0) {
       console.log(`Scrubbed ${count} email address(es).`);
     } else {
       console.log('No email addresses found.');
     }
+    return;
+  }
+
+  if (cmd === 'migrate') {
+    const { runMigrate } = await import('./cli/core/migrate.js');
+    const dryRun = args.includes('--dry-run');
+    const backupDirIdx = args.indexOf('--backup-dir');
+    const backupDir = backupDirIdx !== -1 ? args[backupDirIdx + 1] : undefined;
+    await runMigrate(process.cwd(), { dryRun, backupDir });
     return;
   }
 

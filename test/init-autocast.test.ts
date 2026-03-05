@@ -174,7 +174,7 @@ describe('auto-cast trigger conditions', () => {
     // Missing .init-prompt → auto-cast must NOT fire
   });
 
-  it('auto-cast should NOT fire: team.md does not exist at all', () => {
+  it('auto-cast should fire after scaffold: team.md does not exist at all', () => {
     // Setup: no team.md, just .init-prompt
     fs.writeFileSync(path.join(squadDir, '.init-prompt'), 'Build something');
 
@@ -183,7 +183,8 @@ describe('auto-cast trigger conditions', () => {
 
     expect(teamFileExists).toBe(false);
     expect(initPromptExists).toBe(true);
-    // No team.md → auto-cast guard in index.ts (line 906) prevents firing
+    // No team.md → shell scaffolds .squad/ first (creating team.md with empty roster),
+    // then falls through to handleInitCast which uses the stored .init-prompt.
   });
 
   it('stored .init-prompt content is trimmed before use', () => {

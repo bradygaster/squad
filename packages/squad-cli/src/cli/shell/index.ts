@@ -7,7 +7,7 @@
 
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { join, resolve as pathResolve } from 'node:path';
+import { join, resolve as pathResolve, basename } from 'node:path';
 import React from 'react';
 import { render } from 'ink';
 import { App } from './components/App.js';
@@ -21,7 +21,7 @@ import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import type { ShellMessage } from './types.js';
-import { initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { buildCoordinatorPrompt, buildInitModePrompt, parseCoordinatorResponse, hasRosterEntries } from './coordinator.js';
@@ -1001,15 +1001,23 @@ export async function runShell(): Promise<void> {
       return;
     }
 
-    // Guard: require a Squad team before processing work requests
+    // Guard: require a Squad team before processing work requests.
+    // If .squad/ is missing entirely, scaffold it so /init and plain messages work.
     const teamFile = join(teamRoot, '.squad', 'team.md');
     if (!existsSync(teamFile)) {
-      shellApi?.addMessage({
-        role: 'system',
-        content: '\u26A0 No Squad team found. Run /init to create your team first.',
-        timestamp: new Date(),
-      });
-      return;
+      try {
+        await sdkInitSquad({
+          teamRoot,
+          projectName: basename(teamRoot) || 'my-project',
+          agents: [{ name: 'scribe', role: 'scribe', displayName: 'Scribe' }],
+          skipExisting: true,
+          includeWorkflows: true,
+          includeTemplates: true,
+          version: pkg.version,
+        });
+      } catch {
+        // If scaffold fails, fall through — the roster check below will enter init mode
+      }
     }
 
     // Check if roster is actually populated — if not, enter Init Mode (cast a team)

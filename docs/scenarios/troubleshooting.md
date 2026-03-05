@@ -4,35 +4,6 @@ Common issues and fixes for Squad installation and usage.
 
 ---
 
-## `npx github:bradygaster/squad` appears to hang
-
-**Problem:** Running the install command shows a frozen npm spinner. Nothing happens.
-
-**Cause:** npm resolves `github:` package specifiers via `git+ssh://git@github.com/...`. If no SSH agent is running (or your key isn't loaded), git prompts for your passphrase on the TTY — but npm's progress spinner overwrites the prompt, making it invisible. This is an npm TTY handling issue, not a Squad bug.
-
-**Fix (choose one):**
-
-1. **Start your SSH agent first** (recommended):
-   ```bash
-   eval "$(ssh-agent -s)"
-   ssh-add
-   ```
-   Then re-run `npx github:bradygaster/squad`.
-
-2. **Disable npm's progress spinner** to reveal the prompt:
-   ```bash
-   npx --progress=false github:bradygaster/squad
-   ```
-
-3. **Use HTTPS instead of SSH** by configuring git:
-   ```bash
-   git config --global url."https://github.com/".insteadOf git@github.com:
-   ```
-
-**Reference:** [#30](https://github.com/bradygaster/squad/issues/30)
-
----
-
 ## `gh` CLI not authenticated
 
 **Problem:** GitHub Issues, PRs, Ralph, or Project Boards commands fail with authentication errors.
@@ -60,9 +31,9 @@ Common issues and fixes for Squad installation and usage.
 
 ## Node.js version too old
 
-**Problem:** `npx github:bradygaster/squad` fails with an engine compatibility error, or Squad behaves unexpectedly.
+**Problem:** Squad fails with an engine compatibility error, or behaves unexpectedly.
 
-**Cause:** Squad requires Node.js 22.0.0 or later (enforced via `engines` in `package.json`).
+**Cause:** Squad requires Node.js 20 or later (enforced via `engines` in `package.json`).
 
 **Fix:**
 
@@ -70,9 +41,9 @@ Common issues and fixes for Squad installation and usage.
 node --version
 ```
 
-If below v22, upgrade Node.js:
-- **nvm (macOS/Linux):** `nvm install 22 && nvm use 22`
-- **nvm-windows:** `nvm install 22 && nvm use 22`
+If below v20, upgrade Node.js:
+- **nvm (macOS/Linux):** `nvm install 20 && nvm use 20`
+- **nvm-windows:** `nvm install 20 && nvm use 20`
 - **Direct download:** [nodejs.org](https://nodejs.org/)
 
 ---
@@ -89,7 +60,7 @@ If below v22, upgrade Node.js:
    ```bash
    ls .github/agents/squad.agent.md
    ```
-   If missing, re-run `npx github:bradygaster/squad`.
+   If missing, re-run `squad init` (or `npx @bradygaster/squad-cli init`).
 
 2. Restart your Copilot session — close and reopen the terminal or editor.
 
@@ -97,17 +68,20 @@ If below v22, upgrade Node.js:
 
 ## Upgrade doesn't change anything
 
-**Problem:** Running `npx github:bradygaster/squad upgrade` completes but nothing changes.
+**Problem:** Running `squad upgrade` completes but nothing changes.
 
 **Cause:** You may already be on the latest version, or npm cached an old version.
 
 **Fix:**
 
-1. Check current version in `.github/agents/squad.agent.md` (frontmatter `version:` field).
-
-2. Clear npm cache and retry:
+1. Check current version:
    ```bash
-   npx --yes github:bradygaster/squad upgrade
+   squad --version
+   ```
+
+2. If stale, clear the npm cache and reinstall:
+   ```bash
+   npm install -g @bradygaster/squad-cli@latest
    ```
 
 ---

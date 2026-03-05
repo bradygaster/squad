@@ -9,18 +9,25 @@ Update Squad-owned files to the latest version without touching your team state.
 From your repo root:
 
 ```bash
-npx github:bradygaster/squad upgrade
+# Global install
+squad upgrade
+
+# Local install (npm --save-dev)
+npx squad upgrade
+
+# One-off (no install)
+npx @bradygaster/squad-cli upgrade
 ```
 
 Squad detects your installed version, updates Squad-owned files, and runs any needed migrations:
 
 ```
-✅ upgraded coordinator from 0.1.0 to 0.2.0
-✅ upgraded .ai-team-templates/
+✅ upgraded coordinator from 0.8.18 to 0.8.21
+✅ upgraded .squad/templates/
 
-.ai-team/ untouched — your team state is safe
+.squad/ untouched — your team state is safe
 
-Squad is upgraded. (v0.2.0)
+Squad is upgraded. (v0.8.21)
 ```
 
 That's it.
@@ -32,14 +39,14 @@ That's it.
 | File | Updated? | Notes |
 |------|----------|-------|
 | `.github/agents/squad.agent.md` | ✅ Yes | Overwritten with latest coordinator logic |
-| `.ai-team-templates/` | ✅ Yes | Overwritten with latest templates |
+| `.squad/templates/` | ✅ Yes | Overwritten with latest templates |
 | `.github/workflows/squad-*.yml` | ✅ Yes | Overwritten with latest squad workflows |
 | `.github/copilot-instructions.md` | ⚡ Conditional | Updated only if @copilot is enabled on the team |
-| `.ai-team/` | ❌ Never | Your team's knowledge, decisions, casting state, skills |
+| `.squad/` | ❌ Never | Your team's knowledge, decisions, casting state, skills |
 
-Squad-owned files (`squad.agent.md` and `.ai-team-templates/`) are replaced entirely. Don't put custom changes in them — they'll be lost on upgrade.
+Squad-owned files (`squad.agent.md` and `.squad/templates/`) are replaced entirely. Don't put custom changes in them — they'll be lost on upgrade.
 
-Your team state in `.ai-team/` is never touched. Agent charters, histories, decisions, casting state, skills, and session logs are all safe.
+Your team state in `.squad/` is never touched. Agent charters, histories, decisions, casting state, skills, and session logs are all safe.
 
 ---
 
@@ -51,39 +58,20 @@ Migrations are:
 - **Additive** — they only create new files or directories, never modify existing ones
 - **Idempotent** — safe to re-run; if the change already exists, it's skipped
 
-Example: upgrading to v0.2.0 creates `.ai-team/skills/` if it doesn't already exist.
-
 ---
 
-## Migrating .ai-team/ → .squad/ (v0.5.0+)
+## Migrating .ai-team/ → .squad/
 
-In Squad v0.5.0, the team state directory was renamed from `.ai-team/` to `.squad/`. Existing repos continue to work — Squad detects both. If you're still on `.ai-team/`, you'll see a deprecation warning.
-
-**To migrate your repo:**
+Very early versions of Squad used `.ai-team/` instead of `.squad/`. The `upgrade --migrate-directory` flag handles this rename:
 
 ```bash
-# Step 1: Upgrade to get the latest migration tooling
-npx github:bradygaster/squad upgrade
-
-# Step 2: Rename the directory
-npx github:bradygaster/squad upgrade --migrate-directory
+squad upgrade --migrate-directory
 ```
 
-Then commit:
-
-```bash
-git add -A
-git commit -m "chore: migrate .ai-team/ → .squad/"
-```
-
-**What the migration does:**
+What it does:
 - Renames `.ai-team/` → `.squad/`
 - Updates `.gitignore` and `.gitattributes` references
 - Scrubs email addresses from migrated files (PII cleanup)
-
-**Timeline:** `.ai-team/` support continues through v0.6.0. Migration becomes required in v1.0.0.
-
-**Full details:** See the [Migration Guide](../migration/v0.5.0-squad-rename.md).
 
 ---
 
@@ -95,56 +83,47 @@ git commit -m "chore: migrate .ai-team/ → .squad/"
 
 The version is displayed in the agent picker across all Copilot hosts (VS Code, CLI, Visual Studio):
 
-```yaml
-name: Squad (vX.Y.Z)
+```
+Squad (vX.Y.Z)
 ```
 
 When you select agents in Copilot, you'll see **"Squad (vX.Y.Z)"** in the dropdown — making it immediately clear which version you're running.
 
-### 2. Version Field (For Reference)
-
-The frontmatter also includes a standalone version field:
-
-```yaml
-version: "X.Y.Z"
-```
-
-### 3. CLI Check
+### 2. CLI Check
 
 You can also check your installed version from the command line:
 
 ```bash
-npx github:bradygaster/squad --version
-```
+# Global install
+squad --version
 
-The output will show your installed version (e.g., `X.Y.Z`).
+# Local install
+npx squad --version
+
+# One-off
+npx @bradygaster/squad-cli --version
+```
 
 ---
 
 ## Already Up to Date
 
-If you're already on the latest version:
-
-```bash
-npx github:bradygaster/squad upgrade
-```
+If you're already on the latest version, `squad upgrade` reports it and still runs any pending migrations:
 
 ```
-✅ Already up to date (v0.2.0)
+✅ Already up to date (v0.8.21)
 ```
-
-Squad still runs any missing migrations in case a prior upgrade was interrupted.
 
 ---
 
 ## 2. Commit the Upgrade
 
 ```bash
-git add .github/agents/squad.agent.md .ai-team-templates/
-git commit -m "Upgrade Squad to v0.2.0"
+git add .github/agents/squad.agent.md .squad/templates/
+git commit -m "Upgrade Squad to vX.Y.Z"
 ```
 
-No changes to `.ai-team/` — the diff is limited to Squad-owned files.
+No changes to `.squad/` — the diff is limited to Squad-owned files.
 
 ---
 
@@ -153,3 +132,4 @@ No changes to `.ai-team/` — the diff is limited to Squad-owned files.
 - **Upgrade is safe.** It only overwrites files that Squad owns. Your team state is never modified.
 - **Don't customize `squad.agent.md`.** Any changes you make will be overwritten on the next upgrade. If you need custom behavior, use directives in `decisions.md` instead.
 - **Re-running upgrade is harmless.** If you're not sure whether an upgrade completed, run it again. It's idempotent.
+- **After a major version jump**, consider running `squad migrate` instead of `squad upgrade` — it performs a full backup, clean, and reinit in one step. See the [Migration Guide](../get-started/migration.md).

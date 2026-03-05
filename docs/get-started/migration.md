@@ -16,7 +16,7 @@
 - [Scenario 9: Using Squad SDK Programmatically](#scenario-9-using-squad-sdk-programmatically)
 - [Troubleshooting](#troubleshooting)
 - [Rolling Back](#rolling-back)
-- [What's New in v0.8.18](#whats-new-in-v0818)
+- [What's New in v0.8.21+](#whats-new-in-v0821)
 
 ---
 
@@ -27,7 +27,7 @@
 | `npx github:bradygaster/squad` | `npx @bradygaster/squad-cli` |
 | `@bradygaster/create-squad` | `@bradygaster/squad-cli` |
 | `.ai-team/` directory | `.squad/` directory |
-| v0.5.4 (beta) | v0.8.18 |
+| v0.5.4 (beta) | v0.8.x |
 
 ---
 
@@ -37,21 +37,29 @@ Never used Squad before? Start here.
 
 ### Prerequisites
 
-- Node.js 18 or later
+- Node.js 20 or later
 - npm 9 or later
 - A GitHub account with [GitHub Copilot](https://github.com/features/copilot) enabled
 - `gh` CLI authenticated (`gh auth status` should show you logged in)
 
 ### Install
 
+**Global (recommended for personal use):**
+
 ```bash
 npm install -g @bradygaster/squad-cli
 ```
 
-Or run without installing:
+**Project-local (recommended for team repos):**
 
 ```bash
-npx @bradygaster/squad-cli
+npm install --save-dev @bradygaster/squad-cli
+```
+
+**No install required (one-off):**
+
+```bash
+npx @bradygaster/squad-cli init
 ```
 
 ### Initialize a Project
@@ -80,12 +88,60 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
 ### What Changed
 
 - **TypeScript rewrite:** Entire codebase ported from JavaScript to TypeScript (strict mode).
-- **`.squad/` directory format:** v0.5.4 format is incompatible with v0.8.18. You must reinitialize.
+- **`.squad/` directory format:** v0.5.4 format is incompatible with v0.8.x. You must reinitialize.
 - **Command structure:** Some commands were reorganized or renamed.
 - **SDK API:** The public API changed significantly if you were using Squad programmatically.
 - **Distribution:** npm-only. The `npx github:` install path is gone.
 
-### Step-by-Step
+### Automated Migration (Recommended)
+
+Squad v0.8.20+ includes a `migrate` command that handles backup, cleanup, and reinit in one step.
+
+First, install or update to the latest version using whichever method you prefer:
+
+```bash
+# Global install
+npm install -g @bradygaster/squad-cli@latest
+
+# Project-local
+npm install --save-dev @bradygaster/squad-cli@latest
+
+# One-off (no install)
+# (use npx @bradygaster/squad-cli migrate directly below)
+```
+
+Then run the migration from your repo root:
+
+```bash
+# Global or local install
+squad migrate
+
+# npx (no install)
+npx @bradygaster/squad-cli migrate
+```
+
+Preview what it will do first (nothing is changed):
+
+```bash
+squad migrate --dry-run
+```
+
+`squad migrate` will:
+
+1. Back up your existing `.squad/` to `.squad-backup-{timestamp}/`
+2. Remove Squad-owned scaffold files
+3. Run `squad init` for a clean, current scaffold
+4. Restore your user-owned files: `agents/`, `decisions.md`, `routing.md`, `team.md`, `skills/`
+
+Then verify:
+
+```bash
+squad doctor
+```
+
+### Manual Step-by-Step
+
+If you prefer to migrate manually or can't run the CLI yet:
 
 1. **Back up your existing `.squad/` directory:**
 
@@ -93,16 +149,20 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
    cp -r .squad .squad-v054-backup
    ```
 
-2. **Uninstall the old version (if globally installed):**
+2. **Uninstall the old package (if you had it globally):**
 
    ```bash
    npm uninstall -g @bradygaster/create-squad
    ```
 
-3. **Install v0.8.18:**
+3. **Install the latest version:**
 
    ```bash
-   npm install -g @bradygaster/squad-cli@0.8.18
+   # Global
+   npm install -g @bradygaster/squad-cli@latest
+
+   # Project-local
+   npm install --save-dev @bradygaster/squad-cli@latest
    ```
 
 4. **Remove the old `.squad/` directory:**
@@ -114,7 +174,11 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
 5. **Reinitialize:**
 
    ```bash
+   # Global or local install
    squad init
+
+   # npx (no install)
+   npx @bradygaster/squad-cli init
    ```
 
 6. **Manually migrate your customizations.** Open `.squad-v054-backup/` and copy over any custom agent charters, team roster entries, or decisions into the new `.squad/` directory structure. The new format uses Markdown files (not JSON).
@@ -144,8 +208,8 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
 
 ### Key Format Changes
 
-| v0.5.4 | v0.8.18 |
-|--------|---------|
+| v0.5.4 | v0.8.x |
+|--------|--------|
 | `.squad/config.json` | `.squad/team.md` (Markdown with YAML front matter) |
 | JSON decision log | `.squad/decisions.md` (append-only Markdown) |
 | Flat agent files | `.squad/agents/{name}/charter.md` (directory per agent) |
@@ -157,7 +221,11 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
 If you're already on any v0.8.x release, this is a simple update.
 
 ```bash
+# Global
 npm install -g @bradygaster/squad-cli@latest
+
+# Project-local
+npm install --save-dev @bradygaster/squad-cli@latest
 ```
 
 Verify the version:
@@ -165,8 +233,6 @@ Verify the version:
 ```bash
 squad --version
 ```
-
-Expected output: `0.8.18` (or `0.8.18-preview.N`).
 
 Your `.squad/` directory is compatible — no reinitialization needed.
 
@@ -216,7 +282,21 @@ If you had this in scripts or CI/CD workflows, update every reference.
 
 ## Scenario 6: My .squad/ Directory Broke After Upgrading
 
-If `squad doctor` fails or commands error out after upgrading, follow these steps.
+If `squad doctor` fails or commands error out after upgrading, the fastest fix is `squad migrate`.
+
+### Automated (Recommended)
+
+```bash
+# Global or local install
+squad migrate
+
+# npx (no install)
+npx @bradygaster/squad-cli migrate
+```
+
+Preview first with `--dry-run` if you want to see what it will do before committing.
+
+### Manual
 
 ### 1. Back Up
 
@@ -290,15 +370,15 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
   run: npx github:bradygaster/squad
 ```
 
-### After (v0.8.18)
+### After
 
 ```yaml
 - uses: actions/setup-node@v4
   with:
-    node-version: '18'
+    node-version: '20'
 
 - name: Install Squad
-  run: npm install -g @bradygaster/squad-cli@0.8.18
+  run: npm install -g @bradygaster/squad-cli@latest
 
 - name: Run Squad
   run: squad doctor && squad status
@@ -309,9 +389,9 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 ### Key CI/CD Notes
 
 - Set `GITHUB_TOKEN` as an environment variable. Squad requires it for GitHub Copilot operations.
-- Pin to a specific version (`@0.8.18`) in CI to avoid surprise upgrades.
-- If you use `npx`, use `npx @bradygaster/squad-cli@0.8.18` with a pinned version.
-- Node.js 18+ is required. Update your workflow's `setup-node` action if needed.
+- Pin to a specific version (e.g., `@0.8.21`) in CI to avoid surprise upgrades.
+- If you use `npx`, use `npx @bradygaster/squad-cli@latest` or a pinned version.
+- Node.js 20+ is required. Update your workflow's `setup-node` action if needed.
 
 ---
 
@@ -428,13 +508,13 @@ Clear the npx cache and retry:
 
 ```bash
 npx clear-npx-cache
-npx @bradygaster/squad-cli@0.8.18
+npx @bradygaster/squad-cli@latest
 ```
 
 Or install globally to bypass npx caching entirely:
 
 ```bash
-npm install -g @bradygaster/squad-cli@0.8.18
+npm install -g @bradygaster/squad-cli@latest
 ```
 
 ### Wrong version installed
@@ -449,7 +529,7 @@ If it shows an old version:
 
 ```bash
 npm uninstall -g @bradygaster/squad-cli
-npm install -g @bradygaster/squad-cli@0.8.18
+npm install -g @bradygaster/squad-cli@latest
 ```
 
 ### Team roster gone after upgrade
@@ -473,54 +553,55 @@ Common causes:
 
 - Missing `.squad/` directory — run `squad init`.
 - Missing `GITHUB_TOKEN` — see [GITHUB_TOKEN issues](#github_token-issues) above.
-- Node.js too old — upgrade to Node.js 18+.
+- Node.js too old — upgrade to Node.js 20+.
 - Corrupted `.squad/` files — back up, remove, and reinitialize.
 
 ### Node.js version too old
 
-Squad requires Node.js 18 or later. Check your version:
+Squad requires Node.js 20 or later. Check your version:
 
 ```bash
 node --version
 ```
 
-If below 18, upgrade via [nodejs.org](https://nodejs.org/) or your preferred version manager:
+If below 20, upgrade via [nodejs.org](https://nodejs.org/) or your preferred version manager:
 
 ```bash
 # nvm
-nvm install 18
-nvm use 18
+nvm install 20
+nvm use 20
 
 # fnm
-fnm install 18
-fnm use 18
+fnm install 20
+fnm use 20
 ```
 
 ---
 
 ## Rolling Back
 
-If you need to downgrade from v0.8.18:
+If you need to downgrade from the current version, specify the version you want:
 
 ```bash
-npm install -g @bradygaster/squad-cli@0.8.17
+npm install -g @bradygaster/squad-cli@0.8.18
 ```
 
 ### Warnings
 
 - **The GitHub-native distribution (`npx github:bradygaster/squad`) is permanently removed.** You cannot roll back to that install method.
 - **`.squad/` directory format changed between v0.5.4 and v0.8.x.** If you roll back to v0.5.4, your current `.squad/` directory will not be compatible. Keep backups.
-- Rolling back within the v0.8.x line (e.g., 0.8.18 to 0.8.17) should be safe — the `.squad/` format is stable across v0.8.x releases.
+- Rolling back within the v0.8.x line (e.g., 0.8.21 to 0.8.18) should be safe — the `.squad/` format is stable across v0.8.x releases.
 
 ---
 
-## What's New in v0.8.18
+## What's New in v0.8.21+
 
+- **`squad migrate`:** New command for automated backup, clean, and reinit — the recommended path for any major version migration.
+- **Shell `/init` fix:** The interactive shell now scaffolds `.squad/` automatically if it's missing, so `/init "description"` works even after deleting the directory.
 - **Remote Squad Mode:** `squad link`, `squad init --mode remote`, and dual-root path resolution for team identity directories.
 - **`squad doctor`:** 9-check setup validation with clear pass/fail output.
 - **npm-only distribution:** Simpler install, semantic versioning, stable and insider channels.
 - **TypeScript strict mode:** Full type safety across the SDK and CLI.
-- **Semver fix:** Version format now follows the semver spec (`0.8.18-preview.N` instead of `0.8.18.N-preview`).
 
 For the full list of changes, see the [CHANGELOG](../CHANGELOG.md).
 
