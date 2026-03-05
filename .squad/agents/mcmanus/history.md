@@ -1005,3 +1005,46 @@ Multi-agent build of Rock-Paper-Scissors game with 10 AI strategies, Docker infr
 
 
 📌 Team update (2026-03-04T17:52:00Z): Migration docs file-safety guidance added — doctor command now live in CLI (fixes #188) — decided by Keaton, implemented by McManus
+
+### 2026-03-[Current]: Documentation sweep for `squad migrate` consistency (Issue #197)
+
+**Status:** Complete. Sweep across migration-related docs to ensure consistency with new `squad migrate` command and restore functionality.
+
+**What was fixed:**
+1. **docs/reference/cli.md** — Added missing `squad migrate` and related flags to command table (count: 16 → 17 commands)
+   - Added: `squad migrate`, `squad migrate --dry-run`, `squad migrate --restore [path]`
+2. **docs/scenarios/disaster-recovery.md** — Updated all 9 sections from `.ai-team/` → `.squad/`
+   - Changed: directory paths, commands, file references
+   - Added: explicit mention of `squad migrate` in section 6 (Upgrade broke something) as the recovery tool
+   - Added: tip about using `squad migrate` for broken `.squad/` directories
+3. **docs/scenarios/keep-my-squad.md** — Updated from deprecated `npx github:bradygaster/squad` to `squad init` and modern npm install
+   - Changed: export/import examples, version upgrade examples, command references
+   - Updated: `.ai-team/` → `.squad/`, `.ai-team-templates/` → `.squad/templates/`
+4. **README.md** — Added `squad migrate` command to commands table
+   - Count: 15 → 16 commands
+   - Added full description with --dry-run and --restore flags
+
+**Files not changed (determined out of scope):**
+- Blog posts (historical, not end-user facing in current release)
+- General scenario docs (mid-project, new-project, etc.) — these use old commands but not migration-specific
+
+**Consistency check performed:**
+- All three key migration docs (migration.md, upgrading.md, troubleshooting.md) already had proper `squad migrate` coverage
+- No inconsistencies found between what migrate does across these files
+- `--restore` flag well-documented in migration.md and troubleshooting.md
+
+**Tone and style:**
+- Maintained consistent, action-oriented voice ("Back up", "Reinitialize", "Restore")
+- No marketing language added — purely functional updates
+- All changes are substantiated by actual code behavior described in the migration context
+
+**Learnings:**
+1. **Documentation fragmentation risk:** Scenario docs referencing `.ai-team/` should be addressed in a separate sweep targeting all scenario files (not just migration-focused ones).
+2. **Command inventory pattern:** CLI reference and README command counts need to stay synchronized. This is a manual maintenance risk — consider automation.
+3. **Major version boundaries:** The `.ai-team/` → `.squad/` transition is a hard boundary (v0.5.4 → v0.8.x). Docs should clearly signal this is non-backwards-compatible, which they now do.
+4. **Restore UX:** Having both `--restore` (auto-detect) and `--restore [path]` (explicit) is well-documented and matches actual CLI behavior.
+
+
+---
+
+📌 **Team update (2026-03-05T03:25:00Z):** Documentation sweep for migrate --restore changes completed by McManus. Updated cli.md, disaster-recovery.md, keep-my-squad.md, README.md to reflect new command and flag. Migration-related docs now synchronized.

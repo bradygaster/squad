@@ -2001,4 +2001,26 @@ This is low-effort, high-value — a broken link on the GitHub Pages site erodes
 **Judgment Call:** Preserved both origin/insider (singular, existing) and origin/insiders (plural, new). Conservative approach pending Brady confirmation.
 **Action Required:** Brady to decide: keep origin/insiders (matches decision) + delete origin/insider, or keep origin/insider and delete origin/insiders.
 **Status:** Infrastructure ready. Awaiting final branch naming confirmation.
+### 2026-03-05: Documentation Sweep — migrate --restore Changes
+**By:** McManus (DevRel)
+**What:** Performed targeted documentation sweep to synchronize docs after adding `squad migrate` command and `--restore` flag. Updated 4 files:
+- docs/reference/cli.md (added `squad migrate` command documentation)
+- docs/scenarios/disaster-recovery.md (modernized `.ai-team/` → `.squad/`, all paths updated)
+- docs/scenarios/keep-my-squad.md (updated commands and examples)
+- README.md (updated command table, added 16th command)
+
+Verified 3 files already consistent:
+- docs/get-started/migration.md (full `squad migrate` coverage present)
+- docs/scenarios/upgrading.md (already references migrate for major upgrades)
+- docs/scenarios/troubleshooting.md (already documents --restore)
+
+**Why:** After PR adding migrate command merged, reference docs, README, and scenario docs needed consistency sweep. Users need to know to use `squad migrate --restore` for recovery, not manual steps.
+
+**Outcomes:**
+1. All migration-related docs now synchronously reference `squad migrate` and `--restore` flag
+2. Disaster recovery guidance modernized — users know to use migrate, not manual restore
+3. No manual restore steps remain — all restore guidance points to `squad migrate --restore`
+4. General scenario docs (non-migration) still reference old distribution methods, deferred for future sweep
+
+**Implications:** Users upgrading from v0.5.4 or recovering from `.squad/` corruption now have clear, consistent guidance pointing to migrate command.
 
