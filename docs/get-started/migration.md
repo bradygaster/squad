@@ -139,6 +139,30 @@ Then verify:
 squad doctor
 ```
 
+#### If Something Went Wrong
+
+Your backup is still intact at `.squad-backup-{timestamp}/`. To fully restore your previous state:
+
+```bash
+# Remove the new .squad/ directory
+rm -rf .squad
+
+# Restore from backup (replace the timestamp with your actual backup folder name)
+cp -r .squad-backup-{timestamp} .squad
+```
+
+Once restored, you can retry the migration or revert to your previous Squad version:
+
+```bash
+npm install -g @bradygaster/squad-cli@0.8.18
+```
+
+When you're satisfied everything works, you can delete the backup:
+
+```bash
+rm -rf .squad-backup-{timestamp}
+```
+
 ### Manual Step-by-Step
 
 If you prefer to migrate manually or can't run the CLI yet:
@@ -530,6 +554,24 @@ If it shows an old version:
 ```bash
 npm uninstall -g @bradygaster/squad-cli
 npm install -g @bradygaster/squad-cli@latest
+```
+
+### How do I restore from a `squad migrate` backup?
+
+`squad migrate` saves a full backup to `.squad-backup-{timestamp}/` before making any changes. To restore:
+
+```bash
+# Remove the current .squad/ directory
+rm -rf .squad
+
+# Restore from backup (use your actual backup folder name)
+cp -r .squad-backup-{timestamp} .squad
+```
+
+To find your backup folder if you've forgotten the timestamp:
+
+```bash
+ls -d .squad-backup-*/
 ```
 
 ### Team roster gone after upgrade
