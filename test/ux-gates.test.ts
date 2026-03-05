@@ -70,7 +70,7 @@ describe('UX Gates', () => {
     const output = harness.captureFrame();
     
     expect(output).toMatch(/Squad Status/i);
-    expect(output).toMatch(/Here:/i);
+    expect(output).toMatch(/Active squad:/i);
   });
 
   it('Help groups commands into categories', async () => {

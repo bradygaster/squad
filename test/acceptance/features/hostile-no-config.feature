@@ -15,7 +15,7 @@ Feature: Hostile — Missing .squad/ configuration
   Scenario: Status reports no squad without .squad/ directory
     Given a directory without a ".squad" directory
     When I run "squad status" in the temp directory
-    Then the output contains "none"
+    Then the output contains "not initialized"
     And the exit code is 0
 
   Scenario: Doctor runs without .squad/ directory

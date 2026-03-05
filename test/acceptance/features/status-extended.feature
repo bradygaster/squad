@@ -12,4 +12,4 @@ Feature: Status command extended
     Given a directory without a ".squad" directory
     When I run "squad status" in the temp directory
     Then the output does not contain "Active squad:  repo"
-    And the exit code is 0
+    And the exit code is 1
