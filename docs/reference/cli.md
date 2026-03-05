@@ -16,8 +16,8 @@ npm install -g @bradygaster/squad-cli
 # One-off with npx
 npx @bradygaster/squad-cli init
 
-# Latest from GitHub (bleeding edge)
-squad init
+# Insider builds (bleeding edge)
+npm install -g @bradygaster/squad-cli@insider
 ```
 
 ---

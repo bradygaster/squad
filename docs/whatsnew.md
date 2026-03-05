@@ -7,7 +7,16 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ---
 
-## v0.8.2 — Current Release
+## v0.8.21 — Current Release
+
+- **`squad migrate` command** — New automated migration command that backs up, cleans, and reinitialises `.squad/` in one step. Supports `--dry-run`, `--backup-dir`, and `--restore [path]` flags. Auto-rollback on failure.
+- **Shell re-init fix** — After `squad migrate`, the interactive shell no longer incorrectly treats a migrated install as brand-new (deletes stale `.first-run` / `.init-prompt` markers post-reinit).
+- **Casting registry fix** — `squad migrate` now restores or synthesises `casting/registry.json` after reinit. Handles both v0.8.x repos (restore from backup) and v0.5.x repos (generate from restored `agents/` directory).
+- **Cast overwrite guard** — `createTeam()` no longer overwrites existing `charter.md` or non-empty `history.md` when re-casting after a migration.
+
+---
+
+## v0.8.2
 
 - **Version alignment** — CLI (0.8.1) and SDK (0.8.0) snapped to 0.8.2 across all packages
 - **Published to npm** — `@bradygaster/squad-sdk@0.8.2` and `@bradygaster/squad-cli@0.8.2`

@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { initSquad as sdkInitSquad } from '@bradygaster/squad-sdk';
-import { success, warn, info, DIM, BOLD, RESET } from './output.js';
+import { success, error, warn, info, DIM, BOLD, RESET } from './output.js';
 import { getPackageVersion } from './version.js';
 
 export interface MigrateOptions {
@@ -32,6 +32,7 @@ const SQUAD_OWNED = [
 /** Files and directories that belong to the user — restored from backup after reinit. */
 const USER_OWNED = [
   'agents',
+  'config.json',
   'decisions.md',
   'decisions',
   'routing.md',
@@ -68,21 +69,27 @@ async function runRestore(cwd: string, backupPath?: string): Promise<void> {
   console.log();
 
   const squadDir = path.join(cwd, '.squad');
+  const cwdResolved = path.resolve(cwd);
 
   // Resolve which backup to use
   let resolvedBackup: string | undefined;
   if (backupPath) {
     resolvedBackup = path.resolve(cwd, backupPath);
+    if (!resolvedBackup.startsWith(cwdResolved + path.sep)) {
+      error(`--restore path must be within the current directory.`);
+      info(`  Resolved: ${resolvedBackup}`);
+      info(`  Expected: inside ${cwdResolved}/`);
+      process.exit(1);
+    }
   } else {
     resolvedBackup = findLatestBackup(cwd);
   }
 
   if (!resolvedBackup || !fs.existsSync(resolvedBackup)) {
     const tried = backupPath ? path.resolve(cwd, backupPath) : '.squad-backup-*/';
-    console.error(`Error: No backup found at ${tried}`);
-    console.error('');
-    console.error('List available backups with:');
-    console.error('  ls -d .squad-backup-*/');
+    error(`No backup found at ${tried}`);
+    info('List available backups with:');
+    info('  ls -d .squad-backup-*/');
     process.exit(1);
   }
 
@@ -164,10 +171,21 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
 
   // Step 1: Back up
   const timestamp = formatTimestamp();
-  const backupRoot = options.backupDir
-    ? path.resolve(cwd, options.backupDir)
-    : path.join(cwd, `.squad-backup-${timestamp}`);
+  const cwdResolved = path.resolve(cwd);
+  let backupRoot: string;
+  if (options.backupDir) {
+    backupRoot = path.resolve(cwd, options.backupDir);
+    if (!backupRoot.startsWith(cwdResolved + path.sep)) {
+      error(`--backup-dir path must be within the current directory.`);
+      info(`  Resolved: ${backupRoot}`);
+      info(`  Expected: inside ${cwdResolved}/`);
+      process.exit(1);
+    }
+  } else {
+    backupRoot = path.join(cwd, `.squad-backup-${timestamp}`);
+  }
 
+  let backupComplete = false;
   console.log(`  Step 1/4  Backup`);
   console.log(`           ${squadDir}`);
   console.log(`        →  ${backupRoot}`);
@@ -179,6 +197,7 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
       process.exit(1);
     }
     copyRecursive(squadDir, backupRoot);
+    backupComplete = true;
     success(`Backed up to ${path.relative(cwd, backupRoot)}/`);
   } else {
     console.log(`${prefix}Would copy ${path.relative(cwd, squadDir)}/ → ${path.relative(cwd, backupRoot)}/`);
@@ -222,6 +241,10 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
       }
     }
 
+    if (!dryRun) {
+      success('Removed Squad-owned files.');
+    }
+
     // Step 3: Reinitialize
     console.log();
     console.log(`  Step 3/4  Reinitialize .squad/`);
@@ -250,7 +273,7 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
         }
       }
     } else {
-      console.log(`${prefix}Would run: sdkInitSquad (fresh scaffold)`);
+      console.log(`${prefix}Would reinitialize .squad/ (fresh scaffold)`);
       console.log(`${prefix}Would remove: .squad/.first-run (if present)`);
       console.log(`${prefix}Would remove: .squad/.init-prompt (if present)`);
     }
@@ -272,6 +295,10 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
       } else {
         console.log(`${prefix}Would restore: backup/${userFile} → .squad/${userFile}`);
       }
+    }
+
+    if (!dryRun) {
+      success('User files restored.');
     }
 
     // Step 4b: Restore or initialize casting state.
@@ -354,17 +381,17 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
     }
   } catch (err) {
     console.log();
-    console.error(`Migration failed: ${err instanceof Error ? err.message : String(err)}`);
-    if (!dryRun && fs.existsSync(backupRoot)) {
-      console.error('');
-      console.error('Rolling back from backup...');
+    error(`Migration failed: ${err instanceof Error ? err.message : String(err)}`);
+    if (!dryRun && backupComplete && fs.existsSync(backupRoot)) {
+      console.log();
+      warn('Rolling back from backup...');
       removeRecursive(path.join(cwd, '.squad'));
       copyRecursive(backupRoot, path.join(cwd, '.squad'));
-      console.error(`Restored .squad/ from ${path.relative(cwd, backupRoot)}/`);
-      console.error('');
-      console.error(`Your backup is still at: ${path.relative(cwd, backupRoot)}/`);
-      console.error('You can retry the migration or restore manually with:');
-      console.error(`  squad migrate --restore ${path.relative(cwd, backupRoot)}`);
+      success(`Restored .squad/ from ${path.relative(cwd, backupRoot)}/`);
+      console.log();
+      info(`Your backup is still at: ${path.relative(cwd, backupRoot)}/`);
+      console.log('You can retry the migration or restore manually with:');
+      console.log(`  squad migrate --restore ${path.relative(cwd, backupRoot)}`);
     }
     process.exit(1);
   }
