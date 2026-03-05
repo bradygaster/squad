@@ -1045,6 +1045,9 @@ When Ralph is active, run this check cycle after every batch of agent work compl
 
 **Step 1 — Scan for work** (run these in parallel):
 
+> **Platform-aware:** Use the commands from the Platform Detection section above. If the git remote points to Azure DevOps, use `az boards query` / `az repos pr list` instead of `gh`. If work items are in Planner, use Graph API. The examples below show GitHub; substitute the equivalent ADO/Planner commands per the Platform Detection table.
+
+**GitHub:**
 ```bash
 # Untriaged issues (labeled squad but no squad:{member} sub-label)
 gh issue list --label "squad" --state open --json number,title,labels,assignees --limit 20
@@ -1057,6 +1060,21 @@ gh pr list --state open --json number,title,author,labels,isDraft,reviewDecision
 
 # Draft PRs (agent work in progress)
 gh pr list --state open --draft --json number,title,author,labels,checks --limit 20
+```
+
+**Azure DevOps:**
+```bash
+# Untriaged work items
+az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:untriaged' ORDER BY [System.CreatedDate] DESC" --output table
+
+# Member-assigned work items
+az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:{member}' AND [System.State] <> 'Closed' ORDER BY [System.CreatedDate] DESC" --output table
+
+# Open PRs
+az repos pr list --status active --output table
+
+# Create a work item
+az boards work-item create --type "User Story" --title "{title}" --fields "System.Tags=squad; squad:untriaged"
 ```
 
 **Step 2 — Categorize findings:**
