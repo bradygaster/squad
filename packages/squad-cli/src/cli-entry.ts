@@ -45,6 +45,7 @@ async function main(): Promise<void> {
     console.log(`             Flags: --global (upgrade personal squad), --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`  ${BOLD}migrate${RESET}    Back up, clean, and reinitialize .squad/ (version migration helper)`);
     console.log(`             Flags: --dry-run (preview), --backup-dir <path> (custom backup location)`);
+    console.log(`                    --restore [path] (restore from backup; auto-detects latest if no path given)`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>]`);
@@ -208,7 +209,14 @@ async function main(): Promise<void> {
     const dryRun = args.includes('--dry-run');
     const backupDirIdx = args.indexOf('--backup-dir');
     const backupDir = backupDirIdx !== -1 ? args[backupDirIdx + 1] : undefined;
-    await runMigrate(process.cwd(), { dryRun, backupDir });
+    const restoreIdx = args.indexOf('--restore');
+    let restore: boolean | string | undefined;
+    if (restoreIdx !== -1) {
+      // --restore with an optional path argument (path won't start with --)
+      const restoreArg = args[restoreIdx + 1];
+      restore = (restoreArg && !restoreArg.startsWith('--')) ? restoreArg : true;
+    }
+    await runMigrate(process.cwd(), { dryRun, backupDir, restore });
     return;
   }
 

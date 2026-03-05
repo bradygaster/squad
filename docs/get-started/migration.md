@@ -141,14 +141,16 @@ squad doctor
 
 #### If Something Went Wrong
 
-Your backup is still intact at `.squad-backup-{timestamp}/`. To fully restore your previous state:
+Your backup is still intact at `.squad-backup-{timestamp}/`. To fully restore your previous state in one command:
 
 ```bash
-# Remove the new .squad/ directory
-rm -rf .squad
+squad migrate --restore
+```
 
-# Restore from backup (replace the timestamp with your actual backup folder name)
-cp -r .squad-backup-{timestamp} .squad
+This auto-detects the most recent backup and restores it. To restore from a specific backup:
+
+```bash
+squad migrate --restore .squad-backup-{timestamp}
 ```
 
 Once restored, you can retry the migration or revert to your previous Squad version:
@@ -558,17 +560,19 @@ npm install -g @bradygaster/squad-cli@latest
 
 ### How do I restore from a `squad migrate` backup?
 
-`squad migrate` saves a full backup to `.squad-backup-{timestamp}/` before making any changes. To restore:
+`squad migrate` saves a full backup to `.squad-backup-{timestamp}/` before making any changes. To restore in one command:
 
 ```bash
-# Remove the current .squad/ directory
-rm -rf .squad
-
-# Restore from backup (use your actual backup folder name)
-cp -r .squad-backup-{timestamp} .squad
+squad migrate --restore
 ```
 
-To find your backup folder if you've forgotten the timestamp:
+This auto-detects the most recent backup. To restore from a specific backup:
+
+```bash
+squad migrate --restore .squad-backup-{timestamp}
+```
+
+To find available backups:
 
 ```bash
 ls -d .squad-backup-*/
