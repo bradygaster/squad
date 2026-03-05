@@ -24,6 +24,11 @@ function assertAzCliAvailable(): void {
   }
 }
 
+/** Escape a value for safe interpolation into a WIQL string (double single-quotes). */
+function escapeWiql(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
 /** Safely parse JSON output, including raw text in error messages */
 function parseJson<T>(raw: string): T {
   try {
@@ -60,14 +65,14 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
   async listWorkItems(options: { tags?: string[]; state?: string; limit?: number }): Promise<WorkItem[]> {
     const conditions: string[] = [];
     if (options.state) {
-      conditions.push(`[System.State] = '${options.state}'`);
+      conditions.push(`[System.State] = '${escapeWiql(options.state)}'`);
     }
     if (options.tags?.length) {
       for (const tag of options.tags) {
-        conditions.push(`[System.Tags] Contains '${tag}'`);
+        conditions.push(`[System.Tags] Contains '${escapeWiql(tag)}'`);
       }
     }
-    conditions.push(`[System.TeamProject] = '${this.project}'`);
+    conditions.push(`[System.TeamProject] = '${escapeWiql(this.project)}'`);
 
     const where = conditions.join(' AND ');
     const top = options.limit ?? 50;

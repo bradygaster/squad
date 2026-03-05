@@ -97,18 +97,25 @@ export class PlannerAdapter {
 
   private graphFetch(path: string, method = 'GET', body?: string): string {
     const token = getGraphToken();
+    const url = `https://graph.microsoft.com/v1.0${path}`;
     const curlArgs = [
       '-s',
       '-X', method,
-      '-H', `Authorization: Bearer ${token}`,
       '-H', 'Content-Type: application/json',
+      '--config', '-',
     ];
     if (body) {
       curlArgs.push('-d', body);
     }
-    curlArgs.push(`https://graph.microsoft.com/v1.0${path}`);
+    curlArgs.push(url);
 
-    return execFileSync('curl', curlArgs, EXEC_OPTS).trim();
+    // Pass the Authorization header via stdin so the token is not visible in process args.
+    const config = `header "Authorization: Bearer ${token}"`;
+    return execFileSync('curl', curlArgs, {
+      encoding: 'utf-8',
+      input: config,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
   }
 
   /** Fetch and cache buckets for this plan */
