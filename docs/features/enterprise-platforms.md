@@ -69,6 +69,25 @@ Tag assignment uses the same `squad:{member}` convention, stored as ADO work ite
 
 No additional configuration is needed beyond the `az` CLI setup. Squad reads the git remote URL and automatically selects the correct adapter.
 
+### Authentication
+
+Squad uses the Azure CLI for ADO authentication — **no Personal Access Tokens (PATs) needed.** Run `az login` once, and Squad agents use your authenticated session for all operations.
+
+Alternatively, if the Azure DevOps MCP server is configured in your environment, Squad will use it automatically for richer API access. Add it to `.copilot/mcp-config.json`:
+
+```json
+{
+  "mcpServers": {
+    "azure-devops": {
+      "command": "npx",
+      "args": ["-y", "@azure/devops-mcp-server"]
+    }
+  }
+}
+```
+
+Squad prefers MCP tools when available, falling back to `az` CLI when not.
+
 To explicitly check which platform Squad detects:
 
 ```typescript
