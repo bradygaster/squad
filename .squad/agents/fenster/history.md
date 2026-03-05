@@ -1,3 +1,4 @@
+📌 Team update (2026-03-05T22:46:00Z): Azure Function samples require \main\ field and build step — decided by Fenster
 # Project Context
 
 - **Owner:** Brady
@@ -696,3 +697,4 @@ px tsx), it logs a test-mode warning but still validates config — useful for d
 - A `prestart:func` npm script ensures `func start` always gets fresh compiled JS, preventing stale-build confusion.
 
 📌 Team update (2026-03-06): Fixed Azure Function sample — added missing `main` field to package.json, updated `start` script to build-then-run, added build documentation to README. Root cause was runtime couldn't discover function registration without `main` pointing to compiled output. — decided by Fenster
+

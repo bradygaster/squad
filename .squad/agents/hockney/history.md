@@ -1,3 +1,4 @@
+📌 Team update (2026-03-05T22:46:00Z): Azure Function samples require \main\ field and build step — decided by Fenster
 # Project Context
 
 - **Owner:** Brady
@@ -893,3 +894,12 @@ All labeled squad:hockney for routing. Each issue includes: what's missing, why 
 - **Pattern:** Same as build-command.test.ts — contract-first stubs, real filesystem via mkdtempSync, afterEach cleanup. Fixture creates a complete hand-written squad, SDK config mirrors it, build regenerates, assertions verify semantic equivalence.
 
 📌 Team update (2026-03-05T22-10-00Z): Markdown→SDK conversion test suite completed (29 tests). Full coverage for builders, config discovery, CLI flags, error cases. All passing. — decided by Hockney
+
+### Azure Function sample review (2026-03-05)
+**Status:** Verified — sample builds clean, dry-run passes, no additional issues found beyond Fenster's function discovery fix.
+- **Build verification:** SDK build clean, sample `npm install` + `npm run build` (tsc) — zero errors. `npm test` (dry-run) passes: config loads, all 3 agents execute, score 7/10.
+- **Fenster's fixes confirmed:** `main` field (`dist/functions/squad-prompt.js`) added to package.json, `npm start` chains build + func start, README updated with build-first explanation.
+- **Import audit:** `@bradygaster/squad-sdk/builders` subpath export verified — `defineSquad`, `defineTeam`, `defineAgent`, `defineRouting`, `SquadSDKConfig` all exist and type-match the sample usage. No circular deps.
+- **Azure Functions v4 model:** `app.http()` registration pattern correct, `HttpRequest`/`HttpResponseInit`/`InvocationContext` types used correctly, host.json extension bundle correct, compiled JS output contains proper ESM imports and function registration.
+- **Handler logic:** Mock review handlers (tone, technical, copy) are self-contained, pure functions with reasonable heuristics. No external deps, no side effects. Score aggregation and consensus logic correct.
+- **No issues found:** All files correct. Types align with SDK. README accurate. tsconfig strict mode enabled. Sample is ship-ready.

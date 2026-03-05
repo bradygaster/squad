@@ -2854,26 +2854,4 @@ This sample reinforces core Squad decisions:
 This sample is intentional: I'm designing it to compound future work. Once we have Azure Functions working, Lambda, GCP Cloud Functions, Vercel, and other serverless patterns become copy-paste variations. One good example beats a dozen half-baked ones.
 
 
-# Decision: Azure Function Squad Sample Pattern
-
-**Author:** Fenster  
-**Date:** 2026-03-06  
-**Status:** Implemented
-
-## Context
-
-Brady requested a new sample showing an Azure Function that takes an HTTP POST prompt and dispatches work to a squad. This is the first sample demonstrating the SDK-First builder pattern integrated with a cloud hosting platform.
-
-## Decision
-
-- **Use case:** Content Review Squad — three agents (tone, technical, copy) review submitted content. Chosen for visual impact and demo clarity over alternatives (brainstorm, code review).
-- **Pattern:** Azure Functions v4 HTTP trigger → squad config via `defineSquad()` builders → mock agent handlers → JSON response. Handlers are mock/heuristic, not wired to the real Squad runtime — the point is demonstrating the SDK config pattern, not production agent execution.
-- **Config import path:** `@bradygaster/squad-sdk/builders` (subpath export). This is the canonical import for SDK-First mode.
-- **Dry-run test:** Sample includes `--dry-run` flag that validates config loading and handler execution without the Azure Functions runtime. All other samples should consider a similar zero-dependency validation path.
-
-## Impact
-
-- New sample at `samples/azure-function-squad/` — 7 files, ~200 LOC
-- `samples/README.md` updated with entry #9
-- Sets the pattern for future cloud-platform integration samples (e.g., AWS Lambda, Google Cloud Functions)
 
