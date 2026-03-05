@@ -686,3 +686,5 @@ The CLI couldn't run because `packages/squad-sdk/src/index.ts` was missing re-ex
 px tsx), it logs a test-mode warning but still validates config — useful for dry-run testing.
 - Sample pattern: existing samples use ile:../../packages/squad-sdk for local SDK dependency, 	ype: module in package.json, and NodeNext module resolution. New samples should follow this exact pattern.
 - The SDK builders (defineSquad, defineTeam, defineAgent, defineRouting) are imported from @bradygaster/squad-sdk/builders — the subpath export, not the barrel. This is the SDK-First pattern for programmatic config.
+
+📌 Team update (2026-03-05T22-10-00Z): Azure Function sample implementation complete. samples/azure-function-squad/ (7 files, ~200 LOC). Dry-run flag added for validation. Foundation for future serverless variants. — decided by Fenster

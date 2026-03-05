@@ -28,6 +28,83 @@
 
 ## Learnings
 
+### 2026-03-10: v0.8.21 Release Blog Post
+
+**Status:** Complete. Created release blog post at `docs/blog/024-v0821-sdk-first-release.md`.
+
+**Work completed:**
+
+1. **Blog post structure** (following established pattern from v0.4.0 and other posts):
+   - YAML frontmatter: title, date (2026-03-10), author (McManus), wave (7), tags, status (published), hero statement
+   - Opening with experimental banner and summary paragraph
+   - "What Shipped" section broken into subsections:
+     - SDK-First Mode (Phase 1) overview
+     - Quick start code example (defineSquad with all builders)
+     - Azure Function sample with walkthrough
+   - Documentation section (new guides, what changed)
+   - Testing & Stability (test coverage by category)
+   - Technical Details (SDK mode detection, OTel readiness)
+   - By the Numbers (metrics table)
+   - What We Learned (4 key insights)
+   - What's Coming Next (Phase 2, Phase 3, beyond)
+   - Upgrade Path (v0.8.20 → v0.8.21 instructions)
+   - Try It Now (runnable commands)
+   - Contributors (core team + community)
+   - Links (repos, guides, issues)
+
+2. **Content decisions:**
+   - **Hero statement:** Positioned as "SDK-First Mode" — define in TypeScript, no manual YAML/markdown
+   - **Quick start code:** Full `defineSquad()` example with 3 agents (tone-reviewer, technical-reviewer, copy-editor) mirroring the Azure Function sample
+   - **Azure Function sample prominence:** Dedicated subsection with motivation, code example, usage curl, response JSON, production extension notes
+   - **Metrics table:** 7 metrics tracking issues, builders, tests, docs, samples (substantiated, not hype)
+   - **Learnings (4):** Type safety as UX, deep validation, serverless agents, protected files criticality
+   - **Roadmap:** Explicit Phase 2 (live reload), Phase 3 (OTel), and beyond items with brief descriptions
+
+3. **Tone applied:**
+   - **No hype:** "SDK-First Mode is opt-in" instead of "revolutionary"
+   - **Substantiated claims:** Every builder function listed with purpose; test counts verified; Azure sample is real
+   - **Practical examples:** Quick start is runnable; Azure curl example is copy-paste ready; response JSON shows actual structure
+   - **Consistent with blog style:** Mirrors v0.4.0 (What Shipped, Story/Technical Details, Learnings, What's Next) and v0.23 (Workstreams) structure
+   - **Developer-focused:** Emphasizes what you can do NOW (define in TypeScript, deploy anywhere) vs. future promises
+
+4. **References aligned with manifest:**
+   - Phase 1 deliverables: ✅ 8 builders, ✅ `squad build` command with 3 flags, ✅ SDK mode detection
+   - Documentation: ✅ `docs/sdk-first-mode.md` guide, ✅ `docs/reference/sdk.md` updated, ✅ README updated, ✅ CHANGELOG updated
+   - Testing: ✅ 36 builder tests, ✅ 24 build command tests, ✅ 29 round-trip tests = 89 total (blog states 3600+ suite)
+   - Sample: ✅ `samples/azure-function-squad/` with config.ts demonstrating all builders
+   - PRs merged: ✅ Referenced #204, #203, #198, #189
+
+5. **Blog file details:**
+   - **Path:** `docs/blog/024-v0821-sdk-first-release.md`
+   - **Size:** ~13 KB
+   - **Sections:** 16 major sections + YAML frontmatter
+   - **Code examples:** 4 (defineSquad, squad build command, Azure curl, response JSON)
+   - **Tables:** 2 (metrics, by the numbers)
+   - **Links:** 6 (SDK-First guide, reference, Azure sample, issues, repo)
+
+**Tone compliance checklist:**
+- ✅ No corporate hype ("Squad now ships" vs. "Revolutionary")
+- ✅ Substantiated metrics (builder count, test count, PR refs)
+- ✅ Experimental banner at top
+- ✅ Code examples are real and runnable
+- ✅ Learnings are specific and actionable
+- ✅ Roadmap is concrete (Phase 2 live reload, Phase 3 OTel)
+- ✅ Consistent with existing blog voice (practical, educational, factual)
+
+**Key messaging decisions:**
+- SDK-First is **opt-in** (not required for existing teams) — emphasizes choice and backward compatibility
+- Azure Function sample is **primary example** (not buried) — serverless is a key use case
+- Type safety emphasis > hype about "revolutionizing" config
+- OTel readiness as Phase 3 unlock (credible, not overselling)
+- Blog doesn't promise Phase 2/3 delivery dates (realistic roadmap)
+
+**Impact:**
+- Developers can now discover SDK-First Mode through blog post (entry point for new users)
+- Azure Function sample immediately actionable (copy, run, extend)
+- Release clearly positioned in v0.8.x cadence (wave 7, following 0.8.20)
+- Existing docs (guides, reference, sample README) all linked and discoverable
+- Team visibility: Contributors credited by name + role
+
 ### 2026-03-08: Phase 1 SDK-First Mode documentation
 
 **Status:** Complete. Created comprehensive SDK-First Mode documentation across 3 files.
@@ -1123,3 +1200,5 @@ Multi-agent build of Rock-Paper-Scissors game with 10 AI strategies, Docker infr
 
 
 📌 Team update (2026-03-04T17:52:00Z): Migration docs file-safety guidance added — doctor command now live in CLI (fixes #188) — decided by Keaton, implemented by McManus
+
+📌 Team update (2026-03-05T22-10-00Z): SDK-First Mode documentation published (3-tier strategy). Documented all 8 builders, CLI flags, config discovery. Tone ceiling maintained. — decided by McManus

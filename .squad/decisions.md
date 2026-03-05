@@ -2597,3 +2597,283 @@ When reviewing a destructive command, the reviewer should verify all 10 items be
 **What:** Coordinator detects SDK mode (session-start check for `squad/` directory or `squad.config.ts`). When detected: (1) structural changes go to `squad/*.ts` (not `.squad/*.md`), (2) after modifying config, remind user to run `squad build`, (3) prefer typed metadata from builders over markdown parsing.
 **Why:** SDK mode extends markdown mode (never breaks existing behavior). All agents inherit this awareness through coordinator logic.
 **Impact:** Phase 2+ SDK projects get mode-aware routing. Existing markdown projects unaffected.
+
+
+# Decision: SDK-First Mode Documentation Strategy
+
+**Author:** McManus (DevRel)  
+**Date:** 2026-03-08  
+**Status:** Proposed  
+**Issue:** #194 (Phase 1 SDK-First Squad Mode)
+
+## Problem
+
+Phase 1 SDK-First Mode shipped builder functions (`defineTeam()`, `defineAgent()`, etc.) and `squad build` CLI command, but lacked comprehensive documentation. Users had:
+- No guide explaining what SDK-First Mode is or how to use it
+- Builder types documented only in inline JSDoc (code comments)
+- No examples of full squad.config.ts files
+- CLI flags not documented
+
+## Decision
+
+Created a three-tier documentation strategy:
+
+1. **Dedicated Guide** — `docs/sdk-first-mode.md` (18.5 KB)
+   - Comprehensive, beginner-friendly introduction
+   - All 8 builders documented with type definitions and code examples
+   - `squad build` command flags and generated files
+   - Config discovery order, validation details, best practices
+   - Full runnable example with all sections
+   - Migration guide from manual markdown approach
+
+2. **SDK Reference Update** — `docs/reference/sdk.md`
+   - Added "Builder Functions (SDK-First Mode)" section
+   - Quick reference for each builder (types + examples)
+   - Links to comprehensive guide for deeper learning
+   - Maintains parallel structure with other SDK functions
+
+3. **README Quick Reference** — README.md
+   - Added "SDK-First Mode (New in Phase 1)" subsection
+   - Brief explanation + code snippet
+   - Link to full guide
+   - Positions as alternative to manual config
+
+4. **CHANGELOG Entry** — CHANGELOG.md
+   - Added Phase 1 SDK-First Mode section
+   - Listed all 8 builders + `squad build` command
+   - Documentation updates called out
+
+## Rationale
+
+- **Single source of truth:** All builders documented in one place (the guide), with quick reference in SDK docs
+- **Discoverability:** README points users to full guide; not everyone needs 18 KB of builder docs
+- **Completeness:** Nothing left undocumented — every builder field, flag, and behavior explained
+- **Examples:** Real code from actual source files (packages/squad-sdk/src/builders/)
+- **Tone ceiling:** No hype, no hand-waving — factual, substantiated, practical
+- **Developer experience:** TypeScript + IDE autocomplete supported by documented types
+
+## What Gets Documented
+
+### Builders (8 total)
+1. `defineTeam()` — metadata, context, members
+2. `defineAgent()` — role, tools, model, capabilities
+3. `defineRouting()` — rules, tiers, priority
+4. `defineCeremony()` — schedule, participants, agenda
+5. `defineHooks()` — governance (write paths, blocked commands, PII)
+6. `defineCasting()` — universes, overflow strategy
+7. `defineTelemetry()` — OTel configuration
+8. `defineSquad()` — top-level composition
+
+### CLI Command
+- `squad build` with flags: `--check`, `--dry-run`, `--watch` (stub)
+- Generated files: `.squad/team.md`, `.squad/routing.md`, agent charters, ceremonies
+- Protected files never overwritten
+
+### Configuration
+- Discovery order: squad/index.ts → squad.config.ts → squad.config.js
+- Validation: Runtime type guards, no external dependencies
+- Error messages: Descriptive field-level validation
+
+## Not Documented (Intentional)
+
+- Internal validation functions (private `BuilderValidationError`, `assertNonEmptyString`, etc.)
+- Squad coordinator integration (separate concern, in SDK reference)
+- Agent behavior / system prompts (domain of charter, not config)
+- Advanced telemetry tuning (covered by OTEL standards, not Squad-specific)
+
+## Compliance
+
+- **Tone ceiling:** Every claim substantiated. Builder examples from actual source code.
+- **Experimental banner:** Added to SDK-First Mode guide (⚠️ Alpha Software)
+- **Hyperlinks:** All internal links tested; external links to OTEL, semver specs included
+- **No breaking:** Documentation complements existing docs; no rewrites
+- **Searchability:** CHANGELOG entry ensures discoverability; README link ensures awareness
+
+## Success Criteria
+
+✅ Users can discover SDK-First Mode without reading source code  
+✅ Full API documented with types and examples  
+✅ `squad build` command usage clear with all flags  
+✅ Config discovery order documented  
+✅ Migration path from manual markdown shown  
+✅ Tone ceiling maintained (factual, substantiated)  
+✅ CHANGELOG entry helps with version communication  
+
+## Team Notes
+
+- McManus completed all documentation (18.5 KB guide + reference updates + README + CHANGELOG)
+- Documentation reviewed against actual builder source code for accuracy
+- Real examples used throughout — all code is functional and tested
+- No dependencies added — documentation only
+
+## See Also
+
+- [SDK-First Mode Guide](../../sdk-first-mode.md)
+- [SDK Reference Update](../../reference/sdk.md)
+- [README Update](../../../README.md) — "SDK-First Mode" section
+- [CHANGELOG Update](../../../CHANGELOG.md) — Unreleased section
+- Builder source: `packages/squad-sdk/src/builders/`
+- CLI source: `packages/squad-cli/src/cli/commands/build.ts`
+
+
+# Decision: Azure Function + Squad Sample
+
+**Date:** 2026-03-06T00:00:00Z  
+**Author:** Keaton (Lead)  
+**Status:** Proposed  
+**Scope:** Sample Architecture  
+
+## Problem Statement
+
+Current samples (hello-squad, autonomous-pipeline, skill-discovery) demonstrate Squad in isolated scripts and local environments. We lack a real-world integration sample showing how Squad embeds into production serverless runtimes (Azure Functions, AWS Lambda, etc.).
+
+This limits adoption and leaves developers uncertain about:
+- How to configure squads **in code** (SDK-First mode) vs. YAML scaffolding
+- Whether Squad works in HTTP-triggered, stateless contexts
+- How to stream agent work back to HTTP clients
+- Cost tracking and token metering for billing/quota enforcement
+
+## Decision
+
+File GitHub issue #213 to design and implement a **Content Review Squad** running inside an Azure Function HTTP trigger.
+
+### Scope & Constraints
+
+**What This Sample Demonstrates:**
+1. **SDK-First Configuration** — `defineTeam()` + `defineAgent()` builders (no YAML, no CLI scaffolding)
+2. **Serverless Integration** — HTTP POST triggers squad formation and execution
+3. **Prompt-Driven Execution** — Request body carries the work item; squad processes it
+4. **Streaming Response** — Results flow back to HTTP client as agents complete
+5. **Cost Transparency** — CostTracker and token metering for quota enforcement
+
+**Use Case: Content Review Squad**
+A content creator submits a blog post or article. Four agents analyze it in parallel:
+- **Analyst** → Tone, readability, clarity assessment
+- **Subject Matter Expert** → Technical accuracy validation
+- **SEO Specialist** → Keywords, structure, discoverability
+- **Editor** → Grammar, consistency, brand voice alignment
+
+Results aggregated into a single HTTP response.
+
+**Why Content Review:**
+- Clear, business-relevant workflow that non-SDK users can understand
+- Naturally parallelizable (4 agents, independent analyses)
+- Showcases SkillRegistry routing (each agent has a distinct skill)
+- Real utility: developers can adapt to email review, code review, proposal review, etc.
+
+### Implementation Requirements
+
+**Core Files:**
+- `samples/azure-function-squad/index.ts` — Azure Function entry point (HTTP trigger)
+- `lib/team-builder.ts` — `defineTeam()` and `defineAgent()` logic
+- `lib/prompt-processor.ts` — Squad orchestration and response aggregation
+- `lib/types.ts` — Request/response schemas
+- `README.md` — Setup, deployment, customization guide
+- `tests/azure-function-squad.test.ts` — Vitest coverage
+
+**Tech Stack:**
+- TypeScript (strict mode)
+- Azure Functions runtime v4 (Node.js 20+)
+- `@bradygaster/squad-sdk` (builder API)
+- `@azure/functions` (HTTP trigger)
+- Vitest (testing)
+
+**Testing Strategy:**
+1. Unit tests for team assembly and configuration
+2. Integration tests for HTTP request/response contract
+3. Mocked squad execution (no real LLM calls in CI)
+4. Error cases: malformed prompts, missing config, timeout scenarios
+
+### Why Azure Functions
+
+- **Serverless scalability** — Matches real-world deployment patterns
+- **HTTP trigger** — Simple POST semantics, no infrastructure required locally
+- **Development UX** — Azure Functions Core Tools provide local emulator
+- **TypeScript native** — First-class support in runtime v4
+- **Cost alignment** — Function-per-agent pattern aligns with Squad's cost-per-task model
+
+### Connection to Existing Patterns
+
+This sample reinforces core Squad decisions:
+
+1. **SDK-First Mode** (McManus's decision) — No YAML scaffolding; teams defined in code
+2. **Zero-dependency Scaffolding** (Rabin's decision) — Sample uses only @azure/functions and @bradygaster/squad-sdk
+3. **Strict TypeScript** (Edie's decision) — `strict: true`, no unsafe indexing
+4. **Streaming-first** (Fortier's decision) — Response aggregates as agents complete (async iterators)
+5. **Proposal-first** (Keaton's decision) — This architecture is decided before implementation
+
+### Non-Goals
+
+- Full Azure authentication/authorization (sample uses public endpoints)
+- Persistent squad state (request-scoped work only)
+- Production-grade error recovery (demonstrates happy path)
+- Multi-tenant isolation (single-tenant sample)
+
+### Tradeoffs
+
+**Chosen: Simpler Streaming vs. WebSocket Full Duplex**
+- Response is a single HTTP 200 with aggregated results
+- Rationale: Simpler to understand, test, deploy; matches common production patterns
+- Future: WebSocket variant could stream results in real-time (Phase 4 consideration)
+
+**Chosen: Prompt in Request Body vs. Prompt + Config**
+- Both prompt and squad config sent in single POST
+- Rationale: Self-contained request; easy to test; aligns with function-as-service pattern
+- Future: Config could be persisted in Azure CosmosDB for team reuse
+
+## Impact
+
+**Positive:**
+- Unblocks adoption in serverless environments
+- Showcases SDK-First mode to new users
+- Provides copy-paste template for prompt-driven agent pipelines
+- Demonstrates cost tracking in production context
+
+**Risk & Mitigation:**
+- **Risk:** Azure Functions adds deployment complexity; some devs won't have Azure access
+  - **Mitigation:** Include local dev setup with Functions Core Tools; sample runs in emulator
+- **Risk:** Prompt engineering for agents can be brittle
+  - **Mitigation:** Simple, clear persona in each agent's prompt; tested with synthetic inputs
+
+## Related Decisions
+
+- [SDK-First Mode Guidance](../mcmanus-sdk-first-docs.md) — This sample is the living example
+- [Proposal-First Workflow](../2026-02-21-proposal-first.md) — This decision is itself a proposal
+- [Zero-Dependency Scaffolding](../2026-02-21-zero-deps.md) — Sample maintains zero new runtime deps
+
+## Next Steps
+
+1. **Fenster or Hockney** → Implement sample (assign via issue #213)
+2. **Brady** → Review final sample in PR; validate UX
+3. **Keaton** → Approve architectural fit and update this decision to "Accepted"
+4. **Scribe** → Merge into decisions.md; capture in team learnings
+
+---
+
+**Keaton's Note:**
+This sample is intentional: I'm designing it to compound future work. Once we have Azure Functions working, Lambda, GCP Cloud Functions, Vercel, and other serverless patterns become copy-paste variations. One good example beats a dozen half-baked ones.
+
+
+# Decision: Azure Function Squad Sample Pattern
+
+**Author:** Fenster  
+**Date:** 2026-03-06  
+**Status:** Implemented
+
+## Context
+
+Brady requested a new sample showing an Azure Function that takes an HTTP POST prompt and dispatches work to a squad. This is the first sample demonstrating the SDK-First builder pattern integrated with a cloud hosting platform.
+
+## Decision
+
+- **Use case:** Content Review Squad — three agents (tone, technical, copy) review submitted content. Chosen for visual impact and demo clarity over alternatives (brainstorm, code review).
+- **Pattern:** Azure Functions v4 HTTP trigger → squad config via `defineSquad()` builders → mock agent handlers → JSON response. Handlers are mock/heuristic, not wired to the real Squad runtime — the point is demonstrating the SDK config pattern, not production agent execution.
+- **Config import path:** `@bradygaster/squad-sdk/builders` (subpath export). This is the canonical import for SDK-First mode.
+- **Dry-run test:** Sample includes `--dry-run` flag that validates config loading and handler execution without the Azure Functions runtime. All other samples should consider a similar zero-dependency validation path.
+
+## Impact
+
+- New sample at `samples/azure-function-squad/` — 7 files, ~200 LOC
+- `samples/README.md` updated with entry #9
+- Sets the pattern for future cloud-platform integration samples (e.g., AWS Lambda, Google Cloud Functions)
+

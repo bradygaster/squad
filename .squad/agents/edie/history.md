@@ -207,3 +207,5 @@ All four agents shipped Phase 2 in parallel: Fortier wired TTFT/duration/through
 - Validation added to `defineAgent` and `defineRouting` for both new fields (optional string assertion)
 - Converted root `squad.config.ts` from old `SquadConfig` type to full builder syntax: `defineSquad()` composing `defineTeam()`, 20× `defineAgent()`, `defineRouting()` with 20 rules, `defineCasting()`. This is the real-world proof that a markdown squad converts cleanly to SDK-first config
 - Build compiles clean, 36/36 builder tests + 24/24 build-command tests pass
+
+📌 Team update (2026-03-05T22-10-00Z): Builder type verification complete. Added description fields, converted squad.config.ts to defineSquad(). Strict TypeScript enforced. — decided by Edie
