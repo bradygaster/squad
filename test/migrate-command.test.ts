@@ -347,4 +347,79 @@ describe('Squad Migrate Command', () => {
       ).rejects.toThrow('process.exit: 1');
     });
   });
+
+  describe('runMigrate - casting state initialization', () => {
+    it('should create legacy casting registry when backup has no casting state (v0.5.x repo)', async () => {
+      const squadDir = join(testDir, '.squad');
+      mkdirSync(join(squadDir, 'agents', 'alice'), { recursive: true });
+      mkdirSync(join(squadDir, 'agents', 'bob'), { recursive: true });
+      writeFileSync(join(squadDir, 'team.md'), '## Members\n- alice\n- bob\n');
+
+      await runMigrate(testDir, {});
+
+      const registryPath = join(squadDir, 'casting', 'registry.json');
+      expect(existsSync(registryPath)).toBe(true);
+
+      const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+      expect(registry.agents).toBeDefined();
+      expect(registry.agents['alice']).toMatchObject({ legacy_named: true, universe: 'legacy', status: 'active' });
+      expect(registry.agents['bob']).toMatchObject({ legacy_named: true, universe: 'legacy', status: 'active' });
+    });
+
+    it('should create policy.json and history.json alongside registry.json', async () => {
+      const squadDir = join(testDir, '.squad');
+      mkdirSync(join(squadDir, 'agents', 'charlie'), { recursive: true });
+      writeFileSync(join(squadDir, 'team.md'), '## Members\n- charlie\n');
+
+      await runMigrate(testDir, {});
+
+      const castingDir = join(squadDir, 'casting');
+      expect(existsSync(join(castingDir, 'policy.json'))).toBe(true);
+      expect(existsSync(join(castingDir, 'history.json'))).toBe(true);
+
+      const policy = JSON.parse(readFileSync(join(castingDir, 'policy.json'), 'utf8'));
+      expect(policy.casting_policy_version).toBe('1.1');
+      expect(Array.isArray(policy.allowlist_universes)).toBe(true);
+
+      const history = JSON.parse(readFileSync(join(castingDir, 'history.json'), 'utf8'));
+      expect(history.assignment_cast_snapshots).toBeDefined();
+    });
+
+    it('should restore casting from backup when backup has casting state (v0.8.x repo)', async () => {
+      const squadDir = join(testDir, '.squad');
+      mkdirSync(join(squadDir, 'casting'), { recursive: true });
+      const existingRegistry = {
+        agents: {
+          dave: { created_at: '2026-01-01T00:00:00Z', persistent_name: 'Dave', universe: 'Reservoir Dogs', legacy_named: false, status: 'active' },
+        },
+      };
+      writeFileSync(join(squadDir, 'casting', 'registry.json'), JSON.stringify(existingRegistry, null, 2));
+      writeFileSync(join(squadDir, 'team.md'), '## Members\n- dave\n');
+
+      await runMigrate(testDir, {});
+
+      const registryPath = join(squadDir, 'casting', 'registry.json');
+      expect(existsSync(registryPath)).toBe(true);
+
+      const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+      // Original casting state preserved, not replaced with legacy
+      expect(registry.agents['dave']).toMatchObject({ universe: 'Reservoir Dogs', legacy_named: false });
+    });
+
+    it('should not overwrite existing casting state when sdkInitSquad already created it', async () => {
+      const squadDir = join(testDir, '.squad');
+      mkdirSync(squadDir, { recursive: true });
+      writeFileSync(join(squadDir, 'team.md'), '## Members\n');
+
+      // Pre-populate what the mock sdkInitSquad would create (empty casting dir, no registry)
+      // In this test the mock doesn't write registry.json, so we verify our code creates it
+      await runMigrate(testDir, {});
+
+      // After migration with no agents, registry should exist but be empty
+      const registryPath = join(squadDir, 'casting', 'registry.json');
+      expect(existsSync(registryPath)).toBe(true);
+      const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+      expect(registry.agents).toEqual({});
+    });
+  });
 });

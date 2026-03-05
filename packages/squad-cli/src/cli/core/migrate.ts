@@ -273,6 +273,85 @@ export async function runMigrate(cwd: string, options: MigrateOptions = {}): Pro
         console.log(`${prefix}Would restore: backup/${userFile} → .squad/${userFile}`);
       }
     }
+
+    // Step 4b: Restore or initialize casting state.
+    // casting/ is SQUAD_OWNED so sdkInitSquad() gets a clean slate, but the SDK does
+    // not create registry.json — that's the Coordinator's job during Init Mode.
+    // Handle two cases:
+    //   A: backup had casting state (v0.8.x repo) → restore it (preserves names/universe)
+    //   B: backup had no casting state (v0.5.x repo) → create legacy registry from agents/
+    const castingDir = path.join(cwd, '.squad', 'casting');
+    const registryPath = path.join(castingDir, 'registry.json');
+    const backupCastingRegistry = path.join(backupRoot, 'casting', 'registry.json');
+
+    if (!dryRun) {
+      if (fs.existsSync(backupCastingRegistry)) {
+        // Case A: restore casting state from backup
+        copyRecursive(path.join(backupRoot, 'casting'), castingDir);
+        console.log('           restored: .squad/casting (from backup)');
+      } else if (!fs.existsSync(registryPath)) {
+        // Case B: legacy repo — create casting state from restored agents/
+        const agentsDir = path.join(cwd, '.squad', 'agents');
+        const registryAgents: Record<string, object> = {};
+        const now = new Date().toISOString();
+
+        if (fs.existsSync(agentsDir)) {
+          for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+            if (entry.isDirectory()) {
+              const agentKey = entry.name.toLowerCase();
+              registryAgents[agentKey] = {
+                created_at: now,
+                persistent_name: entry.name.charAt(0).toUpperCase() + entry.name.slice(1),
+                universe: 'legacy',
+                legacy_named: true,
+                status: 'active',
+              };
+            }
+          }
+        }
+
+        fs.mkdirSync(castingDir, { recursive: true });
+        fs.writeFileSync(registryPath, JSON.stringify({ agents: registryAgents }, null, 2) + '\n');
+
+        const policyPath = path.join(castingDir, 'policy.json');
+        if (!fs.existsSync(policyPath)) {
+          const defaultPolicy = {
+            casting_policy_version: '1.1',
+            allowlist_universes: [
+              'The Usual Suspects', 'Reservoir Dogs', 'Alien', "Ocean's Eleven",
+              'Arrested Development', 'Star Wars', 'The Matrix', 'Firefly',
+              'The Goonies', 'The Simpsons', 'Breaking Bad', 'Lost',
+              'Marvel Cinematic Universe', 'DC Universe',
+            ],
+            universe_capacity: {
+              'The Usual Suspects': 6, 'Reservoir Dogs': 8, 'Alien': 8,
+              "Ocean's Eleven": 14, 'Arrested Development': 15, 'Star Wars': 12,
+              'The Matrix': 10, 'Firefly': 10, 'The Goonies': 8,
+              'The Simpsons': 20, 'Breaking Bad': 12, 'Lost': 18,
+              'Marvel Cinematic Universe': 25, 'DC Universe': 18,
+            },
+          };
+          fs.writeFileSync(policyPath, JSON.stringify(defaultPolicy, null, 2) + '\n');
+        }
+
+        const historyPath = path.join(castingDir, 'history.json');
+        if (!fs.existsSync(historyPath)) {
+          const emptyHistory = { assignment_cast_snapshots: {}, universe_usage_history: [] };
+          fs.writeFileSync(historyPath, JSON.stringify(emptyHistory, null, 2) + '\n');
+        }
+
+        const agentCount = Object.keys(registryAgents).length;
+        success(`Initialized casting state (${agentCount} legacy agent${agentCount === 1 ? '' : 's'} registered).`);
+      }
+    } else {
+      if (fs.existsSync(backupCastingRegistry)) {
+        console.log(`${prefix}Would restore: backup/casting/ → .squad/casting/`);
+      } else {
+        console.log(`${prefix}Would create: .squad/casting/registry.json (legacy agents)`);
+        console.log(`${prefix}Would create: .squad/casting/policy.json (defaults)`);
+        console.log(`${prefix}Would create: .squad/casting/history.json (empty)`);
+      }
+    }
   } catch (err) {
     console.log();
     console.error(`Migration failed: ${err instanceof Error ? err.message : String(err)}`);
