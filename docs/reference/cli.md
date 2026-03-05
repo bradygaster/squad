@@ -22,7 +22,7 @@ squad init
 
 ---
 
-## CLI Commands (16 commands)
+## CLI Commands (17 commands)
 
 | Command | Description | Requires `.squad/` |
 |---------|-------------|:------------------:|
@@ -33,6 +33,9 @@ squad init
 | `squad start [--tunnel] [--port N] [--command cmd]` | Start Copilot with remote phone access via PTY and WebSocket | No |
 | `squad status` | Show which squad is active and why | Yes |
 | `squad doctor` | Validate squad setup integrity and diagnose issues (alias: `heartbeat`) | Yes |
+| `squad migrate` | Backup, clean, reinitialize, and restore user files for major version upgrades | Yes |
+| `squad migrate --dry-run` | Preview migration steps without making changes | Yes |
+| `squad migrate --restore [path]` | Restore from a backup (auto-detects latest or accepts explicit `.squad-backup-*` path) | No |
 | `squad upgrade` | Upgrade Squad-owned files to latest version | Yes |
 | `squad upgrade --migrate-directory` | Rename legacy `.ai-team/` directory to `.squad/` | Yes |
 | `squad link <team-repo-path>` | Link project to a remote team root | Yes |

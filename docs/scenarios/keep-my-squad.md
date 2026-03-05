@@ -25,12 +25,12 @@ Squad persistence and portability. Your squad remembers skills, casting, and kno
 
 After working on a project for a few weeks, your squad has learned:
 
-- **Skills** — patterns, conventions, best practices (23 skill files in `.ai-team/skills/`)
-- **Decisions** — architectural choices, why you picked X over Y (`.ai-team/decisions.md`)
-- **Histories** — project-specific context each agent accumulated (`.ai-team/agents/{name}/history.md`)
-- **Casting state** — the chosen agent names, roles, universe (`.ai-team/casting-state.json`)
+- **Skills** — patterns, conventions, best practices (23 skill files in `.squad/skills/`)
+- **Decisions** — architectural choices, why you picked X over Y (`.squad/decisions.md`)
+- **Histories** — project-specific context each agent accumulated (`.squad/agents/{name}/history.md`)
+- **Casting state** — the chosen agent names, roles, universe (`.squad/casting-state.json`)
 
-All of this lives in `.ai-team/`. Commit it, and anyone who clones your repo gets the full team.
+All of this lives in `.squad/`. Commit it, and anyone who clones your repo gets the full team.
 
 ---
 
@@ -40,7 +40,7 @@ When you finish a project or want to take your squad to a new one:
 
 ```bash
 cd ~/projects/finished-saas-app
-npx github:bradygaster/squad export
+squad export
 ```
 
 ```
@@ -69,10 +69,10 @@ Start a new project:
 mkdir ~/projects/new-mobile-app
 cd ~/projects/new-mobile-app
 git init
-npx github:bradygaster/squad
+squad init
 ```
 
-When Squad asks what you're building:
+When Squad asks what you're building, import your squad:
 
 ```
 > Import my squad from squad-export-2025-07-15.zip
@@ -133,29 +133,35 @@ This is intentional. Skills are **reusable**. Project details are **not**.
 
 ---
 
-## 5. Version Upgrades Don't Touch `.ai-team/`
+## 5. Version Upgrades Don't Touch `.squad/`
 
 When Squad releases a new version:
 
 ```bash
-npx github:bradygaster/squad@latest
+npm install -g @bradygaster/squad-cli@latest
+```
+
+Then:
+
+```bash
+squad upgrade
 ```
 
 ```
-🔄 Upgrading Squad from v0.1.5 to v0.2.0
+🔄 Upgrading Squad from v0.8.18 to v0.8.21
 
-✅ .github/agents/squad.agent.md (updated to v0.2.0)
-✅ .ai-team-templates/ (new workflow templates)
+✅ .github/agents/squad.agent.md (updated to v0.8.21)
+✅ .squad/templates/ (new workflow templates)
 ✅ .gitattributes (merge=union rules verified)
 
-⚠️  Your .ai-team/ directory was NOT modified.
+⚠️  Your .squad/ directory was NOT modified.
    Your team's memory, skills, and decisions are untouched.
 ```
 
 Upgrades only change:
 
 - The Squad agent definition (`.github/agents/squad.agent.md`)
-- Workflow templates (`.ai-team-templates/`)
+- Workflow templates (`.squad/templates/`)
 - The installer itself
 
 Your **team's knowledge is safe**.
@@ -164,10 +170,10 @@ Your **team's knowledge is safe**.
 
 ## 6. Git Commit Means Everyone Gets the Team
 
-You commit `.ai-team/`:
+You commit `.squad/`:
 
 ```bash
-git add .ai-team/
+git add .squad/
 git commit -m "Add Squad team with 3 weeks of accumulated knowledge"
 git push
 ```
