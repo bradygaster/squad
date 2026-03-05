@@ -581,11 +581,9 @@ The CLI couldn't run because `packages/squad-sdk/src/index.ts` was missing re-ex
 
 ---
 
-### 2026-03-05: Workflow Filter Implementation Review (PR williamhallatt/201)
+### 2026-03-05: Workflow Filter Implementation Review (PR #201)
 
-**Requested by:** williamhallatt (validation review of completed PR)
-
-**Context:** Branch `williamhallatt/201-investigate-actions-install` changed `packages/squad-sdk/src/config/init.ts` to filter workflow installation to only Squad-framework workflows (4 files) instead of copying all workflows from templates/.
+**Context:** Issue #201 changed `packages/squad-sdk/src/config/init.ts` to filter workflow installation to only Squad-framework workflows (4 files) instead of copying all workflows from templates/.
 
 **Changes reviewed:**
 - Added `FRAMEWORK_WORKFLOWS` constant (4 filenames: squad-heartbeat.yml, squad-issue-assign.yml, squad-triage.yml, sync-squad-labels.yml)
@@ -616,3 +614,35 @@ The CLI couldn't run because `packages/squad-sdk/src/index.ts` was missing re-ex
 - Workflow installation in init.ts is self-contained in the `includeWorkflows` block — SDK layer controls filtering, CLI layer only gates the feature on/off
 
 📌 Team update (2026-03-05T10-35-50Z): PR #201 workflow filter approved by all reviewers — framework/scaffolding distinction, implementation pattern validated, test coverage noted — decided by Keaton, Fenster, Hockney, Edie
+
+## 2026-03-05: PR #201 Implementation Review
+
+**Task:** PR readiness review for issue #201 workflow filtering implementation.
+
+**Implementation verified:**
+
+✅ **FRAMEWORK_WORKFLOWS constant** (lines 446-451 in init.ts):
+  - Correctly placed at module scope, well-commented
+  - Contains exactly 4 framework workflows: heartbeat, issue-assign, triage, sync-labels
+  - Declaration before `initSquad()` function — discoverable and maintainable
+
+✅ **Filter logic** (lines 817-818):
+  - Two-stage filter: `allWorkflowFiles` (all .yml) → `workflowFiles` (framework only)
+  - Variable naming is clear and intentional
+  - Pattern: `allWorkflowFiles.filter(f => FRAMEWORK_WORKFLOWS.includes(f))`
+
+✅ **Edge case handling**:
+  - If FRAMEWORK_WORKFLOWS file doesn't exist in templates/: silently skipped (operates on intersection)
+  - This is acceptable — missing templates won't crash init, just fewer workflows installed
+  - Could log warning in future enhancement, but not a blocker
+
+✅ **includeWorkflows: true** confirmed in CLI init.ts (line 114) — no bypass paths
+
+✅ **Upgrade gap acknowledged**:
+  - templates.ts shows all 12 workflows in manifest
+  - Upgrade command copies all 12 (lines 413-420 in upgrade.ts)
+  - Acceptable to leave for follow-up — existing projects already have workflows
+
+✅ **No other copy sites** — grep confirms workflow copying only in init.ts (SDK) and upgrade.ts (CLI)
+
+**Verdict:** Implementation is solid. No concerns.

@@ -805,7 +805,7 @@ All labeled squad:hockney for routing. Each issue includes: what's missing, why 
 - **Lesson:** On Windows, use `join(root, '.squad', 'templates')` not `join(root, '.squad/templates')` — forward-slash segments in `join` args work on Node but it's better practice to use separate args.
 
 ### Workflow filtering test coverage review — Issue #201 (2026-03-04)
-**Status:** Complete — validated williamhallatt/201-investigate-actions-install branch.
+**Status:** Complete — validated issue #201 workflow filter branch.
 **Context:** Only 4 FRAMEWORK_WORKFLOWS now installed by `squad init` (heartbeat, triage, issue-assign, sync-labels). 8 CI/CD workflows (ci, preview, release, docs, insider-release, label-enforce, main-guard, promote) NOT installed until `squad upgrade`.
 **Test files reviewed:**
 1. `test/workflows.test.js` (CJS, NOT run by vitest — only used for manual testing)

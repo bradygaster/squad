@@ -28,6 +28,52 @@
 
 ## Learnings
 
+### 2026-03-05T[NOW]: PR #201 Readiness Review — Workflow Filter Architecture
+- **Task:** PR readiness review for issue #201 (Squad CI/CD workflows leaking into user repos). Core fix: `FRAMEWORK_WORKFLOWS` constant at module scope in `packages/squad-sdk/src/config/init.ts`, filtering workflow copy loop to only 4 framework files.
+- **Commits reviewed:**
+  - ddc4f6a: fix(sdk): only install Squad-framework workflows during init
+  - da84b90: test(workflows): update expectations to match framework-only install
+  - 080d6b4: docs(ai-team): Merge PR #201 workflow filter reviews
+  - 0512cc4: test(cli): assert exact workflow names installed/excluded by init
+  - abdec4b: docs(ai-team): merged testing & QA discipline decisions (LOCAL ONLY)
+- **Architecture verdict:** ✅ **SOUND.** Constant placement at module scope (before `initSquad()`) is correct — no runtime overhead, clear scope, self-documenting. Filter placement (line 818) is the right choke point: early read + filter pattern (`allWorkflowFiles.filter(f => FRAMEWORK_WORKFLOWS.includes(f))`), no mutation, no side effects. Alternative considered: external config file (overengineered for 4 static names). `FRAMEWORK_WORKFLOWS` is semantic, not mechanical — choosing correct names for user repos is a business rule, belongs in code.
+- **Code quality verdict:** ✅ **MERGE-READY.** Comment is excellent ("Other workflows in templates/workflows/ are generic CI/CD scaffolding and are opt-in"). Test coverage is complete: `test/cli/init.test.ts` has both positive list (4 framework workflows asserted to exist) and negative list (8 CI/CD workflows asserted NOT to exist). No edge cases missed (all 12 templates accounted for). Commit message quality high (explains why, not just what). No blocker-level issues.
+- **Test verdict:** ✅ **COMPREHENSIVE.** Test changes span 2 commits:
+  - da84b90: Updated existing test expectations from "all 12 workflows" to "4 framework workflows"
+  - 0512cc4: Added explicit assertions for excluded workflows (hardened negative case)
+  - Lines 129–145 (init.test.ts): exact filenames checked, no magic numbers
+  - Lines 147–166 (init.test.ts): exclusion list hardened (would catch accidental leakage)
+  - Test philosophy correct: tests verify THE INTENT (only framework workflows), not "whatever is currently installed".
+- **Concerns:** ⚠️ **ONE UPGRADE GAP (non-blocking).** Users on Squad v0.5.4–v0.8.20 already have all 12 workflows installed. `squad init` fixes this for NEW repos, but `squad upgrade` doesn't retroactively remove CI/CD workflows from existing repos. Not a blocker (old workflows are inert if not triggered), but worth noting in PR description: "Existing repos with Squad CI/CD workflows must manually remove them — `squad upgrade` does NOT clean old workflows."
+- **PR title:** `fix(sdk): only install Squad framework workflows during init (4 of 12)` — Scope correct (SDK owns init.ts), type correct (fix for unwanted behavior), suffix adds context.
+- **PR description template:**
+  ```
+  Closes #201
+
+  Squad's own CI/CD workflows (squad-ci, squad-release, squad-docs, etc.) hardcode Squad's branch strategy and Node.js toolchain. They were being copied to user repos on `squad init`, where they have no business running.
+
+  ### Changes
+  - Added `FRAMEWORK_WORKFLOWS` constant listing 4 files that power Squad features
+  - Filtered workflow copy loop to only install framework workflows
+  - Updated tests to assert exact workflow list (both installed and excluded)
+
+  ### Framework workflows (installed):
+  - squad-heartbeat.yml
+  - squad-issue-assign.yml
+  - squad-triage.yml
+  - sync-squad-labels.yml
+
+  ### CI/CD workflows (no longer installed):
+  - squad-ci, squad-release, squad-docs, squad-insider-release, squad-preview, squad-promote, squad-main-guard, squad-label-enforce
+
+  ### Known limitation
+  Existing repos that already have Squad CI/CD workflows will NOT have them removed by `squad upgrade`. Manual cleanup required if users want to remove them.
+  ```
+- **Local commit (abdec4b) verdict:** ⚠️ **PUSH SEPARATELY, DO NOT INCLUDE IN PR #201.** Commit merges Hockney + Waingro testing decisions into `.squad/decisions.md` (278 lines added). This is UNRELATED to workflow filtering — it's Scribe orchestration work from a parallel session. Including it in PR #201 dilutes the PR scope (one fix, one concern). Recommendation: cherry-pick to a separate branch (`squad/scribe-decisions-merge-2026-03-05`) and open separate PR, or push to `dev` directly if team convention allows docs-only commits without PR.
+- **Unstaged package.json changes verdict:** ❌ **DO NOT COMMIT IN THIS PR.** Version bumps (0.8.21-preview.1 → 0.8.21-preview.2) are unrelated to workflow filtering. Likely William's local dev environment preparing for a preview release. Should either (1) be committed in a separate "chore: bump preview version" commit, or (2) be stashed/reset before opening PR #201. Including them pollutes PR diff and creates merge conflicts when Brady bumps versions independently.
+- **Final verdict:** ✅ **APPROVED FOR MERGE TO DEV.** No blockers. Architecture is clean, tests are comprehensive, commit quality is high. Two actions before opening PR: (1) Handle local commit separately (push to different branch or drop), (2) Reset unstaged package.json changes (`git checkout HEAD -- package.json packages/*/package.json`).
+- **Pattern learned:** PR readiness reviews need THREE dimensions: (1) Architecture correctness (is the solution structurally sound?), (2) Scope hygiene (are unrelated commits included?), (3) Upgrade impact (does the fix leave old users in a broken state?). For architectural fixes, "does it solve the problem?" is necessary but not sufficient — also ask "does it leave the next developer a clear path?" The `FRAMEWORK_WORKFLOWS` constant is a gift to future maintainers: when Squad adds a 5th framework workflow, they'll know exactly where to update.
+
 ### 2026-03-05T[NOW]: Read-Only PR Assessment — 4 Open PRs (#182, #185, #178, #131)
 - **Task:** Brady requested read-only assessment of 4 open PRs (all except #189 which Tamir is still working on). Scope: Summary, Quality, Compatibility with recent main, Recommended action.
 - **Context:** Recent main (HEAD: 1dc3bb6) shows major TS replatform: migration from `index.js` (deprecated) to `packages/squad-cli/dist/cli-entry.ts` (new architecture). doctor command already wired, nap command restored, migration docs clarified. This creates compatibility assessment challenge: PRs based on old JS architecture may conflict.
@@ -706,7 +752,7 @@ This history accurately documents Keaton's work and decisions. Future spawns can
 ### 2026-03-05T20:50:00Z: Issue #201 Fix Review — Workflow Install Filter Architecture
 
 - **Task:** Architectural review of PR fixing issue #201 (`squad init` was copying ALL 12 workflows including Squad's own CI/CD pipeline). PR introduces `FRAMEWORK_WORKFLOWS` constant to filter init to 4 framework workflows only. Two files changed: init.ts (filter logic), workflows.test.js (test expectations).
-- **Context:** William Hallatt implemented fix on branch `williamhallatt/201-investigate-actions-install`. Tests pass. Issue reported that users were getting squad-ci.yml, squad-release.yml, squad-preview.yml, etc. — workflows meant for Squad's own repository, not user repos. Fix distinguishes "framework workflows" (always installed) from "CI/CD scaffolding" (opt-in via upgrade).
+- **Context:** Fix for issue #201 addresses the problem that users were getting squad-ci.yml, squad-release.yml, squad-preview.yml, etc. — workflows meant for Squad's own repository, not user repos. Fix distinguishes "framework workflows" (always installed) from "CI/CD scaffolding" (opt-in via upgrade).
 - **Review Findings:**
   1. **✅ FRAMEWORK_WORKFLOWS classification is correct.** Four files in the constant:
      - `squad-heartbeat.yml` (Ralph's automated status updates)

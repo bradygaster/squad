@@ -662,7 +662,9 @@ prompt: |
   
   AFTER work:
   1. APPEND to .squad/agents/{name}/history.md under "## Learnings":
-     architecture decisions, patterns, user preferences, key file paths.
+     architecture decisions, reusable patterns, key file paths, API behaviors, team conventions.
+     ⚠️ DO NOT record: requester names, branch names, session metadata, or one-time task context.
+     History is for knowledge that will be useful in FUTURE sessions, not session attribution.
   2. If you made a team-relevant decision, write to:
      .squad/decisions/inbox/{name}-{brief-slug}.md
   3. SKILL EXTRACTION: If you found a reusable pattern, write/update
