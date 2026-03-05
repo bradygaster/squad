@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+process.env.NODE_NO_WARNINGS = '1';
 
 /**
  * Squad CLI — entry point for command-line invocation.
@@ -20,13 +21,13 @@ import { runShell } from './cli/shell/index.js';
 import { VERSION } from '@bradygaster/squad-sdk';
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  const args = process.argv.slice(2).filter((a) => a.trim() !== '');
   const hasGlobal = args.includes('--global');
-  const cmd = args[0];
+  const cmd = args[0] ?? '--help';
 
   // --version / -v
   if (cmd === '--version' || cmd === '-v') {
-    console.log(`squad ${VERSION}`);
+    console.log(VERSION);
     return;
   }
 
@@ -285,7 +286,7 @@ async function main(): Promise<void> {
   }
 
   // Unknown command
-  fatal(`Unknown command: ${cmd}\n       Run 'squad help' for usage information.`);
+  fatal(`Unknown command: ${cmd}\n       Run 'squad doctor' to check your setup, or 'squad help' for usage information.`);
 }
 
 main().catch(err => {
