@@ -244,10 +244,11 @@ describe('Journey: session-store persistence', () => {
     );
   });
 
-  it('listSessions returns saved sessions sorted most-recent first', () => {
+  it('listSessions returns saved sessions sorted most-recent first', async () => {
     const s1 = createSession();
     s1.messages.push({ role: 'user', content: 'msg1', timestamp: new Date() });
     saveSession(tempDir, s1);
+    await tick(50); // ensure s2 gets a later lastActiveAt timestamp
 
     const s2 = createSession();
     s2.messages.push(

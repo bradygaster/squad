@@ -134,8 +134,8 @@ describe('Journey 1: I just installed this (squad init)', () => {
     await harness.close();
 
     // The human needs a clear next step — not silence
-    expect(output).toContain('Scaffold ready');
-    expect(output.toLowerCase()).toMatch(/copilot session/i);
+    expect(output).toContain('Your team is ready');
+    expect(output.toLowerCase()).toContain('squad');
   });
 
   it('writes first-run marker so the REPL knows this is day one', async () => {

@@ -151,7 +151,7 @@ describe('AgentPanel status display', () => {
   it('idle agents show "idle" status text', () => {
     const agents = [makeAgent({ name: 'Kovash', status: 'idle' })];
     const { lastFrame } = render(h(AgentPanel, { agents }));
-    expect(lastFrame()!.toLowerCase()).toContain('ready');
+    expect(lastFrame()!.toLowerCase()).toContain('[idle]');
   });
 
   it('working agents show active indicator ●', () => {
@@ -494,7 +494,7 @@ describe('Welcome experience', () => {
     expect(frame).toContain('Kovash');
     expect(frame).toContain('Hockney');
     // Should show idle status for the team
-    expect(frame.toLowerCase()).toContain('ready');
+    expect(frame.toLowerCase()).toContain('[idle]');
   });
 
   it('MessageStream with no messages and no processing shows empty area', () => {

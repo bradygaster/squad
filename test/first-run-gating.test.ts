@@ -653,8 +653,8 @@ describe('Banner simplification (#626, #627)', () => {
   it('Header has at most one spacer between banner and version line', async () => {
     const source = await readAppSource();
 
-    // Extract the headerElement useMemo block
-    const headerBlock = source.match(/const headerElement[\s\S]*?useMemo\(\(\)\s*=>\s*\([\s\S]*?\), \[/);
+    // Extract the headerElement useMemo block — matches both inline `=> (` and function body `=> {` forms
+    const headerBlock = source.match(/const headerElement[\s\S]*?(?=const firstRunElement)/);
     expect(headerBlock).not.toBeNull();
 
     const block = headerBlock![0];

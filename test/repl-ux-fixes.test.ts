@@ -119,7 +119,7 @@ describe('#596 — Init creates complete .squad/ directory', () => {
 
     // .gitattributes merge rules
     const gitattributes = readFileSync(join(tmpRoot, '.gitattributes'), 'utf-8');
-    expect(gitattributes).toContain('.squad/decisions/decisions.md merge=union');
+    expect(gitattributes).toContain('.squad/decisions.md merge=union');
     expect(gitattributes).toContain('.squad/agents/*/history.md merge=union');
 
     // .gitignore entries

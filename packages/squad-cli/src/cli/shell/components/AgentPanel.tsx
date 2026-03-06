@@ -95,7 +95,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents, streamingContent
                   ? <Text bold> ✓ Done</Text>
                   : <Text color="green" bold> ✓ Done</Text>
               )}
-              {!active && !errored && <Text dimColor> {statusLabel}</Text>}
+              {!active && !errored && !completionFlash.has(agent.name) && <Text dimColor> {statusLabel}</Text>}
             </Box>
           );
         })}
@@ -123,8 +123,8 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents, streamingContent
               </Text>
               {active && <><Text> </Text><PulsingDot />{agent.activityHint && <Text bold> {agent.activityHint.slice(0, 30)}</Text>}</>}
               {errored && <Text color={noColor ? undefined : 'red'} bold> {statusLabel}</Text>}
-              {completionFlash.has(agent.name) && <Text color={noColor ? undefined : 'green'} bold> ✓</Text>}
-              {!active && !errored && <Text dimColor> {statusLabel}</Text>}
+              {completionFlash.has(agent.name) && <Text color={noColor ? undefined : 'green'} bold> ✓ Done</Text>}
+              {!active && !errored && !completionFlash.has(agent.name) && <Text dimColor> {statusLabel}</Text>}
             </Box>
           );
         })}

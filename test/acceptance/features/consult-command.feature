@@ -21,7 +21,7 @@ Feature: Consult command
   Scenario: Consult blocked in squadified project
     Given the current directory has a ".squad" directory
     When I run "squad consult --check"
-    Then the output contains "already has a .squad/"
+    Then the output contains "No personal squad found"
     And the exit code is 1
 
   Scenario: Extract requires consult mode

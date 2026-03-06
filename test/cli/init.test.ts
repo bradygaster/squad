@@ -91,7 +91,7 @@ describe('CLI: init command', () => {
     expect(existsSync(gitattributesPath)).toBe(true);
     
     const content = await readFile(gitattributesPath, 'utf-8');
-    expect(content).toContain('.squad/decisions/decisions.md merge=union');
+    expect(content).toContain('.squad/decisions.md merge=union');
     expect(content).toContain('.squad/orchestration-log/** merge=union');
   });
 

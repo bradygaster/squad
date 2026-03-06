@@ -8,6 +8,8 @@
  * SDK library exports live in src/index.ts (dist/index.js).
  */
 
+process.env.NODE_NO_WARNINGS = '1';
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
@@ -22,11 +24,12 @@ import { VERSION } from '@bradygaster/squad-sdk';
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const hasGlobal = args.includes('--global');
-  const cmd = args[0];
+  const rawCmd = args[0];
+  const cmd = rawCmd?.trim() || '';
 
   // --version / -v
   if (cmd === '--version' || cmd === '-v') {
-    console.log(`squad ${VERSION}`);
+    console.log(VERSION);
     return;
   }
 
@@ -42,7 +45,8 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
     console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
-    console.log(`             Flags: --global (upgrade personal squad), --migrate-directory (rename .ai-team/ → .squad/)`);
+    console.log(`             Flags: --global (upgrade personal squad)`);
+    console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>]`);
@@ -63,7 +67,8 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
     console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
     console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser`);
-    console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>] [copilot flags...]`);
+    console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>]`);
+    console.log(`                    [copilot flags...]`);
     console.log(`             Examples: start --tunnel --yolo`);
     console.log(`                       start --tunnel --model claude-sonnet-4`);
     console.log(`                       start --tunnel --command "agency copilot"`);
@@ -78,7 +83,8 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}workstreams${RESET} Manage Squad Workstreams (multi-Codespace scaling)`);
     console.log(`             Usage: workstreams <list|status|activate <name>>`);
     console.log(`  ${BOLD}build${RESET}      Compile squad.config.ts into .squad/ markdown`);
-    console.log(`             Flags: --check (validate only), --dry-run (preview), --watch (rebuild on change)`);
+    console.log(`             Flags: --check (validate only), --dry-run (preview)`);
+    console.log(`                    --watch (rebuild on change)`);
 
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
     console.log(`\nFlags:`);
@@ -92,9 +98,16 @@ async function main(): Promise<void> {
     return;
   }
 
-  // No args → launch interactive shell
-  if (!cmd) {
+  // No args → launch interactive shell; whitespace-only arg → show help
+  if (rawCmd === undefined) {
     await runShell();
+    return;
+  }
+  if (!cmd) {
+    // Whitespace-only arg — show help and exit cleanly
+    console.log(`\n${BOLD}squad${RESET} v${VERSION} — Add an AI agent team to any project\n`);
+    console.log(`Usage: squad [command] [options]`);
+    console.log(`Run 'squad help' for the full command list.\n`);
     return;
   }
 
@@ -302,7 +315,7 @@ async function main(): Promise<void> {
   }
 
   // Unknown command
-  fatal(`Unknown command: ${cmd}\n       Run 'squad help' for usage information.`);
+  fatal(`Unknown command: ${cmd}\n       Run 'squad doctor' to check your setup, or 'squad help' for usage information.`);
 }
 
 main().catch(err => {

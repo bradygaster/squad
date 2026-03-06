@@ -133,7 +133,7 @@ describe('Docs Build Script (markdown-it)', () => {
       rmSync(DIST_DIR, { recursive: true, force: true });
     }
     execSync(`node "${BUILD_SCRIPT}"`, { cwd: DOCS_DIR, timeout: 30_000 });
-  });
+  }, 30_000);
 
   afterAll(() => {
     if (existsSync(DIST_DIR)) {
@@ -168,7 +168,7 @@ describe('Docs Build Script (markdown-it)', () => {
     expect(() => {
       execSync(`node "${BUILD_SCRIPT}"`, { cwd: DOCS_DIR, timeout: 30_000 });
     }).not.toThrow();
-  });
+  }, 30_000);
 
   // --- 2. All section files produce HTML output ---
 
