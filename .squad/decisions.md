@@ -2855,3 +2855,15 @@ This sample is intentional: I'm designing it to compound future work. Once we ha
 
 
 
+
+### 2026-03-06T15:37:00Z: User directive — Quality is absolutely job #1
+**By:** Brady (via Copilot)
+**What:** Quality is the top priority from here on out. "Two mistakes and you're locked out" policy is now in effect — agents who produce broken work twice on the same artifact are locked out and a different agent must revise.
+**Why:** User request — recent work introduced regressions (remote control, aspire vanishing, nap vanishing). Trust is earned through correctness.
+
+
+### 2026-03-06T15:37:00Z: User directive — Double/triple check one another
+**By:** Brady (via Copilot)
+**What:** Agents must cross-verify each other's work before shipping. Review gates are non-optional. Charters should be updated when agents realize their processes are producing errors.
+**Why:** User request — multiple features vanished or broke recently. Prevention over correction.
+
