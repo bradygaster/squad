@@ -273,6 +273,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'upstream') {
+    const { upstreamCommand } = await import('./cli/commands/upstream.js');
+    await upstreamCommand(args.slice(1));
+    return;
+  }
+
   // Unknown command
   fatal(`Unknown command: ${cmd}\n       Run 'squad help' for usage information.`);
 }
@@ -285,6 +291,8 @@ main().catch(err => {
   }
   process.exit(1);
 });
+
+
 
 
 
