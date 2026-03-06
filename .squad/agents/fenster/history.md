@@ -286,6 +286,43 @@ All Phase 1 decisions merged to decisions.md. Ready for Phase 2-4.
 ## Learnings
 
 - Root package.json has `"type": "module"` — bare `import` works in cli.js (no dynamic import needed)
+
+### P0 CLI Wiring (2026-03-06)
+
+**Task:** Wire `aspire` command and fix CLI flag validation (Issue #TBD — P0 blockers from triage session)
+
+**Problem:** Aspire command existed (`packages/squad-cli/src/cli/commands/aspire.ts`) and had tests, but was NOT wired into the CLI dispatcher (`cli-entry.ts`). Tests also flagged 5 flag validation issues.
+
+**Fixes applied:**
+1. **Aspire command wiring** (lines 294-301 of cli-entry.ts):
+   - Added dispatcher route: `if (cmd === 'aspire')` with `--docker` and `--port` flag parsing
+   - Added to help text with usage docs (lines 74-76)
+   - Pattern matches existing commands (doctor, nap, etc.)
+
+2. **Flag validation fixes:**
+   - `--version` / `-v`: Changed output from `"squad ${VERSION}"` to bare semver `VERSION` (line 29)
+   - Empty/whitespace args: Added guard at function entry to show help instead of launching shell (lines 28-34)
+   - Help footer: Added "For per-command help: squad <command> --help" (line 91)
+   - Error messages: Updated unknown command error to include `squad doctor` hint (line 314)
+
+**Test results:**
+- **Before:** 55 test failures (44 from triage + 11 pre-existing)
+- **After:** 28 test failures
+- **Fixed:** 27 tests (8 aspire-related, 5 flag validation, 14 error message/UX)
+
+**Pattern established:**
+- CLI command wiring uses simple if/else chain with dynamic imports
+- Flag parsing: `args.includes('--flag')` for booleans, `args.indexOf('--flag')` + `args[idx+1]` for values
+- Help text organization: Commands grouped by function, flags at bottom, footer directs to per-command help
+- Error messages include remediation hints (`squad help`, `squad doctor`)
+
+**Key files:**
+- `packages/squad-cli/src/cli-entry.ts` — Main CLI dispatcher
+- `packages/squad-cli/src/cli/commands/aspire.ts` — Aspire command implementation (existed, just needed wiring)
+
+**Commit:** `9616858` on branch `squad/p0-cli-wiring`
+
+**Quality check:** Build clean ✅, tests reduced from 55→28 failures ✅
 - `packages/squad-cli/dist/cli-entry.js` auto-executes `main().catch(...)` at module level — importing it is sufficient to run the CLI
 - `process.env.npm_execpath` is set when running via npm/npx but absent for direct `node` invocation — good signal for conditional deprecation notices
 - **2026-03-03:** Wired `squad nap` command into CLI entry point (cli-entry.ts lines 245-254). Full implementation existed in nap.ts (runNap, runNapSync, formatNapReport) and REPL already had `/nap` working. CLI was missing the routing — added flag parsing (--deep, --dry-run), squadRoot resolution via resolveSquad(), async runNap() call, formatNapReport() output. Help text and docs/reference/cli.md updated. TypeScript build verified clean.
