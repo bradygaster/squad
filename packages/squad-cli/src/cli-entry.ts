@@ -68,6 +68,9 @@ async function main(): Promise<void> {
     console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
     console.log(`             Flags: --global (upgrade personal squad), --migrate-directory (rename .ai-team/ → .squad/)`);
+    console.log(`  ${BOLD}upstream${RESET}   Manage upstream squad inheritance`);
+    console.log(`             Usage: upstream <add|remove|list|sync>`);
+    console.log(`             Add shared knowledge from parent squads (local, git, or export)`);
     console.log(`\nUtilities:`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
     console.log(`             Usage: plugin marketplace add|remove|list|browse`);
@@ -273,6 +276,12 @@ async function main(): Promise<void> {
   if (cmd === 'doctor') {
     const { doctorCommand } = await import('./cli/commands/doctor.js');
     await doctorCommand();
+    return;
+  }
+
+  if (cmd === 'upstream') {
+    const { upstreamCommand } = await import('./cli/commands/upstream.js');
+    await upstreamCommand(args.slice(1));
     return;
   }
 
