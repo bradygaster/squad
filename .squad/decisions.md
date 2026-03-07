@@ -5770,4 +5770,204 @@ The feature page provides practical setup steps and respects the tone ceiling �
 
 
 ---
+# Skill-Based Orchestration (#255)
+
+**Date:** 2026-03-07
+**Context:** Issue #255 — Decompose squad.agent.md into pluggable skills
+**Decision made by:** Verbal (Prompt Engineer)
+
+## Decision
+
+Squad coordinator capabilities are now **skill-based** — self-contained modules loaded on demand rather than always-inline in squad.agent.md.
+
+## What Changed
+
+### 1. SDK Builder Added
+
+Added `defineSkill()` builder function to the SDK (`packages/squad-sdk/src/builders/`):
+
+```typescript
+export interface SkillDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly domain: string;
+  readonly confidence?: 'low' | 'medium' | 'high';
+  readonly source?: 'manual' | 'observed' | 'earned' | 'extracted';
+  readonly content: string;
+  readonly tools?: readonly SkillTool[];
+}
+
+export function defineSkill(config: SkillDefinition): SkillDefinition { ... }
+```
+
+- **Why:** SDK-First mode needed a typed way to define skills in `squad.config.ts`
+- **Type naming:** Exported as `BuilderSkillDefinition` to distinguish from runtime `SkillDefinition` (skill-loader.ts)
+- **Validation:** Runtime type guards for all fields, follows existing builder pattern
+
+### 2. Four Skills Extracted
+
+Extracted from squad.agent.md:
+
+1. **init-mode** — Phase 1 (propose team) + Phase 2 (create team). ~100 lines. Full casting flow, `ask_user` tool, merge driver setup.
+2. **model-selection** — 4-layer hierarchy (User Override → Charter → Task-Aware → Default), role-to-model mappings, fallback chains. ~90 lines.
+3. **client-compatibility** — Platform detection (CLI vs VS Code vs fallback), spawn adaptations, SQL tool caveat. ~60 lines.
+4. **reviewer-protocol** — Rejection workflow, strict lockout semantics (original author cannot self-revise). ~30 lines.
+
+All skills marked:
+- `confidence: "high"` — extracted from authoritative governance file
+- `source: "extracted"` — marks decomposition from squad.agent.md
+
+### 3. squad.agent.md Compacted
+
+Replaced extracted sections with lazy-loading references:
+
+```markdown
+## Init Mode
+
+**Skill:** Read `.squad/skills/init-mode/SKILL.md` when entering Init Mode.
+
+**Core rules (always loaded):**
+- Phase 1: Propose team → use `ask_user` → STOP and wait
+- Phase 2 trigger: User confirms OR user gives task (implicit yes)
+- ...
+```
+
+**Result:** 840 lines → 711 lines (15% reduction, ~130 lines removed)
+
+### 4. Build Command Updated
+
+`squad build` now generates `.squad/skills/{name}/SKILL.md` when `config.skills` is defined in `squad.config.ts`:
+
+```typescript
+// In build.ts
+function generateSkillFile(skill: BuilderSkillDefinition): string {
+  // Generates frontmatter + content
+}
+
+// In buildFilePlan()
+if (config.skills && config.skills.length > 0) {
+  for (const skill of config.skills) {
+    files.push({
+      relPath: `.squad/skills/${skill.name}/SKILL.md`,
+      content: generateSkillFile(skill),
+    });
+  }
+}
+```
+
+## Why This Matters
+
+### For Coordinators
+- **Smaller context window:** squad.agent.md drops from 840 → 711 lines. Further decomposition can continue.
+- **On-demand loading:** Coordinator reads skill files only when relevant (e.g., init-mode only during Init Mode).
+- **Skill confidence lifecycle:** Framework supports low → medium → high confidence progression for future learned skills.
+
+### For SDK Users
+- **Typed skill definitions:** Define skills in `squad.config.ts` using `defineSkill()`, get validation and type safety.
+- **Programmatic skill authoring:** Skills can be composed, shared, and versioned like code.
+- **Build-time generation:** `squad build` generates SKILL.md from config — single source of truth.
+
+### For the Team
+- **Parallel with ceremony extraction:** Follows the same pattern as ceremony skill files (#193).
+- **Reduces merge conflicts:** Smaller squad.agent.md = fewer line-based conflicts when multiple PRs touch governance.
+- **Enables skill marketplace:** Future work can package skills as npm modules, share across teams.
+
+## Constraints
+
+1. **Existing behavior unchanged:** Skills are lazy-loaded. If coordinator previously got instructions inline, it now gets them from a skill file. Same instructions, different location.
+2. **squad.agent.md must still work:** Core rules remain inline. Coordinator knows WHEN to load each skill without needing the skill file first.
+3. **Type collision avoided:** BuilderSkillDefinition vs runtime SkillDefinition — import from `@bradygaster/squad-sdk/builders` subpath in CLI to avoid ambiguity.
+
+## Future Work
+
+- Extract 3+ more skills from squad.agent.md (target: <500 lines for core orchestration)
+- Add skill discovery/loading to runtime (currently manual references)
+- Skill marketplace: share skills via npm, discover in `squad marketplace`
+- Learned skills: agents can write skills from observations (already architected, not yet implemented)
+
+## References
+
+- Issue: #255
+- Files changed:
+  - `packages/squad-sdk/src/builders/types.ts`
+  - `packages/squad-sdk/src/builders/index.ts`
+  - `packages/squad-sdk/src/index.ts`
+  - `packages/squad-cli/src/cli/commands/build.ts`
+  - `.github/agents/squad.agent.md`
+  - `.squad/skills/init-mode/SKILL.md` (new)
+  - `.squad/skills/model-selection/SKILL.md` (new)
+  - `.squad/skills/client-compatibility/SKILL.md` (new)
+  - `.squad/skills/reviewer-protocol/SKILL.md` (new)
+
+
+
+### 2026-03-07T19-59-58Z: User directive
+**By:** bradygaster (via Copilot)
+**What:** Prefer GitHub Actions for npm publish over local npm publish. Set up a secret in the GitHub repo and facilitate npm deployment via a CI action instead of running it locally.
+**Why:** User request - captured for team memory
+
+
+# npm Publish Automation via GitHub Actions
+
+**Date:** 2026-03-16  
+**Author:** Kobayashi  
+**Status:** Implemented  
+
+## Context
+
+Brady requested automated npm publishing via GitHub Actions instead of manual local publishes. Manual publishing is error-prone (version mismatches, forgotten packages, incorrect tags) and lacks audit trail.
+
+## Decision
+
+Consolidated npm publishing into single GitHub Actions workflow (`publish.yml`) that triggers automatically on GitHub Release creation.
+
+## Implementation
+
+### Workflow Architecture
+
+**Event Chain:**
+1. Code merged to `main` (via squad-promote or direct merge)
+2. `squad-release.yml` creates tag + GitHub Release (if version bumped)
+3. `publish.yml` triggers on `release.published` event
+4. Publishes @bradygaster/squad-sdk → @bradygaster/squad-cli (correct order)
+
+**Manual Override:**
+- Supports `workflow_dispatch` for ad-hoc publishes
+- Requires version input (e.g., "0.8.21")
+
+### Safety Features
+
+1. **Version verification:** Workflow validates package.json version matches release tag
+2. **Publication verification:** Confirms packages visible on npm after publish
+3. **Provenance attestation:** npm packages include cryptographic proof of origin
+4. **Sequential publish:** SDK publishes first (CLI depends on it)
+
+### Changes Made
+
+- Updated `.github/workflows/publish.yml` with new trigger logic
+- Deprecated `.github/workflows/squad-publish.yml` (redundant)
+- Added version/publication verification steps
+
+## Requirements
+
+**NPM_TOKEN Secret:**
+Brady must create Automation token at https://www.npmjs.com/settings/{username}/tokens and add to GitHub repo secrets.
+
+## Implications
+
+- **Releases:** Automatic npm publish when GitHub Release created (zero manual steps)
+- **Audit:** All publishes logged in GitHub Actions (who, when, what version)
+- **Security:** Provenance attestation strengthens supply chain trust
+- **Error reduction:** Version mismatches caught before publish
+
+## Rollback Strategy
+
+- npm allows unpublish within 72 hours of publication
+- Manual `npm unpublish @bradygaster/squad-{pkg}@{version}` if issues detected
+
+## Related Files
+
+- `.github/workflows/publish.yml` — npm publish workflow
+- `.github/workflows/squad-release.yml` — GitHub Release creation
+- `.squad/agents/kobayashi/history.md` — Implementation details
 

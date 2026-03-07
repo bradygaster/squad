@@ -1,3 +1,5 @@
+📌 Team update (2026-03-07T20-04-20Z): GitHub Actions npm publishing automation established. New publish.yml workflow triggers on GitHub Release creation. NPM_TOKEN secret required in repo settings. CI/CD publishing is now authoritative method; local npm publish deprecated. — coordinated by Scribe
+
 📌 Team update (2026-03-07T16:25:00Z): Actions → CLI migration strategy finalized. 4-agent consensus: migrate 5 squad-specific workflows (12 min/mo) to CLI commands. Keep 9 CI/release workflows (215 min/mo, load-bearing). Zero-risk migration. v0.8.22 quick wins identified: squad labels sync + squad labels enforce. Phased rollout: v0.8.22 (deprecation + CLI) → v0.9.0 (remove workflows) → v0.9.x (opt-in automation). Brady's portability insight captured: CLI-first means Squad runs anywhere (containers, Codespaces). Customer communication strategy: "Zero surprise automation" as competitive differentiator. Decisions merged. — coordinated by Scribe
 
 # Project Context
