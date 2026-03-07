@@ -46,7 +46,7 @@ try {
 import fs from 'node:fs';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
-import { BOLD, RESET, DIM, RED } from './cli/core/output.js';
+import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
 import { runInit } from './cli/core/init.js';
 import { resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
 import { runShell } from './cli/shell/index.js';
@@ -145,6 +145,12 @@ async function main(): Promise<void> {
     console.log(`                    --watch (rebuild on change)`);
     console.log(`  ${BOLD}aspire${RESET}     Launch .NET Aspire dashboard for observability`);
     console.log(`             Flags: --docker (force Docker), --port <n> (dashboard port)`);
+    console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
+    console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
+    console.log(`  ${BOLD}copilot-bridge${RESET}  Check Copilot ACP stdio compatibility`);
+    console.log(`  ${BOLD}init-remote${RESET}    Link project to remote team root (shorthand)`);
+    console.log(`             Usage: init-remote <team-repo-path>`);
+    console.log(`  ${BOLD}rc-tunnel${RESET}      Check devtunnel CLI availability`);
 
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
     console.log(`\nFlags:`);
@@ -407,6 +413,50 @@ async function main(): Promise<void> {
       fatal('Usage: squad link <team-repo-path>');
     }
     runLink(process.cwd(), teamPath);
+    return;
+  }
+
+  if (cmd === 'rc' || cmd === 'remote-control') {
+    const { runRC } = await import('./cli/commands/rc.js');
+    const hasTunnel = args.includes('--tunnel');
+    const portIdx = args.indexOf('--port');
+    const port = (portIdx !== -1 && args[portIdx + 1]) ? parseInt(args[portIdx + 1]!, 10) : 0;
+    const pathIdx = args.indexOf('--path');
+    const rcPath = (pathIdx !== -1 && args[pathIdx + 1]) ? args[pathIdx + 1] : undefined;
+    await runRC(rcPath || process.cwd(), { tunnel: hasTunnel, port });
+    return;
+  }
+
+  if (cmd === 'copilot-bridge') {
+    const { CopilotBridge } = await import('./cli/commands/copilot-bridge.js');
+    const result = await CopilotBridge.checkCompatibility();
+    if (result.compatible) {
+      console.log(`${GREEN}✓${RESET} ${result.message}`);
+    } else {
+      console.log(`${YELLOW}⚠${RESET} ${result.message}`);
+    }
+    return;
+  }
+
+  if (cmd === 'init-remote') {
+    const { writeRemoteConfig } = await import('./cli/commands/init-remote.js');
+    const teamPath = args[1];
+    if (!teamPath) {
+      fatal('Usage: squad init-remote <team-repo-path>');
+    }
+    const dest = process.cwd();
+    writeRemoteConfig(dest, teamPath);
+    await runInit(dest);
+    return;
+  }
+
+  if (cmd === 'rc-tunnel') {
+    const { isDevtunnelAvailable } = await import('./cli/commands/rc-tunnel.js');
+    if (isDevtunnelAvailable()) {
+      console.log(`${GREEN}✓${RESET} devtunnel CLI is available`);
+    } else {
+      console.log(`${YELLOW}⚠${RESET} devtunnel CLI not found. Install with: winget install Microsoft.devtunnel`);
+    }
     return;
   }
 
