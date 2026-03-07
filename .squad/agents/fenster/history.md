@@ -764,3 +764,5 @@ Fixed 4 bugs in a single branch:
 - CLI command wiring requires both a routing block in cli-entry.ts AND help text in the help section. Easy to miss one.
 - The .gitignore append pattern (check exists, check includes, append with header comment) is reusable across init, link, and init-remote.
 - FRAMEWORK_WORKFLOWS already filters init to 4 safe workflows; the opt-in flag is about user control, not safety.
+- `process.env.NODE_NO_WARNINGS = '1'` set at runtime does NOT suppress Node.js ExperimentalWarning -- the env var is only checked at process start. Use a `process.emit` override to filter warnings at runtime.
+- CI failures in --version tests were caused by `node:sqlite` ExperimentalWarning leaking into terminal output (3 lines instead of 1). Fixed with process.emit hook in cli-entry.ts.
