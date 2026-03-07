@@ -114,10 +114,16 @@ When triggered:
 
 ### Issue Awareness
 
-**On every session start (after resolving team root):** Check for open GitHub issues assigned to squad members via labels. Use the GitHub CLI or API to list issues with `squad:*` labels:
+**On every session start (after resolving team root):** Check for open issues/work items assigned to squad members. Detect the platform first:
 
+**GitHub:** Use `gh` CLI or GitHub MCP tools:
 ```
 gh issue list --label "squad:{member-name}" --state open --json number,title,labels,body --limit 10
+```
+
+**Azure DevOps:** Read `.squad/config.json` for `ado.org`/`ado.project`, then use WIQL:
+```
+az boards query --wiql "SELECT [System.Id],[System.Title],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:{member-name}' AND [System.State] <> 'Closed' AND [System.TeamProject] = '{project}'" --org "https://dev.azure.com/{org}" --project "{project}" --output json
 ```
 
 For each squad member with assigned issues, note them in the session context. When presenting a catch-up or when the user asks for status, include pending issues:
@@ -455,6 +461,7 @@ MCP (Model Context Protocol) servers extend Squad with tools for external servic
 
 At task start, scan your available tools list for known MCP prefixes:
 - `github-mcp-server-*` → GitHub API (issues, PRs, code search, actions)
+- `azure-devops-*` → Azure DevOps API (work items, repos, PRs, pipelines, wiki)
 - `trello_*` → Trello boards, cards, lists
 - `aspire_*` → Aspire dashboard (metrics, logs, health)
 - `azure_*` → Azure resource management
@@ -946,6 +953,65 @@ Before connecting to a GitHub repository, verify that the `gh` CLI is available 
 
 ---
 
+## Platform Detection
+
+On session start, detect the platform from git remote:
+- `github.com` → Use GitHub commands (`gh` CLI)
+- `dev.azure.com` or `*.visualstudio.com` → Use Azure DevOps commands (`az` CLI)
+
+If `squad.config.ts` specifies `workItems: 'planner'`, use Microsoft Planner for work items regardless of where the repo lives.
+
+### Azure DevOps Mode
+
+If the git remote points to Azure DevOps:
+
+| GitHub concept | Azure DevOps equivalent | Command change |
+|---|---|---|
+| `gh issue list` | WIQL query via `az boards query` | `az boards query --wiql "SELECT ... FROM WorkItems WHERE ..."` |
+| `gh pr list` | `az repos pr list` | `az repos pr list --status active` |
+| `gh pr create` | `az repos pr create` | `az repos pr create --source-branch ... --target-branch ...` |
+| `gh pr merge` | `az repos pr update --status completed` | Set PR status to completed |
+| Issue labels | Work Item tags | `az boards work-item update --fields "System.Tags=..."` |
+| `squad:{member}` label | `squad:{member}` tag on work items | Tags use `;` separator |
+
+**Prerequisites for Azure DevOps:**
+1. Run `az --version`. If missing: *"Azure DevOps mode requires the Azure CLI. Install from https://aka.ms/install-az-cli"*
+2. Run `az extension show --name azure-devops`. If missing: *"Run `az extension add --name azure-devops`"*
+3. Run `az account show`. If not logged in: *"Run `az login` to authenticate"*
+4. Verify defaults: `az devops configure --list` — org and project must be set
+
+**ADO Work Item Config (`.squad/config.json`):**
+
+Read the `ado` section from `.squad/config.json` to resolve org, project, work item type, area/iteration paths:
+
+```json
+{
+  "platform": "azure-devops",
+  "ado": {
+    "org": "my-org",
+    "project": "work-items-project",
+    "defaultWorkItemType": "Scenario",
+    "areaPath": "MyProject\\Team Alpha",
+    "iterationPath": "MyProject\\Sprint 5"
+  }
+}
+```
+
+- If `ado.org`/`ado.project` are set, use them for ALL work item operations (they may differ from the repo's org/project)
+- If not set, parse org/project from `git remote get-url origin`
+- Pass `--org https://dev.azure.com/{org} --project {project}` on every `az boards` command
+- Use `ado.defaultWorkItemType` when creating work items (default: "User Story")
+
+**Ralph on Azure DevOps:**
+- **Read `.squad/config.json`** first — the `ado` section tells you which org/project to query for work items
+- Replace `gh issue list --label "squad:untriaged"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:untriaged' AND [System.TeamProject] = '{project}'" --org ... --project ...`
+- Replace `gh issue list --label "squad:{member}"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:{member}'" --org ... --project ...`
+- Replace `gh pr list` with `az repos pr list` (uses repo org/project, not work item org/project)
+- When creating work items, use `ado.defaultWorkItemType`, include `ado.areaPath` and `ado.iterationPath` if configured
+- Branch naming stays the same: `squad/{issue-number}-{slug}`
+
+---
+
 ## Ralph — Work Monitor
 
 Ralph is a built-in squad member whose job is keeping tabs on work. **Ralph tracks and drives the work queue.** Always on the roster, one job: make sure the team never sits idle.
@@ -970,7 +1036,7 @@ Ralph always appears in `team.md`: `| Ralph | Work Monitor | — | 🔄 Monitor 
 | "Ralph, idle" / "Take a break" / "Stop monitoring" | Fully deactivate (stop loop + idle-watch) |
 | "Ralph, scope: just issues" / "Ralph, skip CI" | Adjust what Ralph monitors this session |
 | References PR feedback or changes requested | Spawn agent to address PR review feedback |
-| "merge PR #N" / "merge it" (recent context) | Merge via `gh pr merge` |
+| "merge PR #N" / "merge it" (recent context) | Merge via `gh pr merge` (GitHub) or `az repos pr update --status completed` (ADO) |
 
 These are intent signals, not exact strings — match meaning, not words.
 
@@ -978,6 +1044,9 @@ When Ralph is active, run this check cycle after every batch of agent work compl
 
 **Step 1 — Scan for work** (run these in parallel):
 
+> **Platform-aware:** Detect the platform from git remote. If Azure DevOps, read `.squad/config.json` for the `ado` section FIRST — it tells you which org/project to query for work items (may differ from the repo). Use `az boards query` / `az repos pr list` instead of `gh`. If Planner, use Graph API. Do NOT guess the ADO project from the repo name — read the config.
+
+**GitHub:**
 ```bash
 # Untriaged issues (labeled squad but no squad:{member} sub-label)
 gh issue list --label "squad" --state open --json number,title,labels,assignees --limit 20
@@ -990,6 +1059,24 @@ gh pr list --state open --json number,title,author,labels,isDraft,reviewDecision
 
 # Draft PRs (agent work in progress)
 gh pr list --state open --draft --json number,title,author,labels,checks --limit 20
+```
+
+**Azure DevOps:**
+```bash
+# Read org/project from .squad/config.json → ado.org, ado.project
+# Fall back to git remote URL parsing if not configured
+
+# Untriaged work items
+az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:untriaged' AND [System.TeamProject] = '{project}' ORDER BY [System.CreatedDate] DESC" --org "https://dev.azure.com/{org}" --project "{project}" --output table
+
+# Member-assigned work items
+az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:{member}' AND [System.State] <> 'Closed' AND [System.TeamProject] = '{project}' ORDER BY [System.CreatedDate] DESC" --org "https://dev.azure.com/{org}" --project "{project}" --output table
+
+# Open PRs (uses repo org/project, NOT work item org/project)
+az repos pr list --status active --output table
+
+# Create a work item (uses configured type, area path, iteration path)
+az boards work-item create --type "{ado.defaultWorkItemType}" --title "{title}" --fields "System.Tags=squad; squad:untriaged" --org "https://dev.azure.com/{org}" --project "{project}"
 ```
 
 **Step 2 — Categorize findings:**

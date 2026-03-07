@@ -178,6 +178,18 @@ ORDER BY [System.CreatedDate] DESC
 
 The full triage → assign → branch → PR → merge loop works end-to-end with ADO.
 
+## Ralph + ADO: The Governance Fix
+
+The coordinator prompt (`squad.agent.md`) is what tells Ralph *where* to look for work. Previously, it only had GitHub commands — `gh issue list`, `gh pr list`. Even if the ADO adapter was perfect, Ralph would still scan GitHub because that's what the governance file told it to do.
+
+We fixed this at every level:
+- **MCP detection** — Added `azure-devops-*` to the tool prefix table so the coordinator recognizes ADO MCP tools
+- **Platform Detection section** — New section in the governance file explaining how to detect GitHub vs ADO from the git remote
+- **Issue Awareness** — Now shows both GitHub and ADO queries, with instructions to read `.squad/config.json` first
+- **Ralph Step 1** — Platform-aware scan with both GitHub and ADO command blocks, plus the critical instruction: *"Read `.squad/config.json` for the `ado` section FIRST — do NOT guess the ADO project from the repo name"*
+
+This is the kind of bug that's invisible in unit tests — the code works, but the governance prompt doesn't tell the coordinator to use it.
+
 ## Getting Started
 
 ```bash
