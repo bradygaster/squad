@@ -27,6 +27,8 @@ import type {
   SquadSDKConfig,
   AgentDefinition,
   CeremonyDefinition,
+  ModelPreference,
+  BuilderModelId,
 } from '@bradygaster/squad-sdk';
 
 // ---------------------------------------------------------------------------
@@ -163,7 +165,42 @@ function generateRoutingMd(config: SquadSDKConfig): string {
   return lines.join('\n');
 }
 
-function generateCharterMd(agent: AgentDefinition): string {
+/**
+ * Normalize a model field (string or ModelPreference) into a ModelPreference object.
+ */
+function normalizeModelPreference(
+  model: BuilderModelId | ModelPreference | undefined,
+): ModelPreference | undefined {
+  if (!model) return undefined;
+  if (typeof model === 'string') return { preferred: model };
+  return model;
+}
+
+/**
+ * Render the `## Model` section for a charter, using the agent's model
+ * preference or falling back to squad-level defaults.
+ */
+function renderModelSection(
+  agentModel: BuilderModelId | ModelPreference | undefined,
+  defaultModel: BuilderModelId | ModelPreference | undefined,
+): string[] {
+  const pref = normalizeModelPreference(agentModel) ?? normalizeModelPreference(defaultModel);
+  if (!pref) return [];
+
+  const lines: string[] = [];
+  lines.push('## Model\n');
+  lines.push(`**Preferred:** ${pref.preferred}`);
+  if (pref.rationale) {
+    lines.push(`**Rationale:** ${pref.rationale}`);
+  }
+  if (pref.fallback) {
+    lines.push(`**Fallback:** ${pref.fallback}`);
+  }
+  lines.push('');
+  return lines;
+}
+
+function generateCharterMd(agent: AgentDefinition, defaultModel?: BuilderModelId | ModelPreference): string {
   const lines: string[] = [GENERATED_HEADER];
   const name = agent.name;
   const role = agent.role;
@@ -179,10 +216,7 @@ function generateCharterMd(agent: AgentDefinition): string {
     lines.push('');
   }
 
-  if (agent.model) {
-    lines.push(`**Model:** ${agent.model}`);
-    lines.push('');
-  }
+  lines.push(...renderModelSection(agent.model, defaultModel));
 
   if (agent.tools && agent.tools.length > 0) {
     lines.push('## Tools\n');
@@ -293,10 +327,11 @@ function buildFilePlan(config: SquadSDKConfig): GeneratedFile[] {
   }
 
   // Agent charters
+  const defaultModel = config.defaults?.model;
   for (const agent of config.agents) {
     files.push({
       relPath: `.squad/agents/${agent.name}/charter.md`,
-      content: generateCharterMd(agent),
+      content: generateCharterMd(agent, defaultModel),
     });
   }
 

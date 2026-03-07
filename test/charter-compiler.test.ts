@@ -46,6 +46,8 @@ Do not modify runtime code. Stay within prompt and charter files.
 ## Model
 
 **Preferred:** claude-sonnet-4.5
+**Rationale:** Best balance of speed and quality for prompt work
+**Fallback:** claude-haiku-4.5
 
 ## Collaboration
 
@@ -106,6 +108,16 @@ describe('parseCharterMarkdown', () => {
       expect(parsed.modelPreference).toBe('claude-sonnet-4.5');
     });
 
+    it('extracts model rationale', () => {
+      const parsed = parseCharterMarkdown(FULL_CHARTER);
+      expect(parsed.modelRationale).toBe('Best balance of speed and quality for prompt work');
+    });
+
+    it('extracts model fallback', () => {
+      const parsed = parseCharterMarkdown(FULL_CHARTER);
+      expect(parsed.modelFallback).toBe('claude-haiku-4.5');
+    });
+
     it('extracts collaboration section', () => {
       const parsed = parseCharterMarkdown(FULL_CHARTER);
       expect(parsed.collaboration).toContain('Fenster');
@@ -133,6 +145,16 @@ describe('parseCharterMarkdown', () => {
     it('returns undefined model preference when section missing', () => {
       const parsed = parseCharterMarkdown(MINIMAL_CHARTER);
       expect(parsed.modelPreference).toBeUndefined();
+    });
+
+    it('returns undefined model rationale when section missing', () => {
+      const parsed = parseCharterMarkdown(MINIMAL_CHARTER);
+      expect(parsed.modelRationale).toBeUndefined();
+    });
+
+    it('returns undefined model fallback when section missing', () => {
+      const parsed = parseCharterMarkdown(MINIMAL_CHARTER);
+      expect(parsed.modelFallback).toBeUndefined();
     });
   });
 

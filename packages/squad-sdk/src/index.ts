@@ -50,6 +50,7 @@ export {
   defineHooks,
   defineCasting,
   defineTelemetry,
+  defineDefaults,
   defineSquad,
   BuilderValidationError,
 } from './builders/index.js';
@@ -57,6 +58,8 @@ export type {
   AgentRef,
   ScheduleExpression,
   BuilderModelId,
+  ModelPreference,
+  DefaultsDefinition,
   TeamDefinition,
   AgentCapability,
   AgentDefinition,

@@ -23,6 +23,39 @@ export type ScheduleExpression = string;
 export type BuilderModelId = string;
 
 // ---------------------------------------------------------------------------
+// ModelPreference — structured model selection
+// ---------------------------------------------------------------------------
+
+/**
+ * Structured model preference for an agent or squad-level default.
+ * Supports the 4-layer model selection hierarchy:
+ *   1. User override (runtime)
+ *   2. Charter / config preference (this type)
+ *   3. Task-aware auto-selection (runtime)
+ *   4. Default (haiku)
+ */
+export interface ModelPreference {
+  /** Preferred model identifier (e.g. `"claude-sonnet-4.5"`). */
+  readonly preferred: BuilderModelId;
+
+  /** Why this model was chosen — helps coordinators respect the preference. */
+  readonly rationale?: string;
+
+  /** Fallback model if the preferred model is unavailable. */
+  readonly fallback?: BuilderModelId;
+}
+
+// ---------------------------------------------------------------------------
+// DefaultsDefinition — squad-level defaults
+// ---------------------------------------------------------------------------
+
+/** Squad-level defaults applied to all agents unless overridden. */
+export interface DefaultsDefinition {
+  /** Default model preference for agents that don't specify one. */
+  readonly model?: BuilderModelId | ModelPreference;
+}
+
+// ---------------------------------------------------------------------------
 // TeamDefinition
 // ---------------------------------------------------------------------------
 
@@ -66,8 +99,8 @@ export interface AgentDefinition {
   /** Path to charter markdown or inline charter text. */
   readonly charter?: string;
 
-  /** Preferred model identifier. */
-  readonly model?: BuilderModelId;
+  /** Preferred model identifier or structured model preference. */
+  readonly model?: BuilderModelId | ModelPreference;
 
   /** Tools this agent is allowed to use. */
   readonly tools?: readonly string[];
@@ -205,6 +238,9 @@ export interface SquadSDKConfig {
 
   /** Agent definitions. */
   readonly agents: readonly AgentDefinition[];
+
+  /** Squad-level defaults applied to agents unless overridden. */
+  readonly defaults?: DefaultsDefinition;
 
   /** Routing rules. */
   readonly routing?: RoutingDefinition;

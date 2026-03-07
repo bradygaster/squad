@@ -36,6 +36,8 @@ import { tmpdir } from 'node:os';
 import type {
   TeamDefinition,
   AgentDefinition,
+  ModelPreference,
+  BuilderModelId,
   RoutingDefinition,
   CeremonyDefinition,
   HooksDefinition,
@@ -153,14 +155,28 @@ function generateRoutingMd(config: SquadSDKConfig): string {
   return lines.join('\n') + '\n';
 }
 
-function generateCharterMd(agent: AgentDefinition): string {
+function normalizeModelPref(
+  model: BuilderModelId | ModelPreference | undefined,
+): ModelPreference | undefined {
+  if (!model) return undefined;
+  if (typeof model === 'string') return { preferred: model };
+  return model;
+}
+
+function generateCharterMd(agent: AgentDefinition, defaultModel?: BuilderModelId | ModelPreference): string {
   const lines: string[] = [
     GENERATED_HEADER,
     '',
     `# ${agent.name} — ${agent.role}`,
   ];
   if (agent.charter) lines.push('', agent.charter);
-  if (agent.model) lines.push('', `**Model:** ${agent.model}`);
+  const pref = normalizeModelPref(agent.model) ?? normalizeModelPref(defaultModel);
+  if (pref) {
+    lines.push('', '## Model', '');
+    lines.push(`**Preferred:** ${pref.preferred}`);
+    if (pref.rationale) lines.push(`**Rationale:** ${pref.rationale}`);
+    if (pref.fallback) lines.push(`**Fallback:** ${pref.fallback}`);
+  }
   if (agent.tools && agent.tools.length > 0) {
     lines.push('', '## Tools', '');
     for (const t of agent.tools) lines.push(`- ${t}`);
@@ -206,11 +222,12 @@ function runBuild(config: SquadSDKConfig, squadDir: string): BuildResult {
   }
 
   // agents/*/charter.md
+  const defaultModel = config.defaults?.model;
   for (const agent of config.agents) {
     const charterDir = join(squadDir, 'agents', agent.name);
     mkdirSync(charterDir, { recursive: true });
     const charterPath = join(charterDir, 'charter.md');
-    writeFileSync(charterPath, generateCharterMd(agent));
+    writeFileSync(charterPath, generateCharterMd(agent, defaultModel));
     written.push(`agents/${agent.name}/charter.md`);
   }
 
@@ -238,7 +255,7 @@ function checkBuild(config: SquadSDKConfig, squadDir: string): CheckResult {
   for (const agent of config.agents) {
     checks.push({
       file: `agents/${agent.name}/charter.md`,
-      expected: generateCharterMd(agent),
+      expected: generateCharterMd(agent, config.defaults?.model),
     });
   }
 
@@ -278,7 +295,7 @@ function dryRunBuild(config: SquadSDKConfig, squadDir: string): { diffs: string[
   for (const agent of config.agents) {
     files.push({
       file: `agents/${agent.name}/charter.md`,
-      expected: generateCharterMd(agent),
+      expected: generateCharterMd(agent, config.defaults?.model),
     });
   }
 

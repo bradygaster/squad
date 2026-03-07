@@ -12,6 +12,8 @@
 import type {
   TeamDefinition,
   AgentDefinition,
+  ModelPreference,
+  DefaultsDefinition,
   RoutingDefinition,
   CeremonyDefinition,
   HooksDefinition,
@@ -25,6 +27,8 @@ export type {
   AgentRef,
   ScheduleExpression,
   BuilderModelId,
+  ModelPreference,
+  DefaultsDefinition,
   TeamDefinition,
   AgentCapability,
   AgentDefinition,
@@ -101,6 +105,20 @@ function assertStringUnion<T extends string>(
   }
 }
 
+/** Validates a model field that accepts string or ModelPreference object. */
+function assertModelPreference(value: unknown, field: string, builder: string): void {
+  if (value === undefined) return;
+  if (typeof value === 'string') return;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    assertNonEmptyString(obj.preferred, `${field}.preferred`, builder);
+    assertOptionalString(obj.rationale, `${field}.rationale`, builder);
+    assertOptionalString(obj.fallback, `${field}.fallback`, builder);
+    return;
+  }
+  throw new BuilderValidationError(builder, `"${field}" must be a model string or { preferred, rationale?, fallback? }`);
+}
+
 // ---------------------------------------------------------------------------
 // defineTeam
 // ---------------------------------------------------------------------------
@@ -157,7 +175,7 @@ export function defineAgent(config: AgentDefinition): AgentDefinition {
   assertNonEmptyString(config.role, 'role', 'defineAgent');
   assertOptionalString(config.description, 'description', 'defineAgent');
   assertOptionalString(config.charter, 'charter', 'defineAgent');
-  assertOptionalString(config.model, 'model', 'defineAgent');
+  assertModelPreference(config.model, 'model', 'defineAgent');
   assertOptionalArray(config.tools, 'tools', 'defineAgent');
   assertOptionalArray(config.capabilities, 'capabilities', 'defineAgent');
 
@@ -353,6 +371,25 @@ export function defineTelemetry(config: TelemetryDefinition): TelemetryDefinitio
 }
 
 // ---------------------------------------------------------------------------
+// defineDefaults
+// ---------------------------------------------------------------------------
+
+/**
+ * Define squad-level defaults applied to all agents unless overridden.
+ *
+ * ```ts
+ * const defaults = defineDefaults({
+ *   model: { preferred: 'claude-sonnet-4', rationale: 'Good balance of speed and quality', fallback: 'claude-haiku-4.5' },
+ * });
+ * ```
+ */
+export function defineDefaults(config: DefaultsDefinition): DefaultsDefinition {
+  assertObject(config, 'defineDefaults');
+  assertModelPreference(config.model, 'model', 'defineDefaults');
+  return config;
+}
+
+// ---------------------------------------------------------------------------
 // defineSquad — top-level composition
 // ---------------------------------------------------------------------------
 
@@ -365,6 +402,7 @@ export function defineTelemetry(config: TelemetryDefinition): TelemetryDefinitio
  *   team: defineTeam({ name: 'Core', members: ['@edie'] }),
  *   agents: [defineAgent({ name: 'edie', role: 'TypeScript Engineer' })],
  *   routing: defineRouting({ rules: [...] }),
+ *   defaults: defineDefaults({ model: 'claude-sonnet-4' }),
  * });
  * ```
  */
@@ -379,6 +417,7 @@ export function defineSquad(config: SquadSDKConfig): SquadSDKConfig {
     defineAgent(agent);
   }
 
+  if (config.defaults !== undefined) defineDefaults(config.defaults);
   if (config.routing !== undefined) defineRouting(config.routing);
   if (config.ceremonies !== undefined) {
     assertArray(config.ceremonies, 'ceremonies', 'defineSquad');

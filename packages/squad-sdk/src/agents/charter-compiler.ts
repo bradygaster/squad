@@ -66,6 +66,10 @@ export interface ParsedCharter {
   boundaries?: string;
   /** Model preference from ## Model section */
   modelPreference?: string;
+  /** Rationale for model preference from ## Model section */
+  modelRationale?: string;
+  /** Fallback model from ## Model section */
+  modelFallback?: string;
   /** Collaboration section content */
   collaboration?: string;
   /** Full charter content */
@@ -237,6 +241,14 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
     const preferredMatch = modelContent.match(/\*\*Preferred:\*\*\s*(.+)/i);
     if (preferredMatch) {
       result.modelPreference = preferredMatch[1]!.trim();
+    }
+    const rationaleMatch = modelContent.match(/\*\*Rationale:\*\*\s*(.+)/i);
+    if (rationaleMatch) {
+      result.modelRationale = rationaleMatch[1]!.trim();
+    }
+    const fallbackMatch = modelContent.match(/\*\*Fallback:\*\*\s*(.+)/i);
+    if (fallbackMatch) {
+      result.modelFallback = fallbackMatch[1]!.trim();
     }
   }
   
