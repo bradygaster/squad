@@ -9,14 +9,34 @@ export type { GitHubRemoteInfo, AzureDevOpsRemoteInfo } from './detect.js';
 export { detectPlatform, detectPlatformFromUrl, detectWorkItemSource, parseGitHubRemote, parseAzureDevOpsRemote, getRemoteUrl } from './detect.js';
 export { GitHubAdapter } from './github.js';
 export { AzureDevOpsAdapter } from './azure-devops.js';
+export type { AdoWorkItemConfig } from './azure-devops.js';
 export { PlannerAdapter, mapPlannerTaskToWorkItem } from './planner.js';
 export { getRalphScanCommands } from './ralph-commands.js';
 export type { RalphCommands } from './ralph-commands.js';
 
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { PlatformAdapter } from './types.js';
 import { detectPlatform, getRemoteUrl, parseGitHubRemote, parseAzureDevOpsRemote } from './detect.js';
 import { GitHubAdapter } from './github.js';
 import { AzureDevOpsAdapter } from './azure-devops.js';
+import type { AdoWorkItemConfig } from './azure-devops.js';
+
+/**
+ * Read ADO work item config from .squad/config.json if present.
+ */
+function readAdoConfig(repoRoot: string): AdoWorkItemConfig | undefined {
+  const configPath = join(repoRoot, '.squad', 'config.json');
+  if (!existsSync(configPath)) return undefined;
+  try {
+    const raw = readFileSync(configPath, 'utf-8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed.ado && typeof parsed.ado === 'object') {
+      return parsed.ado as AdoWorkItemConfig;
+    }
+  } catch { /* ignore parse errors */ }
+  return undefined;
+}
 
 /**
  * Create a platform adapter by auto-detecting the platform from the repo's git remote.
@@ -35,7 +55,8 @@ export function createPlatformAdapter(repoRoot: string): PlatformAdapter {
     if (!info) {
       throw new Error(`Could not parse Azure DevOps remote URL: ${remoteUrl}`);
     }
-    return new AzureDevOpsAdapter(info.org, info.project, info.repo);
+    const adoConfig = readAdoConfig(repoRoot);
+    return new AzureDevOpsAdapter(info.org, info.project, info.repo, adoConfig);
   }
 
   const info = parseGitHubRemote(remoteUrl);

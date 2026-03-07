@@ -38,6 +38,20 @@ function parseJson<T>(raw: string): T {
   }
 }
 
+/** ADO-specific configuration for work items that may live in a different org/project than the repo. */
+export interface AdoWorkItemConfig {
+  /** Azure DevOps org for work items (if different from repo org) */
+  org?: string;
+  /** Azure DevOps project for work items (if different from repo project) */
+  project?: string;
+  /** Default work item type — e.g. "User Story", "Scenario", "Bug" (default: "User Story") */
+  defaultWorkItemType?: string;
+  /** Default area path for new work items — e.g. "MyProject\\Team A" */
+  areaPath?: string;
+  /** Default iteration path for new work items — e.g. "MyProject\\Sprint 1" */
+  iterationPath?: string;
+}
+
 export class AzureDevOpsAdapter implements PlatformAdapter {
   readonly type: PlatformType = 'azure-devops';
 
@@ -45,6 +59,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     private readonly org: string,
     private readonly project: string,
     private readonly repo: string,
+    private readonly workItemConfig?: AdoWorkItemConfig,
   ) {
     assertAzCliAvailable();
   }
@@ -53,9 +68,25 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     return `https://dev.azure.com/${this.org}`;
   }
 
-  /** Common az CLI default args */
+  /** Org URL for work item operations (may differ from repo org). */
+  private get wiOrgUrl(): string {
+    const wiOrg = this.workItemConfig?.org ?? this.org;
+    return `https://dev.azure.com/${wiOrg}`;
+  }
+
+  /** Project for work item operations (may differ from repo project). */
+  private get wiProject(): string {
+    return this.workItemConfig?.project ?? this.project;
+  }
+
+  /** Common az CLI default args for repo operations */
   private get defaultArgs(): string[] {
     return ['--org', this.orgUrl, '--project', this.project];
+  }
+
+  /** Common az CLI default args for work item operations */
+  private get workItemArgs(): string[] {
+    return ['--org', this.wiOrgUrl, '--project', this.wiProject];
   }
 
   private az(args: string[]): string {
@@ -72,14 +103,14 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
         conditions.push(`[System.Tags] Contains '${escapeWiql(tag)}'`);
       }
     }
-    conditions.push(`[System.TeamProject] = '${escapeWiql(this.project)}'`);
+    conditions.push(`[System.TeamProject] = '${escapeWiql(this.wiProject)}'`);
 
     const where = conditions.join(' AND ');
     const top = options.limit ?? 50;
     const wiql = `SELECT [System.Id] FROM WorkItems WHERE ${where} ORDER BY [System.CreatedDate] DESC`;
 
     const output = this.az([
-      'boards', 'query', '--wiql', wiql, ...this.defaultArgs, '--output', 'json',
+      'boards', 'query', '--wiql', wiql, ...this.workItemArgs, '--output', 'json',
     ]);
     const items = parseJson<Array<{ id: number; fields?: Record<string, unknown> }>>(output);
 
@@ -94,7 +125,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
 
   async getWorkItem(id: number): Promise<WorkItem> {
     const output = this.az([
-      'boards', 'work-item', 'show', '--id', String(id), ...this.defaultArgs, '--output', 'json',
+      'boards', 'work-item', 'show', '--id', String(id), ...this.workItemArgs, '--output', 'json',
     ]);
     const wi = parseJson<{
       id: number;
@@ -119,8 +150,8 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     };
   }
 
-  async createWorkItem(options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string }): Promise<WorkItem> {
-    const wiType = options.type ?? 'User Story';
+  async createWorkItem(options: { title: string; description?: string; tags?: string[]; assignedTo?: string; type?: string; areaPath?: string; iterationPath?: string }): Promise<WorkItem> {
+    const wiType = options.type ?? this.workItemConfig?.defaultWorkItemType ?? 'User Story';
     const fields: string[] = [
       `System.Title=${options.title}`,
     ];
@@ -133,9 +164,19 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     if (options.assignedTo) {
       fields.push(`System.AssignedTo=${options.assignedTo}`);
     }
+    // Area path: explicit > config > omit (uses project default)
+    const areaPath = options.areaPath ?? this.workItemConfig?.areaPath;
+    if (areaPath) {
+      fields.push(`System.AreaPath=${areaPath}`);
+    }
+    // Iteration path: explicit > config > omit (uses project default)
+    const iterationPath = options.iterationPath ?? this.workItemConfig?.iterationPath;
+    if (iterationPath) {
+      fields.push(`System.IterationPath=${iterationPath}`);
+    }
 
     const output = this.az([
-      'boards', 'work-item', 'create', '--type', wiType, '--fields', ...fields, ...this.defaultArgs, '--output', 'json',
+      'boards', 'work-item', 'create', '--type', wiType, '--fields', ...fields, ...this.workItemArgs, '--output', 'json',
     ]);
     const created = parseJson<{
       id: number;
@@ -166,7 +207,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     const tagsStr = currentTags.join('; ');
     this.az([
       'boards', 'work-item', 'update', '--id', String(workItemId),
-      '--fields', `System.Tags=${tagsStr}`, ...this.defaultArgs, '--output', 'json',
+      '--fields', `System.Tags=${tagsStr}`, ...this.workItemArgs, '--output', 'json',
     ]);
   }
 
@@ -176,14 +217,14 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     const tagsStr = updatedTags.join('; ');
     this.az([
       'boards', 'work-item', 'update', '--id', String(workItemId),
-      '--fields', `System.Tags=${tagsStr}`, ...this.defaultArgs, '--output', 'json',
+      '--fields', `System.Tags=${tagsStr}`, ...this.workItemArgs, '--output', 'json',
     ]);
   }
 
   async addComment(workItemId: number, comment: string): Promise<void> {
     this.az([
       'boards', 'work-item', 'update', '--id', String(workItemId),
-      '--discussion', comment, ...this.defaultArgs, '--output', 'json',
+      '--discussion', comment, ...this.workItemArgs, '--output', 'json',
     ]);
   }
 
