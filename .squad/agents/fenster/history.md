@@ -766,3 +766,11 @@ Fixed 4 bugs in a single branch:
 - FRAMEWORK_WORKFLOWS already filters init to 4 safe workflows; the opt-in flag is about user control, not safety.
 - `process.env.NODE_NO_WARNINGS = '1'` set at runtime does NOT suppress Node.js ExperimentalWarning -- the env var is only checked at process start. Use a `process.emit` override to filter warnings at runtime.
 - CI failures in --version tests were caused by `node:sqlite` ExperimentalWarning leaking into terminal output (3 lines instead of 1). Fixed with process.emit hook in cli-entry.ts.
+### Model Config Pipeline - Issue #223 (2026-03-08)
+
+- The charter generation pipeline had a format mismatch: build.ts emitted **Model:** value (flat) but charter-compiler.ts parsed ## Model + **Preferred:** value (structured). Model preferences were silently lost in the round-trip.
+- Fix: AgentDefinition.model now accepts string or ModelPreference (backwards compatible). Build output uses proper ## Model section with Preferred, Rationale, Fallback lines.
+- Added DefaultsDefinition and defineDefaults() for squad-level model defaults. Agents without explicit model inherit from config.defaults.model.
+- The assertModelPreference() validator pattern (accept string or object, normalize internally) is reusable for any field that needs a simple-or-rich config shape.
+- Charter-compiler now extracts modelRationale and modelFallback in addition to modelPreference.
+- PR #245, branch squad/223-model-config.
