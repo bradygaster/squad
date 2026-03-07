@@ -12,6 +12,7 @@ import { mkdir, writeFile, readFile, copyFile, readdir, appendFile, unlink } fro
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, cpSync, statSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs';
+import { execFileSync } from 'node:child_process';
 import { MODELS } from '../runtime/constants.js';
 import type { SquadConfig, ModelSelectionConfig, RoutingConfig } from '../runtime/config.js';
 
@@ -538,10 +539,23 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
   
   const squadConfigPath = join(squadDir, 'config.json');
   if (!existsSync(squadConfigPath)) {
+    // Detect platform from git remote for config
+    let detectedPlatform: string | undefined;
+    try {
+      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8' }).trim();
+      if (remoteUrl.includes('dev.azure.com') || remoteUrl.includes('visualstudio.com') || remoteUrl.includes('ssh.dev.azure.com')) {
+        detectedPlatform = 'azure-devops';
+      }
+    } catch {
+      // No git remote — skip platform detection
+    }
     const squadConfig: Record<string, unknown> = {
       version: 1,
       teamRoot: teamRoot,
     };
+    if (detectedPlatform) {
+      squadConfig.platform = detectedPlatform;
+    }
     // Only include extractionDisabled if explicitly set
     if (options.extractionDisabled) {
       squadConfig.extractionDisabled = true;
@@ -794,10 +808,24 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   }
   
   // -------------------------------------------------------------------------
-  // Copy workflows (optional)
+  // Detect platform from git remote
   // -------------------------------------------------------------------------
   
-  if (includeWorkflows && templatesDir && existsSync(join(templatesDir, 'workflows'))) {
+  let isGitHub = true;
+  try {
+    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8' }).trim();
+    if (remoteUrl.includes('dev.azure.com') || remoteUrl.includes('visualstudio.com') || remoteUrl.includes('ssh.dev.azure.com')) {
+      isGitHub = false;
+    }
+  } catch {
+    // No git remote — assume GitHub (default)
+  }
+
+  // -------------------------------------------------------------------------
+  // Copy workflows (optional) — skip for ADO repos
+  // -------------------------------------------------------------------------
+  
+  if (includeWorkflows && isGitHub && templatesDir && existsSync(join(templatesDir, 'workflows'))) {
     const workflowsSrc = join(templatesDir, 'workflows');
     const workflowsDest = join(teamRoot, '.github', 'workflows');
     
@@ -824,18 +852,30 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   if (includeMcpConfig) {
     const mcpConfigPath = join(teamRoot, '.copilot', 'mcp-config.json');
     if (!existsSync(mcpConfigPath)) {
-      const mcpSample = {
-        mcpServers: {
-          "EXAMPLE-trello": {
-            command: "npx",
-            args: ["-y", "@trello/mcp-server"],
-            env: {
-              TRELLO_API_KEY: "${TRELLO_API_KEY}",
-              TRELLO_TOKEN: "${TRELLO_TOKEN}"
+      const mcpSample = isGitHub
+        ? {
+            mcpServers: {
+              "EXAMPLE-github": {
+                command: "npx",
+                args: ["-y", "@anthropic/github-mcp-server"],
+                env: {
+                  GITHUB_TOKEN: "${GITHUB_TOKEN}"
+                }
+              }
             }
           }
-        }
-      };
+        : {
+            mcpServers: {
+              "EXAMPLE-azure-devops": {
+                command: "npx",
+                args: ["-y", "azure-devops-mcp-server"],
+                env: {
+                  AZURE_DEVOPS_ORG: "${AZURE_DEVOPS_ORG}",
+                  AZURE_DEVOPS_PAT: "${AZURE_DEVOPS_PAT}"
+                }
+              }
+            }
+          };
       await mkdir(dirname(mcpConfigPath), { recursive: true });
       await writeFile(mcpConfigPath, JSON.stringify(mcpSample, null, 2) + '\n', 'utf-8');
       createdFiles.push(toRelativePath(mcpConfigPath));
