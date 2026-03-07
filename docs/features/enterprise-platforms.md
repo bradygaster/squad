@@ -67,7 +67,36 @@ Tag assignment uses the same `squad:{member}` convention, stored as ADO work ite
 
 ## Configuration
 
-No additional configuration is needed beyond the `az` CLI setup. Squad reads the git remote URL and automatically selects the correct adapter.
+Squad auto-detects ADO from the git remote URL. For basic use, no extra configuration is needed.
+
+### Work Item Configuration
+
+When your ADO environment has custom work item types, area paths, iterations, or when work items live in a **different project or org** than the git repo, configure the `ado` section in `.squad/config.json`:
+
+```json
+{
+  "version": 1,
+  "teamRoot": "/path/to/repo",
+  "platform": "azure-devops",
+  "ado": {
+    "org": "my-org",
+    "project": "my-work-items-project",
+    "defaultWorkItemType": "Scenario",
+    "areaPath": "MyProject\\Team Alpha",
+    "iterationPath": "MyProject\\Sprint 5"
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `ado.org` | *(from git remote)* | ADO org for work items — set when work items are in a different org than the repo |
+| `ado.project` | *(from git remote)* | ADO project for work items — set when work items are in a different project |
+| `ado.defaultWorkItemType` | `"User Story"` | Default type for new work items. Some orgs use `"Scenario"`, `"Bug"`, or custom types |
+| `ado.areaPath` | *(project default)* | Area path for new work items — controls which team's backlog they appear in |
+| `ado.iterationPath` | *(project default)* | Iteration/sprint path — controls which sprint board work items appear on |
+
+All fields are optional. Omitted fields use the defaults shown above.
 
 ### Authentication
 

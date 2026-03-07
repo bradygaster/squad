@@ -556,6 +556,20 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
     if (detectedPlatform) {
       squadConfig.platform = detectedPlatform;
     }
+    if (detectedPlatform === 'azure-devops') {
+      // ADO work item defaults — users can customize these:
+      // - org/project: set when work items live in a different project than the repo
+      // - defaultWorkItemType: "User Story", "Scenario", "Bug", etc.
+      // - areaPath: e.g. "MyProject\\Team A" (backslash-separated)
+      // - iterationPath: e.g. "MyProject\\Sprint 1"
+      squadConfig.ado = {
+        // org: "my-org",           // uncomment if work items are in a different org
+        // project: "my-project",   // uncomment if work items are in a different project
+        // defaultWorkItemType: "User Story",
+        // areaPath: "",
+        // iterationPath: "",
+      };
+    }
     // Only include extractionDisabled if explicitly set
     if (options.extractionDisabled) {
       squadConfig.extractionDisabled = true;
