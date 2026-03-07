@@ -63,3 +63,67 @@ export interface PlatformAdapter {
   // Branches
   createBranch(name: string, fromBranch?: string): Promise<void>;
 }
+
+// ─── Communication Adapter ────────────────────────────────────────────
+
+/** Where communication happens — which channel/service */
+export type CommunicationChannel = 'github-discussions' | 'ado-work-items' | 'teams-webhook' | 'file-log';
+
+/** A reply from a human on a communication channel */
+export interface CommunicationReply {
+  author: string;
+  body: string;
+  timestamp: Date;
+  /** Platform-specific identifier for the reply */
+  id: string;
+}
+
+/** Configuration for a communication channel */
+export interface CommunicationConfig {
+  channel: CommunicationChannel;
+  /** Post session summaries after agent work */
+  postAfterSession?: boolean;
+  /** Post decisions that need human review */
+  postDecisions?: boolean;
+  /** Post escalations when agents are blocked */
+  postEscalations?: boolean;
+}
+
+/**
+ * Communication adapter interface — pluggable agent-human communication.
+ *
+ * Abstracts the communication channel so Squad can post updates and read
+ * replies from GitHub Discussions, ADO Work Item discussions, Teams, or
+ * plain log files — depending on what the user has configured.
+ */
+export interface CommunicationAdapter {
+  readonly channel: CommunicationChannel;
+
+  /**
+   * Post an update to the communication channel.
+   * Used by Scribe (session summaries), Ralph (board status), and agents (escalations).
+   */
+  postUpdate(options: {
+    title: string;
+    body: string;
+    category?: string;
+    /** Agent or role posting the update */
+    author?: string;
+  }): Promise<{ id: string; url?: string }>;
+
+  /**
+   * Poll for replies since a given timestamp.
+   * Returns new replies from humans on the channel.
+   */
+  pollForReplies(options: {
+    /** Thread/discussion ID to check for replies */
+    threadId: string;
+    since: Date;
+  }): Promise<CommunicationReply[]>;
+
+  /**
+   * Get a URL that humans can open on any device (phone, browser, desktop).
+   * Returns undefined if the channel has no web UI (e.g., file-log).
+   */
+  getNotificationUrl(threadId: string): string | undefined;
+}
