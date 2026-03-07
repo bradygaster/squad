@@ -111,6 +111,30 @@
     "./commands/init-remote": {
       "types": "./dist/cli/commands/init-remote.d.ts",
       "import": "./dist/cli/commands/init-remote.js"
+    },
+    "./commands/watch": {
+      "types": "./dist/cli/commands/watch.d.ts",
+      "import": "./dist/cli/commands/watch.js"
+    },
+    "./commands/start": {
+      "types": "./dist/cli/commands/start.d.ts",
+      "import": "./dist/cli/commands/start.js"
+    },
+    "./commands/rc-tunnel": {
+      "types": "./dist/cli/commands/rc-tunnel.d.ts",
+      "import": "./dist/cli/commands/rc-tunnel.js"
+    },
+    "./commands/extract": {
+      "types": "./dist/cli/commands/extract.d.ts",
+      "import": "./dist/cli/commands/extract.js"
+    },
+    "./commands/copilot": {
+      "types": "./dist/cli/commands/copilot.d.ts",
+      "import": "./dist/cli/commands/copilot.js"
+    },
+    "./commands/copilot-bridge": {
+      "types": "./dist/cli/commands/copilot-bridge.d.ts",
+      "import": "./dist/cli/commands/copilot-bridge.js"
     }
   },
   "files": [
