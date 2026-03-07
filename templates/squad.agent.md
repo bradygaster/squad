@@ -986,10 +986,12 @@ If the git remote points to Azure DevOps:
 4. Verify defaults: `az devops configure --list` — org and project must be set
 
 **Ralph on Azure DevOps:**
-- Replace `gh issue list --label "squad:untriaged"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:untriaged'"`
-- Replace `gh issue list --label "squad:{member}"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:{member}'"`
-- Replace `gh pr list` with `az repos pr list`
+- **Read `.squad/config.json`** first — the `ado` section tells you which org/project to query for work items, the default work item type, area path, and iteration path. If `ado.org`/`ado.project` are set, use those (they may differ from the repo's org/project). If not set, fall back to org/project parsed from `git remote get-url origin`.
+- Replace `gh issue list --label "squad:untriaged"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:untriaged' AND [System.TeamProject] = '{project}'" --org "https://dev.azure.com/{org}" --project "{project}"`
+- Replace `gh issue list --label "squad:{member}"` with WIQL: `az boards query --wiql "SELECT ... WHERE [System.Tags] Contains 'squad:{member}'" --org ... --project ...`
+- Replace `gh pr list` with `az repos pr list` (uses repo org/project, not work item org/project)
 - Branch naming stays the same: `squad/{issue-number}-{slug}`
+- When creating work items, use `ado.defaultWorkItemType` (default: "User Story"), include `ado.areaPath` and `ado.iterationPath` if configured
 
 ### Microsoft Planner Mode (Hybrid)
 
@@ -1046,6 +1048,8 @@ When Ralph is active, run this check cycle after every batch of agent work compl
 **Step 1 — Scan for work** (run these in parallel):
 
 > **Platform-aware:** Use the commands from the Platform Detection section above. If the git remote points to Azure DevOps, use `az boards query` / `az repos pr list` instead of `gh`. If work items are in Planner, use Graph API. The examples below show GitHub; substitute the equivalent ADO/Planner commands per the Platform Detection table.
+>
+> **⚠️ ADO config resolution (CRITICAL):** Before running any ADO work item command, read `.squad/config.json` and check for an `ado` section. If present, `ado.org` and `ado.project` tell you WHERE work items live (which may be a completely different org/project than the git repo). Pass these as `--org` and `--project` flags on every `az boards` command. If no `ado` section exists, parse org/project from the git remote URL. Do NOT guess the project name from the repo name — read the config.
 
 **GitHub:**
 ```bash
@@ -1063,18 +1067,24 @@ gh pr list --state open --draft --json number,title,author,labels,checks --limit
 ```
 
 **Azure DevOps:**
+
+> **Config-aware:** Before running ADO commands, read `.squad/config.json` for the `ado` section. If `ado.org` and/or `ado.project` are set, use them for work item queries (they may differ from the repo's org/project). Pass `--org https://dev.azure.com/{ado.org}` and `--project {ado.project}` on every `az boards` command. If no `ado` config exists, fall back to the org/project parsed from the git remote URL. Also use `ado.defaultWorkItemType` (default: "User Story") when creating work items.
+
 ```bash
-# Untriaged work items
-az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:untriaged' ORDER BY [System.CreatedDate] DESC" --output table
+# Read org/project from .squad/config.json → ado.org, ado.project
+# Fall back to git remote URL parsing if not configured
+
+# Untriaged work items (use configured org/project)
+az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:untriaged' AND [System.TeamProject] = '{project}' ORDER BY [System.CreatedDate] DESC" --org "https://dev.azure.com/{org}" --project "{project}" --output table
 
 # Member-assigned work items
-az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:{member}' AND [System.State] <> 'Closed' ORDER BY [System.CreatedDate] DESC" --output table
+az boards query --wiql "SELECT [System.Id],[System.Title],[System.State],[System.Tags] FROM WorkItems WHERE [System.Tags] Contains 'squad:{member}' AND [System.State] <> 'Closed' AND [System.TeamProject] = '{project}' ORDER BY [System.CreatedDate] DESC" --org "https://dev.azure.com/{org}" --project "{project}" --output table
 
-# Open PRs
+# Open PRs (always uses repo org/project, NOT work item org/project)
 az repos pr list --status active --output table
 
-# Create a work item
-az boards work-item create --type "User Story" --title "{title}" --fields "System.Tags=squad; squad:untriaged"
+# Create a work item (uses configured type, area path, iteration path)
+az boards work-item create --type "{ado.defaultWorkItemType}" --title "{title}" --fields "System.Tags=squad; squad:untriaged" --org "https://dev.azure.com/{org}" --project "{project}"
 ```
 
 **Step 2 — Categorize findings:**
