@@ -77,3 +77,7 @@
 - **Environment-dependent assertions:** Feature files expected text that depends on host machine state (global squad existence). Fix: use assertions that work regardless of host state.
 
 **Final count:** 134 test files, 3656 tests passing, 0 failures, 3 todo.
+
+## 📌 CLI Command Test Coverage — 2026-03-07
+
+**Closed the 8-command test gap.** Added 77 new tests across 9 test files covering all 8 CLI commands that had zero tests: link (10), init-remote (8), watch (6), start (3), rc-tunnel (10), extract (5), copilot (6), copilot-bridge (8). Added command wiring regression test (21 tests) that verifies every .ts file in commands/ has a route in cli-entry.ts — catches the "unwired command" bug class permanently. Added 6 missing subpath exports to squad-cli package.json. Found 2 known-unwired commands (watch.ts, upstream.ts) documented in regression test's KNOWN_UNWIRED set. checkCompatibility on CopilotBridge spawns real processes with an 8-second internal timeout — can't be unit-tested without mocks. Full suite: 143 test files, 3732+ tests passing.
