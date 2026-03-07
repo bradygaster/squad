@@ -71,6 +71,12 @@ async function main(): Promise<void> {
     console.log(`             Examples: start --tunnel --yolo`);
     console.log(`                       start --tunnel --model claude-sonnet-4`);
     console.log(`                       start --tunnel --command "agency copilot"`);
+    console.log(`  ${BOLD}rc${RESET}         Remote control — ACP passthrough for mobile/browser`);
+    console.log(`             Usage: rc [--tunnel] [--port <n>]`);
+    console.log(`  ${BOLD}link${RESET}       Link project to a remote team root`);
+    console.log(`             Usage: link <team-repo-path>`);
+    console.log(`  ${BOLD}aspire${RESET}     Launch Aspire dashboard for Squad traces/metrics`);
+    console.log(`             Usage: aspire [--port <n>]`);
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
@@ -253,6 +259,33 @@ async function main(): Promise<void> {
     const squadFlags = ['start', '--tunnel', '--port', port.toString(), '--command', customCmd || ''].filter(Boolean);
     const copilotArgs = args.slice(1).filter(a => !squadFlags.includes(a));
     await runStart(process.cwd(), { tunnel: hasTunnel, port, copilotArgs, command: customCmd });
+    return;
+  }
+
+  if (cmd === 'aspire') {
+    const { runAspire } = await import('./cli/commands/aspire.js');
+    const portIdx = args.indexOf('--port');
+    const port = (portIdx !== -1 && args[portIdx + 1]) ? parseInt(args[portIdx + 1]!, 10) : undefined;
+    await runAspire({ port });
+    return;
+  }
+
+  if (cmd === 'rc' || cmd === 'remote-control') {
+    const { runRC } = await import('./cli/commands/rc.js');
+    const hasTunnel = args.includes('--tunnel');
+    const portIdx = args.indexOf('--port');
+    const port = (portIdx !== -1 && args[portIdx + 1]) ? parseInt(args[portIdx + 1]!, 10) : 0;
+    await runRC(process.cwd(), { tunnel: hasTunnel, port });
+    return;
+  }
+
+  if (cmd === 'link') {
+    const { runLink } = await import('./cli/commands/link.js');
+    const teamRepoPath = args[1];
+    if (!teamRepoPath) {
+      fatal('Usage: squad link <team-repo-path>');
+    }
+    runLink(process.cwd(), teamRepoPath);
     return;
   }
 

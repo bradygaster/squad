@@ -17,15 +17,13 @@ const COMMANDS_DIR = join(CLI_PKG, 'cli', 'commands');
 const ENTRY_FILE = join(CLI_PKG, 'cli-entry.ts');
 
 // Known-unwired commands tracked under issue #237.
+// These are helper modules (not direct CLI commands) or have no implementation file.
 // Remove entries from this set as they get wired — the test will start
 // failing for them, which is intentional (regression guard).
 const KNOWN_UNWIRED = new Set([
-  'aspire',
-  'copilot-bridge',
-  'init-remote',
-  'link',
-  'rc-tunnel',
-  'rc',
+  'copilot-bridge', // helper class used by rc.ts, not a direct CLI command
+  'init-remote',    // helper function used by link.ts, not a direct CLI command
+  'rc-tunnel',      // helper module used by rc.ts, not a direct CLI command
 ]);
 
 describe('CLI command wiring', () => {
