@@ -407,8 +407,9 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
         }}
       </Static>
 
-      {/* Live region: bounded height so InputPrompt stays in viewport */}
-      <Box flexDirection="column" height={liveContentHeight} overflow="hidden">
+      {/* Live region: bounded height only while processing so InputPrompt stays in viewport;
+          auto-sized when idle to avoid blank space below the agent panel. */}
+      <Box flexDirection="column" {...(processing ? { height: liveContentHeight, overflow: 'hidden' as const } : {})}>
         <AgentPanel agents={agents} streamingContent={streamingContent} />
         <MessageStream messages={[]} agents={agents} streamingContent={streamingContent} processing={processing} activityHint={activityHint || mentionHint} agentActivities={agentActivities} thinkingPhase={thinkingPhase} />
       </Box>

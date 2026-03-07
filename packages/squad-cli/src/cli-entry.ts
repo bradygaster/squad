@@ -43,7 +43,7 @@ async function main(): Promise<void> {
     console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
     console.log(`             Flags: --global (upgrade personal squad), --migrate-directory (rename .ai-team/ → .squad/)`);
-    console.log(``  ${BOLD}upstream${RESET}   Manage upstream squad inheritance``);
+    console.log(`  ${BOLD}upstream${RESET}   Manage upstream squad inheritance`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>]`);
