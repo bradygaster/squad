@@ -168,4 +168,18 @@ Session log: .squad/log/2026-03-07T21-06-29Z-v0822-release.md"
  = 
 ---
 
- + 
+ +
+
+### 2026-03-08: Charter Hardening — Git Discipline
+First session mistake: agents committed directly to main without branching. Brady caught it immediately.
+Lesson: ALWAYS verify branch state before any operation. Branch-first is non-negotiable.
+Charter updated with hard rules for branching, triage-before-work, and release pre-flight.
+
+Added to charter:
+- Git branching guardrails (NEVER commit to main/dev, ALWAYS branch first)
+- Mandatory issue triage before work begins (labels, priority, triage comment required)
+- Release pre-flight verification (branch state, clean status)
+- Collaboration rules with Drucker (shared responsibility for branch discipline)
+- Voice reinforcement: "First-day mistakes on main are not acceptable"
+
+Decision documented at `.squad/decisions/inbox/trejo-charter-hardening.md`. 

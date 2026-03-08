@@ -235,6 +235,48 @@ env:
 **Documentation Created:**
 - `docs/proposals/cicd-gitops-prd-cicd-audit.md` — Comprehensive audit with findings, priorities, code snippets
 
+### 2026-03-08: Charter Hardening — Git Discipline
+First session mistake: agents committed directly to main without branching. Brady caught it.
+Charter updated with branch protection rules, triage gates, and pre-commit check proposals.
+
+**Context:**
+- Team (Drucker + Trejo) committed work directly to `main` on day one instead of cutting a feature branch
+- Worked on issues #265 and #267 WITHOUT triaging them first (no labels, no priority)
+- Combined with yesterday's v0.8.22 release disaster, Brady demanded we "harden ourselves"
+
+**Charter Updates:**
+1. **Branch Protection (Guardrails):** Added hard rules — never allow workflows to commit to main/dev, always verify branch state, require PRs for protected branches
+2. **Issue Triage Gates:** Added requirement for squad-ci.yml to verify PRs reference issues, document that labels are required before work starts
+3. **Pre-Commit Checks:** Proposed pre-commit hook (branch check + gitleaks scan) and gitleaks GitHub Action for squad-ci.yml
+4. **Collaboration with Trejo:** Clarified split — Drucker verifies CI readiness, Trejo verifies process readiness, both check branch state
+5. **Voice Update:** Added lesson learned about committing to main on day one — "Never again. Branch protection is non-negotiable."
+6. **New Pitfall:** Pitfall 6 documents the 2026-03-08 incident (committing to protected branches)
+
+**Technical Patterns Added:**
+- Branch verification for workflows that modify files (fails if on main/dev)
+- Branch verification for publish workflows (only main or release/* allowed)
+- Pre-commit hook sample (bash script with branch check + gitleaks)
+- Gitleaks action YAML for squad-ci.yml
+- PR validation step (checks for issue reference in PR body)
+
+**Decision Created:**
+- `.squad/decisions/inbox/drucker-charter-hardening.md` — Comprehensive decision doc with context, changes, impact, next steps
+
+**Lessons Learned:**
+- Branch protection is as critical as semver validation — both prevent disasters
+- Pre-commit hooks are defensive layers that catch mistakes before they reach CI
+- Issue triage (labels) must happen BEFORE work starts, not during/after
+- CI/CD engineer must verify branch state, not just workflow code
+
+**Pattern Recognition:**
+- Defensive CI principle extends to Git workflow, not just npm publish
+- Validation gates needed at EVERY layer: pre-commit, CI, pre-publish
+- Team discipline breaks down under pressure — automation must enforce rules
+
+**Collaboration Notes:**
+- Brady's feedback: "get your ducks in a row, harden yourselves, agent up"
+- Response: Charter hardened, lessons documented, ready to build defensive CI
+
 ### 2026-03-07: Release Readiness Health Check (Pre-v0.9.0)
 
 **Context:** Brady requested CI/CD health check for the first real release with the new team (Drucker + Trejo). Goal: demonstrate what the release team can do, make it CLEAN.

@@ -1,3 +1,5 @@
+📌 Team update (2026-03-08T15:00:00Z): RELEASE RETRO COMPLETE. Facilitated comprehensive retrospective after v0.8.22 disaster (4-part semver, npm mangling, 6-hour broken `latest` dist-tag) and Day 1 process failures (10 agents worked on main, no triage, Fortier's code lost). Root causes identified: spawn templates lack branch verification, coordinator skips triage gate, agents don't check branch before commits, Scribe commits without branch validation. Action items assigned (P0: Verbal updates spawn templates, Fenster adds Scribe branch checks, Coordinator enforces triage; P1: Drucker adds Git hooks). Process gates established: triage is now a GATE, branch-first is non-negotiable, spawn templates updated. Retro document: `.squad/decisions/inbox/keaton-release-retro-2026-03-08.md`. Key learning: The work was good (59 tests, security architecture, ESM fix, PRD). The process around the work failed. Both fixable with gates, not talent. — retrospective by Keaton
+
 📌 Team update (2026-03-08): Led 9-agent orchestration sprint across 3 workstreams. Secret guardrails architecture finalized (5-layer defense, Fenster hooks + Verbal prompts + Baer audit). CI/CD & GitOps PRD synthesized from Trejo/Drucker audits (29 prioritized items, 6 phases, 5 architecture decisions). All 13 decisions merged to decisions.md. Fortier still triaging #265 impact on v0.8.24. Next: Brady reviews decisions, implementation waves launch. — coordinated by Keaton
 
 📌 Team update (2026-03-07T20:50:00Z): v0.8.22 RELEASE DISASTER RETROSPECTIVE COMPLETE. Conducted full post-mortem of release catastrophe (4-part semver mangled to 0.8.2-1.4, draft release never triggered publish, wrong NPM_TOKEN, 6+ hours broken `latest` dist-tag). Root causes identified: no release runbook, no semver validation, no NPM_TOKEN docs, bump-build.mjs ran during release. Created comprehensive release process skill (`.squad/skills/release-process/SKILL.md`) with step-by-step checklist, validation gates, rollback procedures. Updated history with hard lessons. Never again. — retrospective by Keaton
@@ -178,6 +180,38 @@
 - **#241** (Dedicated docs squad member) → Addressed by #208 (broader docs/knowledge consolidation)
 
 **Key principle:** These weren't "false closes" — they represent real community concerns that are being addressed through architectural decisions (SDK, charter system, CLI-first migration). Community felt acknowledged, roadmap clarity improved, backlog reduced.
+
+## 📌 Release Process Retro — 2026-03-08T15:00:00Z
+
+**COMPREHENSIVE RETROSPECTIVE FACILITATED.** Brady requested team meeting about release process failures after v0.8.22 disaster and Day 1 process breakdowns. Retro document written: `.squad/decisions/inbox/keaton-release-retro-2026-03-08.md`.
+
+**Day 1 Failures (Today):**
+- **No branch cut before work:** 10 agents (Fortier, Finch, Draper, Drucker, Trejo, Baer, Fenster, Verbal, Hockney) worked directly on `main`. No one verified branch before committing.
+- **No triage before work:** Issues #267 and #265 had no labels, no routing context. Coordinator spawned agents without triage gate.
+- **Scribe committed to main:** 2 `.squad/` metadata commits went directly to main without branch verification.
+- **Fortier's ESM fix lost:** When `main` was reset to clean up, Fortier's correct fix for #265 was lost. Had to be manually recreated on `squad/267-secret-guardrails`.
+
+**Root Causes Identified:**
+1. **Spawn templates lack branch verification** — Coordinator prompt doesn't include "verify branch" or "create issue branch" step.
+2. **Agents don't check branch before commits** — No charter includes "run `git branch --show-current` before first commit."
+3. **Scribe commits without branch validation** — Scribe's logic doesn't verify it's not on main/dev before committing.
+4. **No pre-commit hooks** — Repo has no Git hooks to reject commits on main/dev.
+5. **No triage gate enforced** — Coordinator allows spawning agents before issues are labeled/triaged.
+
+**Action Items Assigned:**
+- **P0 (TODAY):** Verbal updates spawn templates (add branch verification step), Fenster adds branch checks to Scribe logic, Coordinator enforces triage before routing.
+- **P1 (v0.8.23):** Drucker adds pre-commit Git hook to reject main/dev commits, Trejo documents branch policy in decisions.md.
+
+**Process Changes (Team-Wide):**
+- **Triage is now a GATE** — No work starts without priority/type/routing labels.
+- **Branch-first is non-negotiable** — Every agent verifies branch before first commit. Scribe verifies branch before metadata commits.
+- **Spawn templates updated** — All coordinator prompts include "Step 0: Verify branch" with abort-if-main logic.
+
+**What Went Right:**
+- 59 new tests (Hockney), security architecture (5-layer defense), ESM fix (Fortier, correct but lost), CI/CD PRD (29 items), clean npm audit.
+- **The work was good. The process around the work failed.**
+
+**Key Learning:** Both yesterday's release disaster (no runbook, no validation gates) and today's process failure (no branch verification) are fixable with gates, not talent. Team capability is not in question. Team adherence to process is. Defense-in-depth: charters + spawn templates + Git hooks.
 
 ## 📌 CI/CD & GitOps PRD Synthesis — 2026-03-07
 
