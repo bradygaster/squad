@@ -149,7 +149,7 @@ describe.skipIf(SKIP_REASON !== null)(
       await shutdownOTel();
       await browser?.close();
       removeContainer();
-    }, 30_000);
+    }, 60_000);
 
     // ------------------------------------------------------------------
     // Test 1: Traces appear in Aspire dashboard

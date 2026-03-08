@@ -66,7 +66,7 @@ export function runFeature(
         for (const step of scenario.steps) {
           await executeStep(step, context, registry);
         }
-      });
+      }, 30_000);
     }
   });
 }

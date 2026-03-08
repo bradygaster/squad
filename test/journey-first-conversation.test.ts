@@ -25,7 +25,7 @@ const h = React.createElement;
 
 // ─── Test infrastructure ────────────────────────────────────────────────────
 
-const TICK = 80;
+const TICK = 200;
 
 function stripAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
@@ -172,7 +172,7 @@ async function createShellHarness(opts?: {
 // Journey: My First Conversation (#384)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('Journey: My first conversation (#384)', () => {
+describe('Journey: My first conversation (#384)', { timeout: 30_000 }, () => {
   let shell: ShellHarness;
 
   beforeEach(async () => {

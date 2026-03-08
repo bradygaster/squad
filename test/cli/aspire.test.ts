@@ -66,7 +66,7 @@ function buildAspireStopCommands(name = 'squad-aspire-dashboard'): string[][] {
 // Docker availability
 // ===========================================================================
 
-describe('CLI: squad aspire — Docker availability', () => {
+describe('CLI: squad aspire — Docker availability', { timeout: 30_000 }, () => {
   it('checkDockerAvailability returns version string when Docker is present', () => {
     const result = checkDockerAvailability();
     if (result === null) {

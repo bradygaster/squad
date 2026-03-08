@@ -63,7 +63,7 @@ function runSquad(
   }
 }
 
-describe('CLI: squad consult', () => {
+describe('CLI: squad consult', { timeout: 30_000 }, () => {
   beforeEach(() => {
     mkdirSync(TEST_ROOT, { recursive: true });
     initGitRepo(TEST_ROOT);

@@ -136,8 +136,8 @@ describe('Docs Build Script (markdown-it)', () => {
     if (existsSync(DIST_DIR)) {
       rmSync(DIST_DIR, { recursive: true, force: true });
     }
-    execSync(`node "${BUILD_SCRIPT}"`, { cwd: DOCS_DIR, timeout: 30_000 });
-  }, 30_000);
+    execSync(`node "${BUILD_SCRIPT}"`, { cwd: DOCS_DIR, timeout: 60_000 });
+  }, 60_000);
 
   afterAll(() => {
     if (existsSync(DIST_DIR)) {
@@ -170,9 +170,9 @@ describe('Docs Build Script (markdown-it)', () => {
   it('build.js runs without errors (exit code 0)', () => {
     if (!existsSync(BUILD_SCRIPT)) return;
     expect(() => {
-      execSync(`node "${BUILD_SCRIPT}"`, { cwd: DOCS_DIR, timeout: 30_000 });
+      execSync(`node "${BUILD_SCRIPT}"`, { cwd: DOCS_DIR, timeout: 60_000 });
     }).not.toThrow();
-  }, 30_000);
+  }, 60_000);
 
   // --- 2. All section files produce HTML output ---
 

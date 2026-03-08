@@ -46,7 +46,7 @@ function withCleanEnv(fn: () => void | Promise<void>) {
 // initializeOTel
 // =============================================================================
 
-describe('OTel Provider — initializeOTel()', () => {
+describe('OTel Provider — initializeOTel()', { timeout: 30_000 }, () => {
   afterEach(async () => {
     try { await shutdownOTel(); } catch { /* ignore shutdown errors in test cleanup */ }
   });

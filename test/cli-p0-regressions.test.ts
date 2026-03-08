@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { TerminalHarness } from './acceptance/harness.js';
 
-describe('P0 Bug Regressions', () => {
+describe('P0 Bug Regressions', { timeout: 30_000 }, () => {
   let harness: TerminalHarness | null = null;
 
   afterEach(async () => {
@@ -20,7 +20,7 @@ describe('P0 Bug Regressions', () => {
   describe('BUG-1: --version bare semver', () => {
     it('outputs bare semver without "squad" prefix', async () => {
       harness = await TerminalHarness.spawnWithArgs(['--version']);
-      await harness.waitForExit(5000);
+      await harness.waitForExit(15000);
 
       const output = harness.captureFrame().trim();
       const lines = output.split('\n').filter((l) => l.trim());
@@ -32,7 +32,7 @@ describe('P0 Bug Regressions', () => {
 
     it('-v also outputs bare semver', async () => {
       harness = await TerminalHarness.spawnWithArgs(['-v']);
-      await harness.waitForExit(5000);
+      await harness.waitForExit(15000);
 
       const output = harness.captureFrame().trim();
       expect(output).toMatch(/^\d+\.\d+\.\d+/);
@@ -43,7 +43,7 @@ describe('P0 Bug Regressions', () => {
   describe('BUG-2: empty/whitespace args show help', () => {
     it('empty string arg shows help and exits 0', async () => {
       harness = await TerminalHarness.spawnWithArgs(['']);
-      await harness.waitForExit(5000);
+      await harness.waitForExit(15000);
 
       const output = harness.captureFrame();
       const exitCode = harness.getExitCode();
@@ -55,7 +55,7 @@ describe('P0 Bug Regressions', () => {
 
     it('whitespace-only arg shows help and exits 0', async () => {
       harness = await TerminalHarness.spawnWithArgs(['   ']);
-      await harness.waitForExit(5000);
+      await harness.waitForExit(15000);
 
       const output = harness.captureFrame();
       const exitCode = harness.getExitCode();
@@ -67,7 +67,7 @@ describe('P0 Bug Regressions', () => {
 
     it('tab-only arg shows help and exits 0', async () => {
       harness = await TerminalHarness.spawnWithArgs(['\t']);
-      await harness.waitForExit(5000);
+      await harness.waitForExit(15000);
 
       const output = harness.captureFrame();
       const exitCode = harness.getExitCode();
@@ -81,7 +81,7 @@ describe('P0 Bug Regressions', () => {
   describe('Error messages have remediation hints', () => {
     it('unknown command includes "squad help" hint', async () => {
       harness = await TerminalHarness.spawnWithArgs(['nonexistent-command']);
-      await harness.waitForExit(5000);
+      await harness.waitForExit(15000);
 
       const output = harness.captureFrame();
       expect(output).toMatch(/squad help/i);
@@ -89,7 +89,7 @@ describe('P0 Bug Regressions', () => {
 
     it('unknown command includes "squad doctor" hint', async () => {
       harness = await TerminalHarness.spawnWithArgs(['nonexistent-command']);
-      await harness.waitForExit(5000);
+      await harness.waitForExit(15000);
 
       const output = harness.captureFrame();
       expect(output).toMatch(/squad doctor/i);

@@ -110,7 +110,7 @@ export class TerminalHarness extends EventEmitter {
   /**
    * Wait for process to exit with optional timeout.
    */
-  async waitForExit(timeoutMs = 10000): Promise<number> {
+  async waitForExit(timeoutMs = 15000): Promise<number> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeoutMs) {

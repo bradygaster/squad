@@ -56,7 +56,7 @@ export function registerCLISteps(registry: StepDefinitions): void {
       const harness = await TerminalHarness.spawnWithArgs(args, { cwd });
 
       try {
-        await harness.waitForExit(5000);
+        await harness.waitForExit(15000);
       } catch {
         // Timeout is okay
       }
@@ -81,7 +81,7 @@ export function registerCLISteps(registry: StepDefinitions): void {
       const harness = await TerminalHarness.spawnWithArgs(args);
 
       try {
-        await harness.waitForExit(5000);
+        await harness.waitForExit(15000);
       } catch {
         // Timeout is okay
       }

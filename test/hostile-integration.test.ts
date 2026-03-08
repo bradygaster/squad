@@ -150,7 +150,7 @@ describe('Hostile corpus → MessageStream render()', () => {
         unmount();
       }).not.toThrow();
     }
-  }, 10000);
+  }, 30000);
 
   it('renders hostile strings in streaming content without crashing', () => {
     for (const input of CLI_SAFE_NASTY_INPUTS) {

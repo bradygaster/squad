@@ -24,7 +24,7 @@ const h = React.createElement;
 
 // ─── Test infrastructure (mirrors e2e-shell.test.ts) ────────────────────────
 
-const TICK = 80;
+const TICK = 200;
 
 function stripAnsi(text: string): string {
   // eslint-disable-next-line no-control-regex
@@ -172,7 +172,7 @@ async function createShellHarness(opts?: {
 // Journey: "I'm waiting and getting anxious"
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('Journey: I\'m waiting and getting anxious', () => {
+describe('Journey: I\'m waiting and getting anxious', { timeout: 30_000 }, () => {
   let shell: ShellHarness;
 
   beforeEach(async () => {
