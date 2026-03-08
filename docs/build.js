@@ -38,6 +38,8 @@ const SECTIONS = [
   { dir: 'features', title: 'Features' },
   { dir: 'reference', title: 'Reference' },
   { dir: 'scenarios', title: 'Scenarios' },
+  { dir: 'concepts', title: 'Concepts' },
+  { dir: 'cookbook', title: 'Cookbook' },
   { dir: 'blog', title: 'Blog' },
 ];
 
@@ -57,6 +59,8 @@ const SECTION_ORDER = {
   ],
   'reference': ['cli', 'sdk', 'config'],
   'scenarios': ['existing-repo', 'solo-dev', 'issue-driven-dev', 'monorepo', 'ci-cd-integration', 'team-of-humans', 'aspire-dashboard'],
+  'concepts': ['your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'],
+  'cookbook': ['recipes'],
 };
 
 // Parse optional YAML-style frontmatter (--- fenced)
