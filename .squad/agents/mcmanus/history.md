@@ -1439,3 +1439,40 @@ Multi-agent build of Rock-Paper-Scissors game with 10 AI strategies, Docker infr
 
 
 
+
+## Learnings
+
+### Docs Build System — Issue #274
+
+**Pattern: Adding new pages to the docs site**
+
+The docs site uses docs/build.js to discover and render markdown files:
+
+1. **Create the markdown file** in the appropriate section directory (e.g., docs/guide/contributing.md)
+   - Add a clear H1 heading — this becomes the page title
+   - Use relative links that will work after the .md → .html conversion
+   - The build.js rewriteLinks function handles .md → .html automatically
+
+2. **Add to SECTION_ORDER** in build.js (line 44–60)
+   - SECTION_ORDER.guide, SECTION_ORDER['get-started'], etc.
+   - Order matters — items appear in the nav in the order listed
+   - If not in the explicit order list, pages fall back to alphabetical
+
+3. **Fix broken relative links** in other docs
+   - ../CONTRIBUTING.md doesn't work on the published site (GitHub Pages doesn't serve the repo root)
+   - Use ./guide/contributing.html instead (relative to the docs root)
+
+4. **Verify the build** — 
+ode docs/build.js outputs to docs/dist/
+   - Check the console for "✓ Generated guide/contributing.html"
+   - Total page count increments
+
+**Key file paths:**
+- docs/build.js — build script with SECTION_ORDER config (line 44–60)
+- docs/template.html — HTML template with nav injection
+- docs/dist/ — generated site (not committed, GitHub Pages builds from docs/ markdown on deploy)
+
+**Adapting content for the docs site:**
+- Keep substance, add proper H1, lightly restructure for web readability
+- Don't just copy verbatim — the docs site is a curated experience
+- Tone ceiling applies: factual, no hype, citations for claims
