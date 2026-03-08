@@ -190,6 +190,11 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}init-remote${RESET}    Link project to remote team root (shorthand)`);
     console.log(`             Usage: init-remote <team-repo-path>`);
     console.log(`  ${BOLD}rc-tunnel${RESET}      Check devtunnel CLI availability`);
+    console.log(`  ${BOLD}upstream${RESET}    Manage upstream Squad sources`);
+    console.log(`             Usage: upstream add <source> [--name <n>] [--ref <branch>]`);
+    console.log(`                    upstream remove <name>`);
+    console.log(`                    upstream list`);
+    console.log(`                    upstream sync [name]`);
 
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
     console.log(`\nFlags:`);
@@ -279,7 +284,12 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'triage' || cmd === 'watch') {
-    console.log('🕵️ Squad triage — scanning for work... (full implementation pending)');
+    const { runWatch } = await import('./cli/commands/watch.js');
+    const intervalIdx = args.indexOf('--interval');
+    const intervalMinutes = (intervalIdx !== -1 && args[intervalIdx + 1])
+      ? parseInt(args[intervalIdx + 1]!, 10)
+      : 10;
+    await runWatch(process.cwd(), intervalMinutes);
     return;
   }
 
@@ -511,6 +521,12 @@ async function main(): Promise<void> {
     } else {
       console.log(`${YELLOW}⚠${RESET} devtunnel CLI not found. Install with: winget install Microsoft.devtunnel`);
     }
+    return;
+  }
+
+  if (cmd === 'upstream') {
+    const { upstreamCommand } = await import('./cli/commands/upstream.js');
+    await upstreamCommand(args.slice(1));
     return;
   }
 

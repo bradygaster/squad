@@ -41,7 +41,7 @@ describe('Speed: --help is scannable', { timeout: 30_000 }, () => {
     await harness.waitForExit(15000);
     const output = harness.captureFrame();
     const lines = output.split('\n').filter(l => l.trim());
-    expect(lines.length).toBeLessThan(80);
+    expect(lines.length).toBeLessThan(100);
   });
 
   it('first 5 lines tell user what to do next', async () => {

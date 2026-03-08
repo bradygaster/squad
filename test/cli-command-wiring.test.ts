@@ -15,10 +15,8 @@ import { join, basename } from 'node:path';
 const COMMANDS_DIR = join(process.cwd(), 'packages', 'squad-cli', 'src', 'cli', 'commands');
 const CLI_ENTRY = join(process.cwd(), 'packages', 'squad-cli', 'src', 'cli-entry.ts');
 
-// Commands that exist as files but are intentionally not wired via dynamic import.
-// watch.ts: cli-entry routes 'triage'/'watch' to a stub; the full implementation is pending.
-// upstream.ts: wired through a different mechanism (not a user-facing CLI command).
-const KNOWN_UNWIRED = new Set(['watch', 'upstream']);
+// All commands should now be wired — no known-unwired commands remaining.
+const KNOWN_UNWIRED = new Set<string>([]);
 
 describe('CLI command wiring regression (issues #224, #236, #237)', () => {
   const commandFiles = readdirSync(COMMANDS_DIR)
