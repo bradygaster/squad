@@ -76,3 +76,114 @@
   3. Team context: Clarified that final team consensus entry is team-wide, documented in Baer's history for reference
 
 **Status:** Clean — all corrections applied.
+
+---
+
+## Secret Audit — .squad/ Directory (2026-03-08)
+
+**Requested by:** Brady  
+**Urgency:** CRITICAL  
+**Scope:** ALL committed files in `.squad/` + git history  
+**Verdict:** ✅ **CLEAN** — No leaked secrets found
+
+### Audit Coverage
+- **330 files** scanned on disk (histories, decisions, logs, configs, skills, templates)
+- **100+ deleted files** examined in git history
+- **Full git log** searched for credential patterns in diffs
+
+### Patterns Searched
+**High-confidence token formats:**
+- GitHub tokens: `ghp_*`, `gho_*`, `github_pat_*` — 0 matches
+- npm tokens: `npm_*` — 0 matches
+- OpenAI keys: `sk-*`, `sk-proj-*` — 0 matches
+- AWS keys: `AKIA*` — 0 matches
+- Private keys: `-----BEGIN.*PRIVATE KEY-----` — 0 matches
+
+**Connection strings:**
+- `mongodb://`, `postgres://`, `mysql://`, `redis://` with auth — 0 matches
+- Azure storage: `DefaultEndpointsProtocol=`, `AccountKey=` — 0 matches
+
+**Generic patterns:**
+- `password=`, `token=`, `secret=`, `bearer ` — 0 real matches (documentation only)
+
+### False Positives
+All credential mentions were **documentation, examples, or variable names**:
+1. `NPM_TOKEN` — CI/CD documentation (automation token requirements)
+2. `GITHUB_TOKEN` — MCP config templates with env var placeholders (`${GITHUB_TOKEN}`)
+3. Connection string examples in `.squad/skills/secret-handling/SKILL.md` — explicitly documented as redaction examples
+4. `process.env.npm_execpath` — Node.js environment variable (not a token)
+5. Email addresses — only example.com test data and Copilot bot attribution
+
+### Git History Clean
+- Deleted `config.json` — contained only `teamRoot` path (machine-local, no secrets)
+- Decision inbox merges — no secrets in deleted content
+- Commit diffs — zero credential-shaped strings found
+
+### Validation Results
+- ✅ PII exposure: Only example.com, Copilot bot, and git@github.com SSH URLs (consistent with 2026-02-24 audit)
+- ✅ .env files: Properly gitignored, not committed
+- ✅ Session storage: Empty or error messages only
+- ✅ Configuration files: Only paths and structure, no secrets
+
+### Preventive Measures Already Active
+1. Hook-based governance with secret scrubbing
+2. `.gitignore` properly excludes `.env`, logs, machine-local configs
+3. GitHub Actions use `secrets.*` syntax (never inline values)
+4. Comprehensive secret handling skill documentation
+
+### Report Location
+`.squad/decisions/inbox/baer-secret-audit-report.md` — comprehensive audit report with pattern tables, findings breakdown, and recommendations
+
+---
+
+## Issue #267 Remediation Plan — Secret Guardrails (2026-03-08)
+
+**Requested by:** Brady  
+**Context:** Community-reported credential leak (lbouriez) — agent read `.env`, wrote to `.squad/decisions/inbox/`, Scribe committed to git  
+**Verdict:** ✅ **CLEAN** logs (audit completed, no current exposure) + **Comprehensive remediation plan delivered**
+
+### What I Did
+
+1. **Read all team analysis documents:**
+   - Keaton's defense-in-depth architecture (5 layers: prompts, pre-tool hooks, post-tool hooks, Scribe pre-commit, git hooks)
+   - Verbal's spawn template and charter hardening (security skill, Scribe pre-commit validation)
+   - Fenster's hooks implementation plan (`.env` read blocker, enhanced secret scrubber, `scanForSecrets()` function)
+   - My own audit report (logs are clean, no secrets found)
+
+2. **Synthesized 3-phase remediation plan:**
+   - **Phase 1 (Immediate):** Spawn template hardening, security skill (`.squad/skills/secret-handling/SKILL.md`), charter security sections, Scribe pre-commit validation
+   - **Phase 2 (Short-term):** PreToolUseHook (block `.env` reads), PostToolUseHook (scrub 15+ credential patterns), Scribe pre-commit scanner (`scanForSecrets()`), PolicyConfig extensions (`blockEnvFileReads`, `scrubSecrets`)
+   - **Phase 3 (Future):** CI-level secret scanning (gitleaks/truffleHog), git pre-commit hooks, entropy-based detection, secret manager integration
+
+3. **Posted comprehensive reply to Issue #267:**
+   - Thanked reporter (responsible disclosure)
+   - Acknowledged severity (legit credential leak vector)
+   - Reported audit status (logs are clean)
+   - Presented all 3 phases in clear, non-jargon terms
+   - Emphasized "hooks are code, prompts can be ignored" (reporter's insight)
+   - Mentioned test coverage (Hockney writing 30+ tests)
+   - Timeline: Phase 1 (this release), Phase 2 (1-2 weeks), Phase 3 (backlog)
+
+### Key Insights
+
+- **Defense in depth is the answer:** No single layer is sufficient. Prompts guide behavior (reduce false positives), hooks enforce policy (deterministic execution).
+- **Reporter's insight was correct:** "Hooks are code, prompts can be ignored." This is the core principle of hook-based governance (Baer learning from beta).
+- **Community security reports are valuable:** lbouriez caught a real issue. Grateful for responsible disclosure.
+- **Audit first, respond second:** Verified logs were clean before responding. No rotation required. This reduces panic and establishes facts.
+
+### What's Next
+
+- Fenster implements Phase 2 hooks (SDK work)
+- Hockney writes test suite (30+ tests for all layers)
+- Verbal deploys Phase 1 fixes (prompts, charters, skills)
+- Monitor for false positives once Phase 2 is live
+
+### Recommendation to Brady
+
+**Does #267 block the next release?**
+- **No** — Logs are clean (no current exposure). 
+- **But** — Phase 1 fixes (prompt hardening) should be included in this release. They're non-breaking and provide immediate defense.
+- **Phase 2** (hook enforcement) can ship in a follow-up release (1-2 weeks).
+
+### GitHub Comment Posted
+https://github.com/bradygaster/squad/issues/267#issuecomment-4019006867

@@ -69,6 +69,51 @@ The definitive release runbook lives at `.squad/skills/release-process/SKILL.md`
 
 ## Learnings
 
+### 2026-03-12: Release Readiness Assessment for v0.8.24
+
+**Context:** Brady requested release readiness assessment — "show what you can do" for first real release post-Kobayashi disaster. Full system check: versions, branches, tests, build, changelog, blockers.
+
+**What I assessed:**
+1. **Version state** — All 3 package.json files at 0.8.23, npm registry matches, git tags consistent
+2. **Branch state** — main clean (no uncommitted changes), dev 7 commits ahead (expected for integration branch)
+3. **Test baseline** — 3811 tests passing, 0 failures, 3 intentional skips (ALL GREEN)
+4. **Build check** — Build succeeds, SKIP_BUILD_BUMP=1 properly prevents bump-build.mjs mutation
+5. **Changelog** — v0.8.23 entry exists but claims to fix #265 (issue still OPEN — discrepancy found)
+6. **Release blockers** — Issue #265 (Node 24+ ESM crash) identified as critical blocker pending verification
+7. **Pre-flight checklist** — Walked through release-process skill, 4/5 gates green, NPM_TOKEN verification pending
+
+**Critical findings:**
+1. **Changelog discrepancy** — CHANGELOG.md claims v0.8.23 fixed issue #265 (Node 24+ ESM import crash), but issue is STILL OPEN with users reporting the bug as of 2026-03-08. No linked PR to verify the fix. Needs verification before v0.8.24 release.
+2. **Issue #265 is a release blocker** — Affects `squad init` on Node 24+ and GitHub Codespaces (fresh installs crash with ERR_MODULE_NOT_FOUND). If v0.8.23 didn't actually fix this, users on modern Node can't use Squad.
+3. **Issue #267 (credential leak) is NOT a blocker** — Serious security issue but doesn't affect new installs or upgrades. Can be mitigated via charter updates while engineering proper fix.
+4. **v0.8.23 already published** — Next release is v0.8.24 (proposed). Version validated via semver.valid().
+
+**Proposed release plan:**
+- **Option A:** Release v0.8.24 immediately if #265 is verified fixed (1-2 days)
+- **Option B:** Fix #265 in v0.8.24 if v0.8.23 didn't fix it (3-5 days)
+- **Recommendation:** Verify #265 status ASAP, then decide path
+
+**Learnings:**
+1. **Changelog must be source of truth** — Discrepancies between changelog and issue state create confusion. If changelog claims a fix, the issue should be closed with verification.
+2. **Test Node version compatibility** — ESM import issues are Node-version-specific. Release testing should cover both Node LTS and latest.
+3. **Verify fixes before claiming them** — Never document a fix in the changelog without a linked PR or commit SHA. Verifiability matters.
+4. **Distinguish release blockers from serious bugs** — Not every open issue blocks a release. Issue #267 is serious but doesn't affect the upgrade path or new installs — can be fixed in follow-up.
+5. **Clean state makes assessment easier** — Having zero uncommitted changes, green tests, and clean build meant I could focus on blockers instead of debugging local state.
+
+**Output:** Comprehensive release readiness report at `.squad/decisions/inbox/trejo-release-readiness.md` with version proposal (0.8.24), blocker analysis, pre-flight checklist status, and 3 release path options.
+
+**What worked:**
+- Parallel data gathering (versions, tags, branch state, tests, build) was efficient
+- Walking through the release-process skill checklist revealed NPM_TOKEN verification gap
+- Test/build validation proved the system is mechanically ready (just needs scope clarity)
+
+**What I'd do differently next time:**
+- Check issue comments more thoroughly — if changelog claims a fix, verify closure status
+- Test the actual fix (e.g., run `npx @bradygaster/squad-cli init` on Node 24+) instead of just reading issue thread
+- Include a "What's new since last release?" section (git log between tags) to define v0.8.24 scope
+
+---
+
 ### 2026-03-07: First task — Release & GitOps audit for CI/CD PRD
 
 **Context:** Brady requested comprehensive audit of release and GitOps state to feed into CI/CD improvement PRD. Drucker auditing CI/CD pipelines separately.

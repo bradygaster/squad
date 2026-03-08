@@ -46,3 +46,23 @@
 **Audit Results:** 2 corrections made.
 - Clarified Feb 24 wave work summary as final state (not intermediate)
 - Added critical v0.6.0 vs v0.8.17 version context to prevent future spawn confusion
+
+---
+
+## Issue #265 Triage — npx Install Failure (2026-03-08)
+
+**Problem:** `npx @bradygaster/squad-cli` crashes with `ERR_MODULE_NOT_FOUND` on Node 24+ due to upstream `@github/copilot-sdk@0.1.32` ESM bug (`session.js` imports `vscode-jsonrpc/node` without `.js` extension). Global install works (postinstall patch runs), but npx fails (cache skips postinstall on 2nd+ run).
+
+**Root cause:** NPX uses `~/.npm/_cacache` and **skips lifecycle hooks on cache hits** for performance (documented npm behavior: npm#8079, npm#10379). Postinstall-only patching can't fix npx.
+
+**Solution:** Implemented **hybrid approach**:
+1. ✅ Keep postinstall patch (`scripts/patch-esm-imports.mjs`) for global installs
+2. ✅ Add runtime fallback (`cli-entry.ts`) that patches `Module._resolveFilename` before any imports
+3. ✅ Works everywhere: npx (cache hit/miss), global install, CI/CD
+
+**Key learning:** For ESM import patching, **runtime > install-time** when npx is a supported install method. Runtime patches survive cache optimizations, install-time patches don't.
+
+**Code:** `packages/squad-cli/src/cli-entry.ts` lines 40-58  
+**Priority:** P1 — High (affects primary onboarding path, workaround exists)  
+**Status:** Fixed (pending next release)  
+**Upstream:** https://github.com/github/copilot-sdk/issues/707 (still open)
