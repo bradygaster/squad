@@ -10,7 +10,7 @@ hero: "Squad now speaks Azure DevOps natively — auto-detection, configurable w
 
 # Squad Goes Enterprise — Azure DevOps, Area Paths, and Cross-Project Work Items
 
-> Blog post #23 — How Squad learned to work with enterprise ADO environments where nothing is "standard."
+> Blog post #25 — How Squad learned to work with enterprise ADO environments where nothing is "standard."
 
 ## The Problem
 
