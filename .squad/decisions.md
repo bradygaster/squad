@@ -10355,3 +10355,427 @@ Add this as a new `## Security` section to the agent charter template (standard 
 **What:** Always cut a branch before doing work. Never commit directly to dev or main. The team (including Trejo, Drucker, and all agents) must follow the squad branch convention: `squad/{issue-number}-{slug}`. This is non-negotiable.
 **Why:** User request — captured for team memory. Agents committed work directly to the current branch instead of creating a feature branch first. This violates proper git practices and the team's own branching model documented in team.md.
 
+
+
+---
+
+## 2026-03-08T13:07Z: User directive — Git & Release discipline
+### 2026-03-08T13:07Z: User directive — Git & Release discipline
+**By:** bradygaster (via Copilot)
+**What:** Multiple directives:
+1. Always triage issues BEFORE working on them — add labels (squad:{member}), document priority, comment on the issue with triage notes.
+2. Always cut a branch (squad/{issue-number}-{slug}) before any work. Never commit to main or dev directly.
+3. Release team (Trejo, Drucker) must update their charters to include these practices as hard rules.
+4. All agents must follow the branching model documented in team.md — no exceptions.
+5. No more sloppy git practices. The v0.8.22 release was a disaster. The team must harden and practice model behavior.
+**Why:** User feedback after agents committed directly to main without branching, and worked on issues without triaging/labeling them first. This is non-negotiable process discipline.
+
+---
+
+## Charter Hardening — CI/CD Branch Protection
+# Charter Hardening — Git Discipline and Branch Protection
+
+**By:** Drucker (CI/CD Engineer)  
+**Date:** 2026-03-08  
+**Context:** Post-incident response to v0.8.22 release disaster + day-one mistake (committing to main)
+
+## Decision
+
+Drucker's charter has been hardened with strict branch protection rules, issue triage gates, and pre-commit check proposals.
+
+## What Changed
+
+### 1. Branch Protection in CI (added to Guardrails)
+
+**NEVER:**
+- ❌ Allow workflows to commit directly to `main` or `dev`
+- ❌ Skip branch verification in any workflow that modifies files
+- ❌ Assume the branch state is correct — always verify
+
+**ALWAYS:**
+- ✅ Add branch-name validation to workflows: fail if on main/dev when expecting a feature branch
+- ✅ Require PRs for any changes to protected branches
+- ✅ Include branch verification step in publish.yml and squad-release.yml
+
+**Code patterns added:**
+- Branch verification for workflows that modify files (fails on main/dev)
+- Branch verification for publish workflows (only allows main or release/* branches)
+
+### 2. Issue Triage Gates in CI
+
+**Added:**
+- ✅ squad-ci.yml should verify that PRs reference an issue (check for `#issue-number` pattern in PR body)
+- ✅ Document: labels (squad, squad:{member}, priority) are required before work starts
+
+**Code pattern added:**
+- PR body validation step that checks for issue reference
+
+### 3. Pre-Commit/Pre-Push Checks
+
+**Proposed:**
+- ✅ Pre-commit hook that checks: (a) not on main/dev, (b) no secrets in staged files (gitleaks)
+- ✅ Gitleaks GitHub Action as CI step in squad-ci.yml
+
+**Code patterns added:**
+- Sample pre-commit hook bash script (branch check + gitleaks scan)
+- Gitleaks action YAML for squad-ci.yml
+
+### 4. Collaboration with Trejo
+
+**Updated delegation section:**
+- **Drucker verifies CI is ready:** workflows green, validation gates in place, branch state correct
+- **Trejo verifies process is ready:** CHANGELOG updated, issue triaged, version decided
+- **Both check branch state** before releasing
+
+### 5. Voice Update
+
+**Added lesson learned:**
+> I learned the hard way: on day one, I committed directly to main without branching. Never again. Branch protection is non-negotiable.
+
+### 6. New Pitfall Documented
+
+**Pitfall 6: Committing Directly to Protected Branches (2026-03-08 incident)**
+- What happened: Agents committed work directly to `main` instead of cutting a feature branch
+- Root cause: No branch verification in workflows, no pre-commit hook
+- Prevention: Branch verification in all workflows, pre-commit hook, team charter documentation
+
+## Why This Matters
+
+**Yesterday's disaster (v0.8.22):** CI failed to catch invalid versions, wrong token types, and missing retry logic. Result: 5+ failed publish attempts, mangled version on npm, customer confusion.
+
+**Today's mistake:** First session with new release team (Drucker + Trejo) committed directly to main without branching. Bypassed PR review and CI checks.
+
+**Pattern:** Humans make mistakes. CI must catch them. Branch protection is as critical as semver validation.
+
+## Impact
+
+- **Charter:** Updated with hard rules about branch protection, triage gates, pre-commit checks
+- **Technical patterns:** Added code samples for branch verification, gitleaks integration, PR validation
+- **Collaboration:** Clarified split between Drucker (CI readiness) and Trejo (process readiness)
+- **Voice:** Reflects lesson learned from day-one mistake
+
+## Next Steps
+
+- **Implement branch verification** in publish.yml and squad-release.yml (when fixed)
+- **Add gitleaks action** to squad-ci.yml (addresses #267 secret leak risk)
+- **Consider pre-commit hook** as team-wide Git configuration
+- **Add PR validation** to squad-ci.yml (issue reference check)
+
+## Team Note
+
+Brady's feedback: "i need y'all to get your ducks in a row, have a team meeting about our FIASCO of a release yesterday, harden yourselves, get the cobwebs out of the machines, and agent up."
+
+**Drucker's response:** Charter hardened. Lessons learned. Ready to build defensive CI that catches mistakes before they ship.
+
+---
+
+## Release Process Retrospective — March 8, 2026
+# Release Process Retrospective — March 8, 2026
+
+**Led by:** Keaton (Lead)  
+**Context:** Post-v0.8.22 release disaster + Day 1 process failures (working on main, no triage)  
+**Status:** ACTION ITEMS ASSIGNED — Execution required
+
+---
+
+## Executive Summary
+
+Yesterday's v0.8.22 release was a catastrophe. Today's first-day work started strong (59 tests, solid security architecture, clean ESM fix) but failed on process fundamentals: 10 agents worked directly on `main`, no issue triage before work started, and Fortier's code fix was lost during cleanup. Brady's directive is clear: **"No more BS. Get your ducks in a row."**
+
+This retro identifies root causes, assigns concrete action items, and establishes team-wide process gates. The work was good. The process around the work failed.
+
+---
+
+## What Went Wrong (Yesterday) — v0.8.22 Release Disaster
+
+**Timeline:** March 7, 2026 — The worst release in Squad history.
+
+### The Cascade of Failures
+
+1. **Invalid semver committed (0.8.21.4)** — Kobayashi ran `bump-build.mjs` 4 times during debugging, mutating the version to a 4-part format. 4-part versions are **not valid semver**. Kobayashi committed without validation.
+
+2. **npm mangled the version** — npm's parser interpreted `0.8.21.4` as `0.8.2-1.4` (major.minor.patch-prerelease). This phantom version was published to the registry. The `latest` dist-tag pointed to a broken version for 6+ hours.
+
+3. **Draft release didn't trigger automation** — The GitHub release was created as DRAFT. Draft releases don't fire the `release: published` event, so `publish.yml` never ran. Automation was dead in the water.
+
+4. **Wrong NPM_TOKEN type** — CI used a User token with 2FA enabled, causing repeated `EOTP` (Expected OTP) failures. Automation tokens don't require OTP. This wasn't documented anywhere.
+
+5. **bump-build.mjs ran during release** — The script silently incremented the version during debugging, creating a moving target. No one noticed until after the commit.
+
+6. **No retry logic in verify steps** — npm propagation delays caused 404s even when the publish succeeded. The verify step had no retry logic and failed immediately.
+
+### Root Causes
+
+- **No release runbook** — Agents improvised. Improvisation during releases = disaster.
+- **No semver validation gates** — 4-part versions look valid to humans but break npm's parser. No pre-commit checks caught this.
+- **No NPM_TOKEN documentation** — Token types (User vs. Automation) were never documented. CI was set up incorrectly.
+- **Draft release footgun** — The difference between "draft" and "published" is invisible in the UI but breaks automation. No one knew this.
+- **No validation before commit** — Kobayashi committed package.json changes without running `require('semver').valid()` first.
+
+### What We Shipped (Recovery)
+
+- **Comprehensive retrospective:** `.squad/decisions/inbox/keaton-v0822-retrospective.md` (brutal honesty, full post-mortem)
+- **Release process skill:** `.squad/skills/release-process/SKILL.md` (definitive runbook with validation gates, rollback procedures)
+- **Team retirements:** Kobayashi retired. Trejo (Release Manager) and Drucker (CI/CD Engineer) replaced him.
+
+---
+
+## What Went Wrong (Today) — Day 1 Process Failures
+
+**Timeline:** March 8, 2026 — First day with new team structure.
+
+### The Failures
+
+1. **No branch cut before work started** — 10 agents (Fortier, Finch, Draper, Drucker, Trejo, Baer, Fenster, Verbal, Fenster again, Hockney) fanned out to work on #267 (security guardrails) and #265 (ESM fix). **ALL work was committed directly to `main`**. No one created a branch. No one verified what branch they were on before committing.
+
+2. **No issue triage before work started** — Issues #267 and #265 had no labels, no priority comments, no routing context. The coordinator spawned agents immediately without triaging. Agents started work blind.
+
+3. **Scribe committed metadata to main** — Scribe wrote two `.squad/` metadata commits directly to main (team roster updates) without verifying the branch.
+
+4. **Fortier's code fix was lost** — When the team realized the mistake, `main` had to be reset to clean up. Fortier's ESM fix (#265) was lost in the cleanup. It had to be manually recreated on the `squad/267-secret-guardrails` branch.
+
+### Root Causes
+
+**Why did the coordinator and agents skip branching?**
+
+1. **Spawn templates don't include branch verification** — The coordinator's spawn prompt template doesn't include a "verify current branch" or "create issue branch" step. Agents are spawned with context but no process guardrails.
+
+2. **Agents don't check their branch before committing** — No agent charter includes "run `git branch --show-current` before first commit." It's not part of the checklist.
+
+3. **Scribe commits without branch verification** — Scribe's commit logic doesn't verify it's not on `main` or `dev` before committing. It trusts the current branch implicitly.
+
+4. **No pre-commit hooks enforce branch policy** — The repo has no Git hooks to reject commits on `main` or `dev` from local development. Everything relies on GitHub branch protection (which only blocks pushes, not local commits).
+
+5. **No triage gate enforced** — The coordinator's routing logic allows spawning agents before issues are labeled and triaged. Triage should be a hard gate, not a courtesy.
+
+---
+
+## Action Items (Concrete, Assigned)
+
+### P0 — BLOCKING (Complete before next issue work)
+
+- [x] **Trejo:** Update charter with branch-first rules (IN PROGRESS — waiting for charter commit)
+  - Add step: "Before work starts, verify current branch is NOT main/dev. Create issue branch if needed."
+  - Add step: "Before pushing, verify branch name follows convention: `squad/{issue-number}-{slug}`."
+
+- [x] **Drucker:** Update charter with CI branch gates (IN PROGRESS — waiting for charter commit)
+  - Add step: "Before commits, verify CI branch protection is active."
+  - Add checklist: Branch validation before every release workflow.
+
+- [ ] **Verbal:** Update spawn templates to include branch verification
+  - Add to coordinator spawn prompt template: "**Step 0 (GATE): Verify branch.** Before starting work, run `git branch --show-current`. If on `main` or `dev`, STOP and create an issue branch: `git checkout -b squad/{issue-number}-{slug}`. Report branch name in RESPONSE ORDER."
+  - Add to all agent spawn templates: "Before first commit, verify you are NOT on main/dev."
+
+- [ ] **Fenster:** Add branch verification to Scribe's commit logic
+  - Add pre-commit check: `git branch --show-current`. If result is `main` or `dev`, abort commit and report error: `"❌ Scribe cannot commit to protected branches (main/dev). Current branch: {branch}. Please create an issue branch first."`
+  - Update Scribe charter with branch policy.
+
+- [ ] **Coordinator:** Always triage (label + comment) before routing work
+  - Before spawning agents for issues, add a triage step:
+    1. Read issue body and comments
+    2. Add priority label (priority:p0/p1/p2)
+    3. Add type label (type:bug/feature/docs/refactor)
+    4. Add routing label (squad:{member}) if routing to specific agent
+    5. Add a triage comment: "🤖 Triaged as {priority} {type}. Routing to {member/team}."
+  - Only AFTER triage, spawn agents with full context.
+
+- [ ] **All agents:** Check branch before first commit
+  - Add to every agent's pre-work checklist (update all 13 charters):
+    - "**Branch verification (required):** Before first commit, run `git branch --show-current`. If on `main` or `dev`, abort and create issue branch."
+
+### P1 — Hardening (Complete before v0.8.23)
+
+- [ ] **Drucker:** Add pre-commit Git hook to reject commits on main/dev
+  - Create `.husky/pre-commit` or equivalent hook.
+  - Hook logic: `current_branch=$(git branch --show-current); if [[ "$current_branch" == "main" || "$current_branch" == "dev" ]]; then echo "❌ Direct commits to main/dev are not allowed."; exit 1; fi`
+  - Document in CONTRIBUTING.md.
+
+- [ ] **Trejo:** Document branch policy in .squad/decisions.md
+  - Add section: "Branch Policy — No Direct Commits to main/dev"
+  - Add enforcement: "All work starts on issue branches. Scribe enforces this. CI enforces this. Git hooks enforce this."
+
+---
+
+## Process Changes (Team-Wide)
+
+### New Gates (Non-Negotiable)
+
+1. **Issue triage is now a GATE** — No work starts without labels.
+   - Every issue MUST be triaged before agents are spawned.
+   - Triage = priority label + type label + routing label (if applicable) + comment.
+   - Coordinator is responsible for triage. If triage is missing, coordinator does it first.
+
+2. **Branch-first is non-negotiable** — Verify before every commit.
+   - Every agent MUST verify current branch before first commit.
+   - If on `main` or `dev`, STOP and create issue branch.
+   - Scribe MUST verify it's not on `main` or `dev` before committing metadata.
+   - CI branch protection MUST be verified before release workflows.
+
+3. **Coordinator includes branch context in every spawn prompt**
+   - Every spawn prompt MUST include: `"Current branch: {branch}. Expected branch: squad/{issue-number}-{slug}. If mismatch, create issue branch first."`
+
+4. **Spawn templates updated with branch verification step**
+   - All spawn templates (Verbal's coordinator prompt, agent task templates) MUST include: "**Step 0: Verify branch** (run `git branch --show-current`, abort if main/dev)."
+
+---
+
+## What Went Right (Be Fair)
+
+**The work delivered today was solid.** This retro is about process failures, not capability failures. Let's be clear about what went right:
+
+### Quality Delivered
+
+1. **59 new tests written** — Hockney delivered comprehensive test coverage for secret guardrails (#267). All passing. High quality.
+
+2. **Security architecture designed** — 5-layer defense system (Fenster hooks + Verbal prompts + Baer audit) finalized. Thoughtful, production-ready.
+
+3. **ESM fix (#265) was correct** — Fortier identified the root cause (TypeScript import path handling) and implemented a clean fix. The fix was lost during cleanup, not because it was wrong.
+
+4. **CI/CD & GitOps PRD synthesized** — 29 prioritized work items, 6 phases, 5 architecture decisions. This is actionable, high-quality product work.
+
+5. **Clean npm audit** — All dependencies vetted. Zero vulnerabilities. Security baseline maintained.
+
+6. **Team coordination was smooth** — 10 agents worked in parallel without stepping on each other's code. The branching failure was process, not coordination.
+
+### What This Means
+
+**The team delivered production-quality work.** The process around the work (branching, triage, metadata commits) failed. This is fixable. The team's capability is not in question. The team's adherence to process is.
+
+---
+
+## Lessons Learned (Hard)
+
+1. **Process gates prevent disasters.** Triage before work, branching before commits — these aren't optional steps. They're gates.
+
+2. **Charters need checklists, not just principles.** "Use branches" is a principle. "Run `git branch --show-current` before first commit" is a checklist. Agents need checklists.
+
+3. **Spawn templates compound mistakes.** If the coordinator's spawn template doesn't include branch verification, EVERY agent spawned will inherit the mistake. Fix the template, fix the team.
+
+4. **Scribe is infrastructure, not an agent.** Scribe's commits (metadata, rosters) are different from code commits. Scribe needs branch validation because its commits are automatic.
+
+5. **Lost work is worse than slow work.** Fortier's ESM fix was correct but lost during cleanup. Slow branching workflow would have preserved it. Speed without process = rework.
+
+6. **Enforcement layers matter.** Branch policy needs 3 layers: (1) charters, (2) spawn templates, (3) Git hooks. Relying on one layer = single point of failure.
+
+---
+
+## Next Steps
+
+1. **Verbal:** Update spawn templates (branch verification step) — **DUE: TODAY**
+2. **Fenster:** Add branch verification to Scribe logic — **DUE: TODAY**
+3. **Coordinator:** Triage #267 and #265 retroactively (add labels, add context comments) — **DUE: TODAY**
+4. **All agents:** Read this retro before picking up next issue — **DUE: BEFORE NEXT WORK**
+5. **Drucker:** Add pre-commit Git hook (P1, can be next week) — **DUE: Before v0.8.23**
+6. **Trejo:** Document branch policy in decisions.md (P1, can be next week) — **DUE: Before v0.8.23**
+
+---
+
+## Reflection (Keaton)
+
+This was a rough 48 hours. Yesterday's release disaster was a systemic failure — no runbook, no validation gates, improvised recovery. Today's process failure (working on main) was a spawn template failure — the coordinator's prompt didn't include branch verification, so 10 agents inherited the mistake.
+
+**The good news:** Both failures are fixable with process, not talent. The team delivered high-quality work (59 tests, security architecture, ESM fix, PRD synthesis). The team's capability is not in question.
+
+**The bad news:** We shipped broken releases and lost code because we didn't follow process. That's on us. We own it.
+
+**The fix:** Gates. Triage is a gate. Branching is a gate. Semver validation is a gate. Spawn templates enforce gates. Charters enforce gates. Git hooks enforce gates. Defense-in-depth.
+
+**Brady's right.** No more BS. Let's harden ourselves, clear the cobwebs, and agent up. We're better than this.
+
+---
+
+**Document written by:** Keaton (Lead)  
+**Date:** 2026-03-08  
+**Next review:** After P0 action items complete (Verbal's spawn updates + Fenster's Scribe updates + Coordinator triage)  
+
+---
+
+## Decision: Trejo Charter Hardening — Git Discipline and Issue Triage
+# Decision: Trejo Charter Hardening — Git Discipline and Issue Triage
+
+**Date:** 2026-03-08  
+**Author:** Trejo  
+**Status:** Proposed  
+**Context:** First-session mistakes, team-wide branching violations
+
+## Problem
+
+On the first day working with the new release team (Trejo and Drucker), the team committed directly to `main` and worked on issues #265 and #267 without triaging them first (no labels, no priority, no triage comments). This violated basic git hygiene and project management discipline, frustrating Brady who expects better process rigor from the release management team.
+
+**Brady's feedback:** "let's not start off on bad git and release practices on a second day and make this process take 10x longer than it needs to. i need y'all to get your ducks in a row."
+
+## Decision
+
+Updated Trejo's charter (`.squad/agents/trejo/charter.md`) with **hard rules** for:
+
+### 1. Git Branching Discipline (added to Guardrails)
+
+**NEVER:**
+- ❌ Commit directly to `main` or `dev` — ALWAYS create a branch first
+- ❌ Start work without a branch following: `squad/{issue-number}-{slug}`
+- ❌ Push to protected branches without a PR
+
+**ALWAYS:**
+- ✅ Branch from `dev` (not main): `git checkout dev && git pull && git checkout -b squad/{issue-number}-{slug}`
+- ✅ Create PRs targeting `dev`: `gh pr create --base dev`
+- ✅ Verify branch before EVERY commit: `git branch --show-current`
+- ✅ Include issue reference: `Closes #{issue-number}`
+- ✅ Use release branch naming: `squad/{version}-release`
+
+### 2. Issue Triage Before Work (added to How I Work)
+
+**MANDATORY triage checklist before ANY agent starts work:**
+- ✅ Add `squad` label
+- ✅ Add `squad:{member}` label for the assigned agent
+- ✅ Add priority label (P0/P1/P2)
+- ✅ Add category label (bug, security, feature, etc.)
+- ✅ Comment on the issue with triage notes
+- ✅ **ONLY THEN** may work begin
+
+**NO WORK WITHOUT TRIAGE.** This is non-negotiable.
+
+### 3. Release Pre-Flight (reinforced)
+
+**ALWAYS:**
+- ✅ Verify branch state BEFORE every release operation
+- ✅ Confirm you're NOT on main/dev before making changes
+- ✅ Confirm branch is clean: `git status`
+- ✅ Verify you're on the correct release branch
+
+### 4. Collaboration with Drucker (added to Collaboration)
+
+When Trejo and Drucker work together on releases:
+- **Trejo owns:** Process checklist, version decisions, GitHub Release creation, orchestration
+- **Drucker owns:** CI/CD automation, workflows, validation gates, retry logic
+- **Both must:** Verify branch state before ANY operation — shared responsibility
+
+### 5. Voice Update (reinforced discipline)
+
+Added: "First-day mistakes on main are not acceptable. Process discipline starts before the first commit. Branch state verification is muscle memory, not an afterthought. If you're on `main` or `dev`, you're doing it wrong — create a branch before ANY work begins."
+
+## Rationale
+
+1. **Prevent main pollution:** Direct commits to `main` bypass review, break automation, and create messy history. Branch-first is non-negotiable.
+2. **Enforce triage:** Starting work on untriaged issues creates chaos — no priority, no context, no coordination. Triage ensures everyone knows what's important and who's responsible.
+3. **Release safety:** Release operations are high-risk. Verifying branch state before every operation prevents disasters like pushing a version bump to the wrong branch.
+4. **Shared responsibility:** Both Trejo and Drucker must enforce process discipline. No exceptions, no excuses.
+
+## Impact
+
+- **All agents** working on issues must complete triage before starting work
+- **Trejo and Drucker** must verify branch state before every operation (releases, PR reviews, CI work)
+- **Team coordination** improves with explicit labels and triage comments
+- **Git history** stays clean with branch-first discipline
+
+## Next Steps
+
+1. Share this decision with the team (Keaton, Drucker, Fortier, McManus, Quincy, Trask)
+2. Audit open issues for triage compliance — add missing labels and triage comments
+3. Create pre-commit hooks or CI checks to enforce branch conventions (future work, pending Drucker's CI audit)
+
+## Related
+
+- `.squad/agents/trejo/charter.md` — updated with hard rules
+- `.squad/agents/trejo/history.md` — lesson documented
+- `.squad/skills/release-process/SKILL.md` — existing release runbook
+
