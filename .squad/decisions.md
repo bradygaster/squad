@@ -10779,3 +10779,5 @@ Added: "First-day mistakes on main are not acceptable. Process discipline starts
 - `.squad/agents/trejo/history.md` — lesson documented
 - `.squad/skills/release-process/SKILL.md` — existing release runbook
 
+
+### 2026-03-08T13:28Z: User directive **By:** Brady (via Copilot) **What:** Users should NEVER have to worry about secrets being leaked by Squad agents. This is non-negotiable. Also, minimize GitHub Actions usage for security scanning — prefer local/runtime guards over CI-based scanning. **Why:** User request — captured for team memory. Actions minutes are already heavily used; prefer SDK-level enforcement that costs zero CI time.
