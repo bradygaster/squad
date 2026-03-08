@@ -93,7 +93,6 @@ export class GitHubAdapter implements PlatformAdapter {
       'issue', 'create',
       '--repo', this.repoFlag,
       '--title', options.title,
-      '--json', 'number,title,state,labels,assignees,url',
     ];
     if (options.description) {
       args.push('--body', options.description);
@@ -107,23 +106,21 @@ export class GitHubAdapter implements PlatformAdapter {
       args.push('--assignee', options.assignedTo);
     }
 
-    const output = this.gh(args);
-    const issue = parseJson<{
-      number: number;
-      title: string;
-      state: string;
-      labels: Array<{ name: string }>;
-      assignees: Array<{ login: string }>;
-      url: string;
-    }>(output);
+    // gh issue create doesn't support --json; it prints the issue URL to stdout
+    const url = this.gh(args);
+    const match = url.match(/\/issues\/(\d+)\s*$/);
+    if (!match) {
+      throw new Error(`Could not parse issue number from gh output: ${url}`);
+    }
+    const issueNumber = parseInt(match[1]!, 10);
 
     return {
-      id: issue.number,
-      title: issue.title,
-      state: issue.state.toLowerCase(),
-      tags: issue.labels.map((l) => l.name),
-      assignedTo: issue.assignees[0]?.login,
-      url: issue.url,
+      id: issueNumber,
+      title: options.title,
+      state: 'open',
+      tags: options.tags ?? [],
+      assignedTo: options.assignedTo,
+      url: url.trim(),
     };
   }
 
@@ -141,7 +138,7 @@ export class GitHubAdapter implements PlatformAdapter {
 
   async listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]> {
     const args = ['pr', 'list', '--repo', this.repoFlag, '--json', 'number,title,headRefName,baseRefName,state,isDraft,reviewDecision,author,url'];
-    if (options.status) args.push('--state', options.status);
+    if (options.status) args.push('--state', mapStatusToGhState(options.status));
     if (options.limit) args.push('--limit', String(options.limit));
 
     const output = this.gh(args);
@@ -221,6 +218,17 @@ export class GitHubAdapter implements PlatformAdapter {
     execFileSync('git', ['checkout', base], EXEC_OPTS);
     execFileSync('git', ['pull'], EXEC_OPTS);
     execFileSync('git', ['checkout', '-b', name], EXEC_OPTS);
+  }
+}
+
+/** Map normalized status (active/completed/abandoned/draft) to gh CLI --state values */
+function mapStatusToGhState(status: string): string {
+  switch (status.toLowerCase()) {
+    case 'active': return 'open';
+    case 'completed': return 'merged';
+    case 'abandoned': return 'closed';
+    case 'draft': return 'open';
+    default: return status;
   }
 }
 

@@ -5,7 +5,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import type { PlatformType } from './types.js';
+import type { PlatformType, WorkItemSource } from './types.js';
 
 /** Parsed GitHub remote info */
 export interface GitHubRemoteInfo {
@@ -119,7 +119,7 @@ export function detectPlatform(repoRoot: string): PlatformType {
 export function detectWorkItemSource(
   repoRoot: string,
   configWorkItems?: string,
-): PlatformType {
+): WorkItemSource {
   if (configWorkItems === 'planner') return 'planner';
   return detectPlatform(repoRoot);
 }

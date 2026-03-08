@@ -87,7 +87,7 @@ function getAzureDevOpsRalphCommands(): RalphCommands {
     listOpenPRs:
       'az repos pr list --status active --output table',
     listDraftPRs:
-      'az repos pr list --status active --output table | findstr /i "draft"',
+      'az repos pr list --status active --query "[?isDraft==`true`]" --output table',
     createBranch:
       'git checkout main && git pull && git checkout -b {branchName}',
     createPR:

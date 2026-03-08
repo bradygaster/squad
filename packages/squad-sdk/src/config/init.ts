@@ -600,7 +600,8 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
     let detectedPlatform: string | undefined;
     try {
       const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8' }).trim();
-      if (remoteUrl.includes('dev.azure.com') || remoteUrl.includes('visualstudio.com') || remoteUrl.includes('ssh.dev.azure.com')) {
+      const remoteUrlLower = remoteUrl.toLowerCase();
+      if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
         detectedPlatform = 'azure-devops';
       }
     } catch {
@@ -897,7 +898,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   let isGitHub = true;
   try {
     const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8' }).trim();
-    if (remoteUrl.includes('dev.azure.com') || remoteUrl.includes('visualstudio.com') || remoteUrl.includes('ssh.dev.azure.com')) {
+    const remoteUrlLower = remoteUrl.toLowerCase();
+    if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
       isGitHub = false;
     }
   } catch {
@@ -952,7 +954,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
             mcpServers: {
               "EXAMPLE-azure-devops": {
                 command: "npx",
-                args: ["-y", "azure-devops-mcp-server"],
+                args: ["-y", "@azure/devops-mcp-server"],
                 env: {
                   AZURE_DEVOPS_ORG: "${AZURE_DEVOPS_ORG}",
                   AZURE_DEVOPS_PAT: "${AZURE_DEVOPS_PAT}"
