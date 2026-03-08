@@ -5,6 +5,8 @@
 - **Stack:** TypeScript (strict mode, ESM-only), Node.js ≥20, @github/copilot-sdk, Vitest, esbuild
 - **Created:** 2026-02-21
 
+📌 **Team update (2026-03-08):** Secret handling skill created at `.squad/skills/secret-handling/SKILL.md` — reference for all agents. Baer's audit (logs clean) boosts team confidence. Trejo found v0.8.24 release readiness blocked by #265 status (Fortier investigating). Your P0 findings (squad-release.yml broken, semver validation missing) are release blockers.
+
 ## Core Context — Drucker's Focus Areas
 
 **CI/CD Engineer:** Drucker owns GitHub Actions workflows, automated validation gates (semver validation, token verification, draft detection), publish pipeline with retry logic, CI health monitoring, and incident response. Pattern: defense in depth — every workflow has validation gates that assume humans will make mistakes.

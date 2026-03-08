@@ -1,3 +1,5 @@
+📌 Team update (2026-03-08): Secret handling skill created and deployed at `.squad/skills/secret-handling/SKILL.md` — canonical reference for all agents. Spawn templates hardened with explicit prohibitions (.env reads, secret writes). Agent charters updated with standard Security sections. First line of defense in 5-layer architecture. Fenster's hooks, Baer's audit, Hockney's tests provide enforcing layers. All 13 decisions merged. — decided by Verbal
+
 📌 Team update (2026-03-07T17:35:45Z): Issue #255 — Skill-based orchestration deployed. Extracted 4 skills (init-mode, model-selection, client-compatibility, reviewer-protocol) from squad.agent.md (840→711 lines). Added defineSkill() builder to SDK. squad build generates .squad/skills/ from config. Lazy loading reduces context window. — decided by Verbal
 
 # Project Context

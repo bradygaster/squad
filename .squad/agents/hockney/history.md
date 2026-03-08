@@ -1,3 +1,5 @@
+📌 Team update (2026-03-08): Secret handling skill created at `.squad/skills/secret-handling/SKILL.md`. Your 59 security tests (backward-compat validated) drive the defense-in-depth strategy. Baer's audit (logs clean) + Fenster's hooks + Verbal's prompts create 5-layer protection. All decisions merged to decisions.md for team reference. — decided by Scribe
+
 📌 Team update (2026-03-07T17:35:45Z): Issues #249/#250/#251/#255 — 66 new tests (init-sdk.test.ts, migrate.test.ts, builders.test.ts). All passing. 3768 total tests, 0 failures. No regressions. Test suite validates all SDK-First features production-ready. — decided by Hockney
 
 

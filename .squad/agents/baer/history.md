@@ -5,6 +5,8 @@
 - **Stack:** TypeScript (strict mode, ESM-only), Node.js ≥20, @github/copilot-sdk, Vitest, esbuild
 - **Created:** 2026-02-21
 
+📌 **Team update (2026-03-08):** New secret-handling skill created at `.squad/skills/secret-handling/SKILL.md` — all agents should reference this. Your audit result (logs clean) is key context for team confidence in #267 response. Drucker identified CI/CD pipeline gaps (P0: semver validation, squad-release.yml broken).
+
 ## Learnings
 
 ### From Beta (carried forward)

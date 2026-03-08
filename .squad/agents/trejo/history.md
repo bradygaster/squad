@@ -5,6 +5,8 @@
 - **Stack:** TypeScript (strict mode, ESM-only), Node.js ≥20, @github/copilot-sdk, Vitest, esbuild
 - **Created:** 2026-02-21
 
+📌 **Team update (2026-03-08):** Secret handling skill created at `.squad/skills/secret-handling/SKILL.md` — all agents reference this. Your v0.8.24 readiness assessment found tests green but flagged #265 (ESM crash) as potential blocker — Fortier investigating. Drucker's CI/CD audit identified P0 gaps (semver validation missing, squad-release.yml broken). Keaton synthesized both audits into PRD for Brady. Release decision pending #265 status.
+
 ## Core Context — Trejo's Focus Areas
 
 **Release Manager:** Trejo owns end-to-end release orchestration, semantic versioning (3-part ONLY), GitHub Release creation (NEVER as draft), changelog management, and pre/post-release validation. Pattern: checklist-first releases — every release follows the same validated process to prevent disasters.
