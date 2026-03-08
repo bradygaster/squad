@@ -41,13 +41,17 @@ function readVersion(path: string): string {
 describe('bump-build.mjs', () => {
   let workspace: { dir: string; paths: string[] };
 
+  // In CI, process.env.CI='true' causes the bump script to skip.
+  // Override env to unset CI so the script actually runs.
+  const execOpts = { stdio: 'pipe' as const, env: { ...process.env, CI: '', SKIP_BUILD_BUMP: '' } };
+
   afterEach(() => {
     if (workspace) rmSync(workspace.dir, { recursive: true, force: true });
   });
 
   it('adds build number .1 when starting from x.y.z-preview', () => {
     workspace = makeTempWorkspace('0.8.6-preview');
-    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, { stdio: 'pipe' });
+    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, execOpts);
     for (const p of workspace.paths) {
       expect(readVersion(p)).toBe('0.8.6-preview.1');
     }
@@ -55,7 +59,7 @@ describe('bump-build.mjs', () => {
 
   it('increments existing build number', () => {
     workspace = makeTempWorkspace('0.8.6-preview.5');
-    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, { stdio: 'pipe' });
+    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, execOpts);
     for (const p of workspace.paths) {
       expect(readVersion(p)).toBe('0.8.6-preview.6');
     }
@@ -63,7 +67,7 @@ describe('bump-build.mjs', () => {
 
   it('handles version without prerelease tag', () => {
     workspace = makeTempWorkspace('1.0.0.3');
-    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, { stdio: 'pipe' });
+    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, execOpts);
     for (const p of workspace.paths) {
       expect(readVersion(p)).toBe('1.0.0.4');
     }
@@ -71,7 +75,7 @@ describe('bump-build.mjs', () => {
 
   it('keeps all 3 package.json files in sync', () => {
     workspace = makeTempWorkspace('0.8.6-preview');
-    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, { stdio: 'pipe' });
+    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, execOpts);
     const versions = workspace.paths.map(readVersion);
     expect(new Set(versions).size).toBe(1);
     expect(versions[0]).toBe('0.8.6-preview.1');
@@ -79,7 +83,7 @@ describe('bump-build.mjs', () => {
 
   it('outputs the build transition to stdout', () => {
     workspace = makeTempWorkspace('0.8.6-preview');
-    const output = execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, { encoding: 'utf8' });
+    const output = execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, { ...execOpts, encoding: 'utf8' });
     expect(output.trim()).toBe('Build 1: 0.8.6-preview → 0.8.6-preview.1');
   });
 });
