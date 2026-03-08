@@ -10782,6 +10782,28 @@ Added: "First-day mistakes on main are not acceptable. Process discipline starts
 
 ### 2026-03-08T13:28Z: User directive **By:** Brady (via Copilot) **What:** Users should NEVER have to worry about secrets being leaked by Squad agents. This is non-negotiable. Also, minimize GitHub Actions usage for security scanning — prefer local/runtime guards over CI-based scanning. **Why:** User request — captured for team memory. Actions minutes are already heavily used; prefer SDK-level enforcement that costs zero CI time.
 
+### 2026-03-08T16:24Z: User directive — Contributors page updated every release
+**By:** Brady (via Copilot)
+**What:** Every release must include an update to the Squad Contributors Guide page in the docs site. No contribution goes unappreciated — all issues, discussions, and PRs that led to shipped work must be acknowledged.
+**Why:** User request — captured for team memory and release checklist.
+
+### 2026-03-08T17:34Z: User directive — Tests must be updated alongside API changes
+**By:** Brady (via Copilot), sourced from Tamir Dresher's PR #279 review
+**What:** When agents change underlying APIs or add new files (especially docs), they MUST update the corresponding tests in the same commit. Fenster and Hockney changed APIs during v0.8.21-0.8.23 without updating tests. Copilot added docs files that broke docs-build test assertions. This must not happen again.
+**Why:** Tamir's code review feedback — process discipline. Broken tests block CI for all contributors.
+
+### 2026-03-08: Roster Assessment (Keaton)
+Recommends consolidation 24→21 agents. Retire Nate, merge Redfoot→Marquez, merge Waingro→Hockney. Promote Hockney to Quality Owner. Defer CFO and Product Strategist. Full assessment in .squad/decisions/inbox/keaton-roster-assessment.md (archived).
+
+### 2026-03-08: Quality Assessment (Hockney)
+API-test sync failure was a process gap. Recommends: every agent owns their tests, Hockney reviews + blocks PRs missing test updates, fix bump-build flakiness (#273). Full assessment archived.
+
+### 2026-03-08: Security Assessment (Baer)
+5-layer defense built but not fully enforced. Ready for dogfood, not production. Recommends hybrid gate model. CFO agent is high-risk without human-in-the-loop. Full assessment archived.
+
+### 2026-03-08: Community Assessment (McManus)
+Community wants cost tracking (#157, #205). Recommends adding Alan (Cost Analyst). Defer Governance Specialist. No consolidations from community perspective. Full assessment archived.
+
 
 ### 2026-03-08T16:24Z: User directive — Contributors page updated every release
 **By:** Brady (via Copilot)

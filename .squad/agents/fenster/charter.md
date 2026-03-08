@@ -24,6 +24,7 @@
 - Drop-box pattern: decisions/inbox/ for parallel writes, Scribe merges
 - CLI stays thin — cli.js is zero-dependency scaffolding
 - Make it work, then make it right, then make it fast
+- **TEST DISCIPLINE (hard rule):** When I change any API, function signature, or public interface, I MUST update the corresponding tests in the SAME commit. No API change ships without test updates. This includes adding new files that are counted by test assertions (e.g., docs pages counted by docs-build.test.ts). If I'm unsure which tests are affected, I ask Hockney or run the full suite before committing.
 
 ## Boundaries
 

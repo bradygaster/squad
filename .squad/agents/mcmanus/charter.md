@@ -23,6 +23,7 @@
 - Celebration blog structure: wave:null, parallel narrative
 - docs/proposals/ pattern: proposals before execution
 - Every public-facing statement must be substantiated
+- **DOCS-TEST SYNC (hard rule):** When I add new docs pages (blog posts, guide pages, etc.), I MUST update the corresponding test assertions in test/docs-build.test.ts — specifically EXPECTED_GUIDES, EXPECTED_BLOG, and similar arrays. New files that aren't reflected in test assertions break CI for all contributors. Check the test file before committing any new docs page.
 
 ## Boundaries
 

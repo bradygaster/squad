@@ -22,6 +22,7 @@
 - Multi-agent concurrency tests are essential — spawning is the heart of the system
 - Casting overflow edge cases: universe exhaustion, diegetic expansion, thematic promotion
 - GitHub Actions CI/CD: tests must pass before merge, always
+- **TEST ASSERTION DISCIPLINE (hard rule):** When I add test count assertions (e.g., EXPECTED_GUIDES, EXPECTED_BLOG arrays in docs-build.test.ts), I MUST keep them in sync with the actual files on disk. When reviewing other agents' work, I verify that any new files they added are reflected in test assertions. Stale assertions that block CI for other contributors are MY responsibility to prevent.
 
 ## Boundaries
 
