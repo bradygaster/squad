@@ -36,6 +36,30 @@
 
 ## Learnings
 
+### 2026-03-16: Squad Contributors Guide — Docs Page (#276)
+
+**Status:** Complete. Created dedicated contributors guide page in docs site Guide section.
+
+**Summary:**
+Created `docs/guide/contributors.md` to honor every community contributor to Squad. Issue #276 requested a proper docs page thanking everyone who has contributed, whether through merged PRs or impactful issues/discussions. The page lists all contributors in reverse-chronological order (most recent first) to keep it current and acknowledge recent work prominently.
+
+**Implementation:**
+- Created comprehensive contributors guide with two sections:
+  - **Code Contributors** (11 people): merged PRs from @tamirdresher (4 PRs), @williamhallatt (5 PRs), @EmmittJ, @jsturtevant, @aadnesd, @CarlosSardo, @codebytes, @spboyer, @digitaldrummerj, @danielscholl, @csharpfritz
+  - **Community Contributors** (25+ people): issues/discussions that drove improvements, including @lbouriez (credential leak → secret guardrails), @eric-vanartsdalen (docs 403), @LasseAtSparkron (ESM crash), @swnger (skill-based orchestration → defineSkill()), and many more
+- Updated `docs/build.js` to add 'contributors' to the guide section order, right after 'contributing'
+- Built docs successfully — new page renders at `/guide/contributors`
+- Opened PR #277 targeting main
+
+**Tone & Structure:**
+- Warm, appreciative opening: "This page honors everyone who has submitted code, filed issues, started discussions, and shared ideas that have shaped this project."
+- Each contributor section shows their GitHub handle (linked), real name when known, most recent contribution date, then bullet list of all contributions with issue/PR links
+- Closing note: "This page is updated with every release. No contribution goes unappreciated."
+- Zero hype, all substance — every line is factual and cited
+
+**DevRel Pattern Reinforced:**
+Recognition is a cornerstone of community health. Brady tracks every contributor meticulously, and now we have a permanent, public home for that gratitude. This page serves both as thanks and as social proof—new contributors can see that their work will be acknowledged. The reverse-chronological ordering keeps it fresh and relevant with each release.
+
 ### 2026-03-13: Community Discussions — Terminal Flickering & Skill-Based Orchestration
 
 **Status:** Complete. Posted warm replies to Discussions #170 (terminal flickering) and #169 (skill-based orchestration).
@@ -1439,3 +1463,40 @@ Multi-agent build of Rock-Paper-Scissors game with 10 AI strategies, Docker infr
 
 
 
+
+## Learnings
+
+### Docs Build System — Issue #274
+
+**Pattern: Adding new pages to the docs site**
+
+The docs site uses docs/build.js to discover and render markdown files:
+
+1. **Create the markdown file** in the appropriate section directory (e.g., docs/guide/contributing.md)
+   - Add a clear H1 heading — this becomes the page title
+   - Use relative links that will work after the .md → .html conversion
+   - The build.js rewriteLinks function handles .md → .html automatically
+
+2. **Add to SECTION_ORDER** in build.js (line 44–60)
+   - SECTION_ORDER.guide, SECTION_ORDER['get-started'], etc.
+   - Order matters — items appear in the nav in the order listed
+   - If not in the explicit order list, pages fall back to alphabetical
+
+3. **Fix broken relative links** in other docs
+   - ../CONTRIBUTING.md doesn't work on the published site (GitHub Pages doesn't serve the repo root)
+   - Use ./guide/contributing.html instead (relative to the docs root)
+
+4. **Verify the build** — 
+ode docs/build.js outputs to docs/dist/
+   - Check the console for "✓ Generated guide/contributing.html"
+   - Total page count increments
+
+**Key file paths:**
+- docs/build.js — build script with SECTION_ORDER config (line 44–60)
+- docs/template.html — HTML template with nav injection
+- docs/dist/ — generated site (not committed, GitHub Pages builds from docs/ markdown on deploy)
+
+**Adapting content for the docs site:**
+- Keep substance, add proper H1, lightly restructure for web readability
+- Don't just copy verbatim — the docs site is a curated experience
+- Tone ceiling applies: factual, no hype, citations for claims
