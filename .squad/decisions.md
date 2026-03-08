@@ -10347,3 +10347,11 @@ Add this as a new `## Security` section to the agent charter template (standard 
 ---
 
 
+
+---
+
+### 2026-03-08T13:06Z: User directive
+**By:** bradygaster (via Copilot)
+**What:** Always cut a branch before doing work. Never commit directly to dev or main. The team (including Trejo, Drucker, and all agents) must follow the squad branch convention: `squad/{issue-number}-{slug}`. This is non-negotiable.
+**Why:** User request — captured for team memory. Agents committed work directly to the current branch instead of creating a feature branch first. This violates proper git practices and the team's own branching model documented in team.md.
+
