@@ -36,6 +36,30 @@
 
 ## Learnings
 
+### 2026-03-16: Squad Contributors Guide — Docs Page (#276)
+
+**Status:** Complete. Created dedicated contributors guide page in docs site Guide section.
+
+**Summary:**
+Created `docs/guide/contributors.md` to honor every community contributor to Squad. Issue #276 requested a proper docs page thanking everyone who has contributed, whether through merged PRs or impactful issues/discussions. The page lists all contributors in reverse-chronological order (most recent first) to keep it current and acknowledge recent work prominently.
+
+**Implementation:**
+- Created comprehensive contributors guide with two sections:
+  - **Code Contributors** (11 people): merged PRs from @tamirdresher (4 PRs), @williamhallatt (5 PRs), @EmmittJ, @jsturtevant, @aadnesd, @CarlosSardo, @codebytes, @spboyer, @digitaldrummerj, @danielscholl, @csharpfritz
+  - **Community Contributors** (25+ people): issues/discussions that drove improvements, including @lbouriez (credential leak → secret guardrails), @eric-vanartsdalen (docs 403), @LasseAtSparkron (ESM crash), @swnger (skill-based orchestration → defineSkill()), and many more
+- Updated `docs/build.js` to add 'contributors' to the guide section order, right after 'contributing'
+- Built docs successfully — new page renders at `/guide/contributors`
+- Opened PR #277 targeting main
+
+**Tone & Structure:**
+- Warm, appreciative opening: "This page honors everyone who has submitted code, filed issues, started discussions, and shared ideas that have shaped this project."
+- Each contributor section shows their GitHub handle (linked), real name when known, most recent contribution date, then bullet list of all contributions with issue/PR links
+- Closing note: "This page is updated with every release. No contribution goes unappreciated."
+- Zero hype, all substance — every line is factual and cited
+
+**DevRel Pattern Reinforced:**
+Recognition is a cornerstone of community health. Brady tracks every contributor meticulously, and now we have a permanent, public home for that gratitude. This page serves both as thanks and as social proof—new contributors can see that their work will be acknowledged. The reverse-chronological ordering keeps it fresh and relevant with each release.
+
 ### 2026-03-13: Community Discussions — Terminal Flickering & Skill-Based Orchestration
 
 **Status:** Complete. Posted warm replies to Discussions #170 (terminal flickering) and #169 (skill-based orchestration).

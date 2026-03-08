@@ -10781,3 +10781,9 @@ Added: "First-day mistakes on main are not acceptable. Process discipline starts
 
 
 ### 2026-03-08T13:28Z: User directive **By:** Brady (via Copilot) **What:** Users should NEVER have to worry about secrets being leaked by Squad agents. This is non-negotiable. Also, minimize GitHub Actions usage for security scanning — prefer local/runtime guards over CI-based scanning. **Why:** User request — captured for team memory. Actions minutes are already heavily used; prefer SDK-level enforcement that costs zero CI time.
+
+
+### 2026-03-08T16:24Z: User directive — Contributors page updated every release
+**By:** Brady (via Copilot)
+**What:** Every release must include an update to the Squad Contributors Guide page in the docs site. No contribution goes unappreciated — all issues, discussions, and PRs that led to shipped work must be acknowledged.
+**Why:** User request — captured for team memory and release checklist.
