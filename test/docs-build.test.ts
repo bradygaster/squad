@@ -28,7 +28,7 @@ const EXPECTED_SCENARIOS = [
 const EXPECTED_BLOG = [
   '026-whats-new-ado-comms-subsquads',
   '025-squad-goes-enterprise-azure-devops', '024-v0823-release',
-  '023-subsquads-horizontal-scaling', '023-squad-goes-enterprise-azure-devops',
+  '023-subsquads-horizontal-scaling',
   '022-welcome-to-the-new-squad', '021-the-migration',
   '020-docs-reborn', '019-shaynes-remote-mode', '018-the-adapter-chronicles',
   '017-version-alignment', '016-wave-3-docs-that-teach', '015-wave-2-the-repl-moment',
