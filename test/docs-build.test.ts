@@ -25,20 +25,16 @@ const EXPECTED_SCENARIOS = [
   'issue-driven-dev', 'existing-repo', 'ci-cd-integration', 'solo-dev', 'monorepo', 'team-of-humans',
 ];
 
-const EXPECTED_BLOG = [
-  '026-whats-new-ado-comms-subsquads',
-  '025-squad-goes-enterprise-azure-devops', '024-v0823-release',
-  '023-subsquads-horizontal-scaling',
-  '022-welcome-to-the-new-squad', '021-the-migration',
-  '020-docs-reborn', '019-shaynes-remote-mode', '018-the-adapter-chronicles',
-  '017-version-alignment', '016-wave-3-docs-that-teach', '015-wave-2-the-repl-moment',
-  '014-wave-1-otel-and-aspire', '013-the-replatform-begins', '012-trending-on-github',
-  '011-skills-system-learning-from-work', '010-v041-patch-release', '009-v040-sprint-progress',
-  '008-v040-release', '007-first-video-coverage', '006-first-external-deployment',
-  '005-v030-give-it-a-brain', '004-v020-release', '003-super-bowl-weekend',
-  '002-first-community-pr', '001c-first-pr-amolchanov', '001b-meet-the-squad',
-  '001a-the-squad-squad-problem', '001-wave-0-the-team-that-built-itself',
-];
+// Blog posts are discovered dynamically from docs/blog/ to avoid breaking
+// tests when posts are added, removed, or renumbered (see issue #282).
+const BLOG_DIR = join(DOCS_DIR, 'blog');
+const EXPECTED_BLOG = existsSync(BLOG_DIR)
+  ? readdirSync(BLOG_DIR)
+      .filter(f => f.endsWith('.md'))
+      .map(f => f.replace('.md', ''))
+      .sort()
+      .reverse() // newest first (matches numbering convention)
+  : [];
 
 // All sections for build output validation
 const ALL_EXPECTED: Array<{ dir: string; name: string }> = [
