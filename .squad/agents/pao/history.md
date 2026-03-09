@@ -29,3 +29,8 @@ External tool integrations require explicit "where to get it" guidance. Placehol
 ### Cross-Org Authentication Docs
 Problem/solution structure for multi-account auth: gh auth switch, Copilot instructions, Squad skill pattern. Cover credential helpers, EMU variations, common error messages. Cross-reference in troubleshooting and enterprise-platforms pages.
 
+### Roster & Contributor Recognition (v0.8.25)
+Squad moved to Apollo 13/NASA Mission Control naming scheme (Flight, Procedures, EECOM, FIDO, PAO, CAPCOM, CONTROL, Surgeon, Booster, GNC, Network, RETRO, INCO, GUIDO, Telemetry, VOX, DSKY, Sims, Handbook). CONTRIBUTORS.md tracks both team roster and community contributors; contributor table entries grow with PRs (append PR counts rather than replace, maintaining attribution history).
+
+### Getting Started Guide Structure
+docs/src/content/docs/get-started/first-session.md explains Squad's first-run experience. Line 89 introduces .squad/ directory creation, followed by "What's inside .squad/?" section (line 91) with table documenting team.md, routing.md, decisions.md, agents/, ceremonies.md, casting/, skills/, templates/. Includes ownership statement ("You own these files") and commit guidance ("Commit .squad/ to version control").
