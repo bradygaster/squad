@@ -31,8 +31,8 @@ git init
 ### 2. Install Squad
 
 ```bash
-npm install --save-dev @bradygaster/squad-cli
-npx squad init
+npm install -g @bradygaster/squad-cli
+squad init
 ```
 
 **✓ Validate:** Check that `.squad/team.md` was created in your project.
