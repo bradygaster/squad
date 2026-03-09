@@ -69,7 +69,17 @@ describe('bump-build.mjs', () => {
     workspace = makeTempWorkspace('1.0.0.3');
     execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, execOpts);
     for (const p of workspace.paths) {
-      expect(readVersion(p)).toBe('1.0.0.4');
+      // Old 4-part format (1.0.0.3) is parsed as base=1.0.0, build=3
+      // New format uses valid semver prerelease tag
+      expect(readVersion(p)).toBe('1.0.0-build.4');
+    }
+  });
+
+  it('bumps clean release version to semver prerelease format', () => {
+    workspace = makeTempWorkspace('1.0.0');
+    execSync(`node ${join(workspace.dir, 'scripts', 'bump-build.mjs')}`, execOpts);
+    for (const p of workspace.paths) {
+      expect(readVersion(p)).toBe('1.0.0-build.1');
     }
   });
 

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Box, Text, Static, useApp, useInput } from 'ink';
+import { Box, Text, Static, useApp, useInput, useStdout } from 'ink';
 import { AgentPanel } from './AgentPanel.js';
 import { MessageStream, renderMarkdownInline, formatDuration } from './MessageStream.js';
 import { InputPrompt } from './InputPrompt.js';
@@ -282,12 +282,16 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
   const width = useTerminalWidth();
   const tier = useLayoutTier();
   const terminalHeight = useTerminalHeight();
-  const contentWidth = tier === 'wide' ? Math.min(width, 120) : tier === 'normal' ? Math.min(width, 80) : width;
-
-  // Budget live region height so InputPrompt is never pushed off-screen.
-  // Reserve 3 rows for InputPrompt (prompt line + hint + padding).
-  const INPUT_RESERVED_ROWS = 3;
-  const liveContentHeight = Math.max(terminalHeight - INPUT_RESERVED_ROWS, 4);
+  // Cap contentWidth at Ink's stdout columns to prevent text overflow/clipping.
+  // In tests, Ink renders at 100 columns while process.stdout.columns may differ.
+  const { stdout: inkStdout } = useStdout();
+  const renderWidth = inkStdout && 'columns' in inkStdout
+    ? (inkStdout as { columns?: number }).columns ?? width
+    : width;
+  const contentWidth = Math.min(
+    tier === 'wide' ? Math.min(width, 120) : tier === 'normal' ? Math.min(width, 80) : width,
+    renderWidth,
+  );
 
   // Prefer lead/coordinator for first-run hint, fall back to first agent
   const leadAgent = welcome?.agents.find(a =>
@@ -299,8 +303,7 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
   // Determine ThinkingIndicator phase based on SDK connection state
   const thinkingPhase: ThinkingPhase = !onDispatch ? 'connecting' : 'routing';
 
-  // Derive @mention hint from last user message (needed because MessageStream
-  // receives messages=[] after the Static scrollback refactor).
+  // Derive @mention hint from last user message.
   const mentionHint = useMemo(() => {
     if (!processing) return undefined;
     const lastUser = [...messages].reverse().find(m => m.role === 'user');
@@ -311,13 +314,12 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
     return undefined;
   }, [messages, processing]);
 
-  // Combine archived + current messages for Static rendering.
-  // This array only grows — archival moves items between the two source arrays
-  // but the combined list stays stable, which is required by Ink's Static tracking.
-  const staticMessages = useMemo(
-    () => [...archivedMessages, ...messages],
-    [archivedMessages, messages],
-  );
+  // Only archived (overflow) messages go to Static scrollback.
+  // Current messages stay in the live region so the user can always see
+  // the recent conversation without scrolling. This prevents the
+  // "conversation vanishes" problem where every re-render forced the
+  // viewport to the bottom, hiding Static scrollback content.
+  const staticMessages = archivedMessages;
   const roleMap = useMemo(() => new Map((agents ?? []).map(a => [a.name, a.role])), [agents]);
 
   // Memoize the header box — rendered once into Static scroll buffer at the top.
@@ -381,13 +383,28 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
   const allStaticItems = useMemo((): StaticItem[] => {
     const items: StaticItem[] = [{ kind: 'header', key: 'welcome-header' }];
     for (let i = 0; i < staticMessages.length; i++) {
-      items.push({ kind: 'msg', key: `${sessionId}-${i}`, msg: staticMessages[i]!, idx: i });
+      // Use timestamp + index-at-creation for stable keys that don't shift
+      // when new messages are added (array only grows via append)
+      const msg = staticMessages[i]!;
+      const stableKey = `${sessionId}-${msg.timestamp.getTime()}-${i}`;
+      items.push({ kind: 'msg', key: stableKey, msg, idx: i });
     }
     return items;
   }, [staticMessages, sessionId]);
 
+  // Fill the entire viewport. Ink's fullscreen clearTerminal path and
+  // trailing-newline behavior have been patched out of ink.js, so we can
+  // safely use the full terminal height without triggering scroll-to-top.
+  // logUpdate tracks exactly rootHeight lines and erases/rewrites them
+  // on each render cycle without cursor drift.
+  const rootHeight = Math.max(terminalHeight, 8);
+
+  // Derive maxVisible from terminal height so taller terminals show more
+  // conversation context. Reserve ~8 rows for header/input/agent-panel chrome.
+  const maxVisible = Math.max(Math.floor((terminalHeight - 8) / 3), 3);
+
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" height={rootHeight}>
       {/* Static block: header first (stays at top of scroll buffer), then messages */}
       <Static items={allStaticItems}>
         {(item) => {
@@ -443,16 +460,20 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
         }}
       </Static>
 
-      {/* Live region: bounded height only while processing so InputPrompt stays in viewport;
-          auto-sized when idle to avoid blank space below the agent panel. */}
-      <Box flexDirection="column" {...(processing ? { height: liveContentHeight, overflow: 'hidden' as const } : {})}>
+      {/* Live region: always height-constrained to prevent layout shift flicker
+          when processing state toggles. InputPrompt stays pinned at bottom.
+          Messages are kept here (not in Static) so the user can always see the
+          recent conversation without scrolling. maxVisible caps the message
+          count to prevent overflow into the InputPrompt area. */}
+      <Box flexDirection="column" flexGrow={1}>
         <AgentPanel agents={agents} streamingContent={streamingContent} />
-        <MessageStream messages={[]} agents={agents} streamingContent={streamingContent} processing={processing} activityHint={activityHint || mentionHint} agentActivities={agentActivities} thinkingPhase={thinkingPhase} />
+        <MessageStream messages={messages} agents={agents} streamingContent={streamingContent} processing={processing} activityHint={activityHint || mentionHint} agentActivities={agentActivities} thinkingPhase={thinkingPhase} maxVisible={maxVisible} />
       </Box>
       {/* Fixed input box at bottom — Copilot/Claude style */}
       <Box marginTop={1} borderStyle={noColor ? undefined : 'round'} borderColor={noColor ? undefined : 'cyan'} paddingX={1}>
         <InputPrompt onSubmit={handleSubmit} disabled={processing} agentNames={agents.map(a => a.name)} messageCount={messages.length} />
       </Box>
+      {/* version is shown in the Static header — no footer duplicate needed */}
     </Box>
   );
 };

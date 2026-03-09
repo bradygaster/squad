@@ -1139,6 +1139,7 @@ export async function runShell(): Promise<void> {
 
   // Clear terminal and scrollback — prevents old scaffold output from
   // bleeding through above the header box in extended sessions.
+  // Also ensures we start from a clean viewport before Ink renders.
   process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
 
   const { waitUntilExit } = render(
@@ -1205,6 +1206,11 @@ export async function runShell(): Promise<void> {
         onRestoreSession,
       }),
     ),
+    // NOTE: Both incrementalRendering AND Ink's trailing-newline have been
+    // patched via scripts/patch-ink-rendering.mjs (runs on postinstall).
+    // This means: (a) logUpdate uses standard erase-and-rewrite, (b) no
+    // trailing '\n' is appended to output, (c) no clearTerminal scroll-to-top.
+    // patchConsole: false ensures console.log doesn't corrupt Ink's rendering.
     { exitOnCtrlC: false, patchConsole: false },
   );
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { getRoleEmoji } from '../lifecycle.js';
 import { isNoColor, useLayoutTier } from '../terminal.js';
@@ -21,10 +21,10 @@ const PulsingDot: React.FC = () => {
 
   useEffect(() => {
     if (noColor) return;
-    // 500ms interval reduces re-renders vs 300ms (#206)
+    // 800ms interval reduces re-renders vs 500ms (fix-cli-scroll-rerender-storm)
     const timer = setInterval(() => {
       setFrame(f => (f + 1) % PULSE_FRAMES.length);
-    }, 500);
+    }, 800);
     return () => clearInterval(timer);
   }, [noColor]);
 
@@ -49,12 +49,27 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ agents, streamingContent
   const noColor = isNoColor();
   const tier = useLayoutTier();
 
-  // Tick every second to update elapsed times
-  const [, setTick] = useState(0);
+  // Re-render gate: store elapsed strings in a ref so the timer only triggers
+  // a React re-render (via the tick counter) when a visible value changes.
+  const elapsedRef = useRef(new Map<string, string>());
+  const [, setElapsedTick] = useState(0);
+
   useEffect(() => {
     const hasActive = agents.some(a => a.status === 'working' || a.status === 'streaming');
     if (!hasActive) return;
-    const timer = setInterval(() => setTick(t => t + 1), 1000);
+    const timer = setInterval(() => {
+      let changed = false;
+      for (const a of agents) {
+        if (a.status === 'working' || a.status === 'streaming') {
+          const display = formatElapsed(agentElapsedSec(a));
+          if (elapsedRef.current.get(a.name) !== display) {
+            elapsedRef.current.set(a.name, display);
+            changed = true;
+          }
+        }
+      }
+      if (changed) setElapsedTick(t => t + 1);
+    }, 1000);
     return () => clearInterval(timer);
   }, [agents]);
 

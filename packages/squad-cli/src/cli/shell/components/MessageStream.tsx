@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Box, Text } from 'ink';
 import { getRoleEmoji } from '../lifecycle.js';
 import { isNoColor, useTerminalWidth, useLayoutTier, type LayoutTier } from '../terminal.js';
@@ -201,39 +201,41 @@ export const MessageStream: React.FC<MessageStreamProps> = ({
   maxVisible = 50,
 }) => {
   const visible = messages.slice(-maxVisible);
-  const roleMap = new Map((agents ?? []).map(a => [a.name, a.role]));
+  const visibleOffset = Math.max(0, messages.length - maxVisible);
+  const roleMap = useMemo(() => new Map((agents ?? []).map(a => [a.name, a.role])), [agents]);
 
   // Message fade-in: new messages start dim for 200ms
   const fadingCount = useMessageFade(messages.length);
 
-  // Elapsed time tracking for the ThinkingIndicator
+  // Elapsed time tracking for the ThinkingIndicator.
+  // Only update state when the rounded seconds value changes to avoid
+  // unnecessary re-renders that cause terminal scroll flicker.
   const [elapsedMs, setElapsedMs] = useState(0);
   const processingStartRef = useRef<number>(Date.now());
+  const lastElapsedSecRef = useRef<number>(0);
 
   useEffect(() => {
     if (processing) {
       processingStartRef.current = Date.now();
+      lastElapsedSecRef.current = 0;
       setElapsedMs(0);
-      // Update once per second — reduces re-renders that cause flicker (#206)
       const timer = setInterval(() => {
-        setElapsedMs(Date.now() - processingStartRef.current);
+        const now = Date.now() - processingStartRef.current;
+        const sec = Math.floor(now / 1000);
+        if (sec !== lastElapsedSecRef.current) {
+          lastElapsedSecRef.current = sec;
+          setElapsedMs(now);
+        }
       }, 1000);
       return () => clearInterval(timer);
     } else {
       setElapsedMs(0);
+      lastElapsedSecRef.current = 0;
     }
   }, [processing]);
 
-  // Build activity hint: prefer explicit hint, then infer from agent @mention
-  const resolvedHint = (() => {
-    if (activityHint) return activityHint;
-    const lastUser = [...messages].reverse().find(m => m.role === 'user');
-    if (lastUser) {
-      const atMatch = lastUser.content.match(/^@(\w+)/);
-      if (atMatch?.[1]) return `${atMatch[1]} is thinking...`;
-    }
-    return undefined;
-  })();
+  // Activity hint comes from the parent (App.tsx derives @mention hints
+  // via `mentionHint` and passes them through `activityHint`).
 
   // Compute response duration: time from previous user message to this agent message
   const getResponseDuration = (index: number): string | null => {
@@ -263,26 +265,28 @@ export const MessageStream: React.FC<MessageStreamProps> = ({
         const isFading = fadingCount > 0 && i >= visible.length - fadingCount;
 
         return (
-          <React.Fragment key={i}>
+          <React.Fragment key={`msg-${visibleOffset + i}`}>
             {isNewTurn && <Separator marginTop={1} />}
-            <Box gap={1}>
-              {msg.role === 'user' ? (
-                <>
-                  <Text color={noColor ? undefined : 'cyan'} bold dimColor={isFading}>❯</Text>
-                  <Text color={noColor ? undefined : 'cyan'} wrap="wrap" dimColor={isFading}>{msg.content}</Text>
-                </>
-              ) : msg.role === 'system' ? (
-                <>
-                  <Text color="gray" wrap="wrap">{msg.content}</Text>
-                </>
-              ) : (
-                <>
-                  <Text color={noColor ? undefined : 'green'} bold dimColor={isFading}>{emoji ? `${emoji} ` : ''}{(msg.agentName === 'coordinator' ? 'Squad' : msg.agentName) ?? 'agent'}:</Text>
-                  <Text wrap="wrap" dimColor={isFading}>{renderMarkdownInline(wrapTableContent(msg.content, contentWidth, tier))}</Text>
-                  {duration && <Text color="gray">({duration})</Text>}
-                </>
-              )}
-            </Box>
+            {msg.role === 'system' ? (
+              <Box flexDirection="column" paddingLeft={2}>
+                <Text color="gray" wrap="wrap">{msg.content}</Text>
+              </Box>
+            ) : (
+              <Box gap={1} paddingLeft={msg.role === 'user' ? 0 : 2}>
+                {msg.role === 'user' ? (
+                  <>
+                    <Text color={noColor ? undefined : 'cyan'} bold dimColor={isFading}>❯</Text>
+                    <Text color={noColor ? undefined : 'cyan'} wrap="wrap" dimColor={isFading}>{msg.content}</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text color={noColor ? undefined : 'green'} bold dimColor={isFading}>{emoji ? `${emoji} ` : ''}{(msg.agentName === 'coordinator' ? 'Squad' : msg.agentName) ?? 'agent'}:</Text>
+                    <Text wrap="wrap" dimColor={isFading}>{renderMarkdownInline(wrapTableContent(msg.content, contentWidth, tier))}</Text>
+                    {duration && <Text color="gray">({duration})</Text>}
+                  </>
+                )}
+              </Box>
+            )}
           </React.Fragment>
         );
       })}
@@ -321,7 +325,7 @@ export const MessageStream: React.FC<MessageStreamProps> = ({
         <ThinkingIndicator
           isThinking={true}
           elapsedMs={elapsedMs}
-          activityHint={resolvedHint}
+          activityHint={activityHint}
           phase={thinkingPhase}
         />
       )}

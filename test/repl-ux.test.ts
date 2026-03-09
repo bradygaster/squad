@@ -62,12 +62,15 @@ describe('ThinkingIndicator visibility', () => {
     expect(frame).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
   });
 
-  it('spinner text includes agent name from @mention', () => {
+  it('spinner text shows agent name from explicit activityHint', () => {
+    // After removing the redundant @mention fallback from MessageStream,
+    // the hint must come from the parent via activityHint (as App.tsx does).
     const { lastFrame } = render(
       h(MessageStream, {
         messages: [makeMessage({ role: 'user', content: '@Kovash fix the bug' })],
         processing: true,
         streamingContent: new Map(),
+        activityHint: 'Kovash is thinking...',
       })
     );
     const frame = lastFrame()!;
@@ -742,12 +745,15 @@ describe('ThinkingIndicator integration with MessageStream', () => {
     expect(frame).toContain('Routing to agent');
   });
 
-  it('shows agent-specific hint when @mention present', () => {
+  it('shows agent-specific hint when activityHint provided', () => {
+    // After removing the redundant @mention fallback from MessageStream,
+    // the hint must come from the parent via activityHint (as App.tsx does).
     const { lastFrame } = render(
       h(MessageStream, {
         messages: [makeMessage({ role: 'user', content: '@Kovash fix the bug' })],
         processing: true,
         streamingContent: new Map(),
+        activityHint: 'Kovash is thinking...',
       })
     );
     const frame = lastFrame()!;

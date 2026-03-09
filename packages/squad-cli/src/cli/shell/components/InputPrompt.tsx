@@ -82,7 +82,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     if (!disabled || noColor) return;
     const timer = setInterval(() => {
       setSpinFrame(f => (f + 1) % SPINNER_FRAMES.length);
-    }, 80);
+    }, 150);
     return () => clearInterval(timer);
   }, [disabled, noColor]);
 

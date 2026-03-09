@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed — CLI Terminal Rendering
+- Eliminated scroll-to-top flicker caused by Ink's fullscreen `clearTerminal` path firing on every render cycle
+- Reduced re-render churn via memoized elapsed-time display (one-second granularity gate) and consolidated animation intervals
+- Stabilized component keys (timestamp-based instead of shifting array indices) to prevent Ink remounts
+- Pinned live viewport height to keep input prompt above fold on all terminal sizes
+
 ## [0.8.24] - 2026-03-08
 
 ### Added — Azure DevOps Platform Adapter

@@ -6,7 +6,7 @@
  *   e.g. 0.8.6-preview.1 → 0.8.6-preview.2
  *
  * If no build number exists (e.g. 0.8.6-preview), starts at 1.
- * Non-prerelease versions use: major.minor.patch.build
+ * Non-prerelease versions use: major.minor.patch-build.N  (valid semver)
  * Updates all 3 package.json files (root + both workspaces) in lockstep.
  *
  * Skip this script by setting SKIP_BUILD_BUMP=1 (used in CI/CD publish).
@@ -32,6 +32,7 @@ const PACKAGE_PATHS = [
 ];
 
 // Parse version: "major.minor.patch-prerelease.build" or "major.minor.patch.build"
+// Non-prerelease bumps now produce "major.minor.patch-build.N" (valid semver)
 function parseVersion(version) {
   // Try prerelease format: "1.2.3-tag" or "1.2.3-tag.N"
   let match = version.match(/^(\d+\.\d+\.\d+)(-[a-zA-Z][a-zA-Z0-9-]*)(?:\.(\d+))?$/);
@@ -58,7 +59,8 @@ function formatVersion({ base, build, prerelease }) {
   if (prerelease) {
     return `${base}${prerelease}.${build}`;
   }
-  return `${base}.${build}`;
+  // Use prerelease tag for valid semver (npm rejects 4-part versions like 0.8.25.4)
+  return `${base}-build.${build}`;
 }
 
 // Read the canonical version from root package.json

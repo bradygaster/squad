@@ -327,8 +327,10 @@ describe('packageForMarketplace', () => {
   });
 
   it('should throw if project directory does not exist', () => {
+    // Use a UUID-based path to guarantee it doesn't exist on any OS
+    const fakePath = path.join(tmpDir, `nonexistent-${randomUUID()}`);
     expect(() =>
-      packageForMarketplace('/nonexistent', makeManifest()),
+      packageForMarketplace(fakePath, makeManifest()),
     ).toThrow('not found');
   });
 

@@ -31,14 +31,18 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     const sdkDist = join(sdkDir, 'dist');
     const cliDist = join(cliDir, 'dist');
 
+    // SKIP_BUILD_BUMP prevents bump-build.mjs from mutating versions to
+    // invalid 4-part semver (e.g. 0.8.25.4) which npm install rejects.
+    const buildEnv = { ...process.env, SKIP_BUILD_BUMP: '1' };
+
     if (!existsSync(sdkDist)) {
       console.log('Building squad-sdk...');
-      execSync('npm run build', { cwd: sdkDir, stdio: 'inherit' });
+      execSync('npm run build', { cwd: sdkDir, stdio: 'inherit', env: buildEnv });
     }
 
     if (!existsSync(cliDist)) {
       console.log('Building squad-cli...');
-      execSync('npm run build', { cwd: cliDir, stdio: 'inherit' });
+      execSync('npm run build', { cwd: cliDir, stdio: 'inherit', env: buildEnv });
     }
 
     // Pack both packages
