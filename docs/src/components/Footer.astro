@@ -1,4 +1,6 @@
 ---
+import { Image } from 'astro:assets';
+import squadLogo from '../assets/images/squad-logo.png';
 const base = import.meta.env.BASE_URL;
 ---
 
@@ -7,7 +9,7 @@ const base = import.meta.env.BASE_URL;
     <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
       <div>
         <div class="flex items-center gap-2 mb-3">
-          <img src={`${base}images/squad-logo.png`} alt="Squad" class="h-6 w-6" />
+          <Image src={squadLogo} alt="Squad" class="h-6 w-6" />
           <span class="font-semibold text-surface-900 dark:text-white">Squad</span>
         </div>
         <p class="text-base text-surface-500 dark:text-surface-400">

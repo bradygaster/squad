@@ -4,8 +4,8 @@ interface Props {
   description?: string;
 }
 
+import squadLogo from '../assets/images/squad-logo.png';
 const { title, description = 'Squad — Your AI Development Team. Describe what you\'re building. Get a team of specialists that live in your repo.' } = Astro.props;
-const base = import.meta.env.BASE_URL;
 ---
 
 <!doctype html>
@@ -15,7 +15,7 @@ const base = import.meta.env.BASE_URL;
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
-    <link rel="icon" type="image/png" href={`${base}images/squad-logo.png`} />
+    <link rel="icon" type="image/png" href={squadLogo.src} />
     <title>{title} — Squad Docs</title>
     <script is:inline>
       const theme = localStorage.getItem('theme');

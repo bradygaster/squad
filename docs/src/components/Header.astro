@@ -1,6 +1,8 @@
 ---
+import { Image } from 'astro:assets';
 import ThemeToggle from './ThemeToggle.astro';
 import Search from './Search.astro';
+import squadLogo from '../assets/images/squad-logo.png';
 const base = import.meta.env.BASE_URL;
 const pathname = Astro.url.pathname;
 const isDocsActive = pathname.startsWith(`${base}docs/`);
@@ -39,7 +41,7 @@ const mobileNavBase = "block px-3 py-2 rounded-md text-base transition-colors";
 
     <!-- Logo -->
     <a href={base} class="flex items-center gap-2 font-semibold text-surface-900 dark:text-white mr-6">
-      <img src={`${base}images/squad-logo.png`} alt="Squad" class="h-7 w-7" />
+      <Image src={squadLogo} alt="Squad" class="h-7 w-7" />
       <span class="text-lg">Squad</span>
     </a>
 
