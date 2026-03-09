@@ -18,3 +18,6 @@ SKIP_BUILD_BUMP=1 environment variable intended to prevent version mutation duri
 
 ### Smoke Test Gating in Publish Pipeline
 Smoke tests now run as a dedicated `smoke-test` job in publish.yml before any npm publish operations. Both publish-sdk and publish-cli jobs depend on smoke-test passing. Prevents publishing broken CLI packages to npm. Smoke test runs `npx vitest run test/cli-packaging-smoke.test.ts` after a full build. Test takes ~30-60s for pack+install validation.
+
+### Adoption Monitoring Automation (Tier 1)
+Implemented daily GitHub Actions workflow (`adoption-report.yml`) that runs `scripts/adoption-monitor.ts` to track Squad adoption metrics. Script collects: repo metrics (stars/forks/watchers), code search results (package.json imports, squad.agent.md files), npm weekly downloads (SDK/CLI), recent forks (7d window). Generates markdown reports in `.squad/adoption/reports/{YYYY-MM-DD}.md` with week-over-week deltas. Uses Node.js 22 built-in fetch (zero added dependencies). Handles GitHub API rate limits gracefully (warns at <10 remaining). Workflow commits via github-actions bot. First run successful: 714 stars, 96 forks, 44 repos using Squad, 135 with squad.agent.md, 2352 SDK downloads/week. Added tsx as dev dependency for TypeScript execution.

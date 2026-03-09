@@ -32,6 +32,7 @@
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.1",
     "playwright": "^1.58.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

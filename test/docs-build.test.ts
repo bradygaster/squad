@@ -25,6 +25,8 @@ const EXPECTED_SCENARIOS = [
   'issue-driven-dev', 'existing-repo', 'ci-cd-integration', 'solo-dev', 'monorepo', 'team-of-humans',
 ];
 
+const EXPECTED_COMMUNITY = ['built-with-squad'];
+
 // Blog posts are discovered dynamically to avoid breaking tests when posts change
 const EXPECTED_BLOG = existsSync(BLOG_CONTENT_DIR)
   ? readdirSync(BLOG_CONTENT_DIR)
@@ -169,6 +171,7 @@ describe('Docs Build Script (Astro)', () => {
       ...EXPECTED_GUIDES.map(n => ({ dir: 'guide', name: n })),
       ...EXPECTED_REFERENCE.map(n => ({ dir: 'reference', name: n })),
       ...EXPECTED_SCENARIOS.map(n => ({ dir: 'scenarios', name: n })),
+      ...EXPECTED_COMMUNITY.map(n => ({ dir: 'community', name: n })),
     ];
     for (const { dir, name } of allExpected) {
       const htmlPath = join(DIST_DIR, 'docs', dir, name, 'index.html');

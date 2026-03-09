@@ -1,0 +1,57 @@
+name: Squad Adoption Report
+
+# Tier 1 automation from Flight's adoption monitoring strategy
+# Runs daily to track Squad adoption metrics
+
+on:
+  schedule:
+    # Daily at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    # Allow manual trigger
+
+permissions:
+  contents: write  # To commit report back to repo
+
+jobs:
+  adoption-monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run adoption monitor
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx tsx scripts/adoption-monitor.ts
+      
+      - name: Commit adoption report
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check if there are changes to commit
+          if [[ -n $(git status --porcelain .squad/adoption/reports/) ]]; then
+            git add .squad/adoption/reports/
+            git commit -m "chore: daily adoption report $(date +%Y-%m-%d)
+            
+            Automated adoption metrics collection.
+            
+            Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            git push
+            echo "✅ Adoption report committed"
+          else
+            echo "ℹ️ No changes to commit"
+          fi
