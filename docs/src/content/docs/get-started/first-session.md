@@ -48,7 +48,7 @@ Start the Copilot CLI:
 copilot
 ```
 
-Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). Squad greets you by name (pulled from `git config user.name`):
+Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). Squad greets you by name:
 
 ```
 Hey Brady, what are you building?
@@ -61,7 +61,7 @@ Describe your project:
 > post recipes, search by ingredient, and save favorites.
 ```
 
-Squad proposes a team. Names come from a fictional universe — the exact universe depends on your project shape and history:
+Squad proposes a team. The coordinator analyzes your description and suggests specialists:
 
 ```
 Here's your team:
@@ -71,6 +71,8 @@ Here's your team:
 🔧  Dallas   — Backend Dev   Node.js, APIs, database
 🧪  Lambert  — Tester        Tests, quality, edge cases
 📋  Scribe   — (silent)      Memory, decisions, session logs
+
+**Scribe** and **Ralph** are always on every roster — you don't manage them.
 
 Look right? Say yes, add someone, or change a role.
 (Or just give me a task to start!)
@@ -86,7 +88,7 @@ Say "yes" or skip straight to a task (which is implicit confirmation):
 > Yes. Dallas, set up the Express server with basic routing.
 ```
 
-Squad creates the `.squad/` directory structure — team roster, routing rules, casting state, ceremony config, agent charters, and histories — all seeded with your project context.
+Squad creates the `.squad/` directory structure — team roster, routing rules, casting state, ceremony config, agent charters, and histories — all seeded with your project context. Each agent spawns to do their work.
 
 ### What's inside .squad/?
 
@@ -177,7 +179,7 @@ At any point, check status:
 > Where are we?
 ```
 
-This is a Direct mode response — no agent spawn, just the coordinator reading recent logs:
+The coordinator reads recent logs:
 
 ```
 Last session: Recipe listing page (15 minutes ago)
@@ -274,7 +276,7 @@ squad export
    5 agents, 3 skills, 6 decisions
 ```
 
-This snapshot contains everything — charters, histories, casting state, skills, and decisions. Import into another repo anytime:
+This snapshot contains charters, histories, casting state, skills, and decisions. Import into another repo anytime:
 
 ```bash
 cd ../other-project
@@ -286,8 +288,8 @@ squad import ../my-app/squad-export.json
 
 ## Tips
 
-- **First session is the slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions and stop asking repeated questions.
-- **Commit `.squad/`.** It's your team's brain. Anyone who clones the repo gets the team with all their knowledge.
+- **First session is slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions.
+- **Commit `.squad/`** — your team's brain. Anyone who clones the repo gets the full team.
 - **Say "team" for big tasks.** The word "team" triggers parallel fan-out across multiple agents.
 - **Name an agent for focused work.** `"Dallas, fix the login bug"` sends work to one specific agent.
 - **Directives are sticky.** Once captured, they persist across all future sessions.

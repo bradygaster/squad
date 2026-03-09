@@ -15,15 +15,17 @@ const BLOG_CONTENT_DIR = join(CONTENT_DIR, 'blog');
 const DIST_DIR = join(DOCS_DIR, 'dist');
 
 // Expected content directories in src/content/docs/
-const EXPECTED_GET_STARTED = ['installation', 'first-session'];
+const EXPECTED_GET_STARTED = ['installation', 'first-session', 'five-minute-start', 'choosing-your-path', 'migration'];
 
 const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad', 'contributing', 'contributors', 'shell'];
 
-const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks'];
+const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
 
 const EXPECTED_SCENARIOS = [
   'issue-driven-dev', 'existing-repo', 'ci-cd-integration', 'solo-dev', 'monorepo', 'team-of-humans',
 ];
+
+const EXPECTED_CONCEPTS = ['architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
 
 // Blog posts are discovered dynamically to avoid breaking tests when posts change
 const EXPECTED_BLOG = existsSync(BLOG_CONTENT_DIR)
@@ -43,7 +45,7 @@ function getMarkdownFiles(section: string): string[] {
 }
 
 function getAllMarkdownFiles(): string[] {
-  const sections = ['get-started', 'guide', 'reference', 'scenarios'];
+  const sections = ['get-started', 'guide', 'reference', 'scenarios', 'concepts'];
   const allFiles: string[] = [];
   for (const section of sections) {
     allFiles.push(...getMarkdownFiles(section));
@@ -169,6 +171,7 @@ describe('Docs Build Script (Astro)', () => {
       ...EXPECTED_GUIDES.map(n => ({ dir: 'guide', name: n })),
       ...EXPECTED_REFERENCE.map(n => ({ dir: 'reference', name: n })),
       ...EXPECTED_SCENARIOS.map(n => ({ dir: 'scenarios', name: n })),
+      ...EXPECTED_CONCEPTS.map(n => ({ dir: 'concepts', name: n })),
     ];
     for (const { dir, name } of allExpected) {
       const htmlPath = join(DIST_DIR, 'docs', dir, name, 'index.html');
