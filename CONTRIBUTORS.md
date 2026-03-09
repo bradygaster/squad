@@ -87,6 +87,16 @@ Squad is built by an AI team where each member owns a domain and ships real work
 
 ---
 
+## Docs Sprint Contributors
+
+| Contributor | What They Shipped |
+|-------------|-------------------|
+| [@IEvangelist](https://github.com/IEvangelist) (David Pine) | PR #293 — Complete Astro docs site rebuild: Astro 5.7, Tailwind CSS 4.1, Pagefind search, structured content collections, responsive design, custom sidebar with scroll-to-active, blog system migration. Ground-up rewrite. PR #298 — Active nav highlighting for Docs/Blog links, favicon fixes, navigation clarity improvements. |
+| [@diberry](https://github.com/diberry) (Dina Berry) | PR #286 — Added validation steps to Quick Start README. PR #288 — "Which method should I use?" decision tree for installation page (CLI vs VS Code vs SDK). PR #290 — .squad/ directory explainer for first-session guide. PR #292 — Doc-impact review process added to team workflows. |
+| [@tamirdresher](https://github.com/tamirdresher) (Tamir Dresher) | PR #272 — Rename workstreams → SubSquads (community decision). PR #278 — Release notes blog 026 + fix duplicate ADO blog. PR #279 — Resolve pre-existing test failures. PR #280 — Wire upstream and watch commands in CLI. PR #283 — Dynamic blog discovery in tests. |
+
+---
+
 ## Community Contributors
 
 These community members shaped Squad through issues, discussions, and feedback. Every contribution matters.

@@ -6,9 +6,27 @@ Thank you to every contributor who has helped make Squad better. This page honor
 
 These community members submitted merged pull requests to Squad:
 
-### [@tamirdresher](https://github.com/tamirdresher) (Tamir Dresher)
-Most recent: March 8, 2026
+### [@IEvangelist](https://github.com/IEvangelist) (David Pine)
+Most recent: March 9, 2026
 
+- [#298](https://github.com/bradygaster/squad/pull/298) — Active nav highlighting for Docs/Blog links, favicon fixes
+- [#293](https://github.com/bradygaster/squad/pull/293) — Complete Astro docs site rebuild: Astro 5.7, Tailwind CSS, Pagefind search, responsive design, blog migration
+
+### [@diberry](https://github.com/diberry) (Dina Berry)
+Most recent: March 9, 2026
+
+- [#292](https://github.com/bradygaster/squad/pull/292) — Doc-impact review process for team workflows
+- [#290](https://github.com/bradygaster/squad/pull/290) — .squad/ directory explainer for first-session guide
+- [#288](https://github.com/bradygaster/squad/pull/288) — Installation method decision tree (CLI vs VS Code vs SDK)
+- [#286](https://github.com/bradygaster/squad/pull/286) — Validation steps for Quick Start README
+
+### [@tamirdresher](https://github.com/tamirdresher) (Tamir Dresher)
+Most recent: March 9, 2026
+
+- [#283](https://github.com/bradygaster/squad/pull/283) — Dynamic blog discovery in docs-build test
+- [#280](https://github.com/bradygaster/squad/pull/280) — Wire upstream and watch commands in CLI
+- [#279](https://github.com/bradygaster/squad/pull/279) — Resolve pre-existing test failures
+- [#278](https://github.com/bradygaster/squad/pull/278) — Release notes blog 026 + fix duplicate ADO blog
 - [#272](https://github.com/bradygaster/squad/pull/272) — Renamed workstreams to SubSquads
 - [#263](https://github.com/bradygaster/squad/pull/263) — Added CommunicationAdapter
 - [#191](https://github.com/bradygaster/squad/pull/191) — Implemented Azure DevOps adapter
@@ -67,6 +85,11 @@ Most recent: February 17, 2026
 Most recent: February 13, 2026
 
 - [#55](https://github.com/bradygaster/squad/pull/55) — Added logo for docs
+
+### [@dkirby-ms](https://github.com/dkirby-ms) (Dale Kirby)
+Most recent: March 8, 2026
+
+- [#243](https://github.com/bradygaster/squad/pull/243) — Fixed CLI blankspace issue
 
 ## Community Contributors
 
