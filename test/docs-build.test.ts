@@ -19,7 +19,7 @@ const EXPECTED_GET_STARTED = ['choose-your-interface', 'first-session', 'install
 
 const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad', 'contributing', 'contributors', 'shell', 'faq'];
 
-const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks'];
+const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
 
 const EXPECTED_SCENARIOS= [
   'aspire-dashboard',
@@ -93,6 +93,8 @@ const EXPECTED_CONCEPTS = [
   'portability',
   'your-team',
 ];
+
+const EXPECTED_CONCEPTS = ['architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
 
 // Blog posts are discovered dynamically to avoid breaking tests when posts change
 const EXPECTED_BLOG = existsSync(BLOG_CONTENT_DIR)
@@ -249,7 +251,6 @@ describe('Docs Build Script (Astro)', () => {
       ...EXPECTED_FEATURES.map(n => ({ dir: 'features', name: n })),
       ...EXPECTED_REFERENCE.map(n => ({ dir: 'reference', name: n })),
       ...EXPECTED_SCENARIOS.map(n => ({ dir: 'scenarios', name: n })),
-      ...EXPECTED_FEATURES.map(n => ({ dir: 'features', name: n })),
       ...EXPECTED_CONCEPTS.map(n => ({ dir: 'concepts', name: n })),
     ];
     for (const { dir, name } of allExpected) {

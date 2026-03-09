@@ -4,6 +4,18 @@ Common issues and fixes for Squad installation and usage.
 
 ---
 
+## Quick fixes
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `squad: command not found` | Squad CLI not installed or not in PATH | Run `npm install -g @bradygaster/squad-cli` or use `npx @bradygaster/squad-cli` |
+| `No .squad/ directory found` | Not in a git repo or Squad not initialized | Run `git init` then `npx squad init` |
+| `Cannot find agent "{name}"` | Agent doesn't exist in `.squad/agents/` | Check `.squad/team.md` for roster, or re-run casting |
+| `gh: command not found` | GitHub CLI not installed | Install from [cli.github.com](https://cli.github.com/) then `gh auth login` |
+| `Node.js version error` | Node.js version below v20 | Upgrade Node.js to v20+ (see below) |
+
+---
+
 ## `npx github:bradygaster/squad` appears to hang
 
 **Problem:** Running the install command shows a frozen npm spinner. Nothing happens.
