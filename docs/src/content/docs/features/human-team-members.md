@@ -77,6 +77,24 @@ Their entry moves to `.squad/agents/_alumni/`. They can be re-added later.
 
 ---
 
+## When to add a human member
+
+Not every collaborator needs a roster entry. Use this table to decide:
+
+| Scenario | Add to roster? | Why |
+|----------|---------------|-----|
+| Approves architecture decisions before implementation | ✅ Yes | Decision gate — agents route and wait |
+| Reviews all docs PRs as a standing reviewer | ✅ Yes | Recurring review gate |
+| Makes the final ship/no-ship call | ✅ Yes | Approval gate |
+| Occasionally reviews PRs when tagged | ❌ No | Use @mention on the PR instead |
+| Files issues and contributes code | ❌ No | Normal GitHub collaboration |
+
+**Litmus test:** If you want agents to *stop and wait* for someone's input before proceeding, add them. If they review asynchronously through normal GitHub flows, a roster entry adds no value.
+
+**You don't need to add yourself.** Squad reads `git config user.name` every session, so the team always knows who's driving. Adding yourself to the roster is optional — it formalizes routing and review tracking but isn't required for day-to-day interaction.
+
+---
+
 ## Tips
 
 - Use human members for approval gates — design review, compliance, final sign-off.

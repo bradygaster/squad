@@ -97,6 +97,8 @@ Sarah appears on the roster with a 👤 Human badge.
 
 When work routes to a human, Squad **pauses** and tells you someone needs to act. You relay the task outside of Squad, then report back what happened. Stale reminders keep things moving.
 
+Not sure whether someone should be a roster member or just a normal GitHub collaborator? See [When to add a human member](../features/human-team-members.md#when-to-add-a-human-member) for a decision framework.
+
 ---
 
 ## Work Routing
