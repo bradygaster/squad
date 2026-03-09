@@ -582,4 +582,19 @@ export class ToolRegistry {
   getTool(name: string): SquadTool<any> | undefined {
     return this.tools.get(name);
   }
+
+  /**
+   * Replace built-in tool handlers with skill-backed versions.
+   * Called post-construction after SkillScriptLoader has resolved handlers.
+   * Only replaces tools that already exist — unknown tool names are silently ignored.
+   * Once applied, handlers are immutable for the session.
+   */
+  applySkillHandlers(tools: SquadTool<any>[]): void {
+    for (const tool of tools) {
+      if (this.tools.has(tool.name)) {
+        this.tools.set(tool.name, tool);
+      }
+      // Unknown tool names silently ignored — skills cannot introduce new tools
+    }
+  }
 }

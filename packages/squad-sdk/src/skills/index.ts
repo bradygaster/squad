@@ -112,3 +112,9 @@ export class SkillRegistry {
     return this.skills.get(skillId)?.content;
   }
 }
+
+// --- Skill Script System Exports ---
+
+export * from './handler-types.js';
+export { SkillScriptLoader, resolveSkillPath } from './skill-script-loader.js';
+export type { LoadResult } from './handler-types.js';
