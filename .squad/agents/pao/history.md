@@ -18,3 +18,6 @@ Release blog posts use YAML frontmatter with: title, date, author, wave, tags, s
 
 ### Roster & Contributor Recognition (v0.8.25)
 Squad moved to Apollo 13/NASA Mission Control naming scheme (Flight, Procedures, EECOM, FIDO, PAO, CAPCOM, CONTROL, Surgeon, Booster, GNC, Network, RETRO, INCO, GUIDO, Telemetry, VOX, DSKY, Sims, Handbook). CONTRIBUTORS.md tracks both team roster and community contributors; contributor table entries grow with PRs (append PR counts rather than replace, maintaining attribution history).
+
+### Getting Started Guide Structure
+docs/src/content/docs/get-started/first-session.md explains Squad's first-run experience. Line 89 introduces .squad/ directory creation, followed by "What's inside .squad/?" section (line 91) with table documenting team.md, routing.md, decisions.md, agents/, ceremonies.md, casting/, skills/, templates/. Includes ownership statement ("You own these files") and commit guidance ("Commit .squad/ to version control").
