@@ -137,12 +137,10 @@ async function getRecentForks() {
     return forks
       .filter(fork => new Date(fork.created_at) > sevenDaysAgo)
       .map(fork => ({
-        owner: fork.owner,
         full_name: fork.full_name,
-        created_at: fork.created_at,
-        stargazers_count: fork.stargazers_count,
-        language: fork.language,
-        description: fork.description
+        owner: fork.owner.login,
+        created_at: fork.created_at.split('T')[0], // Format as YYYY-MM-DD
+        profile: `https://github.com/${fork.owner.login}`
       }));
   } catch (error) {
     console.warn(`⚠️  Failed to fetch recent forks: ${error && error.message ? error.message : 'Unknown error'}`);
@@ -238,9 +236,9 @@ async function generateReport() {
 
 ## New adopters (this week)
 
-${recentForks.length > 0 ? `| Repo | Stars | Language | Description |
-|------|-------|----------|-------------|
-${recentForks.map(fork => `| ${fork.full_name} | ${fork.stargazers_count} | ${fork.language || 'N/A'} | ${(fork.description || 'No description').substring(0, 60)} |`).join('\n')}` : '_No new forks this week_'}
+${recentForks.length > 0 ? `| Fork | Owner | Forked | Profile |
+|------|-------|--------|---------|
+${recentForks.map(fork => `| ${fork.full_name} | ${fork.owner} | ${fork.created_at} | ${fork.profile} |`).join('\n')}` : '_No new forks this week_'}
 
 ## Trend
 
