@@ -53,26 +53,25 @@ Squad is built by an AI team where each member owns a domain and ships real work
 
 | Name | Role | Domain |
 |------|------|--------|
-| Keaton | Lead | Architecture, code review, product direction |
-| Verbal | Prompt Engineer | Agent design, spawn templates, coordinator logic |
-| Fenster | Core Dev | Runtime implementation, CLI, casting engine |
-| Hockney | Tester | Test coverage, quality gates, CI/CD pipeline |
-| McManus | DevRel | Documentation, messaging, developer experience |
-| Kujan | SDK Expert | Copilot SDK integration, platform patterns |
-| Edie | TypeScript Engineer | Type system, build tooling, public API |
-| Kobayashi | Git & Release | Releases, versioning, CI/CD, branch strategy |
-| Fortier | Node.js Runtime | Node.js runtime integration, system APIs |
-| Rabin | Distribution | npm distribution, package management |
-| Baer | Security | Security audits, vulnerability fixes |
-| Redfoot | Graphic Designer | Visual design, UI assets |
-| Strausz | VS Code Extension | VS Code extension, IDE integration |
-| Saul | Aspire & Observability | Aspire dashboard, OpenTelemetry, Docker |
-| Kovash | REPL & Interactive Shell | REPL implementation, interactive features |
-| Marquez | CLI UX Designer | CLI user experience, command design |
-| Cheritto | TUI Engineer | Terminal UI, interactive components |
-| Breedan | E2E Test Engineer | End-to-end testing, integration validation |
-| Nate | Accessibility Reviewer | Accessibility audits, inclusive design |
-| Waingro | Product Dogfooder | User feedback, real-world validation |
+| Flight | Lead | Architecture, code review, product direction |
+| Procedures | Prompt Engineer | Agent design, spawn templates, coordinator logic |
+| EECOM | Core Dev | Runtime implementation, CLI, casting engine |
+| FIDO | Quality Owner | Test coverage, quality gates, CI/CD pipeline |
+| PAO | DevRel | Documentation, messaging, developer experience |
+| CAPCOM | SDK Expert | Copilot SDK integration, platform patterns |
+| CONTROL | TypeScript Engineer | Type system, build tooling, public API |
+| Surgeon | Release Manager | Releases, versioning, CI/CD, branch strategy |
+| Booster | CI/CD Engineer | GitHub Actions, publish pipeline, automation |
+| GNC | Node.js Runtime | Node.js runtime, system APIs, performance |
+| Network | Distribution | npm distribution, package management |
+| RETRO | Security | Security audits, vulnerability fixes |
+| INCO | CLI UX & Visual Design | CLI UX, branding, visual design |
+| GUIDO | VS Code Extension | VS Code extension, IDE integration |
+| Telemetry | Aspire & Observability | Aspire dashboard, OpenTelemetry, Docker |
+| VOX | REPL & Interactive Shell | REPL implementation, interactive features |
+| DSKY | TUI Engineer | Terminal UI, interactive components |
+| Sims | E2E Test Engineer | End-to-end testing, integration validation |
+| Handbook | SDK Usability | JSDoc, API surface clarity, migration guides |
 
 ## v0.8.22 Contributors
 
@@ -95,16 +94,16 @@ These community members shaped Squad through issues, discussions, and feedback. 
 | Contributor | Contributions |
 |-------------|---------------|
 | [@dfberry](https://github.com/dfberry) | #241 (Squad member for docs), #157 (CFO/account member) — docs and team composition ideas |
-| [@IEvangelist](https://github.com/IEvangelist) | PR #293 (Astro docs rewrite) — complete documentation site rebuild with Astro, Tailwind CSS, Pagefind search, responsive design. Massive contribution. |
+| [@IEvangelist](https://github.com/IEvangelist) | PR #293 (Astro docs rewrite) — complete documentation site rebuild with Astro, Tailwind CSS, Pagefind search, responsive design; PR #298 (active nav highlighting and favicon fixes) — navigation polish on Astro rewrite. Massive contribution. |
 | [@diberry](https://github.com/diberry) | #211 (Squad management paradigms), PR #286 (Quick Start validation), PR #288 (installation decision tree), PR #290 (.squad/ directory explainer), PR #292 (doc-impact review process) — management approaches, documentation improvements across multiple PRs |
 | [@HemSoft](https://github.com/HemSoft) | #148 (GitHub Agent Workflows) — GAW concept |
 | [@sturlath](https://github.com/sturlath) | #156 (Team learning from others' work) — cross-agent learning |
 | [@tomasherceg](https://github.com/tomasherceg) | #184 (Multi-PR commit isolation), #237 (CLI wiring bug) — worktree improvements and bug reports |
 | [@csharpfritz](https://github.com/csharpfritz) | #205 (Per-member model configuration) — model selection feature (shipped!) |
 | [@johnwc](https://github.com/johnwc) | #176 (Different repo support) — multi-repo workflows |
-| [@tamirdresher](https://github.com/tamirdresher) | #200 (Squad SubSquads PRD), #237 (CLI wiring bug) — horizontal scaling concept and bug reports |
+| [@tamirdresher](https://github.com/tamirdresher) | #200 (Squad SubSquads PRD), #237 (CLI wiring bug), PR #272 (rename workstreams → SubSquads), PR #278 (release notes blog 026 + fix duplicate ADO blog), PR #279 (resolve pre-existing test failures), PR #280 (wire upstream and watch commands), PR #283 (dynamic blog discovery in tests) — horizontal scaling concept, bug reports, and test infrastructure improvements across multiple PRs |
 | [@marchermans](https://github.com/marchermans) | #247 (Installation failure) — install bug report |
-| [@dkirby-ms](https://github.com/dkirby-ms) | #239 (Terminal flickering bug) — UX bug report |
+| [@dkirby-ms](https://github.com/dkirby-ms) | #239 (Terminal flickering bug), PR #243 (fix CLI blankspace issue) — UX bug reports and improvements |
 | [@EirikHaughom](https://github.com/EirikHaughom) | #223 (Model & reasoning configuration) — model config improvements |
 | [@williamhallatt](https://github.com/williamhallatt) | #202 (squad link/init --remote), #201 (CI/CD opt-in), #218 (fork workflow docs), #216 (TUI init bug) — 4 issues spanning UX, docs, and bugs |
 | [@uvirk](https://github.com/uvirk) | #229 (squad doctor not available) — CLI consistency |

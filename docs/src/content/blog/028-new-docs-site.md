@@ -31,6 +31,16 @@ hero: "Squad's documentation gets a complete rebuild — powered by Astro, Tailw
 
 The site ships as a static build under `docs/` with its own `package.json`. Dev server: `npm run dev`. Production build: `astro build && pagefind`.
 
+### Docs Navigation Polish — PR #298
+
+[@IEvangelist](https://github.com/IEvangelist) (David Pine) followed up with targeted improvements in PR #298:
+
+- **Active link highlighting** — Docs and Blog links now highlight in the top navigation when you're viewing that section
+- **Favicon fixes** — Favicon asset handling improved for all browsers
+- **Navigation clarity** — Users now have better visual feedback about where they are in the docs
+
+This was a fast-follow polish pass on the Astro rewrite, catching the details that make navigation feel solid.
+
 ### Community Content from @diberry
 
 [@diberry](https://github.com/diberry) (Dina Berry) submitted **four pull requests** improving the getting-started experience:
