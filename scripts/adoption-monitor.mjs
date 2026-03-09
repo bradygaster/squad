@@ -12,53 +12,18 @@
  * Generates markdown reports in .squad/adoption/reports/{YYYY-MM-DD}.md
  */
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, '..');
-
-interface RepoMetrics {
-  stars: number;
-  forks: number;
-  watchers: number;
-}
-
-interface NpmDownloads {
-  sdk: number;
-  cli: number;
-}
-
-interface SearchResults {
-  packageJsonCount: number;
-  agentMdCount: number;
-}
-
-interface Fork {
-  owner: string;
-  full_name: string;
-  created_at: string;
-  stargazers_count: number;
-  language: string | null;
-  description: string | null;
-}
-
-interface PreviousReport {
-  date: string;
-  stars: number;
-  forks: number;
-  npmSdk: number;
-  npmCli: number;
-  packageJsonCount: number;
-  agentMdCount: number;
-}
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(__dirname, '..');
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const REPO_OWNER = 'bradygaster';
 const REPO_NAME = 'squad';
 
-async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 3): Promise<Response> {
+async function fetchWithRetry(url, options = {}, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch(url, options);
@@ -83,7 +48,7 @@ async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 
   throw new Error('Max retries exceeded');
 }
 
-async function getRepoMetrics(): Promise<RepoMetrics> {
+async function getRepoMetrics() {
   const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`;
   const response = await fetchWithRetry(url, {
     headers: {
@@ -101,7 +66,7 @@ async function getRepoMetrics(): Promise<RepoMetrics> {
   };
 }
 
-async function searchCode(query: string): Promise<number> {
+async function searchCode(query) {
   const url = `https://api.github.com/search/code?q=${encodeURIComponent(query)}&per_page=1`;
   
   try {
@@ -116,12 +81,12 @@ async function searchCode(query: string): Promise<number> {
     const data = await response.json();
     return data.total_count || 0;
   } catch (error) {
-    console.warn(`⚠️  Code search failed for "${query}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.warn(`⚠️  Code search failed for "${query}": ${error && error.message ? error.message : 'Unknown error'}`);
     return 0;
   }
 }
 
-async function getSearchResults(): Promise<SearchResults> {
+async function getSearchResults() {
   // Search for repos using Squad in package.json
   const packageJsonCount = await searchCode('"@bradygaster/squad" filename:package.json');
   
@@ -131,7 +96,7 @@ async function getSearchResults(): Promise<SearchResults> {
   return { packageJsonCount, agentMdCount };
 }
 
-async function getNpmDownloads(): Promise<NpmDownloads> {
+async function getNpmDownloads() {
   try {
     const [sdkResponse, cliResponse] = await Promise.all([
       fetch('https://api.npmjs.org/downloads/point/last-week/@bradygaster/squad-sdk'),
@@ -146,12 +111,12 @@ async function getNpmDownloads(): Promise<NpmDownloads> {
       cli: cliData.downloads || 0
     };
   } catch (error) {
-    console.warn(`⚠️  npm API failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.warn(`⚠️  npm API failed: ${error && error.message ? error.message : 'Unknown error'}`);
     return { sdk: 0, cli: 0 };
   }
 }
 
-async function getRecentForks(): Promise<Fork[]> {
+async function getRecentForks() {
   const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/forks?sort=newest&per_page=30`;
   
   try {
@@ -170,8 +135,8 @@ async function getRecentForks(): Promise<Fork[]> {
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
     return forks
-      .filter((fork: Fork) => new Date(fork.created_at) > sevenDaysAgo)
-      .map((fork: Fork) => ({
+      .filter(fork => new Date(fork.created_at) > sevenDaysAgo)
+      .map(fork => ({
         owner: fork.owner,
         full_name: fork.full_name,
         created_at: fork.created_at,
@@ -180,16 +145,16 @@ async function getRecentForks(): Promise<Fork[]> {
         description: fork.description
       }));
   } catch (error) {
-    console.warn(`⚠️  Failed to fetch recent forks: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.warn(`⚠️  Failed to fetch recent forks: ${error && error.message ? error.message : 'Unknown error'}`);
     return [];
   }
 }
 
-async function getPreviousReport(): Promise<PreviousReport | null> {
-  const reportsDir = path.join(REPO_ROOT, '.squad/adoption/reports');
+async function getPreviousReport() {
+  const reportsDir = join(REPO_ROOT, '.squad/adoption/reports');
   
   try {
-    const files = await fs.readdir(reportsDir);
+    const files = await readdir(reportsDir);
     const reportFiles = files
       .filter(f => f.endsWith('.md') && f !== '.gitkeep')
       .sort()
@@ -197,8 +162,8 @@ async function getPreviousReport(): Promise<PreviousReport | null> {
     
     if (reportFiles.length === 0) return null;
     
-    const previousReportPath = path.join(reportsDir, reportFiles[0]);
-    const content = await fs.readFile(previousReportPath, 'utf-8');
+    const previousReportPath = join(reportsDir, reportFiles[0]);
+    const content = await readFile(previousReportPath, 'utf-8');
     
     // Parse previous metrics from markdown
     const starsMatch = content.match(/\*\*Stars:\*\* (\d+)/);
@@ -222,19 +187,19 @@ async function getPreviousReport(): Promise<PreviousReport | null> {
   }
 }
 
-function calculateDelta(current: number, previous: number): string {
+function calculateDelta(current, previous) {
   const delta = current - previous;
   if (delta === 0) return '(no change)';
   return delta > 0 ? `(+${delta} this week)` : `(${delta} this week)`;
 }
 
-function calculatePercentage(current: number, previous: number): string {
+function calculatePercentage(current, previous) {
   if (previous === 0) return 'N/A';
   const percentage = ((current - previous) / previous * 100).toFixed(1);
   return `${percentage}%`;
 }
 
-async function generateReport(): Promise<void> {
+async function generateReport() {
   console.log('🚀 Collecting adoption metrics...\n');
   
   if (!GITHUB_TOKEN) {
@@ -286,12 +251,12 @@ ${previousReport ? `- **Week-over-week star growth:** ${calculatePercentage(repo
 
 ---
 
-*Generated by [Squad Adoption Monitor](../../scripts/adoption-monitor.ts)*
+*Generated by [Squad Adoption Monitor](../../scripts/adoption-monitor.mjs)*
 *Next report: ${new Date(Date.now() + 86400000).toISOString().split('T')[0]}*
 `;
   
-  const reportPath = path.join(REPO_ROOT, '.squad/adoption/reports', `${today}.md`);
-  await fs.writeFile(reportPath, report, 'utf-8');
+  const reportPath = join(REPO_ROOT, '.squad/adoption/reports', `${today}.md`);
+  await writeFile(reportPath, report, 'utf-8');
   
   console.log(`✅ Report generated: ${reportPath}`);
 }
