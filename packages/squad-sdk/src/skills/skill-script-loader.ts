@@ -12,30 +12,15 @@
  * - Partial implementations (missing handlers are silently skipped)
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type {
-  Concern,
-  ConcernMap,
   LoadResult,
   SkillHandler,
   HandlerLifecycle,
 } from './handler-types.js';
 import type { SquadTool, SquadToolHandler, SquadToolInvocation } from '../adapter/types.js';
-
-// --- Concern → Tool Name Mapping ---
-
-/**
- * Maps concerns to their corresponding Squad tool names.
- * Tool names follow the convention: squad_{operation}
- */
-const CONCERN_TOOL_MAP: Record<Concern, string[]> = {
-  tasks: ['squad_create_issue', 'squad_update_issue', 'squad_list_issues', 'squad_close_issue'],
-  decisions: ['squad_create_decision', 'squad_list_decisions', 'squad_merge_decision'],
-  memories: ['squad_create_memory', 'squad_list_memories'],
-  logging: ['squad_create_log', 'squad_list_logs'],
-};
 
 // --- Helpers ---
 
@@ -130,32 +115,27 @@ export class SkillScriptLoader {
   ) {}
 
   /**
-   * Load handler scripts for a specific concern from a backend skill directory.
+   * Load handler scripts from a backend skill directory by scanning `scripts/` for `.js` files.
    *
    * Algorithm:
    * 1. Check for `scripts/` directory — return null if missing (triggers markdown fallback)
-   * 2. Get tool names for this concern from CONCERN_TOOL_MAP
-   * 3. For each tool name:
-   *    a. Compute script filename: toolName.replace('squad_', '') + '.js'
-   *    b. Compute full script path
-   *    c. If file doesn't exist → skip (partial implementations are fine)
-   *    d. import() the script using toFileUrl (with Windows path normalization)
-   *    e. Validate: module.default must be a function — if not, THROW (not silent skip)
-   *    f. Get the tool's schema via this.getToolSchema(toolName)
-   *    g. If schema not found → skip with warning (tool not registered yet)
-   *    h. Produce a SquadTool entry with wrapSkillHandler()
+   * 2. Scan scripts/ for all .js files (excluding lifecycle.js)
+   * 3. For each file, derive tool name: prepend 'squad_' to the filename stem
+   *    a. import() the script using toFileUrl (with Windows path normalization)
+   *    b. Validate: module.default must be a function — if not, THROW (not silent skip)
+   *    c. Get the tool's schema via this.getToolSchema(toolName)
+   *    d. If schema not found → skip with warning (tool not registered in ToolRegistry)
+   *    e. Produce a SquadTool entry with wrapSkillHandler()
    * 4. Load scripts/lifecycle.js if present (import() it)
    *    Extract init and dispose named exports if they are functions
    * 5. Return { tools, lifecycle } or { tools } if no lifecycle
    *
    * @param skillPath - Resolved absolute path to the skill directory
-   * @param concern - The concern to load handlers for
    * @param backendConfig - Backend configuration to pass to handlers
    * @returns LoadResult with tools and optional lifecycle, or null if no scripts/ directory
    */
-  async load<C extends Concern>(
+  async load(
     skillPath: string,
-    concern: C,
     backendConfig: Record<string, unknown>,
   ): Promise<LoadResult | null> {
     // 1. Check for scripts/ directory
@@ -164,43 +144,37 @@ export class SkillScriptLoader {
       return null; // Triggers markdown fallback
     }
 
-    // 2. Get tool names for this concern
-    const toolNames = CONCERN_TOOL_MAP[concern];
-    if (!toolNames) {
-      throw new Error(`Unknown concern: ${concern}`);
-    }
+    // 2. Scan scripts/ for handler files — everything except lifecycle.js
+    const scriptFiles = readdirSync(scriptsDir).filter(
+      (f) => f.endsWith('.js') && f !== 'lifecycle.js',
+    );
 
     const tools: SquadTool<any>[] = [];
 
-    // 3. Load each tool's handler script
-    for (const toolName of toolNames) {
-      // a. Compute script filename
-      const scriptName = toolName.replace('squad_', '') + '.js';
+    // 3. Load each discovered handler script
+    for (const scriptName of scriptFiles) {
+      // Derive tool name from filename: create_issue.js → squad_create_issue
+      const toolName = 'squad_' + scriptName.slice(0, -3);
       const scriptPath = path.join(scriptsDir, scriptName);
 
-      // c. Skip if file doesn't exist
-      if (!existsSync(scriptPath)) {
-        continue;
-      }
-
       try {
-        // d. Dynamic import with Windows path normalization
+        // a. Dynamic import with Windows path normalization
         const scriptUrl = toFileUrl(scriptPath);
         const module = await import(scriptUrl);
 
-        // e. Validate: module.default must be a function
+        // b. Validate: module.default must be a function
         if (typeof module.default !== 'function') {
           throw new Error(`Handler script ${scriptName} does not export a default function`);
         }
 
-        // f. Get the tool's schema
+        // c. Get the tool's schema
         const schema = this.getToolSchema(toolName);
         if (!schema) {
           console.warn(`[SkillScriptLoader] Tool schema not found for ${toolName}, skipping`);
           continue;
         }
 
-        // h. Create SquadTool entry
+        // e. Create SquadTool entry
         const tool: SquadTool<any> = {
           name: toolName,
           description: schema.description,

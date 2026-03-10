@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { SkillScriptLoader, resolveSkillPath } from '@bradygaster/squad-sdk/skills';
-import type { LoadResult, Concern } from '@bradygaster/squad-sdk/skills';
+import type { LoadResult } from '@bradygaster/squad-sdk/skills';
 import { ToolRegistry } from '@bradygaster/squad-sdk/tools';
 
 // --- Test fixtures and helpers ---
@@ -81,13 +81,13 @@ describe('SkillScriptLoader', () => {
   describe('null return (markdown fallback)', () => {
     it('should return null when scripts/ directory does not exist', async () => {
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
       expect(result).toBeNull();
     });
 
     it('should return null when skill directory does not exist', async () => {
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load('/nonexistent/path', 'tasks', {});
+      const result = await loader.load('/nonexistent/path', {});
       expect(result).toBeNull();
     });
   });
@@ -100,7 +100,7 @@ describe('SkillScriptLoader', () => {
       writeValidScript(scriptsDir, 'create_issue.js', 'created');
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.tools).toHaveLength(1);
@@ -115,7 +115,7 @@ describe('SkillScriptLoader', () => {
       // list_issues.js and update_issue.js are missing
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.tools).toHaveLength(2);
@@ -133,7 +133,7 @@ describe('SkillScriptLoader', () => {
       writeValidScript(scriptsDir, 'close_issue.js', 'close_result');
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.tools).toHaveLength(4);
@@ -153,7 +153,7 @@ describe('SkillScriptLoader', () => {
       );
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', { testKey: 'test-value' });
+      const result = await loader.load(testDir, { testKey: 'test-value' });
 
       expect(result).not.toBeNull();
       expect(result!.tools).toHaveLength(1);
@@ -169,33 +169,27 @@ describe('SkillScriptLoader', () => {
       writeValidScript(scriptsDir, 'create_decision.js');
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'decisions', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.tools[0].name).toBe('squad_create_decision');
     });
 
-    it('should handle all concerns correctly', async () => {
-      const concerns: Concern[] = ['tasks', 'decisions', 'memories', 'logging'];
-      const scriptNames = {
-        tasks: 'create_issue.js',
-        decisions: 'create_decision.js',
-        memories: 'create_memory.js',
-        logging: 'create_log.js',
-      };
+    it('should discover scripts for any tool naming convention', async () => {
+      const scriptNames = ['create_issue.js', 'create_decision.js', 'create_memory.js', 'create_log.js'];
 
-      for (const concern of concerns) {
-        const concernTestDir = createTestDir();
-        const scriptsDir = createScriptsDir(concernTestDir);
-        writeValidScript(scriptsDir, scriptNames[concern]);
+      for (const scriptName of scriptNames) {
+        const scriptTestDir = createTestDir();
+        const scriptsDir = createScriptsDir(scriptTestDir);
+        writeValidScript(scriptsDir, scriptName);
 
         const loader = new SkillScriptLoader(getSchemaForAll);
-        const result = await loader.load(concernTestDir, concern, {});
+        const result = await loader.load(scriptTestDir, {});
 
         expect(result).not.toBeNull();
         expect(result!.tools.length).toBeGreaterThan(0);
 
-        fs.rmSync(concernTestDir, { recursive: true, force: true });
+        fs.rmSync(scriptTestDir, { recursive: true, force: true });
       }
     });
   });
@@ -209,7 +203,7 @@ describe('SkillScriptLoader', () => {
       writeLifecycleScript(scriptsDir, true, true);
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.lifecycle).toBeDefined();
@@ -223,7 +217,7 @@ describe('SkillScriptLoader', () => {
       writeLifecycleScript(scriptsDir, true, false);
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.lifecycle).toBeDefined();
@@ -237,7 +231,7 @@ describe('SkillScriptLoader', () => {
       writeLifecycleScript(scriptsDir, false, true);
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.lifecycle).toBeDefined();
@@ -250,7 +244,7 @@ describe('SkillScriptLoader', () => {
       writeValidScript(scriptsDir, 'create_issue.js');
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.lifecycle).toBeUndefined();
@@ -274,7 +268,7 @@ describe('SkillScriptLoader', () => {
       );
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', { testKey: 'init-value' });
+      const result = await loader.load(testDir, { testKey: 'init-value' });
 
       expect(result).not.toBeNull();
       expect(result!.lifecycle).toBeDefined();
@@ -292,7 +286,7 @@ describe('SkillScriptLoader', () => {
       writeLifecycleScript(scriptsDir, false, true);
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.lifecycle!.dispose).toBeDefined();
@@ -311,7 +305,7 @@ describe('SkillScriptLoader', () => {
 
       const loader = new SkillScriptLoader(getSchemaForAll);
       
-      await expect(loader.load(testDir, 'tasks', {})).rejects.toThrow();
+      await expect(loader.load(testDir, {})).rejects.toThrow();
     });
 
     it('should throw when script has no default export', async () => {
@@ -320,7 +314,7 @@ describe('SkillScriptLoader', () => {
 
       const loader = new SkillScriptLoader(getSchemaForAll);
       
-      await expect(loader.load(testDir, 'tasks', {})).rejects.toThrow();
+      await expect(loader.load(testDir, {})).rejects.toThrow();
     });
 
     it('should throw when script has syntax error', async () => {
@@ -329,7 +323,7 @@ describe('SkillScriptLoader', () => {
 
       const loader = new SkillScriptLoader(getSchemaForAll);
       
-      await expect(loader.load(testDir, 'tasks', {})).rejects.toThrow();
+      await expect(loader.load(testDir, {})).rejects.toThrow();
     });
   });
 
@@ -342,7 +336,7 @@ describe('SkillScriptLoader', () => {
       writeValidScript(scriptsDir, 'update_issue.js');
 
       const loader = new SkillScriptLoader(getSchemaForNone);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       // No tools should be loaded since all schemas are undefined
       expect(result).not.toBeNull();
@@ -356,7 +350,7 @@ describe('SkillScriptLoader', () => {
       writeValidScript(scriptsDir, 'list_issues.js');
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.tools).toHaveLength(3);
@@ -372,7 +366,7 @@ describe('SkillScriptLoader', () => {
         name === 'squad_create_issue' ? mockSchema : undefined;
 
       const loader = new SkillScriptLoader(selectiveSchema);
-      const result = await loader.load(testDir, 'tasks', {});
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.tools).toHaveLength(1);
@@ -578,3 +572,4 @@ describe('resolveSkillPath()', () => {
     expect(result).toBe(path.resolve(projectRoot, 'skills', 'my-skill'));
   });
 });
+
