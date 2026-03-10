@@ -16,6 +16,8 @@ When GitHub Issues are your work queue, creating tasks should be frictionless. I
 
 ## Why Issue Templates Matter for Squad
 
+GitHub provides Issue Templates — a platform feature that pre-fills labels, fields, and structure when creating new issues. This guide shows how to configure templates that work smoothly with Squad's label-based routing.
+
 Squad operates best when work is captured as GitHub Issues. But creating an issue from scratch takes time: you need to remember the right labels, format the description consistently, and ensure the structure matches what agents expect.
 
 Issue templates solve this:
@@ -113,7 +115,7 @@ body:
 
 When Ralph scans the board, this issue is already labeled `squad:pao` — no triage needed, work goes straight to PAO.
 
-### Setting Up Squad Member Labels
+### Setting up labels for Squad routing
 
 Create labels in your repository for each squad member:
 
