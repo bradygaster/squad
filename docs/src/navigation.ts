@@ -102,6 +102,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Upgrading', slug: 'scenarios/upgrading' },
       { title: 'Multi-Codespace', slug: 'scenarios/multi-codespace' },
       { title: 'Private Repos', slug: 'scenarios/private-repos' },
+      { title: 'Cross-Org Auth', slug: 'scenarios/cross-org-auth' },
       { title: 'Team Portability', slug: 'scenarios/team-portability' },
       { title: 'Team State Storage', slug: 'scenarios/team-state-storage' },
       { title: 'Switching Models', slug: 'scenarios/switching-models' },

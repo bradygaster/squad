@@ -70,6 +70,28 @@ Common issues and fixes for Squad installation and usage.
 
 ---
 
+## Authentication fails on cross-org repos
+
+**Problem:** Squad agents hit authentication errors when working with repositories across personal GitHub and GitHub Enterprise Managed Users (EMU) organizations.
+
+**Cause:** The `gh` CLI and git credentials are tied to one account at a time. When you switch contexts between personal and EMU repos, the active account may not have access to the target repository.
+
+**Fix:**
+
+1. Use `gh auth switch` to toggle between authenticated accounts:
+   ```bash
+   gh auth status
+   gh auth switch --user <username>
+   ```
+
+2. Add account mappings to `.github/copilot-instructions.md` so Squad agents know which account to use for which repos.
+
+3. Configure git credential helpers per host or organization.
+
+See [Cross-organization authentication](./cross-org-auth) for detailed setup instructions.
+
+---
+
 ## Node.js version too old
 
 **Problem:** `npx github:bradygaster/squad` fails with an engine compatibility error, or Squad behaves unexpectedly.

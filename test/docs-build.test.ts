@@ -23,6 +23,7 @@ const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integratio
 
 const EXPECTED_SCENARIOS = [
   'issue-driven-dev', 'existing-repo', 'ci-cd-integration', 'solo-dev', 'monorepo', 'team-of-humans',
+  'cross-org-auth',
 ];
 
 const EXPECTED_CONCEPTS = ['architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
