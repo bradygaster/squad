@@ -9,7 +9,7 @@
  * - npm download stats (weekly downloads)
  * - Recent forks and stargazers
  * 
- * Generates markdown reports in .squad/adoption/reports/{YYYY-MM-DD}.md
+ * Generates markdown reports in .github/adoption/reports/{YYYY-MM-DD}.md
  */
 
 import { readdir, readFile, writeFile } from 'node:fs/promises';
@@ -149,7 +149,7 @@ async function getRecentForks() {
 }
 
 async function getPreviousReport() {
-  const reportsDir = join(REPO_ROOT, '.squad/adoption/reports');
+  const reportsDir = join(REPO_ROOT, '.github/adoption/reports');
   
   try {
     const files = await readdir(reportsDir);
@@ -253,7 +253,7 @@ ${previousReport ? `- **Week-over-week star growth:** ${calculatePercentage(repo
 *Next report: ${new Date(Date.now() + 86400000).toISOString().split('T')[0]}*
 `;
   
-  const reportPath = join(REPO_ROOT, '.squad/adoption/reports', `${today}.md`);
+  const reportPath = join(REPO_ROOT, '.github/adoption/reports', `${today}.md`);
   await writeFile(reportPath, report, 'utf-8');
   
   console.log(`✅ Report generated: ${reportPath}`);

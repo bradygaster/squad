@@ -153,12 +153,6 @@ Eight working examples from beginner to advanced — casting, governance, stream
 
 ---
 
-## Community
-
-📦 [Built with Squad](https://bradygaster.github.io/squad/community/built-with-squad/) — See projects using Squad in the wild
-
----
-
 ### Insider Channel
 
 Want the latest features before they ship?

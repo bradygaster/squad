@@ -39,8 +39,8 @@ jobs:
           git config --local user.name "github-actions[bot]"
           
           # Check if there are changes to commit
-          if [[ -n $(git status --porcelain .squad/adoption/reports/) ]]; then
-            git add .squad/adoption/reports/
+          if [[ -n $(git status --porcelain .github/adoption/reports/) ]]; then
+            git add .github/adoption/reports/
             git commit -m "chore: daily adoption report $(date +%Y-%m-%d)
             
             Automated adoption metrics collection.
