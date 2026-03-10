@@ -58,6 +58,104 @@
 
 ---
 
+## Adoption & Community
+
+### Adoption Tracking — Opt-In Architecture
+**By:** Flight  
+**Date:** 2026-03-09  
+
+Privacy-first adoption monitoring using a three-tier system:
+
+**Tier 1: Aggregate monitoring (SHIPPED)**
+- GitHub Action + monitoring script collect metrics
+- Reports moved to `.github/adoption/reports/{YYYY-MM-DD}.md`
+- Reports show ONLY aggregate numbers (no individual repo names):
+  - "78+ repositories found via code search"
+  - Total stars/forks across all discovered repos
+  - npm weekly downloads
+
+**Tier 2: Opt-in registry (DESIGN NEXT)**
+- Create `SHOWCASE.md` in repo root with submission instructions
+- Opted-in projects listed in `.github/adoption/registry.json`
+- Monitoring script reads registry, reports only on opted-in repos
+
+**Tier 3: Public showcase (LAUNCH LATER)**
+- `docs/community/built-with-squad.md` shows opted-in projects only
+- README link added when ≥5 opted-in projects exist
+
+**Rationale:**
+- Aggregate metrics safe (public code search results)
+- Individual projects only listed with explicit owner consent
+- Prevents surprise listings, respects privacy
+- Incremental rollout maintains team capacity
+
+**Implementation (PR #326):**
+- ✅ Moved `.squad/adoption/` → `.github/adoption/`
+- ✅ Stripped tracking.md to aggregate-only metrics
+- ✅ Removed individual repo names, URLs, metadata
+- ✅ Updated adoption-report.yml and scripts/adoption-monitor.mjs
+- ✅ Removed "Built with Squad" showcase link from README (Tier 2 feature)
+
+---
+
+### Adoption Tracking Location & Privacy
+**By:** EECOM  
+**Date:** 2026-03-10  
+
+Implementation decision confirming Tier 1 adoption tracking changes.
+
+**What:** Move adoption tracking from `.squad/adoption/` to `.github/adoption/`
+
+**Why:**
+1. **GitHub integration:** `.github/adoption/` aligns with GitHub convention (workflows, CODEOWNERS, issue templates)
+2. **Privacy-first:** Aggregate metrics only; defer individual repo showcase to Tier 2 (opt-in)
+3. **Clear separation:** `.squad/` = team internal; `.github/` = GitHub platform integration
+4. **Future-proof:** When Tier 2 opt-in launches, `.github/adoption/` is the natural home
+
+**Impact:**
+- GitHub Action reports write to `.github/adoption/reports/{YYYY-MM-DD}.md`
+- No individual repo information published until Tier 2
+- Monitoring continues collecting aggregate metrics via public APIs
+- Team sees trends without publishing sensitive adoption data
+
+---
+
+### Append-Only File Governance
+**By:** Flight  
+**Date:** 2026-03-09  
+
+Feature branches must never modify append-only team state files except to append new content.
+
+**What:** If a PR diff shows deletions in `.squad/agents/*/history.md` or `.squad/decisions.md`, the PR is blocked until deletions are reverted.
+
+**Why:** Session state drift causes agents to reset append-only files to stale branch state, destroying team knowledge. PR #326 deleted entire history files and trimmed ~75 lines of decisions, causing data loss.
+
+**Enforcement:** Code review + future CI check candidate.
+
+---
+
+### Documentation Style: No Ampersands
+**By:** PAO  
+**Date:** 2026-03-09  
+
+Ampersands (&) are prohibited in user-facing documentation headings and body text, per Microsoft Style Guide.
+
+**Rule:** Use "and" instead.
+
+**Why:** Microsoft Style Guide prioritizes clarity and professionalism. Ampersands feel informal and reduce accessibility.
+
+**Exceptions:**
+- Brand names (AT&T, Barnes & Noble)
+- UI element names matching exact product text
+- Code samples and technical syntax
+- Established product naming conventions
+
+**Scope:** Applies to docs pages, README files, blog posts, community-facing content. Internal files (.squad/** memory files, decision docs, agent history) have flexibility.
+
+**Reference:** https://learn.microsoft.com/en-us/style-guide/punctuation/ampersands
+
+---
+
 ## Sprint Directives
 
 ### Secret handling — agents must never persist secrets
