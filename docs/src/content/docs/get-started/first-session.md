@@ -99,6 +99,7 @@ Squad creates the `.squad/` directory structure — team roster, routing rules, 
 | `ceremonies.md` | Ceremony schedule (retrospectives, reviews, etc.) |
 | `casting/` | Team formation history and casting state |
 | `skills/` | Reusable capabilities agents can learn |
+| `templates/` | Format reference files for docs, PRDs, charters |
 
 **You own these files.** Edit them anytime — change roles, add routing rules, fix decisions. Squad reads them before every spawn.
 
