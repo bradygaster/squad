@@ -102,6 +102,8 @@ All fields are optional. Omitted fields use the defaults shown above.
 
 Squad uses the Azure CLI for ADO authentication — **no Personal Access Tokens (PATs) needed.** Run `az login` once, and Squad agents use your authenticated session for all operations.
 
+For GitHub repositories, Squad uses the `gh` CLI for authentication. When working across multiple GitHub accounts (e.g., personal GitHub and Enterprise Managed Users), use `gh auth switch` to toggle between accounts. See [Cross-organization authentication](../scenarios/cross-org-auth) for detailed multi-account setup.
+
 Alternatively, if the Azure DevOps MCP server is configured in your environment, Squad will use it automatically for richer API access. See [MCP Setup Guide](./mcp.md#mcp-configuration-files) for configuration instructions.
 
 Squad prefers MCP tools when available, falling back to `az` CLI when not.
