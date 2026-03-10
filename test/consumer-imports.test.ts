@@ -52,4 +52,14 @@ describe('Consumer-perspective imports', () => {
       // The test completing without hanging or exiting proves the import is clean
     });
   });
+
+  describe('skills barrel exports', () => {
+    it('exports SkillScriptLoader, resolveSkillPath, and defineHandler from skills barrel', async () => {
+      const { SkillScriptLoader, resolveSkillPath, defineHandler } =
+        await import('@bradygaster/squad-sdk/skills');
+      expect(typeof SkillScriptLoader).toBe('function');
+      expect(typeof resolveSkillPath).toBe('function');
+      expect(typeof defineHandler).toBe('function');
+    });
+  });
 });

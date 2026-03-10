@@ -92,6 +92,57 @@ describe('SkillScriptLoader', () => {
     });
   });
 
+  // --- Non-null return (empty-tools contract) ---
+
+  describe('non-null return (empty-tools contract)', () => {
+    // CONTRACT: non-null even when empty — callers must check tools.length, not null,
+    // for markdown fallback logic. null is ONLY returned when scripts/ is absent.
+
+    it('should return { tools: [] } (not null) when scripts/ exists but contains only .ts files', async () => {
+      const scriptsDir = createScriptsDir(testDir);
+      // .ts file present (developer forgot to compile) — no .js handler produced
+      fs.writeFileSync(
+        path.join(scriptsDir, 'create_issue.ts'),
+        'export default async function(args: unknown, config: unknown) {}',
+        'utf-8',
+      );
+
+      const loader = new SkillScriptLoader(getSchemaForAll);
+      const result = await loader.load(testDir, {});
+
+      // scripts/ is present so result is NOT null — callers must check tools.length for fallback
+      expect(result).not.toBeNull();
+      expect(result!.tools).toHaveLength(0);
+    });
+
+    it('should return { tools: [], lifecycle } (not null) when scripts/ contains only lifecycle.js', async () => {
+      const scriptsDir = createScriptsDir(testDir);
+      // lifecycle.js is excluded from handler scanning — no handler .js files present
+      writeLifecycleScript(scriptsDir, true, true);
+
+      const loader = new SkillScriptLoader(getSchemaForAll);
+      const result = await loader.load(testDir, {});
+
+      // scripts/ is present so result is NOT null — callers must check tools.length for fallback
+      expect(result).not.toBeNull();
+      expect(result!.tools).toHaveLength(0);
+      // lifecycle is still defined since lifecycle.js was loaded
+      expect(result!.lifecycle).toBeDefined();
+    });
+
+    it('should return { tools: [] } (not null) when scripts/ directory is completely empty', async () => {
+      // Create scripts/ dir but write no files at all
+      createScriptsDir(testDir);
+
+      const loader = new SkillScriptLoader(getSchemaForAll);
+      const result = await loader.load(testDir, {});
+
+      // scripts/ is present so result is NOT null — callers must check tools.length for fallback
+      expect(result).not.toBeNull();
+      expect(result!.tools).toHaveLength(0);
+    });
+  });
+
   // --- Successful load ---
 
   describe('successful load', () => {
@@ -253,31 +304,33 @@ describe('SkillScriptLoader', () => {
     it('should call init with backendConfig', async () => {
       const scriptsDir = createScriptsDir(testDir);
       writeValidScript(scriptsDir, 'create_issue.js');
-      
-      // Write lifecycle.js that captures config
+
+      // Use a temp file to capture config across the ESM module boundary.
+      // Module-level variables won't work because Node caches the module between
+      // test runs; writing to disk is the reliable cross-process capture pattern.
+      const capturePath = path.join(testDir, `init-capture-${randomUUID()}.json`);
+
       fs.writeFileSync(
         path.join(scriptsDir, 'lifecycle.js'),
-        `
-        let capturedConfig = null;
-        export async function init(config) { 
-          capturedConfig = config;
-        }
-        export function getConfig() { return capturedConfig; }
-        `,
+        `import { writeFileSync } from 'node:fs';
+export async function init(config) {
+  writeFileSync(${JSON.stringify(capturePath)}, JSON.stringify(config), 'utf-8');
+}`,
         'utf-8',
       );
 
       const loader = new SkillScriptLoader(getSchemaForAll);
-      const result = await loader.load(testDir, { testKey: 'init-value' });
+      const result = await loader.load(testDir, {});
 
       expect(result).not.toBeNull();
       expect(result!.lifecycle).toBeDefined();
-      
-      // Call init
-      await result!.lifecycle!.init!({ testKey: 'init-value' });
-
-      // Verify config was passed (would need to re-import to check, but we've validated the signature)
       expect(result!.lifecycle!.init).toBeDefined();
+
+      // Call init and verify the config was actually received
+      await result!.lifecycle!.init!({ testKey: 'test-value-123' });
+
+      const captured = JSON.parse(fs.readFileSync(capturePath, 'utf-8'));
+      expect(captured).toEqual({ testKey: 'test-value-123' });
     });
 
     it('should call dispose on teardown', async () => {

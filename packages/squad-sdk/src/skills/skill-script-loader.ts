@@ -12,15 +12,62 @@
  * - Partial implementations (missing handlers are silently skipped)
  */
 
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import type {
   LoadResult,
   SkillHandler,
   HandlerLifecycle,
 } from './handler-types.js';
-import type { SquadTool, SquadToolHandler, SquadToolInvocation } from '../adapter/types.js';
+import type { SquadTool, SquadToolHandler, SquadToolResult } from '../adapter/types.js';
+
+const tracer = trace.getTracer('squad-sdk');
+
+// --- OTel Handler Wrapping ---
+
+/**
+ * Wrap a skill handler with OTel span instrumentation.
+ * Mirrors the wrapping applied to built-in tools by defineTool() so skill-dispatched
+ * calls appear in traces, distinguished by 'tool.skill_dispatched: true'.
+ *
+ * This is intentionally a local copy — skill handlers and tool handlers have different
+ * signatures and concerns; they should not share implementation.
+ */
+function wrapSkillHandlerWithSpan<TArgs>(
+  name: string,
+  skillHandler: SkillHandler<TArgs>,
+  backendConfig: Record<string, unknown>,
+): SquadToolHandler<TArgs> {
+  return async (args, _invocation) => {
+    const span = tracer.startSpan('squad.skill.call', {
+      attributes: { 'tool.name': name, 'tool.skill_dispatched': true },
+    });
+    const startTime = Date.now();
+    try {
+      const result = await skillHandler(args, backendConfig) as SquadToolResult;
+      const durationMs = Date.now() - startTime;
+      span.addEvent('squad.skill.result', typeof result === 'string'
+        ? { 'result.type': 'unknown', 'result.length': result.length, 'duration_ms': durationMs, 'success': true }
+        : { 'result.type': result.resultType ?? 'unknown', 'result.length': (result.textResultForLlm ?? '').length, 'duration_ms': durationMs, 'success': result.resultType !== 'failure' },
+      );
+      return result;
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err instanceof Error ? err.message : String(err) });
+      span.addEvent('squad.skill.error', {
+        'error.type': err instanceof Error ? err.constructor.name : 'unknown',
+        'error.message': err instanceof Error ? err.message : String(err),
+        'duration_ms': durationMs,
+      });
+      span.recordException(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    } finally {
+      span.end();
+    }
+  };
+}
 
 // --- Helpers ---
 
@@ -32,19 +79,6 @@ import type { SquadTool, SquadToolHandler, SquadToolInvocation } from '../adapte
 function toFileUrl(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/');
   return pathToFileURL(normalized).href;
-}
-
-/**
- * Wrap a SkillHandler (args, config) to SquadToolHandler (args, invocation).
- * Bridges the skill script signature to the Squad tool handler signature.
- */
-function wrapSkillHandler<T>(
-  skillHandler: SkillHandler<T>,
-  backendConfig: Record<string, unknown>,
-): SquadToolHandler<T> {
-  return (args: T, _invocation: SquadToolInvocation) => {
-    return skillHandler(args, backendConfig);
-  };
 }
 
 /**
@@ -68,22 +102,23 @@ export function resolveSkillPath(
   projectRoot: string,
   teamRoot?: string,
 ): string {
+  /** Resolve symlinks; fall back to the logical path if it doesn't exist yet (write case). */
+  function realOrLogical(p: string): string {
+    try { return realpathSync(p); } catch { return p; }
+  }
+
+  /** True if `p` is equal to `root` or directly inside it. */
+  function isContained(p: string, root: string): boolean {
+    const r = path.resolve(root);
+    return p === r || p.startsWith(r + path.sep);
+  }
+
   // 1. Absolute paths used as-is
   if (path.isAbsolute(skillPath)) {
     const resolved = path.resolve(skillPath);
-    // Validate containment
-    if (teamRoot) {
-      const inTeam = resolved.startsWith(path.resolve(teamRoot) + path.sep) || resolved === path.resolve(teamRoot);
-      const inProject = resolved.startsWith(path.resolve(projectRoot) + path.sep) || resolved === path.resolve(projectRoot);
-      if (!inTeam && !inProject) {
-        throw new Error(`Path escapes containment: ${skillPath} is outside project and team roots`);
-      }
-    } else {
-      const inProject = resolved.startsWith(path.resolve(projectRoot) + path.sep) || resolved === path.resolve(projectRoot);
-      if (!inProject) {
-        throw new Error(`Path escapes containment: ${skillPath} is outside project root`);
-      }
-    }
+    const real = realOrLogical(resolved);
+    const inside = (teamRoot ? isContained(real, teamRoot) || isContained(real, projectRoot) : isContained(real, projectRoot));
+    if (!inside) throw new Error(`Path escapes containment: ${skillPath} is outside project and team roots`);
     return resolved;
   }
 
@@ -91,19 +126,15 @@ export function resolveSkillPath(
   if (teamRoot) {
     const stripped = skillPath.startsWith('.squad/') ? skillPath.slice(7) : skillPath;
     const resolved = path.resolve(teamRoot, stripped);
-    const inTeam = resolved.startsWith(path.resolve(teamRoot) + path.sep) || resolved === path.resolve(teamRoot);
-    if (!inTeam) {
-      throw new Error(`Path escapes containment: ${skillPath} resolves outside team root`);
-    }
+    const real = realOrLogical(resolved);
+    if (!isContained(real, teamRoot)) throw new Error(`Path escapes containment: ${skillPath} resolves outside team root`);
     return resolved;
   }
 
   // 3. Without teamRoot: resolve relative to projectRoot
   const resolved = path.resolve(projectRoot, skillPath);
-  const inProject = resolved.startsWith(path.resolve(projectRoot) + path.sep) || resolved === path.resolve(projectRoot);
-  if (!inProject) {
-    throw new Error(`Path escapes containment: ${skillPath} resolves outside project root`);
-  }
+  const real = realOrLogical(resolved);
+  if (!isContained(real, projectRoot)) throw new Error(`Path escapes containment: ${skillPath} resolves outside project root`);
   return resolved;
 }
 
@@ -133,6 +164,11 @@ export class SkillScriptLoader {
    * @param skillPath - Resolved absolute path to the skill directory
    * @param backendConfig - Backend configuration to pass to handlers
    * @returns LoadResult with tools and optional lifecycle, or null if no scripts/ directory
+   *
+   * @warning **Security note:** `backendConfig` is for non-secret runtime configuration (URLs, feature
+   * flags, timeouts). Do NOT put credentials, tokens, or secrets in `backendConfig` — this config is
+   * part of the skill definition and will be committed to the repository. Handler scripts run with full
+   * process trust and can access the filesystem and the network. Only load skills from trusted sources.
    */
   async load(
     skillPath: string,
@@ -157,8 +193,15 @@ export class SkillScriptLoader {
       const toolName = 'squad_' + scriptName.slice(0, -3);
       const scriptPath = path.join(scriptsDir, scriptName);
 
+      // c. Get the tool's schema — outside the import try block so schema errors are attributed correctly
+      const schema = this.getToolSchema(toolName);
+      if (!schema) {
+        console.warn(`[SkillScriptLoader] Tool schema not found for ${toolName}, skipping`);
+        continue;
+      }
+
+      // d. Dynamic import — errors here mean the script itself is broken
       try {
-        // a. Dynamic import with Windows path normalization
         const scriptUrl = toFileUrl(scriptPath);
         const module = await import(scriptUrl);
 
@@ -167,19 +210,13 @@ export class SkillScriptLoader {
           throw new Error(`Handler script ${scriptName} does not export a default function`);
         }
 
-        // c. Get the tool's schema
-        const schema = this.getToolSchema(toolName);
-        if (!schema) {
-          console.warn(`[SkillScriptLoader] Tool schema not found for ${toolName}, skipping`);
-          continue;
-        }
-
-        // e. Create SquadTool entry
+        // e. Create SquadTool entry — wrap with OTel span instrumentation at load time
+        // so skill-dispatched calls appear in traces with 'tool.skill_dispatched: true'.
         const tool: SquadTool<any> = {
           name: toolName,
           description: schema.description,
           parameters: schema.parameters,
-          handler: wrapSkillHandler(module.default as SkillHandler<any>, backendConfig),
+          handler: wrapSkillHandlerWithSpan(toolName, module.default as SkillHandler<any>, backendConfig),
         };
 
         tools.push(tool);

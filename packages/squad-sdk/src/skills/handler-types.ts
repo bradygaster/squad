@@ -270,6 +270,11 @@ export interface LoadResult {
  *
  * Specifies a skill directory path and optional disposal timeout.
  * The 'package' key is reserved for future use and forbidden here.
+ *
+ * @warning **Security note:** `backendConfig` is for non-secret runtime configuration (URLs, feature
+   * flags, timeouts). Do NOT put credentials, tokens, or secrets in `backendConfig` — this config is
+   * part of the skill definition and will be committed to the repository. Handler scripts run with full
+   * process trust and can access the filesystem and the network. Only load skills from trusted sources.
  */
 export interface SkillConfig {
   /** Path to skill directory (relative to squad root) */
