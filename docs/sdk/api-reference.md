@@ -69,13 +69,18 @@ try {
 
 ### `resolveGlobalSquadPath(): string`
 
-Get path to global personal squad (`~/.squad/` on Unix, `%USERPROFILE%\.squad\` on Windows).
+Get path to global personal squad directory. Platform-specific:
+- Linux: `~/.config/squad/`
+- macOS: `~/Library/Application Support/squad/`
+- Windows: `%APPDATA%\squad\`
 
 ```typescript
 import { resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
 
 const globalSquad = resolveGlobalSquadPath();
-// → /home/user/.squad  (or C:\Users\user\.squad on Windows)
+// → /home/user/.config/squad  (on Linux)
+// → /Users/user/Library/Application Support/squad  (on macOS)
+// → C:\Users\user\AppData\Roaming\squad  (on Windows)
 ```
 
 ### `ensureSquadPath(startPath?: string): string`

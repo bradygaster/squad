@@ -108,7 +108,10 @@ squad init --global
 ```
 
 **What happens:**
-1. Creates `~/.squad/` (Unix/Mac) or `%USERPROFILE%\.squad\` (Windows)
+1. Creates your personal squad directory at a platform-specific path:
+   - Linux: `~/.config/squad/`
+   - macOS: `~/Library/Application Support/squad/`
+   - Windows: `%APPDATA%\squad\`
 2. Scaffolds standard team structure
 3. Sets up agents that can be inherited by project squads
 
@@ -125,13 +128,16 @@ squad init --global
 # 1. Set up personal squad (one-time)
 squad init --global
 
-# 2. Create a personal upstream practice doc
-mkdir ~/.squad/skills/personal-guidelines
-echo "# My Python conventions..." > ~/.squad/skills/personal-guidelines/SKILL.md
+# 2. Create a personal upstream practice doc (use your actual path)
+# Linux: ~/.config/squad/.squad/skills/
+# macOS: ~/Library/Application Support/squad/.squad/skills/
+# Windows: %APPDATA%\squad\.squad\skills\
+mkdir -p "$(squad status | grep 'Global squad:' | cut -d' ' -f3)/.squad/skills/personal-guidelines"
+echo "# My Python conventions..." > "$(squad status | grep 'Global squad:' | cut -d' ' -f3)/.squad/skills/personal-guidelines/SKILL.md"
 
 # 3. In a project, inherit from personal squad
 cd ~/my-project
-squad upstream add ~/.squad --name personal
+squad upstream add "$(resolveGlobalSquadPath)" --name personal
 
 # 4. Now all agents in this project inherit from personal squad
 squad  # launch shell
@@ -141,14 +147,20 @@ squad  # launch shell
 
 ### Global vs. Local Squad
 
-| Aspect | Global (`~/.squad/`) | Local (`./.squad/`) |
+| Aspect | Global (personal squad) | Local (`./.squad/`) |
 |--------|-----|-----|
 | **Created by** | `squad init --global` | `squad init` |
+| **Location** | Platform-specific (see below) | Project root |
 | **Scope** | All projects on this machine | Single project |
 | **Inheritance** | Can be upstream for local squads | Can inherit from global |
 | **History** | Persistent across projects | Per-project learning |
 | **Shared agents** | Yes (optional setup) | No |
 | **Used when** | No `.squad/` in project + parents | Found in project hierarchy |
+
+**Platform-specific paths:**
+- Linux: `~/.config/squad/`
+- macOS: `~/Library/Application Support/squad/`
+- Windows: `%APPDATA%\squad\`
 
 ### Resolution Order
 
@@ -156,10 +168,10 @@ When Squad starts, it looks for `.squad/` in this order:
 
 1. Current directory (`./.squad/`)
 2. Parent directories (walk up to project root)
-3. Home directory (`~/.squad/`)
+3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
 4. Global `@bradygaster/squad-cli` default (fallback only)
 
-**First match wins.** If you're in a project with `.squad/`, the global `~/.squad/` is ignored (but can be an upstream).
+**First match wins.** If you're in a project with `.squad/`, the global personal squad is ignored (but can be an upstream).
 
 ## Commands at a Glance
 
@@ -241,7 +253,7 @@ squad init
 
 # Or use global squad:
 squad init --global
-# Then projects will inherit from ~/.squad/
+# Then projects will inherit from your personal squad
 ```
 
 ### "npm ERR! code E403" when installing globally

@@ -895,7 +895,7 @@ export interface ExtractionResult {
  * Creates the consultations directory if it doesn't exist.
  * For new projects, creates a full header; for existing projects, appends session entry.
  *
- * @param personalSquadRoot - Path to personal squad root (e.g. ~/.config/squad/.squad)
+ * @param personalSquadRoot - Path to personal squad root (platform-specific via resolveGlobalSquadPath())
  * @param result - Extraction result with learnings and metadata
  * @returns Path to the consultation log file
  */
@@ -1006,8 +1006,8 @@ function extractSkillName(content: string): string | null {
 /**
  * Merge staged learnings into personal squad.
  *
- * Routes skills to ~/.squad/skills/{name}/SKILL.md
- * Routes decisions to ~/.squad/decisions.md (with smart merge)
+ * Routes skills to {personalSquadRoot}/skills/{name}/SKILL.md
+ * Routes decisions to {personalSquadRoot}/decisions.md (with smart merge)
  *
  * @param learnings - Staged learnings to merge
  * @param personalSquadRoot - Path to personal squad root
@@ -1035,7 +1035,7 @@ export async function mergeToPersonalSquad(
     }
   }
 
-  // Route skills to ~/.squad/skills/{name}/SKILL.md
+  // Route skills to {personalSquadRoot}/skills/{name}/SKILL.md
   const skillsDir = path.join(personalSquadRoot, 'skills');
   for (const skill of skills) {
     const skillName = extractSkillName(skill.content) || skill.filename.replace('.md', '');
@@ -1053,7 +1053,7 @@ export async function mergeToPersonalSquad(
     skillsAdded++;
   }
 
-  // Route decisions to ~/.squad/decisions.md
+  // Route decisions to {personalSquadRoot}/decisions.md
   if (decisions.length > 0) {
     const decisionsPath = path.join(personalSquadRoot, 'decisions.md');
     const newContent = decisions.map(d => d.content.trim()).join('\n\n');

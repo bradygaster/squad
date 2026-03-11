@@ -24,12 +24,12 @@ Find `.squad/` directories on disk.
 | Function | Description |
 |----------|-------------|
 | `resolveSquad(startPath?)` | Find `.squad/` walking up from `startPath` (throws if not found) |
-| `resolveGlobalSquadPath()` | Get `~/.squad/` path (`%USERPROFILE%\.squad\` on Windows) |
+| `resolveGlobalSquadPath()` | Get personal squad path (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows) |
 | `ensureSquadPath(startPath?)` | Like `resolveSquad`, but creates `.squad/` if missing |
 
 ```typescript
 const squadPath = resolveSquad();                // '/home/user/project/.squad'
-const globalPath = resolveGlobalSquadPath();      // '/home/user/.squad'
+const globalPath = resolveGlobalSquadPath();      // '/home/user/.config/squad' (Linux)
 const safePath = ensureSquadPath();               // Creates if needed
 ```
 

@@ -93,7 +93,7 @@ Want the same agents across all your projects?
 squad init --global
 ```
 
-This creates `~/.squad/` — a personal team root that any project can inherit from. See [Upstream Inheritance](../features/upstream-inheritance.md) for details.
+This creates your personal squad directory — a global team root that any project can inherit from. See [Upstream Inheritance](../features/upstream-inheritance.md) for details.
 
 ---
 
