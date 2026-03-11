@@ -28,7 +28,7 @@ squad init
 |---------|-------------|:------------------:|
 | `squad` | Enter interactive shell (no args) | No |
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
-| `squad init --global` | Create a personal squad at `~/.squad/` | No |
+| `squad init --global` | Create a personal squad in your platform-specific directory | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
 | `squad start [--tunnel] [--port N] [--command cmd]` | Start Copilot with remote phone access via PTY and WebSocket | No |
 | `squad status` | Show which squad is active and why | Yes |
@@ -239,7 +239,7 @@ When Squad starts, it looks for `.squad/` in this order:
 
 1. Current directory (`./.squad/`)
 2. Parent directories (walk up to project root)
-3. Home directory (`~/.squad/`)
+3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
 4. Global CLI default (fallback only)
 
 First match wins.
