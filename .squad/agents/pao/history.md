@@ -41,6 +41,8 @@ Squad docs use plain markdown without Astro frontmatter. Structure: title (H1), 
 ### Proactive Communication Patterns (v0.8.26)
 Two-way communication layer between Squad and work environment. Outbound: Teams webhook notifications (breaking, briefings, recaps, flashes) sent via Adaptive Cards — only when newsworthy. Inbound: WorkIQ/Playwright scanning of Teams channels and email → auto-create GitHub issues with teams-bridge label, anti-duplicate logic enforced. Loop: inbound creates issues → Ralph dispatches → agents work → outbound notifies results. Human stays informed on mobile. Prerequisites are enhancements, not requirements.
 
+📌 **Team update (2026-03-11T01:27:57Z):** Proactive communication patterns and PR trust levels (full/selective/self-managing spectrum) documented in decisions.md. Pattern rationale reinforced: Ralph 24/7 autonomous deployment requires awareness loop (Teams webhooks for outbound) and external work integration (WorkIQ scanning for inbound). Trust levels enable context-appropriate oversight without bottlenecking teams.
+
 ### PR Trust Model Documentation (v0.8.26)
 Three trust levels for PR management: (1) Full review (default, team repos) — human gate on every merge; (2) Selective review (personal projects with patterns) — human reviews only critical paths; (3) Self-managing (solo personal repos only) — Squad merges own PRs, human reviews retroactively. Added to reviewer-protocol.md as new section. Important: self-managing ≠ unmonitored; use Ralph work monitoring and Teams notifications for awareness. Decision matrix included for when to use each level.
 

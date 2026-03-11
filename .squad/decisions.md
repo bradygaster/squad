@@ -1306,8 +1306,28 @@ Brady's directive (2026-03-03T02:16:00Z): "squad-cli and squad-sdk must NOT be b
 
 ## Adoption & Community
 
+### `.squad/` Directory Scope — Owner Directive
+**By:** Brady (project owner, PR #326 review)  
+**Date:** 2026-03-10  
+
+**Directive:** The `.squad/` directory is **reserved for team state only** — roster, routing, decisions, agent histories, casting, and orchestration logs. Non-team data (adoption tracking, community metrics, reports) must NOT live in `.squad/`. Use `.github/` for GitHub platform integration or `docs/` for documentation artifacts.
+
+**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029193833)
+
+---
+
+### No Individual Repo Listing Without Consent — Owner Directive
+**By:** Brady (project owner, PR #326 review)  
+**Date:** 2026-03-10  
+
+**Directive:** Growth metrics must report **aggregate numbers only** (e.g., "78+ repositories found via GitHub code search") — never name or link to individual community repos without explicit opt-in consent. The monitoring script and GitHub Action concepts are approved, but any public showcase or tracking list that identifies specific repos is blocked until a community consent plan exists.
+
+**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029222967)
+
+---
+
 ### Adoption Tracking — Opt-In Architecture
-**By:** Flight  
+**By:** Flight (implementing Brady's directives above)  
 **Date:** 2026-03-09  
 
 Privacy-first adoption monitoring using a three-tier system:
@@ -1408,6 +1428,146 @@ Ampersands (&) are prohibited in user-facing documentation headings and body tex
 **By:** RETRO (formerly Baer), v0.8.24
 **What:** Agents must NEVER write secrets, API keys, tokens, or credentials into conversational history, commit messages, logs, or any persisted file. Acknowledge receipt without echoing values.
 **Why:** Secrets in logs or history are a security incident waiting to happen.
+
+---
+
+## Squad Ecosystem Boundaries & Content Governance
+
+### Squad Docs vs Squad IRL Boundary (consolidated)
+**By:** PAO (via Copilot), Flight  
+**Date:** 2026-03-10  
+**Status:** Active pattern for all documentation PRs
+
+**Litmus test:** If Squad doesn't ship the code or configuration, the documentation belongs in Squad IRL, not the Squad framework docs.
+
+**Categories:**
+
+1. **Squad docs** — Features Squad ships (routing, charters, reviewer protocol, config, behavior)
+2. **Squad IRL** — Infrastructure around Squad (webhooks, deployment patterns, logging, external tools, operational patterns)
+3. **Gray area:** Platform features (GitHub Issue Templates) → Squad docs if framed as "how to configure X for Squad"
+
+**Examples applied (PR #331):**
+
+| Document | Decision | Reason |
+|----------|----------|--------|
+| ralph-operations.md | DELETE → IRL | Infrastructure (deployment, logging) around Squad, not Squad itself |
+| proactive-communication.md | DELETE → IRL | External tools (Teams, WorkIQ) configured by community, not built into Squad |
+| issue-templates.md | KEEP, reframe | GitHub platform feature; clarify scope: "a GitHub feature configured for Squad" |
+| reviewer-protocol.md (Trust Levels) | KEEP | Documents user choice spectrum within Squad's existing review system |
+
+**Enforcement:** Code review + reframe pattern ("GitHub provides X. Here's how to configure it for Squad's needs."). Mark suspicious deletions for restore (append-only governance).
+
+**Future use:** Apply this pattern to all documentation PRs to maintain clean boundaries.
+
+---
+
+### Content Triage Skill — External Content Integration
+**By:** Flight  
+**Date:** 2026-03-10  
+**Status:** Skill created at `.squad/skills/content-triage/SKILL.md`
+
+**Pattern:** External content (blog posts, sample repos, videos, conference talks) that helps Squad adoption must be triaged using the "Squad Ships It" boundary heuristic before incorporation.
+
+**Workflow:**
+1. Triggered by `content-triage` label or external content reference in issue
+2. Flight performs boundary analysis
+3. Sub-issues generated for Squad-ownable content extraction (PAO responsibility)
+4. FIDO verifies docs-test sync on extracted content
+5. Scribe manages IRL references in `.github/irl/references.yml` (YAML schema)
+
+**Label convention:** `content:blog`, `content:sample`, `content:video`, `content:talk`
+
+**Why:** Pattern from PR #331 (Tamir Dresher blog) shows parallel extraction of Squad-ownable patterns (scenario guides, reviewer protocol) and infrastructure patterns (Ralph ops, proactive comms). Without clear boundary, teams pollute Squad docs with operational content or miss valuable patterns that should be generalized.
+
+**Impact:** Enables community content to accelerate Squad adoption without polluting core docs. Flight's boundary analysis becomes reusable decision framework. Prevents scope creep as adoption grows.
+
+---
+
+### PR #331 Quality Gate — Test Assertion Sync
+**By:** FIDO (Quality Owner)  
+**Date:** 2026-03-10  
+**Status:** 🟢 CLEARED (test fix applied, commit 6599db6)
+
+**What was blocked:** Merge blocked on stale test assertions in `test/docs-build.test.ts`.
+
+**Critical violations resolved:**
+1. `EXPECTED_SCENARIOS` array stale (7 vs 25 disk files) — ✅ Updated to 25 entries
+2. `EXPECTED_FEATURES` constant undefined (32 feature files) — ✅ Created array with 32 entries
+3. Test assertion incomplete — ✅ Updated to validate features section
+
+**Why this matters:** Stale assertions that don't reflect filesystem state cause silent test skips. Regression: If someone deletes a scenario file, the test won't catch it. CI passing doesn't guarantee test coverage — only that the test didn't crash.
+
+**Lessons:**
+- Test arrays must be refreshed when filesystem content changes
+- Incomplete commits break the test-reality sync contract
+- FIDO's charter: When adding test count assertions, must keep in sync with disk state
+
+**Outcome:** Test suite: 6/6 passing. Assertions synced to filesystem. No regression risk from stale assertions.
+
+---
+
+### Communication Patterns and PR Trust Models
+**By:** PAO  
+**Date:** 2026-03-10  
+**Status:** Documented in features/reviewer-protocol.md (trust levels section) and scenarios/proactive-communication.md (infrastructure pattern)
+
+**Decision:** Document emerging patterns in real Squad usage: proactive communication loops and PR review trust spectrum.
+
+**Components:**
+
+1. **Proactive communication patterns** — Outbound notifications (Teams webhooks), inbound scanning (Teams/email for work items), two-way feedback loop connecting external sources to Squad workflow
+
+2. **PR trust levels spectrum:**
+   - **Full review** (default for team repos) — All PRs require human review
+   - **Selective review** (personal projects with patterns) — Domain-expert or routine PRs can auto-merge
+   - **Self-managing** (solo personal repos only) — PRs auto-merge; Ralph's work monitoring provides retroactive visibility
+
+**Why:** Ralph 24/7 autonomous deployment creates an awareness gap — how does the human stay informed? Outbound notifications solve visibility. Inbound scanning solves "work lives in multiple places." Trust levels let users tune oversight to their context (full review for team repos, selective for personal projects, self-managing for solo work only).
+
+**Important caveat:** Self-managing ≠ unmonitored; Ralph's work monitoring and notifications provide retroactive visibility.
+
+**Anti-spam expectations:** Don't spam yourself outbound (notification fatigue), don't spam GitHub inbound (volume controls).
+
+---
+
+### Remote Squad Access — Phased Rollout (Proposed)
+**By:** Flight  
+**Date:** 2026-03-10  
+**Status:** Proposed — awaits proposal document in `docs/proposals/remote-squad-access.md`
+
+**Context:** Squad currently requires a local clone to answer questions. Users want remote access from mobile, browser, or different machine without checking out repo.
+
+**Phases:**
+
+**Phase 1: GitHub Discussions Bot (Ship First)**
+- Surface: GitHub Discussions
+- Trigger: `/squad` command or `@squad` mention
+- Context: GitHub Actions workflow checks out repo → full `.squad/` state
+- Response: Bot replies to thread
+- Feasibility: 1 day
+- Why first: Easy to build, zero hosting, respects repo privacy, async Q&A, immediately useful
+
+**Phase 2: GitHub Copilot Extension (High Value)**
+- Surface: GitHub Copilot chat (VS Code, CLI, web, mobile)
+- Trigger: `/squad ask {question}` in any Copilot client
+- Context: Extension fetches `.squad/` files via GitHub API (no clone)
+- Response: Answer inline in Copilot
+- Feasibility: 1 week
+- Why second: Works everywhere Copilot exists, instant response, natural UX
+
+**Phase 3: Slack/Teams Bot (Enterprise Value)**
+- Surface: Slack or Teams channel
+- Trigger: `@squad` mention in channel
+- Context: Webhook fetches `.squad/` via GitHub API
+- Response: Bot replies in thread
+- Feasibility: 2 weeks
+- Why third: Enterprise teams live in chat; high value for companies using Squad
+
+**Constraint:** Squad's intelligence lives in `.squad/` (roster, routing, decisions, histories). Any remote solution must solve context access. GitHub Actions workflows provide checkout for free. Copilot Extension and chat bots use GitHub API to fetch files.
+
+**Implementation:** Before Phase 1 execution, write proposal document. New CLI command: `squad answer --context discussions --question "..."`. New workflow: `.github/workflows/squad-answer.yml`.
+
+**Privacy:** All approaches respect repo visibility or require authentication. Most teams want private by default.
 
 ### Test assertion discipline — mandatory
 **By:** FIDO (formerly Hockney), v0.8.24
