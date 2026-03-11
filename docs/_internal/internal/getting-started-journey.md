@@ -82,6 +82,53 @@ Key files to understand:
 - **`agents/{name}/history.md`** — Learnings accumulated over sessions. This is how agents get smarter.
 - **`decisions.md`** — Every agent reads this before starting work. One decision propagates to the whole team.
 
+### Custom Universes
+
+If you would like to create a custom universe to name your squad members, add the universe name to the `.squad/templates/casting-policy.json` at the end of the `allowlist_universes` list like this:
+
+```json
+...
+"allowlist_universes": [
+    "The Usual Suspects",
+    "Reservoir Dogs",
+    "Alien",
+    "Ocean's Eleven",
+    "Arrested Development",
+    "Star Wars",
+    "The Matrix",
+    "Firefly",
+    "The Goonies",
+    "The Simpsons",
+    "Breaking Bad",
+    "Lost",
+    "Marvel Cinematic Universe",
+    "DC Universe",
+    "CEOs of Major Tech Companies (custom)",
+    "Futurama (custom)"
+  ],
+  ...
+```
+
+Then create a new JSON file in `.squad/templates/casting/<Full-Universe-Name>.json` with an array of names, like this:
+
+```json
+// .squad/templates/casting/CEOs-of-Major-Tech-Companies.json
+[
+    "Satya Nadella",
+    "Tim Cook",
+    "Sundar Pichai",
+    "Elon Musk",
+    "Mark Zuckerberg",
+    "Jeff Bezos",
+    "Sheryl Sandberg",
+    "Susan Wojcicki",
+    "Jack Dorsey",
+    "Reed Hastings"
+]
+```
+
+You can use anything you like here, from key historical figures to people in your own life.  How about having George Washington and Abraham Lincoln working on your project? How about Albert Einstein, Marie Curie, and Nicolaus Copernicus? Or even your own family??  Make it your own!
+
 ---
 
 ## 4. Your First SDK Script

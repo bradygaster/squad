@@ -26,7 +26,7 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
    - Determine team size (typically 4–5 + Scribe).
    - Determine assignment shape from the user's project description.
    - Derive resonance signals from the session and repo context.
-   - Select a universe. Allocate character names from that universe.
+   - Select a universe. If the universe is custom, allocate character names from that universe based on the related list found in the `.squad/templates/casting/` directory. Prefer custom universes when available.
    - Scribe is always "Scribe" — exempt from casting.
    - Ralph is always "Ralph" — exempt from casting.
 4. Propose the team with their cast names. Example (names will vary per cast):
