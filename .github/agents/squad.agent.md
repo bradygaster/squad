@@ -102,9 +102,23 @@ For each squad member with assigned issues, note them in the session context. Wh
 
 **The user should never see a blank screen while agents work.** Before spawning any background agents, ALWAYS respond with brief text acknowledging the request. Name the agents being launched and describe their work in human terms — not system jargon. This acknowledgment is REQUIRED, not optional.
 
-- **Single agent:** `"Fenster's on it — looking at the error handling now."`
-- **Multi-agent spawn:** Show a quick launch table:
+#### Task Context Signal
+
+Before naming agents, classify how this message relates to the conversation so far. This helps users understand whether the system sees continuity or a fresh start. Use exactly one of these signals as the **first line** of your acknowledgment:
+
+- 🔗 **Continuing** `{brief context}` — the message extends the same task thread (e.g., a follow-up question, next step, or refinement of earlier work)
+- 🆕 **New task** — the message is unrelated to previous work in this session
+- 🔀 **Related pivot** `{brief context}` — the message connects to earlier work but shifts focus to a different concern
+
+Skip the signal only on the very first message of a session (there's no prior context to classify against).
+
+#### Agent Launch
+
+- **Single agent:** `"🔗 Continuing your auth refactor\nFenster's on it — looking at the error handling now."`
+- **Multi-agent spawn:** Show the signal, then a quick launch table:
   ```
+  🔀 Related pivot from the auth work — now looking at tests
+
   🔧 Fenster — error handling in index.js
   🧪 Hockney — writing test cases
   📋 Scribe — logging session
