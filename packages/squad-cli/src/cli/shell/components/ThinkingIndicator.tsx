@@ -19,6 +19,8 @@ export interface ThinkingIndicatorProps {
   elapsedMs: number;
   activityHint?: string;
   phase?: ThinkingPhase;
+  /** When true, cycles conversation-aware phrases instead of generic ones. */
+  hasConversation?: boolean;
 }
 
 /** Rotating thinking phrases — cycled every few seconds to keep the UI alive. */
@@ -38,6 +40,25 @@ export const THINKING_PHRASES = [
   'Crafting a plan',
   'Connecting the dots',
   'Exploring possibilities',
+];
+
+/** Context-aware phrases shown when conversation history exists. */
+export const CONVERSATION_PHRASES = [
+  'Reviewing conversation context',
+  'Connecting to previous work',
+  'Analyzing how this relates',
+  'Checking conversation thread',
+  'Considering prior context',
+  'Building on earlier discussion',
+  'Mapping to your session',
+  'Evaluating options',
+  'Consulting the team',
+  'Synthesizing a response',
+  'Weighing trade-offs',
+  'Gathering context',
+  'Crafting a plan',
+  'Connecting the dots',
+  'Reading the codebase',
 ];
 
 /** Map phase to its default label. */
@@ -72,6 +93,7 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
   elapsedMs,
   activityHint,
   phase = 'routing',
+  hasConversation = false,
 }) => {
   const noColor = isNoColor();
   const [frame, setFrame] = useState(0);
@@ -86,14 +108,16 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
     return () => clearInterval(timer);
   }, [isThinking, noColor]);
 
+  const phrases = hasConversation ? CONVERSATION_PHRASES : THINKING_PHRASES;
+
   // Rotate thinking phrases every 3 seconds
   useEffect(() => {
     if (!isThinking) { setPhraseIndex(0); return; }
     const timer = setInterval(() => {
-      setPhraseIndex(i => (i + 1) % THINKING_PHRASES.length);
+      setPhraseIndex(i => (i + 1) % phrases.length);
     }, 3000);
     return () => clearInterval(timer);
-  }, [isThinking]);
+  }, [isThinking, phrases]);
 
   // Reset frame when thinking starts
   useEffect(() => {
@@ -108,7 +132,7 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
 
   // Resolve the display label: activity hint > rotating phrase > phase label
   const displayLabel = activityHint ?? (
-    phase === 'connecting' ? phaseLabel(phase) : `${THINKING_PHRASES[phraseIndex]}...`
+    phase === 'connecting' ? phaseLabel(phase) : `${phrases[phraseIndex]}...`
   );
 
   // NO_COLOR: no color props, use text labels

@@ -314,6 +314,12 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
     return undefined;
   }, [messages, processing]);
 
+  // True when there is prior conversation history (at least one agent response).
+  const hasConversation = useMemo(
+    () => messages.some(m => m.role === 'agent'),
+    [messages],
+  );
+
   // Only archived (overflow) messages go to Static scrollback.
   // Current messages stay in the live region so the user can always see
   // the recent conversation without scrolling. This prevents the
@@ -467,7 +473,7 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
           count to prevent overflow into the InputPrompt area. */}
       <Box flexDirection="column" flexGrow={1}>
         <AgentPanel agents={agents} streamingContent={streamingContent} />
-        <MessageStream messages={messages} agents={agents} streamingContent={streamingContent} processing={processing} activityHint={activityHint || mentionHint} agentActivities={agentActivities} thinkingPhase={thinkingPhase} maxVisible={maxVisible} />
+        <MessageStream messages={messages} agents={agents} streamingContent={streamingContent} processing={processing} activityHint={activityHint || mentionHint} agentActivities={agentActivities} thinkingPhase={thinkingPhase} maxVisible={maxVisible} hasConversation={hasConversation} />
       </Box>
       {/* Fixed input box at bottom — Copilot/Claude style */}
       <Box marginTop={1} borderStyle={noColor ? undefined : 'round'} borderColor={noColor ? undefined : 'cyan'} paddingX={1}>
