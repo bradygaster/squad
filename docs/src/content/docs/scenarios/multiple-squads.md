@@ -22,6 +22,8 @@ Squad's import system brings in a complete team — roster, charters, histories,
 
 **But** you can cherry-pick skills and knowledge manually.
 
+> **Want continuous coordination instead?** If you need squads on different machines to see each other's live state (not just import once), see [Distributed Mesh](../features/distributed-mesh.md) — it syncs remote squad state via git and HTTP.
+
 ---
 
 ## 2. Export from Each Repository
