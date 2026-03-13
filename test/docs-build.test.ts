@@ -21,6 +21,15 @@ const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad', 
 
 const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
 
+const EXPECTED_FEATURES = [
+  'team-setup', 'routing', 'model-selection', 'response-modes', 'parallel-execution', 'memory',
+  'skills', 'directives', 'ceremonies', 'reviewer-protocol', 'github-issues', 'gitlab-issues',
+  'labels', 'prd-mode', 'project-boards', 'ralph', 'copilot-coding-agent', 'human-team-members',
+  'consult-mode', 'remote-control', 'vscode', 'worktrees', 'export-import', 'upstream-inheritance',
+  'marketplace', 'plugins', 'mcp', 'notifications', 'enterprise-platforms', 'squad-rc', 'streams',
+  'distributed-mesh',
+];
+
 const EXPECTED_SCENARIOS = [
   'issue-driven-dev', 'existing-repo', 'ci-cd-integration', 'solo-dev', 'monorepo', 'team-of-humans',
 ];
@@ -45,7 +54,7 @@ function getMarkdownFiles(section: string): string[] {
 }
 
 function getAllMarkdownFiles(): string[] {
-  const sections = ['get-started', 'guide', 'reference', 'scenarios', 'concepts'];
+  const sections = ['get-started', 'guide', 'features', 'reference', 'scenarios', 'concepts'];
   const allFiles: string[] = [];
   for (const section of sections) {
     allFiles.push(...getMarkdownFiles(section));
@@ -77,6 +86,16 @@ describe('Docs Structure Validation', () => {
         expect(files).toContain(guide);
       }
       expect(files.length).toBe(EXPECTED_GUIDES.length);
+    });
+
+    it('features directory contains all expected markdown files', () => {
+      const featuresDir = join(DOCS_CONTENT_DIR, 'features');
+      expect(existsSync(featuresDir)).toBe(true);
+      const files = readdirSync(featuresDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
+      for (const feature of EXPECTED_FEATURES) {
+        expect(files).toContain(feature);
+      }
+      expect(files.length).toBe(EXPECTED_FEATURES.length);
     });
 
     it('all markdown files have proper headings', () => {
@@ -169,6 +188,7 @@ describe('Docs Build Script (Astro)', () => {
     const allExpected = [
       ...EXPECTED_GET_STARTED.map(n => ({ dir: 'get-started', name: n })),
       ...EXPECTED_GUIDES.map(n => ({ dir: 'guide', name: n })),
+      ...EXPECTED_FEATURES.map(n => ({ dir: 'features', name: n })),
       ...EXPECTED_REFERENCE.map(n => ({ dir: 'reference', name: n })),
       ...EXPECTED_SCENARIOS.map(n => ({ dir: 'scenarios', name: n })),
       ...EXPECTED_CONCEPTS.map(n => ({ dir: 'concepts', name: n })),

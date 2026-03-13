@@ -18,3 +18,6 @@ Release blog posts use YAML frontmatter with: title, date, author, wave, tags, s
 
 ### Roster & Contributor Recognition (v0.8.25)
 Squad moved to Apollo 13/NASA Mission Control naming scheme (Flight, Procedures, EECOM, FIDO, PAO, CAPCOM, CONTROL, Surgeon, Booster, GNC, Network, RETRO, INCO, GUIDO, Telemetry, VOX, DSKY, Sims, Handbook). CONTRIBUTORS.md tracks both team roster and community contributors; contributor table entries grow with PRs (append PR counts rather than replace, maintaining attribution history).
+
+### Distributed Mesh Documentation (v0.8.25)
+Added distributed-mesh.md to features/ — covers the three zones (local, remote-trusted, remote-opaque), mesh.json config, sync scripts, getting started, and relation to SubSquads/export-import. Feature page follows standard format: experimental warning, sample prompts, practical structure, Microsoft Style Guide (sentence-case headings, active voice, second person). Test assertions updated in same commit — EXPECTED_FEATURES array expanded to include 'distributed-mesh', features directory test added, getAllMarkdownFiles() now includes features/ section. Cross-reference added to multiple-squads.md pointing readers from snapshot-based export/import to continuous distributed mesh.

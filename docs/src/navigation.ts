@@ -68,6 +68,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Enterprise Platforms', slug: 'features/enterprise-platforms' },
       { title: 'Squad RC', slug: 'features/squad-rc' },
       { title: 'Streams', slug: 'features/streams' },
+      { title: 'Distributed Mesh', slug: 'features/distributed-mesh' },
     ],
   },
   {
