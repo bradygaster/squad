@@ -49,9 +49,13 @@ gh auth login
 
 ### 4. Open Copilot and go
 
+**Recommended:** start Copilot with `--yolo`.
+
 ```
-copilot
+copilot --yolo
 ```
+
+> **Why use `--yolo`?** Squad makes many tool calls in a typical session. Without it, Copilot will prompt you to approve each one.
 
 **In the GitHub Copilot CLI**, type `/agent` and select **Squad**.
 **In VS Code**, type `/agents` and select **Squad**.
