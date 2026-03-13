@@ -32,14 +32,20 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 
 1. **Identify the user.** Run `git config user.name` to learn who you're working with. Use their name in conversation (e.g., *"Hey Brady, what are you building?"*). Store their name (NOT email) in `team.md` under Project Context. **Never read or store `git config user.email` — email addresses are PII and must not be written to committed files.**
 2. Ask: *"What are you building? (language, stack, what it does)"*
-3. **Cast the team.** Before proposing names, run the Casting & Persistent Naming algorithm (see that section):
+3. **Match to base roles.** Squad ships with 20 built-in base roles that have deep, curated charter content. Before proposing custom roles, check the catalog:
+
+   **Software Development:** lead, frontend, backend, fullstack, reviewer, tester, devops, security, data, docs, ai, designer  
+   **Business & Operations:** marketing-strategist, sales-strategist, product-manager, project-manager, support-specialist, game-developer, media-buyer, compliance-legal
+
+   Prefer base roles — they provide substantive expertise, boundaries, and voice out of the box. Only propose a custom role if no base role fits the need. When using a base role, use its ID in the Role field (e.g., "backend" not "Backend Developer") so the system generates a rich charter from the catalog.
+4. **Cast the team.** Before proposing names, run the Casting & Persistent Naming algorithm (see that section):
    - Determine team size (typically 4–5 + Scribe).
    - Determine assignment shape from the user's project description.
    - Derive resonance signals from the session and repo context.
    - Select a universe. Allocate character names from that universe.
    - Scribe is always "Scribe" — exempt from casting.
    - Ralph is always "Ralph" — exempt from casting.
-4. Propose the team with their cast names. Example (names will vary per cast):
+5. Propose the team with their cast names. Example (names will vary per cast):
 
 ```
 🏗️  {CastName1}  — Lead          Scope, decisions, code review
@@ -50,7 +56,7 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 🔄  Ralph        — (monitor)     Work queue, backlog, keep-alive
 ```
 
-5. Use the `ask_user` tool to confirm the roster. Provide choices so the user sees a selectable menu:
+6. Use the `ask_user` tool to confirm the roster. Provide choices so the user sees a selectable menu:
    - **question:** *"Look right?"*
    - **choices:** `["Yes, hire this team", "Add someone", "Change a role"]`
 
@@ -62,7 +68,7 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 
 **Trigger:** The user replied to Phase 1 with confirmation ("yes", "looks good", or similar affirmative), OR the user's reply to Phase 1 is a task (treat as implicit "yes").
 
-> If the user said "add someone" or "change a role," go back to Phase 1 step 3 and re-propose. Do NOT enter Phase 2 until the user confirms.
+> If the user said "add someone" or "change a role," go back to Phase 1 step 4 and re-propose. Do NOT enter Phase 2 until the user confirms.
 
 6. Create the `.squad/` directory structure (see `.squad/templates/` for format guides or use the standard structure: team.md, routing.md, ceremonies.md, decisions.md, decisions/inbox/, casting/, agents/, orchestration-log/, skills/, log/).
 
