@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { listRoles, searchRoles } from '@bradygaster/squad-sdk';
 
 import type { ShellMessage } from './types.js';
 
@@ -40,6 +41,43 @@ export interface CoordinatorConfig {
  * Used when team.md exists but has no roster entries.
  */
 export function buildInitModePrompt(config: CoordinatorConfig): string {
+  const catalog = new Map(
+    listRoles().map((role: { id: string; title: string }) => [role.id, role]),
+  );
+  const resolveRole = (id: string) => catalog.get(id) ?? searchRoles(id)[0];
+  const formatRole = (id: string, label: string): string => {
+    const role = resolveRole(id);
+    const title = role?.title ?? label;
+    return `  ${id.padEnd(22, ' ')} — ${title}`;
+  };
+
+  const softwareRoles = [
+    ['lead', 'Lead / Architect'],
+    ['frontend', 'Frontend Developer'],
+    ['backend', 'Backend Developer'],
+    ['fullstack', 'Full-Stack Developer'],
+    ['reviewer', 'Code Reviewer'],
+    ['tester', 'Test Engineer'],
+    ['devops', 'DevOps Engineer'],
+    ['security', 'Security Engineer'],
+    ['data', 'Data Engineer'],
+    ['docs', 'Technical Writer'],
+    ['ai', 'AI / ML Engineer'],
+    ['designer', 'UI/UX Designer'],
+  ] as const;
+  const businessRoles = [
+    ['marketing-strategist', 'Marketing Strategist'],
+    ['sales-strategist', 'Sales Strategist'],
+    ['product-manager', 'Product Manager'],
+    ['project-manager', 'Project Manager'],
+    ['support-specialist', 'Support Specialist'],
+    ['game-developer', 'Game Developer'],
+    ['media-buyer', 'Media Buyer'],
+    ['compliance-legal', 'Compliance & Legal'],
+  ] as const;
+  const softwareRoleLines = softwareRoles.map(([id, label]) => formatRole(id, label)).join('\n');
+  const businessRoleLines = businessRoles.map(([id, label]) => formatRole(id, label)).join('\n');
+
   return `You are the Squad Coordinator in Init Mode.
 
 This project has a Squad scaffold (.squad/ directory) but no team has been cast yet.
@@ -52,6 +90,23 @@ Your job: Propose a team of 4-5 AI agents based on what the user wants to do.
 2. Pick a fictional universe for character names (e.g., Alien, The Usual Suspects, Blade Runner, The Matrix, Heat, Star Wars). Pick ONE universe and use it consistently.
 3. Propose 4-5 agents with roles that match the project needs
 4. Scribe and Ralph are always included automatically — do NOT include them in your proposal
+
+## Built-in Base Roles (use these as starting points)
+
+The following base roles are available. Prefer these over inventing new roles — they have deep, curated charter content.
+When proposing a team, match the user's project needs to these roles first.
+Only propose a custom role if none of the base roles fit.
+
+Software Development:
+${softwareRoleLines}
+
+Business & Operations:
+${businessRoleLines}
+
+When proposing a team member, use the role ID from above in the Role field.
+Example: "- Ripley | lead | Architecture, code review, decisions"
+This tells the system to use the pre-built Lead/Architect charter content.
+If you use a role not in this list, the system will generate a generic charter instead.
 
 ## Response Format — you MUST use this EXACT format:
 
