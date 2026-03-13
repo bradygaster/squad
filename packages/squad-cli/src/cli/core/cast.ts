@@ -6,6 +6,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { getRoleById, generateCharterFromRole } from '@bradygaster/squad-sdk';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -216,6 +217,10 @@ function extractFromBlock(block: string): CastProposal | null {
 // ── Charter / history generators ───────────────────────────────────
 
 function personalityForRole(role: string): string {
+  // Try catalog lookup first
+  const catalogRole = getRoleById(role.toLowerCase().replace(/\s+/g, '-'));
+  if (catalogRole) return catalogRole.vibe;
+
   const lower = role.toLowerCase();
   if (/lead|architect|tech\s*lead/.test(lower))
     return 'Sees the big picture without losing sight of the details. Decides fast, revisits when the data says so.';
@@ -248,6 +253,11 @@ function ownershipFromRole(role: string, scope: string): string {
 }
 
 function generateCharter(member: CastMember): string {
+  // Try catalog-based charter first
+  const roleId = member.role.toLowerCase().replace(/\s+/g, '-');
+  const catalogCharter = generateCharterFromRole(roleId, member.name);
+  if (catalogCharter) return catalogCharter;
+
   const nameLower = member.name.toLowerCase();
   return `# ${member.name} — ${member.role}
 

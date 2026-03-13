@@ -142,6 +142,8 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
+    console.log(`  ${BOLD}roles${RESET}      List built-in Squad roles`);
+    console.log(`             Usage: roles [--category <name>] [--search <query>]`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
@@ -396,6 +398,12 @@ async function main(): Promise<void> {
     console.log(`  ${DIM}Global squad:      ${globalExists ? globalSquadDir : 'not initialized'}${RESET}`);
     console.log();
 
+    return;
+  }
+
+  if (cmd === 'roles') {
+    const { runRoles } = await import('./cli/commands/roles.js');
+    await runRoles(args.slice(1));
     return;
   }
 

@@ -74,4 +74,6 @@ export type {
   SkillTool as BuilderSkillTool,
   SquadSDKConfig,
 } from './builders/index.js';
+// Base Roles (built-in role catalog)
+export * from './roles/index.js';
 export * from './platform/index.js';
