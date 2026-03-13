@@ -15,7 +15,7 @@
     "Lost",
     "Marvel Cinematic Universe",
     "DC Universe",
-    "CEOs of Major Tech Companies (custom)"
+    "Futurama (custom)"
   ],
   "universe_capacity": {
     "The Usual Suspects": 6,
@@ -31,6 +31,7 @@
     "Breaking Bad": 12,
     "Lost": 18,
     "Marvel Cinematic Universe": 25,
-    "DC Universe": 18
+    "DC Universe": 18,
+    "Futurama (custom)": 8
   }
 }
