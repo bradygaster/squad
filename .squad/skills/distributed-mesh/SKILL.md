@@ -10,19 +10,20 @@ source: "multi-model-consensus (Opus 4.6, Sonnet 4.5, GPT-5.4)"
 
 **✅ THIS SKILL PRODUCES (exactly these, nothing more):**
 
-1. **`mesh.json`** — Generated from user answers about zones and squads (which squads participate, what zone each is in, paths/URLs for each)
-2. **A decision entry** in `.squad/decisions/inbox/` documenting the mesh configuration for team awareness
-3. **A pointer to templates** — Tell the user: "Copy sync scripts from `templates/mesh/` into your project root (or use `npm run mesh:sync` if templates are already integrated)"
+1. **`mesh.json`** — Generated from user answers about zones and squads (which squads participate, what zone each is in, paths/URLs for each), using `mesh.json.example` in this skill's directory as the schema template
+2. **`sync-mesh.sh` and `sync-mesh.ps1`** — Copied from this skill's directory into the project root (these are bundled resources, NOT generated code)
+3. **Zone 2 state repo initialization** (if applicable) — If the user specified a Zone 2 shared state repo, run `sync-mesh.sh --init` to scaffold the state repo structure
+4. **A decision entry** in `.squad/decisions/inbox/` documenting the mesh configuration for team awareness
 
 **❌ THIS SKILL DOES NOT PRODUCE:**
 
 - **No application code** — No validators, libraries, or modules of any kind
 - **No test files** — No test suites, test cases, or test scaffolding
-- **No sync scripts** — They exist as pre-built templates at `templates/mesh/` in the Squad framework. COPY them, don't generate them.
+- **No GENERATING sync scripts** — They are bundled with this skill as pre-built resources. COPY them, don't generate them.
 - **No daemons or services** — No background processes, servers, or persistent runtimes
 - **No modifications to existing squad files** beyond the decision entry (no changes to team.md, routing.md, agent charters, etc.)
 
-**Your role:** Configure the mesh topology. Nothing more.
+**Your role:** Configure the mesh topology and install the bundled sync scripts. Nothing more.
 
 ## Context
 
@@ -156,7 +157,9 @@ Ask these questions (adapt phrasing naturally, but get these answers):
 
 ### Step 2: GENERATE `mesh.json`
 
-Using the answers from Step 1, create a `mesh.json` file at the project root with this structure:
+Using the answers from Step 1, create a `mesh.json` file at the project root. Use `mesh.json.example` from THIS skill's directory (`.squad/skills/distributed-mesh/mesh.json.example`) as the schema template.
+
+Structure:
 
 ```json
 {
@@ -178,9 +181,41 @@ Using the answers from Step 1, create a `mesh.json` file at the project root wit
 }
 ```
 
-Write this file. Do NOT write any other code.
+Write this file to the project root. Do NOT write any other code.
 
-### Step 3: WRITE a decision entry
+### Step 3: COPY sync scripts
+
+Copy the bundled sync scripts from THIS skill's directory into the project root:
+
+- **Source:** `.squad/skills/distributed-mesh/sync-mesh.sh`
+- **Destination:** `sync-mesh.sh` (project root)
+
+- **Source:** `.squad/skills/distributed-mesh/sync-mesh.ps1`
+- **Destination:** `sync-mesh.ps1` (project root)
+
+These are bundled resources. Do NOT generate them — COPY them directly.
+
+### Step 4: RUN `--init` (if Zone 2 state repo exists)
+
+If the user specified a Zone 2 shared state repo in Step 1, run the initialization:
+
+**On Unix/Linux/macOS:**
+```bash
+bash sync-mesh.sh --init
+```
+
+**On Windows:**
+```powershell
+.\sync-mesh.ps1 -Init
+```
+
+This scaffolds the state repo structure (squad directories, placeholder SUMMARY.md files, root README).
+
+**Skip this step if:**
+- No Zone 2 squads are configured (local/opaque only)
+- The state repo already exists and is initialized
+
+### Step 5: WRITE a decision entry
 
 Create a decision file at `.squad/decisions/inbox/<your-agent-name>-mesh-setup.md` with this content:
 
@@ -203,36 +238,26 @@ Create a decision file at `.squad/decisions/inbox/<your-agent-name>-mesh-setup.m
 
 Write this file. The Scribe will merge it into the main decisions file later.
 
-### Step 4: TELL the user about sync scripts
-
-Output this message to the user:
-
-```
-✅ Mesh configured. `mesh.json` created with <N> squads.
-
-📋 Next step: Copy sync scripts from the Squad framework templates.
-
-If you're using the Squad CLI from npm, run:
-  npm run mesh:sync
-
-If you're working from a Squad repo clone, copy:
-  templates/mesh/*.{sh,ps1}
-into your project root, then run the sync script manually before agents start.
-
-Sync scripts handle `git pull` (Zone 2) and `curl` (Zone 3) automatically.
-```
-
-### Step 5: STOP
+### Step 6: STOP
 
 **You are done.** Do not:
-- Generate sync scripts (they exist as templates — COPY them)
+- Generate sync scripts (they're bundled with this skill — COPY them)
 - Write validator code
 - Write test files
 - Create any other modules, libraries, or application code
 - Modify existing squad files (team.md, routing.md, charters)
 - Auto-advance to Phase 2 or Phase 3
 
-The mesh is configured. The user will handle sync script integration.
+Output a simple completion message:
+
+```
+✅ Mesh configured. Created:
+- mesh.json (<N> squads)
+- sync-mesh.sh and sync-mesh.ps1 (copied from skill bundle)
+- Decision entry: .squad/decisions/inbox/<filename>
+
+Run `bash sync-mesh.sh` (or `.\sync-mesh.ps1` on Windows) before agents start to materialize remote state.
+```
 
 ---
 
@@ -241,7 +266,7 @@ The mesh is configured. The user will handle sync script integration.
 **❌ Code generation anti-patterns:**
 - Writing `mesh-config-validator.js` or any validator module
 - Writing test files for mesh configuration
-- Generating sync scripts instead of pointing to templates
+- Generating sync scripts instead of copying the bundled ones from this skill's directory
 - Creating library modules or utilities
 - Building any code that "runs the mesh" — the mesh is read by agents, not executed
 

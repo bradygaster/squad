@@ -34,3 +34,19 @@
 
 📌 Team update (2026-03-14T22-01-14Z): Distributed mesh integrated with deterministic skill pattern — decided by Procedures, PAO, Flight, Network
 
+### 2026-03-15: Self-contained skills pattern (agent-skills spec)
+
+**Problem:** The distributed-mesh skill had a manual gap — Step 4 told the user to copy sync scripts from templates/mesh/ manually. This violated the GitHub agent-skills spec, which says: "add scripts, examples or other resources to your skill's directory. The skill instructions should tell Copilot when, and how, to use these resources."
+
+**Solution:** Skills are self-contained bundles. Resources live WITH the skill, not in separate template directories:
+
+1. **Bundle resources IN the skill directory:** Copy `sync-mesh.sh`, `sync-mesh.ps1`, and `mesh.json.example` into `.squad/skills/distributed-mesh/`
+2. **Update SKILL.md workflow:**
+   - Step 2: Reference `mesh.json.example` from THIS skill's directory
+   - Step 3: COPY sync scripts from THIS skill's directory to project root (agent does it, not user)
+   - Step 4: RUN `--init` if Zone 2 state repo specified (agent does it, not user)
+3. **Update SCOPE section:** Clarify the skill PRODUCES the copied scripts (bundled resources ≠ generated code)
+4. **Replicate to templates:** Copy entire skill directory to `templates/skills/`, `packages/squad-cli/templates/skills/`, `packages/squad-sdk/templates/skills/`
+
+**Pattern for all skills:** Skills are self-contained. Scripts, examples, configs, and resources travel WITH the skill. The agent reads SKILL.md, sees "copy X from this directory," and does it. Zero manual steps.
+
