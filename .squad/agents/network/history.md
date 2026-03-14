@@ -4,6 +4,10 @@
 
 ## Learnings
 
+### Template Placement Pattern (2026-03-15)
+
+Template placement: canonical skill source is `.squad/skills/`, copies to `packages/*/templates/skills/` for npm distribution. Root `templates/` is NOT used by SDK/CLI init code. The build process now auto-syncs from canonical to packages via `scripts/sync-skill-templates.mjs`, preventing divergence. Old locations (`templates/skills/distributed-mesh/`, `templates/mesh/`) removed — they were never referenced and contributed to maintenance burden.
+
 ### Distributed Mesh Template Placement (2026-03-08)
 
 Placed the distributed-mesh skill and scaffolding files in the template structure. Three parallel template locations (root, SDK, CLI) receive the SKILL.md. The mesh/ directory holds the sync scripts and config example. This follows the existing pattern where product-shipped skills go in all three template dirs so both init paths (`squad-sdk` and `squad-cli`) can scaffold them into new projects.

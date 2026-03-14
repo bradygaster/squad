@@ -264,17 +264,17 @@ When you ask an agent to set up a distributed mesh, the skill produces three thi
 
 1. **`mesh.json` config file** — defines squads, zones, and sync sources
 2. **A decision entry** — records why you configured the mesh this way
-3. **A pointer to sync scripts** — points you to `templates/mesh/sync-mesh.sh` and `sync-mesh.ps1`
+3. **Sync scripts** — copies pre-built `sync-mesh.sh` and `sync-mesh.ps1` from the skill's bundled resources
 
 The skill does **not** generate:
 
 - ❌ Code (validators, helpers, utilities)
 - ❌ Tests (the sync scripts are pre-tested templates)
-- ❌ Custom sync scripts (copy from `templates/mesh/`, don't regenerate)
+- ❌ Custom sync scripts (bundled scripts are copied, not regenerated)
 
-**Why this matters:** Deterministic skills give you consistent results. The sync scripts already exist as battle-tested templates at `templates/mesh/`. Agents shouldn't waste time generating 76-line validators or rewriting sync logic from scratch — they should copy the templates and configure your `mesh.json`.
+**Why this matters:** Deterministic skills give you consistent results. The sync scripts are bundled with the distributed-mesh skill. Agents shouldn't waste time generating validators or rewriting sync logic from scratch — they should copy the bundled scripts and configure your `mesh.json`.
 
-If you need to customize the sync behavior, edit the template scripts after copying them to your project root. The mesh skill's job ends at configuration.
+If you need to customize the sync behavior, edit the copied scripts in your project root. The mesh skill's job ends at configuration.
 
 ---
 

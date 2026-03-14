@@ -9,8 +9,9 @@
   ],
   "scripts": {
     "prepare": "npm run build",
-    "prebuild": "node scripts/bump-build.mjs",
+    "prebuild": "node scripts/bump-build.mjs && node scripts/sync-skill-templates.mjs",
     "build": "npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli",
+    "sync-templates": "node scripts/sync-skill-templates.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit -p packages/squad-sdk/tsconfig.json && tsc --noEmit -p packages/squad-cli/tsconfig.json",
