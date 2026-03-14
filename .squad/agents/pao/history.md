@@ -49,3 +49,9 @@ Created docs/src/content/docs/scenarios/cross-org-auth.md covering GitHub person
 
 ### Distributed Mesh Documentation (v0.8.25)
 Added distributed-mesh.md to features/ — covers the three zones (local, remote-trusted, remote-opaque), mesh.json config, sync scripts, getting started, and relation to SubSquads/export-import. Feature page follows standard format: experimental warning, sample prompts, practical structure, Microsoft Style Guide (sentence-case headings, active voice, second person). Test assertions updated in same commit — EXPECTED_FEATURES array expanded to include 'distributed-mesh', features directory test added, getAllMarkdownFiles() now includes features/ section. Cross-reference added to multiple-squads.md pointing readers from snapshot-based export/import to continuous distributed mesh.
+
+### Skill Scope Documentation Pattern
+Added "Skill scope" section to distributed-mesh.md to document zero-code skill boundaries. Pattern: explicitly state what the skill produces (config files, decision entries, pointers to templates) and what it does NOT produce (code, tests, custom scripts). Rationale: deterministic skills prevent agents from generating unnecessary implementations when pre-built templates exist. This documentation pattern should apply to other zero-code skills — helps agents understand when to copy templates vs. generate code. Position: after technical comparison sections, before "What We're NOT Building" or closing content.
+
+📌 Team update (2026-03-14T22-01-14Z): Distributed mesh integrated with deterministic skill pattern — decided by Procedures, PAO, Flight, Network
+
