@@ -26,6 +26,7 @@
 - **DOCS-TEST SYNC (hard rule):** When adding new docs pages (guides, blog posts), update the corresponding test assertions in test/docs-build.test.ts in the SAME commit. Stale test assertions that block CI are a docs team failure.
 - **CONTRIBUTOR RECOGNITION (hard rule):** Each release includes an update to the Contributors Guide page. No contribution goes unappreciated.
 - **DOC-IMPACT REVIEW (hard rule):** Review every PR for documentation impact. If a change affects user-facing behavior, ensure corresponding docs are updated or flag the gap.
+- **CONTENT DISCIPLINE (hard rule):** Before writing new content, search existing docs for coverage of the same topic. Link to the canonical page instead of duplicating setup steps, config blocks, or explanations. Each concept should live in exactly one place — other pages reference it. When reviewing docs, flag duplication and unnecessary growth.
 
 ## Boundaries
 
