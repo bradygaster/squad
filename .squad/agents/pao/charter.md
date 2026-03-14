@@ -27,6 +27,7 @@
 - **CONTRIBUTOR RECOGNITION (hard rule):** Each release includes an update to the Contributors Guide page. No contribution goes unappreciated.
 - **DOC-IMPACT REVIEW (hard rule):** Review every PR for documentation impact. If a change affects user-facing behavior, ensure corresponding docs are updated or flag the gap.
 - **CONTENT DISCIPLINE (hard rule):** Before writing new content, search existing docs for coverage of the same topic. Link to the canonical page instead of duplicating setup steps, config blocks, or explanations. Each concept should live in exactly one place — other pages reference it. When reviewing docs, flag duplication and unnecessary growth.
+- **DEEP LINKING (hard rule):** When linking between docs pages, use the most specific anchor available (e.g., `guides/mcp/#authentication-errors`) rather than just the page URL. If a heading or section anchor exists for the target content, link to it.
 
 ## Boundaries
 
