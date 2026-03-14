@@ -258,6 +258,26 @@ Neither upstream nor mesh is about **agent-to-agent communication within a singl
 
 ---
 
+## Skill scope
+
+When you ask an agent to set up a distributed mesh, the skill produces three things:
+
+1. **`mesh.json` config file** — defines squads, zones, and sync sources
+2. **A decision entry** — records why you configured the mesh this way
+3. **A pointer to sync scripts** — points you to `templates/mesh/sync-mesh.sh` and `sync-mesh.ps1`
+
+The skill does **not** generate:
+
+- ❌ Code (validators, helpers, utilities)
+- ❌ Tests (the sync scripts are pre-tested templates)
+- ❌ Custom sync scripts (copy from `templates/mesh/`, don't regenerate)
+
+**Why this matters:** Deterministic skills give you consistent results. The sync scripts already exist as battle-tested templates at `templates/mesh/`. Agents shouldn't waste time generating 76-line validators or rewriting sync logic from scratch — they should copy the templates and configure your `mesh.json`.
+
+If you need to customize the sync behavior, edit the template scripts after copying them to your project root. The mesh skill's job ends at configuration.
+
+---
+
 ## What We're NOT Building
 
 - ❌ Federation protocol (git push/pull IS federation)
