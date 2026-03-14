@@ -27,7 +27,7 @@
 | `npx github:bradygaster/squad` | `npx @bradygaster/squad-cli` |
 | `@bradygaster/create-squad` | `@bradygaster/squad-cli` |
 | `.ai-team/` directory | `.squad/` directory |
-| v0.5.4 (beta) | v0.8.18 |
+| v0.5.4 (beta) | v0.8.x (latest) |
 
 ---
 
@@ -37,7 +37,7 @@ Never used Squad before? Start here.
 
 ### Prerequisites
 
-- Node.js 18 or later
+- Node.js 20 or later
 - npm 9 or later
 - A GitHub account with [GitHub Copilot](https://github.com/features/copilot) enabled
 - `gh` CLI authenticated (`gh auth status` should show you logged in)
@@ -99,10 +99,21 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
    npm uninstall -g @bradygaster/create-squad
    ```
 
-3. **Install v0.8.18:**
+3. **Install the latest version:**
 
+   **Global (recommended):**
    ```bash
-   npm install -g @bradygaster/squad-cli@0.8.18
+   npm install -g @bradygaster/squad-cli@latest
+   ```
+
+   **Local (project dependency):**
+   ```bash
+   npm install --save-dev @bradygaster/squad-cli@latest
+   ```
+
+   **npx (no install):**
+   ```bash
+   npx @bradygaster/squad-cli@latest
    ```
 
 4. **Remove the old `.squad/` directory:**
@@ -156,9 +167,18 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
 
 If you're already on any v0.8.x release, this is a simple update.
 
+**Global:**
 ```bash
 npm install -g @bradygaster/squad-cli@latest
 ```
+
+**Local:**
+```bash
+npm install --save-dev @bradygaster/squad-cli@latest
+```
+
+**npx:**
+If you use `npx`, no update needed — it always pulls the latest version.
 
 Verify the version:
 
@@ -295,10 +315,10 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 ```yaml
 - uses: actions/setup-node@v4
   with:
-    node-version: '18'
+    node-version: '20'
 
 - name: Install Squad
-  run: npm install -g @bradygaster/squad-cli@0.8.18
+  run: npm install -g @bradygaster/squad-cli@latest
 
 - name: Run Squad
   run: squad doctor && squad status
@@ -309,9 +329,9 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 ### Key CI/CD Notes
 
 - Set `GITHUB_TOKEN` as an environment variable. Squad requires it for GitHub Copilot operations.
-- Pin to a specific version (`@0.8.18`) in CI to avoid surprise upgrades.
-- If you use `npx`, use `npx @bradygaster/squad-cli@0.8.18` with a pinned version.
-- Node.js 18+ is required. Update your workflow's `setup-node` action if needed.
+- Pin to a specific version (e.g., `@0.8.22`) in CI to avoid surprise upgrades.
+- If you use `npx`, use `npx @bradygaster/squad-cli@0.8.22` with a pinned version.
+- Node.js 20+ is required. Update your workflow's `setup-node` action if needed.
 
 ---
 
@@ -428,13 +448,13 @@ Clear the npx cache and retry:
 
 ```bash
 npx clear-npx-cache
-npx @bradygaster/squad-cli@0.8.18
+npx @bradygaster/squad-cli@latest
 ```
 
 Or install globally to bypass npx caching entirely:
 
 ```bash
-npm install -g @bradygaster/squad-cli@0.8.18
+npm install -g @bradygaster/squad-cli@latest
 ```
 
 ### Wrong version installed
@@ -449,7 +469,7 @@ If it shows an old version:
 
 ```bash
 npm uninstall -g @bradygaster/squad-cli
-npm install -g @bradygaster/squad-cli@0.8.18
+npm install -g @bradygaster/squad-cli@latest
 ```
 
 ### Team roster gone after upgrade
@@ -473,27 +493,27 @@ Common causes:
 
 - Missing `.squad/` directory — run `squad init`.
 - Missing `GITHUB_TOKEN` — see [GITHUB_TOKEN issues](#github_token-issues) above.
-- Node.js too old — upgrade to Node.js 18+.
+- Node.js too old — upgrade to Node.js 20+.
 - Corrupted `.squad/` files — back up, remove, and reinitialize.
 
 ### Node.js version too old
 
-Squad requires Node.js 18 or later. Check your version:
+Squad requires Node.js 20 or later. Check your version:
 
 ```bash
 node --version
 ```
 
-If below 18, upgrade via [nodejs.org](https://nodejs.org/) or your preferred version manager:
+If below 20, upgrade via [nodejs.org](https://nodejs.org/) or your preferred version manager:
 
 ```bash
 # nvm
-nvm install 18
-nvm use 18
+nvm install 20
+nvm use 20
 
 # fnm
-fnm install 18
-fnm use 18
+fnm install 20
+fnm use 20
 ```
 
 ---
