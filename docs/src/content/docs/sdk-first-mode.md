@@ -6,6 +6,24 @@ Squad now supports **SDK-First Mode**: define your team in TypeScript with full 
 
 ---
 
+## What gets generated
+
+Running `squad build` generates these files:
+
+| File | Condition | Contains |
+|------|-----------|----------|
+| `.squad/team.md` | Always | Team roster, member list, project context |
+| `.squad/routing.md` | If `routing` defined | Routing rules and default agent |
+| `.squad/agents/{name}/charter.md` | For each agent | Agent role, model, tools, capabilities |
+| `.squad/ceremonies.md` | If `ceremonies` defined | Ceremony schedule and agenda |
+
+**Protected files** (never overwritten):
+- `.squad/decisions.md` / `.squad/decisions-archive.md`
+- `.squad/agents/*/history.md`
+- `.squad/orchestration-log/*`
+
+---
+
 ## What is SDK-First Mode?
 
 In SDK-First Mode:
@@ -17,18 +35,7 @@ In SDK-First Mode:
 
 This replaces manual `.squad/team.md`, `.squad/routing.md`, and agent charters with a single source of truth in code.
 
----
-
-## Which Mode Should I Use?
-
-| Scenario | Command | What You Get |
-|----------|---------|-------------|
-| New project, want simplicity | `squad init` | Markdown-only `.squad/` directory |
-| New project, want type safety | `squad init --sdk` | `.squad/` + `squad.config.ts` with typed builders |
-| Existing squad, want to upgrade | `squad migrate --to sdk` | Keeps your team, generates typed config |
-| SDK squad, want to simplify | `squad migrate --to markdown` | Removes config, keeps markdown |
-
-**Start with markdown.** It's simpler, requires no build step, and works great for most projects. **Upgrade to SDK** when you want type-safe configuration, IDE autocomplete, and the ability to define skills and ceremonies in TypeScript.
+**When to use SDK mode:** For a comparison of SDK-first mode versus CLI mode, see the [Getting started guide](/guide#how-teams-form-init-mode).
 
 ---
 
@@ -97,40 +104,15 @@ This generates:
 
 ---
 
-## Starting a New SDK-First Project
+## Start a new SDK-first project
 
 ```bash
 squad init --sdk
 ```
 
-This generates:
-- `.squad/` directory with all standard markdown files (team.md, routing.md, agent charters, etc.)
-- `squad.config.ts` at your project root using the `defineSquad()` builder syntax
+This generates `.squad/` markdown files and a `squad.config.ts` at your project root using the `defineSquad()` builder syntax. Your TypeScript config is the source of truth — edit it, then run `squad build` to regenerate `.squad/`.
 
-Your `squad.config.ts` is the source of truth. Edit it, then run `squad build` to regenerate `.squad/`.
-
-### What Gets Generated
-
-```typescript
-import {
-  defineSquad,
-  defineTeam,
-  defineAgent,
-} from '@bradygaster/squad-sdk';
-
-export default defineSquad({
-  version: '1.0.0',
-  team: defineTeam({
-    name: 'my-project',
-    members: ['scribe'],
-  }),
-  agents: [
-    defineAgent({ name: 'scribe', role: 'scribe', description: 'Scribe', status: 'active' }),
-  ],
-});
-```
-
-Without `--sdk`, `squad init` creates a markdown-only squad — no config file, no build step needed.
+For the full team initialization flow, see [How teams form (Init Mode)](/guide#how-teams-form-init-mode) in the getting started guide.
 
 ---
 
@@ -177,9 +159,37 @@ This replaces the old `squad upgrade --migrate-directory` command.
 
 ---
 
-## Builder Functions
+## Builder functions
 
-Each builder accepts a configuration object, validates it at runtime, and returns the typed value. The pattern mirrors `defineConfig()` — identity-passthrough with runtime safety.
+Each builder accepts a configuration object, validates it at runtime, and returns the typed value.
+
+### Common types reference
+
+All builders share these core patterns:
+
+```typescript
+// Base types used across multiple builders
+interface AgentCapability {
+  readonly name: string;
+  readonly level: 'expert' | 'proficient' | 'basic';
+}
+
+interface RoutingRule {
+  readonly pattern: string;
+  readonly agents: readonly string[];
+  readonly tier?: 'direct' | 'lightweight' | 'standard' | 'full';
+  readonly priority?: number;
+}
+
+// Lifecycle and status
+type AgentStatus = 'active' | 'inactive' | 'retired';
+type FallbackBehavior = 'ask' | 'default-agent' | 'coordinator';
+type OverflowStrategy = 'reject' | 'generic' | 'rotate';
+type ConfidenceLevel = 'low' | 'medium' | 'high';
+type SkillSource = 'manual' | 'observed' | 'earned' | 'extracted';
+```
+
+---
 
 ### `defineTeam(config)`
 
@@ -192,17 +202,6 @@ const team = defineTeam({
   projectContext: 'Building a React/Node recipe app...',
   members: ['@edie', '@fenster', '@hockney'],
 });
-```
-
-**Type:**
-
-```typescript
-interface TeamDefinition {
-  readonly name: string;
-  readonly description?: string;
-  readonly projectContext?: string;
-  readonly members: readonly string[];
-}
 ```
 
 | Field | Type | Required | Notes |
@@ -233,25 +232,6 @@ const edie = defineAgent({
 });
 ```
 
-**Type:**
-
-```typescript
-interface AgentDefinition {
-  readonly name: string;
-  readonly role: string;
-  readonly charter?: string;
-  readonly model?: string;
-  readonly tools?: readonly string[];
-  readonly capabilities?: readonly AgentCapability[];
-  readonly status?: 'active' | 'inactive' | 'retired';
-}
-
-interface AgentCapability {
-  readonly name: string;
-  readonly level: 'expert' | 'proficient' | 'basic';
-}
-```
-
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `name` | string | ✅ | Unique identifier (kebab-case, no `@`) |
@@ -259,13 +239,8 @@ interface AgentCapability {
 | `charter` | string | ❌ | Character description or link to charter |
 | `model` | string | ❌ | Model preference (e.g., `"claude-sonnet-4"`, `"claude-haiku-4.5"`) |
 | `tools` | string[] | ❌ | Allowed tools (e.g., `["grep", "edit", "view"]`) |
-| `capabilities` | object[] | ❌ | Capability list with proficiency levels |
-| `status` | enum | ❌ | Lifecycle: `'active'` (default), `'inactive'`, `'retired'` |
-
-**Capability Levels:**
-- `expert` — core competency
-- `proficient` — strong knowledge
-- `basic` — foundational
+| `capabilities` | `AgentCapability[]` | ❌ | Capability list with proficiency levels (see Common Types) |
+| `status` | `AgentStatus` | ❌ | Lifecycle: `'active'` (default), `'inactive'`, `'retired'` |
 
 ---
 
@@ -285,33 +260,13 @@ const routing = defineRouting({
 });
 ```
 
-**Type:**
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `rules` | `RoutingRule[]` | ✅ | Pattern-based routing rules (see Common Types) |
+| `defaultAgent` | string | ❌ | Fallback agent ref |
+| `fallback` | `FallbackBehavior` | ❌ | `'ask'`, `'default-agent'`, or `'coordinator'` |
 
-```typescript
-interface RoutingDefinition {
-  readonly rules: readonly RoutingRule[];
-  readonly defaultAgent?: string;
-  readonly fallback?: 'ask' | 'default-agent' | 'coordinator';
-}
-
-interface RoutingRule {
-  readonly pattern: string;
-  readonly agents: readonly string[];
-  readonly tier?: 'direct' | 'lightweight' | 'standard' | 'full';
-  readonly priority?: number;
-}
-```
-
-**Routing Tiers:**
-- `direct` — skip ceremony, execute immediately
-- `lightweight` — quick handoff, minimal overhead
-- `standard` — normal workflow with decision checkpoints
-- `full` — maximum governance, review gates
-
-**Fallback Behavior:**
-- `ask` — ask the user for routing direction
-- `default-agent` — use the `defaultAgent`
-- `coordinator` — delegate to the Squad coordinator
+**Routing tiers:** `direct` (skip ceremony), `lightweight` (quick handoff), `standard` (normal workflow), `full` (maximum governance).
 
 ---
 
@@ -327,19 +282,6 @@ const standup = defineCeremony({
   participants: ['@edie', '@mcmanus', '@fenster'],
   agenda: 'Yesterday / Today / Blockers',
 });
-```
-
-**Type:**
-
-```typescript
-interface CeremonyDefinition {
-  readonly name: string;
-  readonly trigger?: string;
-  readonly schedule?: string;
-  readonly participants?: readonly string[];
-  readonly agenda?: string;
-  readonly hooks?: readonly string[];
-}
 ```
 
 | Field | Type | Required | Notes |
@@ -367,18 +309,6 @@ const hooks = defineHooks({
 });
 ```
 
-**Type:**
-
-```typescript
-interface HooksDefinition {
-  readonly allowedWritePaths?: readonly string[];
-  readonly blockedCommands?: readonly string[];
-  readonly maxAskUser?: number;
-  readonly scrubPii?: boolean;
-  readonly reviewerLockout?: boolean;
-}
-```
-
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `allowedWritePaths` | string[] | ❌ | Glob patterns (e.g., `["src/**", "docs/**"]`) |
@@ -404,20 +334,11 @@ const casting = defineCasting({
 });
 ```
 
-**Type:**
-
-```typescript
-interface CastingDefinition {
-  readonly allowlistUniverses?: readonly string[];
-  readonly overflowStrategy?: 'reject' | 'generic' | 'rotate';
-  readonly capacity?: Readonly<Record<string, number>>;
-}
-```
-
-**Overflow Strategies:**
-- `reject` — refuse to cast if universe is at capacity
-- `generic` — use a generic persona
-- `rotate` — cycle through available universes
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `allowlistUniverses` | string[] | ❌ | Permitted fictional universes |
+| `overflowStrategy` | `OverflowStrategy` | ❌ | `'reject'`, `'generic'`, or `'rotate'` |
+| `capacity` | `Record<string, number>` | ❌ | Max agents per universe |
 
 ---
 
@@ -433,18 +354,6 @@ const telemetry = defineTelemetry({
   sampleRate: 1.0,
   aspireDefaults: true,
 });
-```
-
-**Type:**
-
-```typescript
-interface TelemetryDefinition {
-  readonly enabled?: boolean;
-  readonly endpoint?: string;
-  readonly serviceName?: string;
-  readonly sampleRate?: number;
-  readonly aspireDefaults?: boolean;
-}
 ```
 
 | Field | Type | Required | Notes |
@@ -481,13 +390,13 @@ const gitWorkflow = defineSkill({
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `name` | `string` | ✅ | Unique skill name (kebab-case) |
-| `description` | `string` | ✅ | What this skill teaches |
-| `domain` | `string` | ✅ | Category (e.g., 'orchestration', 'testing') |
-| `confidence` | `'low' \| 'medium' \| 'high'` | — | Skill maturity level |
-| `source` | `'manual' \| 'observed' \| 'earned' \| 'extracted'` | — | How the skill was learned |
-| `content` | `string` | ✅ | The skill body (patterns, examples) |
-| `tools` | `SkillTool[]` | — | MCP tools relevant to this skill |
+| `name` | string | ✅ | Unique skill name (kebab-case) |
+| `description` | string | ✅ | What this skill teaches |
+| `domain` | string | ✅ | Category (e.g., 'orchestration', 'testing') |
+| `confidence` | `ConfidenceLevel` | ❌ | `'low'`, `'medium'`, or `'high'` |
+| `source` | `SkillSource` | ❌ | `'manual'`, `'observed'`, `'earned'`, or `'extracted'` |
+| `content` | string | ✅ | The skill body (patterns, examples) |
+| `tools` | `SkillTool[]` | ❌ | MCP tools relevant to this skill |
 
 Skills defined in `squad.config.ts` are generated to `.squad/skills/{name}/SKILL.md` when you run `squad build`.
 
@@ -513,34 +422,19 @@ export default defineSquad({
 });
 ```
 
-**Type:**
-
-```typescript
-interface SquadSDKConfig {
-  readonly version?: string;
-  readonly team: TeamDefinition;
-  readonly agents: readonly AgentDefinition[];
-  readonly routing?: RoutingDefinition;
-  readonly ceremonies?: readonly CeremonyDefinition[];
-  readonly hooks?: HooksDefinition;
-  readonly casting?: CastingDefinition;
-  readonly telemetry?: TelemetryDefinition;
-}
-```
-
 ---
 
-## `squad build` Command
+## `squad build` command
 
 Compile TypeScript Squad definitions into `.squad/` markdown.
 
-### Usage
+**Usage:**
 
 ```bash
 squad build [options]
 ```
 
-### Flags
+**Flags:**
 
 | Flag | What it does |
 |------|-------------|
@@ -548,65 +442,22 @@ squad build [options]
 | `--dry-run` | Show what would be generated without writing |
 | `--watch` | Rebuild on `.ts` file changes (coming soon) |
 
-### Examples
-
-**Rebuild all generated files:**
+**Examples:**
 
 ```bash
+# Rebuild all generated files
 squad build
-```
 
-**Validate that generated files match disk:**
-
-```bash
+# Validate that generated files match disk (useful in CI/CD)
 squad build --check
-```
 
-This is useful in CI/CD to ensure the config is in sync:
-
-```yaml
-# .github/workflows/squad-check.yml
-- name: Check Squad config
-  run: squad build --check
-```
-
-**Preview changes before writing:**
-
-```bash
+# Preview changes before writing
 squad build --dry-run
 ```
 
-Output:
-```
-ℹ️ Dry run — would generate 6 file(s):
-
-  create  .squad/team.md
-  create  .squad/routing.md
-  create  .squad/agents/edie/charter.md
-  create  .squad/agents/mcmanus/charter.md
-  create  .squad/ceremonies.md
-  overwrite .squad/hooks.md
-```
-
-### Generated Files
-
-`squad build` generates:
-
-| File | Condition | Contains |
-|------|-----------|----------|
-| `.squad/team.md` | Always | Team roster, member list, project context |
-| `.squad/routing.md` | If `routing` defined | Routing rules and default agent |
-| `.squad/agents/{name}/charter.md` | For each agent | Agent role, model, tools, capabilities |
-| `.squad/ceremonies.md` | If `ceremonies` defined | Ceremony schedule and agenda |
-
-**Protected files** — never overwritten:
-- `.squad/decisions.md` / `.squad/decisions-archive.md`
-- `.squad/agents/*/history.md`
-- `.squad/orchestration-log/*`
-
 ---
 
-## Config Discovery
+## Config discovery
 
 `squad build` discovers your config in this order:
 
@@ -614,18 +465,13 @@ Output:
 2. `squad.config.ts` — Alternative location
 3. `squad.config.js` — JavaScript fallback
 
-The config must export one of:
-- **`export default config`** — default export
-- **`export { config }`** — named export
-- **`export { squadConfig }`** — alias
+The config must export: `export default config` (default export), `export { config }` (named export), or `export { squadConfig }` (alias).
 
 ---
 
 ## Validation
 
-All builders perform runtime validation with typed error messages.
-
-If validation fails:
+All builders perform runtime validation with typed error messages. Example:
 
 ```typescript
 defineAgent({
@@ -635,27 +481,6 @@ defineAgent({
 // BuilderValidationError: [defineAgent] "role" must be a non-empty string
 ```
 
-Validation is:
-- **Runtime** — catches errors at build time, not runtime
-- **Typed** — assertions narrow TypeScript types
-- **Descriptive** — error messages include field path and expected type
-- **No dependencies** — no Zod, JSON Schema, or external validators
-
----
-
-## Migration Guide: From Manual to SDK-First
-
-### Before (manual `.squad/team.md`)
-
-```markdown
-# Squad Team — Core Squad
-
-## Members
-
-| Name | Role | Charter |
-|------|------|---------|
-| Edie | TypeScript Engineer | `.squad/agents/edie/charter.md` |
-```
 
 You manually maintain this file and agent charters.
 

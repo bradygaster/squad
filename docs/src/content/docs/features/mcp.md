@@ -19,13 +19,7 @@ MCP (Model Context Protocol) servers extend Squad with external services — Git
 
 ## What MCP Means for Squad
 
-**MCP (Model Context Protocol) servers extend your Squad environment.** Agents use MCP tools to send notifications, query GitHub, monitor deployments, integrate with Trello, and more. This guide walks you through configuring MCP services step-by-step.
-
----
-
-## What MCP Means for Squad
-
-MCP bridges Squad agents and external services. When your agents work, they can call any MCP-exposed tool — send notifications, check project status, update boards, or fetch live data. You define which services are available; agents discover and use them automatically.
+MCP bridges Squad agents and external services. Agents use MCP tools to send notifications, query GitHub, monitor deployments, integrate with Trello, and more. You define which services are available; agents discover and use them automatically.
 
 ---
 
@@ -173,47 +167,13 @@ Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows) and select **"Copilot: R
 
 ## Example: GitHub MCP (Already Included)
 
-Most Squad installs come with GitHub MCP pre-configured. Here's what it looks like:
-
-### CLI: `.copilot/mcp-config.json`
-
-```json
-{
-  "mcpServers": {
-    "github": {
-      "command": "node",
-      "args": ["/path/to/github-mcp.js"],
-      "env": {
-        "GITHUB_TOKEN": "$GITHUB_TOKEN"
-      }
-    }
-  }
-}
-```
-
-### VS Code: `.vscode/settings.json`
-
-```json
-{
-  "copilot.mcp.servers": {
-    "github": {
-      "command": "node",
-      "args": ["/path/to/github-mcp.js"],
-      "env": {
-        "GITHUB_TOKEN": "${env:GITHUB_TOKEN}"
-      }
-    }
-  }
-}
-```
+Most Squad installs come with GitHub MCP pre-configured.
 
 **What it does:**
-- List issues, PRs, and branches in your repo
+- List issues, PRs, and branches
 - Create, update, and search issues
-- Fetch commit history and diff info
+- Fetch commit history and diffs
 - Post and edit PR comments
-
-Agents automatically discover these tools and use them during work.
 
 ---
 
@@ -228,8 +188,17 @@ Trello MCP lets agents interact with your Trello boards — create cards, move t
 3. Click "Tokens" and generate a new token (grant read/write permissions)
 4. Copy the **Token**
 
-### Step 2: Add to `.copilot/mcp-config.json`
+### Step 2: Add to your MCP config
 
+Add the Trello server configuration (see [MCP Configuration Files](#mcp-configuration-files) for CLI vs VS Code):
+
+| Variable | How to Get It |
+|----------|---------------|
+| `TRELLO_API_KEY` | Visit https://trello.com/app-key |
+| `TRELLO_TOKEN` | Click "Tokens" on the API key page, generate with read/write permissions |
+| `TRELLO_BOARD_ID` | Open any card, get ID from URL: `trello.com/c/{{CARD_ID}}/{{BOARD_ID}}/` |
+
+**Config template:**
 ```json
 {
   "mcpServers": {
@@ -246,8 +215,6 @@ Trello MCP lets agents interact with your Trello boards — create cards, move t
 }
 ```
 
-Find your **board ID** by opening any card on Trello and looking at the URL: `trello.com/c/{{CARD_ID}}/{{BOARD_ID}}/`.
-
 ### Step 3: Test it
 
 In your Squad session:
@@ -262,14 +229,9 @@ Agents will now automatically propose Trello tasks for tracking work items.
 
 ## Example: Aspire Dashboard MCP (Deployment Monitoring)
 
-For projects using .NET Aspire, the Aspire Dashboard MCP lets agents monitor deployments, check service health, and log errors.
+For .NET Aspire projects, configure the Aspire Dashboard MCP for deployment monitoring:
 
-### Step 1: Start Aspire Dashboard
-
-Your project should have a dashboard running (usually `http://localhost:18888`).
-
-### Step 2: Configure MCP
-
+**Config template:**
 ```json
 {
   "mcpServers": {
@@ -285,15 +247,7 @@ Your project should have a dashboard running (usually `http://localhost:18888`).
 }
 ```
 
-### Step 3: Use it
-
-Agents can now ask:
-
-```
-> Squad, check the Aspire dashboard — any service errors?
-```
-
-The monitoring agent (or any agent) pulls live deployment status and alerts you to issues.
+Agents can check service health and deployment status automatically.
 
 ---
 
