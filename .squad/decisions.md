@@ -395,4 +395,17 @@ Definitive CLI completeness audit confirms all commands work post-publish.
 
 ---
 
+### 2026-03-14T14:40:47Z: LLM Backend — Copilot-only, BYOK not supported
+**By:** Copilot (via Copilot CLI)  
+**Date:** 2026-03-14  
+**Status:** Decision — Product Constraint
+
+**What:** GitHub Copilot is the **only supported LLM backend**. BYOK (Bring Your Own Key) is **NOT a supported feature**. The `SquadProviderConfig` interface in `packages/squad-sdk/src/adapter/types.ts` should be marked as `@internal`. Docs must clearly state that Squad requires GitHub Copilot.
+
+**Why:** Product clarification on AI backend strategy. Squad's vision couples tightly with Copilot's capabilities. No multi-backend abstraction layer planned. Simplifies architecture, improves integration depth, focuses team effort.
+
+**Closure:** Issue #323 — answered by PR #385 with documentation clarification across README, installation guides, model selection docs, and FAQ.
+
+---
+
 *Fresh start — Mission Control rebirth, 2026-03-08. Previous decisions archived.*
