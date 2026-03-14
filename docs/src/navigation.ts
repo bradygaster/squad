@@ -50,6 +50,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'GitHub Issues', slug: 'features/github-issues' },
       { title: 'GitLab Issues', slug: 'features/gitlab-issues' },
       { title: 'Labels & Triage', slug: 'features/labels' },
+      { title: 'Link', slug: 'features/link' },
       { title: 'PRD Mode', slug: 'features/prd-mode' },
       { title: 'Project Boards', slug: 'features/project-boards' },
       { title: 'Ralph — Work Monitor', slug: 'features/ralph' },
@@ -64,10 +65,12 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Marketplace', slug: 'features/marketplace' },
       { title: 'Plugins', slug: 'features/plugins' },
       { title: 'MCP', slug: 'features/mcp' },
+      { title: 'Nap — Context Hygiene', slug: 'features/nap' },
       { title: 'Notifications', slug: 'features/notifications' },
       { title: 'Enterprise Platforms', slug: 'features/enterprise-platforms' },
       { title: 'Squad RC', slug: 'features/squad-rc' },
       { title: 'Streams', slug: 'features/streams' },
+      { title: 'Scrub Emails', slug: 'features/scrub-emails' },
     ],
   },
   {
@@ -142,3 +145,4 @@ export const STANDALONE_PAGES = [
   { title: 'Community', slug: 'community' },
   { title: 'Insider Program', slug: 'insider-program' },
 ];
+
