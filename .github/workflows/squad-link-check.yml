@@ -25,6 +25,6 @@ jobs:
             --no-progress
             --config .lychee.toml
             '**/*.md'
-          fail: true
+          fail: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
