@@ -3,6 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { calculatePrRework, calculateReworkSummary } = require('./lib/rework');
+
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
 const YELLOW = '\x1b[33m';
@@ -64,6 +66,9 @@ if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
   console.log(`             Flags: --migrate-directory (rename .ai-team/ → .squad/)`);
   console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
   console.log(`             Usage: copilot [--off] [--auto-assign]`);
+  console.log(`  ${BOLD}rework${RESET}     Analyze PR rework rate (the 5th DORA metric)`);
+  console.log(`             Usage: rework [--days <N>] [--limit <N>] [--json]`);
+  console.log(`             Default: last 30 days, up to 20 PRs`);
   console.log(`  ${BOLD}watch${RESET}      Run Ralph's work monitor as a local polling process`);
   console.log(`             Usage: watch [--interval <minutes>]`);
   console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
@@ -99,6 +104,135 @@ function copyRecursive(src, target) {
   }
 }
 
+
+// --- Rework Rate subcommand ---
+if (cmd === 'rework') {
+  const { execSync } = require('child_process');
+
+  // Verify gh CLI is available
+  try {
+    execSync('gh --version', { stdio: 'pipe' });
+  } catch {
+    fatal('gh CLI not found — install from https://cli.github.com');
+  }
+
+  // Parse flags
+  const daysIdx = process.argv.indexOf('--days');
+  const lookbackDays = (daysIdx !== -1 && process.argv[daysIdx + 1])
+    ? parseInt(process.argv[daysIdx + 1], 10) : 30;
+  const limitIdx = process.argv.indexOf('--limit');
+  const prLimit = (limitIdx !== -1 && process.argv[limitIdx + 1])
+    ? parseInt(process.argv[limitIdx + 1], 10) : 20;
+  const jsonOutput = process.argv.includes('--json');
+
+  if (isNaN(lookbackDays) || lookbackDays < 1) fatal('--days must be a positive number');
+  if (isNaN(prLimit) || prLimit < 1) fatal('--limit must be a positive number');
+
+  const sinceDate = new Date(Date.now() - lookbackDays * 86400000).toISOString().split('T')[0];
+
+  if (!jsonOutput) {
+    console.log(`\n${BOLD}📊 Rework Rate Analysis${RESET}`);
+    console.log(`${DIM}Analyzing merged PRs from the last ${lookbackDays} days (limit: ${prLimit})...${RESET}\n`);
+  }
+
+  // Fetch merged PRs
+  let prs;
+  try {
+    const prJson = execSync(
+      `gh pr list --state merged --limit ${prLimit} --search "merged:>=${sinceDate}" --json number,title,author,mergedAt,additions,deletions,changedFiles`,
+      { encoding: 'utf8', timeout: 30000, stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    prs = JSON.parse(prJson || '[]');
+  } catch (err) {
+    fatal(`Failed to fetch PRs: ${err.message}`);
+  }
+
+  if (prs.length === 0) {
+    if (jsonOutput) {
+      console.log(JSON.stringify({ prs: [], summary: { totalPrs: 0 } }, null, 2));
+    } else {
+      console.log(`${DIM}No merged PRs found in the last ${lookbackDays} days.${RESET}`);
+    }
+    process.exit(0);
+  }
+
+  // Analyze each PR for rework
+  const results = [];
+  for (const pr of prs) {
+    let reviews, commits;
+    try {
+      const prDetail = execSync(
+        `gh pr view ${pr.number} --json reviews,commits`,
+        { encoding: 'utf8', timeout: 15000, stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      const detail = JSON.parse(prDetail);
+      reviews = detail.reviews || [];
+      commits = detail.commits || [];
+    } catch {
+      // Skip PRs we can't fetch details for
+      continue;
+    }
+
+    const rework = calculatePrRework(pr, reviews, commits);
+    results.push(rework);
+  }
+
+  // Calculate aggregate metrics
+  const summary = calculateReworkSummary(results);
+
+  if (jsonOutput) {
+    console.log(JSON.stringify({ prs: results, summary }, null, 2));
+  } else {
+    printReworkReport(results, summary, lookbackDays);
+  }
+
+  process.exit(0);
+}
+
+/**
+ * Print human-readable rework report.
+ */
+function printReworkReport(results, summary, lookbackDays) {
+  console.log(`${BOLD}Summary (${summary.totalPrs} PRs, last ${lookbackDays} days)${RESET}`);
+  console.log(`${'─'.repeat(50)}`);
+  console.log(`  Average rework rate:   ${colorReworkRate(summary.avgReworkRate)}%`);
+  console.log(`  PRs with rework:       ${summary.prsWithRework}/${summary.totalPrs} (${Math.round(summary.prsWithRework / summary.totalPrs * 100)}%)`);
+  console.log(`  Rejection rate:        ${summary.rejectionRate}%`);
+  console.log(`  Avg review cycles:     ${summary.avgReviewCycles}`);
+  console.log(`  Total rework commits:  ${summary.totalReworkCommits}/${summary.totalCommits}`);
+  if (summary.avgReworkTimeHours !== null) {
+    console.log(`  Avg rework time:       ${summary.avgReworkTimeHours}h`);
+  }
+  console.log();
+
+  // Per-PR breakdown
+  console.log(`${BOLD}Per-PR Breakdown${RESET}`);
+  console.log(`${'─'.repeat(80)}`);
+
+  for (const r of results) {
+    const rateLabel = colorReworkRate(r.reworkRate);
+    const changeLabel = r.hadChangesRequested ? `${YELLOW}⚑${RESET}` : ' ';
+    console.log(`  #${String(r.number).padEnd(5)} ${rateLabel.padEnd(20)}% rework  ${r.reviewCycles} cycles  ${changeLabel}  ${DIM}${r.title.substring(0, 40)}${RESET}`);
+  }
+
+  console.log();
+
+  // Interpretation guide
+  if (summary.avgReworkRate <= 15) {
+    console.log(`${GREEN}✓${RESET} Rework rate is healthy. Code quality and review process are strong.`);
+  } else if (summary.avgReworkRate <= 30) {
+    console.log(`${YELLOW}⚠${RESET} Moderate rework rate. Consider improving PR descriptions or pre-review checks.`);
+  } else {
+    console.log(`${RED}✗${RESET} High rework rate. Review process may need attention — consider smaller PRs, clearer specs, or pair reviews.`);
+  }
+  console.log();
+}
+
+function colorReworkRate(rate) {
+  if (rate <= 15) return `${GREEN}${rate}${RESET}`;
+  if (rate <= 30) return `${YELLOW}${rate}${RESET}`;
+  return `${RED}${rate}${RESET}`;
+}
 
 // --- Watch subcommand (Ralph local watchdog) ---
 if (cmd === 'watch') {
