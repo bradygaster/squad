@@ -231,7 +231,7 @@ Update help text and README for npm distribution. Add squad status command to do
 
 ### Release Workflow
 
-The team runs changesets on the `main` branch (via GitHub Actions):
+The team runs changesets on the `dev` branch (via GitHub Actions):
 
 ```bash
 npx changeset publish
