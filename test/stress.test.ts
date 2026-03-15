@@ -1,5 +1,5 @@
 /**
- * Stress & Boundary Tests — Waingro's QA
+ * Stress & Boundary Tests
  *
  * Tests system behavior under load and at boundaries:
  * - 500+ messages in MessageStream — no crash, reasonable memory
@@ -120,7 +120,7 @@ describe('Stress: MessageStream with large message counts', () => {
 // ============================================================================
 
 describe('Stress: rapid parseInput calls', () => {
-  const agents = ['Brady', 'Kovash', 'Waingro', 'Ralph', 'Agent1', 'Agent2'];
+  const agents = ['Brady', 'Agent1', 'Agent2', 'Agent3', 'Agent4', 'Agent5'];
 
   it('handles 1000 sequential parseInput calls', () => {
     const inputs = [
@@ -131,7 +131,7 @@ describe('Stress: rapid parseInput calls', () => {
       '/help',
       '🚀💥🔥 deploy now',
       '/history 50',
-      '@Waingro run tests',
+      '@Agent2 run tests',
       "'; DROP TABLE users; --",
       '<script>alert("xss")</script>',
     ];

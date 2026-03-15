@@ -4,7 +4,7 @@
  * Every test here represents a moment where an impatient user would bail
  * if things feel slow. If any of these tests fail, we're losing users.
  *
- * Filed by Waingro (Hostile QA). Issues: #387, #395, #397, #399, #401.
+ * Issues: #387, #395, #397, #399, #401.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -122,7 +122,7 @@ describe('Speed: welcome data loads fast', () => {
 // ============================================================================
 
 describe('Speed: input parsing is instant', () => {
-  const knownAgents = ['Keaton', 'Waingro', 'Cheritto', 'Trejo', 'Hanna'];
+  const knownAgents = ['Agent1', 'Agent2', 'Agent3', 'Agent4', 'Agent5'];
 
   it('parseInput handles @agent message in under 1ms', () => {
     const start = performance.now();

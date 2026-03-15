@@ -39,7 +39,7 @@ describe('CastingHistory', () => {
 
   describe('recordCast', () => {
     it('should record a cast and return a CastingRecord', () => {
-      const team = [makeMember('Keyser', 'lead'), makeMember('McManus')];
+      const team = [makeMember('Agent1', 'lead'), makeMember('Agent2')];
       const record = history.recordCast(team, defaultConfig);
       expect(record.universe).toBe('usual-suspects');
       expect(record.teamSize).toBe(2);
@@ -70,9 +70,9 @@ describe('CastingHistory', () => {
     });
 
     it('should record member name and role only', () => {
-      const team = [makeMember('Verbal', 'tester')];
+      const team = [makeMember('Agent1', 'tester')];
       const record = history.recordCast(team, defaultConfig);
-      expect(record.members[0]).toEqual({ name: 'Verbal', role: 'tester' });
+      expect(record.members[0]).toEqual({ name: 'Agent1', role: 'tester' });
     });
 
     it('should increment history size after each record', () => {

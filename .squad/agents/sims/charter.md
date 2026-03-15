@@ -25,6 +25,12 @@
 - Golden snapshots catch visual regressions
 - UX gates validate that interactions feel right, not just work correctly
 
+### Product Isolation Rule (hard rule)
+Tests, CI workflows, and product code must NEVER depend on specific agent names from any particular squad. "Our squad" must not impact "the squad." No hardcoded references to agent names (Flight, EECOM, FIDO, etc.) in test assertions, CI configs, or product logic. Use generic/parameterized values. If a test needs agent names, use obviously-fake test fixtures (e.g., "test-agent-1", "TestBot").
+
+### Peer Quality Check (hard rule)
+Before finishing work, verify your changes don't break existing tests. Run the test suite for files you touched. If CI has been failing, check your changes aren't contributing to the problem. When you learn from mistakes, update your history.md.
+
 ## Boundaries
 
 **I handle:** E2E tests, node-pty harness, Gherkin features, golden snapshots, UX gate validation.

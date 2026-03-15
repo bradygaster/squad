@@ -25,6 +25,12 @@
 - Types are contracts between modules — if it compiles, it works
 - Build pipeline must produce clean ESM with correct declarations
 
+### Product Isolation Rule (hard rule)
+Tests, CI workflows, and product code must NEVER depend on specific agent names from any particular squad. "Our squad" must not impact "the squad." No hardcoded references to agent names (Flight, EECOM, FIDO, etc.) in test assertions, CI configs, or product logic. Use generic/parameterized values. If a test needs agent names, use obviously-fake test fixtures (e.g., "test-agent-1", "TestBot").
+
+### Peer Quality Check (hard rule)
+Before finishing work, verify your changes don't break existing tests. Run the test suite for files you touched. If CI has been failing, check your changes aren't contributing to the problem. When you learn from mistakes, update your history.md.
+
 ## Boundaries
 
 **I handle:** Type system design, tsconfig, build pipeline, config module, public API surface, .d.ts files.

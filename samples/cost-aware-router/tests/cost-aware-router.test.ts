@@ -22,7 +22,7 @@ const config: SquadConfig = {
   team: { name: 'Test Suite' },
   routing: {
     rules: [
-      { pattern: 'typo', agents: ['Cheritto'], tier: 'direct' },
+      { pattern: 'typo', agents: ['Agent1'], tier: 'direct' },
     ],
   },
   models: {
@@ -112,7 +112,7 @@ describe('CostTracker', () => {
 
     tracker.recordUsage({
       sessionId: 's1',
-      agentName: 'Verbal',
+      agentName: 'Agent1',
       model: 'claude-sonnet-4.5',
       inputTokens: 1000,
       outputTokens: 500,
@@ -121,7 +121,7 @@ describe('CostTracker', () => {
 
     tracker.recordUsage({
       sessionId: 's2',
-      agentName: 'Keaton',
+      agentName: 'Agent2',
       model: 'claude-opus-4.6',
       inputTokens: 5000,
       outputTokens: 2000,
@@ -141,7 +141,7 @@ describe('CostTracker', () => {
 
     tracker.recordUsage({
       sessionId: 's1',
-      agentName: 'Verbal',
+      agentName: 'Agent1',
       model: 'claude-sonnet-4.5',
       inputTokens: 100,
       outputTokens: 50,
@@ -150,7 +150,7 @@ describe('CostTracker', () => {
 
     tracker.recordUsage({
       sessionId: 's2',
-      agentName: 'Verbal',
+      agentName: 'Agent1',
       model: 'claude-sonnet-4.5',
       inputTokens: 200,
       outputTokens: 100,
@@ -158,10 +158,10 @@ describe('CostTracker', () => {
     });
 
     const summary = tracker.getSummary();
-    const verbal = summary.agents.get('Verbal');
-    expect(verbal).toBeDefined();
-    expect(verbal!.turnCount).toBe(2);
-    expect(verbal!.inputTokens).toBe(300);
+    const agent = summary.agents.get('Agent1');
+    expect(agent).toBeDefined();
+    expect(agent!.turnCount).toBe(2);
+    expect(agent!.inputTokens).toBe(300);
   });
 
   it('tracks fallbacks', () => {
@@ -169,7 +169,7 @@ describe('CostTracker', () => {
 
     tracker.recordUsage({
       sessionId: 's1',
-      agentName: 'Fenster',
+      agentName: 'Agent3',
       model: 'claude-opus-4.6',
       inputTokens: 100,
       outputTokens: 50,
@@ -178,7 +178,7 @@ describe('CostTracker', () => {
     });
 
     const summary = tracker.getSummary();
-    expect(summary.agents.get('Fenster')!.fallbackCount).toBe(1);
+    expect(summary.agents.get('Agent3')!.fallbackCount).toBe(1);
   });
 
   it('resets all data', () => {
@@ -186,7 +186,7 @@ describe('CostTracker', () => {
 
     tracker.recordUsage({
       sessionId: 's1',
-      agentName: 'Verbal',
+      agentName: 'Agent1',
       model: 'claude-sonnet-4.5',
       inputTokens: 100,
       outputTokens: 50,
@@ -205,7 +205,7 @@ describe('CostTracker', () => {
 
     tracker.recordUsage({
       sessionId: 's1',
-      agentName: 'Keaton',
+      agentName: 'Agent2',
       model: 'claude-opus-4.6',
       inputTokens: 5000,
       outputTokens: 2000,
@@ -214,7 +214,7 @@ describe('CostTracker', () => {
 
     const output = tracker.formatSummary();
     expect(output).toContain('Squad Cost Summary');
-    expect(output).toContain('Keaton');
+    expect(output).toContain('Agent2');
     expect(output).toContain('$0.2500');
   });
 });

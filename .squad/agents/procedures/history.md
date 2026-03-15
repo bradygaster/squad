@@ -50,3 +50,17 @@
 
 **Pattern for all skills:** Skills are self-contained. Scripts, examples, configs, and resources travel WITH the skill. The agent reads SKILL.md, sees "copy X from this directory," and does it. Zero manual steps.
 
+### 2026-03-15: Three new governance policies added to agent system
+
+**Task:** Brady directive — implement three new policies across the agent system:
+
+1. **Agent Error Lockout** — Added to squad.agent.md. After 2 cumulative errors (build/test failures or reviewer rejection) on the same task, agent is locked out for that task only. Different agent takes over. Coordinator tracks and enforces; Scribe logs lockout events.
+
+2. **Product Isolation Rule** — Added to every charter and squad.agent.md Constraints. Tests, CI, and product code must NEVER depend on specific agent names from any squad. "Our squad" must not impact "the squad." Use generic/parameterized values (e.g., "test-agent-1") instead of real agent names (Flight, EECOM, FIDO).
+
+3. **Peer Quality Check** — Added to every charter. Before finishing work, agents must verify their changes don't break existing tests. Run test suite for files touched. Update history.md when learning from mistakes.
+
+**Implementation:** Updated `.github/agents/squad.agent.md` (new section + constraint) and all 19 active agent charters in `.squad/agents/*/charter.md`.
+
+**Pattern:** Policies added as subsections under "How I Work" in charters to ensure they're loaded with agent context. Coordinator-level policies live in squad.agent.md with explicit enforcement instructions.
+

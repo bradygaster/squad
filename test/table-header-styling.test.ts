@@ -8,7 +8,7 @@
  * 📌 Proactive: Written from requirements while implementation is in progress.
  * Tests target the existing wrapTableContent / renderMarkdownInline pipeline
  * and the rendered MessageStream output. Some assertions may need adjustment
- * once Cheritto lands the header-bold implementation.
+ * once the header-bold implementation lands.
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';

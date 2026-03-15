@@ -67,7 +67,7 @@ describe('CostTracker', () => {
   it('records usage and produces summary', () => {
     tracker.recordUsage({
       sessionId: 'session-1',
-      agentName: 'McManus',
+      agentName: 'Agent1',
       model: 'claude-sonnet-4-20250514',
       inputTokens: 1200,
       outputTokens: 800,
@@ -78,13 +78,13 @@ describe('CostTracker', () => {
     expect(summary.totalInputTokens).toBe(1200);
     expect(summary.totalOutputTokens).toBe(800);
     expect(summary.totalEstimatedCost).toBeCloseTo(0.0156, 4);
-    expect(summary.agents.get('McManus')).toBeDefined();
+    expect(summary.agents.get('Agent1')).toBeDefined();
   });
 
   it('aggregates costs across multiple agents', () => {
     tracker.recordUsage({
       sessionId: 's1',
-      agentName: 'Keyser',
+      agentName: 'Agent1',
       model: 'claude-sonnet-4-20250514',
       inputTokens: 500,
       outputTokens: 300,
@@ -92,7 +92,7 @@ describe('CostTracker', () => {
     });
     tracker.recordUsage({
       sessionId: 's2',
-      agentName: 'Fenster',
+      agentName: 'Agent2',
       model: 'claude-sonnet-4-20250514',
       inputTokens: 800,
       outputTokens: 600,
@@ -108,7 +108,7 @@ describe('CostTracker', () => {
   it('formats summary as string', () => {
     tracker.recordUsage({
       sessionId: 's1',
-      agentName: 'Verbal',
+      agentName: 'Agent3',
       model: 'claude-sonnet-4-20250514',
       inputTokens: 400,
       outputTokens: 200,
@@ -117,7 +117,7 @@ describe('CostTracker', () => {
 
     const formatted = tracker.formatSummary();
     expect(formatted).toContain('Squad Cost Summary');
-    expect(formatted).toContain('Verbal');
+    expect(formatted).toContain('Agent3');
   });
 });
 
@@ -214,13 +214,13 @@ describe('StreamingPipeline', () => {
     await pipeline.processEvent({
       type: 'message_delta',
       sessionId: 'test-session',
-      agentName: 'McManus',
-      content: 'Hello from McManus',
+      agentName: 'Agent1',
+      content: 'Hello from Agent1',
       index: 0,
       timestamp: new Date(),
     });
 
-    expect(deltas).toContain('Hello from McManus');
+    expect(deltas).toContain('Hello from Agent1');
     pipeline.clear();
   });
 
@@ -252,7 +252,7 @@ describe('StreamingPipeline', () => {
     await pipeline.processEvent({
       type: 'usage',
       sessionId: 's1',
-      agentName: 'Keyser',
+      agentName: 'Agent1',
       model: 'claude-sonnet-4-20250514',
       inputTokens: 1000,
       outputTokens: 500,
@@ -278,9 +278,9 @@ describe('selectResponseTier', () => {
     team: { name: 'Test Squad' },
     routing: {
       rules: [
-        { pattern: 'security|audit', agents: ['Hockney'], tier: 'full' },
+        { pattern: 'security|audit', agents: ['Agent1'], tier: 'full' },
       ],
-      defaultAgent: 'Keyser',
+      defaultAgent: 'Agent1',
     },
     models: {
       default: 'claude-sonnet-4-20250514',

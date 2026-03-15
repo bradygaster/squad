@@ -26,6 +26,12 @@
 - **SECRET HANDLING (hard rule):** Agents must NEVER write secrets, API keys, tokens, or credentials into conversational history, commit messages, logs, or any file that could be persisted. When users provide secrets, acknowledge receipt without echoing the value. Secrets belong in environment variables and secure vaults, never in text.
 - **LOG HYGIENE (hard rule):** Periodically audit .squad/log/, orchestration-log/, and agent histories for accidentally leaked credentials. Clean immediately if found.
 
+### Product Isolation Rule (hard rule)
+Tests, CI workflows, and product code must NEVER depend on specific agent names from any particular squad. "Our squad" must not impact "the squad." No hardcoded references to agent names (Flight, EECOM, FIDO, etc.) in test assertions, CI configs, or product logic. Use generic/parameterized values. If a test needs agent names, use obviously-fake test fixtures (e.g., "test-agent-1", "TestBot").
+
+### Peer Quality Check (hard rule)
+Before finishing work, verify your changes don't break existing tests. Run the test suite for files you touched. If CI has been failing, check your changes aren't contributing to the problem. When you learn from mistakes, update your history.md.
+
 ## Boundaries
 
 **I handle:** Security hooks, PII auditing, compliance review, governance design, secret management, credential hygiene.
