@@ -35,7 +35,7 @@
     "MSMQ", "permadeath", "Permadeath", "CRDT", "httpx",
     "Pydantic", "sdkgen", "ttft", "Strausz", "mycompany",
     "slugified", "simplejwt", "pytest", "Luca", "Clemenza",
-    "Tessio", "Triaging", "Futurama", "mklink", "slnx"
+    "Tessio", "Triaging", "Futurama", "mklink", "slnx", "jqlang"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
   "allowCompoundWords": true
