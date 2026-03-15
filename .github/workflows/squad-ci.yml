@@ -32,6 +32,15 @@ jobs:
       - name: Install CLI dependencies
         run: npm ci --workspace=packages/squad-cli
 
+      - name: Debug - Check CLI node_modules SDK after install
+        run: |
+          echo "=== CLI node_modules SDK dist contents ==="
+          ls -la packages/squad-cli/node_modules/@bradygaster/squad-sdk/dist/
+          echo "=== Check for roles dir ==="
+          test -d packages/squad-cli/node_modules/@bradygaster/squad-sdk/dist/roles && echo "✓ roles exists" || echo "✗ roles MISSING"
+          echo "=== Link target (if symlink) ==="
+          readlink packages/squad-cli/node_modules/@bradygaster/squad-sdk || echo "Not a symlink"
+
       - name: Install docs dependencies
         run: npm ci
         working-directory: docs
