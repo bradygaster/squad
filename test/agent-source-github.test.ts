@@ -23,8 +23,8 @@ function makeFetcher(
   };
 }
 
-const CHARTER_VERBAL = `## Identity
-**Name:** Verbal
+const CHARTER_AGENT1 = `## Identity
+**Name:** Agent1
 **Role:** Prompt Engineer
 
 ## Model
@@ -35,8 +35,8 @@ const CHARTER_VERBAL = `## Identity
 - grep
 `;
 
-const CHARTER_FENSTER = `## Identity
-**Name:** Fenster
+const CHARTER_AGENT2 = `## Identity
+**Name:** Agent2
 **Role:** Code Architect
 `;
 
@@ -71,12 +71,12 @@ describe('GitHubAgentSource', () => {
     it('should return manifests for agent directories with charters', async () => {
       const fetcher = makeFetcher(
         [
-          { name: 'verbal', type: 'dir' },
-          { name: 'fenster', type: 'dir' },
+          { name: 'agent1', type: 'dir' },
+          { name: 'agent2', type: 'dir' },
         ],
         {
-          '.squad/agents/verbal/charter.md': CHARTER_VERBAL,
-          '.squad/agents/fenster/charter.md': CHARTER_FENSTER,
+          '.squad/agents/agent1/charter.md': CHARTER_AGENT1,
+          '.squad/agents/agent2/charter.md': CHARTER_AGENT2,
         },
       );
       const source = new GitHubAgentSource('acme/repo', { fetcher });
@@ -84,19 +84,19 @@ describe('GitHubAgentSource', () => {
       const agents = await source.listAgents();
 
       expect(agents).toHaveLength(2);
-      expect(agents[0].name).toBe('Verbal');
+      expect(agents[0].name).toBe('Agent1');
       expect(agents[0].role).toBe('Prompt Engineer');
       expect(agents[0].source).toBe('github');
-      expect(agents[1].name).toBe('Fenster');
+      expect(agents[1].name).toBe('Agent2');
     });
 
     it('should skip files (non-directories)', async () => {
       const fetcher = makeFetcher(
         [
-          { name: 'verbal', type: 'dir' },
+          { name: 'agent1', type: 'dir' },
           { name: 'README.md', type: 'file' },
         ],
-        { '.squad/agents/verbal/charter.md': CHARTER_VERBAL },
+        { '.squad/agents/agent1/charter.md': CHARTER_AGENT1 },
       );
       const source = new GitHubAgentSource('acme/repo', { fetcher });
 
@@ -124,7 +124,7 @@ describe('GitHubAgentSource', () => {
     it('should use custom pathPrefix', async () => {
       const fetcher = makeFetcher(
         [{ name: 'agent1', type: 'dir' }],
-        { 'custom/path/agent1/charter.md': CHARTER_VERBAL },
+        { 'custom/path/agent1/charter.md': CHARTER_AGENT1 },
       );
       const source = new GitHubAgentSource('acme/repo', {
         pathPrefix: 'custom/path',
@@ -148,16 +148,16 @@ describe('GitHubAgentSource', () => {
   describe('getAgent', () => {
     it('should return full agent definition', async () => {
       const fetcher = makeFetcher([], {
-        '.squad/agents/verbal/charter.md': CHARTER_VERBAL,
+        '.squad/agents/agent1/charter.md': CHARTER_AGENT1,
       });
       const source = new GitHubAgentSource('acme/repo', { fetcher });
 
-      const agent = await source.getAgent('verbal');
+      const agent = await source.getAgent('agent1');
 
       expect(agent).not.toBeNull();
-      expect(agent!.name).toBe('Verbal');
+      expect(agent!.name).toBe('Agent1');
       expect(agent!.role).toBe('Prompt Engineer');
-      expect(agent!.charter).toBe(CHARTER_VERBAL);
+      expect(agent!.charter).toBe(CHARTER_AGENT1);
       expect(agent!.model).toBe('claude-sonnet-4.5');
       expect(agent!.tools).toEqual(['edit', 'grep']);
       expect(agent!.source).toBe('github');
@@ -165,12 +165,12 @@ describe('GitHubAgentSource', () => {
 
     it('should include history when available', async () => {
       const fetcher = makeFetcher([], {
-        '.squad/agents/verbal/charter.md': CHARTER_VERBAL,
-        '.squad/agents/verbal/history.md': '# History\n- Created team',
+        '.squad/agents/agent1/charter.md': CHARTER_AGENT1,
+        '.squad/agents/agent1/history.md': '# History\n- Created team',
       });
       const source = new GitHubAgentSource('acme/repo', { fetcher });
 
-      const agent = await source.getAgent('verbal');
+      const agent = await source.getAgent('agent1');
       expect(agent!.history).toBe('# History\n- Created team');
     });
 
@@ -198,12 +198,12 @@ describe('GitHubAgentSource', () => {
   describe('getCharter', () => {
     it('should return raw charter content', async () => {
       const fetcher = makeFetcher([], {
-        '.squad/agents/verbal/charter.md': CHARTER_VERBAL,
+        '.squad/agents/agent1/charter.md': CHARTER_AGENT1,
       });
       const source = new GitHubAgentSource('acme/repo', { fetcher });
 
-      const charter = await source.getCharter('verbal');
-      expect(charter).toBe(CHARTER_VERBAL);
+      const charter = await source.getCharter('agent1');
+      expect(charter).toBe(CHARTER_AGENT1);
     });
 
     it('should return null when charter missing', async () => {
@@ -217,18 +217,18 @@ describe('GitHubAgentSource', () => {
 
   describe('parseCharterMetadata', () => {
     it('should extract name and role from Identity section', () => {
-      const meta = parseCharterMetadata(CHARTER_VERBAL);
-      expect(meta.name).toBe('Verbal');
+      const meta = parseCharterMetadata(CHARTER_AGENT1);
+      expect(meta.name).toBe('Agent1');
       expect(meta.role).toBe('Prompt Engineer');
     });
 
     it('should extract model preference', () => {
-      const meta = parseCharterMetadata(CHARTER_VERBAL);
+      const meta = parseCharterMetadata(CHARTER_AGENT1);
       expect(meta.model).toBe('claude-sonnet-4.5');
     });
 
     it('should extract tools list', () => {
-      const meta = parseCharterMetadata(CHARTER_VERBAL);
+      const meta = parseCharterMetadata(CHARTER_AGENT1);
       expect(meta.tools).toEqual(['edit', 'grep']);
     });
 

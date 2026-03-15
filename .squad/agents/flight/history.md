@@ -27,6 +27,14 @@ Created `.squad/skills/content-triage/SKILL.md` to codify the boundary heuristic
 
 📌 Team update (2026-03-14T22-01-14Z): Distributed mesh integrated with deterministic skill pattern — decided by Procedures, PAO, Flight, Network
 
+**Two-Error Lockout Policy designed:** Lockout triggers after 2 errors (build/test/reviewer/runtime/CI failures) within a session. Counters are session-scoped and per-agent. Interacts with existing Reviewer Rejection Protocol: reviewer rejection = 1 error toward 2-error limit + artifact-scoped lockout. Once locked out, agent cannot take new work for rest of session. Escalates to user if all agents locked out. Written to `.squad/decisions/inbox/flight-lockout-policy.md` for team adoption.
+
+**Test Name-Agnosticism Principle codified:** "Our squad ≠ the squad" — framework tests must never depend on dev team's agent names. Tests assert structure/behavior, not specific names. Use dynamic discovery over hardcoded lists. Sample data uses generic placeholders. Prevents breakage on team rebirths and ensures Squad users with different rosters don't see dev team identity leaking through. Pattern from Tamir's earlier fix, now formalized. Written to `.squad/decisions/inbox/flight-no-name-deps.md`.
+
+**Board triage (40 open issues):** 13 P1 (hot), 4 research/RFC (warm), 23 cold. Hot list: SDK quality gates (#340, #341, #347), WSL transient error (#363), CastingEngine bypass (#342), skills migration (#354), three-layer tooling enforcement (#330), session ask-tracking (#366), SDK base roles (#378), model defaults (#322), docs version pin (#320), client-delivery workflow RFC (#328), personal squad updates (#329). Warm: knowledge library (#413), ADRs (#370), external API docs (#355), bidirectional upstream sync (#357). Cold: A2A protocol suite, long-term design exploration.
+
+**Lockout policy file paths:** `.squad/decisions/inbox/flight-lockout-policy.md`, `.squad/decisions/inbox/flight-no-name-deps.md` — both ready for Scribe merge into main decisions.md.
+
 ---
 
 ## Sprint Prioritization Pattern

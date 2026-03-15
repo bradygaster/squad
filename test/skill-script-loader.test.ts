@@ -1,8 +1,7 @@
 /**
  * Tests for SkillScriptLoader and ToolRegistry.applySkillHandlers() (M3-3, Issue #141)
  * 
- * FIDO: These tests are being written concurrently with the implementation by CONTROL and EECOM.
- * They validate the design spec for script-based skill handlers.
+ * These tests validate the design spec for script-based skill handlers.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

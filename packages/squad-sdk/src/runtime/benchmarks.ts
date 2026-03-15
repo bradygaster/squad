@@ -280,9 +280,9 @@ export class BenchmarkSuite {
     // Simulate export → serialize → deserialize → import round-trip
     const bundle = {
       config: { version: '1.0.0', models: {}, routing: { rules: [] } },
-      agents: [{ name: 'fenster', role: 'developer', content: '# Fenster' }],
+      agents: [{ name: 'agent-1', role: 'developer', content: '# Agent' }],
       skills: ['typescript', 'testing'],
-      routingRules: [{ pattern: 'feature/*', agent: 'fenster' }],
+      routingRules: [{ pattern: 'feature/*', agent: 'agent-1' }],
       metadata: { version: '1.0.0', timestamp: new Date().toISOString(), source: 'test' },
     };
     const serialized = JSON.stringify(bundle);

@@ -1,5 +1,5 @@
 /**
- * SDK Failure Scenario Tests — Waingro's QA
+ * SDK Failure Scenario Tests
  *
  * Tests graceful degradation when the SDK fails in various ways:
  * - sendAndWait returns undefined (ghost response)

@@ -19,9 +19,9 @@ interface AgentInfo {
 }
 
 const AGENTS: AgentInfo[] = [
-  { name: 'McManus', role: 'Backend', keywords: ['api', 'server', 'database', 'backend', 'endpoint', 'rest', 'sql', 'auth'] },
-  { name: 'Kobayashi', role: 'Frontend', keywords: ['ui', 'frontend', 'component', 'css', 'react', 'style', 'layout', 'ux'] },
-  { name: 'Fenster', role: 'Tester', keywords: ['test', 'bug', 'qa', 'coverage', 'assert', 'fixture', 'mock', 'spec'] },
+  { name: 'Agent1', role: 'Backend', keywords: ['api', 'server', 'database', 'backend', 'endpoint', 'rest', 'sql', 'auth'] },
+  { name: 'Agent2', role: 'Frontend', keywords: ['ui', 'frontend', 'component', 'css', 'react', 'style', 'layout', 'ux'] },
+  { name: 'Agent3', role: 'Tester', keywords: ['test', 'bug', 'qa', 'coverage', 'assert', 'fixture', 'mock', 'spec'] },
 ];
 
 function routeMessage(message: string): AgentInfo {
@@ -44,37 +44,37 @@ describe('streaming-chat', () => {
   describe('routeMessage', () => {
     it('routes API-related messages to Backend', () => {
       expect(routeMessage('Design the REST api')).toEqual(
-        expect.objectContaining({ name: 'McManus', role: 'Backend' }),
+        expect.objectContaining({ name: 'Agent1', role: 'Backend' }),
       );
     });
 
     it('routes UI-related messages to Frontend', () => {
       expect(routeMessage('Build a react component')).toEqual(
-        expect.objectContaining({ name: 'Kobayashi', role: 'Frontend' }),
+        expect.objectContaining({ name: 'Agent2', role: 'Frontend' }),
       );
     });
 
     it('routes test-related messages to Tester', () => {
       expect(routeMessage('Add more test coverage')).toEqual(
-        expect.objectContaining({ name: 'Fenster', role: 'Tester' }),
+        expect.objectContaining({ name: 'Agent3', role: 'Tester' }),
       );
     });
 
     it('defaults to Backend for unrecognized messages', () => {
       expect(routeMessage('Tell me a joke')).toEqual(
-        expect.objectContaining({ name: 'McManus', role: 'Backend' }),
+        expect.objectContaining({ name: 'Agent1', role: 'Backend' }),
       );
     });
 
     it('is case-insensitive', () => {
       expect(routeMessage('BUILD a FRONTEND layout')).toEqual(
-        expect.objectContaining({ name: 'Kobayashi', role: 'Frontend' }),
+        expect.objectContaining({ name: 'Agent2', role: 'Frontend' }),
       );
     });
 
     it('matches partial keywords', () => {
       expect(routeMessage('the database schema')).toEqual(
-        expect.objectContaining({ name: 'McManus', role: 'Backend' }),
+        expect.objectContaining({ name: 'Agent1', role: 'Backend' }),
       );
     });
   });
@@ -129,7 +129,7 @@ describe('streaming-chat', () => {
       const delta: StreamDelta = {
         type: 'message_delta',
         sessionId,
-        agentName: 'McManus',
+        agentName: 'Agent1',
         content: 'Hello',
         index: 0,
         timestamp: new Date(),
@@ -171,7 +171,7 @@ describe('streaming-chat', () => {
       await pipeline.processEvent({
         type: 'usage',
         sessionId: 's1',
-        agentName: 'McManus',
+        agentName: 'Agent1',
         model: 'gpt-4',
         inputTokens: 100,
         outputTokens: 50,

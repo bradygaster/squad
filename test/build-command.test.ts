@@ -13,7 +13,7 @@
  *   - --dry-run mode prints diff without writing
  *
  * ⚠️ Build command expected at: packages/squad-cli/src/cli/commands/build.ts
- * When Fenster's implementation lands, replace local stubs with real imports.
+ * When Agent1's implementation lands, replace local stubs with real imports.
  *
  * @see packages/squad-sdk/src/builders/types.ts
  * @module test/build-command
@@ -68,14 +68,14 @@ function makeTmpDir(): string {
  */
 function scaffoldSquadDir(root: string): string {
   const squadDir = join(root, '.squad');
-  mkdirSync(join(squadDir, 'agents', 'edie'), { recursive: true });
-  mkdirSync(join(squadDir, 'agents', 'hockney'), { recursive: true });
+  mkdirSync(join(squadDir, 'agents', 'agent1'), { recursive: true });
+  mkdirSync(join(squadDir, 'agents', 'agent2'), { recursive: true });
   mkdirSync(join(squadDir, 'orchestration-log'), { recursive: true });
 
   // Protected files — build must NOT touch these
   writeFileSync(join(squadDir, 'decisions.md'), '# Decisions\n\nManual decision log.\n');
-  writeFileSync(join(squadDir, 'agents', 'edie', 'history.md'), '# Edie History\n\nManual notes.\n');
-  writeFileSync(join(squadDir, 'agents', 'hockney', 'history.md'), '# Hockney History\n\nManual notes.\n');
+  writeFileSync(join(squadDir, 'agents', 'agent1', 'history.md'), '# Agent1 History\n\nManual notes.\n');
+  writeFileSync(join(squadDir, 'agents', 'agent2', 'history.md'), '# Agent2 History\n\nManual notes.\n');
   writeFileSync(
     join(squadDir, 'orchestration-log', '2026-03-01.md'),
     '# Session log\n\nManual entry.\n',
@@ -93,21 +93,21 @@ function makeTestConfig(overrides?: Partial<SquadSDKConfig>): SquadSDKConfig {
     team: {
       name: 'Test Squad',
       description: 'A test team',
-      members: ['edie', 'hockney'],
+      members: ['agent1', 'agent2'],
     },
     agents: [
-      { name: 'edie', role: 'TypeScript Engineer', charter: 'Writes clean TypeScript.' },
-      { name: 'hockney', role: 'Tester', charter: 'Breaks things that can break.' },
+      { name: 'agent1', role: 'TypeScript Engineer', charter: 'Writes clean TypeScript.' },
+      { name: 'agent2', role: 'Tester', charter: 'Breaks things that can break.' },
     ],
     routing: {
       rules: [
-        { pattern: 'feature-*', agents: ['edie'] },
-        { pattern: 'test-*', agents: ['hockney'] },
+        { pattern: 'feature-*', agents: ['agent1'] },
+        { pattern: 'test-*', agents: ['agent2'] },
       ],
-      defaultAgent: 'edie',
+      defaultAgent: 'agent1',
     },
     ceremonies: [
-      { name: 'standup', schedule: '0 9 * * 1-5', participants: ['edie', 'hockney'] },
+      { name: 'standup', schedule: '0 9 * * 1-5', participants: ['agent1', 'agent2'] },
     ],
     ...overrides,
   };
@@ -116,9 +116,8 @@ function makeTestConfig(overrides?: Partial<SquadSDKConfig>): SquadSDKConfig {
 // ============================================================================
 // Local build stub — simulates `squad build` output generation.
 //
-// ⚠️ When Fenster's build command lands, replace this with:
-//   import { runBuild, checkBuild, dryRunBuild } from
-//     '../packages/squad-cli/src/cli/commands/build.js';
+// Build a minimal SquadSDKConfig for testing.
+// When build command lands, replace local stubs with real imports.
 // ============================================================================
 
 interface BuildResult {
@@ -349,8 +348,8 @@ describe('squad build — file generation', () => {
     const teamMd = readFileSync(join(squadDir, 'team.md'), 'utf-8');
     expect(teamMd).toContain('# Test Squad');
     expect(teamMd).toContain('A test team');
-    expect(teamMd).toContain('**edie**');
-    expect(teamMd).toContain('**hockney**');
+    expect(teamMd).toContain('**agent1**');
+    expect(teamMd).toContain('**agent2**');
     expect(teamMd).toContain('TypeScript Engineer');
     expect(teamMd).toContain('Tester');
   });
@@ -365,10 +364,10 @@ describe('squad build — file generation', () => {
     const routingMd = readFileSync(join(squadDir, 'routing.md'), 'utf-8');
     expect(routingMd).toContain('# Routing');
     expect(routingMd).toContain('`feature-*`');
-    expect(routingMd).toContain('edie');
+    expect(routingMd).toContain('agent1');
     expect(routingMd).toContain('`test-*`');
-    expect(routingMd).toContain('hockney');
-    expect(routingMd).toContain('**Default agent:** edie');
+    expect(routingMd).toContain('agent2');
+    expect(routingMd).toContain('**Default agent:** agent1');
   });
 
   it('generates agent charter files from config', () => {
@@ -378,13 +377,13 @@ describe('squad build — file generation', () => {
 
     runBuild(config, squadDir);
 
-    const edieCharter = readFileSync(join(squadDir, 'agents', 'edie', 'charter.md'), 'utf-8');
-    expect(edieCharter).toContain('# edie — TypeScript Engineer');
-    expect(edieCharter).toContain('Writes clean TypeScript.');
+    const agent1Charter = readFileSync(join(squadDir, 'agents', 'agent1', 'charter.md'), 'utf-8');
+    expect(agent1Charter).toContain('# agent1 — TypeScript Engineer');
+    expect(agent1Charter).toContain('Writes clean TypeScript.');
 
-    const hockneyCharter = readFileSync(join(squadDir, 'agents', 'hockney', 'charter.md'), 'utf-8');
-    expect(hockneyCharter).toContain('# hockney — Tester');
-    expect(hockneyCharter).toContain('Breaks things that can break.');
+    const agent2Charter = readFileSync(join(squadDir, 'agents', 'agent2', 'charter.md'), 'utf-8');
+    expect(agent2Charter).toContain('# agent2 — Tester');
+    expect(agent2Charter).toContain('Breaks things that can break.');
   });
 
   it('generates ceremonies.md from config', () => {
@@ -398,7 +397,7 @@ describe('squad build — file generation', () => {
     expect(ceremoniesMd).toContain('# Ceremonies');
     expect(ceremoniesMd).toContain('## standup');
     expect(ceremoniesMd).toContain('0 9 * * 1-5');
-    expect(ceremoniesMd).toContain('edie, hockney');
+    expect(ceremoniesMd).toContain('agent1, agent2');
   });
 });
 
@@ -432,7 +431,7 @@ describe('squad build — generated header', () => {
     const squadDir = scaffoldSquadDir(root);
     runBuild(makeTestConfig(), squadDir);
 
-    for (const agentName of ['edie', 'hockney']) {
+    for (const agentName of ['agent1', 'agent2']) {
       const content = readFileSync(join(squadDir, 'agents', agentName, 'charter.md'), 'utf-8');
       expect(content).toContain(GENERATED_HEADER);
       expect(content.indexOf(GENERATED_HEADER)).toBe(0);
@@ -470,13 +469,13 @@ describe('squad build — protected files', () => {
   it('does NOT overwrite agent history.md files', () => {
     const root = makeTmpDir();
     const squadDir = scaffoldSquadDir(root);
-    const edieHistory = readFileSync(join(squadDir, 'agents', 'edie', 'history.md'), 'utf-8');
-    const hockneyHistory = readFileSync(join(squadDir, 'agents', 'hockney', 'history.md'), 'utf-8');
+    const agent1History = readFileSync(join(squadDir, 'agents', 'agent1', 'history.md'), 'utf-8');
+    const agent2History = readFileSync(join(squadDir, 'agents', 'agent2', 'history.md'), 'utf-8');
 
     runBuild(makeTestConfig(), squadDir);
 
-    expect(readFileSync(join(squadDir, 'agents', 'edie', 'history.md'), 'utf-8')).toBe(edieHistory);
-    expect(readFileSync(join(squadDir, 'agents', 'hockney', 'history.md'), 'utf-8')).toBe(hockneyHistory);
+    expect(readFileSync(join(squadDir, 'agents', 'agent1', 'history.md'), 'utf-8')).toBe(agent1History);
+    expect(readFileSync(join(squadDir, 'agents', 'agent2', 'history.md'), 'utf-8')).toBe(agent2History);
   });
 
   it('does NOT touch orchestration-log/ directory', () => {
@@ -499,14 +498,14 @@ describe('squad build — protected files', () => {
   it('protected file list: decisions.md, history.md, orchestration-log/', () => {
     // Verify the protection list is comprehensive
     expect(isProtected('decisions.md')).toBe(true);
-    expect(isProtected('agents/edie/history.md')).toBe(true);
-    expect(isProtected('agents/hockney/history.md')).toBe(true);
+    expect(isProtected('agents/agent1/history.md')).toBe(true);
+    expect(isProtected('agents/agent2/history.md')).toBe(true);
     expect(isProtected('orchestration-log/2026-03-01.md')).toBe(true);
 
     // Generated files should NOT be protected
     expect(isProtected('team.md')).toBe(false);
     expect(isProtected('routing.md')).toBe(false);
-    expect(isProtected('agents/edie/charter.md')).toBe(false);
+    expect(isProtected('agents/agent1/charter.md')).toBe(false);
     expect(isProtected('ceremonies.md')).toBe(false);
   });
 });
@@ -567,15 +566,15 @@ describe('squad build --check', () => {
 
     // Tamper with one charter
     writeFileSync(
-      join(squadDir, 'agents', 'edie', 'charter.md'),
-      '# Edie — Hacked Role\n\nSomeone changed this charter.\n',
+      join(squadDir, 'agents', 'agent1', 'charter.md'),
+      '# Agent1 — Hacked Role\n\nSomeone changed this charter.\n',
     );
 
     const result = checkBuild(config, squadDir);
     expect(result.exitCode).toBe(1);
-    expect(result.driftFiles).toContain('agents/edie/charter.md');
+    expect(result.driftFiles).toContain('agents/agent1/charter.md');
     // Other files should not be flagged
-    expect(result.driftFiles).not.toContain('agents/hockney/charter.md');
+    expect(result.driftFiles).not.toContain('agents/agent2/charter.md');
   });
 });
 
@@ -703,8 +702,8 @@ describe('squad build — edge cases', () => {
 
     expect(result.filesWritten).toContain('team.md');
     expect(result.filesWritten).toContain('routing.md');
-    expect(result.filesWritten).toContain('agents/edie/charter.md');
-    expect(result.filesWritten).toContain('agents/hockney/charter.md');
+    expect(result.filesWritten).toContain('agents/agent1/charter.md');
+    expect(result.filesWritten).toContain('agents/agent2/charter.md');
     expect(result.filesWritten).toContain('ceremonies.md');
     expect(result.filesWritten).toHaveLength(5);
   });

@@ -29,6 +29,12 @@
 - **LLM-FIRST DOCS (hard rule):** Every public API surface must have JSDoc comments structured enough that an LLM reading the .d.ts files can correctly use the SDK without additional context. Function signatures, parameter descriptions, return types, and usage examples are mandatory.
 - **LEGACY CLEANUP (hard rule):** Track and remove beta-era artifacts that confuse new users or AI consumers. The .ai-team/ folder is the first target.
 
+### Product Isolation Rule (hard rule)
+Tests, CI workflows, and product code must NEVER depend on specific agent names from any particular squad. "Our squad" must not impact "the squad." No hardcoded references to agent names (Flight, EECOM, FIDO, etc.) in test assertions, CI configs, or product logic. Use generic/parameterized values. If a test needs agent names, use obviously-fake test fixtures (e.g., "test-agent-1", "TestBot").
+
+### Peer Quality Check (hard rule)
+Before finishing work, verify your changes don't break existing tests. Run the test suite for files you touched. If CI has been failing, check your changes aren't contributing to the problem. When you learn from mistakes, update your history.md.
+
 ## Boundaries
 
 **I handle:** SDK documentation, JSDoc, LLM discoverability, API usability review, legacy cleanup, upgrade paths.

@@ -180,12 +180,12 @@ export class Coordinator {
             rationale: 'Team-wide task detected — fan-out to all agents',
           };
         } else {
-          // Default: route to lead agent (Keaton)
+          // Default: route to lead agent
           decision = {
             tier: 'standard',
             agents: ['lead'],
             parallel: false,
-            rationale: 'Default routing to lead agent (Keaton)',
+            rationale: 'Default routing to lead agent',
           };
         }
       }

@@ -11,23 +11,23 @@ describe('Charter Compilation (M1-8)', () => {
   describe('compileCharter', () => {
     it('should compile a basic charter with minimal options', () => {
       const options: CharterCompileOptions = {
-        agentName: 'verbal',
-        charterPath: '/path/to/verbal/charter.md',
+        agentName: 'agent1',
+        charterPath: '/path/to/agent1/charter.md',
       };
 
       const config = compileCharter(options);
 
-      expect(config.name).toBe('verbal');
-      expect(config.displayName).toBe('Verbal');
-      expect(config.prompt).toContain('verbal');
+      expect(config.name).toBe('agent1');
+      expect(config.displayName).toBe('Agent1');
+      expect(config.prompt).toContain('agent1');
       expect(config.infer).toBe(true);
     });
 
     it('should include team context in the prompt', () => {
       const options: CharterCompileOptions = {
-        agentName: 'fenster',
-        charterPath: '/path/to/fenster/charter.md',
-        teamContext: 'Team roster:\n- Fenster (Core Dev)\n- Verbal (Prompt Engineer)',
+        agentName: 'agent1',
+        charterPath: '/path/to/agent1/charter.md',
+        teamContext: 'Team roster:\n- Agent1 (Core Dev)\n- Agent2 (Prompt Engineer)',
       };
 
       const config = compileCharter(options);
@@ -38,21 +38,21 @@ describe('Charter Compilation (M1-8)', () => {
 
     it('should include routing rules in the prompt', () => {
       const options: CharterCompileOptions = {
-        agentName: 'keaton',
-        charterPath: '/path/to/keaton/charter.md',
-        routingRules: 'Route TypeScript to Fenster',
+        agentName: 'agent1',
+        charterPath: '/path/to/agent1/charter.md',
+        routingRules: 'Route TypeScript to Agent1',
       };
 
       const config = compileCharter(options);
 
       expect(config.prompt).toContain('Routing Rules');
-      expect(config.prompt).toContain('Route TypeScript to Fenster');
+      expect(config.prompt).toContain('Route TypeScript to Agent1');
     });
 
     it('should include decisions in the prompt', () => {
       const options: CharterCompileOptions = {
-        agentName: 'verbal',
-        charterPath: '/path/to/verbal/charter.md',
+        agentName: 'agent1',
+        charterPath: '/path/to/agent1/charter.md',
         decisions: 'Decision 001: Use vitest for testing',
       };
 
@@ -64,8 +64,8 @@ describe('Charter Compilation (M1-8)', () => {
 
     it('should handle all context options together', () => {
       const options: CharterCompileOptions = {
-        agentName: 'strausz',
-        charterPath: '/path/to/strausz/charter.md',
+        agentName: 'agent1',
+        charterPath: '/path/to/agent1/charter.md',
         teamContext: 'Team context',
         routingRules: 'Routing rules',
         decisions: 'Decisions',
@@ -82,14 +82,14 @@ describe('Charter Compilation (M1-8)', () => {
       // Test would require actual charter parsing
       // For now, verify basic formatting
       const options: CharterCompileOptions = {
-        agentName: 'fenster',
+        agentName: 'agent1',
         charterPath: '/path/to/charter.md',
       };
 
       const config = compileCharter(options);
       
       expect(config.displayName).toBeTruthy();
-      expect(config.displayName).toContain('Fenster');
+      expect(config.displayName).toContain('Agent1');
     });
   });
 
@@ -98,7 +98,7 @@ describe('Charter Compilation (M1-8)', () => {
       // This would test parseCharterMarkdown with real markdown content
       // For now, we test the exported function behavior
       const options: CharterCompileOptions = {
-        agentName: 'verbal',
+        agentName: 'agent1',
         charterPath: '/test/charter.md',
       };
 
@@ -121,7 +121,7 @@ describe('Charter Compilation (M1-8)', () => {
       // Model preference extraction is internal to parseCharterMarkdown
       // We verify the charter can be compiled without errors
       const options: CharterCompileOptions = {
-        agentName: 'fenster',
+        agentName: 'agent1',
         charterPath: '/test/charter.md',
       };
 

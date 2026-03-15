@@ -1,5 +1,5 @@
 /**
- * Hostile Integration Tests — Waingro's QA
+ * Hostile Integration Tests
  *
  * Wires the 95-string nasty-inputs corpus into actual test execution.
  * Every hostile string gets run through parseInput(), executeCommand(),
@@ -29,7 +29,7 @@ import type { ShellMessage } from '../packages/squad-cli/src/cli/shell/types.js'
 const h = React.createElement;
 
 // Known agents for parseInput routing
-const KNOWN_AGENTS = ['Brady', 'Kovash', 'Waingro', 'Ralph'];
+const KNOWN_AGENTS = ['Agent1', 'Agent2', 'Agent3', 'Agent4'];
 
 function makeMessage(content: string, role: ShellMessage['role'] = 'agent'): ShellMessage {
   return { role, content, timestamp: new Date(), agentName: role === 'agent' ? 'TestAgent' : undefined };

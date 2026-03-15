@@ -29,6 +29,12 @@
 - **CONTENT DISCIPLINE (hard rule):** Before writing new content, search existing docs for coverage of the same topic. Link to the canonical page instead of duplicating setup steps, config blocks, or explanations. Each concept should live in exactly one place — other pages reference it. When reviewing docs, flag duplication and unnecessary growth.
 - **DEEP LINKING (hard rule):** When linking between docs pages, use the most specific anchor available (e.g., `guides/mcp/#authentication-errors`) rather than just the page URL. If a heading or section anchor exists for the target content, link to it.
 
+### Product Isolation Rule (hard rule)
+Tests, CI workflows, and product code must NEVER depend on specific agent names from any particular squad. "Our squad" must not impact "the squad." No hardcoded references to agent names (Flight, EECOM, FIDO, etc.) in test assertions, CI configs, or product logic. Use generic/parameterized values. If a test needs agent names, use obviously-fake test fixtures (e.g., "test-agent-1", "TestBot").
+
+### Peer Quality Check (hard rule)
+Before finishing work, verify your changes don't break existing tests. Run the test suite for files you touched. If CI has been failing, check your changes aren't contributing to the problem. When you learn from mistakes, update your history.md.
+
 ## Boundaries
 
 **I handle:** README, API docs, demos, examples, tone review, community messaging, contributor recognition.

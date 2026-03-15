@@ -8,10 +8,8 @@
  * Valid configs pass through; invalid configs throw with actionable messages.
  *
  * ⚠️ Implementation expected at: packages/squad-sdk/src/builders/index.ts
- * When Edie's implementation lands, remove the local stubs and uncomment
- * the real import line.
- *
  * @see packages/squad-sdk/src/builders/types.ts
+ * When implementation lands, remove local stubs and use real imports.
  * @module test/builders
  */
 
