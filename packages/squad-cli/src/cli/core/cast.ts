@@ -6,7 +6,16 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { getRoleById, generateCharterFromRole, addAgentToConfig } from '@bradygaster/squad-sdk';
+import {
+  getRoleById,
+  generateCharterFromRole,
+  addAgentToConfig,
+} from '@bradygaster/squad-sdk';
+import {
+  CastingEngine,
+  type CastMember as EngineCastMember,
+  type AgentRole as EngineAgentRole,
+} from '@bradygaster/squad-sdk/casting';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -214,9 +223,106 @@ function extractFromBlock(block: string): CastProposal | null {
   return { members, universe: universe || 'Unknown', projectDescription: projectDescription || 'User project' };
 }
 
+// ── CastingEngine Integration ──────────────────────────────────────
+
+/**
+ * Augment a parsed CastProposal with CastingEngine data if universe is recognized.
+ * Maps LLM-proposed universe names to engine universe IDs, then uses the engine to:
+ * - Allocate character names from the curated pool
+ * - Inject template personalities and backstories
+ *
+ * This is an "augment" strategy: LLM proposes roles, engine assigns names/personalities.
+ */
+export function augmentWithCastingEngine(proposal: CastProposal): CastProposal {
+  const engine = new CastingEngine();
+  const universeLower = proposal.universe.toLowerCase();
+
+  // Map universe name to engine universe ID
+  let universeId: 'usual-suspects' | 'oceans-eleven' | null = null;
+  if (/usual\s*suspects/i.test(universeLower)) {
+    universeId = 'usual-suspects';
+  } else if (/ocean/i.test(universeLower)) {
+    universeId = 'oceans-eleven';
+  }
+
+  // If universe not recognized, return as-is (LLM's arbitrary names preserved)
+  if (!universeId) return proposal;
+
+  // Map CLI role strings to engine AgentRole types (only valid engine roles)
+  const roleMapping: Partial<Record<string, EngineAgentRole>> = {
+    lead: 'lead',
+    'tech lead': 'lead',
+    architect: 'lead',
+    developer: 'developer',
+    'frontend dev': 'developer',
+    'backend dev': 'developer',
+    tester: 'tester',
+    qa: 'tester',
+    quality: 'tester',
+    'prompt engineer': 'prompt-engineer',
+    security: 'security',
+    devops: 'devops',
+    designer: 'designer',
+    scribe: 'scribe',
+    reviewer: 'reviewer',
+  };
+
+  // Extract roles from proposal and map them to engine roles
+  const requiredRoles: EngineAgentRole[] = [];
+  for (const member of proposal.members) {
+    const normalized = member.role.toLowerCase();
+    const engineRole = roleMapping[normalized];
+    if (engineRole) {
+      requiredRoles.push(engineRole);
+    } else {
+      // If role not mappable, skip it (will use fallback LLM name)
+      console.warn(`[cast] Unmapped role "${member.role}" — using fallback`);
+    }
+  }
+
+  // If no roles could be mapped, return as-is
+  if (requiredRoles.length === 0) return proposal;
+
+  try {
+    // Use CastingEngine to cast the team with curated names
+    const castMembers = engine.castTeam({
+      universe: universeId,
+      requiredRoles,
+      teamSize: proposal.members.length,
+    });
+
+    // Augment the original proposal members with engine data
+    const augmented = proposal.members.map((member, idx) => {
+      const engineMember = castMembers[idx];
+      if (!engineMember) return member; // fallback: preserve LLM data
+
+      return {
+        ...member,
+        name: engineMember.name, // Replace LLM name with curated name
+        // Store personality + backstory in scope for now (charter generation will use it)
+        // We'll extend CastMember interface in the next step to hold these properly
+        _personality: engineMember.personality,
+        _backstory: engineMember.backstory,
+      } as CastMember & { _personality?: string; _backstory?: string };
+    });
+
+    return {
+      ...proposal,
+      members: augmented,
+    };
+  } catch (err) {
+    // If casting fails (e.g., not enough characters), fall back to original proposal
+    console.warn(`[cast] CastingEngine failed for ${universeId}:`, err);
+    return proposal;
+  }
+}
+
 // ── Charter / history generators ───────────────────────────────────
 
-function personalityForRole(role: string): string {
+function personalityForRole(role: string, engineData?: { personality?: string }): string {
+  // If CastingEngine provided a personality, use it
+  if (engineData?.personality) return engineData.personality;
+
   // Try catalog lookup first
   const catalogRole = getRoleById(role.toLowerCase().replace(/\s+/g, '-'));
   if (catalogRole) return catalogRole.vibe;
@@ -252,16 +358,22 @@ function ownershipFromRole(role: string, scope: string): string {
   return `- ${role} domain tasks`;
 }
 
-function generateCharter(member: CastMember): string {
+
+function generateCharter(member: CastMember & { _personality?: string; _backstory?: string }): string {
   // Try catalog-based charter first
   const roleId = member.role.toLowerCase().replace(/\s+/g, '-');
   const catalogCharter = generateCharterFromRole(roleId, member.name);
   if (catalogCharter) return catalogCharter;
 
+  const personality = personalityForRole(member.role, { personality: member._personality });
   const nameLower = member.name.toLowerCase();
+
+  // If CastingEngine provided a backstory, use it in the charter preamble
+  const preamble = member._backstory || personality;
+
   return `# ${member.name} — ${member.role}
 
-> ${personalityForRole(member.role)}
+> ${preamble}
 
 ## Identity
 

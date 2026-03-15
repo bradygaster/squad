@@ -29,7 +29,7 @@ import { loadAgentCharter, buildAgentPrompt } from './spawn.js';
 import { createSession, saveSession, loadLatestSession, type SessionData } from './session-store.js';
 import { parseDispatchTargets, type ParsedInput } from './router.js';
 import { agentSessionGuidance, genericGuidance, formatGuidance } from './error-messages.js';
-import { parseCastResponse, createTeam, formatCastSummary, type CastProposal } from '../core/cast.js';
+import { parseCastResponse, createTeam, formatCastSummary, augmentWithCastingEngine, type CastProposal } from '../core/cast.js';
 
 export { SessionRegistry } from './sessions.js';
 export { StreamBridge } from './stream-bridge.js';
@@ -896,7 +896,7 @@ export async function runShell(): Promise<void> {
       debugLog('handleInitCast: response preview', accumulated.slice(0, 500));
 
       // Parse the team proposal
-      const proposal = parseCastResponse(accumulated);
+      let proposal = parseCastResponse(accumulated);
       if (!proposal) {
         debugLog('handleInitCast: failed to parse team from response');
         debugLog('handleInitCast: full response:', accumulated);
@@ -911,6 +911,13 @@ export async function runShell(): Promise<void> {
         });
         return;
       }
+
+      // Augment with CastingEngine if universe is recognized
+      proposal = augmentWithCastingEngine(proposal);
+      debugLog('handleInitCast: augmented proposal', {
+        universe: proposal.universe,
+        members: proposal.members.map(m => m.name),
+      });
 
       // Show the proposed team
       shellApi?.addMessage({
