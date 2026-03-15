@@ -1,38 +1,17 @@
-# Flight — Project History
+# Flight
 
-> Knowledge accumulated through leading Squad development.
+## Core Context
 
----
+Team: Apollo 13 (20 members). Test baseline: 3,931 tests. Tamir's active feature streams: remote-control, hierarchical-squad-inheritance, ralph-watch, project-type-detection, prevent-git-checkout-data-loss.
 
-## Learnings
+## Patterns
 
-**Updated now.md to reflect post-v0.8.24 state:** Apollo 13 team, 3931 tests, Tamir's active branches across 5 feature streams (remote-control, hierarchical-squad-inheritance, ralph-watch, project-type-detection, prevent-git-checkout-data-loss).
+**Boundary review:** IRL content (external infrastructure, community implementations) vs Squad docs (features Squad ships). Litmus test: if Squad doesn't ship the code/config, it's IRL content.
 
-**Updated wisdom.md with 4 patterns + 2 anti-patterns from recent work:** Test name-agnosticism for team rebirths, dynamic filesystem discovery for evolving content, cli-entry.ts unwired command bug pattern, bump-build.mjs version mutation timing, invalid semver formats, git reset data loss.
+**Adoption tracking architecture:** Three-tier opt-in system. .squad/ is team state only, not adoption data. Tier 1 (aggregate metrics in .github/adoption/), Tier 2 (opt-in registry), Tier 3 (public showcase when ≥5 projects opt in).
 
-📌 **Team update (2026-03-10T12-55-49Z):** Adoption tracking architecture finalized. Three-tier system approved: Tier 1 (aggregate-only, `.github/adoption/`) shipping with PR #326; Tier 2 (opt-in registry) designed for next PR; Tier 3 (public showcase) launches when ≥5 projects opt in. Append-only file governance rule enforced to prevent data loss. Microsoft ampersand style guide adopted for all user-facing documentation.
+**Remote Squad access:** Three-phase rollout. Phase 1: GitHub Discussions bot with /squad command. Phase 2: GitHub Copilot Extension (fetches .squad/ via API). Phase 3: Slack/Teams bot.
 
-### PR #331 Review — Boundary Review Pattern Reinforced (2026-03-10)
-Approved PR #331 ("docs: scenario and feature guides from blog analysis") for merge. PAO's boundary review (remove external infrastructure docs, reframe platform features to clarify scope, keep Squad behavior/config docs) was executed correctly. Key decisions: (1) ralph-operations.md and proactive-communication.md deleted — both document infrastructure around Squad, not Squad itself; (2) issue-templates.md reframed to clarify "GitHub feature configured for Squad" not "Squad feature"; (3) reviewer-protocol.md Trust Levels section kept — documents user choice spectrum within Squad's existing review system. Litmus test pattern: if Squad doesn't ship the code/config, it's IRL content. Docs-test sync maintained. Pattern reinforced as reusable boundary review heuristic for future doc PRs.
+**Distributed mesh integration:** Zero code changes to existing modules, zero CLI commands, mesh.json stays separate from squad.config.ts. Convention-first additive layer — invisible if unused.
 
-**Adoption tracking architecture — three-tier opt-in system:** `.squad/` is for team state only, not adoption data (boundary pattern). Move tracking to `.github/adoption/`. Never list individual repos without owner consent — aggregate metrics only until opt-in exists. Tier 1 (ship now) = aggregate monitoring. Tier 2 (design next) = opt-in registry in `.github/adoption/registry.json`. Tier 3 (launch later) = public showcase once ≥5 projects opt in. Monitoring infra (GitHub Action + script) is solid — keep it. Privacy-first architecture: code search results are public data, but individual listings require consent.
-
-**Remote Squad access — three-phase rollout:** Phase 1 (ship first): GitHub Discussions bot with `/squad` command. Workflow checks out repo → has full `.squad/` context → answers questions → posts reply. 1 day build, zero hosting, respects repo privacy automatically. Phase 2 (high value): GitHub Copilot Extension — fetches `.squad/` files via GitHub API, answers inline in any Copilot client (VS Code, CLI, mobile). Works truly remote, instant, no cold start. 1 week build. Phase 3 (enterprise): Slack/Teams bot for companies. Webhook + GitHub API fetch. 2 weeks build. Constraint: Squad needs `.squad/` state (team.md, decisions.md, histories, routing) to answer intelligently. Any remote solution must solve context access. GitHub Actions workflows solve this for free (checkout gives full state). Copilot Extension uses Contents API. Discussions wins for MVP because it's async (perfect for knowledge queries), persistent (answers are searchable), and zero infra. Proposal-first: write `docs/proposals/remote-squad-access.md` before building.
-
-### Content Triage Skill Codified (2026-03-10)
-Created `.squad/skills/content-triage/SKILL.md` to codify the boundary heuristic from PR #331. Defines repeatable workflow for triaging external content (blog posts, sample repos, videos, talks) to determine what belongs in Squad's public docs vs IRL tracking. Key components: (1) "Squad Ships It" litmus test — if Squad doesn't ship the code/config, it's IRL content; (2) triage workflow triggered by `content-triage` label or external content reference in issue body; (3) output format with boundary analysis, sub-issues for PAO (doc extraction), and IRL reference entry for Scribe; (4) label convention (`content:blog`, `content:sample`, `content:video`, `content:talk`); (5) Ralph integration for routing to Flight, creating sub-issues, and notifying Scribe. Examples include Tamir blog analysis (PR #331), sample repo with ops patterns, and conference talk. Pattern prevents infrastructure docs from polluting Squad's public docs while ensuring community content accelerates adoption through proper extraction and referencing.
-
-📌 **Team update (2026-03-11T01:27:57Z):** Content triage skill finalized; "Squad Ships It" boundary heuristic codified into shared team decision (decisions.md). Remote Squad access phased rollout approved (Discussions bot → Copilot Extension → Chat bot). PR #331 boundary review pattern established as standard for all doc PRs. Triage workflow enables Flight to scale as community content accelerates.
-**Distributed Mesh integration architecture guidance:** Analyzed Andi's distributed-mesh extension (git-as-transport, 3-zone model, sync scripts, SKILL.md). Mapped integration into Squad: skill files in templates/skills/, scripts in scripts/mesh/, docs in features/distributed-mesh.md. Clarified relationships — sharing/export-import is snapshot-based (complementary), multi-squad.ts is local resolution (orthogonal), streams are label partitioning within repos (composable), remote/bridge is human-to-agent PWA control (mesh replaces agent-to-agent use cases). Decision: Zero code changes to existing modules, zero CLI commands, mesh.json stays separate from squad.config.ts. Mesh integrates as convention-first additive layer — invisible if unused, composes cleanly when needed. The 125:1 ratio (30 lines of script vs. 3,756 lines of deleted federation code) holds. Architecture validated by 3-model consensus remains intact.
-
-📌 Team update (2026-03-14T22-01-14Z): Distributed mesh integrated with deterministic skill pattern — decided by Procedures, PAO, Flight, Network
-
----
-
-## Sprint Prioritization Pattern
-
-**Backlog triage methodology (47-issue analysis):**  
-Rank by: (1) bugs with active user impact, (2) quality/test gaps blocking GA release, (3) high-ROI features unblocking downstream work. Current sprint Top 10 identifies 3 bugs (WSL crash, SDK init regression, VS Code crash), 3 quality gates (SDK feature parity testing), and 4 governance/architecture decisions (opt-in roles, ADR archive, docs gaps, upstream sync). This pattern scales: categorize all open issues by type → sort each category by impact/urgency → interleave across sprint capacity to balance stability (bugs/quality) with velocity (features). Squad GA is gated by quality #340, #341, #347 and user-facing regressions #363, #337 — these must ship in parallel next sprint.
-
-📌 Team update (2026-03-15T11:40:00Z): Bug classification complete (6 issues identified, 2 fixed) — ready for next triage phase
-
+**Sprint prioritization:** Rank by (1) bugs with active user impact, (2) quality/test gaps blocking GA release, (3) high-ROI features unblocking downstream work. Interleave categories to balance stability with velocity.
