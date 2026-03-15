@@ -20,28 +20,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Clean dist folders
-        run: rm -rf packages/*/dist
-
-      - name: Install root and SDK dependencies
-        run: npm ci --workspace=packages/squad-sdk
-
-      - name: Build SDK
-        run: npm run build --workspace=packages/squad-sdk
-
-      - name: Force workspace link refresh
-        run: |
-          rm -rf packages/squad-cli/node_modules/@bradygaster/squad-sdk
-          npm ci --workspace=packages/squad-cli
-
-      - name: Debug - Check CLI node_modules SDK after install
-        run: |
-          echo "=== CLI node_modules SDK dist contents ==="
-          ls -la packages/squad-cli/node_modules/@bradygaster/squad-sdk/dist/
-          echo "=== Check for roles dir ==="
-          test -d packages/squad-cli/node_modules/@bradygaster/squad-sdk/dist/roles && echo "✓ roles exists" || echo "✗ roles MISSING"
-          echo "=== Link target (if symlink) ==="
-          readlink packages/squad-cli/node_modules/@bradygaster/squad-sdk || echo "Not a symlink"
+      - name: Install dependencies
+        run: npm ci
 
       - name: Install docs dependencies
         run: npm ci
@@ -50,8 +30,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Build CLI
-        run: npm run build --workspace=packages/squad-cli
+      - name: Build
+        run: npm run build
 
       - name: Run tests
         run: npm test
