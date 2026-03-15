@@ -267,4 +267,4 @@ This document is based on active research spikes (#32, #33, #34) conducted in Fe
 - [Model Selection](../features/model-selection.md) — Cost-first routing across agents
 - [Parallel Execution](../features/parallel-execution.md) — Background and sync patterns
 - [Worktrees](../features/worktrees.md) — Multi-branch isolation
-- [FAQ](../guide.md#troubleshooting) — Common questions and answers
+- [Troubleshooting](./troubleshooting.md) — Common questions and answers
