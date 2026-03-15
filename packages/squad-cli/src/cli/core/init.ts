@@ -4,6 +4,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { detectSquadDir } from './detect-squad-dir.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
@@ -101,6 +102,8 @@ export interface RunInitOptions {
   includeWorkflows?: boolean;
   /** If true, generate squad.config.ts with SDK builder syntax (default: false) */
   sdk?: boolean;
+  /** If true, use built-in base roles instead of fictional universe casting (default: false) */
+  roles?: boolean;
 }
 
 /**
@@ -195,6 +198,13 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   }
 
   process.off('SIGINT', sigintHandler);
+
+  // Persist --roles flag for the REPL to pick up during casting
+  if (options.roles) {
+    const rolesMarker = path.join(squadDir, '.init-roles');
+    fs.writeFileSync(rolesMarker, '1', 'utf-8');
+    success(`base roles enabled — team will use built-in role catalog`);
+  }
 
   // Report .init-prompt storage
   if (options.prompt) {

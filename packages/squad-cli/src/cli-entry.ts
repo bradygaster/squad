@@ -129,9 +129,10 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
     console.log(`             Flags: --global (init in personal squad directory)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
-    console.log(`             Flags: --sdk (generate squad.config.ts with SDK builder syntax)`);
-    console.log(`                    --global (init in personal squad directory)`);
-    console.log(`                    --no-workflows (skip GitHub workflow installation)`);
+    console.log(`             Flags: --sdk (SDK builder syntax)`);
+    console.log(`                    --roles (use base roles)`);
+    console.log(`                    --global (personal squad dir)`);
+    console.log(`                    --no-workflows (skip CI setup)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -245,7 +246,8 @@ async function main(): Promise<void> {
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
-    runInit(dest, { includeWorkflows: !noWorkflows, sdk }).catch(err => {
+    const roles = args.includes('--roles');
+    runInit(dest, { includeWorkflows: !noWorkflows, sdk, roles }).catch(err => {
       fatal(err.message);
     });
     return;
