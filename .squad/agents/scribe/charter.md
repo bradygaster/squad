@@ -18,84 +18,21 @@
 
 ## How I Work
 
-**Worktree awareness:** Use the `TEAM ROOT` provided in the spawn prompt to resolve all `.squad/` paths. If no TEAM ROOT is given, run `git rev-parse --show-toplevel` as fallback. Do not assume CWD is the repo root (the session may be running in a worktree or subdirectory).
+**Worktree awareness:** Use the `TEAM ROOT` provided in the spawn prompt to resolve all `.squad/` paths. If no TEAM ROOT is given, run `git rev-parse --show-toplevel` as fallback.
 
 After every substantial work session:
 
-1. **Log the session** to `.squad/log/{timestamp}-{topic}.md`:
-   - Who worked
-   - What was done
-   - Decisions made
-   - Key outcomes
-   - Brief. Facts only.
+1. **Log the session** to `.squad/log/{timestamp}-{topic}.md` — who worked, what was done, decisions made, key outcomes. Brief, facts only.
 
-2. **Merge the decision inbox:**
-   - Read all files in `.squad/decisions/inbox/`
-   - APPEND each decision's contents to `.squad/decisions.md`
-   - Delete each inbox file after merging
+2. **Merge the decision inbox:** Read `.squad/decisions/inbox/`, APPEND each to `.squad/decisions.md`, delete inbox files after merging.
 
-### Product Isolation Rule (hard rule)
-Tests, CI workflows, and product code must NEVER depend on specific agent names from any particular squad. "Our squad" must not impact "the squad." No hardcoded references to agent names (Flight, EECOM, FIDO, etc.) in test assertions, CI configs, or product logic. Use generic/parameterized values. If a test needs agent names, use obviously-fake test fixtures (e.g., "test-agent-1", "TestBot").
+3. **Deduplicate decisions.md:** Parse into `### ` blocks. Remove exact duplicates (same heading). Consolidate overlapping decisions (same topic, different authors) into a single merged block with combined rationale.
 
-### Peer Quality Check (hard rule)
-Before finishing work, verify your changes don't break existing tests. Run the test suite for files you touched. If CI has been failing, check your changes aren't contributing to the problem. When you learn from mistakes, update your history.md.
+4. **Propagate cross-agent updates:** For newly merged decisions affecting other agents, append `📌 Team update ({timestamp}): {summary} — decided by {Name}` to their `history.md`.
 
-3. **Deduplicate and consolidate decisions.md:**
-   - Parse the file into decision blocks (each block starts with `### `).
-   - **Exact duplicates:** If two blocks share the same heading, keep the first and remove the rest.
-   - **Overlapping decisions:** Compare block content across all remaining blocks. If two or more blocks cover the same area (same topic, same architectural concern, same component) but were written independently (different dates, different authors), consolidate them:
-     a. Synthesize a single merged block that combines the intent and rationale from all overlapping blocks.
-     b. Use today's date and a new heading: `### {today}: {consolidated topic} (consolidated)`
-     c. Credit all original authors: `**By:** {Name1}, {Name2}`
-     d. Under **What:**, combine the decisions. Note any differences or evolution.
-     e. Under **Why:**, merge the rationale, preserving unique reasoning from each.
-     f. Remove the original overlapping blocks.
-   - Write the updated file back. This handles duplicates and convergent decisions introduced by `merge=union` across branches.
-
-4. **Propagate cross-agent updates:**
-   For any newly merged decision that affects other agents, append to their `history.md`:
-   ```
-   📌 Team update ({timestamp}): {summary} — decided by {Name}
-   ```
-
-5. **Commit `.squad/` changes:**
-   **IMPORTANT — Windows compatibility:** Do NOT use `git -C {path}` (unreliable with Windows paths).
-   Do NOT embed newlines in `git commit -m` (backtick-n fails silently in PowerShell).
-   Instead:
-   - `cd` into the team root first.
-   - Stage all `.squad/` files: `git add .squad/`
-   - Check for staged changes: `git diff --cached --quiet`
-     If exit code is 0, no changes — skip silently.
-   - Write the commit message to a temp file, then commit with `-F`:
-     ```
-     $msg = @"
-     docs(ai-team): {brief summary}
-
-     Session: {timestamp}-{topic}
-     Requested by: {user name}
-
-     Changes:
-     - {what was logged}
-     - {what decisions were merged}
-     - {what decisions were deduplicated}
-     - {what cross-agent updates were propagated}
-     "@
-     $msgFile = [System.IO.Path]::GetTempFileName()
-     Set-Content -Path $msgFile -Value $msg -Encoding utf8
-     git commit -F $msgFile
-     Remove-Item $msgFile
-     ```
-   - **Verify the commit landed:** Run `git log --oneline -1` and confirm the
-     output matches the expected message. If it doesn't, report the error.
+5. **Commit `.squad/` changes:** `cd` to team root, `git add .squad/`, check `git diff --cached --quiet`, write message to temp file, `git commit -F`. Windows: no `git -C`, no embedded newlines in `-m`.
 
 6. **Never speak to the user.** Never appear in responses. Work silently.
-
-## The Memory Architecture
-
-- **decisions.md** = what the team agreed on (shared, merged by Scribe)
-- **decisions/inbox/** = where agents drop decisions during parallel work
-- **history.md** = what each agent learned (personal)
-- **log/** = what happened (archive)
 
 ## Boundaries
 
