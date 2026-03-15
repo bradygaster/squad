@@ -210,6 +210,27 @@ Skills export and import with your team. Move a trained team to a new repo, and 
 
 ---
 
+## Knowledge persistence
+
+Not all knowledge in `.squad/` lasts forever. When files grow large, Squad compacts them to keep performance fast. Here's what persists and what gets summarized:
+
+| What | File | Compacted? | Where old content goes | Who reads it |
+|------|------|-----------|----------------------|-------------|
+| Personal history | `history.md` | Yes, at ~12 KB | `history-archive.md` (preserved, read-only) | Owning agent |
+| Shared decisions | `decisions.md` | Yes, when large | `decisions-archive.md` (preserved, not loaded) | All agents |
+| Skills | `skills/{name}/SKILL.md` | Never | Grows indefinitely | All agents |
+| Directives | In `decisions.md` | With decisions | Archived with decisions | All agents |
+| Wisdom | `identity/wisdom.md` | Never | Permanent | All agents |
+| Casting registry | `casting/registry.json` | Never | Permanent | Coordinator |
+| Session logs | `log/*.md` | Never edited | Append-only archive | Read-only |
+| Orchestration logs | `orchestration-log/*.md` | Never edited | Append-only archive | Read-only |
+
+Knowledge that needs to survive compaction belongs in **skills**. Reusable patterns, code conventions, and technical techniques live here because they grow without limits. Team rules and preferences go in directives (stored in `decisions.md`) — they persist through compaction cycles because directives are preserved when decisions get summarized.
+
+> 💡 **Where to store permanent knowledge:** Put reusable patterns and techniques in `.squad/skills/`. Put team rules and preferences in directives (they persist in `decisions.md`). For org-wide knowledge that multiple teams need, use [upstream inheritance](/features/upstream-inheritance) to share a skills library.
+
+---
+
 ## Tips
 
 - **Commit `.squad/`** — anyone who clones the repo gets the team with all their accumulated knowledge.
