@@ -23,8 +23,14 @@ jobs:
       - name: Clean dist folders
         run: rm -rf packages/*/dist
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install root and SDK dependencies
+        run: npm ci --workspace=packages/squad-sdk
+
+      - name: Build SDK
+        run: npm run build --workspace=packages/squad-sdk
+
+      - name: Install CLI dependencies
+        run: npm ci --workspace=packages/squad-cli
 
       - name: Install docs dependencies
         run: npm ci
@@ -33,23 +39,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Build
-        id: build
-        continue-on-error: true
-        run: npm run build
-
-      - name: Debug - List SDK dist contents
-        run: ls -la packages/squad-sdk/dist/ || echo "SDK dist not found"
-
-      - name: Debug - Check roles exists
-        run: test -d packages/squad-sdk/dist/roles && echo "roles dir exists" || echo "roles dir MISSING"
-
-      - name: Debug - List CLI node_modules SDK
-        run: ls -la packages/squad-cli/node_modules/@bradygaster/squad-sdk/dist/ || echo "SDK not found in CLI node_modules"
-
-      - name: Fail if build failed
-        if: steps.build.outcome == 'failure'
-        run: exit 1
+      - name: Build CLI
+        run: npm run build --workspace=packages/squad-cli
 
       - name: Run tests
         run: npm test
