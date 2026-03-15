@@ -36,5 +36,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Debug - List SDK dist contents
+        run: ls -la packages/squad-sdk/dist/
+
+      - name: Debug - Check roles exists
+        run: test -d packages/squad-sdk/dist/roles && echo "roles dir exists" || echo "roles dir MISSING"
+
+      - name: Debug - List CLI node_modules SDK
+        run: ls -la packages/squad-cli/node_modules/@bradygaster/squad-sdk/dist/ || echo "SDK not found in CLI node_modules"
+
       - name: Run tests
         run: npm test
