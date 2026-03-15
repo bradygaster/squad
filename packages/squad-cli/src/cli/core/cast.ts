@@ -6,7 +6,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { getRoleById, generateCharterFromRole } from '@bradygaster/squad-sdk';
+import { getRoleById, generateCharterFromRole, addAgentToConfig } from '@bradygaster/squad-sdk';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -531,6 +531,11 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const policy = { universe_allowlist: ['*'], max_capacity: 25 };
   await writeFile(join(castingDir, 'policy.json'), JSON.stringify(policy, null, 2) + '\n');
   filesCreated.push(join(castingDir, 'policy.json'));
+
+  // Sync new agents into squad.config.ts (if present)
+  for (const member of allMembers) {
+    await addAgentToConfig(teamRoot, member.name.toLowerCase(), member.role);
+  }
 
   return { teamRoot, membersCreated, filesCreated };
 }

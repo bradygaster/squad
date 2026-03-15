@@ -163,6 +163,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         name: 'scribe',
         role: 'scribe',
         displayName: 'Scribe',
+      },
+      {
+        name: 'ralph',
+        role: 'ralph',
+        displayName: 'Ralph',
       }
     ],
     configFormat: options.sdk ? 'sdk' : 'markdown',
