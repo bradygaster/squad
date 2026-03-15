@@ -20,7 +20,7 @@
 
 ## Rules
 
-1. **One file per agent spawn.** Named `{timestamp}-{agent-name}.md`.
+1. **One file per agent spawn.** Named `{timestamp}-{agent-name}.md`. Timestamps must be filename-safe (replace colons with hyphens, e.g., `2026-02-23T20-16-27Z`).
 2. **Log BEFORE spawning.** The entry must exist before the agent runs.
 3. **Update outcome AFTER the agent completes.** Fill in the Outcome field.
 4. **Never delete or edit past entries.** Append-only.

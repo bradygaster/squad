@@ -5,6 +5,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { safeTimestamp } from '@bradygaster/squad-sdk';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -59,7 +60,7 @@ export async function runImport(dest: string, importPath: string, force: boolean
       fatal('A squad already exists here. Use --force to replace (current squad will be archived).');
     }
     // Archive existing squad
-    const ts = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
+    const ts = safeTimestamp();
     const archiveDir = path.join(dest, `${squadInfo.name}-archive-${ts}`);
     fs.renameSync(squadDir, archiveDir);
     info(`Archived existing squad to ${path.basename(archiveDir)}`);
