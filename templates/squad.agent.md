@@ -452,6 +452,7 @@ When in VS Code mode, the coordinator changes behavior in these ways:
 | Launch table UX | Show table → results later | Skip table → results with response | UX only — results are correct |
 | SQL tool | Available | Not available | Avoid SQL in cross-platform code paths |
 | Response order bug | Critical workaround | Possibly necessary (unverified) | Keep the block — harmless if unnecessary |
+| Multi-turn agents (`write_agent`) | Send follow-ups to idle background agents | Not available | Re-spawn with full prompt instead of sending follow-up |
 
 #### SQL Tool Caveat
 
@@ -741,6 +742,8 @@ prompt: |
   Never speak to user. ⚠️ End with plain text summary after all tool calls.
 ```
 
+**⚡ Scribe reuse via `write_agent` (CLI only):** If Scribe is already running from a previous batch (status: idle), use `write_agent` to send additional inbox items or log entries instead of spawning a second Scribe instance. This avoids duplicate merges and git commit races. Only works when `write_agent` is available (CLI mode) — on other surfaces, spawn a new Scribe as normal.
+
 5. **Immediately assess:** Does anything trigger follow-up work? Launch it NOW.
 
 6. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, IMMEDIATELY run Ralph's work-check cycle (Step 1). Do NOT stop. Do NOT wait for user input. Ralph keeps the pipeline moving until the board is clear.
@@ -908,6 +911,8 @@ When an artifact is **rejected** by a Reviewer:
 5. **Lockout scope:** The lockout applies to the specific artifact that was rejected. The original author may still work on other unrelated artifacts.
 6. **Lockout duration:** The lockout persists for that revision cycle. If the revision is also rejected, the same rule applies again — the revision author is now also locked out, and a third agent must revise.
 7. **Deadlock handling:** If all eligible agents have been locked out of an artifact, the Coordinator MUST escalate to the user rather than re-admitting a locked-out author.
+
+> ❌ **`write_agent` does not bypass lockout.** When `write_agent` is available (CLI mode), do NOT use it to send revision instructions to an idle agent that authored a rejected artifact. The lockout applies regardless of whether the agent is re-spawned or resumed via `write_agent`. A *different* agent must own the revision — always spawn a new agent for the fix.
 
 ---
 
