@@ -34,3 +34,5 @@ Created `.squad/skills/content-triage/SKILL.md` to codify the boundary heuristic
 **Backlog triage methodology (47-issue analysis):**  
 Rank by: (1) bugs with active user impact, (2) quality/test gaps blocking GA release, (3) high-ROI features unblocking downstream work. Current sprint Top 10 identifies 3 bugs (WSL crash, SDK init regression, VS Code crash), 3 quality gates (SDK feature parity testing), and 4 governance/architecture decisions (opt-in roles, ADR archive, docs gaps, upstream sync). This pattern scales: categorize all open issues by type → sort each category by impact/urgency → interleave across sprint capacity to balance stability (bugs/quality) with velocity (features). Squad GA is gated by quality #340, #341, #347 and user-facing regressions #363, #337 — these must ship in parallel next sprint.
 
+📌 Team update (2026-03-15T11:40:00Z): Bug classification complete (6 issues identified, 2 fixed) — ready for next triage phase
+
