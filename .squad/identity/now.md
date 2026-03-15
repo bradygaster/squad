@@ -1,28 +1,29 @@
 ---
-updated_at: 2026-03-08T00:00:00Z
-focus_area: Post-v0.8.24 Stabilization
-version: v0.8.24
-branch: main
-tests_passing: 3931
+updated_at: 2026-03-15T11:41:00Z
+focus_area: Irritating Bugs Sprint — Cross-Platform & Skill Path Migration
+version: v0.8.24+dev
+branch: dev
+tests_passing: 4113
 tests_todo: 46
 tests_skipped: 5
-test_files: 149
+test_files: 152
 team_size: 19 active agents + Scribe + Ralph + @copilot
 team_identity: Apollo 13 / NASA Mission Control
 process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never commit to main directly.
+github_account: Always use bradygaster (personal) in this repo. Use ghp/gh-personal aliases.
 ---
 
 # What We're Focused On
 
-**Status:** v0.8.24 shipped to npm. Build clean (0 errors). Tests stable (3,931 passing, ~89s runtime). One pre-existing test failure in aspire-integration.test.ts (requires Docker). Post-release stabilization in progress. External contributor Tamir shipping major features across multiple branches.
+**Status:** Dev branch stabilized after merge marathon. 4 PRs merged (#404, #403, #405, #389 pending rebase). Terminal flicker fix cherry-picked from main. Next sprint: irritating cross-platform bugs (#197, #353, #354).
 
 ## Current State
 
-**Version:** v0.8.24 (released, on npm)
+**Version:** v0.8.24+dev (pre-release, on dev branch)
 - **Packages:** @bradygaster/squad-sdk, @bradygaster/squad-cli
-- **Branch:** main
+- **Branch:** dev
 - **Build:** ✅ clean (0 errors)
-- **Tests:** 3,931 passed, 46 todo, 5 skipped, 149 test files (~89s)
+- **Tests:** 4,113 passed, 46 todo, 5 skipped, 152 test files (~88s)
   - Only failure: aspire-integration.test.ts (needs Docker, pre-existing)
 
 **Stack:**
@@ -58,11 +59,33 @@ process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never 
 
 ## Key Recent Fixes (Post v0.8.24)
 
+- **PR #404** — Cross-platform filename fix (colons in timestamps) + config.json absolute path fix
+- **PR #403** — FAQ page + CLI guidance docs
+- **PR #405** — Terminal flicker fix cherry-picked from main (ANSI escapes, animation FPS 15→5)
 - Wired `upstream` + `watch`/`triage` commands in cli-entry.ts (recurring unwired command bug)
 - Made tests name-agnostic (resilient to team rebirths)
 - Dynamic blog discovery in docs-build tests (no longer hardcoded)
 - Cleared KNOWN_UNWIRED set (all commands now wired)
 
+## Next Sprint — Irritating Bugs
+
+Pick up in next session ("Team, pick up the irritating bugs sprint — #197, #353, #354"):
+
+| Issue | What | Who | Effort |
+|-------|------|-----|--------|
+| #197 | Migration experience overhaul | EECOM + PAO | Medium |
+| #353 | Create skills in `.copilot/skills/` | EECOM | Medium |
+| #354 | Full skill path migration `.squad/` → `.copilot/` | EECOM + FIDO | Large |
+
+## Pending PRs
+
+- **PR #389** (diberry) — Consolidated docs quality. Squad review ✅. Needs rebase against dev. Merge when rebased.
+- **PR #381** (tamirdresher) — Targets main (should be dev), has conflicts, uses CommonJS. Needs retarget + TypeScript conversion.
+
+## Skills Installed
+
+- `github-multi-account` — from tamirdresher/squad-skills. Configures ghp/ghw aliases for multi-account GitHub CLI.
+
 ## Process
 
-All work through PRs. Branch naming: `squad/{issue-number}-{slug}`. Never commit to main directly. Squad member review before merge.
+All work through PRs. Branch naming: `squad/{issue-number}-{slug}`. Never commit to main directly. Squad member review before merge. Always use `bradygaster` (personal) GitHub account in this repo — use `ghp` alias.
