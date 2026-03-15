@@ -45,3 +45,38 @@ CLI completeness audit (2026-03-08) confirmed: 26 primary commands routed in cli
 
 **PR:** #404 opened targeting dev.
 
+### CastingEngine CLI Integration (#342) (2026-03-15T11:20:00Z)
+
+**Context:** CastingEngine class (Issue #138, M3-2) existed in SDK with curated universe templates (The Usual Suspects, Ocean's Eleven) but was completely bypassed during `squad init`. LLM picked arbitrary names, and charter generation used regex-based `personalityForRole()` instead of template backstories.
+
+**Investigation:**
+- CastingEngine.castTeam() was never called in CLI flow
+- coordinator.ts buildInitModePrompt() let LLM pick any universe without guidance
+- cast.ts generateCharter() used fallback personality logic instead of engine data
+- SDK exports two AgentRole types: broad one in casting-engine.ts, restrictive one in runtime/constants.ts
+
+**Integration Strategy (Augment, Not Replace):**
+- LLM still proposes roles and team composition (the beloved casting experience)
+- CastingEngine augments with curated names when universe is recognized
+- Mapping: "The Usual Suspects" → 'usual-suspects', "Ocean's Eleven" → 'oceans-eleven'
+- Unrecognized universes (Matrix, Alien, etc.) preserve LLM's arbitrary names
+
+**Implementation:**
+1. Added `augmentWithCastingEngine()` in cast.ts to replace LLM names with engine characters
+2. Updated coordinator prompt to suggest preferred universes (Usual Suspects, Ocean's Eleven)
+3. Extended `generateCharter()` to use engine personalities/backstories when available
+4. Attached `_personality` and `_backstory` to CastMember objects for charter generation
+5. Role mapping: CLI role strings → engine AgentRole enum (lead, developer, tester, etc.)
+
+**Type Import Pattern:**
+- Import CastingEngine from `@bradygaster/squad-sdk/casting` (not main barrel export)
+- Use casting-engine.ts AgentRole type (9 roles) not runtime/constants.ts (6 roles)
+- Partial mapping: unmapped roles log warning and skip engine casting
+
+**Tests:**
+- Created test/casting-engine-integration.test.ts (5 tests, all pass)
+- Validates augmentation for both universes, case-insensitive matching, fallback behavior
+- All 45 existing cast-parser/casting tests still pass
+
+**PR:** #417 opened targeting dev.
+
