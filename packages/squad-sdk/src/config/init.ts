@@ -457,12 +457,25 @@ function titleCase(str: string): string {
 
 /**
  * Stamp version into squad.agent.md content.
+ * Replaces three locations: HTML comment, Identity Version line, and {version} placeholder.
  */
 function stampVersionInContent(content: string, version: string): string {
-  return content.replace(
+  // HTML comment: <!-- version: X.Y.Z -->
+  content = content.replace(
     /<!-- version: [^>]* -->/,
     `<!-- version: ${version} -->`
   );
+  // Identity section: - **Version:** X.Y.Z
+  content = content.replace(
+    /- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/m,
+    `- **Version:** ${version}`
+  );
+  // Greeting placeholder: `Squad v{version}`
+  content = content.replace(
+    /`Squad v\{version\}`/g,
+    `\`Squad v${version}\``
+  );
+  return content;
 }
 
 /**

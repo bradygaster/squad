@@ -6,17 +6,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { dirname } from 'node:path';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
 import { TEMPLATE_MANIFEST, getTemplatesDir } from './templates.js';
 import { runMigrations } from './migrations.js';
 import { scrubEmails } from './email-scrub.js';
-
-const currentFile = fileURLToPath(import.meta.url);
-const currentDir = dirname(currentFile);
+import { getPackageVersion, stampVersion, readInstalledVersion } from './version.js';
 
 export interface UpgradeOptions {
   migrateDirectory?: boolean;
@@ -28,26 +24,6 @@ export interface UpdateInfo {
   toVersion: string;
   filesUpdated: string[];
   migrationsRun: string[];
-}
-
-/**
- * Read version from squad.agent.md HTML comment
- */
-function readInstalledVersion(agentPath: string): string {
-  try {
-    if (!fs.existsSync(agentPath)) return '0.0.0';
-    const content = fs.readFileSync(agentPath, 'utf8');
-    
-    // Try HTML comment first (new format)
-    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+(?:\.\d+)?)?) -->/);
-    if (commentMatch) return commentMatch[1]!;
-    
-    // Fallback to frontmatter (old format)
-    const frontmatterMatch = content.match(/^version:\s*"([^"]+)"/m);
-    return frontmatterMatch ? frontmatterMatch[1]! : '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
 }
 
 /**
@@ -70,24 +46,6 @@ function compareSemver(a: string, b: string): number {
   if (!aPre && bPre) return 1;
   if (aPre && bPre) return a < b ? -1 : a > b ? 1 : 0;
   return 0;
-}
-
-/**
- * Stamp version into squad.agent.md after copying
- */
-function stampVersion(filePath: string, version: string): void {
-  let content = fs.readFileSync(filePath, 'utf8');
-  
-  // Replace version in HTML comment
-  content = content.replace(/<!-- version: [^>]+ -->/m, `<!-- version: ${version} -->`);
-  
-  // Replace version in Identity section's Version line
-  content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/m, `- **Version:** ${version}`);
-  
-  // Replace {version} placeholder
-  content = content.replace(/`Squad v\{version\}`/g, `\`Squad v${version}\``);
-  
-  fs.writeFileSync(filePath, content);
 }
 
 /**
@@ -288,24 +246,10 @@ function writeWorkflowFile(file: string, srcPath: string, destPath: string, proj
 }
 
 /**
- * Get CLI version from package.json
- */
-function getCLIVersion(): string {
-  try {
-    // From src/cli/core/upgrade.ts, go up to package root
-    const pkgPath = path.join(currentDir, '..', '..', '..', 'package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    return pkg.version || '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
-}
-
-/**
  * Run the upgrade command
  */
 export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Promise<UpdateInfo> {
-  const cliVersion = getCLIVersion();
+  const cliVersion = getPackageVersion();
   const filesUpdated: string[] = [];
   
   // Detect squad directory
@@ -323,7 +267,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   }
   
   const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
-  const oldVersion = readInstalledVersion(agentDest);
+  const oldVersion = readInstalledVersion(agentDest) ?? '0.0.0';
   
   // Check if already current
   const isAlreadyCurrent = oldVersion && oldVersion !== '0.0.0' && compareSemver(oldVersion, cliVersion) === 0;

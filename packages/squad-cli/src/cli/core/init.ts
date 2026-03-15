@@ -3,13 +3,14 @@
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { detectSquadDir } from './detect-squad-dir.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
-import { getPackageVersion } from './version.js';
+import { getPackageVersion, stampVersion } from './version.js';
 import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, type InitOptions } from '@bradygaster/squad-sdk';
 
 const CYAN = '\x1b[36m';
@@ -195,6 +196,12 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   }
 
   process.off('SIGINT', sigintHandler);
+
+  // Ensure version is fully stamped in squad.agent.md
+  const agentPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
+  if (fs.existsSync(agentPath)) {
+    stampVersion(agentPath, version);
+  }
 
   // Report .init-prompt storage
   if (options.prompt) {

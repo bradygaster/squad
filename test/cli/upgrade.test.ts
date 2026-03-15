@@ -55,6 +55,9 @@ describe('CLI: upgrade command', () => {
     // Verify the file was updated (version should be different from 0.1.0)
     const upgraded = await readFile(agentPath, 'utf-8');
     expect(upgraded).not.toContain('<!-- version: 0.1.0 -->');
+    // Identity section and greeting placeholder must also be stamped
+    expect(upgraded).toContain(`- **Version:** ${getPackageVersion()}`);
+    expect(upgraded).not.toContain('`Squad v{version}`');
   });
 
   it('should return upgrade info with updated files', async () => {
