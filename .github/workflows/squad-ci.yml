@@ -29,8 +29,10 @@ jobs:
       - name: Build SDK
         run: npm run build --workspace=packages/squad-sdk
 
-      - name: Install CLI dependencies
-        run: npm ci --workspace=packages/squad-cli
+      - name: Force workspace link refresh
+        run: |
+          rm -rf packages/squad-cli/node_modules/@bradygaster/squad-sdk
+          npm ci --workspace=packages/squad-cli
 
       - name: Debug - Check CLI node_modules SDK after install
         run: |
