@@ -20,6 +20,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Clean dist folders
+        run: rm -rf packages/*/dist
+
       - name: Install dependencies
         run: npm ci
 
