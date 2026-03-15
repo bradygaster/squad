@@ -166,6 +166,48 @@ describe('resolveSquadPaths()', () => {
     expect(result!.projectDir).toBe(join(TMP, '.squad'));
   });
 
+  // ---- teamRoot: "." (local squad with explicit relative path) ----
+
+  it('resolves teamRoot "." to the repo root (parent of .squad/)', () => {
+    scaffold('.git', '.squad');
+    writeJson('.squad/config.json', { version: 1, teamRoot: '.' });
+
+    const result = resolveSquadPaths(TMP);
+    expect(result).not.toBeNull();
+    expect(result!.teamDir).toBe(TMP);
+    expect(result!.config!.teamRoot).toBe('.');
+  });
+
+  // ---- Backward compat: absolute teamRoot still resolves ----
+
+  it('resolves absolute teamRoot for backward compatibility', () => {
+    const absTeamDir = join(TMP, 'external-team');
+    scaffold('.git', '.squad', 'external-team');
+    writeJson('.squad/config.json', {
+      version: 1,
+      teamRoot: absTeamDir,
+      projectKey: null,
+    });
+
+    const result = resolveSquadPaths(TMP);
+    expect(result).not.toBeNull();
+    expect(result!.mode).toBe('remote');
+    expect(result!.teamDir).toBe(absTeamDir);
+  });
+
+  // ---- Backward compat: config without teamRoot (local mode) ----
+
+  it('falls back to local mode for config without teamRoot (backward compat)', () => {
+    scaffold('.git', '.squad');
+    writeJson('.squad/config.json', { version: 1 });
+
+    const result = resolveSquadPaths(TMP);
+    expect(result).not.toBeNull();
+    expect(result!.mode).toBe('local');
+    expect(result!.projectDir).toBe(join(TMP, '.squad'));
+    expect(result!.teamDir).toBe(join(TMP, '.squad'));
+  });
+
   // ---- projectKey handling ----
 
   it('sets projectKey to null when field is missing from config', () => {

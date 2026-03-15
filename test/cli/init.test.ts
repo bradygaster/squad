@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readdir, readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, isAbsolute } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
@@ -47,6 +47,19 @@ describe('CLI: init command', () => {
     expect(existsSync(join(TEST_ROOT, '.squad', 'skills'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'plugins'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'identity'))).toBe(true);
+  });
+
+  it('should write teamRoot as "." in .squad/config.json (not absolute)', async () => {
+    await runInit(TEST_ROOT);
+
+    const configPath = join(TEST_ROOT, '.squad', 'config.json');
+    expect(existsSync(configPath)).toBe(true);
+
+    const raw = await readFile(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+    expect(config.version).toBe(1);
+    expect(config.teamRoot).toBe('.');
+    expect(isAbsolute(config.teamRoot)).toBe(false);
   });
 
   it('should create identity files (now.md, wisdom.md)', async () => {
