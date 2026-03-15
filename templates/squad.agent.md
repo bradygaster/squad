@@ -771,7 +771,8 @@ If the user says "I need a designer" or "add someone for DevOps":
 4. **Update `.squad/casting/registry.json`** with the new agent entry.
 5. Add to team.md roster.
 6. Add routing entries to routing.md.
-7. Say: *"✅ {CastName} joined the team as {Role}."*
+7. **Update `squad.config.ts`** (if it exists): add a new `defineAgent()` block for the member and append the agent's variable name to both the `members` array in `defineTeam()` and the `agents` array in `defineSquad()`.
+8. Say: *"✅ {CastName} joined the team as {Role}."*
 
 ### Removing Team Members
 

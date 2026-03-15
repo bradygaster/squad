@@ -204,3 +204,35 @@ describe('squad init --sdk flag', () => {
     expect(configContent).toContain('Test Squad');
   });
 });
+
+describe('routing.md template (#339)', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'squad-routing-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('routing.md does not pre-configure @copilot routing', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'edie', role: 'Engineer' }],
+      configFormat: 'sdk',
+      includeTemplates: true,
+    };
+
+    await initSquad(options);
+
+    const routingPath = join(tempDir, '.squad', 'routing.md');
+    expect(existsSync(routingPath)).toBe(true);
+
+    const routingContent = await readFile(routingPath, 'utf-8');
+    // @copilot routing should not be pre-configured
+    expect(routingContent).not.toContain('@copilot');
+    expect(routingContent).not.toContain('squad:copilot');
+  });
+});

@@ -359,6 +359,63 @@ function buildMembersTable(allMembers: CastMember[]): string {
   return table;
 }
 
+// ── squad.config.ts updater ────────────────────────────────────────
+
+/** Role string → kebab-case role id for squad.config.ts */
+function normalizeRole(role: string): string {
+  return role.toLowerCase().replace(/\s+/g, '-');
+}
+
+/**
+ * Generate (or overwrite) squad.config.ts with defineSquad/defineAgent syntax.
+ * Only writes when squad.config.ts already exists (i.e., init was run with --sdk).
+ */
+async function updateSquadConfig(teamRoot: string, allMembers: CastMember[], projectDescription: string): Promise<boolean> {
+  const configPath = join(teamRoot, 'squad.config.ts');
+  if (!existsSync(configPath)) return false;
+
+  // Only update SDK-format configs (contains defineSquad)
+  const existing = await readFile(configPath, 'utf-8');
+  if (!existing.includes('defineSquad')) return false;
+
+  // Extract project name from existing config if possible
+  const nameMatch = existing.match(/name:\s*'([^']+)'/);
+  const projectName = nameMatch ? nameMatch[1] : 'my-project';
+
+  let code = `import {\n  defineSquad,\n  defineTeam,\n  defineAgent,\n} from '@bradygaster/squad-sdk';\n\n`;
+  code += `/**\n * Squad Configuration — ${projectName}\n`;
+  if (projectDescription) {
+    code += ` *\n * ${projectDescription}\n`;
+  }
+  code += ` */\n`;
+
+  for (const member of allMembers) {
+    const varName = member.name.toLowerCase();
+    const roleId = normalizeRole(member.role);
+    code += `const ${varName} = defineAgent({\n`;
+    code += `  name: '${varName}',\n`;
+    code += `  role: '${roleId}',\n`;
+    code += `  description: '${member.name}',\n`;
+    code += `  status: 'active',\n`;
+    code += `});\n\n`;
+  }
+
+  code += `export default defineSquad({\n`;
+  code += `  version: '1.0.0',\n\n`;
+  code += `  team: defineTeam({\n`;
+  code += `    name: '${projectName}',\n`;
+  if (projectDescription) {
+    code += `    description: '${projectDescription.replace(/'/g, "\\'")}',\n`;
+  }
+  code += `    members: [${allMembers.map(m => `'${m.name.toLowerCase()}'`).join(', ')}],\n`;
+  code += `  }),\n\n`;
+  code += `  agents: [${allMembers.map(m => m.name.toLowerCase()).join(', ')}],\n`;
+  code += `});\n`;
+
+  await writeFile(configPath, code);
+  return true;
+}
+
 function buildRoutingTable(members: CastMember[]): string {
   let table = `## Work Type → Agent\n\n| Work Type | Primary | Secondary |\n|-----------|---------|----------|\n`;
   for (const m of members) {
@@ -493,6 +550,12 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     ].join('\n');
     await writeFile(routingPath, freshRouting);
     filesCreated.push(routingPath);
+  }
+
+  // Update squad.config.ts if it exists (SDK mode)
+  const configUpdated = await updateSquadConfig(teamRoot, allMembers, proposal.projectDescription);
+  if (configUpdated) {
+    filesCreated.push(join(teamRoot, 'squad.config.ts'));
   }
 
   // Create casting state files

@@ -398,18 +398,21 @@ export async function onboardAgent(options: OnboardOptions): Promise<OnboardResu
 /**
  * Update an agent's configuration to squad.config.ts (if it exists).
  * 
- * This is a helper function to add agent routing after onboarding.
- * Only works with TypeScript configs (JSON requires manual edit).
+ * Handles both SDK builder format (defineSquad/defineAgent) and legacy
+ * SquadConfig format. For SDK format, adds a defineAgent block and updates
+ * the members/agents arrays. For legacy format, adds routing rules.
  * 
  * @param teamRoot - Team root directory
  * @param agentName - Agent name to add
  * @param role - Agent role
- * @returns True if config was updated, false if not found or JSON format
+ * @param displayName - Optional display name for the agent
+ * @returns True if config was updated, false if not found or incompatible format
  */
 export async function addAgentToConfig(
   teamRoot: string,
   agentName: string,
-  role: string
+  role: string,
+  displayName?: string
 ): Promise<boolean> {
   const configPath = join(teamRoot, 'squad.config.ts');
   
@@ -420,50 +423,120 @@ export async function addAgentToConfig(
   try {
     const content = await readFile(configPath, 'utf-8');
     
-    // Simple heuristic: add routing rule if role matches common work types
-    const workTypeMap: Record<string, string> = {
-      'developer': 'feature-dev',
-      'tester': 'testing',
-      'scribe': 'documentation',
-      'architect': 'architecture',
-      'designer': 'design'
-    };
-    
-    const workType = workTypeMap[role.toLowerCase()];
-    if (!workType) {
-      return false; // No obvious work type mapping
+    // SDK builder format (defineSquad/defineAgent)
+    if (content.includes('defineSquad')) {
+      return await addAgentToSDKConfig(configPath, content, agentName, role, displayName);
     }
     
-    // Check if this work type already has a rule
-    const workTypePattern = new RegExp(`workType:\\s*['"]${workType}['"]`);
-    if (workTypePattern.test(content)) {
-      return false; // Already has a rule for this work type
-    }
-    
-    // Find the routing rules array and add new rule
-    const rulesPattern = /rules:\s*\[([^\]]*)\]/s;
-    const match = content.match(rulesPattern);
-    
-    if (!match) {
-      return false; // Cannot parse rules array
-    }
-    
-    const newRule = `      {
-        workType: '${workType}',
-        agents: ['@${agentName}'],
-        confidence: 'high'
-      }`;
-    
-    const updatedRules = match[1]!.trim() + ',\n' + newRule;
-    const updatedContent = content.replace(
-      rulesPattern,
-      `rules: [\n${updatedRules}\n    ]`
-    );
-    
-    await writeFile(configPath, updatedContent, 'utf-8');
-    return true;
+    // Legacy SquadConfig format (routing rules)
+    return await addAgentToLegacyConfig(configPath, content, agentName, role);
   } catch (error) {
     // Silently fail if we can't parse/update the config
     return false;
   }
+}
+
+/**
+ * Add an agent to an SDK-format squad.config.ts (defineSquad/defineAgent).
+ * Inserts a new defineAgent block before `export default` and appends
+ * the agent to both the members and agents arrays.
+ */
+async function addAgentToSDKConfig(
+  configPath: string,
+  content: string,
+  agentName: string,
+  role: string,
+  displayName?: string
+): Promise<boolean> {
+  const varName = agentName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const roleId = role.toLowerCase().replace(/\s+/g, '-');
+  const desc = displayName || titleCase(agentName);
+
+  // Skip if agent already defined
+  if (content.includes(`name: '${varName}'`) || content.includes(`name: '${agentName}'`)) {
+    return false;
+  }
+
+  // Insert defineAgent block before `export default`
+  const exportIdx = content.indexOf('export default');
+  if (exportIdx === -1) return false;
+
+  const agentBlock = `const ${varName} = defineAgent({\n  name: '${varName}',\n  role: '${roleId}',\n  description: '${desc}',\n  status: 'active',\n});\n\n`;
+  let updated = content.slice(0, exportIdx) + agentBlock + content.slice(exportIdx);
+
+  // Add to members array: members: ['a', 'b'] → members: ['a', 'b', 'varName']
+  updated = updated.replace(
+    /(members:\s*\[)([^\]]*)\]/,
+    (_, prefix, items) => {
+      const trimmed = items.trimEnd();
+      const sep = trimmed.length > 0 ? ', ' : '';
+      return `${prefix}${trimmed}${sep}'${varName}']`;
+    }
+  );
+
+  // Add to agents array: agents: [a, b] → agents: [a, b, varName]
+  updated = updated.replace(
+    /(agents:\s*\[)([^\]]*)\]/,
+    (_, prefix, items) => {
+      const trimmed = items.trimEnd();
+      const sep = trimmed.length > 0 ? ', ' : '';
+      return `${prefix}${trimmed}${sep}${varName}]`;
+    }
+  );
+
+  await writeFile(configPath, updated, 'utf-8');
+  return true;
+}
+
+/**
+ * Add an agent routing rule to a legacy SquadConfig format config.
+ */
+async function addAgentToLegacyConfig(
+  configPath: string,
+  content: string,
+  agentName: string,
+  role: string
+): Promise<boolean> {
+  // Simple heuristic: add routing rule if role matches common work types
+  const workTypeMap: Record<string, string> = {
+    'developer': 'feature-dev',
+    'tester': 'testing',
+    'scribe': 'documentation',
+    'architect': 'architecture',
+    'designer': 'design'
+  };
+  
+  const workType = workTypeMap[role.toLowerCase()];
+  if (!workType) {
+    return false; // No obvious work type mapping
+  }
+  
+  // Check if this work type already has a rule
+  const workTypePattern = new RegExp(`workType:\\s*['"]${workType}['"]`);
+  if (workTypePattern.test(content)) {
+    return false; // Already has a rule for this work type
+  }
+  
+  // Find the routing rules array and add new rule
+  const rulesPattern = /rules:\s*\[([^\]]*)\]/s;
+  const match = content.match(rulesPattern);
+  
+  if (!match) {
+    return false; // Cannot parse rules array
+  }
+  
+  const newRule = `      {
+        workType: '${workType}',
+        agents: ['@${agentName}'],
+        confidence: 'high'
+      }`;
+  
+  const updatedRules = match[1]!.trim() + ',\n' + newRule;
+  const updatedContent = content.replace(
+    rulesPattern,
+    `rules: [\n${updatedRules}\n    ]`
+  );
+  
+  await writeFile(configPath, updatedContent, 'utf-8');
+  return true;
 }

@@ -243,6 +243,72 @@ describe('createTeam', () => {
         expect(existsSync(join(base, 'history.md'))).toBe(true);
       }
     });
+
+    it('does not update squad.config.ts when it does not exist', async () => {
+      await createTeam(tempDir, minimalProposal);
+      expect(existsSync(join(tempDir, 'squad.config.ts'))).toBe(false);
+    });
+  });
+
+  describe('SDK project — existing squad.config.ts', () => {
+    beforeEach(async () => {
+      // Simulate a project initialized with --sdk
+      const sdkConfig = `import {
+  defineSquad,
+  defineTeam,
+  defineAgent,
+} from '@bradygaster/squad-sdk';
+
+const scribe = defineAgent({
+  name: 'scribe',
+  role: 'scribe',
+  description: 'Scribe',
+  status: 'active',
+});
+
+export default defineSquad({
+  version: '1.0.0',
+
+  team: defineTeam({
+    name: 'test-project',
+    members: ['scribe'],
+  }),
+
+  agents: [scribe],
+});
+`;
+      await writeFile(join(tempDir, 'squad.config.ts'), sdkConfig, 'utf-8');
+    });
+
+    it('updates squad.config.ts with all cast members including Ralph', async () => {
+      await createTeam(tempDir, minimalProposal);
+
+      const config = await readFile(join(tempDir, 'squad.config.ts'), 'utf-8');
+      expect(config).toContain('defineAgent');
+      expect(config).toContain('defineSquad');
+      // All proposal members should be present
+      expect(config).toContain("name: 'ripley'");
+      expect(config).toContain("name: 'dallas'");
+      expect(config).toContain("name: 'kane'");
+      // Built-ins should be present
+      expect(config).toContain("name: 'scribe'");
+      expect(config).toContain("name: 'ralph'");
+      expect(config).toContain("role: 'work-monitor'");
+    });
+
+    it('includes Ralph in members and agents arrays', async () => {
+      await createTeam(tempDir, minimalProposal);
+
+      const config = await readFile(join(tempDir, 'squad.config.ts'), 'utf-8');
+      // members array should include ralph
+      const membersMatch = config.match(/members:\s*\[([^\]]+)\]/);
+      expect(membersMatch).toBeTruthy();
+      expect(membersMatch![1]).toContain("'ralph'");
+      // agents array should include ralph variable
+      const agentsMatch = config.match(/agents:\s*\[([^\]]+)\]/);
+      expect(agentsMatch).toBeTruthy();
+      expect(agentsMatch![1]).toContain('ralph');
+    });
   });
 
   describe('existing project — .squad/ with empty team.md', () => {

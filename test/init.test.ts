@@ -502,6 +502,83 @@ export default config;
       const updated = await addAgentToConfig(TEST_ROOT, 'specialist', 'unknown-role');
       expect(updated).toBe(false);
     });
+
+    it('should add agent to SDK-format config (defineSquad)', async () => {
+      const sdkConfig = `import {
+  defineSquad,
+  defineTeam,
+  defineAgent,
+} from '@bradygaster/squad-sdk';
+
+const scribe = defineAgent({
+  name: 'scribe',
+  role: 'scribe',
+  description: 'Scribe',
+  status: 'active',
+});
+
+export default defineSquad({
+  version: '1.0.0',
+
+  team: defineTeam({
+    name: 'test-project',
+    members: ['scribe'],
+  }),
+
+  agents: [scribe],
+});
+`;
+
+      await mkdir(TEST_ROOT, { recursive: true });
+      await writeFile(join(TEST_ROOT, 'squad.config.ts'), sdkConfig, 'utf-8');
+
+      const updated = await addAgentToConfig(TEST_ROOT, 'fenster', 'developer', 'Fenster');
+      expect(updated).toBe(true);
+
+      const newContent = await readFile(join(TEST_ROOT, 'squad.config.ts'), 'utf-8');
+      expect(newContent).toContain("name: 'fenster'");
+      expect(newContent).toContain("role: 'developer'");
+      expect(newContent).toContain("description: 'Fenster'");
+      // Members array should include the new agent
+      expect(newContent).toContain("'fenster'");
+      // Agents array should include the variable
+      const agentsMatch = newContent.match(/agents:\s*\[([^\]]+)\]/);
+      expect(agentsMatch).toBeTruthy();
+      expect(agentsMatch![1]).toContain('fenster');
+    });
+
+    it('should not duplicate agent in SDK-format config', async () => {
+      const sdkConfig = `import {
+  defineSquad,
+  defineTeam,
+  defineAgent,
+} from '@bradygaster/squad-sdk';
+
+const scribe = defineAgent({
+  name: 'scribe',
+  role: 'scribe',
+  description: 'Scribe',
+  status: 'active',
+});
+
+export default defineSquad({
+  version: '1.0.0',
+
+  team: defineTeam({
+    name: 'test-project',
+    members: ['scribe'],
+  }),
+
+  agents: [scribe],
+});
+`;
+
+      await mkdir(TEST_ROOT, { recursive: true });
+      await writeFile(join(TEST_ROOT, 'squad.config.ts'), sdkConfig, 'utf-8');
+
+      const updated = await addAgentToConfig(TEST_ROOT, 'scribe', 'scribe');
+      expect(updated).toBe(false);
+    });
   });
 
   describe('Integration: Init + Onboard', () => {
