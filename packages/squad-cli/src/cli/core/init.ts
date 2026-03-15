@@ -182,6 +182,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     version,
     prompt: options.prompt,
     extractionDisabled: options.extractionDisabled,
+    roles: options.roles,
   };
 
   // Handle SIGINT to cleanup orphan .init-prompt

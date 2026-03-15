@@ -16,6 +16,8 @@ import { execFileSync } from 'node:child_process';
 import { MODELS } from '../runtime/constants.js';
 import type { SquadConfig, ModelSelectionConfig, RoutingConfig } from '../runtime/config.js';
 import type { SubSquadDefinition } from '../streams/types.js';
+import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
+import { getRoleById } from '../roles/index.js';
 
 // ============================================================================
 // Template Resolution
@@ -113,6 +115,8 @@ export interface InitOptions {
   extractionDisabled?: boolean;
   /** Optional SubSquad definitions — generates .squad/workstreams.json when provided */
   streams?: SubSquadDefinition[];
+  /** If true, use built-in base roles with useRole() in SDK config (default: false) */
+  roles?: boolean;
 }
 
 /**
@@ -372,6 +376,94 @@ function generateSDKBuilderConfig(options: InitOptions): string {
   code += `  agents: [${agents.map(a => a.name).join(', ')}],\n`;
   code += `});\n`;
   
+  return code;
+}
+
+/** Default starter roles used when --sdk --roles is specified. */
+const SDK_ROLES_STARTER_TEAM = ['lead', 'backend', 'frontend', 'tester'];
+
+/**
+ * Generate SDK builder config using useRole() for base roles.
+ *
+ * Produces a squad.config.ts that imports useRole from the SDK and
+ * references built-in base role definitions instead of plain
+ * defineAgent() calls.
+ */
+function generateSDKBuilderConfigWithRoles(options: InitOptions): string {
+  const { projectName, projectDescription, agents } = options;
+
+  // Partition agents into base-role agents and non-role agents
+  const roleAgents = agents.filter(a => getRoleById(a.role));
+  const plainAgents = agents.filter(a => !getRoleById(a.role));
+
+  // If caller didn't provide any base-role agents, generate a
+  // starter team from the default set.
+  const effectiveRoleAgents = roleAgents.length > 0
+    ? roleAgents
+    : SDK_ROLES_STARTER_TEAM.map(id => {
+        const role = getRoleById(id)!;
+        return { name: id, role: id, displayName: role.title };
+      });
+
+  const needsDefineAgent = plainAgents.length > 0;
+  const needsUseRole = effectiveRoleAgents.length > 0;
+
+  // Build import list
+  const imports = ['defineSquad', 'defineTeam'];
+  if (needsDefineAgent) imports.push('defineAgent');
+  if (needsUseRole) imports.push('useRole');
+
+  let code = `import {\n${imports.map(i => `  ${i},`).join('\n')}\n} from '@bradygaster/squad-sdk';\n\n`;
+
+  code += `/**\n * Squad Configuration — ${projectName}\n`;
+  if (projectDescription) {
+    code += ` *\n * ${projectDescription}\n`;
+  }
+  code += ` *\n * Uses built-in base roles from the role catalog.\n`;
+  code += ` * Customize names and overrides for your project.\n`;
+  code += ` */\n\n`;
+
+  // Generate useRole() definitions
+  for (const agent of effectiveRoleAgents) {
+    const varName = agent.name.replace(/-/g, '_');
+    code += `const ${varName} = useRole('${agent.role}', {\n`;
+    code += `  name: '${agent.name}',\n`;
+    code += `});\n\n`;
+  }
+
+  // Generate plain defineAgent() definitions (for system agents like scribe/ralph)
+  for (const agent of plainAgents) {
+    const displayName = agent.displayName || titleCase(agent.name);
+    code += `const ${agent.name} = defineAgent({\n`;
+    code += `  name: '${agent.name}',\n`;
+    code += `  role: '${agent.role}',\n`;
+    code += `  description: '${displayName}',\n`;
+    code += `  status: 'active',\n`;
+    code += `});\n\n`;
+  }
+
+  // All agent variable names in order
+  const allVarNames = [
+    ...effectiveRoleAgents.map(a => a.name.replace(/-/g, '_')),
+    ...plainAgents.map(a => a.name),
+  ];
+  const allNames = [
+    ...effectiveRoleAgents.map(a => `'${a.name}'`),
+    ...plainAgents.map(a => `'${a.name}'`),
+  ];
+
+  code += `export default defineSquad({\n`;
+  code += `  version: '1.0.0',\n\n`;
+  code += `  team: defineTeam({\n`;
+  code += `    name: '${projectName}',\n`;
+  if (projectDescription) {
+    code += `    description: '${projectDescription.replace(/'/g, "\\'")}',\n`;
+  }
+  code += `    members: [${allNames.join(', ')}],\n`;
+  code += `  }),\n\n`;
+  code += `  agents: [${allVarNames.join(', ')}],\n`;
+  code += `});\n`;
+
   return code;
 }
 
@@ -658,7 +750,8 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
     const configFileName = configFormat === 'sdk' ? 'squad.config.ts' : 
                            configFormat === 'typescript' ? 'squad.config.ts' : 'squad.config.json';
     configPath = join(teamRoot, configFileName);
-    const configContent = configFormat === 'sdk' ? generateSDKBuilderConfig(options) :
+    const configContent = (configFormat === 'sdk' && options.roles) ? generateSDKBuilderConfigWithRoles(options) :
+                          configFormat === 'sdk' ? generateSDKBuilderConfig(options) :
                           configFormat === 'typescript' ? generateTypeScriptConfig(options) :
                           generateJsonConfig(options);
     
