@@ -856,7 +856,14 @@ export async function runShell(): Promise<void> {
     // Create a temporary Init Mode coordinator session
     let initSession: SquadSession | null = null;
     try {
-      const initSysPrompt = buildInitModePrompt({ teamRoot });
+      // Check for .init-roles marker (set by `squad init --roles` or `/init --roles`)
+      const initRolesMarker = join(teamRoot, '.squad', '.init-roles');
+      const useBaseRoles = existsSync(initRolesMarker);
+      // Consume the marker immediately — it's been read, no need to persist
+      if (useBaseRoles) {
+        try { unlinkSync(initRolesMarker); } catch { /* ignore */ }
+      }
+      const initSysPrompt = buildInitModePrompt({ teamRoot, useBaseRoles });
       initSession = await client.createSession({
         streaming: true,
         systemMessage: { mode: 'append', content: initSysPrompt },
@@ -976,6 +983,8 @@ export async function runShell(): Promise<void> {
     if (existsSync(initPromptFile)) {
       try { unlinkSync(initPromptFile); } catch { /* ignore */ }
     }
+
+    // Note: .init-roles marker is already cleaned up in handleInitCast (consumed on read)
 
     // Invalidate the old coordinator session so the next dispatch builds one
     // with the real team roster

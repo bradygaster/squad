@@ -102,6 +102,8 @@ export interface RunInitOptions {
   includeWorkflows?: boolean;
   /** If true, generate squad.config.ts with SDK builder syntax (default: false) */
   sdk?: boolean;
+  /** If true, use built-in base roles instead of fictional universe casting (default: false) */
+  roles?: boolean;
 }
 
 /**
@@ -206,6 +208,13 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   const agentPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
   if (fs.existsSync(agentPath)) {
     stampVersion(agentPath, version);
+  }
+
+  // Persist --roles flag for the REPL to pick up during casting
+  if (options.roles) {
+    const rolesMarker = path.join(squadDir, '.init-roles');
+    fs.writeFileSync(rolesMarker, '1', 'utf-8');
+    success(`base roles enabled — team will use built-in role catalog`);
   }
 
   // Report .init-prompt storage

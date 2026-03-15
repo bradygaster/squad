@@ -6,6 +6,7 @@ import { listSessions, loadSessionById, type SessionData } from './session-store
 import { formatAgentLine, getStatusTag } from './agent-status.js';
 import type { ShellMessage } from './types.js';
 import path from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { runNapSync, formatNapReport } from '../core/nap.js';
 
 export interface CommandContext {
@@ -129,7 +130,7 @@ function handleHelp(args: string[]): CommandResult {
         '/agents — List team members',
         '/sessions — Past sessions',
         '/resume <id> — Restore session',
-        '/init — Set up your team',
+        '/init [--roles] — Set up your team',
         '/nap — Context hygiene',
         '/version — Show version',
         '/clear — Clear screen',
@@ -151,7 +152,7 @@ function handleHelp(args: string[]): CommandResult {
       '  /agents    — List all team members',
       '  /sessions  — List saved sessions',
       '  /resume    — Restore a past session',
-      '  /init      — Set up your team',
+      '  /init      — Set up your team (add --roles for base role catalog)',
       '  /nap       — Context hygiene (compress, prune, archive)',
       '  /version   — Show version',
       '  /clear     — Clear the screen',
@@ -218,11 +219,19 @@ function handleNap(args: string[], context: CommandContext): CommandResult {
 }
 
 function handleInit(args: string[], context: CommandContext): CommandResult {
-  // Check if args contain an inline prompt
-  const prompt = args.join(' ').trim();
+  // Check for --roles flag
+  const useBaseRoles = args.includes('--roles');
+  const filteredArgs = args.filter(a => a !== '--roles');
+  const prompt = filteredArgs.join(' ').trim();
+
+  if (useBaseRoles) {
+    // Write .init-roles marker for the casting flow to pick up
+    const rolesMarker = path.join(context.teamRoot, '.squad', '.init-roles');
+    try { mkdirSync(path.dirname(rolesMarker), { recursive: true }); } catch { /* ignore */ }
+    try { writeFileSync(rolesMarker, '1', 'utf-8'); } catch { /* ignore */ }
+  }
   
   if (prompt) {
-    // Inline prompt provided: /init "Build a snake game"
     return {
       handled: true,
       triggerInitCast: { prompt },
@@ -240,6 +249,7 @@ function handleInit(args: string[], context: CommandContext): CommandResult {
       'create agent files, and route your work — all automatically.',
       '',
       'Example: "Build a React app with a Node.js backend"',
+      useBaseRoles ? 'Mode: Using built-in base roles (--roles)' : 'Mode: Fictional universe casting (default)',
       '',
       `Team file: ${context.teamRoot}/.squad/team.md`,
     ].join('\n'),
