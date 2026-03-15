@@ -15,7 +15,7 @@ const BLOG_CONTENT_DIR = join(CONTENT_DIR, 'blog');
 const DIST_DIR = join(DOCS_DIR, 'dist');
 
 // Expected content directories in src/content/docs/
-const EXPECTED_GET_STARTED = ['installation', 'first-session', 'choose-your-interface'];
+const EXPECTED_GET_STARTED = ['choose-your-interface', 'first-session', 'installation', 'migration'];
 
 const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad', 'contributing', 'contributors', 'shell', 'faq'];
 

@@ -201,7 +201,7 @@ Squad answers directly without spawning an agent.
 
 Squad automatically picks the right response speed based on your request complexity. Direct answers take seconds, full agent spawns take longer but deliver deeper reasoning and parallel work. You don't control the mode — Squad routes based on what the task needs.
 
-→ [Full guide: Response Modes](features/response-modes.md#response-modes)
+→ [Full guide: Response Modes](features/response-modes.md)
 
 ---
 
@@ -209,7 +209,7 @@ Squad automatically picks the right response speed based on your request complex
 
 Squad's memory is layered — personal agent histories, shared team decisions, and reusable skills. Knowledge compounds over sessions. After a few sessions, agents stop asking questions they've already answered. Mature projects carry full architecture knowledge and decision history.
 
-→ [Full guide: Memory System](features/memory.md#memory-system)
+→ [Full guide: Memory System](features/memory.md)
 
 ---
 

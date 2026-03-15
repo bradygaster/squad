@@ -221,7 +221,7 @@ Set permanent rules early so agents read them before every task — you only say
 
 **Best tip:** Archive outdated decisions in a "Superseded" section so agents ignore them. Check agent `history.md` files when they seem lost — they might be missing context that was learned in previous sessions.
 
-→ [Full memory guide](features/memory.md#memory-system)
+→ [Full memory guide](features/memory.md)
 
 ---
 

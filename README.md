@@ -245,7 +245,7 @@ export default defineSquad({
 });
 ```
 
-Run `squad build` to generate all the markdown. See the [SDK-First Mode Guide](docs/sdk-first-mode.md) for full documentation.
+Run `squad build` to generate all the markdown. See the [SDK-First Mode Guide](docs/src/content/docs/sdk-first-mode.md) for full documentation.
 
 ---
 

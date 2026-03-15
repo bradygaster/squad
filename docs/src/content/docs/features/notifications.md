@@ -1,4 +1,4 @@
-# Squad Pings You
+# Squad pings you
 
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
