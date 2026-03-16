@@ -35,6 +35,7 @@ import {
   defineHooks,
   defineCasting,
   defineSquad,
+  BuilderValidationError,
 } from '../packages/squad-sdk/src/builders/index.js';
 
 // =============================================================================
@@ -125,6 +126,42 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
     const scheduled = config.ceremonies!.find(c => c.trigger === 'schedule');
     expect(scheduled).toBeDefined();
     expect(scheduled!.schedule).toBe('0 9 * * 1-5');
+  });
+
+  it('defineCeremony() throws on missing name', () => {
+    expect(() =>
+      defineCeremony({ name: '', trigger: 'manual' } as any),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineCeremony() throws on non-string trigger', () => {
+    expect(() =>
+      defineCeremony({ name: 'bad', trigger: 42 } as any),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineCeremony() throws on non-array participants', () => {
+    expect(() =>
+      defineCeremony({ name: 'bad', participants: 'edie' } as any),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineCeremony() throws on non-string schedule', () => {
+    expect(() =>
+      defineCeremony({ name: 'bad', schedule: 42 } as any),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineCeremony() throws on non-array hooks', () => {
+    expect(() =>
+      defineCeremony({ name: 'bad', hooks: 'hook-one' } as any),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineCeremony() throws on non-object config', () => {
+    expect(() =>
+      defineCeremony(null as any),
+    ).toThrow(BuilderValidationError);
   });
 
   it('ceremony participants can reference any agent in the squad', () => {
@@ -257,6 +294,39 @@ describe('SDK Feature: Human Team Members (#36)', () => {
   it('agent without status defaults to undefined (implicit active)', () => {
     const agent = defineAgent({ name: 'fenster', role: 'Tester' });
     expect(agent.status).toBeUndefined();
+  });
+
+  it('defineAgent() throws on invalid status value', () => {
+    expect(() =>
+      defineAgent({ name: 'bad', role: 'Tester', status: 'suspended' } as any),
+    ).toThrow(BuilderValidationError);
+    expect(() =>
+      defineAgent({ name: 'bad', role: 'Tester', status: 'suspended' } as any),
+    ).toThrow(/must be one of/);
+  });
+
+  it('defineAgent() throws on empty name', () => {
+    expect(() =>
+      defineAgent({ name: '', role: 'Engineer' }),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineAgent() throws on empty role', () => {
+    expect(() =>
+      defineAgent({ name: 'edie', role: '' }),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineAgent() throws on non-string status', () => {
+    expect(() =>
+      defineAgent({ name: 'edie', role: 'Engineer', status: true } as any),
+    ).toThrow(BuilderValidationError);
+  });
+
+  it('defineAgent() throws on non-object config', () => {
+    expect(() =>
+      defineAgent('not-an-object' as any),
+    ).toThrow(BuilderValidationError);
   });
 
   it('routing rules can reference agents regardless of status', () => {
@@ -557,6 +627,42 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const hooks = defineHooks({});
       // defineHooks is a validator, not a defaulter — undefined fields stay undefined
       expect(hooks.maxAskUser).toBeUndefined();
+    });
+
+    it('defineHooks() throws on non-array allowedWritePaths', () => {
+      expect(() =>
+        defineHooks({ allowedWritePaths: 'src/**' } as any),
+      ).toThrow(BuilderValidationError);
+    });
+
+    it('defineHooks() throws on non-array blockedCommands', () => {
+      expect(() =>
+        defineHooks({ blockedCommands: 'rm -rf' } as any),
+      ).toThrow(BuilderValidationError);
+    });
+
+    it('defineHooks() throws on non-number maxAskUser', () => {
+      expect(() =>
+        defineHooks({ maxAskUser: 'three' } as any),
+      ).toThrow(BuilderValidationError);
+    });
+
+    it('defineHooks() throws on non-boolean scrubPii', () => {
+      expect(() =>
+        defineHooks({ scrubPii: 'yes' } as any),
+      ).toThrow(BuilderValidationError);
+    });
+
+    it('defineHooks() throws on non-boolean reviewerLockout', () => {
+      expect(() =>
+        defineHooks({ reviewerLockout: 1 } as any),
+      ).toThrow(BuilderValidationError);
+    });
+
+    it('defineHooks() throws on non-object config', () => {
+      expect(() =>
+        defineHooks(null as any),
+      ).toThrow(BuilderValidationError);
     });
 
     it('defineSquad() with hooks constraints composes correctly', () => {
