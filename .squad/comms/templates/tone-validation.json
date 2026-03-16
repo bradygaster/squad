@@ -4,63 +4,76 @@
   "reject_patterns": [
     {
       "id": "corporate-speak",
-      "pattern": "(?i)(we appreciate your patience|please be advised|per our discussion|as per|kindly note|please do not hesitate)",
+      "pattern": "(?:[Ww]e appreciate your patience|[Pp]lease be advised|[Pp]er our discussion|[Aa]s per|[Kk]indly note|[Pp]lease do not hesitate)",
       "message": "Corporate speak detected. Use conversational tone instead."
     },
     {
       "id": "passive-voice-formal",
-      "pattern": "(?i)(it has been determined|it was decided|has been escalated|is being investigated|has been noted)",
+      "pattern": "(?:[Ii]t has been determined|[Ii]t was decided|[Hh]as been escalated|[Ii]s being investigated|[Hh]as been noted)",
       "message": "Formal passive voice detected. Use active voice: 'We determined...' or 'We're looking into...'"
     },
     {
       "id": "marketing-hype",
-      "pattern": "(?i)(best in class|cutting.edge|revolutionary|game.changing|industry.leading|next.generation|amazing feature)",
+      "pattern": "(?:[Bb]est[- ]in[- ]class|[Cc]utting[- ]edge|[Rr]evolutionary|[Gg]ame[- ]changing|[Ii]ndustry[- ]leading|[Nn]ext[- ]generation|[Aa]mazing feature)",
       "message": "Marketing hype detected. Be specific about what the feature does, not how great it is."
     },
     {
       "id": "empty-acknowledgment",
-      "pattern": "(?i)^(thanks for your feedback\\.?|thank you for reaching out\\.?)$",
+      "pattern": "^\\s*(?:[Tt]hanks for your feedback\\.?|[Tt]hank you for reaching out\\.?)\\s*$",
       "message": "Empty acknowledgment without substance. Add specific context or next steps."
     },
     {
       "id": "robot-signature",
-      "pattern": "(?i)(best regards|sincerely|kind regards|respectfully|warm regards)\\s*[,.]?\\s*(pao|the squad team|squad bot)",
+      "pattern": "(?:[Bb]est regards|[Ss]incerely|[Kk]ind regards|[Rr]espectfully|[Ww]arm regards)\\s*[,.]?\\s*(?:[Pp][Aa][Oo]|[Tt]he [Ss]quad [Tt]eam|[Ss]quad [Bb]ot)",
       "message": "Robot signature detected. Responses should end naturally, not with formal sign-offs."
     },
     {
       "id": "over-promising",
-      "pattern": "(?i)(we will ship|we'll release|coming soon|in the next release|definitely fix|guaranteed)",
+      "pattern": "(?:[Ww]e will ship|[Ww]e'll release|[Cc]oming soon|[Ii]n the next release|[Dd]efinitely fix|[Gg]uaranteed)",
       "message": "Over-promising detected. Only commit to what the team has explicitly agreed to."
     },
     {
       "id": "dismissive",
-      "pattern": "(?i)(works as designed|not a bug|won't fix|that's expected|user error)",
+      "pattern": "(?:[Ww]orks as designed|[Nn]ot a bug|[Ww]on't fix|[Tt]hat's expected|[Uu]ser error)",
       "message": "Dismissive language detected. Acknowledge the experience before explaining the design."
     },
     {
       "id": "profanity",
-      "pattern": "(?i)(damn|hell|crap|crap|shit|fuck|ass|bastard|bitch)",
+      "pattern": "\\b(?:[Dd]amn|[Hh]ell|[Cc]rap|[Ss]hit|[Ff]uck|[Aa]ss|[Bb]astard|[Bb]itch)\\b",
       "message": "Profanity detected. Never include profanity, even when quoting."
     }
   ],
   "require_patterns": [
     {
       "id": "acknowledgment",
-      "pattern": "(?i)(thanks|thank you|good catch|great question|interesting|appreciate|welcome)",
+      "pattern": "(?:[Tt]hanks|[Tt]hank you|[Gg]ood catch|[Gg]reat question|[Ii]nteresting|[Aa]ppreciate|[Ww]elcome)",
       "message": "Response should include acknowledgment of the author's contribution.",
       "applies_to": ["welcome", "troubleshooting", "acknowledgment"]
     },
     {
       "id": "action-oriented",
-      "pattern": "(?i)(let us know|feel free|happy to help|we'll update|reach out|we'll dig|keep us posted)",
+      "pattern": "(?:[Ll]et us know|[Ff]eel free|[Hh]appy to help|[Ww]e'll update|[Rr]each out|[Ww]e'll dig|[Kk]eep us posted)",
       "message": "Response should end with an action-oriented close.",
       "applies_to": ["troubleshooting", "feature-guidance", "technical-uncertainty"]
+    },
+    {
+      "id": "context-provided",
+      "pattern": "(?:[Cc]urrently|[Rr]ight now|[Aa]t the moment|[Aa]s of|[Tt]he way it works)",
+      "message": "Feature guidance should provide context on current state.",
+      "applies_to": ["feature-guidance"]
+    },
+    {
+      "id": "uncertainty-honest",
+      "pattern": "(?:[Nn]ot sure|[Nn]ot 100%|[Dd]on't know yet|[Ss]till investigating|[Uu]nclear|[Hh]aven't determined)",
+      "message": "Technical uncertainty should be honest about unknowns.",
+      "applies_to": ["technical-uncertainty"]
     }
   ],
   "confidence_thresholds": {
     "high": {
       "description": "Answered before, clear docs, community consensus",
-      "min_similarity": 0.8
+      "min_similarity": 0.8,
+      "baseline_blocking": true
     },
     "medium": {
       "description": "Technically sound but minor uncertainty or tone-dependent",

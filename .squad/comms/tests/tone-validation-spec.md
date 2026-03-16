@@ -83,54 +83,71 @@ Drafts of specific types MUST contain these patterns:
 
 ## Gold Standard Responses
 
-The following 5 responses serve as the tone baseline. New drafts should align with this tone:
+The following 7 gold standard responses serve as the tone baseline. New drafts should align with this tone:
 
 ### GS-1: Welcome (High confidence)
 > Hey @newuser! Welcome to Squad 👋 Thanks for opening this — great first issue!
-> 
+>
 > To answer your question: Squad uses `.squad/team.md` to define your team roster. You can add members by editing that file directly or running `squad init`.
-> 
+>
 > Let us know if you hit any snags — happy to help!
 
 ### GS-2: Troubleshooting (High confidence)
-> Thanks for the detailed report, @reporter! 
-> 
+> Thanks for the detailed report, @reporter!
+>
 > This looks like it might be related to the casting registry not finding the universe file. Here's what we'd suggest:
 > 1. Check that `.squad/casting/registry.json` exists and is valid JSON
 > 2. Run `squad build` to regenerate from source
 > 3. If that doesn't work, try deleting `.squad/casting/` and re-running `squad init`
-> 
+>
 > Let us know if that helps, or if you're seeing something different.
 
 ### GS-3: Feature Guidance (Medium confidence)
 > Great question! Right now, Squad handles cross-repo orchestration through the hub-and-spoke model — you'd have a central `.squad/` in one repo and reference it from others.
-> 
+>
 > We know this isn't ideal for every setup. There's been some discussion about making this more seamless (see #316 for the RFC).
-> 
+>
 > For now, the workaround is to use `squad export` to share config across repos. Hope that helps!
 
 ### GS-4: Acknowledgment (High confidence)
 > Good catch, @finder. We've confirmed this is a real issue with the session pool cleanup.
-> 
+>
 > It looks like sessions aren't being released when the adapter disconnects unexpectedly. We're tracking it and will update this thread when we have a fix.
-> 
+>
 > Thanks for flagging it — this one would have been hard to find without your repro steps!
 
 ### GS-5: Technical Uncertainty (Low confidence)
 > Interesting find, @explorer. We're not 100% sure what's causing this yet.
-> 
+>
 > Here's what we've ruled out:
 > - It's not a casting issue (registry looks fine)
 > - It's not a config issue (your squad.config.ts parses correctly)
-> 
+>
 > Could you share the output of `squad build --verbose`? That would help us narrow it down. We'll dig deeper and update this thread.
+
+### GS-6: Redirect (High confidence)
+> Thanks for reaching out, @asker! This one is actually better suited for the Squad-IRL repo, which covers deployment patterns and infrastructure around Squad.
+>
+> You can open it here: https://github.com/bradygaster/Squad-IRL — they'll be able to help with the Terraform setup specifically.
+>
+> Feel free to link back to this thread for context!
+
+### GS-7: Closing (High confidence)
+> This should be resolved in v0.8.22! 🎉
+>
+> The fix was in PR #389 — the casting registry now handles universe overflow correctly when you have more than 15 agents.
+>
+> Thanks for reporting this, @reporter — your repro steps made this one easy to track down. Closing this out!
 
 ## Phase 1 Readiness Criteria
 
 Before launch, ALL of the following must be true:
 - [ ] All T1 tests have corresponding patterns in `tone-validation.json`
 - [ ] All T2 tests verified against humanizer skill templates
-- [ ] Gold standard responses reviewed and approved by Brady or Dina
+- [ ] All 7 gold standard responses reviewed and approved by Brady or Dina
+- [ ] All 9 response types have corresponding templates (7 original + empathetic disagreement + information request)
+- [ ] Thread-read verification tested with threads of 1, 5, 10, and 20+ comments
+- [ ] Rollback workflow (delete-and-repost) tested end-to-end
 - [ ] Review gate SQLite schema tested with concurrent access
 - [ ] Audit trail format validated against template
 - [ ] `pao halt` / `pao resume` flow tested end-to-end

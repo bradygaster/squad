@@ -1,32 +1,37 @@
+-- Runtime reminder: PRAGMA foreign_keys = ON;
 -- PAO External Communications: Review State Database
 -- Created at runtime in .squad/comms/review-state.db
 -- Zero new dependencies (Copilot CLI already uses SQLite)
 
-CREATE TABLE IF NOT EXISTS review_locks (
-    session_id TEXT PRIMARY KEY,
-    reviewer TEXT NOT NULL,
-    hostname TEXT NOT NULL,
-    pid INTEGER NOT NULL,
-    acquired_at TEXT NOT NULL DEFAULT (datetime('now')),
-    expires_at TEXT NOT NULL DEFAULT (datetime('now', '+1 hour')),
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'released', 'expired'))
+-- Single global review lease — only ONE reviewer at a time
+CREATE TABLE IF NOT EXISTS review_lease (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'held')),
+    reviewer TEXT,
+    hostname TEXT,
+    pid INTEGER,
+    acquired_at TEXT,
+    expires_at TEXT
 );
 
--- Atomic lock acquisition using INSERT ... ON CONFLICT
--- If a lock exists and is expired, it gets replaced
--- If a lock exists and is active, the INSERT fails (lock held)
-CREATE TRIGGER IF NOT EXISTS cleanup_expired_locks
-BEFORE INSERT ON review_locks
-BEGIN
-    DELETE FROM review_locks 
-    WHERE expires_at < datetime('now') 
-    AND status = 'active';
-END;
+-- Initialize the single lease row
+INSERT OR IGNORE INTO review_lease (id, status) VALUES (1, 'available');
+
+-- Acquire: UPDATE review_lease
+--          SET status = 'held', reviewer = ?, hostname = ?, pid = ?, acquired_at = datetime('now'), expires_at = datetime('now', '+1 hour')
+--          WHERE id = 1 AND (status = 'available' OR expires_at < datetime('now'));
+-- Release: UPDATE review_lease
+--          SET status = 'available', reviewer = NULL, hostname = NULL, pid = NULL, acquired_at = NULL, expires_at = NULL
+--          WHERE id = 1;
+-- Check:   SELECT * FROM review_lease WHERE id = 1;
+-- Cleanup expired lease before work: UPDATE review_lease
+--          SET status = 'available', reviewer = NULL, hostname = NULL, pid = NULL, acquired_at = NULL, expires_at = NULL
+--          WHERE id = 1 AND status = 'held' AND expires_at < datetime('now');
 
 -- Draft tracking table
 CREATE TABLE IF NOT EXISTS draft_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL,
+    reviewer TEXT,
     item_type TEXT NOT NULL CHECK (item_type IN ('issue', 'discussion', 'pr')),
     item_number INTEGER NOT NULL,
     item_url TEXT,
@@ -36,11 +41,9 @@ CREATE TABLE IF NOT EXISTS draft_queue (
     thread_depth INTEGER DEFAULT 0,
     long_thread_flag INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'edited', 'skipped', 'posted', 'halted', 'deleted')),
-    reviewer TEXT,
     reviewed_at TEXT,
     posted_url TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (session_id) REFERENCES review_locks(session_id)
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Halt state (safe word mechanism)
@@ -55,7 +58,7 @@ CREATE TABLE IF NOT EXISTS halt_state (
 -- Initialize halt state (not halted by default)
 INSERT OR IGNORE INTO halt_state (id, halted) VALUES (1, 0);
 
--- Audit log (append-only, mirrors markdown audit files)
+-- Audit log (append-only, mirrors runtime audit files)
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp TEXT NOT NULL DEFAULT (datetime('now')),
