@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "description": "Tone validation patterns for PAO external communications",
+  "reject_patterns": [
+    {
+      "id": "corporate-speak",
+      "pattern": "(?i)(we appreciate your patience|please be advised|per our discussion|as per|kindly note|please do not hesitate)",
+      "message": "Corporate speak detected. Use conversational tone instead."
+    },
+    {
+      "id": "passive-voice-formal",
+      "pattern": "(?i)(it has been determined|it was decided|has been escalated|is being investigated|has been noted)",
+      "message": "Formal passive voice detected. Use active voice: 'We determined...' or 'We're looking into...'"
+    },
+    {
+      "id": "marketing-hype",
+      "pattern": "(?i)(best in class|cutting.edge|revolutionary|game.changing|industry.leading|next.generation|amazing feature)",
+      "message": "Marketing hype detected. Be specific about what the feature does, not how great it is."
+    },
+    {
+      "id": "empty-acknowledgment",
+      "pattern": "(?i)^(thanks for your feedback\\.?|thank you for reaching out\\.?)$",
+      "message": "Empty acknowledgment without substance. Add specific context or next steps."
+    },
+    {
+      "id": "robot-signature",
+      "pattern": "(?i)(best regards|sincerely|kind regards|respectfully|warm regards)\\s*[,.]?\\s*(pao|the squad team|squad bot)",
+      "message": "Robot signature detected. Responses should end naturally, not with formal sign-offs."
+    },
+    {
+      "id": "over-promising",
+      "pattern": "(?i)(we will ship|we'll release|coming soon|in the next release|definitely fix|guaranteed)",
+      "message": "Over-promising detected. Only commit to what the team has explicitly agreed to."
+    },
+    {
+      "id": "dismissive",
+      "pattern": "(?i)(works as designed|not a bug|won't fix|that's expected|user error)",
+      "message": "Dismissive language detected. Acknowledge the experience before explaining the design."
+    },
+    {
+      "id": "profanity",
+      "pattern": "(?i)(damn|hell|crap|crap|shit|fuck|ass|bastard|bitch)",
+      "message": "Profanity detected. Never include profanity, even when quoting."
+    }
+  ],
+  "require_patterns": [
+    {
+      "id": "acknowledgment",
+      "pattern": "(?i)(thanks|thank you|good catch|great question|interesting|appreciate|welcome)",
+      "message": "Response should include acknowledgment of the author's contribution.",
+      "applies_to": ["welcome", "troubleshooting", "acknowledgment"]
+    },
+    {
+      "id": "action-oriented",
+      "pattern": "(?i)(let us know|feel free|happy to help|we'll update|reach out|we'll dig|keep us posted)",
+      "message": "Response should end with an action-oriented close.",
+      "applies_to": ["troubleshooting", "feature-guidance", "technical-uncertainty"]
+    }
+  ],
+  "confidence_thresholds": {
+    "high": {
+      "description": "Answered before, clear docs, community consensus",
+      "min_similarity": 0.8
+    },
+    "medium": {
+      "description": "Technically sound but minor uncertainty or tone-dependent",
+      "min_similarity": 0.6
+    },
+    "low": {
+      "description": "Technical uncertainty, policy decision, reputational risk",
+      "min_similarity": 0.0,
+      "requires_review": true
+    }
+  }
+}

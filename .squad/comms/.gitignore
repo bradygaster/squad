@@ -1,0 +1,5 @@
+# Runtime state (not committed)
+review-state.db
+review-state.db-journal
+review-state.db-wal
+review-state.db-shm
