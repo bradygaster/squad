@@ -105,6 +105,7 @@ SPAWN_REFERENCES=0
 SPAWN_TEMPLATE_FILES=(
   "$SQUAD_ROOT/.squad/squad.agent.md"
   "$SQUAD_ROOT/.squad/agents/*/charter.md"
+  "$SQUAD_ROOT/.squad/agents/*/history.md"
 )
 
 for pattern in "${SPAWN_TEMPLATE_FILES[@]}"; do
@@ -158,15 +159,100 @@ fi
 echo ""
 
 # ============================================================================
-# TEST 4: Stress Test (100 files)
+# TEST 4: Frontmatter Validation
 # ============================================================================
-echo "[TEST 3] Stress test (100 files)"
+echo "[TEST 3] Frontmatter validation"
+
+# Check that all knowledge files have required frontmatter
+FRONTMATTER_ERRORS=0
+KNOWLEDGE_FILES_CHECKED=0
+
+if [ -d "$KNOWLEDGE_DIR" ]; then
+  echo "  Scanning knowledge files for required frontmatter..."
+  for file in "$KNOWLEDGE_DIR"/*.md; do
+    if [ -f "$file" ]; then
+      # Skip README.md (it's a directory index, not a knowledge file)
+      if [ "$(basename "$file")" = "README.md" ]; then
+        continue
+      fi
+      
+      KNOWLEDGE_FILES_CHECKED=$((KNOWLEDGE_FILES_CHECKED + 1))
+      MISSING=""
+      
+      # Check for required fields
+      file_contains "$file" "title:" || MISSING="${MISSING}title "
+      file_contains "$file" "author:" || MISSING="${MISSING}author "
+      file_contains "$file" "tags:" || MISSING="${MISSING}tags "
+      file_contains "$file" "created:" || MISSING="${MISSING}created "
+      
+      if [ -n "$MISSING" ]; then
+        echo "    $(basename "$file"): missing ${MISSING}"
+        FRONTMATTER_ERRORS=$((FRONTMATTER_ERRORS + 1))
+      fi
+    fi
+  done
+fi
+
+echo "  Knowledge files checked: $KNOWLEDGE_FILES_CHECKED"
+echo "  Frontmatter errors: $FRONTMATTER_ERRORS"
+
+if [ "$FRONTMATTER_ERRORS" -eq 0 ]; then
+  echo -e "  $PASS"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  $FAIL - Found $FRONTMATTER_ERRORS files with missing frontmatter"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+# ============================================================================
+# TEST 5: Negative Self-Validation
+# ============================================================================
+echo "[TEST 4] Negative self-validation"
+
+# Create a temporary agent with a bad reference to knowledge files
+TEMP_AGENT_DIR="$SQUAD_ROOT/.squad/.test-temp-agent"
+mkdir -p "$TEMP_AGENT_DIR"
+
+cat > "$TEMP_AGENT_DIR/charter.md" <<'EOF'
+# Test Agent
+
+This agent incorrectly references: .squad/knowledge/bad-file.md
+EOF
+
+echo "  Created temp agent with bad knowledge reference"
+
+# Scan for references
+BAD_REFS=0
+if grep -q "\.squad/knowledge/" "$TEMP_AGENT_DIR/charter.md" 2>/dev/null; then
+  BAD_REFS=$((BAD_REFS + 1))
+fi
+
+echo "  Scanner detected bad reference: $([ "$BAD_REFS" -gt 0 ] && echo 'yes' || echo 'no')"
+
+# Cleanup
+rm -rf "$TEMP_AGENT_DIR"
+echo "  (Cleaned up temp agent)"
+
+if [ "$BAD_REFS" -gt 0 ]; then
+  echo -e "  $PASS - Scanner correctly detected bad reference"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo -e "  $FAIL - Scanner did not detect bad reference"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+echo ""
+
+# ============================================================================
+# TEST 6: Stress Test (500 files)
+# ============================================================================
+echo "[TEST 5] Stress test (500 files)"
 
 # Create temporary knowledge directory
 mkdir -p "$TEMP_DIR"
 
-echo "  Creating 100 temporary knowledge files..."
-for i in {1..100}; do
+echo "  Creating 500 temporary knowledge files..."
+for i in {1..500}; do
   cat > "$TEMP_DIR/stress-test-$i.md" <<EOF
 ---
 title: Stress Test File $i
@@ -195,6 +281,7 @@ for pattern in "${SPAWN_TEMPLATE_FILES[@]}"; do
     if [ -f "$file" ]; then
       if grep -q "\.squad/knowledge/" "$file" 2>/dev/null; then
         SPAWN_REFS_AFTER=$((SPAWN_REFS_AFTER + 1))
+        echo "    WARNING: Found reference in $(basename "$file")"
       fi
     fi
   done

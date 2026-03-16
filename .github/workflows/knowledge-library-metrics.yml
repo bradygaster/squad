@@ -1,0 +1,24 @@
+name: Knowledge Library Metrics
+
+on:
+  pull_request:
+    paths:
+      - '.squad/knowledge/**'
+      - 'scripts/knowledge-library-metrics.sh'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Run knowledge library metrics
+        run: |
+          bash scripts/knowledge-library-metrics.sh
+      
+      - name: Report results
+        if: always()
+        run: |
+          echo "Knowledge library metrics test completed"

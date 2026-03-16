@@ -69,9 +69,9 @@
 - Implemented cold storage for substantial team documents with proven zero spawn impact
 - Three-tier context loading architecture: spawn (hot), on-demand (warm), knowledge (cold)
 - Knowledge files NEVER loaded at spawn time - agents discover and read only when needed
-- Created directory structure (.squad/knowledge/) with README and 5 sample knowledge files (~25KB)
+- Created knowledge directory with README and 5 sample knowledge files (~25KB)
 - Sample files cover: context loading architecture, drop-box pattern, docs architecture, SDK mode patterns, testing patterns
-- Built metrics validation script (scripts/knowledge-library-metrics.sh) that proves zero spawn impact
+- Built metrics validation script that proves zero spawn impact
 - All tests pass: zero files at spawn, on-demand access works, stress test with 100 files (440KB) shows no spawn impact
 - File naming convention: {author}-{topic-slug}.md with frontmatter (title, author, tags, created)
 - This is a runtime feature (directory and skill), not SDK code changes
