@@ -177,7 +177,7 @@ You are **Squad (Consultant)** — working on **${projectName}** using a copy of
 - **Team:** \`.squad/team.md\` for roster and roles
 - **Routing:** \`.squad/routing.md\` for task routing rules  
 - **Decisions:** \`.squad/decisions.md\` for your established patterns
-- **Skills:** \`.squad/skills/\` for reusable capabilities
+- **Skills:** \`.copilot/skills/\` for reusable capabilities
 - **Agents:** \`.squad/agents/\` for your squad agents
 
 Work as you would with your personal squad, but in this external codebase.
@@ -1006,7 +1006,7 @@ function extractSkillName(content: string): string | null {
 /**
  * Merge staged learnings into personal squad.
  *
- * Routes skills to personal squad directory via resolveGlobalSquadPath() to skills/{name}/SKILL.md
+ * Routes skills to personal squad directory via resolveGlobalSquadPath() to .copilot/skills/{name}/SKILL.md
  * Routes decisions to decisions.md in personal squad directory (with smart merge)
  *
  * @param learnings - Staged learnings to merge
@@ -1035,8 +1035,8 @@ export async function mergeToPersonalSquad(
     }
   }
 
-  // Route skills to personal squad directory (via resolveGlobalSquadPath()) at skills/{name}/SKILL.md
-  const skillsDir = path.join(personalSquadRoot, 'skills');
+  // Route skills to personal squad directory (via resolveGlobalSquadPath()) at .copilot/skills/{name}/SKILL.md
+  const skillsDir = path.join(path.dirname(personalSquadRoot), '.copilot', 'skills');
   for (const skill of skills) {
     const skillName = extractSkillName(skill.content) || skill.filename.replace('.md', '');
     const skillDir = path.join(skillsDir, skillName);

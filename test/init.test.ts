@@ -136,7 +136,7 @@ describe('Squad Initialization', () => {
       expect(existsSync(join(TEST_ROOT, '.squad', 'agents'))).toBe(true);
       expect(existsSync(join(TEST_ROOT, '.squad', 'casting'))).toBe(true);
       expect(existsSync(join(TEST_ROOT, '.squad', 'decisions'))).toBe(true);
-      expect(existsSync(join(TEST_ROOT, '.squad', 'skills'))).toBe(true);
+      expect(existsSync(join(TEST_ROOT, '.copilot', 'skills'))).toBe(true);
     });
 
     it('should create .gitattributes for merge drivers', async () => {

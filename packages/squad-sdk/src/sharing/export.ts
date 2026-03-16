@@ -127,10 +127,22 @@ export function exportSquadConfig(projectDir: string, options?: ExportOptions): 
   const skills: string[] = [];
 
   if (opts.includeSkills) {
-    const skillsDir = join(projectDir, '.ai-team', 'skills');
-    if (existsSync(skillsDir)) {
-      const skillFiles = readdirSync(skillsDir).filter(f => f.endsWith('.md'));
-      skills.push(...skillFiles.map(f => basename(f, '.md')));
+    const skillSources = [
+      { dir: join(projectDir, '.copilot', 'skills'), layout: 'nested' as const },
+      { dir: join(projectDir, '.squad', 'skills'), layout: 'nested' as const },
+      { dir: join(projectDir, '.ai-team', 'skills'), layout: 'flat' as const },
+    ];
+    const source = skillSources.find(({ dir }) => existsSync(dir));
+    if (source) {
+      if (source.layout === 'nested') {
+        const skillDirs = readdirSync(source.dir, { withFileTypes: true })
+          .filter(entry => entry.isDirectory() && existsSync(join(source.dir, entry.name, 'SKILL.md')))
+          .map(entry => entry.name);
+        skills.push(...skillDirs);
+      } else {
+        const skillFiles = readdirSync(source.dir).filter(f => f.endsWith('.md'));
+        skills.push(...skillFiles.map(f => basename(f, '.md')));
+      }
     }
   }
 

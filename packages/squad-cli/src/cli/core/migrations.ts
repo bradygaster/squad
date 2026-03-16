@@ -46,6 +46,37 @@ const migrations: Migration[] = [
         }
       }
     }
+  },
+  {
+    version: '0.9.0',
+    description: 'Copy legacy .squad skills into .copilot/skills',
+    run(squadDir: string) {
+      const projectRoot = path.dirname(squadDir);
+      const legacySkillsDir = path.join(squadDir, 'skills');
+      if (!fs.existsSync(legacySkillsDir)) {
+        return;
+      }
+
+      const skillNames = fs.readdirSync(legacySkillsDir).filter(entry =>
+        fs.existsSync(path.join(legacySkillsDir, entry, 'SKILL.md')),
+      );
+      if (skillNames.length === 0) {
+        return;
+      }
+
+      const copilotSkillsDir = path.join(projectRoot, '.copilot', 'skills');
+      fs.mkdirSync(copilotSkillsDir, { recursive: true });
+
+      for (const skillName of skillNames) {
+        fs.cpSync(
+          path.join(legacySkillsDir, skillName),
+          path.join(copilotSkillsDir, skillName),
+          { recursive: true, force: false, errorOnExist: false },
+        );
+      }
+
+      success(`Migrated skills to .copilot/skills: ${skillNames.join(', ')}`);
+    }
   }
 ];
 

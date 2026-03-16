@@ -2,7 +2,7 @@
  * Skill Script Loader
  *
  * Runtime loader for executable skill handlers from backend skill directories.
- * Backend skills in `.squad/skills/{name}/scripts/` contain `.js` handler files
+ * Backend skills in `.copilot/skills/{name}/scripts/` contain `.js` handler files
  * that replace built-in tool handlers in ToolRegistry.
  *
  * Supports:
@@ -86,7 +86,7 @@ function toFileUrl(filePath: string): string {
  *
  * Algorithm:
  * 1. Absolute paths used as-is
- * 2. With teamRoot: strip leading `.squad/` prefix to avoid double-nesting, resolve relative to teamRoot
+ * 2. With teamRoot: resolve `.copilot/` paths from projectRoot and strip legacy `.squad/` paths relative to teamRoot
  * 3. Without teamRoot: resolve relative to projectRoot
  * 4. Path containment check: final path must be within projectRoot or teamRoot
  * 5. Reject paths with `..` segments that escape the boundary (throw Error)
@@ -122,8 +122,15 @@ export function resolveSkillPath(
     return resolved;
   }
 
-  // 2. With teamRoot: strip leading .squad/ prefix, resolve relative to teamRoot
+  // 2. With teamRoot: resolve .copilot/ paths from projectRoot, legacy .squad/ paths from teamRoot
   if (teamRoot) {
+    if (skillPath.startsWith('.copilot/')) {
+      const resolved = path.resolve(projectRoot, skillPath);
+      const real = realOrLogical(resolved);
+      if (!isContained(real, projectRoot)) throw new Error(`Path escapes containment: ${skillPath} resolves outside project root`);
+      return resolved;
+    }
+
     const stripped = skillPath.startsWith('.squad/') ? skillPath.slice(7) : skillPath;
     const resolved = path.resolve(teamRoot, stripped);
     const real = realOrLogical(resolved);

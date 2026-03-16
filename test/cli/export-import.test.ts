@@ -118,7 +118,7 @@ describe('CLI: export/import commands', () => {
     await writeFile(teamPath, '# Team\n');
     
     // Create a skill
-    const skillDir = join(TEST_ROOT, '.squad', 'skills', 'test-skill');
+    const skillDir = join(TEST_ROOT, '.copilot', 'skills', 'test-skill');
     await mkdir(skillDir, { recursive: true });
     const skillContent = 'name: "Test Skill"\ndescription: "A test skill"';
     await writeFile(join(skillDir, 'SKILL.md'), skillContent);

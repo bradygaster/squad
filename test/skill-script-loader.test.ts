@@ -589,12 +589,15 @@ describe('resolveSkillPath()', () => {
     expect(result).toBe(path.resolve(teamRoot, 'skills', 'my-skill'));
   });
 
-  it('should strip .squad/ prefix when teamRoot is provided', () => {
-    // Use forward slash format that the implementation checks for
+  it('should resolve .copilot/ prefix from projectRoot when teamRoot is provided', () => {
+    const relative = '.copilot/skills/my-skill';
+    const result = resolveSkillPath(relative, projectRoot, teamRoot);
+    expect(result).toBe(path.resolve(projectRoot, '.copilot', 'skills', 'my-skill'));
+  });
+
+  it('should strip legacy .squad/ prefix when teamRoot is provided', () => {
     const relative = '.squad/skills/my-skill';
     const result = resolveSkillPath(relative, projectRoot, teamRoot);
-    // Implementation strips .squad/ and resolves from teamRoot
-    // So .squad/skills/my-skill becomes teamRoot/skills/my-skill
     expect(result).toBe(path.resolve(teamRoot, 'skills', 'my-skill'));
   });
 

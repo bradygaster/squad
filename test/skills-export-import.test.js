@@ -68,7 +68,7 @@ describe('Skills survive export/import round-trip (#82)', () => {
     initSquad(tmpDir1);
 
     // Create a test skill
-    const skillDir = path.join(tmpDir1, '.ai-team', 'skills', 'test-skill');
+    const skillDir = path.join(tmpDir1, '.copilot', 'skills', 'test-skill');
     fs.mkdirSync(skillDir, { recursive: true });
     const skillContent = `---
 name: test-skill
@@ -109,7 +109,7 @@ This is a test skill for verifying export/import functionality.
     initSquad(tmpDir1);
 
     // Create a test skill with unique content
-    const skillDir = path.join(tmpDir1, '.ai-team', 'skills', 'import-test-skill');
+    const skillDir = path.join(tmpDir1, '.copilot', 'skills', 'import-test-skill');
     fs.mkdirSync(skillDir, { recursive: true });
     const skillContent = `---
 name: import-test-skill
@@ -135,7 +135,7 @@ This skill has unique content to verify import works correctly.
     const exportResult = runSquad(['export'], tmpDir1);
     assert.equal(exportResult.exitCode, 0, `export should succeed: ${exportResult.stdout}`);
 
-    // Initialize squad in second temp dir (to have .ai-team structure)
+    // Initialize squad in second temp dir (to have squad structure)
     initSquad(tmpDir2);
 
     // Import into second temp dir with --force
@@ -143,7 +143,7 @@ This skill has unique content to verify import works correctly.
     assert.equal(importResult.exitCode, 0, `import should succeed: ${importResult.stdout}`);
 
     // Verify the skill exists in the new directory
-    const importedSkillPath = path.join(tmpDir2, '.ai-team', 'skills', 'import-test-skill', 'SKILL.md');
+    const importedSkillPath = path.join(tmpDir2, '.copilot', 'skills', 'import-test-skill', 'SKILL.md');
     assert.ok(fs.existsSync(importedSkillPath), 'imported skill file should exist');
 
     // Verify the content matches
@@ -163,7 +163,7 @@ This skill has unique content to verify import works correctly.
     ];
 
     for (const skill of skills) {
-      const skillDir = path.join(tmpDir1, '.ai-team', 'skills', skill.name);
+      const skillDir = path.join(tmpDir1, '.copilot', 'skills', skill.name);
       fs.mkdirSync(skillDir, { recursive: true });
       const skillContent = `---
 name: ${skill.name}
@@ -196,7 +196,7 @@ ${skill.content}
 
     // Verify all skills exist
     for (const skill of skills) {
-      const importedSkillPath = path.join(tmpDir2, '.ai-team', 'skills', skill.name, 'SKILL.md');
+      const importedSkillPath = path.join(tmpDir2, '.copilot', 'skills', skill.name, 'SKILL.md');
       assert.ok(fs.existsSync(importedSkillPath), `skill ${skill.name} should exist after import`);
 
       const content = fs.readFileSync(importedSkillPath, 'utf8');
@@ -209,7 +209,7 @@ ${skill.content}
     initSquad(tmpDir1);
 
     // Create a skill with high confidence
-    const skillDir = path.join(tmpDir1, '.ai-team', 'skills', 'confidence-test');
+    const skillDir = path.join(tmpDir1, '.copilot', 'skills', 'confidence-test');
     fs.mkdirSync(skillDir, { recursive: true });
     const skillContent = `---
 name: confidence-test
@@ -231,7 +231,7 @@ This skill should maintain its high confidence level after import.
     runSquad(['import', exportPath, '--force'], tmpDir2);
 
     // Verify confidence is preserved
-    const importedSkillPath = path.join(tmpDir2, '.ai-team', 'skills', 'confidence-test', 'SKILL.md');
+    const importedSkillPath = path.join(tmpDir2, '.copilot', 'skills', 'confidence-test', 'SKILL.md');
     const importedContent = fs.readFileSync(importedSkillPath, 'utf8');
     assert.ok(importedContent.includes('confidence: high'), 'skill confidence level should be preserved');
   });
@@ -241,7 +241,7 @@ This skill should maintain its high confidence level after import.
     initSquad(tmpDir1);
 
     // Create a skill
-    const skillDir = path.join(tmpDir1, '.ai-team', 'skills', 'report-test');
+    const skillDir = path.join(tmpDir1, '.copilot', 'skills', 'report-test');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `---
 name: report-test

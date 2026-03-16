@@ -76,14 +76,14 @@ describe('LocalSkillSource', () => {
     expect(source.type).toBe('local');
   });
 
-  it('should return empty list when .squad/skills/ does not exist', async () => {
+  it('should return empty list when .copilot/skills/ does not exist', async () => {
     const source = new LocalSkillSource(tempDir);
     const skills = await source.listSkills();
     expect(skills).toEqual([]);
   });
 
-  it('should list skills from .squad/skills/ directories', async () => {
-    const skillsDir = path.join(tempDir, '.squad', 'skills', 'ts-testing');
+  it('should list skills from .copilot/skills/ directories', async () => {
+    const skillsDir = path.join(tempDir, '.copilot', 'skills', 'ts-testing');
     fs.mkdirSync(skillsDir, { recursive: true });
     fs.writeFileSync(path.join(skillsDir, 'SKILL.md'), SKILL_MD);
 
@@ -98,7 +98,7 @@ describe('LocalSkillSource', () => {
   });
 
   it('should skip directories without SKILL.md', async () => {
-    const emptyDir = path.join(tempDir, '.squad', 'skills', 'empty-skill');
+    const emptyDir = path.join(tempDir, '.copilot', 'skills', 'empty-skill');
     fs.mkdirSync(emptyDir, { recursive: true });
 
     const source = new LocalSkillSource(tempDir);
@@ -107,7 +107,7 @@ describe('LocalSkillSource', () => {
   });
 
   it('should getSkill by id', async () => {
-    const skillsDir = path.join(tempDir, '.squad', 'skills', 'ts-testing');
+    const skillsDir = path.join(tempDir, '.copilot', 'skills', 'ts-testing');
     fs.mkdirSync(skillsDir, { recursive: true });
     fs.writeFileSync(path.join(skillsDir, 'SKILL.md'), SKILL_MD);
 
@@ -130,7 +130,7 @@ describe('LocalSkillSource', () => {
   });
 
   it('should getContent by id', async () => {
-    const skillsDir = path.join(tempDir, '.squad', 'skills', 'ts-testing');
+    const skillsDir = path.join(tempDir, '.copilot', 'skills', 'ts-testing');
     fs.mkdirSync(skillsDir, { recursive: true });
     fs.writeFileSync(path.join(skillsDir, 'SKILL.md'), SKILL_MD);
 
@@ -143,6 +143,18 @@ describe('LocalSkillSource', () => {
     const source = new LocalSkillSource(tempDir);
     const content = await source.getContent('missing');
     expect(content).toBeNull();
+  });
+
+  it('should fall back to legacy .squad/skills/ when .copilot/skills/ is absent', async () => {
+    const legacyDir = path.join(tempDir, '.squad', 'skills', 'legacy-skill');
+    fs.mkdirSync(legacyDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyDir, 'SKILL.md'), SKILL_MD_MINIMAL);
+
+    const source = new LocalSkillSource(tempDir);
+    const skills = await source.listSkills();
+
+    expect(skills).toHaveLength(1);
+    expect(skills[0].id).toBe('legacy-skill');
   });
 
   it('should support custom priority', () => {
@@ -165,7 +177,7 @@ describe('GitHubSkillSource', () => {
   it('should list skills from GitHub repo', async () => {
     const fetcher = makeFetcher(
       [{ name: 'ts-testing', type: 'dir' }],
-      { '.squad/skills/ts-testing/SKILL.md': SKILL_MD },
+      { '.copilot/skills/ts-testing/SKILL.md': SKILL_MD },
     );
     const source = new GitHubSkillSource('acme/repo', { fetcher });
 
@@ -189,7 +201,7 @@ describe('GitHubSkillSource', () => {
 
   it('should getSkill from GitHub', async () => {
     const fetcher = makeFetcher([], {
-      '.squad/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
+      '.copilot/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
     });
     const source = new GitHubSkillSource('acme/repo', { fetcher });
 
@@ -210,7 +222,7 @@ describe('GitHubSkillSource', () => {
 
   it('should getContent from GitHub', async () => {
     const fetcher = makeFetcher([], {
-      '.squad/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
+      '.copilot/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
     });
     const source = new GitHubSkillSource('acme/repo', { fetcher });
 
@@ -234,11 +246,11 @@ describe('SkillSourceRegistry', () => {
   it('should list skills from all sources', async () => {
     const fetcher1 = makeFetcher(
       [{ name: 'skill-a', type: 'dir' }],
-      { '.squad/skills/skill-a/SKILL.md': SKILL_MD },
+      { '.copilot/skills/skill-a/SKILL.md': SKILL_MD },
     );
     const fetcher2 = makeFetcher(
       [{ name: 'skill-b', type: 'dir' }],
-      { '.squad/skills/skill-b/SKILL.md': SKILL_MD_MINIMAL },
+      { '.copilot/skills/skill-b/SKILL.md': SKILL_MD_MINIMAL },
     );
 
     const registry = new SkillSourceRegistry();
@@ -252,7 +264,7 @@ describe('SkillSourceRegistry', () => {
 
   it('should find skill across sources', async () => {
     const fetcher = makeFetcher([], {
-      '.squad/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
+      '.copilot/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
     });
 
     const registry = new SkillSourceRegistry();
@@ -274,7 +286,7 @@ describe('SkillSourceRegistry', () => {
 
   it('should get content across sources', async () => {
     const fetcher = makeFetcher([], {
-      '.squad/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
+      '.copilot/skills/docker/SKILL.md': SKILL_MD_MINIMAL,
     });
 
     const registry = new SkillSourceRegistry();
@@ -286,10 +298,10 @@ describe('SkillSourceRegistry', () => {
 
   it('should respect source priority ordering', async () => {
     const fetcherHigh = makeFetcher([], {
-      '.squad/skills/shared/SKILL.md': `---\nname: High Priority\ndomain: hp\ntriggers: []\nroles: []\n---\nHigh priority content.`,
+      '.copilot/skills/shared/SKILL.md': `---\nname: High Priority\ndomain: hp\ntriggers: []\nroles: []\n---\nHigh priority content.`,
     });
     const fetcherLow = makeFetcher([], {
-      '.squad/skills/shared/SKILL.md': `---\nname: Low Priority\ndomain: lp\ntriggers: []\nroles: []\n---\nLow priority content.`,
+      '.copilot/skills/shared/SKILL.md': `---\nname: Low Priority\ndomain: lp\ntriggers: []\nroles: []\n---\nLow priority content.`,
     });
 
     const registry = new SkillSourceRegistry();

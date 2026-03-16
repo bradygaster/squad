@@ -71,11 +71,18 @@ export async function runExport(dest: string, outPath?: string): Promise<void> {
   }
 
   // Read skills
-  const skillsDir = path.join(squadInfo.path, 'skills');
+  const skillSources = [
+    { dir: path.join(dest, '.copilot', 'skills'), layout: 'nested' as const },
+    { dir: path.join(squadInfo.path, 'skills'), layout: 'nested' as const },
+    { dir: path.join(dest, '.ai-team', 'skills'), layout: 'flat' as const },
+  ];
+  const skillsSource = skillSources.find(({ dir }) => fs.existsSync(dir));
   try {
-    if (fs.existsSync(skillsDir)) {
-      for (const entry of fs.readdirSync(skillsDir)) {
-        const skillFile = path.join(skillsDir, entry, 'SKILL.md');
+    if (skillsSource) {
+      for (const entry of fs.readdirSync(skillsSource.dir)) {
+        const skillFile = skillsSource.layout === 'nested'
+          ? path.join(skillsSource.dir, entry, 'SKILL.md')
+          : path.join(skillsSource.dir, entry);
         if (fs.existsSync(skillFile)) {
           manifest.skills.push(fs.readFileSync(skillFile, 'utf8'));
         }

@@ -102,9 +102,11 @@ describe('#596 — Init creates complete .squad/ directory', () => {
     expect(existsSync(join(squadDir, 'decisions', 'inbox'))).toBe(true);
     expect(existsSync(join(squadDir, 'orchestration-log'))).toBe(true);
     expect(existsSync(join(squadDir, 'casting'))).toBe(true);
-    expect(existsSync(join(squadDir, 'skills'))).toBe(true);
     expect(existsSync(join(squadDir, 'plugins'))).toBe(true);
     expect(existsSync(join(squadDir, 'identity'))).toBe(true);
+
+    // Skills now live in .copilot/skills/ (not .squad/skills/)
+    expect(existsSync(join(tmpRoot, '.copilot', 'skills'))).toBe(true);
 
     // Required files
     expect(existsSync(join(squadDir, 'ceremonies.md'))).toBe(true);

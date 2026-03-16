@@ -88,7 +88,7 @@ export interface StatusQuery {
 }
 
 export interface SkillRequest {
-  /** Skill name (maps to .squad/skills/{name}/SKILL.md) */
+  /** Skill name (maps to .copilot/skills/{name}/SKILL.md) */
   skillName: string;
   /** Operation: read the skill or write/update it */
   operation: 'read' | 'write';
@@ -490,7 +490,7 @@ export class ToolRegistry {
     // squad_skill: Read/write agent skills
     const squadSkill = defineTool<SkillRequest>({
       name: 'squad_skill',
-      description: 'Read or write agent skill definitions. Skills are stored in .squad/skills/{name}/SKILL.md.',
+      description: 'Read or write agent skill definitions. Skills are stored in .copilot/skills/{name}/SKILL.md.',
       parameters: {
         type: 'object',
         properties: {
@@ -520,7 +520,14 @@ export class ToolRegistry {
           return { textResultForLlm: 'Invalid skill name: must contain only letters, numbers, hyphens, and underscores', resultType: 'failure', error: 'Invalid skillName' };
         }
         try {
-          const skillDir = path.join(this.squadRoot, 'skills', args.skillName);
+          const projectRoot = path.dirname(this.squadRoot);
+          const legacySkillDir = path.join(this.squadRoot, 'skills', args.skillName);
+          const copilotSkillDir = path.join(projectRoot, '.copilot', 'skills', args.skillName);
+          const skillDir = args.operation === 'write'
+            ? copilotSkillDir
+            : fs.existsSync(path.join(copilotSkillDir, 'SKILL.md'))
+              ? copilotSkillDir
+              : legacySkillDir;
           const skillFile = path.join(skillDir, 'SKILL.md');
 
           if (args.operation === 'read') {
@@ -562,7 +569,7 @@ export class ToolRegistry {
             fs.writeFileSync(skillFile, skillContent, 'utf-8');
 
             return {
-              textResultForLlm: `Skill written: ${args.skillName} (skills/${args.skillName}/SKILL.md)`,
+              textResultForLlm: `Skill written: ${args.skillName} (.copilot/skills/${args.skillName}/SKILL.md)`,
               resultType: 'success',
               toolTelemetry: { skillName: args.skillName, operation: 'write', confidence: args.confidence },
             };

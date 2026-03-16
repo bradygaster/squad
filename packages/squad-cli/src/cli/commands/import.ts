@@ -70,7 +70,7 @@ export async function runImport(dest: string, importPath: string, force: boolean
   fs.mkdirSync(path.join(squadDir, 'decisions', 'inbox'), { recursive: true });
   fs.mkdirSync(path.join(squadDir, 'orchestration-log'), { recursive: true });
   fs.mkdirSync(path.join(squadDir, 'log'), { recursive: true });
-  fs.mkdirSync(path.join(squadDir, 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(dest, '.copilot', 'skills'), { recursive: true });
 
   // Write empty project-specific files
   fs.writeFileSync(path.join(squadDir, 'decisions.md'), '');
@@ -114,7 +114,7 @@ export async function runImport(dest: string, importPath: string, force: boolean
     const skillName = nameMatch
       ? nameMatch[1]!.trim().toLowerCase().replace(/\s+/g, '-')
       : `skill-${manifest.skills.indexOf(skillContent)}`;
-    const skillDir = path.join(squadDir, 'skills', skillName);
+    const skillDir = path.join(dest, '.copilot', 'skills', skillName);
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent);
   }

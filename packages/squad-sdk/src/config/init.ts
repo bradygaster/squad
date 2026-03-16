@@ -682,7 +682,7 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
     join(squadDir, 'casting'),
     join(squadDir, 'decisions'),
     join(squadDir, 'decisions', 'inbox'),
-    join(squadDir, 'skills'),
+    join(teamRoot, '.copilot', 'skills'),
     join(squadDir, 'plugins'),
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
@@ -901,13 +901,13 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Copy starter skills
   // -------------------------------------------------------------------------
   
-  const skillsDir = join(squadDir, 'skills');
+  const skillsDir = join(teamRoot, '.copilot', 'skills');
   if (templatesDir && existsSync(join(templatesDir, 'skills'))) {
     const skillsSrc = join(templatesDir, 'skills');
     const existingSkills = existsSync(skillsDir) ? readdirSync(skillsDir) : [];
     if (existingSkills.length === 0) {
       cpSync(skillsSrc, skillsDir, { recursive: true });
-      createdFiles.push('.squad/skills');
+      createdFiles.push('.copilot/skills');
     }
   }
   

@@ -28,7 +28,7 @@ Colors are defined as constants at the top of `index.js`: `GREEN`, `RED`, `DIM`,
 - `.squad/templates/` — Template files copied from `templates/` (Squad-owned, overwritten on upgrade)
 - `.github/agents/squad.agent.md` — Coordinator prompt (Squad-owned, overwritten on upgrade)
 - `templates/` — Source templates shipped with the npm package
-- `.squad/skills/` — Team skills in SKILL.md format (user-owned)
+- `.copilot/skills/` — Team skills in SKILL.md format (user-owned)
 - `.squad/decisions/inbox/` — Drop-box for parallel decision writes
 
 ### Windows Compatibility

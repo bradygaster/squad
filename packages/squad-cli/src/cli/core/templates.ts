@@ -166,7 +166,7 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
   // Skills subdirectory (squad-owned)
   {
     source: 'skills/squad-conventions/SKILL.md',
-    destination: 'skills/squad-conventions/SKILL.md',
+    destination: '../.copilot/skills/squad-conventions/SKILL.md',
     overwriteOnUpgrade: true,
     description: 'Squad conventions skill definition',
   },

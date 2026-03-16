@@ -157,7 +157,7 @@ Ask these questions (adapt phrasing naturally, but get these answers):
 
 ### Step 2: GENERATE `mesh.json`
 
-Using the answers from Step 1, create a `mesh.json` file at the project root. Use `mesh.json.example` from THIS skill's directory (`.squad/skills/distributed-mesh/mesh.json.example`) as the schema template.
+Using the answers from Step 1, create a `mesh.json` file at the project root. Use `mesh.json.example` from THIS skill's directory (`.copilot/skills/distributed-mesh/mesh.json.example`) as the schema template.
 
 Structure:
 
@@ -187,10 +187,10 @@ Write this file to the project root. Do NOT write any other code.
 
 Copy the bundled sync scripts from THIS skill's directory into the project root:
 
-- **Source:** `.squad/skills/distributed-mesh/sync-mesh.sh`
+- **Source:** `.copilot/skills/distributed-mesh/sync-mesh.sh`
 - **Destination:** `sync-mesh.sh` (project root)
 
-- **Source:** `.squad/skills/distributed-mesh/sync-mesh.ps1`
+- **Source:** `.copilot/skills/distributed-mesh/sync-mesh.ps1`
 - **Destination:** `sync-mesh.ps1` (project root)
 
 These are bundled resources. Do NOT generate them — COPY them directly.

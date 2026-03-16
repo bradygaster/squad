@@ -23,7 +23,7 @@ Read all agent charters and histories. Measure byte sizes. Identify:
 
 ### Step 2: Extract
 For each identified pattern:
-1. Create or update a skill at `.squad/skills/{skill-name}/SKILL.md`
+1. Create or update a skill at `.copilot/skills/{skill-name}/SKILL.md`
 2. Follow the skill template format (frontmatter + Context + Patterns + Examples + Anti-Patterns)
 3. Set confidence: low (first observation), medium (2+ agents), high (team-wide)
 

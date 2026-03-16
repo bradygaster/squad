@@ -578,15 +578,18 @@ describe('squad_status handler', () => {
 describe('squad_skill handler', () => {
   let registry: ToolRegistry;
   let testRoot: string;
+  let projectRoot: string;
 
   beforeEach(() => {
-    testRoot = path.join('.', '.test-squad-skill-' + randomUUID());
+    projectRoot = path.join('.', '.test-squad-skill-' + randomUUID());
+    testRoot = path.join(projectRoot, '.squad');
+    fs.mkdirSync(testRoot, { recursive: true });
     registry = new ToolRegistry(testRoot);
   });
 
   afterEach(() => {
-    if (fs.existsSync(testRoot)) {
-      fs.rmSync(testRoot, { recursive: true, force: true });
+    if (fs.existsSync(projectRoot)) {
+      fs.rmSync(projectRoot, { recursive: true, force: true });
     }
   });
 
@@ -611,7 +614,7 @@ describe('squad_skill handler', () => {
       resultType: 'success',
     });
 
-    const skillFile = path.join(testRoot, 'skills', 'typescript-refactoring', 'SKILL.md');
+    const skillFile = path.join(projectRoot, '.copilot', 'skills', 'typescript-refactoring', 'SKILL.md');
     expect(fs.existsSync(skillFile)).toBe(true);
 
     const content = fs.readFileSync(skillFile, 'utf-8');
@@ -706,7 +709,7 @@ describe('squad_skill handler', () => {
       }
     );
 
-    const skillFile = path.join(testRoot, 'skills', 'test-skill', 'SKILL.md');
+    const skillFile = path.join(projectRoot, '.copilot', 'skills', 'test-skill', 'SKILL.md');
     const content = fs.readFileSync(skillFile, 'utf-8');
     expect(content).toContain('**Confidence:** medium');
   });

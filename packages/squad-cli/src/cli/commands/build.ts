@@ -270,7 +270,7 @@ function generateCeremoniesDispatchTable(ceremonies: readonly CeremonyDefinition
     const schedule = c.schedule ?? '—';
     const participants = c.participants?.join(', ') ?? '—';
     const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const skillPath = `.squad/skills/ceremony-${slug}/SKILL.md`;
+    const skillPath = `.copilot/skills/ceremony-${slug}/SKILL.md`;
     lines.push(`| ${c.name} | ${trigger} | ${schedule} | ${participants} | \`${skillPath}\` |`);
   }
 
@@ -382,7 +382,7 @@ function buildFilePlan(config: SquadSDKConfig): GeneratedFile[] {
       for (const c of config.ceremonies) {
         const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
         files.push({
-          relPath: `.squad/skills/ceremony-${slug}/SKILL.md`,
+          relPath: `.copilot/skills/ceremony-${slug}/SKILL.md`,
           content: generateCeremonySkillFile(c),
         });
       }
@@ -399,7 +399,7 @@ function buildFilePlan(config: SquadSDKConfig): GeneratedFile[] {
   if (config.skills && config.skills.length > 0) {
     for (const skill of config.skills) {
       files.push({
-        relPath: `.squad/skills/${skill.name}/SKILL.md`,
+        relPath: `.copilot/skills/${skill.name}/SKILL.md`,
         content: generateSkillFile(skill),
       });
     }
