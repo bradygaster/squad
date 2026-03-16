@@ -17,7 +17,7 @@ const TEMPLATE_PATH = join(DOCS_DIR, 'template.html');
 // All sections in the simplified docs structure (5 sections + blog)
 const EXPECTED_GET_STARTED = ['installation', 'first-session'];
 
-const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad'];
+const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad', 'extensibility', 'building-extensions'];
 
 const EXPECTED_REFERENCE = ['cli', 'sdk', 'config'];
 
