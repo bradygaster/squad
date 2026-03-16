@@ -80,3 +80,21 @@ CLI completeness audit (2026-03-08) confirmed: 26 primary commands routed in cli
 
 **PR:** #417 opened targeting dev.
 
+### SDK --roles Config Generation (#378) (2026-03-16T14:20:00Z)
+
+**Context:** `squad init --sdk` and `squad init --roles` both worked independently, but `--sdk --roles` together didn't produce a config using the SDK's `useRole()` API.
+
+**Architecture:**
+- `generateSDKBuilderConfigWithRoles()` in `packages/squad-sdk/src/config/init.ts` handles the combined case
+- Partitions agents into base-role agents (resolved via `getRoleById()`) and plain agents (system agents like scribe/ralph)
+- Base-role agents emit `useRole('roleId', { name: 'agentName' })` calls
+- Plain agents emit standard `defineAgent()` calls
+- Default starter team (`lead`, `backend`, `frontend`, `tester`) generated when no explicit base-role agents provided
+
+**Key Pattern:** The `InitOptions.roles` boolean propagates from CLI (`cli/core/init.ts`) → SDK (`config/init.ts`). Config generation dispatches: `sdk + roles → generateSDKBuilderConfigWithRoles()`, `sdk only → generateSDKBuilderConfig()`.
+
+**Import Chain:** `useRole` is exported from `@bradygaster/squad-sdk` (barrel export via `roles/index.ts`). The config generator imports `getRoleById` and `ENGINEERING_ROLE_IDS` directly from the roles module.
+
+**Test Pattern:** Tests in `test/init-sdk.test.ts` use temp directories with `mkdtemp`, call `initSquad()` with various `configFormat`/`roles` combos, and assert on generated file content via regex and `toContain`.
+
+

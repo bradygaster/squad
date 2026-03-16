@@ -1,12 +1,12 @@
 ---
-updated_at: 2026-03-15T15:50:00Z
-focus_area: Post-sprint — SDK work + remaining bugs
-version: v0.8.25-build.4
+updated_at: 2026-03-16T00:00:00Z
+focus_area: A2A protocol + SDK work
+version: v0.8.25-build.7
 branch: dev
-tests_passing: ~4157
+tests_passing: 4199
 tests_todo: 46
 tests_skipped: 5
-test_files: 154
+test_files: 155
 team_size: 19 active agents + Scribe + Ralph + @copilot
 team_identity: Apollo 13 / NASA Mission Control
 process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never commit to main directly.
@@ -14,17 +14,16 @@ process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never 
 
 # What We're Focused On
 
-**Status:** Irritating bugs sprint COMPLETE. 7 issues closed, 8 PRs merged to dev, 5 community PRs merged. CI lockfile fix resolved 8-day build failure. Reskill needed, then dive into SDK work and remaining bugs.
+**Status:** Sprint bugs DONE. SDK feature parity tests shipped. Reskill running. Next: A2A protocol suite.
 
 ## Current State
 
-**Version:** v0.8.25-build.4 (on dev, not yet released)
+**Version:** v0.8.25-build.7 (on dev, not yet released)
 - **Packages:** @bradygaster/squad-sdk, @bradygaster/squad-cli
 - **Branch:** dev
 - **Build:** ✅ clean (0 errors, CI green)
-- **Tests:** ~4,157 passed, 46 todo, 5 skipped, ~154 test files
+- **Tests:** 4,199 passed, 46 todo, 5 skipped, 155 test files
   - Only failure: aspire-integration.test.ts (needs Docker, pre-existing)
-  - New: docs-links.test.ts (internal link + anchor validation from diberry)
 
 **Stack:**
 - TypeScript (strict mode, ESM-only)
@@ -36,43 +35,28 @@ process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never 
 **Team:** Apollo 13 / NASA Mission Control
 - 19 active agents + Scribe + Ralph + @copilot
 
-## What Just Shipped (Irritating Bugs Sprint — 2026-03-15)
+## Recently Shipped
 
-### Bug Fixes (our PRs)
-- **PR #409** — Version stamp in agent charter.md (#321)
-- **PR #411** — SDK init trio: Ralph in init (#338), config sync after cast (#337), @copilot removed from routing templates (#339)
-- **PR #412** — Base roles opt-in via `--roles` flag (#379) — @spboyer pinged
-- **PR #414** — CI lockfile fix (stale nested SDK entry caused 8-day build failure)
+- **PR #417** — CastingEngine wiring (#342) — casting now routes through the engine
+- **PR #422** — SDK feature parity tests (#340) — 22 real integration tests for worktree awareness, reviewer lockout, deadlock handling, skill confidence
+- **Issues #418-421** — Manual verification sub-issues created for prompt-only features (assigned to Brady)
 
-### Community PRs (Tamir Dresher)
-- **PR #415** — Rework rate OTEL metrics in squad-sdk (5th DORA metric)
-- **PR #381** — Rework rate CLI command (`squad rework`) — cherry-picked to dev
+## Next Up — A2A Protocol Suite 🔥
 
-### Community PRs (Dina Berry)
-- **PR #389** — Docs consolidation & reduction (-1,471 net lines, closes #258/#351)
-- **PR #393** — baseBranch alignment to dev (closes #350)
-- **PR #396** — Docs quality CI (markdownlint, cspell, link validation)
+Brady said this "sounds butter." Five issues filed by Tamir, all `go:needs-research`:
 
-### Issues Closed
-#321, #337, #338, #339, #348, #356, #379, #258, #350, #351
+1. **#332** — Core A2A/ACP Protocol (JSON-RPC 2.0 server, Agent Card, 3 RPCs) → start here
+2. **#333** — Discovery Mechanism (local file registry + optional mDNS) → after #332
+3. **#335** — Security & Authentication (localhost-only MVP, TLS for network) → after #332
+4. **#334** — CLI Integration (`squad serve`, `squad discover`, `squad ask`, etc.) → after #332 + #333
+5. **#336** — Multi-Repo Coordination Patterns (docs/playbook) → can start anytime
 
-## Next Up (Post-Reskill)
+### Other Open
 
-### Remaining Sprint Bugs
-- **#342** — CastingEngine bypass (casting doesn't use the engine)
-- **#363** — WSL transient error handling
-- **#340** — SDK feature parity audit
-
-### SDK Work
-- SDK builder improvements
-- Feature parity between CLI and SDK paths
-
-### Upgrade Notes for PAO
-- Captured in session files — PAO needs to review and update docs for:
-  - `--roles` flag for `squad init`
-  - Version stamp in charters
-  - Ralph auto-inclusion in init
-  - Config sync after casting (SDK users)
+- **#378** — Base roles `--sdk` switch (P1, EECOM + DSKY)
+- **#413** — Knowledge library (persistent team-wide storage)
+- **#354** — Migrate skills to .copilot/skills/
+- **#236** — Persistent Ralph (watch + heartbeat)
 
 ## Process
 
