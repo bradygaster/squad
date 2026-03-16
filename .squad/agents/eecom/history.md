@@ -80,3 +80,11 @@ CLI completeness audit (2026-03-08) confirmed: 26 primary commands routed in cli
 
 **PR:** #417 opened targeting dev.
 
+### PR Review Pattern — Description vs Diff Mismatch (2026-03-16)
+
+**Pattern:** Always verify PR body/title matches actual diff content before reviewing. Use `gh pr diff` + `gh api repos/{owner}/{repo}/pulls/{number}/files` to get file list, then cross-reference with PR description.
+
+**Learned from:** PR #434 review — body described "Agent-inclusive SDLC paper (~3,800 words)" but actual diff contained PAO external comms infrastructure (skills, templates, SQL schema). Branch name was `squad/agent-sdlc-paper` but no paper file in diff. Posted ⚠️ Needs Clarity review requesting alignment.
+
+**Review efficiency:** For docs PRs, check line count (`+394` lines) against "small, strategic" preference. PR #435 (agent on-disk anatomy) at 394 lines was borderline but justified for foundational concept doc. Flag verbosity concerns explicitly in review.
+

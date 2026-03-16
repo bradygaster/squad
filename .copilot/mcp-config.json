@@ -1,15 +1,16 @@
 {
   "mcpServers": {
-    "EXAMPLE-trello": {
+    "azure-devops": {
       "command": "npx",
       "args": [
         "-y",
-        "@trello/mcp-server"
-      ],
-      "env": {
-        "TRELLO_API_KEY": "${TRELLO_API_KEY}",
-        "TRELLO_TOKEN": "${TRELLO_TOKEN}"
-      }
+        "@azure-devops/mcp",
+        "msft-skilling"
+      ]
+    },
+    "powerbi-remote": {
+      "type": "http",
+      "url": "https://api.fabric.microsoft.com/v1/mcp/powerbi"
     }
   }
 }
