@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS draft_queue (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Halt state (safe word mechanism)
+-- Halt state (safe word "banana" mechanism)
 CREATE TABLE IF NOT EXISTS halt_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     halted INTEGER NOT NULL DEFAULT 0,

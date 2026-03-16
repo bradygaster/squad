@@ -20,7 +20,7 @@
 
 ## Safety
 
-- `pao halt` — freezes all pending drafts
+- `banana` — freezes all pending drafts (safe word)
 - Phase 1 is manual-trigger only
 - All responses require explicit human approval
 - Audit trail is append-only and runtime-only

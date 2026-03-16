@@ -142,7 +142,7 @@ Wait for explicit human direction before anything is posted.
 - `pao approve 1 3` — approve drafts 1 and 3
 - `pao edit 2` — edit draft 2
 - `pao skip` — skip all
-- `pao halt` — freeze all pending (safe word)
+- `banana` — freeze all pending (safe word)
 
 ### Rollback — Bad Post Recovery
 
@@ -155,7 +155,7 @@ If a posted response turns out to be wrong, inappropriate, or needs correction:
 3. **Draft replacement** (if needed): PAO drafts a corrected response, goes through normal review cycle
 4. **Postmortem:** If the error reveals a pattern gap, update humanizer anti-patterns or add a new test case
 
-**Safe word — `pao halt`:**
+**Safe word — `banana`:**
 - Immediately freezes all pending drafts in the review queue
 - No new scans or drafts until `pao resume` is issued
 - Audit entry logged with halter identity and reason

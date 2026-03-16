@@ -57,8 +57,8 @@ Drafts of specific types MUST contain these patterns:
 | T5.2 | `pao approve` command without draft ID | Error message |
 | T5.3 | Concurrent review sessions | SQLite lock prevents race |
 | T5.4 | Stale lock (>1 hour) | Auto-cleanup, new session allowed |
-| T5.5 | `pao halt` issued | All pending drafts frozen |
-| T5.6 | `pao resume` after halt | Drafts unfrozen |
+| T5.5 | `banana` issued (safe word) | All pending drafts frozen |
+| T5.6 | `pao resume` after banana | Drafts unfrozen |
 
 ### T6: Audit Trail Completeness
 
@@ -69,7 +69,7 @@ Drafts of specific types MUST contain these patterns:
 | T6.3 | Draft approved | approve action with reviewer |
 | T6.4 | Draft skipped | skip action with reviewer |
 | T6.5 | Response posted | post action with URL |
-| T6.6 | `pao halt` issued | halt action with issuer |
+| T6.6 | `banana` issued (safe word) | halt action with issuer |
 | T6.7 | Draft deleted (rollback) | delete action with reason |
 
 ### T7: Baseline Comparison (Weekly)
@@ -150,5 +150,5 @@ Before launch, ALL of the following must be true:
 - [ ] Rollback workflow (delete-and-repost) tested end-to-end
 - [ ] Review gate SQLite schema tested with concurrent access
 - [ ] Audit trail format validated against template
-- [ ] `pao halt` / `pao resume` flow tested end-to-end
+- [ ] `banana` / `pao resume` flow tested end-to-end
 - [ ] At least one full scan→draft→review→post cycle completed successfully
