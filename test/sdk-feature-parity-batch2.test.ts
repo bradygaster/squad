@@ -19,6 +19,7 @@ import {
   HookPipeline,
   ReviewerLockoutHook,
   type PreToolUseContext,
+  type PostToolUseContext,
   type PolicyConfig,
 } from '../packages/squad-sdk/src/hooks/index.js';
 import type {
@@ -603,6 +604,149 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
         sessionId: 's1',
       });
       expect(ask1.action).toBe('allow');
+    });
+  });
+
+  describe('PII scrubbing (postToolUse)', () => {
+    beforeEach(() => {
+      pipeline = new HookPipeline({ scrubPii: true });
+    });
+
+    it('redacts email addresses from string results', async () => {
+      const ctx: PostToolUseContext = {
+        toolName: 'bash',
+        arguments: { command: 'git log' },
+        result: 'Author: Edie Finneran <edie@example.com>',
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+
+      const result = await pipeline.runPostToolHooks(ctx);
+      expect(result.result).toBe('Author: Edie Finneran <[EMAIL_REDACTED]>');
+      expect(result.result).not.toContain('edie@example.com');
+    });
+
+    it('redacts multiple email addresses in a single string', async () => {
+      const ctx: PostToolUseContext = {
+        toolName: 'bash',
+        arguments: { command: 'cat AUTHORS' },
+        result: 'edie@example.com, fenster@corp.io, hockney@test.org',
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+
+      const result = await pipeline.runPostToolHooks(ctx);
+      expect(result.result).toBe('[EMAIL_REDACTED], [EMAIL_REDACTED], [EMAIL_REDACTED]');
+    });
+
+    it('leaves strings without emails unchanged', async () => {
+      const ctx: PostToolUseContext = {
+        toolName: 'bash',
+        arguments: { command: 'echo hello' },
+        result: 'Hello world — no PII here',
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+
+      const result = await pipeline.runPostToolHooks(ctx);
+      expect(result.result).toBe('Hello world — no PII here');
+    });
+
+    it('scrubs emails from nested object results', async () => {
+      const ctx: PostToolUseContext = {
+        toolName: 'read',
+        arguments: { path: 'config.json' },
+        result: {
+          author: 'edie@example.com',
+          metadata: {
+            reviewer: 'fenster@corp.io',
+            notes: 'Reviewed by fenster@corp.io on Monday',
+          },
+        },
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+
+      const result = await pipeline.runPostToolHooks(ctx);
+      const scrubbed = result.result as any;
+      expect(scrubbed.author).toBe('[EMAIL_REDACTED]');
+      expect(scrubbed.metadata.reviewer).toBe('[EMAIL_REDACTED]');
+      expect(scrubbed.metadata.notes).toBe('Reviewed by [EMAIL_REDACTED] on Monday');
+    });
+
+    it('scrubs emails from arrays', async () => {
+      const ctx: PostToolUseContext = {
+        toolName: 'read',
+        arguments: { path: 'team.json' },
+        result: ['edie@example.com', 'fenster@corp.io', 'no-email-here'],
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+
+      const result = await pipeline.runPostToolHooks(ctx);
+      const scrubbed = result.result as string[];
+      expect(scrubbed[0]).toBe('[EMAIL_REDACTED]');
+      expect(scrubbed[1]).toBe('[EMAIL_REDACTED]');
+      expect(scrubbed[2]).toBe('no-email-here');
+    });
+
+    it('handles non-string/non-object results (numbers, null)', async () => {
+      const numCtx: PostToolUseContext = {
+        toolName: 'bash',
+        arguments: { command: 'wc -l' },
+        result: 42,
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+      const numResult = await pipeline.runPostToolHooks(numCtx);
+      expect(numResult.result).toBe(42);
+
+      const nullCtx: PostToolUseContext = {
+        ...numCtx,
+        result: null,
+      };
+      const nullResult = await pipeline.runPostToolHooks(nullCtx);
+      expect(nullResult.result).toBeNull();
+    });
+
+    it('does not scrub when scrubPii is disabled', async () => {
+      const noScrubPipeline = new HookPipeline({ scrubPii: false });
+      const ctx: PostToolUseContext = {
+        toolName: 'bash',
+        arguments: { command: 'git log' },
+        result: 'Author: edie@example.com',
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+
+      const result = await noScrubPipeline.runPostToolHooks(ctx);
+      expect(result.result).toBe('Author: edie@example.com');
+    });
+
+    it('scrubs deeply nested objects with mixed types', async () => {
+      const ctx: PostToolUseContext = {
+        toolName: 'read',
+        arguments: { path: 'data.json' },
+        result: {
+          users: [
+            { name: 'Edie', email: 'edie@example.com', age: 30 },
+            { name: 'Fenster', email: 'fenster@corp.io', active: true },
+          ],
+          count: 2,
+          note: null,
+        },
+        agentName: 'edie',
+        sessionId: 's1',
+      };
+
+      const result = await pipeline.runPostToolHooks(ctx);
+      const scrubbed = result.result as any;
+      expect(scrubbed.users[0].email).toBe('[EMAIL_REDACTED]');
+      expect(scrubbed.users[0].name).toBe('Edie');
+      expect(scrubbed.users[0].age).toBe(30);
+      expect(scrubbed.users[1].email).toBe('[EMAIL_REDACTED]');
+      expect(scrubbed.users[1].active).toBe(true);
+      expect(scrubbed.count).toBe(2);
     });
   });
 
