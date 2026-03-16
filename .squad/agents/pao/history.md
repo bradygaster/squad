@@ -29,3 +29,6 @@ External tool integrations require explicit "where to get it" guidance. Placehol
 ### Cross-Org Authentication Docs
 Problem/solution structure for multi-account auth: gh auth switch, Copilot instructions, Squad skill pattern. Cover credential helpers, EMU variations, common error messages. Cross-reference in troubleshooting and enterprise-platforms pages.
 
+### Extensibility Guide Three-Layer Model
+Created comprehensive extensibility guide showing users WHERE their change idea belongs. Three layers: Squad Core (coordinator/protocol), Squad Extension (marketplace plugins), Team Configuration (.squad/ files). Decision tree helps self-sorting. Used Claire's RFC #328 as worked example — sophisticated client-delivery workflow maps entirely to existing primitives (skills + ceremonies + directives) without core changes. Key principle: Squad core stays small. Most ideas are composition, not coordinator changes. Doc includes escalation signals, plugin build guide, concrete examples for each layer.
+
