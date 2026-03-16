@@ -235,7 +235,7 @@ describe('Compat v0.4.1: Config Path Equivalence', () => {
 
   it('DEFAULT_CONFIG has expected shape', () => {
     expect(DEFAULT_CONFIG.version).toBe('1.0.0');
-    expect(DEFAULT_CONFIG.models.defaultModel).toBe('claude-sonnet-4.5');
+    expect(DEFAULT_CONFIG.models.defaultModel).toBe('claude-sonnet-4.6');
     expect(DEFAULT_CONFIG.models.defaultTier).toBe('standard');
     expect(DEFAULT_CONFIG.routing.rules.length).toBeGreaterThanOrEqual(1);
     expect(DEFAULT_CONFIG.casting?.allowlistUniverses).toBeDefined();
@@ -475,7 +475,7 @@ describe('Compat v0.4.1: Model Catalog', () => {
   });
 
   it('standard fallback chain starts with sonnet', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-4.5');
+    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-4.6');
   });
 
   it('fast fallback chain starts with haiku', () => {

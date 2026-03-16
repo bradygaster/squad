@@ -76,7 +76,7 @@ describe('DEFAULT_FALLBACK_CHAINS', () => {
   });
 
   it('starts standard chain with sonnet', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-4.5');
+    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-4.6');
   });
 
   it('starts fast chain with haiku', () => {

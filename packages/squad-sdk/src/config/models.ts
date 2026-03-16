@@ -76,6 +76,16 @@ export const MODEL_CATALOG: ModelInfo[] = [
   
   // Standard tier - balanced quality, speed, cost
   {
+    id: 'claude-sonnet-4.6',
+    tier: 'standard',
+    provider: 'anthropic',
+    family: 'claude',
+    vision: true,
+    useCases: ['code generation', 'test writing', 'refactoring', 'prompt engineering'],
+    cost: 5,
+    speed: 7
+  },
+  {
     id: 'claude-sonnet-4.5',
     tier: 'standard',
     provider: 'anthropic',
@@ -93,6 +103,24 @@ export const MODEL_CATALOG: ModelInfo[] = [
     useCases: ['code generation', 'documentation'],
     cost: 4,
     speed: 7
+  },
+  {
+    id: 'gpt-5.4',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 6,
+    speed: 7
+  },
+  {
+    id: 'gpt-5.3-codex',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    useCases: ['heavy code generation', 'multi-file refactors'],
+    cost: 5,
+    speed: 6
   },
   {
     id: 'gpt-5.2-codex',
@@ -201,8 +229,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
  * Default fallback chains per tier from squad.agent.md.
  */
 export const DEFAULT_FALLBACK_CHAINS: Record<ModelTier, ModelId[]> = {
-  premium: ['claude-opus-4.6', 'claude-opus-4.6-fast', 'claude-opus-4.5', 'claude-sonnet-4.5'],
-  standard: ['claude-sonnet-4.5', 'gpt-5.2-codex', 'claude-sonnet-4', 'gpt-5.2'],
+  premium: ['claude-opus-4.6', 'claude-opus-4.6-fast', 'claude-opus-4.5', 'claude-sonnet-4.6'],
+  standard: ['claude-sonnet-4.6', 'gpt-5.4', 'claude-sonnet-4.5', 'gpt-5.3-codex', 'claude-sonnet-4', 'gpt-5.2'],
   fast: ['claude-haiku-4.5', 'gpt-5.1-codex-mini', 'gpt-4.1', 'gpt-5-mini']
 };
 

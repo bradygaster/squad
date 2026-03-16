@@ -208,7 +208,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       expect(result.source).not.toBe('charter');
       expect(result.source).toBe('task-auto');
-      expect(result.model).toBe('claude-sonnet-4.5');
+      expect(result.model).toBe('claude-sonnet-4.6');
     });
 
     it('should prefer user override over charter', () => {
@@ -233,7 +233,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-sonnet-4.5');
+      expect(result.model).toBe('claude-sonnet-4.6');
       expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
@@ -245,7 +245,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-sonnet-4.5');
+      expect(result.model).toBe('claude-sonnet-4.6');
       expect(result.tier).toBe('standard');
       expect(result.source).toBe('task-auto');
     });
@@ -257,7 +257,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-opus-4.5');
+      expect(result.model).toBe('claude-opus-4.6');
       expect(result.tier).toBe('premium');
       expect(result.source).toBe('task-auto');
     });
@@ -328,7 +328,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
         'claude-opus-4.6',
         'claude-opus-4.6-fast',
         'claude-opus-4.5',
-        'claude-sonnet-4.5',
+        'claude-sonnet-4.6',
       ]);
     });
 
@@ -340,8 +340,10 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.fallbackChain).toEqual([
+        'claude-sonnet-4.6',
+        'gpt-5.4',
         'claude-sonnet-4.5',
-        'gpt-5.2-codex',
+        'gpt-5.3-codex',
         'claude-sonnet-4',
         'gpt-5.2',
       ]);
@@ -418,7 +420,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.source).toBe('task-auto');
-      expect(result.model).toBe('claude-sonnet-4.5');
+      expect(result.model).toBe('claude-sonnet-4.6');
     });
 
     it('should include agentRole in context without affecting resolution', () => {
@@ -429,7 +431,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
-      expect(result.model).toBe('claude-sonnet-4.5');
+      expect(result.model).toBe('claude-sonnet-4.6');
       expect(result.source).toBe('task-auto');
     });
   });

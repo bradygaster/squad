@@ -104,7 +104,7 @@ function selectModelForTask(taskType: TaskType): ResolvedModel | undefined {
   switch (taskType) {
     case 'code':
       return {
-        model: 'claude-sonnet-4.5',
+        model: 'claude-sonnet-4.6',
         tier: 'standard',
         source: 'task-auto',
         fallbackChain: [...MODELS.FALLBACK_CHAINS.standard],
@@ -112,7 +112,7 @@ function selectModelForTask(taskType: TaskType): ResolvedModel | undefined {
     
     case 'prompt':
       return {
-        model: 'claude-sonnet-4.5',
+        model: 'claude-sonnet-4.6',
         tier: 'standard',
         source: 'task-auto',
         fallbackChain: [...MODELS.FALLBACK_CHAINS.standard],
@@ -120,7 +120,7 @@ function selectModelForTask(taskType: TaskType): ResolvedModel | undefined {
     
     case 'visual':
       return {
-        model: 'claude-opus-4.5',
+        model: 'claude-opus-4.6',
         tier: 'premium',
         source: 'task-auto',
         fallbackChain: [...MODELS.FALLBACK_CHAINS.premium],

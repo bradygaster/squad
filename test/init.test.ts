@@ -82,7 +82,7 @@ describe('Squad Initialization', () => {
       const configContent = await readFile(result.configPath, 'utf-8');
       const parsed = JSON.parse(configContent);
       expect(parsed.version).toBe('1.0.0');
-      expect(parsed.models.defaultModel).toBe('claude-sonnet-4.5');
+      expect(parsed.models.defaultModel).toBe('claude-sonnet-4.6');
       expect(parsed.routing.rules).toHaveLength(4);
     });
 
