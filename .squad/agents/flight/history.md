@@ -25,3 +25,6 @@ Zero code changes. Skill files in templates/skills/, scripts in scripts/mesh/, d
 ### Sprint Prioritization Pattern
 Rank by: (1) bugs with active user impact, (2) quality/test gaps blocking GA, (3) high-ROI features unblocking downstream work. Interleave stability (bugs/quality) with velocity (features) across sprint capacity.
 
+### Agent On-Disk Anatomy Documentation
+Developer concept doc clarifying the distributed identity model: runtime state (`.squad/agents/{name}/`), SDK infrastructure (`packages/squad-sdk/src/agents/`), and optional config overrides. Charter is DNA (parsed into agent prompt), history is append-only learnings, casting adds memorable names. Three conditions for active agent: charter.md exists, roster entry in team.md, routing rules. Alumni pattern preserves retired agents in `_alumni/`. Context flows via explicit artifacts (team.md, routing.md, decisions.md), not shared memory. SDK is generic runtime — all agent specificity lives in `.squad/`.
+
