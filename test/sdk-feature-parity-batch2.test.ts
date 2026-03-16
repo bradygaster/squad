@@ -48,7 +48,7 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
     const ceremony = defineCeremony({
       name: 'design-review',
       trigger: 'manual',
-      participants: ['edie', 'fenster', 'hockney'],
+      participants: ['test-agent-1', 'test-agent-2', 'test-agent-3'],
       agenda: 'Review architecture decisions and trade-offs',
     });
 
@@ -62,7 +62,7 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
     const ceremony = defineCeremony({
       name: 'post-merge-review',
       trigger: 'pr-merged',
-      participants: ['hockney'],
+      participants: ['test-agent-3'],
       agenda: 'Run regression tests and update coverage report',
     });
 
@@ -74,7 +74,7 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
       name: 'standup',
       trigger: 'schedule',
       schedule: '0 9 * * 1-5',
-      participants: ['edie', 'fenster', 'hockney'],
+      participants: ['test-agent-1', 'test-agent-2', 'test-agent-3'],
       agenda: 'Yesterday / Today / Blockers',
     });
 
@@ -86,7 +86,7 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
     const ceremony = defineCeremony({
       name: 'retrospective',
       trigger: 'manual',
-      participants: ['edie', 'fenster'],
+      participants: ['test-agent-1', 'test-agent-2'],
       agenda: 'What went well? What to improve?',
       hooks: ['pre-retro-gather-metrics', 'post-retro-create-issues'],
     });
@@ -98,22 +98,22 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
 
   it('defineSquad() composes multiple ceremonies including manual', () => {
     const config = defineSquad({
-      team: defineTeam({ name: 'Alpha', members: ['edie', 'hockney'] }),
+      team: defineTeam({ name: 'Alpha', members: ['test-agent-1', 'test-agent-3'] }),
       agents: [
-        defineAgent({ name: 'edie', role: 'TypeScript Engineer' }),
-        defineAgent({ name: 'hockney', role: 'Tester' }),
+        defineAgent({ name: 'test-agent-1', role: 'TypeScript Engineer' }),
+        defineAgent({ name: 'test-agent-3', role: 'Tester' }),
       ],
       ceremonies: [
         defineCeremony({
           name: 'standup',
           trigger: 'schedule',
           schedule: '0 9 * * 1-5',
-          participants: ['edie', 'hockney'],
+          participants: ['test-agent-1', 'test-agent-3'],
         }),
         defineCeremony({
           name: 'design-review',
           trigger: 'manual',
-          participants: ['edie'],
+          participants: ['test-agent-1'],
           agenda: 'Review pending architecture decisions',
         }),
       ],
@@ -143,7 +143,7 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
 
   it('defineCeremony() throws on non-array participants', () => {
     expect(() =>
-      defineCeremony({ name: 'bad', participants: 'edie' } as any),
+      defineCeremony({ name: 'bad', participants: 'test-agent-1' } as any),
     ).toThrow(BuilderValidationError);
   });
 
@@ -167,17 +167,17 @@ describe('SDK Feature: Manual Ceremonies (#27)', () => {
 
   it('ceremony participants can reference any agent in the squad', () => {
     const config = defineSquad({
-      team: defineTeam({ name: 'Squad', members: ['edie', 'fenster', 'hockney'] }),
+      team: defineTeam({ name: 'Squad', members: ['test-agent-1', 'test-agent-2', 'test-agent-3'] }),
       agents: [
-        defineAgent({ name: 'edie', role: 'Lead' }),
-        defineAgent({ name: 'fenster', role: 'Tester' }),
-        defineAgent({ name: 'hockney', role: 'Developer' }),
+        defineAgent({ name: 'test-agent-1', role: 'Lead' }),
+        defineAgent({ name: 'test-agent-2', role: 'Tester' }),
+        defineAgent({ name: 'test-agent-3', role: 'Developer' }),
       ],
       ceremonies: [
         defineCeremony({
           name: 'full-team-sync',
           trigger: 'manual',
-          participants: ['edie', 'fenster', 'hockney'],
+          participants: ['test-agent-1', 'test-agent-2', 'test-agent-3'],
           agenda: 'Cross-team sync',
         }),
       ],
@@ -202,7 +202,7 @@ describe('SDK Feature: Ceremony Cooldown (#28)', () => {
       name: 'standup',
       trigger: 'schedule',
       schedule: '0 9 * * 1-5',
-      participants: ['edie'],
+      participants: ['test-agent-1'],
       agenda: 'Yesterday / Today / Blockers',
     });
 
@@ -215,7 +215,7 @@ describe('SDK Feature: Ceremony Cooldown (#28)', () => {
     const ceremony = defineCeremony({
       name: 'ad-hoc-review',
       trigger: 'manual',
-      participants: ['edie'],
+      participants: ['test-agent-1'],
     });
 
     expect(ceremony.schedule).toBeUndefined();
@@ -236,14 +236,14 @@ describe('SDK Feature: Ceremony Cooldown (#28)', () => {
 
   it('defineSquad() validates ceremonies with schedules in full config', () => {
     const config = defineSquad({
-      team: defineTeam({ name: 'CooldownTeam', members: ['edie'] }),
-      agents: [defineAgent({ name: 'edie', role: 'Engineer' })],
+      team: defineTeam({ name: 'CooldownTeam', members: ['test-agent-1'] }),
+      agents: [defineAgent({ name: 'test-agent-1', role: 'Engineer' })],
       ceremonies: [
         defineCeremony({
           name: 'daily-standup',
           trigger: 'schedule',
           schedule: '0 9 * * 1-5',
-          participants: ['edie'],
+          participants: ['test-agent-1'],
           agenda: 'Daily sync',
         }),
       ],
@@ -259,27 +259,27 @@ describe('SDK Feature: Ceremony Cooldown (#28)', () => {
 
 describe('SDK Feature: Human Team Members (#36)', () => {
   it('defineAgent() accepts status: "active" for active agents', () => {
-    const agent = defineAgent({ name: 'edie', role: 'Engineer', status: 'active' });
+    const agent = defineAgent({ name: 'test-agent-1', role: 'Engineer', status: 'active' });
     expect(agent.status).toBe('active');
   });
 
   it('defineAgent() accepts status: "inactive" for paused agents', () => {
-    const agent = defineAgent({ name: 'alice', role: 'Product Lead', status: 'inactive' });
+    const agent = defineAgent({ name: 'test-agent-4', role: 'Product Lead', status: 'inactive' });
     expect(agent.status).toBe('inactive');
   });
 
   it('defineAgent() accepts status: "retired" for removed agents', () => {
-    const agent = defineAgent({ name: 'old-bot', role: 'Archivist', status: 'retired' });
+    const agent = defineAgent({ name: 'test-agent-retired', role: 'Archivist', status: 'retired' });
     expect(agent.status).toBe('retired');
   });
 
   it('squad config can include agents with mixed statuses', () => {
     const config = defineSquad({
-      team: defineTeam({ name: 'Mixed', members: ['edie', 'alice', 'old-bot'] }),
+      team: defineTeam({ name: 'Mixed', members: ['test-agent-1', 'test-agent-4', 'test-agent-retired'] }),
       agents: [
-        defineAgent({ name: 'edie', role: 'Engineer', status: 'active' }),
-        defineAgent({ name: 'alice', role: 'Product Lead', status: 'inactive' }),
-        defineAgent({ name: 'old-bot', role: 'Archivist', status: 'retired' }),
+        defineAgent({ name: 'test-agent-1', role: 'Engineer', status: 'active' }),
+        defineAgent({ name: 'test-agent-4', role: 'Product Lead', status: 'inactive' }),
+        defineAgent({ name: 'test-agent-retired', role: 'Archivist', status: 'retired' }),
       ],
     });
 
@@ -293,7 +293,7 @@ describe('SDK Feature: Human Team Members (#36)', () => {
   });
 
   it('agent without status defaults to undefined (implicit active)', () => {
-    const agent = defineAgent({ name: 'fenster', role: 'Tester' });
+    const agent = defineAgent({ name: 'test-agent-2', role: 'Tester' });
     expect(agent.status).toBeUndefined();
   });
 
@@ -314,13 +314,13 @@ describe('SDK Feature: Human Team Members (#36)', () => {
 
   it('defineAgent() throws on empty role', () => {
     expect(() =>
-      defineAgent({ name: 'edie', role: '' }),
+      defineAgent({ name: 'test-agent-1', role: '' }),
     ).toThrow(BuilderValidationError);
   });
 
   it('defineAgent() throws on non-string status', () => {
     expect(() =>
-      defineAgent({ name: 'edie', role: 'Engineer', status: true } as any),
+      defineAgent({ name: 'test-agent-1', role: 'Engineer', status: true } as any),
     ).toThrow(BuilderValidationError);
   });
 
@@ -332,42 +332,42 @@ describe('SDK Feature: Human Team Members (#36)', () => {
 
   it('routing rules can reference agents regardless of status', () => {
     const config = defineSquad({
-      team: defineTeam({ name: 'Routed', members: ['edie', 'hockney'] }),
+      team: defineTeam({ name: 'Routed', members: ['test-agent-1', 'test-agent-3'] }),
       agents: [
-        defineAgent({ name: 'edie', role: 'Engineer', status: 'active' }),
-        defineAgent({ name: 'hockney', role: 'Tester', status: 'inactive' }),
+        defineAgent({ name: 'test-agent-1', role: 'Engineer', status: 'active' }),
+        defineAgent({ name: 'test-agent-3', role: 'Tester', status: 'inactive' }),
       ],
       routing: defineRouting({
         rules: [
-          { pattern: 'test-*', agents: ['hockney'] },
-          { pattern: 'feature-*', agents: ['edie'] },
+          { pattern: 'test-*', agents: ['test-agent-3'] },
+          { pattern: 'feature-*', agents: ['test-agent-1'] },
         ],
-        defaultAgent: 'edie',
+        defaultAgent: 'test-agent-1',
       }),
     });
 
     // Routing rules exist for both active and inactive agents
     expect(config.routing!.rules).toHaveLength(2);
     const testRule = config.routing!.rules.find(r => r.pattern === 'test-*');
-    expect(testRule!.agents).toContain('hockney');
+    expect(testRule!.agents).toContain('test-agent-3');
   });
 
   it('team members list can include descriptive roles for human oversight', () => {
     const config = defineSquad({
       team: defineTeam({
         name: 'HumanLed',
-        members: ['edie', 'fenster', 'project-manager'],
+        members: ['test-agent-1', 'test-agent-2', 'test-pm'],
         description: 'Team with human oversight',
       }),
       agents: [
-        defineAgent({ name: 'edie', role: 'Engineer' }),
-        defineAgent({ name: 'fenster', role: 'Tester' }),
-        defineAgent({ name: 'project-manager', role: 'Product Lead', status: 'inactive' }),
+        defineAgent({ name: 'test-agent-1', role: 'Engineer' }),
+        defineAgent({ name: 'test-agent-2', role: 'Tester' }),
+        defineAgent({ name: 'test-pm', role: 'Product Lead', status: 'inactive' }),
       ],
     });
 
-    expect(config.team.members).toContain('project-manager');
-    const pm = config.agents.find(a => a.name === 'project-manager');
+    expect(config.team.members).toContain('test-pm');
+    const pm = config.agents.find(a => a.name === 'test-pm');
     expect(pm!.role).toBe('Product Lead');
     expect(pm!.status).toBe('inactive');
   });
@@ -389,7 +389,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'ask_user',
         arguments: { question: 'Which DB?' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 'session-1',
       };
 
@@ -401,7 +401,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'ask_user',
         arguments: { question: 'Question?' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 'session-1',
       };
 
@@ -421,7 +421,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const session1: PreToolUseContext = {
         toolName: 'ask_user',
         arguments: { question: 'Q?' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 'session-1',
       };
       const session2: PreToolUseContext = {
@@ -446,7 +446,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'edit',
         arguments: { path: 'src/foo.ts' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 'session-1',
       };
 
@@ -466,7 +466,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'edit',
         arguments: { path: 'src/components/auth.ts' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -478,7 +478,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'create',
         arguments: { path: 'test/auth.test.ts' },
-        agentName: 'fenster',
+        agentName: 'test-agent-2',
         sessionId: 's1',
       };
 
@@ -490,7 +490,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'edit',
         arguments: { path: 'package.json' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -502,8 +502,8 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
     it('allows .squad/ path writes', async () => {
       const ctx: PreToolUseContext = {
         toolName: 'create',
-        arguments: { path: '.squad/agents/edie/charter.md' },
-        agentName: 'edie',
+        arguments: { path: '.squad/agents/test-agent-1/charter.md' },
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -515,7 +515,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'read',
         arguments: { path: '/etc/passwd' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -535,7 +535,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'bash',
         arguments: { command: 'rm -rf /important/data' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -548,7 +548,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'bash',
         arguments: { command: 'npm test' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -560,7 +560,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PreToolUseContext = {
         toolName: 'bash',
         arguments: { command: "psql -c 'DROP TABLE users;'" },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -582,7 +582,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const write = await pipeline.runPreToolHooks({
         toolName: 'edit',
         arguments: { path: 'src/app.ts' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       });
       expect(write.action).toBe('allow');
@@ -591,7 +591,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const blocked = await pipeline.runPreToolHooks({
         toolName: 'edit',
         arguments: { path: 'dist/bundle.js' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       });
       expect(blocked.action).toBe('block');
@@ -600,7 +600,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ask1 = await pipeline.runPreToolHooks({
         toolName: 'ask_user',
         arguments: { question: 'Q1?' },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       });
       expect(ask1.action).toBe('allow');
@@ -616,22 +616,22 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PostToolUseContext = {
         toolName: 'bash',
         arguments: { command: 'git log' },
-        result: 'Author: Edie Finneran <edie@example.com>',
-        agentName: 'edie',
+        result: 'Author: Test User <testuser1@example.com>',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
       const result = await pipeline.runPostToolHooks(ctx);
-      expect(result.result).toBe('Author: Edie Finneran <[EMAIL_REDACTED]>');
-      expect(result.result).not.toContain('edie@example.com');
+      expect(result.result).toBe('Author: Test User <[EMAIL_REDACTED]>');
+      expect(result.result).not.toContain('testuser1@example.com');
     });
 
     it('redacts multiple email addresses in a single string', async () => {
       const ctx: PostToolUseContext = {
         toolName: 'bash',
         arguments: { command: 'cat AUTHORS' },
-        result: 'edie@example.com, fenster@corp.io, hockney@test.org',
-        agentName: 'edie',
+        result: 'testuser1@example.com, testuser2@example.com, testuser3@example.com',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -644,7 +644,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
         toolName: 'bash',
         arguments: { command: 'echo hello' },
         result: 'Hello world — no PII here',
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -657,13 +657,13 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
         toolName: 'read',
         arguments: { path: 'config.json' },
         result: {
-          author: 'edie@example.com',
+          author: 'testuser1@example.com',
           metadata: {
-            reviewer: 'fenster@corp.io',
-            notes: 'Reviewed by fenster@corp.io on Monday',
+            reviewer: 'testuser2@example.com',
+            notes: 'Reviewed by testuser2@example.com on Monday',
           },
         },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -678,8 +678,8 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PostToolUseContext = {
         toolName: 'read',
         arguments: { path: 'team.json' },
-        result: ['edie@example.com', 'fenster@corp.io', 'no-email-here'],
-        agentName: 'edie',
+        result: ['testuser1@example.com', 'testuser2@example.com', 'no-email-here'],
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
@@ -695,7 +695,7 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
         toolName: 'bash',
         arguments: { command: 'wc -l' },
         result: 42,
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
       const numResult = await pipeline.runPostToolHooks(numCtx);
@@ -714,13 +714,13 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
       const ctx: PostToolUseContext = {
         toolName: 'bash',
         arguments: { command: 'git log' },
-        result: 'Author: edie@example.com',
-        agentName: 'edie',
+        result: 'Author: testuser1@example.com',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
       const result = await noScrubPipeline.runPostToolHooks(ctx);
-      expect(result.result).toBe('Author: edie@example.com');
+      expect(result.result).toBe('Author: testuser1@example.com');
     });
 
     it('scrubs deeply nested objects with mixed types', async () => {
@@ -729,20 +729,20 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
         arguments: { path: 'data.json' },
         result: {
           users: [
-            { name: 'Edie', email: 'edie@example.com', age: 30 },
-            { name: 'Fenster', email: 'fenster@corp.io', active: true },
+            { name: 'TestUser1', email: 'testuser1@example.com', age: 30 },
+            { name: 'TestUser2', email: 'testuser2@example.com', active: true },
           ],
           count: 2,
           note: null,
         },
-        agentName: 'edie',
+        agentName: 'test-agent-1',
         sessionId: 's1',
       };
 
       const result = await pipeline.runPostToolHooks(ctx);
       const scrubbed = result.result as any;
       expect(scrubbed.users[0].email).toBe('[EMAIL_REDACTED]');
-      expect(scrubbed.users[0].name).toBe('Edie');
+      expect(scrubbed.users[0].name).toBe('TestUser1');
       expect(scrubbed.users[0].age).toBe(30);
       expect(scrubbed.users[1].email).toBe('[EMAIL_REDACTED]');
       expect(scrubbed.users[1].active).toBe(true);
@@ -811,8 +811,8 @@ describe('SDK Feature: Constraint Budget (#49)', () => {
 
     it('defineSquad() with hooks constraints composes correctly', () => {
       const config = defineSquad({
-        team: defineTeam({ name: 'Constrained', members: ['edie'] }),
-        agents: [defineAgent({ name: 'edie', role: 'Engineer' })],
+        team: defineTeam({ name: 'Constrained', members: ['test-agent-1'] }),
+        agents: [defineAgent({ name: 'test-agent-1', role: 'Engineer' })],
         hooks: defineHooks({
           maxAskUser: 2,
           allowedWritePaths: ['src/**'],
@@ -840,47 +840,47 @@ describe('SDK Feature: Multi-Agent Artifact Coordination (#50)', () => {
   });
 
   it('artifact lockout tracks per-artifact per-agent', () => {
-    lockout.lockout('architecture.md', 'edie');
-    lockout.lockout('architecture.md', 'fenster');
-    lockout.lockout('tests.md', 'hockney');
+    lockout.lockout('architecture.md', 'test-agent-1');
+    lockout.lockout('architecture.md', 'test-agent-2');
+    lockout.lockout('tests.md', 'test-agent-3');
 
-    expect(lockout.isLockedOut('architecture.md', 'edie')).toBe(true);
-    expect(lockout.isLockedOut('architecture.md', 'fenster')).toBe(true);
-    expect(lockout.isLockedOut('architecture.md', 'hockney')).toBe(false);
-    expect(lockout.isLockedOut('tests.md', 'hockney')).toBe(true);
-    expect(lockout.isLockedOut('tests.md', 'edie')).toBe(false);
+    expect(lockout.isLockedOut('architecture.md', 'test-agent-1')).toBe(true);
+    expect(lockout.isLockedOut('architecture.md', 'test-agent-2')).toBe(true);
+    expect(lockout.isLockedOut('architecture.md', 'test-agent-3')).toBe(false);
+    expect(lockout.isLockedOut('tests.md', 'test-agent-3')).toBe(true);
+    expect(lockout.isLockedOut('tests.md', 'test-agent-1')).toBe(false);
   });
 
   it('getLockedAgents() lists all agents locked from an artifact', () => {
-    lockout.lockout('design-doc.md', 'edie');
-    lockout.lockout('design-doc.md', 'fenster');
+    lockout.lockout('design-doc.md', 'test-agent-1');
+    lockout.lockout('design-doc.md', 'test-agent-2');
 
     const locked = lockout.getLockedAgents('design-doc.md');
     expect(locked).toHaveLength(2);
-    expect(locked).toContain('edie');
-    expect(locked).toContain('fenster');
+    expect(locked).toContain('test-agent-1');
+    expect(locked).toContain('test-agent-2');
   });
 
   it('clearLockout() enables handoff to next contributor', () => {
-    lockout.lockout('api-spec.md', 'edie');
-    expect(lockout.isLockedOut('api-spec.md', 'edie')).toBe(true);
+    lockout.lockout('api-spec.md', 'test-agent-1');
+    expect(lockout.isLockedOut('api-spec.md', 'test-agent-1')).toBe(true);
 
     lockout.clearLockout('api-spec.md');
-    expect(lockout.isLockedOut('api-spec.md', 'edie')).toBe(false);
+    expect(lockout.isLockedOut('api-spec.md', 'test-agent-1')).toBe(false);
   });
 
   it('multi-agent artifact workflow: write → lockout → handoff', () => {
     // Agent 1 writes their section, then gets locked out
-    lockout.lockout('prd.md', 'edie');
+    lockout.lockout('prd.md', 'test-agent-1');
 
     // Agent 2 can still contribute
-    expect(lockout.isLockedOut('prd.md', 'fenster')).toBe(false);
+    expect(lockout.isLockedOut('prd.md', 'test-agent-2')).toBe(false);
 
     // Agent 2 finishes their section, gets locked out
-    lockout.lockout('prd.md', 'fenster');
+    lockout.lockout('prd.md', 'test-agent-2');
 
     // Agent 3 handles final review
-    expect(lockout.isLockedOut('prd.md', 'hockney')).toBe(false);
+    expect(lockout.isLockedOut('prd.md', 'test-agent-3')).toBe(false);
 
     // After all contributions complete, clear for next iteration
     lockout.clearLockout('prd.md');
@@ -891,14 +891,14 @@ describe('SDK Feature: Multi-Agent Artifact Coordination (#50)', () => {
     const pipeline = new HookPipeline({ reviewerLockout: true });
     const rlHook = pipeline.getReviewerLockout();
 
-    // Lock out edie from the artifact path
-    rlHook.lockout('src/auth', 'edie');
+    // Lock out test-agent-1 from the artifact path
+    rlHook.lockout('src/auth', 'test-agent-1');
 
-    // edie tries to edit a file in the locked artifact scope
+    // test-agent-1 tries to edit a file in the locked artifact scope
     const result = await pipeline.runPreToolHooks({
       toolName: 'edit',
       arguments: { path: 'src/auth/login.ts' },
-      agentName: 'edie',
+      agentName: 'test-agent-1',
       sessionId: 's1',
     });
 
@@ -909,7 +909,7 @@ describe('SDK Feature: Multi-Agent Artifact Coordination (#50)', () => {
     const otherResult = await pipeline.runPreToolHooks({
       toolName: 'edit',
       arguments: { path: 'src/auth/login.ts' },
-      agentName: 'fenster',
+      agentName: 'test-agent-2',
       sessionId: 's1',
     });
 
@@ -917,14 +917,14 @@ describe('SDK Feature: Multi-Agent Artifact Coordination (#50)', () => {
   });
 
   it('multiple artifacts can be tracked independently', () => {
-    lockout.lockout('frontend/app.tsx', 'edie');
-    lockout.lockout('backend/server.ts', 'fenster');
-    lockout.lockout('docs/readme.md', 'hockney');
+    lockout.lockout('frontend/app.tsx', 'test-agent-1');
+    lockout.lockout('backend/server.ts', 'test-agent-2');
+    lockout.lockout('docs/readme.md', 'test-agent-3');
 
-    expect(lockout.isLockedOut('frontend/app.tsx', 'edie')).toBe(true);
-    expect(lockout.isLockedOut('frontend/app.tsx', 'fenster')).toBe(false);
-    expect(lockout.isLockedOut('backend/server.ts', 'fenster')).toBe(true);
-    expect(lockout.isLockedOut('backend/server.ts', 'edie')).toBe(false);
-    expect(lockout.isLockedOut('docs/readme.md', 'hockney')).toBe(true);
+    expect(lockout.isLockedOut('frontend/app.tsx', 'test-agent-1')).toBe(true);
+    expect(lockout.isLockedOut('frontend/app.tsx', 'test-agent-2')).toBe(false);
+    expect(lockout.isLockedOut('backend/server.ts', 'test-agent-2')).toBe(true);
+    expect(lockout.isLockedOut('backend/server.ts', 'test-agent-1')).toBe(false);
+    expect(lockout.isLockedOut('docs/readme.md', 'test-agent-3')).toBe(true);
   });
 });
