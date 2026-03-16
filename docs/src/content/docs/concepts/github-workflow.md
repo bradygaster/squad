@@ -53,6 +53,8 @@ Squad is built for mixed teams — humans set direction, AI agents execute and r
 
 ### Humans in the lifecycle
 
+The following is **one example** of how a mixed team might divide responsibilities. Your team decides its own process — use [ceremonies](../features/ceremonies.md) and [directives](../features/human-team-members.md) to shape the workflow that fits.
+
 | Stage | Who acts | What happens |
 |-------|----------|--------------|
 | **Triage** | Human (or Lead) | Applies `go:yes` / `go:no` — decides what's worth building |
@@ -60,6 +62,8 @@ Squad is built for mixed teams — humans set direction, AI agents execute and r
 | **Implementation** | AI agents | Branch, build, test, open PRs — no human input required |
 | **PR review** | Human | Reviews and approves (or requests changes); lockout protocol prevents conflicting edits |
 | **Merge** | Human or Ralph | Squash-merge, branch cleanup, issue closed |
+
+This is a starting point. Define your own checkpoints by configuring [ceremonies](../features/ceremonies.md) and capturing [directives](../features/human-team-members.md).
 
 For details on how work routes to humans, see [Human team members](../features/human-team-members.md).
 
