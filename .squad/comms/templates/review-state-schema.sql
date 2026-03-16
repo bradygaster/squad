@@ -32,7 +32,7 @@ INSERT OR IGNORE INTO review_lease (id, status) VALUES (1, 'available');
 CREATE TABLE IF NOT EXISTS draft_queue (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     reviewer TEXT,
-    item_type TEXT NOT NULL CHECK (item_type IN ('issue', 'discussion', 'pr')),
+    item_type TEXT NOT NULL CHECK (item_type IN ('issue', 'discussion')),
     item_number INTEGER NOT NULL,
     item_url TEXT,
     response_type TEXT NOT NULL,

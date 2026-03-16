@@ -26,7 +26,7 @@ Phase 1 is **draft-only mode**.
 - PAO scans issues and discussions, drafts responses with the humanizer skill, and presents a review table for human approval.
 - **Human review gate is mandatory** — PAO never posts autonomously.
 - Every action is logged to `.squad/comms/audit/`.
-- This workflow is triggered manually ("PAO, check community") or when Ralph detects the `squad:needs-response` label.
+- This workflow is triggered manually only ("PAO, check community") — no automated or Ralph-triggered activation in Phase 1.
 
 ## Patterns
 
@@ -148,7 +148,9 @@ Wait for explicit human direction before anything is posted.
 
 If a posted response turns out to be wrong, inappropriate, or needs correction:
 
-1. **Delete the comment:** `gh api -X DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}`
+1. **Delete the comment:**
+   - Issues: `gh api -X DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}`
+   - Discussions: `gh api graphql -f query='mutation { deleteDiscussionComment(input: {id: "{node_id}"}) { comment { id } } }'`
 2. **Log the deletion:** Write audit entry with action `delete`, include reason and original content
 3. **Draft replacement** (if needed): PAO drafts a corrected response, goes through normal review cycle
 4. **Postmortem:** If the error reveals a pattern gap, update humanizer anti-patterns or add a new test case
@@ -205,7 +207,7 @@ Full drafts below ▼
 ```markdown
 # PAO External Comms Audit
 
-- action: posted
+- action: post
 - item: Issue #426
 - draft content: |
     Thread: 3 comments, last activity 2026-03-16, reporter hit a preview-build regression after install.

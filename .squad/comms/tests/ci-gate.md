@@ -17,12 +17,16 @@
 3. **Minimum substance** — Draft must be >50 characters (no empty acknowledgments)
 4. **Thread read verification** — Confirm all comments in thread were read before drafting
 
+### Mandatory for High-Confidence Drafts (🟢 only)
+
+5. **Baseline similarity** — Block if tone similarity to gold standard <80% for high-confidence (🟢) drafts. Aligns with `baseline_blocking: true` in `tone-validation.json`.
+
 ### Warning (flags but doesn't block)
 
 1. **Positive pattern check** — Warn if response type should contain patterns from `require_patterns`
 2. **Length check** — Warn if draft >500 words (may be too verbose for a GitHub comment)
 3. **Emoji count** — Warn if >2 emoji in draft
-4. **Similarity check** — Warn if tone similarity to gold standard <80%
+4. **Similarity check** — Warn if tone similarity to gold standard <80% for medium/low-confidence drafts
 
 ### Informational
 
