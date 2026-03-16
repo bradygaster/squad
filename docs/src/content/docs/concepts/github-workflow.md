@@ -47,6 +47,32 @@ Connect repo  →  Show backlog  →  Assign issues  →  Agent branches + imple
 
 ---
 
+## Working with your team
+
+Squad is built for mixed teams — humans set direction, AI agents execute and report back. The [Lead agent](your-team.md) bridges between them, routing work and surfacing decisions when a human needs to act.
+
+### Humans in the lifecycle
+
+| Stage | Who acts | What happens |
+|-------|----------|--------------|
+| **Triage** | Human (or Lead) | Applies `go:yes` / `go:no` — decides what's worth building |
+| **Design review** | Human + team | Auto-triggered ceremony before multi-agent work; humans can participate or observe |
+| **Implementation** | AI agents | Branch, build, test, open PRs — no human input required |
+| **PR review** | Human | Reviews and approves (or requests changes); lockout protocol prevents conflicting edits |
+| **Merge** | Human or Ralph | Squash-merge, branch cleanup, issue closed |
+
+### The relay pattern
+
+When work routes to a [human member](../features/human-team-members.md) (👤), Squad pauses and notifies you that someone needs to act. You relay the decision — approve a direction, unblock a dependency, or apply a label — then work resumes. Non-dependent work continues in parallel; humans don't block the whole pipeline.
+
+### Ceremonies as alignment points
+
+[Ceremonies](../features/ceremonies.md) — design reviews and retrospectives — are the structured moments where the whole team syncs. Design reviews auto-trigger before multi-agent implementations. Retros surface what to improve. These are the natural checkpoints where human judgment shapes the next sprint.
+
+For agent anatomy and how each team member (AI, human, @copilot) is structured, see [your-team.md](your-team.md).
+
+---
+
 ## Label Taxonomy
 
 Labels aren't just tags — they're Squad's **state machine**. Five namespaces drive workflow automation, routing, and lifecycle tracking.
