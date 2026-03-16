@@ -203,4 +203,156 @@ describe('squad init --sdk flag', () => {
     // Should contain the team name
     expect(configContent).toContain('Test Squad');
   });
+
+  // ── --sdk --roles integration (#378) ────────────────────────────────
+
+  it('init --sdk --roles uses useRole() instead of defineAgent()', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'scribe', role: 'scribe' }],
+      configFormat: 'sdk',
+      roles: true,
+    };
+
+    await initSquad(options);
+
+    const configPath = join(tempDir, 'squad.config.ts');
+    expect(existsSync(configPath)).toBe(true);
+
+    const configContent = await readFile(configPath, 'utf-8');
+
+    // Should import useRole
+    expect(configContent).toContain('useRole');
+    expect(configContent).toContain('@bradygaster/squad-sdk');
+
+    // Should have useRole() calls for starter team
+    expect(configContent).toMatch(/useRole\s*\(\s*'lead'/);
+    expect(configContent).toMatch(/useRole\s*\(\s*'backend'/);
+    expect(configContent).toMatch(/useRole\s*\(\s*'frontend'/);
+    expect(configContent).toMatch(/useRole\s*\(\s*'tester'/);
+  });
+
+  it('init --sdk --roles keeps defineAgent() for non-role agents', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [
+        { name: 'scribe', role: 'scribe' },
+        { name: 'ralph', role: 'ralph' },
+      ],
+      configFormat: 'sdk',
+      roles: true,
+    };
+
+    await initSquad(options);
+
+    const configPath = join(tempDir, 'squad.config.ts');
+    const configContent = await readFile(configPath, 'utf-8');
+
+    // System agents use defineAgent, not useRole
+    expect(configContent).toContain('defineAgent');
+    expect(configContent).toMatch(/defineAgent\([\s\S]*?name:\s*'scribe'/);
+    expect(configContent).toMatch(/defineAgent\([\s\S]*?name:\s*'ralph'/);
+  });
+
+  it('init --sdk --roles includes role catalog comment', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'scribe', role: 'scribe' }],
+      configFormat: 'sdk',
+      roles: true,
+    };
+
+    await initSquad(options);
+
+    const configPath = join(tempDir, 'squad.config.ts');
+    const configContent = await readFile(configPath, 'utf-8');
+
+    // Should have helpful comment about base roles
+    expect(configContent).toContain('built-in base roles');
+  });
+
+  it('init --sdk --roles generates valid export default', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'scribe', role: 'scribe' }],
+      configFormat: 'sdk',
+      roles: true,
+    };
+
+    await initSquad(options);
+
+    const configPath = join(tempDir, 'squad.config.ts');
+    const configContent = await readFile(configPath, 'utf-8');
+
+    expect(configContent).toMatch(/export\s+default/);
+    expect(configContent).toMatch(/defineSquad\s*\(/);
+    expect(configContent).toMatch(/defineTeam\s*\(/);
+  });
+
+  it('init --sdk --roles uses base role agent when passed', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [
+        { name: 'kane', role: 'backend' },
+        { name: 'ripley', role: 'lead' },
+      ],
+      configFormat: 'sdk',
+      roles: true,
+    };
+
+    await initSquad(options);
+
+    const configPath = join(tempDir, 'squad.config.ts');
+    const configContent = await readFile(configPath, 'utf-8');
+
+    // Should use useRole for recognized base roles
+    expect(configContent).toMatch(/useRole\s*\(\s*'backend'.*name:\s*'kane'/s);
+    expect(configContent).toMatch(/useRole\s*\(\s*'lead'.*name:\s*'ripley'/s);
+
+    // Should NOT generate default starter team since caller provided roles
+    expect(configContent).not.toContain("useRole('frontend'");
+  });
+
+  it('init --sdk without --roles still uses defineAgent()', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'edie', role: 'Engineer' }],
+      configFormat: 'sdk',
+      roles: false,
+    };
+
+    await initSquad(options);
+
+    const configPath = join(tempDir, 'squad.config.ts');
+    const configContent = await readFile(configPath, 'utf-8');
+
+    // Should NOT contain useRole
+    expect(configContent).not.toContain('useRole');
+    // Should contain defineAgent
+    expect(configContent).toContain('defineAgent');
+  });
+
+  it('init --roles without --sdk still creates markdown-only', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'edie', role: 'Engineer' }],
+      configFormat: 'markdown',
+      roles: true,
+    };
+
+    await initSquad(options);
+
+    // Should NOT generate squad.config.ts
+    expect(existsSync(join(tempDir, 'squad.config.ts'))).toBe(false);
+
+    // .squad/ directory should still be created
+    expect(existsSync(join(tempDir, '.squad'))).toBe(true);
+  });
 });
