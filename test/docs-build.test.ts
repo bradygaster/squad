@@ -86,15 +86,7 @@ const EXPECTED_FEATURES = [
   'worktrees',
 ];
 
-const EXPECTED_CONCEPTS = [
-  'github-workflow',
-  'memory-and-knowledge',
-  'parallel-work',
-  'portability',
-  'your-team',
-];
-
-const EXPECTED_CONCEPTS = ['architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
+const EXPECTED_CONCEPTS = ['architecture', 'github-workflow', 'memory-and-knowledge', 'parallel-work', 'portability', 'your-team'];
 
 // Blog posts are discovered dynamically to avoid breaking tests when posts change
 const EXPECTED_BLOG = existsSync(BLOG_CONTENT_DIR)
