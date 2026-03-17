@@ -84,11 +84,10 @@ export class RalphMonitor {
       eventBus.subscribe('agent:milestone', (event) => this.handleEvent(event)),
     );
 
-    // DISABLED: Heartbeat timer commented out pre-migration — re-enable when ready
-    // const interval = this.config.healthCheckInterval ?? 30_000;
-    // this.healthCheckTimer = setInterval(() => {
-    //   void this.healthCheck();
-    // }, interval);
+    const interval = this.config.healthCheckInterval ?? 30_000;
+    this.healthCheckTimer = setInterval(() => {
+      void this.healthCheck();
+    }, interval);
   }
 
   /** Handle an incoming event from the EventBus */
