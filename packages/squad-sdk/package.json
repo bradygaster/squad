@@ -146,6 +146,10 @@
       "types": "./dist/runtime/event-bus-ws-bridge.d.ts",
       "import": "./dist/runtime/event-bus-ws-bridge.js"
     },
+    "./runtime/scheduler": {
+      "types": "./dist/runtime/scheduler.d.ts",
+      "import": "./dist/runtime/scheduler.js"
+    },
     "./runtime/constants": {
       "types": "./dist/runtime/constants.d.ts",
       "import": "./dist/runtime/constants.js"

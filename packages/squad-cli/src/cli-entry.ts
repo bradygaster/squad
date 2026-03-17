@@ -187,6 +187,8 @@ async function main(): Promise<void> {
     console.log(`                    --watch (rebuild on change)`);
     console.log(`  ${BOLD}aspire${RESET}     Launch .NET Aspire dashboard for observability`);
     console.log(`             Flags: --docker (force Docker), --port <n> (dashboard port)`);
+    console.log(`  ${BOLD}schedule${RESET}   Manage scheduled tasks`);
+    console.log(`             Usage: schedule list | run <id> | init | status`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
     console.log(`  ${BOLD}copilot-bridge${RESET}  Check Copilot ACP stdio compatibility`);
@@ -531,6 +533,13 @@ async function main(): Promise<void> {
     } else {
       console.log(`${YELLOW}⚠${RESET} devtunnel CLI not found. Install with: winget install Microsoft.devtunnel`);
     }
+    return;
+  }
+
+  if (cmd === 'schedule') {
+    const { runSchedule } = await import('./cli/commands/schedule.js');
+    const subcommand = args[1] || 'list';
+    await runSchedule(process.cwd(), subcommand, args.slice(2));
     return;
   }
 
