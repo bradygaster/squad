@@ -198,6 +198,8 @@ async function main(): Promise<void> {
     console.log(`                    upstream remove <name>`);
     console.log(`                    upstream list`);
     console.log(`                    upstream sync [name]`);
+    console.log(`                    upstream watch [--interval N] [--auto-pr]`);
+    console.log(`                    upstream propose <name> [--skills] [--decisions] [--governance] [--all]`);
 
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
     console.log(`\nFlags:`);

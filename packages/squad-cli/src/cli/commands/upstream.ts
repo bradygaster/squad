@@ -6,6 +6,8 @@
  *   squad upstream remove <name>
  *   squad upstream list
  *   squad upstream sync [name]
+ *   squad upstream watch [--interval N] [--auto-pr]
+ *   squad upstream propose <name> [--skills] [--decisions] [--governance] [--all]
  *
  * @module cli/commands/upstream
  */
@@ -72,8 +74,8 @@ function ensureGitignoreEntry(repoDir: string, entry: string): void {
 
 export async function upstreamCommand(args: string[]): Promise<void> {
   const action = args[0];
-  if (!action || !['add', 'remove', 'list', 'sync'].includes(action)) {
-    fatal('Usage: squad upstream add|remove|list|sync');
+  if (!action || !['add', 'remove', 'list', 'sync', 'watch', 'propose'].includes(action)) {
+    fatal('Usage: squad upstream add|remove|list|sync|watch|propose');
     return;
   }
 
@@ -242,5 +244,137 @@ export async function upstreamCommand(args: string[]): Promise<void> {
 
     writeUpstreams(upstreamFile, data);
     info(`\n${synced}/${toSync.length} upstream(s) synced.\n`);
+  }
+
+  if (action === 'watch') {
+    const {
+      createWatchState,
+      runWatchCycle,
+      parseSyncConfig,
+    } = await import('@bradygaster/squad-sdk/upstream' as string);
+
+    const syncConfig = parseSyncConfig(squadDir);
+
+    // Parse CLI flags
+    const intervalIdx = args.indexOf('--interval');
+    const interval = (intervalIdx !== -1 && args[intervalIdx + 1])
+      ? parseInt(args[intervalIdx + 1]!, 10)
+      : syncConfig.interval;
+
+    if (isNaN(interval) || interval < 10) {
+      fatal('--interval must be a number >= 10 (seconds)');
+      return;
+    }
+
+    const autoPr = args.includes('--auto-pr') || syncConfig.autoPr;
+
+    const data = readUpstreams(upstreamFile);
+    if (data.upstreams.length === 0) {
+      fatal('No upstreams configured. Run "squad upstream add <source>" first.');
+      return;
+    }
+
+    info(`\n🔄 Watching ${data.upstreams.length} upstream(s) every ${interval}s${autoPr ? ' (auto-PR enabled)' : ''}...\n`);
+
+    const state = createWatchState();
+
+    // Initial snapshot (first cycle always reports no changes)
+    runWatchCycle(squadDir, state);
+    info('📸 Initial snapshot captured. Watching for changes...\n');
+
+    const runCycle = (round: number) => {
+      const result = runWatchCycle(squadDir, state);
+      if (result.hasAnyChanges) {
+        info(`\n🔔 Changes detected (round ${round}):`);
+        for (const d of result.detections) {
+          if (d.hasChanges) {
+            success(`  ${d.name}: ${d.changedFiles.length} file(s) changed`);
+            for (const f of d.changedFiles.slice(0, 10)) {
+              info(`    • ${f}`);
+            }
+            if (d.changedFiles.length > 10) {
+              info(`    ... and ${d.changedFiles.length - 10} more`);
+            }
+          }
+        }
+        if (autoPr) {
+          info('  📝 Auto-PR: would create PR (requires gh CLI integration)');
+        }
+      } else {
+        info(`⏳ Round ${round}: no changes detected`);
+      }
+    };
+
+    // Run first check immediately after snapshot
+    let round = 1;
+    const timer = setInterval(() => {
+      runCycle(round++);
+    }, interval * 1000);
+
+    // Handle graceful shutdown
+    const cleanup = () => {
+      clearInterval(timer);
+      info('\n👋 Watch stopped.');
+      process.exit(0);
+    };
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+
+    // Keep alive — the interval will run until interrupted
+    await new Promise<void>(() => {
+      // Intentionally never resolves — watch runs until SIGINT/SIGTERM
+    });
+  }
+
+  if (action === 'propose') {
+    const {
+      packageProposal,
+      parseProposeConfig,
+    } = await import('@bradygaster/squad-sdk/upstream' as string);
+
+    const targetName = args[1];
+    if (!targetName) {
+      fatal('Usage: squad upstream propose <upstream-name> [--skills] [--decisions] [--governance] [--all]');
+      return;
+    }
+
+    const data = readUpstreams(upstreamFile);
+    if (!data.upstreams.some(u => u.name === targetName)) {
+      fatal(`Upstream "${targetName}" not found. Run "squad upstream list" to see configured upstreams.`);
+      return;
+    }
+
+    // Parse scope flags
+    const useAll = args.includes('--all');
+    const scope = {
+      skills: useAll || args.includes('--skills'),
+      decisions: useAll || args.includes('--decisions'),
+      governance: useAll || args.includes('--governance'),
+    };
+
+    // If no flags specified, default to what the config allows
+    if (!scope.skills && !scope.decisions && !scope.governance) {
+      const proposeConfig = parseProposeConfig(squadDir);
+      scope.skills = proposeConfig.scope.skills;
+      scope.decisions = proposeConfig.scope.decisions;
+      scope.governance = proposeConfig.scope.governance;
+    }
+
+    info(`\n📦 Packaging proposal for upstream "${targetName}"...\n`);
+
+    const proposal = packageProposal(squadDir, targetName, scope);
+    if (!proposal) {
+      warn('No files to propose. Check your .squad/ directory and scope flags.');
+      return;
+    }
+
+    success(`Proposal packaged: ${proposal.summary}`);
+    info(`  Branch: ${proposal.branchName}`);
+    info(`  Files (${proposal.files.length}):`);
+    for (const f of proposal.files) {
+      info(`    • ${f.path}`);
+    }
+    info('\n💡 To submit: use "gh pr create" on the upstream repo with these changes.');
+    info('   (Automated PR creation requires gh CLI authentication to the parent repo)\n');
   }
 }
