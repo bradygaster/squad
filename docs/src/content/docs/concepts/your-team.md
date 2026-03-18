@@ -233,7 +233,7 @@ Before running `squad init`, think through these decisions. Squad will scan your
 - **Do you want review gates?** [Reviewers](#reviewer-protocol) can approve or reject work before it proceeds
 - **What ceremonies matter?** [Design reviews and retrospectives](#ceremonies) can auto-trigger or run on demand
 - **What model preferences?** Default is automatic selection, or specify preferred models per agent — see [Parallel Work & Models](parallel-work.md)
-- **Personal or repo-level squad?** Repo-level for team projects (commit `.squad/`), personal for a squad that follows you across repos
+- **How many squads, and where do they live?** One squad per repo is the default — your `.squad/` directory lives alongside your code. For multi-repo projects, you can run one squad per repo (each with its own team) or share a single squad across repos using a personal squad or linked team repo. Start with one squad in one repo and expand as needed.
 
 ---
 
