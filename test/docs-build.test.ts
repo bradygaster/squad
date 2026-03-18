@@ -17,9 +17,9 @@ const DIST_DIR = join(DOCS_DIR, 'dist');
 // Expected content directories in src/content/docs/
 const EXPECTED_GET_STARTED = ['choose-your-interface', 'first-session', 'installation', 'migration'];
 
-const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad', 'contributing', 'contributors', 'shell', 'faq'];
+const EXPECTED_GUIDES = ['tips-and-tricks', 'sample-prompts', 'personal-squad', 'contributing', 'contributors', 'shell', 'faq', 'extensibility', 'building-extensions'];
 
-const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks'];
+const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
 
 const EXPECTED_SCENARIOS= [
   'aspire-dashboard',
@@ -53,6 +53,7 @@ const EXPECTED_FEATURES = [
   'built-in-roles',
   'ceremonies',
   'consult-mode',
+  'context-hygiene',
   'copilot-coding-agent',
   'directives',
   'distributed-mesh',
@@ -86,13 +87,7 @@ const EXPECTED_FEATURES = [
   'worktrees',
 ];
 
-const EXPECTED_CONCEPTS = [
-  'github-workflow',
-  'memory-and-knowledge',
-  'parallel-work',
-  'portability',
-  'your-team',
-];
+const EXPECTED_CONCEPTS = ['architecture', 'github-workflow', 'memory-and-knowledge', 'parallel-work', 'portability', 'your-team'];
 
 // Blog posts are discovered dynamically to avoid breaking tests when posts change
 const EXPECTED_BLOG = existsSync(BLOG_CONTENT_DIR)
@@ -249,7 +244,6 @@ describe('Docs Build Script (Astro)', () => {
       ...EXPECTED_FEATURES.map(n => ({ dir: 'features', name: n })),
       ...EXPECTED_REFERENCE.map(n => ({ dir: 'reference', name: n })),
       ...EXPECTED_SCENARIOS.map(n => ({ dir: 'scenarios', name: n })),
-      ...EXPECTED_FEATURES.map(n => ({ dir: 'features', name: n })),
       ...EXPECTED_CONCEPTS.map(n => ({ dir: 'concepts', name: n })),
     ];
     for (const { dir, name } of allExpected) {

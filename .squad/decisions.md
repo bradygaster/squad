@@ -1304,12 +1304,270 @@ Brady's directive (2026-03-03T02:16:00Z): "squad-cli and squad-sdk must NOT be b
 
 ---
 
+## Adoption & Community
+
+### `.squad/` Directory Scope — Owner Directive
+**By:** Brady (project owner, PR #326 review)  
+**Date:** 2026-03-10  
+
+**Directive:** The `.squad/` directory is **reserved for team state only** — roster, routing, decisions, agent histories, casting, and orchestration logs. Non-team data (adoption tracking, community metrics, reports) must NOT live in `.squad/`. Use `.github/` for GitHub platform integration or `docs/` for documentation artifacts.
+
+**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029193833)
+
+---
+
+### No Individual Repo Listing Without Consent — Owner Directive
+**By:** Brady (project owner, PR #326 review)  
+**Date:** 2026-03-10  
+
+**Directive:** Growth metrics must report **aggregate numbers only** (e.g., "78+ repositories found via GitHub code search") — never name or link to individual community repos without explicit opt-in consent. The monitoring script and GitHub Action concepts are approved, but any public showcase or tracking list that identifies specific repos is blocked until a community consent plan exists.
+
+**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029222967)
+
+---
+
+### Adoption Tracking — Opt-In Architecture
+**By:** Flight (implementing Brady's directives above)  
+**Date:** 2026-03-09  
+
+Privacy-first adoption monitoring using a three-tier system:
+
+**Tier 1: Aggregate monitoring (SHIPPED)**
+- GitHub Action + monitoring script collect metrics
+- Reports moved to `.github/adoption/reports/{YYYY-MM-DD}.md`
+- Reports show ONLY aggregate numbers (no individual repo names):
+  - "78+ repositories found via code search"
+  - Total stars/forks across all discovered repos
+  - npm weekly downloads
+
+**Tier 2: Opt-in registry (DESIGN NEXT)**
+- Create `SHOWCASE.md` in repo root with submission instructions
+- Opted-in projects listed in `.github/adoption/registry.json`
+- Monitoring script reads registry, reports only on opted-in repos
+
+**Tier 3: Public showcase (LAUNCH LATER)**
+- `docs/community/built-with-squad.md` shows opted-in projects only
+- README link added when ≥5 opted-in projects exist
+
+**Rationale:**
+- Aggregate metrics safe (public code search results)
+- Individual projects only listed with explicit owner consent
+- Prevents surprise listings, respects privacy
+- Incremental rollout maintains team capacity
+
+**Implementation (PR #326):**
+- ✅ Moved `.squad/adoption/` → `.github/adoption/`
+- ✅ Stripped tracking.md to aggregate-only metrics
+- ✅ Removed individual repo names, URLs, metadata
+- ✅ Updated adoption-report.yml and scripts/adoption-monitor.mjs
+- ✅ Removed "Built with Squad" showcase link from README (Tier 2 feature)
+
+---
+
+### Adoption Tracking Location & Privacy
+**By:** EECOM  
+**Date:** 2026-03-10  
+
+Implementation decision confirming Tier 1 adoption tracking changes.
+
+**What:** Move adoption tracking from `.squad/adoption/` to `.github/adoption/`
+
+**Why:**
+1. **GitHub integration:** `.github/adoption/` aligns with GitHub convention (workflows, CODEOWNERS, issue templates)
+2. **Privacy-first:** Aggregate metrics only; defer individual repo showcase to Tier 2 (opt-in)
+3. **Clear separation:** `.squad/` = team internal; `.github/` = GitHub platform integration
+4. **Future-proof:** When Tier 2 opt-in launches, `.github/adoption/` is the natural home
+
+**Impact:**
+- GitHub Action reports write to `.github/adoption/reports/{YYYY-MM-DD}.md`
+- No individual repo information published until Tier 2
+- Monitoring continues collecting aggregate metrics via public APIs
+- Team sees trends without publishing sensitive adoption data
+
+---
+
+### Append-Only File Governance
+**By:** Flight  
+**Date:** 2026-03-09  
+
+Feature branches must never modify append-only team state files except to append new content.
+
+**What:** If a PR diff shows deletions in `.squad/agents/*/history.md` or `.squad/decisions.md`, the PR is blocked until deletions are reverted.
+
+**Why:** Session state drift causes agents to reset append-only files to stale branch state, destroying team knowledge. PR #326 deleted entire history files and trimmed ~75 lines of decisions, causing data loss.
+
+**Enforcement:** Code review + future CI check candidate.
+
+---
+
+### Documentation Style: No Ampersands
+**By:** PAO  
+**Date:** 2026-03-09  
+
+Ampersands (&) are prohibited in user-facing documentation headings and body text, per Microsoft Style Guide.
+
+**Rule:** Use "and" instead.
+
+**Why:** Microsoft Style Guide prioritizes clarity and professionalism. Ampersands feel informal and reduce accessibility.
+
+**Exceptions:**
+- Brand names (AT&T, Barnes & Noble)
+- UI element names matching exact product text
+- Code samples and technical syntax
+- Established product naming conventions
+
+**Scope:** Applies to docs pages, README files, blog posts, community-facing content. Internal files (.squad/** memory files, decision docs, agent history) have flexibility.
+
+**Reference:** https://learn.microsoft.com/en-us/style-guide/punctuation/ampersands
+
+---
+
 ## Sprint Directives
 
 ### Secret handling — agents must never persist secrets
 **By:** RETRO (formerly Baer), v0.8.24
 **What:** Agents must NEVER write secrets, API keys, tokens, or credentials into conversational history, commit messages, logs, or any persisted file. Acknowledge receipt without echoing values.
 **Why:** Secrets in logs or history are a security incident waiting to happen.
+
+---
+
+## Squad Ecosystem Boundaries & Content Governance
+
+### Squad Docs vs Squad IRL Boundary (consolidated)
+**By:** PAO (via Copilot), Flight  
+**Date:** 2026-03-10  
+**Status:** Active pattern for all documentation PRs
+
+**Litmus test:** If Squad doesn't ship the code or configuration, the documentation belongs in Squad IRL, not the Squad framework docs.
+
+**Categories:**
+
+1. **Squad docs** — Features Squad ships (routing, charters, reviewer protocol, config, behavior)
+2. **Squad IRL** — Infrastructure around Squad (webhooks, deployment patterns, logging, external tools, operational patterns)
+3. **Gray area:** Platform features (GitHub Issue Templates) → Squad docs if framed as "how to configure X for Squad"
+
+**Examples applied (PR #331):**
+
+| Document | Decision | Reason |
+|----------|----------|--------|
+| ralph-operations.md | DELETE → IRL | Infrastructure (deployment, logging) around Squad, not Squad itself |
+| proactive-communication.md | DELETE → IRL | External tools (Teams, WorkIQ) configured by community, not built into Squad |
+| issue-templates.md | KEEP, reframe | GitHub platform feature; clarify scope: "a GitHub feature configured for Squad" |
+| reviewer-protocol.md (Trust Levels) | KEEP | Documents user choice spectrum within Squad's existing review system |
+
+**Enforcement:** Code review + reframe pattern ("GitHub provides X. Here's how to configure it for Squad's needs."). Mark suspicious deletions for restore (append-only governance).
+
+**Future use:** Apply this pattern to all documentation PRs to maintain clean boundaries.
+
+---
+
+### Content Triage Skill — External Content Integration
+**By:** Flight  
+**Date:** 2026-03-10  
+**Status:** Skill created at `.squad/skills/content-triage/SKILL.md`
+
+**Pattern:** External content (blog posts, sample repos, videos, conference talks) that helps Squad adoption must be triaged using the "Squad Ships It" boundary heuristic before incorporation.
+
+**Workflow:**
+1. Triggered by `content-triage` label or external content reference in issue
+2. Flight performs boundary analysis
+3. Sub-issues generated for Squad-ownable content extraction (PAO responsibility)
+4. FIDO verifies docs-test sync on extracted content
+5. Scribe manages IRL references in `.github/irl/references.yml` (YAML schema)
+
+**Label convention:** `content:blog`, `content:sample`, `content:video`, `content:talk`
+
+**Why:** Pattern from PR #331 (Tamir Dresher blog) shows parallel extraction of Squad-ownable patterns (scenario guides, reviewer protocol) and infrastructure patterns (Ralph ops, proactive comms). Without clear boundary, teams pollute Squad docs with operational content or miss valuable patterns that should be generalized.
+
+**Impact:** Enables community content to accelerate Squad adoption without polluting core docs. Flight's boundary analysis becomes reusable decision framework. Prevents scope creep as adoption grows.
+
+---
+
+### PR #331 Quality Gate — Test Assertion Sync
+**By:** FIDO (Quality Owner)  
+**Date:** 2026-03-10  
+**Status:** 🟢 CLEARED (test fix applied, commit 6599db6)
+
+**What was blocked:** Merge blocked on stale test assertions in `test/docs-build.test.ts`.
+
+**Critical violations resolved:**
+1. `EXPECTED_SCENARIOS` array stale (7 vs 25 disk files) — ✅ Updated to 25 entries
+2. `EXPECTED_FEATURES` constant undefined (32 feature files) — ✅ Created array with 32 entries
+3. Test assertion incomplete — ✅ Updated to validate features section
+
+**Why this matters:** Stale assertions that don't reflect filesystem state cause silent test skips. Regression: If someone deletes a scenario file, the test won't catch it. CI passing doesn't guarantee test coverage — only that the test didn't crash.
+
+**Lessons:**
+- Test arrays must be refreshed when filesystem content changes
+- Incomplete commits break the test-reality sync contract
+- FIDO's charter: When adding test count assertions, must keep in sync with disk state
+
+**Outcome:** Test suite: 6/6 passing. Assertions synced to filesystem. No regression risk from stale assertions.
+
+---
+
+### Communication Patterns and PR Trust Models
+**By:** PAO  
+**Date:** 2026-03-10  
+**Status:** Documented in features/reviewer-protocol.md (trust levels section) and scenarios/proactive-communication.md (infrastructure pattern)
+
+**Decision:** Document emerging patterns in real Squad usage: proactive communication loops and PR review trust spectrum.
+
+**Components:**
+
+1. **Proactive communication patterns** — Outbound notifications (Teams webhooks), inbound scanning (Teams/email for work items), two-way feedback loop connecting external sources to Squad workflow
+
+2. **PR trust levels spectrum:**
+   - **Full review** (default for team repos) — All PRs require human review
+   - **Selective review** (personal projects with patterns) — Domain-expert or routine PRs can auto-merge
+   - **Self-managing** (solo personal repos only) — PRs auto-merge; Ralph's work monitoring provides retroactive visibility
+
+**Why:** Ralph 24/7 autonomous deployment creates an awareness gap — how does the human stay informed? Outbound notifications solve visibility. Inbound scanning solves "work lives in multiple places." Trust levels let users tune oversight to their context (full review for team repos, selective for personal projects, self-managing for solo work only).
+
+**Important caveat:** Self-managing ≠ unmonitored; Ralph's work monitoring and notifications provide retroactive visibility.
+
+**Anti-spam expectations:** Don't spam yourself outbound (notification fatigue), don't spam GitHub inbound (volume controls).
+
+---
+
+### Remote Squad Access — Phased Rollout (Proposed)
+**By:** Flight  
+**Date:** 2026-03-10  
+**Status:** Proposed — awaits proposal document in `docs/proposals/remote-squad-access.md`
+
+**Context:** Squad currently requires a local clone to answer questions. Users want remote access from mobile, browser, or different machine without checking out repo.
+
+**Phases:**
+
+**Phase 1: GitHub Discussions Bot (Ship First)**
+- Surface: GitHub Discussions
+- Trigger: `/squad` command or `@squad` mention
+- Context: GitHub Actions workflow checks out repo → full `.squad/` state
+- Response: Bot replies to thread
+- Feasibility: 1 day
+- Why first: Easy to build, zero hosting, respects repo privacy, async Q&A, immediately useful
+
+**Phase 2: GitHub Copilot Extension (High Value)**
+- Surface: GitHub Copilot chat (VS Code, CLI, web, mobile)
+- Trigger: `/squad ask {question}` in any Copilot client
+- Context: Extension fetches `.squad/` files via GitHub API (no clone)
+- Response: Answer inline in Copilot
+- Feasibility: 1 week
+- Why second: Works everywhere Copilot exists, instant response, natural UX
+
+**Phase 3: Slack/Teams Bot (Enterprise Value)**
+- Surface: Slack or Teams channel
+- Trigger: `@squad` mention in channel
+- Context: Webhook fetches `.squad/` via GitHub API
+- Response: Bot replies in thread
+- Feasibility: 2 weeks
+- Why third: Enterprise teams live in chat; high value for companies using Squad
+
+**Constraint:** Squad's intelligence lives in `.squad/` (roster, routing, decisions, histories). Any remote solution must solve context access. GitHub Actions workflows provide checkout for free. Copilot Extension and chat bots use GitHub API to fetch files.
+
+**Implementation:** Before Phase 1 execution, write proposal document. New CLI command: `squad answer --context discussions --question "..."`. New workflow: `.github/workflows/squad-answer.yml`.
+
+**Privacy:** All approaches respect repo visibility or require authentication. Most teams want private by default.
 
 ### Test assertion discipline — mandatory
 **By:** FIDO (formerly Hockney), v0.8.24
@@ -5512,4 +5770,204 @@ The feature page provides practical setup steps and respects the tone ceiling �
 
 
 ---
+# Skill-Based Orchestration (#255)
+
+**Date:** 2026-03-07
+**Context:** Issue #255 — Decompose squad.agent.md into pluggable skills
+**Decision made by:** Verbal (Prompt Engineer)
+
+## Decision
+
+Squad coordinator capabilities are now **skill-based** — self-contained modules loaded on demand rather than always-inline in squad.agent.md.
+
+## What Changed
+
+### 1. SDK Builder Added
+
+Added `defineSkill()` builder function to the SDK (`packages/squad-sdk/src/builders/`):
+
+```typescript
+export interface SkillDefinition {
+  readonly name: string;
+  readonly description: string;
+  readonly domain: string;
+  readonly confidence?: 'low' | 'medium' | 'high';
+  readonly source?: 'manual' | 'observed' | 'earned' | 'extracted';
+  readonly content: string;
+  readonly tools?: readonly SkillTool[];
+}
+
+export function defineSkill(config: SkillDefinition): SkillDefinition { ... }
+```
+
+- **Why:** SDK-First mode needed a typed way to define skills in `squad.config.ts`
+- **Type naming:** Exported as `BuilderSkillDefinition` to distinguish from runtime `SkillDefinition` (skill-loader.ts)
+- **Validation:** Runtime type guards for all fields, follows existing builder pattern
+
+### 2. Four Skills Extracted
+
+Extracted from squad.agent.md:
+
+1. **init-mode** — Phase 1 (propose team) + Phase 2 (create team). ~100 lines. Full casting flow, `ask_user` tool, merge driver setup.
+2. **model-selection** — 4-layer hierarchy (User Override → Charter → Task-Aware → Default), role-to-model mappings, fallback chains. ~90 lines.
+3. **client-compatibility** — Platform detection (CLI vs VS Code vs fallback), spawn adaptations, SQL tool caveat. ~60 lines.
+4. **reviewer-protocol** — Rejection workflow, strict lockout semantics (original author cannot self-revise). ~30 lines.
+
+All skills marked:
+- `confidence: "high"` — extracted from authoritative governance file
+- `source: "extracted"` — marks decomposition from squad.agent.md
+
+### 3. squad.agent.md Compacted
+
+Replaced extracted sections with lazy-loading references:
+
+```markdown
+## Init Mode
+
+**Skill:** Read `.squad/skills/init-mode/SKILL.md` when entering Init Mode.
+
+**Core rules (always loaded):**
+- Phase 1: Propose team → use `ask_user` → STOP and wait
+- Phase 2 trigger: User confirms OR user gives task (implicit yes)
+- ...
+```
+
+**Result:** 840 lines → 711 lines (15% reduction, ~130 lines removed)
+
+### 4. Build Command Updated
+
+`squad build` now generates `.squad/skills/{name}/SKILL.md` when `config.skills` is defined in `squad.config.ts`:
+
+```typescript
+// In build.ts
+function generateSkillFile(skill: BuilderSkillDefinition): string {
+  // Generates frontmatter + content
+}
+
+// In buildFilePlan()
+if (config.skills && config.skills.length > 0) {
+  for (const skill of config.skills) {
+    files.push({
+      relPath: `.squad/skills/${skill.name}/SKILL.md`,
+      content: generateSkillFile(skill),
+    });
+  }
+}
+```
+
+## Why This Matters
+
+### For Coordinators
+- **Smaller context window:** squad.agent.md drops from 840 → 711 lines. Further decomposition can continue.
+- **On-demand loading:** Coordinator reads skill files only when relevant (e.g., init-mode only during Init Mode).
+- **Skill confidence lifecycle:** Framework supports low → medium → high confidence progression for future learned skills.
+
+### For SDK Users
+- **Typed skill definitions:** Define skills in `squad.config.ts` using `defineSkill()`, get validation and type safety.
+- **Programmatic skill authoring:** Skills can be composed, shared, and versioned like code.
+- **Build-time generation:** `squad build` generates SKILL.md from config — single source of truth.
+
+### For the Team
+- **Parallel with ceremony extraction:** Follows the same pattern as ceremony skill files (#193).
+- **Reduces merge conflicts:** Smaller squad.agent.md = fewer line-based conflicts when multiple PRs touch governance.
+- **Enables skill marketplace:** Future work can package skills as npm modules, share across teams.
+
+## Constraints
+
+1. **Existing behavior unchanged:** Skills are lazy-loaded. If coordinator previously got instructions inline, it now gets them from a skill file. Same instructions, different location.
+2. **squad.agent.md must still work:** Core rules remain inline. Coordinator knows WHEN to load each skill without needing the skill file first.
+3. **Type collision avoided:** BuilderSkillDefinition vs runtime SkillDefinition — import from `@bradygaster/squad-sdk/builders` subpath in CLI to avoid ambiguity.
+
+## Future Work
+
+- Extract 3+ more skills from squad.agent.md (target: <500 lines for core orchestration)
+- Add skill discovery/loading to runtime (currently manual references)
+- Skill marketplace: share skills via npm, discover in `squad marketplace`
+- Learned skills: agents can write skills from observations (already architected, not yet implemented)
+
+## References
+
+- Issue: #255
+- Files changed:
+  - `packages/squad-sdk/src/builders/types.ts`
+  - `packages/squad-sdk/src/builders/index.ts`
+  - `packages/squad-sdk/src/index.ts`
+  - `packages/squad-cli/src/cli/commands/build.ts`
+  - `.github/agents/squad.agent.md`
+  - `.squad/skills/init-mode/SKILL.md` (new)
+  - `.squad/skills/model-selection/SKILL.md` (new)
+  - `.squad/skills/client-compatibility/SKILL.md` (new)
+  - `.squad/skills/reviewer-protocol/SKILL.md` (new)
+
+
+
+### 2026-03-07T19-59-58Z: User directive
+**By:** bradygaster (via Copilot)
+**What:** Prefer GitHub Actions for npm publish over local npm publish. Set up a secret in the GitHub repo and facilitate npm deployment via a CI action instead of running it locally.
+**Why:** User request - captured for team memory
+
+
+# npm Publish Automation via GitHub Actions
+
+**Date:** 2026-03-16  
+**Author:** Kobayashi  
+**Status:** Implemented  
+
+## Context
+
+Brady requested automated npm publishing via GitHub Actions instead of manual local publishes. Manual publishing is error-prone (version mismatches, forgotten packages, incorrect tags) and lacks audit trail.
+
+## Decision
+
+Consolidated npm publishing into single GitHub Actions workflow (`publish.yml`) that triggers automatically on GitHub Release creation.
+
+## Implementation
+
+### Workflow Architecture
+
+**Event Chain:**
+1. Code merged to `main` (via squad-promote or direct merge)
+2. `squad-release.yml` creates tag + GitHub Release (if version bumped)
+3. `publish.yml` triggers on `release.published` event
+4. Publishes @bradygaster/squad-sdk → @bradygaster/squad-cli (correct order)
+
+**Manual Override:**
+- Supports `workflow_dispatch` for ad-hoc publishes
+- Requires version input (e.g., "0.8.21")
+
+### Safety Features
+
+1. **Version verification:** Workflow validates package.json version matches release tag
+2. **Publication verification:** Confirms packages visible on npm after publish
+3. **Provenance attestation:** npm packages include cryptographic proof of origin
+4. **Sequential publish:** SDK publishes first (CLI depends on it)
+
+### Changes Made
+
+- Updated `.github/workflows/publish.yml` with new trigger logic
+- Deprecated `.github/workflows/squad-publish.yml` (redundant)
+- Added version/publication verification steps
+
+## Requirements
+
+**NPM_TOKEN Secret:**
+Brady must create Automation token at https://www.npmjs.com/settings/{username}/tokens and add to GitHub repo secrets.
+
+## Implications
+
+- **Releases:** Automatic npm publish when GitHub Release created (zero manual steps)
+- **Audit:** All publishes logged in GitHub Actions (who, when, what version)
+- **Security:** Provenance attestation strengthens supply chain trust
+- **Error reduction:** Version mismatches caught before publish
+
+## Rollback Strategy
+
+- npm allows unpublish within 72 hours of publication
+- Manual `npm unpublish @bradygaster/squad-{pkg}@{version}` if issues detected
+
+## Related Files
+
+- `.github/workflows/publish.yml` — npm publish workflow
+- `.github/workflows/squad-release.yml` — GitHub Release creation
+- `.squad/agents/kobayashi/history.md` — Implementation details
 

@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Squad Manifest",
+  "description": "Public contract a squad exposes for cross-squad discovery and delegation.",
+  "type": "object",
+  "required": ["name", "capabilities", "contact", "accepts"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable squad name (e.g., 'platform-squad').",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "description": "Schema version for forward compatibility.",
+      "default": "1.0.0"
+    },
+    "description": {
+      "type": "string",
+      "description": "One-line description of this squad's purpose."
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Capability tags (e.g., ['kubernetes', 'helm', 'monitoring']).",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "contact": {
+      "type": "object",
+      "description": "How to reach this squad.",
+      "required": ["repo"],
+      "properties": {
+        "repo": {
+          "type": "string",
+          "description": "GitHub repository in 'owner/repo' format.",
+          "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
+        },
+        "labels": {
+          "type": "array",
+          "description": "Labels to apply when creating issues for this squad.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "accepts": {
+      "type": "array",
+      "description": "Work types this squad accepts from other squads.",
+      "items": {
+        "type": "string",
+        "enum": ["issues", "prs"]
+      },
+      "minItems": 1
+    },
+    "skills": {
+      "type": "array",
+      "description": "Named skills this squad offers.",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

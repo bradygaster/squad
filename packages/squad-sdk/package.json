@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "0.8.25-build.4",
+  "version": "0.8.25-build.6",
   "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
@@ -146,6 +146,10 @@
       "types": "./dist/runtime/event-bus-ws-bridge.d.ts",
       "import": "./dist/runtime/event-bus-ws-bridge.js"
     },
+    "./runtime/scheduler": {
+      "types": "./dist/runtime/scheduler.d.ts",
+      "import": "./dist/runtime/scheduler.js"
+    },
     "./runtime/constants": {
       "types": "./dist/runtime/constants.d.ts",
       "import": "./dist/runtime/constants.js"
@@ -153,6 +157,10 @@
     "./builders": {
       "types": "./dist/builders/index.d.ts",
       "import": "./dist/builders/index.js"
+    },
+    "./runtime/cross-squad": {
+      "types": "./dist/runtime/cross-squad.d.ts",
+      "import": "./dist/runtime/cross-squad.js"
     }
   },
   "files": [

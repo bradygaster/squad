@@ -18,7 +18,15 @@ This tutorial walks you through setup, explains what's happening behind the scen
 
 Normally, Squad lives inside a single project — `.squad/` in your repo root. Your agents know that project. They don't know your other ones.
 
-A personal squad flips that. Your team identity — agents, charters, skills, casting history — moves to a global directory (`~/.squad/`). Every project you work in can point to it.
+A personal squad flips that. Your team identity — agents, charters, skills, casting history — moves to your personal squad directory. Every project you work in can point to it.
+
+**Personal squad location by platform:**
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.config/squad/` |
+| macOS | `~/Library/Application Support/squad/` |
+| Windows | `%APPDATA%\squad\` |
 
 What that means in practice:
 
@@ -51,7 +59,7 @@ You'll see:
 
 ```
 ✅ Personal squad initialized.
-   ~/.squad/ — your global team root
+   {personal squad directory} — your global team root
    Agents, skills, and casting will be shared across projects.
 ```
 
@@ -65,7 +73,7 @@ squad status
 
 ```
 Squad Status
-  Global squad: ~/.squad/
+  Global squad: {personal squad directory}
   Agents: 0 (none cast yet — start a session to form your team)
   Skills: 0
 ```
@@ -85,7 +93,7 @@ Squad detects your global team root and writes a pointer:
 
 ```
 ✅ Squad initialized.
-   .squad/config.json → teamRoot: ~/.squad/
+   .squad/config.json → teamRoot: {personal squad directory}
    Team identity inherited from personal squad.
    Project-local state (decisions, logs) stays here.
 ```
@@ -100,12 +108,12 @@ Repeat for any project you want connected.
 
 Two things were created. Understanding the split is the key to personal squads.
 
-### The global directory: `~/.squad/`
+### The global directory: your personal squad
 
 This is your **team identity**. It contains:
 
 ```
-~/.squad/
+{personal squad directory}/
   agents/          — your agent charters and histories
   casting/         — who's been cast, role assignments
   skills/          — accumulated knowledge ("always use Zod", "prefer Tailwind")
@@ -120,7 +128,7 @@ Inside each connected project, `.squad/config.json` looks like this:
 ```json
 {
   "version": 1,
-  "teamRoot": "~/.squad/",
+  "teamRoot": "{personal squad directory}",
   "projectKey": null
 }
 ```
@@ -129,14 +137,14 @@ That `teamRoot` field is the magic. When Squad's resolution system sees it, the 
 
 | | **Local mode** (default) | **Remote mode** (personal squad) |
 |---|---|---|
-| Team identity | `.squad/` in project | `~/.squad/` (global) |
+| Team identity | `.squad/` in project | Personal squad directory (global) |
 | Decisions & logs | `.squad/` in project | `.squad/` in project |
 | Agents shared? | No — project only | Yes — across all connected projects |
 | Skills shared? | No | Yes |
 
 In remote mode:
 
-- **Team identity** (agents, charters, skills, casting) → loaded from `~/.squad/`
+- **Team identity** (agents, charters, skills, casting) → loaded from your personal squad directory
 - **Project-local state** (decisions, logs, orchestration-log) → stays in this project's `.squad/`
 
 The resolution system walks up directories looking for `.squad/`. When it finds one with a `teamRoot` in `config.json`, it switches to remote mode — pulling team identity from the external path while keeping project state local.
@@ -251,7 +259,7 @@ Set a directive once:
 📌 Captured. Linting required before task completion.
 ```
 
-That directive is now in `~/.squad/` — every project, every session. Your agents enforce it everywhere. You set the standard once and it sticks.
+That directive is now in your personal squad directory — every project, every session. Your agents enforce it everywhere. You set the standard once and it sticks.
 
 Over time, your personal squad becomes an opinionated workflow engine. Not because you configured it that way — because you worked with it and it learned.
 
@@ -259,12 +267,12 @@ Over time, your personal squad becomes an opinionated workflow engine. Not becau
 
 ## 8. Use Case: Skills That Grow Everywhere
 
-Skills accumulate in `~/.squad/skills/`. Every project contributes.
+Skills accumulate in your personal squad directory under `skills/`. Every project contributes.
 
 After a few weeks:
 
 ```
-~/.squad/skills/
+{personal squad directory}/skills/
   always-use-zod.md
   prefer-tailwind.md
   cursor-pagination.md
@@ -292,7 +300,7 @@ What works well today:
 - **Consult mode** — bring your team to projects you don't own, invisibly ([docs](../features/consult-mode.md))
 
 What's still rough:
-- No sync mechanism between machines yet — `~/.squad/` is local to your machine
+- No sync mechanism between machines yet — your personal squad directory is local to your machine
 - Project keys aren't used for anything yet (that `null` in config.json)
 - No UI for browsing your global skills or agent histories (it's files for now)
 
@@ -303,10 +311,10 @@ We're building in the open. If something feels off, [open an issue](https://gith
 ## Tips
 
 - **Start with one project.** Get comfortable with the personal squad on one repo before connecting others. The value compounds, but so does confusion if something's misconfigured.
-- **Commit project `.squad/` but not global `~/.squad/`.** The project-local state (decisions, logs) belongs in version control. Your global identity is personal — keep it out of repos.
+- **Commit project `.squad/` but not personal squad directory.** The project-local state (decisions, logs) belongs in version control. Your global identity is personal — keep it out of repos.
 - **Check status anytime.** `squad status` shows your global squad directory and which projects are connected.
 - **Skills are the payoff.** The more projects you work across, the more skills accumulate. After a month, your agents have a real knowledge base tailored to how *you* build software.
-- **It's just files.** `~/.squad/` is a directory on your machine. You can browse it, edit it, back it up, copy it to another machine manually. No magic, no cloud, no lock-in.
+- **It's just files.** Your personal squad directory is a folder on your machine. You can browse it, edit it, back it up, copy it to another machine manually. No magic, no cloud, no lock-in.
 - **Global install matters.** `npm install -g @bradygaster/squad-cli` gives you the `squad` command everywhere. Without it, you'd need `npx` in each project. Global CLI + global squad = full portability.
 
 ---

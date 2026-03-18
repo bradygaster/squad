@@ -214,9 +214,75 @@ Squad auto-selects the right level of effort for each request:
 | `"Remove McManus from the team"` | Archives agent directory to `.squad/agents/.archived/`, updates team.md |
 | `"Change the tester to focus on integration tests"` | Updates the tester's charter and expertise |
 | `"Route all CSS files to Frontend"` | Adds a rule to `.squad/routing.md` |
-| `"From now on, McManus reviews all docs before merge"` | Creates routing rule + [directive](memory-and-knowledge.md) |
+| `"From now on, McManus reviews all docs before merge"` | Creates routing rule + [directive](../features/memory.md) |
 
 Running `init` on an existing Squad repo automatically offers upgrade mode.
+
+---
+
+## Planning your team
+
+Before running `squad init`, think through these decisions. Squad will scan your repo and propose a team — having answers ready makes setup faster.
+
+- **What does your project do?** Have a 1–2 sentence description of the language, stack, and purpose ready — Squad uses this to pick roles
+- **What roles do you need?** The [default composition](#default-team-composition) covers common cases, or let Squad propose custom roles based on your repo
+- **How many agents?** Typical teams are 3–7 agents. Scribe (memory) is always included
+- **Will humans join the team?** [Human members](#human-team-members) can serve as reviewers or domain experts alongside AI agents
+- **Will @copilot participate?** The GitHub Copilot coding agent can pick up issues autonomously — see [Agent anatomy](#agent-anatomy)
+- **How will you track work?** GitHub Issues with `squad:{member}` labels, or conversational tasking via named prompts
+- **Do you want review gates?** [Reviewers](#reviewer-protocol) can approve or reject work before it proceeds
+- **What ceremonies matter?** [Design reviews and retrospectives](#ceremonies) can auto-trigger or run on demand
+- **What model preferences?** Default is automatic selection, or specify preferred models per agent — see [Parallel Work & Models](parallel-work.md)
+- **How many squads, and where do they live?** One squad per repo is the default — your `.squad/` directory lives alongside your code. For multi-repo projects, you can run one squad per repo (each with its own team) or share a single squad across repos using a personal squad or linked team repo. Start with one squad in one repo and expand as needed.
+
+---
+
+## Agent anatomy
+
+An agent is a directory at `.squad/agents/{name}/`. The contents depend on the member type.
+
+For how humans differ from AI agents, see [Human team members](#human-team-members) above.
+
+| | @copilot (🤖) |
+|---|---|
+| Directory | None |
+| `charter.md` | ❌ Uses `copilot-instructions.md` |
+| `history.md` | ❌ |
+| Spawnable | ❌ Works via issue assignment |
+
+**AI agents** have a `charter.md` (identity, expertise, voice — compiled into the system prompt at spawn time) and an optional `history.md` (append-only cross-session learnings).
+
+**@copilot** (🤖) appears on the roster and works via GitHub issue assignment. It reads `.github/copilot-instructions.md` instead of a charter.
+
+**Retired agents** move to `.squad/agents/_alumni/{name}/` — charter preserved as a read-only archive, not spawnable.
+
+---
+
+## Cross-agent context
+
+Agents don't share memory directly. Context flows through explicit shared files:
+
+- **`team.md`** — who's on the team and what they do
+- **`routing.md`** — work assignment rules the coordinator reads on every request
+- **`decisions.md`** — canonical team memory: directives, patterns, learnings
+- **`.squad/decisions/inbox/`** — agents drop decision files here; the Scribe merges them into `decisions.md`
+
+Each agent's `history.md` is personal — only that agent reads it at spawn time. For the full picture on knowledge flow, see [Memory and knowledge](../features/memory.md).
+
+---
+
+## Hiring an agent
+
+To add a new AI agent to your team:
+
+- [ ] Create `.squad/agents/{name}/` directory
+- [ ] Write `charter.md` — start from `.squad/templates/charter.md`
+- [ ] Add to `team.md` roster with status `✅ Active`
+- [ ] Add to `routing.md` with work type assignments
+- [ ] (Optional) Create `history.md` for persistent memory
+- [ ] (Optional) Allocate a name via the casting system
+
+To add a **human member**, skip the directory — just add them to `team.md`. See [Human team members](#human-team-members) for badge and routing details.
 
 ---
 
@@ -225,7 +291,7 @@ Running `init` on an existing Squad repo automatically offers upgrade mode.
 - **Commit `.squad/`** to version control — anyone who clones the repo gets the full team with all accumulated knowledge.
 - Use human members for approval gates: design review, compliance, final sign-off.
 - Design reviews prevent agents from building conflicting implementations — let them run on multi-agent tasks.
-- Retros produce [decisions](memory-and-knowledge.md) that improve future work, not just diagnose the current failure.
+- Retros produce [decisions](../features/memory.md) that improve future work, not just diagnose the current failure.
 - You're the relay for human members. Squad can't message them directly — it tells you, and you coordinate.
 
 ---

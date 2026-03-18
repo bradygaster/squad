@@ -1,0 +1,12 @@
+{
+  "name": "squad",
+  "version": "1.0.0",
+  "description": "Squad — Programmable multi-agent runtime for GitHub Copilot",
+  "capabilities": ["multi-agent", "copilot", "sdk", "cli"],
+  "contact": {
+    "repo": "bradygaster/squad",
+    "labels": ["squad"]
+  },
+  "accepts": ["issues", "prs"],
+  "skills": ["squad-conventions", "cli-wiring", "agent-collaboration"]
+}

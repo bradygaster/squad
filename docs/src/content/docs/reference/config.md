@@ -85,6 +85,46 @@ Commit this directory. It's your team's brain. Anyone who clones the repo gets t
 
 ---
 
+## .squad/ — Required vs Optional Files
+
+`squad init` creates a working team. Here's what's required and what's optional.
+
+### Required Files
+
+These are always created by `squad init`. The loader expects them.
+
+| File | Purpose | Can You Edit? |
+|------|---------|---------------|
+| `.squad/team.md` | Team roster — loader requires it | Yes |
+| `.squad/decisions.md` | Shared decision log — agents read before work | Yes (append only) |
+| `.squad/routing.md` | Work assignment rules | Yes |
+| `.squad/ceremonies.md` | Team meeting definitions | Yes |
+| `.squad/config.json` | SDK settings (teamRoot, version) | Rarely |
+| `.squad/agents/{name}/charter.md` | Agent identity — compiled at spawn | Yes |
+| `.squad/agents/{name}/history.md` | Agent learnings — grows over time | Append only |
+| `.squad/identity/now.md` | Current team focus | Auto-updated |
+| `.squad/identity/wisdom.md` | Accumulated team patterns | Auto-updated |
+| `.gitattributes` | Merge drivers for append-only files | Merge rules only |
+
+### Optional Files
+
+These are created only when you opt in during init.
+
+- **`.squad/templates/`** — SDK templates, overwritten on upgrade
+- **`.github/workflows/*.yml`** — CI/CD workflows (opt-in: `--include-workflows`)
+- **`.copilot/mcp-config.json`** — MCP server config (opt-in: `--include-mcp-config`)
+
+> ⚠️ **Hard rule:** Squad NEVER writes temp files, logs, or memory to your repo root. All team state lives in `.squad/` only. Your project tree stays clean.
+
+### Quick Recovery
+
+```bash
+squad doctor                        # Check for issues
+rm -rf .squad && squad init         # Full reset (back up agents/decisions first)
+```
+
+---
+
 ## Routing Rules
 
 Control which agent gets which work. Edit `.squad/routing.md` or configure in `squad.config.ts`:
@@ -145,7 +185,7 @@ Squad finds `.squad/` by walking up:
 
 1. Current directory (`./.squad/`)
 2. Parent directories (up to project root)
-3. Home directory (`~/.squad/`)
+3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
 4. Global CLI default (fallback)
 
 First match wins.

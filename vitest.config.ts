@@ -9,6 +9,9 @@ export default defineConfig({
       // under squad-cli/node_modules which bypasses the mock.
       '@bradygaster/squad-cli/shell/shell-metrics': path.resolve(__dirname, 'packages/squad-cli/src/cli/shell/shell-metrics.ts'),
     },
+    // Force vitest to resolve @bradygaster/squad-sdk from the workspace root,
+    // not from a duplicate copy under packages/squad-cli/node_modules/.
+    dedupe: ['@bradygaster/squad-sdk'],
   },
   test: {
     include: ['test/**/*.test.ts'],

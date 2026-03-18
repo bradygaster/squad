@@ -38,3 +38,4 @@ export { runDoctor, doctorCommand, type DoctorCheck, type DoctorMode } from './c
 export { runExport } from './commands/export.js';
 export { runImport } from './commands/import.js';
 export { splitHistory } from './core/history-split.js';
+export { discoverCommand, delegateCommand } from './commands/cross-squad.js';
