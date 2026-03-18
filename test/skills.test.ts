@@ -1,5 +1,6 @@
 /**
  * Tests for Skills System (M3-3, Issue #141)
+ * Includes validation of shipped distributed-coordination skills (Part 4 blog)
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -304,4 +305,65 @@ Content here.`,
     const skills = loadSkillsFromDirectory(testDir);
     expect(skills).toHaveLength(1); // only my-skill loaded
   });
+});
+
+// --- Shipped Distributed-Coordination Skills Validation ---
+// Validates that the four Part 4 blog skills are present and well-formed.
+
+const SHIPPED_SKILLS_DIR = path.join(process.cwd(), '.squad', 'skills');
+
+const DISTRIBUTED_SKILLS = [
+  'gh-auth-isolation',
+  'stale-lock-detection',
+  'message-serialization',
+  'notification-routing',
+] as const;
+
+describe('Shipped Distributed-Coordination Skills', () => {
+  for (const skillId of DISTRIBUTED_SKILLS) {
+    const skillFile = path.join(SHIPPED_SKILLS_DIR, skillId, 'SKILL.md');
+
+    describe(`${skillId}`, () => {
+      it('SKILL.md exists', () => {
+        expect(fs.existsSync(skillFile), `Missing: .squad/skills/${skillId}/SKILL.md`).toBe(true);
+      });
+
+      it('SKILL.md is parseable', () => {
+        if (!fs.existsSync(skillFile)) return;
+        const raw = fs.readFileSync(skillFile, 'utf-8');
+        const skill = parseSkillFile(skillId, raw);
+        expect(skill, `parseSkillFile returned undefined for ${skillId}`).toBeDefined();
+      });
+
+      it('has required frontmatter fields (name, description, domain)', () => {
+        if (!fs.existsSync(skillFile)) return;
+        const raw = fs.readFileSync(skillFile, 'utf-8');
+        const { meta } = parseFrontmatter(raw);
+        expect(meta.name, `${skillId}: missing name`).toBeTruthy();
+        expect(meta.description, `${skillId}: missing description`).toBeTruthy();
+        expect(meta.domain, `${skillId}: missing domain`).toBeTruthy();
+      });
+
+      it('has a non-empty body with at least one heading', () => {
+        if (!fs.existsSync(skillFile)) return;
+        const raw = fs.readFileSync(skillFile, 'utf-8');
+        const { body } = parseFrontmatter(raw);
+        expect(body.length, `${skillId}: body is empty`).toBeGreaterThan(50);
+        expect(/^#+\s+.+/m.test(body), `${skillId}: missing heading`).toBe(true);
+      });
+
+      it('has balanced code fences', () => {
+        if (!fs.existsSync(skillFile)) return;
+        const raw = fs.readFileSync(skillFile, 'utf-8');
+        const fenceCount = (raw.match(/```/g) ?? []).length;
+        expect(fenceCount % 2, `${skillId}: unbalanced code fences`).toBe(0);
+      });
+
+      it('has an Anti-Patterns section', () => {
+        if (!fs.existsSync(skillFile)) return;
+        const raw = fs.readFileSync(skillFile, 'utf-8');
+        expect(raw, `${skillId}: missing Anti-Patterns section`).toContain('Anti-Patterns');
+      });
+    });
+  }
 });

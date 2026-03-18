@@ -82,6 +82,7 @@ const EXPECTED_FEATURES = [
   'upstream-inheritance',
   'vscode',
   'worktrees',
+  'distributed-coordination',
 ];
 
 const EXPECTED_CONCEPTS = ['architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
