@@ -220,6 +220,23 @@ Running `init` on an existing Squad repo automatically offers upgrade mode.
 
 ---
 
+## Planning your team
+
+Before running `squad init`, think through these decisions. Squad will scan your repo and propose a team — having answers ready makes setup faster.
+
+- **What does your project do?** Have a 1–2 sentence description of the language, stack, and purpose ready — Squad uses this to pick roles
+- **What roles do you need?** The [default composition](#default-team-composition) covers common cases, or let Squad propose custom roles based on your repo
+- **How many agents?** Typical teams are 3–7 agents. Scribe (memory) is always included
+- **Will humans join the team?** [Human members](#human-team-members) can serve as reviewers or domain experts alongside AI agents
+- **Will @copilot participate?** The GitHub Copilot coding agent can pick up issues autonomously — see [Agent anatomy](#agent-anatomy)
+- **How will you track work?** GitHub Issues with `squad:{member}` labels, or conversational tasking via named prompts
+- **Do you want review gates?** [Reviewers](#reviewer-protocol) can approve or reject work before it proceeds
+- **What ceremonies matter?** [Design reviews and retrospectives](#ceremonies) can auto-trigger or run on demand
+- **What model preferences?** Default is automatic selection, or specify preferred models per agent — see [Parallel Work & Models](parallel-work.md)
+- **Personal or repo-level squad?** Repo-level for team projects (commit `.squad/`), personal for a squad that follows you across repos
+
+---
+
 ## Agent anatomy
 
 An agent is a directory at `.squad/agents/{name}/`. The contents depend on the member type.
