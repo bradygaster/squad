@@ -681,7 +681,7 @@ Agent names are drawn from a single fictional universe per assignment. Names are
 
 **Rules (always loaded):**
 - ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.
-- 31 universes available (capacity 6–25). See reference file for full list.
+- 15 universes available (capacity 6–25). See reference file for full list.
 - Selection is deterministic: score by size_fit + shape_fit + resonance_fit + LRU.
 - Same inputs → same choice (unless LRU changes).
 
