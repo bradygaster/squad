@@ -65,6 +65,9 @@ describe('Template sync & casting parity (issue #459)', () => {
   // --- Test 3: casting-reference.md exists where referenced ---
 
   describe('casting-reference.md exists in template dirs', () => {
+    // casting-reference.md is a template-only file that gets copied to .squad/templates/
+    // during squad init. It belongs in .squad-templates/ and templates/ (both template dirs),
+    // but NOT in .github/agents/ (which only contains squad.agent.md, the live governance file).
     it('.squad-templates/casting-reference.md exists', () => {
       expect(existsSync(join(SQUAD_TEMPLATES, 'casting-reference.md'))).toBe(true);
     });
@@ -79,7 +82,7 @@ describe('Template sync & casting parity (issue #459)', () => {
   it('casting-policy.json is identical in .squad-templates and templates', () => {
     const a = JSON.parse(readFileSync(join(SQUAD_TEMPLATES, 'casting-policy.json'), 'utf-8'));
     const b = JSON.parse(readFileSync(join(TEMPLATES, 'casting-policy.json'), 'utf-8'));
-    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    expect(a).toEqual(b);
   });
 
   // --- Test 5: Every allowlisted universe has a capacity entry and vice versa ---
