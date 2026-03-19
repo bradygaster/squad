@@ -16,7 +16,7 @@
 - [Scenario 9: Using Squad SDK Programmatically](#scenario-9-using-squad-sdk-programmatically)
 - [Troubleshooting](#troubleshooting)
 - [Rolling Back](#rolling-back)
-- [What's New in v0.8.18](#whats-new-in-v0818)
+- [What's New in v0.8.18+](#whats-new-in-v0818)
 
 ---
 
@@ -80,7 +80,7 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
 ### What Changed
 
 - **TypeScript rewrite:** Entire codebase ported from JavaScript to TypeScript (strict mode).
-- **`.squad/` directory format:** v0.5.4 format is incompatible with v0.8.18. You must reinitialize.
+- **`.squad/` directory format:** v0.5.4 format is incompatible with v0.8.x. You must reinitialize.
 - **Command structure:** Some commands were reorganized or renamed.
 - **SDK API:** The public API changed significantly if you were using Squad programmatically.
 - **Distribution:** npm-only. The `npx github:` install path is gone.
@@ -155,7 +155,7 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
 
 ### Key Format Changes
 
-| v0.5.4 | v0.8.18 |
+| v0.5.4 | v0.8.x (latest) |
 |--------|---------|
 | `.squad/config.json` | `.squad/team.md` (Markdown with YAML front matter) |
 | JSON decision log | `.squad/decisions.md` (append-only Markdown) |
@@ -186,7 +186,7 @@ Verify the version:
 squad --version
 ```
 
-Expected output: `0.8.18` (or `0.8.18-preview.N`).
+Expected output: the latest `0.8.x` version (e.g., `0.8.25`).
 
 Your `.squad/` directory is compatible — no reinitialization needed.
 
@@ -310,7 +310,7 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
   run: npx github:bradygaster/squad
 ```
 
-### After (v0.8.18)
+### After (v0.8.x)
 
 ```yaml
 - uses: actions/setup-node@v4
@@ -329,8 +329,8 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 ### Key CI/CD Notes
 
 - Set `GITHUB_TOKEN` as an environment variable. Squad requires it for GitHub Copilot operations.
-- Pin to a specific version (e.g., `@0.8.22`) in CI to avoid surprise upgrades.
-- If you use `npx`, use `npx @bradygaster/squad-cli@0.8.22` with a pinned version.
+- Pin to a specific version (e.g., `@0.8.25`) in CI to avoid surprise upgrades, or use `@latest` to stay current.
+- If you use `npx`, use `npx @bradygaster/squad-cli@latest` (or pin a specific version).
 - Node.js 20+ is required. Update your workflow's `setup-node` action if needed.
 
 ---
@@ -520,7 +520,7 @@ fnm use 20
 
 ## Rolling Back
 
-If you need to downgrade from v0.8.18:
+If you need to downgrade to a previous v0.8.x release:
 
 ```bash
 npm install -g @bradygaster/squad-cli@0.8.17
@@ -530,17 +530,21 @@ npm install -g @bradygaster/squad-cli@0.8.17
 
 - **The GitHub-native distribution (`npx github:bradygaster/squad`) is permanently removed.** You cannot roll back to that install method.
 - **`.squad/` directory format changed between v0.5.4 and v0.8.x.** If you roll back to v0.5.4, your current `.squad/` directory will not be compatible. Keep backups.
-- Rolling back within the v0.8.x line (e.g., 0.8.18 to 0.8.17) should be safe — the `.squad/` format is stable across v0.8.x releases.
+- Rolling back within the v0.8.x line (e.g., 0.8.25 to 0.8.24) should be safe — the `.squad/` format is stable across v0.8.x releases.
 
 ---
 
-## What's New in v0.8.18
+## What's New in v0.8.18+
+
+Key improvements since the migration from v0.5.4 beta:
 
 - **Remote Squad Mode:** `squad link`, `squad init --mode remote`, and dual-root path resolution for team identity directories.
 - **`squad doctor`:** 9-check setup validation with clear pass/fail output.
 - **npm-only distribution:** Simpler install, semantic versioning, stable and insider channels.
 - **TypeScript strict mode:** Full type safety across the SDK and CLI.
-- **Semver fix:** Version format now follows the semver spec (`0.8.18-preview.N` instead of `0.8.18.N-preview`).
+- **Semver fix:** Version format now follows the semver spec (`0.8.x-preview.N`).
+- **Node 22+ compatibility:** ESM import fixes for vscode-jsonrpc (v0.8.23+).
+- **Casting system:** Universe-based agent naming with persistent registries (v0.8.25+).
 
 For the full list of changes, see the [CHANGELOG](https://github.com/bradygaster/squad/blob/main/CHANGELOG.md).
 
