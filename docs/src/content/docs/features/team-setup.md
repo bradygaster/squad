@@ -26,6 +26,10 @@ Squad analyzes your project and proposes a team roster with 3-7 members tailored
 
 When you first run Squad in a repository, it doesn't impose a team — it proposes one. The init flow analyzes your project, suggests roles and members, waits for your confirmation, then creates the `.squad/` directory structure and installs the crew.
 
+### Character Casting
+
+By default, Squad uses the **CastingEngine** to assign agent names from fictional universes (The Usual Suspects, Ocean's Eleven, etc.). The LLM proposes roles and team composition; the engine allocates curated character names, personalities, and backstories from the selected universe. Use `squad init --roles` to opt into the base role catalog (Lead, Backend, Frontend, Tester) instead of universe casting.
+
 ## How Init Works
 
 1. **Discovery** — Squad scans your repository: language distribution, file structure, test frameworks, dependencies, existing workflows.

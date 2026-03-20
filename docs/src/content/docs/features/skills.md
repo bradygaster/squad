@@ -40,6 +40,10 @@ Each skill is a directory containing a `SKILL.md` file. Skills are **team-wide k
 
 Bundled when you initialize Squad. Prefixed with `squad-` (e.g., `squad-conventions`). These encode baseline patterns for working with Squad.
 
+### Session Recovery
+
+The `session-recovery` skill teaches agents to find and resume interrupted Copilot CLI sessions. When a session is interrupted (terminal crash, network drop, machine restart), in-progress work may be left incomplete. This skill uses `session_store` SQL queries to detect abandoned sessions, inspect checkpoint progress, and resume work. See [`.squad/skills/session-recovery/SKILL.md`](https://github.com/bradygaster/squad/blob/dev/.squad/skills/session-recovery/SKILL.md) for query patterns and examples.
+
 ### Earned skills
 
 Written by agents from real work on your project. When an agent discovers a reusable pattern — a deployment strategy, a testing technique, an API integration approach — it writes a skill file.

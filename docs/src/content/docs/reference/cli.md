@@ -29,6 +29,8 @@ squad init
 | `squad` | Enter interactive shell (no args) | No |
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
 | `squad init --global` | Create a personal squad in your platform-specific directory | No |
+| `squad init --sdk` | Generate typed `squad.config.ts` with `useRole()` calls | No |
+| `squad init --roles` | Include base role catalog (Lead, Backend, etc.) instead of universe casting | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
 | `squad start [--tunnel] [--port N] [--command cmd]` | Start Copilot with remote phone access via PTY and WebSocket | No |
 | `squad status` | Show which squad is active and why | Yes |

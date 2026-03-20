@@ -11,6 +11,13 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 - **Version alignment** — CLI (0.8.1) and SDK (0.8.0) snapped to 0.8.2 across all packages
 - **Published to npm** — `@bradygaster/squad-sdk@0.8.2` and `@bradygaster/squad-cli@0.8.2`
+- **Init flow improvements** — Ralph now included in the initial agent set during `squad init`; routing templates no longer reference `@copilot` by default (#337, #338, #339)
+- **`--sdk` switch** — `squad init --sdk` generates typed `squad.config.ts` with `useRole()` calls (#424)
+- **`--roles` opt-in** — `squad init --roles` uses the base role catalog instead of fictional universe casting (#412)
+- **CastingEngine** — CLI init now uses `CastingEngine` to map recognized universes to curated character names and backstories (#417)
+- **Session Recovery skill** — New skill for finding and resuming interrupted sessions via `session_store` queries (#442)
+- **Model defaults updated** — Standard code → Sonnet 4.6, premium visual → Opus 4.6, code specialist → GPT-5.3-codex, GPT-5.4 added to catalog (#429)
+- **Rework rate OTEL metrics** — Four new instruments (`squad.rework.rate`, `squad.rework.cycles`, `squad.rework.rejection_rate`, `squad.rework.time_ms`) for the 5th DORA metric (#415)
 - **Remote squad mode** (ported from @spboyer's [PR #131](https://github.com/bradygaster/squad/pull/131)):
   - `resolveSquadPaths()` dual-root resolver for project-local vs team identity directories (#311)
   - [`squad doctor` command](reference/cli.md) — 9-check setup validation with emoji output (#312)

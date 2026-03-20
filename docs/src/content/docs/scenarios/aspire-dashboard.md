@@ -157,6 +157,17 @@ You'll see gauges, counters, and histograms:
 - `squad.response.ttft` — time to first token (ms)
 - `squad.response.duration` — total response duration (ms)
 
+### Rework Rate Metrics (5th DORA)
+
+PR rework rate instruments, exported alongside the core metrics above:
+
+| Instrument | Type | Unit | Description |
+|-----------|------|------|-------------|
+| `squad.rework.rate` | Gauge | % | Current rework rate percentage |
+| `squad.rework.cycles` | Histogram | — | Review cycles per PR |
+| `squad.rework.rejection_rate` | Gauge | % | Percentage of PRs with changes requested |
+| `squad.rework.time_ms` | Histogram | ms | Time spent in rework |
+
 ### **Resources**
 
 Aspire groups all telemetry by service. You'll see:
