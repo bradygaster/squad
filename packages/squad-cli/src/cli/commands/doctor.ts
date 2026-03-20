@@ -213,6 +213,101 @@ function checkDecisionsMd(squadDir: string): DoctorCheck {
   };
 }
 
+// ── ESM compatibility checks ────────────────────────────────────────
+
+/**
+ * Check that vscode-jsonrpc has the `exports` field needed for Node 22/24+
+ * strict ESM subpath resolution. Without it, `import('vscode-jsonrpc/node')`
+ * fails with ERR_PACKAGE_PATH_NOT_EXPORTED.
+ */
+function checkVscodeJsonrpcExports(cwd: string): DoctorCheck {
+  const possiblePaths = [
+    path.join(cwd, 'node_modules', 'vscode-jsonrpc', 'package.json'),
+    path.join(cwd, 'packages', 'squad-cli', 'node_modules', 'vscode-jsonrpc', 'package.json'),
+  ];
+
+  for (const pkgPath of possiblePaths) {
+    if (!fileExists(pkgPath)) continue;
+
+    const pkg = tryReadJson(pkgPath) as Record<string, unknown> | undefined;
+    if (!pkg) {
+      return {
+        name: 'vscode-jsonrpc exports field',
+        status: 'fail',
+        message: 'package.json found but not valid JSON',
+      };
+    }
+
+    if (pkg['exports'] && typeof pkg['exports'] === 'object') {
+      const exports = pkg['exports'] as Record<string, unknown>;
+      if (exports['./node']) {
+        return {
+          name: 'vscode-jsonrpc exports field',
+          status: 'pass',
+          message: 'exports field present with ./node subpath',
+        };
+      }
+    }
+
+    return {
+      name: 'vscode-jsonrpc exports field',
+      status: 'fail',
+      message: 'missing exports field — run postinstall or reinstall (see #449)',
+    };
+  }
+
+  return {
+    name: 'vscode-jsonrpc exports field',
+    status: 'warn',
+    message: 'vscode-jsonrpc not found in node_modules',
+  };
+}
+
+/**
+ * Check that @github/copilot-sdk session.js has the .js extension fix
+ * on its vscode-jsonrpc/node import (defense-in-depth behind the exports patch).
+ */
+function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
+  const possiblePaths = [
+    path.join(cwd, 'node_modules', '@github', 'copilot-sdk', 'dist', 'session.js'),
+    path.join(cwd, 'packages', 'squad-cli', 'node_modules', '@github', 'copilot-sdk', 'dist', 'session.js'),
+  ];
+
+  for (const sessionPath of possiblePaths) {
+    if (!fileExists(sessionPath)) continue;
+
+    try {
+      const content = fs.readFileSync(sessionPath, 'utf8');
+
+      if (/from\s+["']vscode-jsonrpc\/node["']/.test(content)) {
+        return {
+          name: 'copilot-sdk session.js ESM patch',
+          status: 'fail',
+          message: 'session.js has extensionless vscode-jsonrpc/node import — run postinstall (see #449)',
+        };
+      }
+
+      return {
+        name: 'copilot-sdk session.js ESM patch',
+        status: 'pass',
+        message: 'session.js imports use .js extension',
+      };
+    } catch {
+      return {
+        name: 'copilot-sdk session.js ESM patch',
+        status: 'warn',
+        message: 'could not read session.js',
+      };
+    }
+  }
+
+  return {
+    name: 'copilot-sdk session.js ESM patch',
+    status: 'warn',
+    message: '@github/copilot-sdk not found in node_modules',
+  };
+}
+
 // ── public API ──────────────────────────────────────────────────────
 
 /**
@@ -248,6 +343,10 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     checks.push(checkCastingRegistry(squadDir));
     checks.push(checkDecisionsMd(squadDir));
   }
+
+  // 10–11 ESM compatibility (Node 22/24+)
+  checks.push(checkVscodeJsonrpcExports(resolvedCwd));
+  checks.push(checkCopilotSdkSessionPatch(resolvedCwd));
 
   return checks;
 }

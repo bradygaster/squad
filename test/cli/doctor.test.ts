@@ -55,6 +55,9 @@ describe('squad doctor', () => {
     expect(checks.some((c: DoctorCheck) => c.name === 'agents/ directory exists' && c.status === 'pass')).toBe(true);
     expect(checks.some((c: DoctorCheck) => c.name === 'casting/registry.json exists' && c.status === 'pass')).toBe(true);
     expect(checks.some((c: DoctorCheck) => c.name === 'decisions.md exists' && c.status === 'pass')).toBe(true);
+    // ESM checks return 'warn' (not fail) when node_modules absent from test dir
+    expect(checks.some((c: DoctorCheck) => c.name === 'vscode-jsonrpc exports field')).toBe(true);
+    expect(checks.some((c: DoctorCheck) => c.name === 'copilot-sdk session.js ESM patch')).toBe(true);
   });
 
   it('reports failures on an empty directory', async () => {
@@ -62,8 +65,8 @@ describe('squad doctor', () => {
 
     const squadDirCheck = checks.find((c: DoctorCheck) => c.name === '.squad/ directory exists');
     expect(squadDirCheck?.status).toBe('fail');
-    // When .squad/ is missing the file checks are skipped — only one check
-    expect(checks.length).toBe(1);
+    // When .squad/ is missing the file checks are skipped — only .squad/ + 2 ESM checks
+    expect(checks.length).toBe(3);
   });
 
   it('detects remote mode from config.json with teamRoot', async () => {
