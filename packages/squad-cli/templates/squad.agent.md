@@ -702,6 +702,44 @@ After each batch of agent work:
 
 1. **Collect results** via `read_agent` (wait: true, timeout: 300).
 
+1b. **Verification (when issue has checklist)**
+
+   **Trigger:** The work was for a GitHub issue AND the issue body contains `- [ ]` checkboxes.
+
+   **Skip when:** No issue context, no checkboxes, or this is a re-verification pass at retry limit.
+
+   1. Extract all `- [ ]` items from the issue body.
+   2. Spawn a **verification agent** (sync, `claude-haiku-4.5`) — MUST be a different agent than the one who did the work. Provide: issue body, checklist items, agent's work summary, files changed.
+
+   ```
+   agent_type: "general-purpose"
+   model: "claude-haiku-4.5"
+   mode: "sync"
+   description: "🔍 Verify: {issue title}"
+   prompt: |
+     You are a verification agent. Your ONLY job is to check work completeness.
+
+     ISSUE BODY:
+     {issue_body}
+
+     CHECKLIST ITEMS (extracted):
+     {extracted_checklist}
+
+     AGENT WORK SUMMARY:
+     {agent_result_summary}
+
+     FILES CHANGED:
+     {files_changed}
+
+     For EACH checklist item, determine: ✅ addressed or ❌ not addressed.
+     If not addressed, explain what's missing.
+
+     Final verdict: PASS (all items addressed) or FAIL (gap list below).
+   ```
+
+   3. **PASS** → proceed to Step 2 normally.
+   4. **FAIL** → post gap list as issue comment, do NOT mark done, re-route to original agent (or different agent per lockout rules) with gap list as context. After fix attempt, re-run verification (max 2 retries). After 2 failed re-verifications → escalate to user.
+
 2. **Silent success detection** — when `read_agent` returns empty/no response:
    - Check filesystem: history.md modified? New decision inbox files? Output files created?
    - Files found → `"⚠️ {Name} completed (files verified) but response lost."` Treat as DONE.
