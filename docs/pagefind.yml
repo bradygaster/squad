@@ -9,5 +9,4 @@ exclude_selectors:
   - "pre"
   - ".astro-code"
 
-# Longer excerpts for better search result context
-excerpt_length: 200
+

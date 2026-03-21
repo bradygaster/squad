@@ -42,21 +42,13 @@ const base = import.meta.env.BASE_URL;
           Start typing to search…
         </div>
       </div>
-      <div id="search-pagination" class="hidden items-center justify-between px-4 py-2 border-t border-surface-200 dark:border-surface-700 text-sm">
-        <button id="search-prev" class="px-3 py-1 rounded-md border border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors" disabled>← Previous</button>
-        <span id="search-page-info" class="text-surface-500 dark:text-surface-400"></span>
-        <button id="search-next" class="px-3 py-1 rounded-md border border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors" disabled>Next →</button>
-      </div>
+
     </div>
   </div>
 </div>
 
 <script define:vars={{ base }}>
   let pagefind = null;
-  const PAGE_SIZE = 25;
-  let currentPage = 0;
-  let currentResults = [];
-  let totalResults = 0;
 
   // Detect OS and update shortcut badge
   const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -80,10 +72,6 @@ const base = import.meta.env.BASE_URL;
   const searchEmpty = document.getElementById('search-empty');
   const searchCloseKbd = document.getElementById('search-close-kbd');
   const searchStatus = document.getElementById('search-status');
-  const searchPagination = document.getElementById('search-pagination');
-  const searchPrev = document.getElementById('search-prev');
-  const searchNext = document.getElementById('search-next');
-  const searchPageInfo = document.getElementById('search-page-info');
 
   // Section badge color mapping
   const SECTION_COLORS = {
@@ -118,11 +106,6 @@ const base = import.meta.env.BASE_URL;
       searchEmpty.textContent = 'Start typing to search…';
     }
     searchStatus?.classList.add('hidden');
-    searchPagination?.classList.add('hidden');
-    searchPagination?.classList.remove('flex');
-    currentPage = 0;
-    currentResults = [];
-    totalResults = 0;
     document.body.style.overflow = '';
   }
 
@@ -130,20 +113,7 @@ const base = import.meta.env.BASE_URL;
   searchBackdrop?.addEventListener('click', closeSearch);
   searchCloseKbd?.addEventListener('click', closeSearch);
 
-  searchPrev?.addEventListener('click', () => {
-    if (currentPage > 0) {
-      currentPage--;
-      renderPage();
-    }
-  });
 
-  searchNext?.addEventListener('click', () => {
-    const maxPage = Math.ceil(totalResults / PAGE_SIZE) - 1;
-    if (currentPage < maxPage) {
-      currentPage++;
-      renderPage();
-    }
-  });
 
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -172,88 +142,52 @@ const base = import.meta.env.BASE_URL;
         searchResults.appendChild(searchEmpty);
       }
       searchStatus?.classList.add('hidden');
-      searchPagination?.classList.add('hidden');
-      searchPagination?.classList.remove('flex');
-      currentResults = [];
-      totalResults = 0;
-      currentPage = 0;
       return;
     }
 
     try {
       const pf = await loadPagefind();
       const search = await pf.search(query);
-      totalResults = search.results.length;
-      currentResults = search.results;
-      currentPage = 0;
-      await renderPage();
+      const results = await Promise.all(search.results.slice(0, 8).map(r => r.data()));
+
+      if (!searchResults) return;
+      searchResults.innerHTML = '';
+
+      if (results.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.className = 'p-8 text-center text-surface-400 text-sm';
+        noResults.textContent = `No results for "${query}"`;
+        searchResults.appendChild(noResults);
+        searchStatus?.classList.add('hidden');
+        return;
+      }
+
+      // Update status bar
+      if (searchStatus) {
+        searchStatus.textContent = `${search.results.length} result${search.results.length === 1 ? '' : 's'}`;
+        searchStatus.classList.remove('hidden');
+      }
+
+      // Render results with section badges
+      results.forEach((result) => {
+        const section = result.meta?.section || '';
+        const a = document.createElement('a');
+        a.href = result.url;
+        a.className = 'block px-3 py-2.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors group';
+        a.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-base text-surface-900 dark:text-white group-hover:text-squad-600 dark:group-hover:text-squad-400 transition-colors">${result.meta?.title || 'Untitled'}</span>
+            ${getSectionBadge(section)}
+          </div>
+          <div class="text-sm text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">${result.excerpt || ''}</div>
+        `;
+        a.addEventListener('click', closeSearch);
+        searchResults.appendChild(a);
+      });
     } catch {
       if (searchResults) {
         searchResults.innerHTML = '<div class="p-8 text-center text-surface-400 text-sm">Search index loading…</div>';
       }
     }
-  }
-
-  async function renderPage() {
-    if (!searchResults) return;
-
-    const start = currentPage * PAGE_SIZE;
-    const end = Math.min(start + PAGE_SIZE, totalResults);
-    const pageResults = await Promise.all(
-      currentResults.slice(start, end).map(r => r.data())
-    );
-
-    searchResults.innerHTML = '';
-
-    if (totalResults === 0) {
-      const query = searchInput?.value?.trim() || '';
-      const noResults = document.createElement('div');
-      noResults.className = 'p-8 text-center text-surface-400 text-sm';
-      noResults.textContent = `No results for "${query}"`;
-      searchResults.appendChild(noResults);
-      searchStatus?.classList.add('hidden');
-      searchPagination?.classList.add('hidden');
-      searchPagination?.classList.remove('flex');
-      return;
-    }
-
-    // Update status bar
-    if (searchStatus) {
-      searchStatus.textContent = `Showing ${start + 1}\u2013${end} of ${totalResults} results`;
-      searchStatus.classList.remove('hidden');
-    }
-
-    // Render results with section badges
-    pageResults.forEach((result) => {
-      const section = result.meta?.section || '';
-      const a = document.createElement('a');
-      a.href = result.url;
-      a.className = 'block px-3 py-2.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors group';
-      a.innerHTML = `
-        <div class="flex items-center gap-2">
-          <span class="font-medium text-base text-surface-900 dark:text-white group-hover:text-squad-600 dark:group-hover:text-squad-400 transition-colors">${result.meta?.title || 'Untitled'}</span>
-          ${getSectionBadge(section)}
-        </div>
-        <div class="text-sm text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">${result.excerpt || ''}</div>
-      `;
-      a.addEventListener('click', closeSearch);
-      searchResults.appendChild(a);
-    });
-
-    // Update pagination controls
-    const maxPage = Math.ceil(totalResults / PAGE_SIZE) - 1;
-    if (totalResults > PAGE_SIZE && searchPagination) {
-      searchPagination.classList.remove('hidden');
-      searchPagination.classList.add('flex');
-      if (searchPrev) searchPrev.disabled = currentPage === 0;
-      if (searchNext) searchNext.disabled = currentPage >= maxPage;
-      if (searchPageInfo) searchPageInfo.textContent = `Page ${currentPage + 1} of ${maxPage + 1}`;
-    } else {
-      searchPagination?.classList.add('hidden');
-      searchPagination?.classList.remove('flex');
-    }
-
-    // Scroll results to top on page change
-    searchResults.scrollTop = 0;
   }
 </script>
