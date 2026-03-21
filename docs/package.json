@@ -7,7 +7,10 @@
     "dev": "astro dev",
     "build": "astro build && npx pagefind --site dist",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "test": "node --test tests/build-output.test.mjs && npx playwright test",
+    "test:build": "node --test tests/build-output.test.mjs",
+    "test:e2e": "npx playwright test"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.0",
