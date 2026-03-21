@@ -3,6 +3,7 @@ import BaseLayout from './BaseLayout.astro';
 import Header from '../components/Header.astro';
 import Sidebar from '../components/Sidebar.astro';
 import Footer from '../components/Footer.astro';
+import { NAV_SECTIONS } from '../navigation';
 
 interface Props {
   title: string;
@@ -11,6 +12,11 @@ interface Props {
 }
 
 const { title, description, currentSlug } = Astro.props;
+
+// Derive section name from the URL path for Pagefind metadata
+const sectionDir = currentSlug?.split('/')[0] || '';
+const navSection = NAV_SECTIONS.find(s => s.dir === sectionDir);
+const section = navSection?.title || 'Docs';
 ---
 
 <BaseLayout title={title} description={description}>
@@ -19,7 +25,7 @@ const { title, description, currentSlug } = Astro.props;
     <Sidebar currentSlug={currentSlug} />
     <main class="flex-1 min-w-0">
       <div class="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        <article class="prose" data-pagefind-body>
+        <article class="prose" data-pagefind-body data-pagefind-meta={`section:${section}`}>
           <slot />
         </article>
       </div>

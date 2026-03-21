@@ -46,7 +46,7 @@ const mobileNavBase = "block px-3 py-2 rounded-md text-base transition-colors";
     </a>
 
     <!-- Top nav links (desktop) -->
-    <nav class="hidden md:flex items-center gap-1 text-base">
+    <nav class="hidden md:flex items-center gap-1 text-base" data-pagefind-ignore>
       <a href={`${base}docs/get-started/installation/`} class:list={[navBase, isDocsActive ? navActive : navInactive]}>Docs</a>
       <a href={`${base}blog/`} class:list={[navBase, isBlogActive ? navActive : navInactive]}>Blog</a>
       <a href="https://github.com/bradygaster/squad" class:list={[navBase, navInactive]} target="_blank" rel="noopener">GitHub</a>
@@ -71,7 +71,7 @@ const mobileNavBase = "block px-3 py-2 rounded-md text-base transition-colors";
   </div>
 
   <!-- Mobile nav dropdown -->
-  <nav id="mobile-nav" class="hidden md:hidden border-t border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-950">
+  <nav id="mobile-nav" class="hidden md:hidden border-t border-surface-200 dark:border-surface-800 bg-white dark:bg-surface-950" data-pagefind-ignore>
     <div class="px-4 py-3 space-y-1">
       <a href={`${base}docs/get-started/installation/`} class:list={[mobileNavBase, isDocsActive ? navActive : navInactive]}>Docs</a>
       <a href={`${base}blog/`} class:list={[mobileNavBase, isBlogActive ? navActive : navInactive]}>Blog</a>

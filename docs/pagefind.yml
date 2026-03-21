@@ -1,0 +1,13 @@
+# Pagefind configuration for Squad docs
+# See: https://pagefind.app/docs/config-options/
+
+# Exclude navigation, footers, and code blocks from indexing
+exclude_selectors:
+  - "nav"
+  - "footer"
+  - "aside"
+  - "pre"
+  - ".astro-code"
+
+# Longer excerpts for better search result context
+excerpt_length: 200
