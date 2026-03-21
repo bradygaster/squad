@@ -74,6 +74,25 @@ try {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Top-level signal handlers — safety net for clean exit on Ctrl+C / SIGTERM.
+// Individual commands (shell, watch, aspire, rc) register their own handlers
+// that run first; these ensure the process never hangs if a command doesn't.
+// ---------------------------------------------------------------------------
+let _exitingOnSignal = false;
+function _handleTopLevelSignal(signal: 'SIGINT' | 'SIGTERM'): void {
+  const code = signal === 'SIGINT' ? 130 : 143;
+  if (_exitingOnSignal) {
+    // Second signal — force exit immediately
+    process.exit(code);
+  }
+  _exitingOnSignal = true;
+  // Allow in-flight cleanup handlers a brief window, then force exit
+  setTimeout(() => process.exit(code), 3_000).unref();
+}
+process.on('SIGINT', () => _handleTopLevelSignal('SIGINT'));
+process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';

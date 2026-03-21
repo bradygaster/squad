@@ -1158,7 +1158,7 @@ export async function runShell(): Promise<void> {
   // Also ensures we start from a clean viewport before Ink renders.
   process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
 
-  const { waitUntilExit } = render(
+  const { waitUntilExit, unmount } = render(
     React.createElement(ErrorBoundary, null,
       React.createElement(App, {
         registry,
@@ -1233,6 +1233,25 @@ export async function runShell(): Promise<void> {
   // Clear the loading message now that Ink is rendering
   process.stderr.write('\r\x1b[K');
 
+  // Signal handlers for graceful exit — prevents orphaned child processes on Ctrl+C.
+  // Calling unmount() causes waitUntilExit() to resolve, triggering the normal
+  // cleanup path below (session close, client disconnect, telemetry shutdown).
+  let _shellSignalCode: number | undefined;
+  let _shellExiting = false;
+  const handleShellSignal = (signal: 'SIGINT' | 'SIGTERM'): void => {
+    const code = signal === 'SIGINT' ? 130 : 143;
+    if (_shellExiting) {
+      // Second signal — force exit immediately
+      process.exit(code);
+    }
+    _shellExiting = true;
+    _shellSignalCode = code;
+    debugLog(`Received ${signal}, unmounting shell...`);
+    unmount();
+  };
+  process.on('SIGINT', () => handleShellSignal('SIGINT'));
+  process.on('SIGTERM', () => handleShellSignal('SIGTERM'));
+
   await waitUntilExit();
 
   // Record shell session duration before cleanup
@@ -1291,5 +1310,10 @@ export async function runShell(): Promise<void> {
     console.log(`${prefix}Squad out. ${durationStr}${agentStr} ${messageCount} message${messageCount === 1 ? '' : 's'}.`);
   } else {
     console.log(`${prefix}Squad out.`);
+  }
+
+  // If we exited due to a signal, propagate the conventional exit code
+  if (_shellSignalCode !== undefined) {
+    process.exit(_shellSignalCode);
   }
 }
