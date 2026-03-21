@@ -1,85 +1,83 @@
-# streaming-chat
+# Streaming-chat
 
-> Interactive multi-agent streaming chat — Squad SDK sample for MVP Summit.
+Interactive multi-agent streaming chat demonstrating how to route user messages to the right agent, display token-by-token responses, and work with both live Copilot sessions and demo mode for testing.
 
-Three agents (Backend, Frontend, Tester) cast from the **Usual Suspects** universe. Type a message, watch the right agent respond token-by-token in real time.
+## Prerequisites
 
-## Quick Start
+- Node.js >= 20
+- npm
+- GitHub personal access token with Copilot access (optional; demo mode works without auth)
 
-```bash
-# From the repo root
-cd samples/streaming-chat
-npm install
+To set up your token (for live mode):
 
-# Demo mode (no Copilot auth required — simulated streaming)
-npx tsx index.ts
-# or
-SQUAD_DEMO_MODE=true npx tsx index.ts
+1. Generate a token at https://github.com/settings/tokens
+2. Verify your account has GitHub Copilot enabled
+3. Set the token in your environment
 
-# Live mode (requires @github/copilot-sdk auth)
-npx tsx index.ts
-```
+## Quick start
 
-## What It Demonstrates
+1. Install dependencies: `npm install`
+2. Choose a mode:
+   - **Demo mode** (no auth needed): `npm start` or `SQUAD_DEMO_MODE=true npm start`
+   - **Live mode** (requires GITHUB_TOKEN): Set your token, then `npm start`
+3. Type a message to chat with the agents
 
-| SDK Feature | Usage |
-|---|---|
-| **SquadClientWithPool** | Connection lifecycle + integrated session pool |
-| **CastingEngine** | Casts 3 agents from the `usual-suspects` universe |
-| **SessionPool** | One session per agent, managed by the pool |
-| **EventBus** | Cross-session event pub/sub wired to client events |
-| **StreamingPipeline** | Token-by-token output via `onDelta()` handlers |
-| **Keyword Routing** | Simple content-based routing to the right agent |
+## What you'll learn
 
-## Commands
+- How to cast multiple agents with `CastingEngine` and create a session per agent
+- How `SquadClientWithPool` manages concurrent sessions with rate limiting
+- How to route messages to agents by keyword matching
+- How `StreamingPipeline` captures and displays token-by-token output in real time
+- How the `EventBus` emits and subscribes to session lifecycle events
+- How demo mode simulates streaming when authentication isn't available
 
-| Command | Action |
-|---|---|
-| _any text_ | Routes to an agent and streams the response |
-| `/quit` | Exit the chat |
+## How it works
 
-## Routing Keywords
+The sample creates three agents: McManus (Backend), Kobayashi (Frontend), and Fenster (Tester). Each agent has a set of keywords that route messages to them. When a user types a message, the routing logic checks which keywords are present and selects the matching agent; if no keywords match, the message routes to Backend by default. In live mode, the message is sent to that agent's Copilot session and responses stream token-by-token via the streaming pipeline. In demo mode, pre-written responses are delivered word-by-word with realistic timing. Users can type `/quit` to exit.
 
-- **Backend (McManus):** `api`, `server`, `database`, `backend`, `endpoint`, `rest`, `sql`, `auth`
-- **Frontend (Kobayashi):** `ui`, `frontend`, `component`, `css`, `react`, `style`, `layout`, `ux`
-- **Tester (Fenster):** `test`, `bug`, `qa`, `coverage`, `assert`, `fixture`, `mock`, `spec`
-
-Messages that don't match any keyword are routed to Backend by default.
-
-## Demo Mode
-
-When `SQUAD_DEMO_MODE=true` is set (or when Copilot auth is unavailable), the sample runs with simulated streaming. Pre-written responses are delivered word-by-word with realistic timing to demonstrate the StreamingPipeline's `onDelta` handler pattern.
-
-## Architecture
+## Expected output
 
 ```
-User Input (readline)
-    │
-    ▼
-routeMessage()  ──→  keyword matching  ──→  AgentInfo
-    │
-    ▼
-┌─── Live Mode ───────────────────────────────┐
-│ SquadClientWithPool.resumeSession()         │
-│   → session.sendAndWait()                   │
-│   → message_delta events → pipeline         │
-└─────────────────────────────────────────────┘
-┌─── Demo Mode ───────────────────────────────┐
-│ simulateStreaming()                          │
-│   → synthetic StreamDelta events → pipeline │
-└─────────────────────────────────────────────┘
-    │
-    ▼
-StreamingPipeline.onDelta()  ──→  process.stdout.write()
+  ╔═══════════════════════════════════════════════╗
+  ║   🎬  Squad Streaming Chat  ·  MVP Summit    ║
+  ╚═══════════════════════════════════════════════╝
+
+  Cast:
+    ● McManus — Backend (A bold architect, always thinking ahead.)
+    ● Kobayashi — Frontend (Sharp-eyed designer with an eye for detail.)
+    ● Fenster — Tester (Eccentric tester, spots bugs nobody else can.)
+
+  Running in demo mode — responses are simulated
+
+  ◆ you > How do I set up a REST API?
+
+  McManus (Backend)
+  Sure thing. I'd scaffold that with an Express router...
+
+  ◆ you > /quit
+
+  👋 Goodbye!
 ```
 
-## Files
+## Key files
 
 | File | Purpose |
 |---|---|
-| `index.ts` | Main interactive chat application |
+| `index.ts` | Main interactive chat application with routing and streaming |
 | `package.json` | Dependencies and scripts |
 | `tsconfig.json` | TypeScript configuration (ESM, strict) |
-| `README.md` | This file |
-| `TEST-SCRIPT.md` | Manual test walkthrough |
-| `tests/streaming-chat.test.ts` | Unit tests |
+| `tests/streaming-chat.test.ts` | Unit tests for routing and streaming |
+
+## Routing keywords
+
+- **Backend (McManus):** api, server, database, backend, endpoint, rest, sql, auth
+- **Frontend (Kobayashi):** ui, frontend, component, css, react, style, layout, ux
+- **Tester (Fenster):** test, bug, qa, coverage, assert, fixture, mock, spec
+
+Messages without keyword matches default to Backend.
+
+## Next steps
+
+- Check [cost-aware-router](../cost-aware-router/README.md) to learn tier selection and budget tracking
+- See [rock-paper-scissors](../rock-paper-scissors/README.md) for advanced multi-agent competition with learning
+- Read the [Squad SDK documentation](../../README.md) for more routing and session patterns

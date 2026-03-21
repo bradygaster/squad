@@ -1,29 +1,30 @@
-# hook-governance
+# Hook-governance
 
-**Beginner sample** for `@bradygaster/squad-sdk` — demonstrates the four governance hooks that enforce rules as code, not prompts.
-
-## What It Demonstrates
-
-| Hook | What You'll See |
-|---|---|
-| **File-Write Guards** | Block writes to `/etc/passwd`, allow writes to `src/**/*.ts` |
-| **PII Scrubbing** | Redact email addresses from tool output automatically |
-| **Reviewer Lockout** | Lock an agent out of a file after a review rejection |
-| **Ask-User Rate Limiter** | Cap user prompts at 3 per session, then block |
+Beginner sample for the Squad SDK that demonstrates the four governance hooks, which enforce rules as code rather than as prompt instructions. Hooks run deterministically and can't be bypassed, making them ideal for security and policy enforcement.
 
 ## Prerequisites
 
-- Node.js ≥ 20
+- Node.js >= 20
+- npm
 - The SDK must be built first: `cd ../../ && npm run build`
 
-## Run It
+## Quick start
 
-```bash
-npm install
-npm start
-```
+1. Install dependencies: `npm install`
+2. Run the sample: `npm start`
 
-## Expected Output
+## What you'll learn
+
+- How to use file-write guards to block writes outside safe zones (e.g., prevent writes to `/etc/passwd`)
+- How PII scrubbing automatically redacts email addresses from tool output
+- How reviewer lockout prevents a locked-out agent from editing files after a review rejection
+- How rate limiting caps the number of times an agent can prompt the user per session
+
+## How it works
+
+The sample demonstrates four independent hook demos. The first demo creates a hook pipeline with allowed write paths and shows how attempts to write to prohibited paths are blocked. The second demo scrubs personally identifiable information (emails) from tool output strings and nested objects. The third demo simulates a reviewer lockout: once an agent is locked out of a file, attempts to edit that file are denied, but other agents can still access it. The fourth demo implements a per-session rate limiter that allows three user prompts and blocks any additional ones. Each demo shows the allow/block decision and the reason it was made.
+
+## Expected output
 
 ```
 🛡️  hook-governance — Squad SDK governance hooks sample
@@ -31,17 +32,14 @@ npm start
 ────────────────────────────────────────────────────────────
   Demo 1 — File-Write Guards
 ────────────────────────────────────────────────────────────
-  Only writes to src/**/*.ts and .squad/** are allowed.
-
   Write to src/utils/helper.ts: allow ✅
   Write to /etc/passwd: block 🚫
-  Reason: File write blocked: "/etc/passwd" does not match allowed paths...
 
 ────────────────────────────────────────────────────────────
   Demo 2 — PII Scrubbing
 ────────────────────────────────────────────────────────────
-  Before: Deploy fix by brady@example.com — cc: alice@company.io, bob@test.org
-  After:  Deploy fix by [EMAIL_REDACTED] — cc: [EMAIL_REDACTED], [EMAIL_REDACTED]
+  Before: Deploy fix by brady@example.com — cc: alice@company.io
+  After:  Deploy fix by [EMAIL_REDACTED] — cc: [EMAIL_REDACTED]
 
 ────────────────────────────────────────────────────────────
   Demo 3 — Reviewer Lockout
@@ -56,19 +54,18 @@ npm start
     Ask #2: allow ✅
     Ask #3: allow ✅
     Ask #4: block 🚫
-    Ask #5: block 🚫
 ```
 
-## Run Tests
-
-```bash
-npm test
-```
-
-## Files
+## Key files
 
 | File | Purpose |
 |---|---|
-| `index.ts` | Main demo script — runs all four hook demos |
-| `tests/hook-governance.test.ts` | Acceptance tests for each hook |
+| `index.ts` | Main demo script running all four hook scenarios |
+| `tests/hook-governance.test.ts` | Acceptance tests validating each hook behavior |
 | `TEST-SCRIPT.md` | Manual test walkthrough |
+
+## Next steps
+
+- Move on to [streaming-chat](../streaming-chat/README.md) to see agents interact in real time
+- Read about the [Hook Pipeline API](../../README.md#hooks) in the main documentation
+- See [rock-paper-scissors](../rock-paper-scissors/README.md) for advanced multi-agent scenarios

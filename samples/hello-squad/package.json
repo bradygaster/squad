@@ -1,5 +1,5 @@
 {
-  "name": "hello-squad",
+  "name": "@squad-samples/hello-squad",
   "version": "1.0.0",
   "private": true,
   "type": "module",

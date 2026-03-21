@@ -1,5 +1,5 @@
 {
-  "name": "azure-function-squad-sample",
+  "name": "@squad-samples/azure-function-squad",
   "version": "1.0.0",
   "private": true,
   "description": "Azure Function + Content Review Squad — Squad SDK sample",

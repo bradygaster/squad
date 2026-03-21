@@ -1,5 +1,5 @@
 {
-  "name": "streaming-chat-sample",
+  "name": "@squad-samples/streaming-chat",
   "version": "1.0.0",
   "description": "Interactive multi-agent streaming chat — Squad SDK sample for MVP Summit",
   "type": "module",

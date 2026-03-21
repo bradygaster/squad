@@ -1,5 +1,5 @@
 {
-  "name": "knock-knock",
+  "name": "@squad-samples/knock-knock",
   "version": "1.0.0",
   "private": true,
   "type": "module",

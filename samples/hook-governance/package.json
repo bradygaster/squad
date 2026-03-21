@@ -1,5 +1,5 @@
 {
-  "name": "hook-governance",
+  "name": "@squad-samples/hook-governance",
   "version": "1.0.0",
   "private": true,
   "type": "module",

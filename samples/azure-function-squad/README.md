@@ -1,76 +1,43 @@
-# azure-function-squad
+# Azure Function Squad
 
-**Azure Function + Content Review Squad** — a Squad SDK sample that wires an HTTP-triggered Azure Function to a multi-agent content review pipeline.
-
-## What It Demonstrates
-
-| SDK Feature | What You'll See |
-|---|---|
-| `defineSquad()` | Top-level config composing team, agents, and routing |
-| `defineTeam()` | Team metadata with project context |
-| `defineAgent()` | Three specialist agents with capabilities and models |
-| `defineRouting()` | Pattern-based routing with tiers and priorities |
-| Azure Functions v4 | HTTP trigger → squad orchestration → JSON response |
-
-## How It Works
-
-1. An HTTP POST hits `/api/squad-prompt` with a `{ "prompt": "..." }` body
-2. The function loads the squad config (3 review agents defined via SDK builders)
-3. The review squad wakes up and each agent analyzes the content:
-   - **Tone Reviewer** — audience fit, engagement, emotional resonance
-   - **Technical Reviewer** — factual accuracy, code validation, link checking
-   - **Copy Editor** — grammar, sentence structure, readability
-4. Results are aggregated into a structured JSON response with per-agent scores and findings
+Content review squad deployed as an HTTP-triggered Azure Function. A multi-agent review pipeline analyzes submitted content through three specialist agents: tone reviewer, technical reviewer, and copy editor. Results are aggregated into a structured JSON response with per-agent scores and findings.
 
 ## Prerequisites
 
-- Node.js ≥ 20
-- [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-tools?tabs=v4) (for `func start`)
+- Node.js >= 20
+- npm
+- [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-tools) (for `func start`)
 - The SDK must be built first: `cd ../../ && npm run build`
 
-## Run It
+## Quick start
 
-### With Azure Functions Core Tools
+1. Install dependencies: `npm install`
+2. Build the TypeScript: `npm run build`
+3. Start the Azure Functions runtime: `func start`
+4. Send a request:
+   ```bash
+   curl -X POST http://localhost:7071/api/squad-prompt \
+     -H "Content-Type: application/json" \
+     -d '{"prompt": "Azure Functions now supports Node.js v20. This is great!"}'
+   ```
 
-```bash
-npm install
-npm start          # builds TypeScript, then runs func start
-```
+Or simply run: `npm start` (builds and starts the runtime automatically).
 
-> **Why build first?** Azure Functions runs JavaScript, not TypeScript directly.
-> The `main` field in `package.json` points to `dist/functions/squad-prompt.js` —
-> the compiled output. Without building, the runtime can't discover the function
-> registration and you'll get "No job functions found."
->
-> `npm start` handles this automatically (`npm run build && func start`).
-> If you prefer to build separately: `npm run build` then `func start`.
+## What you'll learn
 
-Then send a request:
+- How to use `defineSquad()`, `defineTeam()`, `defineAgent()`, and `defineRouting()` to compose a squad configuration
+- How to wire an Azure Function HTTP trigger to a Squad SDK application
+- How to aggregate results from multiple specialist agents into a structured response
+- How to structure agent definitions with capabilities and model constraints
+- How to deploy a Squad application to a serverless platform
 
-```bash
-curl -X POST http://localhost:7071/api/squad-prompt \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Azure Functions now supports Node.js v20 with ES modules. This is a game-changer for TypeScript developers who want first-class module support without transpilation hacks!"}'
-```
+## How it works
 
-### Quick Validation (no Azure Functions runtime needed)
+The sample defines a review squad with three specialist agents using the SDK builder API. When an HTTP POST is received at `/api/squad-prompt` with a `{"prompt": "..."}` body, the Azure Function loads the squad config, instantiates the review agents, and distributes the content for analysis. Each agent reviews the content according to its role: the tone reviewer assesses audience fit and engagement, the technical reviewer checks factual accuracy and code validity, and the copy editor reviews grammar and readability. The function aggregates results and returns a JSON response with per-agent scores, findings, and an overall consensus.
 
-```bash
-npm install
-npm test
-```
+## Expected output
 
-## Example Request
-
-```bash
-curl -X POST http://localhost:7071/api/squad-prompt \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Building multi-agent systems with the Squad SDK is straightforward. Define your agents with defineAgent(), compose them into a team with defineTeam(), and wire up routing with defineRouting(). The SDK validates everything at runtime — no schema files needed. Here is an example:\n\n```typescript\nconst reviewer = defineAgent({ name: \"reviewer\", role: \"Code Reviewer\" });\n```\n\nDeploy to Azure Functions and you have a serverless agent pipeline!"
-  }'
-```
-
-## Example Response
+When you send a POST request:
 
 ```json
 {
@@ -84,14 +51,10 @@ curl -X POST http://localhost:7071/api/squad-prompt \
       "findings": [
         {
           "severity": "info",
-          "message": "Code blocks detected. Ensure surrounding prose provides adequate context for non-technical readers."
-        },
-        {
-          "severity": "suggestion",
-          "message": "Tone is neutral/flat. Consider adding variety to maintain reader interest."
+          "message": "Code blocks detected. Ensure surrounding prose provides adequate context."
         }
       ],
-      "summary": "Analyzed 42 words. Tone is informational, energetic."
+      "summary": "Tone is neutral. Consider adding variety to maintain reader interest."
     },
     {
       "agent": "technical-reviewer",
@@ -100,7 +63,7 @@ curl -X POST http://localhost:7071/api/squad-prompt \
       "findings": [
         {
           "severity": "info",
-          "message": "Code blocks present. Verify snippets compile and match described behavior."
+          "message": "Code blocks present. Verify snippets compile and match behavior."
         }
       ],
       "summary": "Technical review complete. Code blocks verified."
@@ -112,10 +75,10 @@ curl -X POST http://localhost:7071/api/squad-prompt \
       "findings": [
         {
           "severity": "suggestion",
-          "message": "Passive voice detected. Consider rewriting in active voice for clarity."
+          "message": "Passive voice detected. Consider rewriting in active voice."
         }
       ],
-      "summary": "Reviewed 6 sentences across 3 paragraph(s). Avg sentence length: 12 words."
+      "summary": "Reviewed 6 sentences. Avg sentence length: 12 words."
     }
   ],
   "overallScore": 8,
@@ -123,24 +86,45 @@ curl -X POST http://localhost:7071/api/squad-prompt \
 }
 ```
 
-## Project Structure
+## Key files
 
 | File | Purpose |
 |---|---|
 | `src/functions/squad-prompt.ts` | Azure Function HTTP trigger — entry point |
-| `src/squad/config.ts` | Squad config using `defineSquad()`, `defineTeam()`, `defineAgent()`, `defineRouting()` |
+| `src/squad/config.ts` | Squad configuration using builder API |
 | `src/squad/handlers.ts` | Agent review handlers (mock logic for demo) |
 | `host.json` | Azure Functions host configuration |
 | `local.settings.json` | Local development settings |
 | `package.json` | Dependencies and scripts |
 | `tsconfig.json` | TypeScript configuration |
 
-## Extending This Sample
+## Extending this sample
 
-To make this production-ready, you'd:
+To make this production-ready:
 
-1. Replace the mock handlers in `handlers.ts` with real Squad runtime calls using `SquadClient`
-2. Add streaming responses via `StreamingPipeline` for long-running reviews
-3. Wire up `CostTracker` to monitor token usage per review agent
+1. Replace mock handlers with real `SquadClient` calls for live reviews
+2. Add `StreamingPipeline` for long-running reviews
+3. Wire up `CostTracker` for per-review cost monitoring
 4. Add `defineHooks()` for PII scrubbing on submitted content
 5. Deploy to Azure with `func azure functionapp publish`
+
+## Building and running
+
+TypeScript must be compiled before the Azure Functions runtime can find the function. `npm start` handles this automatically:
+
+```bash
+npm start   # npm run build && func start
+```
+
+Or build separately:
+
+```bash
+npm run build   # Compile TypeScript to dist/
+func start      # Start runtime
+```
+
+## Next steps
+
+- See [autonomous-pipeline](../autonomous-pipeline/README.md) for a full showcase of Squad SDK features
+- Check the [Squad SDK documentation](../../README.md) for builder API details
+- Review Azure Functions [documentation](https://learn.microsoft.com/en-us/azure/azure-functions/) for deployment options

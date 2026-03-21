@@ -1,113 +1,86 @@
-# SDK Samples Portfolio — MVP Summit
+# Squad SDK Samples
 
-> 7 samples shipping for MVP Summit (Monday). Each is a standalone working app demonstrating a slice of the Squad SDK.
+Learn the Squad SDK by example. Each sample is a complete, working application demonstrating core patterns: agent casting, session management, streaming responses, governance, cost tracking, and real-time collaboration. Start with the beginner samples, then explore intermediate patterns, and finally the advanced showcase.
 
----
+## Prerequisites
 
-## 1. hello-squad
+- **Node.js** ≥ 20 and npm
+- **GitHub Token** (optional, for live LLM mode): `GITHUB_TOKEN=ghp_...` enables Copilot session samples
 
-**The "hello world."** Resolves a `.squad/` directory, loads config, casts a team from the Usual Suspects universe, onboards each agent, and prints the roster. Zero async complexity, zero governance, zero tooling. Pure SDK mechanics: casting engine in, typed roster out. If someone has 5 minutes and wants to see Squad produce output, this is it.
+## Quick start
 
-- **SDK APIs:** `resolveSquad()`, `loadConfig()`, `CastingEngine.castTeam()`, `onboardAgent()`
-- **Difficulty:** Beginner
-- **Estimated LOC:** ~60–80
+1. Clone the repository and navigate to the `hello-squad` sample:
+   ```bash
+   git clone <repo>
+   cd samples/hello-squad
+   ```
 
----
+2. Install dependencies and start:
+   ```bash
+   npm install
+   npm start
+   ```
 
-## 2. knock-knock
+The `hello-squad` sample demonstrates core casting and onboarding mechanics in ~60 lines.
 
-**The simplest multi-agent demo.** Two agents cast from a "Comedy Club" universe trade knock-knock jokes forever, streaming token-by-token via `StreamingPipeline`. No routing, no governance, no auth — just casting and streaming. Runs in Docker; demo mode built in.
+## Samples
 
-- **SDK APIs:** `CastingEngine.castTeam()`, `StreamingPipeline`, `onDelta()`, `EventBus`, `SessionPool`
-- **Difficulty:** Beginner
-- **Estimated LOC:** ~80–120
+| Sample | Difficulty | Description | Key Concepts |
+|--------|-----------|-------------|--------------|
+| [hello-squad](./hello-squad) | Beginner | Resolve `.squad/`, cast a team, onboard agents, print roster | `resolveSquad()`, `CastingEngine`, `onboardAgent()` |
+| [knock-knock](./knock-knock) | Beginner | Two agents stream knock-knock jokes via `StreamingPipeline` | `StreamingPipeline`, `onDelta()`, session streaming |
+| [rock-paper-scissors](./rock-paper-scissors) | Intermediate | Tournament: 9 agents with strategies compete; Sherlock learns opponent patterns | Multi-session pooling, strategy prompts, `EventBus`, learning |
+| [hook-governance](./hook-governance) | Intermediate | File guards, PII scrubbing, reviewer lockout, rate limiting — all hooks demoed | `HookPipeline`, governance hooks, audit logging |
+| [streaming-chat](./streaming-chat) | Intermediate | Interactive chat: user messages routed to agents, responses stream in real time | `SquadClient`, session routing, real-time streaming |
+| [cost-aware-router](./cost-aware-router) | Intermediate–Advanced | Budget-aware routing: `CostTracker` monitors spend; router falls back to cheaper tiers | `CostTracker`, `EventBus`, cost monitoring, tier selection |
+| [skill-discovery](./skill-discovery) | Intermediate | Agents write, share, and promote `SKILL.md` files; team knowledge base grows | Skills system, confidence levels, knowledge sharing |
+| [autonomous-pipeline](./autonomous-pipeline) | Advanced | Full showcase: casting, governance, cost tracking, streaming, monitoring, live dashboard | All core APIs, terminal UI, comprehensive example |
+| [azure-function-squad](./azure-function-squad) | Intermediate | Serverless multi-agent review: HTTP endpoint → three specialist agents → JSON report | Azure Functions v4, SDK-First builder, JSON output |
 
----
+## Recommended learning path
 
-## 3. rock-paper-scissors
+**Beginner (start here):**
+1. `hello-squad` — Understand casting and agent onboarding
+2. `knock-knock` — See streaming and multi-agent patterns
 
-**Multi-agent strategy tournament.** Nine players with distinct strategies compete in endless 1-on-1 matches. A scorekeeper announces results with commentary. Demonstrates multi-session pooling, strategy-via-prompt, agent learning, and real-time streaming. The learning agent (Sherlock) analyzes opponent history to predict and counter moves — watch it adapt in the logs.
+**Intermediate (expand your skills):**
+3. `rock-paper-scissors` — Learn multi-session management and learning
+4. `streaming-chat` — Master real-time session routing and user interaction
+5. `hook-governance` — Implement security and governance patterns
+6. `skill-discovery` — Explore team knowledge sharing
+7. `azure-function-squad` — Deploy to serverless; learn SDK-First patterns
 
-- **SDK APIs:** `SquadClientWithPool`, `SessionPool`, `StreamingPipeline`, `onDelta()`, `EventBus`, system prompts
-- **Difficulty:** Intermediate
-- **Estimated LOC:** ~200–250
+**Advanced (integrate everything):**
+8. `autonomous-pipeline` — See all patterns in one working showcase
 
----
+## Running a sample
 
-## 4. hook-governance
+Each sample is standalone and ready to run. To run any sample:
 
-**Every governance hook demoed in one script.** File-write guards that block writes outside allowed paths. PII scrubbing that redacts emails and phone numbers from tool output. Reviewer lockout that prevents an author from editing rejected files. Ask-user rate limiting that caps human interruptions per session. Custom pre-tool and post-tool hooks for audit logging and output validation. Each hook is configured, triggered, and the result printed — so you can see exactly what gets blocked and why.
+```bash
+cd samples/{sample-name}
+npm install
+npm start
+```
 
-- **SDK APIs:** `HookPipeline`, `addPreToolHook()`, `addPostToolHook()`, `getReviewerLockout()`, `PolicyConfig`
-- **Difficulty:** Intermediate
-- **Estimated LOC:** ~120–150
+Some samples require `GITHUB_TOKEN` for live LLM modes. Check each sample's README for specific setup instructions.
 
----
+## Sample architecture
 
-## 5. streaming-chat
+Each sample demonstrates distinct SDK capabilities:
 
-**Multi-agent interactive chat with real-time streaming.** Creates a `SquadClient`, establishes sessions for multiple agents, and routes messages through the coordinator. Responses stream token-by-token to the terminal via `StreamingPipeline`. The user types messages, the coordinator picks the right agent, and you see the response build in real time. Demonstrates session lifecycle, message routing, and the streaming delta/usage/reasoning handlers.
+- **Casting & Onboarding** — Define agents, cast them from a universe, onboard with persistent identity
+- **Streaming** — Stream token-by-token responses via `StreamingPipeline`
+- **Session Management** — Create, resume, pool, and coordinate multiple agent sessions
+- **Governance** — Apply file guards, PII scrubbing, access control via hooks
+- **Monitoring** — Track costs, events, and health via `CostTracker` and `EventBus`
+- **Serverless** — Deploy agents as Azure Functions with SDK-First patterns
 
-- **SDK APIs:** `SquadClient`, `createSession()`, `StreamingPipeline`, `onDelta()`, `onUsage()`, `onReasoning()`, `EventBus`
-- **Difficulty:** Intermediate
-- **Estimated LOC:** ~150–180
+## Documentation
 
----
+See each sample's `README.md` for detailed setup, expected output, and customization tips. The SDK documentation is at the root repository's `docs/` folder.
 
-## 6. cost-aware-router
+## Questions?
 
-**Cost-optimized task routing.** Uses `CostTracker` wired to the `EventBus` to monitor token usage per agent and per model in real time. Implements a custom routing layer that checks budget thresholds before dispatching work — if an agent's cost exceeds a cap, the router falls back to a cheaper model tier. Shows `recordUsage()`, `getSummary()`, `formatSummary()`, and the `selectResponseTier()` coordinator API for mapping tasks to Direct/Lightweight/Standard/Full tiers.
+Open an issue or check the [Squad SDK documentation](../../README.md).
 
-- **SDK APIs:** `CostTracker`, `EventBus`, `selectResponseTier()`, `getTier()`, `wireToEventBus()`, `recordUsage()`, `recordFallback()`
-- **Difficulty:** Intermediate–Advanced
-- **Estimated LOC:** ~180–220
-
----
-
-## 7. skill-discovery
-
-**Agents that learn, compress knowledge, and share it.** Demonstrates the skills system: agents write `SKILL.md` files with confidence levels (experimenting → confident → proven), read skills from other agents, and build on shared knowledge across sessions. Shows how the `.squad/skills/` directory acts as a team-wide knowledge base. Includes skill creation, retrieval, confidence promotion, and cross-agent skill consumption.
-
-- **SDK APIs:** Skills system (`squad_skill` tool), `onboardAgent()`, skill CRUD operations, confidence levels
-- **Difficulty:** Intermediate
-- **Estimated LOC:** ~140–170
-
----
-
-## 8. autonomous-pipeline
-
-**The full showcase.** A multi-agent pipeline with casting, governance, cost tracking, streaming, monitoring, and a terminal dashboard. Creates a team, assigns a real task (e.g., "build a REST API"), fans out work to parallel agents, monitors health with `RalphMonitor`, tracks costs, enforces governance hooks, and renders a live terminal dashboard showing agent status, token usage, and streaming output. This is the "wow demo" — everything Squad can do in one running script.
-
-- **SDK APIs:** `SquadClient`, `CastingEngine`, `HookPipeline`, `CostTracker`, `EventBus`, `RalphMonitor`, `StreamingPipeline`, `resolveSquad()`, `loadConfig()`, `createSession()`, `resumeSession()`
-- **Difficulty:** Advanced
-- **Estimated LOC:** ~350–450
-
----
-
-## 9. azure-function-squad
-
-**Azure Function meets multi-agent review.** An HTTP POST carries content to a serverless endpoint, which wakes up a Content Review Squad — three specialist agents (Tone Reviewer, Technical Reviewer, Copy Editor) that analyze the submission from different angles. Returns a structured JSON report with per-agent scores, findings, and a consensus verdict. Demonstrates the SDK-First builder pattern (`defineSquad()`, `defineTeam()`, `defineAgent()`, `defineRouting()`) wired into Azure Functions v4, making it a ready-to-deploy serverless agent pipeline.
-
-- **SDK APIs:** `defineSquad()`, `defineTeam()`, `defineAgent()`, `defineRouting()`, `SquadSDKConfig`
-- **Difficulty:** Intermediate
-- **Estimated LOC:** ~180–220
-
----
-
-## Summary Table
-
-| # | Sample | Difficulty | Est. LOC | Key Theme |
-|---|--------|-----------|----------|-----------|
-| 1 | hello-squad | Beginner | ~60–80 | Casting + onboarding |
-| 2 | knock-knock | Beginner | ~80–120 | Multi-agent streaming |
-| 3 | rock-paper-scissors | Intermediate | ~200–250 | Strategy + learning |
-| 4 | hook-governance | Intermediate | ~120–150 | All governance hooks |
-| 5 | streaming-chat | Intermediate | ~150–180 | Real-time multi-agent chat |
-| 6 | cost-aware-router | Int–Advanced | ~180–220 | Budget-aware routing |
-| 7 | skill-discovery | Intermediate | ~140–170 | Knowledge sharing |
-| 8 | autonomous-pipeline | Advanced | ~350–450 | Full showcase + dashboard |
-| 9 | azure-function-squad | Intermediate | ~180–220 | Azure Functions + SDK-First config |
-
-**Total estimated LOC across all 9 samples: ~1,460–1,840**
-
-> ⚠️ Samples are being built by individual agents. This doc is the portfolio overview only.
