@@ -213,6 +213,56 @@ function checkDecisionsMd(squadDir: string): DoctorCheck {
   };
 }
 
+/**
+ * Report the last detected rate limit, if any, by reading the status file
+ * written by the shell when a rate limit error is caught.
+ */
+function checkRateLimitStatus(squadDir: string): DoctorCheck | undefined {
+  const statusPath = path.join(squadDir, 'rate-limit-status.json');
+  if (!fileExists(statusPath)) return undefined;
+
+  const data = tryReadJson(statusPath) as Record<string, unknown> | undefined;
+  if (!data) {
+    return {
+      name: 'rate limit status',
+      status: 'warn',
+      message: 'rate-limit-status.json exists but could not be parsed',
+    };
+  }
+
+  const ts = typeof data['timestamp'] === 'string' ? new Date(data['timestamp']) : null;
+  const retryAfter = typeof data['retryAfter'] === 'number' ? data['retryAfter'] : null;
+  const model = typeof data['model'] === 'string' ? data['model'] : null;
+
+  const age = ts ? Math.floor((Date.now() - ts.getTime()) / 1000) : null;
+  const ageStr = age !== null ? ` (${formatAge(age)} ago)` : '';
+  const modelStr = model ? ` on model: ${model}` : '';
+  const retryStr = retryAfter ? ` — retry after ${retryAfter}s` : '';
+
+  // If last rate limit was more than 4 hours ago, treat as stale info (pass)
+  const stale = age !== null && age > 4 * 3600;
+
+  return {
+    name: 'rate limit status',
+    status: stale ? 'pass' : 'warn',
+    message: stale
+      ? `Last rate limit${ageStr}${modelStr} — appears resolved. Run \`squad economy on\` to reduce future risk.`
+      : `Rate limit detected${ageStr}${modelStr}${retryStr}. Run \`squad economy on\` to switch to cheaper models.`,
+  };
+}
+
+function formatAge(seconds: number): string {
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    return `${h}h`;
+  }
+  if (seconds >= 60) {
+    const m = Math.floor(seconds / 60);
+    return `${m}m`;
+  }
+  return `${seconds}s`;
+}
+
 // ── ESM compatibility checks ────────────────────────────────────────
 
 // ── environment checks ─────────────────────────────────────────────
@@ -363,6 +413,8 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     checks.push(checkAgentsDir(squadDir));
     checks.push(checkCastingRegistry(squadDir));
     checks.push(checkDecisionsMd(squadDir));
+    const rateLimitCheck = checkRateLimitStatus(squadDir);
+    if (rateLimitCheck) checks.push(rateLimitCheck);
   }
 
   // 10. Node.js version (node:sqlite availability)

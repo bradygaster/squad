@@ -130,6 +130,48 @@ describe('squad doctor', () => {
     expect(result.status).toBe('pass');
   });
 
+  it('warns when a recent rate limit status file exists', async () => {
+    await scaffold(TEST_ROOT);
+    const status = {
+      timestamp: new Date().toISOString(),
+      retryAfter: 7200,
+      model: 'claude-sonnet-4.5',
+      message: 'Rate limit exceeded',
+    };
+    await writeFile(
+      join(TEST_ROOT, '.squad', 'rate-limit-status.json'),
+      JSON.stringify(status),
+    );
+
+    const checks = await runDoctor(TEST_ROOT);
+    const rlCheck = checks.find((c: DoctorCheck) => c.name === 'rate limit status');
+    expect(rlCheck).toBeDefined();
+    expect(rlCheck?.status).toBe('warn');
+    expect(rlCheck?.message).toContain('claude-sonnet-4.5');
+    expect(rlCheck?.message).toContain('squad economy on');
+  });
+
+  it('passes rate limit status as stale when timestamp is old', async () => {
+    await scaffold(TEST_ROOT);
+    const oldTs = new Date(Date.now() - 5 * 3600 * 1000).toISOString(); // 5h ago
+    await writeFile(
+      join(TEST_ROOT, '.squad', 'rate-limit-status.json'),
+      JSON.stringify({ timestamp: oldTs, retryAfter: 7200, model: null, message: 'old' }),
+    );
+
+    const checks = await runDoctor(TEST_ROOT);
+    const rlCheck = checks.find((c: DoctorCheck) => c.name === 'rate limit status');
+    expect(rlCheck?.status).toBe('pass');
+    expect(rlCheck?.message).toContain('appears resolved');
+  });
+
+  it('does not include rate limit status check when file is absent', async () => {
+    await scaffold(TEST_ROOT);
+    const checks = await runDoctor(TEST_ROOT);
+    const rlCheck = checks.find((c: DoctorCheck) => c.name === 'rate limit status');
+    expect(rlCheck).toBeUndefined();
+  });
+
   it('warns on absolute teamRoot', async () => {
     await scaffold(TEST_ROOT);
     const abs = process.platform === 'win32' ? 'C:\\some\\absolute\\path' : '/some/absolute/path';

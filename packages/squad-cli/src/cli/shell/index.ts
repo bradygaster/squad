@@ -6,7 +6,7 @@
  */
 
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve as pathResolve } from 'node:path';
 import React from 'react';
 import { render } from 'ink';
@@ -20,6 +20,7 @@ import { ShellLifecycle, loadWelcomeData } from './lifecycle.js';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
+import { RateLimitError } from '@bradygaster/squad-sdk/adapter/errors';
 import type { ShellMessage } from './types.js';
 import { initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
@@ -28,7 +29,7 @@ import { buildCoordinatorPrompt, buildInitModePrompt, parseCoordinatorResponse, 
 import { loadAgentCharter, buildAgentPrompt } from './spawn.js';
 import { createSession, saveSession, loadLatestSession, type SessionData } from './session-store.js';
 import { parseDispatchTargets, type ParsedInput } from './router.js';
-import { agentSessionGuidance, genericGuidance, formatGuidance } from './error-messages.js';
+import { agentSessionGuidance, genericGuidance, rateLimitGuidance, extractRetryAfter, formatGuidance } from './error-messages.js';
 import { parseCastResponse, createTeam, formatCastSummary, augmentWithCastingEngine, type CastProposal } from '../core/cast.js';
 
 export { SessionRegistry } from './sessions.js';
@@ -61,6 +62,8 @@ export {
   teamConfigGuidance,
   agentSessionGuidance,
   genericGuidance,
+  rateLimitGuidance,
+  extractRetryAfter,
   timeoutGuidance,
   unknownCommandGuidance,
   formatGuidance,
@@ -1120,11 +1123,38 @@ export async function runShell(): Promise<void> {
       debugLog('handleDispatch error:', err);
       recordShellError('dispatch', err instanceof Error ? err.constructor.name : 'unknown');
       const errorMsg = err instanceof Error ? err.message : String(err);
-      const friendly = errorMsg.replace(/^Error:\s*/i, '');
-      // Only show raw error detail when SQUAD_DEBUG=1; otherwise keep it generic
-      const detail = process.env['SQUAD_DEBUG'] === '1' ? friendly : 'Something went wrong processing your message.';
       if (shellApi) {
-        const guidance = genericGuidance(detail);
+        const isRateLimit =
+          err instanceof RateLimitError ||
+          /rate.?limit|quota.*exceed|429/i.test(errorMsg);
+        let guidance;
+        if (isRateLimit) {
+          const retryAfter =
+            err instanceof RateLimitError
+              ? err.retryAfter
+              : extractRetryAfter(errorMsg);
+          const model =
+            err instanceof RateLimitError ? err.context.model : undefined;
+          guidance = rateLimitGuidance({ retryAfter, model });
+          // Persist rate limit status so `squad doctor` can surface it.
+          try {
+            const squadDir = join(teamRoot, '.squad');
+            writeFileSync(
+              join(squadDir, 'rate-limit-status.json'),
+              JSON.stringify({
+                timestamp: new Date().toISOString(),
+                retryAfter,
+                model,
+                message: errorMsg,
+              }),
+            );
+          } catch { /* non-fatal */ }
+        } else if (process.env['SQUAD_DEBUG'] === '1') {
+          const friendly = errorMsg.replace(/^Error:\s*/i, '');
+          guidance = genericGuidance(friendly);
+        } else {
+          guidance = genericGuidance('Something went wrong processing your message.');
+        }
         shellApi.addMessage({
           role: 'system',
           content: formatGuidance(guidance),

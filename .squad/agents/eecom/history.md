@@ -5,6 +5,23 @@
 ## Learnings
 
 📌 **Team update (2026-03-22T09-35Z — Wave 1):** Economy mode fully implemented: ECONOMY_MODEL_MAP + resolveModel() integration in SDK, `squad economy on|off` CLI command, `--economy` flag, 34 tests passing. PR #504 open for review. Soft dependency: #464 rate limit UX should offer economy mode as recovery. Next: Phase 1 of ambient personal squad (T1–T5, T19) — ready to start immediately after merging current work. Procedures wrote governance proposals for squad.agent.md — awaiting Flight review.
+### Rate Limit UX (#464) (2026-03-20)
+
+**Context:** Users hitting Copilot rate limits saw generic "Something went wrong processing your message." Squad hid the actual error. `squad doctor` reported nothing — useless to diagnose.
+
+**Root cause:** The catch block in `shell/index.ts` line ~1119 always emitted `genericGuidance()` unless `SQUAD_DEBUG=1`. Rate limit errors never got special treatment despite `RateLimitError` existing in `adapter/errors.ts`.
+
+**Fix:**
+1. `error-messages.ts` — Added `rateLimitGuidance({ retryAfter?, model? })` and `extractRetryAfter(message)` utilities. Rate limit guidance shows clear message + recovery options (retry time, `squad economy on`, config.json model override).
+2. `shell/index.ts` — Catch block now detects rate limits via `instanceof RateLimitError` OR regex on the raw message. Writes `.squad/rate-limit-status.json` on detection.
+3. `doctor.ts` — Added `checkRateLimitStatus()` check. Reads status file and warns if rate limit was recent.
+4. `test/error-messages.test.ts` — Added 11 new tests covering `rateLimitGuidance` and `extractRetryAfter`.
+
+**Pattern:** Rate limit status written to `.squad/rate-limit-status.json` as `{ timestamp, retryAfter, model, message }`. Doctor reads it on next run. File is never deleted automatically — doctor marks it `pass` when > 4h stale.
+
+**Import path for `RateLimitError`:** `@bradygaster/squad-sdk/adapter/errors` (subpath export, not in main barrel).
+
+**PR:** #464 fix — squad/464-rate-limit-ux
 
 ### CLI Entry Point Architecture
 cli-entry.ts is the central router for ~30+ CLI commands using dynamic imports (lazy-loading). Commands are routed via if-else blocks. Has a recurring "unwired command" bug class — implementations exist in cli/commands/ but aren't routed in cli-entry.ts. The cli-command-wiring.test.ts regression test catches this by verifying every .ts file in cli/commands/ is imported.
