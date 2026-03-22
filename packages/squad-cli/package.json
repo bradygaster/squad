@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.8.25-build.10",
+  "version": "0.8.25-build.13",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -87,6 +87,10 @@
     "./core/version": {
       "types": "./dist/cli/core/version.d.ts",
       "import": "./dist/cli/core/version.js"
+    },
+    "./core/gh-cli": {
+      "types": "./dist/cli/core/gh-cli.d.ts",
+      "import": "./dist/cli/core/gh-cli.js"
     },
     "./commands/export": {
       "types": "./dist/cli/commands/export.d.ts",
