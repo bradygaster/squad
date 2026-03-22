@@ -26,6 +26,8 @@ Examples:
 
 ## Workflow for Issue Work
 
+### Single Issue (Standard)
+
 1. **Branch from dev:**
    ```bash
    git checkout dev
@@ -59,32 +61,30 @@ Examples:
    git push origin --delete squad/{issue-number}-{slug}
    ```
 
-## Parallel Multi-Issue Work (Worktrees)
+### Multiple Issues in Parallel (Worktrees) — Default for 2+ Issues
 
 When the coordinator routes multiple issues simultaneously (e.g., "fix bugs X, Y, and Z"), use `git worktree` to give each agent an isolated working directory. No filesystem collisions, no branch-switching overhead.
-
-### When to Use Worktrees vs Sequential
 
 | Scenario | Strategy |
 |----------|----------|
 | Single issue | Standard workflow above — no worktree needed |
-| 2+ simultaneous issues in same repo | Worktrees — one per issue |
+| 2+ simultaneous issues in same repo | **Worktrees — one per issue (default)** |
 | Work spanning multiple repos | Separate clones as siblings (see Multi-Repo below) |
 
 ### Setup
 
-From the main clone (must be on dev or any branch):
+The **coordinator** creates worktrees before spawning agents. From the main clone:
 
 ```bash
-# Ensure dev is current
+# Ensure base branch is current
 git fetch origin dev
 
-# Create a worktree per issue — siblings to the main clone
-git worktree add ../squad-195 -b squad/195-fix-stamp-bug origin/dev
-git worktree add ../squad-193 -b squad/193-refactor-loader origin/dev
+# Create a worktree per issue
+git worktree add ./worktrees/squad-195 -b squad/195-fix-stamp-bug origin/dev
+git worktree add ./worktrees/squad-193 -b squad/193-refactor-loader origin/dev
 ```
 
-**Naming convention:** `../{repo-name}-{issue-number}` (e.g., `../squad-195`, `../squad-pr-42`).
+**Naming convention:** `./worktrees/squad-{issue-number}` (e.g., `./worktrees/squad-195`).
 
 Each worktree:
 - Has its own working directory and index
@@ -93,10 +93,10 @@ Each worktree:
 
 ### Per-Worktree Agent Workflow
 
-Each agent operates inside its worktree exactly like the single-issue workflow:
+Each agent receives a `WORKTREE_PATH` in its spawn prompt and operates exclusively inside its worktree:
 
 ```bash
-cd ../squad-195
+cd ./worktrees/squad-195
 
 # Work normally — commits, tests, pushes
 git add -A && git commit -m "fix: stamp bug (#195)"
@@ -106,7 +106,7 @@ git push -u origin squad/195-fix-stamp-bug
 gh pr create --base dev --title "fix: stamp bug" --body "Closes #195" --draft
 ```
 
-All PRs target `dev` independently. Agents never interfere with each other's filesystem.
+Agents do NOT run `git checkout` to switch branches. All PRs target `dev` independently. Agents never interfere with each other's filesystem.
 
 ### .squad/ State in Worktrees
 
@@ -121,7 +121,7 @@ After a worktree's PR is merged to dev:
 
 ```bash
 # From the main clone
-git worktree remove ../squad-195
+git worktree remove ./worktrees/squad-195
 git worktree prune          # clean stale metadata
 git branch -d squad/195-fix-stamp-bug
 git push origin --delete squad/195-fix-stamp-bug

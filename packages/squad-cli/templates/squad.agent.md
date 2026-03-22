@@ -528,15 +528,44 @@ When the user gives any task, the Coordinator MUST:
 
 1. **Decompose broadly.** Identify ALL agents who could usefully start work, including anticipatory work (tests, docs, scaffolding) that will obviously be needed.
 2. **Check for hard data dependencies only.** Shared memory files (decisions, logs) use the drop-box pattern and are NEVER a reason to serialize. The only real conflict is: "Agent B needs to read a file that Agent A hasn't created yet."
-3. **Spawn all independent agents as `mode: "background"` in a single tool-calling turn.** Multiple `task` calls in one response is what enables true parallelism.
-4. **Show the user the full launch immediately:**
+3. **Create worktrees for parallel issue work.** When spawning 2+ agents on separate issues in the same repo, create a worktree per agent BEFORE spawning (see Worktree Lifecycle below). Single-agent tasks use `git checkout -b` as before.
+4. **Spawn all independent agents as `mode: "background"` in a single tool-calling turn.** Multiple `task` calls in one response is what enables true parallelism.
+5. **Show the user the full launch immediately:**
    ```
    🏗️ {Lead} analyzing project structure...
    ⚛️ {Frontend} building login form components...
    🔧 {Backend} setting up auth API endpoints...
    🧪 {Tester} writing test cases from requirements...
    ```
-5. **Chain follow-ups.** When background agents complete, immediately assess: does this unblock more work? Launch it without waiting for the user to ask.
+6. **Chain follow-ups.** When background agents complete, immediately assess: does this unblock more work? Launch it without waiting for the user to ask.
+
+### Worktree Lifecycle (Parallel Issue Work)
+
+When the coordinator needs to spawn **2+ agents on separate issues in the same repo**, use git worktrees to give each agent an isolated working directory. This prevents filesystem collisions from concurrent `git checkout` operations.
+
+**Decision logic:**
+- **Single agent / single issue** → `git checkout -b squad/{issue}-{slug}` (standard workflow)
+- **2+ agents on separate issues** → `git worktree add` per agent (worktree workflow)
+- **Ralph batch work (multiple issues)** → worktrees per issue
+
+**Pre-spawn — create worktrees:**
+```bash
+git fetch origin {baseBranch}
+git worktree add ./worktrees/squad-{issue} -b squad/{issue}-{slug} origin/{baseBranch}
+```
+
+**Spawn prompt — pass WORKTREE_PATH:**
+Include `WORKTREE_PATH: ./worktrees/squad-{issue}` in every agent spawn prompt that uses a worktree. The agent works exclusively inside that path and does NOT run `git checkout`.
+
+**Post-merge cleanup:**
+After a worktree agent's PR is merged, clean up:
+```bash
+git worktree remove ./worktrees/squad-{issue}
+git worktree prune
+git branch -d squad/{issue}-{slug}
+```
+
+If the worktree was deleted manually, `git worktree prune` recovers the state.
 
 **Example — "Team, build the login page":**
 - Turn 1: Spawn {Lead} (architecture), {Frontend} (UI), {Backend} (API), {Tester} (test cases from spec) — ALL background, ALL in one tool call
@@ -645,6 +674,12 @@ prompt: |
   
   TEAM ROOT: {team_root}
   All `.squad/` paths are relative to this root.
+  
+  {only if agent was spawned with a worktree — omit for single-agent work:}
+  WORKTREE_PATH: {worktree_path}
+  You are already on branch {branchName} in a dedicated worktree.
+  Work ONLY inside this path. Do NOT run `git checkout` to switch branches.
+  {end worktree block}
   
   Read .squad/agents/{name}/history.md (your project knowledge).
   Read .squad/decisions.md (team decisions to respect).
@@ -1100,7 +1135,11 @@ Store `## Issue Source` in `team.md` with repository, connection date, and filte
 
 ### Issue → PR → Merge Lifecycle
 
-Agents create branch (`squad/{issue-number}-{slug}`), do work, commit referencing issue, push, and open PR via `gh pr create`. See `.squad/templates/issue-lifecycle.md` for the full spawn prompt ISSUE CONTEXT block, PR review handling, and merge commands.
+**On-demand reference:** Read `.squad/templates/issue-lifecycle.md` for the full worktree-aware lifecycle, spawn prompt additions, PR review handling, and merge/cleanup commands.
+
+**Single agent (standard):** Agent creates branch (`git checkout -b squad/{issue-number}-{slug}`), does work, commits referencing issue, pushes, and opens PR via `gh pr create`.
+
+**Parallel agents (worktree):** Coordinator creates a worktree per issue BEFORE spawning (`git worktree add ./worktrees/squad-{issue} -b squad/{issue}-{slug} origin/{baseBranch}`). Each agent receives `WORKTREE_PATH` in its spawn prompt and works exclusively inside its worktree. After PR merge, coordinator cleans up (`git worktree remove ./worktrees/squad-{issue} && git worktree prune`).
 
 After issue work completes, follow standard After Agent Work flow.
 

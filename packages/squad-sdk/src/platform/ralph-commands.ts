@@ -12,6 +12,8 @@ export interface RalphCommands {
   listOpenPRs: string;
   listDraftPRs: string;
   createBranch: string;
+  createWorktree: string;
+  removeWorktree: string;
   createPR: string;
   mergePR: string;
   createWorkItem: string;
@@ -48,6 +50,10 @@ export function getPlannerRalphCommands(): RalphCommands {
       'echo "Planner does not manage PRs — use the repo adapter (GitHub or Azure DevOps)"',
     createBranch:
       'git checkout main && git pull && git checkout -b {branchName}',
+    createWorktree:
+      'git fetch origin {baseBranch} && git worktree add {worktreePath} -b {branchName} origin/{baseBranch}',
+    removeWorktree:
+      'git worktree remove {worktreePath} && git worktree prune',
     createPR:
       'echo "Planner does not manage PRs — use the repo adapter (GitHub or Azure DevOps)"',
     mergePR:
@@ -69,6 +75,10 @@ function getGitHubRalphCommands(): RalphCommands {
       'gh pr list --state open --draft --json number,title,headRefName,baseRefName,state,isDraft,reviewDecision,author --limit 20',
     createBranch:
       'git checkout main && git pull && git checkout -b {branchName}',
+    createWorktree:
+      'git fetch origin {baseBranch} && git worktree add {worktreePath} -b {branchName} origin/{baseBranch}',
+    removeWorktree:
+      'git worktree remove {worktreePath} && git worktree prune',
     createPR:
       'gh pr create --title "{title}" --body "{description}" --head {sourceBranch} --base {targetBranch}',
     mergePR:
@@ -90,6 +100,10 @@ function getAzureDevOpsRalphCommands(): RalphCommands {
       'az repos pr list --status active --query "[?isDraft==`true`]" --output table',
     createBranch:
       'git checkout main && git pull && git checkout -b {branchName}',
+    createWorktree:
+      'git fetch origin {baseBranch} && git worktree add {worktreePath} -b {branchName} origin/{baseBranch}',
+    removeWorktree:
+      'git worktree remove {worktreePath} && git worktree prune',
     createPR:
       'az repos pr create --title "{title}" --description "{description}" --source-branch {sourceBranch} --target-branch {targetBranch}',
     mergePR:

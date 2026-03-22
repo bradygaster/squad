@@ -470,6 +470,18 @@ describe('edge cases', () => {
     expect(ghCmds.createBranch).toContain('{branchName}');
     expect(adoCmds.createBranch).toContain('{branchName}');
 
+    // createWorktree should have {worktreePath}, {branchName}, {baseBranch}
+    expect(ghCmds.createWorktree).toContain('{worktreePath}');
+    expect(ghCmds.createWorktree).toContain('{branchName}');
+    expect(ghCmds.createWorktree).toContain('{baseBranch}');
+    expect(adoCmds.createWorktree).toContain('{worktreePath}');
+    expect(adoCmds.createWorktree).toContain('{branchName}');
+    expect(adoCmds.createWorktree).toContain('{baseBranch}');
+
+    // removeWorktree should have {worktreePath}
+    expect(ghCmds.removeWorktree).toContain('{worktreePath}');
+    expect(adoCmds.removeWorktree).toContain('{worktreePath}');
+
     // createPR should have {title}, {sourceBranch}, {targetBranch}
     expect(ghCmds.createPR).toContain('{title}');
     expect(adoCmds.createPR).toContain('{title}');

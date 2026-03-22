@@ -17,6 +17,8 @@ const COMMAND_KEYS: (keyof RalphCommands)[] = [
   'listOpenPRs',
   'listDraftPRs',
   'createBranch',
+  'createWorktree',
+  'removeWorktree',
   'createPR',
   'mergePR',
   'createWorkItem',
@@ -137,6 +139,27 @@ describe('getRalphScanCommands', () => {
       for (const platform of platforms) {
         const cmds = getRalphScanCommands(platform);
         expect(cmds.createBranch).toContain('git checkout');
+      }
+    });
+
+    it('all platforms support createWorktree with git worktree add', () => {
+      const platforms = ['github', 'azure-devops', 'planner'] as const;
+      for (const platform of platforms) {
+        const cmds = getRalphScanCommands(platform);
+        expect(cmds.createWorktree).toContain('git worktree add');
+        expect(cmds.createWorktree).toContain('{worktreePath}');
+        expect(cmds.createWorktree).toContain('{branchName}');
+        expect(cmds.createWorktree).toContain('{baseBranch}');
+      }
+    });
+
+    it('all platforms support removeWorktree with git worktree remove', () => {
+      const platforms = ['github', 'azure-devops', 'planner'] as const;
+      for (const platform of platforms) {
+        const cmds = getRalphScanCommands(platform);
+        expect(cmds.removeWorktree).toContain('git worktree remove');
+        expect(cmds.removeWorktree).toContain('{worktreePath}');
+        expect(cmds.removeWorktree).toContain('git worktree prune');
       }
     });
   });
