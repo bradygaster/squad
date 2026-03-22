@@ -38,27 +38,31 @@ This means Squad works with any notification service. Pick your favorite messagi
 
 ## Quick Start: Teams (Simplest Path)
 
-### Teams Incoming Webhook
+### What you need to know
 
-Teams webhooks are the fastest setup — just a URL.
+Squad doesn't ship a Teams MCP server. You bring your own — either a community implementation or one you build yourself. Squad agents discover the configured MCP server at spawn time and call it automatically when they need to notify you.
 
-1. **In Teams, create a channel for your squad:**
+### Teams Workflows webhook
+
+Teams Workflows (Power Automate) webhooks are the recommended approach. Office 365 Connectors were [retired by Microsoft](https://devblogs.microsoft.com/microsoft365dev/retirement-of-office-365-connectors-within-microsoft-teams/) — use Workflows instead.
+
+1. **Create a channel for your squad:**
    - Create a new Team called "My Squads" (or reuse an existing one)
    - Add a channel, e.g., `#squad-myproject`
 
-2. **Set up the webhook:**
-   - Right-click the channel → "Manage channel" → "Connectors"
-   - Search "Incoming Webhook" → "Configure"
-   - Give it a name (e.g., "Squad Notifications")
-   - Copy the webhook URL
+2. **Create a Workflows webhook:**
+   - Open the channel, select the **+** (add a tab) or go to the **Workflows** app in Teams
+   - Choose **"Post to a channel when a webhook request is received"**
+   - Follow the prompts to name the workflow and select your channel
+   - Copy the generated webhook URL (it starts with `https://prod-...logic.azure.com/...`)
 
-3. **Get the MCP server:**
+3. **Get a Teams webhook MCP server:**
    
-   You need to create or download a Teams webhook MCP server. You have options:
+   You need an MCP server that can POST to your webhook URL. Options:
    
-   - **Community reference implementation:** [benleane83's teams-webhook-mcp.js](https://gist.github.com/benleane83/f37b5bc1ed3d00e320ba48886109b82a) — a working, production-ready implementation
-   - **Build your own:** Use the reference as a starting point and customize for your needs
-   - **Search MCP marketplace:** Look for Teams-compatible MCP servers at https://mcpmarket.com
+   - **Community reference:** [benleane83's teams-webhook-mcp.js](https://gist.github.com/benleane83/f37b5bc1ed3d00e320ba48886109b82a) — a working implementation that sends MessageCard payloads (compatible with Workflows webhooks)
+   - **Build your own:** Use the community reference as a starting point
+   - **Search the MCP marketplace:** Look for Teams-compatible servers at https://mcpmarket.com
 
 4. **Configure Squad:**
    
@@ -70,14 +74,14 @@ Teams webhooks are the fastest setup — just a URL.
          "command": "node",
          "args": ["/absolute/path/to/teams-webhook-mcp.js"],
          "env": {
-           "TEAMS_WEBHOOK_URL": "https://outlook.webhook.office.com/webhookb2/..."
+           "TEAMS_WEBHOOK_URL": "https://prod-XX.westus.logic.azure.com:443/workflows/..."
          }
        }
      }
    }
    ```
    
-   Replace `/absolute/path/to/teams-webhook-mcp.js` with the actual path to your downloaded or created MCP server script.
+   Replace `/absolute/path/to/teams-webhook-mcp.js` with the path to your downloaded or created MCP server script. Replace the `TEAMS_WEBHOOK_URL` value with the URL from step 2.
 
 5. **Use it:**
    - Start a Squad session with `copilot squad`
@@ -382,7 +386,7 @@ Below are complete, copy-pasteable `.copilot/mcp-config.json` examples for each 
       "command": "node",
       "args": ["/absolute/path/to/teams-webhook-mcp.js"],
       "env": {
-        "TEAMS_WEBHOOK_URL": "https://outlook.webhook.office.com/webhookb2/YOUR_WEBHOOK_URL_HERE"
+        "TEAMS_WEBHOOK_URL": "https://prod-XX.westus.logic.azure.com:443/workflows/YOUR_WORKFLOW_URL_HERE"
       }
     }
   }
@@ -390,7 +394,7 @@ Below are complete, copy-pasteable `.copilot/mcp-config.json` examples for each 
 ```
 
 **Setup:** 
-1. Get your webhook URL from Teams channel settings (right-click channel → Manage → Connectors → Incoming Webhook)
+1. Create a Workflows webhook in your Teams channel (Workflows app → "Post to a channel when a webhook request is received")
 2. Download a Teams webhook MCP server (see [community reference implementation](https://gist.github.com/benleane83/f37b5bc1ed3d00e320ba48886109b82a))
 3. Replace `/absolute/path/to/teams-webhook-mcp.js` with the actual path to your MCP server script
 

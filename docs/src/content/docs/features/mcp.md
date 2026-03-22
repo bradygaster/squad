@@ -436,7 +436,7 @@ Agents don't need special setup to discover tools. Here's the flow:
 I want to get pinged on Teams when agents need input. Walk me through it.
 ```
 
-Squad will guide you through Teams webhook setup and MCP configuration.
+Squad will point you to the [Notifications Guide](./notifications.md#quick-start-teams-simplest-path), where you configure a Teams webhook and an MCP notification server.
 
 ### Adding Trello integration
 
