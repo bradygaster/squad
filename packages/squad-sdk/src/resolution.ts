@@ -53,12 +53,43 @@ export interface ResolvedSquadPaths {
 }
 
 /**
+ * Given a directory containing a `.git` worktree pointer file, parse the file
+ * to derive the absolute path of the main checkout.
+ *
+ * The `.git` file format is: `gitdir: <relative-or-absolute-path-to-.git/worktrees/name>`
+ * The main checkout is: dirname(dirname(dirname(resolvedGitdir))) — i.e. two levels up
+ * from the gitdir path puts us at the shared `.git/` dir, and one more dirname gives
+ * us the main working tree root.
+ *
+ * @returns Absolute path to the main working tree, or `null` if resolution fails.
+ */
+function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string | null {
+  try {
+    const content = fs.readFileSync(gitFilePath, 'utf-8').trim();
+    const match = content.match(/^gitdir:\s*(.+)$/m);
+    if (!match || !match[1]) return null;
+    // worktreeGitDir = /main/.git/worktrees/name
+    const worktreeGitDir = path.resolve(worktreeDir, match[1].trim());
+    // mainGitDir     = /main/.git   (up 2 from worktreeGitDir)
+    const mainGitDir = path.resolve(worktreeGitDir, '..', '..');
+    // mainCheckout   = /main        (dirname of mainGitDir)
+    return path.dirname(mainGitDir);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Walk up the directory tree from `startDir` looking for a `.squad/` directory.
  *
- * Stops at the repository root (the directory containing `.git`).
+ * Stops at the repository root (the directory containing `.git` as a directory).
+ * When `.git` is a **file** (git worktree), falls back to the main checkout strategy:
+ * reads the `gitdir:` pointer, resolves the main checkout path, and checks there.
  * Returns the **absolute path** to the `.squad/` directory, or `null` if none is found.
  *
- * Handles nested repos, worktrees (`.git` file pointing elsewhere), and symlinks.
+ * Resolution order (worktree-local strategy first, main-checkout strategy second):
+ * 1. Walk up from `startDir` checking for `.squad/` — stops at `.git` directory boundary
+ * 2. If `.git` is a file (worktree), check the main checkout for `.squad/`
  *
  * @param startDir - Directory to start searching from. Defaults to `process.cwd()`.
  * @returns Absolute path to `.squad/` or `null`.
@@ -74,10 +105,21 @@ export function resolveSquad(startDir?: string): string | null {
       return candidate;
     }
 
-    // Stop if we hit a .git boundary (directory or worktree file)
     const gitMarker = path.join(current, '.git');
     if (fs.existsSync(gitMarker)) {
-      // We've reached the repo root — don't walk higher
+      if (fs.statSync(gitMarker).isDirectory()) {
+        // Real repo root — stop walking, no .squad/ found in this checkout
+        return null;
+      }
+      // .git is a file — this is a git worktree
+      // Worktree-local .squad/ was already checked above; fall back to main checkout
+      const mainCheckout = getMainWorktreePath(current, gitMarker);
+      if (mainCheckout) {
+        const mainCandidate = path.join(mainCheckout, '.squad');
+        if (fs.existsSync(mainCandidate) && fs.statSync(mainCandidate).isDirectory()) {
+          return mainCandidate;
+        }
+      }
       return null;
     }
 
@@ -103,7 +145,10 @@ const SQUAD_DIR_NAMES = ['.squad', '.ai-team'] as const;
  * Find the squad directory by walking up from `startDir`, checking both
  * `.squad/` and `.ai-team/` (legacy fallback).
  *
- * Returns the absolute path, the directory name used, and whether it's legacy.
+ * Worktree-aware: when `.git` is a file (worktree pointer), falls back to
+ * checking the main checkout for either squad directory name.
+ *
+ * Returns the absolute path and the directory name used.
  */
 function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-team' } | null {
   let current = path.resolve(startDir);
@@ -117,9 +162,22 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
       }
     }
 
-    // Stop if we hit a .git boundary
     const gitMarker = path.join(current, '.git');
     if (fs.existsSync(gitMarker)) {
+      if (fs.statSync(gitMarker).isDirectory()) {
+        // Real repo root — stop, no squad dir found in this checkout
+        return null;
+      }
+      // .git is a file — this is a git worktree; fall back to main checkout
+      const mainCheckout = getMainWorktreePath(current, gitMarker);
+      if (mainCheckout) {
+        for (const name of SQUAD_DIR_NAMES) {
+          const candidate = path.join(mainCheckout, name);
+          if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+            return { dir: candidate, name };
+          }
+        }
+      }
       return null;
     }
 

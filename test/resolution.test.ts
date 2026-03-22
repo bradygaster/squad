@@ -62,6 +62,37 @@ describe('resolveSquad()', () => {
     expect(resolveSquad(join(TMP, 'repo', 'src'))).toBe(join(TMP, 'repo', '.squad'));
   });
 
+  it('falls back to main checkout .squad/ when worktree has none', () => {
+    // main checkout: TMP/main with .git dir + .squad dir
+    mkdirSync(join(TMP, 'main', '.git'), { recursive: true });
+    mkdirSync(join(TMP, 'main', '.squad'), { recursive: true });
+    // worktree: TMP/main/.worktrees/feature with .git FILE
+    mkdirSync(join(TMP, 'main', '.worktrees', 'feature', 'src'), { recursive: true });
+    writeFileSync(
+      join(TMP, 'main', '.worktrees', 'feature', '.git'),
+      'gitdir: ../../.git/worktrees/feature',
+    );
+    // Starting from worktree src/, should find main checkout's .squad/
+    expect(resolveSquad(join(TMP, 'main', '.worktrees', 'feature', 'src')))
+      .toBe(join(TMP, 'main', '.squad'));
+  });
+
+  it('prefers worktree-local .squad/ over main checkout when both exist', () => {
+    // main checkout with .squad/
+    mkdirSync(join(TMP, 'main', '.git'), { recursive: true });
+    mkdirSync(join(TMP, 'main', '.squad'), { recursive: true });
+    // worktree with its own .squad/
+    mkdirSync(join(TMP, 'main', '.worktrees', 'feature', '.squad'), { recursive: true });
+    mkdirSync(join(TMP, 'main', '.worktrees', 'feature', 'src'), { recursive: true });
+    writeFileSync(
+      join(TMP, 'main', '.worktrees', 'feature', '.git'),
+      'gitdir: ../../.git/worktrees/feature',
+    );
+    // Worktree-local .squad/ wins
+    expect(resolveSquad(join(TMP, 'main', '.worktrees', 'feature', 'src')))
+      .toBe(join(TMP, 'main', '.worktrees', 'feature', '.squad'));
+  });
+
   it('defaults to cwd when no argument given', () => {
     // Just verify it doesn't throw
     const result = resolveSquad();

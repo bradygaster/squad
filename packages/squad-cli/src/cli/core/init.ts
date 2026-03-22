@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { detectSquadDir } from './detect-squad-dir.js';
+import { detectSquadDir, resolveWorktreeMainCheckout } from './detect-squad-dir.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
@@ -151,6 +151,51 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Detect squad directory
   const squadInfo = detectSquadDir(dest);
+
+  // ── Worktree guard ────────────────────────────────────────────────
+  // Prevent silently scaffolding a duplicate .squad/ when running init
+  // from a git worktree that already has .squad/ in the main checkout.
+  const mainCheckout = resolveWorktreeMainCheckout(dest);
+  if (mainCheckout) {
+    const mainSquadDir = path.join(mainCheckout, '.squad');
+    if (fs.existsSync(mainSquadDir)) {
+      console.log();
+      console.log(`${YELLOW}${BOLD}⚠  Git worktree detected${RESET}`);
+      console.log(`${YELLOW}   Main checkout: ${mainCheckout}${RESET}`);
+      console.log(`${YELLOW}   .squad/ already exists there.${RESET}`);
+      console.log();
+      console.log(`  ${BOLD}[s]${RESET} Use shared .squad/ from main checkout ${DIM}(recommended)${RESET}`);
+      console.log(`  ${BOLD}[l]${RESET} Create a worktree-local .squad/ in this branch`);
+      console.log();
+
+      let useShared = true;
+      if (process.stdin.isTTY) {
+        const { createInterface } = await import('node:readline/promises');
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        try {
+          const answer = (await rl.question(`  Strategy [s/l, default: s]: `)).trim().toLowerCase();
+          useShared = answer !== 'l' && answer !== 'local';
+        } finally {
+          rl.close();
+        }
+      } else {
+        console.log(`  ${DIM}Non-interactive mode — defaulting to shared strategy.${RESET}`);
+      }
+
+      if (useShared) {
+        console.log();
+        console.log(`${GREEN}${BOLD}✓${RESET} Using shared .squad/ from ${mainCheckout}`);
+        console.log(`${DIM}  No changes made. Run squad commands from the main checkout.${RESET}`);
+        console.log();
+        return;
+      }
+
+      // Local strategy: fall through to scaffold .squad/ in this worktree
+      console.log();
+      console.log(`${GREEN}${BOLD}→${RESET} Creating worktree-local .squad/ in ${dest}`);
+      console.log();
+    }
+  }
 
   // Show deprecation warning if using .ai-team/
   if (squadInfo.isLegacy) {
