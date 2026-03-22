@@ -108,6 +108,15 @@ const VERSION = getPackageVersion();
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
+  
+  // --team-root flag: override team root for resolution
+  const teamRootIdx = args.indexOf('--team-root');
+  if (teamRootIdx !== -1 && args[teamRootIdx + 1]) {
+    process.env['SQUAD_TEAM_ROOT'] = args[teamRootIdx + 1]!;
+    // Remove --team-root and its value from args
+    args.splice(teamRootIdx, 2);
+  }
+  
   const hasGlobal = args.includes('--global');
   // --economy activates economy mode for this session (sets env var for spawner)
   const hasEconomy = args.includes('--economy');
@@ -193,6 +202,9 @@ async function main(): Promise<void> {
     console.log(`             Flags: --docker (force Docker), --port <n> (dashboard port)`);
     console.log(`  ${BOLD}schedule${RESET}   Manage scheduled tasks`);
     console.log(`             Usage: schedule list | run <id> | init | status`);
+    console.log(`  ${BOLD}personal${RESET}   Manage your personal squad (ambient agents)`);
+    console.log(`             Usage: personal init | list | add <name> --role <role> | remove <name>`);
+    console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
     console.log(`  ${BOLD}copilot-bridge${RESET}  Check Copilot ACP stdio compatibility`);
@@ -216,6 +228,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}--help, -h${RESET}     Show help`);
     console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
     console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
+    console.log(`  ${BOLD}--team-root${RESET}    Override team root path for resolution`);
     console.log(`\nInstallation:`);
     console.log(`  npm install --save-dev @bradygaster/squad-cli`);
     console.log(`\nInsider channel:`);
@@ -568,6 +581,19 @@ async function main(): Promise<void> {
     const { runSchedule } = await import('./cli/commands/schedule.js');
     const subcommand = args[1] || 'list';
     await runSchedule(process.cwd(), subcommand, args.slice(2));
+    return;
+  }
+
+  if (cmd === 'personal') {
+    const { runPersonal } = await import('./cli/commands/personal.js');
+    const subcommand = args[1] || 'list';
+    await runPersonal(process.cwd(), subcommand, args.slice(2));
+    return;
+  }
+
+  if (cmd === 'cast') {
+    const { runCast } = await import('./cli/commands/cast.js');
+    await runCast(process.cwd());
     return;
   }
 
