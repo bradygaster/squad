@@ -50,6 +50,12 @@ const libDef = {
           "All decorator values are serialized to plaintext artifacts in git history.",
       },
     },
+    "path-traversal": {
+      severity: "error",
+      messages: {
+        default: "Agent ID contains path traversal sequences ('..', '/', or '\\'). Manifest will not be emitted.",
+      },
+    },
   },
 } as const;
 

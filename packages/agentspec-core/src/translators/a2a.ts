@@ -5,6 +5,7 @@ import type { AgentManifestData } from "../types.js";
 export interface AgentCard {
   readonly name: string;
   readonly description: string;
+  readonly instructions?: string;
   readonly skills: ReadonlyArray<AgentCardSkill>;
   readonly defaultInputModes: readonly string[];
   readonly defaultOutputModes: readonly string[];
@@ -53,6 +54,9 @@ export function toAgentCard(
   return {
     name: manifest.id,
     description: manifest.description,
+    ...(options.publishInstructions && manifest.behavior.instructions !== undefined && {
+      instructions: manifest.behavior.instructions,
+    }),
     skills,
     defaultInputModes: manifest.communication.inputModes.slice() as string[],
     defaultOutputModes: manifest.communication.outputModes.slice() as string[],

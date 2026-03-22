@@ -1,6 +1,6 @@
 import type { EmitContext, Model, Type } from "@typespec/compiler";
 import { navigateProgram } from "@typespec/compiler";
-import { StateKeys, AGENTSPEC_PROTOCOL_VERSION } from "./lib.js";
+import { StateKeys, AGENTSPEC_PROTOCOL_VERSION, reportDiagnostic } from "./lib.js";
 import type { AgentManifestData } from "./types.js";
 
 export async function $onEmit(ctx: EmitContext): Promise<void> {
@@ -25,6 +25,12 @@ export async function $onEmit(ctx: EmitContext): Promise<void> {
 
       // Security: reject agent IDs with path traversal sequences
       if (agentState.id.includes('..') || agentState.id.includes('/') || agentState.id.includes('\\')) {
+        reportDiagnostic(program, {
+          code: "path-traversal",
+          target: model,
+          messageId: "default",
+          format: {},
+        });
         return;
       }
 

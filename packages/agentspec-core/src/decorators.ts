@@ -3,6 +3,7 @@ import type {
   Model,
 } from "@typespec/compiler";
 import { StateKeys } from "./lib.js";
+import { checkForPii } from "./diagnostics.js";
 
 /** Extract a plain string from a valueof enum param.
  * TypeSpec 0.56+ passes an EnumValue { valueKind, value: EnumMember } at runtime. */
@@ -79,6 +80,7 @@ export function $instruction(
   target: Model,
   text: string
 ): void {
+  checkForPii(ctx.program, text, target);
   ctx.program.stateMap(StateKeys.instruction).set(target, text);
 }
 
@@ -120,6 +122,8 @@ export function $knowledge(
   source: string,
   description?: string
 ): void {
+  checkForPii(ctx.program, source, target);
+  if (description !== undefined) checkForPii(ctx.program, description, target);
   const map = ctx.program.stateMap(StateKeys.knowledge);
   const existing: KnowledgeEntry[] = map.get(target) ?? [];
   map.set(target, [...existing, { source, description }]);
@@ -138,6 +142,7 @@ export function $conversationStarter(
   target: Model,
   prompt: string
 ): void {
+  checkForPii(ctx.program, prompt, target);
   const map = ctx.program.stateMap(StateKeys.conversationStarters);
   const existing: string[] = map.get(target) ?? [];
   map.set(target, [...existing, prompt]);
