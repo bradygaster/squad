@@ -203,7 +203,8 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}schedule${RESET}   Manage scheduled tasks`);
     console.log(`             Usage: schedule list | run <id> | init | status`);
     console.log(`  ${BOLD}personal${RESET}   Manage your personal squad (ambient agents)`);
-    console.log(`             Usage: personal init | list | add <name> --role <role> | remove <name>`);
+    console.log(`             Usage: personal init | list | add <name>`);
+    console.log(`                    --role <role> | remove <name>`);
     console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);

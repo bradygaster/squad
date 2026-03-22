@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.8.25-build.10",
+  "version": "0.8.25-build.14",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -143,6 +143,14 @@
     "./commands/copilot-bridge": {
       "types": "./dist/cli/commands/copilot-bridge.d.ts",
       "import": "./dist/cli/commands/copilot-bridge.js"
+    },
+    "./commands/personal": {
+      "types": "./dist/cli/commands/personal.d.ts",
+      "import": "./dist/cli/commands/personal.js"
+    },
+    "./commands/cast": {
+      "types": "./dist/cli/commands/cast.d.ts",
+      "import": "./dist/cli/commands/cast.js"
     }
   },
   "files": [

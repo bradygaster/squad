@@ -34,8 +34,8 @@ export async function runPersonal(cwd: string, subcommand: string, args: string[
         fatal('Usage: squad personal add <name> --role <role>');
       }
       const roleIdx = args.indexOf('--role');
-      const role = (roleIdx !== -1 && args[roleIdx + 1]) ? args[roleIdx + 1] : 'agent';
-      await personalAdd(name, role);
+      const role = roleIdx !== -1 && args[roleIdx + 1] ? args[roleIdx + 1] : 'agent';
+      await personalAdd(name!, role!);
       break;
     }
     case 'remove': {
@@ -43,13 +43,14 @@ export async function runPersonal(cwd: string, subcommand: string, args: string[
       if (!name) {
         fatal('Usage: squad personal remove <name>');
       }
-      await personalRemove(name);
+      await personalRemove(name!);
       break;
     }
     default:
       fatal(
         `Unknown personal subcommand: ${subcommand}\n` +
-        `       Available: init, list, add <name> --role <role>, remove <name>`,
+        `       Available: init | list | add <name> --role <role>\n` +
+        `                  remove <name>`,
       );
   }
 }
