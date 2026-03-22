@@ -75,6 +75,9 @@ export function setTelemetryTransport(fn: TelemetryTransport): void {
  * ```
  */
 export class TelemetryCollector {
+  /** Cap queued events to prevent unbounded memory growth. */
+  static readonly MAX_QUEUE_SIZE = 500;
+
   private queue: TelemetryEvent[] = [];
   private config: TelemetryConfig;
 
@@ -125,6 +128,11 @@ export class TelemetryCollector {
     };
 
     this.queue.push(stored);
+
+    // Evict oldest events when queue exceeds cap (FIFO)
+    if (this.queue.length > TelemetryCollector.MAX_QUEUE_SIZE) {
+      this.queue = this.queue.slice(-TelemetryCollector.MAX_QUEUE_SIZE);
+    }
   }
 
   /**

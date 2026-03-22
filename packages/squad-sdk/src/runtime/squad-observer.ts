@@ -121,6 +121,9 @@ export class SquadObserver {
     try {
       this.watcher = fs.watch(this.config.squadDir, { recursive: true }, (eventType, filename) => {
         if (!filename) return;
+        // Skip high-churn directories that don't affect squad state
+        const normalized = filename.replace(/\\/g, '/');
+        if (normalized.startsWith('orchestration-log/') || normalized.startsWith('.git/')) return;
         this.handleChange(eventType, filename);
       });
 
