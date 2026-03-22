@@ -36,11 +36,13 @@ const base = import.meta.env.BASE_URL;
         />
         <kbd class="text-xs border border-surface-300 dark:border-surface-600 rounded px-1.5 py-0.5 text-surface-400 cursor-pointer" id="search-close-kbd">Esc</kbd>
       </div>
+      <div id="search-status" class="hidden px-4 py-2 text-xs text-surface-500 dark:text-surface-400 border-b border-surface-100 dark:border-surface-800"></div>
       <div id="search-results" class="max-h-[60vh] overflow-y-auto p-2">
         <div class="p-8 text-center text-surface-400 text-sm" id="search-empty">
           Start typing to search…
         </div>
       </div>
+
     </div>
   </div>
 </div>
@@ -69,6 +71,25 @@ const base = import.meta.env.BASE_URL;
   const searchResults = document.getElementById('search-results');
   const searchEmpty = document.getElementById('search-empty');
   const searchCloseKbd = document.getElementById('search-close-kbd');
+  const searchStatus = document.getElementById('search-status');
+
+  // Section badge color mapping
+  const SECTION_COLORS = {
+    'Get Started': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    'Guide': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    'Features': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400',
+    'Reference': 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
+    'Scenarios': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400',
+    'Concepts': 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400',
+    'Cookbook': 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+    'Blog': 'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-400',
+  };
+
+  function getSectionBadge(section) {
+    if (!section) return '';
+    const colors = SECTION_COLORS[section] || 'bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-300';
+    return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colors}">${section}</span>`;
+  }
 
   function openSearch() {
     searchModal?.classList.remove('hidden');
@@ -84,12 +105,15 @@ const base = import.meta.env.BASE_URL;
       searchResults?.appendChild(searchEmpty);
       searchEmpty.textContent = 'Start typing to search…';
     }
+    searchStatus?.classList.add('hidden');
     document.body.style.overflow = '';
   }
 
   searchBtn?.addEventListener('click', openSearch);
   searchBackdrop?.addEventListener('click', closeSearch);
   searchCloseKbd?.addEventListener('click', closeSearch);
+
+
 
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -117,6 +141,7 @@ const base = import.meta.env.BASE_URL;
         searchEmpty.textContent = 'Start typing to search…';
         searchResults.appendChild(searchEmpty);
       }
+      searchStatus?.classList.add('hidden');
       return;
     }
 
@@ -133,15 +158,27 @@ const base = import.meta.env.BASE_URL;
         noResults.className = 'p-8 text-center text-surface-400 text-sm';
         noResults.textContent = `No results for "${query}"`;
         searchResults.appendChild(noResults);
+        searchStatus?.classList.add('hidden');
         return;
       }
 
+      // Update status bar
+      if (searchStatus) {
+        searchStatus.textContent = `${search.results.length} result${search.results.length === 1 ? '' : 's'}`;
+        searchStatus.classList.remove('hidden');
+      }
+
+      // Render results with section badges
       results.forEach((result) => {
+        const section = result.meta?.section || '';
         const a = document.createElement('a');
         a.href = result.url;
         a.className = 'block px-3 py-2.5 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors group';
         a.innerHTML = `
-          <div class="font-medium text-base text-surface-900 dark:text-white group-hover:text-squad-600 dark:group-hover:text-squad-400 transition-colors">${result.meta?.title || 'Untitled'}</div>
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-base text-surface-900 dark:text-white group-hover:text-squad-600 dark:group-hover:text-squad-400 transition-colors">${result.meta?.title || 'Untitled'}</span>
+            ${getSectionBadge(section)}
+          </div>
           <div class="text-sm text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">${result.excerpt || ''}</div>
         `;
         a.addEventListener('click', closeSearch);
