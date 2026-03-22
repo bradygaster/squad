@@ -4,6 +4,8 @@
 
 ---
 
+📌 **Team update (2026-03-22T09-35Z — Wave 1):** Ambient personal squad design validated and 19-task implementation plan authored across 4 PRs (Phase 1 SDK, Phase 2 CLI, Phase 3 governance, Phase 4 tests). MVP = PR #1 + PR #3. EECOM executing Phase 1–2 (SDK + CLI), Procedures executing Phase 3 (governance) concurrently. All design gaps resolved; dependency graph established. Procedures wrote governance proposals for personal squad + economy mode — awaiting your review. Sims to execute Phase 4 after Phase 1+2 merge. Directive captured: bug #502 (node:sqlite, P1) to be picked up after Wave 1. No blocking issues — ready for execution.
+
 ## Core Context
 
 Three-branch model (main/dev/insiders). Apollo 13 team, 3931 tests. Boundary review heuristic: "Squad Ships It" — if Squad doesn't ship the code, it's IRL content. Proposal-first: meaningful changes need docs/proposals/ before code. Two-error lockout policy: agent locked out after 2 errors in a session. Test name-agnosticism: framework tests must never depend on dev team's agent names.
@@ -40,3 +42,22 @@ Approved PR #331 ("docs: scenario and feature guides from blog analysis") for me
 Created `.squad/skills/content-triage/SKILL.md` to codify the boundary heuristic from PR #331. Defines repeatable workflow for triaging external content (blog posts, sample repos, videos, talks) to determine what belongs in Squad's public docs vs IRL tracking. Key components: (1) "Squad Ships It" litmus test — if Squad doesn't ship the code/config, it's IRL content; (2) triage workflow triggered by `content-triage` label or external content reference in issue body; (3) output format with boundary analysis, sub-issues for PAO (doc extraction), and IRL reference entry for Scribe; (4) label convention (`content:blog`, `content:sample`, `content:video`, `content:talk`); (5) Ralph integration for routing to Flight, creating sub-issues, and notifying Scribe. Examples include Tamir blog analysis (PR #331), sample repo with ops patterns, and conference talk. Pattern prevents infrastructure docs from polluting Squad's public docs while ensuring community content accelerates adoption through proper extraction and referencing.
 
 📌 **Team update (2026-03-11T01:27:57Z):** Content triage skill finalized; "Squad Ships It" boundary heuristic codified into shared team decision (decisions.md). Remote Squad access phased rollout approved (Discussions bot → Copilot Extension → Chat bot). PR #331 boundary review pattern established as standard for all doc PRs. Triage workflow enables Flight to scale as community content accelerates.
+
+### Ambient Personal Squad Architecture Review (#329 + #344)
+
+**Design validated:** The `flight-ambient-personal-squad.md` proposal is structurally sound. Key finding: `multi-squad.ts` already stores personal squad paths as direct dirs (`squads/{name}/`) with no nested `.squad/` subfolder — the "each team IS the squad root" convention is already the implementation, not a change needed.
+
+**Five gaps found in the design doc:**
+1. No `resolvePersonalAgents()` function signature — added in implementation plan (T2).
+2. Scenario 9 contradiction: personal agents wrote to project orchestration log, violating ghost protocol. Resolution: coordinator writes audit trail (project state), not the personal agent.
+3. `--team-root` scope was undefined. Decision: additive CLI flag on `squad init`, backward compat with existing `config.json` teamRoot.
+4. `squad personal init` was missing — bootstrapping path for first-time users. Added as T6 subcommand.
+5. `SQUAD_NO_PERSONAL` env var was in Open Questions but absent from phases. Added to T1.
+
+**Architecture decision:** Need `ensureSquadPathTriple` in `resolution.ts` (T4) — personal agents write to a third root (personal squad dir). Without it, ghost protocol is advisory-only and not enforced by path guards in SDK.
+
+**Phasing:** Four PRs. MVP = PR #1 (SDK Foundation) + PR #3 (Governance). Users see ambient cast immediately; `squad personal` commands are quality-of-life on top.
+
+**Implementation plan written to:** `.squad/decisions/inbox/flight-329-344-implementation-plan.md`
+
+📌 **Team update (2026-03-24):** Ambient personal squad design reviewed and approved with 5 gaps identified and resolved. Implementation plan broken into 4 PRs across EECOM (SDK + CLI), Procedures (governance), and Sims (tests). MVP path = SDK foundation + governance updates. Phased to avoid one giant PR.

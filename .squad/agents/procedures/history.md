@@ -4,6 +4,8 @@
 
 ## Learnings
 
+📌 **Team update (2026-03-22T09-35Z — Wave 1):** Economy mode governance proposal and personal squad consult-mode governance proposal authored for squad.agent.md — both DRAFT, awaiting Flight review before merging. Economy mode adds Layer 3 table + spawn convention (`💰 economy`) + model catalog audit. Personal squad adds consult mode detection, path reference table, spawn guidance. Persistent model preference (Layer 0) documented. Proposed new skill: `.squad/skills/consult-mode/SKILL.md` (post-approval). Deterministic skill pattern proven effective. PR #503 open with skills module. Next: Flight review → merge governance to squad.agent.md. No blocking issues.
+
 ### 2026-03-10: Deterministic skill pattern
 
 **Problem:** Skills were too loose. The distributed-mesh skill was tested in a real project (mesh-demo), and agents generated 76 lines of validator code, 5 test files with 43 tests, regenerated sync scripts that should have been copied from templates, and left decision files empty. The skill document let agents interpret intent instead of following explicit steps.

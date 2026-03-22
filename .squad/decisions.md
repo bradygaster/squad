@@ -5999,3 +5999,142 @@ Brady must create Automation token at https://www.npmjs.com/settings/{username}/
 - `.github/workflows/squad-release.yml` — GitHub Release creation
 - `.squad/agents/kobayashi/history.md` — Implementation details
 
+---
+
+## Wave 1 Decisions (#329/#344/#500) — 2026-03-22T09-35Z
+
+### Implementation Plan: Ambient Personal Squad (#329 + #344)
+
+**Author:** Flight (Lead)  
+**Date:** 2026-03-22  
+**Issues:** #329, #344  
+
+Personal squad implementation across 4 PRs with clear phase dependencies:
+
+- **PR #1 — SDK Foundation** (EECOM): ResolvedSquadPaths.personalDir, resolvePersonalSquadDir(), PersonalAgentMeta type, resolvePersonalAgents(), mergeSessionCast(), ensureSquadPathTriple()
+- **PR #2 — CLI Surface** (EECOM): squad personal {init,list,add,remove}, squad cast, --team-root flag, wiring + exports
+- **PR #3 — Governance** (Procedures, concurrent): squad.agent.md updates for personal squad, Ghost Protocol in templates, personal-charter.md template
+- **PR #4 — Tests** (Sims): E2E ambient discovery, Ghost Protocol, routing scenarios, unit tests for SDK functions
+
+**MVP = PR #1 + PR #3.** Phase 1 unblocks Phase 2.
+
+**Key Decisions:**
+- Personal agents tagged with `origin: 'personal'` and Ghost Protocol applied
+- Audit trail (personal agent participation) is coordinator-written in project orchestration log
+- SQUAD_NO_PERSONAL env var gates ambient discovery at Phase 1, earliest point
+- Dual-root path guard (ensureSquadPathDual) extended to triple-root (ensureSquadPathTriple) for personal squad dirs
+- Personal squad paths resolved via platform detection (never hard-coded)
+
+**Blocking:** None — design validated against codebase. Ready for EECOM Phase 1 start.
+
+### Economy Mode Design — #500
+
+**Author:** EECOM  
+**Date:** 2026-03-20  
+
+Economy mode implemented as Layer 3/4 modifier (never overrides explicit preferences Layers 0–2):
+
+| Normal | Economy | Use Case |
+|--------|---------|----------|
+| claude-opus-4.6 | claude-sonnet-4.5 | Architecture, review |
+| claude-sonnet-4.6 | gpt-4.1 | Code writing |
+| claude-sonnet-4.5 | gpt-4.1 | Code writing |
+| claude-haiku-4.5 | gpt-4.1 | Docs, planning, mechanical |
+
+**Activation:**
+- Persistent: `"economyMode": true` in `.squad/config.json`
+- Session: `--economy` CLI flag (SQUAD_ECONOMY_MODE=1 env var)
+- Toggle: `squad economy on|off` command
+
+**Implementation:**
+- ECONOMY_MODEL_MAP + applyEconomyMode() in packages/squad-sdk/src/config/models.ts
+- readEconomyMode() + writeEconomyMode() in config/models.ts
+- resolveModel() accepts economyMode option
+- squad economy {on|off} command
+- --economy global flag in cli-entry.ts
+- 34 tests — PR #504 open
+
+**Key Decision:** Economy mode respects user intent. If a user says "always use opus", economy mode defers to that choice.
+
+### Economy Mode Governance — #500
+
+**Author:** Procedures (Prompt Engineer)  
+**Date:** 2026-03-22  
+
+Governance additions needed in squad.agent.md:
+
+1. **Economy Mode Section** — positioned as Layer 3 override, respects Layers 0–2
+2. **Economy Model Selection Table** — per-task mapping (code, docs, architecture review, etc.)
+3. **Spawn Acknowledgment Convention** — include `💰 economy` indicator when active
+4. **Valid Models Catalog Audit** — added claude-sonnet-4.6, gpt-5.4, gpt-5.3-codex; confirmed gpt-4.1, gpt-5-mini already present
+
+**Status:** DRAFT — awaiting Flight review before merging to squad.agent.md.
+
+### Personal Squad Governance — Consult Mode Awareness (#344)
+
+**Author:** Procedures (Prompt Engineer)  
+**Date:** 2026-03-22  
+
+Governance additions for squad.agent.md to close consult-mode coordinator awareness gap:
+
+1. **Consult Mode Detection** — check config.json for `"consult": true` after resolving team root
+2. **Personal Squad Path Reference** — platform-specific paths (Linux, macOS, Windows) resolved via resolveGlobalSquadPath(), never hard-coded
+3. **Consult Mode Spawn Guidance** — pass CONSULT_MODE: true + PROJECT_NAME in spawn prompts so agents know decisions are project-isolated
+4. **Consult Mode Acknowledgment Format** — `🧳 consult mode active — {Agent}` with extraction staging notes
+5. **Charter Template Additions** — all agent charters gain "Consult Mode Awareness" note in "How I Work"
+
+**Proposed Skill** (post-approval): `.squad/skills/consult-mode/SKILL.md` — coordinator behavior for consult mode (detection, spawn guidance, extraction workflow).
+
+**Status:** DRAFT — awaiting Flight review before merging.
+
+### Persistent Model Preference via config.json — #284
+
+**Author:** Procedures (Prompt Engineer)  
+**Date:** 2026-03-17  
+
+Model selection uses 5-layer hierarchy with Layer 0 (Persistent Config) stored in .squad/config.json:
+
+- `defaultModel` — global preference
+- `agentModelOverrides` — per-agent overrides (keyed by agent name)
+
+Coordinator reads these on session start. Persists new preferences when user says "always use X."
+
+**Impact:** All agents respect Layer 0 when spawning. Model preferences travel with the repo (checked into git).
+
+### User Directives (Captured 2026-03-22)
+
+**Rate Limit Recovery UX (#464 soft dependency):**  
+When Squad detects a rate limit, offer actionable recovery: (1) switch to equivalent/alternative models, (2) offer economy mode (#500) as fallback. Rate limits should be a pivot point, not a dead end. *Status: Directive captured; soft dependency on #500.*
+
+**Bug #502 — Next Priority:**  
+node:sqlite installer dependency bug is workshop blocker (P1). Pick up immediately after Wave 1 (#329/#344/#500) finishes. *Status: Queued for Wave 2.*
+
+**GitHub Discussions in Triage:**  
+Include GitHub Discussions in triage workflow alongside issues and PRs. Scan and respond to open discussions as part of the workflow. *Status: Directive captured.*
+
+### Template Directory Sync Enforcement — #461
+
+**Author:** Fenster (Core Dev)  
+**Date:** 2026-07-16  
+
+Template files have 5 duplicate locations. Canonical source is `.squad-templates/`. All copies in `templates/`, `packages/squad-cli/templates/`, `packages/squad-sdk/templates/`, `.github/agents/` must match canonical.
+
+**Enforcement:** `test/template-sync.test.ts` enforces byte-for-byte parity for casting-policy.json, universe count parity for squad.agent.md, cross-file count validation.
+
+**Impact:** All team members editing template files must update all locations + pass sync tests.
+
+### Dual-Layer ESM Fix for vscode-jsonrpc — #449
+
+**Author:** GNC  
+**Date:** 2026-07-25  
+
+ESM module resolution uses dual-layer postinstall strategy:
+
+1. **Layer 1 (canonical):** Inject `exports` field into vscode-jsonrpc@8.2.1/package.json
+2. **Layer 2 (defense-in-depth):** Patch copilot-sdk/dist/session.js to add .js extension
+3. **Layer 3 (runtime):** cli-entry.ts Module._resolveFilename intercept (handles npx cache hits)
+
+`squad doctor` now detects both Layer 1 and Layer 2 issues. Matches vscode-jsonrpc v9.x forward-compatibility.
+
+**Impact:** If users report ESM errors on Node 22/24, direct them to `squad doctor`.
+
