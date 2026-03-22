@@ -17,6 +17,7 @@ import {
 import { RalphMonitor } from '@bradygaster/squad-sdk/ralph';
 import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
 import { ghAvailable, ghAuthenticated, ghIssueList, ghIssueEdit, ghPrList, type GhIssue, type GhPullRequest } from '../core/gh-cli.js';
+import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 
 export interface BoardState {
   untriaged: number;
@@ -155,7 +156,8 @@ async function runCheck(
   modules: ReturnType<typeof parseModuleOwnership>,
   roster: ReturnType<typeof parseRoster>,
   hasCopilot: boolean,
-  autoAssign: boolean
+  autoAssign: boolean,
+  capabilities: MachineCapabilities | null = null
 ): Promise<BoardState> {
   const timestamp = new Date().toLocaleTimeString();
   
@@ -163,13 +165,21 @@ async function runCheck(
     // Fetch open issues with squad label
     const issues = await ghIssueList({ label: 'squad', state: 'open', limit: 20 });
     
+    // Filter by machine capabilities (#514)
+    const { filterByCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
+    const { handled: capableIssues, skipped: incapableIssues } = filterByCapabilities(issues, capabilities);
+    
+    for (const { issue, missing } of incapableIssues) {
+      console.log(`${DIM}[${timestamp}] ⏭️ Skipping #${issue.number} "${issue.title}" — missing: ${missing.join(', ')}${RESET}`);
+    }
+    
     // Find untriaged issues (no squad:{member} label)
     const memberLabels = roster.map(m => m.label);
-    const untriaged = issues.filter(issue => {
+    const untriaged = capableIssues.filter(issue => {
       const issueLabels = issue.labels.map(l => l.name);
       return !memberLabels.some(ml => issueLabels.includes(ml));
     });
-    const assignedIssues = issues.filter(issue => {
+    const assignedIssues = capableIssues.filter(issue => {
       const issueLabels = issue.labels.map(l => l.name);
       return memberLabels.some(ml => issueLabels.includes(ml));
     });
@@ -269,6 +279,14 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   const rules = parseRoutingRules(routingContent);
   const modules = parseModuleOwnership(routingContent);
   
+  // Load machine capabilities for needs:* label filtering (#514)
+  const { loadCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
+  const capabilities = await loadCapabilities(path.dirname(squadDirInfo.path));
+  
+  if (capabilities) {
+    console.log(`${DIM}📦 Machine: ${capabilities.machine} — ${capabilities.capabilities.length} capabilities loaded${RESET}`);
+  }
+  
   if (roster.length === 0) {
     fatal('No squad members found in team.md');
   }
@@ -300,7 +318,7 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   
   // Run immediately, then on interval
   round++;
-  const state = await runCheck(rules, modules, roster, hasCopilot, autoAssign);
+  const state = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities);
   await eventBus.emit({
     type: 'agent:milestone',
     sessionId: monitorSessionId,
@@ -315,7 +333,7 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
     const intervalId = setInterval(
       async () => {
         round++;
-        const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign);
+        const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities);
         await eventBus.emit({
           type: 'agent:milestone',
           sessionId: monitorSessionId,
