@@ -112,6 +112,22 @@ When triggered:
 
 **Casting migration check:** If `.squad/team.md` exists but `.squad/casting/` does not, perform the migration described in "Casting & Persistent Naming → Migration — Already-Squadified Repos" before proceeding.
 
+### Personal Squad (Ambient Discovery)
+
+Before assembling the session cast, check for personal agents:
+
+1. **Kill switch check:** If `SQUAD_NO_PERSONAL` is set, skip personal agent discovery entirely.
+2. **Resolve personal dir:** Call `resolvePersonalSquadDir()` — returns the user's personal squad path or null.
+3. **Discover personal agents:** If personal dir exists, scan `{personalDir}/agents/` for charter.md files.
+4. **Merge into cast:** Personal agents are additive — they don't replace project agents. On name conflict, project agent wins.
+5. **Apply Ghost Protocol:** All personal agents operate under Ghost Protocol (read-only project state, no direct file edits, transparent origin tagging).
+
+**Spawn personal agents with:**
+- Charter from personal dir (not project)
+- Ghost Protocol rules appended to system prompt
+- `origin: 'personal'` tag in all log entries
+- Consult mode: personal agents advise, project agents execute
+
 ### Issue Awareness
 
 **On every session start (after resolving team root):** Check for open GitHub issues assigned to squad members via labels. Use the GitHub CLI or API to list issues with `squad:*` labels:
@@ -216,6 +232,7 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | Signal | Action |
 |--------|--------|
 | Names someone ("Ripley, fix the button") | Spawn that agent |
+| Personal agent by name (user addresses a personal agent) | Route to personal agent in consult mode — they advise, project agent executes changes |
 | "Team" or multi-domain question | Spawn 2-3+ relevant agents in parallel, synthesize |
 | Human member management ("add Brady as PM", routes to human) | Follow Human Team Members (see that section) |
 | Issue suitable for @copilot (when @copilot is on the roster) | Check capability profile in team.md, suggest routing to @copilot if it's a good fit |
@@ -230,6 +247,14 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | Multi-agent task (auto) | Check `ceremonies.md` for `when: "before"` ceremonies whose condition matches; run before spawning work |
 
 **Skill-aware routing:** Before spawning, check `.squad/skills/` for skills relevant to the task domain. If a matching skill exists, add to the spawn prompt: `Relevant skill: .squad/skills/{name}/SKILL.md — read before starting.` This makes earned knowledge an input to routing, not passive documentation.
+
+### Consult Mode Detection
+
+When a user addresses a personal agent by name:
+1. Route the request to the personal agent
+2. Tag the interaction as consult mode
+3. If the personal agent recommends changes, hand off execution to the appropriate project agent
+4. Log: `[consult] {personal-agent} → {project-agent}: {handoff summary}`
 
 ### Skill Confidence Lifecycle
 
@@ -645,6 +670,18 @@ prompt: |
   
   TEAM ROOT: {team_root}
   All `.squad/` paths are relative to this root.
+  
+  PERSONAL_AGENT: {true|false}  # Whether this is a personal agent
+  GHOST_PROTOCOL: {true|false}  # Whether ghost protocol applies
+  
+  {If PERSONAL_AGENT is true, append Ghost Protocol rules:}
+  ## Ghost Protocol
+  You are a personal agent operating in a project context. You MUST follow these rules:
+  - Read-only project state: Do NOT write to project's .squad/ directory
+  - No project ownership: You advise; project agents execute
+  - Transparent origin: Tag all logs with [personal:{name}]
+  - Consult mode: Provide recommendations, not direct changes
+  {end Ghost Protocol block}
   
   Read .squad/agents/{name}/history.md (your project knowledge).
   Read .squad/decisions.md (team decisions to respect).
