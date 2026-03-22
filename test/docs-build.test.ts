@@ -396,7 +396,14 @@ describe('Docs Hygiene Guards', () => {
   function getNavSlugs(): string[] {
     const content = readFile(NAVIGATION_TS);
     const matches = content.match(/slug:\s*['"]([^'"]+)['"]/g) || [];
-    return matches.map(m => m.replace(/slug:\s*['"]/, '').replace(/['"]$/, ''));
+    const slugs = matches.map(m => m.replace(/slug:\s*['"]/, '').replace(/['"]$/, ''));
+    if (slugs.length === 0) {
+      throw new Error(
+        'getNavSlugs() returned 0 slugs — navigation.ts may have changed format. ' +
+        `Check ${NAVIGATION_TS} and update the slug extraction regex if needed.`
+      );
+    }
+    return slugs;
   }
 
   /** All .md files in section subdirectories (excludes root-level files and blog). */
@@ -507,6 +514,15 @@ describe('Docs Hygiene Guards', () => {
     join(DOCS_CONTENT_DIR, 'sdk-first-mode.md'),
     join(DOCS_CONTENT_DIR, 'reference', 'cli.md'),
   ];
+
+  it('allowlists contain only files that exist on disk', () => {
+    const allAllowlistFiles = [...new Set([...LEGACY_INSTALL_ALLOWLIST, ...LEGACY_DIR_ALLOWLIST])];
+    const stale = allAllowlistFiles.filter(f => !existsSync(f));
+    expect(
+      stale,
+      `Allowlist entries no longer exist on disk — remove them:\n${stale.join('\n')}`
+    ).toHaveLength(0);
+  });
 
   it('no deprecated install commands — "npx github:bradygaster/squad" must not appear in any .md file', () => {
     const errors: string[] = [];

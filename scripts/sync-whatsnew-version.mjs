@@ -22,18 +22,37 @@ const root = join(__dirname, '..');
 const PKG_PATH = join(root, 'package.json');
 const WHATSNEW_PATH = join(root, 'docs', 'src', 'content', 'docs', 'whatsnew.md');
 
-const CURRENT_RELEASE_RE = /^## v[\d.][\d.]*[\w.-]* — Current Release$/m;
+const CURRENT_RELEASE_RE = /^## v\d+\.\d+\.\d+[\w.-]* — Current Release$/m;
 
 function cleanVersion(raw) {
   // Strip -build.N, -preview.N, or any other pre-release suffix
   return raw.replace(/-.*$/, '');
 }
 
-const pkg = JSON.parse(readFileSync(PKG_PATH, 'utf8'));
+let pkg;
+try {
+  pkg = JSON.parse(readFileSync(PKG_PATH, 'utf8'));
+} catch (err) {
+  console.error(`❌ Could not read package.json at ${PKG_PATH}: ${err.message}`);
+  process.exit(1);
+}
+
+if (typeof pkg.version !== 'string' || !pkg.version) {
+  console.error(`❌ package.json has no valid version field (got: ${JSON.stringify(pkg.version)})`);
+  process.exit(1);
+}
+
 const version = cleanVersion(pkg.version);
 const expected = `## v${version} — Current Release`;
 
-const original = readFileSync(WHATSNEW_PATH, 'utf8');
+let original;
+try {
+  original = readFileSync(WHATSNEW_PATH, 'utf8');
+} catch (err) {
+  console.error(`❌ Could not read whatsnew.md at ${WHATSNEW_PATH}: ${err.message}`);
+  process.exit(1);
+}
+
 const match = original.match(CURRENT_RELEASE_RE);
 
 if (!match) {
@@ -47,5 +66,10 @@ if (match[0] === expected) {
 }
 
 const updated = original.replace(CURRENT_RELEASE_RE, expected);
-writeFileSync(WHATSNEW_PATH, updated, 'utf8');
+try {
+  writeFileSync(WHATSNEW_PATH, updated, 'utf8');
+} catch (err) {
+  console.error(`❌ Could not write whatsnew.md at ${WHATSNEW_PATH}: ${err.message}`);
+  process.exit(1);
+}
 console.log(`✏️  Updated whatsnew.md: "${match[0]}" → "${expected}"`);

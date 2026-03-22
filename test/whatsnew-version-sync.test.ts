@@ -13,7 +13,7 @@ const ROOT = join(import.meta.dirname, '..');
 const PKG_PATH = join(ROOT, 'package.json');
 const WHATSNEW_PATH = join(ROOT, 'docs', 'src', 'content', 'docs', 'whatsnew.md');
 
-const CURRENT_RELEASE_RE = /^## v([\d.]+[\w.-]*) — Current Release$/m;
+const CURRENT_RELEASE_RE = /^## v(\d+\.\d+\.\d+[\w.-]*) — Current Release$/m;
 
 function cleanVersion(raw: string): string {
   return raw.replace(/-.*$/, '');
