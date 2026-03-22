@@ -132,6 +132,11 @@ async function checkNodeSqlite(): Promise<void> {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const hasGlobal = args.includes('--global');
+  // --economy activates economy mode for this session (sets env var for spawner)
+  const hasEconomy = args.includes('--economy');
+  if (hasEconomy) {
+    process.env['SQUAD_ECONOMY_MODE'] = '1';
+  }
   const rawCmd = args[0];
   const cmd = rawCmd?.trim() || '';
 
@@ -225,12 +230,15 @@ async function main(): Promise<void> {
     console.log(`                    upstream remove <name>`);
     console.log(`                    upstream list`);
     console.log(`                    upstream sync [name]`);
+    console.log(`  ${BOLD}economy${RESET}    Toggle economy mode (cost-conscious model selection)`);
+    console.log(`             Usage: economy [on|off]`);
 
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
     console.log(`\nFlags:`);
     console.log(`  ${BOLD}--version, -v${RESET}  Print version`);
     console.log(`  ${BOLD}--help, -h${RESET}     Show help`);
     console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
+    console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
     console.log(`\nInstallation:`);
     console.log(`  npm install --save-dev @bradygaster/squad-cli`);
     console.log(`\nInsider channel:`);
@@ -602,6 +610,12 @@ async function main(): Promise<void> {
   if (cmd === 'delegate') {
     const { delegateCommand } = await import('./cli/commands/cross-squad.js');
     await delegateCommand(args.slice(1));
+    return;
+  }
+
+  if (cmd === 'economy') {
+    const { runEconomy } = await import('./cli/commands/economy.js');
+    await runEconomy(process.cwd(), args.slice(1));
     return;
   }
 

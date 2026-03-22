@@ -103,3 +103,22 @@ CLI completeness audit (2026-03-08) confirmed: 26 primary commands routed in cli
 Implemented Flight's privacy-first adoption monitoring strategy on PR #326 branch. Moved `.squad/adoption/` → `.github/adoption/` for better GitHub integration. Stripped tracking.md to aggregate-only metrics (removed all individual repo names/URLs). Updated GitHub Action workflow (adoption-report.yml) and monitoring script (scripts/adoption-monitor.mjs) to write reports to `.github/adoption/reports/`. Removed "Built with Squad" showcase link from README.md (deferred to Tier 2 opt-in feature). This honors the principle: collect aggregate metrics via public APIs, but never publish individual repo lists without explicit consent. Test discipline: verified npm run build passes; docs-build.test.ts passed structure tests (Astro build failure unrelated to changes). Committed with clear message explaining privacy rationale.
 
 📌 **Team update (2026-03-10T12-55-49Z):** Adoption tracking Tier 1 complete and merged to decisions.md. Privacy-first architecture confirmed: aggregate metrics only, opt-in for individual repos, public showcase only when 5+ projects opt in. Append-only file governance enforced (no deletions in history.md or decisions.md). Microsoft ampersand style guide adopted for documentation.
+
+### Economy Mode Implementation (#500) (2026-03-20)
+
+**Context:** Issue #500 requested economy mode — a session-level and persistent modifier that shifts model selection to cheaper alternatives.
+
+**Architecture decision:** Economy mode is a Layer 3/4 modifier only. Layers 0–2 (explicit user preferences: config.json, session directive, charter) are never downgraded. This preserves user intent while enabling cost savings on auto-selected tasks.
+
+**Implementation:**
+1. `ECONOMY_MODEL_MAP` + `applyEconomyMode()` in `config/models.ts` — pure mapping function for premium→standard and standard→fast downgrades
+2. `readEconomyMode()` + `writeEconomyMode()` — config.json read/write functions (same merge-without-clobber pattern as `writeModelPreference()`)
+3. `resolveModel()` in `config/models.ts` updated with `economyMode?: boolean` option; falls back to reading from `squadDir` if not provided
+4. `resolveModel()` in `agents/model-selector.ts` updated with `economyMode?: boolean` — both SDK resolvers are economy-aware
+5. `squad economy [on|off]` command in CLI for persistent toggle
+6. `--economy` global flag in `cli-entry.ts` sets `SQUAD_ECONOMY_MODE=1` env var for session scope
+7. 34 new tests in `test/economy-mode.test.ts` — all pass
+
+**Key pattern:** Both resolveModel implementations follow identical principle: explicit overrides (user choice) are sacred; economy only affects computed auto-selection.
+
+**PR:** #500 branch `squad/500-economy-mode`

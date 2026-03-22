@@ -512,11 +512,92 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
 // ============================================================================
 
 /**
+ * Economy mode model map: normal model → cheaper alternative.
+ *
+ * Applied at Layer 3 (task-aware auto) and Layer 4 (default) when
+ * economy mode is active. Layers 0–2 (explicit preferences) are
+ * never substituted — the user's explicit choice always wins.
+ *
+ * Table source: issue #500
+ */
+export const ECONOMY_MODEL_MAP: Record<string, string> = {
+  // Premium → standard downgrade (architecture/review tasks)
+  'claude-opus-4.6':      'claude-sonnet-4.5',
+  'claude-opus-4.6-fast': 'claude-sonnet-4.5',
+  'claude-opus-4.5':      'claude-sonnet-4.5',
+  // Standard → fast downgrade (code writing, docs, planning, triage)
+  'claude-sonnet-4.6':    'gpt-4.1',
+  'claude-sonnet-4.5':    'gpt-4.1',
+  // Fast → cheapest fast (scribe/mechanical, docs)
+  'claude-haiku-4.5':     'gpt-4.1',
+};
+
+/**
+ * Applies economy mode substitution to a model ID.
+ * Returns the cheaper economy alternative, or the original if no mapping exists.
+ */
+export function applyEconomyMode(model: string): string {
+  return ECONOMY_MODEL_MAP[model] ?? model;
+}
+
+/**
  * Shape of model preference fields within `.squad/config.json`.
  */
 export interface ModelPreferenceConfig {
   defaultModel?: string;
   agentModelOverrides?: Record<string, string>;
+  economyMode?: boolean;
+}
+
+/**
+ * Reads the economy mode setting from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns True if economyMode is enabled, false otherwise
+ */
+export function readEconomyMode(squadDir: string): boolean {
+  const configPath = join(squadDir, 'config.json');
+  if (!existsSync(configPath)) {
+    return false;
+  }
+  try {
+    const raw = readFileSync(configPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return parsed !== null &&
+      typeof parsed === 'object' &&
+      parsed.economyMode === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Writes the economy mode setting to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param enabled - Whether economy mode should be enabled
+ */
+export function writeEconomyMode(squadDir: string, enabled: boolean): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (enabled) {
+    config.economyMode = true;
+  } else {
+    delete config.economyMode;
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
 }
 
 /**
@@ -652,6 +733,10 @@ export function writeAgentModelOverrides(
  *
  * Per-agent overrides from config.json take priority over the global defaultModel.
  *
+ * Economy mode modifier: when active (via economyMode option or config.json),
+ * shifts model selection at Layer 3 and Layer 4 to cheaper alternatives per
+ * ECONOMY_MODEL_MAP. Layers 0–2 (explicit user preferences) are never overridden.
+ *
  * @param options - Resolution inputs
  * @returns Resolved model ID
  */
@@ -661,10 +746,12 @@ export function resolveModel(options: {
   sessionDirective?: string | null;
   charterPreference?: string | null;
   taskModel?: string | null;
+  /** When true, apply economy mode substitution at Layer 3/4. Overrides config. */
+  economyMode?: boolean;
 }): string {
   const { agentName, squadDir, sessionDirective, charterPreference, taskModel } = options;
 
-  // Layer 0a: Per-agent persistent override
+  // Layer 0a: Per-agent persistent override (explicit — economy does not apply)
   if (squadDir && agentName) {
     const agentOverrides = readAgentModelOverrides(squadDir);
     if (agentOverrides[agentName]) {
@@ -672,7 +759,7 @@ export function resolveModel(options: {
     }
   }
 
-  // Layer 0b: Global persistent config
+  // Layer 0b: Global persistent config (explicit — economy does not apply)
   if (squadDir) {
     const persistedModel = readModelPreference(squadDir);
     if (persistedModel) {
@@ -680,21 +767,28 @@ export function resolveModel(options: {
     }
   }
 
-  // Layer 1: Session-wide user directive
+  // Layer 1: Session-wide user directive (explicit — economy does not apply)
   if (sessionDirective) {
     return sessionDirective;
   }
 
-  // Layer 2: Charter preference
+  // Layer 2: Charter preference (explicit — economy does not apply)
   if (charterPreference) {
     return charterPreference;
   }
 
-  // Layer 3: Task-aware auto-selection
+  // Determine if economy mode is active (option takes precedence over config)
+  const isEconomy =
+    options.economyMode !== undefined
+      ? options.economyMode
+      : (squadDir ? readEconomyMode(squadDir) : false);
+
+  // Layer 3: Task-aware auto-selection (economy mode applies)
   if (taskModel) {
-    return taskModel;
+    return isEconomy ? applyEconomyMode(taskModel) : taskModel;
   }
 
-  // Layer 4: Default
-  return 'claude-haiku-4.5';
+  // Layer 4: Default (economy mode applies)
+  const defaultModel = 'claude-haiku-4.5';
+  return isEconomy ? applyEconomyMode(defaultModel) : defaultModel;
 }
