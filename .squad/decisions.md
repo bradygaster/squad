@@ -6624,3 +6624,6 @@ These governance additions close the loop between the implementation (CLI + SDK)
 - Issue: #344
 - Flight ambient personal squad note: `.squad/decisions/inbox/flight-ambient-personal-squad.md`
 
+
+
+
