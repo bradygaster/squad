@@ -12,6 +12,16 @@ import { join } from 'path';
 import type { ModelId, ModelTier } from '../runtime/config.js';
 
 /**
+ * Per-token pricing in USD.
+ */
+export interface ModelPricing {
+  /** Cost per input token in USD */
+  inputPerToken: number;
+  /** Cost per output token in USD */
+  outputPerToken: number;
+}
+
+/**
  * Model capability information.
  */
 export interface ModelInfo {
@@ -38,6 +48,9 @@ export interface ModelInfo {
   
   /** Relative speed (1-10 scale, 10 = fastest) */
   speed?: number;
+
+  /** Per-token pricing in USD (if known) */
+  pricing?: ModelPricing;
 }
 
 /**
@@ -53,7 +66,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     vision: true,
     useCases: ['architecture proposals', 'security audits', 'complex design'],
     cost: 10,
-    speed: 3
+    speed: 3,
+    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
   },
   {
     id: 'claude-opus-4.6-fast',
@@ -63,7 +77,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     vision: true,
     useCases: ['architecture proposals', 'urgent reviews'],
     cost: 9,
-    speed: 6
+    speed: 6,
+    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
   },
   {
     id: 'claude-opus-4.5',
@@ -73,7 +88,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     vision: true,
     useCases: ['architecture proposals', 'reviewer gates'],
     cost: 9,
-    speed: 3
+    speed: 3,
+    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
   },
   
   // Standard tier - balanced quality, speed, cost
@@ -85,7 +101,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     vision: true,
     useCases: ['code generation', 'test writing', 'refactoring', 'prompt engineering'],
     cost: 5,
-    speed: 7
+    speed: 7,
+    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
   },
   {
     id: 'claude-sonnet-4.5',
@@ -95,7 +112,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     vision: true,
     useCases: ['code generation', 'test writing', 'refactoring'],
     cost: 5,
-    speed: 7
+    speed: 7,
+    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
   },
   {
     id: 'claude-sonnet-4',
@@ -104,7 +122,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'claude',
     useCases: ['code generation', 'documentation'],
     cost: 4,
-    speed: 7
+    speed: 7,
+    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
   },
   {
     id: 'gpt-5.4',
@@ -113,7 +132,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['general purpose', 'code generation', 'analysis'],
     cost: 6,
-    speed: 7
+    speed: 7,
+    pricing: { inputPerToken: 0.000005, outputPerToken: 0.000015 },
   },
   {
     id: 'gpt-5.3-codex',
@@ -122,7 +142,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['heavy code generation', 'multi-file refactors'],
     cost: 5,
-    speed: 6
+    speed: 6,
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
     id: 'gpt-5.2-codex',
@@ -131,7 +152,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['heavy code generation', 'multi-file refactors'],
     cost: 5,
-    speed: 6
+    speed: 6,
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
     id: 'gpt-5.2',
@@ -140,7 +162,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['general coding', 'analysis'],
     cost: 5,
-    speed: 6
+    speed: 6,
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
     id: 'gpt-5.1-codex-max',
@@ -149,7 +172,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['complex implementation', 'large codebases'],
     cost: 6,
-    speed: 5
+    speed: 5,
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
     id: 'gpt-5.1-codex',
@@ -158,7 +182,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['code generation', 'implementation'],
     cost: 5,
-    speed: 6
+    speed: 6,
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
     id: 'gpt-5.1',
@@ -167,7 +192,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['general purpose', 'analysis'],
     cost: 5,
-    speed: 6
+    speed: 6,
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
     id: 'gpt-5',
@@ -176,7 +202,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['general purpose'],
     cost: 5,
-    speed: 6
+    speed: 6,
+    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
     id: 'gemini-3-pro-preview',
@@ -185,7 +212,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gemini',
     useCases: ['code reviews', 'second opinion', 'diversity'],
     cost: 5,
-    speed: 7
+    speed: 7,
+    pricing: { inputPerToken: 0.00000125, outputPerToken: 0.00001 },
   },
   
   // Fast tier - lowest cost, fastest, good enough quality
@@ -196,7 +224,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'claude',
     useCases: ['boilerplate', 'changelogs', 'simple fixes'],
     cost: 2,
-    speed: 9
+    speed: 9,
+    pricing: { inputPerToken: 0.0000008, outputPerToken: 0.000004 },
   },
   {
     id: 'gpt-5.1-codex-mini',
@@ -205,7 +234,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['scaffolding', 'test boilerplate'],
     cost: 2,
-    speed: 9
+    speed: 9,
+    pricing: { inputPerToken: 0.0000003, outputPerToken: 0.0000012 },
   },
   {
     id: 'gpt-5-mini',
@@ -214,7 +244,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['typo fixes', 'renames', 'simple tasks'],
     cost: 1,
-    speed: 10
+    speed: 10,
+    pricing: { inputPerToken: 0.00000015, outputPerToken: 0.0000006 },
   },
   {
     id: 'gpt-4.1',
@@ -223,7 +254,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     family: 'gpt',
     useCases: ['lightweight tasks', 'triage'],
     cost: 2,
-    speed: 9
+    speed: 9,
+    pricing: { inputPerToken: 0.0000002, outputPerToken: 0.0000008 },
   }
 ];
 
@@ -461,6 +493,18 @@ export function getFallbackChain(tier: ModelTier): ModelId[] {
  */
 export function isModelAvailable(id: ModelId): boolean {
   return defaultRegistry.isModelAvailable(id);
+}
+
+/**
+ * Estimate the cost of a model invocation based on token counts and
+ * the SDK's built-in pricing table.
+ *
+ * @returns Estimated cost in USD, or 0 if pricing is unavailable for the model.
+ */
+export function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
+  const info = defaultRegistry.getModelInfo(model as ModelId);
+  if (!info?.pricing) return 0;
+  return (inputTokens * info.pricing.inputPerToken) + (outputTokens * info.pricing.outputPerToken);
 }
 
 // ============================================================================
