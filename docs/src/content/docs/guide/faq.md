@@ -205,7 +205,7 @@ Nothing breaks! `squad init` is **idempotent** — it's safe to run multiple tim
 
 **What it does:**
 - Checks if `.squad/` exists; if yes, does nothing
-- Copies missing templates from `.ai-team-templates/` to `.squad/`
+- Copies missing templates to `.squad/`
 - Updates `.github/workflows/` with Squad Actions (skips existing files)
 - Adds `.github/agents/squad.agent.md` if missing
 

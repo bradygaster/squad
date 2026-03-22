@@ -289,14 +289,14 @@ Ralph handles the backlog, you handle the critical path.
 ❌ "I want Lead, Frontend, Backend, Tester, DevOps, Data Engineer, Designer, and a Scribe."
 ```
 
-### Pitfall 6: Lost Work Because You Didn't Commit `.ai-team/`
+### Pitfall 6: Lost work because you didn't commit `.squad/`
 
 **Problem:** You deleted the repo and lost all your team knowledge.
 
-**Solution:** **Commit `.ai-team/` to git.** It's permanent team memory.
+**Solution:** **Commit `.squad/` to git.** It's permanent team memory.
 
 ```bash
-git add .ai-team/
+git add .squad/
 git commit -m "Add squad team state"
 git push
 ```
@@ -358,7 +358,7 @@ Squad 1: "Team A, build the admin dashboard. You own features/admin/."
 Squad 2: "Team B, build the mobile app. You own features/mobile/."
 
 [Both teams work in parallel]
-[Shared decisions in .ai-team/decisions.md prevent conflicts]
+[Shared decisions in .squad/decisions.md prevent conflicts]
 ```
 
 Requires good routing rules and clear ownership, but it works.
@@ -456,7 +456,7 @@ A typical high-performing session:
 3. **Parallel execution:** Let agents work (don't interrupt)
 4. **Check logs:** Ask Scribe what happened while you were reading code
 5. **Next round:** Based on what Scribe told you, give follow-up work or start Ralph
-6. **Wrap up:** Ask Ralph for status, commit `.ai-team/`, go home
+6. **Wrap up:** Ask Ralph for status, commit `.squad/`, go home
 
 **Time to productive work: usually < 2 minutes.**
 
