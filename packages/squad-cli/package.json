@@ -72,6 +72,10 @@
       "types": "./dist/cli/shell/shell-metrics.d.ts",
       "import": "./dist/cli/shell/shell-metrics.js"
     },
+    "./core/detect-squad-dir": {
+      "types": "./dist/cli/core/detect-squad-dir.d.ts",
+      "import": "./dist/cli/core/detect-squad-dir.js"
+    },
     "./core/init": {
       "types": "./dist/cli/core/init.d.ts",
       "import": "./dist/cli/core/init.js"
