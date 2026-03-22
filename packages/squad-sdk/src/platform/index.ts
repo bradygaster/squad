@@ -12,7 +12,7 @@ export { AzureDevOpsAdapter } from './azure-devops.js';
 export type { AdoWorkItemConfig, WorkItemTypeInfo } from './azure-devops.js';
 export { getAvailableWorkItemTypes, validateWorkItemType } from './azure-devops.js';
 export { PlannerAdapter, mapPlannerTaskToWorkItem } from './planner.js';
-export { getRalphScanCommands } from './ralph-commands.js';
+export { getRalphScanCommands, isWorktreeEnabled, resolveWorktreePath, createWorktreeCommand, removeWorktreeCommand, setupWorktreeDepsCommand, generateWorktreeVariant } from './ralph-commands.js';
 export type { RalphCommands } from './ralph-commands.js';
 export { FileLogCommunicationAdapter } from './comms-file-log.js';
 export { GitHubDiscussionsCommunicationAdapter } from './comms-github-discussions.js';

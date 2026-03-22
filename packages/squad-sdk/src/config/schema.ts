@@ -12,6 +12,8 @@ export interface SquadConfig {
   hooks?: HooksConfig;
   ceremonies?: CeremonyConfig[];
   plugins?: PluginConfig;
+  /** Enable git worktree mode for branch creation (default: false) */
+  worktrees?: boolean;
 }
 
 export interface TeamConfig {
