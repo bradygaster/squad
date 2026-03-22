@@ -278,9 +278,9 @@ describe('Journey: Invalid slash command', () => {
     await shell.cleanup();
   });
 
-  it('shows "Hmm" message for unknown commands', async () => {
+  it('shows "Unknown command" message for unknown commands', async () => {
     await shell.submit('/foobar');
-    expect(shell.hasText('Hmm')).toBe(true);
+    expect(shell.hasText('Unknown command')).toBe(true);
     expect(shell.hasText('/foobar')).toBe(true);
   });
 
@@ -431,7 +431,7 @@ describe('Journey: Shell remains usable after error', () => {
 
   it('user can type a new message after an invalid command', async () => {
     await shell.submit('/badcmd');
-    expect(shell.hasText('Hmm')).toBe(true);
+    expect(shell.hasText('Unknown command')).toBe(true);
     // Now submit a valid command
     await shell.submit('/status');
     expect(shell.hasText('Squad Status')).toBe(true);
@@ -502,7 +502,7 @@ describe('Journey: Error messages are user-friendly', () => {
   it('unknown command error is conversational, not a stack trace', async () => {
     await shell.submit('/doesnotexist');
     const frame = shell.frame();
-    expect(frame).toContain('Hmm');
+    expect(frame).toContain('Unknown command');
     expect(frame).toContain('/help');
     expect(frame).not.toMatch(/at\s+\w+\s+\(/); // no stack frames
     expect(frame).not.toContain('TypeError');

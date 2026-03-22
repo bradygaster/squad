@@ -43,6 +43,9 @@ export class StreamBridge {
   private readonly options: StreamBridgeOptions;
   private readonly registry: SessionRegistry;
 
+  /** Maximum buffer size per session (1 MB). Prevents unbounded memory growth. */
+  static readonly MAX_BUFFER_SIZE = 1024 * 1024;
+
   constructor(registry: SessionRegistry, options: StreamBridgeOptions) {
     this.registry = registry;
     this.options = options;
@@ -110,9 +113,15 @@ export class StreamBridge {
     const { sessionId, content } = event;
     const agentName = event.agentName ?? sessionId;
 
-    // Accumulate content in the session buffer
+    // Accumulate content in the session buffer (with size limit)
     const existing = this.buffers.get(sessionId) ?? '';
-    this.buffers.set(sessionId, existing + content);
+    const updated = existing + content;
+    if (updated.length <= StreamBridge.MAX_BUFFER_SIZE) {
+      this.buffers.set(sessionId, updated);
+    } else {
+      // Truncate from the front to keep the most recent content
+      this.buffers.set(sessionId, updated.slice(-StreamBridge.MAX_BUFFER_SIZE));
+    }
 
     // Mark session as streaming
     this.registry.updateStatus(agentName, 'streaming');

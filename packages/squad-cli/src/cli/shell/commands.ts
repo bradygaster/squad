@@ -67,8 +67,12 @@ export function executeCommand(
       return handleNap(args, context);
     case 'init':
       return handleInit(args, context);
-    default:
-      return { handled: false, output: `Hmm, /${command}? Type /help for commands.` };
+    default: {
+      const known = ['status', 'history', 'clear', 'help', 'quit', 'exit', 'agents', 'sessions', 'resume', 'version', 'nap', 'init'];
+      const suggestion = known.find(k => k.startsWith(command.slice(0, 2)));
+      const hint = suggestion ? ` Did you mean /${suggestion}?` : '';
+      return { handled: false, output: `Unknown command: /${command}.${hint} Type /help for commands.` };
+    }
   }
 }
 
@@ -93,7 +97,14 @@ function handleStatus(context: CommandContext): CommandResult {
 }
 
 function handleHistory(args: string[], context: CommandContext): CommandResult {
-  const limit = args[0] ? parseInt(args[0], 10) : 10;
+  let limit = 10;
+  if (args[0]) {
+    const parsed = parseInt(args[0], 10);
+    if (isNaN(parsed) || parsed <= 0) {
+      return { handled: true, output: 'Usage: /history [count]  — count must be a positive number.' };
+    }
+    limit = parsed;
+  }
   const recent = context.messageHistory.slice(-limit);
   if (recent.length === 0) {
     return { handled: true, output: 'No messages yet.' };
@@ -123,15 +134,17 @@ function handleHelp(args: string[]): CommandResult {
         'How it works:',
         '  Just type what you need — Squad routes your message to the right agent.',
         '  @AgentName message — send directly to one agent (case-insensitive).',
+        '  @Agent1 @Agent2 message — send to multiple agents in parallel.',
+        '  AgentName, message — comma syntax also works for direct dispatch.',
         '',
         'Commands:',
         '/status — Check your team',
-        '/history — Recent messages',
+        '/history [N] — Recent messages (default 10)',
         '/agents — List team members',
         '/sessions — Past sessions',
-        '/resume <id> — Restore session',
-        '/init [--roles] — Set up your team',
-        '/nap — Context hygiene',
+        '/resume <id> — Restore session by ID prefix',
+        '/init [--roles] [prompt] — Set up your team',
+        '/nap [--deep] [--dry-run] — Context hygiene',
         '/version — Show version',
         '/clear — Clear screen',
         '/quit — Exit',
@@ -145,18 +158,20 @@ function handleHelp(args: string[]): CommandResult {
       'How it works:',
       '  Just type what you need — Squad routes your message to the right agent.',
       '  @AgentName message — send directly to one agent (case-insensitive).',
+      '  @Agent1 @Agent2 message — send to multiple agents in parallel.',
+      '  AgentName, message — comma syntax also works for direct dispatch.',
       '',
       'Commands:',
-      "  /status    — Check your team & what's happening",
-      '  /history   — See recent messages',
-      '  /agents    — List all team members',
-      '  /sessions  — List saved sessions',
-      '  /resume    — Restore a past session',
-      '  /init      — Set up your team (add --roles for base role catalog)',
-      '  /nap       — Context hygiene (compress, prune, archive)',
-      '  /version   — Show version',
-      '  /clear     — Clear the screen',
-      '  /quit      — Exit',
+      "  /status             — Check your team & what's happening",
+      '  /history [N]        — See recent messages (default 10)',
+      '  /agents             — List all team members',
+      '  /sessions           — List saved sessions',
+      '  /resume <id>        — Restore a past session by ID prefix',
+      '  /init [--roles] [p] — Set up your team (add --roles for base role catalog)',
+      '  /nap [--deep]       — Context hygiene (compress, prune, archive)',
+      '  /version            — Show version',
+      '  /clear              — Clear the screen',
+      '  /quit               — Exit',
     ].join('\n'),
   };
 }
@@ -197,13 +212,13 @@ function handleResume(args: string[], context: CommandContext): CommandResult {
   }
   const session = loadSessionById(context.teamRoot, match.id);
   if (!session) {
-    return { handled: true, output: 'Failed to load session data.' };
+    return { handled: true, output: `Failed to load session data for "${prefix}". The session file may be corrupted. Try /sessions to see available sessions.` };
   }
   if (context.onRestoreSession) {
     context.onRestoreSession(session);
     return { handled: true, output: `✓ Restored session ${match.id.slice(0, 8)} (${session.messages.length} messages)` };
   }
-  return { handled: true, output: 'Session restore not available.' };
+  return { handled: true, output: 'Session restore not available in this context. Try restarting the shell.' };
 }
 
 function handleNap(args: string[], context: CommandContext): CommandResult {
@@ -213,8 +228,9 @@ function handleNap(args: string[], context: CommandContext): CommandResult {
     const dryRun = args.includes('--dry-run');
     const result = runNapSync({ squadDir, deep, dryRun });
     return { handled: true, output: formatNapReport(result, !!process.env['NO_COLOR']) };
-  } catch {
-    return { handled: true, output: 'Nap failed. Run `squad nap` from the CLI for details.' };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return { handled: true, output: `Nap failed: ${detail}\nRun \`squad nap\` from the CLI for details.` };
   }
 }
 

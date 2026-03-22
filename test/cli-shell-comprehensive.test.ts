@@ -513,10 +513,10 @@ describe('router.ts — parseInput', () => {
       expect(parsed.agentName).toBe('Fenster');
     });
 
-    it('handles @Agent with no message', () => {
+    it('handles @Agent with no message — routes to coordinator', () => {
       const parsed = parseInput('@Edie', knownAgents);
-      expect(parsed.type).toBe('direct_agent');
-      expect(parsed.content).toBeUndefined();
+      expect(parsed.type).toBe('coordinator');
+      expect(parsed.raw).toBe('@Edie');
     });
 
     it('routes to coordinator when @Unknown agent', () => {
@@ -830,7 +830,7 @@ describe('commands.ts — executeCommand', () => {
     it('returns handled: false with error message', () => {
       const result = executeCommand('foobar', [], context);
       expect(result.handled).toBe(false);
-      expect(result.output).toContain('Hmm, /foobar?');
+      expect(result.output).toContain('Unknown command: /foobar');
       expect(result.output).toContain('Type /help');
     });
   });

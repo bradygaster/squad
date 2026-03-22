@@ -61,6 +61,8 @@ export {
   teamConfigGuidance,
   agentSessionGuidance,
   genericGuidance,
+  timeoutGuidance,
+  unknownCommandGuidance,
   formatGuidance,
 } from './error-messages.js';
 export type { ErrorGuidance } from './error-messages.js';

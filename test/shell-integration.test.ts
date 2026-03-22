@@ -219,11 +219,10 @@ describe('parseInput — input routing', () => {
     expect(result.args).toEqual(['staging', '--force']);
   });
 
-  it('@agent with no message → direct_agent with undefined content', () => {
+  it('@agent with no message → routes to coordinator', () => {
     const result = parseInput('@Fenster', knownAgents);
-    expect(result.type).toBe('direct_agent');
-    expect(result.agentName).toBe('Fenster');
-    expect(result.content).toBeUndefined();
+    expect(result.type).toBe('coordinator');
+    expect(result.raw).toBe('@Fenster');
   });
 });
 

@@ -51,8 +51,33 @@ export function genericGuidance(detail: string): ErrorGuidance {
   return {
     message: detail,
     recovery: [
-      'Try again',
+      'Try your message again',
       "Run 'squad doctor' for diagnostics",
+      'Check your internet connection',
+    ],
+  };
+}
+
+/** Request timeout */
+export function timeoutGuidance(agentName?: string): ErrorGuidance {
+  const who = agentName ? `${agentName} timed out` : 'Request timed out';
+  return {
+    message: `${who}. The model may be under load.`,
+    recovery: [
+      'Try again — the issue is often transient',
+      'Set SQUAD_REPL_TIMEOUT=120 for a longer timeout (seconds)',
+      "Run 'squad doctor' to verify connectivity",
+    ],
+  };
+}
+
+/** Unknown slash command */
+export function unknownCommandGuidance(command: string): ErrorGuidance {
+  return {
+    message: `Unknown command: /${command}`,
+    recovery: [
+      'Type /help to see available commands',
+      'Check for typos in the command name',
     ],
   };
 }

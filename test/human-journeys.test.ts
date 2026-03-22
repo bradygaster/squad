@@ -397,12 +397,12 @@ describe('Journey 5: Talk to a specific agent (@Agent routing)', () => {
     expect(parsed.content).toBe('what should we build next?');
   });
 
-  it('@Agent with no message still routes correctly', () => {
+  it('@Agent with no message routes to coordinator', () => {
     const parsed = parseInput('@Keaton', knownAgents);
 
-    // Should still be direct_agent type, content may be undefined
-    expect(parsed.type).toBe('direct_agent');
-    expect(parsed.agentName).toBe('Keaton');
+    // With no message body, routes to coordinator for context
+    expect(parsed.type).toBe('coordinator');
+    expect(parsed.raw).toBe('@Keaton');
   });
 });
 
