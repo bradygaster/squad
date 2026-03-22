@@ -47,6 +47,8 @@ export interface ResolvedSquadPaths {
   projectDir: string;
   /** Team identity root (agents, casting, skills) */
   teamDir: string;
+  /** User's personal squad dir, null if not found or disabled */
+  personalDir: string | null;
   config: SquadDirConfig | null;
   name: '.squad' | '.ai-team';
   isLegacy: boolean;
@@ -199,6 +201,7 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
       mode: 'remote',
       projectDir,
       teamDir,
+      personalDir: resolvePersonalSquadDir(),
       config,
       name,
       isLegacy,
@@ -210,6 +213,7 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
     mode: 'local',
     projectDir,
     teamDir: projectDir,
+    personalDir: resolvePersonalSquadDir(),
     config,
     name,
     isLegacy,
@@ -252,6 +256,25 @@ export function resolveGlobalSquadPath(): string {
   }
 
   return globalDir;
+}
+
+/**
+ * Resolves the user's personal squad directory.
+ * Returns null if SQUAD_NO_PERSONAL is set or directory doesn't exist.
+ * 
+ * Platform paths:
+ * - Windows: %APPDATA%/squad/personal-squad
+ * - macOS: ~/Library/Application Support/squad/personal-squad
+ * - Linux: $XDG_CONFIG_HOME/squad/personal-squad or ~/.config/squad/personal-squad
+ */
+export function resolvePersonalSquadDir(): string | null {
+  if (process.env['SQUAD_NO_PERSONAL']) return null;
+  
+  const globalDir = resolveGlobalSquadPath();
+  const personalDir = path.join(globalDir, 'personal-squad');
+  
+  if (!fs.existsSync(personalDir)) return null;
+  return personalDir;
 }
 
 /**
@@ -320,6 +343,33 @@ export function ensureSquadPathDual(filePath: string, projectDir: string, teamDi
   throw new Error(
     `Path "${resolved}" is outside both squad roots ("${resolvedProject}", "${resolvedTeam}"). ` +
     'All squad scratch/temp/state files must be written inside a squad directory or the system temp directory.'
+  );
+}
+
+/**
+ * Validates a file path is inside one of three allowed directories:
+ * projectDir, teamDir, personalDir, or system temp.
+ * Extends ensureSquadPathDual() for triple-root (project + team + personal).
+ */
+export function ensureSquadPathTriple(
+  filePath: string,
+  projectDir: string,
+  teamDir: string,
+  personalDir: string | null
+): string {
+  const resolved = path.resolve(filePath);
+  const tmpDir = os.tmpdir();
+  
+  const allowed = [projectDir, teamDir, personalDir, tmpDir].filter(Boolean) as string[];
+  
+  for (const dir of allowed) {
+    if (resolved.startsWith(path.resolve(dir) + path.sep) || resolved === path.resolve(dir)) {
+      return resolved;
+    }
+  }
+  
+  throw new Error(
+    `Path "${resolved}" is outside all allowed directories: ${allowed.join(', ')}`
   );
 }
 

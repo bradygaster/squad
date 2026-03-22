@@ -30,6 +30,10 @@
       "types": "./dist/agents/index.d.ts",
       "import": "./dist/agents/index.js"
     },
+    "./agents/personal": {
+      "types": "./dist/agents/personal.d.ts",
+      "import": "./dist/agents/personal.js"
+    },
     "./adapter": {
       "types": "./dist/adapter/types.d.ts",
       "import": "./dist/adapter/types.js"
