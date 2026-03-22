@@ -7,6 +7,8 @@
  * @module config/models
  */
 
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import type { ModelId, ModelTier } from '../runtime/config.js';
 
 /**
@@ -459,4 +461,196 @@ export function getFallbackChain(tier: ModelTier): ModelId[] {
  */
 export function isModelAvailable(id: ModelId): boolean {
   return defaultRegistry.isModelAvailable(id);
+}
+
+// ============================================================================
+// Persistent Model Preference (Layer 0)
+// ============================================================================
+
+/**
+ * Shape of model preference fields within `.squad/config.json`.
+ */
+export interface ModelPreferenceConfig {
+  defaultModel?: string;
+  agentModelOverrides?: Record<string, string>;
+}
+
+/**
+ * Reads the persistent model preference from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns The defaultModel string if set, or null
+ */
+export function readModelPreference(squadDir: string): string | null {
+  const configPath = join(squadDir, 'config.json');
+  if (!existsSync(configPath)) {
+    return null;
+  }
+  try {
+    const raw = readFileSync(configPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof parsed.defaultModel === 'string' &&
+      parsed.defaultModel.length > 0
+    ) {
+      return parsed.defaultModel;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads per-agent model overrides from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns Record of agent name → model ID, or empty object
+ */
+export function readAgentModelOverrides(squadDir: string): Record<string, string> {
+  const configPath = join(squadDir, 'config.json');
+  if (!existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const raw = readFileSync(configPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof parsed.agentModelOverrides === 'object' &&
+      parsed.agentModelOverrides !== null
+    ) {
+      const result: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed.agentModelOverrides)) {
+        if (typeof value === 'string') {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Writes a persistent model preference to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param model - Model ID to persist, or null to clear
+ */
+export function writeModelPreference(squadDir: string, model: string | null): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (model === null) {
+    delete config.defaultModel;
+  } else {
+    config.defaultModel = model;
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * Writes per-agent model overrides to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param overrides - Record of agent name → model ID, or null to clear
+ */
+export function writeAgentModelOverrides(
+  squadDir: string,
+  overrides: Record<string, string> | null
+): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (existsSync(configPath)) {
+    try {
+      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (overrides === null || Object.keys(overrides).length === 0) {
+    delete config.agentModelOverrides;
+  } else {
+    config.agentModelOverrides = overrides;
+  }
+
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * Resolves the effective model for an agent spawn using the 5-layer hierarchy:
+ *   Layer 0: Persistent config (.squad/config.json defaultModel)
+ *   Layer 1: Session-wide user directive ("always use opus")
+ *   Layer 2: Charter preference (agent's ## Model section)
+ *   Layer 3: Task-aware auto-selection (code → sonnet, docs → haiku)
+ *   Layer 4: Default (claude-haiku-4.5)
+ *
+ * Per-agent overrides from config.json take priority over the global defaultModel.
+ *
+ * @param options - Resolution inputs
+ * @returns Resolved model ID
+ */
+export function resolveModel(options: {
+  agentName?: string;
+  squadDir?: string;
+  sessionDirective?: string | null;
+  charterPreference?: string | null;
+  taskModel?: string | null;
+}): string {
+  const { agentName, squadDir, sessionDirective, charterPreference, taskModel } = options;
+
+  // Layer 0a: Per-agent persistent override
+  if (squadDir && agentName) {
+    const agentOverrides = readAgentModelOverrides(squadDir);
+    if (agentOverrides[agentName]) {
+      return agentOverrides[agentName]!;
+    }
+  }
+
+  // Layer 0b: Global persistent config
+  if (squadDir) {
+    const persistedModel = readModelPreference(squadDir);
+    if (persistedModel) {
+      return persistedModel;
+    }
+  }
+
+  // Layer 1: Session-wide user directive
+  if (sessionDirective) {
+    return sessionDirective;
+  }
+
+  // Layer 2: Charter preference
+  if (charterPreference) {
+    return charterPreference;
+  }
+
+  // Layer 3: Task-aware auto-selection
+  if (taskModel) {
+    return taskModel;
+  }
+
+  // Layer 4: Default
+  return 'claude-haiku-4.5';
 }

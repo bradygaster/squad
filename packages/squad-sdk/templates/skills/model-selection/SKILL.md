@@ -1,143 +1,117 @@
----
-name: "model-selection"
-description: "Per-agent model selection with 4-layer hierarchy and fallback chains"
-domain: "orchestration"
-confidence: "high"
-source: "extracted"
----
+# Model Selection
+
+> Determines which LLM model to use for each agent spawn.
+
+## SCOPE
+
+✅ THIS SKILL PRODUCES:
+- A resolved `model` parameter for every `task` tool call
+- Persistent model preferences in `.squad/config.json`
+- Spawn acknowledgments that include the resolved model
+
+❌ THIS SKILL DOES NOT PRODUCE:
+- Code, tests, or documentation
+- Model performance benchmarks
+- Cost reports or billing artifacts
 
 ## Context
 
-Before spawning an agent, the coordinator determines which model to use. This skill codifies the 4-layer hierarchy, role-to-model mappings, task complexity adjustments, and fallback chains. Applies to all agent spawns in Team Mode.
+Squad supports 18+ models across three tiers (premium, standard, fast). The coordinator must select the right model for each agent spawn. Users can set persistent preferences that survive across sessions.
 
-## Patterns
+## 5-Layer Model Resolution Hierarchy
 
-### 4-Layer Hierarchy
+Resolution is **first-match-wins** — the highest layer with a value wins.
 
-Check these layers in order — first match wins:
+| Layer | Name | Source | Persistence |
+|-------|------|--------|-------------|
+| **0a** | Per-Agent Config | `.squad/config.json` → `agentModelOverrides.{name}` | Persistent (survives sessions) |
+| **0b** | Global Config | `.squad/config.json` → `defaultModel` | Persistent (survives sessions) |
+| **1** | Session Directive | User said "use X" in current session | Session-only |
+| **2** | Charter Preference | Agent's `charter.md` → `## Model` section | Persistent (in charter) |
+| **3** | Task-Aware Auto | Code → sonnet, docs → haiku, visual → opus | Computed per-spawn |
+| **4** | Default | `claude-haiku-4.5` | Hardcoded fallback |
 
-**Layer 1 — User Override:** Did the user specify a model? ("use opus", "save costs", "use gpt-5.2-codex for this"). If yes, use that model. Session-wide directives ("always use haiku") persist until contradicted.
+**Key principle:** Layer 0 (persistent config) beats everything. If the user said "always use opus" and it was saved to config.json, every agent gets opus regardless of role or task type. This is intentional — the user explicitly chose quality over cost.
 
-**Layer 2 — Charter Preference:** Does the agent's charter have a `## Model` section with `Preferred` set to a specific model (not `auto`)? If yes, use that model.
+## AGENT WORKFLOW
 
-**Layer 3 — Task-Aware Auto-Selection:** Use the governing principle: **cost first, unless code is being written.** Match the agent's task to determine output type, then select accordingly:
+### On Session Start
 
-| Task Output | Model | Tier | Rule |
-|-------------|-------|------|------|
-| Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.6` | Standard | Quality and accuracy matter for code. Use standard tier. |
-| Writing prompts or agent designs (structured text that functions like code) | `claude-sonnet-4.6` | Standard | Prompts are executable — treat like code. |
-| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `claude-haiku-4.5` | Fast | Cost first. Haiku handles non-code tasks. |
-| Visual/design work requiring image analysis | `claude-opus-4.5` | Premium | Vision capability required. Overrides cost rule. |
+1. READ `.squad/config.json`
+2. CHECK for `defaultModel` field — if present, this is the Layer 0 override for all spawns
+3. CHECK for `agentModelOverrides` field — if present, these are per-agent Layer 0a overrides
+4. STORE both values in session context for the duration
 
-**Role-to-model mapping** (applying cost-first principle):
+### On Every Agent Spawn
 
-| Role | Default Model | Why | Override When |
-|------|--------------|-----|---------------|
-| Core Dev / Backend / Frontend | `claude-sonnet-4.6` | Writes code — quality first | Heavy code gen → `gpt-5.3-codex` |
-| Tester / QA | `claude-sonnet-4.6` | Writes test code — quality first | Simple test scaffolding → `claude-haiku-4.5` |
-| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → haiku |
-| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → haiku |
-| Copilot SDK Expert | `claude-sonnet-4.6` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
-| Designer / Visual | `claude-opus-4.6` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
-| DevRel / Writer | `claude-haiku-4.5` | Docs and writing — not code | — |
-| Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
-| Git / Release | `claude-haiku-4.5` | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
+1. CHECK Layer 0a: Is there an `agentModelOverrides.{agentName}` in config.json? → Use it.
+2. CHECK Layer 0b: Is there a `defaultModel` in config.json? → Use it.
+3. CHECK Layer 1: Did the user give a session directive? → Use it.
+4. CHECK Layer 2: Does the agent's charter have a `## Model` section? → Use it.
+5. CHECK Layer 3: Determine task type:
+   - Code (implementation, tests, refactoring, bug fixes) → `claude-sonnet-4.6`
+   - Prompts, agent designs → `claude-sonnet-4.6`
+   - Visual/design with image analysis → `claude-opus-4.6`
+   - Non-code (docs, planning, triage, changelogs) → `claude-haiku-4.5`
+6. FALLBACK Layer 4: `claude-haiku-4.5`
+7. INCLUDE model in spawn acknowledgment: `🔧 {Name} ({resolved_model}) — {task}`
 
-**Task complexity adjustments** (apply at most ONE — no cascading):
-- **Bump UP to premium:** architecture proposals, reviewer gates, security audits, multi-agent coordination (output feeds 3+ agents)
-- **Bump DOWN to fast/cheap:** typo fixes, renames, boilerplate, scaffolding, changelogs, version bumps
-- **Switch to code specialist (`gpt-5.3-codex`):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
-- **Switch to analytical diversity (`gemini-3-pro-preview`):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
+### When User Sets a Preference
 
-**Layer 4 — Default:** If nothing else matched, use `claude-haiku-4.5`. Cost wins when in doubt, unless code is being produced.
+**Trigger phrases:** "always use X", "use X for everything", "switch to X", "default to X"
 
-### Fallback Chains
+1. VALIDATE the model ID against the catalog (18+ models)
+2. WRITE `defaultModel` to `.squad/config.json` (merge, don't overwrite)
+3. ACKNOWLEDGE: `✅ Model preference saved: {model} — all future sessions will use this until changed.`
 
-If a spawn fails because the selected model is unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), silently retry with the next model in the chain. Do NOT tell the user about fallback attempts. Maximum 3 retries before jumping to the nuclear fallback.
+**Per-agent trigger:** "use X for {agent}"
 
-```
-Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.6 → (omit model param)
-Standard: claude-sonnet-4.6 → gpt-5.4 → claude-sonnet-4.5 → gpt-5.3-codex → claude-sonnet-4 → (omit model param)
-Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini → (omit model param)
-```
+1. VALIDATE model ID
+2. WRITE to `agentModelOverrides.{agent}` in `.squad/config.json`
+3. ACKNOWLEDGE: `✅ {Agent} will always use {model} — saved to config.`
 
-`(omit model param)` = call the `task` tool WITHOUT the `model` parameter. The platform uses its built-in default. This is the nuclear fallback — it always works.
+### When User Clears a Preference
 
-**Fallback rules:**
-- If the user specified a provider ("use Claude"), fall back within that provider only before hitting nuclear
-- Never fall back UP in tier — a fast/cheap task should not land on a premium model
-- Log fallbacks to the orchestration log for debugging, but never surface to the user unless asked
+**Trigger phrases:** "switch back to automatic", "clear model preference", "use default models"
 
-### Passing the Model to Spawns
+1. REMOVE `defaultModel` from `.squad/config.json`
+2. ACKNOWLEDGE: `✅ Model preference cleared — returning to automatic selection.`
 
-Pass the resolved model as the `model` parameter on every `task` tool call:
+### STOP
 
-```
-agent_type: "general-purpose"
-model: "{resolved_model}"
-mode: "background"
-description: "{emoji} {Name}: {brief task summary}"
-prompt: |
-  ...
-```
+After resolving the model and including it in the spawn template, this skill is done. Do NOT:
+- Generate model comparison reports
+- Run benchmarks or speed tests
+- Create new config files (only modify existing `.squad/config.json`)
+- Change the model after spawn (fallback chains handle runtime failures)
 
-Only set `model` when it differs from the platform default (`claude-sonnet-4.6`). If the resolved model IS `claude-sonnet-4.6`, you MAY omit the `model` parameter — the platform uses it as default.
+## Config Schema
 
-If you've exhausted the fallback chain and reached nuclear fallback, omit the `model` parameter entirely.
+`.squad/config.json` model-related fields:
 
-### Spawn Output Format
-
-When spawning, include the model in your acknowledgment:
-
-```
-🔧 Fenster (claude-sonnet-4.6) — refactoring auth module
-🎨 Redfoot (claude-opus-4.6 · vision) — designing color system
-📋 Scribe (claude-haiku-4.5 · fast) — logging session
-⚡ Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
-📝 McManus (claude-haiku-4.5 · fast) — updating docs
+```json
+{
+  "version": 1,
+  "defaultModel": "claude-opus-4.6",
+  "agentModelOverrides": {
+    "fenster": "claude-sonnet-4.6",
+    "mcmanus": "claude-haiku-4.5"
+  }
+}
 ```
 
-Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
+- `defaultModel` — applies to ALL agents unless overridden by `agentModelOverrides`
+- `agentModelOverrides` — per-agent overrides that take priority over `defaultModel`
+- Both fields are optional. When absent, Layers 1-4 apply normally.
 
-### Valid Models
+## Fallback Chains
 
-**Premium:** `claude-opus-4.6`, `claude-opus-4.6-fast`, `claude-opus-4.5`
-**Standard:** `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1`, `gpt-5`, `gemini-3-pro-preview`
-**Fast/Cheap:** `claude-haiku-4.5`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1`
+If a model is unavailable (rate limit, plan restriction), retry within the same tier:
 
-## Examples
+```
+Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.6
+Standard: claude-sonnet-4.6 → gpt-5.4 → claude-sonnet-4.5 → gpt-5.3-codex → claude-sonnet-4
+Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini
+```
 
-**Example 1: Backend dev writing API endpoints**
-- Role: Backend Dev
-- Task: "implement REST endpoints for user management"
-- Layer 3 decision: writing code → `claude-sonnet-4.6` (standard tier)
-- Spawn: `🔧 Fenster (claude-sonnet-4.6) — implementing user API endpoints`
-
-**Example 2: User override**
-- User says: "use haiku for everything this session"
-- Layer 1 overrides all other layers
-- All spawns use `claude-haiku-4.5` regardless of role or task
-
-**Example 3: Complex refactor**
-- Role: Backend Dev
-- Task: "refactor 15 auth-related files to use new token system"
-- Layer 3 base: `claude-sonnet-4.5`
-- Task complexity: heavy multi-file refactor → switch to `gpt-5.2-codex`
-- Spawn: `🔧 Fenster (gpt-5.2-codex · code specialist) — refactoring auth to new token system`
-
-**Example 4: Scribe logging**
-- Role: Scribe
-- Task: "log session to decisions.md"
-- Layer 3: NOT writing code → `claude-haiku-4.5`
-- Role mapping: Scribe always haiku, never bump
-- Spawn: `📋 Scribe (claude-haiku-4.5 · fast) — logging session`
-
-## Anti-Patterns
-
-- ❌ Falling back UP in tier (fast task landing on premium model)
-- ❌ Telling the user about fallback attempts ("Opus failed, trying Sonnet")
-- ❌ Bumping Scribe or mechanical ops agents to higher tiers
-- ❌ Using premium models for documentation or planning tasks
-- ❌ Applying multiple complexity adjustments (cascading bumps)
-- ❌ Forgetting to include model in spawn acknowledgment
-- ❌ Downgrading vision-required tasks from opus
+**Never fall UP in tier.** A fast task won't land on a premium model via fallback.
