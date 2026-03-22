@@ -1,5 +1,7 @@
 # Squad
 
+[English](README.md) | [中文版](README.zh.md)
+
 **AI agent teams for any project.** One command. A team that grows with your code.
 
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
