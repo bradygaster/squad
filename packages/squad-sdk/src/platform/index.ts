@@ -18,6 +18,8 @@ export { FileLogCommunicationAdapter } from './comms-file-log.js';
 export { GitHubDiscussionsCommunicationAdapter } from './comms-github-discussions.js';
 export { ADODiscussionCommunicationAdapter } from './comms-ado-discussions.js';
 export { createCommunicationAdapter } from './comms.js';
+export { listWorktrees, findMergedWorktrees, cleanupWorktree, cleanupMergedWorktrees } from './worktree-lifecycle.js';
+export type { WorktreeInfo, CleanupResult, BatchCleanupResult } from './worktree-lifecycle.js';
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
