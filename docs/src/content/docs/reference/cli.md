@@ -605,4 +605,4 @@ squad help
 - [SDK Reference](./sdk.md) — Build squads with TypeScript
 - [Remote Control Guide](../features/remote-control.md) — Phone/browser access
 - [Troubleshooting Guide](../scenarios/troubleshooting.md) — Common issues and fixes
-- [Getting Started](../getting-started/index.md) — First steps with Squad
+- [Getting Started](../get-started/index.md) — First steps with Squad
