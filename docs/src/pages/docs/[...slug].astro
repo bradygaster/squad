@@ -1,6 +1,7 @@
 ---
 import { getCollection, render } from 'astro:content';
 import DocsLayout from '../../layouts/DocsLayout.astro';
+import { NAV_SECTIONS } from '../../navigation';
 
 export async function getStaticPaths() {
   const docs = await getCollection('docs');
@@ -15,8 +16,21 @@ const { Content } = await render(entry);
 
 // Extract title from frontmatter or first H1
 const title = entry.data.title || entry.id.split('/').pop()?.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Documentation';
+
+// Compute prev/next from NAV_SECTIONS order
+const allItems = NAV_SECTIONS.flatMap(s => s.items);
+const currentIndex = allItems.findIndex(item => item.slug === entry.id);
+const prevPage = currentIndex > 0 ? allItems[currentIndex - 1] : null;
+const nextPage = currentIndex >= 0 && currentIndex < allItems.length - 1 ? allItems[currentIndex + 1] : null;
 ---
 
-<DocsLayout title={title} description={entry.data.description} currentSlug={entry.id}>
+<DocsLayout
+  title={title}
+  description={entry.data.description}
+  currentSlug={entry.id}
+  updatedAt={entry.data.updatedAt}
+  prevPage={prevPage}
+  nextPage={nextPage}
+>
   <Content />
 </DocsLayout>

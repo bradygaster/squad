@@ -7,6 +7,10 @@ const docs = defineCollection({
     title: z.string().optional(),
     description: z.string().optional(),
     order: z.number().optional(),
+    tags: z.array(z.string()).optional(),
+    author: z.string().optional(),
+    updatedAt: z.coerce.date().optional(),
+    status: z.string().optional(),
   }),
 });
 
@@ -16,6 +20,10 @@ const blog = defineCollection({
     title: z.string().optional(),
     description: z.string().optional(),
     date: z.coerce.string().optional(),
+    tags: z.array(z.string()).optional(),
+    author: z.string().optional(),
+    updatedAt: z.coerce.date().optional(),
+    status: z.string().optional(),
   }),
 });
 

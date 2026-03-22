@@ -1,0 +1,46 @@
+---
+// Client-side Table of Contents — reads h2/h3 from the article after render
+---
+
+<nav id="toc" class="toc sticky top-8 text-sm" aria-label="On this page" data-pagefind-ignore>
+  <p class="font-semibold text-surface-700 dark:text-surface-300 mb-2 text-xs uppercase tracking-wide">On this page</p>
+  <ul id="toc-list" class="space-y-1 text-surface-500 dark:text-surface-400">
+    <!-- Populated by client script -->
+  </ul>
+</nav>
+
+<script is:inline>
+  function buildToc() {
+    const article = document.querySelector('article[data-pagefind-body]');
+    const list = document.getElementById('toc-list');
+    if (!article || !list) return;
+
+    const headings = Array.from(article.querySelectorAll('h2, h3'));
+    if (headings.length === 0) {
+      document.getElementById('toc')?.classList.add('hidden');
+      return;
+    }
+
+    list.innerHTML = '';
+    headings.forEach((h) => {
+      if (!h.id) {
+        h.id = h.textContent
+          ?.toLowerCase()
+          .replace(/[^\w\s-]/g, '')
+          .replace(/\s+/g, '-') || '';
+      }
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent || '';
+      a.className = h.tagName === 'H3'
+        ? 'block pl-3 py-0.5 hover:text-squad-600 dark:hover:text-squad-400 transition-colors'
+        : 'block py-0.5 hover:text-squad-600 dark:hover:text-squad-400 transition-colors font-medium';
+      li.appendChild(a);
+      list.appendChild(li);
+    });
+  }
+
+  document.addEventListener('astro:page-load', buildToc);
+  buildToc();
+</script>
