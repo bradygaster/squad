@@ -80,3 +80,25 @@
 
 **Pattern:** NEVER/ALWAYS sections in charters compress well — fold bullet lists into single-paragraph summaries. Essential workflow details (Scribe's commit steps) should stay verbose.
 
+### 2026-03-22: Economy mode skill and personal squad governance (#500, #344)
+
+**Task:** Two governance tasks — economy mode skill design and personal squad coordinator awareness.
+
+**Economy mode (SKILL.md):**
+- Created `.squad/skills/economy-mode/SKILL.md` as a Layer 3 modifier, not a new resolution layer
+- Key design decision: economy mode ONLY affects Layer 3 auto-selection — Layer 0/1/2 (user intent) always wins
+- `💰` indicator in spawn acknowledgments keeps it transparent
+- Activation via session phrase, persistent config (`economyMode: true` in config.json), or CLI flag
+- Architecture trips shift from opus → sonnet; code tasks shift from sonnet → gpt-4.1/gpt-5-mini
+- Confidence: `low` — first implementation, not yet validated
+
+**Personal squad governance (proposals):**
+- Gap analysis: coordinator has no consult mode awareness despite full SDK implementation
+- Five gaps identified: Init Mode missing personal squad resolution, no consult mode detection, TEAM_ROOT has no personal-squad semantics, charter templates lack consult-mode patterns, no consult-mode skill
+- Proposed `CONSULT_MODE: true` as spawn prompt signal, `🧳 consult` in acknowledgments
+- Proposed new consult-mode skill (after governance approval — skill after governance, not before)
+
+**Governance workflow pattern:** When proposals touch squad.agent.md (governance territory), write to `decisions/inbox/` for Flight review. Don't directly edit squad.agent.md — Flight reviews governance changes.
+
+**Catalog audit finding:** `claude-sonnet-4.6`, `gpt-5.4`, `gpt-5.3-codex` appear in model-selection SKILL.md fallback chains but are absent from squad.agent.md's "Valid models" catalog. Documented in economy-mode governance proposal for Flight to address.
+
