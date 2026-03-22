@@ -11,7 +11,7 @@ import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { runDoctor, getDoctorMode } from '@bradygaster/squad-cli/commands/doctor';
+import { runDoctor, getDoctorMode, checkNodeVersion } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
@@ -65,8 +65,8 @@ describe('squad doctor', () => {
 
     const squadDirCheck = checks.find((c: DoctorCheck) => c.name === '.squad/ directory exists');
     expect(squadDirCheck?.status).toBe('fail');
-    // When .squad/ is missing the file checks are skipped — only .squad/ + 2 ESM checks
-    expect(checks.length).toBe(3);
+    // When .squad/ is missing the file checks are skipped — only .squad/ + Node version + 2 ESM checks
+    expect(checks.length).toBe(4);
   });
 
   it('detects remote mode from config.json with teamRoot', async () => {
@@ -96,6 +96,38 @@ describe('squad doctor', () => {
     await scaffold(TEST_ROOT);
     const mode = getDoctorMode(TEST_ROOT);
     expect(mode).toBe('local');
+  });
+
+  it('reports node:sqlite check as pass on current Node version', async () => {
+    const checks = await runDoctor(TEST_ROOT);
+    const nodeCheck = checks.find((c: DoctorCheck) => c.name.includes('node:sqlite'));
+    expect(nodeCheck).toBeDefined();
+    // Tests run on Node >= 22.5.0 — should always pass in CI
+    expect(nodeCheck?.status).toBe('pass');
+  });
+
+  it('checkNodeVersion returns fail for Node <22.5.0', () => {
+    const result = checkNodeVersion('20.18.0');
+    expect(result.status).toBe('fail');
+    expect(result.message).toContain('22.5.0');
+    expect(result.message).toContain('nodejs.org');
+  });
+
+  it('checkNodeVersion returns fail for Node 22.4.x', () => {
+    const result = checkNodeVersion('22.4.0');
+    expect(result.status).toBe('fail');
+    expect(result.message).toContain('22.5.0');
+  });
+
+  it('checkNodeVersion returns pass for Node 22.5.0', () => {
+    const result = checkNodeVersion('22.5.0');
+    expect(result.status).toBe('pass');
+    expect(result.message).toContain('22.5.0');
+  });
+
+  it('checkNodeVersion returns pass for Node 24.x', () => {
+    const result = checkNodeVersion('24.0.0');
+    expect(result.status).toBe('pass');
   });
 
   it('warns on absolute teamRoot', async () => {

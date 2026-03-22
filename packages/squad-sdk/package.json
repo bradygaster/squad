@@ -181,7 +181,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5.0"
   },
   "dependencies": {
     "@github/copilot-sdk": "^0.1.32",

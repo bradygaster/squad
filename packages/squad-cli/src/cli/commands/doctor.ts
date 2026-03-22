@@ -215,6 +215,27 @@ function checkDecisionsMd(squadDir: string): DoctorCheck {
 
 // ── ESM compatibility checks ────────────────────────────────────────
 
+// ── environment checks ─────────────────────────────────────────────
+
+/**
+ * Check that Node.js is ≥22.5.0 for node:sqlite availability.
+ * Accepts an optional version string for testing.
+ */
+export function checkNodeVersion(nodeVersion?: string): DoctorCheck {
+  const version = nodeVersion ?? process.versions.node;
+  const parts = version.split('.').map(Number);
+  const major = parts[0] ?? 0;
+  const minor = parts[1] ?? 0;
+  const ok = major > 22 || (major === 22 && minor >= 5);
+  return {
+    name: 'Node.js ≥22.5.0 (node:sqlite)',
+    status: ok ? 'pass' : 'fail',
+    message: ok
+      ? `v${version} — node:sqlite available`
+      : `v${version} — node:sqlite requires ≥22.5.0. Upgrade at https://nodejs.org/en/download`,
+  };
+}
+
 /**
  * Check that vscode-jsonrpc has the `exports` field needed for Node 22/24+
  * strict ESM subpath resolution. Without it, `import('vscode-jsonrpc/node')`
@@ -344,7 +365,10 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     checks.push(checkDecisionsMd(squadDir));
   }
 
-  // 10–11 ESM compatibility (Node 22/24+)
+  // 10. Node.js version (node:sqlite availability)
+  checks.push(checkNodeVersion());
+
+  // 11-12. ESM compatibility (Node 22/24+)
   checks.push(checkVscodeJsonrpcExports(resolvedCwd));
   checks.push(checkCopilotSdkSessionPatch(resolvedCwd));
 

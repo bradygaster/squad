@@ -53,25 +53,22 @@ Module._resolveFilename = function (request: string, parent: unknown, isMain: bo
   return _origResolveFilename.call(this, request, parent, isMain, options);
 };
 
-// Pre-flight: detect missing node:sqlite before the Copilot SDK tries to use it.
-// The @github/copilot SDK lazily imports node:sqlite for session storage.
-// Node.js <22.5.0 and some 22.x builds don't include the builtin. (#214)
-try {
-  await import('node:sqlite');
-} catch {
-  // Module not available — install a shim so the SDK's lazy require succeeds.
-  // We register a minimal stub that throws a descriptive error only if
-  // DatabaseSync is actually instantiated (it may never be on short sessions).
-  const { register } = await import('node:module');
-  // No shim to register — just surface a clear message at startup so users
-  // know what's happening instead of seeing an opaque stack trace.
-  const nodeVersion = process.versions.node;
-  console.warn(
-    `⚠ node:sqlite is not available in Node.js v${nodeVersion}.\n` +
-    '  The Copilot SDK uses node:sqlite for session storage.\n' +
-    '  Upgrade to Node.js ≥22.5.0 or launch with --experimental-sqlite.\n' +
-    '  Squad will attempt to continue, but session persistence may fail.\n',
-  );
+// Pre-flight: require Node.js ≥22.5.0 for node:sqlite (#214, #502).
+// node:sqlite is used by the Copilot SDK for session storage.
+// Fail fast with a clear message rather than letting users hit a cryptic
+// ERR_UNKNOWN_BUILTIN_MODULE crash when the SDK loads.
+{
+  const parts = process.versions.node.split('.').map(Number);
+  const major = parts[0] ?? 0;
+  const minor = parts[1] ?? 0;
+  if (major < 22 || (major === 22 && minor < 5)) {
+    console.error(
+      `✗ Squad requires Node.js ≥22.5.0 (you have v${process.versions.node}).\n` +
+      `  node:sqlite (required by the Copilot SDK for session storage) was added in Node 22.5.0.\n` +
+      `  Upgrade at: https://nodejs.org/en/download\n`,
+    );
+    process.exit(1);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -108,26 +105,6 @@ const lazyRunShell = () => import('./cli/shell/index.js');
 
 // Use local version resolver instead of importing VERSION from squad-sdk
 const VERSION = getPackageVersion();
-
-/**
- * Pre-flight: warn if node:sqlite is unavailable (#214).
- * The @github/copilot SDK lazily imports node:sqlite for session storage.
- * Node.js <22.5.0 and some 22.x builds lack this builtin, causing an
- * opaque ERR_UNKNOWN_BUILTIN_MODULE crash. Surface a clear message instead.
- */
-async function checkNodeSqlite(): Promise<void> {
-  try {
-    await import('node:sqlite');
-  } catch {
-    const nodeVersion = process.versions.node;
-    console.warn(
-      `⚠ node:sqlite is not available in Node.js v${nodeVersion}.\n` +
-      '  The Copilot SDK uses node:sqlite for session storage.\n' +
-      '  Upgrade to Node.js ≥22.5.0 or launch with --experimental-sqlite.\n' +
-      '  Squad will attempt to continue, but session persistence may fail.\n',
-    );
-  }
-}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -248,7 +225,6 @@ async function main(): Promise<void> {
 
   // No args → launch interactive shell; whitespace-only arg → show help
   if (rawCmd === undefined) {
-    await checkNodeSqlite();
     // Fire-and-forget update check — non-blocking, never delays shell startup
     import('./cli/self-update.js').then(m => m.notifyIfUpdateAvailable(VERSION)).catch(() => {});
     const { runShell } = await lazyRunShell();

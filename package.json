@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad",
-  "version": "0.8.25-build.7",
+  "version": "0.8.25-build.10",
   "private": true,
   "description": "Squad — Programmable multi-agent runtime for GitHub Copilot, built on @github/copilot-sdk",
   "type": "module",
@@ -23,7 +23,7 @@
     "docs:preview": "cd docs && npm run preview"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.5.0"
   },
   "devDependencies": {
     "@opentelemetry/api": "^1.9.0",
