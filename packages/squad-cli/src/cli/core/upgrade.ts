@@ -292,7 +292,7 @@ export function ensureGitattributes(dest: string): string[] {
     try {
       fs.writeFileSync(filePath, content + suffix + added.join('\n') + '\n');
     } catch (err: unknown) {
-      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EPERM') {
+      if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
         warn('Could not update .gitattributes (read-only). Add merge=union entries manually.');
         return [];
       }
