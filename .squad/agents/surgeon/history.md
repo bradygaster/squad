@@ -4,6 +4,33 @@
 
 ## Learnings
 
+### Release Governance Rules (2026-03-23 v0.9.0→v0.9.1 Incident)
+**Context:** v0.9.0 published with critical defect (CLI package had local monorepo reference instead of registry version). v0.9.1 hotfix prepared in minutes; publish workflow infrastructure collapsed (GitHub cache race + npm automation issue + 2FA hang), extending 10-minute fix to 8-hour incident.
+
+**Governance rules established:**
+1. **Surgeon owns all publishing.** Not Coordinator, not user. All release work routed to Surgeon. Coordinator escalates on failures.
+2. **Strict process adherence.** Same playbook every time. No improvisation. Written checklists mandatory.
+3. **Document to prevent recurrence.** If same problem happens twice, documentation failed. Root cause analysis + action items for every incident.
+4. **CI/CD is top priority.** Release quality determines team effectiveness. Invest in automation, testing, pre-flight validation.
+5. **Pre-flight gates mandatory.** Before any release tagging: validate dependencies, run smoke tests, verify versions, check 2FA settings, run dry-run installs.
+6. **Escalation protocol.** If workflow fails twice, switch to local publish immediately. Two fallback paths: primary (CI/CD) + fallback (local), both documented.
+
+**Action items (A1–A6):**
+- A1: Dependency validation in publish workflow (scan for `file:` refs, npm install dry-run)
+- A2: npm workspace publish policy (never `-w` for publish; 2FA auth-only)
+- A3: GitHub workflow cache mitigation (15+ min wait documented, escalation runbook)
+- A4: Publish fallback protocol (switch to local on 2nd failure)
+- A5: Release readiness checklist (pre-flight validation before tagging)
+- A6: Post-publish smoke test (mandatory global install verification)
+
+**Release process skill created:** `.squad/skills/release-process/SKILL.md` documents all patterns and procedures.
+
+### v0.9.0 CHANGELOG Organization (2026-03-23)
+v0.9.0 is MAJOR minor bump (0.8.25 → 0.9.0) justified by 40+ commits, 6+ major features, governance layer, breaking behavioral changes. Organized by feature cluster (not chronological):
+- Personal Squad, Worktree, Machine Capability Discovery, Rate Limiting, Economy Mode, Telemetry, Templates, Skills, Docs, ESLint patterns
+- 12 feature sections + 5 fix categories
+Strict format adherence: matched existing CHANGELOG headers, `### Added` pattern, PR refs (#NNN), grouped by domain. No npx, no "agency" terminology.
+
 ### Release History
 v0.8.24 released successfully. npm packages: @bradygaster/squad-sdk@0.8.24, @bradygaster/squad-cli@0.8.24. publish.yml triggers on `release: published` (NOT draft). Test baseline at release: 3,931 tests, 149 files.
 
