@@ -137,3 +137,5 @@ Wave 1 governance work on #500 and #344: authored economy-mode skill (`SKILL.md`
 Also updated: examples section (showing `name` + `description` pairs), anti-pattern #4 (now covers both `name` and `description`), and Constraints section (requiring `name` on every spawn).
 
 **Pattern:** Every `task` tool spawn MUST include `name` set to the agent's lowercase cast name. Without it, the platform defaults to generic slugs. The `description` parameter is for the human-readable summary; `name` is for the agent ID.
+
+📌 **Team update (2026-03-23T23:15Z):** Orchestration complete. Agent name display refactor shipped: spawn templates updated with mandatory `name` parameter across all 4 template variants. VOX and FIDO coordinated on parser extraction and cascading pattern strategies. All decisions merged to decisions.md. Canonical source: `.squad-templates/squad.agent.md` (all derived copies secondary).

@@ -5051,6 +5051,29 @@ Created `.squad/skills/release-process/SKILL.md` with the definitive step-by-ste
 
 2. **GitHub Actions Workflow Cache Race (Infrastructure)** — After deleting `squad-publish.yml`, GitHub workflow index didn't refresh for 10+ minutes. 422 error persisted even after file deletion. Infrastructure bug, not your code. FIX: Documented in runbook; escalation protocol (if workflow_dispatch fails twice, switch to local publish).
 
+---
+
+### Agent Name Extraction: Dedicated Parser Module (FIDO)
+**Date:** 2026-03-23  
+**Issue:** #577  
+**What:** Agent name extraction logic extracted from inline regex in `shell/index.ts` into dedicated pure function `parseAgentFromDescription(description, knownAgentNames)` in `packages/squad-cli/src/cli/shell/agent-name-parser.ts`.  
+**Why:** Inline regex was fragile and untestable. Extraction enables comprehensive unit testing (30 tests, all passing) and regression guards for future coordinator format changes.  
+**Impact:** All future agent name matching updates route through `agent-name-parser.ts`, not `index.ts`. VOX's 3-tier cascading strategy is now the canonical reference.
+
+### Agent Name Extraction: 3-Tier Cascading Patterns (VOX)
+**Date:** 2026-03-23  
+**Issue:** #577  
+**What:** Agent name extraction uses cascading pattern matching: (1) emoji + name + colon at start, (2) name + colon anywhere, (3) fuzzy word-boundary match. Fallback: show description text instead of generic hint.  
+**Why:** Coordinator formats agent names inconsistently. Single regex failed silently. Multi-tier approach catches all known formats and degrades gracefully.  
+**Impact:** Coordinator's task description format changes should target these three patterns. New patterns added to `agent-name-parser.ts` update the entire extraction system.
+
+### Spawn Templates: Mandatory `name` Parameter (Procedures)
+**Date:** 2026-03-23  
+**Issue:** #577  
+**What:** All spawn templates in `.squad-templates/squad.agent.md` MUST include `name: "{name}"` parameter set to agent's lowercase cast name (e.g., `name: "eecom"`, `name: "fido"`).  
+**Why:** The `name` parameter generates human-readable agent IDs in Copilot CLI tasks panel. Without it, platform shows generic slugs like "general-purpose-task", making agent identity invisible to users.  
+**Impact:** Any new spawn template or template update must include `name` parameter. `.squad-templates/squad.agent.md` is canonical; all derived copies in agent charters are secondary.
+
 3. **npm Workspace Publish Broken (Tool Gap)** — `npm -w packages/squad-sdk publish` hangs indefinitely when npm 2FA set to `auth-and-writes` (needs OTP from authenticator app). Local machine without authenticator becomes soft hang. FIX: Policy — 2FA must be `auth-only`; always `cd` into package directory for publish.
 
 4. **Coordinator Decision-Making Under Pressure (Process)** — Retried `workflow_dispatch` 4+ times instead of pivoting to local publish fallback. Burned critical time on GitHub UI file operations. FIX: Escalation protocol — if `workflow_dispatch` fails twice, invoke local publish immediately. Release Manager owns all publish automation.
