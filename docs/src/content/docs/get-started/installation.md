@@ -186,4 +186,12 @@ npm install @bradygaster/squad-sdk@latest
 
 ---
 
-## Ready? → [Your First Session](first-session.md)
+## Ready to Learn?
+
+New to Squad? Check out [**Tamir's Squad Skills Workshop**](https://github.com/tamirdresher/squad-skills/tree/main/workshop) for hands-on learning and practical patterns.
+
+---
+
+## Next Steps
+
+→ [Your First Session](first-session.md)

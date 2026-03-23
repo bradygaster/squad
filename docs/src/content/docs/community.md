@@ -54,6 +54,14 @@ We recognize contributions including:
 
 - **Jeff Fritz** ([@csharpfritz](https://github.com/csharpfritz)) — ["Introducing your AI Dev Team Squad with GitHub Copilot"](https://www.youtube.com/watch?v=TXcL-te7ByY). First public technical deep-dive video demonstrating Squad in action.
 
+## Learning Resources
+
+### Hands-On Workshop
+
+[**Tamir's Squad Skills Workshop**](https://github.com/tamirdresher/squad-skills/tree/main/workshop) — A practical, hands-on workshop covering Squad fundamentals and advanced patterns. Great for developers who learn by building.
+
+---
+
 ## Giving Back
 
 If you're using Squad, consider:
