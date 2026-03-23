@@ -4870,6 +4870,250 @@ Created `.squad/skills/release-process/SKILL.md` with the definitive step-by-ste
 
 **Before ANY version commit:**
 ```bash
+
+---
+
+## Release Crisis Resolution & Governance Hardening (2026-03-23)
+
+### CI Workflow Audit & Ghost Cleanup (Booster)
+**Date:** 2026-03-23  
+**What:** Complete audit of 15 GitHub Actions workflows in `.github/workflows/`. Found: 7 essential load-bearing workflows, 7 administrative workflows, 1 ghost (publish-npm.yml, deleted but GitHub index cached), 0 duplication. Authorship: 65% Brady, 10% Copilot (v0.9.1 scramble), 25% team. CI is lean and well-organized.
+
+**Action Items:**
+- [ ] Delete ghost `publish-npm.yml` workflow via GitHub API or UI
+- [ ] Decide: keep or delete optional `ci-rerun.yml` (useful but not essential)
+- [ ] Document release pipeline in CONTRIBUTING.md
+- [ ] Enable Ralph's heartbeat cron if periodic triage desired (currently event-driven only)
+
+**Key Patterns:**
+- Load-bearing: squad-ci, squad-npm-publish, squad-insider-publish, squad-release, squad-preview, squad-promote, squad-insider-release
+- Administrative: squad-triage, squad-issue-assign, squad-label-enforce, sync-squad-labels, squad-heartbeat, squad-docs, squad-docs-links
+- Identified potential weakness: `squad-release` and `squad-npm-publish` both trigger on `release: published` with no explicit job dependency — works but fragile
+
+---
+
+### Pre-Publish Preflight Job (Booster)
+**Date:** 2026-03-23  
+**Status:** Implemented in squad-npm-publish.yml  
+**What:** Added `preflight` job that runs BEFORE smoke-test and all publish operations. Scans all `packages/*/package.json` for:
+1. `file:` references in any dependency section (breaks published packages)
+2. Invalid semver versions (rejects 4-part versions, absolute paths)
+
+**Rationale:** Zero-cost gate (JSON file reads only). Prevents exact class of bug that broke v0.9.0. Fails fast with clear error messages. Defense in depth: preflight catches source issues, smoke-test catches packaging issues.
+
+**Impact:** All squad members — publish pipeline will reject any PR that accidentally leaves `file:` references. No team changes needed; this is passive safety.
+
+---
+
+### `squad version` Subcommand Handler (EECOM)
+**Date:** 2026-07-15  
+**What:** `squad version` returned "Unknown command" while `squad --version` worked. Fixed by handling `version` inline in `cli-entry.ts` alongside `--version`/`-v` flag, rather than creating a separate command file.
+
+**Rationale:** Trivial handlers that just print a value don't warrant their own module. Same output, same code path — no reason to split. Avoids adding a file the wiring test would require an import for. Follows precedent: `help` is also inline.
+
+**Pattern:** CLI flag (`--foo`) works but subcommand (`foo`) doesn't? Check `cli-entry.ts` routing first before creating new command files.
+
+---
+
+### User Directive: Surgeon Owns All Publishing (Brady via Copilot)
+**Date:** 2026-03-23T09-56Z  
+**What:** "I always want the squad to facilitate this for me" — all publishing, deployments, and release processes must be driven by squad agents (primarily Surgeon), not by Coordinator or user manually.
+
+**Why:** User request — captured for team memory.
+
+**Implementation:** Surgeon charter updated with release governance. Coordinator escalates to Surgeon on publish failures. All release work goes through Surgeon.
+
+---
+
+### User Directives: Release Governance (Brady)
+**Date:** 2026-03-23T10-08Z  
+**What:** Batch of release governance directives:
+1. Coordinator should NOT be doing releases. Releases are Brady's responsibility. He will be explicit about when to release.
+2. Strict adherence to the exact same release process every time. No improvisation.
+3. Document problems thoroughly enough to avoid repeating them. If the same problem recurs, it means documentation failed.
+4. CI/CD and release quality is the top priority for the next release cycle.
+5. Session conversation history from release scrambles should be scrubbed — file issues instead of preserving messy logs.
+6. Every release must follow a written, step-by-step playbook. No ad-hoc releases.
+
+**Why:** v0.9.0→v0.9.1 release incident burned ~8 hours and excessive Actions minutes. Brady establishing strict governance to prevent recurrence.
+
+**Implementation:** 
+- Surgeon owns all release automation, including pre-publish validation and fallback procedures
+- Pre-release checklists mandatory (A5 in retrospective)
+- PUBLISH-README.md updated with runbook and all release knowledge
+- Release process skill created at `.squad/skills/release-process/SKILL.md`
+
+---
+
+### Distribution Policy: npm-only (Brady via PAO)
+**Date:** 2026-03-23T00-17-57Z  
+**What:** Stop mentioning npx in README, docs, and all user-facing content. Distribution is npm install -g only.
+
+**Why:** npx path is deprecated, causes confusion. Streamline to single distribution method.
+
+**Implementation:** 
+- Removed all `npx @bradygaster/squad-cli` alternatives from user-facing docs
+- Replaced with `npm install -g @bradygaster/squad-cli` for install; `squad <command>` for usage
+- Insider builds: `npm install -g @bradygaster/squad-cli@insider` + `squad upgrade`
+- Removed "npx github: hang" troubleshooting section (deprecated path gone)
+- Removed "npx cache serving stale version" troubleshooting (no longer applicable)
+
+**What was NOT changed:**
+- `npx` for dev tools (changeset, vitest, astro, pagefind) — not Squad CLI
+- Blog posts (historical content reflects what was true at time)
+- Migration.md "Before" column (valid historical context)
+- `agency-agents` attribution strings in source (MIT license requirement)
+
+---
+
+### README Slim-Down: Orientation, Not SDK Reference (PAO)
+**Date:** 2026-03-23  
+**What:** README's role is discovery and quick-start, NOT SDK internals. Moved SDK deep-dive (custom tools, hook pipeline, Ralph API, architecture) to docs site where it already exists.
+
+**Rationale:** README had grown to 512 lines — ~212 were SDK internal docs duplicating `docs/src/content/docs/reference/`. New users got overwhelmed before running `squad init`. Brady confirmed: "QUITE long."
+
+**Changes:**
+- Removed lines 300–512 (SDK internals) from README
+- Added compact SDK docs pointer linking to `reference/sdk.md`, `reference/tools-and-hooks.md`, `guide/extensibility.md`
+- Added dedicated "Upgrading" section after Quick Start
+- README: 512 → 331 lines
+
+**Rule going forward:** SDK API surface, hook pipeline internals, event-driven code examples — go in `docs/`, not README. README links out; it doesn't host.
+
+---
+
+### v0.9.0 Release Blog Post (PAO)
+**Date:** 2026-03-23  
+**Status:** Complete, ready for merge  
+**What:** Comprehensive blog post documenting Squad's biggest release to date. 10 features with storytelling format:
+1. What it does (one-line value prop)
+2. Why it matters (the problem it solves)
+3. How it works (code or config example)
+4. Real-world scenario (where you'd use it)
+
+**Features covered:**
+- Personal Squad (ambient discovery + Ghost Protocol)
+- Worktree Spawning (parallel issue work without blocking)
+- Cooperative Rate Limiting (green/amber/red traffic-light coordination)
+- Economy Mode (budget-aware fallback, 40–60% spend reduction)
+- + 6 more major features
+
+**Tone:** Factual, not hype. "40–60% spend reduction" vs "Amazing cost savings!" Demos over descriptions. Callout boxes for highlights. Community recognition included.
+
+**No npx:** All install references use `npm install -g @bradygaster/squad-cli`. Firm per Brady's distribution directive.
+
+**Breaking changes:** None — all opt-in. Existing Squads work as-is.
+
+**Community attribution:** diberry (worktree tests), wiisaacs (security review), williamhallatt (test contributions), bradygaster (leadership).
+
+---
+
+### v0.9.0 CHANGELOG Organization (Surgeon)
+**Date:** 2026-03-23  
+**Status:** Final  
+**What:** v0.9.0 is MAJOR minor bump (0.8.25 → 0.9.0) justified by 40+ commits, 6+ major features, governance-layer additions, breaking behavioral changes.
+
+**Organization (by feature cluster, not chronological):**
+- Personal Squad Governance Layer
+- Worktree Spawning & Orchestration
+- Machine Capability Discovery
+- Cooperative Rate Limiting
+- Economy Mode
+- Auto-Wire Telemetry
+- Issue Lifecycle Template
+- KEDA External Scaler Template
+- GAP Analysis Verification Loop
+- Session Recovery Skill
+- Token Usage Visibility
+- GitHub Auth Isolation Skill
+- Docs Site Improvements (Astro)
+- Skill Migrations
+- ESLint Runtime Anti-Pattern Detection
+
+**Fixes (5 sections):**
+- CLI Terminal Rendering
+- Upgrade Path & Installation
+- ESM Compatibility
+- Runtime Stability
+- GitHub Integration
+
+**Style compliance:** Strict adherence to existing CHANGELOG format. Matched headers, `### Added` pattern, PR references (#NNN), no commit hashes, grouped by domain. No npx mentions. No "agency" terminology in product context.
+
+---
+
+### v0.9.0 → v0.9.1 Release Retrospective (Surgeon)
+**Date:** 2026-03-23  
+**Executive Summary:** v0.9.0 published with critical defect — CLI package.json contained `"@bradygaster/squad-sdk": "file:../squad-sdk"` (local monorepo reference instead of registry version). Package broken on global install. v0.9.1 hotfix prepared in minutes; publish workflow collapsed due to cascading infrastructure failures, extending incident from 10 minutes to 8 hours.
+
+**Root Causes (5 identified):**
+
+1. **Dependency Validation Gap (Preventable)** — npm workspaces auto-rewrite `"*"` → `"file:../path"`. Persisted in committed package.json. No pre-publish check caught it. FIX: Preflight job scans for `file:` refs and validates semver.
+
+2. **GitHub Actions Workflow Cache Race (Infrastructure)** — After deleting `squad-publish.yml`, GitHub workflow index didn't refresh for 10+ minutes. 422 error persisted even after file deletion. Infrastructure bug, not your code. FIX: Documented in runbook; escalation protocol (if workflow_dispatch fails twice, switch to local publish).
+
+3. **npm Workspace Publish Broken (Tool Gap)** — `npm -w packages/squad-sdk publish` hangs indefinitely when npm 2FA set to `auth-and-writes` (needs OTP from authenticator app). Local machine without authenticator becomes soft hang. FIX: Policy — 2FA must be `auth-only`; always `cd` into package directory for publish.
+
+4. **Coordinator Decision-Making Under Pressure (Process)** — Retried `workflow_dispatch` 4+ times instead of pivoting to local publish fallback. Burned critical time on GitHub UI file operations. FIX: Escalation protocol — if `workflow_dispatch` fails twice, invoke local publish immediately. Release Manager owns all publish automation.
+
+5. **No Pre-Publish Verification (Process)** — No smoke test or dependency validation before publishing to npm. Package could ship broken. FIX: Preflight + smoke test jobs added; post-publish global install verification mandatory.
+
+**Action Items (A1–A6):**
+- A1: Add dependency validation to publish workflow (scan for `file:` refs, npm install dry-run)
+- A2: Establish npm workspace publish policy (never `-w` for publish; 2FA auth-only)
+- A3: Mitigate GitHub workflow cache race (research best practices, document 15+ minute wait, escalation runbook)
+- A4: Publish fallback/escalation protocol (switch to local publish on 2nd failure; both publish paths documented)
+- A5: Coordinate release readiness review (pre-flight checklist: deps, CHANGELOG, tests, version, 2FA status)
+- A6: Smoke test post-publish (mandatory `npm install -g` in clean shell; rollback if fails)
+
+**Process Changes:**
+1. Pre-publish validation before tagging
+2. Simplified publish flow (remove manual workflow_dispatch, let tag trigger atomically)
+3. Explicit publish runbook in PUBLISH-README.md
+4. Escalation to fallback (failfast; convert 8-hour incidents to 15 minutes)
+5. Package validation in CI (linting rule: reject `file:` refs, absolute paths, invalid semver)
+
+**Outcome:** All 6 action items catalogued for implementation before next release. Release incident analyzed and documented. Process improvements ready.
+
+---
+
+### Discussion Triage & Community Engagement (PAO)
+**Date:** 2026-03-23  
+**What:** Analyzed 15 open discussions and recommended response strategy:
+- **4 discussions → close-as-resolved** — feature now shipped
+- **1 discussion → close-as-duplicate** — consolidate answer thread
+- **2 discussions → convert-to-issue** — bug/roadmap tracking
+- **8 discussions → keep-open** — feedback, edge cases, follow-up needed
+
+**Key Findings:**
+- **Features Shipped, Discussions Pending Close:**
+  - #143 (human team members) — close, feature exists v0.8.25+
+  - #169 (skill-based orchestration) — close, exists v0.8.24+
+  - #402, #463 (per-agent models) — feature exists v0.9.1; consolidate #463 into #402
+  - #299 (squad CLI vs copilot) — answered with docs link; safe to close
+
+- **Documentation Gaps:**
+  - #440 (branch naming change) — v0.9 broke CI; needs migration guide + config override
+  - #306 (multi-root workspaces) — not supported; docs clarify limitation + workarounds
+  - **CRITICAL:** #140 (Teams MCP) — Office 365 Connectors retired Dec 2024; docs must purge old refs, document Power Automate Workflows path
+  - #401 (mobile/remote control) — feature exploration, future scope; keep open
+
+- **Known Issues to Track:**
+  - #161 (Coordinator hijacking) — recurring UX pattern; convert to issue for v1.0
+  - #140 (Teams integration) — external tool dependency; needs urgent update
+
+**Community Engagement Pattern:** 15 discussions across 3 weeks = healthy engagement. Pattern identified: feature releases without follow-up discussion closes = missed trust opportunity. v0.9.1 closed 5+ discussions proactively; do this for every release.
+
+**Recommended Response Order:**
+1. #140 (Teams MCP) — urgent; external deprecation
+2. #534 (enterprise) — recent, from active contributor
+3. #161 (Coordinator) → convert to issue + link
+4. #463/#402 → consolidate + close
+5. #440 → empathetic response + upgrade path
+6. Others → batch close with docs links
+
+**Action:** Post-release, scan discussions for feature-requests matching new features; respond + close proactively.
+
+---
 node -p "require('semver').valid('0.8.21.4')"  # null = invalid, reject immediately
 ```
 

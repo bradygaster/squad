@@ -4,6 +4,13 @@
 
 ## Learnings
 
+### CLI Version Subcommand Pattern (2026-03-23 Release Incident)
+**Context:** `squad version` returned "Unknown command: version" even though `squad --version` and `squad -v` worked fine. Classic "unwired command" bug but for a flag-to-subcommand gap rather than a missing import.
+
+**Pattern:** When a CLI flag works (`--foo`) but the equivalent subcommand doesn't (`foo`), the fix is almost always a single condition addition in `cli-entry.ts`. No separate command file needed for trivial handlers — inline alongside the flag handler. Added `cmd === 'version'` to the existing `--version`/`-v` condition. Also added `version` to help text command list.
+
+**Why inline works:** Trivial handlers that just print a value don't warrant their own module. Same output, same code path — no reason to split. Avoids adding a file the wiring test would require an import for. Precedent: `help` is also handled inline.
+
 ### `squad version` subcommand (2026-07-15)
 
 **Context:** Running `squad version` returned "Unknown command: version" because the subcommand was never routed in `cli-entry.ts`, even though `--version` and `-v` flags worked fine. Classic "unwired command" bug class, but for a flag-to-subcommand gap rather than a missing import.

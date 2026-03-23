@@ -8,6 +8,29 @@ Docs live in docs/ with blog/, concepts/, cookbook/, getting-started/, guide/, f
 
 ## Learnings
 
+### Discussion Triage Patterns (2026-03-23 Release Incident)
+**Context:** v0.9.1 release completed; 15 open discussions analyzing whether community response patterns matched feature releases.
+
+**Pattern identified:** Feature releases without follow-up discussion closes = missed trust opportunity. When you ship features (personal squad, worktrees, economy mode, rate limiting), search discussions for matching feature-requests → respond + close proactively. This signals to community that you listen.
+
+**Triage workflow:**
+1. Map new features to open discussions (which discussions are solved by this release?)
+2. Respond: "This feature is now available in v0.9.1. See docs link."
+3. Close as resolved
+4. Consolidate: if discussion #463 is duplicate of #402, merge responses into #402, close #463
+5. Convert: if discussion reveals a bug or roadmap item, convert to issue with label (e.g., squad:eecom)
+6. Keep: if discussion is feedback or edge case, keep open; respond substantively
+
+**For v0.9.1 release:** 4 closed, 1 consolidated, 2 converted to issue, 8 kept. Result: community sees responsiveness; discussions become productivity tool, not backlog.
+
+**Critical finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024. Docs must purge old connector references and document Power Automate Workflows path (new successor).
+
+### Chinese README Workflow (2026-03-23 Release Incident)
+Community contributor (PR #572) provided Chinese README translation. Approved and merged as part of v0.9.1 release. Pattern: accept community translations; list contributors in CONTRIBUTORS.md; acknowledge in release notes.
+
+### Teams MCP Urgency Pattern (2026-03-23)
+External tool integrations deprecate. Office 365 Connectors retired Dec 2024. Docs mentioning deprecated tools create support burden and user confusion. Action: audit all external tool integration docs for deprecation; update with successor guidance (Power Automate Workflows for Teams).
+
 ### Blog Post Format
 YAML frontmatter: title, date, author, wave, tags, status, hero. Body: experimental warning, What Shipped, Why This Matters, Quick Stats, What's Next. 200-400 words for infrastructure releases. No hype — explain value.
 
@@ -97,3 +120,45 @@ Brady directive: README was too long at 512 lines. Cut the SDK deep-dive block (
 
 ### v0.9.0 Release Blog Post (2026-03-23)
 Created `docs/src/content/blog/028-v090-whats-new.md` documenting Squad's biggest release: Personal Squad (ambient agent discovery + Ghost Protocol), Worktree Spawning (isolated branches per issue), Machine Capability Discovery (needs:* label routing), Cooperative Rate Limiting (predictive circuit breaker), Economy Mode (budget-aware model selection), Auto-Wired Telemetry, P0 upgrade fixes, and docs refresh. Blog format: frontmatter (title/date/author/wave/tags/status/hero) → experimental warning → "What Shipped" (10 features with H2 sections + callout boxes) → "Quick Stats" → "Breaking Changes" (none) → "Upgrading" → "What's Next". Messaging: clear, engaging, factual (no marketing fluff). Demonstrated: Personal Squad governance layer, worktree isolation, capability declaration, RAAS traffic-light pattern, economy fallback logic. Docs refresh section emphasized: README from 512→218 lines, dedicated upgrade guide, npx purged, Astro features, Teams MCP refresh, autonomous agents guide. Contributors: diberry (worktree tests + docs), wiisaacs (security review), community. No breaking changes — all additive opt-in features. Test discovery is dynamic (EXPECTED_BLOG uses filesystem scan), so new post auto-discovered; no test file changes needed. Pattern reinforced: each feature needs a story — if you can't explain it, it's not ready. Demos over descriptions (concrete code examples, YAML config blocks, Bash CLI examples).
+
+### Discussion Triage (2026-03-23)
+
+Analyzed 15 open discussions for response strategy:
+- **4 close-as-resolved** (#143, #169 — features now shipped; #402, #299 — answered with docs links)
+- **1 close-as-duplicate** (#463 → #402)
+- **2 convert-to-issue** (#161 root-copilot-hijack → bug/UX track; #534 enterprise-features → ongoing roadmap signal)
+- **8 keep-open** (ongoing feedback, feature signals, edge cases, follow-up potential)
+
+Key pattern: 15 discussions = 7 feature-request/feedback signals, 4 answered-by-feature-release, 4 documentation-clarity gaps. Community is engaged; v0.9.1 (per-agent models, skills system, human team members, watch mode) directly addressed 5+ discussions that were open for 2-4 weeks. Timing of releases + follow-up responses critical for community trust.
+
+**Documentation gaps identified:**
+- #440 (branch naming convention change) — needs migration guide in upgrade docs
+- #306 (multi-root workspaces) → future feature; docs should clarify current limitation
+- #140 (Teams MCP + Office 365 Connectors retirement) → docs refresh needed; Power Automate Workflows is the new path
+- #401 (mobile/remote control) → feature exploration, keep on radar
+- #161 (Coordinator hijacking) → document workarounds, prioritize UX fix for v1.0
+
+Teams MCP critical update: Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor. Docs mention of old Connectors should be purged; Teams webhook examples should link to Power Automate Workflow guide.
+
+### Community Engagement Wave (2026-03-24)
+
+**6 discussions closed as resolved:**
+- #463, #402 (per-agent model selection — shipped v0.9.1)
+- #324 (local-only operation without GitHub integration)
+- #299 (CLI vs Copilot agent — both viable)
+- #143 (Human team members now first-class feature)
+- #169 (Skills system shipped as core infrastructure)
+
+**8 discussions kept open with substantive replies:**
+- #534 (enterprise features) — asked clarifying questions on scope
+- #499 (Brady's v1.0 announcement) — explained `.squad/` regenerability plan
+- #440 (branch naming change) — acknowledged disruption, offered migration guidance
+- #401 (mobile/async control) — acknowledged use case, roadmap signal
+- #376 (best practices) — provided triage and routing patterns
+- #306 (multi-root support) — acknowledged limitation, kept open for feedback
+- #95 (casting system) — explained mature re-casting flow
+- #140 (Teams MCP) — critical guidance on Office 365 Connectors retirement → Power Automate Workflows
+
+**Pattern observed:** Feature-release timing + follow-up responses critical for community trust. v0.9.1 directly addressed 5+ discussions (models, skills, human members) that were open 2-4 weeks. Community triage now operational: 14 discussions reviewed, 6 closed, 8 kept active = 43% closure rate on resolved items.
+
+**Key insight:** Retirement of Microsoft Office 365 Connectors (Dec 2024) caught users mid-setup. Proactive notification of Teams Workflows alternative + Power Automate guidance essential for Teams MCP users.
