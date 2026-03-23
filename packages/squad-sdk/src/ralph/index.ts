@@ -184,5 +184,5 @@ export class RalphMonitor {
   }
 }
 
-export { loadCapabilities, canHandleIssue, filterByCapabilities, extractNeeds, type MachineCapabilities, KNOWN_CAPABILITIES } from './capabilities.js';
+export { loadCapabilities, canHandleIssue, filterByCapabilities, extractNeeds, getDeploymentMode, getPodId, generatePodCapabilitiesPath, type MachineCapabilities, type DeploymentMode, KNOWN_CAPABILITIES } from './capabilities.js';
 export { getTrafficLight, shouldProceed, getRetryDelay, PredictiveCircuitBreaker, canUseQuota, loadRatePool, type RatePool, type RatePoolAllocation, type RateSample, type TrafficLight, type AgentPriority } from './rate-limiting.js';
