@@ -9,7 +9,7 @@
  * @see https://github.com/bradygaster/squad/issues/515
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
