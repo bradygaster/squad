@@ -17,6 +17,7 @@ import { getPackageVersion, stampVersion, readInstalledVersion } from './version
 export interface UpgradeOptions {
   migrateDirectory?: boolean;
   self?: boolean;
+  force?: boolean;
 }
 
 export interface UpdateInfo {
@@ -245,6 +246,162 @@ function writeWorkflowFile(file: string, srcPath: string, destPath: string, proj
   fs.copyFileSync(srcPath, destPath);
 }
 
+/* ── Infrastructure ensure functions ────────────────────────────── */
+
+const GITATTRIBUTES_RULES = [
+  '.squad/decisions.md merge=union',
+  '.squad/agents/*/history.md merge=union',
+  '.squad/log/** merge=union',
+  '.squad/orchestration-log/** merge=union',
+];
+
+const GITIGNORE_ENTRIES = [
+  '.squad/orchestration-log/',
+  '.squad/log/',
+  '.squad/decisions/inbox/',
+  '.squad/sessions/',
+  '.squad-workstream',
+];
+
+const ENSURE_DIRECTORIES = [
+  '.squad/identity',
+  '.squad/orchestration-log',
+  '.squad/log',
+  '.squad/sessions',
+  '.squad/decisions/inbox',
+  '.copilot/skills',
+];
+
+/**
+ * Ensure .gitattributes has required merge=union rules (idempotent)
+ */
+export function ensureGitattributes(dest: string): string[] {
+  const filePath = path.join(dest, '.gitattributes');
+  let content = '';
+  if (fs.existsSync(filePath)) {
+    content = fs.readFileSync(filePath, 'utf8');
+  }
+  const added: string[] = [];
+  for (const rule of GITATTRIBUTES_RULES) {
+    if (!content.includes(rule)) {
+      added.push(rule);
+    }
+  }
+  if (added.length > 0) {
+    const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(filePath, content + suffix + added.join('\n') + '\n');
+  }
+  return added;
+}
+
+/**
+ * Ensure .gitignore has required entries (idempotent)
+ */
+export function ensureGitignore(dest: string): string[] {
+  const filePath = path.join(dest, '.gitignore');
+  let content = '';
+  if (fs.existsSync(filePath)) {
+    content = fs.readFileSync(filePath, 'utf8');
+  }
+  const added: string[] = [];
+  for (const entry of GITIGNORE_ENTRIES) {
+    if (!content.includes(entry)) {
+      added.push(entry);
+    }
+  }
+  if (added.length > 0) {
+    const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(filePath, content + suffix + added.join('\n') + '\n');
+  }
+  return added;
+}
+
+/**
+ * Create missing infrastructure directories
+ */
+export function ensureDirectories(dest: string): string[] {
+  const created: string[] = [];
+  for (const dir of ENSURE_DIRECTORIES) {
+    const fullPath = path.join(dest, dir);
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true });
+      created.push(dir);
+    }
+  }
+  return created;
+}
+
+/**
+ * Copy all skills from package templates to .copilot/skills/ (force: false)
+ */
+function syncAllSkills(dest: string, templatesDir: string): number {
+  const skillsSrc = path.join(templatesDir, 'skills');
+  const skillsDest = path.join(dest, '.copilot', 'skills');
+  if (!fs.existsSync(skillsSrc)) return 0;
+  fs.mkdirSync(skillsDest, { recursive: true });
+  fs.cpSync(skillsSrc, skillsDest, { recursive: true, force: false });
+  // Count skill directories synced
+  try {
+    return fs.readdirSync(skillsSrc).filter(e =>
+      fs.statSync(path.join(skillsSrc, e)).isDirectory()
+    ).length;
+  } catch { return 0; }
+}
+
+/**
+ * Copy full templates/ directory to .squad/templates/ for user access
+ */
+function refreshSquadTemplatesDir(dest: string, templatesDir: string): void {
+  const squadTemplatesDest = path.join(dest, '.squad', 'templates');
+  fs.mkdirSync(squadTemplatesDest, { recursive: true });
+  // Copy everything except workflows and skills (those have dedicated handling)
+  const entries = fs.readdirSync(templatesDir);
+  for (const entry of entries) {
+    if (entry === 'workflows' || entry === 'skills') continue;
+    const srcPath = path.join(templatesDir, entry);
+    const destPath = path.join(squadTemplatesDest, entry);
+    const stat = fs.statSync(srcPath);
+    if (stat.isDirectory()) {
+      fs.cpSync(srcPath, destPath, { recursive: true, force: true });
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * Run all ensure* checks and skill/template sync — shared by both code paths
+ */
+function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): void {
+  const attrAdded = ensureGitattributes(dest);
+  if (attrAdded.length > 0) {
+    success(`ensured .gitattributes (${attrAdded.length} rules added)`);
+    filesUpdated.push('.gitattributes');
+  }
+
+  const ignoreAdded = ensureGitignore(dest);
+  if (ignoreAdded.length > 0) {
+    success(`ensured .gitignore (${ignoreAdded.length} entries added)`);
+    filesUpdated.push('.gitignore');
+  }
+
+  const dirsCreated = ensureDirectories(dest);
+  if (dirsCreated.length > 0) {
+    success(`created ${dirsCreated.length} missing directories`);
+    filesUpdated.push(...dirsCreated);
+  }
+
+  const skillCount = syncAllSkills(dest, templatesDir);
+  if (skillCount > 0) {
+    success(`synced ${skillCount} skills to .copilot/skills/`);
+    filesUpdated.push(`skills (${skillCount})`);
+  }
+
+  refreshSquadTemplatesDir(dest, templatesDir);
+  success('refreshed .squad/templates/');
+  filesUpdated.push('.squad/templates/');
+}
+
 /**
  * Run the upgrade command
  */
@@ -270,7 +427,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   const oldVersion = readInstalledVersion(agentDest) ?? '0.0.0';
   
   // Check if already current
-  const isAlreadyCurrent = oldVersion && oldVersion !== '0.0.0' && compareSemver(oldVersion, cliVersion) === 0;
+  const isAlreadyCurrent = !options.force && oldVersion && oldVersion !== '0.0.0' && compareSemver(oldVersion, cliVersion) === 0;
   
   const projectType = detectProjectType(dest);
   
@@ -305,6 +462,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       success('upgraded squad.agent.md');
       filesUpdated.push('squad.agent.md');
     }
+    
+    // Run infrastructure ensure checks even when already current
+    runEnsureChecks(dest, templatesDir, filesUpdated);
     
     return {
       fromVersion: oldVersion,
@@ -385,6 +545,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       filesUpdated.push('copilot-instructions.md');
     }
   }
+  
+  // Run infrastructure ensure checks
+  runEnsureChecks(dest, templatesDir, filesUpdated);
   
   console.log();
   info(`Upgrade complete: v${fromLabel} → v${cliVersion}`);

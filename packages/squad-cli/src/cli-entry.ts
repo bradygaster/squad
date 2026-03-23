@@ -286,6 +286,7 @@ async function main(): Promise<void> {
     
     const migrateDir = args.includes('--migrate-directory');
     const selfUpgrade = args.includes('--self');
+    const forceUpgrade = args.includes('--force');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
     
     // Handle --migrate-directory flag
@@ -297,7 +298,8 @@ async function main(): Promise<void> {
     // Run upgrade
     await runUpgrade(dest, { 
       migrateDirectory: migrateDir,
-      self: selfUpgrade
+      self: selfUpgrade,
+      force: forceUpgrade
     });
     
     return;
