@@ -185,6 +185,10 @@
     "./config/models": {
       "types": "./dist/config/models.d.ts",
       "import": "./dist/config/models.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "import": "./dist/storage/index.js"
     }
   },
   "files": [
