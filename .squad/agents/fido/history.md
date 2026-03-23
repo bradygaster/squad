@@ -131,3 +131,9 @@ Pattern: Quality tooling gap identified. ESLint 9 modernization + async/promise 
 
 📌 **Team update (2026-03-22T06:44:01Z):** Flight issued comprehensive triage. FIDO owns Code Quality Linting PRD (#477). ESLint 9 PoC already drafted; ready for implementation planning.
 
+### Agent Name Extraction Test Coverage (#577)
+
+Extracted inline regex-based agent name parsing from `shell/index.ts` into a testable pure function `parseAgentFromDescription` in `shell/agent-name-parser.ts`. Created 30 tests across 7 categories: happy path, emoji variations, case insensitivity, fuzzy fallback, no-match, edge cases, and adversarial inputs. The function uses a 3-tier matching strategy: (1) leading emoji+name+colon regex, (2) name+colon anywhere regex, (3) fuzzy word-boundary match against known agent names. Shell index.ts now imports and delegates to this function. Build and tests green.
+
+**Learning:** Inline regex logic in UI code is untestable and fragile. Extracting to a pure function with explicit inputs (description string + known names array) makes it trivially testable and enables VOX's parallel fix to land cleanly.
+
