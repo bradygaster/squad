@@ -162,3 +162,33 @@ Teams MCP critical update: Office 365 Connectors retired Dec 2024 → Power Auto
 **Pattern observed:** Feature-release timing + follow-up responses critical for community trust. v0.9.1 directly addressed 5+ discussions (models, skills, human members) that were open 2-4 weeks. Community triage now operational: 14 discussions reviewed, 6 closed, 8 kept active = 43% closure rate on resolved items.
 
 **Key insight:** Retirement of Microsoft Office 365 Connectors (Dec 2024) caught users mid-setup. Proactive notification of Teams Workflows alternative + Power Automate guidance essential for Teams MCP users.
+
+### Release Playbook Rewrite (#564, 2026-07-22)
+
+**Task:** Rewrite PUBLISH-README.md from a v0.8.22 version-specific stub (58 lines) into a living, version-agnostic release playbook.
+
+**Outcome:** 232-line playbook replacing entirely with 11 sections per Flight's spec:
+1. Overview — two publish channels, package order (SDK → CLI)
+2. Pre-Flight Checklist — runnable checklist with `grep`/`npm` commands
+3. Publish via CI (Recommended Path) — GitHub Release workflow
+4. Publish via workflow_dispatch — manual trigger fallback
+5. Insider Channel — insider branch + `@insider` tag for testing
+6. Workspace Publish Policy — reference to CI lint rule #557 (enforces `-w` flag)
+7. Manual Local Publish — emergency fallback with step-by-step commands
+8. 422 Race Condition & npm Errors — v0.9.1 incident + troubleshooting
+9. Post-Publish Verification — `npm view` + npx cold-install test
+10. Version Bump After Publish — preview version increment pattern
+11. Legacy Publish Scripts — deprecation notice for PowerShell scripts
+
+**Key decisions:**
+- Microsoft Style Guide enforced: sentence-case headings, active voice, "you" not "we", present tense
+- Version-agnostic: `<VERSION>` placeholder, no hardcoded version numbers
+- Scannability: checklist format, code blocks (bash not PowerShell for portability), tables for error reference
+- Accuracy: pulled from actual workflows (`squad-npm-publish.yml`, `squad-insider-publish.yml`) — preflight job, smoke test, publish stages, registry propagation retry logic (5× 15-second intervals)
+- Runnable: all commands copy-pasteable (e.g., `npm -w packages/squad-sdk pack --dry-run`)
+
+**Pattern:** Living playbook absorbs three related issues (#558 race conditions, #559 manual publish, #560 pre-flight checklist) into unified reference. No separate documents; all under one decision tree: try CI first, use manual only if CI broken. Workspace publish policy section references CI lint rule #557 (being added in parallel by FIDO); both docs + lint create enforcement + education.
+
+**Commit:** `docs: rewrite PUBLISH-README.md as release playbook (#564)` on squad/release-hardening branch.
+
+📌 **Team update (2026-03-24T06-release-hardening):** Release playbook rewrite (#564) completed. PUBLISH-README.md transformed from v0.8.22 stub to living 232-line playbook with 11 sections: Overview, Pre-Flight Checklist, Publish via CI (recommended), Publish via workflow_dispatch, Insider Channel, Workspace Publish Policy, Manual Local Publish (emergency fallback), 422 Race Condition & npm Errors, Post-Publish Verification, Version Bump After Publish, Legacy Publish Scripts. Absorbed issues #558, #559, #560 into unified decision tree. Microsoft Style Guide enforced; version-agnostic; all commands runnable. Scannability: checklist format, bash code blocks, error reference table. Committed to squad/release-hardening.

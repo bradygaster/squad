@@ -172,3 +172,9 @@ Commit: 7660a27 on branch squad/579-init-scaffolding-hardening.
 **Key finding:** `resolvePersonalSquadDir()` is install-method-agnostic — it resolves from env vars and `os.homedir()`, never from `process.argv`. The npx issue (#576) is therefore NOT in path resolution but likely in the CLI command wiring or the `--global` flag routing. Tests confirm the SDK layer works correctly.
 
 **Commit:** c307187 on branch squad/576-personal-squad-init-npx
+### Publish Policy CI Gate (#557)
+
+Added `publish-policy` job to squad-ci.yml — lightweight lint that scans all `.github/workflows/*.yml` for bare `npm publish` commands missing `-w`/`--workspace`. Catches the incident class where root package.json gets published instead of a workspace package. Also wrote `test/publish-policy.test.ts` (36 tests) covering: workspace-scoped passes, bare publish fails, comment/echo/grep/YAML-name line skipping, findViolations line numbering, and live validation of all 15 workflow files. Key pattern: meta-references (echo, grep, YAML name keys containing "npm publish") must be excluded from lint — the CI script's own text would otherwise self-trigger.
+
+📌 **Team update (2026-03-24T06-release-hardening):** Publish policy CI gate (#557) implemented. Added `publish-policy` job to squad-ci.yml: lightweight lint scans `.github/workflows/*.yml` for bare `npm publish` commands, rejects non-workspace-scoped invocations. Wrote test/publish-policy.test.ts (36 tests) validating: workspace-scoped passes, bare publish fails, meta-reference (echo/grep/YAML-name) skipping, live validation of 15 workflow files. Pattern: catch "publish root package.json" incident class before merge. Both lint + playbook docs create enforcement + education loop.
+
