@@ -117,9 +117,15 @@ Set this environment variable in all CI build steps to prevent the build script 
 | Draft GitHub Releases | npm publish workflow doesn't trigger | Never create drafts |
 | User npm tokens with 2FA | EOTP errors in CI | Use Automation token type |
 
+## CI Gate: Workspace Publish Policy
+
+The `publish-policy` job in `squad-ci.yml` scans all workflow files for bare `npm publish` commands that are missing `-w`/`--workspace` flags. Any workflow that attempts a non-workspace-scoped publish will fail CI. This prevents accidental root-level publishes that would push the wrong `package.json` to npm.
+
+See `.github/workflows/squad-ci.yml` → `publish-policy` job for implementation details.
+
 ## Related
 
 - Issues: #556–#564 (release:next)
 - Retro: `.squad/decisions/inbox/surgeon-v091-retrospective.md`
 - CI audit: `.squad/decisions/inbox/booster-ci-audit.md`
-- Playbook (for Brady's review): session files/release-playbook.md
+- Playbook: `PUBLISH-README.md` (repo root)
