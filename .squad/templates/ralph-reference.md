@@ -72,3 +72,79 @@ Ralph stops checking when:
 2. User says "Ralph, idle" or "stop"
 3. Session ends (in-session layer only)
 4. Process killed (watch mode)
+
+## Retrospective Enforcement
+
+Ralph enforces the weekly retrospective ceremony. At **every work-check cycle**, before dispatching any new work, Ralph checks whether a retrospective is overdue.
+
+### Test-RetroOverdue Logic
+
+A retrospective is overdue when no retrospective log file exists from the past 7 days.
+
+**Implementation (PowerShell):**
+
+```powershell
+function Test-RetroOverdue {
+    $logDir = ".squad/log"
+    $threshold = (Get-Date).AddDays(-7)
+
+    # Find the most recent retrospective log file
+    $latestRetro = Get-ChildItem -Path $logDir -Filter "*retrospective*" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $latestRetro) {
+        # No retro ever run — overdue immediately
+        return $true
+    }
+
+    return $latestRetro.LastWriteTime -lt $threshold
+}
+```
+
+**Implementation (JavaScript/Node.js):**
+
+```js
+const fs = require('fs');
+const path = require('path');
+
+function isRetroOverdue() {
+  const logDir = '.squad/log';
+  const threshold = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+
+  if (!fs.existsSync(logDir)) return true;
+
+  const retroFiles = fs.readdirSync(logDir)
+    .filter(f => f.includes('retrospective'))
+    .map(f => fs.statSync(path.join(logDir, f)).mtimeMs)
+    .sort((a, b) => b - a);
+
+  if (retroFiles.length === 0) return true;
+  return retroFiles[0] < threshold;
+}
+```
+
+### Enforcement Rule
+
+Add this check to the **beginning** of Ralph's work-check cycle, before step 1 (Scan):
+
+```
+PRE-CYCLE: Check if retrospective is overdue
+  IF Test-RetroOverdue() THEN
+    Run the "Retrospective (Weekly)" ceremony from ceremonies.md
+    DO NOT dispatch other work until retro is complete
+    Log retro output to .squad/log/{timestamp}-retrospective.md
+  END IF
+```
+
+**Why before other work:** Retros that wait until after the board is clear never run. Enforcing before dispatch means the team reviews before building more.
+
+### Action Item Tracking
+
+Retro action items **must** be created as GitHub Issues, not markdown checkboxes:
+
+- Label: `retro-action`
+- Assignee: the agent or human responsible
+- Track completion via issue close-rate
+
+Measured result: teams using GitHub Issues for retro actions show significantly higher completion rates than markdown checklists, which have near-zero completion when not enforced.
