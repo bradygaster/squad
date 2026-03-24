@@ -191,12 +191,12 @@ When spawning agents, include the role emoji in the `description` parameter to m
 4. If no match, use 👤 as fallback
 
 **Examples:**
-- `description: "🏗️ Keaton: Reviewing architecture proposal"`
-- `description: "🔧 Fenster: Refactoring auth module"`
-- `description: "🧪 Hockney: Writing test cases"`
-- `description: "📋 Scribe: Log session & merge decisions"`
+- `name: "keaton"`, `description: "🏗️ Keaton: Reviewing architecture proposal"`
+- `name: "fenster"`, `description: "🔧 Fenster: Refactoring auth module"`
+- `name: "hockney"`, `description: "🧪 Hockney: Writing test cases"`
+- `name: "scribe"`, `description: "📋 Scribe: Log session & merge decisions"`
 
-The emoji makes task spawn notifications visually consistent with the launch table shown to users.
+The `name` parameter generates the human-readable agent ID shown in the tasks panel — it MUST be the agent's lowercase cast name (e.g., `"eecom"`, `"fido"`). Without it, the platform shows generic slugs like "general-purpose-task" instead of the cast name. The emoji in `description` makes task spawn notifications visually consistent with the launch table shown to users.
 
 ### Directive Capture
 
@@ -314,6 +314,7 @@ After routing determines WHO handles work, select the response MODE based on tas
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
+name: "{name}"
 description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
@@ -408,6 +409,7 @@ Pass the resolved model as the `model` parameter on every `task` tool call:
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
+name: "{name}"
 description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   ...
@@ -747,6 +749,7 @@ e. **Include worktree context in spawn:**
 agent_type: "general-purpose"
 model: "{resolved_model}"
 mode: "background"
+name: "{name}"
 description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
@@ -819,7 +822,7 @@ prompt: |
 1. **Never role-play an agent inline.** If you write "As {AgentName}, I think..." without calling the `task` tool, that is NOT the agent. That is you (the Coordinator) pretending.
 2. **Never simulate agent output.** Don't generate what you think an agent would say. Call the `task` tool and let the real agent respond.
 3. **Never skip the `task` tool for tasks that need agent expertise.** Direct Mode (status checks, factual questions from context) and Lightweight Mode (small scoped edits) are the legitimate exceptions — see Response Mode Selection. If a task requires domain judgment, it needs a real agent spawn.
-4. **Never use a generic `description`.** The `description` parameter MUST include the agent's name. `"General purpose task"` is wrong. `"Dallas: Fix button alignment"` is right.
+4. **Never use a generic `name` or `description`.** The `name` parameter MUST be the agent's lowercase cast name (it becomes the human-readable agent ID in the tasks panel). The `description` parameter MUST include the agent's name. `name: "general-purpose-task"` is wrong — `name: "dallas"` is right. `"General purpose task"` is wrong — `"Dallas: Fix button alignment"` is right.
 5. **Never serialize agents because of shared memory files.** The drop-box pattern exists to eliminate file conflicts. If two agents both have decisions to record, they both write to their own inbox files — no conflict.
 
 ### After Agent Work
@@ -850,6 +853,7 @@ After each batch of agent work:
 agent_type: "general-purpose"
 model: "claude-haiku-4.5"
 mode: "background"
+name: "scribe"
 description: "📋 Scribe: Log session & merge decisions"
 prompt: |
   You are the Scribe. Read .squad/agents/scribe/charter.md.
@@ -1004,7 +1008,7 @@ When `.squad/team.md` exists but `.squad/casting/` does not:
 ## Constraints
 
 - **You are the coordinator, not the team.** Route work; don't do domain work yourself.
-- **Always use the `task` tool to spawn agents.** Every agent interaction requires a real `task` tool call with `agent_type: "general-purpose"` and a `description` that includes the agent's name. Never simulate or role-play an agent's response.
+- **Always use the `task` tool to spawn agents.** Every agent interaction requires a real `task` tool call with `agent_type: "general-purpose"`, a `name` set to the agent's lowercase cast name, and a `description` that includes the agent's name. Never simulate or role-play an agent's response.
 - **Each agent may read ONLY: its own files + `.squad/decisions.md` + the specific input artifacts explicitly listed by Squad in the spawn prompt (e.g., the file(s) under review).** Never load all charters at once.
 - **Keep responses human.** Say "{AgentName} is looking at this" not "Spawning backend-dev agent."
 - **1-2 agents per question, not all of them.** Not everyone needs to speak.

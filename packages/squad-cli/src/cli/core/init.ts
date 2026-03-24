@@ -11,7 +11,7 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, type InitOptions } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, type InitOptions } from '@bradygaster/squad-sdk';
 
 const CYAN = '\x1b[36m';
 
@@ -104,6 +104,8 @@ export interface RunInitOptions {
   sdk?: boolean;
   /** If true, use built-in base roles instead of fictional universe casting (default: false) */
   roles?: boolean;
+  /** If true, this is a global (personal squad) init — bootstrap personal-squad/ dir */
+  isGlobal?: boolean;
 }
 
 /**
@@ -295,6 +297,22 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   console.log();
   console.log(`${GREEN}${BOLD}Your team is ready.${RESET} Run ${CYAN}${BOLD}squad${RESET} to start.`);
   console.log();
+
+  // ── Personal squad bridge ───────────────────────────────────────────
+  if (options.isGlobal) {
+    // Global init: ensure personal-squad/ directory exists alongside .squad/
+    const personalDir = ensurePersonalSquadDir();
+    console.log(`${GREEN}${BOLD}✓${RESET} Personal squad initialized at ${DIM}${personalDir}${RESET}`);
+    console.log(`${DIM}  Add agents with: squad personal add <name> --role <role>${RESET}`);
+    console.log();
+  } else {
+    // Repo init: inform user if personal squad is available
+    const personalDir = resolvePersonalSquadDir();
+    if (personalDir) {
+      console.log(`${GREEN}${BOLD}✓${RESET} Personal squad detected — your personal agents will be available here.`);
+      console.log();
+    }
+  }
 
   if (squadInfo.isLegacy) {
     showDeprecationWarning();

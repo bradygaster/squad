@@ -59,11 +59,7 @@ Ralph will log skipped issues:
 
 ## Kubernetes Integration
 
-Machine capabilities support two deployment modes on Kubernetes:
-
-### Mode A — Agent-per-node (default)
-
-One Ralph process per Kubernetes node. Each reads the node-local `machine-capabilities.json`. Use `nodeSelector` to pin Ralphs to nodes with the right hardware.
+On Kubernetes, machine capabilities map to node labels:
 
 ```yaml
 # Node labels (set by capability DaemonSet or manually)
@@ -74,48 +70,6 @@ node.squad.dev/browser: "true"
 spec:
   nodeSelector:
     node.squad.dev/gpu: "true"
-```
-
-No extra environment variables needed — this is the default mode.
-
-### Mode B — Squad-per-pod
-
-Multiple full Squad instances run as separate pods (on the same or different nodes). Each pod gets its own identity via the `SQUAD_POD_ID` environment variable, which enables pod-specific capability manifests.
-
-```yaml
-# Deployment spec for squad-per-pod mode
-spec:
-  replicas: 3
-  template:
-    spec:
-      containers:
-        - name: squad
-          env:
-            - name: SQUAD_POD_ID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: SQUAD_DEPLOYMENT_MODE
-              value: squad-per-pod
-```
-
-When `SQUAD_POD_ID` is set and `SQUAD_DEPLOYMENT_MODE` is `squad-per-pod`, Ralph looks for a pod-specific manifest first:
-
-1. `.squad/machine-capabilities-{podId}.json` (pod-specific)
-2. `.squad/machine-capabilities.json` (shared fallback)
-3. `~/.squad/machine-capabilities.json` (user home fallback)
-4. `null` (opt-in — all issues pass through)
-
-Example pod-specific manifest (`.squad/machine-capabilities-squad-worker-7b4f6.json`):
-
-```json
-{
-  "machine": "squad-worker-7b4f6",
-  "capabilities": ["gpu", "docker", "azure-cli"],
-  "missing": ["browser", "onedrive"],
-  "lastUpdated": "2026-06-01T00:00:00Z",
-  "podId": "squad-worker-7b4f6"
-}
 ```
 
 A DaemonSet can run capability discovery on each node and maintain labels automatically. See the [squad-on-aks](https://github.com/tamirdresher/squad-on-aks) project for a complete Kubernetes deployment example.

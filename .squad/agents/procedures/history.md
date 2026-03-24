@@ -124,3 +124,18 @@ Pattern: Agent specification gap identified. Procedures owns formal spec structu
 
 Wave 1 governance work on #500 and #344: authored economy-mode skill (`SKILL.md`), economy-mode governance proposal, and personal-squad governance proposal. Caught `claude-sonnet-4.6` missing from valid models catalog. PR #503 (`squad/500-344-governance`) merged to dev.
 
+### 2025-07: Spawn template `name` parameter fix (#577)
+
+**Problem:** Agent cast names weren't displayed during work — the tasks panel showed generic slugs like "general-purpose-task" instead of the cast name. Root cause: spawn templates in `squad.agent.md` specified `description` but NOT the `name` parameter for the `task` tool. The `name` parameter generates the human-readable agent ID shown in the tasks panel.
+
+**Fix:** Added `name: "{name}"` (lowercase cast name) to all spawn templates in `.squad-templates/squad.agent.md`:
+- Lightweight Spawn Template
+- Model-passing example
+- Main full spawn template ("Template for any agent")
+- Scribe spawn template (hardcoded `name: "scribe"`)
+
+Also updated: examples section (showing `name` + `description` pairs), anti-pattern #4 (now covers both `name` and `description`), and Constraints section (requiring `name` on every spawn).
+
+**Pattern:** Every `task` tool spawn MUST include `name` set to the agent's lowercase cast name. Without it, the platform defaults to generic slugs. The `description` parameter is for the human-readable summary; `name` is for the agent ID.
+
+📌 **Team update (2026-03-23T23:15Z):** Orchestration complete. Agent name display refactor shipped: spawn templates updated with mandatory `name` parameter across all 4 template variants. VOX and FIDO coordinated on parser extraction and cascading pattern strategies. All decisions merged to decisions.md. Canonical source: `.squad-templates/squad.agent.md` (all derived copies secondary).

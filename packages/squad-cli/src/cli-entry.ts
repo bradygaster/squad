@@ -271,11 +271,13 @@ async function main(): Promise<void> {
       return;
     }
 
-    const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
+    const sdkMod = hasGlobal ? await lazySquadSdk() : null;
+    const dest = hasGlobal ? sdkMod!.resolveGlobalSquadPath() : process.cwd();
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
-    runInit(dest, { includeWorkflows: !noWorkflows, sdk, roles }).catch(err => {
+    // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).catch(err => {
       fatal(err.message);
     });
     return;

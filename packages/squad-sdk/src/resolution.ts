@@ -341,6 +341,32 @@ export function resolvePersonalSquadDir(): string | null {
 }
 
 /**
+ * Ensure the user's personal squad directory exists with the expected structure.
+ * Creates `personal-squad/agents/` and `personal-squad/config.json` if missing.
+ *
+ * Idempotent — safe to call multiple times.
+ *
+ * @returns Absolute path to the personal squad directory.
+ */
+export function ensurePersonalSquadDir(): string {
+  const globalDir = resolveGlobalSquadPath();
+  const personalDir = path.join(globalDir, 'personal-squad');
+  const agentsDir = path.join(personalDir, 'agents');
+
+  if (!fs.existsSync(agentsDir)) {
+    fs.mkdirSync(agentsDir, { recursive: true });
+  }
+
+  const configPath = path.join(personalDir, 'config.json');
+  if (!fs.existsSync(configPath)) {
+    const config = { defaultModel: 'auto', ghostProtocol: true };
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  }
+
+  return personalDir;
+}
+
+/**
  * Validate that a file path is within `.squad/` or the system temp directory.
  *
  * Use this guard before writing any scratch/temp/state files to ensure Squad

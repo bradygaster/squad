@@ -71,3 +71,29 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  publish-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enforce workspace-scoped npm publish
+        run: |
+          echo "Scanning workflow files for bare npm publish commands..."
+          VIOLATIONS=0
+          for wf in .github/workflows/*.yml; do
+            # Strip comment lines, then check for npm publish without -w/--workspace
+            BARE=$(grep -n 'npm.*publish' "$wf" | grep -v '#' | grep -v '\-w ' | grep -v '\-\-workspace' | grep -v 'echo ' | grep -v 'grep ' | grep -v 'name:' || true)
+            if [ -n "$BARE" ]; then
+              echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
+              echo "$BARE"
+              VIOLATIONS=1
+            fi
+          done
+          if [ "$VIOLATIONS" -eq 1 ]; then
+            echo ""
+            echo "::error::PUBLISH POLICY VIOLATION — all npm publish commands must be workspace-scoped (-w or --workspace)"
+            echo "See: https://github.com/bradygaster/squad/issues/557"
+            exit 1
+          fi
+          echo "✅ All npm publish commands are workspace-scoped"

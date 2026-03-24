@@ -5051,6 +5051,29 @@ Created `.squad/skills/release-process/SKILL.md` with the definitive step-by-ste
 
 2. **GitHub Actions Workflow Cache Race (Infrastructure)** — After deleting `squad-publish.yml`, GitHub workflow index didn't refresh for 10+ minutes. 422 error persisted even after file deletion. Infrastructure bug, not your code. FIX: Documented in runbook; escalation protocol (if workflow_dispatch fails twice, switch to local publish).
 
+---
+
+### Agent Name Extraction: Dedicated Parser Module (FIDO)
+**Date:** 2026-03-23  
+**Issue:** #577  
+**What:** Agent name extraction logic extracted from inline regex in `shell/index.ts` into dedicated pure function `parseAgentFromDescription(description, knownAgentNames)` in `packages/squad-cli/src/cli/shell/agent-name-parser.ts`.  
+**Why:** Inline regex was fragile and untestable. Extraction enables comprehensive unit testing (30 tests, all passing) and regression guards for future coordinator format changes.  
+**Impact:** All future agent name matching updates route through `agent-name-parser.ts`, not `index.ts`. VOX's 3-tier cascading strategy is now the canonical reference.
+
+### Agent Name Extraction: 3-Tier Cascading Patterns (VOX)
+**Date:** 2026-03-23  
+**Issue:** #577  
+**What:** Agent name extraction uses cascading pattern matching: (1) emoji + name + colon at start, (2) name + colon anywhere, (3) fuzzy word-boundary match. Fallback: show description text instead of generic hint.  
+**Why:** Coordinator formats agent names inconsistently. Single regex failed silently. Multi-tier approach catches all known formats and degrades gracefully.  
+**Impact:** Coordinator's task description format changes should target these three patterns. New patterns added to `agent-name-parser.ts` update the entire extraction system.
+
+### Spawn Templates: Mandatory `name` Parameter (Procedures)
+**Date:** 2026-03-23  
+**Issue:** #577  
+**What:** All spawn templates in `.squad-templates/squad.agent.md` MUST include `name: "{name}"` parameter set to agent's lowercase cast name (e.g., `name: "eecom"`, `name: "fido"`).  
+**Why:** The `name` parameter generates human-readable agent IDs in Copilot CLI tasks panel. Without it, platform shows generic slugs like "general-purpose-task", making agent identity invisible to users.  
+**Impact:** Any new spawn template or template update must include `name` parameter. `.squad-templates/squad.agent.md` is canonical; all derived copies in agent charters are secondary.
+
 3. **npm Workspace Publish Broken (Tool Gap)** — `npm -w packages/squad-sdk publish` hangs indefinitely when npm 2FA set to `auth-and-writes` (needs OTP from authenticator app). Local machine without authenticator becomes soft hang. FIX: Policy — 2FA must be `auth-only`; always `cd` into package directory for publish.
 
 4. **Coordinator Decision-Making Under Pressure (Process)** — Retried `workflow_dispatch` 4+ times instead of pivoting to local publish fallback. Burned critical time on GitHub UI file operations. FIX: Escalation protocol — if `workflow_dispatch` fails twice, invoke local publish immediately. Release Manager owns all publish automation.
@@ -7265,3 +7288,297 @@ Prioritize squad.config.ts sync fixes over new commands. Implement in this order
 **Why:** Agents were claiming "done" without completing all checklist items. The verification step enforces the checklist as a contract. Opt-in by structure — zero overhead for issues without checkboxes.
 **PR:** #473
 **Issue:** #472
+
+---
+
+# Decision: Release Hardening Plan
+
+**By:** Flight  
+**Date:** 2026-07-22  
+**Status:** Approved (Brady-approved scope)  
+**Issues:** #564 (umbrella), #557, #562. Deferred into #564: #558, #559, #560.
+
+---
+
+## Summary
+
+Three concrete work items remain to close out v0.9.1 release incident hardening. This plan specifies exactly what gets built, in what order, and who does what. No fluff.
+
+---
+
+## 1. #564 — Rewrite PUBLISH-README.md as Release Playbook
+
+**What:** Replace the stale 58-line v0.8.22 stub with a living, version-agnostic release playbook.  
+**Owner:** Procedures (formal playbook structure) + Surgeon (publish-specific content)  
+**Reviewer:** Flight  
+**File:** `PUBLISH-README.md` (root — same location, new content)  
+**Absorbs:** #558, #559, #560 (each becomes a section below)
+
+### Exact Sections
+
+```
+# Release Playbook
+
+## Overview
+- What this document is (living playbook, not version-specific instructions)
+- Two publish channels: stable (squad-npm-publish.yml) and insider (squad-insider-publish.yml)
+- Package order: SDK first, CLI second (CLI depends on SDK)
+
+## Pre-Flight Checklist (absorbs #560)
+- [ ] All tests pass on dev branch (`npm test` — expect 3900+ tests)
+- [ ] No `file:` references in any packages/*/package.json dependencies
+- [ ] All package.json versions are valid semver (no -preview suffix for release)
+- [ ] SDK dependency in squad-cli is a version range, not `file:../squad-sdk`
+- [ ] `npm run build` succeeds clean (no TypeScript errors)
+- [ ] `npm -w packages/squad-sdk pack --dry-run` and `npm -w packages/squad-cli pack --dry-run` both succeed
+- [ ] Git tag matches package.json versions
+- [ ] CHANGELOG.md updated for this version
+- [ ] GitHub Release draft created (triggers squad-npm-publish.yml on publish)
+
+## Publish via CI (Recommended Path)
+- Create GitHub Release → triggers `squad-npm-publish.yml`
+- Pipeline stages: preflight → smoke-test → publish-sdk → publish-cli
+- Each stage has version match verification and npm registry propagation checks
+- SDK publishes first; CLI job depends on successful SDK publish
+- Provenance attestation is automatic (--provenance flag)
+- Monitor: Actions tab → "Squad npm Publish" workflow
+
+## Publish via workflow_dispatch (Manual Trigger)
+- Go to Actions → "Squad npm Publish" → Run workflow
+- Input: version string (e.g., "0.9.2")
+- Same pipeline as release-triggered publish
+- Use when: re-publishing after a failed attempt, or publishing without a GitHub Release
+
+## Insider Channel
+- Pushes to `insider` branch auto-trigger `squad-insider-publish.yml`
+- Publishes both packages with `--tag insider`
+- No preflight job (insider is for testing, not production)
+- Install: `npm install @bradygaster/squad-cli@insider`
+
+## Workspace Publish Policy
+- NEVER use `npm publish` from the repo root (publishes the wrong package)
+- ALWAYS use `npm -w packages/squad-sdk publish` or `npm -w packages/squad-cli publish`
+- CI enforces this — see lint rule (#557)
+- Manual local publish is a fallback, not the default path
+
+## Manual Local Publish (Emergency Fallback) (absorbs #559)
+- When to use: CI is broken, npm is having issues, or you need to publish NOW
+- Prerequisites: `NPM_TOKEN` or `npm login` with 2FA, build succeeds locally
+- Steps:
+  1. `npm ci && npm run build`
+  2. Run pre-flight checklist above manually
+  3. `cd packages/squad-sdk && npm publish --access public --otp=<CODE>`
+  4. Verify: `npm view @bradygaster/squad-sdk@<VERSION> version`
+  5. `cd ../squad-cli && npm publish --access public --otp=<CODE>`
+  6. Verify: `npm view @bradygaster/squad-cli@<VERSION> version`
+- ALWAYS publish SDK before CLI
+- If CLI publish fails after SDK succeeds: SDK is already live, fix CLI and re-publish (do NOT unpublish SDK)
+
+## 422 Race Condition & npm Errors (absorbs #558)
+- **What happened:** During v0.9.1, npm returned 422 because the package version already existed
+- **Root cause:** `file:` dependency caused SDK to resolve locally instead of from registry. When CI tried to publish, the version check saw the wrong state.
+- **If you get 422 "Version already exists":**
+  1. Check if the package IS actually published: `npm view @bradygaster/squad-<pkg>@<VERSION>`
+  2. If yes — it succeeded, the 422 was a race. Move on.
+  3. If no — bump the version, fix the issue, re-publish
+- **If you get 403 "Forbidden":** NPM_TOKEN is expired or missing. Regenerate at npmjs.com → Access Tokens.
+- **If you get ETARGET "No matching version":** You published SDK but CLI's dependency hasn't propagated yet. Wait 60s and retry.
+- **npm registry propagation:** Takes 15-60 seconds. The CI workflow retries 5 times with 15s intervals.
+
+## Post-Publish Verification
+- `npm view @bradygaster/squad-sdk@<VERSION> version`
+- `npm view @bradygaster/squad-cli@<VERSION> version`
+- `npx @bradygaster/squad-cli@<VERSION> --version` (cold install test)
+- Check GitHub Release is marked as "Latest"
+
+## Version Bump After Publish
+- After stable publish, bump all package.json to next preview: `X.Y.(Z+1)-preview.1`
+- Files to update: root `package.json`, `packages/squad-sdk/package.json`, `packages/squad-cli/package.json`
+- Commit to dev branch, not main
+
+## Legacy Publish Scripts (Deprecated)
+- `publish-0.8.21.ps1`, `publish-0.8.22.ps1`, `publish-0.9.1.ps1` exist in repo root
+- These are version-specific and superseded by CI publish
+- Do NOT create new version-specific publish scripts
+- Existing scripts may be deleted in a future cleanup
+```
+
+### What Gets Deleted from Current PUBLISH-README.md
+
+Everything. The current content is a v0.8.22-specific stub. The new playbook replaces it entirely.
+
+---
+
+## 2. #557 — CI Lint Rule: Reject `npm -w ... publish` in Workflow YAML
+
+**What:** A CI check that fails if any workflow YAML contains bare `npm ... publish` without using the workspace-scoped pattern correctly — specifically, it prevents someone from adding `npm publish` (without `-w`) in a workflow file, which would publish the root package instead of the correct workspace package.
+
+**Owner:** FIDO (CI/lint domain) or Procedures (governance)  
+**Reviewer:** Flight  
+**Where it runs:** New job in `squad-ci.yml`, runs on every PR and push to dev/insider  
+**What it checks:** Scans `.github/workflows/*.yml` for `npm publish` invocations that are NOT workspace-scoped.
+
+### Exact Implementation
+
+Add a new job to `.github/workflows/squad-ci.yml`:
+
+```yaml
+  publish-policy:
+    name: Workspace publish policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject non-workspace npm publish in workflows
+        run: |
+          echo "Checking workflow files for non-workspace npm publish commands..."
+          VIOLATIONS=0
+          for f in .github/workflows/*.yml; do
+            # Find lines with 'npm publish' or 'npm ... publish' that do NOT have '-w' flag
+            # Exclude comments (lines starting with #)
+            while IFS= read -r line; do
+              # Skip comment lines
+              [[ "$line" =~ ^[[:space:]]*# ]] && continue
+              # Match 'npm publish' without '-w' or '--workspace'
+              if echo "$line" | grep -qP 'npm\s+publish' && ! echo "$line" | grep -qP 'npm\s+-w\s|npm\s+--workspace'; then
+                echo "::error file=$f::Found non-workspace 'npm publish' — use 'npm -w packages/<pkg> publish' instead"
+                echo "  → $line"
+                VIOLATIONS=$((VIOLATIONS + 1))
+              fi
+            done < <(grep -n 'npm.*publish' "$f" || true)
+          done
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo ""
+            echo "::error::BLOCKED — $VIOLATIONS workflow file(s) use 'npm publish' without workspace scope."
+            echo "Policy: Always use 'npm -w packages/squad-sdk publish' or 'npm -w packages/squad-cli publish'."
+            echo "See PUBLISH-README.md → Workspace Publish Policy."
+            exit 1
+          fi
+          echo "✅ All npm publish commands are workspace-scoped"
+```
+
+### What This Catches
+
+- `npm publish` (bare, would publish root package.json)
+- `npm publish --access public` (bare with flags)
+- `run: npm publish --tag insider` (insider without workspace)
+
+### What This Allows
+
+- `npm -w packages/squad-sdk publish --access public --provenance` ✅
+- `npm -w packages/squad-cli publish --tag insider --access public` ✅
+
+### Documentation
+
+Add the policy to PUBLISH-README.md under "Workspace Publish Policy" (already in the outline above).
+
+---
+
+## 3. #562 — Delete Ghost Workflow `publish-npm.yml` (ID 250121956)
+
+**What:** The file `.github/workflows/publish-npm.yml` was already deleted from disk, but the workflow ghost persists in GitHub Actions UI with state `disabled_manually`.
+
+**Owner:** Brady (requires repo admin + API token)  
+**Why Brady:** This is a one-time API operation requiring admin-level access, not a code change.
+
+### Research Finding
+
+GitHub has NO `DELETE /repos/{owner}/{repo}/actions/workflows/{id}` endpoint. The Workflows REST API only supports List, Get, Disable, and Enable. **You cannot directly delete a workflow.**
+
+### The Actual Path to Clear It
+
+GitHub auto-garbage-collects a workflow entry once it has **zero workflow runs**. The procedure:
+
+1. **List all runs for the ghost workflow:**
+   ```bash
+   gh api repos/bradygaster/squad/actions/workflows/250121956/runs \
+     --paginate -q '.workflow_runs[].id'
+   ```
+
+2. **Delete every run:**
+   ```bash
+   gh api repos/bradygaster/squad/actions/workflows/250121956/runs \
+     --paginate -q '.workflow_runs[].id' | \
+   while read run_id; do
+     echo "Deleting run $run_id"
+     gh api -X DELETE repos/bradygaster/squad/actions/runs/$run_id
+   done
+   ```
+
+3. **Verify the workflow is gone:**
+   ```bash
+   gh api repos/bradygaster/squad/actions/workflows/250121956
+   ```
+   If all runs are deleted, this should eventually return 404 (GitHub may take a few minutes to GC).
+
+4. **If it still shows:** GitHub's GC is not instant. Wait 24 hours and check again. If it persists after 24h with zero runs, contact GitHub Support — this is a known limitation.
+
+### Alternative: If Zero Runs Already Exist
+
+If the ghost workflow has no runs at all and still shows, this is a GitHub bug. The only path is GitHub Support. Document this in the issue and close with "waiting on GitHub GC" status.
+
+---
+
+## Execution Order
+
+| Order | Issue | Work | Owner | Depends On |
+|-------|-------|------|-------|------------|
+| 1 | #562 | Delete ghost workflow runs via `gh api` | Brady (manual) | Nothing |
+| 2 | #557 | Add `publish-policy` job to squad-ci.yml | FIDO or Procedures | Nothing |
+| 3 | #564 | Rewrite PUBLISH-README.md | Procedures + Surgeon | #557 (so playbook can reference the lint rule) |
+
+Items 1 and 2 are independent and can execute in parallel. Item 3 should go last so it references the lint rule that already exists.
+
+---
+
+## What We Are NOT Doing
+
+- No new publish scripts (CI is the path)
+- No unpublishing or republishing anything
+- No changes to `squad-npm-publish.yml` or `squad-insider-publish.yml` (they're working correctly)
+- No separate documents for #558, #559, #560 (absorbed into #564 playbook sections)
+
+
+---
+
+# Decision: Publish Policy CI Gate
+
+**By:** FIDO
+**Date:** 2025-07-24
+**Issue:** #557
+
+## What
+
+All `npm publish` commands in `.github/workflows/*.yml` must be workspace-scoped (`-w` or `--workspace`). A CI job (`publish-policy`) now enforces this on every PR and push to dev/insider.
+
+## Why
+
+Bare `npm publish` would publish the root `package.json` instead of a workspace package — a critical incident vector. This gate catches it before merge.
+
+## Pattern
+
+Meta-references to "npm publish" in echo, grep, and YAML `name:` lines are excluded from the lint to prevent self-triggering. The test suite (`test/publish-policy.test.ts`) validates both the lint logic and all live workflow files.
+
+
+---
+
+# Decision: `init --global` bootstraps personal-squad/ directory
+
+**By:** EECOM
+**Date:** 2026-07-23
+**Issue:** #576
+
+## What
+
+`init --global` now also creates the `personal-squad/` directory (via `ensurePersonalSquadDir()`) alongside the full `.squad/` structure. Repo-level `init` detects and acknowledges existing personal squads.
+
+## Why
+
+`resolveGlobalSquadPath()` returns `~/.config/squad/` — the container. But `resolvePersonalSquadDir()` looks for `~/.config/squad/personal-squad/`. Without the bridge, `init --global` never created the subdirectory that the rest of the personal squad system depends on.
+
+## Impact
+
+- `ensurePersonalSquadDir()` is a new SDK export — any code that needs to guarantee the personal squad directory exists should use it.
+- `init --global` now suppresses GitHub workflows (they're meaningless in the global config dir).
+- `RunInitOptions` has a new `isGlobal` field.
+
