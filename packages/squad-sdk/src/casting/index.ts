@@ -8,8 +8,9 @@
  * Legacy API:     CastingRegistry (filesystem-backed, stub)
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
 export {
   CastingEngine,
   type CastMember,
@@ -60,16 +61,18 @@ export interface CastingRegistryConfig {
 export class CastingRegistry {
   private entries: Map<string, CastingEntry> = new Map();
   private config: CastingRegistryConfig;
+  private storage: StorageProvider;
 
-  constructor(config: CastingRegistryConfig) {
+  constructor(config: CastingRegistryConfig, storage: StorageProvider = new FSStorageProvider()) {
     this.config = config;
+    this.storage = storage;
   }
 
   async load(): Promise<void> {
     const registryPath = path.join(this.config.castingDir, 'registry.json');
-    if (!fs.existsSync(registryPath)) return;
+    const raw = this.storage.readSync(registryPath);
+    if (!raw) return;
 
-    const raw = fs.readFileSync(registryPath, 'utf-8');
     const entries = JSON.parse(raw) as CastingEntry[];
     for (const entry of entries) {
       this.entries.set(entry.role, entry);

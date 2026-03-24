@@ -8,8 +8,10 @@
  * @module platform/comms-file-log
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
 import { safeTimestamp } from '../utils/safe-timestamp.js';
 import type { CommunicationAdapter, CommunicationChannel, CommunicationReply } from './types.js';
 
@@ -17,11 +19,13 @@ export class FileLogCommunicationAdapter implements CommunicationAdapter {
   readonly channel: CommunicationChannel = 'file-log';
   private readonly commsDir: string;
 
-  constructor(private readonly squadRoot: string) {
+  constructor(
+    private readonly squadRoot: string,
+    private readonly storage: StorageProvider = new FSStorageProvider(),
+  ) {
     this.commsDir = join(squadRoot, '.squad', 'comms');
-    if (!existsSync(this.commsDir)) {
-      mkdirSync(this.commsDir, { recursive: true });
-    }
+    // TODO: StorageProvider lacks mkdirSync — residual fs mkdirSync (#481)
+    mkdirSync(this.commsDir, { recursive: true });
   }
 
   async postUpdate(options: {
@@ -52,7 +56,7 @@ export class FileLogCommunicationAdapter implements CommunicationAdapter {
       '',
     ].join('\n');
 
-    writeFileSync(filepath, content, 'utf-8');
+    await this.storage.write(filepath, content);
 
     return { id: filename.replace(/\.md$/, ''), url: undefined };
   }
@@ -62,9 +66,8 @@ export class FileLogCommunicationAdapter implements CommunicationAdapter {
     since: Date;
   }): Promise<CommunicationReply[]> {
     const filepath = join(this.commsDir, `${options.threadId}.md`);
-    if (!existsSync(filepath)) return [];
-
-    const content = readFileSync(filepath, 'utf-8');
+    const content = await this.storage.read(filepath);
+    if (!content) return [];
     const replyMarker = '<!-- Replies: add your response below this line -->';
     const markerIdx = content.indexOf(replyMarker);
     if (markerIdx === -1) return [];

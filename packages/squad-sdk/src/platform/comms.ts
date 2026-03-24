@@ -7,22 +7,24 @@
  * @module platform/comms
  */
 
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CommunicationAdapter, CommunicationChannel, CommunicationConfig } from './types.js';
 import { FileLogCommunicationAdapter } from './comms-file-log.js';
 import { GitHubDiscussionsCommunicationAdapter } from './comms-github-discussions.js';
 import { ADODiscussionCommunicationAdapter } from './comms-ado-discussions.js';
 import { detectPlatform, getRemoteUrl, parseGitHubRemote, parseAzureDevOpsRemote } from './detect.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
 /**
  * Read communication config from `.squad/config.json`.
  */
-function readCommsConfig(repoRoot: string): CommunicationConfig | undefined {
+function readCommsConfig(repoRoot: string, storage: StorageProvider): CommunicationConfig | undefined {
   const configPath = join(repoRoot, '.squad', 'config.json');
-  if (!existsSync(configPath)) return undefined;
+  if (!storage.existsSync(configPath)) return undefined;
   try {
-    const raw = readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return undefined;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed.communications && typeof parsed.communications === 'object') {
       return parsed.communications as CommunicationConfig;
@@ -39,8 +41,8 @@ function readCommsConfig(repoRoot: string): CommunicationConfig | undefined {
  * 2. Auto-detect from platform: GitHub → GitHubDiscussions, ADO → ADOWorkItemDiscussions
  * 3. Fallback: FileLog (always works)
  */
-export function createCommunicationAdapter(repoRoot: string): CommunicationAdapter {
-  const config = readCommsConfig(repoRoot);
+export function createCommunicationAdapter(repoRoot: string, storage: StorageProvider = new FSStorageProvider()): CommunicationAdapter {
+  const config = readCommsConfig(repoRoot, storage);
 
   // Explicit config wins
   if (config?.channel) {
@@ -65,9 +67,10 @@ export function createCommunicationAdapter(repoRoot: string): CommunicationAdapt
       const configPath = join(repoRoot, '.squad', 'config.json');
       let adoOrg = info.org;
       let adoProject = info.project;
-      if (existsSync(configPath)) {
+      if (storage.existsSync(configPath)) {
         try {
-          const raw = readFileSync(configPath, 'utf-8');
+          const raw = storage.readSync(configPath);
+          if (raw === undefined) throw new Error('file removed');
           const parsed = JSON.parse(raw) as Record<string, unknown>;
           const ado = parsed.ado as Record<string, unknown> | undefined;
           if (ado?.org && typeof ado.org === 'string') adoOrg = ado.org;

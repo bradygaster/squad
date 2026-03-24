@@ -8,10 +8,12 @@
  * @module config/init
  */
 
-import { mkdir, writeFile, readFile, copyFile, readdir, appendFile, unlink } from 'fs/promises';
+import { mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, cpSync, statSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs';
+import { cpSync, statSync, mkdirSync } from 'fs';
+import type { StorageProvider } from '../storage/index.js';
+import { FSStorageProvider } from '../storage/index.js';
 import { execFileSync } from 'node:child_process';
 import { MODELS } from '../runtime/constants.js';
 import type { SquadConfig, ModelSelectionConfig, RoutingConfig } from '../runtime/config.js';
@@ -26,19 +28,19 @@ import { getRoleById } from '../roles/index.js';
 /**
  * Get the SDK templates directory path.
  */
-export function getSDKTemplatesDir(): string | null {
+export function getSDKTemplatesDir(storage: StorageProvider = new FSStorageProvider()): string | null {
   // Use fileURLToPath for cross-platform compatibility (handles Windows drive letters, URL encoding)
   const currentDir = dirname(fileURLToPath(import.meta.url));
   
   // Try relative to this file (in dist/)
   const distPath = join(currentDir, '../../templates');
-  if (existsSync(distPath)) {
+  if (storage.existsSync(distPath)) {
     return distPath;
   }
   
   // Try relative to package root (for dev)
   const pkgPath = join(currentDir, '../../../templates');
-  if (existsSync(pkgPath)) {
+  if (storage.existsSync(pkgPath)) {
     return pkgPath;
   }
   
@@ -48,18 +50,22 @@ export function getSDKTemplatesDir(): string | null {
 /**
  * Copy a directory recursively.
  */
-function copyRecursiveSync(src: string, dest: string): void {
-  if (!existsSync(dest)) {
+function copyRecursiveSync(src: string, dest: string, storage: StorageProvider = new FSStorageProvider()): void {
+  if (!storage.existsSync(dest)) {
+    // TODO: mkdirSync for empty dirs has no StorageProvider equivalent (#481)
     mkdirSync(dest, { recursive: true });
   }
   
-  for (const entry of statSync(src).isDirectory() ? readdirSync(src) : []) {
+  // TODO: statSync has no StorageProvider equivalent (#481)
+  for (const entry of statSync(src).isDirectory() ? storage.listSync(src) : []) {
     const srcPath = join(src, entry);
     const destPath = join(dest, entry);
     
+    // TODO: statSync has no StorageProvider equivalent (#481)
     if (statSync(srcPath).isDirectory()) {
-      copyRecursiveSync(srcPath, destPath);
+      copyRecursiveSync(srcPath, destPath, storage);
     } else {
+      // TODO: cpSync has no StorageProvider equivalent (#481)
       cpSync(srcPath, destPath);
     }
   }
@@ -607,7 +613,7 @@ const FRAMEWORK_WORKFLOWS = [
   'sync-squad-labels.yml',
 ];
 
-export async function initSquad(options: InitOptions): Promise<InitResult> {
+export async function initSquad(options: InitOptions, storage: StorageProvider = new FSStorageProvider()): Promise<InitResult> {
   const {
     teamRoot,
     projectName,
@@ -656,23 +662,23 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
 
   // Helper to write file (respects skipExisting)
   const writeIfNotExists = async (filePath: string, content: string): Promise<boolean> => {
-    if (existsSync(filePath) && skipExisting) {
+    if (storage.existsSync(filePath) && skipExisting) {
       skippedFiles.push(toRelativePath(filePath));
       return false;
     }
-    await mkdir(dirname(filePath), { recursive: true });
-    await writeFile(filePath, content, 'utf-8');
+    await storage.write(filePath, content);
     createdFiles.push(toRelativePath(filePath));
     return true;
   };
   
   // Helper to copy file (respects skipExisting)
   const copyIfNotExists = async (src: string, dest: string): Promise<boolean> => {
-    if (existsSync(dest) && skipExisting) {
+    if (storage.existsSync(dest) && skipExisting) {
       skippedFiles.push(toRelativePath(dest));
       return false;
     }
     await mkdir(dirname(dest), { recursive: true });
+    // TODO: cpSync has no StorageProvider equivalent (#481)
     cpSync(src, dest);
     createdFiles.push(toRelativePath(dest));
     return true;
@@ -696,7 +702,8 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
   ];
   
   for (const dir of directories) {
-    if (!existsSync(dir)) {
+    if (!storage.existsSync(dir)) {
+      // TODO: mkdir for empty dirs has no StorageProvider equivalent (#481)
       await mkdir(dir, { recursive: true });
     }
   }
@@ -714,13 +721,13 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
 
   for (const cf of castingFiles) {
     const dest = join(castingDir, cf.name);
-    if (!existsSync(dest)) {
+    if (!storage.existsSync(dest)) {
       // Try to copy from SDK templates first, fall back to inline defaults
       const templateSrc = templatesDir ? join(templatesDir, cf.templateName) : null;
-      if (templateSrc && existsSync(templateSrc)) {
+      if (templateSrc && storage.existsSync(templateSrc)) {
         cpSync(templateSrc, dest);
       } else {
-        await writeFile(dest, cf.fallback, 'utf-8');
+        await storage.write(dest, cf.fallback);
       }
       createdFiles.push(toRelativePath(dest));
     } else {
@@ -733,7 +740,7 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
   // -------------------------------------------------------------------------
   
   const squadConfigPath = join(squadDir, 'config.json');
-  if (!existsSync(squadConfigPath)) {
+  if (!storage.existsSync(squadConfigPath)) {
     // Detect platform from git remote for config
     let detectedPlatform: string | undefined;
     try {
@@ -797,7 +804,7 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
     if (options.extractionDisabled) {
       squadConfig.extractionDisabled = true;
     }
-    await writeFile(squadConfigPath, JSON.stringify(squadConfig, null, 2), 'utf-8');
+    await storage.write(squadConfigPath, JSON.stringify(squadConfig, null, 2));
     createdFiles.push(toRelativePath(squadConfigPath));
   }
   
@@ -829,7 +836,6 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
   const agentsDir = join(squadDir, 'agents');
   for (const agent of agents) {
     const agentDir = join(agentsDir, agent.name);
-    await mkdir(agentDir, { recursive: true });
     agentDirs.push(agentDir);
     
     // Create charter.md
@@ -883,7 +889,7 @@ Reusable patterns and heuristics learned through work. NOT transcripts — each 
   // -------------------------------------------------------------------------
   
   const ceremoniesDest = join(squadDir, 'ceremonies.md');
-  if (templatesDir && existsSync(join(templatesDir, 'ceremonies.md'))) {
+  if (templatesDir && storage.existsSync(join(templatesDir, 'ceremonies.md'))) {
     await copyIfNotExists(join(templatesDir, 'ceremonies.md'), ceremoniesDest);
   }
   
@@ -940,7 +946,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
   
   const routingPath = join(squadDir, 'routing.md');
-  if (templatesDir && existsSync(join(templatesDir, 'routing.md'))) {
+  if (templatesDir && storage.existsSync(join(templatesDir, 'routing.md'))) {
     await copyIfNotExists(join(templatesDir, 'routing.md'), routingPath);
   } else {
     const routingContent = `# Squad Routing
@@ -963,10 +969,11 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
   
   const skillsDir = join(teamRoot, '.copilot', 'skills');
-  if (templatesDir && existsSync(join(templatesDir, 'skills'))) {
+  if (templatesDir && storage.existsSync(join(templatesDir, 'skills'))) {
     const skillsSrc = join(templatesDir, 'skills');
-    const existingSkills = existsSync(skillsDir) ? readdirSync(skillsDir) : [];
+    const existingSkills = storage.existsSync(skillsDir) ? storage.listSync(skillsDir) : [];
     if (existingSkills.length === 0) {
+      // TODO: cpSync has no StorageProvider equivalent (#481)
       cpSync(skillsSrc, skillsDir, { recursive: true });
       createdFiles.push('.copilot/skills');
     }
@@ -985,8 +992,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   ];
   
   let existingAttrs = '';
-  if (existsSync(gitattributesPath)) {
-    existingAttrs = readFileSync(gitattributesPath, 'utf-8');
+  if (storage.existsSync(gitattributesPath)) {
+    existingAttrs = storage.readSync(gitattributesPath) ?? '';
   }
   
   const missingRules = unionRules.filter(rule => !existingAttrs.includes(rule));
@@ -994,7 +1001,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     const block = (existingAttrs && !existingAttrs.endsWith('\n') ? '\n' : '')
       + '# Squad: union merge for append-only team state files\n'
       + missingRules.join('\n') + '\n';
-    await appendFile(gitattributesPath, block);
+    await storage.append(gitattributesPath, block);
     createdFiles.push(toRelativePath(gitattributesPath));
   }
   
@@ -1013,8 +1020,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   ];
   
   let existingIgnore = '';
-  if (existsSync(gitignorePath)) {
-    existingIgnore = readFileSync(gitignorePath, 'utf-8');
+  if (storage.existsSync(gitignorePath)) {
+    existingIgnore = storage.readSync(gitignorePath) ?? '';
   }
   
   const missingIgnore = ignoreEntries.filter(entry => !existingIgnore.includes(entry));
@@ -1022,7 +1029,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     const block = (existingIgnore && !existingIgnore.endsWith('\n') ? '\n' : '')
       + '# Squad: ignore runtime state (logs, inbox, sessions)\n'
       + missingIgnore.join('\n') + '\n';
-    await appendFile(gitignorePath, block);
+    await storage.append(gitignorePath, block);
     createdFiles.push(toRelativePath(gitignorePath));
   }
   
@@ -1031,12 +1038,11 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
   
   const agentFile = join(teamRoot, '.github', 'agents', 'squad.agent.md');
-  if (!existsSync(agentFile) || !skipExisting) {
-    if (templatesDir && existsSync(join(templatesDir, 'squad.agent.md'))) {
-      let agentContent = readFileSync(join(templatesDir, 'squad.agent.md'), 'utf-8');
+  if (!storage.existsSync(agentFile) || !skipExisting) {
+    if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md'))) {
+      let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md')) ?? '';
       agentContent = stampVersionInContent(agentContent, version);
-      await mkdir(dirname(agentFile), { recursive: true });
-      await writeFile(agentFile, agentContent, 'utf-8');
+      await storage.write(agentFile, agentContent);
       createdFiles.push(toRelativePath(agentFile));
     }
   } else {
@@ -1049,7 +1055,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   
   if (includeTemplates && templatesDir) {
     const templatesDest = join(teamRoot, '.squad', 'templates');
-    if (!existsSync(templatesDest)) {
+    if (!storage.existsSync(templatesDest)) {
+      // TODO: cpSync has no StorageProvider equivalent (#481)
       cpSync(templatesDir, templatesDest, { recursive: true });
       createdFiles.push(toRelativePath(templatesDest));
     } else {
@@ -1076,18 +1083,20 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Copy workflows (optional) — skip for ADO repos
   // -------------------------------------------------------------------------
   
-  if (includeWorkflows && isGitHub && templatesDir && existsSync(join(templatesDir, 'workflows'))) {
+  if (includeWorkflows && isGitHub && templatesDir && storage.existsSync(join(templatesDir, 'workflows'))) {
     const workflowsSrc = join(templatesDir, 'workflows');
     const workflowsDest = join(teamRoot, '.github', 'workflows');
     
+    // TODO: statSync has no StorageProvider equivalent (#481)
     if (statSync(workflowsSrc).isDirectory()) {
-      const allWorkflowFiles = readdirSync(workflowsSrc).filter(f => f.endsWith('.yml'));
+      const allWorkflowFiles = storage.listSync(workflowsSrc).filter(f => f.endsWith('.yml'));
       const workflowFiles = allWorkflowFiles.filter(f => FRAMEWORK_WORKFLOWS.includes(f));
       await mkdir(workflowsDest, { recursive: true });
       
       for (const file of workflowFiles) {
         const destFile = join(workflowsDest, file);
-        if (!existsSync(destFile) || !skipExisting) {
+        if (!storage.existsSync(destFile) || !skipExisting) {
+          // TODO: cpSync has no StorageProvider equivalent (#481)
           cpSync(join(workflowsSrc, file), destFile);
           createdFiles.push(toRelativePath(destFile));
         } else {
@@ -1103,7 +1112,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   
   if (includeMcpConfig) {
     const mcpConfigPath = join(teamRoot, '.copilot', 'mcp-config.json');
-    if (!existsSync(mcpConfigPath)) {
+    if (!storage.existsSync(mcpConfigPath)) {
       const mcpSample = isGitHub
         ? {
             mcpServers: {
@@ -1128,8 +1137,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
               }
             }
           };
-      await mkdir(dirname(mcpConfigPath), { recursive: true });
-      await writeFile(mcpConfigPath, JSON.stringify(mcpSample, null, 2) + '\n', 'utf-8');
+      await storage.write(mcpConfigPath, JSON.stringify(mcpSample, null, 2) + '\n');
       createdFiles.push(toRelativePath(mcpConfigPath));
     } else {
       skippedFiles.push(toRelativePath(mcpConfigPath));
@@ -1156,14 +1164,14 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   {
     const workstreamIgnoreEntry = '.squad-workstream';
     let currentIgnore = '';
-    if (existsSync(gitignorePath)) {
-      currentIgnore = readFileSync(gitignorePath, 'utf-8');
+    if (storage.existsSync(gitignorePath)) {
+      currentIgnore = storage.readSync(gitignorePath) ?? '';
     }
     if (!currentIgnore.includes(workstreamIgnoreEntry)) {
       const block = (currentIgnore && !currentIgnore.endsWith('\n') ? '\n' : '')
         + '# Squad: SubSquad activation file (local to this machine)\n'
         + workstreamIgnoreEntry + '\n';
-      await appendFile(gitignorePath, block);
+      await storage.append(gitignorePath, block);
       createdFiles.push(toRelativePath(gitignorePath));
     }
   }
@@ -1173,8 +1181,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
   
   const firstRunMarker = join(squadDir, '.first-run');
-  if (!existsSync(firstRunMarker)) {
-    await writeFile(firstRunMarker, new Date().toISOString() + '\n', 'utf-8');
+  if (!storage.existsSync(firstRunMarker)) {
+    await storage.write(firstRunMarker, new Date().toISOString() + '\n');
     createdFiles.push(toRelativePath(firstRunMarker));
   }
   
@@ -1184,7 +1192,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   
   if (options.prompt) {
     const promptFile = join(squadDir, '.init-prompt');
-    await writeFile(promptFile, options.prompt, 'utf-8');
+    await storage.write(promptFile, options.prompt);
     createdFiles.push(toRelativePath(promptFile));
   }
   
@@ -1204,9 +1212,9 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
  * 
  * @param squadDir - Path to the .squad directory
  */
-export async function cleanupOrphanInitPrompt(squadDir: string): Promise<void> {
+export async function cleanupOrphanInitPrompt(squadDir: string, storage: StorageProvider = new FSStorageProvider()): Promise<void> {
   const promptFile = join(squadDir, '.init-prompt');
-  if (existsSync(promptFile)) {
-    await unlink(promptFile);
+  if (storage.existsSync(promptFile)) {
+    await storage.delete(promptFile);
   }
 }

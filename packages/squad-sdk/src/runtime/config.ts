@@ -7,11 +7,12 @@
  * @module runtime/config
  */
 
-import { readFileSync, existsSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { pathToFileURL } from 'url';
 import { MODELS } from './constants.js';
 import type { AgentRole } from './constants.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
 // ============================================================================
 // Configuration Types (from spike #72)
@@ -425,7 +426,7 @@ export class ConfigValidationError extends Error {
  * @param cwd - Starting directory for upward search
  * @returns Path to config file if found, undefined otherwise
  */
-export function discoverConfigFile(cwd: string = process.cwd()): string | undefined {
+export function discoverConfigFile(cwd: string = process.cwd(), storage: StorageProvider = new FSStorageProvider()): string | undefined {
   let currentDir = resolve(cwd);
   const root = resolve(dirname(currentDir), '..');
   
@@ -439,7 +440,7 @@ export function discoverConfigFile(cwd: string = process.cwd()): string | undefi
   while (true) {
     for (const configFile of configFiles) {
       const configPath = join(currentDir, configFile);
-      if (existsSync(configPath)) {
+      if (storage.existsSync(configPath)) {
         return configPath;
       }
     }
@@ -470,7 +471,7 @@ export function discoverConfigFile(cwd: string = process.cwd()): string | undefi
  * @returns Configuration load result with validation
  * @throws {ConfigValidationError} If config validation fails
  */
-export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoadResult> {
+export async function loadConfig(cwd: string = process.cwd(), storage: StorageProvider = new FSStorageProvider()): Promise<ConfigLoadResult> {
   const resolvedCwd = resolve(cwd);
   
   // Try local configs first
@@ -482,7 +483,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
   ];
   
   for (const { path: configPath, type } of localConfigs) {
-    if (existsSync(configPath)) {
+    if (storage.existsSync(configPath)) {
       try {
         if (type === 'ts' || type === 'js') {
           const configUrl = pathToFileURL(configPath).href;
@@ -500,7 +501,10 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
             isDefault: false
           };
         } else {
-          const content = readFileSync(configPath, 'utf-8');
+          const content = storage.readSync(configPath);
+          if (content === undefined) {
+            throw new Error(`Config file not found: ${configPath}`);
+          }
           const config = JSON.parse(content);
           const validated = validateConfig(config);
           
@@ -520,7 +524,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
   }
   
   // Walk up directory tree
-  const discoveredPath = discoverConfigFile(dirname(resolvedCwd));
+  const discoveredPath = discoverConfigFile(dirname(resolvedCwd), storage);
   if (discoveredPath) {
     try {
       if (discoveredPath.endsWith('.ts') || discoveredPath.endsWith('.js')) {
@@ -539,7 +543,10 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
           isDefault: false
         };
       } else {
-        const content = readFileSync(discoveredPath, 'utf-8');
+        const content = storage.readSync(discoveredPath);
+        if (content === undefined) {
+          throw new Error(`Config file not found: ${discoveredPath}`);
+        }
         const config = JSON.parse(content);
         const validated = validateConfig(config);
         
@@ -788,14 +795,17 @@ export function validateConfig(config: unknown): SquadConfig {
  * @returns Configuration load result with validation
  * @throws {ConfigValidationError} If config validation fails
  */
-export function loadConfigSync(cwd: string = process.cwd()): ConfigLoadResult {
+export function loadConfigSync(cwd: string = process.cwd(), storage: StorageProvider = new FSStorageProvider()): ConfigLoadResult {
   const resolvedCwd = resolve(cwd);
   
   // Only check squad.config.json (sync loading of .ts not supported)
   const jsonConfigPath = join(resolvedCwd, 'squad.config.json');
-  if (existsSync(jsonConfigPath)) {
+  if (storage.existsSync(jsonConfigPath)) {
     try {
-      const content = readFileSync(jsonConfigPath, 'utf-8');
+      const content = storage.readSync(jsonConfigPath);
+      if (content === undefined) {
+        throw new Error(`Config file not found: ${jsonConfigPath}`);
+      }
       const config = JSON.parse(content);
       const validated = validateConfig(config);
       

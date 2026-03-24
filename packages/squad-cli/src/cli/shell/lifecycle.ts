@@ -7,8 +7,9 @@
  * @module cli/shell/lifecycle
  */
 
-import fs from 'node:fs';
+import { unlinkSync } from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { SessionRegistry } from './sessions.js';
 import { ShellRenderer } from './render.js';
 import type { ShellState, ShellMessage } from './types.js';
@@ -54,12 +55,18 @@ export class ShellLifecycle {
     };
   }
 
-  /** Initialize the shell — verify .squad/, load team.md, discover agents. */
+  /**
+   * Initialize the shell — verify .squad/, load team.md, discover agents.
+   *
+   * Reads via FSStorageProvider so all file access is routed through the
+   * StorageProvider abstraction (Phase 3 migration).
+   */
   async initialize(): Promise<void> {
     this.state.status = 'initializing';
+    const storage = new FSStorageProvider();
 
     const squadDir = path.resolve(this.options.teamRoot, '.squad');
-    if (!fs.existsSync(squadDir) || !fs.statSync(squadDir).isDirectory()) {
+    if (!await storage.exists(squadDir)) {
       this.state.status = 'error';
       const err = new Error(
         `No team found. Run \`squad init\` to create one.`
@@ -69,7 +76,8 @@ export class ShellLifecycle {
     }
 
     const teamPath = path.join(squadDir, 'team.md');
-    if (!fs.existsSync(teamPath)) {
+    const teamContent = await storage.read(teamPath);
+    if (teamContent === undefined) {
       this.state.status = 'error';
       const err = new Error(
         `No team manifest found. The .squad/ directory exists but has no team.md. Run \`squad init\` to fix.`
@@ -78,12 +86,11 @@ export class ShellLifecycle {
       throw err;
     }
 
-    const teamContent = fs.readFileSync(teamPath, 'utf-8');
     this.discoveredAgents = parseTeamManifest(teamContent);
 
     if (this.discoveredAgents.length === 0) {
       const initPromptPath = path.join(squadDir, '.init-prompt');
-      if (!fs.existsSync(initPromptPath)) {
+      if (!await storage.exists(initPromptPath)) {
         console.warn('⚠ No agents found in team.md. Run `squad init "describe your project"` to cast a team.');
       }
       // Auto-cast message is shown inside the Ink UI (index.ts handleInitCast)
@@ -279,12 +286,19 @@ export interface WelcomeData {
   isFirstRun: boolean;
 }
 
-/** Load welcome screen data from .squad/ directory. */
+/**
+ * Load welcome screen data from .squad/ directory.
+ *
+ * Uses FSStorageProvider (sync) so all reads are routed through the
+ * StorageProvider abstraction. Kept synchronous to preserve the React
+ * useState initializer contract in App.tsx (Phase 3 migration).
+ */
 export function loadWelcomeData(teamRoot: string): WelcomeData | null {
   try {
+    const storage = new FSStorageProvider();
     const teamPath = path.join(teamRoot, '.squad', 'team.md');
-    if (!fs.existsSync(teamPath)) return null;
-    const content = fs.readFileSync(teamPath, 'utf-8');
+    const content = storage.readSync(teamPath);
+    if (content === undefined) return null;
 
     const titleMatch = content.match(/^#\s+Squad Team\s+—\s+(.+)$/m);
     const projectName = titleMatch?.[1] ?? 'Squad';
@@ -297,8 +311,8 @@ export function loadWelcomeData(teamRoot: string): WelcomeData | null {
 
     let focus: string | null = null;
     const nowPath = path.join(teamRoot, '.squad', 'identity', 'now.md');
-    if (fs.existsSync(nowPath)) {
-      const nowContent = fs.readFileSync(nowPath, 'utf-8');
+    const nowContent = storage.readSync(nowPath);
+    if (nowContent !== undefined) {
       const focusMatch = nowContent.match(/focus_area:\s*(.+)/);
       focus = focusMatch?.[1]?.trim() ?? null;
     }
@@ -306,9 +320,9 @@ export function loadWelcomeData(teamRoot: string): WelcomeData | null {
     // Detect and consume first-run marker from `squad init`
     const firstRunPath = path.join(teamRoot, '.squad', '.first-run');
     let isFirstRun = false;
-    if (fs.existsSync(firstRunPath)) {
+    if (storage.existsSync(firstRunPath)) {
       isFirstRun = true;
-      try { fs.unlinkSync(firstRunPath); } catch { /* non-fatal */ }
+      try { unlinkSync(firstRunPath); } catch { /* non-fatal */ }
     }
 
     return { projectName, description, agents, focus, isFirstRun };

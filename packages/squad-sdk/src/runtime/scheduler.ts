@@ -11,9 +11,9 @@
  *   - Custom providers via ScheduleProvider interface
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
-import fs from 'node:fs';
 import path from 'node:path';
+import type { StorageProvider } from '../storage/index.js';
+import { FSStorageProvider } from '../storage/index.js';
 
 // ============================================================================
 // Schedule Schema Types
@@ -236,11 +236,21 @@ function validateEntry(entry: unknown, index: number, seenIds: Set<string>): voi
 /**
  * Parse and validate a schedule.json file from disk.
  */
-export async function parseSchedule(filePath: string): Promise<ScheduleManifest> {
+export async function parseSchedule(
+  filePath: string,
+  storage: StorageProvider = new FSStorageProvider(),
+): Promise<ScheduleManifest> {
   let raw: string;
   try {
-    raw = await readFile(filePath, 'utf8');
+    const content = await storage.read(filePath);
+    if (content === undefined) {
+      throw new ScheduleValidationError(
+        `Cannot read schedule file: ${filePath} — ENOENT: no such file or directory`,
+      );
+    }
+    raw = content;
   } catch (err) {
+    if (err instanceof ScheduleValidationError) throw err;
     throw new ScheduleValidationError(
       `Cannot read schedule file: ${filePath} — ${(err as Error).message}`,
     );
@@ -398,9 +408,13 @@ export async function executeTask(
 /**
  * Load schedule state from disk. Returns empty state if file doesn't exist.
  */
-export async function loadState(statePath: string): Promise<ScheduleState> {
+export async function loadState(
+  statePath: string,
+  storage: StorageProvider = new FSStorageProvider(),
+): Promise<ScheduleState> {
   try {
-    const raw = await readFile(statePath, 'utf8');
+    const raw = await storage.read(statePath);
+    if (raw === undefined) return { runs: {} };
     return JSON.parse(raw) as ScheduleState;
   } catch {
     return { runs: {} };
@@ -410,8 +424,12 @@ export async function loadState(statePath: string): Promise<ScheduleState> {
 /**
  * Save schedule state to disk.
  */
-export async function saveState(statePath: string, state: ScheduleState): Promise<void> {
-  await writeFile(statePath, JSON.stringify(state, null, 2) + '\n', 'utf8');
+export async function saveState(
+  statePath: string,
+  state: ScheduleState,
+  storage: StorageProvider = new FSStorageProvider(),
+): Promise<void> {
+  await storage.write(statePath, JSON.stringify(state, null, 2) + '\n');
 }
 
 // ============================================================================
@@ -476,6 +494,11 @@ export class LocalPollingProvider implements ScheduleProvider {
  */
 export class GitHubActionsProvider implements ScheduleProvider {
   readonly name = 'github-actions';
+  private readonly storage: StorageProvider;
+
+  constructor(storage: StorageProvider = new FSStorageProvider()) {
+    this.storage = storage;
+  }
 
   async execute(entry: ScheduleEntry): Promise<TaskResult> {
     // GitHub Actions execution is handled by the platform itself.
@@ -520,11 +543,8 @@ export class GitHubActionsProvider implements ScheduleProvider {
         `        run: echo "Executing ${entry.id} — ${entry.task.type}:${entry.task.ref}"`,
       ].join('\n') + '\n';
 
-      const dir = path.dirname(workflowPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(workflowPath, yaml, 'utf8');
+      // StorageProvider.write() creates parent dirs automatically
+      await this.storage.write(workflowPath, yaml);
       generated.push(workflowPath);
     }
 

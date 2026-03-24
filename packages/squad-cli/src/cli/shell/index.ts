@@ -256,7 +256,7 @@ export async function runShell(): Promise<void> {
   (async () => {
     try {
       debugLog('eager warm-up: creating coordinator session');
-      const systemPrompt = buildCoordinatorPrompt({ teamRoot });
+      const systemPrompt = await buildCoordinatorPrompt({ teamRoot });
       coordinatorSession = await client.createSession({
         streaming: true,
         systemMessage: { mode: 'append', content: systemPrompt },
@@ -396,7 +396,7 @@ export async function runShell(): Promise<void> {
       shellApi?.setAgentActivity(agentName, 'connecting...');
       // Give React a tick to render the connection hint before blocking on SDK
       await new Promise(resolve => setImmediate(resolve));
-      const charter = loadAgentCharter(agentName, teamRoot);
+      const charter = await loadAgentCharter(agentName, teamRoot);
       const systemPrompt = buildAgentPrompt(charter);
 
       if (!registry.get(agentName)) {
@@ -583,7 +583,7 @@ export async function runShell(): Promise<void> {
       shellApi?.setActivityHint('Connecting to SDK...');
       // Give React a tick to render the connection hint before blocking on SDK
       await new Promise(resolve => setImmediate(resolve));
-      const systemPrompt = buildCoordinatorPrompt({ teamRoot });
+      const systemPrompt = await buildCoordinatorPrompt({ teamRoot });
       coordinatorSession = await client.createSession({
         streaming: true,
         systemMessage: { mode: 'append', content: systemPrompt },

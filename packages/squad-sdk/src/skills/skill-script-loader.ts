@@ -12,10 +12,12 @@
  * - Partial implementations (missing handlers are silently skipped)
  */
 
-import { existsSync, readdirSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type {
   LoadResult,
   SkillHandler,
@@ -148,9 +150,14 @@ export function resolveSkillPath(
 // --- SkillScriptLoader ---
 
 export class SkillScriptLoader {
+  private storage: StorageProvider;
+
   constructor(
     private getToolSchema: (toolName: string) => { description: string; parameters: Record<string, unknown> } | undefined,
-  ) {}
+    storage: StorageProvider = new FSStorageProvider(),
+  ) {
+    this.storage = storage;
+  }
 
   /**
    * Load handler scripts from a backend skill directory by scanning `scripts/` for `.js` files.
@@ -183,12 +190,13 @@ export class SkillScriptLoader {
   ): Promise<LoadResult | null> {
     // 1. Check for scripts/ directory
     const scriptsDir = path.join(skillPath, 'scripts');
-    if (!existsSync(scriptsDir)) {
+    if (!(await this.storage.exists(scriptsDir))) {
       return null; // Triggers markdown fallback
     }
 
     // 2. Scan scripts/ for handler files — everything except lifecycle.js
-    const scriptFiles = readdirSync(scriptsDir).filter(
+    const allFiles = await this.storage.list(scriptsDir);
+    const scriptFiles = allFiles.filter(
       (f) => f.endsWith('.js') && f !== 'lifecycle.js',
     );
 
@@ -236,7 +244,7 @@ export class SkillScriptLoader {
     // 4. Load lifecycle.js if present
     let lifecycle: HandlerLifecycle | undefined;
     const lifecyclePath = path.join(scriptsDir, 'lifecycle.js');
-    if (existsSync(lifecyclePath)) {
+    if (await this.storage.exists(lifecyclePath)) {
       try {
         const lifecycleUrl = toFileUrl(lifecyclePath);
         const lifecycleModule = await import(lifecycleUrl);

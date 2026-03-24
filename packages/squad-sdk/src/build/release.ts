@@ -6,7 +6,10 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+// TODO: statSync still uses raw fs — StorageProvider needs a stat/size method
+import { statSync } from 'node:fs';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { CommitInfo } from './versioning.js';
 import { parseConventionalCommit } from './versioning.js';
 
@@ -102,10 +105,15 @@ export function computeSha256(data: Buffer | string): string {
  * Build a ReleaseArtifact from a file path.
  * Returns null if the file does not exist.
  */
-export function buildArtifact(name: string, filePath: string): ReleaseArtifact | null {
-  if (!existsSync(filePath)) return null;
+export function buildArtifact(
+  name: string,
+  filePath: string,
+  storage: StorageProvider = new FSStorageProvider(),
+): ReleaseArtifact | null {
+  if (!storage.existsSync(filePath)) return null;
 
-  const content = readFileSync(filePath);
+  const content = storage.readSync(filePath);
+  if (content === undefined) return null;
   const stat = statSync(filePath);
 
   return {
@@ -126,12 +134,13 @@ export function buildArtifact(name: string, filePath: string): ReleaseArtifact |
 export function createRelease(
   config: ReleaseConfig,
   artifactPaths?: Record<string, string>,
+  storage: StorageProvider = new FSStorageProvider(),
 ): ReleaseManifest {
   const artifacts: ReleaseArtifact[] = [];
 
   if (artifactPaths) {
     for (const [name, filePath] of Object.entries(artifactPaths)) {
-      const artifact = buildArtifact(name, filePath);
+      const artifact = buildArtifact(name, filePath, storage);
       if (artifact) {
         artifacts.push(artifact);
       }

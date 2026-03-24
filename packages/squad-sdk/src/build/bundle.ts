@@ -3,8 +3,11 @@
  * Defines bundling strategy for the SDK: ESM output, tree-shakeable
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+// TODO: readdirSync/statSync still use raw fs — StorageProvider needs sync list() and isDirectory() methods
+import { readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
 export type BundleFormat = 'esm' | 'cjs';
 
@@ -76,14 +79,14 @@ export interface BundleValidationResult {
 /**
  * Check that the output directory contains expected build artifacts.
  */
-export function validateBundleOutput(outDir: string): BundleValidationResult {
+export function validateBundleOutput(outDir: string, storage: StorageProvider = new FSStorageProvider()): BundleValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const files: string[] = [];
 
   const resolvedDir = resolve(outDir);
 
-  if (!existsSync(resolvedDir)) {
+  if (!storage.existsSync(resolvedDir)) {
     return { valid: false, errors: [`Output directory does not exist: ${resolvedDir}`], warnings, files };
   }
 

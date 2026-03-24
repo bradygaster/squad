@@ -101,21 +101,22 @@ describe('SessionRegistry', () => {
 
 describe('Spawn infrastructure', () => {
   describe('loadAgentCharter', () => {
-    it('loads charter from test-fixtures/.squad/agents/{name}', () => {
-      const charter = loadAgentCharter('hockney', FIXTURES);
+    it('loads charter from test-fixtures/.squad/agents/{name}', async () => {
+      const charter = await loadAgentCharter('hockney', FIXTURES);
       expect(charter).toContain('Hockney');
       expect(charter).toContain('Tester');
     });
 
-    it('lowercases the agent name for path resolution', () => {
-      const charter = loadAgentCharter('Fenster', FIXTURES);
+    it('lowercases the agent name for path resolution', async () => {
+      const charter = await loadAgentCharter('Fenster', FIXTURES);
       expect(charter).toContain('Core Dev');
     });
 
-    it('throws for a missing charter', () => {
-      expect(() => loadAgentCharter('nobody', FIXTURES)).toThrow(
-        /No charter found for "nobody"/,
-      );
+    it('throws for a missing charter', async () => {
+      let caught: Error | undefined;
+      try { await loadAgentCharter('nobody', FIXTURES); } catch (err) { caught = err as Error; }
+      expect(caught).toBeDefined();
+      expect(caught!.message).toMatch(/No charter found for "nobody"/);
     });
   });
 
@@ -145,8 +146,8 @@ describe('Spawn infrastructure', () => {
 
 describe('Coordinator', () => {
   describe('buildCoordinatorPrompt', () => {
-    it('includes team.md content', () => {
-      const prompt = buildCoordinatorPrompt({
+    it('includes team.md content', async () => {
+      const prompt = await buildCoordinatorPrompt({
         teamRoot: FIXTURES,
         teamPath: join(FIXTURES, '.squad', 'team.md'),
       });
@@ -154,24 +155,24 @@ describe('Coordinator', () => {
       expect(prompt).toContain('Fenster');
     });
 
-    it('includes routing.md content', () => {
-      const prompt = buildCoordinatorPrompt({
+    it('includes routing.md content', async () => {
+      const prompt = await buildCoordinatorPrompt({
         teamRoot: FIXTURES,
         routingPath: join(FIXTURES, '.squad', 'routing.md'),
       });
       expect(prompt).toContain('Tests → Hockney');
     });
 
-    it('falls back gracefully when team.md is missing', () => {
-      const prompt = buildCoordinatorPrompt({
+    it('falls back gracefully when team.md is missing', async () => {
+      const prompt = await buildCoordinatorPrompt({
         teamRoot: join(FIXTURES, 'nonexistent'),
         teamPath: join(FIXTURES, 'nonexistent', 'team.md'),
       });
       expect(prompt).toContain('NO TEAM CONFIGURED');
     });
 
-    it('falls back gracefully when routing.md is missing', () => {
-      const prompt = buildCoordinatorPrompt({
+    it('falls back gracefully when routing.md is missing', async () => {
+      const prompt = await buildCoordinatorPrompt({
         teamRoot: join(FIXTURES, 'nonexistent'),
         routingPath: join(FIXTURES, 'nonexistent', 'routing.md'),
       });

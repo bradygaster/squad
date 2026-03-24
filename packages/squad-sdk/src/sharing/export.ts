@@ -3,8 +3,9 @@
  * Exports Squad configuration as a portable bundle.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, basename, relative } from 'node:path';
+import { join, basename } from 'node:path';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
 export interface ExportOptions {
   includeHistory?: boolean;
@@ -73,32 +74,35 @@ export function anonymizeContent(content: string): string {
   return result;
 }
 
-function readTeamConfig(projectDir: string): Record<string, unknown> {
+function readTeamConfig(projectDir: string, storage: StorageProvider): Record<string, unknown> {
   const teamFile = join(projectDir, '.ai-team', 'team.md');
-  if (existsSync(teamFile)) {
-    return { teamFile: readFileSync(teamFile, 'utf-8') };
+  const content = storage.readSync(teamFile);
+  if (content !== undefined) {
+    return { teamFile: content };
   }
   return {};
 }
 
-function readAgents(projectDir: string): AgentCharter[] {
+function readAgents(projectDir: string, storage: StorageProvider): AgentCharter[] {
   const agentsDir = join(projectDir, '.github', 'agents');
-  if (!existsSync(agentsDir)) return [];
+  if (!storage.existsSync(agentsDir)) return [];
 
-  return readdirSync(agentsDir)
-    .filter(f => f.endsWith('.md'))
-    .map(f => {
-      const content = readFileSync(join(agentsDir, f), 'utf-8');
-      const name = basename(f, '.md').replace('.agent', '');
-      return { name, role: name, content };
-    });
+  const files = storage.listSync(agentsDir).filter(f => f.endsWith('.md'));
+  const agents: AgentCharter[] = [];
+  for (const f of files) {
+    const content = storage.readSync(join(agentsDir, f));
+    if (content === undefined) continue;
+    const name = basename(f, '.md').replace('.agent', '');
+    agents.push({ name, role: name, content });
+  }
+  return agents;
 }
 
-function readRoutingRules(projectDir: string): ExportRoutingRule[] {
+function readRoutingRules(projectDir: string, storage: StorageProvider): ExportRoutingRule[] {
   const routingFile = join(projectDir, '.ai-team', 'routing.md');
-  if (!existsSync(routingFile)) return [];
+  const content = storage.readSync(routingFile);
+  if (content === undefined) return [];
 
-  const content = readFileSync(routingFile, 'utf-8');
   const rules: ExportRoutingRule[] = [];
   const lines = content.split('\n');
   for (const line of lines) {
@@ -113,7 +117,11 @@ function readRoutingRules(projectDir: string): ExportRoutingRule[] {
 /**
  * Export a Squad project configuration as a bundle.
  */
-export function exportSquadConfig(projectDir: string, options?: ExportOptions): ExportBundle {
+export function exportSquadConfig(
+  projectDir: string,
+  options?: ExportOptions,
+  storage: StorageProvider = new FSStorageProvider(),
+): ExportBundle {
   const opts: Required<ExportOptions> = {
     includeHistory: options?.includeHistory ?? false,
     includeSkills: options?.includeSkills ?? true,
@@ -121,9 +129,9 @@ export function exportSquadConfig(projectDir: string, options?: ExportOptions): 
     anonymize: options?.anonymize ?? false,
   };
 
-  const config = readTeamConfig(projectDir);
-  let agents = readAgents(projectDir);
-  let routingRules = readRoutingRules(projectDir);
+  const config = readTeamConfig(projectDir, storage);
+  let agents = readAgents(projectDir, storage);
+  let routingRules = readRoutingRules(projectDir, storage);
   const skills: string[] = [];
 
   if (opts.includeSkills) {
@@ -132,15 +140,23 @@ export function exportSquadConfig(projectDir: string, options?: ExportOptions): 
       { dir: join(projectDir, '.squad', 'skills'), layout: 'nested' as const },
       { dir: join(projectDir, '.ai-team', 'skills'), layout: 'flat' as const },
     ];
-    const source = skillSources.find(({ dir }) => existsSync(dir));
+    let source: typeof skillSources[number] | undefined;
+    for (const s of skillSources) {
+      if (storage.existsSync(s.dir)) {
+        source = s;
+        break;
+      }
+    }
     if (source) {
       if (source.layout === 'nested') {
-        const skillDirs = readdirSync(source.dir, { withFileTypes: true })
-          .filter(entry => entry.isDirectory() && existsSync(join(source.dir, entry.name, 'SKILL.md')))
-          .map(entry => entry.name);
-        skills.push(...skillDirs);
+        const entries = storage.listSync(source.dir);
+        for (const name of entries) {
+          if (storage.existsSync(join(source.dir, name, 'SKILL.md'))) {
+            skills.push(name);
+          }
+        }
       } else {
-        const skillFiles = readdirSync(source.dir).filter(f => f.endsWith('.md'));
+        const skillFiles = storage.listSync(source.dir).filter(f => f.endsWith('.md'));
         skills.push(...skillFiles.map(f => basename(f, '.md')));
       }
     }

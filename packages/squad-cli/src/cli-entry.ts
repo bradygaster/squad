@@ -90,7 +90,7 @@ function _handleTopLevelSignal(signal: 'SIGINT' | 'SIGTERM'): void {
 process.on('SIGINT', () => _handleTopLevelSignal('SIGINT'));
 process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
 
-import fs from 'node:fs';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
 import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
@@ -409,7 +409,8 @@ async function main(): Promise<void> {
     const repoSquad = sdk.resolveSquad(process.cwd());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
-    const globalExists = fs.existsSync(globalSquadDir);
+    const storage = new FSStorageProvider();
+    const globalExists = await storage.exists(globalSquadDir);
 
     console.log(`\n${BOLD}Squad Status${RESET}\n`);
 
@@ -446,9 +447,10 @@ async function main(): Promise<void> {
     const localSquad = sdk.resolveSquad(process.cwd());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
+    const storage = new FSStorageProvider();
     const teamRoot = localSquad
       ? path.resolve(localSquad, '..')
-      : (fs.existsSync(globalSquadDir) ? globalPath : null);
+      : (await storage.exists(globalSquadDir) ? globalPath : null);
 
     if (!teamRoot) {
       fatal('No squad found. Run "squad init" first.');

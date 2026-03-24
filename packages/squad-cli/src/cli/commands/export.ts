@@ -3,8 +3,9 @@
  * Exports squad to squad-export.json
  */
 
-import fs from 'node:fs';
+import { statSync } from 'node:fs'; // TODO: statSync().isDirectory() not in StorageProvider
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { success, warn } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -22,10 +23,11 @@ interface ExportManifest {
  * Export squad to JSON
  */
 export async function runExport(dest: string, outPath?: string): Promise<void> {
+  const storage = new FSStorageProvider();
   const squadInfo = detectSquadDir(dest);
   const teamMd = path.join(squadInfo.path, 'team.md');
   
-  if (!fs.existsSync(teamMd)) {
+  if (!storage.existsSync(teamMd)) {
     fatal('No squad found — run init first');
   }
 
@@ -43,8 +45,9 @@ export async function runExport(dest: string, outPath?: string): Promise<void> {
   for (const file of ['registry.json', 'policy.json', 'history.json']) {
     const filePath = path.join(castingDir, file);
     try {
-      if (fs.existsSync(filePath)) {
-        manifest.casting[file.replace('.json', '')] = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const raw = storage.readSync(filePath);
+      if (raw !== undefined) {
+        manifest.casting[file.replace('.json', '')] = JSON.parse(raw);
       }
     } catch (err) {
       console.error(`Warning: could not read casting/${file}: ${(err as Error).message}`);
@@ -54,15 +57,18 @@ export async function runExport(dest: string, outPath?: string): Promise<void> {
   // Read agents
   const agentsDir = path.join(squadInfo.path, 'agents');
   try {
-    if (fs.existsSync(agentsDir)) {
-      for (const entry of fs.readdirSync(agentsDir)) {
+    if (storage.existsSync(agentsDir)) {
+      for (const entry of storage.listSync(agentsDir)) {
         const agentDir = path.join(agentsDir, entry);
-        if (!fs.statSync(agentDir).isDirectory()) continue;
+        // TODO: statSync().isDirectory() not in StorageProvider
+        if (!statSync(agentDir).isDirectory()) continue;
         const agent: { charter?: string; history?: string } = {};
         const charterPath = path.join(agentDir, 'charter.md');
         const historyPath = path.join(agentDir, 'history.md');
-        if (fs.existsSync(charterPath)) agent.charter = fs.readFileSync(charterPath, 'utf8');
-        if (fs.existsSync(historyPath)) agent.history = fs.readFileSync(historyPath, 'utf8');
+        const charterContent = storage.readSync(charterPath);
+        if (charterContent !== undefined) agent.charter = charterContent;
+        const historyContent = storage.readSync(historyPath);
+        if (historyContent !== undefined) agent.history = historyContent;
         manifest.agents[entry] = agent;
       }
     }
@@ -76,15 +82,16 @@ export async function runExport(dest: string, outPath?: string): Promise<void> {
     { dir: path.join(squadInfo.path, 'skills'), layout: 'nested' as const },
     { dir: path.join(dest, '.ai-team', 'skills'), layout: 'flat' as const },
   ];
-  const skillsSource = skillSources.find(({ dir }) => fs.existsSync(dir));
+  const skillsSource = skillSources.find(({ dir }) => storage.existsSync(dir));
   try {
     if (skillsSource) {
-      for (const entry of fs.readdirSync(skillsSource.dir)) {
+      for (const entry of storage.listSync(skillsSource.dir)) {
         const skillFile = skillsSource.layout === 'nested'
           ? path.join(skillsSource.dir, entry, 'SKILL.md')
           : path.join(skillsSource.dir, entry);
-        if (fs.existsSync(skillFile)) {
-          manifest.skills.push(fs.readFileSync(skillFile, 'utf8'));
+        const skillContent = storage.readSync(skillFile);
+        if (skillContent !== undefined) {
+          manifest.skills.push(skillContent);
         }
       }
     }
@@ -96,7 +103,7 @@ export async function runExport(dest: string, outPath?: string): Promise<void> {
   const finalOutPath = outPath || path.join(dest, 'squad-export.json');
 
   try {
-    fs.writeFileSync(finalOutPath, JSON.stringify(manifest, null, 2) + '\n');
+    storage.writeSync(finalOutPath, JSON.stringify(manifest, null, 2) + '\n');
   } catch (err) {
     fatal(`Failed to write export file: ${(err as Error).message}`);
   }

@@ -19,22 +19,24 @@ export { GitHubDiscussionsCommunicationAdapter } from './comms-github-discussion
 export { ADODiscussionCommunicationAdapter } from './comms-ado-discussions.js';
 export { createCommunicationAdapter } from './comms.js';
 
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PlatformAdapter } from './types.js';
 import { detectPlatform, getRemoteUrl, parseGitHubRemote, parseAzureDevOpsRemote } from './detect.js';
 import { GitHubAdapter } from './github.js';
 import { AzureDevOpsAdapter } from './azure-devops.js';
 import type { AdoWorkItemConfig } from './azure-devops.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
 
 /**
  * Read ADO work item config from .squad/config.json if present.
  */
-function readAdoConfig(repoRoot: string): AdoWorkItemConfig | undefined {
+function readAdoConfig(repoRoot: string, storage: StorageProvider): AdoWorkItemConfig | undefined {
   const configPath = join(repoRoot, '.squad', 'config.json');
-  if (!existsSync(configPath)) return undefined;
+  if (!storage.existsSync(configPath)) return undefined;
   try {
-    const raw = readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath);
+    if (!raw) return undefined;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (parsed.ado && typeof parsed.ado === 'object') {
       return parsed.ado as AdoWorkItemConfig;
@@ -47,7 +49,7 @@ function readAdoConfig(repoRoot: string): AdoWorkItemConfig | undefined {
  * Create a platform adapter by auto-detecting the platform from the repo's git remote.
  * Throws if required remote info cannot be parsed.
  */
-export function createPlatformAdapter(repoRoot: string): PlatformAdapter {
+export function createPlatformAdapter(repoRoot: string, storage: StorageProvider = new FSStorageProvider()): PlatformAdapter {
   const platform = detectPlatform(repoRoot);
   const remoteUrl = getRemoteUrl(repoRoot);
 
@@ -60,7 +62,7 @@ export function createPlatformAdapter(repoRoot: string): PlatformAdapter {
     if (!info) {
       throw new Error(`Could not parse Azure DevOps remote URL: ${remoteUrl}`);
     }
-    const adoConfig = readAdoConfig(repoRoot);
+    const adoConfig = readAdoConfig(repoRoot, storage);
     return new AzureDevOpsAdapter(info.org, info.project, info.repo, adoConfig);
   }
 

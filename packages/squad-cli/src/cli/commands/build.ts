@@ -17,9 +17,9 @@
  * @module cli/commands/build
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, BOLD, RESET, YELLOW, GREEN, RED } from '../core/output.js';
 import { fatal } from '../core/errors.js';
 
@@ -66,6 +66,7 @@ interface LoadedConfig {
  *   3. squad.config.js
  */
 async function loadSquadConfig(cwd: string): Promise<LoadedConfig> {
+  const storage = new FSStorageProvider();
   const candidates = [
     path.join(cwd, 'squad', 'index.ts'),
     path.join(cwd, 'squad.config.ts'),
@@ -73,7 +74,7 @@ async function loadSquadConfig(cwd: string): Promise<LoadedConfig> {
   ];
 
   for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
+    if (storage.existsSync(candidate)) {
       try {
         const url = pathToFileURL(candidate).href;
         const mod = await import(url);
@@ -430,6 +431,7 @@ interface BuildResult {
 }
 
 function writeFiles(cwd: string, files: GeneratedFile[]): BuildResult {
+  const storage = new FSStorageProvider();
   let written = 0;
   let skipped = 0;
   const drifted: string[] = [];
@@ -441,13 +443,8 @@ function writeFiles(cwd: string, files: GeneratedFile[]): BuildResult {
     }
 
     const absPath = path.join(cwd, file.relPath);
-    const dir = path.dirname(absPath);
 
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-
-    fs.writeFileSync(absPath, file.content, 'utf-8');
+    storage.writeSync(absPath, file.content);
     written++;
   }
 
@@ -455,6 +452,7 @@ function writeFiles(cwd: string, files: GeneratedFile[]): BuildResult {
 }
 
 function checkDrift(cwd: string, files: GeneratedFile[]): { drifted: string[]; clean: string[] } {
+  const storage = new FSStorageProvider();
   const drifted: string[] = [];
   const clean: string[] = [];
 
@@ -462,12 +460,12 @@ function checkDrift(cwd: string, files: GeneratedFile[]): { drifted: string[]; c
     if (isProtected(file.relPath)) continue;
 
     const absPath = path.join(cwd, file.relPath);
-    if (!fs.existsSync(absPath)) {
+    const existing = storage.readSync(absPath);
+    if (existing === undefined) {
       drifted.push(file.relPath);
       continue;
     }
 
-    const existing = fs.readFileSync(absPath, 'utf-8');
     if (existing !== file.content) {
       drifted.push(file.relPath);
     } else {
@@ -532,9 +530,10 @@ export async function runBuild(cwd: string, options: BuildOptions = {}): Promise
 
   // --dry-run mode
   if (options.dryRun) {
+    const dryRunStorage = new FSStorageProvider();
     info(`\n${BOLD}Dry run${RESET} — would generate ${files.length} file(s):\n`);
     for (const file of files) {
-      const exists = fs.existsSync(path.join(cwd, file.relPath));
+      const exists = dryRunStorage.existsSync(path.join(cwd, file.relPath));
       const label = exists ? `${YELLOW}overwrite${RESET}` : `${GREEN}create${RESET}`;
       console.log(`  ${label}  ${file.relPath}`);
     }

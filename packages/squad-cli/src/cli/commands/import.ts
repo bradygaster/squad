@@ -3,8 +3,9 @@
  * Imports squad from squad-export.json
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { mkdirSync, renameSync } from 'node:fs'; // TODO: mkdirSync (empty dir scaffolding) and renameSync not in StorageProvider
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -23,15 +24,20 @@ interface ImportManifest {
  * Import squad from JSON
  */
 export async function runImport(dest: string, importPath: string, force: boolean): Promise<void> {
+  const storage = new FSStorageProvider();
   const resolvedPath = path.resolve(importPath);
   
-  if (!fs.existsSync(resolvedPath)) {
+  if (!storage.existsSync(resolvedPath)) {
     fatal(`Import file not found: ${importPath}`);
   }
 
   let manifest: ImportManifest;
   try {
-    manifest = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+    const raw = storage.readSync(resolvedPath);
+    if (raw === undefined) {
+      fatal(`Import file not found: ${importPath}`);
+    }
+    manifest = JSON.parse(raw);
   } catch (err) {
     fatal(`Invalid JSON in import file: ${(err as Error).message}`);
   }
@@ -54,31 +60,33 @@ export async function runImport(dest: string, importPath: string, force: boolean
   const squadDir = squadInfo.path;
 
   // Conflict detection
-  if (fs.existsSync(squadDir)) {
+  if (storage.existsSync(squadDir)) {
     if (!force) {
       fatal('A squad already exists here. Use --force to replace (current squad will be archived).');
     }
     // Archive existing squad
     const ts = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
     const archiveDir = path.join(dest, `${squadInfo.name}-archive-${ts}`);
-    fs.renameSync(squadDir, archiveDir);
+    // TODO: renameSync not in StorageProvider — requires filesystem-level move
+    renameSync(squadDir, archiveDir);
     info(`Archived existing squad to ${path.basename(archiveDir)}`);
   }
 
   // Create directory structure
-  fs.mkdirSync(path.join(squadDir, 'casting'), { recursive: true });
-  fs.mkdirSync(path.join(squadDir, 'decisions', 'inbox'), { recursive: true });
-  fs.mkdirSync(path.join(squadDir, 'orchestration-log'), { recursive: true });
-  fs.mkdirSync(path.join(squadDir, 'log'), { recursive: true });
-  fs.mkdirSync(path.join(dest, '.copilot', 'skills'), { recursive: true });
+  // TODO: mkdirSync for empty directory scaffolding not in StorageProvider
+  mkdirSync(path.join(squadDir, 'casting'), { recursive: true });
+  mkdirSync(path.join(squadDir, 'decisions', 'inbox'), { recursive: true });
+  mkdirSync(path.join(squadDir, 'orchestration-log'), { recursive: true });
+  mkdirSync(path.join(squadDir, 'log'), { recursive: true });
+  mkdirSync(path.join(dest, '.copilot', 'skills'), { recursive: true });
 
   // Write empty project-specific files
-  fs.writeFileSync(path.join(squadDir, 'decisions.md'), '');
-  fs.writeFileSync(path.join(squadDir, 'team.md'), '');
+  storage.writeSync(path.join(squadDir, 'decisions.md'), '');
+  storage.writeSync(path.join(squadDir, 'team.md'), '');
 
   // Write casting state
   for (const [key, value] of Object.entries(manifest.casting)) {
-    fs.writeFileSync(
+    storage.writeSync(
       path.join(squadDir, 'casting', `${key}.json`),
       JSON.stringify(value, null, 2) + '\n'
     );
@@ -93,10 +101,9 @@ export async function runImport(dest: string, importPath: string, force: boolean
   for (const name of agentNames) {
     const agent = manifest.agents[name]!;
     const agentDir = path.join(squadDir, 'agents', name);
-    fs.mkdirSync(agentDir, { recursive: true });
 
     if (agent.charter) {
-      fs.writeFileSync(path.join(agentDir, 'charter.md'), agent.charter);
+      storage.writeSync(path.join(agentDir, 'charter.md'), agent.charter);
     }
 
     // History split: separate portable knowledge from project learnings
@@ -105,7 +112,7 @@ export async function runImport(dest: string, importPath: string, force: boolean
       historyContent = splitHistory(agent.history, sourceProject);
     }
     historyContent = `📌 Imported from ${sourceProject} on ${importDate}. Portable knowledge carried over; project learnings from previous project preserved below.\n\n` + historyContent;
-    fs.writeFileSync(path.join(agentDir, 'history.md'), historyContent);
+    storage.writeSync(path.join(agentDir, 'history.md'), historyContent);
   }
 
   // Write skills
@@ -115,8 +122,7 @@ export async function runImport(dest: string, importPath: string, force: boolean
       ? nameMatch[1]!.trim().toLowerCase().replace(/\s+/g, '-')
       : `skill-${manifest.skills.indexOf(skillContent)}`;
     const skillDir = path.join(dest, '.copilot', 'skills', skillName);
-    fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent);
+    storage.writeSync(path.join(skillDir, 'SKILL.md'), skillContent);
   }
 
   // Determine universe for messaging

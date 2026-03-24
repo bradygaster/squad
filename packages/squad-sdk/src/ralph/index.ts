@@ -11,7 +11,8 @@
  *   3. Cloud heartbeat: External health signal (future)
  */
 
-import { writeFile, readFile } from 'node:fs/promises';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { EventBus, SquadEvent } from '../runtime/event-bus.js';
 
 // --- Monitor Types ---
@@ -53,12 +54,14 @@ export interface MonitorState {
 export class RalphMonitor {
   private config: MonitorConfig;
   private state: MonitorState;
+  private storage: StorageProvider;
   private eventBus: EventBus | null = null;
   private unsubscribers: (() => void)[] = [];
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(config: MonitorConfig) {
+  constructor(config: MonitorConfig, storage: StorageProvider = new FSStorageProvider()) {
     this.config = config;
+    this.storage = storage;
     this.state = {
       lastHealthCheck: null,
       agents: new Map(),
@@ -177,7 +180,7 @@ export class RalphMonitor {
         agents: Array.from(this.state.agents.entries()),
         observations: this.state.observations,
       };
-      await writeFile(this.config.statePath, JSON.stringify(serializable, null, 2), 'utf-8');
+      await this.storage.write(this.config.statePath, JSON.stringify(serializable, null, 2));
     }
 
     this.eventBus = null;

@@ -7,8 +7,9 @@
  * @module runtime/cross-squad
  */
 
-import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import type { StorageProvider } from '../storage/index.js';
+import { FSStorageProvider } from '../storage/index.js';
 
 // ============================================================================
 // Types
@@ -116,11 +117,15 @@ export function validateManifest(data: unknown): data is SquadManifest {
  * Read and parse a squad manifest from a directory path.
  * Looks for `.squad/manifest.json` relative to the given root.
  */
-export function readManifest(repoPath: string): SquadManifest | null {
+export function readManifest(
+  repoPath: string,
+  storage: StorageProvider = new FSStorageProvider(),
+): SquadManifest | null {
   const manifestPath = join(repoPath, '.squad', 'manifest.json');
-  if (!existsSync(manifestPath)) return null;
+  if (!storage.existsSync(manifestPath)) return null;
   try {
-    const raw = readFileSync(manifestPath, 'utf8');
+    const raw = storage.readSync(manifestPath);
+    if (raw === undefined) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!validateManifest(parsed)) return null;
     return parsed;
@@ -151,13 +156,18 @@ interface UpstreamJsonFile {
  * Discover squads from upstream sources.
  * Reads `.squad/upstream.json` and checks each upstream for a manifest.
  */
-export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
+export function discoverFromUpstreams(
+  squadDir: string,
+  storage: StorageProvider = new FSStorageProvider(),
+): DiscoveredSquad[] {
   const upstreamPath = join(squadDir, 'upstream.json');
-  if (!existsSync(upstreamPath)) return [];
+  if (!storage.existsSync(upstreamPath)) return [];
 
   let config: UpstreamJsonFile;
   try {
-    config = JSON.parse(readFileSync(upstreamPath, 'utf8')) as UpstreamJsonFile;
+    const raw = storage.readSync(upstreamPath);
+    if (raw === undefined) return [];
+    config = JSON.parse(raw) as UpstreamJsonFile;
   } catch {
     return [];
   }
@@ -167,7 +177,7 @@ export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
   const discovered: DiscoveredSquad[] = [];
   for (const upstream of config.upstreams) {
     if (upstream.type === 'local' && upstream.source) {
-      const manifest = readManifest(upstream.source);
+      const manifest = readManifest(upstream.source, storage);
       if (manifest) {
         discovered.push({
           manifest,
@@ -178,7 +188,7 @@ export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
     } else if (upstream.type === 'git') {
       // For git upstreams, check the cached clone directory
       const cloneDir = join(squadDir, '_upstream_repos', upstream.name);
-      const manifest = readManifest(cloneDir);
+      const manifest = readManifest(cloneDir, storage);
       if (manifest) {
         discovered.push({
           manifest,
@@ -196,12 +206,16 @@ export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
  * Discover squads from a registry file.
  * A registry is a JSON file listing repo paths to check for manifests.
  */
-export function discoverFromRegistry(registryPath: string): DiscoveredSquad[] {
-  if (!existsSync(registryPath)) return [];
+export function discoverFromRegistry(
+  registryPath: string,
+  storage: StorageProvider = new FSStorageProvider(),
+): DiscoveredSquad[] {
+  if (!storage.existsSync(registryPath)) return [];
 
   let entries: Array<{ name: string; path: string }>;
   try {
-    const raw = readFileSync(registryPath, 'utf8');
+    const raw = storage.readSync(registryPath);
+    if (raw === undefined) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     entries = parsed as Array<{ name: string; path: string }>;
@@ -212,7 +226,7 @@ export function discoverFromRegistry(registryPath: string): DiscoveredSquad[] {
   const discovered: DiscoveredSquad[] = [];
   for (const entry of entries) {
     if (typeof entry.path === 'string') {
-      const manifest = readManifest(entry.path);
+      const manifest = readManifest(entry.path, storage);
       if (manifest) {
         discovered.push({
           manifest,
@@ -230,10 +244,13 @@ export function discoverFromRegistry(registryPath: string): DiscoveredSquad[] {
  * Discover all squads from all available sources.
  * Checks upstreams first, then a registry file if present.
  */
-export function discoverSquads(squadDir: string): DiscoveredSquad[] {
-  const fromUpstreams = discoverFromUpstreams(squadDir);
+export function discoverSquads(
+  squadDir: string,
+  storage: StorageProvider = new FSStorageProvider(),
+): DiscoveredSquad[] {
+  const fromUpstreams = discoverFromUpstreams(squadDir, storage);
   const registryPath = join(squadDir, 'squad-registry.json');
-  const fromRegistry = discoverFromRegistry(registryPath);
+  const fromRegistry = discoverFromRegistry(registryPath, storage);
 
   // Deduplicate by manifest name (upstreams take priority)
   const seen = new Set(fromUpstreams.map(d => d.manifest.name));

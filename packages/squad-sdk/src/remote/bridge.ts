@@ -7,7 +7,6 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'node:http';
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -22,6 +21,8 @@ import {
   type RCClientCommand,
 } from './protocol.js';
 import type { RemoteBridgeConfig, RemoteConnection, ConnectionState } from './types.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
 export class RemoteBridge {
   private server: http.Server | null = null;
@@ -40,12 +41,11 @@ export class RemoteBridge {
   private tickets = new Map<string, { expires: number }>(); // F-02: one-time WS tickets
   private readonly SESSION_TTL = 4 * 60 * 60 * 1000; // F-18: 4-hour session TTL
   private readonly sessionCreatedAt = Date.now();
+  // TODO: audit log directory was previously created with mode 0o700; StorageProvider does not support directory permissions
   private auditLogDir: string = path.join(os.homedir(), '.cli-tunnel', 'audit');
   private auditLogPath: string = path.join(this.auditLogDir, `squad-audit-${Date.now()}.jsonl`);
-  private auditLog = (() => { fs.mkdirSync(this.auditLogDir, { recursive: true, mode: 0o700 }); return fs.createWriteStream(this.auditLogPath, { flags: 'a' }); })();
 
-  constructor(private config: RemoteBridgeConfig) {
-    this.auditLog.on('error', (err) => { console.error('Audit log error:', err.message); });
+  constructor(private config: RemoteBridgeConfig, private storage: StorageProvider = new FSStorageProvider()) {
     // #30: Ticket GC — clean expired tickets every 30s
     setInterval(() => {
       const now = Date.now();
@@ -538,7 +538,7 @@ export class RemoteBridge {
         try {
           const parsed = JSON.parse(raw);
           if (parsed.type === 'pty_input') {
-            this.auditLog.write(JSON.stringify({ ts: new Date().toISOString(), addr: info.remoteAddress, type: 'pty_input', data: this.redactSecrets(JSON.stringify(parsed.data)) }) + '\n');
+            void this.storage.append(this.auditLogPath, JSON.stringify({ ts: new Date().toISOString(), addr: info.remoteAddress, type: 'pty_input', data: this.redactSecrets(JSON.stringify(parsed.data)) }) + '\n').catch((err) => console.error('Audit log error:', err.message));
           }
 
           // CRITICAL-5: ACP JSON-RPC method allowlist
@@ -553,7 +553,7 @@ export class RemoteBridge {
           }
         } catch {
           // Log non-JSON input
-          this.auditLog.write(JSON.stringify({ ts: new Date().toISOString(), addr: info.remoteAddress, type: 'raw', data: raw }) + '\n');
+          void this.storage.append(this.auditLogPath, JSON.stringify({ ts: new Date().toISOString(), addr: info.remoteAddress, type: 'raw', data: raw }) + '\n').catch((err) => console.error('Audit log error:', err.message));
         }
 
         // Intercept session/new to inject correct cwd

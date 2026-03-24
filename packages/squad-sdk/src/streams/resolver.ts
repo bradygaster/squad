@@ -10,8 +10,9 @@
  * @module streams/resolver
  */
 
-import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { SubSquadConfig, SubSquadDefinition, ResolvedSubSquad } from './types.js';
 
 /**
@@ -20,14 +21,14 @@ import type { SubSquadConfig, SubSquadDefinition, ResolvedSubSquad } from './typ
  * @param squadRoot - Root directory of the project (where .squad/ lives)
  * @returns Parsed SubSquadConfig or null if not found / invalid
  */
-export function loadSubSquadsConfig(squadRoot: string): SubSquadConfig | null {
+export function loadSubSquadsConfig(squadRoot: string, storage: StorageProvider = new FSStorageProvider()): SubSquadConfig | null {
   const configPath = join(squadRoot, '.squad', 'workstreams.json');
-  if (!existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return null;
   }
 
   try {
-    const raw = readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath)!;
     const rawConfig = JSON.parse(raw) as unknown;
 
     if (!rawConfig || typeof rawConfig !== 'object') {
@@ -119,8 +120,8 @@ function findSubSquad(config: SubSquadConfig, name: string): SubSquadDefinition 
  * @param squadRoot - Root directory of the project
  * @returns ResolvedSubSquad or null if no SubSquad is active
  */
-export function resolveSubSquad(squadRoot: string): ResolvedSubSquad | null {
-  const config = loadSubSquadsConfig(squadRoot);
+export function resolveSubSquad(squadRoot: string, storage: StorageProvider = new FSStorageProvider()): ResolvedSubSquad | null {
+  const config = loadSubSquadsConfig(squadRoot, storage);
 
   // 1. SQUAD_TEAM env var
   const envTeam = process.env.SQUAD_TEAM;
@@ -144,9 +145,9 @@ export function resolveSubSquad(squadRoot: string): ResolvedSubSquad | null {
 
   // 2. .squad-workstream file
   const workstreamFilePath = join(squadRoot, '.squad-workstream');
-  if (existsSync(workstreamFilePath)) {
+  if (storage.existsSync(workstreamFilePath)) {
     try {
-      const subsquadName = readFileSync(workstreamFilePath, 'utf-8').trim();
+      const subsquadName = storage.readSync(workstreamFilePath)!.trim();
       if (subsquadName) {
         if (config) {
           const def = findSubSquad(config, subsquadName);

@@ -15,8 +15,11 @@
  * @module multi-squad
  */
 
-import fs from 'node:fs';
+// TODO: mkdirSync/rmSync/statSync still use raw fs — StorageProvider needs sync mkdir(), deleteDir(), and isDirectory()
+import { mkdirSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
+import type { StorageProvider } from './storage/storage-provider.js';
+import { FSStorageProvider } from './storage/fs-storage-provider.js';
 import { resolveGlobalSquadPath } from './resolution.js';
 
 // ============================================================================
@@ -67,13 +70,13 @@ function squadsJsonPath(): string {
 }
 
 /** Read and parse squads.json, returning null if missing or malformed. */
-function loadSquadsConfig(): MultiSquadConfig | null {
+function loadSquadsConfig(storage: StorageProvider): MultiSquadConfig | null {
   const configPath = squadsJsonPath();
-  if (!fs.existsSync(configPath)) {
+  const raw = storage.readSync(configPath);
+  if (raw === undefined) {
     return null;
   }
   try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
     const parsed: unknown = JSON.parse(raw);
     if (
       parsed !== null &&
@@ -92,9 +95,9 @@ function loadSquadsConfig(): MultiSquadConfig | null {
 }
 
 /** Write squads.json atomically. */
-function saveSquadsConfig(config: MultiSquadConfig): void {
+function saveSquadsConfig(config: MultiSquadConfig, storage: StorageProvider): void {
   const configPath = squadsJsonPath();
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 /** Validate a squad name: non-empty, no slashes, no dots-only. */
@@ -112,8 +115,8 @@ function validateName(name: string): void {
  * Returns the platform-appropriate global config directory for squads.
  * Delegates to resolveGlobalSquadPath() which handles Windows/macOS/Linux.
  */
-export function getSquadRoot(): string {
-  return resolveGlobalSquadPath();
+export function getSquadRoot(storage: StorageProvider = new FSStorageProvider()): string {
+  return resolveGlobalSquadPath(storage);
 }
 
 /**
@@ -128,17 +131,17 @@ export function getSquadRoot(): string {
  *
  * Triggers auto-migration on first call if a legacy layout is detected.
  */
-export function resolveSquadPath(name?: string): string {
+export function resolveSquadPath(name?: string, storage: StorageProvider = new FSStorageProvider()): string {
   // Auto-migrate legacy layout if needed
-  migrateIfNeeded();
+  migrateIfNeeded(storage);
 
   const resolved =
     name ??
     process.env['SQUAD_NAME'] ??
-    loadSquadsConfig()?.active ??
+    loadSquadsConfig(storage)?.active ??
     DEFAULT_SQUAD;
 
-  const config = loadSquadsConfig();
+  const config = loadSquadsConfig(storage);
 
   // Look up registered path
   if (config) {
@@ -149,15 +152,15 @@ export function resolveSquadPath(name?: string): string {
   }
 
   // Fallback: derive path inside global config dir
-  const root = getSquadRoot();
+  const root = getSquadRoot(storage);
   return path.join(root, SQUADS_DIR, resolved);
 }
 
 /**
  * List all registered squads with their active status.
  */
-export function listSquads(): SquadInfo[] {
-  const config = loadSquadsConfig();
+export function listSquads(storage: StorageProvider = new FSStorageProvider()): SquadInfo[] {
+  const config = loadSquadsConfig(storage);
   if (!config) {
     return [];
   }
@@ -174,12 +177,12 @@ export function listSquads(): SquadInfo[] {
  *
  * @throws If a squad with the given name already exists.
  */
-export function createSquad(name: string): string {
+export function createSquad(name: string, storage: StorageProvider = new FSStorageProvider()): string {
   validateName(name);
 
   // Ensure squads.json exists (migrate or bootstrap)
-  migrateIfNeeded();
-  let config = loadSquadsConfig();
+  migrateIfNeeded(storage);
+  let config = loadSquadsConfig(storage);
   if (!config) {
     config = { squads: [], active: DEFAULT_SQUAD };
   }
@@ -188,15 +191,15 @@ export function createSquad(name: string): string {
     throw new Error(`Squad "${name}" already exists.`);
   }
 
-  const squadDir = path.join(getSquadRoot(), SQUADS_DIR, name);
-  fs.mkdirSync(squadDir, { recursive: true });
+  const squadDir = path.join(getSquadRoot(storage), SQUADS_DIR, name);
+  mkdirSync(squadDir, { recursive: true });
 
   config.squads.push({
     name,
     path: squadDir,
     created_at: new Date().toISOString(),
   });
-  saveSquadsConfig(config);
+  saveSquadsConfig(config, storage);
 
   return squadDir;
 }
@@ -206,10 +209,10 @@ export function createSquad(name: string): string {
  *
  * @throws If the squad is the currently active one, or if it doesn't exist.
  */
-export function deleteSquad(name: string): void {
+export function deleteSquad(name: string, storage: StorageProvider = new FSStorageProvider()): void {
   validateName(name);
 
-  const config = loadSquadsConfig();
+  const config = loadSquadsConfig(storage);
   if (!config) {
     throw new Error(`Squad "${name}" not found.`);
   }
@@ -224,12 +227,12 @@ export function deleteSquad(name: string): void {
   }
 
   const entry = config.squads[idx];
-  if (entry && fs.existsSync(entry.path)) {
-    fs.rmSync(entry.path, { recursive: true, force: true });
+  if (entry && storage.existsSync(entry.path)) {
+    rmSync(entry.path, { recursive: true, force: true });
   }
 
   config.squads.splice(idx, 1);
-  saveSquadsConfig(config);
+  saveSquadsConfig(config, storage);
 }
 
 /**
@@ -237,10 +240,10 @@ export function deleteSquad(name: string): void {
  *
  * @throws If the named squad is not registered.
  */
-export function switchSquad(name: string): void {
+export function switchSquad(name: string, storage: StorageProvider = new FSStorageProvider()): void {
   validateName(name);
 
-  const config = loadSquadsConfig();
+  const config = loadSquadsConfig(storage);
   if (!config) {
     throw new Error(`No squads configured. Cannot switch to "${name}".`);
   }
@@ -250,7 +253,7 @@ export function switchSquad(name: string): void {
   }
 
   config.active = name;
-  saveSquadsConfig(config);
+  saveSquadsConfig(config, storage);
 }
 
 /**
@@ -261,12 +264,12 @@ export function switchSquad(name: string): void {
  *
  * @returns `true` if migration was performed, `false` if not needed.
  */
-export function migrateIfNeeded(): boolean {
-  const root = getSquadRoot();
+export function migrateIfNeeded(storage: StorageProvider = new FSStorageProvider()): boolean {
+  const root = getSquadRoot(storage);
   const configPath = path.join(root, SQUADS_JSON);
 
   // If squads.json already exists, no migration needed
-  if (fs.existsSync(configPath)) {
+  if (storage.existsSync(configPath)) {
     return false;
   }
 
@@ -274,13 +277,13 @@ export function migrateIfNeeded(): boolean {
   const home = process.env['HOME'] ?? process.env['USERPROFILE'] ?? '';
   const legacyDir = path.join(home, LEGACY_DIR);
 
-  if (!home || !fs.existsSync(legacyDir) || !fs.statSync(legacyDir).isDirectory()) {
+  if (!home || !storage.existsSync(legacyDir) || !statSync(legacyDir).isDirectory()) {
     // No legacy layout — bootstrap empty config
     const config: MultiSquadConfig = {
       squads: [],
       active: DEFAULT_SQUAD,
     };
-    saveSquadsConfig(config);
+    saveSquadsConfig(config, storage);
     return false;
   }
 
@@ -295,6 +298,6 @@ export function migrateIfNeeded(): boolean {
     ],
     active: DEFAULT_SQUAD,
   };
-  saveSquadsConfig(config);
+  saveSquadsConfig(config, storage);
   return true;
 }

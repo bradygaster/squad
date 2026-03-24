@@ -101,3 +101,45 @@ export type {
 // Base Roles (built-in role catalog)
 export * from './roles/index.js';
 export * from './platform/index.js';
+export * from './storage/index.js';
+
+// State facade (Phase 2) — namespaced to avoid conflicts with existing config/sharing exports
+export {
+  // Error classes
+  StateError,
+  NotFoundError,
+  ParseError,
+  WriteConflictError,
+  ProviderError,
+  // Schema
+  COLLECTION_PATHS,
+  resolveCollectionPath,
+  // Handle factory
+  createAgentHandle,
+  // Collection facades
+  AgentsCollection,
+  ConfigCollection,
+  DecisionsCollection,
+  LogCollection,
+  RoutingCollection,
+  SkillsCollection,
+  TeamCollection,
+  TemplatesCollection,
+  // Top-level facade
+  SquadState,
+} from './state/index.js';
+export type { ConfigFileData } from './state/index.js';
+export type {
+  Agent,
+  Decision,
+  LogEntry,
+  RoutingConfigRule,
+  SquadStateConfig,
+  StateErrorKind,
+  TeamMember,
+  Template,
+  CollectionEntityMap,
+  CollectionName,
+  AgentHandle,
+  CollectionPathResolver,
+} from './state/index.js';

@@ -9,10 +9,10 @@
  * @see https://github.com/bradygaster/squad/issues/515
  */
 
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
 /** A rate limit sample from API response headers */
 export interface RateSample {
@@ -187,7 +187,7 @@ export function consumeQuota(pool: RatePool, agentName: string): void {
 /**
  * Load rate pool state from the shared file.
  */
-export async function loadRatePool(teamRoot?: string): Promise<RatePool | null> {
+export async function loadRatePool(teamRoot?: string, storage: StorageProvider = new FSStorageProvider()): Promise<RatePool | null> {
   const candidates: string[] = [];
 
   if (teamRoot) {
@@ -196,9 +196,10 @@ export async function loadRatePool(teamRoot?: string): Promise<RatePool | null> 
   candidates.push(path.join(os.homedir(), '.squad', 'rate-pool.json'));
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (storage.existsSync(candidate)) {
       try {
-        const raw = await readFile(candidate, 'utf8');
+        const raw = await storage.read(candidate);
+        if (raw === undefined) continue;
         return JSON.parse(raw) as RatePool;
       } catch {
         // Malformed — skip

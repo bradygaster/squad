@@ -13,6 +13,8 @@ import path from 'node:path';
 import { SpanStatusCode } from './otel-api.js';
 import { getTracer } from './otel.js';
 import { EventBus, type SquadEvent } from './event-bus.js';
+import type { StorageProvider } from '../storage/index.js';
+import { FSStorageProvider } from '../storage/index.js';
 
 // ============================================================================
 // Types
@@ -49,6 +51,8 @@ export interface SquadObserverConfig {
   eventBus?: EventBus;
   /** Debounce interval in ms (default: 200) */
   debounceMs?: number;
+  /** Storage provider for file I/O (default: FSStorageProvider rooted at squadDir) */
+  storage?: StorageProvider;
 }
 
 // ============================================================================
@@ -88,6 +92,8 @@ export function classifyFile(relativePath: string): SquadFileCategory {
  */
 export class SquadObserver {
   private config: Required<Pick<SquadObserverConfig, 'squadDir' | 'debounceMs'>> & Pick<SquadObserverConfig, 'eventBus'>;
+  private storage: StorageProvider;
+  // TODO: fs.FSWatcher has no StorageProvider equivalent — keep raw fs until StorageProvider supports file watching
   private watcher: fs.FSWatcher | undefined;
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private running = false;
@@ -98,6 +104,7 @@ export class SquadObserver {
       eventBus: config.eventBus,
       debounceMs: config.debounceMs ?? 200,
     };
+    this.storage = config.storage ?? new FSStorageProvider();
   }
 
   /**
@@ -106,7 +113,7 @@ export class SquadObserver {
    */
   start(): void {
     if (this.running) return;
-    if (!fs.existsSync(this.config.squadDir)) {
+    if (!this.storage.existsSync(this.config.squadDir)) {
       throw new Error(`Squad directory not found: ${this.config.squadDir}`);
     }
 
@@ -119,6 +126,7 @@ export class SquadObserver {
     });
 
     try {
+      // TODO: fs.watch has no StorageProvider equivalent — keep raw fs until StorageProvider supports file watching
       this.watcher = fs.watch(this.config.squadDir, { recursive: true }, (eventType, filename) => {
         if (!filename) return;
         // Skip high-churn directories that don't affect squad state
@@ -191,7 +199,7 @@ export class SquadObserver {
   private processChange(filename: string): void {
     const absolutePath = path.join(this.config.squadDir, filename);
     const category = classifyFile(filename);
-    const exists = fs.existsSync(absolutePath);
+    const exists = this.storage.existsSync(absolutePath);
 
     // Determine change type — basic heuristic since fs.watch doesn't tell us
     const changeType: SquadFileChange['changeType'] = exists ? 'modified' : 'deleted';
