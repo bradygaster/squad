@@ -1,0 +1,51 @@
+name: Squad Route by Label
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Route issue to squad agent based on label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = context.payload.label.name;
+            const issue = context.payload.issue;
+
+            // Map squad labels to agent assignments
+            // Customize this map for your team's cast names
+            const labelToAgent = {
+              'squad:engineer': null,   // auto-assign via @copilot or your engineer agent
+              'squad:researcher': null,
+              'squad:scribe': null,
+              'squad:tester': null,
+              'squad:designer': null,
+            };
+
+            if (!(label in labelToAgent)) return;
+
+            const assignee = labelToAgent[label];
+            if (assignee) {
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                assignees: [assignee]
+              });
+            }
+
+            // Optionally post routing notification
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `🏷️ Squad routing: label \`${label}\` applied — issue queued for the matching squad agent.`
+            });

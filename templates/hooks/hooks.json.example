@@ -1,0 +1,19 @@
+{
+  "hooks": [
+    {
+      "event": "issues.opened",
+      "workflow": ".github/workflows/squad-triage.yml",
+      "description": "Auto-triage new issues to the right squad agent"
+    },
+    {
+      "event": "pull_request.merged",
+      "workflow": ".github/workflows/squad-board-sync.yml",
+      "description": "Update Squad Work Board when PRs are merged"
+    },
+    {
+      "event": "issues.labeled",
+      "workflow": ".github/workflows/squad-route.yml",
+      "description": "Route issues to squad agents based on labels"
+    }
+  ]
+}

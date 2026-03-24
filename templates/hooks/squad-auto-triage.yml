@@ -1,0 +1,49 @@
+name: Squad Auto-Triage
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Squad Triage
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+
+            // Route based on labels or keywords in title/body
+            const routingRules = [
+              { keyword: 'bug', label: 'squad:engineer', agent: "B'Elanna" },
+              { keyword: 'research', label: 'squad:researcher', agent: 'Brahms' },
+              { keyword: 'docs', label: 'squad:scribe', agent: 'Scribe-R' },
+              { keyword: 'test', label: 'squad:tester', agent: 'Torres' },
+              { keyword: 'design', label: 'squad:designer', agent: 'Seven' },
+            ];
+
+            const text = [issue.title, issue.body || ''].join(' ').toLowerCase();
+
+            for (const rule of routingRules) {
+              if (text.includes(rule.keyword)) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: [rule.label]
+                });
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `🤖 Squad auto-triage: routed to **${rule.agent}** (label: \`${rule.label}\`)`
+                });
+                break;
+              }
+            }

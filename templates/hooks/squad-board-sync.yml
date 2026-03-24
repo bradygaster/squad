@@ -1,0 +1,44 @@
+name: Squad Board Sync
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+
+jobs:
+  sync:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync linked issues when PR merges
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+
+            // Extract linked issue numbers from PR body (Closes #N, Fixes #N, Resolves #N)
+            const linkedIssues = [...body.matchAll(/(?:closes|fixes|resolves)\s+#(\d+)/gi)]
+              .map(m => parseInt(m[1], 10));
+
+            for (const issueNumber of linkedIssues) {
+              // Add a 'squad:done' label to signal completion
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                labels: ['squad:done']
+              }).catch(() => {}); // Label may not exist; ignore errors
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: `✅ Squad board sync: PR #${pr.number} merged. Marking issue complete.`
+              });
+            }
