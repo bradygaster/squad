@@ -7,7 +7,7 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { resolveSquad, resolveGlobalSquadPath, ensureSquadPath } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquad, resolveGlobalSquadPath, ensureSquadPath, ensurePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-resolution-${randomBytes(4).toString('hex')}`);
 
@@ -195,5 +195,47 @@ describe('ensureSquadPath()', () => {
   it('rejects path traversal that escapes .squad/ via ..', () => {
     const traversal = join(squadRoot, '..', 'evil.txt');
     expect(() => ensureSquadPath(traversal, squadRoot)).toThrow(/outside the \.squad\/ directory/);
+  });
+});
+
+describe('ensurePersonalSquadDir()', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('creates personal-squad/agents/ and config.json', () => {
+    const dir = ensurePersonalSquadDir();
+    expect(existsSync(dir)).toBe(true);
+    expect(existsSync(join(dir, 'agents'))).toBe(true);
+    expect(existsSync(join(dir, 'config.json'))).toBe(true);
+
+    const config = JSON.parse(
+      require('node:fs').readFileSync(join(dir, 'config.json'), 'utf-8'),
+    );
+    expect(config.defaultModel).toBe('auto');
+    expect(config.ghostProtocol).toBe(true);
+  });
+
+  it('is idempotent — does not overwrite existing config', () => {
+    const dir = ensurePersonalSquadDir();
+    const configPath = join(dir, 'config.json');
+
+    // Write custom config
+    const custom = { defaultModel: 'gpt-4', ghostProtocol: true, custom: true };
+    require('node:fs').writeFileSync(configPath, JSON.stringify(custom), 'utf-8');
+
+    // Call again — should not overwrite
+    ensurePersonalSquadDir();
+    const config = JSON.parse(
+      require('node:fs').readFileSync(configPath, 'utf-8'),
+    );
+    expect(config.custom).toBe(true);
+    expect(config.defaultModel).toBe('gpt-4');
+  });
+
+  it('returns path inside resolveGlobalSquadPath()', () => {
+    const globalDir = resolveGlobalSquadPath();
+    const personalDir = ensurePersonalSquadDir();
+    expect(personalDir).toBe(join(globalDir, 'personal-squad'));
   });
 });
