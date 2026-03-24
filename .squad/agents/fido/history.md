@@ -138,3 +138,17 @@ Extracted inline regex-based agent name parsing from `shell/index.ts` into a tes
 **Learning:** Inline regex logic in UI code is untestable and fragile. Extracting to a pure function with explicit inputs (description string + known names array) makes it trivially testable and enables VOX's parallel fix to land cleanly.
 
 📌 **Team update (2026-03-23T23:15Z):** Orchestration complete. Agent name extraction refactor shipped: FIDO's parser module (30 tests, all passing), VOX's 3-tier cascading patterns, Procedures' spawn template standardization. All decisions merged to decisions.md. Agent IDs now display correctly in Copilot CLI. Canonical patterns: `agent-name-parser.ts` is source of truth for extraction logic.
+### Init Scaffolding Completeness Tests (#579)
+
+Added `test/init-scaffolding.test.ts` — 15 tests covering three gaps exposed by issue #579:
+
+1. **Casting directory scaffolding** — After `initSquad()` and `runInit()`, verifies `.squad/casting/` directory and all three JSON files (registry.json, policy.json, history.json) exist and parse as valid JSON. Also confirms re-init does not overwrite existing casting files.
+
+2. **No-remote resilience** — Confirms init succeeds without errors when: git repo has no remote configured, brand-new `git init` repo, or no git at all. Uses `execFileSync` to create isolated git repos in temp dirs.
+
+3. **Doctor validation after init** — Runs `runDoctor()` against a freshly-initialized directory and asserts zero failures, specifically that `casting/registry.json exists` check passes. Also tests negative cases (missing file → fail, corrupt JSON → fail).
+
+Pattern: Tests follow existing `test/cli/init.test.ts` and `test/cli/doctor.test.ts` conventions — vitest, `randomBytes` temp dirs in cwd, imports from compiled dist via package exports (`@bradygaster/squad-cli/core/init`, `@bradygaster/squad-cli/commands/doctor`, `@bradygaster/squad-sdk`).
+
+Commit: 7660a27 on branch squad/579-init-scaffolding-hardening.
+
