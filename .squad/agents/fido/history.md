@@ -152,3 +152,23 @@ Pattern: Tests follow existing `test/cli/init.test.ts` and `test/cli/doctor.test
 
 Commit: 7660a27 on branch squad/579-init-scaffolding-hardening.
 
+### Personal Squad Init Discovery Tests (#576)
+
+**Task:** Write tests for personal squad discovery and init flows (Issue #576 — npx init --global not discovering personal squad).
+
+**Test file:** `test/personal-squad-init.test.ts` — 35 tests, 10 describe blocks, all passing.
+
+**Coverage areas:**
+1. `resolveGlobalSquadPath()` — platform-specific path resolution (Windows APPDATA, Linux XDG_CONFIG_HOME, consistency)
+2. `resolvePersonalSquadDir()` — kill-switch (SQUAD_NO_PERSONAL), directory existence, npx-agnostic discovery
+3. `personalInit` contract — directory structure creation, config.json shape, idempotency
+4. `resolveSquadPaths()` — personalDir field inclusion, null when disabled
+5. Edge: empty personal-squad dir (exists but no agents/)
+6. Edge: partial state (agent dirs without charter.md, missing Role metadata defaults to "personal", stray files skipped)
+7. `mergeSessionCast()` — project-wins precedence, case-insensitive collision, empty inputs
+8. `ensureSquadPathTriple()` — personal dir in allowed roots, null personalDir graceful handling
+9. Charter metadata parsing edge cases (whitespace trimming, sourceDir correctness, multi-agent discovery)
+
+**Key finding:** `resolvePersonalSquadDir()` is install-method-agnostic — it resolves from env vars and `os.homedir()`, never from `process.argv`. The npx issue (#576) is therefore NOT in path resolution but likely in the CLI command wiring or the `--global` flag routing. Tests confirm the SDK layer works correctly.
+
+**Commit:** c307187 on branch squad/576-personal-squad-init-npx
