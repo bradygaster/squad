@@ -7,6 +7,8 @@
 
 import type { RuntimeProvider, RuntimeProviderName } from './provider.js';
 import { ClaudeCodeRuntimeProvider } from './providers/claude-code-provider.js';
+import { CopilotRuntimeProvider } from './providers/copilot-provider.js';
+import type { SquadClientFactory } from './providers/copilot-provider.js';
 
 export interface RuntimeResolverConfig {
   /** Which runtime to use. Defaults to 'copilot'. */
@@ -16,25 +18,31 @@ export interface RuntimeResolverConfig {
     claudeBin?: string;
     sessionTimeout?: number;
   };
+  /** Options passed to the Copilot provider. */
+  copilot?: {
+    /** A SquadClient instance or factory function. Required when runtime is 'copilot'. */
+    client?: SquadClientFactory;
+  };
 }
 
 const DEFAULT_RUNTIME: RuntimeProviderName = 'copilot';
 
 /**
  * Registry of known provider factories.
- * 'copilot' factory is a placeholder — will be replaced when
- * CopilotRuntimeProvider is extracted in Lane A.
  */
 const providerFactories: Record<
   RuntimeProviderName,
   (config: RuntimeResolverConfig) => RuntimeProvider
 > = {
-  'copilot': (_config) => {
-    // TODO: Replace with CopilotRuntimeProvider once extracted (Lane A)
-    throw new Error(
-      'Copilot runtime provider not yet extracted. ' +
-      'Use the existing Copilot integration path until Lane A completes extraction.',
-    );
+  'copilot': (config) => {
+    const clientFactory = config.copilot?.client;
+    if (!clientFactory) {
+      throw new Error(
+        'Copilot runtime provider requires a SquadClient. ' +
+        'Pass { copilot: { client: squadClientInstance } } in your RuntimeResolverConfig.',
+      );
+    }
+    return new CopilotRuntimeProvider({ client: clientFactory });
   },
   'claude-code': (config) => {
     return new ClaudeCodeRuntimeProvider({
