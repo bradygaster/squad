@@ -7703,3 +7703,123 @@ Triaged 14 untriaged issues (3 docs, 6 community features, 3 bugs, 2 questions).
 - #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
 - #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
 
+
+---
+
+### 2026-03-25: Personal Squad Path Canonicalization
+
+**By:** EECOM (Core Developer)  
+**Date:** 2026-03-25  
+**Issue:** #590  
+
+**Decision:** The canonical subdirectory for personal squad (inside global config dir) is personal-squad/. All path resolution functions must use this name. The .squad name is reserved for project-local squad directories only.
+
+**Context:** getPersonalSquadRoot() in consult.ts used .squad as subdirectory, while esolvePersonalSquadDir() and nsurePersonalSquadDir() in esolution.ts both use personal-squad. This path mismatch broke all personal squad discovery.
+
+**Implications:**
+- Any new function resolving personal squad path must use personal-squad, not .squad
+- Consider extracting subdirectory name as shared constant (PERSONAL_SQUAD_DIR = 'personal-squad') if more resolution helpers are added
+- All existing code must use consistent path
+
+**Status:** ✅ Implemented in commit for #590
+
+---
+
+### 2026-03-25: Model Catalog Refresh to Current Platform Offerings
+
+**By:** Procedures (Prompt Engineer)  
+**Date:** 2026-03-25  
+**Issue:** #588  
+
+**Decision:** Bump model catalog to current platform offerings as of March 25, 2026.
+
+- **Default code model:** Bumped to claude-sonnet-4.6 (newest standard-tier Claude, replaces claude-sonnet-4.5)
+- **Code specialist:** Bumped to gpt-5.3-codex (replaces gpt-5.2-codex)
+- **Removed stale models:** claude-opus-4.6-fast, gpt-5 (standalone)
+- **Added new models:** claude-opus-4.6-1m, gpt-5.4, gpt-5.4-mini
+- **Fallback chains:** Restructured with current model availability
+
+**Impact:** All agents using model selection or fallback chains now reference current platform models. No behavioral change for agents using platform default (omitting model param).
+
+**Implementation:** All 5 squad.agent.md template copies synchronized via scripts/sync-templates.mjs
+
+**Status:** ✅ Merged into #588
+
+---
+
+### 2026-03-25: Copilot CLI Platform Changes — Routing Regression Root Cause
+
+**By:** CAPCOM (SDK Expert)  
+**Date:** 2026-03-25  
+**Summary:** Copilot CLI shipped 8 releases (1.0.4→1.0.11) between March 11-23. Three contain high-impact changes directly affecting Squad routing.
+
+**Critical CLI Changes Identified:**
+
+| Version | Date | Change | Squad Impact |
+|---------|------|--------|--------------|
+| **1.0.11** | Mar 23 | Monorepo instruction discovery — finds *.agent.md and copilot-instructions.md at EVERY directory level (cwd → git root) | 🔴 HIGH: Squad has 6+ copies in templates → duplicate/conflicting instructions merged → dilutes routing |
+| **1.0.8** | Mar 18 | Idle subagents hidden from /tasks after 2 minutes of inactivity | 🔴 HIGH: Explains "agent names vanish" symptom |
+| **1.0.7** | Mar 17 | subagentStart hook fires when subagent spawned, can inject context | 🟡 MEDIUM: May add competing instructions to coordinator |
+| **1.0.6** | Mar 16 | Agent ID format changed (gent-0 → {name}-0) | 🟡 MEDIUM: May break ID-based routing if any |
+| **1.0.5** | Mar 13 | Embedding-based dynamic skill instruction injection per turn | 🟡 MEDIUM: Adds competing context during execution |
+
+**Key Insight:** SDK version pinning (^0.1.32) only controls Squad's SDK dependency. The Copilot CLI runtime (system prompt assembly, agent lifecycle, task tool behavior) auto-updates independently. **Squad needs platform-resilient prompt injection, not just "works with current CLI."**
+
+**Recommended Actions:**
+1. **Immediate:** Clean up template file naming to prevent duplicate instruction discovery
+2. **Short-term:** Upgrade to SDK 0.2.0 to use "customize" mode for resilient system prompt control
+3. **Medium-term:** File CLI issue requesting instruction discovery exclusions and idle timeout configurability
+
+**Full Report:** .squad/decisions/inbox/capcom-cli-research.md
+
+---
+
+### 2026-03-25: Squad v0.9.0/v0.9.1 Routing Regression Analysis
+
+**By:** GNC (Node.js Runtime)  
+**Date:** 2026-03-25  
+**Summary:** Regression introduced in Squad v0.9.0 (March 22). v0.9.0→v0.9.1 was CI/publish fixes only — identical coordinator prompts.
+
+**Root Causes by Symptom:**
+
+**Symptom 1: Coordinator doing domain work**
+- **Primary:** Prompt saturation/instruction fatigue
+- Coordinator prompt grew 33% (711→946 lines, 8,867→11,837 words) from v0.8.22 to v0.9.0
+- New content (personal squad governance, worktree lifecycle, gap analysis) adds inline coordinator responsibilities
+- Dilutes core "route, don't do domain work" constraint (buried at line 1016 of 946-line prompt)
+
+**Symptom 2: Routing feels broken**
+- **Primary:** Workstream→Personal Squad replacement broke existing routing configs
+- **Contributing:** Skills path changed (.copilot/skills/ → .squad/skills/)
+- **Contributing:** Prompt weight competing with routing rules
+
+**Symptom 3: Agent names vanishing**
+- **Root cause:** Missing 
+ame parameter in spawn templates
+- v0.9.0 and v0.9.1 shipped WITHOUT the 
+ame parameter
+- Shell relied on fragile regex extraction from description field
+- **Fix exists (commit 561b1a3, issue #577, on dev) but hasn't shipped yet**
+  - Adds mandatory 
+ame: "{name}" parameter to ALL spawn templates
+  - Multi-pattern fallback parser (agent-name-parser.ts)
+  - 30 tests for name extraction
+
+**Template Status:** scripts/sync-templates.mjs correctly propagates from .squad-templates/ to all 4 targets. All copies in sync — no template drift.
+
+**Recommended Follow-Up:**
+
+**P0 — Ship Immediately:**
+1. Merge #577 (agent name fix) — directly addresses symptom 3
+
+**P1 — Next Release:**
+2. Audit coordinator prompt weight (consider moving worktree lifecycle, personal squad governance, gap analysis to skills)
+3. Reinforce routing constraint near top of template
+4. Create routing regression tests
+
+**P2 — Track/Validate:**
+5. Document workstream→personal squad migration for users
+6. Implement "prompt budget" metric (alert if growth >5% per release)
+
+**Full Report:** .squad/decisions/inbox/gnc-internal-research.md
+

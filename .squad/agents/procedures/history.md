@@ -139,3 +139,6 @@ Also updated: examples section (showing `name` + `description` pairs), anti-patt
 **Pattern:** Every `task` tool spawn MUST include `name` set to the agent's lowercase cast name. Without it, the platform defaults to generic slugs. The `description` parameter is for the human-readable summary; `name` is for the agent ID.
 
 📌 **Team update (2026-03-23T23:15Z):** Orchestration complete. Agent name display refactor shipped: spawn templates updated with mandatory `name` parameter across all 4 template variants. VOX and FIDO coordinated on parser extraction and cascading pattern strategies. All decisions merged to decisions.md. Canonical source: `.squad-templates/squad.agent.md` (all derived copies secondary).
+
+📌 **Team update (2026-03-25T18:11Z):** Model catalog updated to current platform offerings — removed 2 stale models (claude-opus-4.6-fast, gpt-5), added 5 new models (claude-sonnet-4.6, claude-opus-4.6-1m, gpt-5.4, gpt-5.3-codex, gpt-5.4-mini), bumped defaults (code: claude-sonnet-4.6, specialist: gpt-5.3-codex), restructured fallbacks. All 5 squad.agent.md template copies synchronized. Merged in #588.
+
