@@ -1,6 +1,6 @@
 # Choose your interface
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
+> ⚠️ **Experimental** - Squad is alpha software. APIs, commands, and behavior may change between releases.
 
 
 Squad works across multiple interfaces. Pick the one that fits your workflow.
@@ -10,8 +10,11 @@ Squad works across multiple interfaces. Pick the one that fits your workflow.
 ## Try this:
 
 ```bash
-# Day-to-day work with your squad
+# Day-to-day work with your squad (Copilot)
 copilot --agent squad
+
+# Day-to-day work with your squad (Claude Code)
+claude --agent squad
 
 # Setup and diagnostics
 squad init
@@ -26,13 +29,23 @@ Squad runs in multiple modes and across multiple platforms:
 
 ### GitHub Copilot CLI (`copilot` command)
 
-The conversational terminal interface. Powered by the GitHub Copilot CLI, this is the recommended way to work with Squad day-to-day.
+Conversational terminal interface via Copilot.
 
 ```bash
 copilot --agent squad
 ```
 
-Reads `.squad/` and uses `squad.agent.md` to coordinate your team. Full feature set — sub-agent spawning, per-spawn model selection, background execution, SQL tools, parallel fan-out.
+Reads `.squad/` and uses `squad.agent.md` to coordinate your team.
+
+### Claude Code CLI (`claude` command)
+
+Conversational terminal interface via Claude Code.
+
+```bash
+claude --agent squad
+```
+
+Also reads `.squad/` and uses `squad.agent.md` with the same Squad coordination model.
 
 ### VS Code (GitHub Copilot in the editor)
 
@@ -40,7 +53,7 @@ Squad works identically in VS Code through GitHub Copilot. Same `.squad/` direct
 
 ### Squad CLI (`squad` command)
 
-The Squad CLI provides setup, diagnostics, and automation commands. Not conversational — use this for installation, validation, and operational tasks.
+The Squad CLI provides setup, diagnostics, and automation commands. Not conversational - use this for installation, validation, and operational tasks.
 
 ```bash
 # Setup
@@ -62,7 +75,7 @@ See [CLI Reference](../reference/cli.md) for all commands.
 
 REPL mode for conversational interaction directly via the Squad CLI. Enter `squad` with no arguments to start a persistent shell session. See [Interactive Shell Guide](../guide/shell.md).
 
-This works, but **GitHub Copilot CLI is recommended** — richer agent experience, better tools, full MCP integration.
+This works, and both Copilot CLI and Claude Code CLI are supported provider paths. See `docs/runtime-providers.md` in the repo root for provider-specific flags, retry behavior, and troubleshooting.
 
 ### SDK (`@bradygaster/squad-sdk`)
 
@@ -90,7 +103,7 @@ See [Copilot Coding Agent](../features/copilot-coding-agent.md) for setup.
 
 | You want to... | Use | Why |
 |----------------|-----|-----|
-| **Work with your squad day-to-day** | **GitHub Copilot CLI** or **VS Code** | Conversational interface, full agent spawning, parallel execution. Most natural way to collaborate with your team. |
+| **Work with your squad day-to-day** | **GitHub Copilot CLI**, **Claude Code CLI**, or **VS Code** | Conversational interface, full agent spawning, parallel execution. Most natural way to collaborate with your team. |
 | **Set up Squad in a new repo** | **Squad CLI** (`squad init`) | One command initializes `.squad/` directory and all configuration. |
 | **Check if Squad is working** | **Squad CLI** (`squad doctor`) | Validates directory structure, agents, configuration integrity. |
 | **Monitor work 24/7** | **Squad CLI** (`squad watch`) | Persistent polling for new issues, auto-triage, agent assignment. |
@@ -104,21 +117,20 @@ See [Copilot Coding Agent](../features/copilot-coding-agent.md) for setup.
 
 Not every feature works everywhere. Here's what's available where:
 
-| Feature | GitHub Copilot CLI | VS Code | Squad CLI | SDK |
-|---------|:------------------:|:-------:|:---------:|:---:|
-| Agent spawning | ✅ | ✅ | ✅ (via shell) | ✅ |
-| Ralph / work monitoring | ✅ | ✅ | ✅ (`squad watch`) | ✅ |
-| Per-spawn model selection | ✅ | ⚠️ (session model only) | ✅ | ✅ |
-| Background execution | ✅ | ⚠️ (parallel sync) | ✅ | ✅ |
-| SQL tool | ✅ | ❌ | ✅ | ✅ |
-| Aspire dashboard | ❌ | ❌ | ✅ | ❌ |
-| `squad doctor` diagnostics | ❌ | ❌ | ✅ | ✅ |
-| Issue assignment to `@copilot` | ❌ | ❌ | ✅ (setup) | ❌ |
-
+| Feature | GitHub Copilot CLI | Claude Code CLI | VS Code | Squad CLI | SDK |
+|---------|:------------------:|:----------------:|:-------:|:---------:|:---:|
+| Agent spawning | Yes | Yes | Yes | Yes (via shell) | Yes |
+| Ralph / work monitoring | Yes | Yes | Yes | Yes (`squad watch`) | Yes |
+| Per-spawn model selection | Yes | Yes | Limited (session model only) | Yes | Yes |
+| Background execution | Yes | Yes | Limited (parallel sync) | Yes | Yes |
+| SQL tool | Yes | Yes | Yes | Yes | Yes |
+| Aspire dashboard | Yes | Yes | Yes | Yes | Yes |
+| `squad doctor` diagnostics | Yes | Yes | Yes | Yes | Yes |
+| Issue assignment to coding agents | Yes (`@copilot`) | Yes (`@claude`) | Yes | Yes (setup) | Yes |
 **Legend:**
-- ✅ Fully supported
-- ⚠️ Limited or constrained
-- ❌ Not available
+- Yes = fully supported
+- Limited = constrained behavior
+- No = not available
 
 For a detailed breakdown of VS Code constraints and CLI parity, see [Client Compatibility Matrix](../scenarios/client-compatibility.md).
 
@@ -126,18 +138,21 @@ For a detailed breakdown of VS Code constraints and CLI parity, see [Client Comp
 
 ## Common workflows
 
-### "I use GitHub Copilot CLI for everything"
+### "I use a provider CLI for everything"
 
 ```bash
-# Terminal 1: Work with Squad
+# Terminal 1: Work with Squad (Copilot)
 copilot --agent squad
+
+# OR: Work with Squad (Claude Code)
+claude --agent squad
 
 # Let Squad call `squad` commands when needed (doctor, watch, aspire)
 ```
 
-This is the recommended workflow. The CLI automatically invokes Squad CLI commands when needed.
+This is the recommended workflow. The provider CLI invokes Squad behavior while `squad` handles setup and operations.
 
-### "I run squad watch in one terminal and use GitHub Copilot CLI in another"
+### "I run squad watch in one terminal and use a provider CLI in another"
 
 ```bash
 # Terminal 1: Monitoring (persistent)
@@ -145,6 +160,8 @@ squad watch --interval 10
 
 # Terminal 2: Work with Squad
 copilot --agent squad
+# or
+claude --agent squad
 ```
 
 Keep Ralph monitoring issues in the background while you work conversationally.
@@ -166,9 +183,10 @@ Initialize with CLI, work in VS Code.
 
 ## See also
 
-- [Installation](installation.md) — Install Squad CLI, SDK, or use in VS Code
-- [First Session](first-session.md) — Get started with your first Squad conversation
-- [Client Compatibility Matrix](../scenarios/client-compatibility.md) — Full feature comparison across platforms
-- [CLI Reference](../reference/cli.md) — All Squad CLI commands
-- [Squad in VS Code](../features/vscode.md) — VS Code-specific guidance
-- [SDK Reference](../reference/sdk.md) — Programmatic API
+- [Installation](installation.md) - Install Squad CLI, SDK, or use in VS Code
+- [First Session](first-session.md) - Get started with your first Squad conversation
+- [Client Compatibility Matrix](../scenarios/client-compatibility.md) - Full feature comparison across platforms
+- [CLI Reference](../reference/cli.md) - All Squad CLI commands
+- [Squad in VS Code](../features/vscode.md) - VS Code-specific guidance
+- [SDK Reference](../reference/sdk.md) - Programmatic API
+- [Runtime Providers](../reference/runtime-providers.md) - Provider selection, compatibility matrix, and troubleshooting

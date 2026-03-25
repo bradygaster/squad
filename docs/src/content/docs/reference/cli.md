@@ -1,9 +1,11 @@
 # CLI Reference
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
+> ⚠️ **Experimental** - Squad is alpha software. APIs, commands, and behavior may change between releases.
 
 
-Everything you need to run Squad from the command line — commands, shell interactions, configuration files, and environment variables.
+Everything you need to run Squad from the command line - commands, shell interactions, configuration files, and environment variables.
+
+For provider-specific runtime behavior (Copilot vs Claude Code), see [Runtime Providers](./runtime-providers.md).
 
 ---
 
@@ -27,7 +29,7 @@ squad init
 | Command | Description | Requires `.squad/` |
 |---------|-------------|:------------------:|
 | `squad` | Enter interactive shell (no args) | No |
-| `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
+| `squad init` | Initialize Squad in the current repo (idempotent - safe to run multiple times) | No |
 | `squad init --global` | Create a personal squad in your platform-specific directory | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
 | `squad start [--tunnel] [--port N] [--command cmd]` | Start Copilot with remote phone access via PTY and WebSocket | No |
@@ -49,7 +51,8 @@ squad init
 | `squad aspire` | Launch Aspire dashboard for observability | No |
 | `squad aspire --docker` | Force Docker mode for Aspire | No |
 | `squad upstream add\|remove\|list\|sync` | Manage upstream Squad sources | Yes |
-| `copilot --agent squad` | Launch interactive shell explicitly | No |
+| `copilot --agent squad` | Launch Squad session via Copilot provider | No |
+| `claude --agent squad` | Launch Squad session via Claude Code provider | No |
 | `squad nap` | Context hygiene (compress, prune, archive .squad/ state) | Yes |
 | `squad nap --deep` | Thorough cleanup with recursive descent | Yes |
 | `squad nap --dry-run` | Preview cleanup actions without changes | Yes |
@@ -70,13 +73,13 @@ In dual-root mode, project-specific state lives in your local `.squad/` while te
 
 ### squad start
 
-Start Copilot with optional remote access via phone. Spawns Copilot in a PTY and mirrors to your phone via WebSocket + devtunnel.
+Start a provider session with optional remote access via phone. By default this launches Copilot in a PTY and mirrors to your phone via WebSocket + devtunnel. For Claude provider sessions, use `claude --agent squad` directly (or `--command` override).
 
 **Flags:**
 
-- `--tunnel` — Create a devtunnel for remote access (shows QR code for phone scanning). Requires `devtunnel` CLI installed and authenticated (`devtunnel user login`).
-- `--port <N>` — Specific WebSocket port (default: random). Example: `--port 3456`
-- `--command <cmd>` — Run a custom command instead of copilot. Example: `--command powershell`
+- `--tunnel` - Create a devtunnel for remote access (shows QR code for phone scanning). Requires `devtunnel` CLI installed and authenticated (`devtunnel user login`).
+- `--port <N>` - Specific WebSocket port (default: random). Example: `--port 3456`
+- `--command <cmd>` - Run a custom command instead of copilot. Example: `--command powershell`
 - All copilot flags pass through. Example: `squad start --tunnel --yolo` or `squad start --tunnel --model gpt-4`
 
 **Examples:**
@@ -119,7 +122,7 @@ All shell commands start with `/`.
 | Command | What it does |
 |---------|-------------|
 | `/status` | Show active agents, sessions, recent decisions |
-| `/history` | View session log — tasks, decisions, agent work |
+| `/history` | View session log - tasks, decisions, agent work |
 | `/agents` | List team members with roles and expertise |
 | `/sessions` | List saved sessions |
 | `/resume <id>` | Restore a past session |
@@ -136,7 +139,7 @@ squad > Keaton, set up the database schema
 squad > Build a blog post about our casting system
 ```
 
-Agent name matching is **case-insensitive** — `@keaton`, `@Keaton`, and `@KEATON` all route to the same agent. Name an agent to route directly. Omit the name and the coordinator routes to the best fit.
+Agent name matching is **case-insensitive** - `@keaton`, `@Keaton`, and `@KEATON` all route to the same agent. Name an agent to route directly. Omit the name and the coordinator routes to the best fit.
 
 ### Keyboard Shortcuts
 
@@ -158,7 +161,7 @@ Agent name matching is **case-insensitive** — `@keaton`, `@Keaton`, and `@KEAT
 
 ```
 .squad/
-├── team.md              # Roster — agent names, roles, human members
+├── team.md              # Roster - agent names, roles, human members
 ├── routing.md           # Work routing rules
 ├── decisions.md         # Architectural decisions log
 ├── directives.md        # Permanent team rules and conventions
@@ -183,16 +186,16 @@ Defines the roster. Squad generates this during init, but you can edit it:
 ```markdown
 ## Team
 
-🏗️  Neo      — Lead          Scope, decisions, code review
-⚛️  Trinity  — Frontend Dev  React, TypeScript, UI
-🔧  Morpheus — Backend Dev   Node.js, Express, Prisma
-🧪  Tank     — Tester        Jest, integration tests
-📋  Scribe   — (silent)      Memory, decisions, session logs
+🏗️  Neo      - Lead          Scope, decisions, code review
+⚛️  Trinity  - Frontend Dev  React, TypeScript, UI
+🔧  Morpheus - Backend Dev   Node.js, Express, Prisma
+🧪  Tank     - Tester        Jest, integration tests
+📋  Scribe   - (silent)      Memory, decisions, session logs
 
 ## Human Team Members
 
-- **Sarah** — Senior Backend Engineer
-- **Jamal** — Frontend Lead
+- **Sarah** - Senior Backend Engineer
+- **Jamal** - Frontend Lead
 ```
 
 ### `routing.md`
@@ -292,7 +295,7 @@ git clone my-project && cd my-project && squad doctor
 ✓ .squad/ directory exists
 ✓ team.md is readable and valid
 ✓ 4 agents registered
-⚠ skills/ directory is empty — consider adding documentation
+⚠ skills/ directory is empty - consider adding documentation
 ✓ .gitattributes rules applied
 ```
 
@@ -313,6 +316,6 @@ npm install -g @bradygaster/squad-cli@insider # Insider builds
 
 ## See Also
 
-- [SDK Reference](./sdk.md) — Programmatic API
-- [Recipes & Advanced Scenarios](../cookbook/recipes.md) — Prompt-driven cookbook
-- [Adding Squad to an Existing Repo](../scenarios/existing-repo.md) — Getting started walkthrough
+- [SDK Reference](./sdk.md) - Programmatic API
+- [Recipes & Advanced Scenarios](../cookbook/recipes.md) - Prompt-driven cookbook
+- [Adding Squad to an Existing Repo](../scenarios/existing-repo.md) - Getting started walkthrough

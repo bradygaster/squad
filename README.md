@@ -5,15 +5,15 @@
 **AI agent teams for any project.** One command. A team that grows with your code.
 
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
-[![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
+[![Platform](https://img.shields.io/badge/platform-Copilot%20%7C%20Claude%20Code-blue)](#what-is-squad)
 
-> ⚠️ **Alpha Software** — Squad is experimental. APIs and CLI commands may change between releases. We'll document breaking changes in [CHANGELOG.md](CHANGELOG.md).
+> ⚠️ **Alpha Software** - Squad is experimental. APIs and CLI commands may change between releases. We'll document breaking changes in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
 ## What is Squad?
 
-Squad gives you an AI development team through GitHub Copilot. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and get better the more you use them.
+Squad gives you an AI development team through **GitHub Copilot or Claude Code**. Describe what you're building. Get a team of specialists - frontend, backend, tester, lead - that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and get better the more you use them.
 
 It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned.
 
@@ -28,7 +28,7 @@ mkdir my-project && cd my-project
 git init
 ```
 
-**✓ Validate:** Run `git status` — you should see "No commits yet".
+**✓ Validate:** Run `git status` - you should see "No commits yet".
 
 ### 2. Install Squad
 
@@ -45,17 +45,23 @@ squad init
 gh auth login
 ```
 
-**✓ Validate:** Run `gh auth status` — you should see "Logged in to github.com".
+**✓ Validate:** Run `gh auth status` - you should see "Logged in to github.com".
 
-### 4. Open Copilot and go
+### 4. Open your provider and go
 
-```
+Use either provider path:
+
+```bash
+# GitHub Copilot CLI
 copilot --agent squad --yolo
+
+# Claude Code CLI
+claude --agent squad --dangerously-skip-permissions
 ```
 
-> **Why `--yolo`?** Squad makes many tool calls in a typical session. Without it, Copilot will prompt you to approve each one.
+> **Permission flags:** Squad makes many tool calls in typical sessions. Use the provider-specific equivalent that matches your trust/sandbox settings.
 
-**In VS Code**, open Copilot Chat and select the **Squad** agent.
+**In VS Code**, open your chat provider (Copilot or Claude extension) and select the **Squad** agent.
 
 Then:
 
@@ -64,9 +70,19 @@ I'm starting a new project. Set up the team.
 Here's what I'm building: a recipe sharing app with React and Node.
 ```
 
-**✓ Validate:** Squad responds with team member proposals. Type `yes` to confirm — they're ready to work.
+**✓ Validate:** Squad responds with team member proposals. Type `yes` to confirm - they're ready to work.
 
-Squad proposes a team — each member named from a persistent thematic cast. You say **yes**. They're ready.
+Squad proposes a team - each member named from a persistent thematic cast. You say **yes**. They're ready.
+
+## Runtime providers
+
+Squad supports both runtime providers as first-class paths:
+
+- **Copilot:** `copilot --agent squad`
+- **Claude Code:** `claude --agent squad`
+
+Provider-specific flags, compatibility behavior, token mappings, and troubleshooting are documented in:
+- [`docs/runtime-providers.md`](docs/runtime-providers.md)
 
 ---
 
@@ -86,7 +102,7 @@ npm install -g @bradygaster/squad-cli@latest
 squad upgrade
 ```
 
-`squad upgrade` updates `squad.agent.md`, templates, and GitHub workflows to the latest versions. It never touches your `.squad/` team state — your agents, decisions, and history are always preserved.
+`squad upgrade` updates `squad.agent.md`, templates, and GitHub workflows to the latest versions. It never touches your `.squad/` team state - your agents, decisions, and history are always preserved.
 
 Use `--force` to re-apply updates even when your installed version already matches the latest.
 
@@ -96,11 +112,11 @@ Use `--force` to re-apply updates even when your installed version already match
 
 | Command | What it does |
 |---------|-------------|
-| `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `hire`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
+| `squad init` | **Init** - scaffold Squad in the current directory (idempotent - safe to run multiple times); alias: `hire`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
 | `squad status` | Show which squad is active and why |
 | `squad triage` | Watch issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10) |
-| `squad copilot` | Add/remove the Copilot coding agent (@copilot); use `--off` to remove, `--auto-assign` to enable auto-assignment |
+| `squad copilot` | Manage Copilot coding-agent integration (`@copilot`); for Claude runtime workflows, see `docs/runtime-providers.md` |
 | `squad doctor` | Check your setup and diagnose issues (alias: `heartbeat`) |
 | `squad link <team-repo-path>` | Connect to a remote team |
 | `squad shell` | Launch interactive shell explicitly |
@@ -108,7 +124,7 @@ Use `--force` to re-apply updates even when your installed version already match
 | `squad import <file>` | Import squad from an export file |
 | `squad plugin marketplace add\|remove\|list\|browse` | Manage plugin marketplaces |
 | `squad upstream add\|remove\|list\|sync` | Manage upstream Squad sources |
-| `squad nap` | Context hygiene — compress, prune, archive; use `--deep` for aggressive compression, `--dry-run` to preview changes |
+| `squad nap` | Context hygiene - compress, prune, archive; use `--deep` for aggressive compression, `--dry-run` to preview changes |
 | `squad aspire` | Open Aspire dashboard for observability |
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) |
 
@@ -158,7 +174,7 @@ squad > McManus, write a blog post about our new feature
 squad > Build the login page
 ```
 
-The coordinator routes messages to the right agents. Multiple agents can work in parallel—you'll see progress in real-time.
+The coordinator routes messages to the right agents. Multiple agents can work in parallel-you'll see progress in real-time.
 
 ### What the Shell Does
 
@@ -172,33 +188,33 @@ For more details on shell usage, see the commands table above.
 
 ## Samples
 
-Eight working examples from beginner to advanced — casting, governance, streaming, Docker. See [samples/README.md](samples/README.md).
+Eight working examples from beginner to advanced - casting, governance, streaming, Docker. See [samples/README.md](samples/README.md).
 
 ---
 
-## Agents Work in Parallel— You Catch Up When You're Ready
+## Agents Work in Parallel- You Catch Up When You're Ready
 
-Squad doesn't work on a human schedule. When you give a task, the coordinator launches every agent that can usefully start — simultaneously.
+Squad doesn't work on a human schedule. When you give a task, the coordinator launches every agent that can usefully start - simultaneously.
 
 ```
 You: "Team, build the login page"
 
-  🏗️ Lead — analyzing requirements...          ⎤
-  ⚛️ Frontend — building login form...          ⎥ all launched
-  🔧 Backend — setting up auth endpoints...     ⎥ in parallel
-  🧪 Tester — writing test cases from spec...   ⎥
-  📋 Scribe — logging everything...             ⎦
+  🏗️ Lead - analyzing requirements...          ⎤
+  ⚛️ Frontend - building login form...          ⎥ all launched
+  🔧 Backend - setting up auth endpoints...     ⎥ in parallel
+  🧪 Tester - writing test cases from spec...   ⎥
+  📋 Scribe - logging everything...             ⎦
 ```
 
 When agents finish, the coordinator immediately chains follow-up work. If you step away, a breadcrumb trail is waiting when you get back:
 
-- **`decisions.md`** — every decision any agent made
-- **`orchestration-log/`** — what was spawned, why, and what happened
-- **`log/`** — full session history, searchable
+- **`decisions.md`** - every decision any agent made
+- **`orchestration-log/`** - what was spawned, why, and what happened
+- **`log/`** - full session history, searchable
 
 **Knowledge compounds across sessions.** Every time an agent works, it writes lasting learnings to its `history.md`. After a few sessions, agents know your conventions, your preferences, your architecture. They stop asking questions they've already answered.
 
-**And it's all in git.** Anyone who clones your repo gets the team — with all their accumulated knowledge.
+**And it's all in git.** Anyone who clones your repo gets the team - with all their accumulated knowledge.
 
 ---
 
@@ -206,9 +222,9 @@ When agents finish, the coordinator immediately chains follow-up work. If you st
 
 ```
 .squad/
-├── team.md              # Roster — who's on the team
-├── routing.md           # Routing — who handles what
-├── decisions.md         # Shared brain — team decisions
+├── team.md              # Roster - who's on the team
+├── routing.md           # Routing - who handles what
+├── decisions.md         # Shared brain - team decisions
 ├── ceremonies.md        # Sprint ceremonies config
 ├── casting/
 │   ├── policy.json      # Casting configuration
@@ -227,7 +243,7 @@ When agents finish, the coordinator immediately chains follow-up work. If you st
 └── log/                 # Session history (searchable archive)
 ```
 
-**Commit this folder.** Your team persists. Names persist. Anyone who clones gets the team — with the same cast.
+**Commit this folder.** Your team persists. Names persist. Anyone who clones gets the team - with the same cast.
 
 ### SDK-First Mode (New in Phase 1)
 
@@ -255,8 +271,8 @@ Run `squad build` to generate all the markdown. See the [SDK-First Mode Guide](d
 ## Monorepo Development
 
 Squad is a monorepo with two packages:
-- **`@bradygaster/squad-sdk`** — Core runtime and library for programmable agent orchestration
-- **`@bradygaster/squad-cli`** — Command-line interface that depends on the SDK
+- **`@bradygaster/squad-sdk`** - Core runtime and library for programmable agent orchestration
+- **`@bradygaster/squad-cli`** - Command-line interface that depends on the SDK
 
 ### Building
 
@@ -311,17 +327,17 @@ Changesets are resolved on the `main` branch; releases happen independently per 
 
 Squad supports multiple AI coding agent backends through a unified provider interface. You can switch between GitHub Copilot and the Claude CLI without changing any orchestration code.
 
-- [Runtime Providers guide](docs/runtime-providers.md) — provider selection, compatibility matrix, error handling, and troubleshooting
+- [Runtime Providers guide](docs/runtime-providers.md) - provider selection, compatibility matrix, error handling, and troubleshooting
 
 ---
 
 ## SDK documentation
 
-The SDK provides programmatic control over agent orchestration — custom tools, hook pipelines, file-write guards, PII scrubbing, reviewer lockout, and event-driven monitoring.
+The SDK provides programmatic control over agent orchestration - custom tools, hook pipelines, file-write guards, PII scrubbing, reviewer lockout, and event-driven monitoring.
 
 - [SDK API reference](docs/src/content/docs/reference/sdk.md)
 - [Custom tools and hooks guide](docs/src/content/docs/reference/tools-and-hooks.md)
 - [Extensibility guide](docs/src/content/docs/guide/extensibility.md)
-- [Samples](samples/README.md) — eight working examples from beginner to advanced
+- [Samples](samples/README.md) - eight working examples from beginner to advanced
 
 For SDK installation: `npm install @bradygaster/squad-sdk`
