@@ -7582,3 +7582,124 @@ Meta-references to "npm publish" in echo, grep, and YAML `name:` lines are exclu
 - `init --global` now suppresses GitHub workflows (they're meaningless in the global config dir).
 - `RunInitOptions` has a new `isGlobal` field.
 
+---
+
+# Decision: PR Review Batch — Overlap Resolution
+
+**Date:** 2026-03-25  
+**Reviewer:** FIDO (Quality Owner)  
+**Context:** 10 open PRs reviewed, 3 duplicate/overlap pairs identified
+
+## Problem
+
+tamirdresher opened 6 PRs addressing related concerns (retro enforcement, challenger agent, tiered memory). Three pairs have significant overlap:
+
+1. **#607 vs #605** — Both add weekly retro ceremony with Ralph enforcement
+2. **#604 vs #603** — Both add Challenger agent template (complete duplicates)
+3. **#606 vs #602** — Both add tiered memory/history skills (superset/subset)
+
+## Decision
+
+**Merge these:**
+- **#607** (retro enforcement) — comprehensive, standalone ceremony file
+- **#603** (Challenger + fact-checking) — correct file locations, follows project conventions
+- **#606** (tiered memory) — superset of #602, 3-tier model vs 2-tier
+
+**Close as duplicate:**
+- **#605** — same scope as #607, less comprehensive
+- **#604** — duplicate of #603, different file locations
+- **#602** — subset of #606, narrower scope
+
+## Rationale
+
+- **#607 vs #605:** #607 provides standalone ceremony file (`ceremonies/retrospective.md`) + enforcement guide + skill, while #605 inlines into existing templates. Standalone file is more discoverable and modular.
+- **#604 vs #603:** Functionally identical. #603 uses `.squad/` paths matching project conventions; #604 uses `templates/` (non-standard for agents).
+- **#606 vs #602:** #606 is a superset — 3-tier model (hot/cold/wiki) vs 2-tier (hot/cold). Both cite same production data. Broader scope is more useful.
+
+## Impact
+
+- Reduces PR count from 10 to 7 (close 3 duplicates)
+- Eliminates conflicting file changes (e.g., both #607 and #605 modify `templates/ceremonies.md`)
+- Preserves all unique value (no functionality lost)
+
+## Affected PRs
+
+| PR  | Action | Reason |
+|-----|--------|--------|
+| 607 | Merge  | Comprehensive retro enforcement |
+| 605 | Close  | Duplicate of #607 (less comprehensive) |
+| 604 | Close  | Duplicate of #603 (wrong file paths) |
+| 603 | Merge  | Challenger template (correct paths) |
+| 606 | Merge  | Tiered memory (superset) |
+| 602 | Close  | Subset of #606 (narrower scope) |
+
+## Next Steps
+
+1. Comment on #605, #604, #602 explaining they are duplicates/subsets and will be closed
+2. Merge #607, #603, #606 after author confirms deduplication is acceptable
+3. All other PRs (#611, #608, #592, #567) can proceed independently
+
+---
+
+# Decision: Triage + Work Session Plan
+
+**By:** Flight  
+**Date:** 2026-03-25
+
+## Context
+
+Triaged 14 untriaged issues (3 docs, 6 community features, 3 bugs, 2 questions). Multiple overlap with existing P1 work. 10 open PRs (5 from tamirdresher, 2 from diberry, 1 from joniba, 1 from eric-vanartsdalen, 1 draft).
+
+## Triage Decisions
+
+### High-Value Quick Wins (P1)
+- **#610** (docs broken link) → squad:pao, P1 — 5-minute fix blocking diberry's PR #611 CI
+- **#590** (getPersonalSquadRoot bug) → squad:eecom, P0 — personal squad init broken for all users since v0.9.1
+- **#591** (hiring wiring docs) → squad:procedures, P1 — matches PR #592 (joniba), docs-only, high clarity
+
+### Community Feature Contributions (Defer to Review)
+- **#601, #600, #598, #596, #595** (tamirdresher proposals) — all have matching PRs (#607, #606, #604, #602). Priority: review PRs first, triage issues after PR decisions.
+
+### Maintenance Items (P2)
+- **#597** (upgrade CLI docs) → squad:pao + squad:network, P2 — user confusion, docs fix + UX improvement
+- **#588** (model list update) → squad:procedures, P2 — hardcoded model list in squad.agent.md + templates
+- **#554** (broken external links) → squad:pao, P2 — automated link checker output, investigate failures
+
+### Questions (No Squad Assignment)
+- **#589** (skills placement) → community reply — clarify `.copilot/skills` vs `.github/skills` vs `.claude/skills`
+- **#494** (model vs squad model) → community reply — clarify Copilot CLI `/models` vs squad.agent.md model preference
+
+### Long-Horizon Feature Work (P2-P3)
+- **#581** (ADO Support PRD) → squad:flight, P2 — comprehensive PRD, but blocked until SDK-first parity (#341) ships
+
+## Work Session Priority (Top 5)
+
+1. **#610** → PAO — fix broken link (5 min), unblocks #611
+2. **#590** → EECOM — fix getPersonalSquadRoot(), critical user-facing bug
+3. **PR #592** → Flight review — matches #591, validate joniba's wiring guide
+4. **PR #611** → Flight review — diberry TypeDoc API reference (blocked on #610 fix)
+5. **#588** → Procedures — update model lists in templates
+
+## PR Review Strategy
+
+**Merge-ready (after minimal validation):**
+- #611 (diberry) — blocked on #610, then merge
+- #592 (joniba) — high-quality wiring guide
+
+**Tamir PRs (defer until proposal-first validated):**
+- #607, #606, #605, #604, #603, #602 — all substantive feature proposals without prior proposals in `docs/proposals/`. Apply proposal-first policy: request `docs/proposals/{slug}.md` before reviewing implementation.
+
+**Draft (not ready):**
+- #567 (diberry) — explicitly marked DRAFT
+
+## Patterns Noted
+
+- **Tamir contributions:** High technical quality, but needs proposal-first discipline (6 PRs without proposals).
+- **Joniba contributions:** Consistently high-quality, matches team standards (wiring guide is excellent).
+- **Diberry contributions:** MSFT-level quality, merge-ready on delivery.
+
+## Deferred
+
+- #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
+- #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
+

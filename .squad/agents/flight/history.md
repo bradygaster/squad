@@ -4,6 +4,8 @@
 
 ---
 
+📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review):** Flight triaged 14 untriaged GitHub issues, created prioritized work session plan. Identified high-value quick wins (P1): #610 (docs broken link, 5-min fix), #590 (getPersonalSquadRoot bug, P0), #591 (hiring wiring docs). Deferred community feature contributions (#601–#595) pending PR review. Categorized maintenance (P2) and questions for community. FIDO reviewed 10 open PRs, identified 3 duplicate/overlap pairs (6 PRs consolidate to 4: merge #607/#603/#606, close #605/#604/#602). Work session priority: #610→PAO, #590→EECOM, #592/#611→Flight review, #588→Procedures. Established PR review strategy: Tamir PRs require proposal-first discipline before review. Merge-ready identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). A2A protocol PRs remain shelved. All 14 issues fully categorized with squad assignments. Decision inbox merged to decisions.md. Session complete; team ready for execution.
+
 📌 **Team update (2026-03-23T22:00Z — Release Crisis Recovery):** v0.9.0→v0.9.1 incident resolved. Released v0.9.1 stable on npm after 8-hour debugging marathon (should have been 10 min). Root causes: dependency validation gap (file: refs in packages), GitHub workflow cache race, npm workspace publish automation broken, coordinator decision-making under pressure, no pre-publish verification. Created comprehensive retrospective with 5 root causes and 6 action items (A1–A6). Filed 9 GitHub issues (#556–#564) documenting release process improvements. Pre-flight job added to publish pipeline (dependency scanning + semver validation). Surgeon charter hardened with release governance rules. 10 community PRs merged (#569, #570, #571, #555, #552, #568, #572, #513, #573, #574). Discussion board fully triaged (15 discussions: 4 closed, 1 consolidated, 2 converted to issue, 8 kept). Dark mode fix deployed to production. Release process skill created at `.squad/skills/release-process/SKILL.md`. 9 GitHub issues filed for release improvements. Team ready for next cycle.
 
 📌 **Team update (2026-03-22T09-35Z — Wave 1):** Ambient personal squad design validated and 19-task implementation plan authored across 4 PRs (Phase 1 SDK, Phase 2 CLI, Phase 3 governance, Phase 4 tests). MVP = PR #1 + PR #3. EECOM executing Phase 1–2 (SDK + CLI), Procedures executing Phase 3 (governance) concurrently. All design gaps resolved; dependency graph established. Procedures wrote governance proposals for personal squad + economy mode — awaiting your review. Sims to execute Phase 4 after Phase 1+2 merge. Directive captured: bug #502 (node:sqlite, P1) to be picked up after Wave 1. No blocking issues — ready for execution.
@@ -152,3 +154,32 @@ Brady approved scope for remaining v0.9.1 incident hardening. Three issues to ex
 **Execution order:** #562 (Brady, manual API call) and #557 (FIDO/Procedures, CI change) run in parallel. #564 (Procedures+Surgeon, playbook) goes last so it can reference the lint rule.
 
 Decision written to `.squad/decisions/inbox/flight-release-hardening-plan.md`.
+
+### Issue Triage Session — 14 Untriaged Issues (2026-03-24)
+
+**Triaged 14 issues + 10 PRs:** 3 docs issues, 6 community feature proposals, 3 bugs, 2 questions. Key findings:
+
+**P0 Bug (immediate):**
+- #590 (getPersonalSquadRoot) → squad:eecom — personal squad broken since v0.9.1, affects all `squad consult` on new repos
+
+**P1 Quick Wins:**
+- #610 (broken docs link) → squad:pao — 5-minute fix, unblocks diberry PR #611 CI
+- #591 (hiring wiring docs) → squad:procedures — matches PR #592 (joniba), high-quality wiring guide ready to merge
+
+**Community PRs (proposal-first enforcement):**
+- Tamir PRs #602-607 (6 PRs) — high technical quality but missing proposal-first compliance. Need `docs/proposals/` entries before review.
+- Joniba PR #592 — merge-ready, validates enforcement wiring gap
+- Diberry PR #611 — blocked on #610 fix, then merge
+
+**P2 Maintenance:**
+- #597 (upgrade CLI docs) → squad:pao + squad:network
+- #588 (model list update) → squad:procedures
+- #554 (broken external links) → squad:pao
+
+**Deferred/Questions:**
+- #581 (ADO PRD) → P2, blocked until #341 SDK-first parity ships
+- #589, #494 → community replies clarifying skill paths and model selection
+
+**Pattern:** Tamir is a high-output contributor (6 PRs in 2 weeks) but needs proposal-first discipline. Joniba and diberry deliver MSFT-level quality.
+
+Decision written to `.squad/decisions/inbox/flight-triage-session-plan.md`.

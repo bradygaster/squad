@@ -6,6 +6,8 @@
 
 Quality gate authority for all PRs. Test assertion arrays (EXPECTED_GUIDES, EXPECTED_FEATURES, EXPECTED_SCENARIOS, etc.) MUST stay in sync with files on disk. When reviewing PRs with CI failures, always check if dev branch has the same failures — don't block PRs for pre-existing issues. 3,931 tests passing, 149 test files, ~89s runtime.
 
+📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review Batch):** FIDO reviewed 10 open PRs for quality and merge readiness. Identified 3 duplicate/overlap pairs consolidating 6 PRs into 4: #607 (retro enforcement, comprehensive) approved for merge, #605 closed as duplicate (less comprehensive). #603 (Challenger agent, correct paths) approved for merge, #604 closed as duplicate (wrong file paths). #606 (tiered memory superset, 3-tier model) approved for merge, #602 closed as duplicate (narrower 2-tier scope). Merge-ready PRs identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). Draft #567 not ready. Impact: reduces PR count from 10 to 7, eliminates file conflicts, preserves unique value. All other PRs (#611, #608, #592, #567) can proceed independently. Decisions merged to decisions.md and decisions inbox deleted.
+
 ## Learnings
 
 ### Test Assertion Sync Discipline
@@ -177,4 +179,33 @@ Commit: 7660a27 on branch squad/579-init-scaffolding-hardening.
 Added `publish-policy` job to squad-ci.yml — lightweight lint that scans all `.github/workflows/*.yml` for bare `npm publish` commands missing `-w`/`--workspace`. Catches the incident class where root package.json gets published instead of a workspace package. Also wrote `test/publish-policy.test.ts` (36 tests) covering: workspace-scoped passes, bare publish fails, comment/echo/grep/YAML-name line skipping, findViolations line numbering, and live validation of all 15 workflow files. Key pattern: meta-references (echo, grep, YAML name keys containing "npm publish") must be excluded from lint — the CI script's own text would otherwise self-trigger.
 
 📌 **Team update (2026-03-24T06-release-hardening):** Publish policy CI gate (#557) implemented. Added `publish-policy` job to squad-ci.yml: lightweight lint scans `.github/workflows/*.yml` for bare `npm publish` commands, rejects non-workspace-scoped invocations. Wrote test/publish-policy.test.ts (36 tests) validating: workspace-scoped passes, bare publish fails, meta-reference (echo/grep/YAML-name) skipping, live validation of 15 workflow files. Pattern: catch "publish root package.json" incident class before merge. Both lint + playbook docs create enforcement + education loop.
+
+### PR Review Batch — 10 Open PRs (2026-03-24)
+
+Reviewed all 10 open PRs for quality, test coverage, and merge readiness.
+
+**Critical finding — Duplicate/overlapping PRs (tamirdresher):**
+- **PRs #607 / #605** overlap on retrospective ceremony — both add weekly retro ceremony with Ralph enforcement. #607 adds ceremony + enforcement skill + guide (444 lines), #605 modifies existing templates/ceremonies.md + ralph-reference.md (217 lines). Both solve the same problem (retro enforcement) with different file structures. #607 is more comprehensive (includes enforcement guide + pseudocode), #605 is more concise (inline in existing templates). **Verdict: Pick one** — recommend #607 (standalone ceremony file is more discoverable).
+- **PRs #604 / #603** are complete duplicates — both add Challenger agent template + fact-checking skill. #604 has `templates/challenger.md` (153 lines), #603 has `.squad/templates/agents/challenger.md` + `.squad/skills/fact-checking/SKILL.md` (133 lines). File locations differ but content is nearly identical. **Verdict: Close one as duplicate** — recommend #603 (file locations match project conventions).
+- **PRs #606 / #602** overlap on tiered memory/history — #606 adds tiered-memory skill (hot/cold/wiki tiers, 370 lines), #602 adds tiered-history skill (hot/cold split, 158 lines). #606 is broader (3 tiers, scribe integration, spawn templates), #602 is narrower (2 tiers, history.md only). Both cite same production data source. **Verdict: #606 supersedes #602** — recommend closing #602 as subset.
+
+**Quality assessment:**
+- **PR #611 (TypeDoc API):** CI passing, large well-scoped PR (1569 additions), includes tests (Playwright), screenshots provided, PAO reviewed. Ready to merge pending PAO's requested fixes (crosslink banner, nav URL simplification). Quality: HIGH.
+- **PR #608 (Security policy):** Trivial (28 lines), no tests needed, no CI configured. Adds SECURITY.md with standard vulnerability reporting text. Quality: ACCEPTABLE (minor typo: "timely manor" → "timely manner").
+- **PR #592 (Enforcement wiring):** Well-documented (549 additions), adds missing step to hiring process + 3 appendices. CI passing, no code changes, docs-only. Quality: HIGH.
+- **PR #567 (StorageProvider):** DRAFT status, clean implementation (321 additions), 18 tests passing, Wave 1 foundation PR (no call-site migration yet). Quality: HIGH, but keep as DRAFT until Wave 2 ready.
+
+**CI status:** 9/10 PRs have CI passing. #608 (security policy) has no CI configured on branch "patch-1" (external contributor branch).
+
+**Test coverage:**
+- #611: Playwright tests included (8 tests)
+- #607, #605, #604, #603, #606, #602: All docs-only, no tests needed
+- #592: Docs-only, no tests needed
+- #567: 18 tests included, all passing
+
+**Overlap resolution needed:** tamirdresher has 6 PRs, 3 pairs have significant overlap. Recommend: merge #607 (not #605), merge #603 (close #604), merge #606 (close #602).
+
+**Blocking issues:**
+- None for mergeability — all non-overlapping PRs are technically ready
+- Deduplication decision needed for tamirdresher's PRs before merging any of them
 
