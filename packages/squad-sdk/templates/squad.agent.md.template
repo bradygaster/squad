@@ -253,7 +253,11 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | Ambiguous | Pick the most likely agent; say who you chose |
 | Multi-agent task (auto) | Check `ceremonies.md` for `when: "before"` ceremonies whose condition matches; run before spawning work |
 
-**Skill-aware routing:** Before spawning, check `.squad/skills/` for skills relevant to the task domain. If a matching skill exists, add to the spawn prompt: `Relevant skill: .squad/skills/{name}/SKILL.md — read before starting.` This makes earned knowledge an input to routing, not passive documentation.
+**Skill-aware routing:** Before spawning, check BOTH skill directories for skills relevant to the task domain:
+1. `.copilot/skills/` — **Copilot-level skills.** Foundational process knowledge (release process, git workflow, reviewer protocol, etc.). These are the coordinator's own playbook — check first.
+2. `.squad/skills/` — **Team-level skills.** Patterns and practices agents discovered during work.
+
+If a matching skill exists, add to the spawn prompt: `Relevant skill: {path}/SKILL.md — read before starting.` This makes earned knowledge an input to routing, not passive documentation.
 
 ### Consult Mode Detection
 
@@ -364,8 +368,8 @@ Before spawning an agent, determine which model to use. Check these layers in or
 
 | Task Output | Model | Tier | Rule |
 |-------------|-------|------|------|
-| Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.5` | Standard | Quality and accuracy matter for code. Use standard tier. |
-| Writing prompts or agent designs (structured text that functions like code) | `claude-sonnet-4.5` | Standard | Prompts are executable — treat like code. |
+| Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.6` | Standard | Quality and accuracy matter for code. Use standard tier. |
+| Writing prompts or agent designs (structured text that functions like code) | `claude-sonnet-4.6` | Standard | Prompts are executable — treat like code. |
 | NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `claude-haiku-4.5` | Fast | Cost first. Haiku handles non-code tasks. |
 | Visual/design work requiring image analysis | `claude-opus-4.5` | Premium | Vision capability required. Overrides cost rule. |
 
@@ -373,11 +377,11 @@ Before spawning an agent, determine which model to use. Check these layers in or
 
 | Role | Default Model | Why | Override When |
 |------|--------------|-----|---------------|
-| Core Dev / Backend / Frontend | `claude-sonnet-4.5` | Writes code — quality first | Heavy code gen → `gpt-5.2-codex` |
-| Tester / QA | `claude-sonnet-4.5` | Writes test code — quality first | Simple test scaffolding → `claude-haiku-4.5` |
+| Core Dev / Backend / Frontend | `claude-sonnet-4.6` | Writes code — quality first | Heavy code gen → `gpt-5.3-codex` |
+| Tester / QA | `claude-sonnet-4.6` | Writes test code — quality first | Simple test scaffolding → `claude-haiku-4.5` |
 | Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → haiku |
 | Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → haiku |
-| Copilot SDK Expert | `claude-sonnet-4.5` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
+| Copilot SDK Expert | `claude-sonnet-4.6` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
 | Designer / Visual | `claude-opus-4.5` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
 | DevRel / Writer | `claude-haiku-4.5` | Docs and writing — not code | — |
 | Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
@@ -386,7 +390,7 @@ Before spawning an agent, determine which model to use. Check these layers in or
 **Task complexity adjustments** (apply at most ONE — no cascading):
 - **Bump UP to premium:** architecture proposals, reviewer gates, security audits, multi-agent coordination (output feeds 3+ agents)
 - **Bump DOWN to fast/cheap:** typo fixes, renames, boilerplate, scaffolding, changelogs, version bumps
-- **Switch to code specialist (`gpt-5.2-codex`):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
+- **Switch to code specialist (`gpt-5.3-codex`):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
 - **Switch to analytical diversity (`gemini-3-pro-preview`):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
 
 **Layer 4 — Default:** If nothing else matched, use `claude-haiku-4.5`. Cost wins when in doubt, unless code is being produced.
@@ -396,9 +400,9 @@ Before spawning an agent, determine which model to use. Check these layers in or
 If a spawn fails because the selected model is unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), silently retry with the next model in the chain. Do NOT tell the user about fallback attempts. Maximum 3 retries before jumping to the nuclear fallback.
 
 ```
-Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.5 → (omit model param)
-Standard: claude-sonnet-4.5 → gpt-5.2-codex → claude-sonnet-4 → gpt-5.2 → (omit model param)
-Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini → (omit model param)
+Premium:  claude-opus-4.6 → claude-opus-4.5 → claude-sonnet-4.6 → claude-sonnet-4.5 → (omit model param)
+Standard: claude-sonnet-4.6 → claude-sonnet-4.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4 → (omit model param)
+Fast:     claude-haiku-4.5 → gpt-5.4-mini → gpt-5.1-codex-mini → gpt-4.1 → (omit model param)
 ```
 
 `(omit model param)` = call the `task` tool WITHOUT the `model` parameter. The platform uses its built-in default. This is the nuclear fallback — it always works.
@@ -422,7 +426,7 @@ prompt: |
   ...
 ```
 
-Only set `model` when it differs from the platform default (`claude-sonnet-4.5`). If the resolved model IS `claude-sonnet-4.5`, you MAY omit the `model` parameter — the platform uses it as default.
+Only set `model` when it differs from the platform default (`claude-sonnet-4.6`). If the resolved model IS `claude-sonnet-4.6`, you MAY omit the `model` parameter — the platform uses it as default.
 
 If you've exhausted the fallback chain and reached nuclear fallback, omit the `model` parameter entirely.
 
@@ -431,7 +435,7 @@ If you've exhausted the fallback chain and reached nuclear fallback, omit the `m
 When spawning, include the model in your acknowledgment:
 
 ```
-🔧 Fenster (claude-sonnet-4.5) — refactoring auth module
+🔧 Fenster (claude-sonnet-4.6) — refactoring auth module
 🎨 Redfoot (claude-opus-4.5 · vision) — designing color system
 📋 Scribe (claude-haiku-4.5 · fast) — logging session
 ⚡ Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
@@ -442,9 +446,9 @@ Include tier annotation only when the model was bumped or a specialist was chose
 
 **Valid models (current platform catalog):**
 
-Premium: `claude-opus-4.6`, `claude-opus-4.6-fast`, `claude-opus-4.5`
-Standard: `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1`, `gpt-5`, `gemini-3-pro-preview`
-Fast/Cheap: `claude-haiku-4.5`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1`
+Premium: `claude-opus-4.6`, `claude-opus-4.6-1m` (Internal only), `claude-opus-4.5`
+Standard: `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1`, `gemini-3-pro-preview`
+Fast/Cheap: `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1`
 
 ### Client Compatibility
 
@@ -794,7 +798,9 @@ prompt: |
   Read .squad/decisions.md (team decisions to respect).
   If .squad/identity/wisdom.md exists, read it before starting work.
   If .squad/identity/now.md exists, read it at spawn time.
-  If .squad/skills/ has relevant SKILL.md files, read them before working.
+  Check .copilot/skills/ for copilot-level skills (process, workflow, protocol).
+  Check .squad/skills/ for team-level skills (patterns discovered during work).
+  Read any relevant SKILL.md files before working.
   
   {only if MCP tools detected — omit entirely if none:}
   MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
