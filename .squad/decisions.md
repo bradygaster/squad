@@ -7823,3 +7823,79 @@ ame: "{name}" parameter to ALL spawn templates
 
 **Full Report:** .squad/decisions/inbox/gnc-internal-research.md
 
+
+---
+## 2026-03-25: VS Code Routing Enforcement Fix — Proposal
+
+**By:** Procedures (Prompt Engineer)  
+**Date:** 2026-03-25  
+**Issue:** #613 — VSCode Autopilot breaks Squad agent execution  
+**Status:** DRAFT — awaiting Flight review  
+
+### Root Cause Analysis
+
+Three factors combine to create the VS Code routing failure. Ranked by dominance:
+
+#### 1. 🔴 CLI-Centric Enforcement Language (DOMINANT)
+
+The routing constraint is expressed exclusively in CLI terms. The CRITICAL RULE references 	ask tool only. When the coordinator reads this in VS Code, where the tool is unSubagent, it doesn't reliably make the substitution. It falls through to Platform Detection's Fallback mode: 'work inline.' This enforcement language creates a logical gap.
+
+#### 2. 🟡 Prompt Saturation (AMPLIFYING)
+
+The coordinator prompt is 950 lines / ~80KB. The routing constraint is buried at line 1010 under irrelevant sections (Init Mode, ceremonies, Ralph work monitor, worktree lifecycle). The core dispatch loop accounts for ~200 lines, competing for attention with ~750 lines of governance and reference material.
+
+#### 3. 🟡 Template Duplication (AMPLIFYING)
+
+CLI 1.0.11 discovers all \*.agent.md\ files from cwd to git root. Squad has 5 copies: .squad-templates, templates/, packages/squad-cli/templates, packages/squad-sdk/templates, and .github/agents/. Only .github/agents/ should be discoverable. CLI 1.0.11 merges ALL of them, multiplying the coordinator instructions by 5x and diluting the routing constraint.
+
+### Proposed Fixes
+
+**Fix 1: Platform-Neutral Enforcement Language (P0)**
+- Rewrite CRITICAL RULE to be platform-neutral: 'You are a DISPATCHER, not a DOER. Every task that needs domain expertise MUST be dispatched to a specialist agent.'
+- List dispatch mechanisms: CLI (\	ask\ tool), VS Code (\unSubagent\ tool), or fallback (work inline)
+- Update anti-patterns and constraints sections with same substitution
+
+**Fix 2: Top-and-Bottom Reinforcement (P0)**
+- Add reinforcement block at end of prompt (LLMs weight beginning/end more heavily than middle)
+- Emphasize: Squad ROUTES, it does not BUILD. Do not produce domain artifacts inline.
+
+**Fix 3: Prompt Slimming — Move to Lazy-Loaded References (P1)**
+- Extract ~350 lines (~37%) to lazy-loaded templates: worktree-reference.md, ralph-reference.md, casting-reference.md, mcp-reference.md
+- Reduce from 950→600 lines, making routing constraint a larger percentage of total prompt
+
+**Fix 4: Template File Renaming (P1)**
+- Rename template copies to .template extension to prevent CLI 1.0.11 discovery
+- Update sync-templates.mjs and squad-cli/squad-sdk init code to reference new filenames
+
+**Fix 5: VS Code-Specific Hardening Block (P1)**
+- Move VS Code adaptations section higher (from line 458 to immediately after CRITICAL RULE)
+- Restructure as active enforcement block with platform detection table
+- Make clear: if \unSubagent\ is available, it MUST be used for domain work
+
+### Priority Ordering
+
+| Priority | Fix | Impact | Effort | Ships In |
+|---|---|---|---|---|
+| **P0** | Fix 1: Platform-neutral enforcement | 🔴 Directly closes logical gap | Low | Next patch |
+| **P0** | Fix 2: Top-and-bottom reinforcement | 🔴 Exploits LLM attention patterns | Trivial | Next patch |
+| **P1** | Fix 4: Template file renaming | 🟡 Eliminates 4x duplication | Medium | Next minor |
+| **P1** | Fix 3: Prompt slimming | 🟡 Reduces 950→600 lines | Medium | Next minor |
+| **P1** | Fix 5: VS Code hardening block | 🟡 Makes VS Code dispatch prominent | Low | Next minor |
+
+**Ship order:** Fix 1 + Fix 2 together (one PR, immediate). Fix 4 next (requires code changes). Fix 3 + Fix 5 together (prompt restructure PR).
+
+### Validation
+
+After implementing, test with Andreas's reproduction case:
+1. Open VS Code with squadified project
+2. Ask coordinator to do domain work that matches routing rule
+3. Verify: coordinator dispatches via \unSubagent\ instead of working inline
+4. Verify: coordinator cites the routing rule when dispatching
+
+FIDO should own the test scenario. GUIDO should validate the VS Code runtime behavior.
+
+### Open Questions
+
+1. Does CLI 1.0.11 support exclusion patterns (.copilotignore)? If yes, Fix 4 becomes simpler.
+2. Should we version-gate the VS Code adaptations (detect CLI version)?
+3. Is \unSubagent\ still the correct tool name, or has it changed?
