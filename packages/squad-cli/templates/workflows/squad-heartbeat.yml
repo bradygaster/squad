@@ -102,7 +102,7 @@ jobs:
             core.info(`🔄 Ralph triaged ${results.length} issue(s)`);
 
       # Copilot auto-assign step (uses PAT if available)
-      - name: Ralph — Assign @copilot issues
+      - name: Ralph — Assign {{CODING_AGENT_HANDLE}} issues
         if: success()
         uses: actions/github-script@v7
         with:
@@ -128,7 +128,7 @@ jobs:
               const { data: copilotIssues } = await github.rest.issues.listForRepo({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                labels: 'squad:copilot',
+                labels: '{{CODING_AGENT_LABEL}}',
                 state: 'open',
                 per_page: 5
               });
@@ -138,7 +138,7 @@ jobs:
               );
 
               if (unassigned.length === 0) {
-                core.info('No unassigned squad:copilot issues');
+                core.info('No unassigned {{CODING_AGENT_LABEL}} issues');
                 return;
               }
 
@@ -154,18 +154,18 @@ jobs:
                     owner: context.repo.owner,
                     repo: context.repo.repo,
                     issue_number: issue.number,
-                    assignees: ['copilot-swe-agent[bot]'],
+                    assignees: ['{{CODING_AGENT_ASSIGNEE}}'],
                     agent_assignment: {
                       target_repo: `${context.repo.owner}/${context.repo.repo}`,
                       base_branch: repoData.default_branch,
                       custom_instructions: `Read .squad/team.md (or .ai-team/team.md) for team context and .squad/routing.md (or .ai-team/routing.md) for routing rules.`
                     }
                   });
-                  core.info(`Assigned copilot-swe-agent[bot] to #${issue.number}`);
+                  core.info(`Assigned {{CODING_AGENT_ASSIGNEE}} to #${issue.number}`);
                 } catch (e) {
-                  core.warning(`Failed to assign @copilot to #${issue.number}: ${e.message}`);
+                  core.warning(`Failed to assign {{CODING_AGENT_HANDLE}} to #${issue.number}: ${e.message}`);
                 }
               }
             } catch (e) {
-              core.info(`No squad:copilot label found or error: ${e.message}`);
+              core.info(`No {{CODING_AGENT_LABEL}} label found or error: ${e.message}`);
             }
