@@ -9,9 +9,9 @@ Common questions, troubleshooting tips, and clarifications based on community fe
 
 ## Which CLI should I use?
 
-**Short answer:** Use **GitHub Copilot CLI** for day-to-day work. Use **Squad CLI** for setup, diagnostics, and specific features.
+**Short answer:** Use **GitHub Copilot CLI** or **Claude Code CLI** for day-to-day work. Use **Squad CLI** for setup, diagnostics, and specific features.
 
-**Why GitHub Copilot CLI?**
+**Why provider CLI (Copilot or Claude Code)?**
 - Full agent spawning capabilities
 - Access to all Squad features through natural conversation
 - Model selection and background execution
@@ -30,9 +30,11 @@ Common questions, troubleshooting tips, and clarifications based on community fe
 # Terminal 1: Run continuous triage
 squad triage --interval 10
 
-# Terminal 2: Work with your team
-gh copilot
-> @squad what issues are ready to work?
+# Terminal 2: Work with your team (Copilot)
+copilot --agent squad
+
+# or (Claude Code)
+claude --agent squad
 ```
 
 For a detailed feature comparison, see [Client Compatibility Matrix](../scenarios/client-compatibility.md).
@@ -90,7 +92,7 @@ See [Copilot Coding Agent](../features/copilot-coding-agent.md) for full setup i
 
 5. Refresh the Aspire dashboard — you should see traces, metrics, and logs appear
 
-**Note:** GitHub Copilot CLI sessions do **not** send telemetry to Aspire. Only Squad CLI commands emit OpenTelemetry data to the dashboard.
+**Note:** Provider CLI sessions (Copilot/Claude) do **not** send telemetry to Aspire. Only Squad CLI commands emit OpenTelemetry data to the dashboard.
 
 See [Using Squad with the Aspire Dashboard](../scenarios/aspire-dashboard.md) for details.
 
@@ -143,16 +145,16 @@ You should see `✓ teamRoot is relative` or no warning.
 
 ---
 
-## Can I use Squad CLI and GitHub Copilot CLI at the same time?
+## Can I use Squad CLI with Copilot CLI or Claude Code CLI at the same time?
 
 Yes! They complement each other:
 
 - **Squad CLI** provides infrastructure: triage, Aspire observability, export/import, diagnostics
-- **GitHub Copilot CLI** provides conversational interface to your team
+- **Copilot CLI or Claude Code CLI** provides conversational interface to your team
 
 **Recommended setup:**
 - Run `squad triage --interval 10` in a dedicated terminal (or as a cron job / GitHub Action)
-- Use `gh copilot` (or `@squad` in VS Code) for all team interactions
+- Use `copilot --agent squad` or `claude --agent squad` (or `@squad` in VS Code) for team interactions
 - Use `squad doctor` or `squad aspire` for diagnostics when needed
 
 Both CLIs read and write the same `.squad/` directory, so state stays synchronized.
@@ -179,7 +181,7 @@ Both CLIs read and write the same `.squad/` directory, so state stays synchroniz
 **In conversation (recommended):**
 
 ```
-gh copilot
+copilot --agent squad
 > @squad I want to add a new agent
 > Role: Security specialist
 > Name: Guardian
@@ -221,7 +223,7 @@ Nothing breaks! `squad init` is **idempotent** — it's safe to run multiple tim
 Yes, but with limitations.
 
 **What works without GitHub Issues:**
-- Conversational team interaction (`@squad`, `gh copilot`)
+- Conversational team interaction (`@squad`, `copilot --agent squad`)
 - Agent spawning and parallel execution
 - Memory, decisions, and knowledge sharing
 - Skills and ceremonies

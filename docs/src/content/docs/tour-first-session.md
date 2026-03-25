@@ -19,21 +19,25 @@ You'll see:
 
 ```
 ✅ Squad installed.
-   .github/agents/squad.agent.md — coordinator agent
-   .github/workflows/            — 5 GitHub workflows (heartbeat, triage, CI, etc.)
-   .squad/templates/             — 11 template files
+   .github/agents/squad.agent.md - coordinator agent
+   .github/workflows/            - 5 GitHub workflows (heartbeat, triage, CI, etc.)
+   .squad/templates/             - 11 template files
 
-Open GitHub Copilot and select Squad from the agent list.
+Open your provider CLI and select Squad from the agent list (Copilot) or run with `--agent squad` (Claude Code).
 ```
 
 ---
 
-## 2. Open Copilot — Your Team Forms
+## 2. Open your provider - Your Team Forms
 
-Start the Copilot CLI:
+Start either provider CLI:
 
 ```bash
-copilot
+# Copilot
+copilot --agent squad
+
+# Claude Code
+claude --agent squad
 ```
 
 Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). Squad greets you by name (pulled from `git config user.name`):
@@ -49,16 +53,16 @@ Describe your project:
 > post recipes, search by ingredient, and save favorites.
 ```
 
-Squad proposes a team. Names come from a fictional universe — the exact universe depends on your project shape and history. Here's what it might look like:
+Squad proposes a team. Names come from a fictional universe - the exact universe depends on your project shape and history. Here's what it might look like:
 
 ```
 Here's your team:
 
-🏗️  Hicks    — Lead          Scope, decisions, code review
-⚛️  Ripley   — Frontend Dev  React, UI, components
-🔧  Dallas   — Backend Dev   Node.js, APIs, database
-🧪  Lambert  — Tester        Tests, quality, edge cases
-📋  Scribe   — (silent)      Memory, decisions, session logs
+🏗️  Hicks    - Lead          Scope, decisions, code review
+⚛️  Ripley   - Frontend Dev  React, UI, components
+🔧  Dallas   - Backend Dev   Node.js, APIs, database
+🧪  Lambert  - Tester        Tests, quality, edge cases
+📋  Scribe   - (silent)      Memory, decisions, session logs
 
 Look right? Say yes, add someone, or change a role.
 (Or just give me a task to start!)
@@ -74,17 +78,17 @@ You can say "yes" or skip straight to a task (which is implicit confirmation):
 > Yes. Dallas, set up the Express server with basic routing.
 ```
 
-Squad creates the `.ai-team/` directory structure (team roster, routing rules, casting state, ceremony config, agent charters and histories — all seeded with your project context). Then it spawns Dallas.
+Squad creates the `.ai-team/` directory structure (team roster, routing rules, casting state, ceremony config, agent charters and histories - all seeded with your project context). Then it spawns Dallas.
 
 ```
-🔧 Dallas — setting up Express server with routing
+🔧 Dallas - setting up Express server with routing
 
-Dallas is on it — building the Express server now.
+Dallas is on it - building the Express server now.
 ```
 
 ---
 
-## 4. Parallel Fan-Out — The Launch Table
+## 4. Parallel Fan-Out - The Launch Table
 
 Now give a bigger task to see parallel work:
 
@@ -96,14 +100,14 @@ Now give a bigger task to see parallel work:
 Squad decomposes the work and launches agents simultaneously:
 
 ```
-🏗️ Hicks   — reviewing requirements, defining API contract
-⚛️ Ripley  — building RecipeList component
-🔧 Dallas  — creating GET /api/recipes endpoint
-🧪 Lambert — writing test cases from requirements
-📋 Scribe  — logging session
+🏗️ Hicks   - reviewing requirements, defining API contract
+⚛️ Ripley  - building RecipeList component
+🔧 Dallas  - creating GET /api/recipes endpoint
+🧪 Lambert - writing test cases from requirements
+📋 Scribe  - logging session
 ```
 
-All five agents are working at the same time in separate context windows. The tester writes test cases from the requirements *while* the implementation is being built — no waiting.
+All five agents are working at the same time in separate context windows. The tester writes test cases from the requirements *while* the implementation is being built - no waiting.
 
 ---
 
@@ -112,19 +116,19 @@ All five agents are working at the same time in separate context windows. The te
 When agents finish, you see results tagged with each agent's identity:
 
 ```
-🏗️ Hicks — Defined API contract: GET /api/recipes returns
+🏗️ Hicks - Defined API contract: GET /api/recipes returns
    { recipes: [{ id, title, ingredients, prepTime }] }.
    Decided on cursor-based pagination for large result sets.
 
-⚛️ Ripley — Built RecipeList component at src/components/RecipeList.tsx.
+⚛️ Ripley - Built RecipeList component at src/components/RecipeList.tsx.
    Uses React Query for data fetching. Card layout with title,
    prep time, and ingredient count.
 
-🔧 Dallas — Created GET /api/recipes endpoint at src/routes/recipes.ts.
+🔧 Dallas - Created GET /api/recipes endpoint at src/routes/recipes.ts.
    Connected to MongoDB. Supports ?cursor= pagination per Hicks' spec.
    Also added GET /api/recipes/:id for detail view (proactive).
 
-🧪 Lambert — Wrote 8 test cases in test/recipes.test.ts:
+🧪 Lambert - Wrote 8 test cases in test/recipes.test.ts:
    📌 Proactive: Written from requirements while Dallas was building.
    May need adjustment once implementation is final.
    - List returns paginated results
@@ -138,7 +142,7 @@ Behind the scenes, the Scribe merged decisions from each agent into `decisions.m
 
 ---
 
-## 6. Ask "Where Are We?" — Instant Status
+## 6. Ask "Where Are We?" - Instant Status
 
 At any point, you can check status:
 
@@ -146,7 +150,7 @@ At any point, you can check status:
 > Where are we?
 ```
 
-This is a Direct mode response — no agent spawn, just the coordinator reading recent logs:
+This is a Direct mode response - no agent spawn, just the coordinator reading recent logs:
 
 ```
 Last session: Recipe listing page (15 minutes ago)
@@ -167,7 +171,7 @@ Key decisions:
 
 ---
 
-## 7. Follow-Up Task — Watch Decisions Accumulate
+## 7. Follow-Up Task - Watch Decisions Accumulate
 
 Give a follow-up task:
 
@@ -179,10 +183,10 @@ Give a follow-up task:
 Squad sees this involves multiple domains and fans out again:
 
 ```
-🔧 Dallas  — adding search endpoint with ingredient filtering
-⚛️ Ripley  — building search UI with ingredient input
-🧪 Lambert — writing search test cases
-📋 Scribe  — logging session
+🔧 Dallas  - adding search endpoint with ingredient filtering
+⚛️ Ripley  - building search UI with ingredient input
+🧪 Lambert - writing search test cases
+📋 Scribe  - logging session
 ```
 
 After completion, check decisions:
@@ -208,7 +212,7 @@ After completion, check decisions:
 **Why:** Native MongoDB capability, no external search service needed
 ```
 
-Every agent reads these decisions before working. As the list grows, the team self-aligns — agents respect each other's architectural choices without you repeating them.
+Every agent reads these decisions before working. As the list grows, the team self-aligns - agents respect each other's architectural choices without you repeating them.
 
 ---
 
@@ -220,7 +224,7 @@ You notice something you want to standardize:
 > Always use Zod for API input validation
 ```
 
-Squad captures this as a directive — no agent spawn needed:
+Squad captures this as a directive - no agent spawn needed:
 
 ```
 📌 Captured. All API input validation must use Zod.
@@ -243,7 +247,7 @@ squad export
    5 agents, 3 skills, 6 decisions
 ```
 
-This snapshot contains everything — charters, histories, casting state, skills, and decisions. You can import it into another repo later:
+This snapshot contains everything - charters, histories, casting state, skills, and decisions. You can import it into another repo later:
 
 ```bash
 cd ../other-project
@@ -259,14 +263,14 @@ squad import ../my-app/squad-export.json
 - **Add a team member:** `"I need a DevOps person"`
 - **Run a ceremony:** `"Run a design review before we start the auth system"`
 - **Direct an agent:** `"Lambert, run the test suite and tell me what's failing"`
-- **Remove someone:** `"Remove the designer — we don't need them anymore"`
+- **Remove someone:** `"Remove the designer - we don't need them anymore"`
 - **Connect to issues:** `"Connect to myorg/myrepo"` (see [GitHub Issues Walkthrough](tour-github-issues.md))
 
 ---
 
 ## Tips
 
-- **First session is the slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions and stop asking questions they've answered before.
+- **First session is the slowest.** Agents have no history yet. After 2-3 sessions, they know your conventions and stop asking questions they've answered before.
 - **Commit `.ai-team/`.** It's your team's brain. Anyone who clones gets the team with all their knowledge.
 - **Say "team" for big tasks.** The word "team" triggers parallel fan-out across multiple agents.
 - **Name an agent for focused work.** `"Dallas, fix the login bug"` sends work to one specific agent.

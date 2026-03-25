@@ -1,8 +1,8 @@
 # Choose your path
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
+> ⚠️ **Experimental** - Squad is alpha software. APIs, commands, and behavior may change between releases.
 
-CLI, Copilot agent, or SDK? Pick the right mode for your workflow.
+CLI, provider agent (Copilot or Claude Code), or SDK? Pick the right mode for your workflow.
 
 ---
 
@@ -23,15 +23,16 @@ squad watch
 
 ---
 
-### Copilot agent mode
+### Provider agent mode (Copilot or Claude Code)
 
-Talk to Squad in GitHub Copilot CLI or VS Code. Squad is built-in as an agent. Your `.squad/` directory works identically to CLI mode.
+Talk to Squad in GitHub Copilot CLI, Claude Code CLI, or VS Code. Squad is built-in as an agent. Your `.squad/` directory works identically to CLI mode.
 
 ```bash
-copilot
-> /agent Squad
+# Copilot
+copilot --agent squad
 
-Squad: Hey Brady, what are you building?
+# Claude Code
+claude --agent squad
 ```
 
 **Use for:** Conversational workflows, exploratory work, VS Code users.
@@ -61,9 +62,9 @@ const result = await coordinator.route('Build a login page');
 
 | **Your goal** | **Use** |
 |---------------|---------|
-| Try Squad quickly | **Copilot agent** — no install |
-| Work in the terminal | **CLI** |
-| Work in VS Code | **Copilot agent** |
+| Try Squad quickly | **Provider agent** (Copilot or Claude Code) |
+| Work in the terminal | **CLI** or **Provider agent** |
+| Work in VS Code | **Provider agent** |
 | Automate repetitive tasks | **CLI** or **SDK** |
 | Build custom tooling | **SDK** |
 | CI/CD integration | **CLI** or **SDK** |
@@ -72,7 +73,7 @@ const result = await coordinator.route('Build a login page');
 
 ## Can I use multiple modes?
 
-Yes. Your `.squad/` directory is the source of truth. CLI, Copilot agent, and SDK all read and write the same files. You can switch between modes anytime.
+Yes. Your `.squad/` directory is the source of truth. CLI, provider agent (Copilot or Claude Code), and SDK all read and write the same files. You can switch between modes anytime.
 
 Example workflow:
 1. Use **Copilot agent** to form your team and do exploratory work

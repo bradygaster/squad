@@ -1,6 +1,6 @@
 # Your First Session
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
+> ⚠️ **Experimental** - Squad is alpha software. APIs, commands, and behavior may change between releases.
 
 
 A step-by-step walkthrough from install to parallel fan-out. Follow along in your terminal.
@@ -20,7 +20,7 @@ Then tell your team what you're building.
 
 ## 1. Install Squad
 
-Start with a git repo — new or existing:
+Start with a git repo - new or existing:
 
 ```bash
 mkdir my-app && cd my-app
@@ -32,20 +32,24 @@ You'll see:
 
 ```
 ✅ Squad installed.
-   .github/agents/squad.agent.md — coordinator agent
-   .squad/templates/ — 11 template files
+   .github/agents/squad.agent.md - coordinator agent
+   .squad/templates/ - 11 template files
 
-Open GitHub Copilot and select Squad from the agent list.
+Open your provider CLI and select Squad from the agent list (Copilot) or run with `--agent squad` (Claude Code).
 ```
 
 ---
 
-## 2. Open Copilot — Your Team Forms
+## 2. Open your provider - Your Team Forms
 
-Start the Copilot CLI:
+Start either provider CLI:
 
 ```bash
-copilot
+# Copilot
+copilot --agent squad
+
+# Claude Code
+claude --agent squad
 ```
 
 Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). Squad greets you by name:
@@ -66,13 +70,13 @@ Squad proposes a team. The coordinator analyzes your description and suggests sp
 ```
 Here's your team:
 
-🏗️  Hicks    — Lead          Scope, decisions, code review
-⚛️  Ripley   — Frontend Dev  React, UI, components
-🔧  Dallas   — Backend Dev   Node.js, APIs, database
-🧪  Lambert  — Tester        Tests, quality, edge cases
-📋  Scribe   — (silent)      Memory, decisions, session logs
+🏗️  Hicks    - Lead          Scope, decisions, code review
+⚛️  Ripley   - Frontend Dev  React, UI, components
+🔧  Dallas   - Backend Dev   Node.js, APIs, database
+🧪  Lambert  - Tester        Tests, quality, edge cases
+📋  Scribe   - (silent)      Memory, decisions, session logs
 
-**Scribe** and **Ralph** are always on every roster — you don't manage them.
+**Scribe** and **Ralph** are always on every roster - you don't manage them.
 
 Look right? Say yes, add someone, or change a role.
 (Or just give me a task to start!)
@@ -88,7 +92,7 @@ Say "yes" or skip straight to a task (which is implicit confirmation):
 > Yes. Dallas, set up the Express server with basic routing.
 ```
 
-Squad creates the `.squad/` directory structure — team roster, routing rules, casting state, ceremony config, agent charters, and histories — all seeded with your project context. Each agent spawns to do their work.
+Squad creates the `.squad/` directory structure - team roster, routing rules, casting state, ceremony config, agent charters, and histories - all seeded with your project context. Each agent spawns to do their work.
 
 ### What's inside .squad/?
 
@@ -96,28 +100,28 @@ Squad creates the `.squad/` directory structure — team roster, routing rules, 
 |---|---|
 | `team.md` | Team roster, roles, and member info |
 | `routing.md` | Work routing rules (which agent handles what) |
-| `decisions.md` | Team decisions — all agents read this before working |
+| `decisions.md` | Team decisions - all agents read this before working |
 | `agents/` | Each agent's charter and history (their memory) |
 | `ceremonies.md` | Ceremony schedule (retrospectives, reviews, etc.) |
 | `casting/` | Team formation history and casting state |
 | `skills/` | Reusable capabilities agents can learn |
 | `templates/` | Format reference files for docs, PRDs, charters |
 
-**You own these files.** Edit them anytime — change roles, add routing rules, fix decisions. Squad reads them before every spawn.
+**You own these files.** Edit them anytime - change roles, add routing rules, fix decisions. Squad reads them before every spawn.
 
 **Commit `.squad/` to version control.** It's your team's brain. Anyone who clones the repo gets the team with all their knowledge.
 
 Then it spawns Dallas:
 
 ```
-🔧 Dallas — setting up Express server with routing
+🔧 Dallas - setting up Express server with routing
 
-Dallas is on it — building the Express server now.
+Dallas is on it - building the Express server now.
 ```
 
 ---
 
-## 4. Parallel Fan-Out — The Launch Table
+## 4. Parallel Fan-Out - The Launch Table
 
 Now give a bigger task to see parallel work:
 
@@ -129,14 +133,14 @@ Now give a bigger task to see parallel work:
 Squad decomposes the work and launches agents simultaneously:
 
 ```
-🏗️ Hicks   — reviewing requirements, defining API contract
-⚛️ Ripley  — building RecipeList component
-🔧 Dallas  — creating GET /api/recipes endpoint
-🧪 Lambert — writing test cases from requirements
-📋 Scribe  — logging session
+🏗️ Hicks   - reviewing requirements, defining API contract
+⚛️ Ripley  - building RecipeList component
+🔧 Dallas  - creating GET /api/recipes endpoint
+🧪 Lambert - writing test cases from requirements
+📋 Scribe  - logging session
 ```
 
-All five agents are working at the same time in separate context windows. The tester writes test cases from the requirements *while* the implementation is being built — no waiting.
+All five agents are working at the same time in separate context windows. The tester writes test cases from the requirements *while* the implementation is being built - no waiting.
 
 ---
 
@@ -145,19 +149,19 @@ All five agents are working at the same time in separate context windows. The te
 When agents finish, you see results tagged with each agent's identity:
 
 ```
-🏗️ Hicks — Defined API contract: GET /api/recipes returns
+🏗️ Hicks - Defined API contract: GET /api/recipes returns
    { recipes: [{ id, title, ingredients, prepTime }] }.
    Decided on cursor-based pagination for large result sets.
 
-⚛️ Ripley — Built RecipeList component at src/components/RecipeList.tsx.
+⚛️ Ripley - Built RecipeList component at src/components/RecipeList.tsx.
    Uses React Query for data fetching. Card layout with title,
    prep time, and ingredient count.
 
-🔧 Dallas — Created GET /api/recipes endpoint at src/routes/recipes.ts.
+🔧 Dallas - Created GET /api/recipes endpoint at src/routes/recipes.ts.
    Connected to MongoDB. Supports ?cursor= pagination per Hicks' spec.
    Also added GET /api/recipes/:id for detail view (proactive).
 
-🧪 Lambert — Wrote 8 test cases in test/recipes.test.ts:
+🧪 Lambert - Wrote 8 test cases in test/recipes.test.ts:
    📌 Proactive: Written from requirements while Dallas was building.
    May need adjustment once implementation is final.
    - List returns paginated results
@@ -171,7 +175,7 @@ Behind the scenes, the Scribe merged decisions from each agent into `decisions.m
 
 ---
 
-## 6. Ask "Where Are We?" — Instant Status
+## 6. Ask "Where Are We?" - Instant Status
 
 At any point, check status:
 
@@ -200,7 +204,7 @@ Key decisions:
 
 ---
 
-## 7. Follow-Up — Watch Decisions Accumulate
+## 7. Follow-Up - Watch Decisions Accumulate
 
 Give a follow-up task:
 
@@ -212,10 +216,10 @@ Give a follow-up task:
 Squad fans out again:
 
 ```
-🔧 Dallas  — adding search endpoint with ingredient filtering
-⚛️ Ripley  — building search UI with ingredient input
-🧪 Lambert — writing search test cases
-📋 Scribe  — logging session
+🔧 Dallas  - adding search endpoint with ingredient filtering
+⚛️ Ripley  - building search UI with ingredient input
+🧪 Lambert - writing search test cases
+📋 Scribe  - logging session
 ```
 
 After completion, check decisions:
@@ -241,7 +245,7 @@ After completion, check decisions:
 **Why:** Native MongoDB capability, no external search service needed
 ```
 
-Every agent reads these decisions before working. As the list grows, the team self-aligns — agents respect each other's architectural choices without you repeating them.
+Every agent reads these decisions before working. As the list grows, the team self-aligns - agents respect each other's architectural choices without you repeating them.
 
 ---
 
@@ -253,7 +257,7 @@ You notice something you want to standardize:
 > Always use Zod for API input validation
 ```
 
-Squad captures it — no agent spawn needed:
+Squad captures it - no agent spawn needed:
 
 ```
 📌 Captured. All API input validation must use Zod.
@@ -288,8 +292,8 @@ squad import ../my-app/squad-export.json
 
 ## Tips
 
-- **First session is slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions.
-- **Commit `.squad/`** — your team's brain. Anyone who clones the repo gets the full team.
+- **First session is slowest.** Agents have no history yet. After 2-3 sessions, they know your conventions.
+- **Commit `.squad/`** - your team's brain. Anyone who clones the repo gets the full team.
 - **Say "team" for big tasks.** The word "team" triggers parallel fan-out across multiple agents.
 - **Name an agent for focused work.** `"Dallas, fix the login bug"` sends work to one specific agent.
 - **Directives are sticky.** Once captured, they persist across all future sessions.
@@ -298,6 +302,6 @@ squad import ../my-app/squad-export.json
 
 ## What to Try Next
 
-- [**Your Team**](../concepts/your-team.md) — How agents form, specialize, and collaborate
-- [**Memory & Knowledge**](../concepts/memory-and-knowledge.md) — Decisions, skills, and persistent context
-- [**Existing Repo Scenario**](../scenarios/existing-repo.md) — Bring Squad into a project that's already in flight
+- [**Your Team**](../concepts/your-team.md) - How agents form, specialize, and collaborate
+- [**Memory & Knowledge**](../concepts/memory-and-knowledge.md) - Decisions, skills, and persistent context
+- [**Existing Repo Scenario**](../scenarios/existing-repo.md) - Bring Squad into a project that's already in flight
