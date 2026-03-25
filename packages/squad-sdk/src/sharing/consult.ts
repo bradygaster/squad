@@ -313,7 +313,7 @@ export interface SetupConsultModeResult {
  * Returns {globalSquadPath}/.squad/
  */
 export function getPersonalSquadRoot(): string {
-  return path.resolve(resolveGlobalSquadPath(), '.squad');
+  return path.resolve(resolveGlobalSquadPath(), 'personal-squad');
 }
 
 /**
