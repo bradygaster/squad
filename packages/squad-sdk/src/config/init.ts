@@ -1032,8 +1032,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   
   const agentFile = join(teamRoot, '.github', 'agents', 'squad.agent.md');
   if (!existsSync(agentFile) || !skipExisting) {
-    if (templatesDir && existsSync(join(templatesDir, 'squad.agent.md'))) {
-      let agentContent = readFileSync(join(templatesDir, 'squad.agent.md'), 'utf-8');
+    if (templatesDir && existsSync(join(templatesDir, 'squad.agent.md.template'))) {
+      let agentContent = readFileSync(join(templatesDir, 'squad.agent.md.template'), 'utf-8');
       agentContent = stampVersionInContent(agentContent, version);
       await mkdir(dirname(agentFile), { recursive: true });
       await writeFile(agentFile, agentContent, 'utf-8');
