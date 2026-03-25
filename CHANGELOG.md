@@ -4,11 +4,125 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-23
+
+### Added — Personal Squad Governance Layer
+- **Personal Squad concept** (#508) — isolated developer workspace with own team.md, routing.md, and agent roster
+- **Ambient discovery** — automatic detection of personal squad at `~/.squad/` via environment variables and fallback paths
+- **CLI commands** (#508) — `squad personal init`, `squad personal list`, `squad personal use`, `squad personal remove`
+- **Governance integration** (#508) — hooks, ceremonies, telemetry isolated per personal squad
+- **Unit & integration tests** (#508) — full test coverage for personal squad flows
+
+### Added — Worktree Spawning & Orchestration
+- **Worktree creation** (#529) — coordinator spawns managed worktrees for parallel agent work via `squad worktree spawn`
+- **Cross-squad orchestration** (#446) — agents coordinate work across multiple squads and worktrees
+- **Persistent Ralph — watch + heartbeat** (#443) — long-running Ralph daemon with health monitoring
+- **Regression guard** (#521) — worktree .git detection (file vs directory) with full test coverage
+
+### Added — Machine Capability Discovery
+- **Capability inference** (#514) — automatic detection of available tools, models, and hardware specs at session start
+- **needs:* Label Routing** (#514) — agents self-route based on discovered capabilities vs work requirements
+
+### Added — Cooperative Rate Limiting
+- **Predictive circuit breaker** (#515) — model token budget forecasting to prevent runtime exhaustion
+- **Rate limit recovery** (#464) — surface errors with actionable recovery options
+- **Circuit breaker for Ralph** (#451) — graceful degradation under model quota pressure
+
+### Added — Economy Mode
+- **Cost-conscious model selection** (#500) — automatic selection of cheaper models when quality thresholds permit
+- **Economy mode skill** (#503) — governance proposals for balanced cost/quality tradeoffs
+- **Token usage tracking** (#453) — visibility into per-agent token consumption and costs
+
+### Added — Auto-Wire Telemetry
+- **Auto-wire in initSquadTelemetry()** (#281) — telemetry initialization no longer requires manual wiring
+- **OpenTelemetry integration** — automatic context propagation across squad sessions
+
+### Added — Issue Lifecycle Template
+- **Template document** (#527) — standardized issue lifecycle workflow (creation → triage → assignment → completion)
+- **Integrated into squad init** — available to all new teams via `.squad/templates/issue-lifecycle.md`
+
+### Added — KEDA External Scaler Template
+- **Agent autoscaling template** (#516) — KEDA-based horizontal scaling for compute-intensive agent work
+- **Documentation** (#519) — setup guide for Kubernetes-based squad deployments
+
+### Added — GAP Analysis Verification Loop
+- **After Agent Work flow** (#473) — gap analysis verification loop ensures all requirements are met before task completion
+- **Checklist-driven completion** — structured validation to prevent incomplete deliverables
+
+### Added — Session Recovery Skill
+- **Session recovery** (#442) — find and resume lost sessions without restarting work
+- **Integration** — available as a core team skill via `.squad/skills/session-recovery/SKILL.md`
+
+### Added — Token Usage Visibility
+- **Per-agent cost tracking** (#453) — token consumption and estimated costs per agent
+- **Dashboard integration** — visible in session UI for cost-conscious workflows
+
+### Added — GitHub Auth Isolation Skill
+- **Multi-account GitHub workflows** (#470) — safely switch GitHub identities within a squad session
+- **Integration** — available as `.squad/skills/gh-auth-isolation/SKILL.md`
+
+### Added — Docs Site Improvements (Astro)
+- **10 Astro feature items** (#524) — implemented search tuning, section badges, test coverage indicators
+- **Autonomous agents guide** (#492) — comprehensive guide for building autonomous agents with Squad SDK
+- **Blog posts** (#029) — upgrade cross-testing at scale post
+- **Expanded search** (#482) — Pagefind tuning with section badges for better discoverability
+- **CLI README expansion** (#487) — detailed CLI reference with workflow examples
+- **Teams MCP integration refresh** (#496) — updated Workflows webhook documentation
+- **Migration guide updates** (#320, #468) — @latest installation instructions and heartbeat config
+
+### Added — ESLint Runtime Anti-Pattern Detection
+- **ESLint with TypeScript support** (#493) — static analysis for common runtime anti-patterns
+- **Integration** — available in CLI pre-flight checks
+
 ### Fixed — CLI Terminal Rendering
 - Eliminated scroll-to-top flicker caused by Ink's fullscreen `clearTerminal` path firing on every render cycle
 - Reduced re-render churn via memoized elapsed-time display (one-second granularity gate) and consolidated animation intervals
 - Stabilized component keys (timestamp-based instead of shifting array indices) to prevent Ink remounts
 - Pinned live viewport height to keep input prompt above fold on all terminal sizes
+
+### Fixed — Upgrade Path & Installation
+- **P0 upgrade gaps** (#544) — context-aware footer and EPERM handling for permission issues
+- **Gitignore parent coverage** (#549) — `.gitignore` updates for nested squad directories
+- **ADO configurable work item types** (#444) — flexible schema for Azure DevOps work items
+- **Template directory audit** (#461) — all template references aligned with `.squad/templates/`
+- **Package template sync** (#462) — monorepo workspace templates now in sync
+
+### Fixed — ESM Compatibility
+- **Complete exports check** — verify all ESM exports before applying patch
+- **Dual-layer ESM fix** (#449) — Node 22/24 compatibility for vscode-jsonrpc resolution
+- **Node 24+ hard-fail** (#502) — clear error message for Node <22.5.0 with upgrade guidance
+
+### Fixed — Runtime Stability
+- **SIGINT/SIGTERM handling** (#486) — graceful shutdown with 22+ tests for signal handling
+- **Read-modify-write race condition** (#480) — fixed history-shadow.ts file access race
+- **az CLI timeout** (#483) — 2s timeout for getAvailableWorkItemTypes to prevent hangs
+- **Memory safety caps** (#259) — file watcher filtering and memory limits
+- **User model preference persistence** (#284) — model selection now persists across sessions
+- **Repository auto-detection** (#437) — auto-detect repo owner/name at session start
+
+### Fixed — GitHub Integration
+- **CI hardening** — stale lockfile handling, manual rerun workflow, merge ref fixes
+- **Casting universe alignment** (#459) — align casting universe count with reality
+
+### Changed — npm Distribution & Installation
+- **npm-only distribution** — removed GitHub-native distribution channel
+- **Installation:** `npm install -g @bradygaster/squad-cli` (standard npm registry)
+- **Verified upgrade path** — tested at scale across 100+ projects
+
+### Documentation — Guides & References
+- **Agent anatomy & hiring checklist** (#439) — detailed guide for building team rosters
+- **Behavior documentation** (#448) — nap, reskill, and compact behavior reference
+- **Content gap fill** — 7 recent PRs documented
+- **PAO external communications** (#426) — Phase 1 infrastructure for multi-channel squad updates
+- **Casting reference** (#814133d) — comprehensive casting configuration guide
+
+### By the Numbers
+- **40+ commits** merged since v0.8.25
+- **6+ major features** (Personal Squad, Worktree Spawning, Capability Discovery, Cooperative Rate Limiting, Economy Mode, Auto-wire Telemetry)
+- **10+ docs site improvements** via Astro
+- **15+ stability & compatibility fixes**
+- **Tested at scale** — upgrade process verified across 100+ projects
+- **Governance layer** — new Personal Squad feature enables distributed developer workflows
 
 ## [0.8.24] - 2026-03-08
 

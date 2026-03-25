@@ -100,12 +100,6 @@ The SDK gives you typed configuration, routing, model selection, and the full ag
 
 ---
 
-## Not sure which interface to use?
-
-See [Choose your interface](choose-your-interface.md) for a complete breakdown of GitHub Copilot CLI, VS Code, Squad CLI, SDK, and the Copilot Coding Agent.
-
----
-
 ### Personal squad (cross-project)
 
 Want the same agents across all your projects?
@@ -124,20 +118,6 @@ This creates your personal squad directory — a personal team root that any pro
 | macOS | `~/Library/Application Support/squad/` |
 | Windows | `%APPDATA%\squad\` |
 
-### SDK mode
-
-Generate a typed `squad.config.ts` with `useRole()` calls instead of markdown-only setup:
-
-```bash
-squad init --sdk
-```
-
-Combine with `--roles` to include the base role catalog (Lead, Backend, Frontend, Tester, etc.) in the generated config. Without `--roles`, init uses fictional universe casting by default.
-
-```bash
-squad init --sdk --roles
-```
-
 ---
 
 ## First-Time Setup
@@ -153,71 +133,8 @@ This creates:
 
 ```
 .github/agents/squad.agent.md  — coordinator agent
-.github/workflows/             — GitHub workflows (see below)
 .squad/                        — team state directory
-.squad/templates/              — template files for casting, routing, ceremonies
 ```
-
-### What `squad init` installs
-
-Beyond the coordinator agent and team state, `squad init` creates GitHub workflows in `.github/workflows/`:
-
-| Workflow | Purpose |
-|----------|---------|
-| `squad-heartbeat.yml` | Ralph's triage loop — auto-assigns issues to squad members based on routing rules |
-| `squad-triage.yml` | Issue triage automation |
-| `squad-issue-assign.yml` | Auto-assign issues to squad members |
-| `squad-label-enforce.yml` | Label state machine enforcement |
-| `squad-ci.yml` | Build & test integration |
-
-> **Important:** These workflows are created but may need a separate commit. If `squad init` is run inside a Copilot session, the generated workflow files are staged but not committed. Commit them explicitly:
->
-> ```bash
-> git add .github/workflows/ .github/agents/ .squad/
-> git commit -m "chore: initialize squad team"
-> ```
-
-### Enabling the heartbeat schedule
-
-The heartbeat workflow runs Ralph's triage automatically. By default, the cron schedule is **disabled** — it only triggers on issue/PR events and manual dispatch. To enable periodic triage:
-
-1. Open `.github/workflows/squad-heartbeat.yml`
-2. Uncomment the `schedule` block:
-
-```yaml
-on:
-  schedule:
-    # Every 30 minutes — adjust to your team's pace
-    - cron: '*/30 * * * *'
-```
-
-**Common schedule examples:**
-
-| Schedule | Cron Expression |
-|----------|----------------|
-| Every 30 minutes | `*/30 * * * *` |
-| Every hour | `0 * * * *` |
-| Every 4 hours during business hours | `0 9-17/4 * * 1-5` |
-| Once daily at 9 AM UTC | `0 9 * * *` |
-
-### Adding Squad to an existing project
-
-Already have a running project? `squad init` works the same way — it won't overwrite your existing files:
-
-```bash
-cd my-existing-project
-squad init
-```
-
-**Tip:** After initializing, give Squad context about your project in your first session:
-
-```
-> This is a React + Node.js task management app. We use PostgreSQL,
-> deploy to AWS, and follow trunk-based development. The main entry
-> points are src/server/index.ts and src/client/App.tsx.
-```
-
-Squad uses this to form a team matched to your stack and write accurate routing rules. See [Adding Squad to an Existing Repo](../scenarios/existing-repo.md) for a detailed walkthrough.
 
 ### Configuration (optional)
 

@@ -41,7 +41,7 @@ done         → Remove from board
 When the board is clear (all work done/merged), Ralph enters **idle mode**. In this state:
 - In-session Ralph stops the active loop (agents can still be called manually)
 - Watch mode Ralph pauses polling until next interval
-- Heartbeat Ralph waits for next cron trigger
+- Heartbeat Ralph waits for next event trigger (cron permanently disabled)
 
 Ralph wakes from idle when:
 - New issue is created with `squad` label
@@ -61,8 +61,7 @@ Ralph wakes from idle when:
 - Ctrl+C → Stop watch mode
 
 **Event-based (Heartbeat):**
-- Cron schedule → Check GitHub
-- Issue opened/closed → Check GitHub
+- Issue closed/labeled → Check GitHub
 - PR opened/merged → Check GitHub
 - Manual dispatch → Check GitHub
 

@@ -153,9 +153,9 @@ Ralph **never stops on his own while work remains** — he keeps cycling until t
 |-------|------|-----|
 | **In-session** | You're at the keyboard | `"Ralph, go"` — active loop |
 | **Local watchdog** | You're AFK but machine is on | `squad watch --interval 10` |
-| **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions cron |
+| **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions events |
 
-The heartbeat workflow (`squad-heartbeat.yml`) is installed during `init` or `upgrade`. It runs every 30 minutes by default, on issue close, on PR merge, and on manual dispatch. Edit the cron schedule in `.github/workflows/squad-heartbeat.yml` to fit your cadence.
+The heartbeat workflow (`squad-heartbeat.yml`) is installed during `init` or `upgrade`. It runs on issue close, PR merge, and manual dispatch. Edit the workflow in `.github/workflows/squad-heartbeat.yml` to customize triggers. For periodic polling without events, use `squad watch` locally.
 
 **PAT requirement:** Ralph needs `gh` CLI authenticated with a Classic PAT (scopes: `repo` and `project`). The default `GITHUB_TOKEN` doesn't have sufficient scopes.
 

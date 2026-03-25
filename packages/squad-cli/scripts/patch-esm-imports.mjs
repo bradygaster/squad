@@ -51,8 +51,8 @@ function patchVscodeJsonrpcExports() {
       const raw = readFileSync(pkgPath, 'utf8');
       const pkg = JSON.parse(raw);
 
-      if (pkg.exports) {
-        console.log('⏭️  vscode-jsonrpc already has exports field — skipping');
+      if (pkg.exports && pkg.exports['./node.js']) {
+        console.log('⏭️  vscode-jsonrpc already has complete exports field — skipping');
         return false;
       }
 

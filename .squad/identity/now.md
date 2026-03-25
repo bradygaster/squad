@@ -1,12 +1,12 @@
 ---
-updated_at: 2026-03-16T12:30:00Z
-focus_area: "Skills migration + three-layer tooling (#330 + #354) — RELEASE BLOCKER"
-version: v0.8.25-build.10
-branch: dev
-tests_passing: ~4321
-tests_todo: 46
-tests_skipped: 5
-test_files: 154
+updated_at: 2026-03-22T06:50:31Z
+focus_area: PR Pipeline Cleared, Next-Up Issues Ready
+version: v0.8.24
+branch: main
+tests_passing: 4655+
+tests_todo: ~20
+tests_skipped: ~5
+test_files: 149
 team_size: 19 active agents + Scribe + Ralph + @copilot
 team_identity: Apollo 13 / NASA Mission Control
 process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never commit to main directly.
@@ -14,47 +14,80 @@ process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never 
 
 # What We're Focused On
 
-**Status:** Skills migration and three-layer tooling awareness are the team's #1 priority. These two issues (#330 + #354) MUST ship together before the next release. All team efforts focused here.
+**Status:** PR pipeline cleared. 8 PRs reviewed, rebased, and merged. 6 issues triaged. 10 issues labeled `next-up` for immediate pickup. 1 new issue filed (#488 — GitHub auth documentation). Team ready to work through priority issues.
 
-## The Big One — Skills Migration + Three-Layer Tooling (#330 + #354)
+## Session Recap: PR Pipeline & Issue Triage (2026-03-22)
 
-**RELEASE BLOCKER — must ship before next release.**
+**Agents Deployed:** Flight (Lead), EECOM (Core Dev), GNC (Node.js Runtime), PAO (DevRel), Coordinator
 
-Two issues, one body of work:
-- **#330** (spboyer) — Coordinator detects and enforces all three tooling layers (local skills, global MCP, global Copilot skills)
-- **#354** (bradygaster) — Migrate skills from `.squad/skills/` to `.copilot/skills/`
+### PRs Merged (8 total)
 
-### Why this matters
-- Skills in `.squad/skills/` are invisible to Copilot's discovery system
-- Global MCP tools (azure-mcp-*, etc.) are detected but not enforced — no pre-flight research
-- Global Copilot skills are completely invisible to the coordinator
-- 11 of 13 deployment fix commits in Shayne's Azure session were avoidable with available tools
-- ~115KB of skill content loaded fully on every routing decision (vs frontmatter-only scanning in `.copilot/skills/`)
+| PR | Title | Agent | Status |
+|---|---|---|---|
+| #483 | az CLI timeout fix | EECOM | ✅ Merged |
+| #480 | history race fix (async mutex + 14 tests) | EECOM | ✅ Merged |
+| #486 | SIGINT handling (two-layer cleanup + 22 tests) | EECOM | ✅ Merged |
+| #474 | Node 22 ESM fix + exports key alignment | GNC | ✅ Merged |
+| #487 | CLI docs expansion + broken link fixes | PAO | ✅ Merged |
+| #482 | Pagefind search integration | PAO | ✅ Merged |
+| #484 | Sample README templates | PAO | ✅ Merged |
+| #473 | Gap analysis | Flight | ✅ Merged |
 
-### Execution sequence
-1. **Prototype** — verify spawned agents inherit MCP tools from parent session (gates design)
-2. **Governance** — update squad.agent.md (6 refs), add three-layer model + pre-flight rules
-3. **SDK/CLI** — update init, upgrade (migration), export/import, doctor, SkillScriptLoader paths
-4. **Physical move** — 23 skills from `.squad/skills/` → `.copilot/skills/`, update cross-refs
-5. **Backward compat** — check both locations for one version
-6. **Tests** — skill routing, migration, backward compat
-7. **Docs** — update all path references
+### Issues Triaged & Labeled (6 total)
 
-### Gating question
-Do spawned `general-purpose` agents inherit MCP tools from the coordinator's session? This determines whether "Azure skills + Azure MCP" is a real pipeline or just documentation.
+**Issues:** #485, #481, #479, #478, #477, #476  
+**Assignments:** Distributed across EECOM, CONTROL, RETRO, VOX, FIDO, HANDBOOK, PAO  
+**Status:** All labeled with squad/team ownership
 
-## Next Up (After #330/#354)
+### Next-Up Label (10 issues)
 
-### Quick Wins
-- **#320** — Docs migration guide version pin (PAO)
-- **#347** — SDK init quality gate (FIDO)
+**Label:** `next-up`  
+**Type:** Bugs, easy wins, documentation improvements  
+**Status:** Ready for team pickup next sprint
 
-### Recently Shipped
-- **#322** — Model selection updated to Claude Sonnet 4.6 / GPT-5.4 (PR #429, merged)
-- **#342** — Closed (already shipped via PR #417)
-- **A2A (#332-336)** — Shelved (too risky short-term)
-- **#316, #357** — Shelved (A2A dependency)
+### New Issue: #488
+
+**Title:** docs: GitHub auth  
+**Type:** Documentation  
+**Owner:** PAO  
+**Status:** Created and assigned
+
+## Key Patterns Identified
+
+1. **CLI Timeouts** — External CLI calls need explicit timeouts + fallback logic
+2. **File Race Conditions** — History operations require async mutex + atomic writes + comprehensive tests (14 tests validated #480)
+3. **Signal Handling** — SIGINT cleanup needs two-layer approach: parent process handler + child process cleanup (22 tests validated #486)
+4. **ESM Exports** — Node 22 requires explicit exports map + validation that declared paths exist (PR #474 fixed mismatch)
+5. **Documentation Links** — Automated link validation should be CI gate to prevent broken references
+
+## Test Coverage Update
+
+- **New tests:** 36 from EECOM (14 race + 22 signal), GNC ESM validation
+- **Total passing:** 4655+ (per GNC report)
+- **Coverage areas:** Concurrent operations, signal handling, ESM compatibility, timeout scenarios
+
+## 🚨 Next Session: Start Here
+
+**PR pipeline cleared. Work through `next-up` issues.**
+
+Priorities:
+1. **#488** — PAO: GitHub auth documentation (new)
+2. **#481** — EECOM + CONTROL: StorageProvider PRD (architectural)
+3. **#479** — EECOM + RETRO: history-shadow race fix (production bug mitigation)
+4. **#478** — VOX + PAO: Polish REPL (UX readiness)
+5. **#477** — FIDO: Code quality linting PRD (ESLint 9)
+6. **#476** — HANDBOOK + PAO: Guide v0.4.1 update (high community value)
+
+## Current State
+
+**Version:** v0.8.24 (released, on npm)
+- **Packages:** @bradygaster/squad-sdk, @bradygaster/squad-cli
+- **Branch:** main
+- **Build:** ✅ clean (0 errors)
+- **Tests:** 4,655+ passed, ~20 todo, ~5 skipped, 149 test files
+
+**Open Issues:** 30 total. 6 triaged today + 10 labeled next-up for immediate work.
 
 ## Process
 
-All work through PRs. Branch naming: `squad/{issue-number}-{slug}`. Never commit to main directly. Squad member review before merge. Always use bradygaster (personal) GitHub account for this repo.
+All work through PRs. Branch naming: `squad/{issue-number}-{slug}`. Never commit to main directly. Squad member review before merge.

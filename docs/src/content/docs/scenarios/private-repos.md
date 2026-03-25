@@ -112,10 +112,8 @@ No project-specific details. No code references. No file paths.
 
 ## 5. Exporting Your Squad — What's Included
 
-When you run:
-
 ```bash
-npx github:bradygaster/squad export
+squad export
 ```
 
 The export includes:

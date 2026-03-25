@@ -73,7 +73,6 @@ Squad's `sync-board.yml` workflow runs:
 - **On label change** — Issue labeled `go:yes` → moves to "Ready" column
 - **On issue close** → moves to "Done" column
 - **On PR merge** → linked issue moves to "Done"
-- **On schedule** (every 30 min) — full board resync to catch any drift
 
 ### Manual Sync
 

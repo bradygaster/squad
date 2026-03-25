@@ -40,7 +40,7 @@ When you finish a project or want to take your squad to a new one:
 
 ```bash
 cd ~/projects/finished-saas-app
-npx github:bradygaster/squad export
+squad export
 ```
 
 ```
@@ -69,7 +69,8 @@ Start a new project:
 mkdir ~/projects/new-mobile-app
 cd ~/projects/new-mobile-app
 git init
-npx github:bradygaster/squad
+npm install -g @bradygaster/squad-cli
+squad init
 ```
 
 When Squad asks what you're building:
@@ -133,12 +134,13 @@ This is intentional. Skills are **reusable**. Project details are **not**.
 
 ---
 
-## 5. Version Upgrades Don't Touch `.ai-team/`
+## 5. Version Upgrades Don't Touch `.squad/`
 
 When Squad releases a new version:
 
 ```bash
-npx github:bradygaster/squad@latest
+npm install -g @bradygaster/squad-cli@latest
+squad upgrade
 ```
 
 ```

@@ -77,18 +77,6 @@ jobs:
               return;
             }
 
-            // Ensure parent "squad" label exists (prevents orphaned squad:{member} labels)
-            const issueLabels = issue.labels.map(l => l.name);
-            if (!issueLabels.includes('squad')) {
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                labels: ['squad']
-              });
-              core.info(`Added parent "squad" label to #${issue.number}`);
-            }
-
             // Post assignment acknowledgment
             let comment;
             if (isCopilotAssignment) {

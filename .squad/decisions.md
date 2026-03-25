@@ -655,6 +655,124 @@ Ampersands (&) are prohibited in user-facing documentation headings and body tex
 
 ---
 
+## Adoption & Community
+
+### `.squad/` Directory Scope — Owner Directive
+**By:** Brady (project owner, PR #326 review)  
+**Date:** 2026-03-10  
+
+**Directive:** The `.squad/` directory is **reserved for team state only** — roster, routing, decisions, agent histories, casting, and orchestration logs. Non-team data (adoption tracking, community metrics, reports) must NOT live in `.squad/`. Use `.github/` for GitHub platform integration or `docs/` for documentation artifacts.
+
+**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029193833)
+
+---
+
+### No Individual Repo Listing Without Consent — Owner Directive
+**By:** Brady (project owner, PR #326 review)  
+**Date:** 2026-03-10  
+
+**Directive:** Growth metrics must report **aggregate numbers only** (e.g., "78+ repositories found via GitHub code search") — never name or link to individual community repos without explicit opt-in consent. The monitoring script and GitHub Action concepts are approved, but any public showcase or tracking list that identifies specific repos is blocked until a community consent plan exists.
+
+**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029222967)
+
+---
+
+### Adoption Tracking — Opt-In Architecture
+**By:** Flight (implementing Brady's directives above)  
+**Date:** 2026-03-09  
+
+Privacy-first adoption monitoring using a three-tier system:
+
+**Tier 1: Aggregate monitoring (SHIPPED)**
+- GitHub Action + monitoring script collect metrics
+- Reports moved to `.github/adoption/reports/{YYYY-MM-DD}.md`
+- Reports show ONLY aggregate numbers (no individual repo names):
+  - "78+ repositories found via code search"
+  - Total stars/forks across all discovered repos
+  - npm weekly downloads
+
+**Tier 2: Opt-in registry (DESIGN NEXT)**
+- Create `SHOWCASE.md` in repo root with submission instructions
+- Opted-in projects listed in `.github/adoption/registry.json`
+- Monitoring script reads registry, reports only on opted-in repos
+
+**Tier 3: Public showcase (LAUNCH LATER)**
+- `docs/community/built-with-squad.md` shows opted-in projects only
+- README link added when ≥5 opted-in projects exist
+
+**Rationale:**
+- Aggregate metrics safe (public code search results)
+- Individual projects only listed with explicit owner consent
+- Prevents surprise listings, respects privacy
+- Incremental rollout maintains team capacity
+
+**Implementation (PR #326):**
+- ✅ Moved `.squad/adoption/` → `.github/adoption/`
+- ✅ Stripped tracking.md to aggregate-only metrics
+- ✅ Removed individual repo names, URLs, metadata
+- ✅ Updated adoption-report.yml and scripts/adoption-monitor.mjs
+- ✅ Removed "Built with Squad" showcase link from README (Tier 2 feature)
+
+---
+
+### Adoption Tracking Location & Privacy
+**By:** EECOM  
+**Date:** 2026-03-10  
+
+Implementation decision confirming Tier 1 adoption tracking changes.
+
+**What:** Move adoption tracking from `.squad/adoption/` to `.github/adoption/`
+
+**Why:**
+1. **GitHub integration:** `.github/adoption/` aligns with GitHub convention (workflows, CODEOWNERS, issue templates)
+2. **Privacy-first:** Aggregate metrics only; defer individual repo showcase to Tier 2 (opt-in)
+3. **Clear separation:** `.squad/` = team internal; `.github/` = GitHub platform integration
+4. **Future-proof:** When Tier 2 opt-in launches, `.github/adoption/` is the natural home
+
+**Impact:**
+- GitHub Action reports write to `.github/adoption/reports/{YYYY-MM-DD}.md`
+- No individual repo information published until Tier 2
+- Monitoring continues collecting aggregate metrics via public APIs
+- Team sees trends without publishing sensitive adoption data
+
+---
+
+### Append-Only File Governance
+**By:** Flight  
+**Date:** 2026-03-09  
+
+Feature branches must never modify append-only team state files except to append new content.
+
+**What:** If a PR diff shows deletions in `.squad/agents/*/history.md` or `.squad/decisions.md`, the PR is blocked until deletions are reverted.
+
+**Why:** Session state drift causes agents to reset append-only files to stale branch state, destroying team knowledge. PR #326 deleted entire history files and trimmed ~75 lines of decisions, causing data loss.
+
+**Enforcement:** Code review + future CI check candidate.
+
+---
+
+### Documentation Style: No Ampersands
+**By:** PAO  
+**Date:** 2026-03-09  
+
+Ampersands (&) are prohibited in user-facing documentation headings and body text, per Microsoft Style Guide.
+
+**Rule:** Use "and" instead.
+
+**Why:** Microsoft Style Guide prioritizes clarity and professionalism. Ampersands feel informal and reduce accessibility.
+
+**Exceptions:**
+- Brand names (AT&T, Barnes & Noble)
+- UI element names matching exact product text
+- Code samples and technical syntax
+- Established product naming conventions
+
+**Scope:** Applies to docs pages, README files, blog posts, community-facing content. Internal files (.squad/** memory files, decision docs, agent history) have flexibility.
+
+**Reference:** https://learn.microsoft.com/en-us/style-guide/punctuation/ampersands
+
+---
+
 ## Sprint Directives
 
 ### Secret handling — agents must never persist secrets
@@ -6138,3 +6256,768 @@ ESM module resolution uses dual-layer postinstall strategy:
 
 **Impact:** If users report ESM errors on Node 22/24, direct them to `squad doctor`.
 
+
+---
+
+# Economy Mode Design — #500
+
+**Date:** 2026-03-20  
+**Author:** EECOM  
+**Issue:** #500
+
+## Decision
+
+Economy mode is implemented as a modifier that shifts model selection at Layer 3 (task-aware auto) and Layer 4 (default fallback) only. Layers 0–2 (explicit user preferences) are never downgraded.
+
+## Model Map
+
+| Normal | Economy | Use case |
+|--------|---------|----------|
+| `claude-opus-4.6` | `claude-sonnet-4.5` | Architecture, review |
+| `claude-sonnet-4.6` | `gpt-4.1` | Code writing |
+| `claude-sonnet-4.5` | `gpt-4.1` | Code writing |
+| `claude-haiku-4.5` | `gpt-4.1` | Docs, planning, mechanical |
+
+## Activation
+
+1. **Persistent:** `"economyMode": true` in `.squad/config.json` (survives sessions)
+2. **Session:** `--economy` CLI flag (sets `SQUAD_ECONOMY_MODE=1` env var, current session only)
+3. **Toggle command:** `squad economy on|off` writes to config.json
+
+## Hierarchy Integration
+
+Economy mode is a Layer 3/4 modifier — it does NOT override explicit preferences (Layers 0–2). This is intentional: if a user said "always use opus", economy mode respects that choice.
+
+## Implementation Points
+
+- `ECONOMY_MODEL_MAP` + `applyEconomyMode()` in `packages/squad-sdk/src/config/models.ts`
+- `readEconomyMode()` + `writeEconomyMode()` in `packages/squad-sdk/src/config/models.ts`
+- `resolveModel()` in `config/models.ts` accepts `economyMode?: boolean` option; reads from config if not provided
+- `resolveModel()` in `agents/model-selector.ts` also supports `economyMode?: boolean`
+- `squad economy [on|off]` command in `packages/squad-cli/src/cli/commands/economy.ts`
+- `--economy` global flag in `cli-entry.ts`
+
+---
+
+# Decision: Hard-fail on Node <22.5.0 at CLI Startup
+
+**Author:** EECOM  
+**Date:** 2026-03-21  
+**Issue:** #502 (workshop blocker)
+
+## Context
+
+Workshop participants reported `ERR_UNKNOWN_BUILTIN_MODULE` when using Squad on Node <22.5.0. The `node:sqlite` built-in (used by the Copilot SDK for session storage) requires Node 22.5.0+.
+
+The previous approach — `try { await import('node:sqlite') } catch { warn and continue }` — let the process limp along until the SDK actually hit sqlite, producing a confusing crash deep in a stack trace.
+
+## Decision
+
+**Hard-fail at startup with a clear, actionable message.** If Node <22.5.0 is detected, Squad exits immediately (`process.exit(1)`) with:
+
+```
+✗ Squad requires Node.js ≥22.5.0 (you have v20.18.0).
+  node:sqlite (required by the Copilot SDK for session storage) was added in Node 22.5.0.
+  Upgrade at: https://nodejs.org/en/download
+```
+
+**Rationale:**
+- Fail fast > fail cryptically later
+- The message includes the exact version needed and where to upgrade
+- `engines.node` updated to `>=22.5.0` in all package.json files — npm/npx will also warn at install time
+- `squad doctor` now includes a Node version check so users can proactively diagnose
+
+## Alternatives Rejected
+
+- **Fallback to `better-sqlite3`:** Adds a native binary dependency. Complexity cost is not justified since Node 22.5.0+ is already 18+ months old.
+- **Soft warn and continue:** The existing approach — proved to be a workshop blocker.
+
+---
+
+# Rate Limit UX: Detect and Recover, Don't Hide
+
+**Date:** 2026-03-20
+**Author:** EECOM
+**Issue:** #464
+
+## Decision
+
+When Squad catches a rate limit error (HTTP 429, "rate limit", "quota exceeded"), surface it explicitly rather than hiding it under "Something went wrong processing your message."
+
+## Rationale
+
+Generic error messages fail the user in two ways:
+1. They don't explain *why* the error happened (rate limit vs. network vs. bug)
+2. They give no recovery path — the user is stuck with "run squad doctor" which previously showed nothing useful
+
+Rate limits are a **pivot point, not a dead end**. The user can unblock themselves immediately by switching to economy mode or a different model.
+
+## Implementation
+
+1. **`error-messages.ts`** — added `rateLimitGuidance()` and `extractRetryAfter()`. Rate limit guidance shows:
+   - Clear message: "Rate limit reached [for {model}]. Copilot has temporarily throttled your requests."
+   - Recovery: time until reset (if parseable), `squad economy on`, and config.json model override
+
+2. **`shell/index.ts` catch block** — detects rate limits via `instanceof RateLimitError` OR regex on the error message (`/rate.?limit|quota.*exceed|429/i`). Writes `.squad/rate-limit-status.json` on detection for doctor to read.
+
+3. **`doctor.ts`** — added `checkRateLimitStatus()`. Reads `.squad/rate-limit-status.json` and reports:
+   - `warn` if rate limit was recent (< 4h ago), with command to fix
+   - `pass` if stale (> 4h ago)
+   - Silent if no rate limit has been hit
+
+## Alternatives Considered
+
+- **Making a live API call in `squad doctor`** — rejected, adds latency and may itself be rate-limited
+- **Just showing the raw error** — rejected, unhelpful wall of text
+- **Writing to a separate log format** — rejected, JSON status file is simpler to read/update
+
+---
+
+# Triage: #525 — Worktree Creation & Lifecycle Missing from Coordinator/Spawn Flow
+
+**Author:** Flight  
+**Date:** 2025-07-18  
+**Status:** Triaged  
+**Priority:** P2 — Important, not v1-blocking  
+**Labels:** `squad:eecom`, `squad:procedures`, `squad:flight`
+
+## Validation
+
+Community contributor joniba's analysis is **accurate and thorough**. I validated all 10 claims:
+
+| Claim | Verdict |
+|-------|---------|
+| ralph-commands.ts hardcodes `git checkout -b` (all 3 adapters) | ✅ Confirmed — lines 50, 71, 92 |
+| issue-lifecycle.md referenced but missing | ✅ Confirmed — two broken refs in squad.agent.md |
+| squad.agent.md has Worktree Awareness section | ✅ Confirmed — lines 569–607 |
+| git-workflow skill defaults to checkout -b | ✅ Confirmed — worktree is documented but separate path |
+| resolveSquad() detects .git as file (worktree pointer) | ✅ Confirmed — resolution.ts line 66–93 |
+| .gitattributes merge=union for append-only files | ✅ Confirmed — 5 entries |
+| Tests for worktree boundary detection | ✅ Confirmed — 5+ tests |
+| Coordinator creates worktrees before spawn | ❌ Confirmed missing |
+| WORKTREE_PATH in spawn prompts | ❌ Confirmed missing |
+| Post-merge worktree cleanup | ❌ Confirmed missing |
+
+**Summary:** The reading side (detection, path resolution, merge drivers, tests) is solid — approximately 95% of the worktree infrastructure exists. The gap is purely on the writing/orchestration side: nobody creates worktrees, and the coordinator doesn't know it should.
+
+## Impact Assessment
+
+**Who this affects:** Any user running parallel agents on the same repo. Today, two agents spawned simultaneously will both `git checkout -b` from the same working directory and clobber each other.
+
+**Why it's P2 not P1:** Most current Squad users run single-agent sequential workflows. Parallel multi-agent execution is the advanced case. The SubSquads/Workstreams design (#509–#511) will eventually need this, but those aren't in Wave 1.
+
+**Risk of deferral:** Low short-term, medium long-term. Community contributors noticing the gap means adoption is hitting this edge. If we defer past v1, it becomes tech debt that's harder to retrofit.
+
+## Scope Recommendation: Break Into Sub-Issues
+
+This is too broad for one issue. Recommended decomposition:
+
+1. **Doc fix: Create issue-lifecycle.md** (quick win, 1 hour)  
+   Owner: `squad:procedures`  
+   Fix the broken reference in squad.agent.md. Standalone — no code changes.
+
+2. **SDK: Add worktree branch-creation variant to ralph-commands.ts**  
+   Owner: `squad:eecom`  
+   Add `git worktree add` as an alternative to `git checkout -b` in all 3 platform adapters. Decision logic: single agent = checkout, parallel = worktree.
+
+3. **Coordinator: Pre-spawn worktree creation**  
+   Owner: `squad:procedures`, `squad:eecom`  
+   When coordinator detects parallel spawn, create worktree before dispatching agent. Pass WORKTREE_PATH in spawn context.
+
+4. **Lifecycle: Post-merge worktree cleanup**  
+   Owner: `squad:eecom`  
+   After PR merge, `git worktree remove` + prune. Could hook into Ralph's idle-watch.
+
+5. **Architecture decision: Worktree vs checkout heuristic**  
+   Owner: `squad:flight`  
+   Formal decision on when to use which strategy. Default: checkout-b for solo work, worktree for parallel. Write to decisions.md.
+
+## Priority Relative to Backlog
+
+**Above:** Long-term/exploratory (#357, #316, #308, #296, #260, #252), manual verification debt (#418–#421)  
+**Comparable to:** #457 (monorepo context), #413 (knowledge library) — all infrastructure improvements  
+**Below:** Wave 1 (#508, #330/#354), PRDs (#498, #485, #481), GitLab support (#465)
+
+**Recommendation:** Sub-issue #1 (doc fix) is a quick win — ship immediately. Sub-issues #2–#5 go into the post-Wave-1 queue, likely alongside SubSquads work where parallel execution becomes a hard requirement.
+
+## Top 5 Priority Recommendations for v1 Progress
+
+1. **#508 — Ambient Personal Squad** — Wave 1 in progress, highest user-facing value
+2. **#498 — Remove .squad/ from version control** — Critical for v1 GA; repos shouldn't ship team state
+3. **#485 — Agent Spec & Validation Framework** — Foundation for quality gates and onboarding
+4. **#481 — Typed StorageProvider Interface** — SDK maturity; unblocks #498
+5. **#347 — Shore up squad init --sdk** — Onboarding gate; first impression for SDK users
+
+**Quick wins:** #525 sub-issue #1 (doc fix), #347 (scoped CLI work).  
+**Deprioritize:** Manual verification issues (#418–#421) are test debt, not v1-blocking. Long-term exploratory items (#357, #316, #308, #296, #260, #252) stay backlog.  
+**Shelved (unchanged):** A2A suite (#332–#336) per existing team decision.
+
+---
+
+# Proposal: Economy Mode Integration in squad.agent.md
+
+**By:** Procedures (Prompt Engineer)  
+**Date:** 2026-03-22  
+**Issues:** #500  
+**Status:** DRAFT — for Flight review before merging to squad.agent.md
+
+---
+
+## Summary
+
+Economy mode is a new session/persistent modifier that shifts Layer 3 (Task-Aware Auto-Selection) to cost-optimized alternatives. This proposal documents the governance additions needed in `squad.agent.md`.
+
+**Note to Flight:** Procedures owns the skill design. Squad.agent.md is governance — Flight reviews before commit.
+
+---
+
+## 1. New Paragraph After Layer 0 (Per-Agent Model Selection section)
+
+Insert after the existing Layer 0 bullet points and before "**Layer 1 — Session Directive**":
+
+---
+
+**Economy Mode — Cost Modifier (Layer 3 override):** Economy mode shifts all Layer 3 auto-selection to cost-optimized alternatives. It does NOT override Layer 0 (persistent config), Layer 1 (explicit session directive), or Layer 2 (charter preference) — user intent always wins.
+
+- **Activation (session):** User says "use economy mode", "save costs", "go cheap" → activate for this session only.
+- **Activation (persistent):** User says "always use economy mode" OR `"economyMode": true` in `.squad/config.json` → persists across sessions.
+- **Deactivation:** "turn off economy mode" or remove `economyMode` from `config.json`.
+- **On session start:** Read `.squad/config.json`. If `economyMode: true`, activate economy mode before any spawns.
+
+---
+
+## 2. Economy Model Selection Table
+
+Add after Layer 3 normal table:
+
+---
+
+**Economy Mode Layer 3 Table** (active when economy mode is on):
+
+| Task Output | Normal Mode | Economy Mode |
+|-------------|-------------|--------------|
+| Writing code (implementation, refactoring, bug fixes) | `claude-sonnet-4.5` | `gpt-4.1` or `gpt-5-mini` |
+| Writing prompts or agent designs | `claude-sonnet-4.5` | `gpt-4.1` or `gpt-5-mini` |
+| Docs, planning, triage, changelogs, mechanical ops | `claude-haiku-4.5` | `gpt-4.1` or `gpt-5-mini` |
+| Architecture, code review, security audits | `claude-opus-4.5` | `claude-sonnet-4.5` |
+| Scribe / logger / mechanical file ops | `claude-haiku-4.5` | `gpt-4.1` |
+
+Prefer `gpt-4.1` over `gpt-5-mini` for structured output or tool use. Prefer `gpt-5-mini` for pure text generation.
+
+---
+
+## 3. Spawn Acknowledgment Convention
+
+Add to the spawn acknowledgment format guidance:
+
+---
+
+When economy mode is active, include `💰 economy` after the model name in spawn acknowledgments:
+
+```
+🔧 Fenster (gpt-4.1 · 💰 economy) — fixing auth bug
+📋 Scribe (gpt-4.1 · 💰 economy) — logging decision
+```
+
+This gives the user instant visibility that cost-optimized models are in use.
+
+---
+
+## 4. Valid Models Catalog Audit
+
+Current "Valid models" section lists:
+
+```
+Premium: claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5
+Standard: claude-sonnet-4.5, claude-sonnet-4, gpt-5.2-codex, gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1, gpt-5, gemini-3-pro-preview
+Fast/Cheap: claude-haiku-4.5, gpt-5.1-codex-mini, gpt-5-mini, gpt-4.1
+```
+
+**Audit findings:**
+- `claude-opus-4.6` and `claude-opus-4.6-fast` are listed but not used in the Layer 3 table (table uses `claude-opus-4.5`). The Layer 3 table should reference `claude-opus-4.6` as the premium default for consistency with the catalog.
+- `claude-sonnet-4.6` appears in the model-selection SKILL.md but is absent from the valid models list in squad.agent.md. Add it under Standard.
+- Economy mode introduces `gpt-4.1` and `gpt-5-mini` as primary alternatives — both are already in the Fast/Cheap catalog. No additions needed.
+
+**Proposed updated catalog:**
+
+```
+Premium: claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5
+Standard: claude-sonnet-4.6, claude-sonnet-4.5, claude-sonnet-4, gpt-5.4, gpt-5.3-codex, gpt-5.2-codex, gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1, gpt-5, gemini-3-pro-preview
+Fast/Cheap: claude-haiku-4.5, gpt-5.1-codex-mini, gpt-5-mini, gpt-4.1
+```
+
+(Added `claude-sonnet-4.6`, `gpt-5.4`, `gpt-5.3-codex` which appear in the model-selection SKILL.md fallback chains but are missing from squad.agent.md's catalog.)
+
+---
+
+## 5. Config Schema Addition
+
+Add `economyMode` to the config schema reference in squad.agent.md (wherever `defaultModel` is documented):
+
+```json
+{
+  "version": 1,
+  "defaultModel": "claude-sonnet-4.6",
+  "economyMode": true,
+  "agentModelOverrides": {
+    "fenster": "claude-sonnet-4.6"
+  }
+}
+```
+
+---
+
+## Rationale
+
+Economy mode solves a real user need: "I want all agents to run cheaper, but I don't want to set each one individually." It's a session-level modifier that works orthogonally to the existing hierarchy — no layer gets changed, only Layer 3's lookup table swaps. The `💰` indicator keeps it transparent.
+
+The skill (`economy-mode/SKILL.md`) covers the coordinator behavior in detail. This proposal is the governance side — ensuring squad.agent.md is the authoritative source for the feature.
+
+---
+
+## References
+
+- Skill: `.squad/skills/economy-mode/SKILL.md`
+- Issue: #500
+- Model selection skill: `.squad/skills/model-selection/SKILL.md`
+
+---
+
+# Proposal: Personal Squad Governance Awareness in squad.agent.md
+
+**By:** Procedures (Prompt Engineer)  
+**Date:** 2026-03-22  
+**Issues:** #344  
+**Status:** DRAFT — for Flight review before merging to squad.agent.md
+
+---
+
+## Summary
+
+Squad has a consult mode (implemented, per `prd-consult-mode.md`) and personal squad semantics (via `resolveGlobalSquadPath()`), but `squad.agent.md` doesn't tell the coordinator how to reason about either. This proposal documents the gaps and the governance additions needed.
+
+---
+
+## Gap Analysis
+
+### Gap 1: Init Mode references `--global` without explaining personal squad resolution
+
+Current Init Mode says "run `squad init --global` for a personal squad" (implied by CLI docs) but squad.agent.md doesn't explain what a personal squad IS or how the coordinator should detect it.
+
+**What agents need to know:**
+- Personal squad = a squad at the global path (resolved via `resolveGlobalSquadPath()`)
+  - Linux/macOS: `~/.config/squad/.squad`
+  - macOS (alt): `~/Library/Application Support/squad/.squad`
+  - Windows: `%APPDATA%\squad\.squad`
+- If `.squad/config.json` contains `"consult": true`, the coordinator is working inside a consult session
+- `sourceSquad` in `config.json` points to the original personal squad (for Scribe extraction context)
+
+### Gap 2: No coordinator guidance for consult mode
+
+`squad.agent.md` mentions nothing about consult mode. The coordinator doesn't know:
+- How to recognize it's in a consult session
+- That writes go to the project `.squad/` (isolated copy) — NOT the personal squad
+- That Scribe's charter is patched with extraction instructions
+- That `.squad/extract/` is a staging area for generic learnings
+
+### Gap 3: TEAM_ROOT works, but personal squad semantics are absent
+
+The coordinator resolves `TEAM_ROOT` correctly (Worktree Awareness section), but:
+- No distinction between "project squad" vs "personal squad copy in consult mode"
+- No guidance on what to tell agents about their squad context when in consult mode
+
+### Gap 4: Charter templates have no personal-squad-aware patterns
+
+Agent charters have no concept of:
+- Consult mode restrictions (agents shouldn't commit to project, shouldn't pollute personal squad)
+- Extraction tagging (Scribe needs to flag decisions as generic vs project-specific)
+
+### Gap 5: No skill for consult-mode behavior
+
+There is no skill for consult-mode coordinator behavior, even though consult mode has distinct patterns (invisibility, extraction, isolation).
+
+---
+
+## Proposed squad.agent.md Additions
+
+### Addition 1: Consult Mode Detection (in Team Mode → On Session Start)
+
+After "resolve the team root" and before Issue Awareness, add:
+
+---
+
+**Consult Mode Detection:** After resolving team root, check `.squad/config.json` for `"consult": true`.
+
+- If `consult: true` → **Consult mode is active.** This is a personal squad consulting on a project.
+  - The `.squad/` directory is an isolated copy of the user's personal squad.
+  - `sourceSquad` in `config.json` contains the path to the original personal squad.
+  - Do NOT read or write to `sourceSquad` — it's out of scope. Only operate within TEAM_ROOT.
+  - Scribe's charter is already patched with extraction instructions — no coordinator action needed.
+  - Include `🧳 consult` in your session acknowledgment: `Squad v{version} (🧳 consult — {projectName})`
+  - Remind agents: decisions they make here are project-isolated until explicitly extracted.
+- If `consult: false` or absent → Normal mode. Team root is authoritative.
+
+---
+
+### Addition 2: Personal Squad Path Reference
+
+Add a new subsection under "Worktree Awareness":
+
+---
+
+**Personal Squad Paths:** The global squad path is resolved by `resolveGlobalSquadPath()`:
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.config/squad/.squad` |
+| macOS | `~/Library/Application Support/squad/.squad` |
+| Windows | `%APPDATA%\squad\.squad` |
+
+The coordinator should NEVER hard-code these paths. Use `squad --global` or `resolveGlobalSquadPath()` to resolve. Only relevant in consult mode (to understand the `sourceSquad` field) — the coordinator does NOT read the personal squad directly during a session.
+
+---
+
+### Addition 3: Consult Mode Spawn Guidance
+
+Add to the spawn template section:
+
+---
+
+**In consult mode:** Pass `CONSULT_MODE: true` and `PROJECT_NAME: {projectName}` in spawn prompts alongside `TEAM_ROOT`. This lets agents know:
+1. Their decisions will be reviewed for extraction — keep project-specific and generic reasoning separate
+2. They should NOT reference personal squad paths or personal squad agent names
+3. Scribe will classify their decisions — agents should write clear, extractable decision rationale
+
+---
+
+### Addition 4: Consult Mode Acknowledgment Format
+
+Add to spawn acknowledgment conventions:
+
+```
+🧳 consult mode active — Fenster (claude-sonnet-4.5) — refactoring auth module
+     ↳ decisions staged in .squad/extract/ for review before extraction
+```
+
+---
+
+## Proposed New Skill
+
+**Skill needed:** `.squad/skills/consult-mode/SKILL.md`
+
+Should cover:
+- Detecting consult mode from config.json
+- Coordinator behavior changes (CONSULT_MODE in spawn prompts)
+- Scribe extraction workflow (already documented in prd-consult-mode.md — condense into skill)
+- Acknowledgment format conventions
+- STOP: extraction is always user-driven via `squad extract` — coordinator never auto-extracts
+
+This skill should be authored after this governance proposal is approved, to avoid the skill getting ahead of the governance.
+
+---
+
+## Charter Template Additions
+
+All agent charter templates should include a note in "How I Work":
+
+```markdown
+**Consult Mode Awareness:** If `CONSULT_MODE: true` is in my spawn prompt, I'm working on a project outside my home squad. My decisions here are project-isolated. Write extractable rationale so Scribe can classify them for `squad extract` review.
+```
+
+This should be added to `.squad/templates/charter.md` (if it exists) and `.squad/agents/scribe/charter.md` (Scribe already has extraction logic, but clarifying the classification responsibility is valuable).
+
+---
+
+## Rationale
+
+Consult mode is fully implemented at the SDK level (`prd-consult-mode.md`, `squad consult` command) but the coordinator has no awareness of it. The result: agents running in a consult session have no context that they're in a temporary, isolated copy of a personal squad. They might make decisions as if they're permanent, or reference the project in ways that pollute the personal squad on extraction.
+
+These governance additions close the loop between the implementation (CLI + SDK) and the runtime behavior (coordinator + agents).
+
+---
+
+## References
+
+- Consult mode PRD: `.squad/identity/prd-consult-mode.md`
+- Issue: #344
+- Flight ambient personal squad note: `.squad/decisions/inbox/flight-ambient-personal-squad.md`
+
+
+
+
+
+---
+
+### User Directive: Teams Messaging Approval
+
+**By:** Brady (via Copilot)  
+**When:** 2026-03-23  
+**What:** Never send Teams messages to anyone unless Brady explicitly asks and reviews the content first.  
+**Why:** User request — Teams messaging requires explicit approval and content review before sending. Prevents automated or unreviewed communications.
+
+
+---
+
+# Decision: Context-aware upgrade footer message (#549)
+
+**Author:** EECOM  
+**Date:** 2026-07-14  
+**PR:** #551  
+
+## Decision
+
+The upgrade command's summary footer now distinguishes between two outcomes:
+
+- `"Privacy scrub applied"` — shown when the email scrub actually ran (i.e., at least one file was scrubbed)
+- `"Preserves user state"` — shown when no scrub occurred (original intent of the message)
+
+## Rationale
+
+The previous footer always said "Preserves user state" regardless of whether a privacy scrub had just run. When scrubbing did occur, the footer actively contradicted the operation, creating user confusion and loss of trust in the upgrade output.
+
+## Related changes in same commit
+
+- `ensureGitattributes` now catches `EPERM`/`EACCES` and degrades gracefully (warns, returns `[]`) instead of throwing and aborting the upgrade.
+- `ensureGitignore` skips entries already covered by a parent path in the existing file (avoids redundant entries like `.squad/log/` when `.squad/` is present).
+
+## Impact
+
+No breaking changes. Footer text is purely informational. Existing callers of `ensureGitattributes` and `ensureGitignore` receive `[]` on EPERM / parent-covered cases respectively — consistent with the existing return type.
+
+
+# Decision: Community PR Batch Review — July 2026
+
+**By:** Flight  
+**Date:** 2026-07-18  
+**Context:** Five open community PRs reviewed at Brady's request.
+
+## Decisions
+
+### #524 — diberry: Astro docs improvements
+**Decision:** ✅ Approve for merge.  
+**Note:** `docs/public/robots.txt` references `https://squad.dev/sitemap-index.xml` but `astro.config.mjs` still has `site: 'https://bradygaster.github.io'`. If the squad.dev domain is live, this is fine. If not, the sitemap URL needs updating before merge.
+
+### #523 — diberry: Worktree regression guard
+**Decision:** ✅ Approve for merge.  
+**Rationale:** Directly resolves the worktree detection gap (#525). Correct `.git`-file parsing logic, sensible interactive UX, proper TTY fallback.
+
+### #522 — tamirdresher: Watch command circuit breaker integration
+**Decision:** 🔄 Still blocked. Changes requested by bradygaster (additive patch vs. full rewrite) have not been addressed. The PR remains a full 355-line delete + 534-line replacement of watch.ts.  
+**Required:** Rework as a surgical additive patch. Existing structure of watch.ts must be preserved.
+
+### #513 — tamirdresher: Cross-machine-coordination skill
+**Decision:** 🔄 Needs changes before merge.  
+**Required:**
+1. Move from `.squad/skills/` (team-state) to `templates/skills/` (library content) so it ships as a Squad template, not as hardcoded team state.
+2. Replace personal use case examples (voice cloning, DevBox) with generic examples.
+3. Submit a `docs/proposals/cross-machine-coordination.md` per the proposal-first policy. This is a meaningful new coordination primitive.
+
+### #507 — JasonYeYuhe: Chinese README translation
+**Decision:** 🔄 Minor change needed before merge.  
+**Required:** Add a disclaimer block at the top of `README.zh.md` indicating it is community-maintained and may lag behind the English original. Example:
+```
+> ⚠️ This translation is community-maintained and may not reflect the latest changes. For the most up-to-date content, see the [English README](README.md).
+```
+Once added, approve for merge.
+
+## Rationale
+
+- Surgical patches over full rewrites — reinforcing the existing decision from the tamirdresher PR series review.
+- Proposal-first policy applies to cross-machine coordination — it's a meaningful new primitive with security implications.
+- Community translations are welcome but need a freshness disclaimer to set correct expectations for readers.
+- `.squad/` is for team state; reusable skill templates belong in `templates/skills/`.
+
+
+# Decision: Community PR Merge Strategy for tamirdresher #514–#516 Series
+
+**By:** Flight  
+**Date:** 2025-07-18  
+**Context:** Batch review of 4 PRs from tamirdresher (cooperative rate limiting, KEDA scaler docs, machine capabilities, watch integration)
+
+## Decision
+
+1. **#519 (KEDA docs)** — Approve after removing stray `test/capabilities.test.ts` file that belongs to #520. Docs-only, no code risk.
+
+2. **#520 (Machine Capabilities)** — Approve after reverting `package-lock.json` changes (version bump + Node engine change from >=20 to >=22.5.0). SDK module and watch integration are clean.
+
+3. **#518 (Rate Limiting SDK)** — Approve after fixing test import paths to use `@bradygaster/squad-sdk/ralph/rate-limiting` instead of relative `../packages/` paths.
+
+4. **#522 (Watch Integration)** — Request changes. Full rewrite of watch.ts is unacceptable — must be reworked as a surgical patch (add `executeRound` wrapper, circuit breaker state, gh-cli additions) without deleting and recreating the entire file. This is the only PR with real merge conflict risk.
+
+## Merge Order
+
+`#519 → #520 → #518 → #522` (each depends on the previous being clean)
+
+## Rationale
+
+- Surgical patches over full rewrites — watch.ts is a high-traffic file
+- package-lock.json mutations don't belong in feature PRs
+- Node engine requirement changes need their own decision and PR
+- Cross-PR file collisions must be resolved before merge
+
+---
+
+## SDK Init Shore-Up Initiative (2026-03-11)
+
+### Phase-Based SDK Quality Improvement Program
+
+**By:** Flight  
+**Date:** 2026-03-11  
+**Affects:** EECOM, CAPCOM, FIDO, Procedures
+
+SDK initialization produces incomplete state (config sync broken, built-in members missing, CastingEngine bypassed). Implement 3-phase approach prioritizing foundational gaps before comprehensive testing.
+
+**What:**
+1. **Phase 1 (P1):** Fix foundational gaps — config sync, Ralph inclusion, @copilot roster entry
+2. **Phase 2 (P1):** Wire CastingEngine into CLI init flow (restore universe curation quality)
+3. **Phase 3 (P2):** Exercise full test matrix (29 untested features → 100% SDK feature parity)
+
+**Why this order:**
+- Config sync must work before CastingEngine templates can rely on it
+- Stable init flow required before systematic feature verification
+- Phases 1-2 unblock SDK consumers immediately (Phase 3 is verification)
+
+**Ownership:**
+- **EECOM + CAPCOM:** Phases 1-2 (estimated 2 sprints)
+- **FIDO + CAPCOM:** Phase 3 (estimated 2 sprints)
+- **Procedures:** Partner on Phase 2 (universe template quality)
+
+**Success Criteria:**
+- Phase 1: All members (user-added, Ralph, @copilot) in `squad.config.ts` without manual edits
+- Phase 2: 90%+ init runs use curated templates (Apollo 13/Usual Suspects)
+- Phase 3: 100% SDK feature parity
+
+Full PRD: `.squad/identity/prd-sdk-init-shoreup.md`
+
+---
+
+### CastingEngine is the canonical casting system
+
+**By:** CAPCOM  
+**Date:** 2026-03-11  
+
+All team casting flows (CLI init, REPL auto-cast, manual casting) must use `CastingEngine.castTeam()`.
+
+**What:** Consolidate casting logic to avoid duplication of personality/role-matching. Use structured character data (personality, backstory, role) from universe templates instead of generic role-based personalities.
+
+**Why:** SDK already ships with CastingEngine — we should use it. Provides rich, themed characters instead of generic roles. Avoids duplication of casting logic across CLI and REPL.
+
+**Impact:** Requires refactoring `cli/core/cast.ts:personalityForRole()` and wiring coordinator universe selection to CastingEngine templates.
+
+---
+
+### squad.config.ts is the source of truth for SDK-mode projects
+
+**By:** CAPCOM  
+**Date:** 2026-03-11  
+
+When `squad.config.ts` exists, it is the canonical team roster. Markdown files (.squad/team.md, routing.md) are **generated output** from `squad build`.
+
+**What:** TypeScript config enables type-checking, validation, and better tooling. Markdown is regenerated from config during build.
+
+**Why:** Having two sources of truth (config + markdown) creates sync bugs. One source enables automated consistency.
+
+**Impact:**
+- `squad build` regenerates markdown from config
+- REPL init flow writes squad.config.ts after casting
+- Manual team.md edits in SDK mode trigger a warning (suggest `squad migrate --to sdk`)
+
+---
+
+### Ralph is a required built-in agent, always included
+
+**By:** CAPCOM  
+**Date:** 2026-03-11  
+
+Ralph (Work Monitor) is added automatically during init, just like Scribe.
+
+**What:** Ralph is a core framework component (work queue tracking, keep-alive monitoring). Include Ralph in both CLI init and REPL auto-cast flows.
+
+**Why:** Ralph is a core team member, not an optional add-on. Should be present in every Squad project.
+
+**Impact:** Add Ralph to the hardcoded agents array in `cli/core/init.ts` (both SDK init and REPL paths).
+
+---
+
+### SDK Init Implementation Priority Order
+
+**By:** EECOM  
+**Date:** 2026-03-11  
+
+Prioritize squad.config.ts sync fixes over new commands. Implement in this order:
+
+1. **Fix 1 — squad.config.ts sync utility** (regex-based, upgrade to AST if edge cases arise)
+2. **Fix 2, 7 — Ralph in CLI init + REPL init with prompt**
+3. **Fix 6 — CastingEngine integration** (augment LLM proposals with structured character data, don't replace LLM)
+4. **Fix 3, 4, 5 — hire/remove commands, @copilot flag** (polish, lower priority)
+
+**Why:** squad.config.ts sync is load-bearing for the rest. Ralph fixes are quick wins completing a half-implemented feature. CastingEngine is high-value but medium-risk. Hire/remove/flags are polish.
+
+**Open Questions:**
+- AST vs Regex for config parsing: Start with regex, upgrade if edge cases arise
+- CastingEngine augment vs replace: Keep LLM for flexibility, use CastingEngine to enrich proposals
+- Ralph always-on vs opt-in: Make Ralph always-included
+
+**Reference:** Full roadmap at `.squad/identity/sdk-init-implementation-roadmap.md`
+
+---
+
+### 2026-03-20T13:26:45Z: No cron jobs — ever
+**By:** Brady (via Copilot)
+**What:** No cron jobs in GitHub Actions — ever. Cron is permanently disabled in all workflows. We should not be shipping code that has cron turned on by default. It costs too much. This applies to our repo, the product templates, and the docs.
+**Why:** User request — captured for team memory. GitHub Actions cron burns minutes and money. Squad uses event-based triggers and local watch mode instead.
+
+---
+
+### 2026-03-20: CI Lockfile Lint + Edited Trigger
+**By:** Booster (CI/CD Engineer)
+**What:**
+1. Add `edited` to CI pull_request trigger types in `.github/workflows/squad-ci.yml` (types: [opened, synchronize, reopened, edited]) to catch PR retargeting.
+2. Add lockfile lint step before `npm ci` to detect stale nested workspace entries in `package-lock.json` with remediation: `Fix: delete these entries from package-lock.json and run npm install`.
+3. Changed repository default branch from `main` to `dev`.
+**Why:** 
+- PRs retargeted to different base branches need CI retrigger (standard GitHub Actions pattern).
+- Stale nested npm registry entries cause TypeScript type errors that are hard to diagnose; catching at lockfile level gives clear, actionable feedback.
+- Community PRs now naturally target `dev` without manual retargeting.
+
+---
+
+### 2026-03-11T12:10Z: Session handoff — SDKs are next priority
+**By:** Brady (via Copilot)
+**What:** Next session begins with SDK Init PRDs. The unified PRD consolidating #337-#342 is ready for implementation and is the team's top priority.
+**Why:** User request — captured for team memory.
+
+---
+
+### 2026-03-20: Press milestone — GitHub Blog + .NET Rocks!
+**By:** Brady (via Copilot)
+**What:** Squad featured on the GitHub Blog ("How Squad runs coordinated AI agents inside your repository") and .NET Rocks! Episode 1994, both published March 19, 2026. First major press coverage.
+**Why:** Team morale milestone. Validates the "repository-native multi-agent orchestration" positioning. Community visibility will likely drive new issues and contributors.
+
+---
+
+### 2026-03-19: Node 22+ ESM Resolution Fix Strategy
+**By:** Flight (Lead)
+**Date:** 2026-03-19
+**Issue:** #449
+**Status:** Proposed
+**What:** Dual-layer postinstall patching:
+1. Primary fix: Patch `vscode-jsonrpc/package.json` at postinstall to add the `exports` field (modeled on v9.x) to fix ALL subpath import resolution at source.
+2. Backup fix: Keep existing copilot-sdk `session.js` patch as defense-in-depth.
+3. Observability: Add a `squad doctor` check that detects whether `vscode-jsonrpc` has proper exports.
+4. CI: Add Node 22 and Node 24 to the CI smoke test matrix.
+**Why:**
+- `vscode-jsonrpc@8.2.1` lacks an `exports` field; Node 22+ strict ESM resolution rejects `vscode-jsonrpc/node` imports without `.js` extension.
+- Patching the package with missing exports is more robust than chasing individual import sites.
+- `vscode-jsonrpc` v9.x (which has exports) is all pre-release with no stable release timeline.
+- Node 22 is Active LTS — must-support for any package declaring `engines: >=20`.
+**Owners:** GNC (~1 day implementation), Booster (CI matrix), FIDO (ESM import smoke test).
+
+---
+
+### 2026-03-21: Gap analysis verification loop
+**By:** Procedures (Prompt Engineer)
+**What:** After Agent Work now includes Step 1b — Verification. When an issue has `- [ ]` checkboxes, a lightweight verification agent (claude-haiku-4.5, sync, different from the doer) independently checks each item against the work product before the coordinator proceeds. 2-retry cap, then escalate to user.
+**Why:** Agents were claiming "done" without completing all checklist items. The verification step enforces the checklist as a contract. Opt-in by structure — zero overhead for issues without checkboxes.
+**PR:** #473
+**Issue:** #472

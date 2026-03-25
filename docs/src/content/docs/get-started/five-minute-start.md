@@ -30,19 +30,10 @@ You'll see:
 ```
 ✅ Squad installed.
    .github/agents/squad.agent.md — coordinator agent
-   .github/workflows/            — 5 GitHub workflows (heartbeat, triage, CI, etc.)
-   .squad/templates/             — 11 template files
+   .squad/templates/ — 11 template files
 
 Open GitHub Copilot and select Squad from the agent list.
 ```
-
-> **Don't forget:** Commit the generated files — workflows won't run until they're on your default branch.
->
-> ```bash
-> git add .github/ .squad/
-> git commit -m "chore: initialize squad team"
-> git push
-> ```
 
 ---
 

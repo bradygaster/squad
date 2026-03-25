@@ -37,7 +37,8 @@ Squad helps:
 
 ```bash
 cd ~/projects/my-open-source-lib
-npx github:bradygaster/squad
+npm install -g @bradygaster/squad-cli
+squad init
 ```
 
 Enable the Ralph heartbeat workflow:
@@ -182,7 +183,7 @@ Contributors see **why you made decisions**, not just what the code does.
 When someone forks your project, they can **import your squad**:
 
 ```bash
-npx github:bradygaster/squad export
+squad export
 ```
 
 Share `squad-export-{date}.zip` in your repo's releases or documentation.
@@ -192,7 +193,7 @@ Forkers import it:
 ```bash
 git clone https://github.com/forker/my-lib-fork.git
 cd my-lib-fork
-npx github:bradygaster/squad import squad-export-2025-07-15.zip
+squad import squad-export-2025-07-15.zip
 ```
 
 Now they have **your team's knowledge** — skills, decisions, conventions. They're not starting from scratch.
@@ -259,7 +260,7 @@ This project uses [Squad](https://github.com/bradygaster/squad) for AI-assisted 
 - **Triaging:** Issues are auto-labeled by Squad's Ralph agent
 - **Patterns:** See `.ai-team/skills/` for coding conventions
 - **Decisions:** See `.ai-team/decisions.md` for architectural rationale
-- **Import the squad:** `npx github:bradygaster/squad import squad-export.zip`
+- **Import the squad:** `squad import squad-export.zip`
 ```
 
 Contributors know what to expect.

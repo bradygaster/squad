@@ -6,10 +6,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-import { runUpgrade } from '@bradygaster/squad-cli/core/upgrade';
+import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories } from '@bradygaster/squad-cli/core/upgrade';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(process.cwd(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
@@ -189,5 +189,147 @@ describe('CLI: upgrade command', () => {
     
     // Should complete without error
     expect(result.toVersion).toBe(getPackageVersion());
+  });
+
+  /* ── ensureGitattributes ─────────────────────────────────────── */
+
+  it('ensureGitattributes adds rules when .gitattributes is missing', () => {
+    const dir = join(TEST_ROOT, 'gitattr-test-missing');
+    mkdirSync(dir, { recursive: true });
+    const added = ensureGitattributes(dir);
+    expect(added.length).toBeGreaterThanOrEqual(4);
+    const content = readFileSync(join(dir, '.gitattributes'), 'utf8');
+    expect(content).toContain('.squad/decisions.md merge=union');
+    expect(content).toContain('.squad/log/** merge=union');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ensureGitattributes adds missing rules to existing file', () => {
+    const dir = join(TEST_ROOT, 'gitattr-test-partial');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, '.gitattributes'), '.squad/decisions.md merge=union\n');
+    const added = ensureGitattributes(dir);
+    // Should add the ones not already present
+    expect(added).not.toContain('.squad/decisions.md merge=union');
+    expect(added.length).toBeGreaterThanOrEqual(3);
+    const content = readFileSync(join(dir, '.gitattributes'), 'utf8');
+    expect(content).toContain('.squad/orchestration-log/** merge=union');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ensureGitattributes is idempotent', () => {
+    const dir = join(TEST_ROOT, 'gitattr-test-idempotent');
+    mkdirSync(dir, { recursive: true });
+    ensureGitattributes(dir);
+    const first = readFileSync(join(dir, '.gitattributes'), 'utf8');
+    ensureGitattributes(dir);
+    const second = readFileSync(join(dir, '.gitattributes'), 'utf8');
+    expect(second).toBe(first);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ensureGitattributes warns and returns empty on read-only file (EPERM)', () => {
+    const dir = join(TEST_ROOT, 'gitattr-test-eperm');
+    mkdirSync(dir, { recursive: true });
+    const filePath = join(dir, '.gitattributes');
+    // Write a partial file, then make it read-only
+    writeFileSync(filePath, '# existing content\n');
+    chmodSync(filePath, 0o444);
+    try {
+      const added = ensureGitattributes(dir);
+      // Should return empty — graceful degradation, no crash
+      expect(added).toEqual([]);
+    } finally {
+      // Restore write permission so cleanup works
+      chmodSync(filePath, 0o644);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /* ── ensureGitignore ─────────────────────────────────────────── */
+
+  it('ensureGitignore adds entries when .gitignore is missing', () => {
+    const dir = join(TEST_ROOT, 'gitignore-test-missing');
+    mkdirSync(dir, { recursive: true });
+    const added = ensureGitignore(dir);
+    expect(added.length).toBeGreaterThanOrEqual(5);
+    const content = readFileSync(join(dir, '.gitignore'), 'utf8');
+    expect(content).toContain('.squad/orchestration-log/');
+    expect(content).toContain('.squad-workstream');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ensureGitignore is idempotent', () => {
+    const dir = join(TEST_ROOT, 'gitignore-test-idempotent');
+    mkdirSync(dir, { recursive: true });
+    ensureGitignore(dir);
+    const first = readFileSync(join(dir, '.gitignore'), 'utf8');
+    ensureGitignore(dir);
+    const second = readFileSync(join(dir, '.gitignore'), 'utf8');
+    expect(second).toBe(first);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /* ── ensureDirectories ───────────────────────────────────────── */
+
+  it('ensureDirectories creates missing directories', () => {
+    const dir = join(TEST_ROOT, 'dirs-test');
+    mkdirSync(dir, { recursive: true });
+    const created = ensureDirectories(dir);
+    expect(created.length).toBeGreaterThanOrEqual(5);
+    expect(existsSync(join(dir, '.squad', 'identity'))).toBe(true);
+    expect(existsSync(join(dir, '.squad', 'sessions'))).toBe(true);
+    expect(existsSync(join(dir, '.copilot', 'skills'))).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ensureDirectories does not duplicate existing dirs', () => {
+    const dir = join(TEST_ROOT, 'dirs-test-existing');
+    mkdirSync(dir, { recursive: true });
+    ensureDirectories(dir);
+    const second = ensureDirectories(dir);
+    expect(second.length).toBe(0);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /* ── "already current" path still runs ensure checks ─────── */
+
+  it('already-current path runs ensure checks', async () => {
+    // After init, version is already current — delete dirs to prove ensure recreates
+    const sessionsDir = join(TEST_ROOT, '.squad', 'sessions');
+    if (existsSync(sessionsDir)) {
+      await rm(sessionsDir, { recursive: true, force: true });
+    }
+    const gitattr = join(TEST_ROOT, '.gitattributes');
+    if (existsSync(gitattr)) {
+      await rm(gitattr);
+    }
+
+    const result = await runUpgrade(TEST_ROOT);
+
+    // Should be already current
+    const currentVersion = getPackageVersion();
+    expect(result.fromVersion).toBe(currentVersion);
+    expect(result.toVersion).toBe(currentVersion);
+
+    // Ensure checks should have repaired missing items
+    expect(existsSync(sessionsDir)).toBe(true);
+    expect(existsSync(gitattr)).toBe(true);
+  });
+
+  /* ── --force flag ───────────────────────────────────────────── */
+
+  it('--force flag triggers full manifest processing even when current', async () => {
+    // Run normal upgrade first — should be "already current"
+    const normalResult = await runUpgrade(TEST_ROOT);
+    const currentVersion = getPackageVersion();
+    expect(normalResult.fromVersion).toBe(currentVersion);
+
+    // Now run with force — should go through full upgrade path
+    const forceResult = await runUpgrade(TEST_ROOT, { force: true });
+    // Force upgrade treats it as a real upgrade (fromVersion != toVersion possible,
+    // or it processes the full manifest)
+    expect(forceResult.filesUpdated.length).toBeGreaterThan(0);
+    expect(forceResult.filesUpdated).toContain('squad.agent.md');
   });
 });

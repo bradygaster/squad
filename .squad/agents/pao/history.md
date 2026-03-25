@@ -43,6 +43,22 @@ Two-way communication layer between Squad and work environment. Outbound: Teams 
 
 📌 **Team update (2026-03-11T01:27:57Z):** Proactive communication patterns and PR trust levels (full/selective/self-managing spectrum) documented in decisions.md. Pattern rationale reinforced: Ralph 24/7 autonomous deployment requires awareness loop (Teams webhooks for outbound) and external work integration (WorkIQ scanning for inbound). Trust levels enable context-appropriate oversight without bottlenecking teams.
 
+### PR #487 Review & Merge — CLI Docs Expansion (2026-03-22)
+
+Reviewed and merged PR #487 (CLI documentation expansion + broken docs link fix). Improved CLI command reference coverage and fixed internal link validation.
+
+**Pattern identified:** Broken internal links hurt user navigation and SEO. Recommendations: (1) add link validation to docs build pipeline (crawl all internal references, report 404s), (2) make validation a CI gate (fail build on broken links), (3) maintain link checklist when refactoring docs structure.
+
+**Key learning:** Documentation maintenance requires systematic link validation. A single broken link creates friction for users following guides. Automated validation should be non-negotiable in CI/CD.
+
+### PR #482 Review & Merge — Pagefind Search Integration (2026-03-22)
+
+Reviewed and merged PR #482. Search functionality integrated into docs site for improved discoverability.
+
+### PR #484 Review & Merge — Sample READMEs (2026-03-22)
+
+Reviewed and merged PR #484. Sample README templates added to improve consistency across documentation examples.
+
 ### PR Trust Model Documentation (v0.8.26)
 Three trust levels for PR management: (1) Full review (default, team repos) — human gate on every merge; (2) Selective review (personal projects with patterns) — human reviews only critical paths; (3) Self-managing (solo personal repos only) — Squad merges own PRs, human reviews retroactively. Added to reviewer-protocol.md as new section. Important: self-managing ≠ unmonitored; use Ralph work monitoring and Teams notifications for awareness. Decision matrix included for when to use each level.
 
@@ -60,3 +76,24 @@ Created docs/src/content/docs/scenarios/cross-org-auth.md covering GitHub person
 
 ### Scannability Framework (v0.8.25)
 Format selection is a scannability decision, not style preference. Paragraphs for narrative/concepts (3-4 sentences max). Bullets for scannable items (features, options, non-sequential steps). Tables for comparisons or structured reference data (config, API params). Quotes/indents for callouts/warnings. Decision test: if reader hunts for one item in a paragraph, convert to bullets/table. This framework is now a hard rule in charter under SCANNABILITY REVIEW.
+
+### Issue Triage (2026-03-22T06:44:01Z)
+
+**Flight triaged 6 unlabeled issues and filed 1 new issue.**
+
+PAO assigned:
+- **#488 (GitHub auth setup for project boards)** → squad:pao (documentation, newly filed)
+- **#478 (Polish REPL)** → squad:vox + squad:pao (shell UX readiness + README documentation gate)
+- **#476 (Guide v0.4.1 update)** → squad:handbook + squad:pao (SDK patterns + documentation)
+
+New issue #488 is documentation-focused; Fleet relabeled from squad:fido → squad:pao for proper domain ownership.
+
+📌 **Team update (2026-03-22T06:44:01Z):** Flight issued comprehensive triage. PAO owns GitHub auth docs (#488), REPL documentation gate (#478), and Guide v0.4.1 refresh (#476). High community value on Guide update. Ready to begin documentation work on next sprint.
+### npx Purge + Agency Audit
+Brady's distribution directive: `npm install -g @bradygaster/squad-cli` is the only supported install path. Remove ALL user-facing `npx @bradygaster/squad-cli` and `npx github:bradygaster/squad` references from docs. Replace with either `npm install -g` (for install steps) or `squad <command>` (for usage steps). Keep `npx` only for dev tools (changeset, vitest, astro, pagefind). Keep historical blog posts as-is. Migration.md "Before" column and CI/CD "OLD" examples are valid historical context — keep them. Insider program: `npm install -g @bradygaster/squad-cli@insider` and `squad upgrade` replace the old `npx github:bradygaster/squad#insider`. Agency audit: all "agency-agents" references in source files and docs are MIT attribution for the upstream open-source project — legally required, never touch them. The `agency copilot` example in cli-entry.ts help text was a competing-product reference — changed to `gh copilot`.
+
+### README Slimming + Upgrade Section (v0.8.x)
+Brady directive: README was too long at 512 lines. Cut the SDK deep-dive block (custom tools, hook pipeline, Ralph API code) and replaced it with a compact pointer to the docs site. Added a dedicated "Upgrading" section (two-step: `npm install -g` then `squad upgrade`) after Quick Start. Final length: 331 lines. SDK internals live in `docs/src/content/docs/reference/sdk.md` and `tools-and-hooks.md`. The README is now discovery/orientation; the docs site is the full reference.
+
+### v0.9.0 Release Blog Post (2026-03-23)
+Created `docs/src/content/blog/028-v090-whats-new.md` documenting Squad's biggest release: Personal Squad (ambient agent discovery + Ghost Protocol), Worktree Spawning (isolated branches per issue), Machine Capability Discovery (needs:* label routing), Cooperative Rate Limiting (predictive circuit breaker), Economy Mode (budget-aware model selection), Auto-Wired Telemetry, P0 upgrade fixes, and docs refresh. Blog format: frontmatter (title/date/author/wave/tags/status/hero) → experimental warning → "What Shipped" (10 features with H2 sections + callout boxes) → "Quick Stats" → "Breaking Changes" (none) → "Upgrading" → "What's Next". Messaging: clear, engaging, factual (no marketing fluff). Demonstrated: Personal Squad governance layer, worktree isolation, capability declaration, RAAS traffic-light pattern, economy fallback logic. Docs refresh section emphasized: README from 512→218 lines, dedicated upgrade guide, npx purged, Astro features, Teams MCP refresh, autonomous agents guide. Contributors: diberry (worktree tests + docs), wiisaacs (security review), community. No breaking changes — all additive opt-in features. Test discovery is dynamic (EXPECTED_BLOG uses filesystem scan), so new post auto-discovered; no test file changes needed. Pattern reinforced: each feature needs a story — if you can't explain it, it's not ready. Demos over descriptions (concrete code examples, YAML config blocks, Bash CLI examples).

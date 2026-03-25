@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "0.8.25-build.10",
+  "version": "0.9.1",
   "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,6 +22,10 @@
       "types": "./dist/config/index.d.ts",
       "import": "./dist/config/index.js"
     },
+    "./config/agent-source": {
+      "types": "./dist/config/agent-source.d.ts",
+      "import": "./dist/config/agent-source.js"
+    },
     "./skills": {
       "types": "./dist/skills/index.d.ts",
       "import": "./dist/skills/index.js"
@@ -29,6 +33,10 @@
     "./agents": {
       "types": "./dist/agents/index.d.ts",
       "import": "./dist/agents/index.js"
+    },
+    "./agents/personal": {
+      "types": "./dist/agents/personal.d.ts",
+      "import": "./dist/agents/personal.js"
     },
     "./adapter": {
       "types": "./dist/adapter/types.d.ts",
@@ -77,6 +85,14 @@
     "./ralph/triage": {
       "types": "./dist/ralph/triage.d.ts",
       "import": "./dist/ralph/triage.js"
+    },
+    "./ralph/capabilities": {
+      "types": "./dist/ralph/capabilities.d.ts",
+      "import": "./dist/ralph/capabilities.js"
+    },
+    "./ralph/rate-limiting": {
+      "types": "./dist/ralph/rate-limiting.d.ts",
+      "import": "./dist/ralph/rate-limiting.js"
     },
     "./casting": {
       "types": "./dist/casting/index.d.ts",

@@ -65,7 +65,7 @@ Ralph, start monitoring
 
 Ralph triages issues, assigns them, spawns agents, and reports every 3-5 rounds. Say `"Ralph, idle"` to stop.
 
-The `squad-heartbeat` workflow runs Ralph on a schedule — your squad works even when you're offline.
+The `squad-heartbeat` workflow runs Ralph on event-based triggers (issue close, PR merge, manual dispatch).
 
 ---
 

@@ -33,7 +33,7 @@ Complete step-by-step guide for Squad maintainers: three-branch model (dev/previ
 |--------|---------|------------|---------------|---------------|
 | **dev** | Development — all work happens here | All team members | ❌ No | Everything (`.ai-team/`, team-docs, etc.) |
 | **preview** | Staging/testing — validated product only | Release coordinator | ✅ Yes | Distribution files only (`.ai-team/` blocked) |
-| **main** | Production — release source for `npx` | Release coordinator | ✅ Yes | Distribution files only (`.ai-team/` blocked) |
+| **main** | Production — npm release source | Release coordinator | ✅ Yes | Distribution files only (`.ai-team/` blocked) |
 
 ---
 
@@ -285,7 +285,7 @@ git push origin dev
 **Fix:**
 
 ```bash
-npx github:bradygaster/squad upgrade
+squad upgrade
 git add .github/workflows/
 git commit -m "chore: restore Squad workflows"
 git push origin dev

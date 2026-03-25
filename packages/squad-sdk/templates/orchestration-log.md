@@ -15,7 +15,6 @@
 | **Files authorized to read** | {Exact file paths the agent was told to read} |
 | **File(s) agent must produce** | {Exact file paths the agent is expected to create or modify} |
 | **Outcome** | {Completed / Rejected by {Reviewer} / Escalated} |
-| **Token usage** | {inputTokens} in / {outputTokens} out — ${estimatedCostUsd} |
 
 ---
 

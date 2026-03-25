@@ -189,6 +189,28 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
   }
 
   // ============================================================================
+  // PHASE 1.5 — PUBLISH SAFETY CHECKS
+  // These prevent broken packages from reaching npm.
+  // ============================================================================
+
+  it('squad-cli has no file: dependencies (breaks global installs)', () => {
+    const pkgPath = join(tempDir, 'node_modules', '@bradygaster', 'squad-cli', 'package.json');
+    const pkg = JSON.parse(require('fs').readFileSync(pkgPath, 'utf8'));
+    const deps = pkg.dependencies || {};
+    for (const [name, version] of Object.entries(deps)) {
+      expect(String(version), `${name} has file: dependency — will break global installs`)
+        .not.toMatch(/^file:/);
+    }
+  });
+
+  it('squad-sdk resolves as a real package (not a workspace link)', () => {
+    const sdkPkg = join(tempDir, 'node_modules', '@bradygaster', 'squad-sdk', 'package.json');
+    expect(existsSync(sdkPkg), 'squad-sdk not installed as dependency of squad-cli').toBe(true);
+    const pkg = JSON.parse(require('fs').readFileSync(sdkPkg, 'utf8'));
+    expect(pkg.name).toBe('@bradygaster/squad-sdk');
+  });
+
+  // ============================================================================
   // PHASE 2 — SMOKE TESTS
   // ============================================================================
 

@@ -11,7 +11,8 @@ Start with a git repo (new or existing):
 ```bash
 mkdir my-app && cd my-app
 git init
-npx github:bradygaster/squad
+npm install -g @bradygaster/squad-cli
+squad init
 ```
 
 You'll see:
@@ -19,7 +20,8 @@ You'll see:
 ```
 ✅ Squad installed.
    .github/agents/squad.agent.md — coordinator agent
-   .ai-team-templates/ — 11 template files
+   .github/workflows/            — 5 GitHub workflows (heartbeat, triage, CI, etc.)
+   .squad/templates/             — 11 template files
 
 Open GitHub Copilot and select Squad from the agent list.
 ```
@@ -233,7 +235,7 @@ This is written to `decisions.md` via the inbox. Every agent will see it in thei
 After a productive session, export your team for portability:
 
 ```bash
-npx github:bradygaster/squad export
+squad export
 ```
 
 ```
@@ -245,8 +247,9 @@ This snapshot contains everything — charters, histories, casting state, skills
 
 ```bash
 cd ../other-project
-npx github:bradygaster/squad
-npx github:bradygaster/squad import ../my-app/squad-export.json
+npm install -g @bradygaster/squad-cli
+squad init
+squad import ../my-app/squad-export.json
 ```
 
 ---

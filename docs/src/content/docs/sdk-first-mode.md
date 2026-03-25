@@ -93,7 +93,7 @@ export default defineSquad({
 ### 3. Run `squad build`
 
 ```bash
-npx squad-cli build
+squad build
 ```
 
 This generates:

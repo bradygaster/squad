@@ -804,7 +804,8 @@ describe('validateWorkItemType', () => {
     expect(result.available.length).toBeGreaterThanOrEqual(3);
   });
 
-  it('is case-insensitive', async () => {
+  it('is case-insensitive', { timeout: 10_000 }, async () => {
+
     const { validateWorkItemType } = await import('../packages/squad-sdk/src/platform/azure-devops.js');
     const lower = validateWorkItemType('no-org', 'no-proj', 'user story');
     const upper = validateWorkItemType('no-org', 'no-proj', 'USER STORY');

@@ -32,7 +32,7 @@ In each repo with a trained squad:
 
 ```bash
 cd ~/projects/saas-app
-npx github:bradygaster/squad export
+squad export
 ```
 
 ```
@@ -51,11 +51,11 @@ Repeat for your other repos:
 
 ```bash
 cd ~/projects/mobile-app
-npx github:bradygaster/squad export
+squad export
 # Produces: squad-export-2025-07-15-1.zip
 
 cd ~/projects/api-gateway
-npx github:bradygaster/squad export
+squad export
 # Produces: squad-export-2025-07-15-2.zip
 ```
 
@@ -70,7 +70,8 @@ Pick the squad whose domain knowledge is closest to your new project.
 ```bash
 cd ~/projects/new-platform
 git init
-npx github:bradygaster/squad
+npm install -g @bradygaster/squad-cli
+squad init
 ```
 
 ```
@@ -160,7 +161,7 @@ Agents now know they have hybrid knowledge.
 If you want to **replace** your imported squad with a different one:
 
 ```bash
-npx github:bradygaster/squad import squad-export-mobile-app.zip --force
+squad import squad-export-mobile-app.zip --force
 ```
 
 This **overwrites** the existing squad. Use only if you're sure.

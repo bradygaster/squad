@@ -15,13 +15,13 @@ const BLOG_CONTENT_DIR = join(CONTENT_DIR, 'blog');
 const DIST_DIR = join(DOCS_DIR, 'dist');
 
 // Expected content directories in src/content/docs/
-const EXPECTED_GET_STARTED = ['choose-your-interface', 'first-session', 'installation', 'migration'];
+const EXPECTED_GET_STARTED = ['installation', 'first-session', 'five-minute-start', 'choosing-your-path', 'migration'];
 
-const EXPECTED_GUIDES = ['build-autonomous-agent', 'tips-and-tricks', 'sample-prompts', 'personal-squad', 'contributing', 'contributors', 'shell', 'faq', 'extensibility', 'building-extensions', 'github-auth-setup'];
+const EXPECTED_GUIDES = ['build-autonomous-agent', 'building-extensions', 'contributing', 'contributors', 'extensibility', 'faq', 'github-auth-setup', 'personal-squad', 'sample-prompts', 'shell', 'tips-and-tricks'];
 
 const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
 
-const EXPECTED_SCENARIOS= [
+const EXPECTED_SCENARIOS = [
   'aspire-dashboard',
   'ci-cd-integration',
   'client-compatibility',
@@ -50,14 +50,10 @@ const EXPECTED_SCENARIOS= [
 ];
 
 const EXPECTED_FEATURES = [
-  'built-in-roles',
   'ceremonies',
   'consult-mode',
-  'context-hygiene',
   'copilot-coding-agent',
-  'cost-tracking',
   'directives',
-  'distributed-mesh',
   'enterprise-platforms',
   'export-import',
   'github-issues',
@@ -88,7 +84,7 @@ const EXPECTED_FEATURES = [
   'worktrees',
 ];
 
-const EXPECTED_CONCEPTS = ['architecture', 'github-workflow', 'memory-and-knowledge', 'parallel-work', 'portability', 'your-team'];
+const EXPECTED_CONCEPTS = ['architecture', 'your-team', 'memory-and-knowledge', 'parallel-work', 'github-workflow', 'portability'];
 
 // Blog posts are discovered dynamically to avoid breaking tests when posts change
 const EXPECTED_BLOG = existsSync(BLOG_CONTENT_DIR)
@@ -108,7 +104,7 @@ function getMarkdownFiles(section: string): string[] {
 }
 
 function getAllMarkdownFiles(): string[] {
-  const sections = ['get-started', 'guide', 'features', 'reference', 'scenarios', 'concepts'];
+  const sections = ['get-started', 'guide', 'reference', 'scenarios', 'features', 'concepts'];
   const allFiles: string[] = [];
   for (const section of sections) {
     allFiles.push(...getMarkdownFiles(section));
@@ -140,16 +136,6 @@ describe('Docs Structure Validation', () => {
         expect(files).toContain(guide);
       }
       expect(files.length).toBe(EXPECTED_GUIDES.length);
-    });
-
-    it('features directory contains all expected markdown files', () => {
-      const featuresDir = join(DOCS_CONTENT_DIR, 'features');
-      expect(existsSync(featuresDir)).toBe(true);
-      const files = readdirSync(featuresDir).filter(f => f.endsWith('.md')).map(f => f.replace('.md', ''));
-      for (const feature of EXPECTED_FEATURES) {
-        expect(files).toContain(feature);
-      }
-      expect(files.length).toBe(EXPECTED_FEATURES.length);
     });
 
     it('all markdown files have proper headings', () => {
@@ -242,9 +228,9 @@ describe('Docs Build Script (Astro)', () => {
     const allExpected = [
       ...EXPECTED_GET_STARTED.map(n => ({ dir: 'get-started', name: n })),
       ...EXPECTED_GUIDES.map(n => ({ dir: 'guide', name: n })),
-      ...EXPECTED_FEATURES.map(n => ({ dir: 'features', name: n })),
       ...EXPECTED_REFERENCE.map(n => ({ dir: 'reference', name: n })),
       ...EXPECTED_SCENARIOS.map(n => ({ dir: 'scenarios', name: n })),
+      ...EXPECTED_FEATURES.map(n => ({ dir: 'features', name: n })),
       ...EXPECTED_CONCEPTS.map(n => ({ dir: 'concepts', name: n })),
     ];
     for (const { dir, name } of allExpected) {

@@ -20,13 +20,14 @@ The Insider Program gives you continuous access to development builds of Squad. 
 ### Install Insider Build
 
 ```bash
-npx github:bradygaster/squad#insider
+npm install -g @bradygaster/squad-cli@insider
 ```
 
 ### Upgrade Existing Repo to Insider
 
 ```bash
-npx github:bradygaster/squad#insider upgrade
+npm install -g @bradygaster/squad-cli@insider
+squad upgrade
 ```
 
 This updates Squad-owned files (`squad.agent.md`, workflows, templates) to the latest insider build. Your `.squad/` team state (agents, decisions, casting, history) is always preserved.
@@ -75,7 +76,7 @@ You'll see this in your `squad.agent.md` HTML version comment:
 **Pin a specific tagged version:**
 
 ```bash
-npx github:bradygaster/squad#v0.5.2-insider+<sha>
+npm install -g @bradygaster/squad-cli@0.5.2-insider
 ```
 
 ---
@@ -102,7 +103,7 @@ Version: v0.4.2-insider+abc1234f
 Environment: CLI on macOS 14.1, Node 20.11.0
 
 Steps:
-1. npx github:bradygaster/squad#insider
+1. npm install -g @bradygaster/squad-cli@insider
 2. Follow quick start
 3. Error in squad.agent.md...
 ```
@@ -114,10 +115,10 @@ Steps:
 Want to go back to stable releases?
 
 ```bash
-npx github:bradygaster/squad
+npm install -g @bradygaster/squad-cli@latest
 ```
 
-This installs the latest stable version. Your `.ai-team/` state is safe — it'll work with any version.
+This installs the latest stable version. Your `.squad/` state is safe — it'll work with any version.
 
 ---
 
@@ -129,23 +130,23 @@ This installs the latest stable version. Your `.ai-team/` state is safe — it'l
 
 ### Q: Can I switch between insider and stable builds?
 
-**A:** Yes. Insider builds are backward compatible with stable installs. Your `.ai-team/` directory works with any version.
+**A:** Yes. Insider builds are backward compatible with stable installs. Your `.squad/` directory works with any version.
 
 ### Q: How often do insider builds update?
 
-**A:** As often as commits land on the `insider` branch. Could be daily, could be weekly — depends on the dev cycle. Run the install command again to fetch the latest.
+**A:** As often as commits land on the `insider` branch. Could be daily, could be weekly — depends on the dev cycle. Run `npm install -g @bradygaster/squad-cli@insider` again to fetch the latest.
 
 ### Q: Will my team state be preserved?
 
-**A:** Yes. `.ai-team/` is never overwritten on upgrade. All your agents, decisions, and histories are safe.
+**A:** Yes. `.squad/` is never overwritten on upgrade. All your agents, decisions, and histories are safe.
 
 ### Q: What if an insider build has a bad bug?
 
 **A:** Roll back immediately:
 
 ```bash
-npx github:bradygaster/squad                  # Back to stable
-npx github:bradygaster/squad upgrade          # Apply stable version
+npm install -g @bradygaster/squad-cli@latest   # Back to stable
+squad upgrade                                   # Apply stable version
 ```
 
 Then [report the issue](https://github.com/bradygaster/squad/issues).

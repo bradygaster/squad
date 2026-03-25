@@ -96,14 +96,14 @@ When you're in a Copilot session, Ralph self-chains the coordinator's work loop:
 
 ### Between Sessions (GitHub Actions Heartbeat)
 
-When no one is at the keyboard, the `squad-heartbeat.yml` workflow runs on a cron schedule (every 30 minutes by default). It:
+When no one is at the keyboard, the `squad-heartbeat.yml` workflow runs on event-based triggers (issue close, PR merge, manual dispatch). It:
 
 - Finds untriaged `squad`-labeled issues
 - Auto-triages based on your routing.md — matching issues to the right agent by work type and module ownership
 - Assigns `squad:{member}` labels
 - For `@copilot` (if enabled with auto-assign): assigns `copilot-swe-agent[bot]` so the coding agent picks up work autonomously
 
-This creates a fully autonomous loop for `@copilot` — heartbeat triages → assigns → agent works → issue closed → heartbeat finds next issue → repeat.
+This creates a fully autonomous loop for `@copilot` — heartbeat triages → assigns → agent works → issue closed → heartbeat finds next issue → repeat. For continuous periodic monitoring, use `squad watch` locally.
 
 ### Work-in-Progress Monitoring
 
@@ -147,11 +147,10 @@ Ralph monitors work at three different layers, each with different wake-up trigg
 - Poll interval expires (default 10 min) → Ralph checks GitHub
 - You press Ctrl+C → Ralph stops
 
-**Cloud Heartbeat (GitHub Actions cron):**
-- Scheduled cron triggers (default every 30 min) → Ralph checks GitHub
+**Cloud Heartbeat (GitHub Actions events):**
+- Issue close event → Ralph checks for next item
+- PR merge event → Ralph checks for next item
 - Manual dispatch via GitHub Actions UI → Ralph checks GitHub
-- Issue closed event → Ralph checks for next item
-- PR merged event → Ralph checks for next item
 
 In all three layers, when Ralph wakes up, he scans the board, triages any untriaged items using routing.md, dispatches work to the right agent, watches in-flight items for progress, and reports results.
 
@@ -211,7 +210,7 @@ This runs as a standalone local process (not inside Copilot) that:
 |-------|------|-----|
 | **In-session** | You're at the keyboard | "Ralph, go" — active loop while work exists |
 | **Local watchdog** | You're away but machine is on | `squad watch --interval 10` |
-| **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions cron |
+| **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions events (issue close, PR merge, manual dispatch) |
 
 ## Ralph's Board View
 
@@ -231,22 +230,11 @@ When you ask for status:
 
 The heartbeat workflow (`squad-heartbeat.yml`) is automatically installed during `init` or `upgrade`. It runs:
 
-- **On a schedule**: Every 30 minutes (configurable in the workflow file)
 - **On issue close**: Checks for next item in backlog
 - **On PR merge**: Checks for follow-up work
 - **On manual dispatch**: Trigger via GitHub Actions UI
 
-### Adjusting the Schedule
-
-Edit `.github/workflows/squad-heartbeat.yml`:
-
-```yaml
-on:
-  schedule:
-    - cron: '*/30 * * * *'  # Every 30 min (default)
-    # - cron: '0 * * * *'   # Every hour
-    # - cron: '0 9-17 * * 1-5'  # Work hours only (M-F 9am-5pm UTC)
-```
+For persistent polling when you're away, use `squad watch` locally — it polls at your chosen interval without consuming GitHub Actions minutes.
 
 ## Notes
 

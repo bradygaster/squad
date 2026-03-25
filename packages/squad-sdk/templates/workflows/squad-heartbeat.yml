@@ -1,4 +1,10 @@
 name: Squad Heartbeat (Ralph)
+# ⚠️ SYNC: This workflow is maintained in 4 locations. Changes must be applied to all:
+#   - templates/workflows/squad-heartbeat.yml (source template)
+#   - packages/squad-cli/templates/workflows/squad-heartbeat.yml (CLI package)
+#   - .squad/templates/workflows/squad-heartbeat.yml (installed template)
+#   - .github/workflows/squad-heartbeat.yml (active workflow)
+# Run 'squad upgrade' to sync installed copies from source templates.
 
 on:
   schedule:
@@ -25,257 +31,75 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Ralph — Repair orphaned squad labels
-        uses: actions/github-script@v7
-        with:
-          script: |
-            // Find issues with squad:{member} labels but missing parent "squad" label
-            const { data: openIssues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              per_page: 100
-            });
+      - name: Check triage script
+        id: check-script
+        run: |
+          if [ -f ".squad/templates/ralph-triage.js" ]; then
+            echo "has_script=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_script=false" >> $GITHUB_OUTPUT
+            echo "⚠️ ralph-triage.js not found — run 'squad upgrade' to install"
+          fi
 
-            let repaired = 0;
-            for (const issue of openIssues) {
-              const labels = issue.labels.map(l => l.name);
-              const hasSquadMember = labels.some(l => l.startsWith('squad:'));
-              const hasSquadParent = labels.includes('squad');
-              if (hasSquadMember && !hasSquadParent) {
-                await github.rest.issues.addLabels({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issue.number,
-                  labels: ['squad']
-                });
-                core.info(`Repaired orphaned label on #${issue.number} — added parent "squad" label`);
-                repaired++;
-              }
-            }
-            if (repaired > 0) {
-              core.info(`🔧 Ralph repaired ${repaired} orphaned squad label(s)`);
-            }
+      - name: Ralph — Smart triage
+        if: steps.check-script.outputs.has_script == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .squad/templates/ralph-triage.js \
+            --squad-dir .squad \
+            --output triage-results.json
 
-      - name: Ralph — Check for squad work
+      - name: Ralph — Apply triage decisions
+        if: steps.check-script.outputs.has_script == 'true' && hashFiles('triage-results.json') != ''
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-
-            // Read team roster — check .squad/ first, fall back to .ai-team/
-            let teamFile = '.squad/team.md';
-            if (!fs.existsSync(teamFile)) {
-              teamFile = '.ai-team/team.md';
-            }
-            if (!fs.existsSync(teamFile)) {
-              core.info('No .squad/team.md or .ai-team/team.md found — Ralph has nothing to monitor');
+            const path = 'triage-results.json';
+            if (!fs.existsSync(path)) {
+              core.info('No triage results — board is clear');
               return;
             }
-
-            const content = fs.readFileSync(teamFile, 'utf8');
-
-            // Check if Ralph is on the roster
-            if (!content.includes('Ralph') || !content.includes('🔄')) {
-              core.info('Ralph not on roster — heartbeat disabled');
+            
+            const results = JSON.parse(fs.readFileSync(path, 'utf8'));
+            if (results.length === 0) {
+              core.info('📋 Board is clear — Ralph found no untriaged issues');
               return;
             }
-
-            // Parse members from roster
-            const lines = content.split('\n');
-            const members = [];
-            let inMembersTable = false;
-            for (const line of lines) {
-              if (line.match(/^##\s+(Members|Team Roster)/i)) {
-                inMembersTable = true;
-                continue;
-              }
-              if (inMembersTable && line.startsWith('## ')) break;
-              if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
-                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-                if (cells.length >= 2 && !['Scribe', 'Ralph'].includes(cells[0])) {
-                  members.push({
-                    name: cells[0],
-                    role: cells[1],
-                    label: `squad:${cells[0].toLowerCase()}`
-                  });
-                }
-              }
-            }
-
-            if (members.length === 0) {
-              core.info('No squad members found — nothing to monitor');
-              return;
-            }
-
-            // 1. Find untriaged issues (labeled "squad" but no "squad:{member}" label)
-            const { data: squadIssues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: 'squad',
-              state: 'open',
-              per_page: 20
-            });
-
-            const memberLabels = members.map(m => m.label);
-            const untriaged = squadIssues.filter(issue => {
-              const issueLabels = issue.labels.map(l => l.name);
-              return !memberLabels.some(ml => issueLabels.includes(ml));
-            });
-
-            // 2. Find assigned but unstarted issues (has squad:{member} label, no assignee)
-            const unstarted = [];
-            for (const member of members) {
+            
+            for (const decision of results) {
               try {
-                const { data: memberIssues } = await github.rest.issues.listForRepo({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  labels: member.label,
-                  state: 'open',
-                  per_page: 10
-                });
-                for (const issue of memberIssues) {
-                  if (!issue.assignees || issue.assignees.length === 0) {
-                    unstarted.push({ issue, member });
-                  }
-                }
-              } catch (e) {
-                // Label may not exist yet
-              }
-            }
-
-            // 3. Find squad issues missing triage verdict (no go:* label)
-            const missingVerdict = squadIssues.filter(issue => {
-              const labels = issue.labels.map(l => l.name);
-              return !labels.some(l => l.startsWith('go:'));
-            });
-
-            // 4. Find go:yes issues missing release target
-            const goYesIssues = squadIssues.filter(issue => {
-              const labels = issue.labels.map(l => l.name);
-              return labels.includes('go:yes') && !labels.some(l => l.startsWith('release:'));
-            });
-
-            // 4b. Find issues missing type: label
-            const missingType = squadIssues.filter(issue => {
-              const labels = issue.labels.map(l => l.name);
-              return !labels.some(l => l.startsWith('type:'));
-            });
-
-            // 5. Find open PRs that need attention
-            const { data: openPRs } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              per_page: 20
-            });
-
-            const squadPRs = openPRs.filter(pr =>
-              pr.labels.some(l => l.name.startsWith('squad'))
-            );
-
-            // Build status summary
-            const summary = [];
-            if (untriaged.length > 0) {
-              summary.push(`🔴 **${untriaged.length} untriaged issue(s)** need triage`);
-            }
-            if (unstarted.length > 0) {
-              summary.push(`🟡 **${unstarted.length} assigned issue(s)** have no assignee`);
-            }
-            if (missingVerdict.length > 0) {
-              summary.push(`⚪ **${missingVerdict.length} issue(s)** missing triage verdict (no \`go:\` label)`);
-            }
-            if (goYesIssues.length > 0) {
-              summary.push(`⚪ **${goYesIssues.length} approved issue(s)** missing release target (no \`release:\` label)`);
-            }
-            if (missingType.length > 0) {
-              summary.push(`⚪ **${missingType.length} issue(s)** missing \`type:\` label`);
-            }
-            if (squadPRs.length > 0) {
-              const drafts = squadPRs.filter(pr => pr.draft).length;
-              const ready = squadPRs.length - drafts;
-              if (drafts > 0) summary.push(`🟡 **${drafts} draft PR(s)** in progress`);
-              if (ready > 0) summary.push(`🟢 **${ready} PR(s)** open for review/merge`);
-            }
-
-            if (summary.length === 0) {
-              core.info('📋 Board is clear — Ralph found no pending work');
-              return;
-            }
-
-            core.info(`🔄 Ralph found work:\n${summary.join('\n')}`);
-
-            // Auto-triage untriaged issues
-            for (const issue of untriaged) {
-              const issueText = `${issue.title}\n${issue.body || ''}`.toLowerCase();
-              let assignedMember = null;
-              let reason = '';
-
-              // Simple keyword-based routing
-              for (const member of members) {
-                const role = member.role.toLowerCase();
-                if ((role.includes('frontend') || role.includes('ui')) &&
-                    (issueText.includes('ui') || issueText.includes('frontend') ||
-                     issueText.includes('css') || issueText.includes('component'))) {
-                  assignedMember = member;
-                  reason = 'Matches frontend/UI domain';
-                  break;
-                }
-                if ((role.includes('backend') || role.includes('api') || role.includes('server')) &&
-                    (issueText.includes('api') || issueText.includes('backend') ||
-                     issueText.includes('database') || issueText.includes('endpoint'))) {
-                  assignedMember = member;
-                  reason = 'Matches backend/API domain';
-                  break;
-                }
-                if ((role.includes('test') || role.includes('qa')) &&
-                    (issueText.includes('test') || issueText.includes('bug') ||
-                     issueText.includes('fix') || issueText.includes('regression'))) {
-                  assignedMember = member;
-                  reason = 'Matches testing/QA domain';
-                  break;
-                }
-              }
-
-              // Default to Lead
-              if (!assignedMember) {
-                const lead = members.find(m =>
-                  m.role.toLowerCase().includes('lead') ||
-                  m.role.toLowerCase().includes('architect')
-                );
-                if (lead) {
-                  assignedMember = lead;
-                  reason = 'No domain match — routed to Lead';
-                }
-              }
-
-              if (assignedMember) {
-                // Add member label
                 await github.rest.issues.addLabels({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: issue.number,
-                  labels: [assignedMember.label]
+                  issue_number: decision.issueNumber,
+                  labels: [decision.label]
                 });
-
-                // Post triage comment
+                
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: issue.number,
+                  issue_number: decision.issueNumber,
                   body: [
-                    `### 🔄 Ralph — Auto-Triage`,
+                    '### 🔄 Ralph — Auto-Triage',
                     '',
-                    `**Assigned to:** ${assignedMember.name} (${assignedMember.role})`,
-                    `**Reason:** ${reason}`,
+                    `**Assigned to:** ${decision.assignTo}`,
+                    `**Reason:** ${decision.reason}`,
+                    `**Source:** ${decision.source}`,
                     '',
-                    `> Ralph auto-triaged this issue via the squad heartbeat. To reassign, swap the \`squad:*\` label.`
+                    '> Ralph auto-triaged this issue using routing rules.',
+                    '> To reassign, swap the `squad:*` label.'
                   ].join('\n')
                 });
-
-                core.info(`Auto-triaged #${issue.number} → ${assignedMember.name}`);
+                
+                core.info(`Triaged #${decision.issueNumber} → ${decision.assignTo} (${decision.source})`);
+              } catch (e) {
+                core.warning(`Failed to triage #${decision.issueNumber}: ${e.message}`);
               }
             }
+            
+            core.info(`🔄 Ralph triaged ${results.length} issue(s)`);
 
       # Copilot auto-assign step (uses PAT if available)
       - name: Ralph — Assign @copilot issues

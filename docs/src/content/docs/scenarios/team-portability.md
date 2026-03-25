@@ -22,7 +22,7 @@ In the repo where your team currently lives:
 
 ```bash
 cd ~/projects/project-alpha
-npx github:bradygaster/squad export
+squad export
 ```
 
 ```
@@ -35,7 +35,7 @@ This creates `squad-export.json` — a portable snapshot containing agents, cast
 You can also specify a custom output path:
 
 ```bash
-npx github:bradygaster/squad export --out ~/exports/alpha-team.json
+squad export --out ~/exports/alpha-team.json
 ```
 
 ---
@@ -46,7 +46,8 @@ The target repo needs Squad installed before importing:
 
 ```bash
 cd ~/projects/project-beta
-npx github:bradygaster/squad
+npm install -g @bradygaster/squad-cli
+squad init
 ```
 
 ```
@@ -64,7 +65,7 @@ Squad is ready.
 ## 3. Import the Team
 
 ```bash
-npx github:bradygaster/squad import ~/projects/project-alpha/squad-export.json
+squad import ~/projects/project-alpha/squad-export.json
 ```
 
 ```
@@ -87,7 +88,7 @@ Next steps:
 If `.ai-team/` already exists (e.g., this repo already had a team), import will fail:
 
 ```bash
-npx github:bradygaster/squad import squad-export.json
+squad import squad-export.json
 ```
 
 ```
@@ -97,7 +98,7 @@ npx github:bradygaster/squad import squad-export.json
 Use `--force` to archive the existing team and replace it:
 
 ```bash
-npx github:bradygaster/squad import squad-export.json --force
+squad import squad-export.json --force
 ```
 
 The existing `.ai-team/` is moved to `.ai-team-archive-2025-07-15-14-30-00/`. Nothing is deleted.

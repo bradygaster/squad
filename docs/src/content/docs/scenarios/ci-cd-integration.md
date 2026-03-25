@@ -14,22 +14,24 @@ Ralph runs periodically via GitHub Actions to handle housekeeping between Copilo
 
 ## 1. The Heartbeat Workflow — Ralph Between Sessions
 
-Ralph (the manager agent) runs via GitHub Actions on a schedule:
+Ralph (the manager agent) runs via GitHub Actions on event-based triggers:
 
 - Triage new issues
 - Apply squad labels based on routing rules
 - Check for stale branches
 - Archive old decisions
 
-The workflow is in `.github/workflows/squad-heartbeat.yml` and runs every 6 hours.
+The workflow is in `.github/workflows/squad-heartbeat.yml` and runs on issue close, PR merge, and manual dispatch (or via `squad watch` for local polling).
 
 **You don't have to do anything** — it's installed automatically (along with 9 other workflows) when you run `squad`.
 
 ```yaml
 name: Ralph Heartbeat
 on:
-  # schedule:
-  #   - cron: '0 */6 * * *'  # Every 6 hours
+  issues:
+    types: [closed]
+  pull_request:
+    types: [closed]
   workflow_dispatch:
 
 jobs:
@@ -41,7 +43,7 @@ jobs:
         run: squad heartbeat
 ```
 
-> ⚡ **Cron is commented out by default.** The heartbeat schedule is disabled when Squad installs the workflow — it only runs via manual `workflow_dispatch` until you uncomment the `schedule` block. Be aware: enabling scheduled heartbeats will consume GitHub Actions minutes on every run. A 6-hour cron burns ~120 runs/month. Adjust the frequency to match your budget, or leave it manual and trigger heartbeats from the CLI with `squad heartbeat`.
+> ⚡ **Cron is permanently disabled.** Scheduled cron jobs are no longer supported in GitHub Actions to reduce costs. The heartbeat workflow runs on event-based triggers: when issues are closed, PRs are merged, or you manually trigger via `workflow_dispatch`. For periodic polling without events, use `squad watch` in a separate terminal (local, no GitHub Actions cost).
 
 Ralph reads `.squad/routing.md`, looks at open issues, and applies labels:
 

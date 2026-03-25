@@ -207,21 +207,181 @@ This prevents "we decided different things" surprises.
 
 ## Tips for Working with Ralph (Work Monitor)
 
-Ralph excels at grinding through backlogs while you focus on urgent work. Activate him when you have open issues, let him report every 3-5 rounds, and check his status before wrapping up. The heartbeat workflow means your squad triages issues between sessions.
+### 1. Activate Ralph When You Have Backlog
 
-**Best tip:** Give Ralph scope constraints if you need to pause certain work (e.g., `"Ralph, scope: just issues"` when you don't want PRs merged yet).
+Ralph is most useful when you have open issues.
 
-→ [Full Ralph guide](features/ralph.md#ralph--work-monitor)
+```
+> Ralph, start monitoring
+```
+
+Ralph will:
+- Check GitHub Issues for untriaged work
+- Ask the Lead to triage
+- Assign issues to team members
+- Spawn agents to work through them
+- Report every 3 rounds
+
+### 2. Give Ralph a Scope If Needed
+
+By default, Ralph monitors issues, PRs, and CI.
+
+```
+> Ralph, scope: just issues
+```
+
+Useful when:
+- You're in the middle of a PR and don't want Ralph to merge it yet
+- You only care about triaging issues, not closing them
+- You want to focus on one type of work
+
+### 3. Ralph Reports Automatically Every 3-5 Rounds
+
+Don't ask for status — Ralph tells you.
+
+```
+🔄 Ralph: Round 3 complete.
+   ✅ 2 issues closed, 1 PR merged
+   📋 3 items remaining: #42, #45, PR #12
+   Continuing... (say "Ralph, idle" to stop)
+```
+
+When you see this, you can:
+- Let Ralph keep working (he will)
+- Say "Ralph, idle" to stop
+- Jump in with a different task
+- Check a specific issue
+
+### 4. Use Ralph Between Sessions
+
+The `squad-heartbeat` workflow runs Ralph on event-based triggers (issue close, PR merge, manual dispatch). For persistent polling when you're away from the keyboard, use `squad watch` locally.
+
+Ralph will:
+- Triage new issues
+- Assign them to team members
+- Trigger `@copilot` if you have the coding agent enabled
+
+This means your squad works even when you're not at the keyboard.
+
+### 5. Check Ralph's Status Before Wrapping Up
+
+```
+> Ralph, status
+```
+
+Ralph does one check and reports:
+
+```
+📊 Board Status:
+   🔴 Untriaged:    0 issues need triage
+   🟡 In Progress:  1 issue assigned, 0 draft PRs
+   🟢 Ready:        0 PRs approved
+   ✅ Done:         7 issues closed this session
+```
+
+If the board is clean, you can wrap up. If there's work, start Ralph for the next session.
 
 ---
 
 ## Managing Decisions and Team Memory
 
-Set permanent rules early so agents read them before every task — you only say them once. When agents disagree, check `decisions.md` for missing decisions. When agents make mistakes, turn the lesson into a directive (`"Never commit environment variables to git"`). Scribe handles decision merging automatically.
+### 1. Set Permanent Rules Early
 
-**Best tip:** Archive outdated decisions in a "Superseded" section so agents ignore them. Check agent `history.md` files when they seem lost — they might be missing context that was learned in previous sessions.
+The first or second session, establish conventions.
 
-→ [Full memory guide](features/memory.md)
+```
+> Here are the permanent rules for this team:
+> - Always use TypeScript strict mode
+> - Component naming: PascalCase (never kebab-case)
+> - All exports are named exports (no defaults)
+> - Test coverage must be > 80%
+> - PR must have at least one review before merge
+```
+
+These go to `decisions.md`. Every agent reads them before working. **You only have to say them once.**
+
+### 2. Use User Directives for "Never Again" Lessons
+
+When an agent makes a mistake, turn it into a directive.
+
+```
+> Never use inline styles. Use CSS classes instead.
+> Always validate user input on the backend, not just the frontend.
+> Never commit environment variables to git.
+```
+
+These get stored as directives and agents follow them automatically in future sessions.
+
+### 3. Check decisions.md When Agents Disagree
+
+If Frontend does something one way and Backend does it another way, the decision is usually missing.
+
+```
+Agent A: "I used kebab-case for the file names"
+Agent B: "I used PascalCase for the file names"
+
+[You check .ai-team/decisions.md]
+[No decision about file naming conventions]
+
+> Here's the permanent rule: all component files are PascalCase.
+```
+
+Now it's in the shared brain. Next agent to work on components will see this.
+
+### 4. Archive Outdated Decisions
+
+When a decision no longer applies, move it to a "Superseded" section.
+
+You can edit `.ai-team/decisions.md` directly:
+
+```markdown
+## Superseded Decisions
+
+- **File naming (v1)**: "All files kebab-case" — SUPERSEDED by PascalCase convention in v2
+- **API versioning (v1)**: "Use URL paths for versioning" — SUPERSEDED by headers-based versioning
+
+## Active Decisions
+...
+```
+
+Agents know to ignore "Superseded" sections.
+
+### 5. Let Scribe Handle Decision Merging
+
+Agents write decisions to `/decisions/inbox/`, Scribe merges them into `/decisions.md`.
+
+You don't have to manually merge. Just ask:
+
+```
+> Scribe, merge pending decisions
+```
+
+Scribe will:
+- Read all files in `/decisions/inbox/`
+- Merge them into the canonical `decisions.md`
+- Deduplicate overlaps
+- Clean up the inbox
+
+This happens automatically in mature teams, but you can force it anytime.
+
+### 6. Personal History Files Build Over Time
+
+Each agent's `.ai-team/agents/{name}/history.md` grows with every session. Check it when an agent seems lost.
+
+```
+[Dallas's history shows]
+- React expertise: hooks, context, performance patterns
+- Knowledge of routing: react-router v6
+- Knows about the design system: established in session 3
+- Familiar with the component structure: 50+ components in src/components/
+```
+
+If an agent keeps asking "where are the components?", their history might not have the right info. Edit it directly or remind them:
+
+```
+> Dallas, your last 5 sessions were all in the same component library. 
+> Check your history.md for the path.
+```
 
 ---
 
@@ -289,14 +449,14 @@ Ralph handles the backlog, you handle the critical path.
 ❌ "I want Lead, Frontend, Backend, Tester, DevOps, Data Engineer, Designer, and a Scribe."
 ```
 
-### Pitfall 6: Lost work because you didn't commit `.squad/`
+### Pitfall 6: Lost Work Because You Didn't Commit `.ai-team/`
 
 **Problem:** You deleted the repo and lost all your team knowledge.
 
-**Solution:** **Commit `.squad/` to git.** It's permanent team memory.
+**Solution:** **Commit `.ai-team/` to git.** It's permanent team memory.
 
 ```bash
-git add .squad/
+git add .ai-team/
 git commit -m "Add squad team state"
 git push
 ```
@@ -358,7 +518,7 @@ Squad 1: "Team A, build the admin dashboard. You own features/admin/."
 Squad 2: "Team B, build the mobile app. You own features/mobile/."
 
 [Both teams work in parallel]
-[Shared decisions in .squad/decisions.md prevent conflicts]
+[Shared decisions in .ai-team/decisions.md prevent conflicts]
 ```
 
 Requires good routing rules and clear ownership, but it works.
@@ -456,7 +616,7 @@ A typical high-performing session:
 3. **Parallel execution:** Let agents work (don't interrupt)
 4. **Check logs:** Ask Scribe what happened while you were reading code
 5. **Next round:** Based on what Scribe told you, give follow-up work or start Ralph
-6. **Wrap up:** Ask Ralph for status, commit `.squad/`, go home
+6. **Wrap up:** Ask Ralph for status, commit `.ai-team/`, go home
 
 **Time to productive work: usually < 2 minutes.**
 

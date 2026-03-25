@@ -29,16 +29,17 @@ Recovery scenarios: deleted `.ai-team/`, bad agent code, confused squad, upgrade
 git checkout .ai-team/
 ```
 
-If you haven't committed `.ai-team/` yet, it's gone. Rebuild:
+If you haven't committed `.squad/` yet, it's gone. Rebuild:
 
 ```bash
-npx github:bradygaster/squad
+npm install -g @bradygaster/squad-cli
+squad init
 ```
 
 Start from scratch. If you exported your squad before, import the export:
 
 ```bash
-npx github:bradygaster/squad import squad-export-2025-07-15.zip
+squad import squad-export-2025-07-15.zip
 ```
 
 **Prevention:** Commit `.ai-team/` early. Don't let it stay uncommitted for long.
@@ -141,11 +142,11 @@ Agents **forget** the bad session. They still have their long-term skills and de
 
 ## 5. "I want to start over completely"
 
-**Solution:** Delete `.ai-team/` and reinstall.
+**Solution:** Delete `.squad/` and reinitialize.
 
 ```bash
-rm -rf .ai-team/
-npx github:bradygaster/squad
+rm -rf .squad/
+squad init
 ```
 
 ```
@@ -174,10 +175,10 @@ Roll back the Squad agent definition:
 git checkout HEAD^ .github/agents/squad.agent.md
 ```
 
-Or reinstall the previous version:
+Or reinstall a previous version:
 
 ```bash
-npx github:bradygaster/squad@0.1.5
+npm install -g @bradygaster/squad-cli@0.1.5
 ```
 
 **Your team's knowledge is safe.** `.ai-team/` is untouched.

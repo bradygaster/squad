@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad",
-  "version": "0.8.25-build.10",
+  "version": "0.9.1",
   "private": true,
   "description": "Squad — Programmable multi-agent runtime for GitHub Copilot, built on @github/copilot-sdk",
   "type": "module",

@@ -9,16 +9,16 @@ Update Squad-owned files to the latest version without touching your team state.
 From your repo root:
 
 ```bash
-npx github:bradygaster/squad upgrade
+squad upgrade
 ```
 
 Squad detects your installed version, updates Squad-owned files, and runs any needed migrations:
 
 ```
 ✅ upgraded coordinator from 0.1.0 to 0.2.0
-✅ upgraded .ai-team-templates/
+✅ upgraded .squad/templates/
 
-.ai-team/ untouched — your team state is safe
+.squad/ untouched — your team state is safe
 
 Squad is upgraded. (v0.2.0)
 ```
@@ -63,10 +63,10 @@ In Squad v0.5.0, the team state directory was renamed from `.ai-team/` to `.squa
 
 ```bash
 # Step 1: Upgrade to get the latest migration tooling
-npx github:bradygaster/squad upgrade
+squad upgrade
 
 # Step 2: Rename the directory
-npx github:bradygaster/squad upgrade --migrate-directory
+squad upgrade --migrate-directory
 ```
 
 Then commit:
@@ -114,7 +114,7 @@ version: "X.Y.Z"
 You can also check your installed version from the command line:
 
 ```bash
-npx github:bradygaster/squad --version
+squad --version
 ```
 
 The output will show your installed version (e.g., `X.Y.Z`).
@@ -126,7 +126,7 @@ The output will show your installed version (e.g., `X.Y.Z`).
 If you're already on the latest version:
 
 ```bash
-npx github:bradygaster/squad upgrade
+squad upgrade
 ```
 
 ```

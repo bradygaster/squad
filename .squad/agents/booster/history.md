@@ -68,3 +68,49 @@ Analyzed 20 CI runs from March 15. Identified 3 distinct failure categories:
 3. TypeScript workspace reference health check (catch SDK/CLI type mismatches early)
 4. Better failure grouping/attribution in CI UI (distinguish "new gate" vs "regression")
 5. Spell check dictionary maintenance workflow (easier to add known-good usernames/terms)
+
+### CI Workflow Audit — March 23, 2026
+
+**Status:** Conducted full audit of 15 workflow files. Brady's perception ("complete nightmare, 12,000 workflows") is not accurate — the codebase is lean, well-organized, and 99% authored by Brady (bradygaster + Copilot).
+
+**Key Findings:**
+- **Total workflows:** 15 (7 load-bearing core, 7 admin/automation, 1 ghost)
+- **Authorship:** bradygaster 46 commits (65%), Copilot 7 (10%), team 17 (24%)
+- **v0.9.1 Scramble:** Copilot made 4 commits on 2026-03-23 trying to work around GitHub platform bug (workflow_dispatch returns 422 after file renames/deletes)
+- **Ghost file identified:** `publish-npm.yml` (deleted but still in GitHub's workflow cache) → requires manual deletion via API
+- **Zero duplication:** Each workflow has clear, non-overlapping responsibility
+- **One optional cleanup:** `ci-rerun.yml` (useful but not essential)
+
+**Release Pipeline Quality:**
+- Core pipeline (squad-ci → squad-release → squad-npm-publish → insider-*) is solid
+- Smoke tests run before any npm publish (good safety gate)
+- Implicit ordering works but fragile (squad-npm-publish depends on release: published event)
+
+**Triage Automation Quality:**
+- Label routing (squad-triage, squad-issue-assign, squad-label-enforce) well-integrated
+- Ralph heartbeat has cron disabled (event-driven only)
+- Works correctly with @copilot assignment
+
+**Recommendation:** Delete ghost publish-npm.yml file, optionally keep ci-rerun for fork PR debugging, keep everything else. CI health is good.
+
+**Report written to:** `.squad/decisions/inbox/booster-ci-audit.md`
+
+### CI Cleanup & Hardening — Post-Audit
+
+**Changes shipped:**
+
+1. **Ghost workflow disabled** — `publish-npm.yml` (workflow ID 250121956) disabled via GitHub API (`PUT /actions/workflows/{id}/disable`). GitHub doesn't support DELETE on workflow entries; disable is the permanent fix.
+
+2. **Pre-publish `preflight` job added** to `squad-npm-publish.yml`:
+   - Scans ALL `packages/*/package.json` for `file:` references across all dependency sections (dependencies, devDependencies, optionalDependencies, peerDependencies)
+   - Validates all package versions are valid semver
+   - Runs BEFORE smoke-test and all publish jobs — blocks the entire pipeline if violations found
+   - This is the gate that would have caught the v0.9.1 incident
+
+3. **Smoke test enhanced** — Added `npm pack --dry-run` validation step for both SDK and CLI packages before the vitest smoke tests run
+
+4. **ci-rerun.yml retained** — Added purpose documentation comment. Still useful for fork PR re-testing and infrastructure flake recovery.
+
+5. **YAML fix** — Quoted `file:` in step names that were causing YAML parse ambiguity (both new and pre-existing)
+
+**Pipeline dependency chain:** `preflight → smoke-test → publish-sdk → publish-cli`

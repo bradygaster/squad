@@ -183,3 +183,6 @@ export class RalphMonitor {
     this.eventBus = null;
   }
 }
+
+export { loadCapabilities, canHandleIssue, filterByCapabilities, extractNeeds, type MachineCapabilities, KNOWN_CAPABILITIES } from './capabilities.js';
+export { getTrafficLight, shouldProceed, getRetryDelay, PredictiveCircuitBreaker, canUseQuota, loadRatePool, type RatePool, type RatePoolAllocation, type RateSample, type TrafficLight, type AgentPriority } from './rate-limiting.js';

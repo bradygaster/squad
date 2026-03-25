@@ -24,7 +24,7 @@
 
 | Before | After |
 |--------|-------|
-| `npx github:bradygaster/squad` | `npx @bradygaster/squad-cli` |
+| `npx github:bradygaster/squad` | `npm install -g @bradygaster/squad-cli` |
 | `@bradygaster/create-squad` | `@bradygaster/squad-cli` |
 | `.ai-team/` directory | `.squad/` directory |
 | v0.5.4 (beta) | v0.8.x (latest) |
@@ -46,12 +46,6 @@ Never used Squad before? Start here.
 
 ```bash
 npm install -g @bradygaster/squad-cli
-```
-
-Or run without installing:
-
-```bash
-npx @bradygaster/squad-cli
 ```
 
 ### Initialize a Project
@@ -109,11 +103,6 @@ This is the biggest jump. The codebase was rewritten in TypeScript, the `.squad/
    **Local (project dependency):**
    ```bash
    npm install --save-dev @bradygaster/squad-cli@latest
-   ```
-
-   **npx (no install):**
-   ```bash
-   npx @bradygaster/squad-cli@latest
    ```
 
 4. **Remove the old `.squad/` directory:**
@@ -177,9 +166,6 @@ npm install -g @bradygaster/squad-cli@latest
 npm install --save-dev @bradygaster/squad-cli@latest
 ```
 
-**npx:**
-If you use `npx`, no update needed — it always pulls the latest version.
-
 Verify the version:
 
 ```bash
@@ -227,10 +213,10 @@ With:
 
 ```bash
 # NEW
-npx @bradygaster/squad-cli
+npm install -g @bradygaster/squad-cli
 ```
 
-If you had this in scripts or CI/CD workflows, update every reference.
+Then use the `squad` command directly. If you had this in scripts or CI/CD workflows, update every reference — see [Scenario 8: Using Squad in CI/CD](#scenario-8-using-squad-in-cicd).
 
 ---
 
@@ -330,7 +316,6 @@ If you run Squad in GitHub Actions or another CI/CD system, update your workflow
 
 - Set `GITHUB_TOKEN` as an environment variable. Squad requires it for GitHub Copilot operations.
 - Pin to a specific version (e.g., `@0.8.25`) in CI to avoid surprise upgrades, or use `@latest` to stay current.
-- If you use `npx`, use `npx @bradygaster/squad-cli@latest` (or pin a specific version).
 - Node.js 20+ is required. Update your workflow's `setup-node` action if needed.
 
 ---
@@ -371,12 +356,10 @@ import { Squad } from '@bradygaster/squad-sdk';
 
 ### `command not found: squad`
 
-Squad isn't on your PATH. Either install globally or use `npx`:
+Squad isn't on your PATH. Install globally:
 
 ```bash
 npm install -g @bradygaster/squad-cli
-# or
-npx @bradygaster/squad-cli doctor
 ```
 
 ### npm 404 error when installing
@@ -391,16 +374,13 @@ If the package genuinely isn't published yet, check [the npm page](https://www.n
 
 ### Permission denied during install
 
-Use one of these approaches (do **not** use `sudo npm`):
+Use this approach (do **not** use `sudo npm`):
 
 ```bash
-# Option 1: Fix npm prefix (recommended)
+# Fix npm prefix (recommended)
 mkdir -p ~/.npm-global
 npm config set prefix '~/.npm-global'
 export PATH=~/.npm-global/bin:$PATH
-
-# Option 2: Use npx instead
-npx @bradygaster/squad-cli
 ```
 
 ### Old format not recognized
@@ -440,21 +420,6 @@ If not authenticated:
 
 ```bash
 gh auth login
-```
-
-### npx cache serving a stale version
-
-Clear the npx cache and retry:
-
-```bash
-npx clear-npx-cache
-npx @bradygaster/squad-cli@latest
-```
-
-Or install globally to bypass npx caching entirely:
-
-```bash
-npm install -g @bradygaster/squad-cli@latest
 ```
 
 ### Wrong version installed

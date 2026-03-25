@@ -1,3 +1,9 @@
+# CI Rerun — Manual workflow for re-running CI on fork PRs or PRs that need
+# a fresh CI pass without push. Useful when:
+#   - Fork PRs don't trigger CI automatically (security restriction)
+#   - A PR needs re-testing after an infrastructure flake
+#   - You need to validate a PR against current base branch state
+# Usage: Actions → CI Rerun (Manual) → enter PR number → Run workflow
 name: CI Rerun (Manual)
 
 on:

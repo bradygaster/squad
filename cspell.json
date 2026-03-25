@@ -12,7 +12,7 @@
     "sims", "telemetry", "handbook",
     "WIQL", "webhook", "webhooks", "dedup", "deduplicate",
     "triage", "triaging", "untriaged", "kanban", "lifecycle",
-    "PRD", "SDK", "ADO", "RBAC", "OAuth", "JWT",
+    "PRD", "SDK", "ADO", "CUDA", "RBAC", "RAAS", "OAuth", "JWT",
     "Aspire", "Bicep", "Terraform", "Kubernetes",
     "orchestrator", "orchestration", "runSubagent",
     "Kujan", "kobayashi", "Kobayashi", "squadify",
@@ -36,7 +36,7 @@
     "Pydantic", "sdkgen", "ttft", "Strausz", "mycompany",
     "slugified", "simplejwt", "pytest", "Luca", "Clemenza",
     "Tessio", "Triaging", "Futurama", "mklink", "slnx", "jqlang",
-    "benleane"
+    "benleane", "TELMU", "Automator"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
   "allowCompoundWords": true

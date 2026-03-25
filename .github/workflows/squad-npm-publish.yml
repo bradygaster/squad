@@ -1,0 +1,210 @@
+name: Squad npm Publish
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 0.9.1)'
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  preflight:
+    name: Pre-publish dependency validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: "Scan for file: references in package.json files"
+        run: |
+          echo "Scanning all packages/*/package.json for file: references..."
+          FOUND=0
+          for pkg in packages/*/package.json; do
+            # Check dependencies, devDependencies, and optionalDependencies for file: refs
+            MATCHES=$(node -e "
+              const pkg = require('./$pkg');
+              const sections = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'];
+              for (const s of sections) {
+                for (const [name, ver] of Object.entries(pkg[s] || {})) {
+                  if (String(ver).startsWith('file:')) {
+                    console.log('  ❌ ' + s + '.' + name + ' = ' + ver);
+                  }
+                }
+              }
+            ")
+            if [ -n "$MATCHES" ]; then
+              echo "::error::file: dependency found in $pkg"
+              echo "$pkg:"
+              echo "$MATCHES"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -eq 1 ]; then
+            echo ""
+            echo "::error::PUBLISH BLOCKED — file: references break global installs (see v0.9.1 incident)"
+            echo "Fix: Replace file: references with proper version ranges before publishing."
+            exit 1
+          fi
+          echo "✅ No file: references found — safe to publish"
+      - name: Validate semver versions
+        run: |
+          echo "Validating version numbers are valid semver..."
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const semverRe = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+            const pkgs = fs.readdirSync('packages', { withFileTypes: true })
+              .filter(d => d.isDirectory())
+              .map(d => path.join('packages', d.name, 'package.json'))
+              .filter(p => fs.existsSync(p));
+            let failed = false;
+            for (const p of pkgs) {
+              const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+              if (!semverRe.test(pkg.version)) {
+                console.error('::error::Invalid semver in ' + p + ': ' + pkg.version);
+                failed = true;
+              } else {
+                console.log('✅ ' + pkg.name + '@' + pkg.version);
+              }
+            }
+            if (failed) process.exit(1);
+          "
+  smoke-test:
+    name: CLI packaging smoke test
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+        env:
+          SKIP_BUILD_BUMP: '1'
+      - name: Validate npm pack succeeds
+        run: |
+          echo "Verifying npm pack produces valid tarballs..."
+          npm -w packages/squad-sdk pack --dry-run
+          npm -w packages/squad-cli pack --dry-run
+          echo "✅ Both packages pack successfully"
+      - name: Run CLI smoke tests
+        run: npx vitest run test/cli-packaging-smoke.test.ts
+  publish-sdk:
+    name: Publish @bradygaster/squad-sdk
+    needs: [preflight, smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: ${VERSION}"
+      - name: Install dependencies
+        run: npm ci
+      - name: Build squad-sdk
+        run: npm -w packages/squad-sdk run build
+      - name: Verify package version matches target
+        run: |
+          PKG_VERSION=$(node -p "require('./packages/squad-sdk/package.json').version")
+          if [[ "$PKG_VERSION" != "${{ steps.version.outputs.version }}" ]]; then
+            echo "::error::Package version ($PKG_VERSION) does not match target version (${{ steps.version.outputs.version }})"
+            exit 1
+          fi
+          echo "Package version matches: $PKG_VERSION"
+      - name: Publish squad-sdk to npm
+        run: npm -w packages/squad-sdk publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify npm publication
+        run: |
+          for i in 1 2 3 4 5; do
+            if npm view @bradygaster/squad-sdk@${{ steps.version.outputs.version }} version 2>/dev/null; then
+              echo "Verified on npm registry"
+              exit 0
+            fi
+            echo "Registry propagation attempt $i/5, waiting 15s..."
+            sleep 15
+          done
+          echo "Registry propagation slow but package was published successfully"
+  publish-cli:
+    name: Publish @bradygaster/squad-cli
+    needs: [preflight, smoke-test, publish-sdk]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Publishing version: ${VERSION}"
+      - name: Install dependencies
+        run: npm ci
+      - name: "Guard against file: dependencies"
+        run: |
+          SDK_DEP=$(node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']")
+          if [[ "$SDK_DEP" == file:* ]]; then
+            echo "::error::squad-cli has file: dependency on squad-sdk — this breaks global installs"
+            exit 1
+          fi
+          echo "SDK dependency is safe: $SDK_DEP"
+      - name: Build squad-sdk (required for CLI project references)
+        run: npm -w packages/squad-sdk run build
+      - name: Build squad-cli
+        run: npm -w packages/squad-cli run build
+      - name: Verify package version matches target
+        run: |
+          PKG_VERSION=$(node -p "require('./packages/squad-cli/package.json').version")
+          if [[ "$PKG_VERSION" != "${{ steps.version.outputs.version }}" ]]; then
+            echo "::error::Package version ($PKG_VERSION) does not match target version (${{ steps.version.outputs.version }})"
+            exit 1
+          fi
+          echo "Package version matches: $PKG_VERSION"
+      - name: Publish squad-cli to npm
+        run: npm -w packages/squad-cli publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Verify npm publication
+        run: |
+          for i in 1 2 3 4 5; do
+            if npm view @bradygaster/squad-cli@${{ steps.version.outputs.version }} version 2>/dev/null; then
+              echo "Verified on npm registry"
+              exit 0
+            fi
+            echo "Registry propagation attempt $i/5, waiting 15s..."
+            sleep 15
+          done
+          echo "Registry propagation slow but package was published successfully"

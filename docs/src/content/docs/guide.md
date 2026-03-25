@@ -59,12 +59,6 @@ Not sure which to use? See [Choose your interface](get-started/choose-your-inter
 npm install -g @bradygaster/squad-cli
 ```
 
-Or run without installing:
-
-```bash
-npx @bradygaster/squad-cli init
-```
-
 **Requirements:**
 - Node.js 20+ (LTS)
 - GitHub Copilot (CLI, VS Code, Visual Studio, or Coding Agent)
