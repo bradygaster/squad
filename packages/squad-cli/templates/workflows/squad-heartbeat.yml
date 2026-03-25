@@ -123,7 +123,7 @@ jobs:
             const autoAssign = content.includes('<!-- copilot-auto-assign: true -->');
             if (!hasCopilot || !autoAssign) return;
 
-            // Find issues labeled squad:copilot with no assignee
+            // Find issues labeled {{CODING_AGENT_LABEL}} with no assignee
             try {
               const { data: copilotIssues } = await github.rest.issues.listForRepo({
                 owner: context.repo.owner,

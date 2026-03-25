@@ -65,7 +65,7 @@ project-feature-b/
 ```bash
 cd project-feature-a
 # Initialize Squad in this worktree
-gh copilot "Initialize Squad for this worktree"
+squad init
 ```
 
 ### 2. Main-Checkout (Shared State)
