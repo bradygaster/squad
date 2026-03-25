@@ -1,0 +1,18 @@
+{
+  "$schema": "https://typedoc-plugin-markdown.org/schema.json",
+  "entryPoints": ["./src/index.ts"],
+  "out": "../../docs/src/content/docs/reference/api",
+  "plugin": ["typedoc-plugin-markdown"],
+  "tsconfig": "./tsconfig.json",
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  "entryFileName": "index.md",
+  "flattenOutputFiles": true,
+  "sanitizeComments": true,
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "excludeNotDocumented": true,
+  "readme": "none",
+  "githubPages": false
+}

@@ -18,7 +18,8 @@
     "lint:docs": "markdownlint-cli2 && cspell --no-progress --dot \"docs/src/content/**/*.md\" \"README.md\"",
     "dev:link": "npm run build && cd packages/squad-sdk && npm link && cd ../squad-cli && npm link",
     "dev:unlink": "cd packages/squad-cli && npm unlink && cd ../squad-sdk && npm unlink",
-    "docs:build": "cd docs && npm run build",
+    "docs:api": "node scripts/generate-api-docs.mjs",
+    "docs:build": "npm run docs:api && cd docs && npm run build",
     "docs:dev": "cd docs && npm run dev",
     "docs:preview": "cd docs && npm run preview"
   },

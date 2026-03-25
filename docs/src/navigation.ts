@@ -82,7 +82,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { title: 'CLI', slug: 'reference/cli' },
       { title: 'SDK', slug: 'reference/sdk' },
-      { title: 'SDK API Reference', slug: 'reference/api-reference' },
+      { title: 'SDK API Reference', slug: 'reference/api' },
       { title: 'SDK Integration', slug: 'reference/integration' },
       { title: 'Tools & Hooks', slug: 'reference/tools-and-hooks' },
       { title: 'Config', slug: 'reference/config' },
