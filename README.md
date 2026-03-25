@@ -307,6 +307,14 @@ Changesets are resolved on the `main` branch; releases happen independently per 
 
 ---
 
+## Runtime Providers
+
+Squad supports multiple AI coding agent backends through a unified provider interface. You can switch between GitHub Copilot and the Claude CLI without changing any orchestration code.
+
+- [Runtime Providers guide](docs/runtime-providers.md) — provider selection, compatibility matrix, error handling, and troubleshooting
+
+---
+
 ## SDK documentation
 
 The SDK provides programmatic control over agent orchestration — custom tools, hook pipelines, file-write guards, PII scrubbing, reviewer lockout, and event-driven monitoring.

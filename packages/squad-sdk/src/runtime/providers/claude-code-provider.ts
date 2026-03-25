@@ -17,6 +17,7 @@ import type {
   RuntimeProviderSession,
   RuntimeMessage,
   RuntimeStartOptions,
+  RuntimeErrorPayload,
 } from '../provider.js';
 
 /** Maximum line length (bytes) accepted from claude stdout. Lines longer than
@@ -108,11 +109,16 @@ export class ClaudeCodeRuntimeProvider implements RuntimeProvider {
     if (proc.stderr) {
       const rl = createInterface({ input: proc.stderr });
       rl.on('line', (line) => {
+        const errorPayload: RuntimeErrorPayload = {
+          message: line,
+          code: 'STDERR',
+          retryable: false,
+        };
         this.emit(sessionId, {
           type: 'error',
           sessionId,
           timestamp: Date.now(),
-          payload: { message: line },
+          payload: errorPayload,
         });
       });
     }
@@ -256,6 +262,20 @@ export class ClaudeCodeRuntimeProvider implements RuntimeProvider {
     ];
   }
 
+  /**
+   * Returns true when the session exists in the registry AND the subprocess
+   * is still running (not killed and not yet exited).
+   */
+  isSessionAlive(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) return false;
+    if (session.shuttingDown) return false;
+    // exitCode is null while the process is still running
+    if (session.process.exitCode !== null) return false;
+    if (session.process.killed) return false;
+    return true;
+  }
+
   // ── Internal helpers ────────────────────────────────
 
   private getSession(sessionId: string): ClaudeSession {
@@ -272,7 +292,7 @@ export class ClaudeCodeRuntimeProvider implements RuntimeProvider {
 
     // Activity received — reset the idle-timeout watchdog (skip for the
     // synthetic timeout-error event itself to avoid an infinite loop).
-    if (event.type !== 'error' || (event.payload as Record<string, unknown> | undefined)?.['_timeout'] !== true) {
+    if (event.type !== 'error' || (event.payload as RuntimeErrorPayload | undefined)?.['_timeout'] !== true) {
       this.resetSessionTimeout(session);
     }
 
@@ -299,14 +319,17 @@ export class ClaudeCodeRuntimeProvider implements RuntimeProvider {
 
     session.timeoutHandle = setTimeout(() => {
       // Emit the timeout error, then tear the session down.
+      const timeoutPayload: RuntimeErrorPayload = {
+        _timeout: true,
+        message: `Session ${session.id} timed out after ${this.sessionTimeoutMs}ms of inactivity and has been shut down.`,
+        code: 'TIMEOUT',
+        retryable: false,
+      };
       this.emit(session.id, {
         type: 'error',
         sessionId: session.id,
         timestamp: Date.now(),
-        payload: {
-          _timeout: true,
-          message: `Session ${session.id} timed out after ${this.sessionTimeoutMs}ms of inactivity and has been shut down.`,
-        },
+        payload: timeoutPayload,
       });
       void this.shutdownSession(session.id);
     }, this.sessionTimeoutMs);
@@ -321,11 +344,16 @@ export class ClaudeCodeRuntimeProvider implements RuntimeProvider {
     // Guard: drop lines that are suspiciously long (binary noise / memory risk).
     if (line.length > MAX_LINE_LENGTH) {
       // Emit a non-fatal warning and skip.
+      const oversizePayload: RuntimeErrorPayload = {
+        message: `Dropped oversized output line (${line.length} bytes) from session ${sessionId}.`,
+        code: 'OVERSIZE_LINE',
+        retryable: false,
+      };
       this.emit(sessionId, {
         type: 'error',
         sessionId,
         timestamp: Date.now(),
-        payload: { message: `Dropped oversized output line (${line.length} bytes) from session ${sessionId}.` },
+        payload: oversizePayload,
       });
       return;
     }
@@ -408,13 +436,19 @@ export class ClaudeCodeRuntimeProvider implements RuntimeProvider {
           },
         };
 
-      case 'error':
+      case 'error': {
+        const errorPayload: RuntimeErrorPayload = {
+          message: (data.error as string | undefined) ?? (data.message as string | undefined) ?? 'Unknown error',
+          code: data.code as string | undefined,
+          retryable: data.retryable as boolean | undefined,
+        };
         return {
           type: 'error',
           sessionId,
           timestamp,
-          payload: { message: data.error ?? data.message ?? 'Unknown error' },
+          payload: errorPayload,
         };
+      }
 
       default:
         // Unknown event type — pass through as-is

@@ -17,6 +17,7 @@ import type {
   RuntimeProviderSession,
   RuntimeMessage,
   RuntimeStartOptions,
+  RuntimeErrorPayload,
 } from '../provider.js';
 import type { SquadClient } from '../../adapter/client.js';
 import type { SquadSession, SquadSessionEvent } from '../../adapter/types.js';
@@ -142,6 +143,18 @@ export class CopilotRuntimeProvider implements RuntimeProvider {
     return ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'o3-mini', 'claude-sonnet-4'];
   }
 
+  /**
+   * Returns true when the session is registered.
+   *
+   * Retry note: the underlying SquadClient manages its own connection pooling
+   * and retry logic.  From the provider's perspective a session is alive as
+   * long as its entry exists in the registry — the SquadClient handles
+   * transport-level reconnects transparently.
+   */
+  isSessionAlive(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
+  }
+
   // ── Internal helpers ──────────────────────────────────
 
   private async getClient(): Promise<SquadClient> {
@@ -172,7 +185,7 @@ export class CopilotRuntimeProvider implements RuntimeProvider {
    *   message_delta  → message.delta
    *   message        → message.complete
    *   turn_end       → message.complete
-   *   error          → error
+   *   error          → error  (payload normalised to RuntimeErrorPayload)
    *   usage          → (pass-through as payload on message.complete)
    */
   private wireEvents(entry: CopilotSessionEntry): void {
@@ -197,9 +210,32 @@ export class CopilotRuntimeProvider implements RuntimeProvider {
     wire('message_delta', 'message.delta');
     wire('message', 'message.complete');
     wire('turn_end', 'message.complete');
-    wire('error', 'error');
     wire('tool_call', 'tool.call');
     wire('tool_result', 'tool.result');
+
+    // Error events: normalise to RuntimeErrorPayload so consumers get a
+    // consistent shape regardless of which provider emitted the error.
+    const errorHandler = (evt: SquadSessionEvent) => {
+      const raw = evt as Record<string, unknown>;
+      const errorPayload: RuntimeErrorPayload = {
+        message: (raw['message'] as string | undefined) ?? 'Unknown Copilot error',
+        code: raw['code'] as string | undefined,
+        // SquadClient retries internally; surface-level errors reaching here
+        // are generally non-retryable from the provider's perspective.
+        retryable: (raw['retryable'] as boolean | undefined) ?? false,
+        ...raw,
+      };
+      this.emit(entry, {
+        type: 'error',
+        sessionId,
+        timestamp: Date.now(),
+        payload: errorPayload,
+      });
+    };
+    session.on('error', errorHandler);
+    entry.teardowns.push(() => {
+      try { session.off('error', errorHandler); } catch { /* ignore */ }
+    });
 
     // Usage events: pass through with the original payload so upstream
     // consumers can inspect token counts.  We surface them as
