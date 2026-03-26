@@ -90,13 +90,13 @@ function getSquadAgentTemplatePath(): string | null {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   
   // Try relative to this file (in dist/)
-  const distPath = path.resolve(currentDir, '../../templates/squad.agent.md');
+  const distPath = path.resolve(currentDir, '../../templates/squad.agent.md.template');
   if (fs.existsSync(distPath)) {
     return distPath;
   }
   
   // Try relative to package root
-  const pkgPath = path.resolve(currentDir, '../../../templates/squad.agent.md');
+  const pkgPath = path.resolve(currentDir, '../../../templates/squad.agent.md.template');
   if (fs.existsSync(pkgPath)) {
     return pkgPath;
   }
