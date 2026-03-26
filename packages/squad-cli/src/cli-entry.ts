@@ -627,6 +627,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'config') {
+    const { runConfig } = await import('./cli/commands/config.js');
+    await runConfig(process.cwd(), args.slice(1));
+    return;
+  }
+
   // Unknown command
   fatal(`Unknown command: ${cmd}\n       Run 'squad doctor' to check your setup, or 'squad help' for usage information.`);
 }
