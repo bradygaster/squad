@@ -5,7 +5,6 @@ import { createCompleter } from '../autocomplete.js';
 
 interface InputPromptProps {
   onSubmit: (value: string) => void;
-  prompt?: string;
   disabled?: boolean;
   agentNames?: string[];
   /** Number of messages exchanged so far — drives progressive hint text. */
@@ -40,7 +39,6 @@ export function getNextWordBoundary(text: string, pos: number): number {
 
 export const InputPrompt: React.FC<InputPromptProps> = ({ 
   onSubmit, 
-  prompt = '> ',
   disabled = false,
   agentNames = [],
   messageCount = 0,
@@ -119,13 +117,31 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     setSelectionAnchor(nextSelectionAnchor);
   };
 
-  const replaceSelectionOrInsert = (insertText: string) => {
+  const getSelectionStateSnapshot = () => {
     const currentValue = valueRef.current;
     const currentCursor = cursorPosRef.current;
     const currentSelectionAnchor = selectionAnchorRef.current;
     const currentHasSelection = currentSelectionAnchor !== null && currentSelectionAnchor !== currentCursor;
     const currentSelectionStart = currentHasSelection ? Math.min(currentSelectionAnchor!, currentCursor) : -1;
     const currentSelectionEnd = currentHasSelection ? Math.max(currentSelectionAnchor!, currentCursor) : -1;
+    return {
+      currentValue,
+      currentCursor,
+      currentSelectionAnchor,
+      currentHasSelection,
+      currentSelectionStart,
+      currentSelectionEnd,
+    };
+  };
+
+  const replaceSelectionOrInsert = (insertText: string) => {
+    const {
+      currentValue,
+      currentCursor,
+      currentHasSelection,
+      currentSelectionStart,
+      currentSelectionEnd,
+    } = getSelectionStateSnapshot();
 
     if (currentHasSelection) {
       const before = currentValue.slice(0, currentSelectionStart);
@@ -143,13 +159,13 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   };
 
   const deleteSelectionIfAny = (): boolean => {
-    const currentValue = valueRef.current;
-    const currentCursor = cursorPosRef.current;
-    const currentSelectionAnchor = selectionAnchorRef.current;
-    const currentHasSelection = currentSelectionAnchor !== null && currentSelectionAnchor !== currentCursor;
+    const {
+      currentValue,
+      currentHasSelection,
+      currentSelectionStart,
+      currentSelectionEnd,
+    } = getSelectionStateSnapshot();
     if (!currentHasSelection) return false;
-    const currentSelectionStart = Math.min(currentSelectionAnchor!, currentCursor);
-    const currentSelectionEnd = Math.max(currentSelectionAnchor!, currentCursor);
     const nextValue = currentValue.slice(0, currentSelectionStart) + currentValue.slice(currentSelectionEnd);
     applyInputState(nextValue, currentSelectionStart, null);
     return true;
@@ -231,12 +247,13 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     if (key.return) {
       // Debounce to detect multi-line paste: if more input arrives
       // within 10ms this is a paste and the newline should be preserved.
-      const currentValue = valueRef.current;
-      const currentCursor = cursorPosRef.current;
-      const currentSelectionAnchor = selectionAnchorRef.current;
-      const currentHasSelection = currentSelectionAnchor !== null && currentSelectionAnchor !== currentCursor;
-      const currentSelectionStart = currentHasSelection ? Math.min(currentSelectionAnchor!, currentCursor) : -1;
-      const currentSelectionEnd = currentHasSelection ? Math.max(currentSelectionAnchor!, currentCursor) : -1;
+      const {
+        currentValue,
+        currentCursor,
+        currentHasSelection,
+        currentSelectionStart,
+        currentSelectionEnd,
+      } = getSelectionStateSnapshot();
       if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current);
       if (currentHasSelection) {
         const nextValue = currentValue.slice(0, currentSelectionStart) + '\n' + currentValue.slice(currentSelectionEnd);
@@ -264,10 +281,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     }
 
     if (key.ctrl && (input === 'a' || input === 'A')) {
-      selectionAnchorRef.current = 0;
-      cursorPosRef.current = valueRef.current.length;
-      setSelectionAnchor(0);
-      setCursorPos(valueRef.current.length);
+      applyInputState(valueRef.current, valueRef.current.length, 0);
       return;
     }
 
@@ -298,8 +312,16 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     }
 
     const isBackspaceChar = input === '\u007f' || input === '\b';
+    // Some terminal/input stacks report Backspace as `key.delete=true` with empty input.
+    // Treat that specific end-of-line shape as backspace compatibility handling.
+    const isLikelyBackspaceViaDeleteKey =
+      key.delete &&
+      !key.backspace &&
+      !input &&
+      cursorPosRef.current > 0 &&
+      cursorPosRef.current === valueRef.current.length;
 
-    if (key.backspace || isBackspaceChar) {
+    if (key.backspace || isBackspaceChar || isLikelyBackspaceViaDeleteKey) {
       if (deleteSelectionIfAny()) return;
       const currentValue = valueRef.current;
       const currentCursor = cursorPosRef.current;
@@ -311,26 +333,9 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     }
 
     if (key.delete) {
-      if (isBackspaceChar) {
-        if (deleteSelectionIfAny()) return;
-        const currentValue = valueRef.current;
-        const currentCursor = cursorPosRef.current;
-        if (currentCursor > 0) {
-          const nextValue = currentValue.slice(0, currentCursor - 1) + currentValue.slice(currentCursor);
-          applyInputState(nextValue, currentCursor - 1, null);
-        }
-        return;
-      }
       if (deleteSelectionIfAny()) return;
       const currentValue = valueRef.current;
       const currentCursor = cursorPosRef.current;
-      // Some terminals report Backspace (DEL, 0x7f) as delete=true with no input.
-      // When we're at end-of-line, interpret that as a backspace for compatibility.
-      if (currentCursor === currentValue.length && currentCursor > 0) {
-        const nextValue = currentValue.slice(0, currentCursor - 1) + currentValue.slice(currentCursor);
-        applyInputState(nextValue, currentCursor - 1, null);
-        return;
-      }
       if (currentCursor < currentValue.length) {
         const nextValue = currentValue.slice(0, currentCursor) + currentValue.slice(currentCursor + 1);
         applyInputState(nextValue, currentCursor, null);
