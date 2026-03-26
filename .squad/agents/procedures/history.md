@@ -153,3 +153,36 @@ Also updated: examples section (showing `name` + `description` pairs), anti-patt
 - All 5 copies synced via `sync-templates.mjs`
 
 **Pattern:** Model catalogs drift. When the platform adds/removes models, every section referencing models needs updating — not just the catalog list. Search for all model name strings before considering the refresh complete.
+### 2026-03-25: VS Code routing enforcement investigation (#613)
+
+**Problem:** In VS Code, the coordinator reads routing rules but doesn't enforce them — continues working inline instead of dispatching via `runSubagent`. Andreas (andikrueger) reproduced and the agent itself admitted it violated the rules.
+
+**Root cause (dominant):** CLI-centric enforcement language. The CRITICAL RULE says "MUST use the `task` tool" — but in VS Code the dispatch tool is `runSubagent`. When `task` isn't available, the coordinator falls through Platform Detection's "Fallback mode" (work inline) instead of using `runSubagent`. The VS Code adaptations section is buried 360 lines below the CRITICAL RULE and reads as optional, not mandatory.
+
+**Amplifying factors:**
+1. Prompt saturation: 950 lines / 80KB. Routing constraint competes with 900+ lines of governance, lifecycle, and reference material. Core dispatch loop is ~200 lines; rest is noise.
+2. Template duplication: CLI 1.0.11 discovers all `*.agent.md` from cwd to git root. Squad has 5 copies — only `.github/agents/squad.agent.md` should be discoverable.
+
+**Proposed fixes (5 total, prioritized):**
+- P0: Rewrite enforcement language to be platform-neutral ("dispatch tool" not "`task` tool")
+- P0: Add routing reinforcement at bottom of prompt (LLMs weight start/end more than middle)
+- P1: Rename template copies to `.agent.md.template` to prevent CLI discovery
+- P1: Extract ~350 lines to lazy-loaded reference files (worktree, Ralph, casting, MCP)
+- P1: Move VS Code dispatch block immediately after CRITICAL RULE
+
+**Key pattern learned:** Enforcement language must name ALL dispatch mechanisms, not just the CLI one. Platform-specific instructions buried deep in a long prompt get lost — they need to be co-located with the constraint they modify. LLM attention patterns favor prompt boundaries (top/bottom) over the middle.
+
+**Proposal filed:** `.squad/decisions/inbox/procedures-vscode-routing-fix.md`
+
+### 2026-07: VS Code routing enforcement — Fix 1 + Fix 2 shipped (#613)
+
+**Implemented** P0 fixes from the VS Code routing proposal:
+
+- **Fix 1 (Platform-Neutral Enforcement):** Rewrote CRITICAL RULE from CLI-specific "`task` tool" language to dispatcher-identity framing ("You are a DISPATCHER, not a DOER") with explicit dispatch mechanism table (CLI → `task`, VS Code → `runSubagent`, fallback → inline as last resort). Updated all 7 enforcement-context references throughout squad.agent.md: anti-patterns #1/#2/#3, constraints block, and spawn template header.
+
+- **Fix 2 (Top-and-Bottom Reinforcement):** Added `## ⚠️ Routing Enforcement Reminder` as final section, exploiting LLM prompt-boundary attention bias. Reinforces dispatcher identity at both top and bottom of the prompt.
+
+**Branch:** `squad/613-vscode-routing-enforcement` — canonical source edited, synced to all 5 copies via `scripts/sync-templates.mjs`, build verified clean.
+
+**Remaining P1 fixes** (template renaming, prompt slimming, VS Code block relocation) deferred to separate PRs per the proposal's ship order.
+
