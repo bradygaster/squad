@@ -198,8 +198,8 @@ describe('CLI: squad consult', { timeout: 30_000 }, () => {
       const initResult = runSquad('init --global', TEST_ROOT, envWithGlobal);
       expect(initResult.exitCode).toBe(0);
 
-      // Verify the personal squad was created
-      const personalSquadDir = join(globalConfig, 'squad', '.squad');
+      // Verify the personal squad was created (init --global bootstraps personal-squad/)
+      const personalSquadDir = join(globalConfig, 'squad', 'personal-squad');
       expect(existsSync(personalSquadDir)).toBe(true);
 
       // 2. Create a fresh project with its own git repo (no .squad/)

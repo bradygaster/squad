@@ -507,7 +507,7 @@ describe('setupConsultMode', () => {
     expect(content).toContain('.squad/agents/');
   });
 
-  it('uses full squad.agent.md template with consult mode preamble', async () => {
+  it('uses consult mode preamble and squad context references', async () => {
     const result = await setupConsultMode({
       projectRoot: PROJECT_ROOT,
       personalSquadRoot: PERSONAL_SQUAD,
@@ -517,9 +517,10 @@ describe('setupConsultMode', () => {
     // Should have consult mode preamble
     expect(content).toContain('Consult Mode Active');
     expect(content).toContain('Skip Init Mode');
-    // Should have full template content (Coordinator Identity section)
-    expect(content).toContain('Coordinator Identity');
-    expect(content).toContain('Team Mode');
+    // Should reference local .squad/ context (present in both template and fallback)
+    expect(content).toContain('.squad/decisions.md');
+    // Should start with valid frontmatter
+    expect(content).toMatch(/^---\r?\n/);
   });
 
   it('adds .github/agents/squad.agent.md to git exclude', async () => {
