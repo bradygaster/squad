@@ -73,3 +73,20 @@ If you make a decision that affects other team members, write it to:
 .squad/decisions/inbox/copilot-{brief-slug}.md
 ```
 The Scribe will merge it into the shared decisions file.
+
+## Test Integrity
+
+NEVER delete, skip, or weaken existing tests to make your code pass.
+
+- If a test fails, fix the CODE, not the test.
+- Never add `.skip`, `xit`, or `xdescribe` to bypass failures.
+- Never change `expect(x).toBe('specific')` to `expect(x).toBeTruthy()` to avoid failures.
+- Never lower coverage thresholds or test count baselines.
+
+The only acceptable reasons to modify a test:
+1. The test's expected behavior has intentionally changed (document why in commit message)
+2. The test was genuinely wrong (explain in the commit message)
+
+If you cannot make a test pass, report the failure in your PR — do NOT suppress it.
+
+A CI guard will reject any PR that reduces the test count below the baseline in `.github/test-baseline.json`.

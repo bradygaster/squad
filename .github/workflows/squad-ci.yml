@@ -107,7 +107,11 @@ jobs:
         run: npm run build
 
       - name: Run tests
-        run: npm test
+        run: npx vitest run --reporter=default --reporter=json --outputFile=test-results.json
+
+      - name: Test count guard
+        if: success() || failure()
+        run: node .github/scripts/test-count-guard.mjs --from-json test-results.json
 
   publish-policy:
     runs-on: ubuntu-latest
