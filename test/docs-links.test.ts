@@ -16,6 +16,7 @@ const KNOWN_ISSUES = [
   'README.md:40', // Migration guide link needs updating
   'README.md:248', // SDK-first mode link needs updating
   'docs\\src\\content\\docs\\scenarios\\client-compatibility.md:270', // Troubleshooting anchor
+  'docs\\src\\content\\docs\\tour-first-session.md:263', // Pre-existing on dev — tour-github-issues.md doesn't exist (bradygaster/squad#610)
 ];
 
 function isKnownIssue(sourceFile: string, lineNumber: number): boolean {
