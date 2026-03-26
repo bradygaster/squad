@@ -12,6 +12,8 @@ coverage/
 .squad/sessions/
 .squad/config.json
 .test-cli-*
+.test-setup-*
+.test-init-scaffold-*
 # Docs site generated files
 docs/dist/
 docs/src/content/docs/reference/api/
