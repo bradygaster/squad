@@ -31,7 +31,7 @@ export interface NapMetrics {
 }
 
 export interface NapAction {
-  type: 'compress' | 'prune' | 'archive' | 'merge' | 'cleanup';
+  type: 'compress' | 'prune' | 'archive' | 'merge' | 'cleanup' | 'warning';
   target: string;
   description: string;
   bytesSaved: number;
@@ -95,6 +95,19 @@ function humanTokens(bytes: number): string {
   const tokens = Math.round((bytes / 1024) * TOKENS_PER_KB);
   if (tokens < 1000) return `${tokens}`;
   return `${(tokens / 1000).toFixed(0)}K`;
+}
+
+/** Build a warning action when decisions.md is oversized but nothing was archivable. */
+function oversizedDecisionsWarning(squadDir: string): NapAction | null {
+  const decisionsPath = path.join(squadDir, 'decisions.md');
+  const decisionsSize = fileSize(decisionsPath);
+  if (decisionsSize <= DECISION_THRESHOLD) return null;
+  return {
+    type: 'warning',
+    target: decisionsPath,
+    description: `⚠️ decisions.md is ${humanBytes(decisionsSize)} but no entries could be archived (all recent or undated). Consider manual cleanup or adding dates to undated entries.`,
+    bytesSaved: 0,
+  };
 }
 
 function daysAgoFromLine(line: string): number | null {
@@ -472,7 +485,12 @@ export async function runNap(options: NapOptions): Promise<NapResult> {
 
     // Decision archival
     const archiveAction = archiveDecisions(squadDir, dryRun);
-    if (archiveAction) actions.push(archiveAction);
+    if (archiveAction) {
+      actions.push(archiveAction);
+    } else {
+      const warning = oversizedDecisionsWarning(squadDir);
+      if (warning) actions.push(warning);
+    }
 
   } finally {
     if (!dryRun) removeJournal(squadDir);
@@ -524,7 +542,12 @@ export function runNapSync(options: NapOptions): NapResult {
     actions.push(...cleanInbox(squadDir, dryRun));
 
     const archiveAction = archiveDecisions(squadDir, dryRun);
-    if (archiveAction) actions.push(archiveAction);
+    if (archiveAction) {
+      actions.push(archiveAction);
+    } else {
+      const warning = oversizedDecisionsWarning(squadDir);
+      if (warning) actions.push(warning);
+    }
   } finally {
     if (!dryRun) removeJournal(squadDir);
   }

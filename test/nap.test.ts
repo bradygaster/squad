@@ -510,6 +510,52 @@ describe('Nap — Decision archival', () => {
     expect(archiveActions).toHaveLength(0);
     expect(existsSync(join(squadDir, 'decisions-archive.md'))).toBe(false);
   });
+  it('warns when decisions.md is over threshold but nothing is archivable', async () => {
+    // decisions.md >20KB with ONLY header content — no ### entries at all.
+    // archiveDecisions() finds no entries and returns null, but the file is oversized.
+    const headerOnly = '# Decisions\n\n' + 'x'.repeat(21 * 1024);
+    expect(Buffer.byteLength(headerOnly)).toBeGreaterThan(20 * 1024);
+
+    const squadDir = createTestSquadDir({ 'decisions.md': headerOnly });
+    const result = await runNap({ squadDir, dryRun: true });
+
+    const warnActions = result.actions.filter(
+      (a) => a.type === 'warning' && a.target.includes('decisions'),
+    );
+    expect(warnActions).toHaveLength(1);
+    expect(warnActions[0]!.bytesSaved).toBe(0);
+    expect(warnActions[0]!.description).toContain('no entries could be archived');
+  });
+
+  it('no warning when decisions.md is under threshold', async () => {
+    const smallContent = '# Decisions\n\n' + 'x'.repeat(5 * 1024);
+    expect(Buffer.byteLength(smallContent)).toBeLessThan(20 * 1024);
+
+    const squadDir = createTestSquadDir({ 'decisions.md': smallContent });
+    const result = await runNap({ squadDir });
+
+    const warnActions = result.actions.filter((a) => a.type === 'warning');
+    expect(warnActions).toHaveLength(0);
+  });
+
+  it('no warning when archival succeeds', async () => {
+    // decisions.md >20KB with old entries that DO get archived
+    let bigOldDecisions = '# Decisions\n\n';
+    for (let i = 0; i < 30; i++) {
+      bigOldDecisions += `### 2024-01-${String(i + 1).padStart(2, '0')}: Decision ${i + 1}\n`;
+      bigOldDecisions += 'w'.repeat(800) + '\n\n';
+    }
+    expect(Buffer.byteLength(bigOldDecisions)).toBeGreaterThan(20 * 1024);
+
+    const squadDir = createTestSquadDir({ 'decisions.md': bigOldDecisions });
+    const result = await runNap({ squadDir });
+
+    const archiveActions = result.actions.filter((a) => a.type === 'archive');
+    expect(archiveActions.length).toBeGreaterThan(0);
+
+    const warnActions = result.actions.filter((a) => a.type === 'warning');
+    expect(warnActions).toHaveLength(0);
+  });
 });
 
 // ============================================================================
