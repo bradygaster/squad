@@ -390,6 +390,126 @@ describe('Nap — Decision archival', () => {
     const afterSize = statSync(join(squadDir, 'decisions.md')).size;
     expect(afterSize).toBeLessThan(Buffer.byteLength(bigDecisions));
   });
+
+  it('count-based fallback: archives oldest recent entries when all entries are <30 days old and >20KB', async () => {
+    // 50 entries all dated today — all "recent" by age, but total >20KB
+    const today = new Date().toISOString().slice(0, 10);
+    let bigRecent = '# Decisions\n\n';
+    for (let i = 0; i < 50; i++) {
+      bigRecent += `### ${today}: Decision ${i + 1}\n`;
+      bigRecent += 'z'.repeat(600) + '\n\n';
+    }
+    expect(Buffer.byteLength(bigRecent)).toBeGreaterThan(20 * 1024);
+
+    const squadDir = createTestSquadDir({
+      'decisions.md': bigRecent,
+    });
+
+    const result = await runNap({ squadDir });
+
+    const archiveActions = result.actions.filter(
+      (a) => a.type === 'archive' && a.target.includes('decisions')
+    );
+    expect(archiveActions).toHaveLength(1);
+    expect(archiveActions[0]!.bytesSaved).toBeGreaterThan(0);
+
+    // Archive file should have been created
+    expect(existsSync(join(squadDir, 'decisions-archive.md'))).toBe(true);
+
+    // decisions.md should now be ≤20KB
+    const afterSize = statSync(join(squadDir, 'decisions.md')).size;
+    expect(afterSize).toBeLessThanOrEqual(20 * 1024);
+  });
+
+  it('count-based fallback: all-recent entries under threshold returns null (no archival)', async () => {
+    // 5 entries all dated today, total well under 20KB
+    const today = new Date().toISOString().slice(0, 10);
+    let smallRecent = '# Decisions\n\n';
+    for (let i = 0; i < 5; i++) {
+      smallRecent += `### ${today}: Decision ${i + 1}\n`;
+      smallRecent += 'Content here.\n\n';
+    }
+    expect(Buffer.byteLength(smallRecent)).toBeLessThan(20 * 1024);
+
+    const squadDir = createTestSquadDir({
+      'decisions.md': smallRecent,
+    });
+
+    const result = await runNap({ squadDir });
+
+    const archiveActions = result.actions.filter(
+      (a) => a.type === 'archive' && a.target.includes('decisions')
+    );
+    expect(archiveActions).toHaveLength(0);
+    expect(existsSync(join(squadDir, 'decisions-archive.md'))).toBe(false);
+  });
+
+  it('count-based fallback: undated entries are preserved, not archived', async () => {
+    // Mix: 10 undated directive entries + 40 dated entries, total >20KB
+    const today = new Date().toISOString().slice(0, 10);
+    let mixedContent = '# Decisions\n\n';
+    // Undated entries first (foundational directives)
+    for (let i = 0; i < 10; i++) {
+      mixedContent += `### Directive ${i + 1}: Always do X\n`;
+      mixedContent += 'Foundational rule content.\n\n';
+    }
+    // Dated entries
+    for (let i = 0; i < 40; i++) {
+      mixedContent += `### ${today}: Decision ${i + 1}\n`;
+      mixedContent += 'd'.repeat(500) + '\n\n';
+    }
+    expect(Buffer.byteLength(mixedContent)).toBeGreaterThan(20 * 1024);
+
+    const squadDir = createTestSquadDir({
+      'decisions.md': mixedContent,
+    });
+
+    const result = await runNap({ squadDir });
+
+    const archiveActions = result.actions.filter(
+      (a) => a.type === 'archive' && a.target.includes('decisions')
+    );
+    expect(archiveActions).toHaveLength(1);
+
+    // All undated entries must remain in decisions.md
+    const remaining = readFileSync(join(squadDir, 'decisions.md'), 'utf8');
+    for (let i = 0; i < 10; i++) {
+      expect(remaining).toContain(`Directive ${i + 1}: Always do X`);
+    }
+
+    // Archived content should NOT contain any undated entries
+    const archived = readFileSync(join(squadDir, 'decisions-archive.md'), 'utf8');
+    for (let i = 0; i < 10; i++) {
+      expect(archived).not.toContain(`Directive ${i + 1}: Always do X`);
+    }
+  });
+
+  it('count-based fallback: exactly at threshold does NOT archive (boundary case)', async () => {
+    // Build content that is exactly at or just under 20KB with all-recent entries
+    const today = new Date().toISOString().slice(0, 10);
+    const header = '# Decisions\n\n';
+    const headerSize = Buffer.byteLength(header, 'utf8');
+    // Each entry: "### YYYY-MM-DD: Decision N\n" + padding + "\n\n"
+    const entryHeading = `### ${today}: Decision 1\n`;
+    const headingSize = Buffer.byteLength(entryHeading, 'utf8');
+    // Fill to exactly DECISION_THRESHOLD (20*1024) with a single entry
+    const paddingNeeded = (20 * 1024) - headerSize - headingSize - 2; // 2 for \n\n
+    const exactContent = header + entryHeading + 'x'.repeat(paddingNeeded) + '\n\n';
+    // Verify we're at or just at the threshold
+    expect(Buffer.byteLength(exactContent)).toBeLessThanOrEqual(20 * 1024 + 10);
+
+    const squadDir = createTestSquadDir({
+      'decisions.md': exactContent,
+    });
+
+    const result = await runNap({ squadDir });
+
+    const archiveActions = result.actions.filter(
+      (a) => a.type === 'archive' && a.target.includes('decisions')
+    );
+    expect(archiveActions).toHaveLength(0);
+    expect(existsSync(join(squadDir, 'decisions-archive.md'))).toBe(false);
+  });
 });
 
 // ============================================================================
