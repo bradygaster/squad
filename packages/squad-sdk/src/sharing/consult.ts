@@ -310,10 +310,10 @@ export interface SetupConsultModeResult {
 
 /**
  * Get the personal squad root path.
- * Returns {globalSquadPath}/.squad/
+ * Returns {globalSquadPath}/personal-squad/
  */
 export function getPersonalSquadRoot(): string {
-  return path.resolve(resolveGlobalSquadPath(), '.squad');
+  return path.resolve(resolveGlobalSquadPath(), 'personal-squad');
 }
 
 /**

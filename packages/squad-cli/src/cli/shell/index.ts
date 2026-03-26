@@ -148,7 +148,7 @@ export async function runShell(): Promise<void> {
   // contexts (pipes, tests, CI) see useful guidance rather than a TTY error.
   const cwd = process.cwd();
   const localSquad = resolveSquad(cwd);
-  const globalSquadDir = join(resolveGlobalSquadPath(), '.squad');
+  const globalSquadDir = join(resolveGlobalSquadPath(), 'personal-squad');
   const hasAnySquad = !!localSquad || existsSync(globalSquadDir);
 
   if (!hasAnySquad && !process.stdin.isTTY) {
