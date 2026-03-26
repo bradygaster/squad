@@ -4,6 +4,21 @@
 
 ## Learnings
 
+### archiveDecisions() count-based fallback (#626) (2025-07-24)
+
+**Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.
+
+**Fix:** Added a count-based fallback after the age-based split. When `old.length === 0` and total file size exceeds `DECISION_THRESHOLD` (20KB), the fallback separates recent entries into dated vs undated, sorts dated by age (most recent first), keeps entries that fit under the threshold budget, and archives the rest. Undated entries are always preserved — they are foundational directives per Procedures' guidance.
+
+**Key design choices:**
+1. Undated entries (`daysAgo === null`) are never archived by the count-based fallback. They stay in `recent`.
+2. Budget calculation accounts for header + undated entries + kept dated entries to guarantee the result fits under 20KB.
+3. Entries are re-sorted into original document order after the split, so the output file preserves heading sequence.
+
+**Tests:** Added 4 adversarial tests — 50 all-today entries >20KB, mixed dated/undated preservation, under-threshold no-op, exact-threshold boundary case.
+
+**Pattern:** When a function has an early-return optimization (`if (old.length === 0) return null`), always consider whether the condition that triggered the function call (file size > threshold) can still be true when the early-return fires. If so, the early-return is a silent failure.
+
 ### Init scaffolding: casting dir + no-remote stderr (#579) (2025-07-18)
 
 **Context:** `squad init` in a fresh `git init` repo (no remote) printed `error: No such remote 'origin'` to stderr and `squad doctor` reported `casting/registry.json` missing. Two independent bugs in `packages/squad-sdk/src/config/init.ts`.

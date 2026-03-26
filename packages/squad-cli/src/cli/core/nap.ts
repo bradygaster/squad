@@ -343,7 +343,45 @@ function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
     }
   }
 
-  if (old.length === 0) return null;
+  // Count-based fallback: if nothing is old enough but file exceeds threshold,
+  // archive the oldest dated recent entries to get under the size limit.
+  // Undated entries are preserved — they are often foundational directives.
+  if (old.length === 0) {
+    const dated = recent.filter(e => e.daysAgo !== null);
+    const undated = recent.filter(e => e.daysAgo === null);
+
+    if (dated.length === 0) return null; // only undated entries, nothing to archive
+
+    // Sort dated entries: most recent first (smallest daysAgo)
+    dated.sort((a, b) => a.daysAgo! - b.daysAgo!);
+
+    // Keep the most recent dated entries that fit under the threshold
+    // along with all undated entries and the header
+    const headerEnd = entries.length > 0 ? entries[0]!.start : lines.length;
+    const headerSize = Buffer.byteLength(lines.slice(0, headerEnd).join('\n'), 'utf8');
+    const undatedSize = undated.reduce(
+      (sum, e) => sum + Buffer.byteLength(lines.slice(e.start, e.end).join('\n'), 'utf8'), 0,
+    );
+    let budget = DECISION_THRESHOLD - headerSize - undatedSize;
+
+    const keptDated: typeof entries = [];
+    for (const e of dated) {
+      const entrySize = Buffer.byteLength(lines.slice(e.start, e.end).join('\n'), 'utf8');
+      if (budget >= entrySize) {
+        budget -= entrySize;
+        keptDated.push(e);
+      } else {
+        old.push(e);
+      }
+    }
+
+    if (old.length === 0) return null; // everything fits, no archival needed
+
+    // Rebuild recent: undated + kept dated, in original document order
+    recent.length = 0;
+    recent.push(...undated, ...keptDated);
+    recent.sort((a, b) => a.start - b.start);
+  }
 
   // Header: lines before first ### heading
   const headerEnd = entries.length > 0 ? entries[0]!.start : lines.length;
