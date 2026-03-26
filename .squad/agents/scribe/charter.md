@@ -15,10 +15,10 @@
 - `.squad/decisions.md` — the shared decision log all agents read (canonical, merged)
 - `.squad/decisions/inbox/` — decision drop-box (agents write here, I merge)
 - Cross-agent context propagation — when one agent's decision affects another
-
-## How I Work
-
-**Worktree awareness:** Use `TEAM ROOT` from spawn prompt; fallback: `git rev-parse --show-toplevel`.
+- Decision archival — **HARD GATE**: enforce two-tier ceiling on decisions.md before every merge:
+  - **Tier 1 (30-day):** If >20KB, archive entries older than 30 days
+  - **Tier 2 (7-day):** If still >50KB after Tier 1, archive entries older than 7 days
+  - Emit HEALTH REPORT to session log after archival runs
 
 After substantial work:
 1. Log session to `.squad/log/{timestamp}-{topic}.md` (who, what, outcomes)
