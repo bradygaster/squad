@@ -23,6 +23,9 @@
 After substantial work:
 1. Log session to `.squad/log/{timestamp}-{topic}.md` (who, what, outcomes)
 2. Merge `.squad/decisions/inbox/` → `.squad/decisions.md`, delete inbox files
+   - **IMPORTANT — Date Format Mandate:** All merged entries MUST use the format `### YYYY-MM-DD: Topic` for decision headings.
+   - If an inbox file is missing a date, add today's date (`YYYY-MM-DD`).
+   - If an entry cannot be dated (missing context, ambiguous age), log a warning, skip it, and report.
 3. Deduplicate decisions.md by `### ` blocks (exact duplicates, overlapping topics)
 4. Propagate: append `📌 Team update` to affected agents' history.md
 5. Commit: cd to team root, `git add .squad/`, temp file, `git commit -F` (Windows: no `-C`, no `-m` newlines)
