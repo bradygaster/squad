@@ -54,6 +54,7 @@ const EXPECTED_FEATURES = [
   'capability-routing',
   'consult-mode',
   'copilot-coding-agent',
+  'decision-archival',
   'directives',
   'enterprise-platforms',
   'export-import',

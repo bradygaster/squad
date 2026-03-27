@@ -46,6 +46,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Response Modes', slug: 'features/response-modes' },
       { title: 'Parallel Execution', slug: 'features/parallel-execution' },
       { title: 'Memory', slug: 'features/memory' },
+      { title: 'Decision Archival', slug: 'features/decision-archival' },
       { title: 'Skills', slug: 'features/skills' },
       { title: 'Directives', slug: 'features/directives' },
       { title: 'Ceremonies', slug: 'features/ceremonies' },
