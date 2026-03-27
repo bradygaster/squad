@@ -22,17 +22,26 @@ const base = import.meta.env.BASE_URL;
         </h3>
         <ul class="space-y-0.5">
           {section.items.map((item) => (
-            <li>
-              <a
-                href={`${base}docs/${item.slug}/`}
-                class:list={[
-                  'sidebar-link',
-                  { active: currentSlug === item.slug },
-                ]}
-              >
-                {item.title}
-              </a>
-            </li>
+            <>
+              {item.category && (
+                <li class="pt-3 first:pt-0">
+                  <span class="block px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-surface-400 dark:text-surface-500 select-none">
+                    {item.category}
+                  </span>
+                </li>
+              )}
+              <li>
+                <a
+                  href={`${base}docs/${item.slug}/`}
+                  class:list={[
+                    'sidebar-link',
+                    { active: currentSlug === item.slug },
+                  ]}
+                >
+                  {item.title}
+                </a>
+              </li>
+            </>
           ))}
         </ul>
       </div>
