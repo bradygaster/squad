@@ -62,6 +62,17 @@ For files shared across PRs (navigation.ts, test files, CI workflows):
   \\\
 - This prevents diffs that rewrite the entire file, which cause merge conflicts with every other PR
 
+#### Serial Branch Operations — Critical Rule
+
+⚠️ **When multiple agents fix different PRs in parallel on the same physical repository (even if different branches), they all run `git checkout` in the same working tree.** This causes:
+- Working tree conflicts (both agents try to update `.git/index` simultaneously)
+- Commits landing on wrong branches (Agent A's commit lands on Agent B's branch)
+- Race conditions (`.git/HEAD` and `.git/index` become inconsistent)
+
+**RULE: Bleed fixes across multiple PRs must be done SERIALLY (one at a time) unless using git worktrees.** Never launch parallel agents that checkout different branches in the same repo without worktrees.
+
+**Exception**: Use `git worktree add ../squad-195 -b squad/195-fix-issue origin/dev` to give each agent an isolated working directory.
+
 #### When Rebase Fails
 If rebase has conflicts on shared files:
 1. `git rebase --abort`
@@ -75,8 +86,11 @@ Prepare for upstream PR:
 - Squash commits into logical units
 - Clean up commit messages
 - Remove any \.squad/\ files if present
+- Check for stale TDD comments ("RED PHASE", "TODO: implement", "WIP") that no longer apply
 - Verify no \/docs/\ prefix in titles
 - Remove double blank lines from description
+
+**Note on `.squad/skills/` files**: The `.squad/skills/` directory may be gitignored in some configurations. If you need to commit skill files to the fork, use `git add -f` to force them through, even if they match `.gitignore` patterns.
 
 ### Step 7: UPSTREAM
 Open PR on upstream repository against \radygaster/squad:dev\:
@@ -97,6 +111,9 @@ Upstream PR is merged. Close or keep fork PR for reference.
 | Commit \.squad/\ files in app PRs | Repo pollution, merge conflicts | Exclude from staging, bleed check catches this |
 | Open multiple PRs per feature | Fragmented review, merge chaos | One upstream PR per feature |
 | Skip rebase before upstream | Diverged branch creates full-file diffs | Always rebase against origin/dev before step 6 |
+| Parallel branch checkouts in same repo | Multiple agents switch branches simultaneously, causing working tree conflicts and commits landing on wrong branches | Use git worktrees or fix PRs serially |
+| Forgetting to stash skill file updates | `.squad/skills/` files are gitignored, so they don't commit to the fork | Use `git add -f` when committing skill files |
+| Leaving stale TDD comments in code | "RED PHASE", "TODO: implement" markers confuse reviewers after merge | Clean up all TDD markers before approval |
 
 ## Pre-Upstream Gate Checklist
 

@@ -9,6 +9,16 @@ Periodic cross-branch bleed audits, stowaway file detection
 ## Problem Statement
 Features developed on forks can accidentally include files intended for \.squad/\, docs, or unrelated purposes. These "stowaway" files pollute the upstream repository if not caught before PR merge. A periodic audit across all open PRs by a contributor identifies and flags these stragglers before they reach main.
 
+## High-Risk Shared Files
+
+**These files are the #1 bleed vectors** — they appear in almost every docs PR and are where cross-branch contamination happens most:
+
+- **`navigation.ts`** — contains site structure and nav entries for all features
+- **`test/docs-build.test.ts`** — build verification tests that reference multiple PRs' output paths
+- **`docs/` directories** — shared documentation structure
+
+**When checking these files, verify entries are ONLY for this PR's content — not entries from other concurrent PRs or stale previous runs. Flag full-file rewrites of these shared files — surgical additions only.**
+
 ## Trigger
 
 - **Scheduled**: Twice per session day (morning and afternoon sweeps)
@@ -45,6 +55,33 @@ Check each file against the PR's stated purpose (from title/description). Red fl
 | Full-file rewrites | Accidental large refactors | Out of scope, causes merge debt |
 | Build artifacts | \dist/\, \uild/\, \.next/\ | Should be in \.gitignore\ |
 | Root-level strays | Unexpected \.env.local\, \secrets.json\ | Likely accidental commits |
+
+### 3.5: Convention Gate Checks
+
+While auditing files, also check for house-style violations. **These are blockers, not nits — per team directive.**
+
+| Convention | Rule | Blocker? |
+|-----------|------|----------|
+| Internal link format | Use bare paths like `/features/memory`, not `/docs/features/memory` | ✅ Yes |
+| Blank lines | Single blank line between sections (not double) | ✅ Yes |
+| Entry duplication | Each nav entry appears exactly once | ✅ Yes |
+| Stale TDD comments | Clean up "RED PHASE", "TODO: implement", "WIP" markers before merge | ✅ Yes |
+
+### 3.6: CI Path Debugging Pattern
+
+When CI reports a step as successful but tests fail on a missing file, path mismatches often indicate cross-branch contamination or stale config:
+
+Example: CI says "generator succeeded — output at docs/public/" but the test looks for docs/dist/ and fails.
+
+**Check actual path**:
+\\\ash
+ls -la docs/public/
+ls -la docs/dist/
+grep "outDir" build.config.ts
+grep "docs/dist" test/docs-build.test.ts
+\\\
+
+**Pattern**: Add `ls -la {expected-path}` verification steps when debugging CI file issues. This reveals if the build wrote to the wrong directory (often from stale config or entries from another PR).
 
 ### 4. Output Format: Emoji-Based Table
 
