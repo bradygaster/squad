@@ -93,11 +93,17 @@ Prepare for upstream PR:
 **Note on `.squad/skills/` files**: The `.squad/skills/` directory may be gitignored in some configurations. If you need to commit skill files to the fork, use `git add -f` to force them through, even if they match `.gitignore` patterns.
 
 ### Step 7: UPSTREAM
-Open PR on upstream repository against \radygaster/squad:dev\:
-\\\ash
+Open PR on upstream repository against radygaster/squad:dev:
+\\\ash
 gh pr create --repo bradygaster/squad --base dev --fill
 \\\
 
+After the PR is created, undraft it to mark it ready for review. The upstream PR is the **final presentation** — it should not remain in draft:
+\\\ash
+gh pr ready {pr-number} --repo bradygaster/squad
+\\\
+
+The upstream PR signals completion of the fork pipeline. Leaving it in draft confuses reviewers — they may assume work is still in progress when iteration is already complete.
 ### Step 8: DONE
 Upstream PR is merged. Close or keep fork PR for reference.
 
@@ -114,6 +120,7 @@ Upstream PR is merged. Close or keep fork PR for reference.
 | Parallel branch checkouts in same repo | Multiple agents switch branches simultaneously, causing working tree conflicts and commits landing on wrong branches | Use git worktrees or fix PRs serially |
 | Forgetting to stash skill file updates | `.squad/skills/` files are gitignored, so they don't commit to the fork | Use `git add -f` when committing skill files |
 | Leaving stale TDD comments in code | "RED PHASE", "TODO: implement" markers confuse reviewers after merge | Clean up all TDD markers before approval |
+| Leave upstream PR in draft | Signals incomplete work when pipeline is done | Undraft upstream PR after opening — it's presentation-ready |
 
 ## Pre-Upstream Gate Checklist
 
@@ -216,3 +223,5 @@ This pipeline separates concerns:
 - **Upstream PR**: Clean, single-commit, ready-to-merge
 
 Result: Upstream PRs are lean, reviewed, and production-ready.
+
+
