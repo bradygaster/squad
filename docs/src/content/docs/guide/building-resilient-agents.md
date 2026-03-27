@@ -17,7 +17,7 @@ The circuit breaker operates in three states:
 |-------|----------|------------|
 | **CLOSED** | Requests pass through normally | Open on threshold exceeded |
 | **OPEN** | Requests fail fast without attempting | Half-open after backoff timeout |
-| **HALF-OPEN** | Allow a single probe request to test recovery | Closed if probe succeeds; open if fails |
+| **HALF-OPEN** | Allow limited probe requests to test recovery | Closed after `successThreshold` consecutive successes; open if any probe fails |
 
 When failures exceed the configured threshold within a time window, the breaker **opens** to prevent further failing requests. After the backoff timeout, it enters **half-open** to test if the system has recovered. A successful probe closes the circuit; a failure re-opens it.
 
@@ -38,9 +38,10 @@ Each failed probe attempt resets the backoff. This gives flaky services time to 
 
 ## Configuration
 
-Squad includes sensible defaults — most agents won't need to change these. Configure the circuit breaker in your agent's `squad.json` or initialization code only if you want to customize:
+Squad includes sensible defaults — most agents won't need to change these. If you want to customize the circuit breaker, provide a JSON configuration object in your agent's initialization code:
 
 ```json
+// Example configuration (pattern guidance — not a shipped config file)
 {
   "resilience": {
     "circuitBreaker": {
@@ -57,7 +58,7 @@ Squad includes sensible defaults — most agents won't need to change these. Con
 | Parameter | Default | Meaning |
 |-----------|---------|---------|
 | `failureThreshold` | 5 | Open circuit after this many failures |
-| `successThreshold` | 2 | Close circuit after this many successes in half-open |
+| `successThreshold` | 2 | In half-open state, close circuit after this many consecutive successes (confirms system recovery) |
 | `timeWindow` | 60s | Count failures within this window |
 | `initialBackoff` | 2m | Start backoff at this duration |
 | `maxBackoff` | 30m | Cap backoff at this duration |
@@ -72,10 +73,13 @@ The circuit breaker persists its state to disk. If an agent restarts while the c
 
 ## How to apply to custom agents
 
-When building a custom agent, wrap your external calls with circuit breaker protection:
+When building a custom agent, wrap your external calls with circuit breaker protection.
+
+> **Planned API — example only:** The `@squad/resilience` module is not yet shipped. This pseudocode shows the intended interface. For custom agents today, you must implement your own circuit breaker following this pattern.
 
 ```typescript
-import { CircuitBreaker } from '@squad/resilience';
+// Pseudocode: Intended interface (not yet shipped)
+// For now, use squad.config.ts circuit breaker settings instead.
 
 const breaker = new CircuitBreaker({
   failureThreshold: 5,
@@ -94,16 +98,18 @@ async function callDownstreamAPI() {
 // and exponential backoff — just call it.
 try {
   const data = await callDownstreamAPI();
+  console.log('Request succeeded:', data);
 } catch (err) {
   if (err.code === 'CIRCUIT_OPEN') {
     console.log('Circuit is open; retrying later');
   } else {
+    // Only actual operation failures reach here, not open-circuit guards
     console.error('Request failed:', err);
   }
 }
 ```
 
-When the circuit opens, `execute()` throws a `CIRCUIT_OPEN` error. Your agent can catch this and backoff gracefully, or fail-fast to upstream callers.
+When the circuit opens, `execute()` throws a `CIRCUIT_OPEN` error. Your agent can catch this and backoff gracefully, or fail-fast to upstream callers. Note that `CIRCUIT_OPEN` errors are guard failures (circuit is protecting the system), not operation failures — don't conflate them in error metrics.
 
 ---
 
