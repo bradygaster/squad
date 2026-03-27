@@ -45,6 +45,31 @@ Run a bleed audit to verify no stowaway files are committed. Check for:
 
 If bleed detected, fix on the feature branch.
 
+### Step 5.5: REBASE
+Before squashing for upstream, rebase the feature branch against `origin/dev` to avoid full-file rewrites:
+\\\ash
+git fetch origin dev
+git rebase origin/dev
+\\\
+
+#### Shared File Strategy
+For files shared across PRs (navigation.ts, test files, CI workflows):
+- **Never** make full-file changes on feature branches
+- **Always** reset to dev first, then make surgical additions:
+  \\\ash
+  git checkout origin/dev -- docs/src/navigation.ts
+  # Then manually add ONLY the entries for this PR's content
+  \\\
+- This prevents diffs that rewrite the entire file, which cause merge conflicts with every other PR
+
+#### When Rebase Fails
+If rebase has conflicts on shared files:
+1. `git rebase --abort`
+2. Reset the shared files to dev: `git checkout origin/dev -- {file}`
+3. Re-add only this PR's surgical changes
+4. `git commit --amend --no-edit`
+5. Continue with step 6 CLEAN
+
 ### Step 6: CLEAN
 Prepare for upstream PR:
 - Squash commits into logical units
@@ -71,6 +96,7 @@ Upstream PR is merged. Close or keep fork PR for reference.
 | Skip bleed check | Stowaway files merge upstream | Always audit before upstream PR |
 | Commit \.squad/\ files in app PRs | Repo pollution, merge conflicts | Exclude from staging, bleed check catches this |
 | Open multiple PRs per feature | Fragmented review, merge chaos | One upstream PR per feature |
+| Skip rebase before upstream | Diverged branch creates full-file diffs | Always rebase against origin/dev before step 6 |
 
 ## Pre-Upstream Gate Checklist
 

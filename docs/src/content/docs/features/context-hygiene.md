@@ -24,7 +24,7 @@ Over multiple sessions, Squad's `.squad/` files grow — agent histories, decisi
 
 ## Nap
 
-**What it does:** Summarizes accumulated work into smaller, more efficient memory files. This is the same as running `/compact` in the CLI or `squad nap` from the command line.
+**What it does:** Summarizes accumulated work in `.squad/` team state files into smaller, more efficient memory files. This compresses your persistent team knowledge — agent histories, decisions, and logs across multiple sessions.
 
 When you tell the team to "take a nap," each agent:
 
@@ -52,7 +52,7 @@ squad nap --deep       # Thorough cleanup with recursive descent
 squad nap --dry-run    # Preview what would be cleaned up
 ```
 
-In the interactive shell, use `/compact` for the same effect.
+> **Note:** For session-level conversation compression, use `/compact` in the Copilot CLI interactive shell. See [Nap vs /compact](/concepts/nap-vs-compact) for the difference between team state cleanup and session transcript compression.
 
 ---
 
