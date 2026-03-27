@@ -32,6 +32,9 @@ After every substantial work session:
 2. **Merge the decision inbox:**
    - Read all files in `.squad/decisions/inbox/`
    - APPEND each decision's contents to `.squad/decisions.md`
+   - **IMPORTANT — Date Format Mandate:** All merged entries MUST use the format `### YYYY-MM-DD: Topic` for decision headings.
+     - If an inbox file is missing a date, add today's date (`YYYY-MM-DD`).
+     - If an entry cannot be dated (missing context, ambiguous age), log a warning, skip it, and report.
    - Delete each inbox file after merging
 
 3. **Deduplicate and consolidate decisions.md:**

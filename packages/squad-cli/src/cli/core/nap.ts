@@ -308,6 +308,33 @@ function cleanInbox(squadDir: string, dryRun: boolean): NapAction[] {
 
 // ─── Decision archival ──────────────────────────────────────────────────
 
+/**
+ * Archive stale decision entries from `decisions.md` to `decisions-archive.md`.
+ *
+ * **Entry format:** Each entry starts with `### YYYY-MM-DD: Topic`. Entries
+ * without a parseable date are treated as undated and always preserved (they
+ * are typically foundational directives).
+ *
+ * **Invariant:** `entries_before === entries_kept + entries_archived` — no
+ * decision data is ever silently dropped.
+ *
+ * **Threshold:** The file must exceed {@link DECISION_THRESHOLD} (default
+ * 20 KB) before any archival is attempted. This constant is overridable via
+ * config in future iterations.
+ *
+ * **Archival strategy:**
+ * 1. *Age-based* — entries older than {@link DECISION_MAX_AGE_DAYS} are
+ *    archived first.
+ * 2. *Count-based fallback* — when no entries exceed the age limit but the
+ *    file still exceeds the threshold, the oldest dated entries are archived
+ *    until the remaining content fits within the budget.
+ *
+ * @param squadDir - Absolute path to the `.squad` directory.
+ * @param dryRun  - When `true`, calculates the action without writing to disk.
+ * @returns `null` when the file is under threshold, doesn't exist, or nothing
+ *   was archivable (e.g. only undated entries remain). Otherwise a
+ *   {@link NapAction} describing the archive operation and bytes saved.
+ */
 function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
   const decisionsFile = path.join(squadDir, 'decisions.md');
   if (!fs.existsSync(decisionsFile)) return null;
