@@ -1,6 +1,7 @@
 export interface NavItem {
   title: string;
   slug: string;
+  category?: string;  // Visual group header in sidebar
 }
 
 export interface NavSection {
@@ -37,20 +38,35 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: 'Concepts',
+    dir: 'concepts',
+    items: [
+      { title: 'Architecture', slug: 'concepts/architecture' },
+      { title: 'Your Team', slug: 'concepts/your-team' },
+      { title: 'Memory & Knowledge', slug: 'concepts/memory-and-knowledge' },
+      { title: 'Parallel Work', slug: 'concepts/parallel-work' },
+      { title: 'GitHub Workflow', slug: 'concepts/github-workflow' },
+      { title: 'Portability', slug: 'concepts/portability' },
+    ],
+  },
+  {
     title: 'Features',
     dir: 'features',
     items: [
-      { title: 'Team Setup', slug: 'features/team-setup' },
+      // Team & Configuration
+      { title: 'Team Setup', slug: 'features/team-setup', category: 'Team & Configuration' },
       { title: 'Work Routing', slug: 'features/routing' },
       { title: 'Model Selection', slug: 'features/model-selection' },
       { title: 'Response Modes', slug: 'features/response-modes' },
-      { title: 'Parallel Execution', slug: 'features/parallel-execution' },
+      // Agent Intelligence
+      { title: 'Parallel Execution', slug: 'features/parallel-execution', category: 'Agent Intelligence' },
       { title: 'Memory', slug: 'features/memory' },
       { title: 'Skills', slug: 'features/skills' },
       { title: 'Directives', slug: 'features/directives' },
       { title: 'Ceremonies', slug: 'features/ceremonies' },
       { title: 'Reviewer Protocol', slug: 'features/reviewer-protocol' },
-      { title: 'GitHub Issues', slug: 'features/github-issues' },
+      // Workflow & Projects
+      { title: 'GitHub Issues', slug: 'features/github-issues', category: 'Workflow & Projects' },
       { title: 'GitLab Issues', slug: 'features/gitlab-issues' },
       { title: 'Labels & Triage', slug: 'features/labels' },
       { title: 'PRD Mode', slug: 'features/prd-mode' },
@@ -58,7 +74,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Ralph — Work Monitor', slug: 'features/ralph' },
       { title: '@copilot Coding Agent', slug: 'features/copilot-coding-agent' },
       { title: 'Human Team Members', slug: 'features/human-team-members' },
-      { title: 'Consult Mode', slug: 'features/consult-mode' },
+      // Extensibility
+      { title: 'Consult Mode', slug: 'features/consult-mode', category: 'Extensibility' },
       { title: 'Remote Control', slug: 'features/remote-control' },
       { title: 'VS Code', slug: 'features/vscode' },
       { title: 'Git Worktrees', slug: 'features/worktrees' },
@@ -67,7 +84,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Marketplace', slug: 'features/marketplace' },
       { title: 'Plugins', slug: 'features/plugins' },
       { title: 'MCP', slug: 'features/mcp' },
-      { title: 'Notifications', slug: 'features/notifications' },
+      // Platform & Scale
+      { title: 'Notifications', slug: 'features/notifications', category: 'Platform & Scale' },
       { title: 'Enterprise Platforms', slug: 'features/enterprise-platforms' },
       { title: 'Squad RC', slug: 'features/squad-rc' },
       { title: 'Streams', slug: 'features/streams' },
@@ -120,18 +138,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Disaster Recovery', slug: 'scenarios/disaster-recovery' },
       { title: 'Troubleshooting', slug: 'scenarios/troubleshooting' },
       { title: 'Aspire Dashboard', slug: 'scenarios/aspire-dashboard' },
-    ],
-  },
-  {
-    title: 'Concepts',
-    dir: 'concepts',
-    items: [
-      { title: 'Architecture', slug: 'concepts/architecture' },
-      { title: 'Your Team', slug: 'concepts/your-team' },
-      { title: 'Memory & Knowledge', slug: 'concepts/memory-and-knowledge' },
-      { title: 'Parallel Work', slug: 'concepts/parallel-work' },
-      { title: 'GitHub Workflow', slug: 'concepts/github-workflow' },
-      { title: 'Portability', slug: 'concepts/portability' },
     ],
   },
   {
