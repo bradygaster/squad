@@ -79,12 +79,15 @@ for (const relFile of sourceFiles) {
   const targets = [];
 
   // Mirror to each target directory
+  // Rename squad.agent.md → squad.agent.md.template in mirror targets
+  // so Copilot CLI 1.0.11 doesn't discover template copies as *.agent.md
   for (const targetDir of MIRROR_TARGETS) {
     if (!existsSync(targetDir)) {
       // Skip targets whose root doesn't exist (e.g., package not checked out)
       continue;
     }
-    targets.push(join(targetDir, relFile));
+    const destName = relFile === AGENT_MD_FILE ? AGENT_MD_FILE + '.template' : relFile;
+    targets.push(join(targetDir, destName));
   }
 
   // Special case: squad.agent.md also goes to .github/agents/

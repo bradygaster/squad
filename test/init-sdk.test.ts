@@ -129,7 +129,12 @@ describe('squad init --sdk flag', () => {
 
     // Assert: .squad/casting/ exists (if created during init)
     const castingPath = join(tempDir, '.squad', 'casting');
-    // May not exist in minimal init, so just check structure
+    expect(existsSync(castingPath)).toBe(true);
+
+    // Assert: casting files are scaffolded (#579)
+    expect(existsSync(join(castingPath, 'policy.json'))).toBe(true);
+    expect(existsSync(join(castingPath, 'registry.json'))).toBe(true);
+    expect(existsSync(join(castingPath, 'history.json'))).toBe(true);
 
     // Assert: .squad/decisions/ exists
     expect(existsSync(join(tempDir, '.squad', 'decisions'))).toBe(true);
@@ -142,6 +147,53 @@ describe('squad init --sdk flag', () => {
 
     // Assert: .squad/identity/ exists
     expect(existsSync(join(tempDir, '.squad', 'identity'))).toBe(true);
+  });
+
+  it('init scaffolds casting files with valid JSON (#579)', async () => {
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'edie', role: 'Engineer' }],
+      configFormat: 'markdown',
+    };
+
+    await initSquad(options);
+
+    const castingDir = join(tempDir, '.squad', 'casting');
+
+    // policy.json should have casting_policy_version
+    const policy = JSON.parse(await readFile(join(castingDir, 'policy.json'), 'utf-8'));
+    expect(policy).toHaveProperty('casting_policy_version');
+    expect(policy).toHaveProperty('allowlist_universes');
+
+    // registry.json should have agents object
+    const registry = JSON.parse(await readFile(join(castingDir, 'registry.json'), 'utf-8'));
+    expect(registry).toHaveProperty('agents');
+
+    // history.json should have empty arrays
+    const history = JSON.parse(await readFile(join(castingDir, 'history.json'), 'utf-8'));
+    expect(history).toHaveProperty('universe_usage_history');
+    expect(history).toHaveProperty('assignment_cast_snapshots');
+  });
+
+  it('init does not overwrite existing casting files', async () => {
+    const castingDir = join(tempDir, '.squad', 'casting');
+    const { mkdirSync, writeFileSync } = await import('fs');
+    mkdirSync(castingDir, { recursive: true });
+    writeFileSync(join(castingDir, 'registry.json'), '{"agents":{"custom":"data"}}', 'utf-8');
+
+    const options: InitOptions = {
+      teamRoot: tempDir,
+      projectName: 'test-squad',
+      agents: [{ name: 'edie', role: 'Engineer' }],
+      configFormat: 'markdown',
+    };
+
+    const result = await initSquad(options);
+
+    // Should have skipped the existing file
+    const registry = JSON.parse(await readFile(join(castingDir, 'registry.json'), 'utf-8'));
+    expect(registry.agents).toEqual({ custom: 'data' });
   });
 
   it('backward compat: configFormat typescript still works', async () => {

@@ -29,7 +29,7 @@ export interface TemplateFile {
 export const TEMPLATE_MANIFEST: TemplateFile[] = [
   // Core coordinator
   {
-    source: 'squad.agent.md',
+    source: 'squad.agent.md.template',
     destination: '../.github/agents/squad.agent.md',
     overwriteOnUpgrade: true,
     description: 'Squad coordinator agent prompt',

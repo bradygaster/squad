@@ -88,10 +88,10 @@ const AGENT_MD_EXTRA_TARGET = '.github/agents';
 
 const SQUAD_AGENT_LOCATIONS = [
   `${SOURCE_DIR}/${AGENT_MD_FILE}`,
-  'templates/squad.agent.md',
+  'templates/squad.agent.md.template',
   '.github/agents/squad.agent.md',
-  'packages/squad-cli/templates/squad.agent.md',
-  'packages/squad-sdk/templates/squad.agent.md',
+  'packages/squad-cli/templates/squad.agent.md.template',
+  'packages/squad-sdk/templates/squad.agent.md.template',
 ] as const;
 
 const CASTING_POLICY_LOCATIONS = [
@@ -116,7 +116,10 @@ describe('dynamic template enumeration (all synced files)', () => {
     const canonicalPath = `${SOURCE_DIR}/${relFile}`;
 
     for (const target of MIRROR_TARGETS) {
-      const targetPath = `${target}/${relFile}`;
+      // squad.agent.md is renamed to .template in mirror targets
+      // to prevent Copilot CLI from discovering template copies
+      const destName = relFile === AGENT_MD_FILE ? `${AGENT_MD_FILE}.template` : relFile;
+      const targetPath = `${target}/${destName}`;
 
       it(`${targetPath} is byte-for-byte identical to ${canonicalPath}`, () => {
         expect(fileExists(targetPath), `${targetPath} should exist`).toBe(true);

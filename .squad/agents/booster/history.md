@@ -4,6 +4,21 @@
 
 ## Learnings
 
+### CI Workflow Audit & Preflight Patterns (2026-03-23 Release Incident)
+**Context:** v0.9.0 shipped with broken dependency reference (`file:../squad-sdk` in CLI package.json). Required hotfix. Used incident as opportunity to audit entire CI/CD system.
+
+**Audit findings:** 15 total workflow files. 7 load-bearing (ci, publish, release, preview, promote, insider variants). 7 administrative (triage, assign, labels, heartbeat, docs, link-check). 1 ghost (publish-npm.yml, deleted but GitHub index cached). No duplication. Authorship: 65% Brady, 10% Copilot (v0.9.1 scramble), 25% team.
+
+**Key patterns identified:**
+- Preflight gate (dependency scanning + semver validation) prevents dependency defects
+- Implicit ordering risk: squad-release and squad-npm-publish both trigger on `release: published` with no explicit job dependency (works but fragile)
+- Ghost workflow cleanup: GitHub's workflow index caches file names; deletion doesn't immediately invalidate; must wait 15+ minutes or manually refresh
+
+**Preflight job pattern:** Scans `packages/*/package.json` for:
+1. `file:` references (breaks published packages)
+2. Invalid semver versions (rejects malformed versions)
+Runs before smoke-test and all publish operations. Zero-cost gate (JSON reads only). Clear error messages with remediation instructions.
+
 ### CI Pipeline Status
 149 test files, 3,931 tests passing, ~89s runtime. Only failure: aspire-integration.test.ts (needs Docker daemon — pre-existing, expected). publish.yml triggers on `release: published` event with retry logic for npm registry propagation (5 attempts, 15s sleep).
 

@@ -44,3 +44,10 @@ There is no `claude-haiku-4.6`. The latest haiku is `claude-haiku-4.5`. Never bu
 
 ### ModelId Type
 `ModelId = string` in `runtime/config.ts` — not a discriminated union. New model IDs can be added to the catalog without TypeScript changes beyond the catalog and chain arrays.
+
+### Template Copy Rename Pattern (#613/#614)
+- Template copies of `squad.agent.md` in `templates/`, `packages/squad-cli/templates/`, and `packages/squad-sdk/templates/` are now named `squad.agent.md.template` to prevent Copilot CLI 1.0.11 from discovering and merging them as `*.agent.md` files.
+- The canonical source (`.squad-templates/squad.agent.md`) and the active copy (`.github/agents/squad.agent.md`) remain unchanged.
+- `scripts/sync-templates.mjs` handles the rename: mirror targets get `.template` suffix, `.github/agents/` target keeps `.md`.
+- All code reading templates for init/upgrade/consult (SDK `init.ts`, CLI `upgrade.ts`, CLI `templates.ts`, SDK `consult.ts`) references `squad.agent.md.template` as the source filename.
+- The `TEMPLATE_MANIFEST` in `templates.ts` uses `source: 'squad.agent.md.template'` but `destination: '../.github/agents/squad.agent.md'` — source and target names differ.

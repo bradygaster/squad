@@ -480,7 +480,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     }
     
     // Refresh squad.agent.md
-    const agentSrc = path.join(templatesDir, 'squad.agent.md');
+    const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
     if (fs.existsSync(agentSrc)) {
       fs.mkdirSync(path.dirname(agentDest), { recursive: true });
       fs.copyFileSync(agentSrc, agentDest);
@@ -502,10 +502,10 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   
   // Upgrade squad.agent.md
   const templatesDir = getTemplatesDir();
-  const agentSrc = path.join(templatesDir, 'squad.agent.md');
+  const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
   
   if (!fs.existsSync(agentSrc)) {
-    fatal('squad.agent.md not found in templates — installation may be corrupted');
+    fatal('squad.agent.md.template not found in templates — installation may be corrupted');
   }
   
   fs.mkdirSync(path.dirname(agentDest), { recursive: true });
@@ -518,7 +518,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   
   // Upgrade squad-owned files from template manifest
   // Exclude squad.agent.md — already copied and version-stamped above
-  const filesToUpgrade = TEMPLATE_MANIFEST.filter(f => f.overwriteOnUpgrade && f.source !== 'squad.agent.md');
+  const filesToUpgrade = TEMPLATE_MANIFEST.filter(f => f.overwriteOnUpgrade && f.source !== 'squad.agent.md.template');
   
   for (const file of filesToUpgrade) {
     const srcPath = path.join(templatesDir, file.source);

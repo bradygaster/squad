@@ -1,10 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   extractNeeds,
   canHandleIssue,
   filterByCapabilities,
+  loadCapabilities,
+  getDeploymentMode,
+  getPodId,
+  generatePodCapabilitiesPath,
   type MachineCapabilities,
 } from '@bradygaster/squad-sdk/ralph/capabilities';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 const gpuMachine: MachineCapabilities = {
   machine: 'GPU-SERVER',
@@ -103,5 +110,133 @@ describe('filterByCapabilities', () => {
     const { handled, skipped } = filterByCapabilities([], gpuMachine);
     expect(handled).toHaveLength(0);
     expect(skipped).toHaveLength(0);
+  });
+});
+
+describe('dual-mode deployment', () => {
+  let savedPodId: string | undefined;
+  let savedMode: string | undefined;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    savedPodId = process.env.SQUAD_POD_ID;
+    savedMode = process.env.SQUAD_DEPLOYMENT_MODE;
+    delete process.env.SQUAD_POD_ID;
+    delete process.env.SQUAD_DEPLOYMENT_MODE;
+
+    tmpDir = path.join(os.tmpdir(), `squad-cap-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(path.join(tmpDir, '.squad'), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (savedPodId !== undefined) process.env.SQUAD_POD_ID = savedPodId;
+    else delete process.env.SQUAD_POD_ID;
+    if (savedMode !== undefined) process.env.SQUAD_DEPLOYMENT_MODE = savedMode;
+    else delete process.env.SQUAD_DEPLOYMENT_MODE;
+
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('loadCapabilities reads pod-specific manifest when SQUAD_POD_ID is set', async () => {
+    process.env.SQUAD_POD_ID = 'squad-worker-abc';
+    process.env.SQUAD_DEPLOYMENT_MODE = 'squad-per-pod';
+
+    const podManifest: MachineCapabilities = {
+      machine: 'POD-ABC',
+      capabilities: ['gpu', 'docker'],
+      missing: [],
+      lastUpdated: '2026-06-01T00:00:00Z',
+    };
+    writeFileSync(
+      path.join(tmpDir, '.squad', 'machine-capabilities-squad-worker-abc.json'),
+      JSON.stringify(podManifest),
+    );
+    // Also write shared manifest to ensure pod-specific wins
+    const sharedManifest: MachineCapabilities = {
+      machine: 'SHARED',
+      capabilities: ['browser'],
+      missing: ['gpu'],
+      lastUpdated: '2026-06-01T00:00:00Z',
+    };
+    writeFileSync(
+      path.join(tmpDir, '.squad', 'machine-capabilities.json'),
+      JSON.stringify(sharedManifest),
+    );
+
+    const caps = await loadCapabilities(tmpDir);
+    expect(caps).not.toBeNull();
+    expect(caps!.machine).toBe('POD-ABC');
+    expect(caps!.podId).toBe('squad-worker-abc');
+  });
+
+  it('loadCapabilities falls back to shared manifest when pod-specific not found', async () => {
+    process.env.SQUAD_POD_ID = 'squad-worker-xyz';
+    process.env.SQUAD_DEPLOYMENT_MODE = 'squad-per-pod';
+
+    const sharedManifest: MachineCapabilities = {
+      machine: 'SHARED-FALLBACK',
+      capabilities: ['browser'],
+      missing: ['gpu'],
+      lastUpdated: '2026-06-01T00:00:00Z',
+    };
+    writeFileSync(
+      path.join(tmpDir, '.squad', 'machine-capabilities.json'),
+      JSON.stringify(sharedManifest),
+    );
+
+    const caps = await loadCapabilities(tmpDir);
+    expect(caps).not.toBeNull();
+    expect(caps!.machine).toBe('SHARED-FALLBACK');
+    expect(caps!.podId).toBe('squad-worker-xyz');
+  });
+
+  it('loadCapabilities ignores SQUAD_POD_ID when SQUAD_DEPLOYMENT_MODE is agent-per-node', async () => {
+    process.env.SQUAD_POD_ID = 'squad-worker-abc';
+    process.env.SQUAD_DEPLOYMENT_MODE = 'agent-per-node';
+
+    const podManifest: MachineCapabilities = {
+      machine: 'POD-ABC',
+      capabilities: ['gpu', 'docker'],
+      missing: [],
+      lastUpdated: '2026-06-01T00:00:00Z',
+    };
+    writeFileSync(
+      path.join(tmpDir, '.squad', 'machine-capabilities-squad-worker-abc.json'),
+      JSON.stringify(podManifest),
+    );
+    const sharedManifest: MachineCapabilities = {
+      machine: 'SHARED',
+      capabilities: ['browser'],
+      missing: ['gpu'],
+      lastUpdated: '2026-06-01T00:00:00Z',
+    };
+    writeFileSync(
+      path.join(tmpDir, '.squad', 'machine-capabilities.json'),
+      JSON.stringify(sharedManifest),
+    );
+
+    const caps = await loadCapabilities(tmpDir);
+    expect(caps).not.toBeNull();
+    // Should read shared, not pod-specific, because mode is agent-per-node
+    expect(caps!.machine).toBe('SHARED');
+    expect(caps!.podId).toBeUndefined();
+  });
+
+  it('getDeploymentMode defaults to agent-per-node', () => {
+    delete process.env.SQUAD_DEPLOYMENT_MODE;
+    expect(getDeploymentMode()).toBe('agent-per-node');
+  });
+
+  it('getDeploymentMode reads SQUAD_DEPLOYMENT_MODE env var', () => {
+    process.env.SQUAD_DEPLOYMENT_MODE = 'squad-per-pod';
+    expect(getDeploymentMode()).toBe('squad-per-pod');
+  });
+
+  it('getPodId reads SQUAD_POD_ID env var', () => {
+    delete process.env.SQUAD_POD_ID;
+    expect(getPodId()).toBeUndefined();
+
+    process.env.SQUAD_POD_ID = 'my-pod-42';
+    expect(getPodId()).toBe('my-pod-42');
   });
 });

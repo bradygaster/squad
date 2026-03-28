@@ -1,3 +1,9 @@
+---
+title: Per-Agent Model Selection
+description: Route each agent to the right model based on task type, with persistent overrides and economy mode.
+order: 34
+---
+
 # Per-Agent Model Selection
 
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
@@ -114,6 +120,41 @@ Tell the coordinator what you want:
 - `"always use opus"` — **persistent** preference saved to `.squad/config.json` (survives sessions)
 - `"use gpt-5.2-codex for Fenster"` — **persistent** per-agent override
 - `"switch back to automatic"` — clears persistent preference
+
+## Economy Mode
+
+Economy mode automatically falls back to cheaper models when rate limits are approaching or when you want to cap spend. It is opt-in — enable it per session or persistently.
+
+**Enable economy mode:**
+```
+Switch to economy mode
+```
+
+**Disable economy mode:**
+```
+Turn off economy mode
+```
+
+When economy mode is active, Squad remaps models using the `ECONOMY_MODEL_MAP`:
+
+| Normal Tier | Economy Model |
+|-------------|--------------|
+| Standard (Sonnet) | `gpt-4.1` |
+| Fast (Haiku) | `gpt-4.1` |
+
+**Fallback chains in economy mode** run the same logic as normal fallback chains, but start one tier lower. A code task that would normally use `claude-sonnet-4.6` uses `claude-haiku-4.5` instead.
+
+**Cost tradeoffs:** Economy mode trades output quality for lower cost and reduced rate limit pressure. Use it for bulk triage, log analysis, or changelog generation — not for architecture work or complex refactors where quality matters.
+
+**Persistent economy mode** saves to `.squad/config.json`:
+```json
+{
+  "version": 1,
+  "economyMode": true
+}
+```
+
+Economy mode is also triggered automatically by the [rate limiting](rate-limiting.md) system when headroom drops to Amber state — you do not have to enable it manually for rate limit protection.
 
 ## Sample Prompts
 

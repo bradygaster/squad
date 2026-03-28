@@ -1,0 +1,17 @@
+docs(squad): close #631 incident response — revert, CI guards, git safety rules
+
+Incident #631 complete closure:
+- Surgeon reverted problematic commit 1ab2f5c on dev (restored 361 files)
+- Booster added CI deletion guards & canary checks to squad-ci.yml
+- RETRO documented Git Safety mandatory rules in copilot-instructions.md
+- PRs created and ready for merge (squad/631-ci-deletion-guard, squad/631-copilot-git-safety)
+- Issue #631 closed with incident summary
+
+Team memory updated:
+- Orchestration log: 2026-03-26T17-28-631-closure.md
+- Session log: 2026-03-26T17-28-631-closure.md
+
+Incident response: Full parallel execution by Surgeon, Booster, RETRO agents.
+Resolution: EMU auth restrictions resolved, manual coordination by Coordinator.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

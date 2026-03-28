@@ -4,6 +4,12 @@
 
 ---
 
+📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution Complete):** Post-CLI crash recovery executed in 3 rounds. Round 1: Flight audited PR/issue state (found #617 merged, #619 conflicting, 3 dupes #605/#604/#602 open); FIDO verified baseline (5,038 tests ✅ green); Scribe merged stale inbox. Round 2: Flight closed 3 duplicate PRs with rationale; Procedures rebased PR #619 (model catalog) onto dev, resolved 3 merge conflicts, merged; FIDO reviewed 9 community PRs—approved 3 (#625/#603/#608), requested changes on 6 (package naming, file paths). Round 3: Coordinator merged 3 approved PRs. **10 PRs merged total** (6 merge-plan, 3 community, 1 legacy #592). **3 PRs closed** as duplicates. **6 PRs awaiting author revisions**. **Dev branch green** (5,038 tests). All merge-plan sequence complete. Draft #567 parked pending requirements. Decision inbox merged to decisions.md and deleted. Next: Monitor change-request PRs for author responses.
+
+📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review):** Flight triaged 14 untriaged GitHub issues, created prioritized work session plan. Identified high-value quick wins (P1): #610 (docs broken link, 5-min fix), #590 (getPersonalSquadRoot bug, P0), #591 (hiring wiring docs). Deferred community feature contributions (#601–#595) pending PR review. Categorized maintenance (P2) and questions for community. FIDO reviewed 10 open PRs, identified 3 duplicate/overlap pairs (6 PRs consolidate to 4: merge #607/#603/#606, close #605/#604/#602). Work session priority: #610→PAO, #590→EECOM, #592/#611→Flight review, #588→Procedures. Established PR review strategy: Tamir PRs require proposal-first discipline before review. Merge-ready identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). A2A protocol PRs remain shelved. All 14 issues fully categorized with squad assignments. Decision inbox merged to decisions.md. Session complete; team ready for execution.
+
+📌 **Team update (2026-03-23T22:00Z — Release Crisis Recovery):** v0.9.0→v0.9.1 incident resolved. Released v0.9.1 stable on npm after 8-hour debugging marathon (should have been 10 min). Root causes: dependency validation gap (file: refs in packages), GitHub workflow cache race, npm workspace publish automation broken, coordinator decision-making under pressure, no pre-publish verification. Created comprehensive retrospective with 5 root causes and 6 action items (A1–A6). Filed 9 GitHub issues (#556–#564) documenting release process improvements. Pre-flight job added to publish pipeline (dependency scanning + semver validation). Surgeon charter hardened with release governance rules. 10 community PRs merged (#569, #570, #571, #555, #552, #568, #572, #513, #573, #574). Discussion board fully triaged (15 discussions: 4 closed, 1 consolidated, 2 converted to issue, 8 kept). Dark mode fix deployed to production. Release process skill created at `.squad/skills/release-process/SKILL.md`. 9 GitHub issues filed for release improvements. Team ready for next cycle.
+
 📌 **Team update (2026-03-22T09-35Z — Wave 1):** Ambient personal squad design validated and 19-task implementation plan authored across 4 PRs (Phase 1 SDK, Phase 2 CLI, Phase 3 governance, Phase 4 tests). MVP = PR #1 + PR #3. EECOM executing Phase 1–2 (SDK + CLI), Procedures executing Phase 3 (governance) concurrently. All design gaps resolved; dependency graph established. Procedures wrote governance proposals for personal squad + economy mode — awaiting your review. Sims to execute Phase 4 after Phase 1+2 merge. Directive captured: bug #502 (node:sqlite, P1) to be picked up after Wave 1. No blocking issues — ready for execution.
 
 ## Core Context
@@ -11,6 +17,12 @@
 Three-branch model (main/dev/insiders). Apollo 13 team, 3931 tests. Boundary review heuristic: "Squad Ships It" — if Squad doesn't ship the code, it's IRL content. Proposal-first: meaningful changes need docs/proposals/ before code. Two-error lockout policy: agent locked out after 2 errors in a session. Test name-agnosticism: framework tests must never depend on dev team's agent names.
 
 ## Learnings
+
+### Issue Filing Patterns (2026-03-23 Release Incident)
+When a major incident occurs, file 9+ GitHub issues documenting root causes and improvements. Pattern: one issue per root cause + one per action item. Use descriptive titles linking to specific improvements (e.g., "#556 Dependency validation in pre-publish checks"). Let team pick up issues in priority order. This accelerates fixes and creates accountability.
+
+### Release Governance Directives (2026-03-23)
+Brady established strict release governance: (1) Surgeon owns all publishing (not Coordinator); (2) strict adherence to playbook; (3) document problems so they don't recur; (4) CI/CD is top priority; (5) written playbooks for everything; (6) no improvisation. Captured for team memory and enforced in team decisions.
 
 ### Adoption Tracking Architecture
 Three-tier opt-in system: Tier 1 (aggregate-only, `.github/adoption/`) ships first; Tier 2 (opt-in registry) designed next; Tier 3 (public showcase) launches when ≥5 projects opt in. `.squad/` is for team state only, not adoption data. Never list individual repos without owner consent.
@@ -127,3 +139,49 @@ Community contributor joniba filed #525 identifying that Squad has full worktree
 **Decision:** P2 — important but not v1-blocking. Broke into 5 sub-issues: (1) doc fix for missing issue-lifecycle.md (quick win → Procedures), (2) worktree variant in ralph-commands.ts (EECOM), (3) coordinator pre-spawn logic (Procedures + EECOM), (4) post-merge cleanup (EECOM), (5) architecture decision on heuristic (Flight). Sub-issue #1 ships immediately; #2–5 queue post-Wave-1 alongside SubSquads work where parallel execution becomes a hard requirement.
 
 **Backlog priority recommendation:** Top 5 for v1 = #508 (Ambient Personal Squad), #498 (remove .squad/ from VCS), #485 (Agent Spec & Validation), #481 (Typed StorageProvider), #347 (shore up init --sdk). Quick wins: #525 doc fix, #347. Deprioritize: manual verification debt (#418–421), long-term exploratory. A2A (#332–336) stays shelved per existing decision.
+
+### Release Hardening Plan — Finalized (2026-07-22)
+
+Brady approved scope for remaining v0.9.1 incident hardening. Three issues to execute, three deferred into umbrella:
+
+**DO:** #564 (rewrite PUBLISH-README.md as living playbook — absorbs #558, #559, #560), #557 (CI lint rule rejecting non-workspace `npm publish` in workflow YAML), #562 (delete ghost workflow `publish-npm.yml` ID 250121956).
+
+**DEFERRED into #564:** #560 (pre-flight checklist → playbook section), #559 (fallback protocol → playbook section), #558 (422 race docs → playbook section).
+
+**Key findings:**
+- GitHub REST API has NO "Delete a workflow" endpoint. Ghost workflows only disappear when all their runs are deleted (GitHub GC). Procedure: `gh api` to list+delete all runs for workflow ID 250121956, then wait for GC.
+- The lint rule goes in `squad-ci.yml` as a `publish-policy` job: scans `.github/workflows/*.yml` for `npm publish` without `-w` flag. Blocks PR merge if violated.
+- PUBLISH-README.md playbook has 11 sections covering pre-flight, CI publish, manual fallback, 422 race conditions, insider channel, workspace policy, post-publish verification, and version bumping. Replaces the stale v0.8.22 stub entirely.
+
+**Execution order:** #562 (Brady, manual API call) and #557 (FIDO/Procedures, CI change) run in parallel. #564 (Procedures+Surgeon, playbook) goes last so it can reference the lint rule.
+
+Decision written to `.squad/decisions/inbox/flight-release-hardening-plan.md`.
+
+### Issue Triage Session — 14 Untriaged Issues (2026-03-24)
+
+**Triaged 14 issues + 10 PRs:** 3 docs issues, 6 community feature proposals, 3 bugs, 2 questions. Key findings:
+
+**P0 Bug (immediate):**
+- #590 (getPersonalSquadRoot) → squad:eecom — personal squad broken since v0.9.1, affects all `squad consult` on new repos
+
+**P1 Quick Wins:**
+- #610 (broken docs link) → squad:pao — 5-minute fix, unblocks diberry PR #611 CI
+- #591 (hiring wiring docs) → squad:procedures — matches PR #592 (joniba), high-quality wiring guide ready to merge
+
+**Community PRs (proposal-first enforcement):**
+- Tamir PRs #602-607 (6 PRs) — high technical quality but missing proposal-first compliance. Need `docs/proposals/` entries before review.
+- Joniba PR #592 — merge-ready, validates enforcement wiring gap
+- Diberry PR #611 — blocked on #610 fix, then merge
+
+**P2 Maintenance:**
+- #597 (upgrade CLI docs) → squad:pao + squad:network
+- #588 (model list update) → squad:procedures
+- #554 (broken external links) → squad:pao
+
+**Deferred/Questions:**
+- #581 (ADO PRD) → P2, blocked until #341 SDK-first parity ships
+- #589, #494 → community replies clarifying skill paths and model selection
+
+**Pattern:** Tamir is a high-output contributor (6 PRs in 2 weeks) but needs proposal-first discipline. Joniba and diberry deliver MSFT-level quality.
+
+Decision written to `.squad/decisions/inbox/flight-triage-session-plan.md`.

@@ -12,7 +12,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveGlobalSquadPath, resolvePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
+import { resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
 import { resolvePersonalAgents } from '@bradygaster/squad-sdk/agents/personal';
 import { success, warn, info, BOLD, RESET, DIM } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -68,20 +68,10 @@ async function personalInit(): Promise<void> {
     return;
   }
   
-  // Create directory structure
-  const agentsDir = path.join(personalDir, 'agents');
-  fs.mkdirSync(agentsDir, { recursive: true });
-  
-  // Create config.json
-  const config = {
-    defaultModel: 'auto',
-    ghostProtocol: true,
-  };
-  const configPath = path.join(personalDir, 'config.json');
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  const created = ensurePersonalSquadDir();
   
   success('Personal squad initialized');
-  info(`  Path: ${personalDir}`);
+  info(`  Path: ${created}`);
   info(`  Add agents with: squad personal add <name> --role <role>`);
 }
 
