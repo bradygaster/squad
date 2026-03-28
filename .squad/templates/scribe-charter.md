@@ -15,6 +15,10 @@
 - `.squad/decisions.md` — the shared decision log all agents read (canonical, merged)
 - `.squad/decisions/inbox/` — decision drop-box (agents write here, I merge)
 - Cross-agent context propagation — when one agent's decision affects another
+- Decision archival — **HARD GATE**: enforce two-tier ceiling on decisions.md before every merge:
+  - **Tier 1 (30-day):** If >20KB, archive entries older than 30 days
+  - **Tier 2 (7-day):** If still >50KB after Tier 1, archive entries older than 7 days
+  - Emit HEALTH REPORT to session log after archival runs
 
 ## How I Work
 
@@ -32,6 +36,9 @@ After every substantial work session:
 2. **Merge the decision inbox:**
    - Read all files in `.squad/decisions/inbox/`
    - APPEND each decision's contents to `.squad/decisions.md`
+   - **IMPORTANT — Date Format Mandate:** All merged entries MUST use the format `### YYYY-MM-DD: Topic` for decision headings.
+     - If an inbox file is missing a date, add today's date (`YYYY-MM-DD`).
+     - If an entry cannot be dated (missing context, ambiguous age), log a warning, skip it, and report.
    - Delete each inbox file after merging
 
 3. **Deduplicate and consolidate decisions.md:**

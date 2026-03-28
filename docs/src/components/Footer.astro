@@ -50,6 +50,9 @@ const base = import.meta.env.BASE_URL;
 
     <div class="mt-8 pt-6 border-t border-surface-200 dark:border-surface-800 text-center text-base text-surface-500 dark:text-surface-400">
       <p>MIT License · Built with <a href="https://astro.build" class="text-squad-600 dark:text-squad-400 hover:underline" target="_blank" rel="noopener">Astro</a></p>
+      <p class="text-xs text-surface-400 dark:text-surface-500 mt-1">
+        v{__VERSION__} · {(__COMMIT_SHA__ as string).slice(0, 7)} · {__BUILD_DATE__}
+      </p>
     </div>
   </div>
 </footer>

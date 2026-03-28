@@ -31,6 +31,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Interactive Shell', slug: 'guide/shell' },
       { title: 'Extensibility', slug: 'guide/extensibility' },
       { title: 'Building Extensions', slug: 'guide/building-extensions' },
+      { title: 'Building Resilient Agents', slug: 'guide/building-resilient-agents' },
       { title: 'Contributing', slug: 'guide/contributing' },
       { title: 'Contributors', slug: 'guide/contributors' },
     ],
@@ -71,6 +72,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Squad RC', slug: 'features/squad-rc' },
       { title: 'Streams', slug: 'features/streams' },
       { title: 'Distributed Mesh', slug: 'features/distributed-mesh' },
+      { title: 'Capability Routing', slug: 'features/capability-routing' },
+      { title: 'Rate Limiting', slug: 'features/rate-limiting' },
+      { title: 'KEDA Autoscaling', slug: 'features/keda-scaling' },
     ],
   },
   {
@@ -79,7 +83,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { title: 'CLI', slug: 'reference/cli' },
       { title: 'SDK', slug: 'reference/sdk' },
-      { title: 'SDK API Reference', slug: 'reference/api-reference' },
+      { title: 'SDK API Reference', slug: 'reference/api' },
       { title: 'SDK Integration', slug: 'reference/integration' },
       { title: 'Tools & Hooks', slug: 'reference/tools-and-hooks' },
       { title: 'Config', slug: 'reference/config' },

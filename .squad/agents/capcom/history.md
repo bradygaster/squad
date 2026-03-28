@@ -64,3 +64,6 @@ Written full technical analysis to `.squad/identity/sdk-init-technical-analysis.
 - Template system in SDK (`templates/` directory) is well-structured, used correctly by `initSquad()`
 
 📌 **Team update (2026-03-11T01:25:00Z):** 5 SDK Init decisions merged to decisions.md: Phase-based quality improvement (3-phase approach), CastingEngine canonical casting, squad.config.ts as source of truth, Ralph always-included, implementation priority order. Full technical analysis informed Flight's unified PRD and EECOM's roadmap.
+
+📌 **Team update (2026-03-25T18:11Z):** CLI platform research complete — identified Copilot CLI 1.0.5–1.0.11 (8 releases in 10 days) contain three high-impact changes affecting Squad routing: monorepo instruction discovery (1.0.11), idle subagent hiding (1.0.8), subagentStart hook context injection (1.0.7). SDK version pinning doesn't prevent CLI runtime auto-updates. Recommendations: clean up template naming, upgrade to SDK 0.2.0 customize mode, file CLI issue. Report in decisions inbox.
+

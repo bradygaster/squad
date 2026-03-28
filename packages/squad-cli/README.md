@@ -16,7 +16,7 @@ The programmable multi-agent CLI for GitHub Copilot. Build an AI team, assign ro
 
 ```bash
 # Global (recommended)
-npm install -g @bradygaster/squad-cli
+npm install -g @bradygaster/squad-cli@latest
 
 # Project-local
 npm install --save-dev @bradygaster/squad-cli

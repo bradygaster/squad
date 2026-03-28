@@ -131,8 +131,8 @@ describe('CLI: init command', () => {
     const templatesPath = join(TEST_ROOT, '.squad', 'templates');
     expect(existsSync(templatesPath)).toBe(true);
     
-    // Should contain squad.agent.md
-    expect(existsSync(join(templatesPath, 'squad.agent.md'))).toBe(true);
+    // Should contain squad.agent.md.template (renamed to prevent CLI discovery)
+    expect(existsSync(join(templatesPath, 'squad.agent.md.template'))).toBe(true);
   });
 
   it('should copy starter skills if none exist', async () => {

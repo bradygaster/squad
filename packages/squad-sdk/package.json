@@ -218,6 +218,8 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13",
+    "typedoc": "~0.28.18",
+    "typedoc-plugin-markdown": "~4.11.0",
     "typescript": "^5.7.0"
   },
   "keywords": [

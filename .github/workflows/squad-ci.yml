@@ -66,8 +66,71 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
+      - name: "🔒 Source tree canary check"
+        run: |
+          echo "Verifying critical source files exist..."
+          MISSING=0
+          for f in \
+            "packages/squad-sdk/src/index.ts" \
+            "packages/squad-cli/src/cli/index.ts" \
+            "packages/squad-sdk/package.json" \
+            "packages/squad-cli/package.json"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::MISSING critical file: $f"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ $MISSING -gt 0 ]; then
+            echo "::error::$MISSING critical source files missing — possible accidental deletion"
+            exit 1
+          fi
+          echo "✅ All critical source files present"
+
+      - name: "🔒 Large deletion guard"
+        if: github.event_name == 'pull_request'
+        run: |
+          DELETED=$(git diff --diff-filter=D --name-only origin/${{ github.base_ref }}...HEAD | wc -l)
+          echo "Files deleted in this PR: $DELETED"
+          if [ "$DELETED" -gt 50 ]; then
+            echo "::error::This PR deletes $DELETED files (threshold: 50). If intentional, add the 'large-deletion-approved' label."
+            LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+            if echo "$LABELS" | grep -q "large-deletion-approved"; then
+              echo "✅ Large deletion approved via label"
+            else
+              exit 1
+            fi
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Build
         run: npm run build
 
       - name: Run tests
         run: npm test
+
+  publish-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enforce workspace-scoped npm publish
+        run: |
+          echo "Scanning workflow files for bare npm publish commands..."
+          VIOLATIONS=0
+          for wf in .github/workflows/*.yml; do
+            # Strip comment lines, then check for npm publish without -w/--workspace
+            BARE=$(grep -n 'npm.*publish' "$wf" | grep -v '#' | grep -v '\-w ' | grep -v '\-\-workspace' | grep -v 'echo ' | grep -v 'grep ' | grep -v 'name:' || true)
+            if [ -n "$BARE" ]; then
+              echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
+              echo "$BARE"
+              VIOLATIONS=1
+            fi
+          done
+          if [ "$VIOLATIONS" -eq 1 ]; then
+            echo ""
+            echo "::error::PUBLISH POLICY VIOLATION — all npm publish commands must be workspace-scoped (-w or --workspace)"
+            echo "See: https://github.com/bradygaster/squad/issues/557"
+            exit 1
+          fi
+          echo "✅ All npm publish commands are workspace-scoped"

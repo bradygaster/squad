@@ -90,13 +90,13 @@ function getSquadAgentTemplatePath(): string | null {
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   
   // Try relative to this file (in dist/)
-  const distPath = path.resolve(currentDir, '../../templates/squad.agent.md');
+  const distPath = path.resolve(currentDir, '../../templates/squad.agent.md.template');
   if (fs.existsSync(distPath)) {
     return distPath;
   }
   
   // Try relative to package root
-  const pkgPath = path.resolve(currentDir, '../../../templates/squad.agent.md');
+  const pkgPath = path.resolve(currentDir, '../../../templates/squad.agent.md.template');
   if (fs.existsSync(pkgPath)) {
     return pkgPath;
   }
@@ -310,10 +310,10 @@ export interface SetupConsultModeResult {
 
 /**
  * Get the personal squad root path.
- * Returns {globalSquadPath}/.squad/
+ * Returns {globalSquadPath}/personal-squad/
  */
 export function getPersonalSquadRoot(): string {
-  return path.resolve(resolveGlobalSquadPath(), '.squad');
+  return path.resolve(resolveGlobalSquadPath(), 'personal-squad');
 }
 
 /**

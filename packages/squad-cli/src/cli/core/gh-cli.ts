@@ -128,3 +128,37 @@ export async function ghIssueEdit(issueNumber: number, options: GhEditOptions): 
   
   await execFileAsync('gh', args);
 }
+
+// ── Rate limit helpers (#515) ──────────────────────────────────
+
+export interface GhRateLimit {
+  remaining: number;
+  limit: number;
+  resetAt: string;
+}
+
+/**
+ * Check current GitHub API rate limit via `gh api rate_limit`.
+ */
+export async function ghRateLimitCheck(): Promise<GhRateLimit> {
+  const { stdout } = await execFileAsync('gh', [
+    'api', 'rate_limit', '--jq', '.resources.core | {remaining, limit, reset}',
+  ]);
+  const data = JSON.parse(stdout);
+  return {
+    remaining: data.remaining,
+    limit: data.limit,
+    resetAt: new Date(data.reset * 1000).toISOString(),
+  };
+}
+
+/**
+ * Detect if an error is a GitHub 429 rate limit error.
+ */
+export function isRateLimitError(err: unknown): boolean {
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    return msg.includes('rate limit') || msg.includes('secondary rate') || msg.includes('403');
+  }
+  return false;
+}

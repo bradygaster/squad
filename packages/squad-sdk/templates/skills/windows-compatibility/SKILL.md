@@ -30,6 +30,23 @@ Squad runs on Windows, macOS, and Linux. Several bugs have been traced to platfo
 - **Never assume CWD is repo root:** Always use `TEAM ROOT` from spawn prompt or run `git rev-parse --show-toplevel`
 - **Use path.join() or path.resolve():** Don't manually concatenate with `/` or `\`
 
+### Path Comparison (Case Sensitivity)
+- **Never use case-sensitive `startsWith` or `===` for path comparison on Windows or macOS:** These filesystems are case-insensitive — `C:\Users\` and `c:\users\` refer to the same location
+- **Use platform-aware comparison:** Check `process.platform === 'win32' || process.platform === 'darwin'` and lowercase both sides before comparing
+- **Pattern:**
+  ```typescript
+  const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+  
+  function pathStartsWith(fullPath: string, prefix: string): boolean {
+    if (CASE_INSENSITIVE) {
+      return fullPath.toLowerCase().startsWith(prefix.toLowerCase());
+    }
+    return fullPath.startsWith(prefix);
+  }
+  ```
+- **Where it matters:** Security checks (path traversal prevention), rootDir confinement, any path-contains-path validation
+- **Linux is case-sensitive:** Do NOT lowercase on Linux — `/Home/` and `/home/` are different directories
+
 ## Examples
 
 ✓ **Correct:**
@@ -72,3 +89,10 @@ exec('git commit -m "First line\nSecond line"'); // FAILS silently in PowerShell
 - Assuming Unix-style paths work everywhere
 - Using `git -C` because it "looks cleaner" (it doesn't work)
 - Skipping `git diff --cached --quiet` check (creates empty commits)
+- **Wrong — case-sensitive path check on Windows and macOS:**
+  ```typescript
+  if (!resolved.startsWith(rootDir + path.sep)) {
+    throw new Error('Path traversal blocked');
+  }
+  // Fails: 'c:\\Users\\temp\\file'.startsWith('C:\\Users\\temp\\') → false
+  ```

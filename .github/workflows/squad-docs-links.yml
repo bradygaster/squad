@@ -20,7 +20,6 @@ jobs:
           args: >-
             --verbose
             --no-progress
-            --exclude-mail
             --timeout 30
             --max-retries 3
             --accept 200..=299,403,429

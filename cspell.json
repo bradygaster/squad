@@ -36,7 +36,7 @@
     "Pydantic", "sdkgen", "ttft", "Strausz", "mycompany",
     "slugified", "simplejwt", "pytest", "Luca", "Clemenza",
     "Tessio", "Triaging", "Futurama", "mklink", "slnx", "jqlang",
-    "benleane", "TELMU", "Automator"
+    "benleane", "TELMU", "Automator", "kedacore"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
   "allowCompoundWords": true

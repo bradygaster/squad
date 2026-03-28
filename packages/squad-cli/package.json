@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.9.1",
+  "version": "0.9.1-build.4",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -71,6 +71,10 @@
     "./shell/shell-metrics": {
       "types": "./dist/cli/shell/shell-metrics.d.ts",
       "import": "./dist/cli/shell/shell-metrics.js"
+    },
+    "./shell/agent-name-parser": {
+      "types": "./dist/cli/shell/agent-name-parser.d.ts",
+      "import": "./dist/cli/shell/agent-name-parser.js"
     },
     "./core/detect-squad-dir": {
       "types": "./dist/cli/core/detect-squad-dir.d.ts",

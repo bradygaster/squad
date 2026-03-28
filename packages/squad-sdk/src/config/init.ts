@@ -702,6 +702,33 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
   }
   
   // -------------------------------------------------------------------------
+  // Scaffold .squad/casting/ files (policy, registry, history)
+  // -------------------------------------------------------------------------
+
+  const castingDir = join(squadDir, 'casting');
+  const castingFiles: Array<{ name: string; templateName: string; fallback: string }> = [
+    { name: 'policy.json', templateName: 'casting-policy.json', fallback: JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n' },
+    { name: 'registry.json', templateName: 'casting-registry.json', fallback: JSON.stringify({ agents: {} }, null, 2) + '\n' },
+    { name: 'history.json', templateName: 'casting-history.json', fallback: JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n' },
+  ];
+
+  for (const cf of castingFiles) {
+    const dest = join(castingDir, cf.name);
+    if (!existsSync(dest)) {
+      // Try to copy from SDK templates first, fall back to inline defaults
+      const templateSrc = templatesDir ? join(templatesDir, cf.templateName) : null;
+      if (templateSrc && existsSync(templateSrc)) {
+        cpSync(templateSrc, dest);
+      } else {
+        await writeFile(dest, cf.fallback, 'utf-8');
+      }
+      createdFiles.push(toRelativePath(dest));
+    } else {
+      skippedFiles.push(toRelativePath(dest));
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Create .squad/config.json for squad settings
   // -------------------------------------------------------------------------
   
@@ -710,7 +737,7 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
     // Detect platform from git remote for config
     let detectedPlatform: string | undefined;
     try {
-      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8' }).trim();
+      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
       const remoteUrlLower = remoteUrl.toLowerCase();
       if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
         detectedPlatform = 'azure-devops';
@@ -729,7 +756,7 @@ export async function initSquad(options: InitOptions): Promise<InitResult> {
       // to discover available work item types for the project.
       let introspectedTypes: string[] | undefined;
       try {
-        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8' }).trim();
+        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
         // Parse org/project from remote URL for introspection
         const httpsMatch = remoteUrl.match(/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git/i);
         const sshMatch = remoteUrl.match(/ssh\.dev\.azure\.com:v3\/([^/]+)\/([^/]+)\//i);
@@ -1005,8 +1032,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   
   const agentFile = join(teamRoot, '.github', 'agents', 'squad.agent.md');
   if (!existsSync(agentFile) || !skipExisting) {
-    if (templatesDir && existsSync(join(templatesDir, 'squad.agent.md'))) {
-      let agentContent = readFileSync(join(templatesDir, 'squad.agent.md'), 'utf-8');
+    if (templatesDir && existsSync(join(templatesDir, 'squad.agent.md.template'))) {
+      let agentContent = readFileSync(join(templatesDir, 'squad.agent.md.template'), 'utf-8');
       agentContent = stampVersionInContent(agentContent, version);
       await mkdir(dirname(agentFile), { recursive: true });
       await writeFile(agentFile, agentContent, 'utf-8');
@@ -1036,7 +1063,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   
   let isGitHub = true;
   try {
-    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8' }).trim();
+    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     const remoteUrlLower = remoteUrl.toLowerCase();
     if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
       isGitHub = false;

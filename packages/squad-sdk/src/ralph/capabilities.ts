@@ -13,12 +13,17 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+/** Deployment mode for capability routing */
+export type DeploymentMode = 'agent-per-node' | 'squad-per-pod';
+
 /** Machine capability manifest */
 export interface MachineCapabilities {
   machine: string;
   capabilities: string[];
   missing: string[];
   lastUpdated: string;
+  /** Pod identifier when running in squad-per-pod mode */
+  podId?: string;
 }
 
 /** Well-known capability identifiers */
@@ -39,8 +44,44 @@ export type KnownCapability = typeof KNOWN_CAPABILITIES[number];
 const NEEDS_PREFIX = 'needs:';
 
 /**
+ * Get the deployment mode from the `SQUAD_DEPLOYMENT_MODE` env var.
+ * Defaults to `'agent-per-node'` when unset.
+ */
+export function getDeploymentMode(): DeploymentMode {
+  const raw = process.env.SQUAD_DEPLOYMENT_MODE;
+  if (raw === 'squad-per-pod') return 'squad-per-pod';
+  return 'agent-per-node';
+}
+
+/**
+ * Get the pod identifier from the `SQUAD_POD_ID` env var.
+ * Returns `undefined` when unset.
+ */
+export function getPodId(): string | undefined {
+  return process.env.SQUAD_POD_ID || undefined;
+}
+
+/**
+ * Build the path for a pod-specific capabilities manifest.
+ *
+ * @example
+ *   generatePodCapabilitiesPath('/app', 'squad-worker-7b4f6')
+ *   // → '/app/.squad/machine-capabilities-squad-worker-7b4f6.json'
+ */
+export function generatePodCapabilitiesPath(teamRoot: string, podId: string): string {
+  return path.join(teamRoot, '.squad', `machine-capabilities-${podId}.json`);
+}
+
+/**
  * Load machine capabilities from the standard location.
- * Checks (in order):
+ *
+ * When `SQUAD_POD_ID` is set **and** `SQUAD_DEPLOYMENT_MODE` is
+ * `squad-per-pod`, the search order becomes:
+ *   1. `.squad/machine-capabilities-{podId}.json` (pod-specific)
+ *   2. `.squad/machine-capabilities.json` (shared fallback)
+ *   3. `~/.squad/machine-capabilities.json` (user home fallback)
+ *
+ * Otherwise (default `agent-per-node` mode):
  *   1. `.squad/machine-capabilities.json` in the team root
  *   2. `~/.squad/machine-capabilities.json` in the user home
  *
@@ -50,8 +91,14 @@ export async function loadCapabilities(
   teamRoot?: string
 ): Promise<MachineCapabilities | null> {
   const candidates: string[] = [];
+  const mode = getDeploymentMode();
+  const podId = getPodId();
 
   if (teamRoot) {
+    // In squad-per-pod mode, try pod-specific manifest first
+    if (mode === 'squad-per-pod' && podId) {
+      candidates.push(generatePodCapabilitiesPath(teamRoot, podId));
+    }
     candidates.push(path.join(teamRoot, '.squad', 'machine-capabilities.json'));
   }
   candidates.push(path.join(os.homedir(), '.squad', 'machine-capabilities.json'));
@@ -60,7 +107,12 @@ export async function loadCapabilities(
     if (existsSync(candidate)) {
       try {
         const raw = await readFile(candidate, 'utf8');
-        return JSON.parse(raw) as MachineCapabilities;
+        const parsed = JSON.parse(raw) as MachineCapabilities;
+        // Stamp podId onto the loaded manifest when running in pod mode
+        if (mode === 'squad-per-pod' && podId) {
+          parsed.podId = parsed.podId ?? podId;
+        }
+        return parsed;
       } catch {
         // Malformed file — skip
       }

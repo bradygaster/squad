@@ -25,6 +25,7 @@ import type { ShellMessage } from './types.js';
 import { initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
+import { parseAgentFromDescription } from './agent-name-parser.js';
 import { buildCoordinatorPrompt, buildInitModePrompt, parseCoordinatorResponse, hasRosterEntries } from './coordinator.js';
 import { loadAgentCharter, buildAgentPrompt } from './spawn.js';
 import { createSession, saveSession, loadLatestSession, type SessionData } from './session-store.js';
@@ -147,7 +148,7 @@ export async function runShell(): Promise<void> {
   // contexts (pipes, tests, CI) see useful guidance rather than a TTY error.
   const cwd = process.cwd();
   const localSquad = resolveSquad(cwd);
-  const globalSquadDir = join(resolveGlobalSquadPath(), '.squad');
+  const globalSquadDir = join(resolveGlobalSquadPath(), 'personal-squad');
   const hasAnySquad = !!localSquad || existsSync(globalSquadDir);
 
   if (!hasAnySquad && !process.stdin.isTTY) {
@@ -679,17 +680,17 @@ export async function runShell(): Promise<void> {
         };
         // Try to extract agent name from task description (e.g., "🔧 Morpheus: Building effects")
         const desc = typeof event['description'] === 'string' ? event['description'] as string : '';
-        const agentMatch = desc.match(/^\S*\s*(\w+):/);
-        const matchedAgent = agentMatch?.[1]?.toLowerCase();
-        if (matchedAgent && knownAgentNames.includes(matchedAgent)) {
+        const parsed = parseAgentFromDescription(desc, knownAgentNames);
+        if (parsed) {
+          const { agentName: matchedAgent, taskSummary } = parsed;
           registry.updateStatus(matchedAgent, 'working');
-          const taskSummary = desc.replace(/^\S*\s*\w+:\s*/, '').slice(0, 60);
           registry.updateActivityHint(matchedAgent, taskSummary || 'working...');
           shellApi?.setActivityHint(`${registry.get(matchedAgent)?.name ?? matchedAgent} — ${taskSummary || 'working'}...`);
           shellApi?.setAgentActivity(matchedAgent, taskSummary || 'working...');
           shellApi?.refreshAgents();
         } else {
-          const hint = hintMap[toolName] ?? `Using ${toolName}...`;
+          const trimmedDesc = desc.trim().slice(0, 80);
+          const hint = trimmedDesc || (hintMap[toolName] ?? `Using ${toolName}...`);
           shellApi?.setActivityHint(hint);
         }
       }

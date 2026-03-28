@@ -2,6 +2,35 @@
 
 You are working on a project that uses **Squad**, an AI team framework. When picking up issues autonomously, follow these guidelines.
 
+## Git Safety — Mandatory Rules
+
+**These rules are non-negotiable. Violating them risks deleting production source code.**
+
+### Staging
+- ❌ **NEVER** use `git add .` or `git add -A` — these stage unintended deletions from incomplete working trees
+- ❌ **NEVER** use `git commit -a` — same risk
+- ✅ **ALWAYS** stage specific files: `git add path/to/file1.ts path/to/file2.ts`
+- ✅ **ALWAYS** review before committing: run `git diff --cached --stat` and verify the file count matches your intent
+
+### Pushing
+- ❌ **NEVER** push directly to `dev` or `main` — always open a PR
+- ❌ **NEVER** force push (`git push --force` or `--force-with-lease`) to shared branches
+- ✅ **ALWAYS** work on a feature branch: `git checkout -b squad/{issue-number}-{slug}`
+- ✅ **ALWAYS** open a PR: `gh pr create --base dev --draft`
+
+### Pre-Push Checklist
+Before pushing any commit, verify:
+1. `git diff --cached --stat` — file count matches intent (expect ≤10 files for most fixes)
+2. `git diff --cached --diff-filter=D --name-only` — NO unintended deletions
+3. `npm run build` — build succeeds with your changes
+4. Commit message references the issue: `Closes #N`
+
+### Red Flags — STOP and Ask
+If you see any of these, STOP immediately and comment on the issue asking for guidance:
+- More than 20 files in your diff
+- ANY file deletions you didn't explicitly intend
+- Changes outside the scope of your assigned issue
+
 ## Team Context
 
 Before starting work on any issue:

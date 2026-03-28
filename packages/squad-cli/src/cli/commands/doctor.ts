@@ -135,7 +135,7 @@ function checkAbsoluteTeamRoot(squadDir: string): DoctorCheck | undefined {
     return {
       name: 'absolute path warning',
       status: 'warn',
-      message: `teamRoot is absolute (${teamRoot}) — prefer relative paths for portability`,
+      message: `teamRoot is absolute (${teamRoot}) — prefer relative paths for portability. Edit .squad/config.json to use a relative path.`,
     };
   }
   return undefined;
@@ -330,7 +330,7 @@ function checkVscodeJsonrpcExports(cwd: string): DoctorCheck {
   return {
     name: 'vscode-jsonrpc exports field',
     status: 'warn',
-    message: 'vscode-jsonrpc not found in node_modules',
+    message: 'vscode-jsonrpc not found in node_modules — expected for global CLI installs. For local development, run: npm install',
   };
 }
 
@@ -375,7 +375,39 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
   return {
     name: 'copilot-sdk session.js ESM patch',
     status: 'warn',
-    message: '@github/copilot-sdk not found in node_modules',
+    message: '@github/copilot-sdk not found in node_modules — expected for global CLI installs. For local development, run: npm install',
+  };
+}
+
+function checkSquadAgentMd(cwd: string): DoctorCheck {
+  const agentMdPath = path.join(cwd, '.github', 'agents', 'squad.agent.md');
+  if (!fileExists(agentMdPath)) {
+    return {
+      name: '.github/agents/squad.agent.md',
+      status: 'fail',
+      message: "file not found — run 'squad upgrade' to restore it",
+    };
+  }
+  try {
+    const content = fs.readFileSync(agentMdPath, 'utf8');
+    if (content.trim().length === 0) {
+      return {
+        name: '.github/agents/squad.agent.md',
+        status: 'warn',
+        message: "file is empty — run 'squad upgrade' to restore it",
+      };
+    }
+  } catch {
+    return {
+      name: '.github/agents/squad.agent.md',
+      status: 'warn',
+      message: "file is empty — run 'squad upgrade' to restore it",
+    };
+  }
+  return {
+    name: '.github/agents/squad.agent.md',
+    status: 'pass',
+    message: 'file present (Copilot agent discovery file)',
   };
 }
 
@@ -417,7 +449,10 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     if (rateLimitCheck) checks.push(rateLimitCheck);
   }
 
-  // 10. Node.js version (node:sqlite availability)
+  // 10. Copilot agent discovery file (relative to cwd, not squadDir)
+  checks.push(checkSquadAgentMd(resolvedCwd));
+
+  // 11. Node.js version (node:sqlite availability)
   checks.push(checkNodeVersion());
 
   // 11-12. ESM compatibility (Node 22/24+)
