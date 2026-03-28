@@ -310,4 +310,39 @@ This pipeline separates concerns:
 
 Result: Upstream PRs are lean, reviewed, and production-ready.
 
+## Branch Segregation Rule
+
+**Confidence:** high (validated by 3 stowaway incidents on PR #640)
+
+### What goes where
+
+| Content | Target Branch |
+|---------|--------------|
+| Code changes for the feature/issue | Feature branch |
+| .squad/ state (decisions, logs, history) | dev |
+| Skill updates (.squad/skills/) | dev |
+| Fork-sync results | dev |
+| Anything not part of a specific PR's scope | dev |
+
+### Mechanic (when on a feature branch)
+
+If you need to commit infrastructure work while on a feature branch:
+
+1. `git stash` -- save feature work
+2. `git checkout dev && git pull`
+3. Commit and push the infrastructure change to dev
+4. `git checkout -` -- return to feature branch
+5. `git stash pop` -- restore feature work
+
+### Coordinator responsibility
+
+When dispatching agents for non-feature work while on a feature branch, include in the spawn prompt:
+
+> "You are on a feature branch. Infrastructure work (.squad/, skills, decisions) must go to dev -- switch before committing."
+
+### Anti-pattern
+
+NEVER commit .squad/, skills, decisions, or fork-sync to a feature branch. This creates "stowaways" that contaminate PRs and require manual cleanup during squash.
+
+**Evidence:** PR #640 had 3 stowaway incidents in one session -- fork-sync skill, fork-first-pipeline update, and .squad/ state all landed on the StorageProvider PR branch and had to be stripped.
 
