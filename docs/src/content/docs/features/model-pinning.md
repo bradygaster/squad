@@ -22,13 +22,13 @@ Set a project-wide default and override individual agents:
 
 ```bash
 # Set Sonnet as the default for all agents
-squad config model claude-sonnet-4-5
+squad config model claude-sonnet-4.5
 
 # Pin Scribe to Haiku (cheaper — it only writes docs)
-squad config model claude-haiku-4-5 --agent Scribe
+squad config model claude-haiku-4.5 --agent scribe
 
 # Pin Tester to Haiku (cheaper — simple test scaffolding)
-squad config model claude-haiku-4-5 --agent Tester
+squad config model claude-haiku-4.5 --agent tester
 ```
 
 Verify your configuration:
@@ -39,11 +39,11 @@ squad config model
 
 ```
 Model configuration:
-  Default model: claude-sonnet-4-5
+  Default model: claude-sonnet-4.5
 
   Agent overrides:
-    Scribe → claude-haiku-4-5
-    Tester → claude-haiku-4-5
+    scribe → claude-haiku-4.5
+    tester → claude-haiku-4.5
 ```
 
 That's it — your Scribe and Tester now run on cheaper models. Code Lead and Researcher get Sonnet-level reasoning. You've balanced cost with capability.
@@ -93,16 +93,16 @@ Pin specific agents to specific models using the CLI or natural language:
 
 ```bash
 # Set global default
-squad config model claude-sonnet-4-5
+squad config model claude-sonnet-4.5
 
 # Pin an agent to a specific model
-squad config model claude-haiku-4-5 --agent Scribe
+squad config model claude-haiku-4.5 --agent scribe
 
 # Clear the global default (revert to auto-selection)
 squad config model --clear
 
 # Clear a specific agent's override
-squad config model --clear --agent Scribe
+squad config model --clear --agent scribe
 ```
 
 ### Natural language (in a session)
@@ -140,7 +140,7 @@ This means Squad automatically routes non-code work to cheaper models — you on
 | Writing code (implementation, refactoring, tests, bug fixes) | `claude-sonnet-4.6` | Standard | Quality and accuracy matter for code |
 | Writing prompts or agent designs | `claude-sonnet-4.6` | Standard | Prompts are executable — treat like code |
 | Non-code work (docs, planning, triage, logs, changelogs) | `claude-haiku-4.5` | Fast | Cost first — Haiku handles non-code tasks |
-| Visual/design work requiring image analysis | `claude-opus-4.5` | Premium | Vision capability required — overrides cost rule |
+| Visual/design work requiring image analysis | `claude-opus-4.6` | Premium | Vision capability required — overrides cost rule |
 
 If nothing else matches, Squad defaults to `claude-haiku-4.5`. Cost wins when in doubt, unless code is being produced.
 
@@ -157,7 +157,7 @@ Each agent role maps to a default model based on what that role typically does:
 | Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage → haiku |
 | Prompt Engineer | auto (per-task) | Prompt design is like code, research is not | Prompt architecture → sonnet; research → haiku |
 | SDK Expert | `claude-sonnet-4.6` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
-| Designer / Visual | `claude-opus-4.5` | Vision-capable model required | Never downgrade — vision is non-negotiable |
+| Designer / Visual | `claude-opus-4.6` | Vision-capable model required | Never downgrade — vision is non-negotiable |
 | DevRel / Writer | `claude-haiku-4.5` | Docs and writing — not code | — |
 | Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops — cheapest possible | Never bump Scribe |
 | Git / Release | `claude-haiku-4.5` | Mechanical ops — changelogs, tags, version bumps | Never bump mechanical ops |
@@ -208,14 +208,14 @@ switch back to automatic model selection
 If a model is unavailable (plan restriction, org policy, rate limit, or deprecation), Squad silently retries with the next model in chain. You don't see the retries — your agent just works.
 
 ```
-Premium:  claude-opus-4.6 → claude-opus-4.5 → claude-sonnet-4.6 → claude-sonnet-4.5 → (platform default)
-Standard: claude-sonnet-4.6 → claude-sonnet-4.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4 → (platform default)
-Fast:     claude-haiku-4.5 → gpt-5.4-mini → gpt-5.1-codex-mini → gpt-4.1 → (platform default)
+Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.6
+Standard: claude-sonnet-4.6 → gpt-5.4 → claude-sonnet-4.5 → gpt-5.3-codex → claude-sonnet-4 → gpt-5.2
+Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini
 ```
 
 **Rules:**
 - Never falls back UP in tier — a fast/cheap task won't land on a premium model
-- Maximum 3 retries before jumping to the platform default (nuclear fallback)
+- If the entire chain is exhausted, Squad falls back to `claude-haiku-4.5` (nuclear fallback) with up to 3 retries
 - If you specified a provider ("use Claude"), Squad falls back within that provider first
 
 ---
@@ -233,7 +233,7 @@ switch to haiku — I'm doing a docs sprint and want to save costs
 Or make it persistent:
 
 ```bash
-squad config model claude-haiku-4-5
+squad config model claude-haiku-4.5
 ```
 
 ### Bump quality for an architecture review
@@ -247,7 +247,7 @@ use opus for this architecture review
 Or pin your architect permanently:
 
 ```bash
-squad config model claude-opus-4-6 --agent Flight
+squad config model claude-opus-4.6 --agent flight
 ```
 
 ### Mixed-tier team strategy
@@ -256,11 +256,11 @@ Set up a 4-agent team with cost-conscious pinning:
 
 ```bash
 # Sonnet as the default for code-writing agents
-squad config model claude-sonnet-4-5
+squad config model claude-sonnet-4.5
 
 # Haiku for non-code agents
-squad config model claude-haiku-4-5 --agent Scribe
-squad config model claude-haiku-4-5 --agent Tester
+squad config model claude-haiku-4.5 --agent scribe
+squad config model claude-haiku-4.5 --agent tester
 ```
 
 Result: Code Lead and Researcher get Sonnet-level reasoning. Scribe and Tester run on Haiku. You've cut costs on half your agents without sacrificing code quality.
@@ -271,9 +271,9 @@ Squad supports models across three tiers:
 
 | Tier | Models |
 |------|--------|
-| **Premium** | `claude-opus-4.6`, `claude-opus-4.5` |
+| **Premium** | `claude-opus-4.6`, `claude-opus-4.6-fast`, `claude-opus-4.5` |
 | **Standard** | `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-5.1-codex`, `gpt-5.1`, `gemini-3-pro-preview` |
-| **Fast/Cheap** | `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1` |
+| **Fast/Cheap** | `claude-haiku-4.5`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1` |
 
 ---
 
