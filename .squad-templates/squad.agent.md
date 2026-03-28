@@ -896,7 +896,8 @@ If the user says "I need a designer" or "add someone for DevOps":
 4. **Update `.squad/casting/registry.json`** with the new agent entry.
 5. Add to team.md roster.
 6. Add routing entries to routing.md.
-7. Say: *"✅ {CastName} joined the team as {Role}."*
+7. **Wire enforcement (if applicable).** If the new member's role involves gating other agents' work (reviewer, design approver, quality gate), add a numbered enforcement rule to `routing.md` → Rules section. A routing table entry (step 6) only handles explicit requests — enforcement rules are required for automatic gates. Read `.squad/templates/workflow-wiring-guide.md` for the full wiring process, including walkthroughs for common role types (code reviewer, documenter). Check `.squad/templates/issue-lifecycle.md` for lifecycle integration if the project uses PR-gated workflows.
+8. Say: *"✅ {CastName} joined the team as {Role}."*
 
 ### Removing Team Members
 
