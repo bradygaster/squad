@@ -109,6 +109,138 @@ jobs:
       - name: Run tests
         run: npm test
 
+  changelog-gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check feature flag
+        id: flag
+        # Default: gate is ENABLED. When vars.SQUAD_CHANGELOG_CHECK is
+        # undefined (not set in repo/org variables), the bash comparison
+        # [ "" = "false" ] evaluates to false, so skip stays "false" and
+        # the gate runs. Set vars.SQUAD_CHANGELOG_CHECK to "false" to
+        # explicitly disable.
+        run: |
+          if [ "${{ vars.SQUAD_CHANGELOG_CHECK }}" = "false" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "CHANGELOG gate disabled via vars.SQUAD_CHANGELOG_CHECK"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip label
+        if: steps.flag.outputs.skip == 'false'
+        id: label
+        run: |
+          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+          if echo "$LABELS" | grep -q "skip-changelog"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping CHANGELOG gate (skip-changelog label present)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Require CHANGELOG update for SDK/CLI source changes
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # Three-dot diff (base...head) finds the merge-base automatically,
+          # so it works correctly even when the PR branch contains merge
+          # commits from syncing with the base branch. It compares against
+          # the common ancestor, not the literal base SHA.
+          CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
+
+          SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E '^packages/squad-(sdk|cli)/src/' || true)
+          if [ -z "$SDK_CLI_CHANGED" ]; then
+            echo "No SDK/CLI source changes detected -- CHANGELOG gate not applicable"
+            exit 0
+          fi
+
+          echo "SDK/CLI source files changed:"
+          echo "$SDK_CLI_CHANGED"
+
+          CHANGELOG_CHANGED=$(echo "$CHANGED" | grep -E '^CHANGELOG\.md$' || true)
+          if [ -z "$CHANGELOG_CHANGED" ]; then
+            echo ""
+            echo "::error::CHANGELOG.md was not updated but SDK/CLI source files were changed."
+            echo "::error::Please add a CHANGELOG.md entry describing your changes."
+            echo "::error::If this is intentional, add the 'skip-changelog' label to your PR."
+            exit 1
+          fi
+
+          echo "CHANGELOG.md updated -- gate passed"
+
+  exports-map-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check feature flag
+        id: flag
+        # Default: gate is ENABLED. When vars.SQUAD_EXPORTS_CHECK is
+        # undefined (not set in repo/org variables), the bash comparison
+        # [ "" = "false" ] evaluates to false, so skip stays "false" and
+        # the gate runs. Set vars.SQUAD_EXPORTS_CHECK to "false" to
+        # explicitly disable.
+        run: |
+          if [ "${{ vars.SQUAD_EXPORTS_CHECK }}" = "false" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Exports map check disabled via vars.SQUAD_EXPORTS_CHECK"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip label
+        if: steps.flag.outputs.skip == 'false'
+        id: label
+        run: |
+          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+          if echo "$LABELS" | grep -q "skip-exports-check"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping exports map check (skip-exports-check label present)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check for SDK source changes
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        id: changes
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # Three-dot diff (base...head) finds the merge-base automatically,
+          # so it works correctly even when the PR branch contains merge
+          # commits from syncing with the base branch.
+          SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
+          if [ -z "$SDK_CHANGED" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No SDK source changes detected -- exports check not applicable"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "SDK source files changed:"
+            echo "$SDK_CHANGED"
+          fi
+
+      - name: Verify exports map matches barrel files
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        run: node scripts/check-exports-map.mjs
+
   publish-policy:
     runs-on: ubuntu-latest
     steps:
