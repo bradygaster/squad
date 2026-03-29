@@ -10,7 +10,7 @@
  * Those missing exports are expected; they are tracked separately.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -39,27 +39,30 @@ function runScript(): Promise<{ code: number; stdout: string; stderr: string }> 
 }
 
 describe('check-exports-map.mjs', () => {
-  it('executes without crashing (exits 0 or 1)', async () => {
-    const { code } = await runScript();
-    // Exit 0 = all barrels mapped, exit 1 = some missing.
-    // Both are valid outcomes. A crash would be a non-0/1 code or thrown error.
-    expect([0, 1]).toContain(code);
+  let result: { code: number; stdout: string; stderr: string };
+
+  beforeAll(async () => {
+    result = await runScript();
   });
 
-  it('produces output describing the check result', async () => {
-    const { stdout, stderr } = await runScript();
-    const combined = stdout + stderr;
+  it('executes without crashing (exits 0 or 1)', () => {
+    // Exit 0 = all barrels mapped, exit 1 = some missing.
+    // Both are valid outcomes. A crash would be a non-0/1 code or thrown error.
+    expect([0, 1]).toContain(result.code);
+  });
+
+  it('produces output describing the check result', () => {
+    const combined = result.stdout + result.stderr;
     // The script always prints either "passed" or "FAILED" in its output
     expect(combined).toMatch(/Exports map check (passed|FAILED)/);
   });
 
-  it('reports MISSING entries with expected format when barrels are unmapped', async () => {
-    const { code, stderr } = await runScript();
-    if (code === 1) {
+  it('reports MISSING entries with expected format when barrels are unmapped', () => {
+    if (result.code === 1) {
       // When the check fails, each missing barrel is reported with a MISSING: prefix
-      expect(stderr).toContain('MISSING:');
+      expect(result.stderr).toContain('MISSING:');
       // The error message should mention the skip label escape hatch
-      expect(stderr).toContain('skip-exports-check');
+      expect(result.stderr).toContain('skip-exports-check');
     }
     // If code === 0, all barrels are mapped and there is nothing to assert here
   });

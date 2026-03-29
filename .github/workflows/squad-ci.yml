@@ -191,7 +191,7 @@ jobs:
           fi
 
       - name: Check for SDK source changes
-        if: steps.flag.outputs.skip == 'false' && !contains(join(github.event.pull_request.labels.*.name, ','), 'skip-exports-check')
+        if: steps.flag.outputs.skip == 'false' && !contains(github.event.pull_request.labels.*.name, 'skip-exports-check')
         id: changes
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
@@ -210,7 +210,7 @@ jobs:
           fi
 
       - name: Verify exports map matches barrel files
-        if: steps.flag.outputs.skip == 'false' && !contains(join(github.event.pull_request.labels.*.name, ','), 'skip-exports-check') && steps.changes.outputs.skip != 'true'
+        if: steps.flag.outputs.skip == 'false' && !contains(github.event.pull_request.labels.*.name, 'skip-exports-check') && steps.changes.outputs.skip != 'true'
         run: node scripts/check-exports-map.mjs
 
   publish-policy:
