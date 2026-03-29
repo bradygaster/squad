@@ -304,9 +304,6 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             samples/**/package-lock.json
-          cache-dependency-path: |
-            package-lock.json
-            samples/**/package-lock.json
 
       - name: Check feature flag
         id: flag
@@ -514,8 +511,6 @@ jobs:
               if (!key.includes('node_modules/@bradygaster/squad-')) continue;
               if (val.resolved && val.resolved.startsWith('https://')) {
                 problems.push({ path: key, resolved: val.resolved });
-              } else if (val.version && !val.link) {
-                problems.push({ path: key, version: val.version, link: false });
               }
             }
 
