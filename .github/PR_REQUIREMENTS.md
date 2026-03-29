@@ -84,11 +84,11 @@ Requirements are ordered by review flow. All marked **REQUIRED** must be satisfi
 
 - [ ] CHANGELOG.md entry under `[Unreleased]` following Keep-a-Changelog format
   - Example: `### Added — FeatureName (#N) — short description`
-  - Required when: `packages/squad-sdk/src/` or `packages/squad-cli/src/` changes
+  - Required when: a **user-facing change** (see "Definition of \"User-Facing Change\"") affects the SDK or CLI public surface (e.g., exports in `packages/squad-sdk/src/` or commands in `packages/squad-cli/src/cli/`)
 - [ ] README.md section updated if adding a new feature or module to the SDK
 - [ ] Docs feature page added under `docs/src/content/docs/features/` if adding a user-facing capability
 - [ ] `docs/src/navigation.ts` updated if a new docs page is added
-- [ ] Docs build test updated if a new feature page is added (Playwright test in CI)
+- [ ] Docs build test updated if a new feature page is added (`test/docs-build.test.ts`, run via `npm test`)
 
 **Enforced by**: Manual PR review (FIDO, Flight) + future automated checks in #104
 
