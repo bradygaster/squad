@@ -132,22 +132,8 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
-        run: |
-          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
-          if echo "$LABELS" | grep -q "skip-changelog"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping CHANGELOG gate (skip-changelog label present)"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Require CHANGELOG update for SDK/CLI source changes
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        if: steps.flag.outputs.skip == 'false' && !contains(join(github.event.pull_request.labels.*.name, ','), 'skip-changelog')
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
@@ -204,22 +190,8 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
-        run: |
-          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
-          if echo "$LABELS" | grep -q "skip-exports-check"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping exports map check (skip-exports-check label present)"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Check for SDK source changes
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        if: steps.flag.outputs.skip == 'false' && !contains(join(github.event.pull_request.labels.*.name, ','), 'skip-exports-check')
         id: changes
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
@@ -238,7 +210,7 @@ jobs:
           fi
 
       - name: Verify exports map matches barrel files
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        if: steps.flag.outputs.skip == 'false' && !contains(join(github.event.pull_request.labels.*.name, ','), 'skip-exports-check') && steps.changes.outputs.skip != 'true'
         run: node scripts/check-exports-map.mjs
 
   publish-policy:

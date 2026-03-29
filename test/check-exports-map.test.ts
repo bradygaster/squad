@@ -16,11 +16,24 @@ import { resolve } from 'node:path';
 
 const SCRIPT_PATH = resolve(process.cwd(), 'scripts', 'check-exports-map.mjs');
 
-function runScript(): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  return new Promise((res) => {
+function runScript(): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((res, rej) => {
     execFile('node', [SCRIPT_PATH], { cwd: process.cwd() }, (error, stdout, stderr) => {
-      const code = error ? error.code ?? (error as NodeJS.ErrnoException & { status?: number }).status ?? 1 : 0;
-      res({ code: typeof code === 'number' ? code : 1, stdout, stderr });
+      if (!error) {
+        res({ code: 0, stdout, stderr });
+        return;
+      }
+      const err = error as NodeJS.ErrnoException & { status?: number; code?: number | string };
+      if (typeof err.code === 'number') {
+        res({ code: err.code, stdout, stderr });
+        return;
+      }
+      if (typeof err.status === 'number') {
+        res({ code: err.status, stdout, stderr });
+        return;
+      }
+      // Non-numeric code or missing exit code (e.g., spawn ENOENT, signal termination)
+      rej(error);
     });
   });
 }
