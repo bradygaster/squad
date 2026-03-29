@@ -1,8 +1,6 @@
 name: Docs — Weekly Link Check
 
 on:
-  schedule:
-    - cron: '0 9 * * 1'  # Monday 9am UTC
   workflow_dispatch:
 
 jobs:
