@@ -21,4 +21,4 @@ jobs:
           node-version: 22
 
       - name: Run tests
-        run: node --test test/*.test.js
+        run: node --test test/*.test.cjs
