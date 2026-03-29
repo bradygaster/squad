@@ -10,8 +10,10 @@
  * @module cli/commands/doctor
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 /** Result of a single diagnostic check. */
 export interface DoctorCheck {
@@ -34,20 +36,18 @@ interface ModeInfo {
 // ── helpers ─────────────────────────────────────────────────────────
 
 function fileExists(p: string): boolean {
-  return fs.existsSync(p);
+  return storage.existsSync(p);
 }
 
 function isDirectory(p: string): boolean {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
+  return storage.isDirectorySync(p);
 }
 
 function tryReadJson(p: string): unknown | undefined {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    const raw = storage.readSync(p);
+    if (!raw) return undefined;
+    return JSON.parse(raw);
   } catch {
     return undefined;
   }
@@ -158,7 +158,7 @@ function checkTeamMd(squadDir: string): DoctorCheck {
   if (!fileExists(teamPath)) {
     return { name: 'team.md found with ## Members header', status: 'fail', message: 'file not found' };
   }
-  const content = fs.readFileSync(teamPath, 'utf8');
+  const content = storage.readSync(teamPath) ?? '';
   if (!content.includes('## Members')) {
     return { name: 'team.md found with ## Members header', status: 'warn', message: 'file exists but missing ## Members header' };
   }
@@ -181,8 +181,8 @@ function checkAgentsDir(squadDir: string): DoctorCheck {
   }
   let count = 0;
   try {
-    for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
-      if (entry.isDirectory()) count++;
+    for (const entry of storage.listSync(agentsDir)) {
+      if (storage.isDirectorySync(path.join(agentsDir, entry))) count++;
     }
   } catch { /* empty */ }
   return {
@@ -348,7 +348,7 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
     if (!fileExists(sessionPath)) continue;
 
     try {
-      const content = fs.readFileSync(sessionPath, 'utf8');
+      const content = storage.readSync(sessionPath) ?? '';
 
       if (/from\s+["']vscode-jsonrpc\/node["']/.test(content)) {
         return {
@@ -389,7 +389,7 @@ function checkSquadAgentMd(cwd: string): DoctorCheck {
     };
   }
   try {
-    const content = fs.readFileSync(agentMdPath, 'utf8');
+    const content = storage.readSync(agentMdPath) ?? '';
     if (content.trim().length === 0) {
       return {
         name: '.github/agents/squad.agent.md',

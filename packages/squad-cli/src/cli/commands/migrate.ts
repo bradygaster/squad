@@ -3,8 +3,10 @@
  * @module cli/commands/migrate
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { success, warn, dim, bold, BOLD, RESET, DIM } from '../core/output.js';
 import { fatal, SquadError } from '../core/errors.js';
 import { migrateDirectory } from '../core/migrate-directory.js';
@@ -51,10 +53,10 @@ interface ParsedCasting {
  * Detect current squad mode
  */
 function detectMode(cwd: string): 'sdk' | 'markdown' | 'legacy' | 'none' {
-  const hasConfigTs = fs.existsSync(path.join(cwd, 'squad.config.ts'));
-  const hasConfigJs = fs.existsSync(path.join(cwd, 'squad.config.js'));
-  const hasSquadDir = fs.existsSync(path.join(cwd, '.squad'));
-  const hasAiTeamDir = fs.existsSync(path.join(cwd, '.ai-team'));
+  const hasConfigTs = storage.existsSync(path.join(cwd, 'squad.config.ts'));
+  const hasConfigJs = storage.existsSync(path.join(cwd, 'squad.config.js'));
+  const hasSquadDir = storage.existsSync(path.join(cwd, '.squad'));
+  const hasAiTeamDir = storage.existsSync(path.join(cwd, '.ai-team'));
 
   if (hasConfigTs || hasConfigJs) return 'sdk';
   if (hasSquadDir) return 'markdown';
@@ -67,11 +69,11 @@ function detectMode(cwd: string): 'sdk' | 'markdown' | 'legacy' | 'none' {
  */
 function parseTeamMd(squadDir: string): ParsedTeam {
   const teamPath = path.join(squadDir, 'team.md');
-  if (!fs.existsSync(teamPath)) {
+  if (!storage.existsSync(teamPath)) {
     fatal('No .squad/team.md found — cannot migrate');
   }
 
-  const content = fs.readFileSync(teamPath, 'utf8');
+  const content = storage.readSync(teamPath) ?? '';
   const lines = content.split('\n');
 
   let name = 'untitled-squad';
@@ -155,11 +157,11 @@ function parseTeamMd(squadDir: string): ParsedTeam {
  */
 function parseRoutingMd(squadDir: string): { rules: ParsedRoutingRule[]; defaultAgent: string } {
   const routingPath = path.join(squadDir, 'routing.md');
-  if (!fs.existsSync(routingPath)) {
+  if (!storage.existsSync(routingPath)) {
     return { rules: [], defaultAgent: '@coordinator' };
   }
 
-  const content = fs.readFileSync(routingPath, 'utf8');
+  const content = storage.readSync(routingPath) ?? '';
   const lines = content.split('\n');
   const rules: ParsedRoutingRule[] = [];
 
@@ -209,7 +211,7 @@ function parseAgentCharter(squadDir: string, agentName: string): ParsedAgent {
   const charterPath = path.join(squadDir, 'agents', agentName, 'charter.md');
   const role = agentName.charAt(0).toUpperCase() + agentName.slice(1);
   
-  if (!fs.existsSync(charterPath)) {
+  if (!storage.existsSync(charterPath)) {
     return {
       name: agentName,
       role,
@@ -218,7 +220,7 @@ function parseAgentCharter(squadDir: string, agentName: string): ParsedAgent {
     };
   }
 
-  const content = fs.readFileSync(charterPath, 'utf8');
+  const content = storage.readSync(charterPath) ?? '';
   const lines = content.split('\n');
   
   let parsedRole = role;
@@ -247,12 +249,12 @@ function parseAgentCharter(squadDir: string, agentName: string): ParsedAgent {
  */
 function parseCastingPolicy(squadDir: string): ParsedCasting | undefined {
   const policyPath = path.join(squadDir, 'casting', 'policy.json');
-  if (!fs.existsSync(policyPath)) {
+  if (!storage.existsSync(policyPath)) {
     return undefined;
   }
 
   try {
-    const content = fs.readFileSync(policyPath, 'utf8');
+    const content = storage.readSync(policyPath) ?? '';
     const policy = JSON.parse(content) as {
       allowlist_universes?: string[];
       universe_capacity?: Record<string, number>;
@@ -409,14 +411,14 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
     const { runBuild } = await import('./build.js');
     await runBuild(cwd, { check: false, dryRun: false, watch: false });
     
-    const configPath = fs.existsSync(path.join(cwd, 'squad.config.ts'))
+    const configPath = storage.existsSync(path.join(cwd, 'squad.config.ts'))
       ? path.join(cwd, 'squad.config.ts')
       : path.join(cwd, 'squad.config.js');
     
     if (!options.dryRun) {
       // Backup the config file
       const backupPath = configPath + '.bak';
-      fs.renameSync(configPath, backupPath);
+      storage.renameSync(configPath, backupPath);
       success(`Moved ${path.basename(configPath)} → ${path.basename(backupPath)}`);
       
       console.log();
@@ -479,7 +481,7 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
     }
     
     const configPath = path.join(cwd, 'squad.config.ts');
-    fs.writeFileSync(configPath, configContent);
+    storage.writeSync(configPath, configContent);
     success('Created squad.config.ts');
     
     console.log();

@@ -3,15 +3,17 @@
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { detectSquadDir, resolveWorktreeMainCheckout } from './detect-squad-dir.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
 import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, type InitOptions } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 const CYAN = '\x1b[36m';
 
@@ -160,7 +162,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   const mainCheckout = resolveWorktreeMainCheckout(dest);
   if (mainCheckout) {
     const mainSquadDir = path.join(mainCheckout, '.squad');
-    if (fs.existsSync(mainSquadDir)) {
+    if (storage.existsSync(mainSquadDir)) {
       console.log();
       console.log(`${YELLOW}${BOLD}⚠  Git worktree detected${RESET}`);
       console.log(`${YELLOW}   Main checkout: ${mainCheckout}${RESET}`);
@@ -254,14 +256,14 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Ensure version is fully stamped in squad.agent.md
   const agentPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
-  if (fs.existsSync(agentPath)) {
+  if (storage.existsSync(agentPath)) {
     stampVersion(agentPath, version);
   }
 
   // Persist --roles flag for the REPL to pick up during casting
   if (options.roles) {
     const rolesMarker = path.join(squadDir, '.init-roles');
-    fs.writeFileSync(rolesMarker, '1', 'utf-8');
+    storage.writeSync(rolesMarker, '1');
     success(`base roles enabled — team will use built-in role catalog`);
   }
 

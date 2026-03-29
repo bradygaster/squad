@@ -6,8 +6,10 @@ import { listSessions, loadSessionById, type SessionData } from './session-store
 import { formatAgentLine, getStatusTag } from './agent-status.js';
 import type { ShellMessage } from './types.js';
 import path from 'node:path';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { runNapSync, formatNapReport } from '../core/nap.js';
+
+const storage = new FSStorageProvider();
 
 export interface CommandContext {
   registry: SessionRegistry;
@@ -243,8 +245,8 @@ function handleInit(args: string[], context: CommandContext): CommandResult {
   if (useBaseRoles) {
     // Write .init-roles marker for the casting flow to pick up
     const rolesMarker = path.join(context.teamRoot, '.squad', '.init-roles');
-    try { mkdirSync(path.dirname(rolesMarker), { recursive: true }); } catch { /* ignore */ }
-    try { writeFileSync(rolesMarker, '1', 'utf-8'); } catch { /* ignore */ }
+    try { storage.mkdirSync(path.dirname(rolesMarker), { recursive: true }); } catch { /* ignore */ }
+    try { storage.writeSync(rolesMarker, '1'); } catch { /* ignore */ }
   }
   
   if (prompt) {

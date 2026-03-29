@@ -60,6 +60,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Human Team Members', slug: 'features/human-team-members' },
       { title: 'Consult Mode', slug: 'features/consult-mode' },
       { title: 'Remote Control', slug: 'features/remote-control' },
+      { title: 'Storage Provider', slug: 'features/storage-provider' },
       { title: 'VS Code', slug: 'features/vscode' },
       { title: 'Git Worktrees', slug: 'features/worktrees' },
       { title: 'Export & Import', slug: 'features/export-import' },
@@ -149,3 +150,4 @@ export const STANDALONE_PAGES = [
   { title: 'Community', slug: 'community' },
   { title: 'Insider Program', slug: 'insider-program' },
 ];
+

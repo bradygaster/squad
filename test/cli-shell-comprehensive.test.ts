@@ -96,31 +96,31 @@ ${rows}
 // ============================================================================
 
 describe('coordinator.ts — buildCoordinatorPrompt', () => {
-  it('uses custom teamPath when provided', () => {
+  it('uses custom teamPath when provided', async () => {
     const customPath = join(FIXTURES, '.squad', 'team.md');
-    const prompt = buildCoordinatorPrompt({ teamRoot: '/fake', teamPath: customPath });
+    const prompt = await buildCoordinatorPrompt({ teamRoot: '/fake', teamPath: customPath });
     expect(prompt).toContain('Hockney');
     expect(prompt).toContain('Fenster');
   });
 
-  it('uses custom routingPath when provided', () => {
+  it('uses custom routingPath when provided', async () => {
     const customPath = join(FIXTURES, '.squad', 'routing.md');
-    const prompt = buildCoordinatorPrompt({ teamRoot: '/fake', routingPath: customPath });
+    const prompt = await buildCoordinatorPrompt({ teamRoot: '/fake', routingPath: customPath });
     expect(prompt).toContain('Tests → Hockney');
   });
 
-  it('handles missing team.md gracefully', () => {
-    const prompt = buildCoordinatorPrompt({ teamRoot: '/nonexistent' });
+  it('handles missing team.md gracefully', async () => {
+    const prompt = await buildCoordinatorPrompt({ teamRoot: '/nonexistent' });
     expect(prompt).toContain('NO TEAM CONFIGURED');
   });
 
-  it('handles missing routing.md gracefully', () => {
-    const prompt = buildCoordinatorPrompt({ teamRoot: '/nonexistent' });
+  it('handles missing routing.md gracefully', async () => {
+    const prompt = await buildCoordinatorPrompt({ teamRoot: '/nonexistent' });
     expect(prompt).toContain('No routing.md found');
   });
 
-  it('includes all required prompt sections', () => {
-    const prompt = buildCoordinatorPrompt({ teamRoot: FIXTURES });
+  it('includes all required prompt sections', async () => {
+    const prompt = await buildCoordinatorPrompt({ teamRoot: FIXTURES });
     expect(prompt).toContain('Squad Coordinator');
     expect(prompt).toContain('Team Roster');
     expect(prompt).toContain('Routing Rules');
@@ -324,28 +324,28 @@ describe('coordinator.ts — formatConversationContext', () => {
 // ============================================================================
 
 describe('spawn.ts — loadAgentCharter', () => {
-  it('loads charter with teamRoot provided', () => {
-    const charter = loadAgentCharter('hockney', FIXTURES);
+  it('loads charter with teamRoot provided', async () => {
+    const charter = await loadAgentCharter('hockney', FIXTURES);
     expect(charter).toContain('Hockney');
   });
 
-  it('lowercases agent name for path resolution', () => {
-    const charter = loadAgentCharter('HOCKNEY', FIXTURES);
+  it('lowercases agent name for path resolution', async () => {
+    const charter = await loadAgentCharter('HOCKNEY', FIXTURES);
     expect(charter).toContain('Hockney');
   });
 
-  it('throws descriptive error when charter not found', () => {
-    expect(() => loadAgentCharter('nobody', FIXTURES)).toThrow(
+  it('throws descriptive error when charter not found', async () => {
+    await expect(loadAgentCharter('nobody', FIXTURES)).rejects.toThrow(
       /No charter found for "nobody"/
     );
   });
 
-  it('throws when .squad/ does not exist and teamRoot not provided', () => {
+  it('throws when .squad/ does not exist and teamRoot not provided', async () => {
     const originalCwd = process.cwd();
     try {
       const tmpDir = makeTempDir('no-squad-');
       process.chdir(tmpDir);
-      expect(() => loadAgentCharter('test')).toThrow(/No (team|charter) found/);
+      await expect(loadAgentCharter('test')).rejects.toThrow(/No (team|charter) found/);
       cleanDir(tmpDir);
     } finally {
       process.chdir(originalCwd);
@@ -1134,21 +1134,21 @@ describe('Error hardening — user-friendly messages with remediation hints', ()
 
   // --- spawn.ts ---
 
-  it('loadAgentCharter error for missing charter includes agent name', () => {
+  it('loadAgentCharter error for missing charter includes agent name', async () => {
     try {
-      loadAgentCharter('nonexistent-agent', FIXTURES);
+      await loadAgentCharter('nonexistent-agent', FIXTURES);
     } catch (err: unknown) {
       expect((err as Error).message).toContain('nonexistent-agent');
       expect((err as Error).message).toContain('charter.md exists');
     }
   });
 
-  it('loadAgentCharter error for no .squad/ includes actionable hint', () => {
+  it('loadAgentCharter error for no .squad/ includes actionable hint', async () => {
     const tmpDir = makeTempDir('no-squad-spawn-');
     const originalCwd = process.cwd();
     try {
       process.chdir(tmpDir);
-      loadAgentCharter('test');
+      await loadAgentCharter('test');
     } catch (err: unknown) {
       // Error may say "squad init" OR "charter.md exists" depending on resolveSquad()
       expect((err as Error).message).toMatch(/squad init|charter\.md exists/);
@@ -1161,8 +1161,8 @@ describe('Error hardening — user-friendly messages with remediation hints', ()
 
   // --- coordinator.ts ---
 
-  it('buildCoordinatorPrompt includes squad init hint in fallback text', () => {
-    const prompt = buildCoordinatorPrompt({ teamRoot: '/nonexistent' });
+  it('buildCoordinatorPrompt includes squad init hint in fallback text', async () => {
+    const prompt = await buildCoordinatorPrompt({ teamRoot: '/nonexistent' });
     expect(prompt).toContain('squad init');
   });
 

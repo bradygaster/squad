@@ -207,6 +207,50 @@ const resumed = await client.resumeSession(
 
 ---
 
+## Storage Abstraction
+
+Squad separates I/O from business logic. All persistent storage — sessions, state, decisions, histories — flows through a pluggable `StorageProvider` interface. Swap the backend (filesystem, database, cloud) without touching orchestration code.
+
+### Built-in Providers
+
+| Provider | Use When |
+|----------|----------|
+| `FSStorageProvider` | Running on Node.js. Stores everything on disk. |
+| `InMemoryStorageProvider` | Writing unit tests or running ephemeral sessions. |
+| `SQLiteStorageProvider` | Need a single portable database file. Works on all platforms (runs on WASM). |
+
+### Build Your Own
+
+Implement the `StorageProvider` interface:
+
+```typescript
+import type { StorageProvider } from '@bradygaster/squad-sdk';
+
+export class MyCloudStorageProvider implements StorageProvider {
+  async read(filePath: string): Promise<string | undefined> {
+    // Fetch from Azure Blob, S3, or your service
+    try {
+      return await this.client.getBlob(filePath);
+    } catch (e) {
+      if (e.code === 'NotFound') return undefined;
+      throw e;
+    }
+  }
+
+  async write(filePath: string, data: string): Promise<void> {
+    // Store to cloud
+    await this.client.putBlob(filePath, data);
+  }
+
+  // Implement remaining methods: append, exists, list, delete, deleteDir, isDirectory, mkdir, rename, copy, stat
+  // + sync variants (deprecated in Wave 2)
+}
+```
+
+See `storage-provider-azure` and `storage-provider-sqlite` samples for complete implementations.
+
+---
+
 ## The Casting Engine
 
 Agents aren't `role-1`, `role-2`. They have names, personalities, and persistent identities across sessions. The casting engine assigns them automatically from a thematic universe.

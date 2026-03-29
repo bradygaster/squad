@@ -3,8 +3,10 @@
  * @module cli/core/email-scrub
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 const EMAIL_PATTERN = /([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
 const NAME_WITH_EMAIL_PATTERN = /([a-zA-Z0-9_-]+)\s*\(([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\)/g;
@@ -26,7 +28,7 @@ export async function scrubEmails(dir: string): Promise<number> {
   // Scrub root-level files
   for (const file of filesToScrub) {
     const filePath = path.join(dir, file);
-    if (fs.existsSync(filePath)) {
+    if (storage.existsSync(filePath)) {
       if (scrubFile(filePath)) {
         scrubbedFiles.push(file);
       }
@@ -35,11 +37,11 @@ export async function scrubEmails(dir: string): Promise<number> {
   
   // Scrub agent history files
   const agentsDir = path.join(dir, 'agents');
-  if (fs.existsSync(agentsDir)) {
+  if (storage.existsSync(agentsDir)) {
     try {
-      for (const agentName of fs.readdirSync(agentsDir)) {
+      for (const agentName of storage.listSync(agentsDir)) {
         const historyPath = path.join(agentsDir, agentName, 'history.md');
-        if (fs.existsSync(historyPath)) {
+        if (storage.existsSync(historyPath)) {
           if (scrubFile(historyPath)) {
             scrubbedFiles.push(path.join('agents', agentName, 'history.md'));
           }
@@ -52,9 +54,9 @@ export async function scrubEmails(dir: string): Promise<number> {
   
   // Scrub log files
   const logDir = path.join(dir, 'log');
-  if (fs.existsSync(logDir)) {
+  if (storage.existsSync(logDir)) {
     try {
-      const logFiles = fs.readdirSync(logDir)
+      const logFiles = storage.listSync(logDir)
         .filter(f => f.endsWith('.md') || f.endsWith('.txt') || f.endsWith('.log'));
       
       for (const file of logFiles) {
@@ -77,7 +79,7 @@ export async function scrubEmails(dir: string): Promise<number> {
  */
 function scrubFile(filePath: string): boolean {
   try {
-    let content = fs.readFileSync(filePath, 'utf8');
+    let content = storage.readSync(filePath) ?? '';
     let modified = false;
     
     // Replace "name (email)" → "name"
@@ -102,7 +104,7 @@ function scrubFile(filePath: string): boolean {
     });
     
     if (modified) {
-      fs.writeFileSync(filePath, scrubbed.join('\n'));
+      storage.writeSync(filePath, scrubbed.join('\n'));
     }
     
     return modified;

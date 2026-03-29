@@ -3,9 +3,11 @@
  * Imports a Squad configuration bundle into a target project.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { join, dirname } from 'node:path';
 import type { ExportBundle, ExportRoutingRule } from './export.js';
+
+const storage = new FSStorageProvider();
 
 export interface ImportOptions {
   merge?: boolean;
@@ -99,13 +101,13 @@ export function importSquadConfig(
   const changes: ImportChange[] = [];
 
   // Read and parse bundle
-  if (!existsSync(bundlePath)) {
+  if (!storage.existsSync(bundlePath)) {
     return { success: false, changes: [], warnings: [`Bundle file not found: ${bundlePath}`] };
   }
 
   let bundle: ExportBundle;
   try {
-    const content = readFileSync(bundlePath, 'utf-8');
+    const content = storage.readSync(bundlePath) ?? '';
     bundle = deserializeBundle(content);
   } catch (err) {
     return { success: false, changes: [], warnings: [`Failed to parse bundle: ${(err as Error).message}`] };
@@ -129,20 +131,20 @@ export function importSquadConfig(
     const agentPath = join(agentsDir, `${agent.name}.agent.md`);
     const relativePath = `.github/agents/${agent.name}.agent.md`;
 
-    if (existsSync(agentPath) && !opts.merge) {
+    if (storage.existsSync(agentPath) && !opts.merge) {
       changes.push({ type: 'skipped', path: relativePath, reason: 'File exists and merge is disabled' });
       continue;
     }
 
-    if (existsSync(agentPath) && opts.merge) {
+    if (storage.existsSync(agentPath) && opts.merge) {
       if (!opts.dryRun) {
-        writeFileSync(agentPath, agent.content, 'utf-8');
+        storage.writeSync(agentPath, agent.content);
       }
       changes.push({ type: 'modified', path: relativePath });
     } else {
       if (!opts.dryRun) {
-        mkdirSync(dirname(agentPath), { recursive: true });
-        writeFileSync(agentPath, agent.content, 'utf-8');
+        storage.mkdirSync(dirname(agentPath), { recursive: true });
+        storage.writeSync(agentPath, agent.content);
       }
       changes.push({ type: 'added', path: relativePath });
     }
@@ -154,14 +156,14 @@ export function importSquadConfig(
     const relativePath = '.ai-team/routing.md';
     const routingContent = formatRoutingRules(bundle.routingRules);
 
-    if (existsSync(routingPath) && !opts.merge) {
+    if (storage.existsSync(routingPath) && !opts.merge) {
       changes.push({ type: 'skipped', path: relativePath, reason: 'File exists and merge is disabled' });
     } else {
       if (!opts.dryRun) {
-        mkdirSync(dirname(routingPath), { recursive: true });
-        writeFileSync(routingPath, routingContent, 'utf-8');
+        storage.mkdirSync(dirname(routingPath), { recursive: true });
+        storage.writeSync(routingPath, routingContent);
       }
-      changes.push({ type: existsSync(routingPath) ? 'modified' : 'added', path: relativePath });
+      changes.push({ type: storage.existsSync(routingPath) ? 'modified' : 'added', path: relativePath });
     }
   }
 

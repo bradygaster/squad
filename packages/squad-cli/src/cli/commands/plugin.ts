@@ -3,12 +3,10 @@
  * Port from beta index.js lines 716-833
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { TIMEOUTS } from '@bradygaster/squad-sdk';
+import { TIMEOUTS, FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold, DIM, BOLD, RESET } from '../core/output.js';
 import { fatal } from '../core/errors.js';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
@@ -39,15 +37,17 @@ export async function runPlugin(dest: string, args: string[]): Promise<void> {
   }
 
   const squadDirInfo = detectSquadDir(dest);
+  const storage = new FSStorageProvider();
   const pluginsDir = join(squadDirInfo.path, 'plugins');
   const marketplacesFile = join(pluginsDir, 'marketplaces.json');
 
   async function readMarketplaces(): Promise<MarketplacesRegistry> {
-    if (!existsSync(marketplacesFile)) {
+    if (!storage.existsSync(marketplacesFile)) {
       return { marketplaces: [] };
     }
     try {
-      const content = await readFile(marketplacesFile, 'utf8');
+      const content = await storage.read(marketplacesFile);
+      if (!content) return { marketplaces: [] };
       return JSON.parse(content);
     } catch {
       return { marketplaces: [] };
@@ -55,8 +55,8 @@ export async function runPlugin(dest: string, args: string[]): Promise<void> {
   }
 
   async function writeMarketplaces(data: MarketplacesRegistry): Promise<void> {
-    await mkdir(pluginsDir, { recursive: true });
-    await writeFile(marketplacesFile, JSON.stringify(data, null, 2) + '\n', 'utf8');
+    await storage.mkdir(pluginsDir, { recursive: true });
+    await storage.write(marketplacesFile, JSON.stringify(data, null, 2) + '\n');
   }
 
   // --- Add marketplace ---

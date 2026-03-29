@@ -7,7 +7,7 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'node:http';
-import fs from 'node:fs';
+import { createWriteStream, mkdirSync as fsMkdirSync } from 'node:fs'; // createWriteStream/mkdirSync retained — streaming API + restrictive perms, not in StorageProvider scope
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -42,7 +42,7 @@ export class RemoteBridge {
   private readonly sessionCreatedAt = Date.now();
   private auditLogDir: string = path.join(os.homedir(), '.cli-tunnel', 'audit');
   private auditLogPath: string = path.join(this.auditLogDir, `squad-audit-${Date.now()}.jsonl`);
-  private auditLog = (() => { fs.mkdirSync(this.auditLogDir, { recursive: true, mode: 0o700 }); return fs.createWriteStream(this.auditLogPath, { flags: 'a' }); })();
+  private auditLog = (() => { fsMkdirSync(this.auditLogDir, { recursive: true, mode: 0o700 }); return createWriteStream(this.auditLogPath, { flags: 'a' }); })();
 
   constructor(private config: RemoteBridgeConfig) {
     this.auditLog.on('error', (err) => { console.error('Audit log error:', err.message); });

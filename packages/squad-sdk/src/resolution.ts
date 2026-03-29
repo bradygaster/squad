@@ -12,9 +12,11 @@
  * @module resolution
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { FSStorageProvider } from './storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Dual-root path resolution types (Issue #311)
@@ -67,7 +69,7 @@ export interface ResolvedSquadPaths {
  */
 function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string | null {
   try {
-    const content = fs.readFileSync(gitFilePath, 'utf-8').trim();
+    const content = (storage.readSync(gitFilePath) ?? '').trim();
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (!match || !match[1]) return null;
     // worktreeGitDir = /main/.git/worktrees/name
@@ -77,7 +79,7 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
     // mainCheckout   = /main        (dirname of mainGitDir)
     const mainCheckout = path.dirname(mainGitDir);
     // Verify the derived main checkout is a real git repo
-    if (!fs.existsSync(mainGitDir) || !fs.statSync(mainGitDir).isDirectory()) {
+    if (!storage.existsSync(mainGitDir) || !storage.isDirectorySync(mainGitDir)) {
       return null;
     }
     return mainCheckout;
@@ -108,13 +110,13 @@ export function resolveSquad(startDir?: string): string | null {
   while (true) {
     const candidate = path.join(current, '.squad');
 
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+    if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
       return candidate;
     }
 
     const gitMarker = path.join(current, '.git');
-    if (fs.existsSync(gitMarker)) {
-      if (fs.statSync(gitMarker).isDirectory()) {
+    if (storage.existsSync(gitMarker)) {
+      if (storage.isDirectorySync(gitMarker)) {
         // Real repo root — stop walking, no .squad/ found in this checkout
         return null;
       }
@@ -123,7 +125,7 @@ export function resolveSquad(startDir?: string): string | null {
       const mainCheckout = getMainWorktreePath(current, gitMarker);
       if (mainCheckout) {
         const mainCandidate = path.join(mainCheckout, '.squad');
-        if (fs.existsSync(mainCandidate) && fs.statSync(mainCandidate).isDirectory()) {
+        if (storage.existsSync(mainCandidate) && storage.isDirectorySync(mainCandidate)) {
           return mainCandidate;
         }
       }
@@ -164,14 +166,14 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
   while (true) {
     for (const name of SQUAD_DIR_NAMES) {
       const candidate = path.join(current, name);
-      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
         return { dir: candidate, name };
       }
     }
 
     const gitMarker = path.join(current, '.git');
-    if (fs.existsSync(gitMarker)) {
-      if (fs.statSync(gitMarker).isDirectory()) {
+    if (storage.existsSync(gitMarker)) {
+      if (storage.isDirectorySync(gitMarker)) {
         // Real repo root — stop, no squad dir found in this checkout
         return null;
       }
@@ -180,7 +182,7 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
       if (mainCheckout) {
         for (const name of SQUAD_DIR_NAMES) {
           const candidate = path.join(mainCheckout, name);
-          if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+          if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
             return { dir: candidate, name };
           }
         }
@@ -202,11 +204,11 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
  */
 export function loadDirConfig(squadDir: string): SquadDirConfig | null {
   const configPath = path.join(squadDir, 'config.json');
-  if (!fs.existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return null;
   }
   try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath) ?? '';
     const parsed = JSON.parse(raw);
     if (
       parsed !== null &&
@@ -314,8 +316,8 @@ export function resolveGlobalSquadPath(): string {
 
   const globalDir = path.join(base, 'squad');
 
-  if (!fs.existsSync(globalDir)) {
-    fs.mkdirSync(globalDir, { recursive: true });
+  if (!storage.existsSync(globalDir)) {
+    storage.mkdirSync(globalDir, { recursive: true });
   }
 
   return globalDir;
@@ -336,7 +338,7 @@ export function resolvePersonalSquadDir(): string | null {
   const globalDir = resolveGlobalSquadPath();
   const personalDir = path.join(globalDir, 'personal-squad');
   
-  if (!fs.existsSync(personalDir)) return null;
+  if (!storage.existsSync(personalDir)) return null;
   return personalDir;
 }
 
@@ -353,14 +355,14 @@ export function ensurePersonalSquadDir(): string {
   const personalDir = path.join(globalDir, 'personal-squad');
   const agentsDir = path.join(personalDir, 'agents');
 
-  if (!fs.existsSync(agentsDir)) {
-    fs.mkdirSync(agentsDir, { recursive: true });
+  if (!storage.existsSync(agentsDir)) {
+    storage.mkdirSync(agentsDir, { recursive: true });
   }
 
   const configPath = path.join(personalDir, 'config.json');
-  if (!fs.existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     const config = { defaultModel: 'auto', ghostProtocol: true };
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
   }
 
   return personalDir;

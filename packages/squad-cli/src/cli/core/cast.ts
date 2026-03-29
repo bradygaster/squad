@@ -3,9 +3,8 @@
  * @module cli/core/cast
  */
 
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import {
   getRoleById,
   generateCharterFromRole,
@@ -487,16 +486,13 @@ function buildRoutingTable(members: CastMember[]): string {
  * teamRoot is the project root (parent of .squad/).
  */
 export async function createTeam(teamRoot: string, proposal: CastProposal): Promise<CastResult> {
+  const storage = new FSStorageProvider();
   const squadDir = join(teamRoot, '.squad');
   const agentsDir = join(squadDir, 'agents');
   const castingDir = join(squadDir, 'casting');
   const filesCreated: string[] = [];
   const membersCreated: string[] = [];
   const now = new Date().toISOString();
-
-  // Ensure directories exist
-  await mkdir(agentsDir, { recursive: true });
-  await mkdir(castingDir, { recursive: true });
 
   // Collect all members (proposal + built-ins)
   const allMembers = [...proposal.members];
@@ -511,7 +507,6 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   for (const member of allMembers) {
     const nameLower = member.name.toLowerCase();
     const agentDir = join(agentsDir, nameLower);
-    await mkdir(agentDir, { recursive: true });
 
     const charterPath = join(agentDir, 'charter.md');
     let charter: string;
@@ -522,11 +517,11 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
     } else {
       charter = generateCharter(member);
     }
-    await writeFile(charterPath, charter);
+    await storage.write(charterPath, charter);
     filesCreated.push(charterPath);
 
     const historyPath = join(agentDir, 'history.md');
-    await writeFile(historyPath, generateHistory(member, proposal.projectDescription));
+    await storage.write(historyPath, generateHistory(member, proposal.projectDescription));
     filesCreated.push(historyPath);
 
     membersCreated.push(member.name);
@@ -534,9 +529,9 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
 
   // Create or update team.md
   const teamPath = join(squadDir, 'team.md');
-  if (existsSync(teamPath)) {
+  if (storage.existsSync(teamPath)) {
     // Update existing — preserve content before and after ## Members
-    const content = await readFile(teamPath, 'utf8');
+    const content = await storage.read(teamPath) ?? '';
     const membersIdx = content.indexOf('## Members');
     if (membersIdx !== -1) {
       const before = content.slice(0, membersIdx);
@@ -548,7 +543,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
         ? afterMembers.slice(afterMembers.indexOf(nextHeader))
         : '';
       const newContent = before + buildMembersTable(allMembers) + '\n' + after;
-      await writeFile(teamPath, newContent);
+      await storage.write(teamPath, newContent);
       filesCreated.push(teamPath);
     }
   } else {
@@ -574,17 +569,17 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       `- **Created:** ${new Date().toISOString().split('T')[0]}`,
       '',
     ].join('\n');
-    await writeFile(teamPath, freshContent);
+    await storage.write(teamPath, freshContent);
     filesCreated.push(teamPath);
   }
 
   // Create or update routing.md
   const routingPath = join(squadDir, 'routing.md');
   const routingTable = buildRoutingTable(allMembers);
-  if (existsSync(routingPath)) {
+  if (storage.existsSync(routingPath)) {
     // Update existing — append routing table
-    const content = await readFile(routingPath, 'utf8');
-    await writeFile(routingPath, content.trimEnd() + '\n\n' + routingTable + '\n');
+    const content = await storage.read(routingPath) ?? '';
+    await storage.write(routingPath, content.trimEnd() + '\n\n' + routingTable + '\n');
     filesCreated.push(routingPath);
   } else {
     // Create from scratch
@@ -603,7 +598,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       '',
       routingTable,
     ].join('\n');
-    await writeFile(routingPath, freshRouting);
+    await storage.write(routingPath, freshRouting);
     filesCreated.push(routingPath);
   }
 
@@ -622,7 +617,7 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   }
 
   const registry = { agents: registryAgents };
-  await writeFile(join(castingDir, 'registry.json'), JSON.stringify(registry, null, 2) + '\n');
+  await storage.write(join(castingDir, 'registry.json'), JSON.stringify(registry, null, 2) + '\n');
   filesCreated.push(join(castingDir, 'registry.json'));
 
   const history = {
@@ -637,11 +632,11 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       { universe: proposal.universe, used_at: now },
     ],
   };
-  await writeFile(join(castingDir, 'history.json'), JSON.stringify(history, null, 2) + '\n');
+  await storage.write(join(castingDir, 'history.json'), JSON.stringify(history, null, 2) + '\n');
   filesCreated.push(join(castingDir, 'history.json'));
 
   const policy = { universe_allowlist: ['*'], max_capacity: 25 };
-  await writeFile(join(castingDir, 'policy.json'), JSON.stringify(policy, null, 2) + '\n');
+  await storage.write(join(castingDir, 'policy.json'), JSON.stringify(policy, null, 2) + '\n');
   filesCreated.push(join(castingDir, 'policy.json'));
 
   // Sync new agents into squad.config.ts (if present)

@@ -5,7 +5,9 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 /** Template file descriptor */
 export interface TemplateFile {
@@ -258,7 +260,7 @@ export function getTemplatesDir(): string {
   let dir = dirname(currentFile);
   for (let i = 0; i < 6; i++) {
     const candidate = join(dir, 'templates');
-    if (existsSync(candidate)) return candidate;
+    if (storage.existsSync(candidate)) return candidate;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

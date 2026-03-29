@@ -3,8 +3,10 @@
  * Defines bundling strategy for the SDK: ESM output, tree-shakeable
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 
 export type BundleFormat = 'esm' | 'cjs';
 
@@ -83,12 +85,11 @@ export function validateBundleOutput(outDir: string): BundleValidationResult {
 
   const resolvedDir = resolve(outDir);
 
-  if (!existsSync(resolvedDir)) {
+  if (!storage.existsSync(resolvedDir)) {
     return { valid: false, errors: [`Output directory does not exist: ${resolvedDir}`], warnings, files };
   }
 
-  const stat = statSync(resolvedDir);
-  if (!stat.isDirectory()) {
+  if (!storage.isDirectorySync(resolvedDir)) {
     return { valid: false, errors: [`Path is not a directory: ${resolvedDir}`], warnings, files };
   }
 
@@ -119,10 +120,10 @@ export function validateBundleOutput(outDir: string): BundleValidationResult {
 }
 
 function collectFiles(baseDir: string, dir: string, result: string[]): void {
-  for (const entry of readdirSync(dir)) {
+  for (const entry of storage.listSync(dir)) {
     const fullPath = join(dir, entry);
     const relativePath = fullPath.slice(baseDir.length + 1).replace(/\\/g, '/');
-    if (statSync(fullPath).isDirectory()) {
+    if (storage.isDirectorySync(fullPath)) {
       collectFiles(baseDir, fullPath, result);
     } else {
       result.push(relativePath);

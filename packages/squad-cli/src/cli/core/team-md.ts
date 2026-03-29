@@ -2,18 +2,24 @@
  * team.md parser and editor utilities — zero dependencies
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 /**
  * Read team.md content from squad directory
  */
 export function readTeamMd(squadDir: string): string {
   const teamMdPath = path.join(squadDir, 'team.md');
-  if (!fs.existsSync(teamMdPath)) {
+  if (!storage.existsSync(teamMdPath)) {
     throw new Error('team.md not found — run init first');
   }
-  return fs.readFileSync(teamMdPath, 'utf8');
+  const content = storage.readSync(teamMdPath);
+  if (content === undefined) {
+    throw new Error('team.md not found — run init first');
+  }
+  return content;
 }
 
 /**
@@ -21,7 +27,7 @@ export function readTeamMd(squadDir: string): string {
  */
 export function writeTeamMd(squadDir: string, content: string): void {
   const teamMdPath = path.join(squadDir, 'team.md');
-  fs.writeFileSync(teamMdPath, content, 'utf8');
+  storage.writeSync(teamMdPath, content);
 }
 
 /**

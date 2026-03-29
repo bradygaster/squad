@@ -4,8 +4,11 @@
  * @module cli/core/nap
  */
 
-import fs from 'node:fs';
+// Raw fs imports removed — Wave 3a migrated all stat/append/delete to StorageProvider.
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -51,12 +54,12 @@ const TOKENS_PER_KB = 250;
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 function collectFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
+  if (!storage.existsSync(dir)) return [];
   const results: string[] = [];
   const walk = (d: string) => {
-    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory()) walk(full);
+    for (const name of storage.listSync(d)) {
+      const full = path.join(d, name);
+      if (storage.isDirectorySync(full)) walk(full);
       else results.push(full);
     }
   };
@@ -68,20 +71,21 @@ function dirSize(dir: string): { files: number; bytes: number } {
   const files = collectFiles(dir);
   let bytes = 0;
   for (const f of files) {
-    try { bytes += fs.statSync(f).size; } catch { /* skip */ }
+    try { bytes += storage.statSync(f)?.size ?? 0; } catch { /* skip */ }
   }
   return { files: files.length, bytes };
 }
 
 function fileSize(p: string): number {
-  try { return fs.statSync(p).size; } catch { return 0; }
+  try { return storage.statSync(p)?.size ?? 0; } catch { return 0; }
 }
 
 function isOlderThan(filePath: string, days: number): boolean {
   try {
-    const stat = fs.statSync(filePath);
+    const s = storage.statSync(filePath);
+    if (!s) return false;
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-    return stat.mtimeMs < cutoff;
+    return s.mtimeMs < cutoff;
   } catch { return false; }
 }
 
@@ -116,10 +120,10 @@ function collectMetrics(squadDir: string): NapMetrics {
   const inboxDir = path.join(squadDir, 'decisions', 'inbox');
 
   let historyBytes = 0;
-  if (fs.existsSync(agentsDir)) {
-    for (const agent of fs.readdirSync(agentsDir, { withFileTypes: true })) {
-      if (!agent.isDirectory()) continue;
-      const hf = path.join(agentsDir, agent.name, 'history.md');
+  if (storage.existsSync(agentsDir)) {
+    for (const name of storage.listSync(agentsDir)) {
+      if (!storage.isDirectorySync(path.join(agentsDir, name))) continue;
+      const hf = path.join(agentsDir, name, 'history.md');
       historyBytes += fileSize(hf);
     }
   }
@@ -131,8 +135,8 @@ function collectMetrics(squadDir: string): NapMetrics {
   const decisionBytes = fileSize(decisionsFile);
 
   let inboxFiles = 0;
-  if (fs.existsSync(inboxDir)) {
-    inboxFiles = fs.readdirSync(inboxDir).filter(f => !f.startsWith('.')).length;
+  if (storage.existsSync(inboxDir)) {
+    inboxFiles = storage.listSync(inboxDir).filter(f => !f.startsWith('.')).length;
   }
 
   const total = dirSize(squadDir);
@@ -154,11 +158,11 @@ function compressHistory(
   keepEntries: number,
   dryRun: boolean,
 ): NapAction | null {
-  if (!fs.existsSync(filePath)) return null;
+  if (!storage.existsSync(filePath)) return null;
   const size = fileSize(filePath);
   if (size <= HISTORY_THRESHOLD) return null;
 
-  const content = fs.readFileSync(filePath, 'utf8');
+  const content = storage.readSync(filePath) ?? '';
   const lines = content.split('\n');
 
   // Find ## Core Context section bounds
@@ -236,9 +240,9 @@ function compressHistory(
     const archivePath = filePath.replace(/\.md$/, '-archive.md');
     // Append to archive
     if (archiveContent.trim()) {
-      fs.appendFileSync(archivePath, archiveContent + '\n', 'utf8');
+      storage.appendSync(archivePath, archiveContent + '\n');
     }
-    fs.writeFileSync(filePath, newContent, 'utf8');
+    storage.writeSync(filePath, newContent);
   }
 
   const relPath = path.basename(path.dirname(filePath));
@@ -253,14 +257,14 @@ function compressHistory(
 // ─── Log pruning ────────────────────────────────────────────────────────
 
 function pruneLogs(dir: string, dryRun: boolean): NapAction[] {
-  if (!fs.existsSync(dir)) return [];
+  if (!storage.existsSync(dir)) return [];
   const actions: NapAction[] = [];
   const files = collectFiles(dir);
   for (const f of files) {
     if (isOlderThan(f, LOG_MAX_AGE_DAYS)) {
       const size = fileSize(f);
       if (!dryRun) {
-        fs.unlinkSync(f);
+        storage.deleteSync(f);
       }
       actions.push({
         type: 'prune',
@@ -278,22 +282,21 @@ function pruneLogs(dir: string, dryRun: boolean): NapAction[] {
 function cleanInbox(squadDir: string, dryRun: boolean): NapAction[] {
   const inboxDir = path.join(squadDir, 'decisions', 'inbox');
   const decisionsFile = path.join(squadDir, 'decisions.md');
-  if (!fs.existsSync(inboxDir)) return [];
+  if (!storage.existsSync(inboxDir)) return [];
 
-  const files = fs.readdirSync(inboxDir).filter(f => !f.startsWith('.'));
+  const files = storage.listSync(inboxDir).filter(f => !f.startsWith('.'));
   if (files.length === 0) return [];
 
   const actions: NapAction[] = [];
   for (const f of files) {
     const fp = path.join(inboxDir, f);
-    const stat = fs.statSync(fp);
-    if (!stat.isFile()) continue;
-    const content = fs.readFileSync(fp, 'utf8');
-    const size = stat.size;
+    if (storage.isDirectorySync(fp)) continue;
+    const content = storage.readSync(fp) ?? '';
+    const size = Buffer.byteLength(content, 'utf8');
 
     if (!dryRun) {
-      fs.appendFileSync(decisionsFile, '\n' + content.trimEnd() + '\n', 'utf8');
-      fs.unlinkSync(fp);
+      storage.appendSync(decisionsFile, '\n' + content.trimEnd() + '\n');
+      storage.deleteSync(fp);
     }
 
     actions.push({
@@ -337,11 +340,11 @@ function cleanInbox(squadDir: string, dryRun: boolean): NapAction[] {
  */
 function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
   const decisionsFile = path.join(squadDir, 'decisions.md');
-  if (!fs.existsSync(decisionsFile)) return null;
+  if (!storage.existsSync(decisionsFile)) return null;
   const size = fileSize(decisionsFile);
   if (size <= DECISION_THRESHOLD) return null;
 
-  const content = fs.readFileSync(decisionsFile, 'utf8');
+  const content = storage.readSync(decisionsFile) ?? '';
   const lines = content.split('\n');
 
   // Find entry boundaries (### headings)
@@ -422,9 +425,9 @@ function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
   if (!dryRun) {
     const archivePath = path.join(squadDir, 'decisions-archive.md');
     if (archiveContent.trim()) {
-      fs.appendFileSync(archivePath, archiveContent, 'utf8');
+      storage.appendSync(archivePath, archiveContent);
     }
-    fs.writeFileSync(decisionsFile, recentContent, 'utf8');
+    storage.writeSync(decisionsFile, recentContent);
   }
 
   return {
@@ -438,20 +441,19 @@ function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
 // ─── Journal safety ─────────────────────────────────────────────────────
 
 function checkJournal(squadDir: string): boolean {
-  return fs.existsSync(path.join(squadDir, JOURNAL_FILE));
+  return storage.existsSync(path.join(squadDir, JOURNAL_FILE));
 }
 
 function writeJournal(squadDir: string): void {
-  fs.writeFileSync(
+  storage.writeSync(
     path.join(squadDir, JOURNAL_FILE),
     `nap started at ${new Date().toISOString()}\n`,
-    'utf8',
   );
 }
 
 function removeJournal(squadDir: string): void {
   const jp = path.join(squadDir, JOURNAL_FILE);
-  if (fs.existsSync(jp)) fs.unlinkSync(jp);
+  if (storage.existsSync(jp)) storage.deleteSync(jp);
 }
 
 // ─── Main entry ─────────────────────────────────────────────────────────
@@ -460,7 +462,7 @@ export async function runNap(options: NapOptions): Promise<NapResult> {
   const { squadDir, deep = false, dryRun = false } = options;
   const actions: NapAction[] = [];
 
-  if (!fs.existsSync(squadDir)) {
+  if (!storage.existsSync(squadDir)) {
     return { before: emptyMetrics(), after: emptyMetrics(), actions };
   }
 
@@ -481,10 +483,10 @@ export async function runNap(options: NapOptions): Promise<NapResult> {
 
     // History compression
     const agentsDir = path.join(squadDir, 'agents');
-    if (fs.existsSync(agentsDir)) {
-      for (const agent of fs.readdirSync(agentsDir, { withFileTypes: true })) {
-        if (!agent.isDirectory()) continue;
-        const hf = path.join(agentsDir, agent.name, 'history.md');
+    if (storage.existsSync(agentsDir)) {
+      for (const name of storage.listSync(agentsDir)) {
+        if (!storage.isDirectorySync(path.join(agentsDir, name))) continue;
+        const hf = path.join(agentsDir, name, 'history.md');
         const action = compressHistory(hf, keepEntries, dryRun);
         if (action) actions.push(action);
       }
@@ -519,7 +521,7 @@ export function runNapSync(options: NapOptions): NapResult {
   const { squadDir, deep = false, dryRun = false } = options;
   const actions: NapAction[] = [];
 
-  if (!fs.existsSync(squadDir)) {
+  if (!storage.existsSync(squadDir)) {
     return { before: emptyMetrics(), after: emptyMetrics(), actions };
   }
 
@@ -537,10 +539,10 @@ export function runNapSync(options: NapOptions): NapResult {
     const keepEntries = deep ? KEEP_ENTRIES_DEEP : KEEP_ENTRIES_DEFAULT;
 
     const agentsDir = path.join(squadDir, 'agents');
-    if (fs.existsSync(agentsDir)) {
-      for (const agent of fs.readdirSync(agentsDir, { withFileTypes: true })) {
-        if (!agent.isDirectory()) continue;
-        const hf = path.join(agentsDir, agent.name, 'history.md');
+    if (storage.existsSync(agentsDir)) {
+      for (const name of storage.listSync(agentsDir)) {
+        if (!storage.isDirectorySync(path.join(agentsDir, name))) continue;
+        const hf = path.join(agentsDir, name, 'history.md');
         const action = compressHistory(hf, keepEntries, dryRun);
         if (action) actions.push(action);
       }
