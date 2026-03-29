@@ -241,6 +241,139 @@ jobs:
         if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
         run: node scripts/check-exports-map.mjs
 
+  samples-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            samples/**/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            samples/**/package-lock.json
+
+      - name: Check feature flag
+        id: flag
+        # Default: gate is ENABLED. Set vars.SQUAD_SAMPLES_CI to "false"
+        # to explicitly disable.
+        run: |
+          if [ "${{ vars.SQUAD_SAMPLES_CI }}" = "false" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Samples build gate disabled via vars.SQUAD_SAMPLES_CI"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip label
+        if: steps.flag.outputs.skip == 'false'
+        id: label
+        run: |
+          SKIP="false"
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q "skip-samples-ci"; then
+            SKIP="true"
+            echo "Skipping samples build gate (skip-samples-ci label present)"
+          fi
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+
+      - name: Check for SDK source changes
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        id: changes
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
+          if [ -z "$SDK_CHANGED" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No SDK source changes detected -- samples build not applicable"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "SDK source files changed:"
+            echo "$SDK_CHANGED"
+          fi
+
+      - name: Install root dependencies and build SDK
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        run: |
+          npm ci --ignore-scripts
+          npm run build -w packages/squad-sdk
+
+      - name: Build and test samples
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        run: |
+          FAILED=0
+          PASSED=0
+          SKIPPED=0
+
+          for sample_dir in samples/*/; do
+            sample=$(basename "$sample_dir")
+
+            if [ ! -f "$sample_dir/package.json" ]; then
+              echo "::notice::[$sample] No package.json -- skipping"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            HAS_BUILD=$(node -e "const p=require('./$sample_dir/package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null && echo "true" || echo "false")
+            HAS_TEST=$(node -e "const p=require('./$sample_dir/package.json'); process.exit(p.scripts?.test ? 0 : 1)" 2>/dev/null && echo "true" || echo "false")
+
+            if [ "$HAS_BUILD" = "false" ] && [ "$HAS_TEST" = "false" ]; then
+              echo "::notice::[$sample] No build or test scripts -- skipping"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            echo ""
+            echo "========================================="
+            echo "[$sample] Installing dependencies..."
+            echo "========================================="
+            if ! (cd "$sample_dir" && npm install --ignore-scripts 2>&1); then
+              echo "::error::[$sample] npm install failed"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+
+            if [ "$HAS_BUILD" = "true" ]; then
+              echo "[$sample] Running build..."
+              if ! (cd "$sample_dir" && npm run build 2>&1); then
+                echo "::error::[$sample] npm run build failed"
+                FAILED=$((FAILED + 1))
+                continue
+              fi
+            fi
+
+            if [ "$HAS_TEST" = "true" ]; then
+              echo "[$sample] Running tests..."
+              if ! (cd "$sample_dir" && npm test 2>&1); then
+                echo "::error::[$sample] npm test failed"
+                FAILED=$((FAILED + 1))
+                continue
+              fi
+            fi
+
+            echo "::notice::[$sample] Passed"
+            PASSED=$((PASSED + 1))
+          done
+
+          echo ""
+          echo "========================================="
+          echo "Samples build summary: $PASSED passed, $FAILED failed, $SKIPPED skipped"
+          echo "========================================="
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED sample(s) failed build/test validation"
+            exit 1
+          fi
+
   publish-policy:
     runs-on: ubuntu-latest
     steps:
