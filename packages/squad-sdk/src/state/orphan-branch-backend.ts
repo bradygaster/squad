@@ -35,8 +35,14 @@ export class OrphanBranchBackend implements StateBackend {
     if (this.branchExists()) return;
 
     // Create an empty orphan branch with an initial commit
-    const emptyTree = this.git(['hash-object', '-t', 'tree', '/dev/null']).trim()
-      || this.git(['mktree'], '').trim(); // Windows fallback: empty stdin to mktree
+    // Use git mktree with empty stdin — portable across Windows/macOS/Linux
+    let emptyTree: string;
+    try {
+      emptyTree = this.git(['mktree'], '').trim();
+    } catch {
+      // Fallback: the well-known empty tree hash
+      emptyTree = '4b825dc642cb6eb9a060e54bf899d15363ed7564';
+    }
     const commitHash = this.git(
       ['commit-tree', emptyTree, '-m', 'Initialize squad-state branch']
     ).trim();
@@ -90,24 +96,19 @@ export class OrphanBranchBackend implements StateBackend {
 
   async list(dir: string): Promise<string[]> {
     try {
-      const output = this.git([
-        'ls-tree', '--name-only', this.branch,
-      ]);
+      // For root, list top-level entries; for subdirs, list that subtree
+      const ref = (dir === '.' || dir === '')
+        ? this.branch
+        : `${this.branch}:${dir}`;
+      const output = this.git(['ls-tree', '--name-only', ref]);
       if (!output.trim()) return [];
-      const allFiles = output.split('\n').filter(Boolean);
-      if (dir === '.' || dir === '') {
-        return allFiles;
-      }
-      return allFiles
-        .filter(f => f.startsWith(`${dir}/`))
-        .map(f => f.slice(dir.length + 1));
+      return output.split('\n').filter(Boolean);
     } catch {
       return [];
     }
   }
 
   async remove(path: string): Promise<void> {
-    const baseTree = this.git(['rev-parse', `${this.branch}^{tree}`]).trim();
     // Use ls-tree to get all entries except the one we're removing
     const entries = this.git(['ls-tree', '-r', this.branch])
       .split('\n')
