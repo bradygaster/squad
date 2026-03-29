@@ -20,14 +20,6 @@
       "types": "./dist/cli/copilot-install.d.ts",
       "import": "./dist/cli/copilot-install.js"
     },
-    "./shell/sessions": {
-      "types": "./dist/cli/shell/sessions.d.ts",
-      "import": "./dist/cli/shell/sessions.js"
-    },
-    "./shell/spawn": {
-      "types": "./dist/cli/shell/spawn.d.ts",
-      "import": "./dist/cli/shell/spawn.js"
-    },
     "./shell/coordinator": {
       "types": "./dist/cli/shell/coordinator.d.ts",
       "import": "./dist/cli/shell/coordinator.js"
@@ -124,18 +116,6 @@
       "types": "./dist/cli/commands/watch/index.d.ts",
       "import": "./dist/cli/commands/watch/index.js"
     },
-    "./commands/start": {
-      "types": "./dist/cli/commands/start.d.ts",
-      "import": "./dist/cli/commands/start.js"
-    },
-    "./commands/rc-tunnel": {
-      "types": "./dist/cli/commands/rc-tunnel.d.ts",
-      "import": "./dist/cli/commands/rc-tunnel.js"
-    },
-    "./commands/rc": {
-      "types": "./dist/cli/commands/rc.d.ts",
-      "import": "./dist/cli/commands/rc.js"
-    },
     "./commands/extract": {
       "types": "./dist/cli/commands/extract.d.ts",
       "import": "./dist/cli/commands/extract.js"
@@ -147,10 +127,6 @@
     "./commands/cost": {
       "types": "./dist/cli/commands/cost.d.ts",
       "import": "./dist/cli/commands/cost.js"
-    },
-    "./commands/copilot-bridge": {
-      "types": "./dist/cli/commands/copilot-bridge.d.ts",
-      "import": "./dist/cli/commands/copilot-bridge.js"
     },
     "./commands/personal": {
       "types": "./dist/cli/commands/personal.d.ts",
@@ -168,26 +144,21 @@
     "README.md"
   ],
   "scripts": {
-    "postinstall": "node scripts/patch-esm-imports.mjs && node scripts/patch-ink-rendering.mjs",
+    "postinstall": "node scripts/patch-esm-imports.mjs",
     "prepublishOnly": "npm run build",
-    "build": "tsc -p tsconfig.json && npm run postbuild",
-    "postbuild": "node -e \"require('fs').cpSync('src/remote-ui', 'dist/remote-ui', {recursive: true})\""
+    "build": "tsc -p tsconfig.json"
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "dependencies": {
     "@bradygaster/squad-sdk": ">=0.9.0",
-    "ink": "^6.8.0",
-    "react": "^19.2.4",
     "vscode-jsonrpc": "^8.2.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/react": "^19.2.14",
     "esbuild": "^0.25.0",
-    "typescript": "^5.7.0",
-    "ink-testing-library": "^4.0.0"
+    "typescript": "^5.7.0"
   },
   "keywords": [
     "copilot",
