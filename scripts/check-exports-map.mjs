@@ -19,7 +19,8 @@ const srcEntries = readdirSync(SRC_DIR, { withFileTypes: true });
 const barrelDirs = srcEntries
   .filter((entry) => entry.isDirectory())
   .filter((entry) => existsSync(join(SRC_DIR, entry.name, 'index.ts')))
-  .map((entry) => entry.name);
+  .map((entry) => entry.name)
+  .sort();
 
 const missing = [];
 
