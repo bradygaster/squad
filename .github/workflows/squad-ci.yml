@@ -109,7 +109,33 @@ jobs:
       - name: Run tests
         run: npm test
 
+  # ════════════════════════════════════════════════════════════════════════
+  # Skip Labels Reference
+  # ────────────────────────────────────────────────────────────────────────
+  # The following PR labels can be used to bypass specific health gates.
+  # Add them via the GitHub UI or `gh pr edit --add-label <label>`.
+  #
+  #   skip-changelog         — skip the changelog-gate job
+  #   skip-exports-check     — skip the exports-map-check job
+  #   skip-samples-ci        — skip the samples-build job
+  #   skip-workspace-check   — skip the workspace-integrity job
+  #   skip-version-check     — skip the prerelease-version-guard job
+  #   skip-export-smoke      — skip the export-smoke-test job
+  #   large-deletion-approved — bypass the large-deletion guard (test job)
+  #
+  # These labels are compatible with sync-squad-labels.yml — add them
+  # to the label sync config to auto-create them in new repos.
+  # ════════════════════════════════════════════════════════════════════════
+
   changelog-gate:
+    # ── Local testing ──────────────────────────────────────────────────────
+    # To test this gate locally:
+    #   1. Identify the merge-base: git merge-base dev HEAD
+    #   2. Check for SDK/CLI source changes:
+    #      git diff --name-only <merge-base>...HEAD | grep -E '^packages/squad-(sdk|cli)/src/'
+    #   3. If any match, verify CHANGELOG.md is also in the diff:
+    #      git diff --name-only <merge-base>...HEAD | grep -E '^CHANGELOG\.md$'
+    # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -157,6 +183,10 @@ jobs:
           # the common ancestor, not the literal base SHA.
           CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
 
+          # Change detection regex: ^packages/squad-(sdk|cli)/src/
+          #   Matches any file under packages/squad-sdk/src/ or packages/squad-cli/src/
+          #   This intentionally excludes config files, tests, and docs — only source changes
+          #   require a CHANGELOG entry.
           SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E '^packages/squad-(sdk|cli)/src/' || true)
           if [ -z "$SDK_CLI_CHANGED" ]; then
             echo "No SDK/CLI source changes detected -- CHANGELOG gate not applicable"
@@ -166,6 +196,7 @@ jobs:
           echo "SDK/CLI source files changed:"
           echo "$SDK_CLI_CHANGED"
 
+          # Regex: ^CHANGELOG\.md$ — exact match on root CHANGELOG.md only
           CHANGELOG_CHANGED=$(echo "$CHANGED" | grep -E '^CHANGELOG\.md$' || true)
           if [ -z "$CHANGELOG_CHANGED" ]; then
             echo ""
@@ -178,6 +209,13 @@ jobs:
           echo "CHANGELOG.md updated -- gate passed"
 
   exports-map-check:
+    # ── Local testing ──────────────────────────────────────────────────────
+    # To test this gate locally:
+    #   1. Check for SDK source changes:
+    #      git diff --name-only $(git merge-base dev HEAD)...HEAD | grep -E '^packages/squad-sdk/src/'
+    #   2. If any match, run the exports map script:
+    #      node scripts/check-exports-map.mjs
+    # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -227,6 +265,9 @@ jobs:
           # Three-dot diff (base...head) finds the merge-base automatically,
           # so it works correctly even when the PR branch contains merge
           # commits from syncing with the base branch.
+          # Change detection regex: ^packages/squad-sdk/src/
+          #   Matches any file under the SDK source directory.
+          #   Config or test-only changes don't require exports validation.
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
           if [ -z "$SDK_CHANGED" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -242,6 +283,12 @@ jobs:
         run: node scripts/check-exports-map.mjs
 
   samples-build:
+    # ── Local testing ──────────────────────────────────────────────────────
+    # To test this gate locally:
+    #   1. Build the SDK: npm run build -w packages/squad-sdk
+    #   2. Loop over samples: for d in samples/*/; do (cd "$d" && npm install && npm run build); done
+    #   3. Or test a single sample: cd samples/<name> && npm install && npm run build && npm test
+    # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -291,6 +338,8 @@ jobs:
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
+          # Change detection regex: ^packages/squad-sdk/src/
+          #   Only SDK source changes trigger sample rebuilds — doc or config changes are skipped.
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
           if [ -z "$SDK_CHANGED" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -412,6 +461,14 @@ jobs:
     #           stale published SDK from the registry.
     # Cost:     Zero-install — reads package-lock.json only.
     # ──────────────────────────────────────────────────────────────────────
+    # ── Local testing ──────────────────────────────────────────────────────
+    # To test this gate locally:
+    #   1. Inspect lockfile entries for workspace packages:
+    #      node -e "const l=JSON.parse(require('fs').readFileSync('package-lock.json','utf8'));
+    #        Object.entries(l.packages||{}).filter(([k])=>k.includes('@bradygaster/squad-'))
+    #        .forEach(([k,v])=>console.log(k, v.resolved||v.version, v.link?'(link)':''))"
+    #   2. All entries should show "(link)" — any with https:// URLs are stale.
+    # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -490,6 +547,14 @@ jobs:
     #           copy during dependency resolution.
     # Cost:     Zero-install — reads package.json files only.
     # ──────────────────────────────────────────────────────────────────────
+    # ── Local testing ──────────────────────────────────────────────────────
+    # To test this gate locally:
+    #   1. Scan for prerelease versions:
+    #      node -e "require('fs').readdirSync('packages').forEach(d=>{
+    #        const p=require('./packages/'+d+'/package.json');
+    #        if(/-/.test(p.version)) console.log(p.name+'@'+p.version+' ← prerelease!')})"
+    #   2. A clean run should produce no output.
+    # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -537,6 +602,10 @@ jobs:
               const pkgPath = path.join('packages', dir, 'package.json');
               if (!fs.existsSync(pkgPath)) continue;
               const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+              // Version regex: /-/ — matches any hyphen in the version string.
+              // In semver, a hyphen after the patch number indicates a prerelease
+              // suffix (e.g. 1.0.0-alpha.1, 0.9.1-build.4). Stable releases
+              // like 1.0.0 contain no hyphen and pass this check.
               if (pkg.version && /-/.test(pkg.version)) {
                 violations.push({ name: pkg.name, version: pkg.version, path: pkgPath });
               }
@@ -578,6 +647,18 @@ jobs:
     # Why:      Added after PR #640 prerelease version incident to
     #           strengthen build artifact validation.
     # Cost:     Requires install + SDK build (~30s).
+    # ──────────────────────────────────────────────────────────────────────
+    # ── Local testing ──────────────────────────────────────────────────────
+    # To test this gate locally:
+    #   1. Build the SDK:  npm run build -w packages/squad-sdk
+    #   2. Run the smoke test inline:
+    #      node -e "const p=require('./packages/squad-sdk/package.json');
+    #        Object.entries(p.exports||{}).forEach(async([k,v])=>{
+    #          const f=typeof v==='string'?v:(v.import||v.default);
+    #          try{await import('./packages/squad-sdk/'+f);console.log('✅',k)}
+    #          catch(e){console.error('❌',k,e.message)}})"
+    #   3. To create a test PR to verify this gate:
+    #      gh pr edit <number> --add-label skip-export-smoke
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -626,6 +707,10 @@ jobs:
           # Three-dot diff (base...head) finds the merge-base automatically,
           # so it works correctly even when the PR branch contains merge
           # commits from syncing with the base branch.
+          # Change detection regex: ^packages/squad-sdk/(src/|package\.json)
+          #   Matches SDK source files OR the SDK package.json (which contains the
+          #   exports map). This is broader than other gates because changes to
+          #   the exports map in package.json also need smoke testing.
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/(src/|package\.json)' || true)
           if [ -z "$SDK_CHANGED" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -645,9 +730,11 @@ jobs:
       - name: Smoke test all subpath exports
         if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
         run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
+          node --input-type=module -e "
+            import fs from 'fs';
+            import path from 'path';
+            import { pathToFileURL } from 'url';
+
             const pkg = JSON.parse(fs.readFileSync('packages/squad-sdk/package.json', 'utf8'));
             const exportsMap = pkg.exports || {};
             const failures = [];
@@ -665,11 +752,21 @@ jobs:
                 continue;
               }
               const resolvedPath = path.resolve('packages/squad-sdk', filePath);
-              if (fs.existsSync(resolvedPath)) {
-                passed++;
-                console.log('  ✅ ' + importPath + ' → ' + filePath);
-              } else {
+
+              // Phase 1: File existence check
+              if (!fs.existsSync(resolvedPath)) {
                 failures.push({ subpath, importPath, filePath, error: 'File not found: ' + resolvedPath });
+                continue;
+              }
+
+              // Phase 2: Dynamic import() — verifies the module actually loads
+              // without syntax errors, missing dependencies, or broken re-exports.
+              try {
+                await import(pathToFileURL(resolvedPath).href);
+                passed++;
+                console.log('  ✅ ' + importPath + ' → ' + filePath + ' (exists + imports OK)');
+              } catch (e) {
+                failures.push({ subpath, importPath, filePath, error: 'import() failed: ' + e.message });
               }
             }
 
@@ -683,9 +780,9 @@ jobs:
               console.error('');
               console.error('This means consumers importing these subpaths will get runtime errors.');
               console.error('To fix: ensure the build produces all files referenced in package.json exports.');
-              console.error('To skip: add the \"skip-export-smoke\" label to your PR.');
+              console.error('To skip: add the \\\"skip-export-smoke\\\" label to your PR.');
               process.exit(1);
             }
 
-            console.log('✅ All ' + passed + ' subpath exports resolve to built artifacts');
+            console.log('✅ All ' + passed + ' subpath exports resolve and import successfully');
           "
