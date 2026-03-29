@@ -361,6 +361,7 @@ jobs:
           SKIPPED=0
 
           for sample_dir in samples/*/; do
+            sample_dir="${sample_dir%/}"
             sample=$(basename "$sample_dir")
 
             if [ ! -f "$sample_dir/package.json" ]; then
