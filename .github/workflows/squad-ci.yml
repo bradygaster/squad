@@ -399,3 +399,293 @@ jobs:
             exit 1
           fi
           echo "✅ All npm publish commands are workspace-scoped"
+
+  workspace-integrity:
+    # ──────────────────────────────────────────────────────────────────────
+    # Workspace Integrity Check
+    # Purpose:  Verify workspace packages resolve to local file: links,
+    #           not stale registry versions in the lockfile.
+    # Catches:  npm silently resolving a published registry copy instead
+    #           of the local workspace symlink due to version mismatches.
+    # Why:      Added after PR #640 prerelease version incident where
+    #           >=0.9.0 didn't match 0.9.1-build.4, so npm pulled the
+    #           stale published SDK from the registry.
+    # Cost:     Zero-install — reads package-lock.json only.
+    # ──────────────────────────────────────────────────────────────────────
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check feature flag
+        id: flag
+        # Default: gate is ENABLED. When vars.SQUAD_WORKSPACE_CHECK is
+        # undefined (not set in repo/org variables), the bash comparison
+        # [ "" = "false" ] evaluates to false, so skip stays "false" and
+        # the gate runs. Set vars.SQUAD_WORKSPACE_CHECK to "false" to
+        # explicitly disable.
+        run: |
+          if [ "${{ vars.SQUAD_WORKSPACE_CHECK }}" = "false" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Workspace integrity check disabled via vars.SQUAD_WORKSPACE_CHECK"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip label
+        if: steps.flag.outputs.skip == 'false'
+        id: label
+        run: |
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q "skip-workspace-check"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping workspace integrity check (skip-workspace-check label present)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify workspace packages resolve locally
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+            const pkgs = lock.packages || {};
+            const problems = [];
+
+            for (const [key, val] of Object.entries(pkgs)) {
+              if (!key.includes('node_modules/@bradygaster/squad-')) continue;
+              if (val.resolved && val.resolved.startsWith('https://')) {
+                problems.push({ path: key, resolved: val.resolved });
+              } else if (val.version && !val.link) {
+                problems.push({ path: key, version: val.version, link: false });
+              }
+            }
+
+            if (problems.length > 0) {
+              console.error('::error::WORKSPACE INTEGRITY FAILURE — npm resolved registry packages instead of local workspace copies.');
+              console.error('::error::This likely means a version mismatch between workspace packages (see PR #640).');
+              console.error('');
+              problems.forEach(p => {
+                console.error('  STALE: ' + p.path + (p.resolved ? ' → ' + p.resolved : ' (version: ' + p.version + ', not a workspace link)'));
+              });
+              console.error('');
+              console.error('To fix: ensure all workspace package version ranges match local versions,');
+              console.error('then run npm install at the repo root to regenerate the lockfile.');
+              process.exit(1);
+            }
+
+            console.log('✅ All workspace packages resolve to local file: links');
+          "
+
+  prerelease-version-guard:
+    # ──────────────────────────────────────────────────────────────────────
+    # Prerelease Version Guard
+    # Purpose:  Prevent prerelease version strings (-build, -alpha, -beta,
+    #           -rc) from being committed to dev or main.
+    # Catches:  Forgotten prerelease suffixes that break semver range
+    #           resolution in workspace dependencies.
+    # Why:      Added after PR #640 prerelease version incident where a
+    #           -build.N suffix caused npm to skip the local workspace
+    #           copy during dependency resolution.
+    # Cost:     Zero-install — reads package.json files only.
+    # ──────────────────────────────────────────────────────────────────────
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check feature flag
+        id: flag
+        # Default: gate is ENABLED. When vars.SQUAD_VERSION_CHECK is
+        # undefined (not set in repo/org variables), the bash comparison
+        # [ "" = "false" ] evaluates to false, so skip stays "false" and
+        # the gate runs. Set vars.SQUAD_VERSION_CHECK to "false" to
+        # explicitly disable.
+        run: |
+          if [ "${{ vars.SQUAD_VERSION_CHECK }}" = "false" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Prerelease version guard disabled via vars.SQUAD_VERSION_CHECK"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip label
+        if: steps.flag.outputs.skip == 'false'
+        id: label
+        run: |
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q "skip-version-check"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping prerelease version guard (skip-version-check label present)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Scan packages for prerelease versions
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const pkgDirs = fs.readdirSync('packages', { withFileTypes: true })
+              .filter(d => d.isDirectory())
+              .map(d => d.name);
+
+            const violations = [];
+            for (const dir of pkgDirs) {
+              const pkgPath = path.join('packages', dir, 'package.json');
+              if (!fs.existsSync(pkgPath)) continue;
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+              if (pkg.version && /-/.test(pkg.version)) {
+                violations.push({ name: pkg.name, version: pkg.version, path: pkgPath });
+              }
+            }
+
+            if (violations.length > 0) {
+              console.error('::error::PRERELEASE VERSION DETECTED — packages with prerelease versions cannot merge to dev/main.');
+              console.error('');
+              violations.forEach(v => {
+                console.error('  ' + v.name + '@' + v.version + ' (' + v.path + ')');
+              });
+              console.error('');
+              console.error('Prerelease suffixes (-build, -alpha, -beta, -rc) must be removed before merging.');
+              console.error('To fix: update the version field in each listed package.json to a release version.');
+              console.error('To skip: add the \"skip-version-check\" label to your PR.');
+              process.exit(1);
+            }
+
+            console.log('✅ All package versions are release versions (no prerelease suffixes)');
+            pkgDirs.forEach(dir => {
+              const pkgPath = path.join('packages', dir, 'package.json');
+              if (fs.existsSync(pkgPath)) {
+                const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+                if (pkg.version) console.log('  ' + pkg.name + '@' + pkg.version);
+              }
+            });
+          "
+
+  export-smoke-test:
+    # ──────────────────────────────────────────────────────────────────────
+    # Export Smoke Test
+    # Purpose:  Verify that subpath exports actually resolve after build.
+    #           The exports-map-check validates config (barrel files match
+    #           export entries); this gate validates built artifacts exist
+    #           and are importable.
+    # Catches:  Missing dist/ files for declared subpath exports — e.g. a
+    #           new export added to package.json but the build doesn't
+    #           produce the referenced .js file.
+    # Why:      Added after PR #640 prerelease version incident to
+    #           strengthen build artifact validation.
+    # Cost:     Requires install + SDK build (~30s).
+    # ──────────────────────────────────────────────────────────────────────
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check feature flag
+        id: flag
+        # Default: gate is ENABLED. When vars.SQUAD_EXPORT_SMOKE is
+        # undefined (not set in repo/org variables), the bash comparison
+        # [ "" = "false" ] evaluates to false, so skip stays "false" and
+        # the gate runs. Set vars.SQUAD_EXPORT_SMOKE to "false" to
+        # explicitly disable.
+        run: |
+          if [ "${{ vars.SQUAD_EXPORT_SMOKE }}" = "false" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Export smoke test disabled via vars.SQUAD_EXPORT_SMOKE"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check skip label
+        if: steps.flag.outputs.skip == 'false'
+        id: label
+        run: |
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q "skip-export-smoke"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping export smoke test (skip-export-smoke label present)"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for SDK source changes
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+        id: changes
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          # Three-dot diff (base...head) finds the merge-base automatically,
+          # so it works correctly even when the PR branch contains merge
+          # commits from syncing with the base branch.
+          SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/(src/|package\.json)' || true)
+          if [ -z "$SDK_CHANGED" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No SDK source/config changes detected -- export smoke test not applicable"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "SDK files changed:"
+            echo "$SDK_CHANGED"
+          fi
+
+      - name: Install and build SDK
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        run: |
+          npm ci --ignore-scripts
+          npm run build -w packages/squad-sdk
+
+      - name: Smoke test all subpath exports
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const pkg = JSON.parse(fs.readFileSync('packages/squad-sdk/package.json', 'utf8'));
+            const exportsMap = pkg.exports || {};
+            const failures = [];
+            let passed = 0;
+
+            for (const [subpath, targets] of Object.entries(exportsMap)) {
+              const importPath = subpath === '.'
+                ? '@bradygaster/squad-sdk'
+                : '@bradygaster/squad-sdk/' + subpath.slice(2);
+              const filePath = typeof targets === 'string'
+                ? targets
+                : (targets.import || targets.default);
+              if (!filePath) {
+                failures.push({ subpath, importPath, error: 'No import target defined' });
+                continue;
+              }
+              const resolvedPath = path.resolve('packages/squad-sdk', filePath);
+              if (fs.existsSync(resolvedPath)) {
+                passed++;
+                console.log('  ✅ ' + importPath + ' → ' + filePath);
+              } else {
+                failures.push({ subpath, importPath, filePath, error: 'File not found: ' + resolvedPath });
+              }
+            }
+
+            console.log('');
+            if (failures.length > 0) {
+              console.error('::error::EXPORT SMOKE TEST FAILED — ' + failures.length + ' subpath export(s) do not resolve to built artifacts.');
+              console.error('');
+              failures.forEach(f => {
+                console.error('  ❌ ' + (f.importPath || f.subpath) + ': ' + f.error);
+              });
+              console.error('');
+              console.error('This means consumers importing these subpaths will get runtime errors.');
+              console.error('To fix: ensure the build produces all files referenced in package.json exports.');
+              console.error('To skip: add the \"skip-export-smoke\" label to your PR.');
+              process.exit(1);
+            }
+
+            console.log('✅ All ' + passed + ' subpath exports resolve to built artifacts');
+          "
