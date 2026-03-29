@@ -276,6 +276,27 @@ jobs:
           npm ci --ignore-scripts
           npm run build -w packages/squad-sdk
 
+      - name: Patch npm-registry samples to use local SDK
+        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        shell: bash
+        run: |
+          for pkg in samples/*/package.json; do
+            if grep -q '"@bradygaster/squad-sdk"' "$pkg" && ! grep -q 'file:' "$pkg"; then
+              node -e "
+                const fs = require('fs');
+                const p = JSON.parse(fs.readFileSync('$pkg', 'utf8'));
+                if (p.dependencies?.['@bradygaster/squad-sdk']) {
+                  p.dependencies['@bradygaster/squad-sdk'] = 'file:../../packages/squad-sdk';
+                }
+                if (p.devDependencies?.['@bradygaster/squad-sdk']) {
+                  p.devDependencies['@bradygaster/squad-sdk'] = 'file:../../packages/squad-sdk';
+                }
+                fs.writeFileSync('$pkg', JSON.stringify(p, null, 2) + '\n');
+              "
+              echo "Patched $pkg to use local SDK"
+            fi
+          done
+
       - name: Build and test samples
         if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
         run: |
