@@ -11,8 +11,36 @@ permissions:
   contents: read
 
 jobs:
-  docs-quality:
+  # ── Path filter for conditional job execution ──────────────────────────
+  # Detects which areas of the repo changed so downstream jobs can skip
+  # when their inputs haven't changed (e.g., skip docs-quality on code-only PRs).
+  changes:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect changed paths
+        id: filter
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
+          if echo "$CHANGED" | grep -qE '^(docs/|README\.md|\.markdownlint|\.cspell)'; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  docs-quality:
+    needs: changes
+    if: "!cancelled() && (github.event_name == 'push' || needs.changes.outputs.docs == 'true')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +49,12 @@ jobs:
           node-version: 22
 
       - name: Install docs tools
-        run: npm install --no-save markdownlint-cli2 cspell
+        run: |
+          for i in 1 2 3; do
+            npm install --no-save markdownlint-cli2 cspell && break
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."
+            sleep 5
+          done
 
       - name: Lint docs markdown
         run: npx markdownlint-cli2
@@ -31,12 +64,14 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
 
       - name: Fix stale lockfile entries
         run: |
@@ -57,10 +92,20 @@ jobs:
           "
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          for i in 1 2 3; do
+            npm install && break
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."
+            sleep 5
+          done
 
       - name: Install docs dependencies
-        run: npm ci
+        run: |
+          for i in 1 2 3; do
+            npm ci && break
+            echo "Retry $i/3 — npm ci failed, retrying in 5s..."
+            sleep 5
+          done
         working-directory: docs
 
       - name: Install Playwright browsers
@@ -138,6 +183,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -218,6 +264,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -424,6 +471,7 @@ jobs:
 
   publish-policy:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -470,6 +518,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -554,6 +603,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -659,6 +709,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:

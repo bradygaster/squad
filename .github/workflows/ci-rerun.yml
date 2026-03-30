@@ -21,6 +21,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Fetch PR metadata
         id: pr
@@ -65,6 +66,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
 
       - name: Fix stale lockfile entries
         run: |
@@ -85,10 +87,20 @@ jobs:
           "
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          for i in 1 2 3; do
+            npm install && break
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."
+            sleep 5
+          done
 
       - name: Install docs dependencies
-        run: npm ci
+        run: |
+          for i in 1 2 3; do
+            npm ci && break
+            echo "Retry $i/3 — npm ci failed, retrying in 5s..."
+            sleep 5
+          done
         working-directory: docs
 
       - name: Install Playwright browsers
