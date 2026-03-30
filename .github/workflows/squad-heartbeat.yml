@@ -5,6 +5,15 @@ name: Squad Heartbeat (Ralph)
 #   - .squad/templates/workflows/squad-heartbeat.yml (installed template)
 #   - .github/workflows/squad-heartbeat.yml (active workflow)
 # Run 'squad upgrade' to sync installed copies from source templates.
+#
+# CI Hardening: Cron schedule audit (item 8, refs diberry/squad#120)
+# ─────────────────────────────────────────────────────────────────
+# Audit finding: No cron schedule is configured here, which is INTENTIONAL.
+# Ralph should only run reactively (on issue/PR events) or manually.
+# A cron schedule would waste Actions minutes (~20 min/week) for minimal
+# benefit since Ralph's triage logic is event-driven.
+# If scheduled runs appear in Actions history, they are event-triggered
+# (issue close/label), not cron-triggered. Do NOT add a schedule trigger.
 
 on:
   # React to completed work or new squad work
@@ -26,6 +35,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # CI Hardening: GitHub API rate limit monitoring (item 9)
+      # Ralph makes multiple API calls (list issues, add labels, create comments).
+      # Check rate limit early to avoid silent failures mid-workflow.
+      - name: "📊 Check GitHub API rate limit"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: rateLimit } = await github.rest.rateLimit.get();
+            const { remaining, limit, reset } = rateLimit.rate;
+            // Security: mask numeric values to prevent fingerprinting via CI logs
+            core.setSecret(String(remaining));
+            core.setSecret(String(limit));
+            const resetDate = new Date(reset * 1000).toISOString();
+            if (remaining < 10) {
+              core.setFailed(`❌ Rate limit: CRITICAL — below minimum threshold. Aborting to prevent silent failures.`);
+            } else if (remaining < 100) {
+              core.warning(`⚠️ Rate limit: WARNING — below safe threshold (resets ${resetDate})`);
+            } else {
+              core.info(`✅ Rate limit: OK — above safe threshold (resets ${resetDate})`);
+            }
 
       - name: Ralph — Repair orphaned squad labels
         uses: actions/github-script@v7
