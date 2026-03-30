@@ -6,13 +6,13 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import type { GhIssue } from '@bradygaster/squad-cli/core/gh-cli';
+import { buildAgentCommand, findExecutableIssues, reportBoard } from '../../packages/squad-cli/src/cli/commands/watch.js';
+import type { GhIssue } from '../../packages/squad-cli/src/cli/core/gh-cli.js';
 
 describe('CLI: watch execute mode', () => {
   describe('buildAgentCommand', () => {
     it('builds default gh copilot command', async () => {
-      const { buildAgentCommand } = await import('@bradygaster/squad-cli/commands/watch');
-      const issue: GhIssue = {
+            const issue: GhIssue = {
         number: 42,
         title: 'Fix auth redirect bug',
         body: 'User auth redirects to wrong page',
@@ -31,8 +31,7 @@ describe('CLI: watch execute mode', () => {
     });
 
     it('passes through copilotFlags', async () => {
-      const { buildAgentCommand } = await import('@bradygaster/squad-cli/commands/watch');
-      const issue: GhIssue = {
+            const issue: GhIssue = {
         number: 45,
         title: 'Add retry logic',
         body: 'Add exponential backoff',
@@ -51,8 +50,7 @@ describe('CLI: watch execute mode', () => {
     });
 
     it('uses custom agentCmd when provided', async () => {
-      const { buildAgentCommand } = await import('@bradygaster/squad-cli/commands/watch');
-      const issue: GhIssue = {
+            const issue: GhIssue = {
         number: 50,
         title: 'Custom task',
         body: '',
@@ -73,8 +71,7 @@ describe('CLI: watch execute mode', () => {
 
   describe('findExecutableIssues', () => {
     it('returns only issues ready for execution', async () => {
-      const { findExecutableIssues } = await import('@bradygaster/squad-cli/commands/watch');
-      const roster = [
+            const roster = [
         { name: 'EECOM', label: 'squad:eecom', expertise: [] },
         { name: 'GNC', label: 'squad:gnc', expertise: [] },
       ];
@@ -120,8 +117,7 @@ describe('CLI: watch execute mode', () => {
     });
 
     it('filters by capabilities when provided', async () => {
-      const { findExecutableIssues } = await import('@bradygaster/squad-cli/commands/watch');
-      const roster = [{ name: 'EECOM', label: 'squad:eecom', expertise: [] }];
+            const roster = [{ name: 'EECOM', label: 'squad:eecom', expertise: [] }];
       const issues: GhIssue[] = [
         {
           number: 10,
@@ -155,9 +151,7 @@ describe('CLI: watch execute mode', () => {
 
   describe('emptyBoardState', () => {
     it('includes executed field', async () => {
-      const mod = await import('@bradygaster/squad-cli/commands/watch');
-      // emptyBoardState is not exported, but we can verify BoardState interface via reportBoard
-      const state = {
+            const state = {
         untriaged: 0,
         assigned: 0,
         drafts: 0,
@@ -169,14 +163,13 @@ describe('CLI: watch execute mode', () => {
       };
 
       // Should not throw — verifies the shape is correct
-      expect(() => mod.reportBoard(state, 1)).not.toThrow();
+      expect(() => reportBoard(state, 1)).not.toThrow();
     });
   });
 
   describe('reportBoard with executed count', () => {
     it('reports executed count when > 0', async () => {
-      const { reportBoard } = await import('@bradygaster/squad-cli/commands/watch');
-      const consoleLogSpy = vi.spyOn(console, 'log');
+            const consoleLogSpy = vi.spyOn(console, 'log');
 
       const state = {
         untriaged: 1,
@@ -199,3 +192,4 @@ describe('CLI: watch execute mode', () => {
     });
   });
 });
+
