@@ -3,6 +3,7 @@
  */
 
 import path from 'node:path';
+import { execFile, type ChildProcess } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
@@ -25,6 +26,34 @@ import {
   getTrafficLight,
 } from '@bradygaster/squad-sdk/ralph/rate-limiting';
 
+/**
+ * Options controlling the watch/triage loop.
+ * When `execute` is false (default) the loop only triages — identical to
+ * the original behaviour.
+ */
+export interface WatchOptions {
+  intervalMinutes: number;
+  execute?: boolean;
+  copilotFlags?: string;
+  /** Hidden — fully override the agent command (not shown in help). */
+  agentCmd?: string;
+  maxConcurrent?: number;
+  issueTimeoutMinutes?: number;
+}
+
+/** Labels that indicate an issue is NOT ready for autonomous execution. */
+const BLOCKED_LABELS: ReadonlySet<string> = new Set([
+  'status:blocked',
+  'status:waiting-external',
+  'status:postponed',
+  'status:scheduled',
+  'status:needs-action',
+  'status:needs-decision',
+  'status:needs-review',
+  'pending-user',
+  'do-not-merge',
+]);
+
 export interface BoardState {
   untriaged: number;
   assigned: number;
@@ -33,6 +62,7 @@ export interface BoardState {
   changesRequested: number;
   ciFailures: number;
   readyToMerge: number;
+  executed: number;
 }
 
 export function reportBoard(state: BoardState, round: number): void {
@@ -52,6 +82,7 @@ export function reportBoard(state: BoardState, round: number): void {
   if (state.ciFailures > 0) console.log(`  ❌ CI failures:       ${state.ciFailures}`);
   if (state.needsReview > 0) console.log(`  🔵 Needs review:      ${state.needsReview}`);
   if (state.readyToMerge > 0) console.log(`  🟢 Ready to merge:    ${state.readyToMerge}`);
+  if (state.executed > 0) console.log(`  🚀 Executed:          ${state.executed}`);
   console.log();
 }
 
@@ -64,6 +95,7 @@ function emptyBoardState(): BoardState {
     changesRequested: 0,
     ciFailures: 0,
     readyToMerge: 0,
+    executed: 0,
   };
 }
 
@@ -240,12 +272,158 @@ async function runCheck(
     return {
       untriaged: untriaged.length,
       assigned: assignedIssues.length,
+      executed: 0,
       ...prState,
     };
   } catch (e) {
     const err = e as Error;
     console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${err.message}`);
     return emptyBoardState();
+  }
+}
+
+// ── Execute-mode helpers (#708) ──────────────────────────────────
+
+/**
+ * Build the command + arguments array for the agent subprocess.
+ * - Default: `gh copilot --message "<prompt>" [copilotFlags]`
+ * - With `--agent-cmd`: splits the custom command by whitespace.
+ */
+export function buildAgentCommand(
+  issue: GhIssue,
+  teamRoot: string,
+  options: WatchOptions,
+): { cmd: string; args: string[] } {
+  const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
+
+  if (options.agentCmd) {
+    const parts = options.agentCmd.trim().split(/\s+/);
+    const cmd = parts[0]!;
+    const args = [...parts.slice(1), '--message', prompt];
+    return { cmd, args };
+  }
+
+  const args = ['copilot', '--message', prompt];
+  if (options.copilotFlags) {
+    args.push(...options.copilotFlags.trim().split(/\s+/));
+  }
+  return { cmd: 'gh', args };
+}
+
+/**
+ * Result of a single issue execution attempt.
+ */
+interface ExecuteResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Spawn the agent process to work on a single issue.
+ * Claims the issue first (addAssignee @me), posts a "starting work"
+ * comment, then runs the agent command with a timeout.
+ */
+export async function executeIssue(
+  issue: GhIssue,
+  teamRoot: string,
+  options: WatchOptions,
+): Promise<ExecuteResult> {
+  const ts = new Date().toLocaleTimeString();
+  const timeoutMs = (options.issueTimeoutMinutes ?? 30) * 60_000;
+
+  // Claim the issue
+  try {
+    await ghIssueEdit(issue.number, { addAssignee: '@me' });
+  } catch {
+    // best-effort — don't block execution
+  }
+
+  // Post "starting work" comment via gh CLI
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const cp: ChildProcess = execFile(
+        'gh',
+        ['issue', 'comment', String(issue.number), '--body', `🤖 Ralph: starting autonomous work on this issue.`],
+        { maxBuffer: 5 * 1024 * 1024 },
+        (err) => (err ? reject(err) : resolve()),
+      );
+    });
+  } catch {
+    // best-effort comment
+  }
+
+  const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
+  console.log(`${GREEN}▶${RESET} [${ts}] Executing #${issue.number} "${issue.title}" → ${cmd} ${args.join(' ')}`);
+
+  return new Promise<ExecuteResult>((resolve) => {
+    const cp: ChildProcess = execFile(
+      cmd,
+      args,
+      {
+        cwd: teamRoot,
+        timeout: timeoutMs,
+        maxBuffer: 50 * 1024 * 1024, // 50 MB — agent output can be large
+      },
+      (err, _stdout, stderr) => {
+        if (err) {
+          const msg = (err as NodeJS.ErrnoException).killed
+            ? `Timed out after ${options.issueTimeoutMinutes ?? 30}m`
+            : (err as Error).message;
+          console.error(`${RED}✗${RESET} [${new Date().toLocaleTimeString()}] #${issue.number} failed: ${msg}`);
+          resolve({ success: false, error: msg });
+        } else {
+          console.log(`${GREEN}✓${RESET} [${new Date().toLocaleTimeString()}] #${issue.number} completed`);
+          resolve({ success: true });
+        }
+      },
+    );
+  });
+}
+
+/**
+ * Return issues from the board that are eligible for autonomous
+ * execution: labelled for a squad member, not assigned to a human,
+ * and not in a blocked/waiting state.
+ */
+export function findExecutableIssues(
+  roster: ReturnType<typeof parseRoster>,
+  capabilities: MachineCapabilities | null,
+  issues: GhIssue[],
+): GhIssue[] {
+  const memberLabels = new Set(roster.map(m => m.label));
+
+  return issues.filter(issue => {
+    const labels = issue.labels.map(l => l.name);
+
+    // Must have a squad:{member} assignment label
+    if (!labels.some(l => memberLabels.has(l))) return false;
+
+    // Must not be assigned to a human already
+    if (issue.assignees && issue.assignees.length > 0) return false;
+
+    // Must not carry any blocked/waiting label
+    if (labels.some(l => BLOCKED_LABELS.has(l))) return false;
+
+    return true;
+  });
+}
+
+/**
+ * Best-effort `git fetch && git pull --ff-only` so the work-tree
+ * stays reasonably up-to-date between rounds.  Never throws — a
+ * failed pull must never block a triage/execute cycle.
+ */
+export async function selfPull(teamRoot: string): Promise<void> {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      execFile('git', ['fetch', '--quiet'], { cwd: teamRoot }, (err) => (err ? reject(err) : resolve()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      execFile('git', ['pull', '--ff-only', '--quiet'], { cwd: teamRoot }, (err) => (err ? reject(err) : resolve()));
+    });
+  } catch {
+    // best-effort — log at debug level but never block
+    console.log(`${DIM}⚠ selfPull: git pull skipped (not on a tracking branch or conflicts)${RESET}`);
   }
 }
 
@@ -293,9 +471,15 @@ function saveCBState(squadDir: string, state: CircuitBreakerState): void {
 }
 
 /**
- * Run watch command — Ralph's local polling process
+ * Run watch command — Ralph's local polling process.
+ *
+ * Accepts the new {@link WatchOptions} bag. When `options.execute` is
+ * false (the default) the behaviour is identical to the original
+ * triage-only loop.
  */
-export async function runWatch(dest: string, intervalMinutes: number): Promise<void> {
+export async function runWatch(dest: string, options: WatchOptions): Promise<void> {
+  const { intervalMinutes } = options;
+
   // Validate interval
   if (isNaN(intervalMinutes) || intervalMinutes < 1) {
     fatal('--interval must be a positive number of minutes');
@@ -305,6 +489,7 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   const squadDirInfo = detectSquadDir(dest);
   const teamMd = path.join(squadDirInfo.path, 'team.md');
   const routingMdPath = path.join(squadDirInfo.path, 'routing.md');
+  const teamRoot = path.dirname(squadDirInfo.path);
   
   if (!storage.existsSync(teamMd)) {
     fatal('No squad found — run init first.');
@@ -330,7 +515,7 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   
   // Load machine capabilities for needs:* label filtering (#514)
   const { loadCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
-  const capabilities = await loadCapabilities(path.dirname(squadDirInfo.path));
+  const capabilities = await loadCapabilities(teamRoot);
   
   if (capabilities) {
     console.log(`${DIM}📦 Machine: ${capabilities.machine} — ${capabilities.capabilities.length} capabilities loaded${RESET}`);
@@ -345,7 +530,7 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   const monitorSessionId = 'ralph-watch';
   const eventBus = new EventBus();
   const monitor = new RalphMonitor({
-    teamRoot: path.dirname(squadDirInfo.path),
+    teamRoot,
     healthCheckInterval: intervalMinutes * 60 * 1000,
     staleSessionThreshold: intervalMinutes * 60 * 1000 * 3,
     statePath: path.join(squadDirInfo.path, '.ralph-state.json'),
@@ -360,8 +545,16 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   });
   
   // Print startup banner
-  console.log(`\n${BOLD}🔄 Ralph — Watch Mode${RESET}`);
-  console.log(`${DIM}Polling every ${intervalMinutes} minute(s) for squad work. Ctrl+C to stop.${RESET}\n`);
+  const modeTag = options.execute ? ` ${BOLD}(Execute)${RESET}` : '';
+  console.log(`\n${BOLD}🔄 Ralph — Watch Mode${RESET}${modeTag}`);
+  console.log(`${DIM}Polling every ${intervalMinutes} minute(s) for squad work. Ctrl+C to stop.${RESET}`);
+  if (options.execute && options.copilotFlags) {
+    console.log(`${DIM}Copilot flags: ${options.copilotFlags}${RESET}`);
+  }
+  if (options.execute) {
+    console.log(`${DIM}Max concurrent: ${options.maxConcurrent ?? 1} | Timeout: ${options.issueTimeoutMinutes ?? 30}m${RESET}`);
+  }
+  console.log();
   
   // Initialize circuit breaker (#515)
   const circuitBreaker = new PredictiveCircuitBreaker();
@@ -371,8 +564,8 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
 
   /**
    * Gate a round through the circuit breaker, then delegate to the
-   * existing runCheck + reportBoard flow. This wrapper is the ONLY
-   * new control flow — everything inside is unchanged.
+   * existing runCheck + reportBoard flow. When execute mode is on,
+   * also run selfPull and spawn agent processes for eligible issues.
    */
   async function executeRound(): Promise<void> {
     const ts = new Date().toLocaleTimeString();
@@ -415,9 +608,27 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
       // Rate limit check failed — proceed anyway, runCheck has its own catch
     }
 
+    // ── Execute mode: keep work-tree up-to-date ────────────────
+    if (options.execute) {
+      await selfPull(teamRoot);
+    }
+
     // ── Delegate to existing check cycle (untouched) ────────────
     round++;
     const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities);
+
+    // ── Execute mode: find and work on eligible issues ──────────
+    if (options.execute) {
+      const allIssues = await ghIssueList({ label: 'squad', state: 'open', limit: 50 });
+      const executable = findExecutableIssues(roster, capabilities, allIssues);
+      const batch = executable.slice(0, options.maxConcurrent ?? 1);
+
+      const results = await Promise.all(
+        batch.map(issue => executeIssue(issue, teamRoot, options)),
+      );
+      roundState.executed = results.filter(r => r.success).length;
+    }
+
     await eventBus.emit({
       type: 'agent:milestone',
       sessionId: monitorSessionId,

@@ -159,8 +159,12 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}cost${RESET}       Report token usage from orchestration logs`);
     console.log(`             Flags: --all, --agent <name>`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
-    console.log(`             Usage: triage [--interval <minutes>]`);
+    console.log(`             Usage: triage [--interval <minutes>] [--execute]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
+    console.log(`             Flags: --execute (spawn agents to work on issues)`);
+    console.log(`                    --copilot-flags "..." (extra copilot CLI flags)`);
+    console.log(`                    --max-concurrent N (parallel issue limit, default 1)`);
+    console.log(`                    --timeout N (max minutes per issue, default 30)`);
     console.log(`  ${BOLD}loop${RESET}       Continuous work loop (Ralph mode)`);
     console.log(`             Usage: loop [--filter <label>] [--interval <minutes>]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
@@ -325,7 +329,38 @@ async function main(): Promise<void> {
     const intervalMinutes = (intervalIdx !== -1 && args[intervalIdx + 1])
       ? parseInt(args[intervalIdx + 1]!, 10)
       : 10;
-    await runWatch(process.cwd(), intervalMinutes);
+
+    const execute = args.includes('--execute');
+
+    const copilotFlagsIdx = args.indexOf('--copilot-flags');
+    const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
+      ? args[copilotFlagsIdx + 1]
+      : undefined;
+
+    // Hidden flag — not shown in help text
+    const agentCmdIdx = args.indexOf('--agent-cmd');
+    const agentCmd = (agentCmdIdx !== -1 && args[agentCmdIdx + 1])
+      ? args[agentCmdIdx + 1]
+      : undefined;
+
+    const maxConcurrentIdx = args.indexOf('--max-concurrent');
+    const maxConcurrent = (maxConcurrentIdx !== -1 && args[maxConcurrentIdx + 1])
+      ? parseInt(args[maxConcurrentIdx + 1]!, 10)
+      : 1;
+
+    const timeoutIdx = args.indexOf('--timeout');
+    const issueTimeoutMinutes = (timeoutIdx !== -1 && args[timeoutIdx + 1])
+      ? parseInt(args[timeoutIdx + 1]!, 10)
+      : 30;
+
+    await runWatch(process.cwd(), {
+      intervalMinutes,
+      execute,
+      copilotFlags,
+      agentCmd,
+      maxConcurrent,
+      issueTimeoutMinutes,
+    });
     return;
   }
 
