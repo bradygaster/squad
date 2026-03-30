@@ -11,8 +11,40 @@ permissions:
   contents: read
 
 jobs:
-  docs-quality:
+  # ── Path filter for conditional job execution ──────────────────────────
+  # Detects which areas of the repo changed so downstream jobs can skip
+  # when their inputs haven't changed (e.g., skip docs-quality on code-only PRs).
+  changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect changed paths
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+            CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
+          else
+            # On push, compare against parent commit
+            CHANGED=$(git diff --name-only HEAD~1...HEAD 2>/dev/null || echo "docs/")
+          fi
+          if echo "$CHANGED" | grep -qE '^(docs/|README\.md|\.markdownlint|\.cspell|cspell\.json)'; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  docs-quality:
+    needs: changes
+    if: "!cancelled() && (github.event_name == 'push' || needs.changes.outputs.docs == 'true')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +53,20 @@ jobs:
           node-version: 22
 
       - name: Install docs tools
-        run: npm install --no-save markdownlint-cli2 cspell
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm install --no-save markdownlint-cli2 cspell; then
+              success=true
+              break
+            fi
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm install failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Lint docs markdown
         run: npx markdownlint-cli2
@@ -31,12 +76,14 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
 
       - name: Fix stale lockfile entries
         run: |
@@ -57,10 +104,36 @@ jobs:
           "
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm install; then
+              success=true
+              break
+            fi
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm install failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Install docs dependencies
-        run: npm ci
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm ci; then
+              success=true
+              break
+            fi
+            echo "Retry $i/3 — npm ci failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
         working-directory: docs
 
       - name: Install Playwright browsers
@@ -138,6 +211,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -218,6 +292,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -424,6 +499,7 @@ jobs:
 
   publish-policy:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -470,6 +546,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -554,6 +631,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -659,6 +737,7 @@ jobs:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
