@@ -4,6 +4,74 @@
 
 ## Learnings
 
+📌 **Team update (2026-03-30T00:46:00Z — PRD-120 Runtime Feasibility Review Verdict: APPROVE WITH CHANGES):** EECOM completed runtime feasibility assessment for PRD-120 Cron Disable + CI Gating + Feature Management. Verdict: **APPROVE WITH CHANGES**. Key finding: Squad's existing infrastructure provides 70% foundation already. No CopilotClient/Adapter Layer changes required (config-layer only). Feature flag system straightforward; schedule command is main greenfield effort (~18h scope). Recommendation: Defer CI gate (FR-3) to v0.10.1 to keep v0.10.0 scope tight; schedule command and feature flags can ship v0.10.0 without blocking. Full review filed at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/EECOM.md`. Decision merged to decisions.md.
+
+### PRD-120 Runtime Feasibility Review (2026-07-25)
+
+**Context:** Flight submitted PRD-120 (Cron Disable, CI Gating, Feature Management) for team review. EECOM tasked with assessing runtime implementation feasibility for Functional Requirements 1–4 and identifying core runtime changes needed.
+
+**Key Findings:**
+
+1. **Foundation already exists** — 70% of infrastructure present:
+   - Ceremonies schema already has schedule support (`schedule?: string`, `enabled?: boolean`)
+   - Upgrade machinery (`upgrade.ts`, 362 lines, migration system at line 426) provides solid foundation
+   - Init workflow copying pattern (lines 913–932) reusable for schedule.json template setup
+   - Config loader infrastructure ready for feature flags
+
+2. **Configuration schema extensions are minimal** — Only 2 new optional fields needed in `SquadConfig`:
+   - `features?: Record<string, boolean>` — Feature flag overrides (e.g., `cronSchedules: true`)
+   - `schedulePolicy?: { allowWorkflowCron?: string[] }` — Workflow schedule allowlist
+   - Both fields backward compatible; schema at `packages/squad-sdk/src/config/schema.ts`
+
+3. **Runtime impact is isolated** — CopilotClient and session pool unaffected:
+   - Cron disable affects state (schedule.json) and templates (workflow YAML), not casting/spawn logic
+   - No session lifecycle changes; no adapter layer modifications needed
+   - Feature flags are config-only, no runtime data structure changes
+
+4. **Schedule command is greenfield** — Largest implementation effort (~3.5 hours):
+   - No existing `packages/squad-cli/src/cli/commands/schedule.ts`
+   - Needs: enable <id>, enable --all, disable <id>, list subcommands
+   - Straightforward JSON I/O; can follow existing CLI command patterns (e.g., plugin.ts, doctor.ts)
+
+5. **Workflow detection strategy** — Regex-based approach chosen over YAML parser (maintains NFR-3: zero new dependencies):
+   - Pattern: `/^(\s*)schedule:\s*$/gm` for block detection
+   - Risk: Regex may miss edge cases (quoted cron values, multiline syntax)
+   - Mitigation: Comprehensive test matrix; parser as fallback in v0.10.1 if needed
+
+6. **Idempotency is critical** — Upgrade path must handle multiple runs safely:
+   - `.squad/schedule.json.pre-upgrade` backup file signals first-run completion
+   - Regex-based workflow commenting must detect already-commented blocks
+   - Risk: Without careful implementation, second upgrade could corrupt workflow files or duplicate backup files
+
+**Verdict:** **APPROVE WITH CHANGES**
+- FR-1 (Cron Disable Init/Upgrade) — Fully feasible, recommend v0.10.0
+- FR-4.3 (Feature Flags) — Fully feasible, recommend v0.10.0
+- FR-3 (CI Gate) — Defer to v0.10.1 (doesn't block cron disable, adds ~6 hours complexity)
+- FR-4.1–4.5 (Change Manifest System) — Defer to v0.10.1 (infrastructure-heavy, not on critical path)
+
+**Complexity estimate:**
+- v0.10.0 core (FR-1 + FR-4.3 + schedule command): ~18 hours
+- Full scope (include FR-3 + FR-4.x): ~28 hours
+- Rationale: Deferring gate + manifest keeps v0.10.0 tight; users get immediate value from cron disable
+
+**Key recommendations for implementation:**
+1. Config schema: Add both fields as optional, with defensive defaults in config loader
+2. Init: Reuse workflow copy pattern for schedule.json template (static JSON at init time)
+3. Upgrade: Extend `TEMPLATE_MANIFEST` pattern for schedule.json; create migration functions `migrateSchedules()` and `migrateWorkflows()` with idempotency guards
+4. Schedule command: Follow existing CLI patterns (dynamic imports, help text wiring in cli-entry.ts)
+5. Feature flags: Implement as simple config-level boolean overrides; warn on unknown flags for forward compatibility
+6. Tests: New test suite ~450 lines; extend existing init/upgrade tests for schedule migration; add idempotency matrix tests for workflow commenting
+
+**Risk mitigations:**
+- Idempotency: Backup file flag + regex-based detection for already-commented blocks; regression test (upgrade twice, compare files)
+- Regex fragility: Test matrix covering inline/multiline/quoted/commented edge cases; parser fallback approved as v0.10.1 tech debt
+- User experience: `squad schedule enable` cost warning every time; `squad doctor` checks enabled schedules
+- Feature flag sprawl: Policy (flags sunset after 2 major versions) owned by Procedures; unknown flags warn not error
+
+**Questions for Flight/team:** See review document section "Open Questions" for v0.10.0 vs v0.10.1 delineation, multi-repo support, changelog automation strategy.
+
+**Review output:** `.squad/decisions/inbox/eecom-prd120-review.md` (2.1KB, structured with executive summary → verdict → detailed assessment → risks → test strategy → conclusion)
+
 ### archiveDecisions() count-based fallback (#626) (2025-07-24)
 
 **Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.

@@ -4,6 +4,8 @@
 
 ## Learnings
 
+📌 **Team update (2026-03-30T00:46:00Z — PRD-120 Version Management Review Verdict: APPROVED WITH CONDITIONS):** Surgeon completed release management and version control review for PRD-120. Verdict: **APPROVED WITH CONDITIONS**. Feature versioning system (change manifests + feature flags + deprecation warnings) sound and necessary; directly addresses v0.9.0→v0.9.1 incident and prevents recurrence of unstructured behavioral changes. Well-designed release infrastructure. Three conditions before implementation: (1) Confirm change manifest system integrates with Surgeon's release checklist, (2) Automate changelog generation from `changes/` directory, (3) Document upgrade deprecation warning timeline. Recommendation: Ship all phases in v0.10.0 (consolidates scope, simplifies changelog story). Release checklist updates needed: add feature manifest validation, changelog automation, deprecation warning audit to pre-ship procedures. Version lock enforcement: ensure SDK and CLI versions stay in sync (per Versioning Policy). Full review filed at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/Surgeon.md`. Decision merged to decisions.md.
+
 ### Release Governance Rules (2026-03-23 v0.9.0→v0.9.1 Incident)
 **Context:** v0.9.0 published with critical defect (CLI package had local monorepo reference instead of registry version). v0.9.1 hotfix prepared in minutes; publish workflow infrastructure collapsed (GitHub cache race + npm automation issue + 2FA hang), extending 10-minute fix to 8-hour incident.
 
@@ -135,3 +137,39 @@ Prepared comprehensive release playbook and CI improvement plan for Brady's revi
 - Pre-release validation prevents 90% of publish issues
 - Culture: "If the same problem happens twice, the playbook failed"
 - Documentation must be user-first (Brady's perspective, not technical jargon)
+
+
+### PRD-120 Review: Feature Versioning System (2026-06-25)
+
+**Context:** Flight published PRD-120 (Cron Disable + CI Gating + Feature Versioning). Surgeon reviewed for version management implications.
+
+**Key findings:**
+
+1. **Feature Versioning System is SOUND.** The proposed change manifest infrastructure (YAML frontmatter + markdown files in changes/) directly solves the v0.9.0→v0.9.1 problem. It establishes proper separation between:
+   - Template defaults (what squad init ships)
+   - Behavioral changes (what squad upgrade applies)
+   - Feature flags (how users opt out)
+   - Deprecation warnings (how Squad signals future breaks)
+
+2. **Version bump to v0.10.0 is CORRECT.** Cron disable is a MINOR version change (new functionality + new defaults), not MAJOR. It qualifies as "new functionality" under Semver.
+
+3. **Release gating approach:** Behavioral changes require enhanced release checklist (not time-based milestone). Checklist must verify:
+   - Change manifests exist with proper version/type/feature metadata
+   - CHANGELOG.md includes ⚠️ Behavioral Changes section
+   - Upgrade docs exist (cost rationale + migration steps + feature flag overrides)
+   - Dry-run upgrade succeeds
+   - Post-publish smoke test includes schedule commands
+
+4. **Migration strategy is SAFE.** Backup-first approach + feature flags + reversible commands = low risk for existing users. One gap found: feature flag + upgrade interaction must be tested (if user has cronSchedules: true in config, upgrade should not disable schedules).
+
+5. **Changelog automation is REQUIRED.** PRD expects Surgeon to automate change manifest → CHANGELOG integration. Requires new script: scripts/generate-changelog-changes.js.
+
+**Approval conditions:**
+- Changelog automation script ready before v0.10.0 tag
+- Feature flag + upgrade interaction tested
+- Deprecation timeline documented (removal_target_version in manifests)
+- Release checklist updated for future behavioral changes
+
+**Recommendation:** Ship all four PRD phases (template defaults + upgrade migration + CI gate + feature system) in v0.10.0. Don't stagger releases. Consolidating prevents situations where v0.10.0 ships without feature flags, then v0.10.1 adds them — already-upgraded users don't benefit.
+
+**Status:** ✅ **APPROVED WITH CONDITIONS** — Review documented in .squad/decisions/inbox/surgeon-prd120-review.md.

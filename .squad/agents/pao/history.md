@@ -8,6 +8,8 @@ Docs live in docs/ with blog/, concepts/, cookbook/, getting-started/, guide/, f
 
 ## Learnings
 
+📌 **Team update (2026-03-30T00:46:00Z — PRD-120 User Communication Review Verdict: APPROVED WITH RECOMMENDATIONS):** PAO completed user communication, documentation, and migration guidance review for PRD-120. Verdict: **APPROVED WITH RECOMMENDATIONS**. PRD well-researched and technically sound; success hinges on communication and documentation execution. Key messaging validated: "Schedules off by default" = zero cost until user explicitly enables (right choice); opt-in reenablement via `squad schedule enable <id>` discoverable and explicit; backup + restore path signals trust in upgrade safety; cost warning at enable time surfaces trade-off. Four documentation pages required before ship: (1) Migration Guide (`.pre-upgrade` backup restoration, schedule re-enablement walkthrough), (2) Feature Flags User Guide (how to use `features.cronSchedules: true`), (3) Upgrade Release Notes (breaking change with cost implications), (4) Schedule Management Tutorial (`squad schedule list/enable/disable` reference). Key messaging points: "Scheduled triggers are disabled by default. Run `squad schedule enable <id>` to activate." + "Enabling scheduled triggers will consume GitHub Actions minutes." Recommendation: Assign documentation sprints in parallel with code work. Review all user-facing messages (FR-1.4, FR-2.3, FR-4.2) before code review. Full review filed at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/PAO.md`. Decision merged to decisions.md.
+
 ### Discussion Triage Patterns (2026-03-23 Release Incident)
 **Context:** v0.9.1 release completed; 15 open discussions analyzing whether community response patterns matched feature releases.
 
@@ -285,3 +287,44 @@ Completed full PRD based on research findings. **Document:** `docs/research/jsdo
 - Four-phase approach breaks large effort into digestible increments (Phase 0 validation before JSDoc audit helps mitigate risk of TypeDoc setup failing)
 
 **Decision:** PRD approved for handoff to implementation team. Ready for execution on next sprint.
+
+### PRD-120 Review: Cron Disable, Feature Change Management (2026-06-25)
+
+**Context:** Flight authored PRD-120 to solve cost problem (silent GitHub Actions minute burn) via three interconnected capabilities: (1) Cron disable on init/upgrade, (2) CI gating to prevent reintroduction, (3) Feature change management system. Assigned to PAO for user communication + docs impact review.
+
+**DevRel Review Outcome:** APPROVED WITH RECOMMENDATIONS. PRD is technically sound and strategically important. Success depends entirely on execution of messaging, documentation, and feature flag system.
+
+**Key findings:**
+
+1. **Behavioral change = communication burden.** PRD introduces a default change (cron off → on requires explicit action). Users upgrading v0.9.x → v0.10.0 will see quiet workflows. Without proactive messaging, support volume will spike with "why did my cron stop?" questions. Solution: multi-channel messaging (blog, upgrade output, CHANGELOG, docs) + feature flag escape hatch (set `features.cronSchedules: true`).
+
+2. **Documentation scope is large.** Four new guides required: (1) schedule-management.md (how to enable/disable cron), (2) upgrade-v0.10.0-behavioral-changes.md (migration runbook), (3) feature-flags.md concept page (explain new system), (4) ci-cron-gate.md reference (gate configuration). Plus updates to README, scheduler guide, init guide. Docs must ship in parallel with code (not after). **Recommendation:** Assign docs sprint concurrently with implementation, target merge 1 week before v0.10.0 release.
+
+3. **Multi-repo friction unaddressed.** PRD identifies that users with 10+ repos need to run `squad upgrade` on each repo (cannot bulk-apply schedules). Risk table marks this as "high likelihood, medium severity" but no mitigation beyond "document pattern." Solution: Add guidance to upgrade guide with script template example + link to future #98 (bulk tooling). Prevent support burden by acknowledging the pain point upfront.
+
+4. **Feature flag deprecation timeline missing.** PRD introduces `features.cronSchedules` flag but doesn't state when it deprecates/removes. This matters for trust: users need to know they can safely override defaults and have a runway before the override breaks. **Recommendation:** Add sunset dates to PRD (e.g., "Deprecated in v0.12.0, removed in v0.13.0") and communicate via JSDoc + docs.
+
+5. **Upgrade output is primary discovery mechanism.** Most existing users won't read blog or CHANGELOG before running `squad upgrade`. The upgrade command's console output is the critical moment to explain what changed + why + how to restore. PRD's upgrade report format is good; messaging tone must emphasize "this is safe" not "we disabled your stuff."
+
+**Pattern identified:** For behavioral changes, DevRel's job is not to rubber-stamp but to surface user communication debt early. If a feature change lacks clear messaging, docs, feature flag escape hatch, or migration path, escalate before implementation. The cost of poor release messaging (support tickets, trust erosion) is 10× the cost of spending 1 extra week on docs.
+
+**Messaging strategy (recommended framing):**
+- **Core:** "Squad now ships with safe defaults. Schedules are off by default — you're in control."
+- **Pillar 1:** Safety first (prevent accidental Actions minute burn)
+- **Pillar 2:** Control (opt in only what you need)
+- **Pillar 3:** Transparency (we changed this because it protects you)
+- **Escape hatch:** Feature flag for users who want v0.9.x behavior
+- **Timeline:** Deprecation schedule communicated upfront
+
+**Decision gates for Ship Readiness (PAO sign-off required):**
+- ✅ All 4 docs pages drafted and reviewed
+- ✅ Blog post emphasizes "safe defaults" not "breaking change"
+- ✅ CHANGELOG has `⚠️ Behavioral Changes` section
+- ✅ Feature flag system includes deprecation timeline
+- ✅ Upgrade command output tested for readability
+- ✅ Multi-repo migration guidance in docs
+- ✅ Feature flag escape hatch tested and documented
+
+If gates are not met by release candidate build, delay release by 1 week for docs. Documentation quality directly impacts user trust in behavioral changes.
+
+**Next step:** Flight to confirm implementation + docs sprint timeline. Assign PAO to blog post draft review.

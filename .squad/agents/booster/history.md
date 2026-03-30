@@ -4,6 +4,8 @@
 
 ## Learnings
 
+📌 **Team update (2026-03-30T00:46:00Z — PRD-120 CI Gating Review Verdict: APPROVED WITH CONDITIONS):** Booster completed CI/CD domain review for PRD-120. Verdict: **APPROVED WITH CONDITIONS**. CI gating approach technically sound and implementable. Cron detection gate feasible; allowlist mechanism practical; GitHub Actions integration straightforward. Key conditions: (1) gate workflow must use path-based filtering to avoid false triggering, (2) YAML parsing must tolerate both commented and active schedules to minimize false positives, (3) allowlist must support regex for flexible workflow matching, (4) test matrix required for edge cases. Recommendation: State machine YAML parsing over regex. Effort: 3–4 weeks (80–120 hours). Phase assessment: Phase 1–2 low-risk; Phase 3 (CI gate) medium complexity but achievable; Phase 4 orthogonal to CI domain. Full review filed at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/Booster.md`. Decision merged to decisions.md.
+
 ### CI Workflow Audit & Preflight Patterns (2026-03-23 Release Incident)
 **Context:** v0.9.0 shipped with broken dependency reference (`file:../squad-sdk` in CLI package.json). Required hotfix. Used incident as opportunity to audit entire CI/CD system.
 
@@ -109,6 +111,46 @@ Analyzed 20 CI runs from March 15. Identified 3 distinct failure categories:
 **Recommendation:** Delete ghost publish-npm.yml file, optionally keep ci-rerun for fork PR debugging, keep everything else. CI health is good.
 
 **Report written to:** `.squad/decisions/inbox/booster-ci-audit.md`
+
+### PRD-120 CI Gating Review — June 25, 2026
+
+**Context:** Flight authored PRD-120 (Cron Disable + CI Gating + Feature Versioning) addressing silent GitHub Actions minutes burn on new installs and upgrades. Three interconnected areas: (1) Cron disable on init/upgrade, (2) CI gating to prevent cron bleedthrough, (3) Feature change management system.
+
+**Booster's Primary Review:** CI gating for unauthorized cron schedules (FR-3).
+
+**Key Findings:**
+
+**✅ APPROVED WITH CONDITIONS** — Gate is technically sound and implementable.
+
+**Technical Assessment:**
+1. **Cron Detection — Sound:** Schedule detection via state machine (not naive regex) correctly identifies `schedule:` blocks while avoiding false positives on commented schedules and workflow names containing "schedule."
+2. **Allowlist Mechanism — Practical:** Config-driven allowlist in `squad.config.ts` works, but should support glob patterns (`squad-*.yml`) to reduce toil. Fallback to `.squad/schedule-policy.json` JSON recommended to reduce parsing complexity.
+3. **GitHub Actions Integration — Well-Designed:** Trigger on `pull_request` with `.github/workflows/**` path filter is correct. Zero false triggers, negligible cost (~0.1 min/month for typical repos). Gate is orthogonal to existing CI checks (tests, preflight, publish).
+4. **False Positives/Negatives:** Risk is LOW with recommended mitigations. State machine parsing, 15+ test cases (YAML edge cases), and diagnostic logging prevent most issues. False negative risk (cron sneaking in) mitigated by making gate opt-in for existing repos.
+
+**Concerns & Recommendations:**
+- Gate must **never run on `push: main/dev`** — only `pull_request` to prevent locking out releases if gate logic breaks
+- Gate should **log all execution** to `.squad/log/cron-gate-{timestamp}.log` for debugging
+- Allowlist must support **glob patterns** (`squad-*.yml`, `{hourly,daily}-*.yml`)
+- Error messages must include file path, line number, allowlist guidance, and link to docs
+
+**Effort Estimate:** 1.5–2 weeks for Booster (gate workflow + installation + test support)
+- Gate workflow implementation: ~30–40 hours
+- Installation command (`squad schedule gate init`): ~8–12 hours
+- Test coverage (15+ YAML edge cases + allowlist): ~16–24 hours (with FIDO)
+
+**Test Matrix:** 15 test cases covering:
+- Simple schedule blocks, spacing variations, multiline YAML
+- Commented schedules (migration markers), schedule in comments/names
+- Allowlist matching (exact paths, glob patterns)
+- YAML edge cases (anchors, aliases, template expressions)
+- Error message content, gate performance (<5 seconds for 15 workflows)
+
+**Critical Path:** Phase 1 (templates) → Phase 2 (upgrade) → Phase 3 (gate, parallel with Phase 4 feature flags).
+
+**Approval Gate:** ✅ Ready for Flight approval + implementation kickoff
+
+**Report Location:** `.squad/decisions/inbox/booster-prd120-review.md`
 
 ### CI Cleanup & Hardening — Post-Audit
 

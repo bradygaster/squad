@@ -5644,6 +5644,76 @@ Users deserve a distribution pipeline they can trust. Right now, `@bradygaster/s
 
 Definitive CLI completeness audit confirms all commands work post-publish.
 
+---
+
+## Recent Reviews & Decisions (2026-03-26 to 2026-03-30)
+
+### 2026-03-26: CI deletion guard and source tree canary
+**By:** Booster (CI/CD)
+**What:** Added two safety checks to squad-ci.yml: (1) source tree canary verifying critical files exist, (2) large deletion guard failing PRs that delete >50 files without 'large-deletion-approved' label. Branch protection on dev requested (may need manual setup).
+**Why:** Incident #631 — @copilot deleted 361 files on dev with no CI gate catching it.
+
+### 2026-03-26: Copilot git safety rules
+**By:** RETRO (Security)
+**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits `git add .`, requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
+**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
+
+### 2026-03-29: Versioning Policy — No Prerelease Versions on dev/main
+**By:** Flight (Lead)
+**Requested by:** Dina
+**Status:** DECIDED
+**Confidence:** Medium (confirmed by PR #640 incident, PR #116 prerelease leak, CI gate implementation)
+
+**Policy:**
+1. **All packages use strict semver** (`MAJOR.MINOR.PATCH`). No prerelease suffixes on `dev` or `main`.
+2. **Prerelease versions are ephemeral.** `bump-build.mjs` creates `-build.N` for local testing only — never committed.
+3. **SDK and CLI versions must stay in sync.** Divergence silently breaks npm workspace resolution.
+4. **Surgeon owns version bumps.** Other agents must not modify `version` fields in `package.json` unless fixing a prerelease leak.
+5. **CI enforcement via `prerelease-version-guard`** blocks PRs with prerelease versions. `skip-version-check` label is Surgeon-only.
+
+**Why:** Repo had no documented versioning policy, causing two incidents:
+- **PR #640:** Prerelease version `0.9.1-build.4` silently broke workspace resolution
+- **PR #116:** Surgeon set versions to `0.9.1-build.1` instead of `0.9.1` because there was no guidance
+
+**Skill Reference:** Full policy documented in `.squad/skills/versioning-policy/SKILL.md`.
+
+### 2026-03-30: PRD-120 Team Review Summary
+**By:** Flight (Lead) with Scribe consolidation
+**Topic:** Cron Disable, CI Gating, Feature Change Management (Issue #120)
+**Verdict:** ✅ TEAM CLEARED FOR IMPLEMENTATION
+
+**PRD Location:** `docs/proposals/prd-120-cron-disable-feature-management.md`
+
+**Individual Team Verdicts:**
+- ✅ **EECOM (Core Dev):** APPROVE WITH CHANGES — Defer CI gate to v0.10.1; schedule + feature flags ship v0.10.0 (18h scope)
+- ✅ **Booster (CI/CD):** APPROVED WITH CONDITIONS — State machine parsing recommended (3–4 weeks, 80–120h)
+- ✅ **Procedures (Prompt Engineer):** APPROVED WITH TIER 1 GUARDRAILS — 3 blockers for Flight (template location, upgrade prompt flow, template sync)
+- 🟡 **FIDO (Quality Owner):** CONDITIONAL GO — 54–72 tests required across 5 test files before code review
+- ✅ **RETRO (Security):** CONDITIONAL APPROVAL — 4 security gating checkpoints required
+- ✅ **Surgeon (Release Manager):** APPROVED WITH CONDITIONS — Changelog automation needed; recommend v0.10.0 single-phase ship
+- ✅ **PAO (DevRel):** APPROVED WITH RECOMMENDATIONS — 4 new doc pages required before ship
+- ✅ **Network (Distribution):** APPROVED — Zero-dependency maintained; negligible +5–10 KB package size
+
+**Tier 1 Blockers (Flight decision point):**
+1. Define schedule.json template location (canonical path and sync destinations)
+2. Confirm upgrade confirmation flow (prompt or auto-apply?)
+3. Update sync-templates.mjs to include new templates
+
+**Key Architectural Decisions:**
+- Feature flags live in `squad.config.ts` under `features: {}`
+- Change manifests stored as markdown with YAML frontmatter in `changes/` directory
+- CI cron gate opt-in via `--with-cron-gate` flag (not forced)
+- Four-phase rollout: Phase 1–2 (defaults + migration) in v0.10.0; Phase 3 (CI gate) in v0.10.0+; Phase 4 (change infrastructure) in v0.10.x
+
+**Next Steps:**
+1. Flight addresses Tier 1 blockers
+2. FIDO designs 54–72 test matrix before code starts
+3. RETRO defines 4 security checkpoints for implementation
+4. Procedures resolves 3 blocker items
+5. Implementation begins phased rollout
+
+**See Also:** Full orchestration logs at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/`
+
 **What:**
 - 26 primary commands routed, all tested ✅
 - 4 aliases routed (watch, workstreams, remote-control, streams) — 3 tested, 1 untested

@@ -6,11 +6,93 @@
 
 Quality gate authority for all PRs. Test assertion arrays (EXPECTED_GUIDES, EXPECTED_FEATURES, EXPECTED_SCENARIOS, etc.) MUST stay in sync with files on disk. When reviewing PRs with CI failures, always check if dev branch has the same failures — don't block PRs for pre-existing issues. 3,931 tests passing, 149 test files, ~89s runtime.
 
-📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution & Community PR Review):** Post-CLI crash recovery completed: Round 1 baseline verified (5,038 tests ✅ green), Round 2 executed duplicate closures (#605/#604/#602) and 9-PR community batch review. FIDO approved 3 PRs (#625 notification-routing, #603 Challenger agent, #608 security policy—merged via Coordinator) and issued change requests on 6 PRs identifying systemic issues: changeset package naming (4 PRs used unscoped `squad-cli` instead of `@bradygaster/squad-cli`); file paths (2 PRs placed files at root instead of correct package structure). Quality gate result: high-bar community acceptance—approved 3/9 (33%), change-request 6/9 (67%), 0 rejections. PR #592 (legacy, high-quality) also merged. All actions complete; dev branch remains green. Decision inbox merged and deleted. Next: Monitor 6 change-request PRs for author responses.
+📌 **Team update (2026-03-30T00:46:00Z — PRD-120 Test Strategy Review Verdict: CONDITIONAL GO):** FIDO completed comprehensive test strategy review for PRD-120. Verdict: **CONDITIONAL GO** — approval contingent on test strategy implementation before code review begins. PRD architecturally sound with clear acceptance criteria; however, introduces significant testing complexity across init, upgrade, schedule, config, and CI workflows. Risk: subtle regressions in upgrade path, false positives in CI gate, feature flag sprawl, backward compatibility breaks. Conditions: GO on implementation IF test strategy matrix is committed before code starts; FAIL on merge IF PRs lack tests for the matrix; NO-GO on general availability IF regression tests don't confirm 80%+ coverage. Test matrix needed: 54–72 tests across 5 files: init.test.ts (12–15 tests, new install paths), upgrade.test.ts (18–20 tests, migration), schedule.test.ts (10–12 tests, enable/disable), features.test.ts (8–10 tests, flag overrides), ci-gate.integration.ts (6–8 tests, gate workflow). Backward compatibility: pre-existing test suite must pass at 80%+ coverage. Full review filed at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/FIDO.md`. Decision merged to decisions.md.
+
+📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution & Community PR Review):**Post-CLI crash recovery completed: Round 1 baseline verified (5,038 tests ✅ green), Round 2 executed duplicate closures (#605/#604/#602) and 9-PR community batch review. FIDO approved 3 PRs (#625 notification-routing, #603 Challenger agent, #608 security policy—merged via Coordinator) and issued change requests on 6 PRs identifying systemic issues: changeset package naming (4 PRs used unscoped `squad-cli` instead of `@bradygaster/squad-cli`); file paths (2 PRs placed files at root instead of correct package structure). Quality gate result: high-bar community acceptance—approved 3/9 (33%), change-request 6/9 (67%), 0 rejections. PR #592 (legacy, high-quality) also merged. All actions complete; dev branch remains green. Decision inbox merged and deleted. Next: Monitor 6 change-request PRs for author responses.
 
 📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review Batch):** FIDO reviewed 10 open PRs for quality and merge readiness. Identified 3 duplicate/overlap pairs consolidating 6 PRs into 4: #607 (retro enforcement, comprehensive) approved for merge, #605 closed as duplicate (less comprehensive). #603 (Challenger agent, correct paths) approved for merge, #604 closed as duplicate (wrong file paths). #606 (tiered memory superset, 3-tier model) approved for merge, #602 closed as duplicate (narrower 2-tier scope). Merge-ready PRs identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). Draft #567 not ready. Impact: reduces PR count from 10 to 7, eliminates file conflicts, preserves unique value. All other PRs (#611, #608, #592, #567) can proceed independently. Decisions merged to decisions.md and decisions inbox deleted.
 
 ## Learnings
+
+### PRD-120 Test Strategy Review (2026-06-25T14:30:00Z)
+
+**Context:** Flight requested FIDO test strategy review for PRD-120 (cron disable + CI gating + feature versioning). This is a three-phase feature affecting init/upgrade/schedule logic plus new CI gate workflow.
+
+**Assessment:** 🟡 **CONDITIONAL GO** — Architecture is sound; test strategy is CRITICAL prerequisite. Identified 5 medium-to-high-risk areas and ~80–100 missing tests across 8–10 test files.
+
+**Critical Findings:**
+
+1. **Cron Disable Tests (MEDIUM RISK):** No tests exist for:
+   - `schedule.json` template defaults (`enabled: false`)
+   - `squad schedule enable <id>` / `squad schedule enable --all` commands
+   - Upgrade schedule migration (YAML comment-insertion, .pre-upgrade backup)
+   - Upgrade idempotence (3x consecutive runs)
+   
+   **Gap:** All 4 acceptance criteria (FR-1.1 through FR-2.4) need dedicated test module.
+
+2. **CI Gate Tests (MEDIUM-HIGH RISK):** Zero coverage for:
+   - YAML schedule block detection (must avoid false positives: `# schedule:`, `"schedule": value`)
+   - Allowlist enforcement from `squad.config.ts`
+   - Error message format (file/line/doc link)
+   - Performance gate (<10 seconds)
+   
+   **Edge Case:** Detecting `schedule:` in YAML is HARD. Recommended: Use js-yaml parser, not regex, to avoid false positives on commented blocks and string literals.
+
+3. **Feature Flag Tests (MEDIUM RISK):** Missing:
+   - Config schema for `features: { cronSchedules: true/false }`
+   - Feature flag loading from `squad.config.ts`
+   - Deprecation warnings for deprecated features
+   - Feature flag override behavior (does it trump manifest setting? Needs spec)
+
+4. **Regression Risk (HIGH):** Existing tests could break:
+   - init.test.ts assumes schedule.json structure (now changed to all `enabled: false`)
+   - upgrade.test.ts assumes no schedule migration (new code path added)
+   - config-schema.test.ts must handle optional `features` field without breaking merge logic
+
+5. **E2E Coverage (CRITICAL):** No tests for full lifecycle:
+   - Fresh init → schedule defaults to disabled
+   - Upgrade v0.9→v0.10 → cron disabled, backup created, output formatted
+   - User runs `squad schedule enable` → costs warning, flag flipped
+   - CI gate blocks PR with unauthorized `schedule:` → error message clear
+
+**Test Matrix Recommendation:**
+| Area | Test Count | Risk | Owner |
+|------|-----------|------|-------|
+| Cron Disable (init/upgrade/enable) | 20–25 | MEDIUM | EECOM |
+| CI Gate (detect/allowlist/perf) | 15–20 | HIGH | Booster |
+| Feature Flags (config/deprecation/override) | 12–18 | MEDIUM | EECOM |
+| E2E Scenarios (full lifecycle) | 6–8 | CRITICAL | FIDO |
+| Regression Baseline (existing suite) | 1 | HIGH | FIDO |
+| **TOTAL** | **54–72** | | |
+
+**YAML Detection Risk:** Must use parser, not regex:
+```typescript
+// BAD: Regex catches comment
+const regex = /^\s*schedule:/m;
+regex.test('# schedule:') // ← FALSE POSITIVE
+
+// GOOD: YAML parser knows it's a comment
+const yaml = YAML.parse(content);
+yaml.on?.schedule // ← Correctly undefined for comments
+```
+
+**Verdict Conditions for Approval:**
+- ✅ Test strategy approved before coding starts
+- ✅ All MUST-HAVE tests implemented (20 core scenarios)
+- ✅ Regression baseline confirms zero new failures
+- ✅ E2E scenarios verified on test repos
+- ✅ Cron gate proven <10s on large repos
+- ✅ Feature flag spec clarified (flag vs. manifest precedence)
+
+**Blockers for Merge:**
+- ❌ Any MUST-HAVE test missing
+- ❌ Idempotence fails on 3rd run
+- ❌ Coverage drops below 80%
+- ❌ Backup file overwritten on 2nd upgrade
+
+**Recommendation:** Block code review until test infrastructure + YAML parser approach is committed. This PRD is too risky (user impact, cost bleedthrough) to ship without comprehensive test coverage first.
+
+**Decision:** Review written to `.squad/decisions/inbox/fido-prd120-review.md` (29KB). Awaiting Flight approval.
 
 ### Test Assertion Sync Discipline
 EXPECTED_* arrays in docs-build.test.ts must match filesystem reality. When PRs add new content files, verify the corresponding test arrays are updated. Consider dynamic discovery pattern (used for blog posts) for resilience against content additions. Stale assertions that block CI are FIDO's responsibility.

@@ -2,6 +2,8 @@
 
 > Standard Operating Procedures & Spec Writer
 
+📌 **Team update (2026-03-30T00:46:00Z — PRD-120 Template & Prompt Review Verdict: APPROVED WITH TIER 1 GUARDRAILS):** Procedures completed template, prompt, and workflow impact review for PRD-120. Verdict: **APPROVED WITH TIER 1 GUARDRAILS**. PRD technically sound and implementable within Procedures domain; correctly identifies prompt and template gaps; exposes three prompt architecture risks and one template sync risk. Tier 1 blockers for Flight (before implementation): (1) Define schedule.json template location (canonical path and sync destinations), (2) Confirm upgrade confirmation flow (prompt or auto-apply?), (3) Update sync-templates.mjs to include new templates. Key assessments: FR-1.2 schedule.json template missing baseline (no template exists yet), FR-1.1 remove schedule feasible (templates clean), FR-3.1 cron-gate.yml feasible (standard YAML), feature flag awareness requires minimal changes, current 5-copy sync pattern needs verification. Tier 2 (during implementation): FR-1.4 message in init, feature flag debug logging, deprecation spam mitigation, feature flag schema versioning. Full review filed at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/Procedures.md`. Decision merged to decisions.md.
+
 ## Learnings
 
 ### Issue Triage (2026-03-22T06:44:01Z)
@@ -195,4 +197,24 @@ Also updated: examples section (showing `name` + `description` pairs), anti-patt
 **Fix:** Used targeted `git rebase --onto dev <base>` to replay only the 2 actual PR commits (skipping accumulated dev merge noise). Rebase applied cleanly — one commit landed, one was auto-dropped as already upstream. After rebase, only `packages/squad-sdk/templates/squad.agent.md.template` and `templates/squad.agent.md.template` needed changes since the canonical and other copies already had the model updates from earlier merges.
 
 **Pattern:** When a PR branch has accumulated merge commits from dev, use `git rebase --onto dev <parent-of-first-PR-commit>` to cherry-pick only the relevant commits. This avoids conflict noise from old merge commits that are already in dev. Also: after template renames, the sync script may overwrite version stamps in the canonical file — revert those before pushing.
+
+### 2026-07: PRD-120 template and prompt impact review
+
+**Task:** Procedures reviewed Flight's PRD-120 (cron disable, CI gating, feature versioning) for template, init flow, upgrade flow, coordinator, and spawn template impacts.
+
+**Key findings:**
+1. **Templates:** Current workflow templates already lack `schedule:` blocks (defensive grep scan found zero). New templates needed: `schedule.json` (location undefined — Tier 1 blocker), `squad-cron-gate.yml` (straightforward addition). Template sync script must include new files.
+2. **Init flow:** No new interactive prompts required. Single advisory message (FR-1.4: "Scheduled triggers are disabled by default") belongs in CLI init output after SDK init completes.
+3. **Upgrade flow:** Clear report format specified (FR-2.3). Change manifest integration (FR-4.2) is well-designed. Decision needed: Should `squad upgrade` prompt for confirmation before disabling cron (Option A: silent + backup files; Option B: prompt + safety).
+4. **Coordinator:** Feature flag awareness requires one-line addition to squad.agent.md debug logging section. No new governance policies needed. Risk: Agent charters (Booster, PAO) may have cron-related assumptions — separate audit needed.
+5. **Spawn templates:** No spawn template changes needed. Cron gate is a workflow, not an agent spawn.
+
+**Critical blockers identified:**
+- schedule.json template location undefined (impacts sync strategy)
+- Upgrade confirmation flow unspecified (UX decision needed)
+- sync-templates.mjs must be updated for new templates
+
+**Approved verdict:** ✅ **APPROVED FOR IMPLEMENTATION — with Tier 1 guardrails.** Decision file written to `.squad/decisions/inbox/procedures-prd120-review.md` with detailed assessment, three critical issues, four prompt architecture concerns, and 10 implementation recommendations (Tier 1/2/3).
+
+**Handoff:** Ready for EECOM (runtime feasibility), Booster (CI gate), FIDO (test strategy), Surgeon (version management).
 

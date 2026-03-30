@@ -4,6 +4,19 @@
 
 ## Learnings
 
+📌 **Team update (2026-03-30T00:46:00Z — PRD-120 Distribution Review Verdict: APPROVED):** Network completed packaging, npm distribution, and zero-dependency principle review for PRD-120. Verdict: **APPROVED** — low-impact additive change; zero-dependency principle maintained; negligible package size increase. Key findings: PRD introduces 5–10 KB total bulk to npm packages (<1% size increase, negligible). New files in scope: `changes/` directory (markdown + YAML frontmatter, 1–2 KB total), updated templates (schedule.json + workflow comments, 5 lines), `schedulePolicy` config schema in squad.config.ts (type-only, no runtime impact). SDK package (`squad-sdk`): `changes/` directory added to `files` field in package.json (already includes `templates/`). CLI package (`squad-cli`): no new runtime dependencies; already includes `templates/` and `scripts/`. Bundle estimate: +5–10 KB total across both packages. No blocker concerns. Zero-dependency scaffolding preserved. Ready for packaging and distribution. Full review filed at `.squad/orchestration-log/2026-03-30T00-46-prd120-review/Network.md`. Decision merged to decisions.md.
+
+### PRD-120 Distribution Review: Feature Versioning + Cron System (2026-06-25)
+
+PRD-120 introduces behavioral change management via a `changes/` directory and cron schedule gating. From a packaging perspective: **low-impact, zero-dependency, distribution-clean.** Key findings:
+- Change manifests (markdown with YAML frontmatter) add ~5-10 KB total; negligible against package size.
+- Template distribution pattern unchanged; existing `sync-templates.mjs` handles new workflow/schedule template variations automatically.
+- Zero new npm dependencies maintained; all logic (feature flags, schedule migration, CI gate) uses built-in Node.js + shell commands.
+- Global install unaffected; schedule migration is explicit command (`squad upgrade`), not postinstall hook.
+- Cron gate workflow is optional (shipped as template, installed only via `--with-cron-gate` flag).
+- Marketplace and skill systems orthogonal; no collision.
+**Action:** Add `"changes"` to squad-sdk `files` array in package.json during implementation. Test `npm pack` includes both `dist/`, `templates/`, and new `changes/` directory.
+
 ### Template Placement Pattern (2026-03-15)
 
 Template placement: canonical skill source is `.squad/skills/`, copies to `packages/*/templates/skills/` for npm distribution. Root `templates/` is NOT used by SDK/CLI init code. The build process now auto-syncs from canonical to packages via `scripts/sync-skill-templates.mjs`, preventing divergence. Old locations (`templates/skills/distributed-mesh/`, `templates/mesh/`) removed — they were never referenced and contributed to maintenance burden.
