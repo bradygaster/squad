@@ -88,19 +88,35 @@ jobs:
 
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm install && break
+            if npm install; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm install failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm install failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Install docs dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
         working-directory: docs
 
       - name: Install Playwright browsers

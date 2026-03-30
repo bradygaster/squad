@@ -15,7 +15,6 @@ jobs:
   # Detects which areas of the repo changed so downstream jobs can skip
   # when their inputs haven't changed (e.g., skip docs-quality on code-only PRs).
   changes:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
@@ -27,10 +26,15 @@ jobs:
       - name: Detect changed paths
         id: filter
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          HEAD="${{ github.event.pull_request.head.sha }}"
-          CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
-          if echo "$CHANGED" | grep -qE '^(docs/|README\.md|\.markdownlint|\.cspell)'; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+            CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
+          else
+            # On push, compare against parent commit
+            CHANGED=$(git diff --name-only HEAD~1...HEAD 2>/dev/null || echo "docs/")
+          fi
+          if echo "$CHANGED" | grep -qE '^(docs/|README\.md|\.markdownlint|\.cspell|cspell\.json)'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
@@ -50,11 +54,19 @@ jobs:
 
       - name: Install docs tools
         run: |
+          success=false
           for i in 1 2 3; do
-            npm install --no-save markdownlint-cli2 cspell && break
+            if npm install --no-save markdownlint-cli2 cspell; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm install failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm install failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Lint docs markdown
         run: npx markdownlint-cli2
@@ -93,19 +105,35 @@ jobs:
 
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm install && break
+            if npm install; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm install failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm install failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Install docs dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
         working-directory: docs
 
       - name: Install Playwright browsers

@@ -25,11 +25,19 @@ jobs:
 
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Build
         run: npm run build
@@ -51,11 +59,19 @@ jobs:
 
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Run tests
         run: npm test
@@ -88,11 +104,19 @@ jobs:
 
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
 
       - name: Build packages
         run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build

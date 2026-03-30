@@ -89,11 +89,19 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
       - name: Build
         run: npm run build
         env:
@@ -119,6 +127,7 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
       - name: Validate npm token
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
@@ -141,11 +150,19 @@ jobs:
           echo "Publishing version: ${VERSION}"
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
       - name: Build squad-sdk
         run: npm -w packages/squad-sdk run build
       - name: Verify package version matches target
@@ -184,6 +201,7 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
       - name: Validate npm token
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
@@ -206,11 +224,19 @@ jobs:
           echo "Publishing version: ${VERSION}"
       - name: Install dependencies
         run: |
+          success=false
           for i in 1 2 3; do
-            npm ci && break
+            if npm ci; then
+              success=true
+              break
+            fi
             echo "Retry $i/3 — npm ci failed, retrying in 5s..."
             sleep 5
           done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
       - name: "Guard against file: dependencies"
         run: |
           SDK_DEP=$(node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']")
