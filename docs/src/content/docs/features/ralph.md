@@ -190,7 +190,11 @@ Ralph does **not** ask permission to continue — he keeps working. The only thi
 
 ## Watch Mode (`squad watch`)
 
-Ralph's in-session loop processes work while it exists, then idles. For **persistent polling** when you're away from the keyboard, run the `squad watch` command in a separate terminal:
+Ralph's in-session loop processes work while it exists, then idles. For **persistent polling** when you're away from the keyboard, run the `squad watch` command in a separate terminal.
+
+### Triage Mode (Default)
+
+Basic usage — triage only, no execution:
 
 ```bash
 squad watch                    # polls every 10 minutes (default)
@@ -204,12 +208,126 @@ This runs as a standalone local process (not inside Copilot) that:
 - Assigns @copilot to `squad:copilot` issues (if auto-assign is enabled)
 - Runs until Ctrl+C
 
+### Full Work Monitor Mode (`--execute`)
+
+Add `--execute` to transform Ralph from a triage bot into a full work monitor that spawns Copilot sessions and actually does the work:
+
+```bash
+squad watch --execute                           # basic work monitor
+squad watch --execute --interval 15             # check every 15 minutes
+squad watch --execute --max-concurrent 2        # work on 2 issues in parallel
+```
+
+When `--execute` is enabled, Ralph spawns Copilot CLI sessions for actionable issues (assigned to a squad member, not blocked, not already assigned to a human).
+
+**Example execution output:**
+
+```
+🔄 Ralph — Round 1
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🔴 Untriaged:         2
+  🟡 Assigned:          5
+  🚀 Executed:          3
+  
+▶ [14:23:10] Executing #42 "Fix auth redirect bug" → gh copilot --message "Work on issue #42..."
+✓ [14:25:43] #42 completed
+▶ [14:25:44] Executing #45 "Add retry logic" → gh copilot --message "Work on issue #45..."
+✓ [14:28:20] #45 completed
+```
+
+### All Watch Flags
+
+All new features are **opt-in** and disabled by default. Existing `squad watch` behavior is unchanged.
+
+#### Execution Control
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--execute` | Enable work execution (spawn Copilot to work on issues) | `squad watch --execute` |
+| `--max-concurrent N` | Max parallel issues per round (default: 1) | `squad watch --execute --max-concurrent 3` |
+| `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
+| `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-4"` |
+
+#### Issue Scanning
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--two-pass` | Lightweight list → hydrate actionable only (saves API quota) | `squad watch --two-pass` |
+| `--wave-dispatch` | Parallel sub-task execution within issues (dependency-aware) | `squad watch --execute --wave-dispatch` |
+
+#### Communication Bridges
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--monitor-teams` | Scan Teams for actionable messages each round (requires WorkIQ MCP) | `squad watch --monitor-teams` |
+| `--monitor-email` | Scan email for alerts and action items each round (requires WorkIQ MCP) | `squad watch --monitor-email` |
+
+#### Project Board Lifecycle
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--board` | Enable project board lifecycle (In Progress / Done / Blocked + reconciliation) | `squad watch --board` |
+| `--board-project N` | Project board number (default: 1) | `squad watch --board --board-project 2` |
+
+#### Housekeeping & Governance
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--retro` | Enforce retrospective checks (Fridays or when missed >7 days) | `squad watch --retro` |
+| `--decision-hygiene` | Auto-merge decision inbox when >5 files | `squad watch --decision-hygiene` |
+| `--channel-routing` | Route notifications to specific Teams channels (requires `.squad/teams-channels.json`) | `squad watch --channel-routing` |
+
+### Common Workflows
+
+**Basic triage + work execution:**
+```bash
+squad watch --execute --interval 10
+```
+
+**Full monitor with all features:**
+```bash
+squad watch --execute --board --two-pass --monitor-teams --retro --decision-hygiene --max-concurrent 2 --interval 15
+```
+
+**Cost-conscious (two-pass, lower concurrency):**
+```bash
+squad watch --execute --two-pass --max-concurrent 1 --timeout 20
+```
+
+**Teams + email bridge only (no issue execution):**
+```bash
+squad watch --monitor-teams --monitor-email --interval 5
+```
+
+### Round Cycle (Full Monitor)
+
+When all features are enabled, each round follows this cycle:
+
+1. **Self-pull**: `git fetch && git pull --ff-only` to stay current
+2. **Scan**: Fetch open issues (two-pass if enabled)
+3. **Triage**: Label untriaged issues based on routing rules
+4. **Execute**: Spawn Copilot sessions for actionable issues (wave dispatch if enabled)
+5. **Board**: Update project board status, reconcile mismatches
+6. **Monitor**: Scan Teams/email for new actionable items
+7. **Housekeep**: Check for retro, merge decision inbox if needed
+8. **Report**: Log round summary, sleep until next interval
+
+### Advanced: `--agent-cmd` (Hidden Flag)
+
+For advanced users who know what they're doing:
+
+```bash
+squad watch --execute --agent-cmd "custom-agent-wrapper"
+```
+
+This fully overrides the agent command. The default is `gh copilot --message "<prompt>"` plus any `--copilot-flags`. Use this to plug in custom agent wrappers or alternative Copilot entry points.
+
 ### Three layers of Ralph
 
 | Layer | When | How |
 |-------|------|-----|
 | **In-session** | You're at the keyboard | "Ralph, go" — active loop while work exists |
-| **Local watchdog** | You're away but machine is on | `squad watch --interval 10` |
+| **Local watchdog** | You're away but machine is on | `squad watch --interval 10` (triage) or `squad watch --execute` (full monitor) |
 | **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions events (issue close, PR merge, manual dispatch) |
 
 ## Ralph's Board View
