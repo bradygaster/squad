@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added — Full Work Monitor for squad watch (#708)
 - `--execute` flag spawns Copilot sessions to work on actionable issues autonomously
+- `--platform github|ado` flag for multi-platform support (auto-detects from git remote)
+- Azure DevOps support: WatchPlatform abstraction bridges ADO work items, tags, and PRs
 - `--monitor-teams` / `--monitor-email` scan Teams/email for actionable items via WorkIQ
 - `--board` enables project board lifecycle (In Progress → Done/Blocked + reconciliation)
 - `--two-pass` lightweight scan then hydrate only actionable issues (saves API quota)

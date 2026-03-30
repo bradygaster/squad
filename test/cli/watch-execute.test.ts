@@ -6,13 +6,13 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { buildAgentCommand, findExecutableIssues, reportBoard } from '../../packages/squad-cli/src/cli/commands/watch.js';
-import type { GhIssue } from '../../packages/squad-cli/src/cli/core/gh-cli.js';
+import { buildAgentCommand, findExecutableIssues, reportBoard, createWatchPlatform } from '../../packages/squad-cli/src/cli/commands/watch.js';
+import type { WatchWorkItem, WatchPlatform } from '../../packages/squad-cli/src/cli/commands/watch.js';
 
 describe('CLI: watch execute mode', () => {
   describe('buildAgentCommand', () => {
     it('builds default gh copilot command', async () => {
-            const issue: GhIssue = {
+            const issue: WatchWorkItem = {
         number: 42,
         title: 'Fix auth redirect bug',
         body: 'User auth redirects to wrong page',
@@ -31,7 +31,7 @@ describe('CLI: watch execute mode', () => {
     });
 
     it('passes through copilotFlags', async () => {
-            const issue: GhIssue = {
+            const issue: WatchWorkItem = {
         number: 45,
         title: 'Add retry logic',
         body: 'Add exponential backoff',
@@ -50,7 +50,7 @@ describe('CLI: watch execute mode', () => {
     });
 
     it('uses custom agentCmd when provided', async () => {
-            const issue: GhIssue = {
+            const issue: WatchWorkItem = {
         number: 50,
         title: 'Custom task',
         body: '',
@@ -75,7 +75,7 @@ describe('CLI: watch execute mode', () => {
         { name: 'EECOM', label: 'squad:eecom', expertise: [] },
         { name: 'GNC', label: 'squad:gnc', expertise: [] },
       ];
-      const issues: GhIssue[] = [
+      const issues: WatchWorkItem[] = [
         // Executable: has squad label, unassigned, not blocked
         {
           number: 1,
@@ -118,7 +118,7 @@ describe('CLI: watch execute mode', () => {
 
     it('filters by capabilities when provided', async () => {
             const roster = [{ name: 'EECOM', label: 'squad:eecom', expertise: [] }];
-      const issues: GhIssue[] = [
+      const issues: WatchWorkItem[] = [
         {
           number: 10,
           title: 'Task with needs',
@@ -189,6 +189,47 @@ describe('CLI: watch execute mode', () => {
       expect(logOutput).toContain('3');
 
       consoleLogSpy.mockRestore();
+    });
+  });
+
+  describe('createWatchPlatform', () => {
+    it('returns GitHub platform by default', () => {
+      const platform = createWatchPlatform({ intervalMinutes: 10 }, '/nonexistent/path');
+      // Default should be GitHub when no config or git remote is detectable
+      expect(platform).toBeDefined();
+      expect(typeof platform.listWorkItems).toBe('function');
+      expect(typeof platform.editWorkItem).toBe('function');
+      expect(typeof platform.listPullRequests).toBe('function');
+      expect(typeof platform.commentOnWorkItem).toBe('function');
+    });
+
+    it('returns GitHub platform when explicitly set', () => {
+      const platform = createWatchPlatform({ intervalMinutes: 10, platform: 'github' }, '/nonexistent/path');
+      expect(platform).toBeDefined();
+      expect(typeof platform.checkRateLimit).toBe('function');
+    });
+
+    it('throws for ADO when config is incomplete and no git remote', () => {
+      expect(() =>
+        createWatchPlatform({ intervalMinutes: 10, platform: 'ado' }, '/nonexistent/path'),
+      ).toThrow(/Azure DevOps configuration incomplete/);
+    });
+  });
+
+  describe('WatchPlatform interface', () => {
+    it('platform option defaults to undefined', () => {
+      const options = { intervalMinutes: 10 };
+      expect(options.platform).toBeUndefined();
+    });
+
+    it('platform option accepts github', () => {
+      const options = { intervalMinutes: 10, platform: 'github' as const };
+      expect(options.platform).toBe('github');
+    });
+
+    it('platform option accepts ado', () => {
+      const options = { intervalMinutes: 10, platform: 'ado' as const };
+      expect(options.platform).toBe('ado');
     });
   });
 });

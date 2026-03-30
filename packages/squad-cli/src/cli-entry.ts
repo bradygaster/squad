@@ -378,6 +378,11 @@ async function main(): Promise<void> {
     const decisionHygiene = args.includes('--decision-hygiene');
     const channelRouting = args.includes('--channel-routing');
 
+    const platformIdx = args.indexOf('--platform');
+    const platformArg = (platformIdx !== -1 && args[platformIdx + 1])
+      ? args[platformIdx + 1] as 'github' | 'ado'
+      : undefined;
+
     await runWatch(process.cwd(), {
       intervalMinutes,
       execute,
@@ -394,6 +399,7 @@ async function main(): Promise<void> {
       retro,
       decisionHygiene,
       channelRouting,
+      platform: platformArg,
     });
     return;
   }

@@ -247,6 +247,7 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--max-concurrent N` | Max parallel issues per round (default: 1) | `squad watch --execute --max-concurrent 3` |
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
 | `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-4"` |
+| `--platform github\|ado` | Target platform — auto-detected if omitted | `squad watch --platform ado` |
 
 #### Issue Scanning
 
@@ -321,6 +322,38 @@ squad watch --execute --agent-cmd "custom-agent-wrapper"
 ```
 
 This fully overrides the agent command. The default is `gh copilot --message "<prompt>"` plus any `--copilot-flags`. Use this to plug in custom agent wrappers or alternative Copilot entry points.
+
+### Azure DevOps Support
+
+Ralph supports Azure DevOps repos and work items via the `--platform ado` flag. When your git remote points to `dev.azure.com` or `visualstudio.com`, Ralph auto-detects ADO — no flag needed.
+
+**Setup:**
+
+1. Install Azure CLI: `az extension add --name azure-devops`
+2. Authenticate: `az login`
+3. Add ADO config to `.squad/config.json`:
+```json
+{
+  "platform": "ado",
+  "ado": {
+    "org": "YOUR_ORG",
+    "project": "YOUR_PROJECT"
+  }
+}
+```
+
+**Usage:**
+```bash
+squad watch --platform ado                  # explicit ADO mode
+squad watch                                 # auto-detects from git remote
+squad watch --platform ado --execute        # full work monitor on ADO
+```
+
+**Key differences from GitHub:**
+- ADO uses **tags** instead of labels — `squad:data` becomes a tag on the work item
+- ADO uses `az boards` CLI instead of `gh` — Ralph checks `az` availability
+- ADO rate limiting is handled differently — the circuit breaker skips quota checks
+- ADO PRs don't expose `statusCheckRollup` — CI status columns may be empty
 
 ### Three layers of Ralph
 
