@@ -3,7 +3,7 @@
  */
 
 import path from 'node:path';
-import { execFile, type ChildProcess } from 'node:child_process';
+import { execFile, execFileSync, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
@@ -522,11 +522,23 @@ async function updateBoard(
   const ts = new Date().toLocaleTimeString();
   const projectNum = options.projectNumber ?? 1;
   try {
+    // Resolve repo URL first (execFile doesn't expand shell substitutions)
+    let repoUrl: string;
+    try {
+      const repoName = execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], {
+        encoding: 'utf-8', timeout: 10_000,
+      }).trim();
+      repoUrl = `https://github.com/${repoName}/issues/${issueNumber}`;
+    } catch {
+      console.warn(`${YELLOW}⚠️${RESET} Could not resolve repo URL for board update`);
+      return;
+    }
+
     // Ensure the issue is on the project board
     await execFileAsync('gh', [
       'project', 'item-add', String(projectNum),
       '--owner', options.owner ?? '@me',
-      '--url', `https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/issues/${issueNumber}`,
+      '--url', repoUrl,
     ], { maxBuffer: 5 * 1024 * 1024 });
 
     // Map status to a field value — these are conventional defaults
@@ -695,16 +707,8 @@ async function twoPassScan(
   const ts = new Date().toLocaleTimeString();
   const memberLabels = new Set(roster.map(m => m.label));
 
-  // Pass 1: lightweight list (no body/comments)
-  const { stdout: pass1Json } = await execFileAsync('gh', [
-    'issue', 'list',
-    '--label', 'squad',
-    '--state', 'open',
-    '--json', 'number,title,labels,assignees',
-    '--limit', '200',
-  ], { maxBuffer: 10 * 1024 * 1024 });
-
-  const allIssues: GhIssue[] = JSON.parse(pass1Json);
+  // Pass 1: lightweight list using existing ghIssueList wrapper
+  const allIssues = await ghIssueList({ label: 'squad', state: 'open', limit: 200 });
   const total = allIssues.length;
 
   // Filter to actionable: has squad member label, unassigned, not blocked
