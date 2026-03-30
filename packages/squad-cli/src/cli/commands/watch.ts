@@ -388,9 +388,10 @@ export async function executeIssue(
       },
       (err, _stdout, stderr) => {
         if (err) {
-          const msg = (err as NodeJS.ErrnoException).killed
+          const execErr = err as Error & { killed?: boolean };
+          const msg = execErr.killed
             ? `Timed out after ${options.issueTimeoutMinutes ?? 30}m`
-            : (err as Error).message;
+            : execErr.message;
           console.error(`${RED}✗${RESET} [${new Date().toLocaleTimeString()}] #${issue.number} failed: ${msg}`);
           resolve({ success: false, error: msg });
         } else {
@@ -1064,9 +1065,10 @@ function spawnWithTimeout(
       { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
       (err) => {
         if (err) {
-          const msg = (err as NodeJS.ErrnoException).killed
+          const execErr = err as Error & { killed?: boolean };
+          const msg = execErr.killed
             ? `Timed out after ${Math.round(timeoutMs / 1000)}s`
-            : (err as Error).message;
+            : execErr.message;
           reject(new Error(msg));
         } else {
           resolve();

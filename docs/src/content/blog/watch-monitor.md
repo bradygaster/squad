@@ -96,7 +96,7 @@ When all features are enabled, each round follows this cycle:
    - Reconcile mismatches (closed issues not in Done, open issues in Done)
 6. **Monitor**: Scan Teams/email for new actionable items
    - Teams: query WorkIQ for action items, reviews, urgent requests
-   - Email: query for CI failures, Dependabot alerts, security vulns
+   - Email: query for CI failures, Dependabot alerts, security vulnerabilities
    - Create GitHub issues with bridge labels (`teams-bridge`, `email-bridge`)
 7. **Housekeep**: Governance checks
    - Retro: if it's Friday after 14:00 UTC or last retro was >7 days ago, spawn a retro session
