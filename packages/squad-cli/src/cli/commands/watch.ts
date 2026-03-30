@@ -4,9 +4,11 @@
 
 import path from 'node:path';
 import { execFile, type ChildProcess } from 'node:child_process';
+import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
+const execFileAsync = promisify(execFile);
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { fatal } from '../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../core/output.js';
@@ -29,7 +31,7 @@ import {
 /**
  * Options controlling the watch/triage loop.
  * When `execute` is false (default) the loop only triages — identical to
- * the original behaviour.
+ * the original behaviour.  All new opt-in features are disabled by default.
  */
 export interface WatchOptions {
   intervalMinutes: number;
@@ -39,6 +41,26 @@ export interface WatchOptions {
   agentCmd?: string;
   maxConcurrent?: number;
   issueTimeoutMinutes?: number;
+
+  // ── Opt-in feature flags (#708) ──────────────────────────────
+  /** Scan Teams for actionable messages each round (requires WorkIQ MCP). */
+  monitorTeams?: boolean;
+  /** Scan email for actionable items each round (requires WorkIQ MCP). */
+  monitorEmail?: boolean;
+  /** Enable project board lifecycle (In Progress / Done / Blocked + reconciliation). */
+  board?: boolean;
+  /** Project board number (default: 1). */
+  boardProject?: number;
+  /** Use two-pass scanning (lightweight list → hydrate actionable only). */
+  twoPass?: boolean;
+  /** Enable wave-based parallel sub-task dispatch within issues. */
+  waveDispatch?: boolean;
+  /** Enforce retrospective checks (on Fridays or when missed). */
+  retro?: boolean;
+  /** Auto-merge decision inbox when >5 files. */
+  decisionHygiene?: boolean;
+  /** Route notifications to specific Teams channels (requires .squad/teams-channels.json). */
+  channelRouting?: boolean;
 }
 
 /** Labels that indicate an issue is NOT ready for autonomous execution. */
@@ -427,6 +449,633 @@ export async function selfPull(teamRoot: string): Promise<void> {
   }
 }
 
+// ── Teams & Email Monitoring (#708) ──────────────────────────────
+
+/**
+ * Spawn a lightweight Copilot session to scan Teams messages via WorkIQ.
+ * Best-effort: logs a warning if WorkIQ is unavailable or the agent fails.
+ * @param teamRoot - Root directory of the squad project.
+ * @param options  - Watch options (used for --agent-cmd override).
+ */
+async function monitorTeams(teamRoot: string, options: WatchOptions): Promise<void> {
+  const ts = new Date().toLocaleTimeString();
+  try {
+    const prompt =
+      'Check Teams for actionable messages from the last 30 minutes. ' +
+      'Use workiq-ask_work_iq to query: "Teams messages in last 30 min mentioning action items, reviews, urgent requests". ' +
+      'For each actionable item found, create a GitHub issue with the label "teams-bridge". ' +
+      'First check existing open issues with label "teams-bridge" to avoid duplicates. ' +
+      'If WorkIQ is not available, just report that and exit.';
+
+    const { cmd, args } = buildAgentCommandFromPrompt(prompt, teamRoot, options);
+    await spawnWithTimeout(cmd, args, teamRoot, 60_000);
+    console.log(`${GREEN}✓${RESET} [${ts}] Teams monitor scan complete`);
+  } catch (e) {
+    const err = e as Error;
+    console.log(`${YELLOW}⚠${RESET} [${ts}] Teams monitor: ${err.message}`);
+  }
+}
+
+/**
+ * Spawn a lightweight Copilot session to scan email via WorkIQ.
+ * Includes GitHub alert email dedup (CI failures, Dependabot, security vulns).
+ * Best-effort: logs a warning if WorkIQ is unavailable.
+ * @param teamRoot - Root directory of the squad project.
+ * @param options  - Watch options (used for --agent-cmd override).
+ */
+async function monitorEmail(teamRoot: string, options: WatchOptions): Promise<void> {
+  const ts = new Date().toLocaleTimeString();
+  try {
+    const prompt =
+      'Check email for actionable items. Use workiq-ask_work_iq to query: ' +
+      '"Recent emails about CI failures, Dependabot alerts, security vulnerabilities, or review requests". ' +
+      'For CI failures: check if a GitHub issue with label "ci-alert" already exists for the same workflow in the last 24 hours — if so, skip. ' +
+      'For new alerts: create a GitHub issue with label "email-bridge". ' +
+      'If a failed workflow can be re-run, attempt: gh run rerun <run-id> --failed. ' +
+      'If WorkIQ is not available, just report that and exit.';
+
+    const { cmd, args } = buildAgentCommandFromPrompt(prompt, teamRoot, options);
+    await spawnWithTimeout(cmd, args, teamRoot, 60_000);
+    console.log(`${GREEN}✓${RESET} [${ts}] Email monitor scan complete`);
+  } catch (e) {
+    const err = e as Error;
+    console.log(`${YELLOW}⚠${RESET} [${ts}] Email monitor: ${err.message}`);
+  }
+}
+
+// ── Board Lifecycle (#708) ───────────────────────────────────────
+
+/**
+ * Move an issue to a status column on a GitHub Projects v2 board.
+ * Uses `gh project item-add` and `gh project item-edit` CLI commands.
+ * Best-effort — failures are logged, never thrown.
+ * @param issueNumber - The GitHub issue number.
+ * @param status      - Target status column.
+ * @param options     - Project number and owner overrides.
+ */
+async function updateBoard(
+  issueNumber: number,
+  status: 'in-progress' | 'done' | 'blocked' | 'todo',
+  options: { projectNumber?: number; owner?: string },
+): Promise<void> {
+  const ts = new Date().toLocaleTimeString();
+  const projectNum = options.projectNumber ?? 1;
+  try {
+    // Ensure the issue is on the project board
+    await execFileAsync('gh', [
+      'project', 'item-add', String(projectNum),
+      '--owner', options.owner ?? '@me',
+      '--url', `https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/issues/${issueNumber}`,
+    ], { maxBuffer: 5 * 1024 * 1024 });
+
+    // Map status to a field value — these are conventional defaults
+    const statusMap: Record<string, string> = {
+      'todo': 'Todo',
+      'in-progress': 'In Progress',
+      'done': 'Done',
+      'blocked': 'Blocked',
+    };
+    const statusValue = statusMap[status] ?? 'Todo';
+
+    // Get the item ID so we can edit it
+    const { stdout: itemsJson } = await execFileAsync('gh', [
+      'project', 'item-list', String(projectNum),
+      '--owner', options.owner ?? '@me',
+      '--format', 'json',
+      '--limit', '300',
+    ], { maxBuffer: 10 * 1024 * 1024 });
+
+    const items = JSON.parse(itemsJson) as { items?: Array<{ id: string; content?: { number?: number } }> };
+    const item = items.items?.find(i => i.content?.number === issueNumber);
+    if (!item) {
+      console.log(`${DIM}[${ts}] Board: issue #${issueNumber} not found on project ${projectNum}${RESET}`);
+      return;
+    }
+
+    await execFileAsync('gh', [
+      'project', 'item-edit',
+      '--project-id', String(projectNum),
+      '--id', item.id,
+      '--field-id', 'Status',
+      '--single-select-option-id', statusValue,
+    ], { maxBuffer: 5 * 1024 * 1024 });
+
+    console.log(`${DIM}[${ts}] Board: #${issueNumber} → ${statusValue}${RESET}`);
+  } catch (e) {
+    const err = e as Error;
+    console.log(`${YELLOW}⚠${RESET} [${ts}] Board update #${issueNumber}: ${err.message}`);
+  }
+}
+
+/**
+ * Reconcile the project board: move closed issues to Done, open issues out of Done.
+ * Runs every round when --board is enabled. Best-effort.
+ * @param options - Project number override.
+ */
+async function reconcileBoard(
+  options: { projectNumber?: number },
+): Promise<void> {
+  const ts = new Date().toLocaleTimeString();
+  const projectNum = options.projectNumber ?? 1;
+  try {
+    const { stdout: itemsJson } = await execFileAsync('gh', [
+      'project', 'item-list', String(projectNum),
+      '--owner', '@me',
+      '--format', 'json',
+      '--limit', '300',
+    ], { maxBuffer: 10 * 1024 * 1024 });
+
+    const items = JSON.parse(itemsJson) as {
+      items?: Array<{
+        id: string;
+        status?: string;
+        content?: { number?: number; type?: string; state?: string };
+      }>;
+    };
+    if (!items.items?.length) return;
+
+    let mismatches = 0;
+    for (const item of items.items) {
+      if (!item.content?.number || item.content.type !== 'Issue') continue;
+      const isClosed = item.content.state === 'CLOSED';
+      const isDone = item.status?.toLowerCase() === 'done';
+
+      if (isClosed && !isDone) {
+        // Closed issue not in Done → move to Done
+        mismatches++;
+        console.log(`${DIM}[${ts}] Reconcile: #${item.content.number} closed but not Done — moving${RESET}`);
+      } else if (!isClosed && isDone) {
+        // Open issue in Done → move to Todo
+        mismatches++;
+        console.log(`${DIM}[${ts}] Reconcile: #${item.content.number} open but in Done — moving to Todo${RESET}`);
+      }
+    }
+
+    if (mismatches > 0) {
+      console.log(`${DIM}[${ts}] Board reconciliation: ${mismatches} mismatch(es) detected${RESET}`);
+    }
+  } catch (e) {
+    const err = e as Error;
+    console.log(`${YELLOW}⚠${RESET} [${ts}] Board reconciliation: ${err.message}`);
+  }
+}
+
+/**
+ * Archive issues that have been in Done for >3 days by closing them
+ * with a summary comment.  Best-effort.
+ * @param options - Project number override.
+ */
+async function archiveDoneItems(
+  options: { projectNumber?: number },
+): Promise<void> {
+  const ts = new Date().toLocaleTimeString();
+  const projectNum = options.projectNumber ?? 1;
+  const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+  try {
+    const { stdout: itemsJson } = await execFileAsync('gh', [
+      'project', 'item-list', String(projectNum),
+      '--owner', '@me',
+      '--format', 'json',
+      '--limit', '300',
+    ], { maxBuffer: 10 * 1024 * 1024 });
+
+    const items = JSON.parse(itemsJson) as {
+      items?: Array<{
+        id: string;
+        status?: string;
+        updatedAt?: string;
+        content?: { number?: number; type?: string; state?: string };
+      }>;
+    };
+    if (!items.items?.length) return;
+
+    for (const item of items.items) {
+      if (!item.content?.number || item.content.type !== 'Issue') continue;
+      if (item.status?.toLowerCase() !== 'done') continue;
+      if (item.content.state === 'CLOSED') continue;
+
+      const updatedAt = item.updatedAt ? new Date(item.updatedAt).getTime() : Date.now();
+      if (Date.now() - updatedAt < threeDaysMs) continue;
+
+      // Close with summary comment
+      try {
+        await new Promise<void>((resolve, reject) => {
+          execFile(
+            'gh',
+            ['issue', 'close', String(item.content!.number!), '--comment', '🤖 Ralph: Auto-closing — issue has been in Done for >3 days.'],
+            { maxBuffer: 5 * 1024 * 1024 },
+            (err) => (err ? reject(err) : resolve()),
+          );
+        });
+        console.log(`${DIM}[${ts}] Archived: #${item.content.number} (Done >3 days)${RESET}`);
+      } catch {
+        // best-effort
+      }
+    }
+  } catch (e) {
+    const err = e as Error;
+    console.log(`${YELLOW}⚠${RESET} [${ts}] Archive done items: ${err.message}`);
+  }
+}
+
+// ── Two-Pass Scanning (#708) ─────────────────────────────────────
+
+/**
+ * Two-pass issue scanning: lightweight list first, then hydrate only
+ * actionable issues.  Returns hydrated issues plus scan statistics.
+ * @param roster       - Parsed team roster.
+ * @param capabilities - Machine capabilities for filtering.
+ * @returns Actionable issues and scan stats.
+ */
+async function twoPassScan(
+  roster: ReturnType<typeof parseRoster>,
+  capabilities: MachineCapabilities | null,
+): Promise<{ issues: GhIssue[]; stats: { total: number; actionable: number } }> {
+  const ts = new Date().toLocaleTimeString();
+  const memberLabels = new Set(roster.map(m => m.label));
+
+  // Pass 1: lightweight list (no body/comments)
+  const { stdout: pass1Json } = await execFileAsync('gh', [
+    'issue', 'list',
+    '--label', 'squad',
+    '--state', 'open',
+    '--json', 'number,title,labels,assignees',
+    '--limit', '200',
+  ], { maxBuffer: 10 * 1024 * 1024 });
+
+  const allIssues: GhIssue[] = JSON.parse(pass1Json);
+  const total = allIssues.length;
+
+  // Filter to actionable: has squad member label, unassigned, not blocked
+  const actionableShallow = allIssues.filter(issue => {
+    const labels = issue.labels.map(l => l.name);
+    if (!labels.some(l => memberLabels.has(l))) return false;
+    if (issue.assignees && issue.assignees.length > 0) return false;
+    if (labels.some(l => BLOCKED_LABELS.has(l))) return false;
+    return true;
+  });
+
+  // Filter by capabilities if available
+  let toHydrate = actionableShallow;
+  if (capabilities) {
+    const { filterByCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
+    const { handled } = filterByCapabilities(actionableShallow, capabilities);
+    toHydrate = handled;
+  }
+
+  // Pass 2: hydrate actionable issues (fetch body + comments)
+  const hydrated: GhIssue[] = [];
+  for (const issue of toHydrate) {
+    try {
+      const { stdout: detailJson } = await execFileAsync('gh', [
+        'issue', 'view', String(issue.number),
+        '--json', 'number,title,body,labels,assignees',
+      ], { maxBuffer: 5 * 1024 * 1024 });
+      hydrated.push(JSON.parse(detailJson));
+    } catch {
+      // If hydration fails, use the shallow version
+      hydrated.push(issue);
+    }
+  }
+
+  console.log(`${DIM}[${ts}] Two-pass: ${total} total → ${hydrated.length} actionable (hydrated)${RESET}`);
+  return { issues: hydrated, stats: { total, actionable: hydrated.length } };
+}
+
+// ── Wave Dispatch (#708) ─────────────────────────────────────────
+
+/** Parsed sub-task with optional dependency annotation. */
+interface SubTask {
+  description: string;
+  dependsOn: string[];
+}
+
+/**
+ * Parse sub-tasks from an issue body. Looks for task-list items with
+ * optional `depends_on:` annotations in parentheses.
+ * @param body - Issue body markdown.
+ * @returns Array of parsed sub-tasks.
+ */
+function parseSubTasks(body: string | undefined): SubTask[] {
+  if (!body) return [];
+  const lines = body.split('\n');
+  const tasks: SubTask[] = [];
+
+  for (const line of lines) {
+    const match = line.match(/^[-*]\s+\[[ x]?\]\s+(.+)/i);
+    if (!match) continue;
+
+    let description = match[1]!.trim();
+    let dependsOn: string[] = [];
+
+    // Check for depends_on annotation: (depends_on: task1, task2)
+    const depMatch = description.match(/\(depends_on:\s*([^)]+)\)/i);
+    if (depMatch) {
+      dependsOn = depMatch[1]!.split(',').map(d => d.trim()).filter(Boolean);
+      description = description.replace(depMatch[0], '').trim();
+    }
+
+    tasks.push({ description, dependsOn });
+  }
+
+  return tasks;
+}
+
+/**
+ * Execute issues using wave-based parallel dispatch.  Sub-tasks within
+ * an issue body are grouped by dependency and run in waves (Wave 1 in
+ * parallel, then Wave 2, etc.).  Falls back to regular sequential
+ * execution if no sub-tasks are found.
+ * @param issues   - Issues to execute.
+ * @param teamRoot - Root directory of the squad project.
+ * @param options  - Watch options.
+ * @returns Execution results.
+ */
+async function waveDispatch(
+  issues: GhIssue[],
+  teamRoot: string,
+  options: WatchOptions,
+): Promise<{ executed: number; failed: number }> {
+  const ts = new Date().toLocaleTimeString();
+  let executed = 0;
+  let failed = 0;
+
+  for (const issue of issues) {
+    const subTasks = parseSubTasks(issue.body);
+
+    if (subTasks.length === 0) {
+      // No sub-tasks — fallback to normal execution
+      const result = await executeIssue(issue, teamRoot, options);
+      if (result.success) executed++;
+      else failed++;
+      continue;
+    }
+
+    // Build dependency waves
+    const completed = new Set<string>();
+    const remaining = new Map(subTasks.map((t, i) => [`task-${i}`, t]));
+    let waveNum = 0;
+
+    while (remaining.size > 0) {
+      waveNum++;
+      const wave: Array<[string, SubTask]> = [];
+
+      for (const [id, task] of remaining) {
+        const depsReady = task.dependsOn.every(dep => completed.has(dep));
+        if (depsReady) wave.push([id, task]);
+      }
+
+      if (wave.length === 0) {
+        // Circular dependency or unresolvable — execute remaining sequentially
+        console.log(`${YELLOW}⚠${RESET} [${ts}] #${issue.number}: unresolvable deps, falling back to sequential`);
+        for (const [id] of remaining) {
+          completed.add(id);
+        }
+        const result = await executeIssue(issue, teamRoot, options);
+        if (result.success) executed++;
+        else failed++;
+        break;
+      }
+
+      console.log(`${DIM}[${ts}] #${issue.number} Wave ${waveNum}: ${wave.length} task(s)${RESET}`);
+
+      // Execute wave in parallel (bounded by maxConcurrent)
+      const maxParallel = options.maxConcurrent ?? 1;
+      for (let i = 0; i < wave.length; i += maxParallel) {
+        const batch = wave.slice(i, i + maxParallel);
+        const results = await Promise.all(
+          batch.map(([, task]) => {
+            // Create a synthetic issue per sub-task for dispatch
+            const syntheticIssue: GhIssue = {
+              ...issue,
+              title: `${issue.title} — ${task.description}`,
+            };
+            return executeIssue(syntheticIssue, teamRoot, options);
+          }),
+        );
+        for (const r of results) {
+          if (r.success) executed++;
+          else failed++;
+        }
+      }
+
+      for (const [id] of wave) {
+        completed.add(id);
+        remaining.delete(id);
+      }
+    }
+  }
+
+  console.log(`${DIM}[${ts}] Wave dispatch: ${executed} succeeded, ${failed} failed${RESET}`);
+  return { executed, failed };
+}
+
+// ── Retrospective & Housekeeping (#708) ──────────────────────────
+
+/**
+ * Check if a retrospective is due (Fridays after 14:00 UTC or if the
+ * last retro was >7 days ago).  Spawns a Copilot session to run it.
+ * Best-effort: never blocks the round.
+ * @param teamRoot - Root directory of the squad project.
+ * @param options  - Watch options (used for --agent-cmd override).
+ */
+async function checkRetro(teamRoot: string, options: WatchOptions): Promise<void> {
+  const ts = new Date().toLocaleTimeString();
+  try {
+    const now = new Date();
+    const isFriday = now.getUTCDay() === 5;
+    const isAfternoon = now.getUTCHours() >= 14;
+
+    // Check last retro timestamp
+    const logDir = path.join(teamRoot, '.squad', 'log');
+    let lastRetroAge = Infinity;
+    try {
+      const files = storage.listSync?.(logDir) ?? [];
+      const retroFiles = (Array.isArray(files) ? files : [])
+        .filter((f: string) => f.includes('retrospective'));
+      if (retroFiles.length > 0) {
+        // Sort descending to find newest
+        retroFiles.sort().reverse();
+        const newest = retroFiles[0]!;
+        // Extract timestamp from filename pattern: YYYY-MM-DD-...-retrospective.md
+        const dateMatch = newest.match(/(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          const retroDate = new Date(dateMatch[1]!);
+          lastRetroAge = now.getTime() - retroDate.getTime();
+        }
+      }
+    } catch {
+      // No log dir or files — treat as never done
+    }
+
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const isDue = (isFriday && isAfternoon) || lastRetroAge > sevenDaysMs;
+
+    if (!isDue) return;
+
+    const dateSlug = now.toISOString().slice(0, 10);
+    const prompt =
+      `Run a sprint retrospective for the squad. ` +
+      `Review recent GitHub activity (issues closed, PRs merged, CI status). ` +
+      `Summarize: what went well, what didn't, action items. ` +
+      `Write the output to .squad/log/${dateSlug}-retrospective.md`;
+
+    const { cmd, args } = buildAgentCommandFromPrompt(prompt, teamRoot, options);
+    await spawnWithTimeout(cmd, args, teamRoot, 120_000);
+    console.log(`${GREEN}✓${RESET} [${ts}] Retrospective completed`);
+  } catch (e) {
+    const err = e as Error;
+    console.log(`${YELLOW}⚠${RESET} [${ts}] Retrospective: ${err.message}`);
+  }
+}
+
+/**
+ * Merge decision inbox files when >5 accumulate.  Spawns Scribe to
+ * consolidate into decisions.md.  Best-effort.
+ * @param teamRoot - Root directory of the squad project.
+ * @param options  - Watch options (used for --agent-cmd override).
+ */
+async function cleanDecisionInbox(teamRoot: string, options: WatchOptions): Promise<void> {
+  const ts = new Date().toLocaleTimeString();
+  try {
+    const inboxDir = path.join(teamRoot, '.squad', 'decisions', 'inbox');
+    if (!storage.existsSync(inboxDir)) return;
+
+    let fileCount = 0;
+    try {
+      const files = storage.listSync?.(inboxDir) ?? [];
+      fileCount = Array.isArray(files) ? files.filter((f: string) => f.endsWith('.md')).length : 0;
+    } catch {
+      return;
+    }
+
+    if (fileCount <= 5) return;
+
+    console.log(`${DIM}[${ts}] Decision inbox has ${fileCount} files — merging${RESET}`);
+    const prompt =
+      `Merge the decision inbox files in .squad/decisions/inbox/ into .squad/decisions.md. ` +
+      `Append each decision as a new section. After merging, delete the inbox files.`;
+
+    const { cmd, args } = buildAgentCommandFromPrompt(prompt, teamRoot, options);
+    await spawnWithTimeout(cmd, args, teamRoot, 60_000);
+    console.log(`${GREEN}✓${RESET} [${ts}] Decision inbox merged`);
+  } catch (e) {
+    const err = e as Error;
+    console.log(`${YELLOW}⚠${RESET} [${ts}] Decision hygiene: ${err.message}`);
+  }
+}
+
+// ── SubSquad Discovery (#708) ────────────────────────────────────
+
+/** Discovered subsquad metadata. */
+interface SubSquad {
+  name: string;
+  dir: string;
+  labels: string[];
+}
+
+/**
+ * Discover subsquads under .squad/subsquads/.  Returns an empty array
+ * if no subsquads exist — never throws.
+ * @param teamRoot - Root directory of the squad project.
+ * @returns Array of discovered subsquads.
+ */
+function discoverSubSquads(teamRoot: string): SubSquad[] {
+  const subsquadDir = path.join(teamRoot, '.squad', 'subsquads');
+  if (!storage.existsSync(subsquadDir)) return [];
+
+  try {
+    const entries = storage.listSync?.(subsquadDir) ?? [];
+    const dirs = Array.isArray(entries) ? entries : [];
+    const squads: SubSquad[] = [];
+
+    for (const entry of dirs) {
+      const entryPath = path.join(subsquadDir, entry);
+      const teamMdPath = path.join(entryPath, 'team.md');
+      if (!storage.existsSync(teamMdPath)) continue;
+
+      // Extract scope labels from routing.md if present
+      const routingPath = path.join(entryPath, 'routing.md');
+      let labels: string[] = [];
+      if (storage.existsSync(routingPath)) {
+        try {
+          const content = storage.readSync(routingPath) ?? '';
+          // Look for labels in a "Scope" section or label references
+          const labelMatches = content.match(/label[s]?:\s*([^\n]+)/gi);
+          if (labelMatches) {
+            labels = labelMatches
+              .flatMap((m: string) => m.replace(/labels?:\s*/i, '').split(','))
+              .map((l: string) => l.trim())
+              .filter(Boolean);
+          }
+        } catch {
+          // best-effort
+        }
+      }
+
+      squads.push({ name: entry, dir: entryPath, labels });
+    }
+
+    return squads;
+  } catch {
+    return [];
+  }
+}
+
+// ── Shared Helpers (#708) ────────────────────────────────────────
+
+/**
+ * Build agent command from an arbitrary prompt string (for monitoring,
+ * retro, and other spawned sessions).  Respects --agent-cmd.
+ */
+function buildAgentCommandFromPrompt(
+  prompt: string,
+  _teamRoot: string,
+  options: WatchOptions,
+): { cmd: string; args: string[] } {
+  if (options.agentCmd) {
+    const parts = options.agentCmd.trim().split(/\s+/);
+    const cmd = parts[0]!;
+    const args = [...parts.slice(1), '--message', prompt];
+    return { cmd, args };
+  }
+
+  const args = ['copilot', '--message', prompt];
+  if (options.copilotFlags) {
+    args.push(...options.copilotFlags.trim().split(/\s+/));
+  }
+  return { cmd: 'gh', args };
+}
+
+/**
+ * Spawn a child process with a timeout.  Returns a promise that
+ * resolves on success or rejects on failure/timeout.
+ */
+function spawnWithTimeout(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    execFile(
+      cmd,
+      args,
+      { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
+      (err) => {
+        if (err) {
+          const msg = (err as NodeJS.ErrnoException).killed
+            ? `Timed out after ${Math.round(timeoutMs / 1000)}s`
+            : (err as Error).message;
+          reject(new Error(msg));
+        } else {
+          resolve();
+        }
+      },
+    );
+  });
+}
+
 // ── Circuit Breaker State (#515) ─────────────────────────────────
 // Persisted to .squad/ralph-circuit-breaker.json across restarts.
 
@@ -554,6 +1203,19 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
   if (options.execute) {
     console.log(`${DIM}Max concurrent: ${options.maxConcurrent ?? 1} | Timeout: ${options.issueTimeoutMinutes ?? 30}m${RESET}`);
   }
+  // Print active opt-in features
+  const activeFeatures: string[] = [];
+  if (options.monitorTeams) activeFeatures.push('Teams');
+  if (options.monitorEmail) activeFeatures.push('Email');
+  if (options.board) activeFeatures.push(`Board(#${options.boardProject ?? 1})`);
+  if (options.twoPass) activeFeatures.push('TwoPass');
+  if (options.waveDispatch) activeFeatures.push('WaveDispatch');
+  if (options.retro) activeFeatures.push('Retro');
+  if (options.decisionHygiene) activeFeatures.push('DecisionHygiene');
+  if (options.channelRouting) activeFeatures.push('ChannelRouting');
+  if (activeFeatures.length > 0) {
+    console.log(`${DIM}Opt-in: ${activeFeatures.join(', ')}${RESET}`);
+  }
   console.log();
   
   // Initialize circuit breaker (#515)
@@ -613,21 +1275,72 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
       await selfPull(teamRoot);
     }
 
-    // ── Delegate to existing check cycle (untouched) ────────────
-    round++;
-    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities);
-
-    // ── Execute mode: find and work on eligible issues ──────────
-    if (options.execute) {
-      const allIssues = await ghIssueList({ label: 'squad', state: 'open', limit: 50 });
-      const executable = findExecutableIssues(roster, capabilities, allIssues);
-      const batch = executable.slice(0, options.maxConcurrent ?? 1);
-
-      const results = await Promise.all(
-        batch.map(issue => executeIssue(issue, teamRoot, options)),
-      );
-      roundState.executed = results.filter(r => r.success).length;
+    // ── SubSquad discovery (best-effort, informational) ──────────
+    const subSquads = discoverSubSquads(teamRoot);
+    if (subSquads.length > 0 && round === 1) {
+      console.log(`${DIM}📂 Discovered ${subSquads.length} subsquad(s): ${subSquads.map(s => s.name).join(', ')}${RESET}`);
     }
+
+    // ── Scanning ─────────────────────────────────────────────────
+    round++;
+    let roundState: BoardState;
+
+    if (options.twoPass) {
+      const { issues, stats } = await twoPassScan(roster, capabilities);
+      console.log(`${DIM}[two-pass] ${stats.total} total, ${stats.actionable} actionable${RESET}`);
+      // Run the standard check for triage (labels, PRs), then overlay execution
+      roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities);
+
+      // Execute mode with two-pass results
+      if (options.execute && issues.length > 0) {
+        const executable = findExecutableIssues(roster, capabilities, issues);
+        const batch = executable.slice(0, options.maxConcurrent ?? 1);
+
+        if (options.waveDispatch) {
+          const results = await waveDispatch(batch, teamRoot, options);
+          roundState.executed = results.executed;
+        } else {
+          const results = await Promise.all(
+            batch.map(issue => executeIssue(issue, teamRoot, options)),
+          );
+          roundState.executed = results.filter(r => r.success).length;
+        }
+      }
+    } else {
+      // ── Delegate to existing check cycle (untouched) ──────────
+      roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities);
+
+      // ── Execute mode: find and work on eligible issues ────────
+      if (options.execute) {
+        const allIssues = await ghIssueList({ label: 'squad', state: 'open', limit: 50 });
+        const executable = findExecutableIssues(roster, capabilities, allIssues);
+        const batch = executable.slice(0, options.maxConcurrent ?? 1);
+
+        if (options.waveDispatch) {
+          const results = await waveDispatch(batch, teamRoot, options);
+          roundState.executed = results.executed;
+        } else {
+          const results = await Promise.all(
+            batch.map(issue => executeIssue(issue, teamRoot, options)),
+          );
+          roundState.executed = results.filter(r => r.success).length;
+        }
+      }
+    }
+
+    // ── Board lifecycle (opt-in) ─────────────────────────────────
+    if (options.board) {
+      await reconcileBoard({ projectNumber: options.boardProject });
+      await archiveDoneItems({ projectNumber: options.boardProject });
+    }
+
+    // ── Monitoring (opt-in) ──────────────────────────────────────
+    if (options.monitorTeams) await monitorTeams(teamRoot, options);
+    if (options.monitorEmail) await monitorEmail(teamRoot, options);
+
+    // ── Housekeeping (opt-in) ────────────────────────────────────
+    if (options.retro) await checkRetro(teamRoot, options);
+    if (options.decisionHygiene) await cleanDecisionInbox(teamRoot, options);
 
     await eventBus.emit({
       type: 'agent:milestone',

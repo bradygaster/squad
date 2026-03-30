@@ -165,6 +165,15 @@ async function main(): Promise<void> {
     console.log(`                    --copilot-flags "..." (extra copilot CLI flags)`);
     console.log(`                    --max-concurrent N (parallel issue limit, default 1)`);
     console.log(`                    --timeout N (max minutes per issue, default 30)`);
+    console.log(`                    --monitor-teams (scan Teams for actionable messages)`);
+    console.log(`                    --monitor-email (scan email for actionable items)`);
+    console.log(`                    --board (enable project board lifecycle)`);
+    console.log(`                    --board-project N (project number, default 1)`);
+    console.log(`                    --two-pass (lightweight list then hydrate actionable)`);
+    console.log(`                    --wave-dispatch (wave-based parallel sub-task dispatch)`);
+    console.log(`                    --retro (enforce retrospective checks)`);
+    console.log(`                    --decision-hygiene (auto-merge decision inbox)`);
+    console.log(`                    --channel-routing (route to Teams channels)`);
     console.log(`  ${BOLD}loop${RESET}       Continuous work loop (Ralph mode)`);
     console.log(`             Usage: loop [--filter <label>] [--interval <minutes>]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
@@ -353,6 +362,22 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : 30;
 
+    // Opt-in feature flags (#708)
+    const monitorTeams = args.includes('--monitor-teams');
+    const monitorEmail = args.includes('--monitor-email');
+    const board = args.includes('--board');
+
+    const boardProjectIdx = args.indexOf('--board-project');
+    const boardProject = (boardProjectIdx !== -1 && args[boardProjectIdx + 1])
+      ? parseInt(args[boardProjectIdx + 1]!, 10)
+      : 1;
+
+    const twoPass = args.includes('--two-pass');
+    const waveDispatchFlag = args.includes('--wave-dispatch');
+    const retro = args.includes('--retro');
+    const decisionHygiene = args.includes('--decision-hygiene');
+    const channelRouting = args.includes('--channel-routing');
+
     await runWatch(process.cwd(), {
       intervalMinutes,
       execute,
@@ -360,6 +385,15 @@ async function main(): Promise<void> {
       agentCmd,
       maxConcurrent,
       issueTimeoutMinutes,
+      monitorTeams,
+      monitorEmail,
+      board,
+      boardProject,
+      twoPass,
+      waveDispatch: waveDispatchFlag,
+      retro,
+      decisionHygiene,
+      channelRouting,
     });
     return;
   }
