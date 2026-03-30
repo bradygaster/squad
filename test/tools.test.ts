@@ -379,7 +379,7 @@ Initial session entry.
   });
 
   it('should create section if it does not exist', async () => {
-    // Create a history file without Sessions section
+    // Create a history file without Context section (sessions maps to Context via SECTION_MAP)
     const agentDir = path.join(testRoot, 'agents', 'brady');
     fs.mkdirSync(agentDir, { recursive: true });
     fs.writeFileSync(path.join(agentDir, 'history.md'), '# Brady History\n\n## Learnings\n', 'utf-8');
@@ -406,7 +406,7 @@ Initial session entry.
     const historyFile = path.join(testRoot, 'agents', 'brady', 'history.md');
     const content = fs.readFileSync(historyFile, 'utf-8');
     
-    expect(content).toContain('## Sessions');
+    expect(content).toContain('## Context');
     expect(content).toContain('Session on M1-1 implementation');
   });
 

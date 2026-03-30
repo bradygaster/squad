@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — StorageProvider Abstraction Layer
+- **StorageProvider interface** (#640) — pluggable I/O contract decoupling the runtime from `node:fs`
+- **FSStorageProvider** (#640) — Node.js `fs` wrapper, default provider for CLI and local workflows
+- **InMemoryStorageProvider** (#640) — Map-backed, test-friendly provider for deterministic unit tests
+- **SQLiteStorageProvider** (#640) — portable single-file provider using WASM-based sql.js
+- **StorageError** (#640) — typed error handling with `operation` and `code` fields for structured diagnostics
+- **24-method async + sync API** (#640) — full file-system surface (read, write, list, mkdir, stat, etc.); sync variants deprecated, Wave 2 removal
+- **Contract test suite** (#640) — provider conformance tests ensuring all implementations satisfy the StorageProvider interface
+- **Sample projects** (#640) — `storage-provider-azure` and `storage-provider-sqlite` in `samples/`
+
 ## [0.9.0] - 2026-03-23
 
 ### Added — Personal Squad Governance Layer

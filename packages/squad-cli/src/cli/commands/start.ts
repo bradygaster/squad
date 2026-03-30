@@ -10,9 +10,12 @@
  */
 
 import path from 'node:path';
-import fs from 'node:fs';
+// createReadStream retained — streaming not in StorageProvider scope
+import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { RemoteBridge } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, RemoteBridge } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import type { RemoteBridgeConfig } from '@bradygaster/squad-sdk';
 import {
   isDevtunnelAvailable,
@@ -38,9 +41,9 @@ export interface StartOptions {
 export async function runStart(cwd: string, options: StartOptions): Promise<void> {
   const { repo, branch } = getGitInfo(cwd);
   const machine = getMachineId();
-  const squadDir = fs.existsSync(path.join(cwd, '.squad'))
+  const squadDir = storage.existsSync(path.join(cwd, '.squad'))
     ? path.join(cwd, '.squad')
-    : fs.existsSync(path.join(cwd, '.ai-team'))
+    : storage.existsSync(path.join(cwd, '.ai-team'))
       ? path.join(cwd, '.ai-team')
       : '';
 
@@ -69,13 +72,13 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     let filePath = path.resolve(uiDir, decodedUrl === '/' ? 'index.html' : decodedUrl.replace(/^\//, ''));
     if (!filePath.startsWith(uiDir)) { res.writeHead(403); res.end(); return; }
     try {
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) {
+      const stat = storage.statSync(filePath);
+      if (stat?.isDirectory) {
         filePath = path.join(filePath, 'index.html');
-        if (!fs.existsSync(filePath)) { res.writeHead(404); res.end(); return; }
-      }
+        if (!storage.existsSync(filePath)) { res.writeHead(404); res.end(); return; }
+      } else if (!stat) { res.writeHead(404); res.end(); return; }
     } catch { res.writeHead(404); res.end(); return; }
-    const servePath = fs.existsSync(filePath) ? filePath : path.join(uiDir, 'index.html');
+    const servePath = storage.existsSync(filePath) ? filePath : path.join(uiDir, 'index.html');
     const ext = path.extname(servePath);
     const mimes: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json' };
     const headers: Record<string, string> = {
@@ -87,7 +90,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net";
     }
     res.writeHead(200, headers);
-    const stream = fs.createReadStream(servePath);
+    const stream = createReadStream(servePath);
     stream.on('error', () => { if (!res.headersSent) { res.writeHead(500); } res.end(); });
     stream.pipe(res);
   });
@@ -125,7 +128,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     'C:', 'ProgramData', 'global-npm', 'node_modules', '@github', 'copilot',
     'node_modules', '@github', 'copilot-win32-x64', 'copilot.exe'
   );
-  const defaultCmd = fs.existsSync(copilotExePath) ? copilotExePath : 'copilot';
+  const defaultCmd = storage.existsSync(copilotExePath) ? copilotExePath : 'copilot';
   const copilotCmd = options.command || defaultCmd;
 
   const cols = process.stdout.columns || 120;
@@ -218,7 +221,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       // Only log, do NOT write raw input to PTY
       const auditPath = bridge?.getAuditLogPath();
       if (auditPath) {
-        fs.appendFileSync(auditPath, `${new Date().toISOString()} [remote] [RAW] ${JSON.stringify(msg)}\n`);
+        storage.appendSync(auditPath, `${new Date().toISOString()} [remote] [RAW] ${JSON.stringify(msg)}\n`);
       }
     }
   });

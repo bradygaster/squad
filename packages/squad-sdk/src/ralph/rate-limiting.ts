@@ -9,9 +9,10 @@
  * @see https://github.com/bradygaster/squad/issues/515
  */
 
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 import os from 'node:os';
 
 /** A rate limit sample from API response headers */
@@ -196,9 +197,9 @@ export async function loadRatePool(teamRoot?: string): Promise<RatePool | null> 
   candidates.push(path.join(os.homedir(), '.squad', 'rate-pool.json'));
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (storage.existsSync(candidate)) {
       try {
-        const raw = await readFile(candidate, 'utf8');
+        const raw = await storage.read(candidate) ?? '';
         return JSON.parse(raw) as RatePool;
       } catch {
         // Malformed — skip

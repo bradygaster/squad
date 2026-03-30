@@ -6,10 +6,11 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { safeTimestamp } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, safeTimestamp } from '@bradygaster/squad-sdk';
 import type { ShellMessage } from './types.js';
+
+const storage = new FSStorageProvider();
 
 /** Serialisable session envelope persisted to disk. */
 export interface SessionData {
@@ -36,8 +37,8 @@ function sessionsDir(teamRoot: string): string {
 }
 
 function ensureDir(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
+  if (!storage.existsSync(dir)) {
+    storage.mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -70,7 +71,7 @@ export function saveSession(teamRoot: string, session: SessionData): string {
   const existing = findSessionFile(dir, session.id);
   const filePath = existing ?? join(dir, `${safeTimestamp()}_${session.id}.json`);
 
-  writeFileSync(filePath, JSON.stringify(session, null, 2), 'utf-8');
+  storage.writeSync(filePath, JSON.stringify(session, null, 2));
   return filePath;
 }
 
@@ -79,15 +80,16 @@ export function saveSession(teamRoot: string, session: SessionData): string {
  */
 export function listSessions(teamRoot: string): SessionSummary[] {
   const dir = sessionsDir(teamRoot);
-  if (!existsSync(dir)) return [];
+  if (!storage.existsSync(dir)) return [];
 
-  const files = readdirSync(dir).filter(f => f.endsWith('.json'));
+  const files = storage.listSync(dir).filter(f => f.endsWith('.json'));
   const summaries: SessionSummary[] = [];
 
   for (const file of files) {
     try {
       const filePath = join(dir, file);
-      const raw = readFileSync(filePath, 'utf-8');
+      const raw = storage.readSync(filePath);
+      if (raw === undefined) continue;
       const data = JSON.parse(raw) as SessionData;
       summaries.push({
         id: data.id,
@@ -126,13 +128,14 @@ export function loadLatestSession(teamRoot: string): SessionData | null {
  */
 export function loadSessionById(teamRoot: string, sessionId: string): SessionData | null {
   const dir = sessionsDir(teamRoot);
-  if (!existsSync(dir)) return null;
+  if (!storage.existsSync(dir)) return null;
 
   const filePath = findSessionFile(dir, sessionId);
   if (!filePath) return null;
 
   try {
-    const raw = readFileSync(filePath, 'utf-8');
+    const raw = storage.readSync(filePath);
+    if (raw === undefined) return null;
     const data = JSON.parse(raw) as SessionData;
     // Rehydrate Date objects on messages
     data.messages = data.messages.map(m => ({
@@ -150,7 +153,7 @@ export function loadSessionById(teamRoot: string, sessionId: string): SessionDat
 // ---------------------------------------------------------------------------
 
 function findSessionFile(dir: string, sessionId: string): string | null {
-  const files = readdirSync(dir);
+  const files = storage.listSync(dir);
   const match = files.find(f => f.includes(sessionId) && f.endsWith('.json'));
   return match ? join(dir, match) : null;
 }

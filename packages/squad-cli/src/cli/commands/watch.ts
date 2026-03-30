@@ -2,8 +2,10 @@
  * Watch command — Ralph's standalone polling process
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { fatal } from '../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../core/output.js';
@@ -275,14 +277,16 @@ function defaultCBState(): CircuitBreakerState {
 function loadCBState(squadDir: string): CircuitBreakerState {
   const filePath = path.join(squadDir, 'ralph-circuit-breaker.json');
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const raw = storage.readSync(filePath);
+    if (!raw) return defaultCBState();
+    return JSON.parse(raw);
   } catch {
     return defaultCBState();
   }
 }
 
 function saveCBState(squadDir: string, state: CircuitBreakerState): void {
-  fs.writeFileSync(
+  storage.writeSync(
     path.join(squadDir, 'ralph-circuit-breaker.json'),
     JSON.stringify(state, null, 2),
   );
@@ -302,7 +306,7 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   const teamMd = path.join(squadDirInfo.path, 'team.md');
   const routingMdPath = path.join(squadDirInfo.path, 'routing.md');
   
-  if (!fs.existsSync(teamMd)) {
+  if (!storage.existsSync(teamMd)) {
     fatal('No squad found — run init first.');
   }
   
@@ -318,9 +322,9 @@ export async function runWatch(dest: string, intervalMinutes: number): Promise<v
   }
   
   // Parse team.md
-  const content = fs.readFileSync(teamMd, 'utf8');
+  const content = storage.readSync(teamMd) ?? '';
   const roster = parseRoster(content);
-  const routingContent = fs.existsSync(routingMdPath) ? fs.readFileSync(routingMdPath, 'utf8') : '';
+  const routingContent = storage.existsSync(routingMdPath) ? (storage.readSync(routingMdPath) ?? '') : '';
   const rules = parseRoutingRules(routingContent);
   const modules = parseModuleOwnership(routingContent);
   

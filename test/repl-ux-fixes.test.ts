@@ -152,22 +152,22 @@ describe('#597 — Coordinator prompt guards against missing team', () => {
   beforeEach(() => { tmpRoot = makeTmpRoot(); });
   afterEach(() => { rmSync(tmpRoot, { recursive: true, force: true }); });
 
-  it('prompt includes "squad init" guidance when team.md is missing', () => {
+  it('prompt includes "squad init" guidance when team.md is missing', async () => {
     const config: CoordinatorConfig = {
       teamRoot: tmpRoot,
       teamPath: join(tmpRoot, '.squad', 'team.md'),
     };
-    const prompt = buildCoordinatorPrompt(config);
+    const prompt = await buildCoordinatorPrompt(config);
     expect(prompt).toContain('squad init');
   });
 
-  it('prompt includes "squad init" when routing.md is also missing', () => {
+  it('prompt includes "squad init" when routing.md is also missing', async () => {
     const config: CoordinatorConfig = {
       teamRoot: tmpRoot,
       routingPath: join(tmpRoot, '.squad', 'routing.md'),
       teamPath: join(tmpRoot, '.squad', 'team.md'),
     };
-    const prompt = buildCoordinatorPrompt(config);
+    const prompt = await buildCoordinatorPrompt(config);
     // Both missing — prompt should mention squad init for both
     expect(prompt).toContain('squad init');
     // Team fallback text varies — may be "NO TEAM CONFIGURED" or "No team.md found"
@@ -175,12 +175,12 @@ describe('#597 — Coordinator prompt guards against missing team', () => {
     expect(prompt).toContain('No routing.md found');
   });
 
-  it('does NOT include generic assistant behavior when team is missing', () => {
+  it('does NOT include generic assistant behavior when team is missing', async () => {
     const config: CoordinatorConfig = {
       teamRoot: tmpRoot,
       teamPath: join(tmpRoot, '.squad', 'team.md'),
     };
-    const prompt = buildCoordinatorPrompt(config);
+    const prompt = await buildCoordinatorPrompt(config);
     // The prompt should still be the coordinator prompt, not a generic "I'm an assistant" fallback
     expect(prompt).toContain('Squad Coordinator');
     expect(prompt).toContain('route');
@@ -188,7 +188,7 @@ describe('#597 — Coordinator prompt guards against missing team', () => {
     expect(prompt).not.toContain('I am a helpful');
   });
 
-  it('loads team.md content when file exists', () => {
+  it('loads team.md content when file exists', async () => {
     writeTeamMd(tmpRoot);
     writeRoutingMd(tmpRoot);
     const config: CoordinatorConfig = {
@@ -196,7 +196,7 @@ describe('#597 — Coordinator prompt guards against missing team', () => {
       teamPath: join(tmpRoot, '.squad', 'team.md'),
       routingPath: join(tmpRoot, '.squad', 'routing.md'),
     };
-    const prompt = buildCoordinatorPrompt(config);
+    const prompt = await buildCoordinatorPrompt(config);
     expect(prompt).toContain('Fenster');
     expect(prompt).toContain('Core Dev');
     expect(prompt).not.toContain('No team.md found');
@@ -912,12 +912,12 @@ describe('Round 2 REPL UX fixes', () => {
       expect(guidanceText).toContain('/init');
     });
 
-    it('coordinator prompt shows squad init guidance when team.md missing', () => {
+    it('coordinator prompt shows squad init guidance when team.md missing', async () => {
       const config: CoordinatorConfig = {
         teamRoot: tmpRoot,
         teamPath: join(tmpRoot, '.squad', 'team.md'),
       };
-      const prompt = buildCoordinatorPrompt(config);
+      const prompt = await buildCoordinatorPrompt(config);
       expect(prompt).toContain('squad init');
       expect(prompt).toContain('/init');
     });

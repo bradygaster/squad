@@ -3,8 +3,10 @@
  * Exports Squad configuration as a portable bundle.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { join, basename, relative } from 'node:path';
+
+const storage = new FSStorageProvider();
 
 export interface ExportOptions {
   includeHistory?: boolean;
@@ -75,20 +77,20 @@ export function anonymizeContent(content: string): string {
 
 function readTeamConfig(projectDir: string): Record<string, unknown> {
   const teamFile = join(projectDir, '.ai-team', 'team.md');
-  if (existsSync(teamFile)) {
-    return { teamFile: readFileSync(teamFile, 'utf-8') };
+  if (storage.existsSync(teamFile)) {
+    return { teamFile: storage.readSync(teamFile) ?? '' };
   }
   return {};
 }
 
 function readAgents(projectDir: string): AgentCharter[] {
   const agentsDir = join(projectDir, '.github', 'agents');
-  if (!existsSync(agentsDir)) return [];
+  if (!storage.existsSync(agentsDir)) return [];
 
-  return readdirSync(agentsDir)
-    .filter(f => f.endsWith('.md'))
-    .map(f => {
-      const content = readFileSync(join(agentsDir, f), 'utf-8');
+  return storage.listSync(agentsDir)
+    .filter((f: string) => f.endsWith('.md'))
+    .map((f: string) => {
+      const content = storage.readSync(join(agentsDir, f)) ?? '';
       const name = basename(f, '.md').replace('.agent', '');
       return { name, role: name, content };
     });
@@ -96,9 +98,9 @@ function readAgents(projectDir: string): AgentCharter[] {
 
 function readRoutingRules(projectDir: string): ExportRoutingRule[] {
   const routingFile = join(projectDir, '.ai-team', 'routing.md');
-  if (!existsSync(routingFile)) return [];
+  if (!storage.existsSync(routingFile)) return [];
 
-  const content = readFileSync(routingFile, 'utf-8');
+  const content = storage.readSync(routingFile) ?? '';
   const rules: ExportRoutingRule[] = [];
   const lines = content.split('\n');
   for (const line of lines) {
@@ -132,16 +134,15 @@ export function exportSquadConfig(projectDir: string, options?: ExportOptions): 
       { dir: join(projectDir, '.squad', 'skills'), layout: 'nested' as const },
       { dir: join(projectDir, '.ai-team', 'skills'), layout: 'flat' as const },
     ];
-    const source = skillSources.find(({ dir }) => existsSync(dir));
+    const source = skillSources.find(({ dir }) => storage.existsSync(dir));
     if (source) {
       if (source.layout === 'nested') {
-        const skillDirs = readdirSync(source.dir, { withFileTypes: true })
-          .filter(entry => entry.isDirectory() && existsSync(join(source.dir, entry.name, 'SKILL.md')))
-          .map(entry => entry.name);
+        const skillDirs = storage.listSync(source.dir)
+          .filter((entry: string) => storage.isDirectorySync(join(source.dir, entry)) && storage.existsSync(join(source.dir, entry, 'SKILL.md')));
         skills.push(...skillDirs);
       } else {
-        const skillFiles = readdirSync(source.dir).filter(f => f.endsWith('.md'));
-        skills.push(...skillFiles.map(f => basename(f, '.md')));
+        const skillFiles = storage.listSync(source.dir).filter((f: string) => f.endsWith('.md'));
+        skills.push(...skillFiles.map((f: string) => basename(f, '.md')));
       }
     }
   }

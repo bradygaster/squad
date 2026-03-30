@@ -11,9 +11,10 @@
  *   - Custom providers via ScheduleProvider interface
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Schedule Schema Types
@@ -239,7 +240,7 @@ function validateEntry(entry: unknown, index: number, seenIds: Set<string>): voi
 export async function parseSchedule(filePath: string): Promise<ScheduleManifest> {
   let raw: string;
   try {
-    raw = await readFile(filePath, 'utf8');
+    raw = await storage.read(filePath) ?? '';
   } catch (err) {
     throw new ScheduleValidationError(
       `Cannot read schedule file: ${filePath} — ${(err as Error).message}`,
@@ -400,7 +401,7 @@ export async function executeTask(
  */
 export async function loadState(statePath: string): Promise<ScheduleState> {
   try {
-    const raw = await readFile(statePath, 'utf8');
+    const raw = await storage.read(statePath) ?? '';
     return JSON.parse(raw) as ScheduleState;
   } catch {
     return { runs: {} };
@@ -411,7 +412,7 @@ export async function loadState(statePath: string): Promise<ScheduleState> {
  * Save schedule state to disk.
  */
 export async function saveState(statePath: string, state: ScheduleState): Promise<void> {
-  await writeFile(statePath, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  await storage.write(statePath, JSON.stringify(state, null, 2) + '\n');
 }
 
 // ============================================================================
@@ -521,10 +522,10 @@ export class GitHubActionsProvider implements ScheduleProvider {
       ].join('\n') + '\n';
 
       const dir = path.dirname(workflowPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+      if (!storage.existsSync(dir)) {
+        storage.mkdirSync(dir, { recursive: true });
       }
-      fs.writeFileSync(workflowPath, yaml, 'utf8');
+      storage.writeSync(workflowPath, yaml);
       generated.push(workflowPath);
     }
 

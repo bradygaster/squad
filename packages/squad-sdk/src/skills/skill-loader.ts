@@ -16,8 +16,10 @@
  * ```
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 import { normalizeEol } from '../utils/normalize-eol.js';
 
 // --- Types ---
@@ -88,25 +90,25 @@ export function parseFrontmatter(
  * Malformed or missing files are silently skipped.
  */
 export function loadSkillsFromDirectory(dir: string): SkillDefinition[] {
-  if (!fs.existsSync(dir)) return [];
+  if (!storage.existsSync(dir)) return [];
 
   const skills: SkillDefinition[] = [];
-  let entries: fs.Dirent[];
+  let entries: string[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = storage.listSync(dir);
   } catch {
     return [];
   }
 
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+  for (const entryName of entries) {
+    if (!storage.isDirectorySync(path.join(dir, entryName))) continue;
 
-    const skillFile = path.join(dir, entry.name, 'SKILL.md');
-    if (!fs.existsSync(skillFile)) continue;
+    const skillFile = path.join(dir, entryName, 'SKILL.md');
+    if (!storage.existsSync(skillFile)) continue;
 
     try {
-      const raw = fs.readFileSync(skillFile, 'utf-8');
-      const skill = parseSkillFile(entry.name, raw);
+      const raw = storage.readSync(skillFile) ?? '';
+      const skill = parseSkillFile(entryName, raw);
       if (skill) skills.push(skill);
     } catch {
       // Malformed file — skip gracefully

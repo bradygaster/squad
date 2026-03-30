@@ -79,6 +79,7 @@ const EXPECTED_FEATURES = [
   'reviewer-protocol',
   'routing',
   'skills',
+  'storage-provider',
   'squad-rc',
   'streams',
   'team-setup',

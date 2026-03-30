@@ -7,13 +7,15 @@
  * @module cli/commands/consult
  */
 
-import { existsSync, readFileSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import {
   setupConsultMode,
   isConsultMode,
   PersonalSquadNotFoundError,
+  FSStorageProvider,
 } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { fatal } from '../core/errors.js';
 
 /**
@@ -29,11 +31,14 @@ export async function runConsult(cwd: string, args: string[]): Promise<void> {
 
   // --status: show current consult mode status (query only, no setup)
   if (showStatus) {
-    if (existsSync(squadDir)) {
+    if (storage.existsSync(squadDir)) {
       try {
-        const config = JSON.parse(
-          readFileSync(resolve(squadDir, 'config.json'), 'utf-8'),
-        );
+        const raw = storage.readSync(resolve(squadDir, 'config.json'));
+        if (!raw) {
+          console.log('ℹ️  Project has .squad/ but config is invalid');
+          return;
+        }
+        const config = JSON.parse(raw);
         if (isConsultMode(config)) {
           console.log('✅ Consult mode active');
           console.log(`   Team root: ${config.teamRoot ?? config.sourceSquad}`);

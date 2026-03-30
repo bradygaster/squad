@@ -3,9 +3,11 @@
  * Issue #108 (M4-8)
  */
 
-import * as fs from 'node:fs';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import * as path from 'node:path';
 import type { MarketplaceManifest } from './index.js';
+
+const storage = new FSStorageProvider();
 
 // --- PackageResult ---
 
@@ -37,18 +39,18 @@ export function packageForMarketplace(
   const warnings: string[] = [];
   const files: string[] = [];
 
-  if (!fs.existsSync(projectDir)) {
+  if (!storage.existsSync(projectDir)) {
     throw new Error(`Project directory not found: ${projectDir}`);
   }
 
   // Write manifest.json
   const manifestPath = path.join(projectDir, 'manifest.json');
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+  storage.writeSync(manifestPath, JSON.stringify(manifest, null, 2));
   files.push('manifest.json');
 
   // Collect README
   const readmePath = path.join(projectDir, 'README.md');
-  if (fs.existsSync(readmePath)) {
+  if (storage.existsSync(readmePath)) {
     files.push('README.md');
   } else {
     warnings.push('README.md not found — marketplace listings require a README');
@@ -56,7 +58,7 @@ export function packageForMarketplace(
 
   // Collect icon
   const iconPath = path.join(projectDir, manifest.icon);
-  if (fs.existsSync(iconPath)) {
+  if (storage.existsSync(iconPath)) {
     files.push(manifest.icon);
   } else {
     warnings.push(`Icon file not found: ${manifest.icon}`);
@@ -64,7 +66,7 @@ export function packageForMarketplace(
 
   // Collect dist/
   const distDir = path.join(projectDir, 'dist');
-  if (fs.existsSync(distDir) && fs.statSync(distDir).isDirectory()) {
+  if (storage.existsSync(distDir) && storage.isDirectorySync(distDir)) {
     const distFiles = collectFiles(distDir, 'dist');
     files.push(...distFiles);
   } else {
@@ -75,8 +77,9 @@ export function packageForMarketplace(
   let totalSize = 0;
   for (const file of files) {
     const fullPath = path.join(projectDir, file);
-    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
-      totalSize += fs.statSync(fullPath).size;
+    const st = storage.statSync(fullPath);
+    if (st && !st.isDirectory) {
+      totalSize += st.size;
     }
   }
 
@@ -97,7 +100,7 @@ export function validatePackageContents(packagePath: string): MarketplacePackage
   const errors: string[] = [];
   const missingFiles: string[] = [];
 
-  if (!fs.existsSync(packagePath)) {
+  if (!storage.existsSync(packagePath)) {
     return {
       valid: false,
       errors: [`Package path not found: ${packagePath}`],
@@ -107,7 +110,7 @@ export function validatePackageContents(packagePath: string): MarketplacePackage
 
   for (const file of REQUIRED_FILES) {
     const filePath = path.join(packagePath, file);
-    if (!fs.existsSync(filePath)) {
+    if (!storage.existsSync(filePath)) {
       missingFiles.push(file);
       errors.push(`Required file missing: ${file}`);
     }
@@ -115,7 +118,7 @@ export function validatePackageContents(packagePath: string): MarketplacePackage
 
   // Check dist/ directory exists
   const distDir = path.join(packagePath, 'dist');
-  if (!fs.existsSync(distDir) || !fs.statSync(distDir).isDirectory()) {
+  if (!storage.existsSync(distDir) || !storage.isDirectorySync(distDir)) {
     missingFiles.push('dist/');
     errors.push('Required directory missing: dist/');
   }
@@ -123,7 +126,7 @@ export function validatePackageContents(packagePath: string): MarketplacePackage
   // Check icon — look for any common image file
   const iconCandidates = ['icon.png', 'icon.svg', 'icon.jpg'];
   const hasIcon = iconCandidates.some((ic) =>
-    fs.existsSync(path.join(packagePath, ic)),
+    storage.existsSync(path.join(packagePath, ic)),
   );
   if (!hasIcon) {
     missingFiles.push('icon');
@@ -141,11 +144,11 @@ export function validatePackageContents(packagePath: string): MarketplacePackage
 
 function collectFiles(dir: string, prefix: string): string[] {
   const results: string[] = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const entries = storage.listSync(dir);
   for (const entry of entries) {
-    const rel = path.join(prefix, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...collectFiles(path.join(dir, entry.name), rel));
+    const rel = path.join(prefix, entry);
+    if (storage.isDirectorySync(path.join(dir, entry))) {
+      results.push(...collectFiles(path.join(dir, entry), rel));
     } else {
       results.push(rel);
     }

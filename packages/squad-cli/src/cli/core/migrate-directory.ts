@@ -3,11 +3,13 @@
  * @module cli/core/migrate-directory
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success, warn, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { scrubEmails } from './email-scrub.js';
+
+const storage = new FSStorageProvider();
 
 /**
  * Migrate .ai-team/ directory to .squad/
@@ -18,38 +20,38 @@ export async function migrateDirectory(dest: string): Promise<void> {
   const aiTeamDir = path.join(dest, '.ai-team');
   const squadDir = path.join(dest, '.squad');
   
-  if (!fs.existsSync(aiTeamDir)) {
+  if (!storage.existsSync(aiTeamDir)) {
     fatal('No .ai-team/ directory found — nothing to migrate.');
   }
   
-  if (fs.existsSync(squadDir)) {
+  if (storage.existsSync(squadDir)) {
     fatal('.squad/ directory already exists — migration appears to be complete.');
   }
   
   dim('Migrating .ai-team/ → .squad/...');
   
   // Rename directory
-  fs.renameSync(aiTeamDir, squadDir);
+  storage.renameSync(aiTeamDir, squadDir);
   success('Renamed .ai-team/ → .squad/');
   
   // Update .gitattributes
   const gitattributes = path.join(dest, '.gitattributes');
-  if (fs.existsSync(gitattributes)) {
-    let content = fs.readFileSync(gitattributes, 'utf8');
+  if (storage.existsSync(gitattributes)) {
+    let content = storage.readSync(gitattributes) ?? '';
     const updated = content.replace(/\.ai-team\//g, '.squad/');
     if (content !== updated) {
-      fs.writeFileSync(gitattributes, updated);
+      storage.writeSync(gitattributes, updated);
       success('Updated .gitattributes');
     }
   }
   
   // Update .gitignore
   const gitignore = path.join(dest, '.gitignore');
-  if (fs.existsSync(gitignore)) {
-    let content = fs.readFileSync(gitignore, 'utf8');
+  if (storage.existsSync(gitignore)) {
+    let content = storage.readSync(gitignore) ?? '';
     const updated = content.replace(/\.ai-team\//g, '.squad/');
     if (content !== updated) {
-      fs.writeFileSync(gitignore, updated);
+      storage.writeSync(gitignore, updated);
       success('Updated .gitignore');
     }
   }
@@ -66,9 +68,9 @@ export async function migrateDirectory(dest: string): Promise<void> {
   // Rename .ai-team-templates/ if it exists
   const aiTeamTemplatesDir = path.join(dest, '.ai-team-templates');
   const squadTemplatesDir = path.join(dest, '.squad', 'templates');
-  if (fs.existsSync(aiTeamTemplatesDir)) {
-    fs.mkdirSync(path.join(dest, '.squad'), { recursive: true });
-    fs.renameSync(aiTeamTemplatesDir, squadTemplatesDir);
+  if (storage.existsSync(aiTeamTemplatesDir)) {
+    storage.mkdirSync(path.join(dest, '.squad'), { recursive: true });
+    storage.renameSync(aiTeamTemplatesDir, squadTemplatesDir);
     success('Renamed .ai-team-templates/ → .squad/templates/');
   }
   
