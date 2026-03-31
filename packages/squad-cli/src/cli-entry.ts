@@ -383,6 +383,19 @@ async function main(): Promise<void> {
         : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
     }
 
+    // Detect positional args that look like agent messages (user may expect routing)
+    const flagArgValues = new Set(
+      ([intervalIdx, copilotFlagsIdx, agentCmdIdx, maxConcurrentIdx, timeoutIdx, boardProjectIdx] as number[])
+        .filter(i => i !== -1 && args[i + 1])
+        .map(i => args[i + 1]!)
+    );
+    const unknownPositionals = args.filter(a => a !== cmd && !a.startsWith('--') && !flagArgValues.has(a));
+    if (unknownPositionals.length > 0) {
+      const message = unknownPositionals.join(' ');
+      console.warn(`\n⚠️  Watch mode does not route messages to agents. Ignoring: "${message}"`);
+      console.warn(`   To address an agent directly, use an interactive session instead.\n`);
+    }
+
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(process.cwd(), {
       interval,

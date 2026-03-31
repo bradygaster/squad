@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+
 ### Added — Full Work Monitor for squad watch (#708)
 - `--execute` flag spawns Copilot sessions to work on actionable issues autonomously
 - Multi-platform support — auto-detects GitHub vs Azure DevOps from git remote URL
@@ -29,6 +30,12 @@ All notable changes to this project will be documented in this file.
 - **24-method async + sync API** (#640) — full file-system surface (read, write, list, mkdir, stat, etc.); sync variants deprecated, Wave 2 removal
 - **Contract test suite** (#640) — provider conformance tests ensuring all implementations satisfy the StorageProvider interface
 - **Sample projects** (#640) — `storage-provider-azure` and `storage-provider-sqlite` in `samples/`
+
+### Fixed — squad watch ignores extra arguments silently (#703)
+- `squad watch` (and `squad triage`) now warns when extra arguments are passed instead of silently ignoring them — users see: `⚠️  Watch mode does not route messages to agents. Ignoring: "..."`
+- Documentation in `ralph.md` and `cli.md` clarifies that `squad watch` is a polling loop, not a message router — create a `squad:{agent}` issue label to route work to a specific agent
+
+
 
 ## [0.9.0] - 2026-03-23
 

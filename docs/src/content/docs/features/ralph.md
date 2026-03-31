@@ -208,6 +208,23 @@ This runs as a standalone local process (not inside Copilot) that:
 - Assigns @copilot to `squad:copilot` issues (if auto-assign is enabled)
 - Runs until Ctrl+C
 
+
+:::caution[Watch mode does not route messages]
+`squad watch` is a **triage polling loop**, not a message router. Extra arguments like agent names or messages are ignored:
+
+```bash
+# ❌ This does NOT route to Nick — the message is ignored
+squad watch --interval 5 "Nick, Run scheduled tasks"
+
+# ✅ To address an agent directly, use an interactive session:
+squad
+> Nick, Run scheduled tasks
+```
+
+To route work to a specific agent, create a GitHub issue with the appropriate `squad:{member}` label — `squad watch` will pick it up during the next poll cycle.
+:::
+
+
 ### Full Work Monitor Mode (`--execute`)
 
 Add `--execute` to transform Ralph from a triage bot into a full work monitor that spawns Copilot sessions and actually does the work:
@@ -352,6 +369,7 @@ squad watch --execute                       # full work monitor (auto-detects pl
 - ADO uses `az boards` CLI instead of `gh` — Ralph checks `az` availability
 - ADO rate limiting is handled differently — the circuit breaker skips quota checks
 - ADO PRs don't expose `statusCheckRollup` — CI status columns may be empty
+
 
 ### Three layers of Ralph
 
