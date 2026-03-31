@@ -84,6 +84,11 @@ All notable changes to this project will be documented in this file.
 - **ESLint with TypeScript support** (#493) — static analysis for common runtime anti-patterns
 - **Integration** — available in CLI pre-flight checks
 
+### Fixed — CLI node-pty Validation
+- **squad start --tunnel** (#711) — validates node-pty availability before creating RemoteBridge or tunnel, preventing terminal corruption when package is missing
+- Graceful error message guides users to install node-pty when required
+- Includes smoke test coverage for node-pty failure scenarios
+
 ### Fixed — CLI Terminal Rendering
 - Eliminated scroll-to-top flicker caused by Ink's fullscreen `clearTerminal` path firing on every render cycle
 - Reduced re-render churn via memoized elapsed-time display (one-second granularity gate) and consolidated animation intervals
