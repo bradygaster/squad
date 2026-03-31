@@ -163,9 +163,10 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
 
   /**
    * Helper to verify a command was routed (not unknown, not module error).
-   * Some commands may have optional dependencies (e.g., node-pty for 'start')
-   * that aren't packaged. We still consider them routed if the error is about
-   * a missing optional dependency, not the command itself being unknown.
+   * 
+   * Issue #711: The `start` command requires node-pty (optionalDependency).
+   * If node-pty is missing, the command should show a graceful error message
+   * ("node-pty not available"), NOT crash with raw MODULE_NOT_FOUND.
    */
   function expectCommandRouted(result: { stdout: string; stderr: string; timedOut?: boolean }, command?: string) {
     // If the command timed out, it was routed — it started executing
@@ -175,15 +176,16 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     const output = result.stdout + result.stderr;
     expect(output.toLowerCase()).not.toContain('unknown command');
     
-    // Allow MODULE_NOT_FOUND if it's for an optional dependency (node-pty),
-    // not for the command module itself
+    // Special case for 'start' command: if node-pty is missing, we should see
+    // the graceful error message, NOT a raw MODULE_NOT_FOUND crash
+    if (command === 'start' && output.includes('node-pty')) {
+      // Should have graceful error, not raw module error
+      expect(output).toMatch(/node-pty not available/i);
+      return;
+    }
+    
+    // For all other commands, MODULE_NOT_FOUND is a test failure
     if (output.match(/MODULE_NOT_FOUND|Cannot find module/i)) {
-      // If it's node-pty, that's OK — it's an optional dep for the start command
-      if (output.includes('node-pty')) {
-        // This is expected — node-pty is an optional dependency
-        return;
-      }
-      // Otherwise fail — this is a real module error
       expect(output).not.toMatch(/MODULE_NOT_FOUND|Cannot find module/i);
     }
   }
@@ -258,7 +260,7 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
   for (const cmd of COMMANDS) {
     it(`command "${cmd}" is routable`, () => {
       const result = runCommand([cmd]);
-      expectCommandRouted(result);
+      expectCommandRouted(result, cmd);
     });
   }
 
