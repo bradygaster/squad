@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { buildAgentCommand, findExecutableIssues, reportBoard } from '../../packages/squad-cli/src/cli/commands/watch.js';
-import type { WatchWorkItem } from '../../packages/squad-cli/src/cli/commands/watch.js';
+import { buildAgentCommand, findExecutableIssues, reportBoard } from '../../packages/squad-cli/src/cli/commands/watch/index.js';
+import type { WatchWorkItem } from '../../packages/squad-cli/src/cli/commands/watch/index.js';
 
 describe('CLI: watch execute mode', () => {
   describe('buildAgentCommand', () => {
