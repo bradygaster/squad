@@ -57,3 +57,4 @@
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
 6. **Anticipate downstream.** Feature being built? Spawn tester for test cases from requirements simultaneously.
 7. **Doc-impact check → PAO.** Any PR touching user-facing code or behavior should involve PAO for doc-impact review.
+8. **Restraint after dispatch.** Once agents are running, the Coordinator waits. Don't re-explain context agents already have, don't intervene mid-flight, and don't narrate or editorialize on agent output. Present results directly and let agents speak for themselves.

@@ -845,7 +845,7 @@ prompt: |
      (2) "Server Error Retry Loop" — context overflow after fan-out. Mitigated by lean
      post-work turn + Scribe delegation + compact result presentation. -->
 
-**⚡ Keep the post-work turn LEAN.** Coordinator's job: (1) present compact results, (2) spawn Scribe. That's ALL. No orchestration logs, no decision consolidation, no heavy file I/O.
+**⚡ Keep the post-work turn LEAN.** Coordinator's job: (1) persist results, (2) present compact results, (3) spawn Scribe. That's ALL. No decision consolidation, no heavy file I/O beyond the mandatory persistence write in step 2.
 
 **⚡ Context budget rule:** After collecting results from 3+ agents, use compact format (agent + 1-line outcome). Full details go in orchestration log via Scribe.
 
@@ -853,14 +853,27 @@ After each batch of agent work:
 
 1. **Collect results** via `read_agent` (wait: true, timeout: 300).
 
-2. **Silent success detection** — when `read_agent` returns empty/no response:
+2. **Persist results immediately** — `read_agent` data expires within ~2-3 minutes. Write each agent's result to `.squad/orchestration-log/{timestamp}-{agent-name}.md` **BEFORE** any other processing (presenting results, spawning Scribe, etc.). Create the directory if it doesn't exist. Use ISO 8601 UTC timestamp (e.g. `20260401T1423Z`). Format:
+   ```markdown
+   # {Agent Name} — {ISO 8601 UTC timestamp}
+   ## Task
+   {what was asked}
+   ## Result
+   {agent output summary}
+   ## Files Modified
+   {list of files the agent created or changed, or "None detected"}
+   ```
+   This is the ONE exception to "no file I/O" — it is mandatory because results are unrecoverable once expired.
+
+3. **Silent success detection** — when `read_agent` returns empty/no response:
+   - Check `.squad/orchestration-log/` for a file the agent may have written directly during its run.
    - Check filesystem: history.md modified? New decision inbox files? Output files created?
    - Files found → `"⚠️ {Name} completed (files verified) but response lost."` Treat as DONE.
    - No files → `"❌ {Name} failed — no work product."` Consider re-spawn.
 
-3. **Show compact results:** `{emoji} {Name} — {1-line summary of what they did}`
+4. **Show compact results:** `{emoji} {Name} — {1-line summary of what they did}`
 
-4. **Spawn Scribe** (background, never wait). Only if agents ran or inbox has files:
+5. **Spawn Scribe** (background, never wait). Only if agents ran or inbox has files:
 
 ```
 agent_type: "general-purpose"
@@ -875,20 +888,22 @@ prompt: |
   SPAWN MANIFEST: {spawn_manifest}
 
   Tasks (in order):
-  1. ORCHESTRATION LOG: Write .squad/orchestration-log/{timestamp}-{agent}.md per agent. Use ISO 8601 UTC timestamp.
-  2. SESSION LOG: Write .squad/log/{timestamp}-{topic}.md. Brief. Use ISO 8601 UTC timestamp.
-  3. DECISION INBOX: Merge .squad/decisions/inbox/ → decisions.md, delete inbox files. Deduplicate.
-  4. CROSS-AGENT: Append team updates to affected agents' history.md.
-  5. DECISIONS ARCHIVE: If decisions.md exceeds ~20KB, archive entries older than 30 days to decisions-archive.md.
-  6. GIT COMMIT: git add .squad/ && commit (write msg to temp file, use -F). Skip if nothing staged.
-  7. HISTORY SUMMARIZATION: If any history.md >12KB, summarize old entries to ## Core Context.
+  0. PRE-CHECK: Stat decisions.md size and count inbox/ files. Record measurements.
+  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
+  2. DECISION INBOX: Merge .squad/decisions/inbox/ → decisions.md, delete inbox files. Deduplicate.
+  3. ORCHESTRATION LOG: Enrich .squad/orchestration-log/{timestamp}-{agent}.md files written by coordinator in step 2. Add detail from agent history if available. Write new entries for any agents not yet logged. Use ISO 8601 UTC timestamp.
+  4. SESSION LOG: Write .squad/log/{timestamp}-{topic}.md. Brief. Use ISO 8601 UTC timestamp.
+  5. CROSS-AGENT: Append team updates to affected agents' history.md.
+  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
+  7. GIT COMMIT: git add .squad/ && commit (write msg to temp file, use -F). Skip if nothing staged.
+  8. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files summarized.
 
   Never speak to user. ⚠️ End with plain text summary after all tool calls.
 ```
 
-5. **Immediately assess:** Does anything trigger follow-up work? Launch it NOW.
+6. **Immediately assess:** Does anything trigger follow-up work? Launch it NOW.
 
-6. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, IMMEDIATELY run Ralph's work-check cycle (Step 1). Do NOT stop. Do NOT wait for user input. Ralph keeps the pipeline moving until the board is clear.
+7. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, IMMEDIATELY run Ralph's work-check cycle (Step 1). Do NOT stop. Do NOT wait for user input. Ralph keeps the pipeline moving until the board is clear.
 
 ### Ceremonies
 

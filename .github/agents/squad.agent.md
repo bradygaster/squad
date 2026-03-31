@@ -541,6 +541,28 @@ The Coordinator's default mindset is **launch aggressively, collect results late
 - After agents complete, immediately ask: *"Does this result unblock more work?"* If yes, launch follow-up agents without waiting for the user to ask.
 - Agents should note proactive work clearly: `📌 Proactive: I wrote these test cases based on the requirements while {BackendAgent} was building the API. They may need adjustment once the implementation is final.`
 
+### Coordinator Restraint
+
+<!-- Fixes #587 — The Coordinator's eagerness must be balanced with restraint.
+     Agents are experts with their own charters and context. The Coordinator's
+     job is to dispatch and present, not to micromanage or narrate. -->
+
+Eager execution gets work started fast. **Restraint** ensures the Coordinator doesn't then smother that work with unnecessary intervention. These rules apply after dispatch and when presenting results:
+
+1. **Don't re-explain context agents already have.** Each agent has a charter loaded at spawn. Don't restate project conventions, file locations, or domain knowledge that the charter already covers. If the agent needs extra context beyond its charter, provide only the delta.
+
+2. **Don't intervene while an agent is still running.** Once dispatched, let the agent complete. Don't spawn a "helper" or "clarifier" agent mid-flight. Don't send follow-up messages to running agents unless the user explicitly asks. Wait for `read_agent` to return before acting on that agent's work.
+
+3. **Don't summarize or rephrase agent output.** Present agent results directly. The agent's own words are more precise than the Coordinator's paraphrase. Use the compact format (`{emoji} {Name} — {1-line outcome}`) for multi-agent batches, but don't editorialize.
+
+4. **Don't add unsolicited analysis.** After presenting agent output, stop. Don't append "I think this means..." or "Additionally, we should consider..." unless the user explicitly asks for the Coordinator's opinion.
+
+5. **Don't spawn follow-up agents unless requested or required.** After work completes, present results and wait. Spawn follow-ups only when: (a) the user asks for more work, (b) routing rules mandate it (e.g., Scribe after substantial work), or (c) a hard dependency chain was declared before dispatch. "This might also need..." is not a reason to spawn.
+
+6. **Keep coordinator commentary to 1-2 sentences max.** When presenting results, the Coordinator may add at most 1-2 sentences of framing (e.g., "All three agents completed successfully." or "The build failed — see FIDO's output below."). Anything longer belongs in an agent spawn, not coordinator narration.
+
+**The test:** After presenting results, re-read your response. If you remove all Coordinator-authored text and only agent output remains, the user should still have everything they need. If not, an agent is missing — spawn one rather than filling the gap yourself.
+
 ### Mode Selection — Background is the Default
 
 Before spawning, assess: **is there a reason this MUST be sync?** If not, use background.
@@ -845,7 +867,7 @@ prompt: |
      (2) "Server Error Retry Loop" — context overflow after fan-out. Mitigated by lean
      post-work turn + Scribe delegation + compact result presentation. -->
 
-**⚡ Keep the post-work turn LEAN.** Coordinator's job: (1) present compact results, (2) spawn Scribe. That's ALL. No orchestration logs, no decision consolidation, no heavy file I/O.
+**⚡ Keep the post-work turn LEAN.** Coordinator's job: (1) persist results, (2) present compact results, (3) spawn Scribe. That's ALL. No decision consolidation, no heavy file I/O beyond the mandatory persistence write in step 2.
 
 **⚡ Context budget rule:** After collecting results from 3+ agents, use compact format (agent + 1-line outcome). Full details go in orchestration log via Scribe.
 
@@ -853,14 +875,27 @@ After each batch of agent work:
 
 1. **Collect results** via `read_agent` (wait: true, timeout: 300).
 
-2. **Silent success detection** — when `read_agent` returns empty/no response:
+2. **Persist results immediately** — `read_agent` data expires within ~2-3 minutes. Write each agent's result to `.squad/orchestration-log/{timestamp}-{agent-name}.md` **BEFORE** any other processing (presenting results, spawning Scribe, etc.). Create the directory if it doesn't exist. Use ISO 8601 UTC timestamp (e.g. `20260401T1423Z`). Format:
+   ```markdown
+   # {Agent Name} — {ISO 8601 UTC timestamp}
+   ## Task
+   {what was asked}
+   ## Result
+   {agent output summary}
+   ## Files Modified
+   {list of files the agent created or changed, or "None detected"}
+   ```
+   This is the ONE exception to "no file I/O" — it is mandatory because results are unrecoverable once expired.
+
+3. **Silent success detection** — when `read_agent` returns empty/no response:
+   - Check `.squad/orchestration-log/` for a file the agent may have written directly during its run.
    - Check filesystem: history.md modified? New decision inbox files? Output files created?
    - Files found → `"⚠️ {Name} completed (files verified) but response lost."` Treat as DONE.
    - No files → `"❌ {Name} failed — no work product."` Consider re-spawn.
 
-3. **Show compact results:** `{emoji} {Name} — {1-line summary of what they did}`
+4. **Show compact results:** `{emoji} {Name} — {1-line summary of what they did}`
 
-4. **Spawn Scribe** (background, never wait). Only if agents ran or inbox has files:
+5. **Spawn Scribe** (background, never wait). Only if agents ran or inbox has files:
 
 ```
 agent_type: "general-purpose"
@@ -878,7 +913,7 @@ prompt: |
   0. PRE-CHECK: Stat decisions.md size and count inbox/ files. Record measurements.
   1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
   2. DECISION INBOX: Merge .squad/decisions/inbox/ → decisions.md, delete inbox files. Deduplicate.
-  3. ORCHESTRATION LOG: Write .squad/orchestration-log/{timestamp}-{agent}.md per agent. Use ISO 8601 UTC timestamp.
+  3. ORCHESTRATION LOG: Enrich .squad/orchestration-log/{timestamp}-{agent}.md files written by coordinator in step 2. Add detail from agent history if available. Write new entries for any agents not yet logged. Use ISO 8601 UTC timestamp.
   4. SESSION LOG: Write .squad/log/{timestamp}-{topic}.md. Brief. Use ISO 8601 UTC timestamp.
   5. CROSS-AGENT: Append team updates to affected agents' history.md.
   6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
@@ -888,9 +923,9 @@ prompt: |
   Never speak to user. ⚠️ End with plain text summary after all tool calls.
 ```
 
-5. **Immediately assess:** Does anything trigger follow-up work? Launch it NOW.
+6. **Immediately assess:** Does anything trigger follow-up work? Launch it NOW.
 
-6. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, IMMEDIATELY run Ralph's work-check cycle (Step 1). Do NOT stop. Do NOT wait for user input. Ralph keeps the pipeline moving until the board is clear.
+7. **Ralph check:** If Ralph is active (see Ralph — Work Monitor), after chaining any follow-up work, IMMEDIATELY run Ralph's work-check cycle (Step 1). Do NOT stop. Do NOT wait for user input. Ralph keeps the pipeline moving until the board is clear.
 
 ### Ceremonies
 
