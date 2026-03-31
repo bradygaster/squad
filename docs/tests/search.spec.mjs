@@ -182,6 +182,7 @@ test.describe('Search after View Transition navigation', () => {
     await expect(resultLinks.first()).toBeVisible({ timeout: 10_000 });
 
     const href = await resultLinks.first().getAttribute('href');
+    expect(href).toBeTruthy();
     await resultLinks.first().click();
 
     // Wait for View Transition navigation to complete

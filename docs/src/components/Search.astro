@@ -174,6 +174,9 @@ const base = import.meta.env.BASE_URL;
   }
 
   function initSearch() {
+    // Cancel any in-flight debounce from the previous page
+    clearTimeout(debounceTimer);
+
     // Tear down old element listeners (old refs may be detached)
     if (_onBtnClick && searchBtn) searchBtn.removeEventListener('click', _onBtnClick);
     if (_onBackdropClick && searchBackdrop) searchBackdrop.removeEventListener('click', _onBackdropClick);
