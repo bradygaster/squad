@@ -21,19 +21,14 @@ import {
 } from '@bradygaster/squad-sdk/ralph/triage';
 import { RalphMonitor } from '@bradygaster/squad-sdk/ralph';
 import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
-import { ghAvailable, ghAuthenticated, ghIssueList, ghIssueEdit, ghPrList, ghRateLimitCheck, isRateLimitError } from '../core/gh-cli.js';
+import { ghAvailable, ghAuthenticated, ghRateLimitCheck, isRateLimitError } from '../core/gh-cli.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import {
   PredictiveCircuitBreaker,
   getTrafficLight,
 } from '@bradygaster/squad-sdk/ralph/rate-limiting';
-import {
-  detectPlatformFromUrl,
-  getRemoteUrl,
-  AzureDevOpsAdapter,
-  parseAzureDevOpsRemote,
-} from '@bradygaster/squad-sdk/platform';
-import type { AdoWorkItemConfig } from '@bradygaster/squad-sdk/platform';
+import { createPlatformAdapter } from '@bradygaster/squad-sdk/platform';
+import type { PlatformAdapter, WorkItem, PullRequest as SdkPullRequest } from '@bradygaster/squad-sdk/platform';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
 
@@ -59,134 +54,76 @@ export interface WatchPullRequest {
   statusCheckRollup: Array<{ state: string; name: string }>;
 }
 
-/** Platform bridge interface for watch operations. */
-export interface WatchPlatform {
-  listWorkItems(options: { label?: string; state?: string; limit?: number }): Promise<WatchWorkItem[]>;
-  editWorkItem(id: number, options: { addLabel?: string; removeLabel?: string; addAssignee?: string; removeAssignee?: string }): Promise<void>;
-  listPullRequests(options: { state?: string; limit?: number }): Promise<WatchPullRequest[]>;
-  commentOnWorkItem(id: number, body: string): Promise<void>;
-  /** Check if the underlying CLI is available. */
-  checkAvailable(): Promise<boolean>;
-  /** Check if the underlying CLI is authenticated. */
-  checkAuthenticated(): Promise<boolean>;
-  /** Check rate limit (returns null if unsupported). */
-  checkRateLimit(): Promise<{ remaining: number; limit: number; resetAt: string } | null>;
-  /** Detect if an error is a rate limit error. */
-  isRateLimitError(err: unknown): boolean;
+// ── SDK Mapping Helpers ──────────────────────────────────────────
+
+/** Map SDK WorkItem to internal WatchWorkItem format. */
+function toWatchWorkItem(wi: WorkItem): WatchWorkItem {
+  return {
+    number: wi.id,
+    title: wi.title,
+    labels: wi.tags.map(t => ({ name: t })),
+    assignees: wi.assignedTo ? [{ login: wi.assignedTo }] : [],
+  };
 }
 
-// ── GitHub Watch Platform ────────────────────────────────────────
-
-/** WatchPlatform backed by gh CLI — preserves existing behavior exactly. */
-class GitHubWatchPlatform implements WatchPlatform {
-  async listWorkItems(options: { label?: string; state?: string; limit?: number }): Promise<WatchWorkItem[]> {
-    return ghIssueList({
-      label: options.label,
-      state: options.state as 'open' | 'closed' | 'all' | undefined,
-      limit: options.limit,
-    });
-  }
-
-  async editWorkItem(id: number, options: { addLabel?: string; removeLabel?: string; addAssignee?: string; removeAssignee?: string }): Promise<void> {
-    return ghIssueEdit(id, options);
-  }
-
-  async listPullRequests(options: { state?: string; limit?: number }): Promise<WatchPullRequest[]> {
-    return ghPrList({
-      state: options.state as 'open' | 'closed' | 'merged' | 'all' | undefined,
-      limit: options.limit,
-    });
-  }
-
-  async commentOnWorkItem(id: number, body: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      execFile(
-        'gh',
-        ['issue', 'comment', String(id), '--body', body],
-        { maxBuffer: 5 * 1024 * 1024 },
-        (err) => (err ? reject(err) : resolve()),
-      );
-    });
-  }
-
-  async checkAvailable(): Promise<boolean> {
-    return ghAvailable();
-  }
-
-  async checkAuthenticated(): Promise<boolean> {
-    return ghAuthenticated();
-  }
-
-  async checkRateLimit(): Promise<{ remaining: number; limit: number; resetAt: string }> {
-    return ghRateLimitCheck();
-  }
-
-  isRateLimitError(err: unknown): boolean {
-    return isRateLimitError(err);
-  }
+/** Map SDK PullRequest to internal WatchPullRequest format. */
+function toWatchPullRequest(pr: SdkPullRequest): WatchPullRequest {
+  return {
+    number: pr.id,
+    title: pr.title,
+    author: { login: pr.author },
+    labels: [],
+    isDraft: pr.status === 'draft',
+    reviewDecision: pr.reviewStatus === 'approved' ? 'APPROVED'
+      : pr.reviewStatus === 'changes-requested' ? 'CHANGES_REQUESTED'
+      : pr.reviewStatus === 'pending' ? 'REVIEW_REQUIRED' : '',
+    state: pr.status === 'active' ? 'OPEN'
+      : pr.status === 'completed' ? 'MERGED'
+      : pr.status === 'abandoned' ? 'CLOSED' : 'OPEN',
+    headRefName: pr.sourceBranch,
+    statusCheckRollup: [],
+  };
 }
 
-// ── Azure DevOps Watch Platform ──────────────────────────────────
-
-/** Check whether the az CLI with devops extension is available. */
-async function azAvailable(): Promise<boolean> {
-  try {
-    await execFileAsync('az', ['devops', '-h']);
-    return true;
-  } catch {
-    return false;
-  }
+/** Fetch work items via the SDK adapter and map to WatchWorkItem[]. */
+async function listWatchWorkItems(
+  adapter: PlatformAdapter,
+  options: { label?: string; state?: string; limit?: number },
+): Promise<WatchWorkItem[]> {
+  const tags = options.label ? [options.label] : undefined;
+  const items = await adapter.listWorkItems({ tags, state: options.state, limit: options.limit });
+  return items.map(toWatchWorkItem);
 }
 
-/** Check whether az CLI is authenticated. */
-async function azAuthenticated(): Promise<boolean> {
-  try {
-    await execFileAsync('az', ['account', 'show']);
-    return true;
-  } catch {
-    return false;
-  }
+/** Fetch PRs via the SDK adapter and map to WatchPullRequest[]. */
+async function listWatchPullRequests(
+  adapter: PlatformAdapter,
+  options: { state?: string; limit?: number },
+): Promise<WatchPullRequest[]> {
+  let status: string | undefined;
+  if (options.state === 'open') status = 'active';
+  else if (options.state === 'closed') status = 'abandoned';
+  else if (options.state === 'merged') status = 'completed';
+  else status = options.state;
+  const prs = await adapter.listPullRequests({ status, limit: options.limit });
+  return prs.map(toWatchPullRequest);
 }
 
-/** WatchPlatform backed by AzureDevOpsAdapter from the SDK. */
-class AdoWatchPlatform implements WatchPlatform {
-  private adapter: AzureDevOpsAdapter;
-
-  constructor(org: string, project: string, repo: string, workItemConfig?: AdoWorkItemConfig) {
-    this.adapter = new AzureDevOpsAdapter(org, project, repo, workItemConfig);
-  }
-
-  async listWorkItems(options: { label?: string; state?: string; limit?: number }): Promise<WatchWorkItem[]> {
-    const tags = options.label ? [options.label] : undefined;
-    // Map GitHub-style state to ADO state
-    let adoState: string | undefined;
-    if (options.state === 'open') adoState = 'Active';
-    else if (options.state === 'closed') adoState = 'Closed';
-
-    const items = await this.adapter.listWorkItems({
-      tags,
-      state: adoState,
-      limit: options.limit,
-    });
-
-    return items.map(wi => ({
-      number: wi.id,
-      title: wi.title,
-      labels: wi.tags.map(t => ({ name: t })),
-      assignees: wi.assignedTo ? [{ login: wi.assignedTo }] : [],
-    }));
-  }
-
-  async editWorkItem(id: number, options: { addLabel?: string; removeLabel?: string; addAssignee?: string; removeAssignee?: string }): Promise<void> {
-    // ADO uses tags instead of labels
-    if (options.addLabel) {
-      await this.adapter.addTag(id, options.addLabel);
-    }
-    if (options.removeLabel) {
-      await this.adapter.removeTag(id, options.removeLabel);
-    }
-    // Assignee updates via az boards work-item update
-    if (options.addAssignee) {
+/** Edit a work item — wraps adapter calls for tag/assignee operations. */
+async function editWorkItem(
+  adapter: PlatformAdapter,
+  id: number,
+  options: { addLabel?: string; removeLabel?: string; addAssignee?: string; removeAssignee?: string },
+): Promise<void> {
+  if (options.addLabel) await adapter.addTag(id, options.addLabel);
+  if (options.removeLabel) await adapter.removeTag(id, options.removeLabel);
+  if (options.addAssignee) {
+    // Adapter doesn't support assignees directly — use CLI fallback
+    if (adapter.type === 'github') {
+      try {
+        await execFileAsync('gh', ['issue', 'edit', String(id), '--add-assignee', options.addAssignee]);
+      } catch { /* best-effort */ }
+    } else if (adapter.type === 'azure-devops') {
       const assignee = options.addAssignee === '@me' ? '' : options.addAssignee;
       if (assignee) {
         try {
@@ -196,172 +133,10 @@ class AdoWatchPlatform implements WatchPlatform {
             '--fields', `System.AssignedTo=${assignee}`,
             '--output', 'json',
           ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-        } catch {
-          // best-effort
-        }
+        } catch { /* best-effort */ }
       }
     }
   }
-
-  async listPullRequests(options: { state?: string; limit?: number }): Promise<WatchPullRequest[]> {
-    // Map GitHub-style state to ADO status
-    let adoStatus: string | undefined;
-    if (options.state === 'open') adoStatus = 'active';
-    else if (options.state === 'closed') adoStatus = 'abandoned';
-    else if (options.state === 'merged') adoStatus = 'completed';
-
-    const prs = await this.adapter.listPullRequests({
-      status: adoStatus,
-      limit: options.limit,
-    });
-
-    return prs.map(pr => ({
-      number: pr.id,
-      title: pr.title,
-      author: { login: pr.author },
-      labels: [], // ADO PRs don't have labels in the same way
-      isDraft: pr.status === 'draft',
-      reviewDecision: mapAdoReviewToGhDecision(pr.reviewStatus),
-      state: mapAdoStatusToGhState(pr.status),
-      headRefName: pr.sourceBranch,
-      statusCheckRollup: [], // ADO check runs are queried differently
-    }));
-  }
-
-  async commentOnWorkItem(id: number, body: string): Promise<void> {
-    await this.adapter.addComment(id, body);
-  }
-
-  async checkAvailable(): Promise<boolean> {
-    return azAvailable();
-  }
-
-  async checkAuthenticated(): Promise<boolean> {
-    return azAuthenticated();
-  }
-
-  async checkRateLimit(): Promise<null> {
-    // ADO doesn't expose rate limits the same way — skip
-    return null;
-  }
-
-  isRateLimitError(err: unknown): boolean {
-    if (err instanceof Error) {
-      const msg = err.message.toLowerCase();
-      return msg.includes('429') || msg.includes('too many requests');
-    }
-    return false;
-  }
-}
-
-/** Map ADO review status to GitHub review decision strings. */
-function mapAdoReviewToGhDecision(status?: 'approved' | 'changes-requested' | 'pending'): string {
-  switch (status) {
-    case 'approved': return 'APPROVED';
-    case 'changes-requested': return 'CHANGES_REQUESTED';
-    case 'pending': return 'REVIEW_REQUIRED';
-    default: return '';
-  }
-}
-
-/** Map ADO PR status to GitHub-style state strings. */
-function mapAdoStatusToGhState(status: 'active' | 'completed' | 'abandoned' | 'draft'): string {
-  switch (status) {
-    case 'active': return 'OPEN';
-    case 'completed': return 'MERGED';
-    case 'abandoned': return 'CLOSED';
-    case 'draft': return 'OPEN';
-    default: return 'OPEN';
-  }
-}
-
-// ── Watch Platform Factory ───────────────────────────────────────
-
-/**
- * Create the appropriate WatchPlatform based on options and environment.
- * - Explicit `options.platform` takes precedence.
- * - Falls back to auto-detection: checks .squad/config.json, then git remote URL.
- * - Default: GitHubWatchPlatform.
- */
-export function createWatchPlatform(options: WatchOptions, teamRoot: string): WatchPlatform {
-  const explicit = options.platform;
-
-  if (explicit === 'ado') {
-    return buildAdoWatchPlatform(teamRoot);
-  }
-
-  if (explicit === 'github') {
-    return new GitHubWatchPlatform();
-  }
-
-  // Auto-detect from .squad/config.json
-  const configPath = path.join(teamRoot, '.squad', 'config.json');
-  if (storage.existsSync(configPath)) {
-    try {
-      const raw = storage.readSync(configPath) ?? '';
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      if (parsed.platform === 'ado' || parsed.platform === 'azure-devops') {
-        return buildAdoWatchPlatform(teamRoot);
-      }
-    } catch { /* ignore parse errors */ }
-  }
-
-  // Auto-detect from git remote
-  const remoteUrl = getRemoteUrl(teamRoot);
-  if (remoteUrl) {
-    const detected = detectPlatformFromUrl(remoteUrl);
-    if (detected === 'azure-devops') {
-      return buildAdoWatchPlatform(teamRoot);
-    }
-  }
-
-  return new GitHubWatchPlatform();
-}
-
-/** Build an AdoWatchPlatform from config + git remote. */
-function buildAdoWatchPlatform(teamRoot: string): AdoWatchPlatform {
-  // Read ADO config from .squad/config.json
-  const configPath = path.join(teamRoot, '.squad', 'config.json');
-  let adoConfig: AdoWorkItemConfig | undefined;
-  let org = '';
-  let project = '';
-  let repo = '';
-
-  if (storage.existsSync(configPath)) {
-    try {
-      const raw = storage.readSync(configPath) ?? '';
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      if (parsed.ado && typeof parsed.ado === 'object') {
-        const adoSection = parsed.ado as Record<string, unknown>;
-        org = (adoSection.org as string) ?? '';
-        project = (adoSection.project as string) ?? '';
-        repo = (adoSection.repo as string) ?? '';
-        adoConfig = parsed.ado as AdoWorkItemConfig;
-      }
-    } catch { /* ignore */ }
-  }
-
-  // Fall back to git remote parsing
-  if (!org || !project) {
-    const remoteUrl = getRemoteUrl(teamRoot);
-    if (remoteUrl) {
-      const info = parseAzureDevOpsRemote(remoteUrl);
-      if (info) {
-        org = org || info.org;
-        project = project || info.project;
-        repo = repo || info.repo;
-      }
-    }
-  }
-
-  if (!org || !project) {
-    throw new Error(
-      'Azure DevOps configuration incomplete. Set org/project in .squad/config.json:\n' +
-      '  { "platform": "ado", "ado": { "org": "YOUR_ORG", "project": "YOUR_PROJECT" } }',
-    );
-  }
-
-  return new AdoWatchPlatform(org, project, repo, adoConfig);
 }
 
 /**
@@ -377,10 +152,6 @@ export interface WatchOptions {
   agentCmd?: string;
   maxConcurrent?: number;
   issueTimeoutMinutes?: number;
-
-  // ── Platform selection ────────────────────────────────────────
-  /** Target platform: 'github' or 'ado'. Auto-detected if omitted. */
-  platform?: 'github' | 'ado';
 
   // ── Opt-in feature flags (#708) ──────────────────────────────
   /** Scan Teams for actionable messages each round (requires WorkIQ MCP). */
@@ -465,9 +236,9 @@ type PRBoardState = Pick<BoardState, 'drafts' | 'needsReview' | 'changesRequeste
   totalOpen: number;
 };
 
-async function checkPRs(roster: ReturnType<typeof parseRoster>, platform: WatchPlatform): Promise<PRBoardState> {
+async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter): Promise<PRBoardState> {
   const timestamp = new Date().toLocaleTimeString();
-  const prs = await platform.listPullRequests({ state: 'open', limit: 20 });
+  const prs = await listWatchPullRequests(adapter, { state: 'open', limit: 20 });
   
   // Filter to squad-related PRs (has squad label or branch starts with squad/)
   const squadPRs: WatchPullRequest[] = prs.filter(pr =>
@@ -558,13 +329,13 @@ async function runCheck(
   hasCopilot: boolean,
   autoAssign: boolean,
   capabilities: MachineCapabilities | null = null,
-  platform: WatchPlatform = new GitHubWatchPlatform(),
+  adapter: PlatformAdapter,
 ): Promise<BoardState> {
   const timestamp = new Date().toLocaleTimeString();
   
   try {
     // Fetch open issues with squad label
-    const issues = await platform.listWorkItems({ label: 'squad', state: 'open', limit: 20 });
+    const issues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 20 });
     
     // Filter by machine capabilities (#514)
     const { filterByCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
@@ -589,7 +360,7 @@ async function runCheck(
     let unassignedCopilot: WatchWorkItem[] = [];
     if (hasCopilot && autoAssign) {
       try {
-        const copilotIssues = await platform.listWorkItems({ label: 'squad:copilot', state: 'open', limit: 10 });
+        const copilotIssues = await listWatchWorkItems(adapter, { label: 'squad:copilot', state: 'open', limit: 10 });
         unassignedCopilot = copilotIssues.filter(i => !i.assignees || i.assignees.length === 0);
       } catch {
         // Label may not exist yet
@@ -608,7 +379,7 @@ async function runCheck(
       
       if (triage) {
         try {
-          await platform.editWorkItem(issue.number, { addLabel: triage.agent.label });
+          await editWorkItem(adapter, issue.number, { addLabel: triage.agent.label });
           console.log(
             `${GREEN}✓${RESET} [${timestamp}] Triaged #${issue.number} "${issue.title}" → ${triage.agent.name} (${triage.reason})`
           );
@@ -622,7 +393,7 @@ async function runCheck(
     // Assign @copilot to unassigned copilot issues
     for (const issue of unassignedCopilot) {
       try {
-        await platform.editWorkItem(issue.number, { addAssignee: 'copilot-swe-agent' });
+        await editWorkItem(adapter, issue.number, { addAssignee: 'copilot-swe-agent' });
         console.log(`${GREEN}✓${RESET} [${timestamp}] Assigned @copilot to #${issue.number} "${issue.title}"`);
       } catch (e) {
         const err = e as Error;
@@ -630,7 +401,7 @@ async function runCheck(
       }
     }
     
-    const prState = await checkPRs(roster, platform);
+    const prState = await checkPRs(roster, adapter);
     
     return {
       untriaged: untriaged.length,
@@ -690,21 +461,21 @@ export async function executeIssue(
   issue: WatchWorkItem,
   teamRoot: string,
   options: WatchOptions,
-  platform: WatchPlatform = new GitHubWatchPlatform(),
+  adapter: PlatformAdapter,
 ): Promise<ExecuteResult> {
   const ts = new Date().toLocaleTimeString();
   const timeoutMs = (options.issueTimeoutMinutes ?? 30) * 60_000;
 
   // Claim the issue
   try {
-    await platform.editWorkItem(issue.number, { addAssignee: '@me' });
+    await editWorkItem(adapter, issue.number, { addAssignee: '@me' });
   } catch {
     // best-effort — don't block execution
   }
 
   // Post "starting work" comment
   try {
-    await platform.commentOnWorkItem(issue.number, `🤖 Ralph: starting autonomous work on this issue.`);
+    await adapter.addComment(issue.number, `🤖 Ralph: starting autonomous work on this issue.`);
   } catch {
     // best-effort comment
   }
@@ -1038,13 +809,13 @@ async function archiveDoneItems(
 async function twoPassScan(
   roster: ReturnType<typeof parseRoster>,
   capabilities: MachineCapabilities | null,
-  platform: WatchPlatform = new GitHubWatchPlatform(),
+  adapter: PlatformAdapter,
 ): Promise<{ issues: WatchWorkItem[]; stats: { total: number; actionable: number } }> {
   const ts = new Date().toLocaleTimeString();
   const memberLabels = new Set(roster.map(m => m.label));
 
   // Pass 1: lightweight list using platform adapter
-  const allIssues = await platform.listWorkItems({ label: 'squad', state: 'open', limit: 200 });
+  const allIssues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 200 });
   const total = allIssues.length;
 
   // Filter to actionable: has squad member label, unassigned, not blocked
@@ -1137,7 +908,7 @@ async function waveDispatch(
   issues: WatchWorkItem[],
   teamRoot: string,
   options: WatchOptions,
-  platform: WatchPlatform = new GitHubWatchPlatform(),
+  adapter: PlatformAdapter,
 ): Promise<{ executed: number; failed: number }> {
   const ts = new Date().toLocaleTimeString();
   let executed = 0;
@@ -1148,7 +919,7 @@ async function waveDispatch(
 
     if (subTasks.length === 0) {
       // No sub-tasks — fallback to normal execution
-      const result = await executeIssue(issue, teamRoot, options, platform);
+      const result = await executeIssue(issue, teamRoot, options, adapter);
       if (result.success) executed++;
       else failed++;
       continue;
@@ -1174,7 +945,7 @@ async function waveDispatch(
         for (const [id] of remaining) {
           completed.add(id);
         }
-        const result = await executeIssue(issue, teamRoot, options, platform);
+        const result = await executeIssue(issue, teamRoot, options, adapter);
         if (result.success) executed++;
         else failed++;
         break;
@@ -1193,7 +964,7 @@ async function waveDispatch(
               ...issue,
               title: `${issue.title} — ${task.description}`,
             };
-            return executeIssue(syntheticIssue, teamRoot, options, platform);
+            return executeIssue(syntheticIssue, teamRoot, options, adapter);
           }),
         );
         for (const r of results) {
@@ -1489,23 +1260,29 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
   }
   
   // Create platform adapter
-  const platform = createWatchPlatform(options, path.dirname(squadDirInfo.path));
+  let adapter: PlatformAdapter;
+  try {
+    adapter = createPlatformAdapter(teamRoot);
+    console.log(`${DIM}Platform: ${adapter.type}${RESET}`);
+  } catch (err) {
+    return fatal(`Could not detect platform: ${(err as Error).message}`);
+  }
 
   // Verify platform CLI availability
-  if (!(await platform.checkAvailable())) {
-    const cliName = options.platform === 'ado' ? 'az' : 'gh';
-    const installUrl = options.platform === 'ado'
-      ? 'https://aka.ms/install-az-cli'
-      : 'https://cli.github.com';
-    fatal(`${cliName} CLI not found — install from ${installUrl}`);
-  }
-  
-  if (!(await platform.checkAuthenticated())) {
-    const cliName = options.platform === 'ado' ? 'az' : 'gh';
-    const authCmd = options.platform === 'ado' ? 'az login' : 'gh auth login';
-    console.error(`${YELLOW}⚠️${RESET} ${cliName} CLI not authenticated`);
-    console.error(`   Run: ${BOLD}${authCmd}${RESET}\n`);
-    fatal(`${cliName} authentication required`);
+  if (adapter.type === 'github') {
+    if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
+    if (!(await ghAuthenticated())) fatal('gh CLI not authenticated — run: gh auth login');
+  } else if (adapter.type === 'azure-devops') {
+    try {
+      await execFileAsync('az', ['devops', '-h']);
+    } catch {
+      fatal('az CLI not found — install from https://aka.ms/install-az-cli');
+    }
+    try {
+      await execFileAsync('az', ['account', 'show']);
+    } catch {
+      fatal('az CLI not authenticated — run: az login');
+    }
   }
   
   // Parse team.md
@@ -1548,7 +1325,7 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
   
   // Print startup banner
   const modeTag = options.execute ? ` ${BOLD}(Execute)${RESET}` : '';
-  const platformTag = options.platform ? ` [${options.platform}]` : '';
+  const platformTag = ` [${adapter.type}]`;
   console.log(`\n${BOLD}🔄 Ralph — Watch Mode${RESET}${modeTag}${platformTag}`);
   console.log(`${DIM}Polling every ${intervalMinutes} minute(s) for squad work. Ctrl+C to stop.${RESET}`);
   if (options.execute && options.copilotFlags) {
@@ -1599,31 +1376,33 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
       saveCBState(squadDirInfo.path, cbState);
     }
 
-    // Pre-flight: sample rate limit headers
-    try {
-      const rl = await platform.checkRateLimit();
-      if (rl) {
-        cbState.lastRateLimitRemaining = rl.remaining;
-        cbState.lastRateLimitTotal = rl.limit;
-        circuitBreaker.addSample(rl.remaining, rl.limit);
+    // Pre-flight: sample rate limit headers (GitHub only)
+    if (adapter.type === 'github') {
+      try {
+        const rl = await ghRateLimitCheck();
+        if (rl) {
+          cbState.lastRateLimitRemaining = rl.remaining;
+          cbState.lastRateLimitTotal = rl.limit;
+          circuitBreaker.addSample(rl.remaining, rl.limit);
 
-        const light = getTrafficLight(rl.remaining, rl.limit);
-        if (light === 'red' || circuitBreaker.shouldOpen()) {
-          cbState.status = 'open';
-          cbState.openedAt = new Date().toISOString();
-          cbState.consecutiveFailures++;
-          cbState.consecutiveSuccesses = 0;
-          cbState.cooldownMinutes = Math.min(cbState.cooldownMinutes * 2, 30);
-          saveCBState(squadDirInfo.path, cbState);
-          console.log(`${RED}🛑${RESET} [${ts}] Circuit opened — quota ${light === 'red' ? 'critical' : 'predicted low'} (${rl.remaining}/${rl.limit})`);
-          return;
+          const light = getTrafficLight(rl.remaining, rl.limit);
+          if (light === 'red' || circuitBreaker.shouldOpen()) {
+            cbState.status = 'open';
+            cbState.openedAt = new Date().toISOString();
+            cbState.consecutiveFailures++;
+            cbState.consecutiveSuccesses = 0;
+            cbState.cooldownMinutes = Math.min(cbState.cooldownMinutes * 2, 30);
+            saveCBState(squadDirInfo.path, cbState);
+            console.log(`${RED}🛑${RESET} [${ts}] Circuit opened — quota ${light === 'red' ? 'critical' : 'predicted low'} (${rl.remaining}/${rl.limit})`);
+            return;
+          }
+          if (light === 'amber') {
+            console.log(`${YELLOW}⚠️${RESET}  [${ts}] Quota amber (${rl.remaining}/${rl.limit}) — proceeding cautiously`);
+          }
         }
-        if (light === 'amber') {
-          console.log(`${YELLOW}⚠️${RESET}  [${ts}] Quota amber (${rl.remaining}/${rl.limit}) — proceeding cautiously`);
-        }
+      } catch {
+        // Rate limit check failed — proceed anyway, runCheck has its own catch
       }
-    } catch {
-      // Rate limit check failed — proceed anyway, runCheck has its own catch
     }
 
     // ── Execute mode: keep work-tree up-to-date ────────────────
@@ -1642,10 +1421,10 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
     let roundState: BoardState;
 
     if (options.twoPass) {
-      const { issues, stats } = await twoPassScan(roster, capabilities, platform);
+      const { issues, stats } = await twoPassScan(roster, capabilities, adapter);
       console.log(`${DIM}[two-pass] ${stats.total} total, ${stats.actionable} actionable${RESET}`);
       // Run the standard check for triage (labels, PRs), then overlay execution
-      roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, platform);
+      roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter);
 
       // Execute mode with two-pass results
       if (options.execute && issues.length > 0) {
@@ -1653,31 +1432,31 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
         const batch = executable.slice(0, options.maxConcurrent ?? 1);
 
         if (options.waveDispatch) {
-          const results = await waveDispatch(batch, teamRoot, options, platform);
+          const results = await waveDispatch(batch, teamRoot, options, adapter);
           roundState.executed = results.executed;
         } else {
           const results = await Promise.all(
-            batch.map(issue => executeIssue(issue, teamRoot, options, platform)),
+            batch.map(issue => executeIssue(issue, teamRoot, options, adapter)),
           );
           roundState.executed = results.filter(r => r.success).length;
         }
       }
     } else {
       // ── Delegate to existing check cycle (untouched) ──────────
-      roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, platform);
+      roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter);
 
       // ── Execute mode: find and work on eligible issues ────────
       if (options.execute) {
-        const allIssues = await platform.listWorkItems({ label: 'squad', state: 'open', limit: 50 });
+        const allIssues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 50 });
         const executable = findExecutableIssues(roster, capabilities, allIssues);
         const batch = executable.slice(0, options.maxConcurrent ?? 1);
 
         if (options.waveDispatch) {
-          const results = await waveDispatch(batch, teamRoot, options, platform);
+          const results = await waveDispatch(batch, teamRoot, options, adapter);
           roundState.executed = results.executed;
         } else {
           const results = await Promise.all(
-            batch.map(issue => executeIssue(issue, teamRoot, options, platform)),
+            batch.map(issue => executeIssue(issue, teamRoot, options, adapter)),
           );
           roundState.executed = results.filter(r => r.success).length;
         }
@@ -1737,7 +1516,7 @@ export async function runWatch(dest: string, options: WatchOptions): Promise<voi
           await executeRound();
         } catch (e) {
           const err = e as Error;
-          if (platform.isRateLimitError(err)) {
+          if (adapter.type === 'github' && isRateLimitError(err)) {
             cbState.status = 'open';
             cbState.openedAt = new Date().toISOString();
             cbState.consecutiveFailures++;

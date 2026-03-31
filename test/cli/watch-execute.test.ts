@@ -6,8 +6,8 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { buildAgentCommand, findExecutableIssues, reportBoard, createWatchPlatform } from '../../packages/squad-cli/src/cli/commands/watch.js';
-import type { WatchWorkItem, WatchPlatform } from '../../packages/squad-cli/src/cli/commands/watch.js';
+import { buildAgentCommand, findExecutableIssues, reportBoard } from '../../packages/squad-cli/src/cli/commands/watch.js';
+import type { WatchWorkItem } from '../../packages/squad-cli/src/cli/commands/watch.js';
 
 describe('CLI: watch execute mode', () => {
   describe('buildAgentCommand', () => {
@@ -191,46 +191,4 @@ describe('CLI: watch execute mode', () => {
       consoleLogSpy.mockRestore();
     });
   });
-
-  describe('createWatchPlatform', () => {
-    it('returns GitHub platform by default', () => {
-      const platform = createWatchPlatform({ intervalMinutes: 10 }, '/nonexistent/path');
-      // Default should be GitHub when no config or git remote is detectable
-      expect(platform).toBeDefined();
-      expect(typeof platform.listWorkItems).toBe('function');
-      expect(typeof platform.editWorkItem).toBe('function');
-      expect(typeof platform.listPullRequests).toBe('function');
-      expect(typeof platform.commentOnWorkItem).toBe('function');
-    });
-
-    it('returns GitHub platform when explicitly set', () => {
-      const platform = createWatchPlatform({ intervalMinutes: 10, platform: 'github' }, '/nonexistent/path');
-      expect(platform).toBeDefined();
-      expect(typeof platform.checkRateLimit).toBe('function');
-    });
-
-    it('throws for ADO when config is incomplete and no git remote', () => {
-      expect(() =>
-        createWatchPlatform({ intervalMinutes: 10, platform: 'ado' }, '/nonexistent/path'),
-      ).toThrow(/Azure DevOps configuration incomplete/);
-    });
-  });
-
-  describe('WatchPlatform interface', () => {
-    it('platform option defaults to undefined', () => {
-      const options = { intervalMinutes: 10 };
-      expect(options.platform).toBeUndefined();
-    });
-
-    it('platform option accepts github', () => {
-      const options = { intervalMinutes: 10, platform: 'github' as const };
-      expect(options.platform).toBe('github');
-    });
-
-    it('platform option accepts ado', () => {
-      const options = { intervalMinutes: 10, platform: 'ado' as const };
-      expect(options.platform).toBe('ado');
-    });
-  });
-});
 

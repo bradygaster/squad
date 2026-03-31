@@ -247,7 +247,6 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--max-concurrent N` | Max parallel issues per round (default: 1) | `squad watch --execute --max-concurrent 3` |
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
 | `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-4"` |
-| `--platform github\|ado` | Target platform — auto-detected if omitted | `squad watch --platform ado` |
 
 #### Issue Scanning
 
@@ -325,7 +324,7 @@ This fully overrides the agent command. The default is `gh copilot --message "<p
 
 ### Azure DevOps Support
 
-Ralph supports Azure DevOps repos and work items via the `--platform ado` flag. When your git remote points to `dev.azure.com` or `visualstudio.com`, Ralph auto-detects ADO — no flag needed.
+Ralph supports Azure DevOps repos and work items via the SDK's PlatformAdapter. When your git remote points to `dev.azure.com` or `visualstudio.com`, Ralph auto-detects ADO — no flag needed.
 
 **Setup:**
 
@@ -344,9 +343,8 @@ Ralph supports Azure DevOps repos and work items via the `--platform ado` flag. 
 
 **Usage:**
 ```bash
-squad watch --platform ado                  # explicit ADO mode
 squad watch                                 # auto-detects from git remote
-squad watch --platform ado --execute        # full work monitor on ADO
+squad watch --execute                       # full work monitor (auto-detects platform)
 ```
 
 **Key differences from GitHub:**
