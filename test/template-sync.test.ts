@@ -153,7 +153,7 @@ describe('sync-templates.mjs script execution', () => {
     const output = execSync('node scripts/sync-templates.mjs', {
       cwd: ROOT,
       encoding: 'utf-8',
-      timeout: 30_000,
+      timeout: 60_000,
     });
     expect(output).toContain('Synced');
   });

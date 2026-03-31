@@ -18,6 +18,13 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { dockerSkipReason } from '../helpers/skip-guards.js';
+
+// ===========================================================================
+// Skip guard — bail early if Docker is unavailable or tests disabled
+// ===========================================================================
+
+const SKIP_REASON = dockerSkipReason();
 
 // ===========================================================================
 // Docker availability helpers (mockable)
@@ -66,7 +73,10 @@ function buildAspireStopCommands(name = 'squad-aspire-dashboard'): string[][] {
 // Docker availability
 // ===========================================================================
 
-describe('CLI: squad aspire — Docker availability', { timeout: 30_000 }, () => {
+describe.skipIf(SKIP_REASON !== null)(
+  `CLI: squad aspire — Docker availability (${SKIP_REASON ?? 'enabled'})`,
+  { timeout: 30_000 },
+  () => {
   it('checkDockerAvailability returns version string when Docker is present', () => {
     const result = checkDockerAvailability();
     if (result === null) {
