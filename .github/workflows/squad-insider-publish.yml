@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
@@ -33,13 +33,16 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup-squad-node
         with:
           node-version: ${{ matrix.node-version }}
+
+      - name: Build (required for subpath export resolution)
+        run: npm run build
 
       - name: Run tests
         run: npm test
@@ -81,7 +84,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
