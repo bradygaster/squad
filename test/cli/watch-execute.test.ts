@@ -191,4 +191,4 @@ describe('CLI: watch execute mode', () => {
       consoleLogSpy.mockRestore();
     });
   });
-
+});
