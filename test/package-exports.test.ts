@@ -7,6 +7,12 @@ describe('SDK package exports', () => {
     expect(typeof sdk.VERSION).toBe('string');
   });
 
+  it('exports FSStorageProvider from root', async () => {
+    const sdk = await import('@bradygaster/squad-sdk');
+    expect(sdk.FSStorageProvider).toBeDefined();
+    expect(typeof sdk.FSStorageProvider).toBe('function');
+  });
+
   it('exports from /config subpath', async () => {
     const config = await import('@bradygaster/squad-sdk/config');
     expect(config).toBeDefined();
@@ -45,5 +51,11 @@ describe('SDK package exports', () => {
   it('exports from /tools subpath', async () => {
     const tools = await import('@bradygaster/squad-sdk/tools');
     expect(tools).toBeDefined();
+  });
+
+  it('exports FSStorageProvider from /storage subpath', async () => {
+    const storage = await import('@bradygaster/squad-sdk/storage');
+    expect(storage.FSStorageProvider).toBeDefined();
+    expect(typeof storage.FSStorageProvider).toBe('function');
   });
 });

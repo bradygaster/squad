@@ -27,30 +27,17 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     const sdkDir = join(cwd, 'packages', 'squad-sdk');
     const cliDir = join(cwd, 'packages', 'squad-cli');
 
-    // Build first if dist/ doesn't exist
-    const sdkDist = join(sdkDir, 'dist');
-    const cliDist = join(cliDir, 'dist');
-
     // SKIP_BUILD_BUMP prevents bump-build.mjs from mutating versions to
     // invalid 4-part semver (e.g. 0.8.25.4) which npm install rejects.
     const buildEnv = { ...process.env, SKIP_BUILD_BUMP: '1' };
 
-    if (!existsSync(sdkDist)) {
-      console.log('Building squad-sdk...');
-      execSync('npm run build', { cwd: sdkDir, stdio: 'inherit', env: buildEnv });
-    }
-
-    if (!existsSync(cliDist)) {
-      console.log('Building squad-cli...');
-      execSync('npm run build', { cwd: cliDir, stdio: 'inherit', env: buildEnv });
-    }
-
-    // Pack both packages
+    // Pack both packages. npm pack must exercise package-local prepack hooks
+    // so the tarballs always contain fresh dist/ artifacts.
     console.log('Packing squad-sdk...');
     const sdkPackOutput = execSync('npm pack --quiet', {
       cwd: sdkDir,
       encoding: 'utf8',
-      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+      env: { ...buildEnv, NO_COLOR: '1', FORCE_COLOR: '0' },
     }).trim();
     sdkTarball = join(sdkDir, sdkPackOutput.split('\n').pop()!.trim());
 
@@ -58,7 +45,7 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     const cliPackOutput = execSync('npm pack --quiet', {
       cwd: cliDir,
       encoding: 'utf8',
-      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+      env: { ...buildEnv, NO_COLOR: '1', FORCE_COLOR: '0' },
     }).trim();
     cliTarball = join(cliDir, cliPackOutput.split('\n').pop()!.trim());
 
@@ -208,6 +195,34 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     expect(existsSync(sdkPkg), 'squad-sdk not installed as dependency of squad-cli').toBe(true);
     const pkg = JSON.parse(require('fs').readFileSync(sdkPkg, 'utf8'));
     expect(pkg.name).toBe('@bradygaster/squad-sdk');
+  });
+
+  it('packaged squad-sdk exports FSStorageProvider from root', () => {
+    const script = [
+      "import('@bradygaster/squad-sdk')",
+      "  .then((sdk) => console.log(typeof sdk.FSStorageProvider))",
+      "  .catch((error) => { console.error(error); process.exit(1); });",
+    ].join('');
+    const stdout = execSync(`node --input-type=module -e ${JSON.stringify(script)}`, {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    }).trim();
+    expect(stdout).toBe('function');
+  });
+
+  it('packaged squad-sdk exports FSStorageProvider from /storage subpath', () => {
+    const script = [
+      "import('@bradygaster/squad-sdk/storage')",
+      "  .then((storage) => console.log(typeof storage.FSStorageProvider))",
+      "  .catch((error) => { console.error(error); process.exit(1); });",
+    ].join('');
+    const stdout = execSync(`node --input-type=module -e ${JSON.stringify(script)}`, {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+    }).trim();
+    expect(stdout).toBe('function');
   });
 
   // ============================================================================
