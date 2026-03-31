@@ -161,19 +161,22 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>] [--execute]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
-    console.log(`             Flags: --execute (spawn agents to work on issues)`);
+    console.log(`             Core flags:`);
+    console.log(`                    --execute (spawn agents to work on issues)`);
     console.log(`                    --copilot-flags "..." (extra copilot CLI flags)`);
     console.log(`                    --max-concurrent N (parallel issue limit, default 1)`);
     console.log(`                    --timeout N (max minutes per issue, default 30)`);
-    console.log(`                    --monitor-teams (scan Teams for actionable messages)`);
-    console.log(`                    --monitor-email (scan email for actionable items)`);
-    console.log(`                    --board (enable project board lifecycle)`);
-    console.log(`                    --board-project N (project number, default 1)`);
-    console.log(`                    --two-pass (lightweight list then hydrate actionable)`);
-    console.log(`                    --wave-dispatch (wave-based parallel sub-task dispatch)`);
-    console.log(`                    --retro (enforce retrospective checks)`);
-    console.log(`                    --decision-hygiene (auto-merge decision inbox)`);
-    console.log(`                    --channel-routing (route to Teams channels)`);
+    console.log(`             Capabilities (opt-in via --<name> or config.json):`);
+    console.log(`                    --self-pull       git fetch/pull at round start`);
+    console.log(`                    --board           project board lifecycle + reconciliation`);
+    console.log(`                    --board-project N project number (default 1)`);
+    console.log(`                    --monitor-teams   scan Teams for actionable messages`);
+    console.log(`                    --monitor-email   scan email for actionable items`);
+    console.log(`                    --two-pass        lightweight list then hydrate actionable`);
+    console.log(`                    --wave-dispatch   wave-based parallel sub-task dispatch`);
+    console.log(`                    --retro           enforce retrospective checks`);
+    console.log(`                    --decision-hygiene auto-merge decision inbox`);
+    console.log(`             Disable: --no-<capability> overrides config.json`);
     console.log(`  ${BOLD}loop${RESET}       Continuous work loop (Ralph mode)`);
     console.log(`             Usage: loop [--filter <label>] [--interval <minutes>]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
@@ -333,20 +336,21 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'triage' || cmd === 'watch') {
-    const { runWatch } = await import('./cli/commands/watch.js');
-    const intervalIdx = args.indexOf('--interval');
-    const intervalMinutes = (intervalIdx !== -1 && args[intervalIdx + 1])
-      ? parseInt(args[intervalIdx + 1]!, 10)
-      : 10;
+    const { runWatch, loadWatchConfig, createDefaultRegistry } = await import('./cli/commands/watch/index.js');
 
-    const execute = args.includes('--execute');
+    // Parse core flags
+    const intervalIdx = args.indexOf('--interval');
+    const interval = (intervalIdx !== -1 && args[intervalIdx + 1])
+      ? parseInt(args[intervalIdx + 1]!, 10)
+      : undefined;
+
+    const execute = args.includes('--execute') ? true : undefined;
 
     const copilotFlagsIdx = args.indexOf('--copilot-flags');
     const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
       ? args[copilotFlagsIdx + 1]
       : undefined;
 
-    // Hidden flag — not shown in help text
     const agentCmdIdx = args.indexOf('--agent-cmd');
     const agentCmd = (agentCmdIdx !== -1 && args[agentCmdIdx + 1])
       ? args[agentCmdIdx + 1]
@@ -355,46 +359,42 @@ async function main(): Promise<void> {
     const maxConcurrentIdx = args.indexOf('--max-concurrent');
     const maxConcurrent = (maxConcurrentIdx !== -1 && args[maxConcurrentIdx + 1])
       ? parseInt(args[maxConcurrentIdx + 1]!, 10)
-      : 1;
+      : undefined;
 
     const timeoutIdx = args.indexOf('--timeout');
-    const issueTimeoutMinutes = (timeoutIdx !== -1 && args[timeoutIdx + 1])
+    const timeout = (timeoutIdx !== -1 && args[timeoutIdx + 1])
       ? parseInt(args[timeoutIdx + 1]!, 10)
-      : 30;
+      : undefined;
 
-    // Opt-in feature flags (#708)
-    const monitorTeams = args.includes('--monitor-teams');
-    const monitorEmail = args.includes('--monitor-email');
-    const board = args.includes('--board');
+    // Build capability overrides from CLI flags and --no-{cap} flags
+    const capabilities: Record<string, boolean | Record<string, unknown>> = {};
+    const registry = createDefaultRegistry();
+    for (const cap of registry.all()) {
+      if (args.includes(`--${cap.name}`)) capabilities[cap.name] = true;
+      if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
+    }
 
+    // Legacy flag compat: --board-project sets board sub-option
     const boardProjectIdx = args.indexOf('--board-project');
-    const boardProject = (boardProjectIdx !== -1 && args[boardProjectIdx + 1])
-      ? parseInt(args[boardProjectIdx + 1]!, 10)
-      : 1;
+    if (boardProjectIdx !== -1 && args[boardProjectIdx + 1]) {
+      const existing = capabilities['board'];
+      capabilities['board'] = typeof existing === 'object' && existing !== null
+        ? { ...existing, projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) }
+        : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
+    }
 
-    const twoPass = args.includes('--two-pass');
-    const waveDispatchFlag = args.includes('--wave-dispatch');
-    const retro = args.includes('--retro');
-    const decisionHygiene = args.includes('--decision-hygiene');
-    const channelRouting = args.includes('--channel-routing');
-
-    await runWatch(process.cwd(), {
-      intervalMinutes,
+    // Load config: .squad/config.json merged with CLI overrides
+    const config = loadWatchConfig(process.cwd(), {
+      interval,
       execute,
+      maxConcurrent,
+      timeout,
       copilotFlags,
       agentCmd,
-      maxConcurrent,
-      issueTimeoutMinutes,
-      monitorTeams,
-      monitorEmail,
-      board,
-      boardProject,
-      twoPass,
-      waveDispatch: waveDispatchFlag,
-      retro,
-      decisionHygiene,
-      channelRouting,
+      capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
+
+    await runWatch(process.cwd(), config);
     return;
   }
 
