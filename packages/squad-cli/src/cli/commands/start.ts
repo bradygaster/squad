@@ -39,6 +39,18 @@ export interface StartOptions {
 }
 
 export async function runStart(cwd: string, options: StartOptions): Promise<void> {
+  // ─── Verify node-pty availability FIRST (before any side effects) ───
+  let nodePty: any;
+  try {
+    // @ts-ignore — node-pty is an optional native dependency
+    nodePty = await import('node-pty');
+  } catch (err) {
+    console.error(`${YELLOW}✗${RESET} node-pty not available. Install it for PTY support:`);
+    console.error(`  ${DIM}npm install -g node-pty${RESET}`);
+    console.error(`\n${DIM}Error: ${(err as Error).message}${RESET}`);
+    process.exit(1);
+  }
+
   const { repo, branch } = getGitInfo(cwd);
   const machine = getMachineId();
   const squadDir = storage.existsSync(path.join(cwd, '.squad'))
@@ -47,7 +59,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       ? path.join(cwd, '.ai-team')
       : '';
 
-  // ─── Setup remote bridge FIRST (before PTY takes over terminal) ───
+  // ─── Setup remote bridge (after verifying PTY is available) ───
   let bridge: RemoteBridge | null = null;
   let tunnelUrl = '';
 
@@ -120,10 +132,6 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
   }
 
   // ─── Spawn copilot in PTY ─────────────────────────────────
-  // Dynamic import node-pty (native module)
-  // @ts-expect-error — node-pty is an optional native dependency
-  const nodePty = await import('node-pty');
-
   const copilotExePath = path.join(
     'C:', 'ProgramData', 'global-npm', 'node_modules', '@github', 'copilot',
     'node_modules', '@github', 'copilot-win32-x64', 'copilot.exe'

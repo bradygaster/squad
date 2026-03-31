@@ -182,6 +182,10 @@
     "react": "^19.2.4",
     "vscode-jsonrpc": "^8.2.1"
   },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0",
+    "qrcode-terminal": "^0.12.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
