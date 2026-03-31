@@ -30,6 +30,8 @@ const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
+const MISSING_MODULE_RE =
+  /\b(?:MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND)\b|Cannot find module|Cannot find package/i;
 
 export interface StartOptions {
   tunnel: boolean;
@@ -38,16 +40,33 @@ export interface StartOptions {
   command?: string;
 }
 
+async function checkNodePty(): Promise<any> {
+  try {
+    // @ts-ignore — node-pty is an optional native dependency
+    return await import('node-pty');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    if (MISSING_MODULE_RE.test(detail)) {
+      throw new Error('node-pty not available. Install it for PTY support:');
+    }
+    throw new Error('node-pty not available. Install it for PTY support:', {
+      cause: detail,
+    });
+  }
+}
+
 export async function runStart(cwd: string, options: StartOptions): Promise<void> {
   // ─── Verify node-pty availability FIRST (before any side effects) ───
   let nodePty: any;
   try {
-    // @ts-ignore — node-pty is an optional native dependency
-    nodePty = await import('node-pty');
+    nodePty = await checkNodePty();
   } catch (err) {
-    console.error(`${YELLOW}✗${RESET} node-pty not available. Install it for PTY support:`);
+    const detail = err instanceof Error && typeof err.cause === 'string' ? err.cause : undefined;
+    console.error(`${YELLOW}✗${RESET} ${(err as Error).message}`);
     console.error(`  ${DIM}npm install -g node-pty${RESET}`);
-    console.error(`\n${DIM}Error: ${(err as Error).message}${RESET}`);
+    if (detail) {
+      console.error(`\n${DIM}Error: ${detail}${RESET}`);
+    }
     process.exit(1);
   }
 

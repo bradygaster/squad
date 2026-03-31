@@ -5,7 +5,12 @@
  * Does NOT spawn PTY or create tunnels (requires native deps + network).
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.resetModules();
+});
 
 describe('CLI: start command', () => {
   it('module exports runStart function', async () => {
@@ -33,31 +38,115 @@ describe('CLI: start command', () => {
  * immediately without creating RemoteBridge or tunnel side effects.
  */
 describe('CLI: start command - node-pty requirement (issue #711)', () => {
-  it('verifies node-pty import appears before RemoteBridge construction in source', async () => {
+  it('exits before bridge or tunnel setup when node-pty is missing', async () => {
+    const exitSignal = new Error('process.exit');
+    const remoteBridgeCtor = vi.fn();
+    const remoteBridgeStart = vi.fn(async () => 0);
+    const createTunnel = vi.fn();
+    const destroyTunnel = vi.fn();
+    const getGitInfo = vi.fn(() => ({ repo: 'owner/repo', branch: 'test-branch' }));
+    const getMachineId = vi.fn(() => 'machine-id');
+    const isDevtunnelAvailable = vi.fn(() => true);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exitMock = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      (exitSignal as Error & { exitCode?: string | number | null }).exitCode = code;
+      throw exitSignal;
+    }) as never);
+
+    vi.doMock('@bradygaster/squad-sdk', () => {
+      class FSStorageProvider {
+        existsSync(): boolean {
+          return false;
+        }
+
+        statSync(): undefined {
+          return undefined;
+        }
+
+        appendSync(): void {}
+      }
+
+      class RemoteBridge {
+        constructor(_config: unknown) {
+          remoteBridgeCtor(_config);
+        }
+
+        setStaticHandler = vi.fn();
+        start = remoteBridgeStart;
+        getSessionToken = vi.fn(() => 'session-token');
+        getAuditLogPath = vi.fn(() => 'audit.log');
+        getSessionExpiry = vi.fn(() => Date.now() + 60_000);
+        setPassthrough = vi.fn();
+        passthroughFromAgent = vi.fn();
+        stop = vi.fn();
+      }
+
+      return { FSStorageProvider, RemoteBridge };
+    });
+
+    vi.doMock('../../packages/squad-cli/src/cli/commands/rc-tunnel.js', () => ({
+      isDevtunnelAvailable,
+      createTunnel,
+      destroyTunnel,
+      getMachineId,
+      getGitInfo,
+    }));
+
+    vi.doMock('node-pty', () => {
+      throw new Error('Cannot find package "node-pty" imported from start.ts');
+    });
+
+    const { runStart } = await import('../../packages/squad-cli/src/cli/commands/start.ts');
+
+    await expect(runStart(process.cwd(), { tunnel: true, port: 0 })).rejects.toBe(exitSignal);
+
+    expect(exitMock).toHaveBeenCalledWith(1);
+    expect((exitSignal as Error & { exitCode?: string | number | null }).exitCode).toBe(1);
+
+    const errorOutput = consoleError.mock.calls.flat().join('\n');
+    expect(errorOutput).toMatch(/node-pty not available/i);
+    expect(errorOutput).toMatch(/npm install -g node-pty/i);
+
+    expect(getGitInfo).not.toHaveBeenCalled();
+    expect(getMachineId).not.toHaveBeenCalled();
+    expect(isDevtunnelAvailable).not.toHaveBeenCalled();
+    expect(remoteBridgeCtor).not.toHaveBeenCalled();
+    expect(remoteBridgeStart).not.toHaveBeenCalled();
+    expect(createTunnel).not.toHaveBeenCalled();
+    expect(destroyTunnel).not.toHaveBeenCalled();
+  });
+
+  it('uses checkNodePty helper before RemoteBridge construction in source', async () => {
     // Read the source file directly to verify implementation order
     const fs = await import('node:fs');
     const path = await import('node:path');
     
     const startTsPath = path.resolve(process.cwd(), 'packages/squad-cli/src/cli/commands/start.ts');
     const source = fs.readFileSync(startTsPath, 'utf-8');
-    
-    // Find the start of runStart function
+
+    // Verify the dedicated helper exists and owns the optional import
+    const helperStart = source.indexOf('async function checkNodePty');
+    expect(helperStart).toBeGreaterThan(-1);
+
     const functionStart = source.indexOf('export async function runStart');
     expect(functionStart).toBeGreaterThan(-1);
+
+    const helperSource = source.slice(helperStart, functionStart);
+    expect(helperSource).toMatch(/await import\(['"]node-pty['"]\)/);
     
-    // Find node-pty import position (relative to function start)
-    const nodePtyImportPattern = /await import\(['"]node-pty['"]\)/;
-    const nodePtyMatch = source.slice(functionStart).match(nodePtyImportPattern);
-    expect(nodePtyMatch).toBeTruthy();
-    const nodePtyPos = functionStart + (nodePtyMatch?.index || 0);
+    // Find helper call position (relative to function start)
+    const helperCallPos = source.indexOf('await checkNodePty()', functionStart);
+    expect(helperCallPos).toBeGreaterThan(-1);
     
     // Find RemoteBridge construction
     const bridgePattern = /new RemoteBridge\(/;
     const bridgeMatch = source.slice(functionStart).match(bridgePattern);
     if (bridgeMatch) {
       const bridgePos = functionStart + bridgeMatch.index;
-      // node-pty import MUST come before RemoteBridge construction
-      expect(nodePtyPos).toBeLessThan(bridgePos);
+      // checkNodePty MUST run before RemoteBridge construction
+      expect(helperCallPos).toBeLessThan(bridgePos);
     }
     
     // Find bridge.start() call
@@ -65,7 +154,7 @@ describe('CLI: start command - node-pty requirement (issue #711)', () => {
     const bridgeStartMatch = source.slice(functionStart).match(bridgeStartPattern);
     if (bridgeStartMatch) {
       const bridgeStartPos = functionStart + bridgeStartMatch.index;
-      expect(nodePtyPos).toBeLessThan(bridgeStartPos);
+      expect(helperCallPos).toBeLessThan(bridgeStartPos);
     }
     
     // Find createTunnel call
@@ -73,7 +162,7 @@ describe('CLI: start command - node-pty requirement (issue #711)', () => {
     const createTunnelMatch = source.slice(functionStart).match(createTunnelPattern);
     if (createTunnelMatch) {
       const createTunnelPos = functionStart + createTunnelMatch.index;
-      expect(nodePtyPos).toBeLessThan(createTunnelPos);
+      expect(helperCallPos).toBeLessThan(createTunnelPos);
     }
   });
 });
