@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +84,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
