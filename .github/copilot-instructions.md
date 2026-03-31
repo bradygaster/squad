@@ -66,6 +66,32 @@ When opening a PR:
 - If this is a 🟡 needs-review task, add to the PR description: `⚠️ This task was flagged as "needs review" — please have a squad member review before merging.`
 - Follow any project conventions in `.squad/decisions.md`
 
+## PR Requirements — Pre-Push Quality Checklist
+
+Before pushing code that will become a PR, run these checks locally. These mirror what CI will catch, but running them early saves a round-trip.
+
+### 1. CHANGELOG gate
+If you changed files in `packages/squad-sdk/src/` or `packages/squad-cli/src/`, you **must** also update `CHANGELOG.md` with an entry under `[Unreleased]`. CI will block if you forget. Bypass: `skip-changelog` label (requires reviewer approval).
+
+### 2. Exports map check
+Run `node scripts/check-exports-map.mjs` before pushing. If you added a new `src/*/index.ts` barrel directory, it must have a matching entry in `packages/squad-sdk/package.json` exports. CI will block if missing. Bypass: `skip-exports-check` label (requires reviewer approval).
+
+### 3. Samples build (planned — PR #674)
+If you changed SDK source files, verify your changes don't break sample projects by running `npm run build` in any affected sample directory. A CI gate (`samples-build`) covering all 9 samples is planned in PR #674 but not yet active — this is a manual pre-push check until that PR merges. Bypass (once active): `skip-samples-ci` label (requires reviewer approval).
+
+### 4. PR description completeness
+Fill in all sections of the PR template (What, Why, How, Testing). If your changes are user-facing (SDK exports or CLI commands), the Docs section must include a CHANGELOG entry reference. Empty template sections will be flagged during review.
+
+### 5. User-facing change detection
+A change is **user-facing** if it touches:
+- `packages/squad-sdk/src/` (SDK exports consumers import)
+- `packages/squad-cli/src/cli/` (CLI commands users run)
+
+User-facing changes require: CHANGELOG entry, README update (if new feature), docs page (if new capability), package.json exports (if new module), and sample updates (if API changed).
+
+### 6. Escape hatches
+All CI gates have skip labels and global feature flags. **Self-waiving is not allowed** — another reviewer must agree before you add a skip label. See `.github/PR_REQUIREMENTS.md` for the full spec.
+
 ## Decisions
 
 If you make a decision that affects other team members, write it to:

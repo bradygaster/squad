@@ -10,6 +10,7 @@
 | SDK integration | CAPCOM 🕵️ | @github/copilot-sdk usage, CopilotSession lifecycle, event handling, platform patterns |
 | Runtime performance | GNC ⚡ | Streaming, event loop health, session management, async iterators, memory profiling |
 | Tests & quality | FIDO 🧪 | Test coverage, Vitest, edge cases, CI/CD, quality gates, adversarial testing, PR blocking |
+| PR requirements enforcement | FIDO 🧪 | Pre-CI validation, CHANGELOG gate, exports map check, PR template completeness, bleed detection, waiver audit, skip-label governance |
 | Docs & messaging | PAO 📣 | README, API docs, getting-started, demos, tone review, contributor recognition |
 | Architecture & review | Flight 🏗️ | Product direction, architectural decisions, code review, scope/trade-offs |
 | Distribution | Network 📦 | npm packaging, esbuild config, global install, marketplace prep |
@@ -47,6 +48,10 @@
 | `src/cli/shell/components/` | DSKY 🖥️ | VOX 🖥️ |
 | `tests/acceptance/` | Sims 🧪 | FIDO 🧪 |
 | `src/index.ts` | CONTROL 👩‍💻 | Flight 🏗️ |
+| `.github/PR_REQUIREMENTS.md` | FIDO 🧪 | Flight 🏗️ |
+| `.github/PULL_REQUEST_TEMPLATE.md` | FIDO 🧪 | Flight 🏗️ |
+| `.github/workflows/squad-ci.yml` | Booster ⚙️ | FIDO 🧪 |
+| `scripts/check-exports-map.mjs` | FIDO 🧪 | Booster ⚙️ |
 
 ## Routing Principles
 
@@ -57,3 +62,4 @@
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
 6. **Anticipate downstream.** Feature being built? Spawn tester for test cases from requirements simultaneously.
 7. **Doc-impact check → PAO.** Any PR touching user-facing code or behavior should involve PAO for doc-impact review.
+8. **PR compliance check → FIDO.** Before any PR is opened or after agent work completes, spawn FIDO to validate against `.github/PR_REQUIREMENTS.md`. FIDO catches CHANGELOG, exports, template, and bleed issues before CI runs.
