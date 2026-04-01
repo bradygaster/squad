@@ -38,6 +38,17 @@ squad init
 | `squad link <team-repo-path>` | Link project to a remote team root | Yes |
 | `squad triage` | Auto-triage issues and assign to team (primary name; `watch` is an alias) | Yes |
 | `squad triage --interval <min>` | Continuous triage (default: every 10 min) | Yes |
+| `squad watch --execute` | Enable work execution (spawn Copilot to work on issues) | Yes |
+| `squad watch --monitor-teams` | Scan Teams for actionable messages each round | Yes |
+| `squad watch --monitor-email` | Scan email for alerts and action items each round | Yes |
+| `squad watch --board` | Enable project board lifecycle management | Yes |
+| `squad watch --two-pass` | Use two-pass scanning (lightweight → hydrate) | Yes |
+| `squad watch --wave-dispatch` | Parallel sub-task execution within issues | Yes |
+| `squad watch --retro` | Enforce retrospective checks | Yes |
+| `squad watch --decision-hygiene` | Auto-merge decision inbox | Yes |
+| `squad watch --max-concurrent N` | Max parallel issues per round (default: 1) | Yes |
+| `squad watch --timeout N` | Per-issue timeout in minutes (default: 30) | Yes |
+| `squad watch --copilot-flags "..."` | Extra flags for Copilot CLI | Yes |
 | `squad copilot` | Add the @copilot coding agent to the team | Yes |
 | `squad copilot --off` | Remove @copilot from the team | Yes |
 | `squad copilot --auto-assign` | Enable auto-assignment for @copilot | Yes |

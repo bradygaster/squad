@@ -121,8 +121,8 @@
       "import": "./dist/cli/commands/init-remote.js"
     },
     "./commands/watch": {
-      "types": "./dist/cli/commands/watch.d.ts",
-      "import": "./dist/cli/commands/watch.js"
+      "types": "./dist/cli/commands/watch/index.d.ts",
+      "import": "./dist/cli/commands/watch/index.js"
     },
     "./commands/start": {
       "types": "./dist/cli/commands/start.d.ts",

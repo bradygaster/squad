@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { triageIssue, type RoutingRule, type TeamMember, type TriageIssue } from '../packages/squad-sdk/src/ralph/triage.js';
-import { reportBoard, type BoardState } from '../packages/squad-cli/src/cli/commands/watch.js';
+import { reportBoard, type BoardState } from '../packages/squad-cli/src/cli/commands/watch/index.js';
 
 type BoardIssueState = Pick<BoardState, 'untriaged' | 'assigned'>;
 
@@ -127,3 +127,4 @@ describe('board state compatibility with triage output', () => {
     expect(after).toEqual({ untriaged: 0, assigned: 1 });
   });
 });
+
