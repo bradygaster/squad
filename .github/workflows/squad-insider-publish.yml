@@ -25,6 +25,9 @@ jobs:
           node-version: ${{ matrix.node-version }}
           install-command: 'install'
 
+      - name: Fix platform-specific rollup bindings
+        run: npm install @rollup/rollup-linux-x64-gnu --no-save || true
+
       - name: Build
         run: |
           rm -rf packages/squad-cli/node_modules/@bradygaster/squad-sdk
@@ -44,6 +47,9 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           install-command: 'install'
+
+      - name: Fix platform-specific rollup bindings
+        run: npm install @rollup/rollup-linux-x64-gnu --no-save || true
 
       - name: Build (required for subpath export resolution)
         run: |
@@ -105,6 +111,9 @@ jobs:
           node-version: ${{ matrix.node-version }}
           registry-url: 'https://registry.npmjs.org'
           install-command: 'install'
+
+      - name: Fix platform-specific rollup bindings
+        run: npm install @rollup/rollup-linux-x64-gnu --no-save || true
 
       - name: Validate npm token
         run: |
