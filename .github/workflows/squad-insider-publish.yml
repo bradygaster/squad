@@ -44,6 +44,12 @@ jobs:
       - name: Build (required for subpath export resolution)
         run: npm run build
 
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Install docs dependencies
+        run: npm --prefix docs install
+
       - name: Run tests
         run: npm test
 
