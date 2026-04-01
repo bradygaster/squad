@@ -1,0 +1,220 @@
+# Upstream PR Readiness Gate
+#
+# Evaluates open PRs for readiness after CI completes.
+# Adds squad:pr-reviewed when all checks pass, removes it if any fail.
+#
+# Runs on:
+# - Completed workflow runs (evaluates only affected PRs)
+# - Manual trigger (full scan of all open PRs)
+#
+# This is a devops workflow for the squad repo, not a product template.
+
+name: PR Readiness Gate
+
+on:
+  workflow_run:
+    workflows: ["Squad CI"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: read
+  checks: read
+  statuses: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate PR readiness
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Determine which PRs to evaluate:
+            // - workflow_run: only PRs affected by the triggering CI run
+            // - workflow_dispatch: all open PRs (full scan)
+            let pulls;
+            if (context.payload.workflow_run?.pull_requests?.length > 0) {
+              // Targeted evaluation — only PRs from the triggering CI run
+              const prNumbers = context.payload.workflow_run.pull_requests.map(p => p.number);
+              console.log(`Targeted evaluation for PRs: ${prNumbers.join(', ')}`);
+              pulls = [];
+              for (const num of prNumbers) {
+                const { data: pr } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: num
+                });
+                if (pr.state === 'open') pulls.push(pr);
+              }
+            } else {
+              // Full scan — all open PRs (paginated)
+              console.log('Full scan of all open PRs');
+              pulls = await github.paginate(
+                github.rest.pulls.list,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  state: 'open',
+                  per_page: 100
+                }
+              );
+            }
+
+            if (pulls.length === 0) {
+              console.log('No open PRs to evaluate');
+              return;
+            }
+
+            // Verify the label exists (managed centrally by sync-squad-labels.yml)
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'squad:pr-reviewed'
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                // Create it as fallback if sync-squad-labels hasn't run yet
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'squad:pr-reviewed',
+                  color: '0E8A16',
+                  description: 'Fully reviewed and ready for maintainer'
+                });
+              } else {
+                throw e;
+              }
+            }
+
+            for (const pr of pulls) {
+              console.log(`\n--- PR #${pr.number}: ${pr.title} ---`);
+
+              const hasLabel = pr.labels.some(l => l.name === 'squad:pr-reviewed');
+
+              // Check 1: Mergeable (with retry for null state)
+              let prDetail;
+              for (let attempt = 0; attempt < 3; attempt++) {
+                const { data } = await github.rest.pulls.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number
+                });
+                prDetail = data;
+                if (prDetail.mergeable !== null) break;
+                if (attempt < 2) {
+                  console.log(`  Mergeable is null (attempt ${attempt + 1}); retrying...`);
+                  await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+                }
+              }
+              if (prDetail.mergeable === null) {
+                console.log('  Mergeable still null after retries; skipping this PR.');
+                continue;
+              }
+              const mergeable = prDetail.mergeable && prDetail.mergeable_state !== 'dirty';
+              console.log(`  Mergeable: ${mergeable} (state: ${prDetail.mergeable_state})`);
+
+              // Check 2: Single commit
+              const commits = await github.paginate(
+                github.rest.pulls.listCommits,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  per_page: 100
+                }
+              );
+              const singleCommit = commits.length === 1;
+              console.log(`  Commits: ${commits.length} (single: ${singleCommit})`);
+
+              // Check 3: CI green (checks API + combined status)
+              const ciRef = prDetail.merge_commit_sha || pr.head.sha;
+              const checkRuns = await github.paginate(
+                github.rest.checks.listForRef,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: ciRef,
+                  per_page: 100
+                },
+                (response) => response.data
+              );
+              const ciChecks = checkRuns.filter(c => c.name !== 'PR Readiness Gate');
+
+              // Also check commit statuses (e.g. from CI Rerun workflow)
+              const { data: combinedStatus } = await github.rest.repos.getCombinedStatusForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha
+              });
+              const statusFailing = combinedStatus.state === 'failure';
+
+              const allGreen = ciChecks.length > 0 && ciChecks.every(c =>
+                c.conclusion === 'success' || c.conclusion === 'skipped' || c.conclusion === 'neutral'
+              ) && !statusFailing;
+              const pending = ciChecks.some(c => c.status !== 'completed') || combinedStatus.state === 'pending';
+              const failing = ciChecks.filter(c =>
+                c.conclusion === 'failure' || c.conclusion === 'cancelled' || c.conclusion === 'timed_out'
+              ).map(c => c.name);
+              console.log(`  CI: allGreen=${allGreen}, pending=${pending}, failing=[${failing.join(', ')}], statusState=${combinedStatus.state}`);
+
+              // Check 4: No outstanding change requests (latest review per user)
+              const allReviews = await github.paginate(
+                github.rest.pulls.listReviews,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  per_page: 100
+                }
+              );
+              const latestReviewByUser = new Map();
+              for (const review of allReviews) {
+                if (!review.user || !review.user.login || !review.submitted_at) continue;
+                const key = review.user.login;
+                const existing = latestReviewByUser.get(key);
+                if (!existing || new Date(review.submitted_at) > new Date(existing.submitted_at)) {
+                  latestReviewByUser.set(key, review);
+                }
+              }
+              const changesRequested = Array.from(latestReviewByUser.values()).some(r =>
+                r.state === 'CHANGES_REQUESTED' &&
+                r.user.login !== pr.user.login
+              );
+              console.log(`  Changes requested (latest per reviewer): ${changesRequested}`);
+
+              // Evaluate readiness — pending CI = not ready (remove label to keep it a live signal)
+              const ready = !pending && mergeable && singleCommit && allGreen && !changesRequested;
+              console.log(`  Ready: ${ready}`);
+
+              if (ready && !hasLabel) {
+                console.log(`  🟢 Adding squad:pr-reviewed`);
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  labels: ['squad:pr-reviewed']
+                });
+              } else if (!ready && hasLabel) {
+                console.log(`  🔴 Removing squad:pr-reviewed`);
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: pr.number,
+                    name: 'squad:pr-reviewed'
+                  });
+                } catch (e) {
+                  if (e.status !== 404) throw e;
+                }
+              } else {
+                console.log(`  No label change needed (ready=${ready}, hasLabel=${hasLabel})`);
+              }
+            }
