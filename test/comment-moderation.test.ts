@@ -1,14 +1,15 @@
 /**
- * Tests for comment-moderation scoring logic.
- * Validates the pure functions extracted from the CI workflow.
+ * Tests for comment-moderation scoring logic and orchestration.
+ * Validates the pure functions and the run() orchestrator.
  * Issue: #751, PR: #753
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   shouldSkipComment,
   scoreComment,
   buildModerationNotice,
+  run,
   TRUSTED_ASSOCIATIONS,
   SPAM_THRESHOLD,
   RECRUITMENT_PATTERNS,
@@ -390,5 +391,170 @@ describe('buildModerationNotice', () => {
     const notice = buildModerationNotice([], 'o', 'r');
     expect(notice).toContain('reply to this thread');
     expect(notice).toContain('restore it promptly');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// run() — orchestration
+// ---------------------------------------------------------------------------
+
+describe('run', () => {
+  /** Build a mock env with defaults that produce a spam hit. */
+  function spamEnv(overrides = {}) {
+    return {
+      GITHUB_TOKEN: 'ghp_test',
+      COMMENT_ID: '12345',
+      COMMENT_NODE_ID: 'IC_node123',
+      COMMENT_BODY: 'Buy crypto now! Best bitcoin deals! We are hiring!',
+      COMMENT_USER: 'spammer42',
+      COMMENT_USER_TYPE: 'User',
+      COMMENT_ASSOCIATION: 'NONE',
+      COMMENT_CREATED: '2024-01-01T00:00:00Z',
+      REPO_OWNER: 'testowner',
+      REPO_NAME: 'testrepo',
+      ISSUE_NUMBER: '99',
+      ...overrides,
+    };
+  }
+
+  /** Build a mock env for a clean (non-spam) comment. */
+  function cleanEnv(overrides = {}) {
+    return {
+      GITHUB_TOKEN: 'ghp_test',
+      COMMENT_ID: '12345',
+      COMMENT_NODE_ID: 'IC_node123',
+      COMMENT_BODY: 'Thanks for the great library!',
+      COMMENT_USER: 'contributor1',
+      COMMENT_USER_TYPE: 'User',
+      COMMENT_ASSOCIATION: 'NONE',
+      COMMENT_CREATED: '2024-01-01T00:00:00Z',
+      REPO_OWNER: 'testowner',
+      REPO_NAME: 'testrepo',
+      ISSUE_NUMBER: '99',
+      ...overrides,
+    };
+  }
+
+  /** Create a mock fetch that returns the given user data on the first call. */
+  function mockFetch(userCreatedAt = '2020-01-01T00:00:00Z') {
+    return vi.fn(async (url, _opts) => {
+      if (typeof url === 'string' && url.includes('/users/')) {
+        return { ok: true, json: async () => ({ created_at: userCreatedAt }) };
+      }
+      // GraphQL + comment creation calls
+      return { ok: true, json: async () => ({}) };
+    });
+  }
+
+  it('should skip Bot sender types', async () => {
+    const result = await run({
+      env: spamEnv({ COMMENT_USER_TYPE: 'Bot' }),
+      fetchFn: mockFetch(),
+    });
+    expect(result.action).toBe('skipped');
+    expect(result.reason).toBe('trusted_or_bot');
+  });
+
+  it('should skip trusted associations', async () => {
+    const result = await run({
+      env: spamEnv({ COMMENT_ASSOCIATION: 'OWNER' }),
+      fetchFn: mockFetch(),
+    });
+    expect(result.action).toBe('skipped');
+  });
+
+  it('should return "none" when score is below threshold', async () => {
+    const fetchFn = mockFetch('2020-01-01T00:00:00Z'); // old account
+    const result = await run({ env: cleanEnv(), fetchFn });
+    expect(result.action).toBe('none');
+    expect(result.score).toBeLessThan(SPAM_THRESHOLD);
+  });
+
+  it('should return "moderated" when score meets threshold', async () => {
+    // New account (1 day) + NONE + spam keywords → ≥ 5
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const fetchFn = mockFetch(oneDayAgo);
+    const result = await run({ env: spamEnv(), fetchFn });
+    expect(result.action).toBe('moderated');
+    expect(result.score).toBeGreaterThanOrEqual(SPAM_THRESHOLD);
+  });
+
+  it('should call GraphQL minimize when spam is detected', async () => {
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const fetchFn = mockFetch(oneDayAgo);
+    await run({ env: spamEnv(), fetchFn });
+
+    const graphqlCall = fetchFn.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.includes('/graphql'),
+    );
+    expect(graphqlCall).toBeDefined();
+    const body = JSON.parse(graphqlCall[1].body);
+    expect(body.query).toContain('minimizeComment');
+    expect(body.variables.id).toBe('IC_node123');
+  });
+
+  it('should post moderation notice when spam is detected', async () => {
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const fetchFn = mockFetch(oneDayAgo);
+    await run({ env: spamEnv(), fetchFn });
+
+    const noticeCall = fetchFn.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.includes('/issues/99/comments'),
+    );
+    expect(noticeCall).toBeDefined();
+    const body = JSON.parse(noticeCall[1].body);
+    expect(body.body).toContain('Automated moderation');
+  });
+
+  it('should not post notice when ISSUE_NUMBER is empty', async () => {
+    const oneDayAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+    const fetchFn = mockFetch(oneDayAgo);
+    await run({ env: spamEnv({ ISSUE_NUMBER: '' }), fetchFn });
+
+    const noticeCall = fetchFn.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.includes('/issues/'),
+    );
+    expect(noticeCall).toBeUndefined();
+  });
+
+  it('should handle user lookup failure gracefully', async () => {
+    const fetchFn = vi.fn(async (url, _opts) => {
+      if (typeof url === 'string' && url.includes('/users/')) {
+        return { ok: false, status: 404 };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    const result = await run({ env: spamEnv(), fetchFn });
+    // userLookupFailed adds 3 + NONE 2 + spam keywords 3 = 8
+    expect(result.action).toBe('moderated');
+    expect(result.signals).toEqual(
+      expect.arrayContaining([expect.stringContaining('account_lookup_failed')]),
+    );
+  });
+
+  it('should handle fetch network error gracefully', async () => {
+    const fetchFn = vi.fn(async (url, _opts) => {
+      if (typeof url === 'string' && url.includes('/users/')) {
+        throw new Error('network down');
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    const result = await run({ env: spamEnv(), fetchFn });
+    expect(result.action).toBe('moderated');
+  });
+
+  it('should not make API calls when comment is skipped', async () => {
+    const fetchFn = mockFetch();
+    await run({ env: spamEnv({ COMMENT_USER_TYPE: 'Bot' }), fetchFn });
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('should not call minimize or post notice when below threshold', async () => {
+    const fetchFn = mockFetch('2020-01-01T00:00:00Z');
+    await run({ env: cleanEnv(), fetchFn });
+
+    // Only the user lookup call should have been made
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(fetchFn.mock.calls[0][0]).toContain('/users/');
   });
 });

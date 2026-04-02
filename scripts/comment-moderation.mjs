@@ -1,13 +1,18 @@
 /**
- * Comment spam moderation — pure scoring logic.
+ * Comment spam moderation — scoring logic + orchestration.
  *
- * Extracted from .github/workflows/squad-comment-moderation.yml so the
- * scoring heuristics can be unit-tested independently of the GitHub
- * Actions runtime.  All functions are pure (no API calls) — the workflow
- * remains the thin orchestrator that fetches data and acts on results.
+ * All scoring heuristics are pure functions (no API calls).  The `run()`
+ * function is the orchestrator: it reads context from environment
+ * variables, calls the GitHub API via `fetch`, scores the comment, and
+ * takes action (minimize + post notice) when the score exceeds the
+ * threshold.
+ *
+ * The workflow invokes this script via `node scripts/comment-moderation.mjs`.
  *
  * Issue: #751
  */
+
+import { fileURLToPath } from 'node:url';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -144,4 +149,147 @@ export function buildModerationNotice(signals, repoOwner, repoName) {
     '',
     `*This check is automated. See [comment-spam-protection proposal](https://github.com/${repoOwner}/${repoName}/blob/dev/docs/proposals/comment-spam-protection.md) for details.*`,
   ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Orchestration
+// ---------------------------------------------------------------------------
+
+/**
+ * Full moderation orchestrator.  Reads context, scores the comment,
+ * and takes action when the spam threshold is met.
+ *
+ * Dependencies (`env` and `fetchFn`) are injectable for testing.
+ *
+ * @param {object}   [opts]
+ * @param {Record<string,string>} [opts.env]      - Environment variables
+ *   (defaults to `process.env`).
+ * @param {typeof globalThis.fetch} [opts.fetchFn] - Fetch implementation
+ *   (defaults to global `fetch`).
+ * @returns {Promise<{ action: string, score?: number, signals?: string[], reason?: string }>}
+ */
+export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}) {
+  const token            = env.GITHUB_TOKEN;
+  const commentBody      = env.COMMENT_BODY || '';
+  const commentUser      = env.COMMENT_USER;
+  const commentUserType  = env.COMMENT_USER_TYPE;
+  const commentAssoc     = env.COMMENT_ASSOCIATION;
+  const commentNodeId    = env.COMMENT_NODE_ID;
+  const repoOwner        = env.REPO_OWNER;
+  const repoName         = env.REPO_NAME;
+  const issueNumber      = env.ISSUE_NUMBER;
+
+  // --- Skip trusted / bot authors ---
+  if (shouldSkipComment(commentAssoc, commentUserType)) {
+    console.log(`Skipping: author_association=${commentAssoc}, sender.type=${commentUserType}`);
+    return { action: 'skipped', reason: 'trusted_or_bot' };
+  }
+
+  // --- Fetch account age ---
+  let userAgeDays = null;
+  let userLookupFailed = false;
+  try {
+    const res = await fetchFn(`https://api.github.com/users/${encodeURIComponent(commentUser)}`, {
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'squad-comment-moderation',
+      },
+    });
+    if (res.ok) {
+      const user = await res.json();
+      userAgeDays = (Date.now() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24);
+    } else {
+      userLookupFailed = true;
+    }
+  } catch {
+    userLookupFailed = true;
+  }
+
+  // --- Score ---
+  const { score, signals } = scoreComment({
+    body: commentBody,
+    authorAssociation: commentAssoc,
+    userAgeDays,
+    userLookupFailed,
+  });
+
+  console.log(`Spam score: ${score}/${SPAM_THRESHOLD} threshold | Signals: ${signals.join(', ') || 'none'}`);
+
+  if (score < SPAM_THRESHOLD) {
+    console.log('Below threshold — no action taken.');
+    return { action: 'none', score, signals };
+  }
+
+  // --- Act: minimize comment ---
+  console.log(`⚠️ Spam detected (score=${score}). Minimizing comment.`);
+  try {
+    const gqlRes = await fetchFn('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `bearer ${token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'squad-comment-moderation',
+      },
+      body: JSON.stringify({
+        query: `mutation($id: ID!) {
+          minimizeComment(input: { subjectId: $id, classifier: SPAM }) {
+            minimizedComment { isMinimized }
+          }
+        }`,
+        variables: { id: commentNodeId },
+      }),
+    });
+    if (!gqlRes.ok) {
+      console.error(`GraphQL request failed: ${gqlRes.status}`);
+    } else {
+      console.log('Comment minimized successfully.');
+    }
+  } catch (e) {
+    console.error(`Failed to minimize comment: ${e.message}`);
+  }
+
+  // --- Act: post moderation notice ---
+  const notice = buildModerationNotice(signals, repoOwner, repoName);
+  if (issueNumber) {
+    try {
+      const noticeRes = await fetchFn(
+        `https://api.github.com/repos/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/issues/${issueNumber}/comments`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `token ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'squad-comment-moderation',
+          },
+          body: JSON.stringify({ body: notice }),
+        },
+      );
+      if (!noticeRes.ok) {
+        console.error(`Failed to post notice: ${noticeRes.status}`);
+      } else {
+        console.log('Moderation notice posted.');
+      }
+    } catch (e) {
+      console.error(`Failed to post notice: ${e.message}`);
+    }
+  }
+
+  return { action: 'moderated', score, signals };
+}
+
+// ---------------------------------------------------------------------------
+// CLI entry point — run when invoked directly via `node scripts/comment-moderation.mjs`
+// ---------------------------------------------------------------------------
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  run().then((result) => {
+    if (result.action === 'moderated') {
+      process.exitCode = 0;
+    }
+  }).catch((err) => {
+    console.error('Moderation script failed:', err);
+    process.exitCode = 1;
+  });
 }
