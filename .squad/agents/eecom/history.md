@@ -1,5 +1,3 @@
-# EECOM History
-
 # EECOM
 
 > Environmental, Electrical, and Consumables Manager
