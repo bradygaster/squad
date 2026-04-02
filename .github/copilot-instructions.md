@@ -31,6 +31,28 @@ If you see any of these, STOP immediately and comment on the issue asking for gu
 - ANY file deletions you didn't explicitly intend
 - Changes outside the scope of your assigned issue
 
+## Protected Files — Zero External Dependencies
+
+**Some files MUST only use Node.js built-in modules. Do NOT add npm packages, SDK imports, or any non-`node:*` dependencies to them.**
+
+These are bootstrap utilities that run **before** the Squad SDK is loaded. If they import SDK code (e.g., `FSStorageProvider`, anything from `squad-sdk`), the CLI breaks at startup.
+
+### Protected file list
+| File | Purpose |
+|------|---------|
+| `packages/squad-cli/src/cli/core/detect-squad-dir.ts` | Finds `.squad/` directory at startup — runs before SDK init |
+
+### Rules
+- ❌ **NEVER** convert these files to use `FSStorageProvider`, `StorageProvider`, or any SDK abstraction
+- ❌ **NEVER** add `import` or `require` statements referencing packages outside `node:*` built-ins
+- ✅ **ONLY** use `node:fs`, `node:path`, and other Node.js built-in modules
+- ✅ **DO** check this list before sweeping refactors (e.g., "convert all fs calls to StorageProvider")
+
+### Why this matters
+Regression tests guard these files (`detect-squad-dir.test.ts` verifies zero external dependencies), but **prevention is better than detection**. A broken bootstrap means the entire CLI fails to start — no helpful error, just a crash.
+
+> **When adding new bootstrap utilities**, add them to this table and write a matching zero-dependency regression test.
+
 ## Team Context
 
 Before starting work on any issue:
