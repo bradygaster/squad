@@ -20,7 +20,12 @@ permissions:
 
 jobs:
   moderate:
+    # Skip bot comments to avoid unnecessary runs (e.g. Copilot, Dependabot).
+    # Recursion-safe: GITHUB_TOKEN-triggered comments don't fire issue_comment
+    # events, so this workflow cannot re-trigger itself.
+    if: github.event.sender.type != 'Bot'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check comment for spam signals
         uses: actions/github-script@v7
@@ -144,7 +149,7 @@ jobs:
               '',
               'If this was a legitimate comment, please reply to this thread or contact the maintainers — we\'ll restore it promptly.',
               '',
-              `*This check is automated. See [comment-spam-protection proposal](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/proposals/comment-spam-protection.md) for details.*`
+              `*This check is automated. See [comment-spam-protection proposal](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/dev/docs/proposals/comment-spam-protection.md) for details.*`
             ].join('\n');
 
             try {
