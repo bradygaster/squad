@@ -263,6 +263,31 @@ function formatAge(seconds: number): string {
   return `${seconds}s`;
 }
 
+// ── Windows .ps1 shim check (#758) ──────────────────────────────────
+
+/**
+ * Detect the unsigned .ps1 shim that npm creates on global install.
+ * PowerShell's default execution policy blocks unsigned scripts, so
+ * the .ps1 shim prevents `squad` from running in PowerShell on Windows.
+ * The .cmd shim works fine — users just need to remove the .ps1 file.
+ */
+export function checkWindowsPs1Shim(): DoctorCheck | undefined {
+  if (process.platform !== 'win32') return undefined;
+
+  const npmPrefix = process.env['npm_config_prefix'] ||
+    path.join(process.env['APPDATA'] ?? '', 'npm');
+  const ps1Path = path.join(npmPrefix, 'squad.ps1');
+
+  if (!fileExists(ps1Path)) return undefined;
+
+  return {
+    name: 'Windows PowerShell shim',
+    status: 'warn',
+    message: 'squad.ps1 exists and may be blocked by execution policy. ' +
+      'Fix: Remove-Item "' + ps1Path + '" — PowerShell will fall back to squad.cmd which works fine.',
+  };
+}
+
 // ── ESM compatibility checks ────────────────────────────────────────
 
 // ── environment checks ─────────────────────────────────────────────
@@ -455,9 +480,13 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
   // 11. Node.js version (node:sqlite availability)
   checks.push(checkNodeVersion());
 
-  // 11-12. ESM compatibility (Node 22/24+)
+  // 12-13. ESM compatibility (Node 22/24+)
   checks.push(checkVscodeJsonrpcExports(resolvedCwd));
   checks.push(checkCopilotSdkSessionPatch(resolvedCwd));
+
+  // 14. Windows .ps1 shim warning (#758)
+  const ps1Check = checkWindowsPs1Shim();
+  if (ps1Check) checks.push(ps1Check);
 
   return checks;
 }
