@@ -303,6 +303,12 @@ GitHub Actions runs on every push:
 
 All checks must pass before merge.
 
+### Comment Moderation
+
+This repo uses automated comment moderation to combat spam. A GitHub Action scans new comments on issues and PRs for spam signals (recruitment ads, crypto scams, SEO link drops) using a multi-signal scoring system. Only comments that match *multiple* spam indicators are hidden — legitimate first-time contributors are not affected.
+
+If your comment is mistakenly hidden, reply to the thread or open a new issue and a maintainer will restore it promptly.
+
 ## Common Tasks
 
 ### Add a CLI Command
