@@ -17,15 +17,23 @@
  */
 
 import { existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
 
 if (process.platform !== 'win32') {
   console.log('ℹ️  Not on Windows — nothing to do.');
   process.exit(0);
 }
 
-const npmPrefix = process.env['npm_config_prefix'] ||
-  join(process.env['APPDATA'] ?? '', 'npm');
+const configuredPrefix = process.env['npm_config_prefix'];
+const appData = process.env['APPDATA'];
+const npmPrefix = configuredPrefix || (appData ? join(appData, 'npm') : undefined);
+
+if (!npmPrefix || !isAbsolute(npmPrefix)) {
+  console.error('❌ Unable to determine absolute npm prefix.');
+  console.error('   npm_config_prefix and APPDATA are not set.');
+  process.exit(1);
+}
+
 const ps1Path = join(npmPrefix, 'squad.ps1');
 
 if (!existsSync(ps1Path)) {

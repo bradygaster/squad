@@ -274,8 +274,10 @@ function formatAge(seconds: number): string {
 export function checkWindowsPs1Shim(): DoctorCheck | undefined {
   if (process.platform !== 'win32') return undefined;
 
-  const npmPrefix = process.env['npm_config_prefix'] ||
-    path.join(process.env['APPDATA'] ?? '', 'npm');
+  const configuredPrefix = process.env['npm_config_prefix'];
+  const appData = process.env['APPDATA'];
+  const npmPrefix = configuredPrefix || (appData ? path.join(appData, 'npm') : undefined);
+  if (!npmPrefix || !path.isAbsolute(npmPrefix)) return undefined;
   const ps1Path = path.join(npmPrefix, 'squad.ps1');
 
   if (!fileExists(ps1Path)) return undefined;
