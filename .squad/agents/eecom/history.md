@@ -4,6 +4,20 @@
 
 ## Learnings
 
+### Replace custom comment moderation with github/ai-moderator (#751) (2025-07-25)
+
+**Context:** PR #753 had a custom 300-line scoring script (`scripts/comment-moderation.mjs`) with 46 tests for spam detection. The approach used multi-signal heuristics (account age, link density, keyword matching) to score and minimize spam comments on issues/PRs.
+
+**Change:** Replaced the entire custom implementation with GitHub's official `github/ai-moderator@v1` marketplace action. Deleted `scripts/comment-moderation.mjs` (295 lines) and `test/comment-moderation.test.ts` (560 lines). Updated workflow to use the action with spam + link-spam detection enabled, AI-content detection disabled initially.
+
+**Key decisions:**
+1. `enable-ai-detection: false` — can be toggled on later if Brady wants AI-generated content flagged. Start conservative.
+2. Added `issues: { types: [opened] }` trigger — the original only covered comments, not issue bodies.
+3. Added `models: read` and `contents: read` permissions — required by the ai-moderator action.
+4. Kept `spam` label for flagged content — matches community expectations.
+
+**Pattern:** When a GitHub marketplace action exists for a CI task you've hand-rolled, prefer the official action. Less code to maintain, better detection (AI-powered vs heuristic), and GitHub handles updates. The 855-line delta (17 added, 889 removed) speaks for itself.
+
 ### archiveDecisions() count-based fallback (#626) (2025-07-24)
 
 **Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.
