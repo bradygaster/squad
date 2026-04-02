@@ -196,3 +196,11 @@ Also updated: examples section (showing `name` + `description` pairs), anti-patt
 
 **Pattern:** When a PR branch has accumulated merge commits from dev, use `git rebase --onto dev <parent-of-first-PR-commit>` to cherry-pick only the relevant commits. This avoids conflict noise from old merge commits that are already in dev. Also: after template renames, the sync script may overwrite version stamps in the canonical file — revert those before pushing.
 
+### 2026-07: Protected Files guardrail in copilot-instructions.md
+
+**Problem:** Commit `26047dc5` (StorageProvider abstraction) accidentally converted `detect-squad-dir.ts` from raw `node:fs` to `FSStorageProvider`. This broke the insider build because `detect-squad-dir.ts` is a zero-dependency bootstrap utility that runs before the SDK is loaded. EECOM fixed the code and added a regression test; Procedures added the preventive guardrail.
+
+**Fix:** Added "Protected Files — Zero External Dependencies" section to `.github/copilot-instructions.md`, placed between Git Safety and Team Context. Lists protected files in a table, explains why they must stay Node.js-only, provides clear ❌/✅ rules, and notes that regression tests exist but prevention beats detection.
+
+**Pattern:** Bootstrap utilities that run before SDK init form a dependency boundary. Any file in that category must be explicitly listed in Copilot instructions so sweeping refactors don't accidentally cross the boundary. Pair with regression tests for defense in depth.
+
