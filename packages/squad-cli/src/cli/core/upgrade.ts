@@ -502,7 +502,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       success('upgraded squad.agent.md');
       filesUpdated.push('squad.agent.md');
     } else {
-      warn('squad.agent.md.template not found — squad.agent.md was not refreshed. Run "squad upgrade --force" or reinstall the CLI.');
+      warn('squad.agent.md.template not found — squad.agent.md was not refreshed. Reinstall or repair the CLI to restore the missing template.');
     }
     
     // Run infrastructure ensure checks even when already current

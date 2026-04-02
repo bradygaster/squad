@@ -134,7 +134,7 @@ export interface InitResult {
   /** List of skipped file paths (already existed) */
   skippedFiles: string[];
   /** Warnings for degraded operations (e.g. missing templates) */
-  warnings: string[];
+  warnings?: string[];
   /** Configuration file path */
   configPath: string;
   /** Agent directory paths */
@@ -1039,7 +1039,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
       await storage.write(agentFile, agentContent);
       createdFiles.push(toRelativePath(agentFile));
     } else {
-      warnings.push('squad.agent.md template not found — Copilot agent file was not created');
+      warnings.push(`squad.agent.md template not found (${join(templatesDir || '.squad/templates', 'squad.agent.md.template')}) — Copilot agent file was not created or not refreshed`);
     }
   } else {
     skippedFiles.push(toRelativePath(agentFile));
