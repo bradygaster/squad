@@ -4,6 +4,18 @@
 
 ## Learnings
 
+### PR review feedback batch fix (#724, #725, #753) (2025-07-25)
+
+**Context:** Three open PRs had review findings that needed targeted fixes — scope bloat, stowaway commits, and missing CI safeguards.
+
+**PR #724 — Stray screenshot:** Removed `2026-03-28-skills-not-used.png` from repo root. It was accidentally committed alongside the roster sync fix and inflated the PR to 39 changed files.
+
+**PR #725 — nap.ts stowaway:** The config-version-fix branch carried budget calculation changes to `nap.ts` that were unrelated to config versioning and already merged to dev via #746. Reverted nap.ts to match dev (`git checkout origin/dev -- packages/squad-cli/src/cli/core/nap.ts`). The FSStorageProvider→node:fs refactoring remains bundled — extracting it would require rewriting the PR.
+
+**PR #753 — Workflow hardening:** Added `timeout-minutes: 5`, bot-type skip condition (`github.event.sender.type != 'Bot'`), fixed `blob/main` → `blob/dev` in the moderation notice URL, added recursion-safety comment explaining GITHUB_TOKEN can't re-trigger workflows, and created the missing changeset.
+
+**Pattern:** When a PR review flags "scope bloat," the safest fix is surgical: remove the specific stray files or revert the specific stowaway commits rather than rebasing/rewriting history. `git checkout origin/dev -- <file>` is the cleanest way to revert a single file to match the target branch.
+
 ### archiveDecisions() count-based fallback (#626) (2025-07-24)
 
 **Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.
