@@ -62,6 +62,7 @@ export * from './sharing/index.js';
 export * from './upstream/index.js';
 export * from './remote/index.js';
 export * from './streams/index.js';
+export * from './impact/index.js';
 
 // Builder functions (SDK-First Squad Mode)
 export {

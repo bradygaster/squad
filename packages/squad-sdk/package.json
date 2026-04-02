@@ -213,6 +213,10 @@
     "./upstream": {
       "types": "./dist/upstream/index.d.ts",
       "import": "./dist/upstream/index.js"
+    },
+    "./impact": {
+      "types": "./dist/impact/index.d.ts",
+      "import": "./dist/impact/index.js"
     }
   },
   "files": [

@@ -158,6 +158,9 @@ async function main(): Promise<void> {
     console.log(`             Usage: roles [--category <name>] [--search <query>]`);
     console.log(`  ${BOLD}cost${RESET}       Report token usage from orchestration logs`);
     console.log(`             Flags: --all, --agent <name>`);
+    console.log(`  ${BOLD}impact${RESET}     Analyze PR blast radius and module boundaries`);
+    console.log(`             Usage: impact <PR#> | impact --branch <name>`);
+    console.log(`             Flags: --json, --markdown, --base <branch>`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
     console.log(`             Usage: triage [--interval <minutes>] [--execute]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
@@ -689,6 +692,12 @@ async function main(): Promise<void> {
   if (cmd === 'delegate') {
     const { delegateCommand } = await import('./cli/commands/cross-squad.js');
     await delegateCommand(args.slice(1));
+    return;
+  }
+
+  if (cmd === 'impact') {
+    const { runImpact } = await import('./cli/commands/impact.js');
+    await runImpact(args.slice(1), process.cwd());
     return;
   }
 
