@@ -1,0 +1,269 @@
+name: Squad PR Readiness
+
+on:
+  pull_request:
+    branches: [dev, main, insider]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: read
+  checks: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip if the PR is from a bot account (dependabot, renovate, etc.)
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR Readiness Check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = pr.number;
+
+            // ── Helper: find or create the bot comment ──
+            const COMMENT_MARKER = '<!-- squad-pr-readiness -->';
+
+            async function upsertComment(body) {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner, repo, issue_number: prNumber, per_page: 100
+              });
+              const existing = comments.find(c => c.body.includes(COMMENT_MARKER));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner, repo, comment_id: existing.id, body
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: prNumber, body
+                });
+              }
+            }
+
+            // ── Collect check results ──
+            const checks = [];
+
+            // 1. Single commit (or squashable)
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner, repo, pull_number: prNumber, per_page: 250
+            });
+            const commitCount = commits.length;
+            checks.push({
+              name: 'Single commit (or squashable)',
+              pass: commitCount === 1,
+              detail: commitCount === 1
+                ? '1 commit — clean history'
+                : `${commitCount} commits — consider squashing before review (or repo will squash on merge)`
+            });
+
+            // 2. Not in draft
+            checks.push({
+              name: 'Not in draft',
+              pass: !pr.draft,
+              detail: pr.draft
+                ? 'PR is still in draft — mark as ready for review when done'
+                : 'Ready for review'
+            });
+
+            // 3. Branch up to date
+            // Compare the PR base to the latest commit on the target branch
+            let branchUpToDate = false;
+            let branchDetail = '';
+            try {
+              const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+                owner, repo,
+                basehead: `${pr.head.sha}...${pr.base.ref}`
+              });
+              // If the target branch has 0 commits ahead of the PR head, the PR is up to date
+              branchUpToDate = comparison.ahead_by === 0;
+              branchDetail = branchUpToDate
+                ? `Up to date with ${pr.base.ref}`
+                : `${pr.base.ref} is ${comparison.ahead_by} commit(s) ahead — rebase recommended`;
+            } catch (e) {
+              branchDetail = 'Could not determine — check manually';
+            }
+            checks.push({
+              name: 'Branch up to date',
+              pass: branchUpToDate,
+              detail: branchDetail
+            });
+
+            // 4. Copilot review
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner, repo, pull_number: prNumber, per_page: 100
+            });
+            const copilotReview = reviews.find(r =>
+              r.user && r.user.login === 'copilot-pull-request-reviewer'
+            );
+            const copilotApproved = copilotReview && copilotReview.state === 'APPROVED';
+            checks.push({
+              name: 'Copilot review',
+              pass: !!copilotReview,
+              detail: copilotApproved
+                ? 'Copilot reviewed and approved'
+                : copilotReview
+                  ? `Copilot reviewed (state: ${copilotReview.state})`
+                  : 'No Copilot review yet — it may still be processing'
+            });
+
+            // 5. Changeset present
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner, repo, pull_number: prNumber, per_page: 300
+            });
+            const hasChangeset = files.some(f =>
+              f.filename.startsWith('.changeset/') && f.filename.endsWith('.md')
+            );
+            // Check if only non-source files changed (exempt from changeset)
+            const sourcePattern = /^packages\/squad-(sdk|cli)\/src\//;
+            const touchesSource = files.some(f => sourcePattern.test(f.filename));
+            let changesetPass = hasChangeset || !touchesSource;
+            let changesetDetail = '';
+            if (hasChangeset) {
+              changesetDetail = 'Changeset file found';
+            } else if (!touchesSource) {
+              changesetDetail = 'No source files changed — changeset not required';
+            } else {
+              changesetDetail = 'Missing `.changeset/*.md` — run `npx changeset add` (or add `skip-changelog` label)';
+            }
+            // Check for skip-changelog label
+            const hasSkipLabel = pr.labels.some(l => l.name === 'skip-changelog');
+            if (hasSkipLabel && !hasChangeset) {
+              changesetPass = true;
+              changesetDetail = 'Changeset skipped via `skip-changelog` label';
+            }
+            checks.push({
+              name: 'Changeset present',
+              pass: changesetPass,
+              detail: changesetDetail
+            });
+
+            // 6. No merge conflicts
+            // Note: mergeable state may not be immediately available
+            // We need to fetch the PR again to get the mergeable field
+            let mergeablePass = false;
+            let mergeableDetail = '';
+            // GitHub sometimes needs a moment to compute mergeability
+            // Retry once after a short delay
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const { data: freshPr } = await github.rest.pulls.get({
+                owner, repo, pull_number: prNumber
+              });
+              if (freshPr.mergeable === null && attempt === 0) {
+                // GitHub hasn't computed it yet — wait briefly
+                await new Promise(r => setTimeout(r, 3000));
+                continue;
+              }
+              if (freshPr.mergeable === true) {
+                mergeablePass = true;
+                mergeableDetail = 'No merge conflicts';
+              } else if (freshPr.mergeable === false) {
+                mergeableDetail = 'Merge conflicts detected — resolve before review';
+              } else {
+                mergeableDetail = 'Merge status unknown — GitHub is still computing';
+                mergeablePass = true; // Don't penalize on unknown
+              }
+              break;
+            }
+            checks.push({
+              name: 'No merge conflicts',
+              pass: mergeablePass,
+              detail: mergeableDetail
+            });
+
+            // 7. CI passing
+            // Check combined commit status + check runs
+            let ciPass = false;
+            let ciDetail = '';
+            try {
+              const { data: status } = await github.rest.repos.getCombinedStatusForRef({
+                owner, repo, ref: pr.head.sha
+              });
+              const { data: checkRuns } = await github.rest.checks.listForRef({
+                owner, repo, ref: pr.head.sha, per_page: 100
+              });
+              // Filter out this workflow's own check
+              const otherChecks = checkRuns.check_runs.filter(cr =>
+                cr.name !== 'readiness' && cr.name !== 'PR Readiness Check'
+              );
+              const failedChecks = otherChecks.filter(cr =>
+                cr.conclusion === 'failure' || cr.conclusion === 'cancelled'
+              );
+              const pendingChecks = otherChecks.filter(cr =>
+                cr.status === 'in_progress' || cr.status === 'queued'
+              );
+
+              if (failedChecks.length > 0) {
+                ciDetail = `${failedChecks.length} check(s) failing: ${failedChecks.map(c => c.name).join(', ')}`;
+              } else if (pendingChecks.length > 0) {
+                ciDetail = `${pendingChecks.length} check(s) still running`;
+                ciPass = true; // Don't penalize while CI is in progress
+              } else if (otherChecks.length === 0 && status.statuses.length === 0) {
+                ciDetail = 'No CI checks have run yet';
+                ciPass = true; // Don't penalize before CI starts
+              } else {
+                ciPass = true;
+                ciDetail = 'All checks passing';
+              }
+            } catch (e) {
+              ciDetail = 'Could not check CI status';
+              ciPass = true; // Don't penalize on API errors
+            }
+            checks.push({
+              name: 'CI passing',
+              pass: ciPass,
+              detail: ciDetail
+            });
+
+            // ── Build the comment ──
+            const allPass = checks.every(c => c.pass);
+            const passCount = checks.filter(c => c.pass).length;
+
+            let status;
+            if (allPass) {
+              status = '### ✅ PR is ready for review';
+            } else {
+              status = `### ⚠️ ${checks.length - passCount} item(s) to address before review`;
+            }
+
+            const checklistLines = checks.map(c => {
+              const icon = c.pass ? '✅' : '❌';
+              return `| ${icon} | **${c.name}** | ${c.detail} |`;
+            });
+
+            const body = [
+              COMMENT_MARKER,
+              '## 🛫 PR Readiness Check',
+              '',
+              status,
+              '',
+              '| Status | Check | Details |',
+              '|--------|-------|---------|',
+              ...checklistLines,
+              '',
+              '---',
+              '*This check runs automatically on every push. Fix any ❌ items and push again.*',
+              `*See [CONTRIBUTING.md](../blob/dev/CONTRIBUTING.md#pr-readiness-checklist) and [PR Requirements](../blob/dev/.github/PR_REQUIREMENTS.md) for details.*`
+            ].join('\n');
+
+            await upsertComment(body);
+
+            // Log summary
+            core.info(`PR Readiness: ${passCount}/${checks.length} checks passing`);
+            if (!allPass) {
+              const failing = checks.filter(c => !c.pass).map(c => c.name);
+              core.info(`Failing: ${failing.join(', ')}`);
+            }
