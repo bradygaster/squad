@@ -39,6 +39,18 @@ squad init
 
 **✓ Validate:** Check that `.squad/team.md` was created in your project.
 
+#### Windows (PowerShell)
+
+If you see `PSSecurityException: UnauthorizedAccess` after installing globally,
+PowerShell is blocking the unsigned `.ps1` shim that npm creates. Fix it by
+removing the shim — PowerShell will fall back to the `.cmd` version which works fine:
+
+```powershell
+Remove-Item "$env:APPDATA\npm\squad.ps1"
+```
+
+Or run `squad doctor` to detect this automatically. You can also use `cmd.exe` or invoke via `npx @bradygaster/squad-cli`.
+
 ### 3. Authenticate with GitHub (for Issues, PRs, and Ralph)
 
 ```bash

@@ -11,7 +11,7 @@ import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { runDoctor, getDoctorMode, checkNodeVersion } from '@bradygaster/squad-cli/commands/doctor';
+import { runDoctor, getDoctorMode, checkNodeVersion, checkWindowsPs1Shim } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
@@ -68,8 +68,12 @@ describe('squad doctor', () => {
 
     const squadDirCheck = checks.find((c: DoctorCheck) => c.name === '.squad/ directory exists');
     expect(squadDirCheck?.status).toBe('fail');
-    // When .squad/ is missing the file checks are skipped — .squad/ + squad.agent.md + Node version + 2 ESM checks
-    expect(checks.length).toBe(5);
+    // When .squad/ is missing the file checks are skipped — .squad/ + squad.agent.md + Node version + 2 ESM checks = 5
+    // On Windows, the .ps1 shim check may add one more if squad.ps1 exists
+    const baseCount = 5;
+    const ps1Check = checks.find((c: DoctorCheck) => c.name === 'Windows PowerShell shim');
+    const expectedCount = ps1Check ? baseCount + 1 : baseCount;
+    expect(checks.length).toBe(expectedCount);
   });
 
   it('detects remote mode from config.json with teamRoot', async () => {
@@ -288,5 +292,96 @@ describe('squad doctor', () => {
     expect(agentMdCheck).toBeDefined();
     expect(agentMdCheck?.status).toBe('fail');
     expect(agentMdCheck?.message).toContain('squad upgrade');
+  });
+
+  // ── #758 — Windows .ps1 shim detection ────────────────────────────
+
+  it('checkWindowsPs1Shim returns undefined on non-Windows', () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    try {
+      const result = checkWindowsPs1Shim();
+      expect(result).toBeUndefined();
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+    }
+  });
+
+  it('checkWindowsPs1Shim returns warn when .ps1 file exists on Windows', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const originalEnv = { ...process.env };
+
+    // Create a fake npm prefix directory with a squad.ps1 file
+    const fakeNpmPrefix = join(TEST_ROOT, 'fake-npm');
+    await mkdir(fakeNpmPrefix, { recursive: true });
+    await writeFile(join(fakeNpmPrefix, 'squad.ps1'), '# fake shim');
+
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    process.env['npm_config_prefix'] = fakeNpmPrefix;
+
+    try {
+      const result = checkWindowsPs1Shim();
+      expect(result).toBeDefined();
+      expect(result?.status).toBe('warn');
+      expect(result?.name).toBe('Windows PowerShell shim');
+      expect(result?.message).toContain('squad.ps1');
+      expect(result?.message).toContain('Remove-Item');
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+      process.env = originalEnv;
+    }
+  });
+
+  it('checkWindowsPs1Shim returns undefined when no .ps1 file found on Windows', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const originalEnv = { ...process.env };
+
+    // Create a fake npm prefix directory WITHOUT squad.ps1
+    const fakeNpmPrefix = join(TEST_ROOT, 'fake-npm-empty');
+    await mkdir(fakeNpmPrefix, { recursive: true });
+
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    process.env['npm_config_prefix'] = fakeNpmPrefix;
+
+    try {
+      const result = checkWindowsPs1Shim();
+      expect(result).toBeUndefined();
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+      process.env = originalEnv;
+    }
+  });
+
+  it('checkWindowsPs1Shim falls back to APPDATA when npm_config_prefix is unset', async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    const originalEnv = { ...process.env };
+
+    // Create fake APPDATA/npm with squad.ps1
+    const fakeAppData = join(TEST_ROOT, 'fake-appdata');
+    const fakeNpmDir = join(fakeAppData, 'npm');
+    await mkdir(fakeNpmDir, { recursive: true });
+    await writeFile(join(fakeNpmDir, 'squad.ps1'), '# fake shim');
+
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    delete process.env['npm_config_prefix'];
+    process.env['APPDATA'] = fakeAppData;
+
+    try {
+      const result = checkWindowsPs1Shim();
+      expect(result).toBeDefined();
+      expect(result?.status).toBe('warn');
+      expect(result?.message).toContain(fakeNpmDir);
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+      process.env = originalEnv;
+    }
   });
 });
