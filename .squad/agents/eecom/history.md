@@ -4,6 +4,18 @@
 
 ## Learnings
 
+### PR #753 — Moderation script extraction refactor (2025-07-25)
+
+**Context:** The comment spam moderation workflow (`.github/workflows/squad-comment-moderation.yml`) had ~100 lines of inline JavaScript in a single `actions/github-script` block — untestable, hard to review, and mixing pure logic with API calls.
+
+**Refactor:** Extracted pure scoring logic into `scripts/comment-moderation.mjs` as ES module exports: `shouldSkipComment()`, `scoreComment()`, `buildModerationNotice()`, plus constants (`TRUSTED_ASSOCIATIONS`, `SPAM_THRESHOLD`, pattern arrays). The workflow now imports the module via `await import()` after a sparse-checkout step and acts as a thin orchestrator: fetch data → call scoring → act on results.
+
+**Tests:** Created `test/comment-moderation.test.ts` with 35 vitest tests covering all 6 scoring signals, threshold behavior, and edge cases (empty body, boundary values, defaults).
+
+**Pattern:** When a GitHub Actions workflow has inline `script:` blocks with >30 lines of logic, extract pure functions into `.mjs` files under `scripts/`. Use `actions/checkout@v4` with `sparse-checkout` to make the module available, then `await import()` in the `actions/github-script` block. This keeps the workflow as a thin orchestrator while making the logic testable.
+
+**Scope cleanup:** Reverted `.squad/` and `docs/proposals/` files that had leaked into the PR diff via earlier commits. Used `git checkout origin/dev --` for modified files and `git rm` for files added only in the branch.
+
 ### archiveDecisions() count-based fallback (#626) (2025-07-24)
 
 **Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.
