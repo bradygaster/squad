@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added — Watch Resilience Parity (#743)
+- **Circuit breaker** — model-level fallback with cooldown when rate-limited
+- **Health checks** — pre-round auth, disk space, branch verification
+- **Post-failure remediation** — tiered self-healing (4 tiers)
+- **Priority scoring** — issue prioritization by P-level, age, staleness
+- **Machine capabilities** — `needs:*` label matching against local machine (GPU, Docker, etc.)
+- **Stale work reclaim** — reclaims idle assigned issues after configurable timeout
+- **Budget check** — configurable max issues per round
+- **Heartbeat** — JSON heartbeat file + structured logging with rotation
+- **Lockfile** — per-repo PID lock with stale detection
+- **Webhook alerts** — generic webhook POST on consecutive failures (Slack, Discord, Teams, custom)
+- **Cooperative rate pool** — multi-instance API budget coordination via shared JSON file
+- **Config file support** — `.squad/config.json` watch section (CLI flags > config > defaults)
+- New CLI flags: `--webhook-url`, `--alert-threshold`, `--max-budget`, `--capabilities`
+
 ### Fixed
 - **Nap archival budget** (#123) — account for separator newlines in decision archival budget calculation
 
