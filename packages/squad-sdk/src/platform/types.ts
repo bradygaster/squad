@@ -87,6 +87,15 @@ export interface CommunicationConfig {
   postDecisions?: boolean;
   /** Post escalations when agents are blocked */
   postEscalations?: boolean;
+  /** Teams-specific configuration */
+  teams?: {
+    tenantId?: string;
+    clientId?: string;
+    recipientUpn?: string;
+    chatId?: string;
+    channelId?: string;
+    teamId?: string;
+  };
 }
 
 /**
