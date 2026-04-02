@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Nap archival budget** (#123) — account for separator newlines in decision archival budget calculation
+
 ### Added — Full Work Monitor for squad watch (#708)
 - `--execute` flag spawns Copilot sessions to work on actionable issues autonomously
 - Multi-platform support — auto-detects GitHub vs Azure DevOps from git remote URL
