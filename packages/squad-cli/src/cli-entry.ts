@@ -176,6 +176,15 @@ async function main(): Promise<void> {
     console.log(`                    --wave-dispatch   wave-based parallel sub-task dispatch`);
     console.log(`                    --retro           enforce retrospective checks`);
     console.log(`                    --decision-hygiene auto-merge decision inbox`);
+    console.log(`                    --health-check    pre-round watchdog (auth, disk, branch)`);
+    console.log(`                    --stale-reclaim   reclaim stale assigned issues (>24h)`);
+    console.log(`                    --heartbeat       write heartbeat JSON + structured log`);
+    console.log(`                    --webhook-alerts  POST to webhook on consecutive failures`);
+    console.log(`             Resilience flags (#743):`);
+    console.log(`                    --webhook-url <url>      webhook for failure alerts`);
+    console.log(`                    --alert-threshold <n>    failures before alert (default 3)`);
+    console.log(`                    --max-budget <n>         max issues per round (default 5)`);
+    console.log(`                    --capabilities <list>    machine caps (e.g., gpu,docker)`);
     console.log(`             Disable: --no-<capability> overrides config.json`);
     console.log(`  ${BOLD}loop${RESET}       Continuous work loop (Ralph mode)`);
     console.log(`             Usage: loop [--filter <label>] [--interval <minutes>]`);
@@ -383,6 +392,27 @@ async function main(): Promise<void> {
         : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
     }
 
+    // ── Watch parity CLI flags (#743) ────────────────────────────
+    const webhookUrlIdx = args.indexOf('--webhook-url');
+    const webhookUrl = (webhookUrlIdx !== -1 && args[webhookUrlIdx + 1])
+      ? args[webhookUrlIdx + 1]
+      : undefined;
+
+    const alertThresholdIdx = args.indexOf('--alert-threshold');
+    const alertThreshold = (alertThresholdIdx !== -1 && args[alertThresholdIdx + 1])
+      ? parseInt(args[alertThresholdIdx + 1]!, 10)
+      : undefined;
+
+    const maxBudgetIdx = args.indexOf('--max-budget');
+    const maxBudget = (maxBudgetIdx !== -1 && args[maxBudgetIdx + 1])
+      ? parseInt(args[maxBudgetIdx + 1]!, 10)
+      : undefined;
+
+    const capabilitiesIdx = args.indexOf('--capabilities');
+    const machineCapabilities = (capabilitiesIdx !== -1 && args[capabilitiesIdx + 1])
+      ? args[capabilitiesIdx + 1]!.split(',').map(s => s.trim())
+      : undefined;
+
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(process.cwd(), {
       interval,
@@ -392,6 +422,10 @@ async function main(): Promise<void> {
       copilotFlags,
       agentCmd,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
+      webhookUrl,
+      alertThreshold,
+      maxBudget,
+      machineCapabilities,
     });
 
     await runWatch(process.cwd(), config);

@@ -20,6 +20,15 @@ export interface WatchConfig {
   agentCmd?: string;
   /** Per-capability config: `true` / `false` / object with sub-options. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
+  // ── Watch parity flags (#743) ──────────────────────────────────
+  /** Webhook URL for failure alerts. */
+  webhookUrl?: string;
+  /** Consecutive failures before webhook alert (default: 3). */
+  alertThreshold?: number;
+  /** Max issues to execute per round (default: 5). */
+  maxBudget?: number;
+  /** Explicit machine capabilities list (e.g., ["gpu", "docker"]). */
+  machineCapabilities?: string[];
 }
 
 const DEFAULTS: WatchConfig = {
@@ -28,6 +37,8 @@ const DEFAULTS: WatchConfig = {
   maxConcurrent: 1,
   timeout: 30,
   capabilities: {},
+  alertThreshold: 3,
+  maxBudget: 5,
 };
 
 /**
@@ -68,7 +79,20 @@ export function loadWatchConfig(
       ...(fileConfig.capabilities ?? {}),
       ...(cliOverrides.capabilities ?? {}),
     },
+    // Watch parity fields (#743)
+    webhookUrl: cliOverrides.webhookUrl ?? fileConfig.webhookUrl ?? DEFAULTS.webhookUrl,
+    alertThreshold: cliOverrides.alertThreshold ?? fileConfig.alertThreshold ?? DEFAULTS.alertThreshold,
+    maxBudget: cliOverrides.maxBudget ?? fileConfig.maxBudget ?? DEFAULTS.maxBudget,
+    machineCapabilities: cliOverrides.machineCapabilities ?? fileConfig.machineCapabilities ?? DEFAULTS.machineCapabilities,
   };
+
+  // Wire webhook-alerts capability config from top-level flags
+  if (merged.webhookUrl && !merged.capabilities['webhook-alerts']) {
+    merged.capabilities['webhook-alerts'] = {
+      webhookUrl: merged.webhookUrl,
+      alertThreshold: merged.alertThreshold ?? 3,
+    };
+  }
 
   return merged;
 }
@@ -84,9 +108,20 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['copilotFlags'] === 'string') result.copilotFlags = raw['copilotFlags'];
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
 
+  // Watch parity fields (#743)
+  if (typeof raw['webhookUrl'] === 'string') result.webhookUrl = raw['webhookUrl'];
+  if (typeof raw['alertThreshold'] === 'number') result.alertThreshold = raw['alertThreshold'];
+  if (typeof raw['maxBudget'] === 'number') result.maxBudget = raw['maxBudget'];
+  if (Array.isArray(raw['machineCapabilities'])) {
+    result.machineCapabilities = raw['machineCapabilities'] as string[];
+  }
+
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd']);
+  const reserved = new Set([
+    'interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd',
+    'webhookUrl', 'alertThreshold', 'maxBudget', 'machineCapabilities',
+  ]);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {
