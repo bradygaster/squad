@@ -1,11 +1,16 @@
 # Decisions
 
+> Team decisions that all agents must read. Managed by Scribe.
+
+# Decisions
+
 > Team decisions that all agents must respect. Managed by Scribe.
 
 
 ---
 
 ## Foundational Directives (carried from beta, updated for Mission Control)
+
 
 ### Type safety — strict mode non-negotiable
 **By:** CONTROL (formerly Edie)
@@ -52,8038 +57,1238 @@
 **What:** Squad becomes its own interactive CLI shell. `squad` with no args enters a REPL.
 **Why:** Squad needs to own the full interactive experience.
 
-### 2026-02-21: User directive — no temp/memory files in repo root
-**By:** Brady (via Copilot)
-**What:** NEVER write temp files, issue files, or memory files to the repo root. All squad state/scratch files belong in .squad/ and ONLY .squad/. Root tree of a user's repo is sacred.
-**Why:** User request — hard rule. Captured for all agents.
+### 2026-03-26: CI deletion guard and source tree canary
+**By:** Booster (CI/CD)
+**What:** Added two safety checks to squad-ci.yml: (1) source tree canary verifying critical files exist, (2) large deletion guard failing PRs that delete >50 files without 'large-deletion-approved' label. Branch protection on dev requested (may need manual setup).
+**Why:** Incident #631 — @copilot deleted 361 files on dev with no CI gate catching it.
 
-### 2026-02-21: npm workspace protocol for monorepo
-**By:** Edie (TypeScript Engineer)
-**What:** Use npm-native workspace resolution (version-string references) instead of `workspace:*` protocol for cross-package dependencies.
-**Why:** The `workspace:*` protocol is pnpm/Yarn-specific. npm workspaces resolve workspace packages automatically.
-**Impact:** All inter-package dependencies in `packages/*/package.json` should use the actual version string, not `workspace:*`.
+### 2026-04-02: EECOM Decision: InitResult.warnings field (#730)
 
-### 2026-02-21: Distribution is npm-only (GitHub-native removed)
-**By:** Rabin (Distribution) + Fenster (Core Dev)
-**What:** Squad packages (`@bradygaster/squad-sdk` and `@bradygaster/squad-cli`) are distributed exclusively via npmjs.com. The GitHub-native `npx github:bradygaster/squad` path has been removed.
-**Why:** npm is the standard distribution channel. One distribution path reduces confusion and maintenance burden. Root `cli.js` prints deprecation warning if anyone still hits the old path.
+# EECOM Decision: InitResult.warnings field (#730)
 
-### 2026-02-21: Coordinator prompt structure — three routing modes
-**By:** Verbal (Prompt Engineer)
-**What:** Coordinator uses structured response format: `DIRECT:` (answer inline), `ROUTE:` + `TASK:` + `CONTEXT:` (single agent), `MULTI:` (fan-out). Unrecognized formats fall back to `DIRECT`.
-**Why:** Keyword prefixes are cheap to parse and reliable. Fallback-to-direct prevents silent failures.
-### `.squad/` Directory Scope — Owner Directive
-**By:** Brady (project owner, PR #326 review)  
-**Date:** 2026-03-10  
-
-**Directive:** The `.squad/` directory is **reserved for team state only** — roster, routing, decisions, agent histories, casting, and orchestration logs. Non-team data (adoption tracking, community metrics, reports) must NOT live in `.squad/`. Use `.github/` for GitHub platform integration or `docs/` for documentation artifacts.
-
-**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029193833)
-
-
----
-
-### No Individual Repo Listing Without Consent — Owner Directive
-**By:** Brady (project owner, PR #326 review)  
-**Date:** 2026-03-10  
-
-**Directive:** Growth metrics must report **aggregate numbers only** (e.g., "78+ repositories found via GitHub code search") — never name or link to individual community repos without explicit opt-in consent. The monitoring script and GitHub Action concepts are approved, but any public showcase or tracking list that identifies specific repos is blocked until a community consent plan exists.
-
-**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029222967)
-
-
----
-
-### Adoption Tracking — Opt-In Architecture
-**By:** Flight (implementing Brady's directives above)  
-**Date:** 2026-03-09  
-
-### 2026-02-21: CLI entry point split — src/index.ts is a pure barrel
-**By:** Edie (TypeScript Engineer)
-**What:** `src/index.ts` is a pure re-export barrel with ZERO side effects. `src/cli-entry.ts` contains `main()` and all CLI routing.
-**Why:** Library consumers importing `@bradygaster/squad` were triggering CLI argument parsing and `process.exit()` on import.
-
-### 2026-02-21: Process.exit() refactor — library-safe CLI functions
-**By:** Kujan (SDK Expert)
-**What:** `fatal()` throws `SquadError` instead of `process.exit(1)`. Only `cli-entry.ts` may call `process.exit()`.
-**Pattern:** Library functions throw `SquadError`. CLI entry catches and exits. Library consumers catch for structured error handling.
-
-### 2026-02-21: User directive — docs as you go
-**By:** bradygaster (via Copilot)
-**What:** Doc and blog as you go during SquadUI integration work. Doesn't have to be perfect — keep docs updated incrementally.
-
-### 2026-02-22: Runtime EventBus as canonical bus
-**By:** Fortier
-**What:** `runtime/event-bus.ts` (colon-notation: `session:created`, `subscribe()` API) is the canonical EventBus for all orchestration classes. The `client/event-bus.ts` (dot-notation) remains for backward-compat but should not be used in new code.
-**Why:** Runtime EventBus has proper error isolation — one handler failure doesn't crash others.
-
-### 2026-02-22: Subpath exports in @bradygaster/squad-sdk
-**By:** Edie (TypeScript Engineer)
-**What:** SDK declares subpath exports (`.`, `./parsers`, `./types`, and module paths). Each uses types-first condition ordering.
-**Constraints:** Every subpath needs a source barrel. `"types"` before `"import"`. ESM-only: no `"require"` condition.
-
-### 2026-02-22: User directive — Aspire testing requirements
-**By:** Brady (via Copilot)
-**What:** Integration tests must launch the Aspire dashboard and validate OTel telemetry shows up. Use Playwright. Use latest Aspire bits. Reference aspire.dev (NOT learn.microsoft.com). It's "Aspire" not ".NET Aspire".
-
-### 2026-02-23: User directive — code fences
-**By:** Brady (via Copilot)
-**What:** Never use / or \ as code fences in GitHub issues, PRs, or comments. Only use backticks to format code.
-
-### 2026-02-23: User Directive — Docs Overhaul & Publication Pause
-**By:** Brady (via Copilot)
-**What:** Pause docs publication until Brady explicitly gives go-ahead. Tone: lighthearted, welcoming, fun (NOT stuffy). First doc should be "first experience" with squad CLI. All docs: brief, prompt-first, action-oriented, fun. Human tone throughout.
-
-### 2026-02-23: Use sendAndWait for streaming dispatch
-**By:** Kovash (REPL Expert)
-**What:** `dispatchToAgent()` and `dispatchToCoordinator()` use `sendAndWait()` instead of `sendMessage()`. Fallback listens for `turn_end`/`idle` if unavailable.
-**Why:** `sendMessage()` is fire-and-forget — resolves before streaming deltas arrive.
-**Impact:** Never parse `accumulated` after a bare `sendMessage()`. Always use `awaitStreamedResponse`.
-
-### 2026-02-23: extractDelta field priority — deltaContent first
-**By:** Kovash (REPL Expert)
-**What:** `extractDelta` priority: `deltaContent` > `delta` > `content`. Matches SDK actual format.
-**Impact:** Use `deltaContent` as the canonical field name for streamed text chunks.
-
-### 2026-02-24: Per-command --help/-h: intercept-before-dispatch pattern
-**By:** Fenster (Core Dev)
-**What:** All CLI subcommands support `--help` and `-h`. Help intercepted before command routing prevents destructive commands from executing.
-**Convention:** New CLI commands MUST have a `getCommandHelp()` entry with usage, description, options, and 2+ examples.
-
-### 2026-02-25: REPL cancellation and configurable timeout
-**By:** Kovash (REPL Expert)
-**What:** Ctrl+C immediately resets `processing` state. Timeout: `SQUAD_REPL_TIMEOUT` (seconds) > `SQUAD_SESSION_TIMEOUT_MS` (ms) > 600000ms default. CLI `--timeout` flag sets env var.
-
-### 2026-02-24: Shell Observability Metrics
-**By:** Saul (Aspire & Observability)
-**What:** Four metrics under `squad.shell.*` namespace, gated behind `SQUAD_TELEMETRY=1`.
-**Convention:** Shell metrics require explicit consent via `SQUAD_TELEMETRY=1`, separate from OTLP endpoint activation.
-
-### 2026-02-23: Telemetry in both CLI and agent modes
-**By:** Brady (via Copilot)
-**What:** Squad should pump telemetry during BOTH modes: (1) standalone Squad CLI, and (2) running as an agent inside GitHub Copilot CLI.
-
-### 2026-02-27: ASCII-only separators and NO_COLOR
-**By:** Cheritto (TUI Engineer)
-**What:** All separators use ASCII hyphens. Text-over-emoji principle: text status is primary, emoji is supplementary.
-**Convention:** Use ASCII hyphens for separators. Keep emoji out of status/system messages.
-
-### 2026-02-24: Version format — bare semver canonical
-**By:** Fenster
-**What:** Bare semver (e.g., `0.8.5.1`) for version commands. Display contexts use `squad v{VERSION}`.
-
-### 2026-02-25: Help text — progressive disclosure
-**By:** Fenster
-**What:** Default `/help` shows 4 essential lines. `/help full` shows complete reference.
-
-### 2026-02-24: Unified status vocabulary
-**By:** Marquez (CLI UX Designer)
-**What:** Use `[WORK]` / `[STREAM]` / `[ERR]` / `[IDLE]` across ALL status surfaces.
-**Why:** Most granular, NO_COLOR compatible, text-over-emoji, consistent across contexts.
-
-### 2026-02-24: Pick one tagline
-**By:** Marquez (CLI UX Designer)
-**What:** Use "Team of AI agents at your fingertips" everywhere.
-
-### 2026-02-24: User directive — experimental messaging
-**By:** Brady (via Copilot)
-**What:** CLI docs should note the project is experimental and ask users to file issues.
-
-### 2026-02-28: User directive — DO NOT merge PR #547
-**By:** Brady (via Copilot)
-**What:** DO NOT merge PR #547 (Squad Remote Control). Do not touch #547 at all.
-**Why:** User request — captured for team memory
-
-### 2026-02-28: CLI Critical Gap Issues Filed
-**By:** Keaton (Lead)
-**What:** 4 critical CLI gaps filed as GitHub issues #554–#557 for explicit team tracking:
-- #554: `--preview` flag undocumented and untested
-- #556: `--timeout` flag undocumented and untested
-- #557: `upgrade --self` is dead code
-- #555: `run` subcommand is a stub (non-functional)
-
-**Why:** Orchestration logs captured gaps but they lacked actionable GitHub tracking and ownership. Filed issues now have explicit assignment to Fenster, clear acceptance criteria, and visibility in Wave E planning.
-
-### 2026-02-28: Test Gap Issues Filed (10 items)
-**By:** Hockney (Tester)
-**What:** 10 moderate CLI/test gaps filed as issues #558–#567:
-- #558: Exit code consistency untested
-- #559: Timeout edge cases untested
-- #560: Missing per-command help
-- #561: Shell-specific flag behavior untested
-- #562: Env var fallback paths untested
-- #563: REPL mode transitions untested
-- #564: Config file precedence untested
-- #565: Agent spawn flags undocumented
-- #566: Untested flag aliases
-- #567: Flag parsing error handling untested
-
-**Why:** Each gap identified in coverage analysis but lacked explicit GitHub tracking for prioritization and team visibility.
-
-### 2026-02-28: Documentation Audit Results (10 issues)
-**By:** McManus (DevRel)
-**What:** Docs audit filed 10 GitHub issues (#568–#575, #577–#578) spanning:
-- Feature documentation lag (#568 `squad run`, #570 consult mode, #572 Ralph smart triage)
-- Terminology inconsistency (#569 triage/watch/loop naming)
-- Brand compliance (#571 experimental banner on 40+ docs)
-- Clarity/UX gaps (#573 response modes, #575 dual-root, #577 VS Code, #578 session examples)
-- Reference issue (#574 README command count)
-
-**Why:** Features shipped faster than documentation. PR #552, #553 merged without doc updates. No automation to enforce experimental banner. Users discover advanced features accidentally.
-
-**Root cause:** Feature-docs lag, decision-doc drift, no brand enforcement in CI.
-
-### 2026-02-28: Dogfood UX Issues Filed (4 items)
-**By:** Waingro (Dogfooder)
-**What:** Dogfood testing against 8 realistic scenarios surfaced 4 UX issues (filed as #576, #579–#581):
-- #576 (P1): Shell launch fails in non-TTY piped mode (Blocks CI)
-- #580 (P1): Help text overwhelms new users (44 lines, no tiering)
-- #579 (P2): Status shows parent `.squad/` as local (confusing in multi-project workspaces)
-- #581 (P2): Error messages show debug output always (noisy production logs)
-
-**Why:** CLI is solid for happy path but first-time user experience and CI/CD integration have friction points. All 4 block either new user onboarding or automation workflows.
-
-**Priority:** #576 > #580 > #581 > #579. All should be fixed before next public release.
-
-### 2026-02-28: decisions.md Aggressive Cleanup
-**By:** Keaton (Lead)
-**What:** Trimmed `decisions.md` from 226KB (223 entries) to 10.3KB (35 entries) — 95% reduction.
-- Kept: Core architectural decisions, active process rules, active user directives, current UX conventions, runtime patterns
-- Archived: Implementation details, one-time setup, PR reviews, audit reports, wave planning, superseded decisions, duplicates
-- Created: `decisions-archive.md` with full original content preserved
-
-**Why:** Context window bloat during release push. Every agent loads 95% less decisions context. Full history preserved append-only.
-
-**Impact:** File size reduced, agent context efficiency improved, all decisions preserved in archive.
-
-### 2026-02-28: Backlog Gap Issues Filed (8 items)
-**By:** Keaton (Lead)
-**Approval:** Brady (via directive in issue request)
-**What:** Filed 8 missing backlog items from `.squad/identity/now.md` as GitHub issues. These items were identified as "should-fix" polish or "post-M1" improvements but lacked explicit GitHub tracking until now.
-
-**Why:** Brady requested: "Cross-reference the known backlog against filed issues and file anything missing." The team had filed 28 issues this session (#554–#581), but 8 known items from `now.md` remained unfiled. Without GitHub issues, these lack ownership assignment, visibility for Wave E planning, trackability in automated workflows, and routing to squad members.
-
-**Issues Filed:**
-- #583 (squad:rabin): Add `homepage` and `bugs` fields to package.json
-- #584 (squad:mcmanus): Document alpha→v1.0 breaking change policy in README
-- #585 (squad:edie): Add `noUncheckedIndexedAccess` to tsconfig
-- #586 (squad:edie): Tighten ~26 `any` types in SDK
-- #587 (squad:mcmanus): Add architecture overview doc
-- #588 (squad:kujan): Implement SQUAD_DEBUG env var test
-- #589 (squad:kujan): One real Copilot SDK integration test
-- #590 (squad:baer): `npm audit fix` for dev-dependency ReDoS warnings
-- #591 (squad:hockney, type:bug): Aspire dashboard test fails — docker pull in test suite
-- #592 (squad:rabin): Replace workspace:* protocol with version string
-
-**Impact:** Full backlog now visible with explicit issues. No unmapped items. Each issue routed to the squad member domain expert. Issues are independent; can be executed in any order.
-
-### 2026-02-28: Codebase Scan — Unfiled Issues Audit
-**By:** Fenster (Core Dev)
-**Requested by:** Brady
-**Date:** 2026-02-28T22:05:00Z
-**Status:** Complete — 2 new issues filed
-
-**What:** Systematic scan of the codebase to identify known issues that haven't been filed as GitHub issues. Checked:
-1. TODO/FIXME/HACK/XXX comments in code
-2. TypeScript strict mode violations (@ts-ignore/@ts-expect-error)
-3. Skipped/todo tests (.skip() or .todo())
-4. Errant console.log statements
-5. Missing package.json metadata fields
-
-**Findings:**
-- Type safety violations: ✅ CLEAN — Zero @ts-ignore/@ts-expect-error found. Strict mode compliance excellent.
-- Workspace protocol: ❌ VIOLATION — 1 issue filed (#592): `workspace:*` in squad-cli violates npm workspace convention
-- Skipped tests: ❌ GAP — 1 issue filed (#588): SQUAD_DEBUG test is .todo() placeholder
-- Console.log: ✅ INTENTIONAL — All are user-facing output (status, errors)
-- TODO comments: ✅ TEMPLATES — TODOs in generated workflow templates, not code
-- Package.json: ✅ TRACKED — Missing homepage/bugs already filed as #583
-
-**Code Quality Assessment:**
-- Type Safety (Excellent): Zero violations of strict mode or type suppression. Team decision being followed faithfully.
-- TODO/FIXME Comments (Clean): All TODOs in upgrade.ts and workflows.ts are template strings for generated GitHub Actions YAML, intentionally scoped.
-- Console Output (Intentional): All are user-facing (dashboard startup, OTLP endpoint, issue labeling, shell loading) — no debug debris.
-- Dead Code (None Found): No unreachable code, orphaned functions, or unused exports detected.
-
-**Recommendations:**
-1. Immediate: Fix workspace protocol violation (#592) — violates established team convention
-2. Soon: Implement SQUAD_DEBUG test (#588) — fills observable test gap
-3. Going forward: Maintain type discipline; review package.json metadata during SDK/CLI version bumps
-
-**Conclusion:** Codebase in good health. Type safety discipline strong. No hidden technical debt. Conventions mostly followed (one npm workspace exception). Test coverage has minor gaps in observability.
-
-### 2026-02-28: Auto-link detection for preview builds
-**By:** Fenster (Core Dev)
-**Date:** 2026-02-28
-**What:** When running from source (`VERSION` contains `-preview`), the CLI checks if `@bradygaster/squad-cli` is globally npm-linked. If not, it prompts the developer to link it. Declining creates `~/.squad/.no-auto-link` to suppress future prompts.
-**Why:** Dev convenience — saves contributors from forgetting `npm link` after cloning. Non-interactive commands (help, version, export, import, doctor, scrub-emails) skip the check. Everything is wrapped in try/catch so failures are silent.
-**Impact:** Only affects `-preview` builds in interactive TTY sessions. No effect on published releases or CI.
-
-### 2026-03-01T00:34Z: User directive — Full scrollback support in REPL shell
-**By:** Brady (via Copilot)
-**What:** The REPL shell must support full scrollback — users should be able to scroll up and down to see all text (paste, run output, rendered content, logs) over time, like GitHub Copilot CLI does. The current Ink-based rendering loses/hides content and that's unacceptable.
-**Why:** User request — captured for team memory. This is a P0 UX requirement for the shell.
-**Status:** P0 blocking issue. Requires rendering architecture review (Cheritto, Kovash, Marquez).
-
-### 2026-03-01T04:47Z: User directive — Auto-incrementing build numbers
-**By:** Brady (via Copilot)
-**What:** Add auto-incrementing build numbers to versions. Format: `0.8.6.{N}-preview` where N increments each local build. Tracks build-to-release cadence.
-**Why:** User request — captured for team memory.
-
-### 2026-03-01: Nap engine — dual sync/async export pattern
-**By:** Fenster (Core Dev)
-**What:** The nap engine (`cli/core/nap.ts`) exports both `runNap` (async, for CLI entry) and `runNapSync` (sync, for REPL). All internal operations use sync fs calls. The async wrapper exists for CLI convention consistency.
-**Why:** REPL `executeCommand` is synchronous and cannot await. ESM forbids `require()`. Exporting a sync variant keeps the REPL integration clean without changing the shell architecture.
-**Impact:** Future commands that need both CLI and REPL support should follow this pattern if they only do sync fs work.
-
-### 2026-03-01: First-run gating test strategy
-**By:** Hockney (Tester)
-**Date:** 2026-03-01
-**Issue:** #607
-**What:** Created `test/first-run-gating.test.ts` with 25 tests covering 6 categories of Init Mode gating. Tests use logic-level extraction from App.tsx conditionals, filesystem marker lifecycle via `loadWelcomeData`, and source-code structural assertions for render ordering. No full App component rendering — SDK dependencies make that impractical for unit tests.
-**Why:** 3059 tests existed with zero enforcement of first-run gating behavior. The `.first-run` marker, banner uniqueness, assembled-message gating, warning suppression, session-scoped keys, and terminal clear ordering were all untested paths that could regress silently.
-**Impact:** All squad members: if you modify `loadWelcomeData`, the `firstRunElement` conditional in App.tsx, or the terminal clear sequence in `runShell`, these tests will catch regressions. The warning suppression tests replicate the `cli-entry.ts` pattern — if that pattern changes, update both locations.
-
-### Verbal's Analysis: "nap" Skill — Context Window Optimization
-**By:** Verbal (Prompt Engineer)
-**Requested by:** Brady
-**Date:** 2026-03-01
-**Scope:** Approved. Build it. Current context budget analysis:
-- Agent spawn loads charter (~500t) + history + decisions.md (4,852t) + team.md (972t)
-- Hockney: 25,940t history (worst offender)
-- Fenster: 22,574t (history + CLI inventory)
-- Coherence cliff: 40-50K tokens on non-task context
-
-**Key Recommendations:**
-1. **Decision distillation:** Keep decisions.md as single source of truth (don't embed in charters — creates staleness/duplication)
-2. **History compression — 12KB rule insufficient:** Six agents blow past threshold. Target **4KB ceiling per history** (~1,000t) with assertions not stories.
-3. **Nap should optimize:** Deduplication (strip decisions.md content echoed in histories), staleness (flag closed PRs, merged work), charter bloat (stay <600t), skill pruning (archive high-confidence, no-recent-invocation skills), demand-loading for extra files (CLI inventory, UX catalog, fragility catalog).
-4. **Enforcement:** Nap runs periodically or on-demand, enforces hard ceilings without silent quality degradation.
-
-### ShellApi.clearMessages() for terminal state reset
-**By:** Kovash (REPL Expert)
-**Date:** 2026-03-01
-**What:** `ShellApi` now exposes `clearMessages()` which resets both `messages` and `archivedMessages` React state. Used in session restore and `/clear` command.
-**Why:** Without clearing archived messages, old content bleeds through when restoring sessions or clearing the shell. The `/clear` command previously only reset `messages`, leaving `archivedMessages` in the Static render list.
-**Impact:** Any code calling `shellApi` to reset shell state should use `clearMessages()` rather than manually manipulating message arrays.
-
-### 2026-03-01: Prompt placeholder hints must not duplicate header banner
-**By:** Kovash (REPL Expert)
-**Date:** 2026-03-01
-**Issue:** #606
-**What:** The InputPrompt placeholder text must provide *complementary* guidance, never repeat what the header banner already shows. The header banner is the single source of truth for @agent routing and /help discovery. Placeholder hints should surface lesser-known features (tab completion, history navigation, utility commands).
-**Why:** Two elements showing "Type @agent or /help" simultaneously creates visual noise and a confusing UX. One consistent prompt style throughout the session.
-**Impact:** `getHintText()` in InputPrompt.tsx now has two tiers instead of three. Any future prompt hints should check the header banner first to avoid duplication.
-
-### 2026-03-02: Paste detection via debounce in InputPrompt
-**By:** Kovash (REPL Expert)
-**Date:** 2026-03-02
-**What:** InputPrompt uses a 10ms debounce on `key.return` to distinguish paste from intentional Enter. If more input arrives within 10ms → paste detected → newline preserved. If timer fires without input → real Enter → submit. A `valueRef` (React ref) mirrors mutations synchronously since closure-captured `value` is stale during rapid `useInput` calls. In disabled state, `key.return` appends `\n` to buffer instead of being ignored.
-**Why:** Multi-line paste was garbled because `useInput` fires per-character and `key.return` triggered immediate submission.
-**Impact:** 10ms delay on single-line submit is imperceptible. UX: multi-line paste preserved. Testing: Hockney should verify paste scenarios use `jest.useFakeTimers()` or equivalent. Future: if Ink adds native bracketed-paste support, debounce can be replaced.
-
-### 2026-03-01: First-run init messaging — single source of truth
-**By:** Kovash (REPL & Interactive Shell)
-**Date:** 2026-03-01
-**Issue:** #625
-**What:** When no roster exists, only the header banner tells the user about `squad init` / `/init`. The `firstRunElement` block returns `null` for the empty-roster case instead of showing a duplicate message. `firstRunElement` is reserved for the "Your squad is assembled" onboarding when a roster already exists.
-**Why:** Two competing UI elements both said "run squad init" — visual noise that confuses the information hierarchy. Banner is persistent and visible; it owns the no-roster guidance. `firstRunElement` owns the roster-present first-run experience.
-**Impact:** App.tsx only. No API or prop changes. Banner text reworded to prioritize `/init` (in-shell path) over exit-and-run.
-
-### 2026-03-01: NODE_NO_WARNINGS for subprocess warning suppression
-**By:** Cheritto (TUI Engineer)
-**Date:** 2026-03-01
-**Issue:** #624
-**What:** `process.env.NODE_NO_WARNINGS = '1'` is set as the first executable line in `cli-entry.ts` (line 2, after shebang). This supplements the existing `process.emitWarning` override.
-**Why:** The Copilot SDK spawns child processes that inherit environment variables but NOT in-process monkey-patches like `process.emitWarning` overrides. `NODE_NO_WARNINGS=1` is the Node.js-native mechanism for suppressing warnings across an entire process tree. Without it, `ExperimentalWarning` messages (e.g., SQLite) leak into the terminal via the SDK's subprocess stderr forwarding.
-**Pattern:** When suppressing Node.js warnings, use BOTH: (1) `process.env.NODE_NO_WARNINGS = '1'` — covers child processes (env var inheritance); (2) `process.emitWarning` override — covers main process (belt-and-suspenders).
-**Impact:** Eliminates `ExperimentalWarning` noise in terminal for all Squad CLI users, including when the Copilot SDK spawns subprocesses.
-
-### 2026-03-01: No content suppression based on terminal width
-**By:** Cheritto (TUI Engineer)
-**Date:** 2026-03-01
-**What:** Terminal width tiers (compact ≤60, standard, wide ≥100) may adjust *layout* (e.g., wrapping, column arrangement) but must NOT suppress or truncate *content*. Every piece of information shown at 120 columns must also be shown at 40 columns.
-**Why:** Users can scroll. Hiding roster names, spacing, help text, or routing hints on narrow terminals removes information the user needs. Layout adapts to width; content does not.
-**Convention:** `compact` variable may be used for layout decisions (flex direction, column vs. row) but must NOT gate visibility of text, spacing, or UI sections. `wide` may add supplementary content but narrow must not remove it.
-
-### 2026-03-01: Multi-line user message rendering pattern
-**By:** Cheritto (TUI Engineer)
-**Date:** 2026-03-01
-**What:** Multi-line user messages in the Static scrollback use `split('\n')` with a column layout: first line gets the `❯` prefix, subsequent lines get `paddingLeft={2}` for alignment.
-**Why:** Ink's horizontal `<Box>` layout doesn't handle embedded `\n` in `<Text>` children predictably when siblings exist. Explicit line splitting with column flex direction gives deterministic multi-line rendering.
-**Impact:** Any future changes to user message prefix width must update the `paddingLeft={2}` on continuation lines to match.
-
-### 2026-03-01: Elapsed time display — inline after message content
-**By:** Cheritto (TUI Engineer)
-**Date:** 2026-03-01
-**Issue:** #605
-**What:** Elapsed time annotations on completed agent messages are always rendered inline after the message content as `(X.Xs)` in dimColor. This applies to the Static scrollback block in App.tsx, which is the canonical render path for all completed messages.
-**Why:** After the Static scrollback refactor, MessageStream receives `messages=[]` and only renders live streaming content. The duration code in MessageStream was dead. Moving duration display into the Static block ensures it always appears consistently.
-**Convention:** `formatDuration()` from MessageStream.tsx is the shared formatter. Format is `Xms` for <1s, `X.Xs` for ≥1s. Always inline, always dimColor, always after content text.
-
-### 2026-03-01: Banner usage line separator convention
-**By:** Cheritto (TUI Engineer)
-**Date:** 2026-03-01
-**What:** Banner hint/usage lines use middle dot `·` as inline separator. Init messages use single CTA (no dual-path instructions).
-**Why:** Consistent visual rhythm. Middle dot is lighter than em-dash or hyphen for inline command lists. Single CTA reduces cognitive load for new users.
-**Impact:** App.tsx headerElement. Future banner copy should follow same separator and single-CTA pattern.
-
-### 2026-03-02: REPL casting engine design
-**By:** Fenster (Core Dev)
-**Date:** 2026-03-02
-**Status:** Implemented
-**Issue:** #638
-**What:** Created `packages/squad-cli/src/cli/core/cast.ts` as a self-contained casting engine with four exports:
-1. `parseCastResponse()` — parses the `INIT_TEAM:` format from coordinator output
-2. `createTeam()` — scaffolds all `.squad/agents/` directories, writes charters, updates team.md and routing.md, writes casting state JSON
-3. `roleToEmoji()` — maps role strings to emoji, reusable across the CLI
-4. `formatCastSummary()` — renders a padded roster summary for terminal display
-
-Scribe and Ralph are always injected if missing from the proposal. Casting state is written to `.squad/casting/` (registry.json, history.json, policy.json).
-**Why:** Enables coordinator to propose and create teams from within the REPL session after `squad init`.
-**Implications:**
-
-### 2026-03-02: Beta → Origin Migration: Version Path (v0.5.4 → v0.8.17)
-
-**By:** Kobayashi (Git & Release)  
-**Date:** 2026-03-02  
-**Context:** Analyzed migration from beta repo (`bradygaster/squad`, v0.5.4) to origin repo (`bradygaster/squad-pr`, v0.8.18-preview). Version gap spans 0.6.x, 0.7.x, 0.8.0–0.8.16 (internal origin development only).
-
-**What:** Beta will jump directly from v0.5.4 to v0.8.17 (skip all intermediate versions). Rationale:
-1. **Semantic versioning allows gaps** — version numbers are labels, not counters
-2. **Users care about features, not numbers** — comprehensive changelog is more valuable than version sequence
-3. **Simplicity reduces risk** — single migration release is easier to execute and communicate
-4. **Precedent exists** — major refactors/rewrites commonly skip versions (Angular 2→4, etc)
-
-**Risks & Mitigations:**
-- Risk: Version jump confuses users. Mitigation: Clear release notes explaining the gap + comprehensive changelog
-- Risk: Intermediate versions were never public (no user expectations). Mitigation: This is actually a benefit — no backfill needed
-
-**Impact:** After merge, beta repo version jumps from v0.5.4 to v0.8.17. All intermediate work is included in the 0.8.17 release. Next release after v0.8.17 may be v0.8.18 or v0.9.0 (team decision post-merge).
-
-**Why:** Avoids maintenance burden of backfilling 12+ fake versions. Users get complete feature set in one migration release.
-
-### 2026-03-02: Beta → Origin Migration: Package Naming
-
-**By:** Kobayashi (Git & Release)  
-**Date:** 2026-03-02
-
-**What:** Deprecate `@bradygaster/create-squad` (beta's package name). All future releases use:
-- `@bradygaster/squad-cli` (user-facing CLI)
-- `@bradygaster/squad-sdk` (programmatic SDK for integrations)
-
-**Why:** Origin's naming is more accurate and supports independent versioning if needed. Monorepo structure benefits from clear package separation.
-
-**Action:** When v0.8.17 is ready to publish, release a final version of `@bradygaster/create-squad` with deprecation notice: "This package has been renamed to @bradygaster/squad-cli. Install with: npm install -g @bradygaster/squad-cli"
-
-**Impact:** Package ecosystem clarity. No breaking change for users upgrading (CLI handles detection and warnings).
-
-### 2026-03-02: Beta → Origin Migration: Retroactive v0.8.17 Tag
-
-**By:** Kobayashi (Git & Release)  
-**Date:** 2026-03-02
-
-**What:** Retroactively tag commit `5b57476` ("chore(release): prep v0.8.16 for npm publish") as v0.8.17. This commit and v0.8.16 have identical code.
-
-**Rationale:**
-- Commit `6fdf9d5` jumped directly to v0.8.17-preview (no v0.8.17 release tag exists)
-- Commit `87e4f1c` bumps to v0.8.18-preview "after 0.8.17 release" (implying v0.8.17 was released)
-- Retroactive tagging is less disruptive than creating a new prep commit and rebasing
-
-**Action:** When banana gate clears, tag origin commit `5b57476` as v0.8.17.
-
-**Why:** Completes the missing link in origin's tag history. Indicates to users which commit was released as v0.8.17.
-
-### 2026-03-02: npx Distribution Migration: Error-Only Shim Strategy
-
-**By:** Rabin (Distribution)  
-**Date:** 2026-03-02  
-**Context:** Beta repo currently uses GitHub-native distribution (`npx github:bradygaster/squad`). Origin uses npm distribution (`npm install -g @bradygaster/squad-cli`). After merge, old path will break.
-
-**Problem:** After migration, `npx github:bradygaster/squad` fails (root `package.json` has no `bin` entry). Users hitting the old path get cryptic npm error.
-
-**Solution — Option 5 (Error-only shim):**
-1. Add root `bin` entry pointing to `cli.js`
-2. `cli.js` detects GitHub-native invocation and prints **bold, clear error** with migration instructions
-3. Exit with code 1 (fail fast, no hidden redirection)
-
-**Implementation:**
-```json
-{
-  "bin": {
-    "squad": "./cli.js"
-  }
-}
-```
-
-Update `cli.js` to print error message with new install instructions:
-```
-npm install -g @bradygaster/squad-cli
-```
-
-**Pros:**
-- ✅ Clear, actionable error message (not cryptic npm error)
-- ✅ Aligns with npm-only team decision (no perpetuation of GitHub-native path)
-- ✅ Low maintenance burden (simple error script, no complex shim)
-- ✅ Can be removed in v1.0.0 when beta users have migrated
-
-**Cons:**
-- Immediate breakage (no grace period) — but users get clear guidance
-
-**Why This Over Others:**
-- Option 1 (keep working) contradicts npm-only decision
-- Option 2 (exit early) same as this, but explicit error format needed
-- Option 3 (time-limited) best UX but maintenance burden
-- Option 4 (just break) user-hostile without error message
-- **Option 5 balances user experience + team decision**
-
-**Related Decision:** See 2026-02-21 decision "Distribution is npm-only (GitHub-native removed)"
-
-**User Impact:**
-- Users running `npx github:bradygaster/squad` see bold error with `npm install -g @bradygaster/squad-cli` instruction
-- Existing projects running `squad upgrade` work seamlessly (upgrade logic built-in)
-- No data loss or silent breakage
-
-**Upgrade Path (existing beta users):**
-```bash
-npm install -g @bradygaster/squad-cli
-cd /path/to/project
-squad upgrade
-squad upgrade --migrate-directory  # Optional: .ai-team/ → .squad/
-```
-
-**Why:** Rabin's principle: "If users have to think about installation, install is broken." A clear error message respects users better than a cryptic npm error.
-
-### 2026-02-28: Init flow reliability — proposal-first before code
-
-**By:** Keaton (Lead)
-**Date:** 2026-02-28
-**What:** Init/onboarding fixes require a proposal review before implementation. Proposal at `docs/proposals/reliable-init-flow.md`. Two confirmed bugs (race condition in auto-cast, Ctrl+C doesn't abort init session) plus UX gaps (empty-roster messaging, `/init` no-op). P0 bugs are surgical — don't expand scope.
-**Why:** Four PRs (#637–#640) patched init iteratively without a unified design. Before writing more patches, the team needs to agree on the golden path. Proposal-first (per team decision 2026-02-21).
-**Impact:** Blocks init-related code changes until Brady reviews the proposal.
-- Kovash (REPL): Can call `parseCastResponse` + `createTeam` to wire up casting flow in shell dispatcher
-- Verbal (Prompts): INIT_TEAM format is now the contract — coordinator prompt should emit this
-- Hockney (Tests): cast.ts needs unit tests for parser edge cases, emoji mapping, file creation
-
-### 2026-03-02: REPL empty-roster gate — dual check pattern
-**By:** Fenster (Core Dev)
-**Date:** 2026-03-02
-**What:** REPL dispatch is now gated on *populated* roster, not just team.md existence. `hasRosterEntries()` in `coordinator.ts` checks for table data rows in the `## Members` section. Two layers: `handleDispatch` blocks with user guidance, `buildCoordinatorPrompt` injects refusal prompt.
-**Why:** After `squad init`, team.md exists but is empty. Coordinator received a "route to agents" prompt with no agents listed, causing silent generic AI behavior. Users never got told to cast their team.
-**Convention:** Post-init message references "Copilot session" (works in VS Code, github.com, and Copilot CLI). The `/init` slash command provides same guidance inside REPL.
-**Impact:** All agents — if you modify the `## Members` table format in team.md templates, update `hasRosterEntries()` to match.
-
-### 2026-03-02: Connection promise dedup in SquadClient
-**By:** Fenster (Core Dev)
-**Date:** 2026-03-02
-**What:** `SquadClient.connect()` now uses a promise dedup pattern — concurrent callers share the same in-flight `connectPromise` instead of throwing "Connection already in progress".
-**Why:** Eager warm-up and auto-cast both call `createSession()` → `connect()` at REPL startup, racing on the connection. The throw crashed auto-cast every time.
-**Impact:** `packages/squad-sdk/src/adapter/client.ts` only. No API surface change.
-
-### 2026-03-01: CLI UI Polish PRD — Alpha Shipment Over Perfection
-**By:** Keaton (Lead)  
-**Date:** 2026-03-01  
-**Context:** Team image review identified 20+ UX issues ranging from P0 blockers to P3 future polish
-
-**What:** CLI UI polish follows pragmatic alpha shipment strategy: fix P0 blockers + P1 quick wins, defer grand redesign to post-alpha. 20 discrete issues created with clear priority tiers (P0/P1/P2/P3).
-
-**Why:** Brady confirmed "alpha-level shipment acceptable — no grand redesign today." Team converged on 3 P0 blockers (blank screens, static spinner, missing alpha banner) that would embarrass us vs. 15+ polish items that can iterate post-ship.
-
-**Trade-off:** Shipping with known layout quirks (input positioning, responsive tables) rather than blocking on 1-2 week TUI refactor. Users expect alpha rough edges IF we warn them upfront.
-
-**Priority Rationale:**
-- **P0 (must fix):** User-facing broken states — blank screens, no feedback, looks crashed
-- **P1 (quick wins):** Accessibility (contrast), usability (copy clarity), visual hierarchy — high ROI, low effort
-- **P2 (next sprint):** Layout architecture, responsive design — important but alpha-acceptable if missing
-- **P3 (future):** Fixed bottom input, alt screen buffer, creative spinner — delightful but not blockers
-
-**Architectural Implications:**
-1. **Quick win discovered:** App.tsx overrides ThinkingIndicator's native rotation with static hints (~5 line fix)
-2. **Debt acknowledged:** 3 separate separator implementations need consolidation (P2 work)
-3. **Layout strategy:** Ink's layout model fights bottom-anchored input. Alt screen buffer is the real solution (P3 deferred).
-4. **Issue granularity:** 20 discrete issues vs. 1 monolithic "fix UI" epic — enables parallel work by Cheritto (11 issues), Kovash (4), Redfoot (2), Fenster (1), Marquez (1 review)
-
-**Success Gate:** "Brady says it doesn't embarrass us" — qualitative gate appropriate for alpha software. Quantitative gates: zero blank screens >500ms, contrast ≥4.5:1, spinner rotates every 3s.
-
-**Impact:**
-- **Team routing:** Clear ownership — Cheritto (TUI), Kovash (shell), Redfoot (design), Marquez (UX review)
-- **Timeline transparency:** P0 (1-2 days) → P1 (2-3 days) → P2 (1 week) — alpha ship when P0+P1 done
-- **Expectation management:** Out of Scope section explicitly lists grand redesign, advanced features, WCAG audit — prevents scope creep
-
-### 2026-03-01: Cast confirmation required for freeform REPL casts
-**By:** Fenster (Core Dev)  
-**Date:** 2026-03-01  
-**Context:** P2 from Keaton's reliable-init-flow proposal
-
-**What:** When a user types a freeform message in the REPL and the roster is empty, the cast proposal is shown and the user must confirm (y/yes) before team files are created. Auto-cast from .init-prompt and /init "prompt" skip confirmation since the user explicitly provided the prompt.
-
-**Why:** Prevents garbage casts from vague or accidental first messages (e.g., "hello", "what can you do?"). Matches the squad.agent.md Init Mode pattern where confirmation is required before creating team files.
-
-**Pattern:** pendingCastConfirmation state in shell/index.ts. handleDispatch intercepts y/n at the top before normal routing. inalizeCast() is the shared helper for both auto-confirmed and user-confirmed paths.
-
-### 2026-03-01: Expose setProcessing on ShellApi
-**By:** Kovash (REPL Expert)  
-**Date:** 2026-03-01  
-**Context:** Init auto-cast path bypassed App.tsx handleSubmit, so processing state was never set — spinner invisible during team casting.
-
-**What:** ShellApi now exposes setProcessing(processing: boolean) so that any code path in index.ts that triggers async work outside of handleSubmit can properly bracket it with processing state. This enables ThinkingIndicator and InputPrompt spinner without duplicating React state management.
-
-**Rule:** Any new async dispatch path in index.ts that bypasses handleSubmit **must** call shellApi.setProcessing(true) before the async work and shellApi.setProcessing(false) in a inally block covering all exit paths.
-
-**Files Changed:**
-- packages/squad-cli/src/cli/shell/components/App.tsx — added setProcessing to ShellApi interface + wired in onReady
-- packages/squad-cli/src/cli/shell/index.ts — added setProcessing calls in handleInitCast (entry, pendingCastConfirmation return, finally block)
-
-### 2026-03-01T20:13:16Z: User directives — UI polish and shipping priorities
-**By:** Brady (via Copilot)  
-**Date:** 2026-03-01
-Ampersands (&) are prohibited in user-facing documentation headings and body text, per Microsoft Style Guide.
-
-**Rule:** Use "and" instead.
-
-**Why:** Microsoft Style Guide prioritizes clarity and professionalism. Ampersands feel informal and reduce accessibility.
-
-**Exceptions:**
-- Brand names (AT&T, Barnes & Noble)
-- UI element names matching exact product text
-- Code samples and technical syntax
-- Established product naming conventions
-
-**Scope:** Applies to docs pages, README files, blog posts, community-facing content. Internal files (.squad/** memory files, decision docs, agent history) have flexibility.
-
-**Reference:** https://learn.microsoft.com/en-us/style-guide/punctuation/ampersands
-
-
----
-
-## Adoption & Community
-
-### `.squad/` Directory Scope — Owner Directive
-**By:** Brady (project owner, PR #326 review)  
-**Date:** 2026-03-10  
-
-**Directive:** The `.squad/` directory is **reserved for team state only** — roster, routing, decisions, agent histories, casting, and orchestration logs. Non-team data (adoption tracking, community metrics, reports) must NOT live in `.squad/`. Use `.github/` for GitHub platform integration or `docs/` for documentation artifacts.
-
-**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029193833)
-
----
-
-### No Individual Repo Listing Without Consent — Owner Directive
-**By:** Brady (project owner, PR #326 review)  
-**Date:** 2026-03-10  
-
-**Directive:** Growth metrics must report **aggregate numbers only** (e.g., "78+ repositories found via GitHub code search") — never name or link to individual community repos without explicit opt-in consent. The monitoring script and GitHub Action concepts are approved, but any public showcase or tracking list that identifies specific repos is blocked until a community consent plan exists.
-
-**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029222967)
-
----
-
-### Adoption Tracking — Opt-In Architecture
-**By:** Flight (implementing Brady's directives above)  
-**Date:** 2026-03-09  
-
-Privacy-first adoption monitoring using a three-tier system:
-
-**Tier 1: Aggregate monitoring (SHIPPED)**
-- GitHub Action + monitoring script collect metrics
-- Reports moved to `.github/adoption/reports/{YYYY-MM-DD}.md`
-- Reports show ONLY aggregate numbers (no individual repo names):
-  - "78+ repositories found via code search"
-  - Total stars/forks across all discovered repos
-  - npm weekly downloads
-
-**Tier 2: Opt-in registry (DESIGN NEXT)**
-- Create `SHOWCASE.md` in repo root with submission instructions
-- Opted-in projects listed in `.github/adoption/registry.json`
-- Monitoring script reads registry, reports only on opted-in repos
-
-**Tier 3: Public showcase (LAUNCH LATER)**
-- `docs/community/built-with-squad.md` shows opted-in projects only
-- README link added when ≥5 opted-in projects exist
-
-**Rationale:**
-- Aggregate metrics safe (public code search results)
-- Individual projects only listed with explicit owner consent
-- Prevents surprise listings, respects privacy
-- Incremental rollout maintains team capacity
-
-**Implementation (PR #326):**
-- ✅ Moved `.squad/adoption/` → `.github/adoption/`
-- ✅ Stripped tracking.md to aggregate-only metrics
-- ✅ Removed individual repo names, URLs, metadata
-- ✅ Updated adoption-report.yml and scripts/adoption-monitor.mjs
-- ✅ Removed "Built with Squad" showcase link from README (Tier 2 feature)
-
----
-
-### Adoption Tracking Location & Privacy
-**By:** EECOM  
-**Date:** 2026-03-10  
-
-Implementation decision confirming Tier 1 adoption tracking changes.
-
-**What:** Move adoption tracking from `.squad/adoption/` to `.github/adoption/`
-
-**Why:**
-1. **GitHub integration:** `.github/adoption/` aligns with GitHub convention (workflows, CODEOWNERS, issue templates)
-2. **Privacy-first:** Aggregate metrics only; defer individual repo showcase to Tier 2 (opt-in)
-3. **Clear separation:** `.squad/` = team internal; `.github/` = GitHub platform integration
-4. **Future-proof:** When Tier 2 opt-in launches, `.github/adoption/` is the natural home
-
-**Impact:**
-- GitHub Action reports write to `.github/adoption/reports/{YYYY-MM-DD}.md`
-- No individual repo information published until Tier 2
-- Monitoring continues collecting aggregate metrics via public APIs
-- Team sees trends without publishing sensitive adoption data
-
----
-
-### Append-Only File Governance
-**By:** Flight  
-**Date:** 2026-03-09  
-
-Feature branches must never modify append-only team state files except to append new content.
-
-**What:** If a PR diff shows deletions in `.squad/agents/*/history.md` or `.squad/decisions.md`, the PR is blocked until deletions are reverted.
-
-**Why:** Session state drift causes agents to reset append-only files to stale branch state, destroying team knowledge. PR #326 deleted entire history files and trimmed ~75 lines of decisions, causing data loss.
-
-**Enforcement:** Code review + future CI check candidate.
-
----
-
-### Documentation Style: No Ampersands
-**By:** PAO  
-**Date:** 2026-03-09  
-
-Ampersands (&) are prohibited in user-facing documentation headings and body text, per Microsoft Style Guide.
-
-**Rule:** Use "and" instead.
-
-**Why:** Microsoft Style Guide prioritizes clarity and professionalism. Ampersands feel informal and reduce accessibility.
-
-**Exceptions:**
-- Brand names (AT&T, Barnes & Noble)
-- UI element names matching exact product text
-- Code samples and technical syntax
-- Established product naming conventions
-
-**Scope:** Applies to docs pages, README files, blog posts, community-facing content. Internal files (.squad/** memory files, decision docs, agent history) have flexibility.
-
-**Reference:** https://learn.microsoft.com/en-us/style-guide/punctuation/ampersands
-
----
-
-## Sprint Directives
-
-### Secret handling — agents must never persist secrets
-**By:** RETRO (formerly Baer), v0.8.24
-**What:** Agents must NEVER write secrets, API keys, tokens, or credentials into conversational history, commit messages, logs, or any persisted file. Acknowledge receipt without echoing values.
-**Why:** Secrets in logs or history are a security incident waiting to happen.
-
-
----
-
-## Squad Ecosystem Boundaries & Content Governance
-
-### Squad Docs vs Squad IRL Boundary (consolidated)
-**By:** PAO (via Copilot), Flight  
-**Date:** 2026-03-10  
-**Status:** Active pattern for all documentation PRs
-
-**Litmus test:** If Squad doesn't ship the code or configuration, the documentation belongs in Squad IRL, not the Squad framework docs.
-
-**Categories:**
-
-1. **Squad docs** — Features Squad ships (routing, charters, reviewer protocol, config, behavior)
-2. **Squad IRL** — Infrastructure around Squad (webhooks, deployment patterns, logging, external tools, operational patterns)
-3. **Gray area:** Platform features (GitHub Issue Templates) → Squad docs if framed as "how to configure X for Squad"
-
-**Examples applied (PR #331):**
-
-| Document | Decision | Reason |
-|----------|----------|--------|
-| ralph-operations.md | DELETE → IRL | Infrastructure (deployment, logging) around Squad, not Squad itself |
-| proactive-communication.md | DELETE → IRL | External tools (Teams, WorkIQ) configured by community, not built into Squad |
-| issue-templates.md | KEEP, reframe | GitHub platform feature; clarify scope: "a GitHub feature configured for Squad" |
-| reviewer-protocol.md (Trust Levels) | KEEP | Documents user choice spectrum within Squad's existing review system |
-
-**Enforcement:** Code review + reframe pattern ("GitHub provides X. Here's how to configure it for Squad's needs."). Mark suspicious deletions for restore (append-only governance).
-
-**Future use:** Apply this pattern to all documentation PRs to maintain clean boundaries.
-
-
----
-
-### Content Triage Skill — External Content Integration
-**By:** Flight  
-**Date:** 2026-03-10  
-**Status:** Skill created at `.squad/skills/content-triage/SKILL.md`
-
-**Pattern:** External content (blog posts, sample repos, videos, conference talks) that helps Squad adoption must be triaged using the "Squad Ships It" boundary heuristic before incorporation.
-
-**Workflow:**
-1. Triggered by `content-triage` label or external content reference in issue
-2. Flight performs boundary analysis
-3. Sub-issues generated for Squad-ownable content extraction (PAO responsibility)
-4. FIDO verifies docs-test sync on extracted content
-5. Scribe manages IRL references in `.github/irl/references.yml` (YAML schema)
-
-**Label convention:** `content:blog`, `content:sample`, `content:video`, `content:talk`
-
-**Why:** Pattern from PR #331 (Tamir Dresher blog) shows parallel extraction of Squad-ownable patterns (scenario guides, reviewer protocol) and infrastructure patterns (Ralph ops, proactive comms). Without clear boundary, teams pollute Squad docs with operational content or miss valuable patterns that should be generalized.
-
-**Impact:** Enables community content to accelerate Squad adoption without polluting core docs. Flight's boundary analysis becomes reusable decision framework. Prevents scope creep as adoption grows.
-
-
----
-
-### PR #331 Quality Gate — Test Assertion Sync
-**By:** FIDO (Quality Owner)  
-**Date:** 2026-03-10  
-**Status:** 🟢 CLEARED (test fix applied, commit 6599db6)
-
-**What was blocked:** Merge blocked on stale test assertions in `test/docs-build.test.ts`.
-
-**Critical violations resolved:**
-1. `EXPECTED_SCENARIOS` array stale (7 vs 25 disk files) — ✅ Updated to 25 entries
-2. `EXPECTED_FEATURES` constant undefined (32 feature files) — ✅ Created array with 32 entries
-3. Test assertion incomplete — ✅ Updated to validate features section
-
-**Why this matters:** Stale assertions that don't reflect filesystem state cause silent test skips. Regression: If someone deletes a scenario file, the test won't catch it. CI passing doesn't guarantee test coverage — only that the test didn't crash.
-
-**Lessons:**
-- Test arrays must be refreshed when filesystem content changes
-- Incomplete commits break the test-reality sync contract
-- FIDO's charter: When adding test count assertions, must keep in sync with disk state
-
-**Outcome:** Test suite: 6/6 passing. Assertions synced to filesystem. No regression risk from stale assertions.
-
-
----
-
-### Communication Patterns and PR Trust Models
-**By:** PAO  
-**Date:** 2026-03-10  
-**Status:** Documented in features/reviewer-protocol.md (trust levels section) and scenarios/proactive-communication.md (infrastructure pattern)
-
-**Decision:** Document emerging patterns in real Squad usage: proactive communication loops and PR review trust spectrum.
-
-**Components:**
-
-1. **Proactive communication patterns** — Outbound notifications (Teams webhooks), inbound scanning (Teams/email for work items), two-way feedback loop connecting external sources to Squad workflow
-
-2. **PR trust levels spectrum:**
-   - **Full review** (default for team repos) — All PRs require human review
-   - **Selective review** (personal projects with patterns) — Domain-expert or routine PRs can auto-merge
-   - **Self-managing** (solo personal repos only) — PRs auto-merge; Ralph's work monitoring provides retroactive visibility
-
-**Why:** Ralph 24/7 autonomous deployment creates an awareness gap — how does the human stay informed? Outbound notifications solve visibility. Inbound scanning solves "work lives in multiple places." Trust levels let users tune oversight to their context (full review for team repos, selective for personal projects, self-managing for solo work only).
-
-**Important caveat:** Self-managing ≠ unmonitored; Ralph's work monitoring and notifications provide retroactive visibility.
-
-**Anti-spam expectations:** Don't spam yourself outbound (notification fatigue), don't spam GitHub inbound (volume controls).
-
-
----
-
-### Remote Squad Access — Phased Rollout (Proposed)
-**By:** Flight  
-**Date:** 2026-03-10  
-**Status:** Proposed — awaits proposal document in `docs/proposals/remote-squad-access.md`
-
-**Context:** Squad currently requires a local clone to answer questions. Users want remote access from mobile, browser, or different machine without checking out repo.
-
-**Phases:**
-
-**Phase 1: GitHub Discussions Bot (Ship First)**
-- Surface: GitHub Discussions
-- Trigger: `/squad` command or `@squad` mention
-- Context: GitHub Actions workflow checks out repo → full `.squad/` state
-- Response: Bot replies to thread
-- Feasibility: 1 day
-- Why first: Easy to build, zero hosting, respects repo privacy, async Q&A, immediately useful
-
-**Phase 2: GitHub Copilot Extension (High Value)**
-- Surface: GitHub Copilot chat (VS Code, CLI, web, mobile)
-- Trigger: `/squad ask {question}` in any Copilot client
-- Context: Extension fetches `.squad/` files via GitHub API (no clone)
-- Response: Answer inline in Copilot
-- Feasibility: 1 week
-- Why second: Works everywhere Copilot exists, instant response, natural UX
-
-**Phase 3: Slack/Teams Bot (Enterprise Value)**
-- Surface: Slack or Teams channel
-- Trigger: `@squad` mention in channel
-- Context: Webhook fetches `.squad/` via GitHub API
-- Response: Bot replies in thread
-- Feasibility: 2 weeks
-- Why third: Enterprise teams live in chat; high value for companies using Squad
-
-**Constraint:** Squad's intelligence lives in `.squad/` (roster, routing, decisions, histories). Any remote solution must solve context access. GitHub Actions workflows provide checkout for free. Copilot Extension and chat bots use GitHub API to fetch files.
-
-**Implementation:** Before Phase 1 execution, write proposal document. New CLI command: `squad answer --context discussions --question "..."`. New workflow: `.github/workflows/squad-answer.yml`.
-
-**Privacy:** All approaches respect repo visibility or require authentication. Most teams want private by default.
-
-### Test assertion discipline — mandatory
-**By:** FIDO (formerly Hockney), v0.8.24
-**What:** All code agents must update tests when changing APIs. FIDO has PR blocking authority on quality grounds.
-**Why:** APIs changed without test updates caused CI failures and blocked external contributors.
-
-### Docs-test sync — mandatory
-**By:** PAO (formerly McManus), v0.8.24
-**What:** New docs pages require corresponding test assertion updates in the same commit.
-**Why:** Stale test assertions block CI and frustrate contributors.
-
-### Contributor recognition — every release
-**By:** PAO, v0.8.24
-**What:** Each release includes an update to the Contributors Guide page.
-**Why:** No contribution goes unappreciated.
-
-### API-test sync cross-check
-**By:** FIDO + Booster, v0.8.24
-**What:** Booster adds CI check for stale test assertions. FIDO enforces via PR review.
-**Why:** Prevents the pattern of APIs changing without test updates.
-
-### Doc-impact review — every PR
-**By:** PAO, v0.8.25
-**What:** Every PR must be evaluated for documentation impact. PAO reviews PRs for missing or outdated docs.
-**Why:** Code changes without doc updates lead to stale guides and confused users.
-
-
----
-
-## Release v0.8.24
-
-### CLI Packaging Smoke Test: Release Gate Decision
-**By:** FIDO, v0.8.24  
-**Date:** 2026-03-08
-
-The CLI packaging smoke test is APPROVED as the quality gate for npm releases.
-
-**What:**
-1. Text box preference: bottom-aligned, squared off (like Copilot CLI / Claude CLI) — future work, not today
-2. Alpha-level shipment acceptable for now — no grand UI redesign today
-3. CLI must show "experimental, please file issues" banner
-4. Spinner/wait messages should rotate every ~3 seconds — use codebase facts, project trivia, vulnerability info, or creative "-ing" words. Never just spin silently.
-5. Use wait time to inform or entertain users
-
-**Why:** User request — captured for team memory and crash recovery
-
-### 2026-03-01T20:16:00Z: User directive — CLI timeout too low
-**By:** Brady (via Copilot)  
-**Date:** 2026-03-01
-
-**What:** The CLI timeout is set too low — Brady tried using Squad CLI in this repo and it didn't work well. Timeout needs to be increased. Not urgent but should be captured as a CLI improvement opportunity.
-
-**Why:** User request — captured for team memory and PRD inclusion
-
-### 2026-03-01: Multi-Squad Storage & Resolution Design
-**By:** Keaton (Lead)
-**What:** 
-- New directory structure: ~/.config/squad/squads/{name}/.squad/ with ~/.config/squad/config.json for registry
-- Keep 
-esolveGlobalSquadPath() unchanged; add 
-esolveNamedSquadPath(name?: string) and listPersonalSquads() on top
-- Auto-migration: existing single personal squad moves to squads/default/ on first run
-- Resolution priority: explicit (CLI flag) > project config > env var > git remote mapping > path mapping > default
-- Global config.json schema: { version, defaultSquad, squads, mappings }
-
-**Why:** 
-- squads/ container avoids collisions with existing files at global root
-- Backward-compatible: legacy layout detected and auto-migrated; existing code continues to work
-- Clean separation: global config lives alongside squads, not inside any one squad
-- Resolution chain enables flexible mapping without breaking existing workflows
-
-### 2026-03-01: Multi-Squad SDK Functions
-**By:** Kujan (SDK Expert)
-**What:**
-- New SDK exports: 
-esolveNamedSquadPath(), listSquads(), createSquad(), deleteSquad(), switchSquad(), 
-esolveSquadForProject()
-- New type: SquadEntry { name, path, isDefault, createdAt }
-- squads.json registry (separate file, not config.json) with squad metadata and mappings
-- SquadDirConfig v2 addition: optional personalSquad?: string field (v1 configs unaffected)
-- Consult mode updated: setupConsultMode(options?: { squad?: string }) with explicit selection or auto-resolution
-
-**Why:**
-- Lazy migration with fallback chain ensures zero breaking changes to existing users
-- Separate squads.json is single source of truth for routing; keeps project config focused
-- Version handling allows incremental adoption; v1 configs work unchanged
-- SDK resolution functions can be called from CLI and library code without duplication
-
-### 2026-03-01: Multi-Squad CLI Commands & REPL
-**By:** Kovash (REPL)
-**What:**
-- New commands: squad list, squad create <name>, squad switch <name>, squad delete <name>
-- Modified commands: squad consult --squad=<name>, squad extract --squad=<name>, squad init --global --name=<name>
-- Interactive picker for squad selection: arrow keys (↑/↓), Enter to confirm, Ctrl+C to cancel
-- REPL integration: /squad and /squads slash commands with 	riggerSquadReload signal
-- .active file stores current active squad name (plain text)
-- Status command enhanced to show active squad and squad list
-
-**Why:**
-- Picker only shows when needed (multiple squads) and TTY available; non-TTY gracefully uses active squad
-- Slash commands follow existing pattern (/init, /agents, etc.); seamless REPL integration
-- .active file is simple and atomic; suitable for concurrent CLI access
-- Squad deletion safety: cannot delete active squad; requires confirmation
-
-### 2026-03-01: Multi-Squad UX & Interaction Design
-**By:** Marquez (UX Designer)
-**What:**
-- Visual indicator: current squad marked with ●, others with ○; non-default squads tagged [switched]
-- Squad name always visible in REPL header and prompt: ◆ Squad (client-acme)
-- Picker interactions: ↑/↓ navigate, Enter select, Esc/Ctrl+C cancel; 5-7 squads displayed, wrap around
-- Error states: clear copy with next actions (e.g., "Squad not found. Try @squad:personal." or "Run /squads to list.")
-- Copy style: active verbs (Create, Switch, List), human-readable nouns (no jargon), 3-5 words per line
-- Onboarding: fresh install defaults to "personal"; existing single-squad users see migration notice
-
-**Why:**
-- Persistent context (squad name in header/prompt) prevents "Which squad am I in?" confusion
-- Interactive picker is discoverable and non-blocking; minimal cognitive load
-- Error messages with next actions reduce support friction
-- Onboarding defaults and migration notices ensure smooth upgrade path for existing users
-
-# Decision: Separator component is canonical for horizontal rules
-
-**By:** Cheritto (TUI Engineer)
-**Date:** 2026-03-02
-**Issues:** #655, #670, #671, #677
-
-## What
-
-- All horizontal separator lines in shell components must use the shared `Separator` component (`components/Separator.tsx`), not inline `box.h.repeat()` calls.
-- The `Separator` component handles terminal capability detection, box-drawing character degradation, and width computation internally.
-- Information hierarchy convention: **bold** for primary CTAs (commands, actions) > normal for content > **dim** for metadata (timestamps, status, hints).
-- `flexGrow` should not be used on containers that may be empty — it creates dead space in Ink layouts.
-
-## Why
-
-Duplicated separator logic was found in 3 files (App.tsx, AgentPanel.tsx, MessageStream.tsx). Consolidation to a single component prevents drift and makes it trivial to change separator style globally. The info hierarchy and whitespace conventions ensure visual consistency as new components are added.
-### 2026-03-01: PR #547 Remote Control Feature — Architectural Review
-**By:** Fenster  
-**Date:** 2026-03-01  
-**PR:** #547 "Squad Remote Control - PTY mirror + devtunnel for phone access" by tamirdresher (external)
-
-## Context
-
-External contributor Tamir Dresher submitted a PR adding `squad start --tunnel` command to run Copilot in a PTY and mirror terminal output to phone/browser via WebSocket + Microsoft Dev Tunnels.
-
-## Architectural Question
-
-Is remote terminal access via devtunnel + PTY mirroring in scope for Squad v1 core?
-
-## Technical Assessment
-
-**What works:**
-- RemoteBridge WebSocket server architecture is sound
-- PTY mirroring approach is technically correct
-- Session management dashboard is useful
-- Security headers and CSP are present
-- Test coverage exists (18 tests, though failing due to build issues)
-
-**Critical blockers:**
-1. **Build broken** — TypeScript errors in `start.ts`, all tests failing
-2. **Command injection vulnerability** — `execFileSync` with string interpolation in `rc-tunnel.ts`
-3. **Native dependency** — `node-pty` requires C++ compiler (install friction)
-4. **Windows-only effectively** — hardcoded paths, devtunnel CLI Windows-centric
-5. **No cross-platform strategy** — macOS/Linux support unclear
-
-**Architectural concerns:**
-
-### 2026-03-02T23:36:00Z: Version target — v0.6.0 for public migration **[SUPERSEDED — see line 1046]**
-**By:** Brady (via Copilot)
-**What:** The public migration from squad-pr to squad should target v0.6.0, not v0.8.17. This overrides Kobayashi's Phase 5 Option A recommendation. The public repo (bradygaster/squad) goes from v0.5.4 → v0.6.0 — a clean minor bump.
-**Why:** User directive. v0.6.0 is the logical next public version from v0.5.4. Internal version numbers (0.6.x–0.8.x) were private development milestones.
-**[CORRECTION — 2026-03-03]:** This decision was REVERSED by Brady. Brady explicitly stated: "0.6.0 should NOT appear as the goal for ANY destination. I want the beta to become 0.8.17." The actual migration target is v0.8.17. See the superseding "Versioning Model: npm packages vs Public Repo Tags" decision at line 1046 which clarifies that v0.6.0 is a public repo tag only, while npm packages remain at 0.8.17. Current migration documentation correctly references v0.8.17 throughout.
-1. **Not integrated with Squad runtime** — doesn't use EventBus, Coordinator, or agent orchestration. Isolated feature.
-2. **Two separate modes** — PTY mode (`start.ts`) vs. ACP passthrough mode (`rc.ts`). Why both?
-3. **New CLI paradigm** — "start" implies daemon/server, not interactive mirroring. Command naming collision risk.
-4. **External dependency** — requires `devtunnel` CLI installed + authenticated. Not bundled, not auto-installed.
-5. **Audit logs** — go to `~/.cli-tunnel/audit/` instead of `.squad/log/` (inconsistent with Squad state location).
-
-## Recommendation
-
-**Request Changes** — Do not merge until:
-1. TypeScript build errors fixed
-2. Command injection vulnerability patched (use array args, no interpolation)
-3. Tests passing (currently 18/18 failing)
-4. Cross-platform support documented or Windows-only label added
-5. Architectural decision on scope: Is this core or plugin?
-
-**If approved as core feature:**
-- Extract to plugin first, prove value, then consider core integration
-- Unify PTY vs. ACP modes (pick one)
-- Integrate with EventBus/Coordinator (or explain why isolated is correct)
-- Rename command to `squad remote` or `squad tunnel` (avoid `start` collision)
-- Move audit logs to `.squad/log/`
-
-**If approved as plugin:**
-- This is the right path — keeps core small, proves value independently
-- Still fix security issues before merge to plugin repo
-
-## For Brady
-
-You requested a runtime review. Here's the verdict:
-
-- **Concept is cool** — phone access to Copilot is a real use case.
-- **Implementation needs work** — build broken, security issues, Windows-only.
-- **Architectural fit unclear** — not in any Squad v1 PRD. No integration with agent orchestration.
-- **Native dependency risk** — `node-pty` adds install friction (C++ compiler required).
-
-**My take:** This belongs in a plugin, not core. External contributor did solid work on the WebSocket bridge, but Squad v1 needs to ship agent orchestration first. Remote access is a nice-to-have, not a v1 must-have.
-
-If you want this in v1, we need a proposal (docs/proposals/) first.
-
-### 2026-03-02: Multi-squad test contract — squads.json schema
-**By:** Hockney (Tester)
-**Date:** 2026-03-02
-**Issue:** #652
-
-## What
-
-Tests for multi-squad (PR #690) encode a specific squads.json contract:
-
-```typescript
-interface SquadsJson {
-  version: 1;
-  defaultSquad: string;
-  squads: Record<string, { description?: string; createdAt: string }>;
-}
-```
-
-Squad name validation regex: `^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$` (kebab-case, 1-40 chars).
-
-## Why
-
-Fenster's implementation should match this schema. If the schema changes, tests need updating. Recording so the team knows the contract is encoded in tests.
-
-## Impact
-
-Fenster: Align `multi-squad.ts` types with this schema, or flag if different — Hockney will adjust tests.
-
-### 2026-03-02: PR #582 Review — Consult Mode Implementation
-**By:** Keaton (Lead)  
-**Date:** 2026-03-01  
-**Context:** External contributor PR from James Sturtevant (jsturtevant)
+> **Author:** EECOM 🔧 | **Date:** 2026-07-16 | **Status:** Implemented (PR #762)
 
 ## Decision
 
-**Do not merge PR #582 in its current form.**
-
-This is a planning document (PRD) masquerading as implementation. The PR contains:
-- An excellent 854-line PRD for consult mode
-- Test stubs for non-existent functions
-- Zero actual implementation code
-- A history entry claiming work is done (aspirational, not factual)
-
-## Required Actions
-
-1. **Extract PRD to proper location:**
-   - Move `.squad/identity/prd-consult-mode.md` → `docs/proposals/consult-mode.md`
-   - PRDs belong in proposals/, not identity/
-
-2. **Close this PR with conversion label:**
-   - Label: "converted-to-proposal"
-   - Comment: Acknowledge excellent design work, explain missing implementation
-
-3. **Create implementation issues from PRD phases:**
-   - Phase 1: SDK changes (SquadDirConfig, resolution helpers)
-   - Phase 2: CLI command implementation
-   - Phase 3: Extraction workflow
-   - Each phase: discrete PR with actual code + tests
-
-4. **Architecture discussion needed before implementation:**
-   - How does consult mode integrate with existing sharing/ module?
-   - Session learnings vs agent history — conceptual model mismatch
-   - Remote mode (teamRoot pointer) vs copy approach — PRD contradicts itself
-
-## Architectural Guidance
-
-**What's right:**
-- `consult: true` flag in config.json ✅
-- `.git/info/exclude` for git invisibility ✅
-- `git rev-parse --git-path info/exclude` for worktree compatibility ✅
-- Separate extraction command (`squad extract`) ✅
-- License risk detection (copyleft) ✅
-
-**What needs rethinking:**
-- Reusing `sharing/` module (history split vs learnings extraction — different domains)
-- PRD flip-flops between "copy squad" and "remote mode teamRoot pointer"
-- No design for how learnings are structured or extracted
-- Tests before code (cart before horse)
-
-## Pattern Observed
-
-James Sturtevant is a thoughtful contributor who understands the product vision. The PRD is coherent and well-structured. This connects to his #652 issue (Multiple Personal Squads) — consult mode is a stepping stone to multi-squad workflows.
-
-**Recommendation:** Engage James in architecture discussion before he writes code. This feature has implications for the broader personal squad vision. Get alignment on:
-1. Sharing module fit (or new consult module?)
-2. Learnings structure and extraction strategy
-3. Phase boundaries and deliverables
-
-## Why This Matters
-
-External contributors are engaging with Squad's architecture. We need to guide them toward shippable PRs, not just accept aspirational work. Setting clear expectations now builds trust and avoids wasted effort.
-
-## Files Referenced
-
-- `.squad/identity/prd-consult-mode.md` (PRD, should move)
-- `test/consult.test.ts` (tests for non-existent code)
-- `.squad/agents/fenster/history.md` (claims work done)
-- `packages/squad-sdk/src/resolution.ts` (needs `consult` field, unchanged in PR)
-
-
-### cli.js is now a thin ESM shim
-
-**By:** Fenster  
-**Date:** 2025-07  
-**What:** `cli.js` at repo root is a 14-line shim that imports `./packages/squad-cli/dist/cli-entry.js`. It no longer contains bundled CLI code. The deprecation notice only displays when invoked via npm/npx.  
-**Why:** The old bundled cli.js was stale and missing commands added after the monorepo migration (e.g., `aspire`). A shim ensures `node cli.js` always runs the latest built CLI.  
-**Impact:** `node cli.js` now requires `npm run build` to have been run first (so `packages/squad-cli/dist/cli-entry.js` exists). This was already the case for any development workflow.
-
-
-### 2026-03-02T01-09-49Z: User directive
-**By:** Brady (via Copilot)
-**What:** Stop distributing the package via NPX and GitHub. Only distribute via NPM from now on. Go from the public version to whatever version we're in now in the private repo. Adopt the versioning scheme from issue #692.
-**Why:** User request — captured for team memory
-
-# Release Plan Update — npm-only Distribution & Semver Fix (#692)
-
-**Status:** DECIDED
-**Decided by:** Kobayashi (Git & Release)
-**Date:** 2026-03-01T14:22Z
-**Context:** Brady's two strategic decisions on distribution and versioning
-
-## Decisions
-
-### 1. NPM-Only Distribution
-- **What:** End GitHub-native distribution (`npx github:bradygaster/squad`). Install exclusively via npm registry.
-- **How:** Users install via `npm install -g @bradygaster/squad-cli` (global) or `npx @bradygaster/squad-cli` (per-project).
-- **Why:** Simplified distribution, centralized source of truth, standard npm tooling conventions.
-- **Scope:** Affects all future releases, all external documentation, and CI/CD publish workflows.
-- **Owners:** Rabin (docs), Fenster (scripts), all team members (update docs/sample references).
-
-### 2. Semantic Versioning Fix (#692)
-- **Problem:** Versions were `X.Y.Z.N-preview` (four-part with prerelease after), which violates semver spec.
-- **Solution:** Correct format is `X.Y.Z-preview.N` (prerelease identifier comes after patch, before any build metadata).
-- **Examples:**
-  - ❌ Invalid: `0.8.6.1-preview`, `0.8.6.16-preview`
-  - ✅ Valid: `0.8.6-preview.1`, `0.8.6-preview.16`
-- **Impact:** Affects all version strings going forward (package.json, CLI version constant, release tags).
-- **Release sequence:** 
-  1. Pre-release: `X.Y.Z-preview.1`, `X.Y.Z-preview.2`, ...
-  2. At publish: Bump to `X.Y.Z`
-  3. Post-publish: Bump to `{next}-preview.1` (reset counter)
-
-### 3. Version Continuity
-- **Transition:** Public repo ended at `0.8.5.1`. Private repo continues at `0.8.6-preview` (following semver format).
-- **Rationale:** Clear break between public (stable) and private (dev) codebases while maintaining version history continuity.
-
-## Implementation
-
-- ✅ **CHANGELOG.md:** Added "Changed" section documenting distribution channel and semver fix.
-- ✅ **Charter (Kobayashi):** Updated Release Versioning Sequence with corrected pattern and phase description.
-- ✅ **History (Kobayashi):** Logged decision with rationale and scope.
-
-## Dependent Work
-
-- **Fenster:** Ensure `bump-build.mjs` implements X.Y.Z-preview.N pattern (not X.Y.Z.N-preview).
-- **Rabin:** Update README, docs, and all install instructions to reflect npm-only distribution.
-- **All:** Use corrected version format in release commits, tags, and announcements.
-
-## Notes
-
-- Zero impact on functionality — this is purely distribution and versioning cleanup.
-- Merge drivers on `.squad/agents/kobayashi/history.md` ensure this decision appends safely across parallel branches.
-- If questions arise about versioning during releases, refer back to Charter § Release Versioning Sequence.
-
-# Decision: npm-only distribution (GitHub-native removed)
-
-**By:** Rabin (Distribution)
-**Date:** 2026-03-01
-**Requested by:** Brady
-
-## What Changed
-
-All distribution now goes through npm. The `npx github:bradygaster/squad` path has been fully removed from:
-- Source code (github-dist.ts default template, install-migration.ts, init.ts)
-- All 4 copies of squad.agent.md (Ralph Watch Mode commands)
-- All 4 copies of squad-insider-release.yml (release notes)
-- README.md, migration guides, blog posts, cookbook, installation docs
-- Test assertions (bundle.test.ts)
-- Rabin's own charter (flipped from "never npmjs.com" to "always npmjs.com")
-
-## Install Paths (the only paths)
-
-```bash
-# Global install
-npm install -g @bradygaster/squad-cli
-
-# Per-use (no install)
-npx @bradygaster/squad-cli
-
-# SDK for programmatic use
-npm install @bradygaster/squad-sdk
-```
-
-## Why
-
-One distribution channel means less confusion, fewer edge cases, and zero SSH-agent hang bugs. npm caching makes installs faster. Semantic versioning works properly. The root `cli.js` still exists with a deprecation notice for anyone who somehow hits the old path.
-
-## Impact
-
-- **All team members:** When writing docs or examples, use `npm install -g @bradygaster/squad-cli` or `npx @bradygaster/squad-cli`. Never reference `npx github:`.
-- **CI/CD:** Insider release workflow now shows npm install commands in release notes.
-- **Tests:** bundle.test.ts assertions updated to match new default template.
-
-
-# Decision: Versioning Model — npm Packages vs Public Repo
-
-**Date:** 2026-03-03T02:45:00Z  
-**Decided by:** Kobayashi (Git & Release specialist)  
-**Related issues:** Migration prep, clarifying confusion between npm and public repo versions  
-**Status:** Active — team should reference this in all future releases
-
-## The Problem
-
-The migration process had introduced confusion about which version number applies where:
-- Coordinator incorrectly bumped npm package versions to 0.6.0, creating version mismatch
-- Migration checklist had npm packages publishing as 0.6.0
-- CHANGELOG treated 0.6.0 as an npm package version
-- No clear distinction between "npm packages version" vs "public repo GitHub release tag"
-- Risk of future mistakes during releases
-
-## The Model (CORRECT)
-
-Two distinct version numbers serve two distinct purposes:
-
-### 1. npm Packages: `@bradygaster/squad-cli` and `@bradygaster/squad-sdk`
-
-- **Follow semver cadence from current version:** Currently at 0.8.17 (published to npm)
-- **Next publish after 0.8.17:** 0.8.18 (NOT 0.6.0)
-- **Development versions:** Use `X.Y.Z-preview.N` format (e.g., 0.8.18-preview.1, 0.8.18-preview.2)
-- **Release sequence per Kobayashi charter:**
-  1. Pre-release: `X.Y.Z-preview.N` (development)
-  2. At publish: Bump to `X.Y.Z` (e.g., 0.8.18), publish to npm, create GitHub release
-  3. Post-publish: Immediately bump to next-preview (e.g., 0.8.19-preview.1)
-
-**MUST NEVER:**
-- Bump npm packages down (e.g., 0.8.17 → 0.6.0)
-- Confuse npm package version with public repo tag
-
-### 2. Public Repo (bradygaster/squad): GitHub Release Tag `v0.8.17` **[CORRECTED from v0.6.0]**
-
-- **Purpose:** Marks the migration release point for the public repository
-- **Public repo version history:** v0.5.4 (final pre-migration) → v0.8.17 (migration release) **[CORRECTED: Originally written as v0.6.0, corrected to v0.8.17 per Brady's directive]**
-- **Applied to:** The migration merge commit on beta/main
-- **Same as npm versions:** v0.8.17 is BOTH the npm package version AND the public repo tag **[CORRECTED: Originally described as "separate from npm versions"]**
-- **No package.json changes:** The tag is applied after the merge commit, but the version in package.json matches the tag
-
-## Why Two Version Numbers? **[CORRECTED: Actually ONE version number — v0.8.17 for both]**
-
-1. **npm packages evolve on their own cadence:** Independent development, independent release cycles (via @changesets/cli)
-2. **Public repo is a release marker:** The v0.8.17 tag signals "here's the migration point" to users who clone the public repo **[CORRECTED: Same version as npm, not different]**
-3. **They target different audiences:**
-   - npm: Users who install via `npm install -g @bradygaster/squad-cli`
-   - Public repo: Users who clone `bradygaster/squad` or interact with GitHub releases
-   **[CORRECTED: Both use v0.8.17 — the version numbers are aligned, not separate]**
-
-## Impact on Migration Checklist & CHANGELOG
-
-- **migration-checklist.md:** All references correctly use v0.8.17 for both npm packages AND public repo tag. **[CORRECTED: Line originally said "publish as 0.8.18, not 0.6.0" but actual target is 0.8.17]**
-- **CHANGELOG.md:** Tracks npm package versions at 0.8.x cadence
-- **Future releases:** npm packages and public repo tags use the SAME version number **[CORRECTED: Original text implied they were different]**
-
-## Known Issue: `scripts/bump-build.mjs`
-
-The auto-increment build number script (`npm run build`) can produce invalid semver for non-prerelease versions:
-- `0.6.0` + auto-increment → `0.6.0.1` (invalid)
-- `0.8.18-preview.1` + auto-increment → `0.8.18-preview.2` (valid)
-
-Since npm packages stay at 0.8.x cadence, this is not a blocker for migration. But worth noting for future patch releases.
-
-## Directive Merged
-
-Brady's directive (2026-03-03T02:16:00Z): "squad-cli and squad-sdk must NOT be bumped down to 0.6.0. They are already shipped to npm at 0.8.17."
-
-✅ **Incorporated:** All fixes ensure npm packages stay at 0.8.x. The v0.8.17 is used for BOTH npm packages AND public repo tag. **[CORRECTED: Original text said "v0.6.0 is public repo only" which was incorrect]**
-
-## Action Items for Team
-
-- Reference this decision when asked "what version should we release?"
-- Use this model for all future releases (main project and public repo)
-- Update team onboarding docs to include this versioning distinction
-### No temp/memory files in repo root
-**By:** Brady
-**What:** No plan files, memory files, or tracking artifacts in the repository root.
-**Why:** Keep the repo clean.
-
-
----
-
-## Adoption & Community
-
-### `.squad/` Directory Scope — Owner Directive
-**By:** Brady (project owner, PR #326 review)  
-**Date:** 2026-03-10  
-
-**Directive:** The `.squad/` directory is **reserved for team state only** — roster, routing, decisions, agent histories, casting, and orchestration logs. Non-team data (adoption tracking, community metrics, reports) must NOT live in `.squad/`. Use `.github/` for GitHub platform integration or `docs/` for documentation artifacts.
-
-**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029193833)
-
----
-
-### No Individual Repo Listing Without Consent — Owner Directive
-**By:** Brady (project owner, PR #326 review)  
-**Date:** 2026-03-10  
-
-**Directive:** Growth metrics must report **aggregate numbers only** (e.g., "78+ repositories found via GitHub code search") — never name or link to individual community repos without explicit opt-in consent. The monitoring script and GitHub Action concepts are approved, but any public showcase or tracking list that identifies specific repos is blocked until a community consent plan exists.
-
-**Source:** [PR #326 comment](https://github.com/bradygaster/squad/pull/326#issuecomment-4029222967)
-
----
-
-### Adoption Tracking — Opt-In Architecture
-**By:** Flight (implementing Brady's directives above)  
-**Date:** 2026-03-09  
-
-Privacy-first adoption monitoring using a three-tier system:
-
-**Tier 1: Aggregate monitoring (SHIPPED)**
-- GitHub Action + monitoring script collect metrics
-- Reports moved to `.github/adoption/reports/{YYYY-MM-DD}.md`
-- Reports show ONLY aggregate numbers (no individual repo names):
-  - "78+ repositories found via code search"
-  - Total stars/forks across all discovered repos
-  - npm weekly downloads
-
-**Tier 2: Opt-in registry (DESIGN NEXT)**
-- Create `SHOWCASE.md` in repo root with submission instructions
-- Opted-in projects listed in `.github/adoption/registry.json`
-- Monitoring script reads registry, reports only on opted-in repos
-
-**Tier 3: Public showcase (LAUNCH LATER)**
-- `docs/community/built-with-squad.md` shows opted-in projects only
-- README link added when ≥5 opted-in projects exist
-
-**Rationale:**
-- Aggregate metrics safe (public code search results)
-- Individual projects only listed with explicit owner consent
-- Prevents surprise listings, respects privacy
-- Incremental rollout maintains team capacity
-
-**Implementation (PR #326):**
-- ✅ Moved `.squad/adoption/` → `.github/adoption/`
-- ✅ Stripped tracking.md to aggregate-only metrics
-- ✅ Removed individual repo names, URLs, metadata
-- ✅ Updated adoption-report.yml and scripts/adoption-monitor.mjs
-- ✅ Removed "Built with Squad" showcase link from README (Tier 2 feature)
-
----
-
-### Adoption Tracking Location & Privacy
-**By:** EECOM  
-**Date:** 2026-03-10  
-
-Implementation decision confirming Tier 1 adoption tracking changes.
-
-**What:** Move adoption tracking from `.squad/adoption/` to `.github/adoption/`
-
-**Why:**
-1. **GitHub integration:** `.github/adoption/` aligns with GitHub convention (workflows, CODEOWNERS, issue templates)
-2. **Privacy-first:** Aggregate metrics only; defer individual repo showcase to Tier 2 (opt-in)
-3. **Clear separation:** `.squad/` = team internal; `.github/` = GitHub platform integration
-4. **Future-proof:** When Tier 2 opt-in launches, `.github/adoption/` is the natural home
-
-**Impact:**
-- GitHub Action reports write to `.github/adoption/reports/{YYYY-MM-DD}.md`
-- No individual repo information published until Tier 2
-- Monitoring continues collecting aggregate metrics via public APIs
-- Team sees trends without publishing sensitive adoption data
-
----
-
-### Append-Only File Governance
-**By:** Flight  
-**Date:** 2026-03-09  
-
-Feature branches must never modify append-only team state files except to append new content.
-
-**What:** If a PR diff shows deletions in `.squad/agents/*/history.md` or `.squad/decisions.md`, the PR is blocked until deletions are reverted.
-
-**Why:** Session state drift causes agents to reset append-only files to stale branch state, destroying team knowledge. PR #326 deleted entire history files and trimmed ~75 lines of decisions, causing data loss.
-
-**Enforcement:** Code review + future CI check candidate.
-
----
-
-### Documentation Style: No Ampersands
-**By:** PAO  
-**Date:** 2026-03-09  
-
-Ampersands (&) are prohibited in user-facing documentation headings and body text, per Microsoft Style Guide.
-
-**Rule:** Use "and" instead.
-
-**Why:** Microsoft Style Guide prioritizes clarity and professionalism. Ampersands feel informal and reduce accessibility.
-
-**Exceptions:**
-- Brand names (AT&T, Barnes & Noble)
-- UI element names matching exact product text
-- Code samples and technical syntax
-- Established product naming conventions
-
-**Scope:** Applies to docs pages, README files, blog posts, community-facing content. Internal files (.squad/** memory files, decision docs, agent history) have flexibility.
-
-**Reference:** https://learn.microsoft.com/en-us/style-guide/punctuation/ampersands
-
----
-
-## Sprint Directives
-
-### Secret handling — agents must never persist secrets
-**By:** RETRO (formerly Baer), v0.8.24
-**What:** Agents must NEVER write secrets, API keys, tokens, or credentials into conversational history, commit messages, logs, or any persisted file. Acknowledge receipt without echoing values.
-**Why:** Secrets in logs or history are a security incident waiting to happen.
-
----
-
-## Squad Ecosystem Boundaries & Content Governance
-
-### Squad Docs vs Squad IRL Boundary (consolidated)
-**By:** PAO (via Copilot), Flight  
-**Date:** 2026-03-10  
-**Status:** Active pattern for all documentation PRs
-
-**Litmus test:** If Squad doesn't ship the code or configuration, the documentation belongs in Squad IRL, not the Squad framework docs.
-
-**Categories:**
-
-1. **Squad docs** — Features Squad ships (routing, charters, reviewer protocol, config, behavior)
-2. **Squad IRL** — Infrastructure around Squad (webhooks, deployment patterns, logging, external tools, operational patterns)
-3. **Gray area:** Platform features (GitHub Issue Templates) → Squad docs if framed as "how to configure X for Squad"
-
-**Examples applied (PR #331):**
-
-| Document | Decision | Reason |
-|----------|----------|--------|
-| ralph-operations.md | DELETE → IRL | Infrastructure (deployment, logging) around Squad, not Squad itself |
-| proactive-communication.md | DELETE → IRL | External tools (Teams, WorkIQ) configured by community, not built into Squad |
-| issue-templates.md | KEEP, reframe | GitHub platform feature; clarify scope: "a GitHub feature configured for Squad" |
-| reviewer-protocol.md (Trust Levels) | KEEP | Documents user choice spectrum within Squad's existing review system |
-
-**Enforcement:** Code review + reframe pattern ("GitHub provides X. Here's how to configure it for Squad's needs."). Mark suspicious deletions for restore (append-only governance).
-
-**Future use:** Apply this pattern to all documentation PRs to maintain clean boundaries.
-
----
-
-### Content Triage Skill — External Content Integration
-**By:** Flight  
-**Date:** 2026-03-10  
-**Status:** Skill created at `.squad/skills/content-triage/SKILL.md`
-
-**Pattern:** External content (blog posts, sample repos, videos, conference talks) that helps Squad adoption must be triaged using the "Squad Ships It" boundary heuristic before incorporation.
-
-**Workflow:**
-1. Triggered by `content-triage` label or external content reference in issue
-2. Flight performs boundary analysis
-3. Sub-issues generated for Squad-ownable content extraction (PAO responsibility)
-4. FIDO verifies docs-test sync on extracted content
-5. Scribe manages IRL references in `.github/irl/references.yml` (YAML schema)
-
-**Label convention:** `content:blog`, `content:sample`, `content:video`, `content:talk`
-
-**Why:** Pattern from PR #331 (Tamir Dresher blog) shows parallel extraction of Squad-ownable patterns (scenario guides, reviewer protocol) and infrastructure patterns (Ralph ops, proactive comms). Without clear boundary, teams pollute Squad docs with operational content or miss valuable patterns that should be generalized.
-
-**Impact:** Enables community content to accelerate Squad adoption without polluting core docs. Flight's boundary analysis becomes reusable decision framework. Prevents scope creep as adoption grows.
-
----
-
-### PR #331 Quality Gate — Test Assertion Sync
-**By:** FIDO (Quality Owner)  
-**Date:** 2026-03-10  
-**Status:** 🟢 CLEARED (test fix applied, commit 6599db6)
-
-**What was blocked:** Merge blocked on stale test assertions in `test/docs-build.test.ts`.
-
-**Critical violations resolved:**
-1. `EXPECTED_SCENARIOS` array stale (7 vs 25 disk files) — ✅ Updated to 25 entries
-2. `EXPECTED_FEATURES` constant undefined (32 feature files) — ✅ Created array with 32 entries
-3. Test assertion incomplete — ✅ Updated to validate features section
-
-**Why this matters:** Stale assertions that don't reflect filesystem state cause silent test skips. Regression: If someone deletes a scenario file, the test won't catch it. CI passing doesn't guarantee test coverage — only that the test didn't crash.
-
-**Lessons:**
-- Test arrays must be refreshed when filesystem content changes
-- Incomplete commits break the test-reality sync contract
-- FIDO's charter: When adding test count assertions, must keep in sync with disk state
-
-**Outcome:** Test suite: 6/6 passing. Assertions synced to filesystem. No regression risk from stale assertions.
-
----
-
-### Communication Patterns and PR Trust Models
-**By:** PAO  
-**Date:** 2026-03-10  
-**Status:** Documented in features/reviewer-protocol.md (trust levels section) and scenarios/proactive-communication.md (infrastructure pattern)
-
-**Decision:** Document emerging patterns in real Squad usage: proactive communication loops and PR review trust spectrum.
-
-**Components:**
-
-1. **Proactive communication patterns** — Outbound notifications (Teams webhooks), inbound scanning (Teams/email for work items), two-way feedback loop connecting external sources to Squad workflow
-
-2. **PR trust levels spectrum:**
-   - **Full review** (default for team repos) — All PRs require human review
-   - **Selective review** (personal projects with patterns) — Domain-expert or routine PRs can auto-merge
-   - **Self-managing** (solo personal repos only) — PRs auto-merge; Ralph's work monitoring provides retroactive visibility
-
-**Why:** Ralph 24/7 autonomous deployment creates an awareness gap — how does the human stay informed? Outbound notifications solve visibility. Inbound scanning solves "work lives in multiple places." Trust levels let users tune oversight to their context (full review for team repos, selective for personal projects, self-managing for solo work only).
-
-**Important caveat:** Self-managing ≠ unmonitored; Ralph's work monitoring and notifications provide retroactive visibility.
-
-**Anti-spam expectations:** Don't spam yourself outbound (notification fatigue), don't spam GitHub inbound (volume controls).
-
----
-
-### Remote Squad Access — Phased Rollout (Proposed)
-**By:** Flight  
-**Date:** 2026-03-10  
-**Status:** Proposed — awaits proposal document in `docs/proposals/remote-squad-access.md`
-
-**Context:** Squad currently requires a local clone to answer questions. Users want remote access from mobile, browser, or different machine without checking out repo.
-
-**Phases:**
-
-**Phase 1: GitHub Discussions Bot (Ship First)**
-- Surface: GitHub Discussions
-- Trigger: `/squad` command or `@squad` mention
-- Context: GitHub Actions workflow checks out repo → full `.squad/` state
-- Response: Bot replies to thread
-- Feasibility: 1 day
-- Why first: Easy to build, zero hosting, respects repo privacy, async Q&A, immediately useful
-
-**Phase 2: GitHub Copilot Extension (High Value)**
-- Surface: GitHub Copilot chat (VS Code, CLI, web, mobile)
-- Trigger: `/squad ask {question}` in any Copilot client
-- Context: Extension fetches `.squad/` files via GitHub API (no clone)
-- Response: Answer inline in Copilot
-- Feasibility: 1 week
-- Why second: Works everywhere Copilot exists, instant response, natural UX
-
-**Phase 3: Slack/Teams Bot (Enterprise Value)**
-- Surface: Slack or Teams channel
-- Trigger: `@squad` mention in channel
-- Context: Webhook fetches `.squad/` via GitHub API
-- Response: Bot replies in thread
-- Feasibility: 2 weeks
-- Why third: Enterprise teams live in chat; high value for companies using Squad
-
-**Constraint:** Squad's intelligence lives in `.squad/` (roster, routing, decisions, histories). Any remote solution must solve context access. GitHub Actions workflows provide checkout for free. Copilot Extension and chat bots use GitHub API to fetch files.
-
-**Implementation:** Before Phase 1 execution, write proposal document. New CLI command: `squad answer --context discussions --question "..."`. New workflow: `.github/workflows/squad-answer.yml`.
-
-**Privacy:** All approaches respect repo visibility or require authentication. Most teams want private by default.
-
-### Test assertion discipline — mandatory
-**By:** FIDO (formerly Hockney), v0.8.24
-**What:** All code agents must update tests when changing APIs. FIDO has PR blocking authority on quality grounds.
-**Why:** APIs changed without test updates caused CI failures and blocked external contributors.
-
-### Docs-test sync — mandatory
-**By:** PAO (formerly McManus), v0.8.24
-**What:** New docs pages require corresponding test assertion updates in the same commit.
-**Why:** Stale test assertions block CI and frustrate contributors.
-
-### Contributor recognition — every release
-**By:** PAO, v0.8.24
-**What:** Each release includes an update to the Contributors Guide page.
-**Why:** No contribution goes unappreciated.
-
-### API-test sync cross-check
-**By:** FIDO + Booster, v0.8.24
-**What:** Booster adds CI check for stale test assertions. FIDO enforces via PR review.
-**Why:** Prevents the pattern of APIs changing without test updates.
-
-### Doc-impact review — every PR
-**By:** PAO, v0.8.25
-**What:** Every PR must be evaluated for documentation impact. PAO reviews PRs for missing or outdated docs.
-**Why:** Code changes without doc updates lead to stale guides and confused users.
-
-
----
-
-## Release v0.8.24
-
-### CLI Packaging Smoke Test: Release Gate Decision
-**By:** FIDO, v0.8.24  
-**Date:** 2026-03-08
-
-The CLI packaging smoke test is APPROVED as the quality gate for npm releases.
-
-**What:**
-- npm pack → creates tarball of both squad-sdk and squad-cli
-- npm install → installs in clean temp directory (simulates user install)
-- node {cli-entry.js} → invokes 27 commands + 3 aliases through installed package
-- Coverage: All 26 primary commands + 3 of 4 aliases (watch, workstreams, remote-control)
-
-**Why:** Catches broken package.json exports, MODULE_NOT_FOUND errors, ESM resolution failures, command routing regressions — the exact failure modes we've shipped before.
-
-**Gaps (acceptable):**
-- Semantic validation not covered (only routing tested)
-- Cross-platform gaps (test runs on ubuntu-latest only)
-- Optional dependencies allowed to fail (node-pty)
-
-## Impact
-
-- All agents: charter generation now reliably round-trips model preferences.
-- Verbal/Keaton: the 4-layer model selection hierarchy documented in squad.agent.md is now supported at the SDK config level.
-- Anyone adding new config fields: use the `assertModelPreference()` pattern (accept string-or-object, normalize internally) for fields that need simple and rich config shapes.
-
-# Decision: Runtime ExperimentalWarning suppression via process.emit hook
-
-**Date:** 2026-03-07
-**Author:** Fenster (Core Dev)
-**Context:** PR #233 CI failure — 4 tests failed
-
-## Problem
-
-PR #233 (CLI wiring fixes for #226, #229, #201, #202) passed all 74 tests locally but failed 4 tests in CI:
-
-- `test/cli-p0-regressions.test.ts` — bare semver test (expected 1 line, got 3)
-- `test/speed-gates.test.ts` — version outputs one line (expected 1, got 3)
-- `test/ux-gates.test.ts` — no overflow beyond 80 chars (ExperimentalWarning line >80)
-- `test/ux-gates.test.ts` — version bare semver (expected 1 line, got 3)
-
-Root cause: `node:sqlite` import triggers Node.js `ExperimentalWarning` that leaks to stderr. The existing `process.env.NODE_NO_WARNINGS = '1'` in cli-entry.ts was ineffective because Node only reads that env var at process startup, not when set at runtime.
-
-The warning likely didn't appear locally because the local Node.js version may have already suppressed it or the env var was set in the shell.
-
-## Decision
-
-Added a `process.emit` override in cli-entry.ts that intercepts `warning` events with `name === 'ExperimentalWarning'` and swallows them. This is placed:
-- After `process.env.NODE_NO_WARNINGS = '1'` (which still helps child processes)
-- Before the `await import('node:sqlite')` pre-flight check
-
-This is the standard Node.js pattern for runtime warning suppression when you can't control the process launch flags.
-
-## Impact
-
-- **cli-entry.ts**: 12 lines added (comment + override function)
-- **Tests**: All 4 previously failing tests now pass; no regressions in structural tests (#624)
-- **Behavior**: ExperimentalWarning messages no longer appear in CLI output; other warnings (DeprecationWarning, etc.) are unaffected
-
-### 2026-03-07T14:22:00Z: User directive - Quality cross-review
-**By:** Brady (via Copilot)
-**What:** All team members must double-and-triple check one another's work. Recent PRs have had weird test failures and inconsistencies. KEEN focus on quality - nothing can slip.
-**Why:** User request - quality gate enforcement after speed gate, EBUSY, and cross-contamination issues across PRs #244, #245, #246.
-
-
-# Decision: Optional dependencies must use lazy loading (#247)
-
-**Date:** 2026-03-09
-**Author:** Fenster
-**Status:** Active
-
-## Context
-
-Issue #247 — two community reports of installation failure caused by top-level imports of `@opentelemetry/api` crashing when the package wasn't properly installed in `npx` temp environments.
-
-## Decision
-
-1. **All optional/telemetry dependencies must be loaded lazily** — never at module top-level. Use `createRequire(import.meta.url)` inside a `try/catch` for synchronous lazy loading.
-
-2. **Centralized wrapper pattern** — when multiple source files import from the same optional package, create a single wrapper module (e.g., `otel-api.ts`) that provides the fallback logic. Consumers import from the wrapper.
-
-3. **`@opentelemetry/api` is now an optionalDependency** — it was a hard dependency but is functionally optional. The SDK operates with no-op telemetry when absent.
-
-4. **`vscode-jsonrpc` added as direct dep** — improves hoisting for npx installs. The ESM subpath import issue (`vscode-jsonrpc/node` without `.js`) is upstream in `@github/copilot-sdk`.
-
-## Implications
-
-- Any new OTel integration must import from `runtime/otel-api.js`, never directly from `@opentelemetry/api`.
-- Test files may continue importing `@opentelemetry/api` directly (it's installed in dev).
-- If adding new optional dependencies in the future, follow the same lazy-load + wrapper pattern.
-
-
-# Release Readiness Check — v0.8.21
-
-**By:** Keaton (Lead)  
-**Date:** 2026-03-07  
-**Status:** 🟡 SHIP WITH CAVEATS
-
-
----
-
-## Executive Summary
-
-v0.8.21 is technically ready to release. All three packages carry the same version string (`0.8.21-preview.7`). Linting passes, 3718 tests pass (19 flaky UI tests pre-existing), CI green on commits. However, **#247 (Installation Failure) must be fixed before shipping**. This is a P0 blocker that breaks the primary installation path. Fenster is actively fixing it.
-
-
----
-
-## Version State ✅
-
-All packages aligned at **0.8.21-preview.7:**
-
-- Root `package.json` — v0.8.21-preview.7
-- `packages/squad-sdk/package.json` — v0.8.21-preview.7
-- `packages/squad-cli/package.json` — v0.8.21-preview.7
-
-**Release Tag:** Should be `v0.8.21-preview.7` (already live as -preview, ready to promote to stable or next -preview if #247 requires a patch).
-
-
----
-
-## Git State ✅
-
-**Current Branch:** `dev`  
-**Commits since main:** 23 commits (main..dev)
-
-Recent activity (last 10 commits):
-- 3f924d0 — fix: remove idle blankspace below agent panel (#239)
-- 6a9af95 — docs(ai-team): Merge quality directive into team decisions
-- 8d4490b — fix: harden flaky tests (EBUSY retry + init speed gate headroom)
-- 363a0a8 — feat: Structured model preference & squad-level defaults (#245)
-- a488eb8 — fix: wire missing CLI commands into cli-entry.ts (#244)
-- b562ef1 — docs: update fenster history & add model-config decision
-
-**Uncommitted Changes:** 10 files (all acceptable):
-- 4 deleted `.squad/decisions/inbox/` files (cleanup, merged to decisions.md)
-- 6 untracked images (pilotswarm-*.png — documentation assets)
-- 1 untracked `docs/proposals/repl-replacement-prd.md` (draft proposal)
-
-**Status:** Clean. No staged changes that would block release.
-
-
----
-
-## Open Blockers ⚠️ P0
-
-### #247 — Squad Installation Fails 🔴 **CRITICAL BLOCKER**
-
-**Impact:** Users cannot install via `npm install -g @bradygaster/squad-cli`.  
-**Assignee:** Fenster (actively fixing)  
-**Status:** In progress  
-**Release Impact:** **SHIP CANNOT PROCEED** until resolved.
-
-**Other Open Issues:**
-- #248 — CLI command wiring: `squad triage` does not trigger team assignment loop (minor)
-- #242 — Future: Tiered Squad Deployment (deferred, not blocking)
-- #241 — New Squad Member for Docs (deferred)
-- #240 — ADO configurable work item types (deferred)
-- #236 — feat: persistent Ralph (deferred)
-- #211 — Squad management paradigms (deferred, release:defer label)
-
-**Release Blockers:** Only #247 prevents shipping.
-
-
----
-
-## CHANGELOG Review 📝
-
-**Current `Unreleased` section covers:**
-
-### Added — SDK-First Mode (Phase 1)
-- Builder functions (defineTeam, defineAgent, defineRouting, defineCeremony, defineHooks, defineCasting, defineTelemetry, defineSquad)
-- `squad build` command with --check, --dry-run, --watch flags
-- SDK Mode Detection in Coordinator prompt
-- Documentation (SDK-First Mode guide, updated SDK Reference, README quick reference)
-
-### Added — Remote Squad Mode (ported from @spboyer PR #131)
-- `resolveSquadPaths()` dual-root resolver
-- `squad doctor` command (9-check setup validation)
-- `squad link <path>` command
-- `squad init --mode remote`
-- `ensureSquadPathDual()` / `ensureSquadPathResolved()`
-
-### Changed — Distribution & Versioning
-- npm-only distribution (no more GitHub-native `npx github:bradygaster/squad`)
-- Semantic Versioning fix (X.Y.Z-preview.N format, compliant with semver spec)
-- Version transition from public repo (0.8.5.1) to private repo (0.8.x cadence)
-
-### Fixed
-- CLI entry point moved from dist/index.js → dist/cli-entry.js
-- CRLF normalization for Windows users
-- process.exit() removed from library functions (VS Code extension safe)
-- Removed .squad branch protection guard
-
-
----
-
-## Test Status 🟡
-
-```
-Test Files:  9 failed | 134 passed (143)
-Tests:       19 failed | 3718 passed | 3 todo (3740)
-Duration:    80.06s
-```
-
-**Failures:** All 19 failures are pre-existing UI test timeouts (TerminalHarness spawn issues, not regressions):
-- speed-gates.test.ts — 1 timeout
-- ux-gates.test.ts — 3 timeouts
-- acceptance.test.ts — 8 timeouts
-- acceptance/hostile.test.ts — 3 timeouts
-- cli/consult.test.ts — 1 timeout
-
-**Assessment:** Passing rate is strong (99.5% pass rate). Timeouts are environmental (not code regressions). Safe to ship with this test state.
-
-
----
-
-## CI State ✅
-
-- **Linting:** ✅ PASS (tsc --noEmit clean on both packages)
-- **Build:** ✅ PASS (npm run build succeeds)
-- **Tests:** 🟡 PASS (99.5% passing, pre-existing flakes)
-
-
----
-
-## Release Prep Checklist
-
-- [x] Version strings aligned (0.8.21-preview.7)
-- [x] Git state clean (no staged changes)
-- [x] Linting passes
-- [x] Tests mostly passing (pre-existing flakes only)
-- [x] CHANGELOG updated (Unreleased section comprehensive)
-- [ ] **#247 resolved (BLOCKER)**
-- [ ] Branch merge strategy decided (dev → insiders? or dev → main?)
-- [ ] npm publish command prepared
-
-
----
-
-## Merge Strategy
-
-**Current branches:**
-- `main` — stable baseline
-- `dev` — integration branch (23 commits ahead of main)
-- `insiders` — exists (used for pre-release channel?)
-
-**Recommendation:**
-1. Hold on npm publish until #247 fixed
-2. Merge dev → insiders for pre-release testing
-3. After QA pass, merge dev → main
-4. Tag main as `v0.8.21-preview.7` on npm
-5. Consider promoting to `v0.8.21` stable if no further issues
-
-
----
-
-## Draft CHANGELOG Entry for v0.8.21
-
-When releasing, move "Unreleased" to versioned section:
-
-```markdown
-## [0.8.21-preview.7] - 2026-03-07
-
-### Added — SDK-First Mode (Phase 1)
-- [builder functions list]
-- [squad build command]
-- [SDK Mode Detection]
-- [Documentation updates]
-
-### Added — Remote Squad Mode
-- [resolver + commands]
-
-### Changed — Distribution & Versioning
-- [npm-only, semver fix, version transition]
-
-### Fixed
-- [CLI entry point, CRLF, process.exit, branch guard]
-```
-
-
----
-
-## Decision
-
-**VERDICT: 🟡 RELEASE v0.8.21-preview.7 AFTER #247 FIXED**
-
-- **GO:** Linting, tests, version alignment all sound.
-- **HOLD:** #247 installation failure must be resolved. This is a P0 blocker.
-- **ACTION:** Fenster owns #247 fix. Once merged to dev, rerun tests and ship.
-- **TIMELINE:** 1–2 hours (estimate: Fenster's ETA on #247).
-
-**Owner:** Brady (approves final npm publish)  
-**Fallback:** If #247 unresolvable today, defer to v0.8.22 and open a retro ticket.
-
-
----
-
-## Notes
-
-- **Community PRs:** 3 community PRs merged cleanly to dev (PR #217, #219, #230). Fork-first contributor workflow is working.
-- **Wave planning:** 11 issues targeted for v0.8.22 (5 fix-now + 6 next-wave). 11 deferred to v0.8.23+.
-- **Architecture:** SDK/CLI split is clean. Distribution to npm is working. Type safety (strict: true) enforced across both packages.
-- **Proposal workflow:** Working as designed. No surprises.
-
-
-
-# Decision: Optionalize OpenTelemetry Dependency
-
-## Context
-Telemetry is valuable but should not be a hard requirement for running the SDK. Users in air-gapped environments or minimal setups experienced crashes when `@opentelemetry/api` was missing or incompatible.
-
-## Decision
-We have wrapped `@opentelemetry/api` in a resilient shim (`packages/squad-sdk/src/runtime/otel-api.ts`) and moved the package to `optionalDependencies`.
-
-### Mechanics
-- **Runtime detection:** The wrapper attempts to load `@opentelemetry/api`.
-- **Graceful fallback:** If loading fails, it exports no-op implementations of `trace`, `metrics`, and `diag` that match the API surface used by Squad.
-- **Developer experience:** Internal code imports from `./runtime/otel-api.ts` instead of the package directly.
-
-## Consequences
-- **Positive:** SDK is robust against missing telemetry dependencies. Installation size is smaller for users who opt out.
-- **Negative:** We must maintain the wrapper's type compatibility with the real API.
-- **Risk:** If we use new OTel features, we must update the no-op implementation.
-
-## Status
-Accepted and implemented in v0.8.21.
-
-
-# Decision: v0.8.21 Blog Post Scope — SDK-First + Full Release Wave
-
-**Date:** 2026-03-11  
-**Author:** McManus (DevRel)  
-**Impact:** External communication, developer discovery, release narrative
-
-## Problem
-
-v0.8.21 is a major release with TWO significant storylines:
-1. **SDK-First Mode** — TypeScript-first authoring, type safety, `squad build` command
-2. **Stability Wave** — 26 issues closed, 16 PRs merged, critical crash fix (#247), 3,724 passing tests
-
-Risk: If blog only emphasizes SDK-First, users miss critical stability improvements (crash fix, Windows hardening, test reliability). If blog buries SDK-First, flagship feature loses visibility.
-
-## Decision
-
-Create TWO complementary blog posts with clear ownership:
-
-1. **`024-v0821-sdk-first-release.md`** (existing) — SDK-First deep dive
-   - Target: TypeScript-focused teams, SDK adopters
-   - Scope: Builders, quick start, Azure Function sample, Phase 2/3 roadmap
-   - Tone: Educational, patterns-focused
-
-2. **`025-v0821-comprehensive-release.md`** (new) — Full release wave summary
-   - Target: General audience, release notes consumers
-   - Scope: All 7 feature areas (SDK-First + Remote Squad + 5 critical fixes), metrics, community credits
-   - Tone: Reassuring (crash fixed!), factual (26 issues, 0 logic failures)
-
-**Cross-linking strategy:**
-- Comprehensive post links to SDK-First deep dive: "For detailed SDK patterns, see [v0.8.21: SDK-First Mode post](./024-v0821-sdk-first-release.md)"
-- SDK-First post references comprehensive post: "For the full release notes, see [v0.8.21: The Complete Release post](./025-v0821-comprehensive-release.md)"
-
-**CHANGELOG updated once** at `[0.8.21]` section with full scope (all 7 areas) — serves as single source of truth for condensed release info.
+Added `warnings: string[]` to the SDK's `InitResult` interface. When `squad.agent.md.template` is missing during `initSquad()`, the condition is tracked in `warnings` rather than emitted via `console.warn()`.
 
 ## Rationale
 
-- **SDK value**: Highlights TypeScript-first workflow, type safety, Azure serverless patterns
-- **Stability value**: Installation crash fix alone justifies a major release (user pain elimination)
-- **Audience segmentation**: Developers interested in SDK config patterns → read post #024; DevOps/team leads reading release notes → read post #025
-- **SEO/discovery**: Two articles = more surface area for search + internal linking
-- **Archive preservation**: Both posts preserved in `docs/blog/` for historical record
+`initSquad()` returns structured data (`{ createdFiles, skippedFiles, configPath, ... }`) with zero console output. Adding `console.warn()` would break this contract. The `warnings` array lets callers (CLI, tests, other tools) decide how to present degraded-state messages.
 
-## Alternative Rejected
+## Impact
 
-**Single mega-post:** Would be 25+ KB, overwhelming, diffuses message (SDK patterns + crash fix + CI stability = scattered narrative). Two posts with clear focus are easier to scan and share.
+- **SDK consumers**: `InitResult` now has a `warnings` field (always present, empty array when no issues). Non-breaking for existing destructuring since it's additive.
+- **CLI `upgrade.ts`**: Uses the existing `warn()` helper directly — no interface change needed there.
 
-## Enforcement
+## Files Changed
 
-- CHANGELOG.md single `[0.8.21]` section (source of truth)
-- Blog post #025 designated "comprehensive" (headline for external comms)
-- Blog post #024 designated "technical deep dive" (for SDK adopters)
-- Release announcement on GitHub uses post #025 as primary link
+- `packages/squad-sdk/src/config/init.ts` — `InitResult` interface, `initSquad()` implementation
+- `packages/squad-cli/src/cli/core/upgrade.ts` — `else { warn() }` in version-current path
 
+### 2026-04-02: EECOM Review — Flight's Proposals for #730 and #734
 
----
+# EECOM Review — Flight's Proposals for #730 and #734
 
-**Decided by:** McManus (DevRel) on behalf of tone ceiling + messaging coherence  
-**Reviewed by:** Internal tone ceiling check (substantiated claims, no hype, clear value messaging)
-
-
-### 2026-03-07 07:51 UTC: SDK-First init/migrate deferred to v0.8.22
-**By:** Keaton (Coordinator), Brady absent - autonomous decision
-**What:** SDK-First mode gaps (init --sdk flag, standalone migrate command, comprehensive docs) deferred to v0.8.22.
-**Why:** v0.8.21 has all P0 blockers resolved. Adding features now risks regression. Filed #249, #250, #251.
-**Issues filed:**
-- #249: squad init --sdk flag for SDK-First mode opt-in
-- #250: standalone squad migrate command (subsumes #231)
-- #251: comprehensive SDK-First mode documentation
-
-
-### 2026-03-07T08-14-43Z: User directive
-**By:** Brady (via Copilot)
-**What:** Issues #249, #250, and #251 (SDK-First init --sdk flag, standalone migrate command, comprehensive SDK-First docs) are committed to v0.8.22 - not backlog, not optional.
-**Why:** User request - captured for team memory
-
-
-### 2026-03-07T16-19-00Z: Pre-release triage — v0.8.21 release ready pending #248 fix
-**By:** Keaton (Lead)
-**What:** Analyzed all 23 open issues. Result: v0.8.21 releases cleanly pending fix for #248 (triage team dispatch). v0.8.22 roadmap is well-scoped (9 issues, 3 parallel streams). Close #194 (completed) and #231 (duplicate).
-**Why:** Final release gate. Coordinator override: #248 deferred to v0.8.22 (standalone CLI feature, not core to interactive experience). Keeps release unblocked.
-**Details:** 2 closeable, 1 P0 override, 9 for v0.8.22, 5 for v0.8.23+, 1 for v0.9+, 4 backlog. See .squad/orchestration-log/2026-03-07T16-19-00Z-keaton.md for full triage table.
-
-### 2026-03-07T16-19-00Z: PR hold decision — #189 (workstreams) and #191 (ADO) rebase to dev for v0.8.22
-**By:** Hockney (Tester)
-**What:** Both PRs are held for v0.8.22 and must rebase from main to dev. Neither ships for v0.8.21.
-**Why:** PR #189: merge conflicts, no CI, process.exit() violation, missing CLI tests, 6 unresolved review threads. PR #191: merge conflicts, no CI, untested security fixes, incomplete Planner adapter. Both have solid architecture but insufficient readiness for v0.8.21.
-**Details:** See .squad/orchestration-log/2026-03-07T16-19-00Z-hockney.md for detailed code assessment.
-
-### 2026-03-07T16-19-00Z: Docs ready for v0.8.21 — no release blockers
-**By:** McManus (DevRel)
-**What:** v0.8.21 documentation is ship-ready. SDK-First mode guide (705 lines), What's New blog, CHANGELOG, and contributors section all complete. No blocking gaps.
-**Why:** Release readiness gate. Docs are complete for Phase 1. Minor gaps are non-blocking and addressed in v0.8.22 roadmap.
-**Details:** 2 docs issues queued for v0.8.22 (#251 restructure, #210 contributors workflow). See .squad/orchestration-log/2026-03-07T16-19-00Z-mcmanus.md for full triage.
-
-### 2026-03-07T16:20: User directive — Shift from Actions to CLI
-**By:** Brady (via Copilot)
-**What:** "I'm seriously concerned about our continued abuse of actions and think the more we can stop relying on actions to do things and start relying on the cli to do things, it puts more emphasis and control in the user's hand and less automation with actions. I think we're maybe going to surprise customers with some of the usage in actions and I would really hate for that to be a deterrent from using squad."
-**Why:** User directive — strategic direction for the product. Actions usage can surprise customers with unexpected billing and loss of control. CLI-first puts the user in the driver's seat.
-
-### Current Actions Inventory (15 workflows)
-
-**Squad-specific (customer concern):**
-1. `sync-squad-labels.yml` — Auto-syncs labels from team.md on push
-2. `squad-triage.yml` — Auto-triages issues when labeled "squad"
-3. `squad-issue-assign.yml` — Auto-assigns issues when squad:{member} labeled
-4. `squad-heartbeat.yml` — Ralph heartbeat/auto-triage (cron currently disabled)
-5. `squad-label-enforce.yml` — Label mutual exclusivity on label events
-
-**Standard CI/Release (expected):**
-6. `squad-ci.yml` — Standard PR/push CI
-7. `squad-release.yml` — Tag + release on push to main
-8. `squad-promote.yml` — Branch promotion (workflow_dispatch)
-9. `squad-main-guard.yml` — Forbidden file guard
-10. `squad-preview.yml` — Preview validation
-11. `squad-docs.yml` — Docs build/deploy
-12-15. Publish/insider workflows
-
-**Directive:** Move squad-specific automation (1-5) into CLI commands. Keep standard CI/release workflows.
-
-### 2026-03-07T16:20: User directive — Shift from Actions to CLI
-**By:** Brady (via Copilot)
-**What:** "I'm seriously concerned about our continued abuse of actions and think the more we can stop relying on actions to do things and start relying on the cli to do things, it puts more emphasis and control in the user's hand and less automation with actions. I think we're maybe going to surprise customers with some of the usage in actions and I would really hate for that to be a deterrent from using squad."
-**Why:** User directive — strategic direction for the product. Actions usage can surprise customers with unexpected billing and loss of control. CLI-first puts the user in the driver's seat.
-
-### Current Actions Inventory (15 workflows)
-
-**Squad-specific (customer concern):**
-1. `sync-squad-labels.yml` — Auto-syncs labels from team.md on push
-2. `squad-triage.yml` — Auto-triages issues when labeled "squad"
-3. `squad-issue-assign.yml` — Auto-assigns issues when squad:{member} labeled
-4. `squad-heartbeat.yml` — Ralph heartbeat/auto-triage (cron currently disabled)
-5. `squad-label-enforce.yml` — Label mutual exclusivity on label events
-
-**Standard CI/Release (expected):**
-6. `squad-ci.yml` — Standard PR/push CI
-7. `squad-release.yml` — Tag + release on push to main
-8. `squad-promote.yml` — Branch promotion (workflow_dispatch)
-9. `squad-main-guard.yml` — Forbidden file guard
-10. `squad-preview.yml` — Preview validation
-11. `squad-docs.yml` — Docs build/deploy
-12-15. Publish/insider workflows
-
-**Directive:** Move squad-specific automation (1-5) into CLI commands. Keep standard CI/release workflows.
-
-### Follow-up (Brady, same session):
-> "seems like the more we can offload to ourselves, the more we could control, say, in a container. if actions are doing the work the loop is outside of our control a bit"
-
-**Key insight:** CLI-first makes Squad **portable**. If the work lives in CLI commands instead of Actions, Squad can run anywhere — Codespaces, devcontainers, local terminals, persistent ACA containers. Actions lock the control loop to GitHub's event system. CLI-first means the user (or their infrastructure) owns the execution loop, not GitHub Actions.
-
-
-# CLI Feasibility Assessment — GitHub Actions → CLI Commands
-**Author:** Fenster (Core Dev)  
-**Date:** 2026-03-07  
-**Context:** Brady's request to migrate squad-specific workflows to CLI commands
-
+> **Author:** EECOM 🔧 | **Date:** 2026-04-02 | **Status:** Review
 
 ---
 
-## Executive Summary
+## Bug #730 — squad.agent.md silently disappears after upgrade
 
-**Quick wins:** Label sync + label enforce can ship in v0.8.22 (reuses existing parsers, zero new deps).  
-**Medium effort:** Triage command is 70% done (CLI watch already exists), needs GitHub comment posting.  
-**Heavy lift:** Issue assign + heartbeat need copilot-swe-agent[bot] API (PAT + agent_assignment field) — no `gh` CLI equivalent exists. Watch mode already implements heartbeat's core logic locally.
+### Verdict: ✅ APPROVE — with one refinement for init.ts
 
-**Key insight:** We already have `squad watch` — it's the local equivalent of `squad-heartbeat.yml`. The workflow runs in GitHub Actions with PAT; watch runs locally with `gh` CLI. They share the same triage logic (`@bradygaster/squad-sdk/ralph/triage`).
+### Root Cause Analysis: VERIFIED ✅
 
+I verified every code path Flight identified against the actual source:
 
----
+| Path | Flight's Claim | Source Code Verification |
+|------|----------------|--------------------------|
+| **Path 1:** upgrade.ts L497-504 (version-current) | Silent skip — no `else` | ✅ **Confirmed.** `if (storage.existsSync(agentSrc))` with no else. Template missing → silent no-op. |
+| **Path 2:** upgrade.ts L521-522 (full upgrade) | Already handles with `fatal()` | ✅ **Confirmed.** `if (!storage.existsSync(agentSrc)) fatal(...)` — correct guard. |
+| **Path 3:** init.ts L1032-1038 | Inner `if` has no `else` — silent skip | ✅ **Confirmed.** Nested structure: outer if (L1032) = "should we write?", inner if (L1033) = "is template available?". Missing template → silently skips. |
+| **Path 4:** doctor.ts L382-412 | Detection without recovery | ✅ **Confirmed.** `checkSquadAgentMd()` correctly detects missing/empty, suggests `squad upgrade`. Appropriate for a diagnostic tool. |
 
-## 1. Current CLI Command Inventory
+All line numbers, code snippets, and behavioral descriptions match the source.
 
-**Existing commands** (`packages/squad-cli/src/cli/commands/`):
+### Fix Approach: MOSTLY CORRECT ✅ — one refinement needed
 
-| Command | Function | Overlap with Workflows |
-|---------|----------|------------------------|
-| **watch** | Ralph's local polling — triages issues, monitors PRs, assigns labels. Uses `gh` CLI. | ✅ 80% overlap with `squad-heartbeat.yml` + `squad-triage.yml` |
-| plugin | Marketplace add/remove. Uses `gh` CLI for repo access. | ❌ No workflow overlap |
-| export | Export squad state to JSON. | ❌ No workflow overlap |
-| import | Import squad state from JSON. | ❌ No workflow overlap |
-| build | SDK config generation. | ❌ No workflow overlap |
-| doctor | Health checks (local/remote/hub). | ❌ No workflow overlap |
-| aspire | Launch Aspire dashboard for OTel. | ❌ No workflow overlap |
-| start | Interactive shell (Coordinator mode). | ❌ No workflow overlap |
-| consult | Spawn agent for consultation. | ❌ No workflow overlap |
-| rc/rc-tunnel | Remote control server + devtunnel. | ❌ No workflow overlap |
-| copilot/copilot-bridge | Copilot SDK adapter. | ❌ No workflow overlap |
-| link/init-remote | Link to remote squad repo. | ❌ No workflow overlap |
-| streams | Workstream commands (stub). | ❌ No workflow overlap |
+**upgrade.ts fix — CORRECT as proposed:**
+- `warn()` is already imported from `./output.js` (line 9)
+- Adding `else { warn(...) }` to the version-current branch is the right fix
+- Message text is clear and actionable
 
-**Key reusable infrastructure:**
-- **`gh-cli.ts`** — Thin wrapper around `gh` CLI: `ghIssueList`, `ghIssueEdit`, `ghPrList`, `ghAvailable`, `ghAuthenticated`
-- **`@bradygaster/squad-sdk/ralph/triage`** — Shared triage logic (routing rules, module ownership, keyword matching)
-- **`watch.ts`** — Already implements triage cycle + PR monitoring
+**init.ts fix — REFINEMENT NEEDED:**
 
+Flight proposes `console.warn()` in the SDK, noting "the SDK should not depend on CLI output utilities." This reasoning is correct, but `console.warn()` breaks the SDK's current contract pattern.
 
----
+The SDK's `initSquad()` returns `{ createdFiles, skippedFiles }` — it tracks what happened via return values, not console output. A `console.warn()` here is side-effectful in a module that's otherwise pure-return-value based. Additionally, there are currently zero `console.warn/log/error` calls anywhere in init.ts.
 
-## 2. Per-Workflow Migration Plan
+**Recommended refinement:** Instead of `console.warn()`, add the file to a `warnings` array or append a note to `skippedFiles` so the **caller** can decide how to present the message:
 
-### 2.1. sync-squad-labels.yml → `squad labels sync`
-
-**Current workflow:** 170 lines. Parses `team.md`, syncs `squad`, `squad:{member}`, `go:*`, `release:*`, `type:*`, `priority:*`, `bug`, `feedback` labels. Uses Octokit.
-
-**Proposed CLI command:**
-```bash
-squad labels sync [--squad-dir .squad] [--dry-run]
-```
-
-**Implementation:**
-- **Size:** S (2-3 hours)
-- **Dependencies:** 
-  - ✅ `gh` CLI (already used in plugin.ts, watch.ts)
-  - ✅ `parseRoster()` from `@bradygaster/squad-sdk/parsers` (already exists)
-  - ✅ Thin wrapper — reuse roster parser, call `gh label create/edit`
-- **Offline:** ❌ Needs GitHub API access via `gh`
-- **Reuse:** Roster parsing (team.md → member list) already exists. Just needs label creation loop with `gh`.
-- **Complexity:** Low. No auth complexity (uses `gh auth` flow). No copilot-swe-agent API.
-
-**Why quick win:** Zero new parsers needed. Label sync is idempotent (create-or-update pattern). Can run manually after `team.md` changes.
-
-
----
-
-### 2.2. squad-triage.yml → `squad triage` (or extend `squad watch`)
-
-**Current workflow:** 260 lines. On `squad` label, parses `team.md` + `routing.md`, keyword-matches, applies `squad:{member}` label, posts comment.
-
-**Proposed CLI command:**
-```bash
-squad triage [--issue <number>] [--squad-dir .squad]
-```
-Or: enhance `squad watch` to post comments (currently it only adds labels).
-
-**Implementation:**
-- **Size:** M (4-6 hours)
-- **Dependencies:** 
-  - ✅ `gh` CLI (already used)
-  - ✅ `triageIssue()` from `@bradygaster/squad-sdk/ralph/triage` (already used in watch.ts)
-  - ❌ **Missing:** `gh issue comment` wrapper in `gh-cli.ts` (5 lines to add)
-- **Offline:** ❌ Needs GitHub API
-- **Reuse:** 
-  - **watch.ts already does this** (line 189-209). Just missing comment posting.
-  - Triage logic, routing rules, module ownership — all implemented.
-- **Complexity:** Low. The logic exists; just needs `gh issue comment <number> --body <text>` wrapper.
-
-**Why medium effort:** Code exists. Just needs comment posting feature added to `gh-cli.ts` and called from `watch.ts`.
-
-
----
-
-### 2.3. squad-issue-assign.yml → ???
-
-**Current workflow:** 160 lines. On `squad:{member}` label, posts assignment comment, calls **copilot-swe-agent[bot] assignment API with PAT** (lines 116-161).
-
-**Problem:** The workflow uses a special POST endpoint:
-```js
-POST /repos/{owner}/{repo}/issues/{issue_number}/assignees
-{
-  assignees: ['copilot-swe-agent[bot]'],
-  agent_assignment: {
-    target_repo: `${owner}/${repo}`,
-    base_branch: baseBranch,
-    custom_instructions: '',
-    custom_agent: '',
-    model: ''
-  }
-}
-```
-**This endpoint does NOT exist in `gh` CLI.** It requires:
-- Personal Access Token (PAT) with `issues:write` scope
-- Direct Octokit call (cannot use `gh` as thin wrapper)
-
-**Migration options:**
-1. **Add Octokit dependency** — heavyweight (35+ deps), violates zero-dependency CLI goal
-2. **Add raw HTTPS module** — 50-100 lines to make authenticated POST with PAT, parse JSON response
-3. **Document manual workflow** — "To auto-assign @copilot, use the GitHub Actions workflow (requires PAT)"
-
-**Proposed approach:**
-- **Do NOT migrate.** Keep as workflow-only feature.
-- **Reasoning:** The copilot-swe-agent assignment API is GitHub-specific and requires secrets (PAT). CLI commands should not manage secrets. Workflows already have secure secret storage.
-- **Alternative:** Document `squad watch` as the local equivalent (it can label + post comments, but not trigger bot assignment).
-
-**Implementation:**
-- **Size:** XL (8-12 hours if full migration)
-- **Dependencies:** 
-  - ❌ PAT management (needs secret storage or prompting)
-  - ❌ Octokit or raw HTTPS POST wrapper (50-100 lines)
-  - ❌ Not available in `gh` CLI
-- **Offline:** ❌ Never (GitHub-specific API)
-- **Complexity:** High. Requires secret handling, bot assignment API, error handling, fallback.
-
-**Recommendation:** **Do not migrate.** Keep as workflow. Document that copilot auto-assign requires Actions + PAT.
-
-
----
-
-### 2.4. squad-heartbeat.yml → Already exists as `squad watch`
-
-**Current workflow:** 170 lines. Runs on cron (disabled), issues closed/labeled, PRs closed. Triages untriaged issues, assigns @copilot to `squad:copilot` issues.
-
-**CLI equivalent:** **Already shipped as `squad watch`** (`packages/squad-cli/src/cli/commands/watch.ts`, 356 lines).
-
-**What `squad watch` does:**
-- Polls open issues with `squad` label
-- Triages untriaged issues (adds `squad:{member}` label)
-- Monitors PRs (draft/needs-review/changes-requested/CI failures/ready-to-merge)
-- Runs on interval (default: 30 minutes)
-- Uses `gh` CLI for auth + API access
-- Uses shared `@bradygaster/squad-sdk/ralph/triage` logic
-
-**What `squad watch` does NOT do (that heartbeat.yml does):**
-- ❌ Post triage comments (workflow posts "Ralph — Auto-Triage" comments)
-- ❌ Auto-assign copilot-swe-agent[bot] (requires PAT + bot API, same issue as #2.3)
-
-**Implementation gap:**
-- **Comment posting:** M (4-6 hours) — add `gh issue comment` wrapper to `gh-cli.ts`, call it from `runCheck()` in watch.ts
-- **Copilot auto-assign:** Do not migrate (same as #2.3)
-
-**Migration plan:**
-- ✅ **Already done.** `squad watch` is the local heartbeat.
-- **Add comment posting** to match workflow behavior (quick win, 4-6 hours).
-- **Document copilot auto-assign** as workflow-only (requires PAT).
-
-**Recommendation:** Enhance `squad watch` with comment posting. Keep copilot auto-assign in workflow.
-
-
----
-
-### 2.5. squad-label-enforce.yml → `squad labels enforce`
-
-**Current workflow:** 180 lines. On label applied, removes conflicting labels from mutual-exclusivity namespaces (`go:`, `release:`, `type:`, `priority:`). Posts update comment.
-
-**Proposed CLI command:**
-```bash
-squad labels enforce [--issue <number>] [--squad-dir .squad]
-```
-
-**Implementation:**
-- **Size:** S (2-4 hours)
-- **Dependencies:** 
-  - ✅ `gh` CLI (already used)
-  - ❌ `gh issue edit --remove-label <label>` (already exists in `gh-cli.ts` as `ghIssueEdit`)
-  - ❌ `gh issue comment` (needs 5-line wrapper in `gh-cli.ts`)
-- **Offline:** ❌ Needs GitHub API
-- **Reuse:** 
-  - `ghIssueEdit()` already supports `removeLabel` (line 119).
-  - Enforcement logic is pure JS (no parsing needed).
-- **Complexity:** Low. Fetch issue labels, check prefixes, remove conflicts, post comment.
-
-**Why quick win:** No parsing. No complex logic. Just label list manipulation + `gh` CLI calls (already have the wrappers).
-
-
----
-
-## 3. The `squad watch` Connection
-
-**`squad watch` is the local heartbeat.** It already does 80% of what `squad-heartbeat.yml` does:
-- ✅ Triage untriaged issues (adds `squad:{member}` label)
-- ✅ Monitor PR states (draft/review/CI/merge-ready)
-- ✅ Poll on interval (default: 30 min, configurable)
-- ✅ Report board state (untriaged/assigned/drafts/CI failures/ready-to-merge)
-- ❌ Post triage comments (workflow does this)
-- ❌ Auto-assign copilot-swe-agent[bot] (requires PAT + bot API)
-
-**Key difference:** Workflow runs in GitHub Actions with PAT. Watch runs locally with `gh` CLI auth.
-
-**Can `squad watch` subsume heartbeat.yml entirely?**
-- **No** — not for copilot auto-assign (needs PAT + bot API).
-- **Yes** — for triage + PR monitoring (already implemented).
-- **Partial** — if we add comment posting (4-6 hour lift).
-
-**Recommendation:** Keep heartbeat.yml for copilot auto-assign (PAT-only feature). Enhance `squad watch` with comment posting for parity on triage behavior.
-
-
----
-
-## 4. Technical Risks
-
-### What's Harder Than It Looks
-
-1. **Copilot-swe-agent[bot] assignment API** — Not exposed in `gh` CLI. Requires PAT + Octokit or raw HTTPS. Violates zero-dependency CLI goal. **Mitigation:** Keep as workflow-only feature.
-
-2. **Secret management for PAT** — CLI should not prompt for or store PATs. Workflows have secure secret storage. **Mitigation:** Do not migrate PAT-dependent workflows.
-
-3. **Comment posting at scale** — Triage comments have rich formatting (team roster, routing rules, member bios). Watch loop runs every N minutes. Posting comments on every cycle could spam issues. **Mitigation:** Only post comments when triage decision is made (same as workflow).
-
-4. **Offline story** — All workflows need GitHub API. CLI commands will fail without `gh auth login`. **Mitigation:** Document auth requirement. Already have `ghAuthenticated()` check in watch.ts.
-
-### What's Easier Than It Looks
-
-1. **Label sync** — Idempotent create-or-update. No complex parsing (roster already implemented). Just needs `gh label create/edit` loop. **Quick win.**
-
-2. **Label enforce** — No parsing needed. Pure label list manipulation. `gh-cli.ts` already has `removeLabel`. **Quick win.**
-
-3. **Triage logic** — Already implemented in `@bradygaster/squad-sdk/ralph/triage` and used by both `watch.ts` and `ralph-triage.js`. **Reuse at 100%.**
-
-4. **PR monitoring** — Already implemented in `watch.ts` (line 67-148). Returns PR board state (drafts/needs-review/changes-requested/CI failures/ready-to-merge). **Done.**
-
-
----
-
-## 5. Implementation Estimate
-
-### Quick Wins (v0.8.22 — could ship today)
-
-**Total: 4-7 hours**
-
-1. **`squad labels sync`** — S (2-3 hours)
-   - Reuse `parseRoster()`, add label create/edit loop with `gh`
-   - Supports `--dry-run`, `--squad-dir`
-   - Zero new deps
-
-2. **`squad labels enforce`** — S (2-4 hours)
-   - Add `gh issue comment` wrapper to `gh-cli.ts` (5 lines)
-   - Implement mutual-exclusivity logic (pure JS, no parsing)
-   - Fetch issue labels, remove conflicts, post comment
-
-### Medium Effort (v0.8.22 stretch or v0.8.23)
-
-**Total: 4-6 hours**
-
-3. **Enhance `squad watch` with comment posting** — M (4-6 hours)
-   - Add `gh issue comment` wrapper to `gh-cli.ts` (if not done in #2)
-   - Call it from `runCheck()` in watch.ts when triage decision is made
-   - Match workflow comment format (team roster, routing reason, member info)
-   - **Result:** `squad watch` now has full parity with triage + heartbeat workflows (minus copilot auto-assign)
-
-### Heavy Lift (v0.9+ or never)
-
-**Total: 8-12 hours**
-
-4. **`squad copilot assign` (copilot-swe-agent[bot] API)** — XL (8-12 hours)
-   - Add Octokit dependency OR raw HTTPS POST wrapper (50-100 lines)
-   - Add PAT secret management (prompt or env var)
-   - Implement agent_assignment API call
-   - Error handling, fallback to basic assignment
-   - **Recommendation:** Do not migrate. Keep as workflow-only feature. Workflows already have PAT storage.
-
-
----
-
-## 6. Recommendation
-
-### Ship Now (v0.8.22)
-
-1. **`squad labels sync`** — 2-3 hours. Quick win. Zero deps.
-2. **`squad labels enforce`** — 2-4 hours. Quick win. Reuses existing wrappers.
-
-### Ship Next (v0.8.23)
-
-3. **Enhance `squad watch` with comment posting** — 4-6 hours. Medium effort. Full parity with triage workflow (minus copilot auto-assign).
-
-### Do Not Migrate
-
-4. **Copilot auto-assign** (issue-assign.yml + heartbeat.yml copilot auto-assign step) — Keep as workflow-only. Requires PAT + bot API not exposed in `gh` CLI. Violates zero-dependency CLI goal.
-
-### Already Exists
-
-5. **`squad watch`** — Already shipped (v0.8.16+). Local equivalent of heartbeat.yml. Triages issues, monitors PRs. Missing comment posting (4-6 hour gap).
-
-
----
-
-## 7. Summary Table
-
-| Workflow | CLI Command | Complexity | Can Migrate? | Estimate |
-|----------|-------------|------------|--------------|----------|
-| sync-squad-labels.yml | `squad labels sync` | S | ✅ Yes | 2-3 hrs (v0.8.22) |
-| squad-label-enforce.yml | `squad labels enforce` | S | ✅ Yes | 2-4 hrs (v0.8.22) |
-| squad-triage.yml | Enhance `squad watch` | M | ✅ Partial | 4-6 hrs (v0.8.23) |
-| squad-heartbeat.yml | Already `squad watch` | M | ✅ Done | 0 hrs (shipped) |
-| squad-issue-assign.yml | N/A | XL | ❌ No | Keep workflow (PAT-only) |
-
-**Total migration effort:** 8-13 hours for full CLI parity (minus copilot auto-assign).
-
-**v0.8.22 quick wins:** 4-7 hours (labels sync + enforce).
-
-**v0.8.23 polish:** 4-6 hours (watch comment posting).
-
-
----
-
-## 8. Next Steps
-
-1. **Brady decides:** Ship labels commands in v0.8.22?
-2. **If yes:** Fenster implements `squad labels sync` + `squad labels enforce` (4-7 hours total).
-3. **If comment posting desired:** Add `gh issue comment` wrapper to `gh-cli.ts`, call it from watch.ts (4-6 hours).
-4. **Document:** Copilot auto-assign requires GitHub Actions + PAT. `squad watch` is local equivalent for triage + PR monitoring.
-
-
----
-
-**Author:** Fenster  
-**Date:** 2026-03-07  
-**Status:** Awaiting Brady's go/no-go decision
-
-
-# Actions → CLI Migration Strategy
-**Author:** Keaton (Lead)  
-**Date:** 2026-03-07  
-**Requested by:** Brady  
-
-## Executive Summary
-
-Brady's concern is valid: **Squad is surprising users with automated GitHub Actions that consume API quota and execute without explicit user intent.** The current model treats Squad as an automated bot service rather than a user-controlled tool.
-
-**Core principle:** Squad should be a CLI-first tool that users invoke when they want it, not an always-on automation layer that reacts to every label change.
-
-**Recommendation:** Migrate 5 squad-specific workflows to CLI commands. Keep 10 standard CI/CD workflows (expected by any project). Target v0.8.22 for deprecation warnings, v0.9.0 for removal.
-
-
----
-
-## Classification: All 15 Workflows
-
-### 🟢 KEEP — Standard CI/CD (10 workflows)
-
-These are expected by ANY modern project. No surprise factor. Keep as-is.
-
-| Workflow | Trigger | Why Keep |
-|----------|---------|----------|
-| **squad-ci.yml** | PR/push to dev/insider | Standard CI — every repo needs this |
-| **squad-release.yml** | Push to main | Standard release automation — tag + GitHub Release |
-| **squad-promote.yml** | workflow_dispatch only | Manual branch promotion — user-triggered |
-| **squad-main-guard.yml** | PR/push to main/preview/insider | Prevents forbidden files on release branches — safety net |
-| **squad-preview.yml** | Push to preview | Pre-release validation — standard quality gate |
-| **squad-docs.yml** | Push to main (docs/**) | Docs build/deploy to GH Pages — standard pattern |
-| **publish.yml** | Tag push (v*) | npm publish on tag — standard release flow |
-| **squad-publish.yml** | Tag push (v*) | npm publish (monorepo variant) — standard release flow |
-| **squad-insider-release.yml** | Push to insider | Insider build tagging — standard preview channel |
-| **squad-insider-publish.yml** | Push to insider | Insider npm publish — standard preview channel |
-
-**Verdict:** These workflows are **expected behavior** for a project with CI/CD. No user would be surprised that pushing to `main` triggers a release or that opening a PR runs tests. Keep all 10.
-
-
----
-
-### 🟡 MIGRATE TO CLI — Squad-Specific Automation (5 workflows)
-
-These workflows execute Squad logic on GitHub events. They surprise users because they:
-- Consume GitHub API quota automatically
-- Execute AI logic without user awareness
-- Make label/assignment decisions on behalf of the user
-- Trigger on innocuous actions (adding a label)
-
-| Workflow | Trigger | Surprise Factor | CLI Replacement |
-|----------|---------|-----------------|-----------------|
-| **sync-squad-labels.yml** | Push to team.md | 🟡 Moderate — creates ~30+ labels automatically | `squad labels sync` |
-| **squad-triage.yml** | issues:[labeled] when "squad" label added | 🔴 HIGH — AI routing + label assignment + comment | `squad triage` or `squad triage <issue>` |
-| **squad-issue-assign.yml** | issues:[labeled] when squad:{member} label added | 🟡 Moderate — posts comment, assigns @copilot | `squad assign <issue> <member>` |
-| **squad-heartbeat.yml** | issues:[closed/labeled], PR:[closed], cron (disabled) | 🔴 HIGH — Ralph auto-triage every 30min (if enabled) | `squad watch` (user keeps terminal open) |
-| **squad-label-enforce.yml** | issues:[labeled] | 🟡 Moderate — removes conflicting labels, posts comments | `squad labels check <issue>` |
-
-**Total:** 5 workflows to migrate.
-
-
----
-
-## Migration Architecture
-
-### 1. **sync-squad-labels.yml** → `squad labels sync`
-
-**Current behavior:** On push to `.squad/team.md`, automatically syncs ~30+ labels (squad:*, go:*, release:*, type:*, priority:*).
-
-**CLI replacement:**
-```bash
-squad labels sync
-# Reads .squad/team.md, creates/updates labels via GitHub API
-# Output: "✓ Created 12 labels, updated 18 labels"
-```
-
-**When users run it:**
-- After editing `.squad/team.md` (new member added)
-- During initial Squad setup (`squad init` could offer to run it)
-- Manually when they want to refresh label definitions
-
-**Tradeoff:** Labels won't auto-sync. Users must remember to run this.  
-**Mitigation:** `squad init` runs it automatically. `squad doctor` warns if team.md changed but labels haven't been synced.
-
-
----
-
-### 2. **squad-triage.yml** → `squad triage`
-
-**Current behavior:** On "squad" label added, reads team.md + routing.md, does keyword-based routing, assigns squad:{member} label, posts triage comment.
-
-**CLI replacement:**
-```bash
-# Triage all issues with "squad" label and no squad:{member} label
-squad triage
-
-# Triage a specific issue
-squad triage 42
-
-# Output:
-# ✓ Issue #42: Assigned to Ripley (Frontend) — matches "UI component" keyword
-# ✓ Issue #43: Assigned to @copilot (good fit) — matches "bug fix" keyword
-```
-
-**When users run it:**
-- After new issues are labeled with "squad"
-- During daily standup / triage sessions
-- As part of a larger workflow (`squad watch` could include this)
-
-**Tradeoff:** Triage doesn't happen automatically when label is added.  
-**Mitigation:** `squad watch` can poll for untriaged issues and notify the user. User still invokes triage explicitly.
-
-
----
-
-### 3. **squad-issue-assign.yml** → `squad assign <issue> <member>`
-
-**Current behavior:** On squad:{member} label added, posts assignment comment. If squad:copilot, assigns copilot-swe-agent[bot] via PAT.
-
-**CLI replacement:**
-```bash
-# Assign issue to a squad member (adds label, posts comment)
-squad assign 42 ripley
-
-# Assign to @copilot (adds label, posts comment, assigns bot)
-squad assign 42 copilot
-
-# Output:
-# ✓ Issue #42 assigned to Ripley (Frontend)
-# ✓ Posted assignment comment
-```
-
-**When users run it:**
-- After manual triage (they decide who should work on it)
-- As part of `squad triage` output (suggests assignments, user confirms)
-
-**Tradeoff:** Assignment doesn't happen automatically when label is added.  
-**Mitigation:** `squad triage` can assign in one step (triage + assign). User still has control.
-
-
----
-
-### 4. **squad-heartbeat.yml** → `squad watch`
-
-**Current behavior:** Cron every 30min (disabled), or on issue/PR events. Runs ralph-triage.js, applies triage decisions, auto-assigns @copilot.
-
-**CLI replacement:**
-```bash
-# Watch mode — keeps terminal open, polls for new work
-squad watch
-
-# Output:
-# 🔄 Watching for new issues...
-# [10:42] New issue #45: "Add login form validation"
-#         → Suggested: @copilot (good fit)
-#         Run `squad triage 45` to assign?
-# [10:45] Issue #42 closed by Ripley
-# [10:50] PR #38 merged to main
-```
-
-**When users run it:**
-- During active work sessions
-- On a dedicated terminal/tmux pane
-- In CI (optional — they opt-in)
-
-**Tradeoff:** No background automation. User must keep `squad watch` running.  
-**Mitigation:** Users who want automation can keep `squad watch` in a tmux pane or run it in CI. Users who DON'T want automation aren't surprised.
-
-
----
-
-### 5. **squad-label-enforce.yml** → `squad labels check`
-
-**Current behavior:** On any label added, enforces mutual exclusivity (go:, release:, type:, priority:), removes conflicts, posts comments.
-
-**CLI replacement:**
-```bash
-# Check label consistency for all open issues
-squad labels check
-
-# Check a specific issue
-squad labels check 42
-
-# Output:
-# ⚠️ Issue #42: Multiple go: labels detected (go:yes, go:no)
-#    Run `squad labels fix 42` to resolve
-```
-
-**When users run it:**
-- Before triage sessions
-- As part of `squad doctor` (health check)
-- Manually when they notice conflicting labels
-
-**Tradeoff:** Conflicting labels won't be auto-removed.  
-**Mitigation:** `squad labels check` is fast. `squad doctor` includes it. Users can run it proactively.
-
-
----
-
-## Tradeoffs: What Do We LOSE?
-
-| Lost Capability | Impact | Mitigation |
-|----------------|--------|------------|
-| **Auto-sync labels on team.md push** | Labels may be out of sync with team roster | `squad doctor` warns. `squad init` syncs automatically. |
-| **Auto-triage on "squad" label** | Issues sit in triage inbox longer | `squad watch` notifies. `squad triage` is one command. |
-| **Auto-assign on squad:{member} label** | Manual step to assign after labeling | `squad triage` does both in one step. |
-| **Ralph heartbeat (cron auto-triage)** | No background automation | `squad watch` in tmux/screen. Or: users run `squad triage` daily. |
-| **Auto-enforce label rules** | Conflicting labels may exist temporarily | `squad labels check` is fast. `squad doctor` includes it. |
-
-**Key insight:** We lose automatic execution, but GAIN user control and transparency. Users aren't surprised by API usage or AI decisions happening behind their back.
-
-
----
-
-## Migration Path: Phased Rollout
-
-### **Phase 1: v0.8.22 (Deprecation Warnings)**
-
-- Add deprecation warnings to all 5 workflows (at the top of each file):
-  ```yaml
-  # ⚠️ DEPRECATION WARNING: This workflow will be removed in v0.9.0
-  # Use `squad labels sync` instead (see docs/migration/actions-to-cli.md)
-  ```
-- Implement CLI commands:
-  - `squad labels sync`
-  - `squad triage [<issue>]`
-  - `squad assign <issue> <member>`
-  - `squad watch` (basic polling loop)
-  - `squad labels check [<issue>]`
-- Ship docs: `docs/migration/actions-to-cli.md` (migration guide)
-- Announce in CHANGELOG.md: "GitHub Actions workflows are deprecated. Migrate to CLI commands."
-
-**Timeline:** v0.8.22 ships with deprecation warnings + CLI commands. Users have time to adapt.
-
-
----
-
-### **Phase 2: v0.9.0 (Remove Workflows)**
-
-- Remove all 5 workflows from `.github/workflows/`
-- Remove from template bundles (`.squad/templates/workflows/`)
-- Update `squad init` to NOT install these workflows
-- Add `squad upgrade` to remove deprecated workflows from existing repos
-
-**Timeline:** v0.9.0 removes workflows entirely. CLI commands are the only path.
-
-
----
-
-### **Phase 3: v0.9.x (Optional Automation)**
-
-- Add opt-in GitHub Actions workflow for users who want automation:
-  ```yaml
-  name: Squad CLI Runner (opt-in)
-  on:
-    issues: [labeled]
-  jobs:
-    run-cli:
-      - run: npx @bradygaster/squad-cli triage ${{ github.event.issue.number }}
-  ```
-- Users who want automation can install this workflow themselves.
-- Key difference: They CHOOSE to install it. Not a default.
-
-**Timeline:** Post-v0.9.0. Optional path for users who miss automation.
-
-
----
-
-## The "Zero Actions Required" Vision
-
-**Can Squad work with ZERO custom Actions (just standard CI)?**
-
-**YES.** Here's what it looks like:
-
-### Minimal GitHub Actions Setup
-- **squad-ci.yml** — Test on PR (standard)
-- **squad-release.yml** — Tag + release on main push (standard)
-- **squad-docs.yml** — Build docs on main push (standard)
-
-**That's it.** 3 workflows. Zero Squad-specific logic in GitHub Actions.
-
-### User Workflow (CLI-First)
-```bash
-# 1. New issue arrives (via GitHub UI or gh CLI)
-# 2. User triages at their terminal
-squad triage
-
-# Output:
-# ✓ Issue #42: Assigned to Ripley (Frontend)
-# ✓ Issue #43: Assigned to @copilot (good fit)
-
-# 3. User watches for new work (optional)
-squad watch
-# Polls in background, notifies on new issues
-
-# 4. User checks health periodically
-squad doctor
-# ✓ Labels synced
-# ✓ No conflicting labels
-# ⚠️ 3 untriaged issues in inbox
-```
-
-**Benefits:**
-- **Zero API usage surprises** — users invoke Squad when they want it
-- **Zero hidden costs** — no cron jobs running every 30min
-- **Full transparency** — users see Squad's decisions as they happen
-- **User control** — users can override triage decisions before they're applied
-
-**This is the right model.** Squad is a tool users invoke, not a bot that watches them.
-
-
----
-
-## Recommendation
-
-**Migrate all 5 squad-specific workflows to CLI commands.**
-
-1. **v0.8.22** — Add deprecation warnings + CLI commands. Users have time to adapt.
-2. **v0.9.0** — Remove workflows entirely. CLI-first is the only path.
-3. **Post-v0.9.0** — Add opt-in automation for users who want it.
-
-**Core belief:** Squad should be a CLI-first tool that users control, not an automation layer that surprises them. This migration aligns with that vision.
-
-
----
-
-## Implementation Notes
-
-### CLI Command Structure
-```
-squad labels sync          # Sync labels from team.md
-squad labels check [issue] # Check for conflicting labels
-squad labels fix <issue>   # Fix conflicting labels
-
-squad triage [issue]       # Triage issue(s) using routing rules
-squad assign <issue> <member> # Assign issue to squad member
-
-squad watch               # Watch for new issues (polling loop)
-squad doctor              # Health check (labels, triage queue, etc.)
-```
-
-### UX Principles
-- **Explicit is better than implicit** — users invoke Squad when they want it
-- **One command does one thing** — no hidden side effects
-- **Fast feedback** — commands complete in <1s for single issues
-- **Batch operations** — `squad triage` without args processes all untriaged
-
-### Technical Approach
-- All CLI commands use GitHub API (via Octokit)
-- `squad watch` uses polling (every 30s) with efficient API usage (If-None-Match headers)
-- `squad triage` uses same routing logic as current `squad-triage.yml` (reuse ralph-triage.js)
-- `squad doctor` aggregates multiple checks (labels, triage, etc.)
-
-
----
-
-## Appendix: Current Workflow Triggers
-
-| Workflow | Trigger | API Calls/Event |
-|----------|---------|-----------------|
-| sync-squad-labels.yml | Push to team.md | ~30 (create/update labels) |
-| squad-triage.yml | issues:[labeled] "squad" | ~5-10 (read files, add labels, post comment) |
-| squad-issue-assign.yml | issues:[labeled] "squad:*" | ~3-5 (post comment, assign) |
-| squad-heartbeat.yml | Cron every 30min (disabled) | ~10-50 (depends on open issues) |
-| squad-label-enforce.yml | issues:[labeled] any label | ~2-5 (remove conflicting labels, post comment) |
-
-**Total:** If heartbeat were enabled, Squad would make 50+ API calls every 30 minutes, even if no real work happened. This is the core problem Brady identified.
-
-
-
-# CI/CD Impact Assessment: GitHub Actions vs. CLI Migration
-
-**Date:** 2026-03-15 | **Author:** Kobayashi (Git & Release) | **Status:** Analysis Complete
-
-
----
-
-## Executive Summary
-
-Brady seeks to reduce GitHub Actions usage by migrating automation to Squad CLI. This assessment identifies which workflows are **load-bearing infrastructure** (must stay as Actions) vs. **migration candidates** that can move to CLI-side automation.
-
-**Bottom Line:** ~90 actions-minutes/month can be eliminated by migrating 5 squad-specific workflows (label sync, triage, assignments, label enforcement). However, **9 workflows must remain as Actions** because they provide event-driven guardrails that cannot be replicated CLI-side.
-
-
----
-
-## Part 1: Actions Minutes Analysis
-
-### Monthly Actions Consumption by Workflow
-
-| Workflow | Category | Trigger | Est. Min/Month | Notes |
-|----------|----------|---------|----------------|-------|
-| **squad-ci.yml** | CI | PR changes + dev push | ~120 | Runs per PR update, most frequent trigger |
-| **squad-release.yml** | Release | Push to main (once/release) | ~15 | Tag creation + GitHub Release |
-| **squad-promote.yml** | Release | Manual dispatch | ~20 | dev→preview→main pipeline |
-| **squad-main-guard.yml** | CI | PR to main + push | ~10 | File pattern guards (fast) |
-| **squad-preview.yml** | CI | Push to preview | ~15 | Full test suite validation |
-| **squad-publish.yml** | Publish | Tag push | ~30 | Build + npm publish (2x jobs) |
-| **squad-insider-release.yml** | Release | Push to insider | ~15 | Tag creation only |
-| **squad-insider-publish.yml** | Publish | Push to insider | ~30 | Build + npm publish |
-| **sync-squad-labels.yml** | Squad | team.md changes | ~1 | Lightweight label sync |
-| **squad-triage.yml** | Squad | Issue labeled | ~2 | Script runs, ~50-100 issues/month |
-| **squad-issue-assign.yml** | Squad | Issue labeled | ~2 | Script runs, ~50-100 issues/month |
-| **squad-heartbeat.yml** | Squad | Issue/PR closed, manual | ~5 | Ralph triage script (when enabled) |
-| **squad-label-enforce.yml** | Squad | Issue labeled | ~2 | Label mutual exclusivity enforcement |
-| **squad-docs.yml** | Docs | Manual + docs push | ~5 | Rarely triggered (on demand mostly) |
-
-### Cost Breakdown
-
-- **CI/Release (MUST STAY):** ~215 minutes/month — essential event-driven guardrails
-- **Squad-Specific (MIGRATE):** ~12 minutes/month — low cost but high synchronization burden
-- **Total:** ~227 minutes/month (well under GitHub's 3000-min free tier for public repos)
-
-**Finding:** This repository is **not Actions-minute-constrained**. Cost is not the primary driver; **complexity & maintenance** is.
-
-
----
-
-## Part 2: Workflow Dependencies & Orchestration Chain
-
-### Dependency Graph
-
-```
-dev branch (squad-ci.yml) 
-    ↓
-main branch (squad-ci.yml + squad-main-guard.yml)
-    ↓
-squad-release.yml (validates version, creates tag v*)
-    ↓
-squad-publish.yml (triggered by tag, publishes to npm)
-    ↓
-GitHub Release + npm distribution (end user benefit)
-```
-
-### Event-Driven Orchestration
-
-| Workflow | Trigger | Depends On | Blocks | Critical? |
-|----------|---------|-----------|--------|-----------|
-| **squad-ci.yml** | PR open/sync, dev push | — | All downstream | ✅ YES |
-| **squad-main-guard.yml** | PR to main/preview | — | Release process | ✅ YES |
-| **squad-release.yml** | Push to main | squad-main-guard + squad-ci | squad-publish | ✅ YES |
-| **squad-promote.yml** | Manual workflow_dispatch | — | Follows main merge | ⚠️ MANUAL |
-| **squad-publish.yml** | Tag push (v*) | All CI/tests upstream | npm distribution | ✅ YES |
-| **sync-squad-labels.yml** | team.md changes | — | squad-triage | ⚠️ AUTOMATION |
-| **squad-triage.yml** | Issue labeled "squad" | sync-squad-labels output | squad-issue-assign | ⚠️ AUTOMATION |
-| **squad-issue-assign.yml** | Issue labeled "squad:*" | squad-triage | @copilot work start | ⚠️ AUTOMATION |
-| **squad-heartbeat.yml** | Issue/PR closed, manual | — | Auto-triage | ⚠️ AUTOMATION |
-| **squad-label-enforce.yml** | Issue labeled | — | Triage feedback | ⚠️ AUTOMATION |
-
-### Cross-Workflow Triggers (Implicit Dependencies)
-
-1. **squad-triage → squad-issue-assign**: Triage adds `squad:{member}` label → triggers assignment workflow
-2. **squad-label-enforce → feedback loop**: Enforces mutual exclusivity → posts triage updates
-3. **squad-release → squad-publish**: Successful main push creates tag → triggers publish
-
-**Finding:** squad-release + squad-publish form an **implicit pipeline** — removing either breaks the release chain.
-
-
----
-
-## Part 3: Load-Bearing Infrastructure (MUST STAY as Actions)
-
-### Why These Workflows Cannot Move to CLI
-
-#### 1. **squad-ci.yml** — PR/Push Event Guard
-- **Trigger:** Pull request open/sync + dev push
-- **Function:** Build + test on every code change
-- **Why it must be Actions:**
-  - Must run **before** merge decisions (PR gates, branch protection)
-  - Event-driven: no other way to intercept PR lifecycle events
-  - Results **feed into GitHub's merge protection logic**
-  - Failure blocks PR merge (security/correctness gate)
-
-#### 2. **squad-main-guard.yml** — Protected Branch Enforcement
-- **Trigger:** PR to main/preview/insider, push to main/preview/insider
-- **Function:** Prevents `.squad/`, `.ai-team/`, internal-only files from reaching production
-- **Why it must be Actions:**
-  - **Enforcement happens at GitHub API layer** — no CLI equivalent
-  - Runs even if developer bypasses local git hooks
-  - Final validation before release branches merge
-  - State corruption risk if this fails
-
-#### 3. **squad-release.yml** — Tag + Release Creation
-- **Trigger:** Push to main (automatic version detection)
-- **Function:** Create semantic version tag, GitHub Release, generate release notes
-- **Why it must be Actions:**
-  - Runs on every main merge (automated release)
-  - Creates artifacts that trigger downstream squad-publish.yml
-  - If moved to CLI, requires manual invocation (breaks release automation)
-  - **Dependency:** squad-publish.yml is triggered **only** by tag push
-
-#### 4. **squad-publish.yml** — npm Distribution Gate
-- **Trigger:** Tag push (v*)
-- **Function:** Build monorepo, publish squad-sdk + squad-cli to npm
-- **Why it must be Actions:**
-  - Distributes to **public npm registry** (external system)
-  - Final node in release pipeline — runs only after tag exists
-  - If moved to CLI, end users never receive updates
-
-#### 5. **squad-promote.yml** — Branch Promotion Pipeline
-- **Trigger:** Manual `workflow_dispatch`
-- **Function:** dev→preview→main with forbidden-path stripping
-- **Why it must be Actions:**
-  - Complex, **sequential git operations** that require shell environment
-  - Dry-run capability (shows what _would_ happen) — essential for release safety
-  - Manual trigger allows human decision points
-
-#### 6. **squad-preview.yml** — Pre-Release Validation
-- **Trigger:** Push to preview
-- **Function:** Verify version consistency, CHANGELOG entries, no internal files
-- **Why it must be Actions:**
-  - Validates **release readiness** before main merge
-  - Final "go/no-go" checkpoint for publication
-  - Prevents bad releases from reaching public channels
-
-#### 7. **squad-docs.yml** — Documentation Build & Deploy
-- **Trigger:** Manual + docs changes on main
-- **Function:** Build markdown docs, deploy to GitHub Pages
-- **Why it must be Actions:**
-  - **GitHub Pages deployment** requires Actions API (or setup-pages)
-  - Public-facing documentation delivery
-  - Not CLI-suited (requires repository deployment permissions)
-
-#### 8. **squad-insider-release.yml** — Pre-Release Channel
-- **Trigger:** Push to insider
-- **Function:** Create insider tags (v*.insider+SHA), GitHub Release
-- **Why it must be Actions:**
-  - Supports insider/development release channel
-  - Tag creation must happen at push time (cannot be manual)
-
-#### 9. **squad-insider-publish.yml** — Insider npm Distribution
-- **Trigger:** Push to insider
-- **Function:** Publish squad-sdk + squad-cli to npm with `insider` tag
-- **Why it must be Actions:**
-  - Final distribution step for pre-release channel
-  - Mirrors squad-publish.yml for insider builds
-
-### The Core Constraint: Event-Driven Guarantees
-
-**GitHub Actions provides these guarantees that CLI cannot:**
-
-1. **Atomicity**: Workflow runs **exactly once** per trigger event (no duplicates, no misses)
-2. **Immutability**: Events are recorded; workflows cannot be skipped retroactively
-3. **Authorization**: Actions run with repo access token (PAT or GITHUB_TOKEN) — centralized permission control
-4. **Branch Protection Integration**: Workflow status **blocks merges** via PR checks (native GitHub API)
-5. **Tag Triggers**: Tag push events are instant and guaranteed (CLI has no hook into git server)
-
-**CLI automation lacks these guarantees:**
-- Requires manual invocation (susceptible to user error)
-- No built-in authorization (relies on user's local git credentials)
-- Cannot integrate with branch protection rules
-- Cannot react to remote events (only local ones)
-
-
----
-
-## Part 4: Migration Candidates (Squad-Specific Workflows)
-
-### Workflows That Should Migrate to CLI
-
-#### 1. **sync-squad-labels.yml** → `squad sync-labels`
-- **Current:** Triggered by team.md changes
-- **Proposal:** Move to CLI command (could also run on init + periodic manual trigger)
-- **CLI Implementation:** Read team.md, iterate GitHub API to create/update labels
-- **Risks:** Low — idempotent operation, no branch protection dependency
-- **Migration Path:** Run as part of `squad upgrade`, available via `squad sync-labels` command
-
-#### 2. **squad-triage.yml** → `squad triage`
-- **Current:** Triggered by "squad" label on issue
-- **Proposal:** Move to CLI command that runs on-demand or via Ralph (monitor) agent
-- **CLI Implementation:** Detect issues with "squad" label, run routing logic, add member labels + comments
-- **Risks:** Low — does not modify protected state, user can run manually
-- **Note:** Ralph (work monitor) already implements smart triage; could consume this logic
-
-#### 3. **squad-issue-assign.yml** → `squad assign`
-- **Current:** Triggered by "squad:{member}" label on issue
-- **Proposal:** Move to CLI command, combines with triage workflow
-- **CLI Implementation:** Detect issues with squad:* labels, post assignment comments, optionally assign @copilot via PAT
-- **Risks:** Medium — requires COPILOT_ASSIGN_TOKEN (PAT) for copilot-swe-agent assignment
-- **Migration Path:** CLI can handle label detection + comments; copilot assignment remains as optional GitHub workflow step
-
-#### 4. **squad-heartbeat.yml** → `squad heartbeat` / Ralph monitor
-- **Current:** Triggered by issue/PR close, labeled events, + manual dispatch
-- **Proposal:** Ralph (the work monitor agent) already implements smart triage; fold this into Ralph's periodic monitor loop
-- **CLI Implementation:** Ralph already has access to team.md, routing rules, issue data
-- **Risks:** Low — currently disabled in workflow anyway (cron commented out)
-- **Note:** Ralph can be invoked manually OR integrated with Copilot CLI agent lifecycle
-
-#### 5. **squad-label-enforce.yml** → `squad validate-labels`
-- **Current:** Triggered by issue labeled (any label event)
-- **Proposal:** Move to CLI command, called by triage workflow or manual enforcement
-- **CLI Implementation:** Given an issue, check label namespaces (go:, release:, type:, priority:) for mutual exclusivity, remove conflicts
-- **Risks:** Low — idempotent, modifies issue labels only (no protected state)
-- **Migration Path:** Can be called as part of squad-triage → removes conflicting labels before applying member assignment
-
-### Migration Risk Matrix
-
-| Workflow | Complexity | State Risk | Race Conditions | Human Review | Recommendation |
-|----------|-----------|-----------|-----------------|---------------|-----------------|
-| **sync-squad-labels.yml** | Low | None | None | No | ✅ MIGRATE |
-| **squad-triage.yml** | Medium | Low | Possible (concurrent issues) | Yes (lead review) | ✅ MIGRATE |
-| **squad-issue-assign.yml** | Medium | Low | Possible (label race) | Yes (PAT required) | ✅ MIGRATE |
-| **squad-heartbeat.yml** | Medium | Low | None (async monitor) | Yes (Ralph logic) | ✅ MIGRATE (to Ralph) |
-| **squad-label-enforce.yml** | Low | None | None | No | ✅ MIGRATE |
-
-**Total Time Savings:** ~12 Actions minutes/month (negligible for cost, but **reduces maintenance burden**)
-
-
----
-
-## Part 5: The `squad init` Impact
-
-### Current Flow: squad init → Install Workflows
-
-```
-squad init [repo]
-  ├─ Detect project type (Node.js, Python, Go, etc.)
-  ├─ Copy .squad/ template files
-  │  ├─ team.md
-  │  ├─ routing.md
-  │  ├─ charter.md
-  │  └─ other YAML configs
-  ├─ Copy .github/workflows/ from templates/workflows/
-  │  ├─ squad-ci.yml (project-type sensitive stub)
-  │  ├─ squad-release.yml (project-type sensitive)
-  │  ├─ squad-promote.yml
-  │  ├─ squad-main-guard.yml
-  │  ├─ squad-preview.yml
-  │  ├─ squad-docs.yml
-  │  ├─ squad-publish.yml
-  │  ├─ sync-squad-labels.yml
-  │  ├─ squad-triage.yml
-  │  ├─ squad-issue-assign.yml
-  │  ├─ squad-heartbeat.yml
-  │  └─ squad-label-enforce.yml
-  └─ Show team onboarding (emoji ceremony)
-```
-
-### Impact of Selective Migration
-
-**Option A: Remove All Squad-Specific Workflows from init**
-
-```diff
-  squad init [repo]
-    ├─ Install CI/Release workflows (9 workflows)
-    ├─ Skip squad-specific workflows (5 workflows)
-    └─ Post message: "To enable smart triage, run: squad init-automation"
-```
-
-**Implications:**
-- Simpler `squad init` — no automation magic, team must opt-in
-- Users who want triage must run second command: `squad init-automation`
-- Clearer separation: **core** (CI/Release) vs. **optional** (team automation)
-
-**Option B: Keep All, Make Workflows Optional in Init**
-
-```
-squad init [repo] --with-automation
-squad init [repo] --automation=none  # skip squad-specific
-```
-
-**Implications:**
-- Backward compatible (existing users' behavior unchanged)
-- First-time users get full automation by default
-- Power users can disable triage workflows if not needed
-
-**Option C: Hybrid — Install Squad Workflows, Disable Some by Default**
-
-```
-squad init [repo]
-  ├─ Install ALL workflows
-  ├─ Disable (comment out triggers on):
-  │  ├─ squad-heartbeat.yml (cron already commented)
-  │  ├─ squad-triage.yml (comments say "disabled pre-migration")
-  └─ Enable on demand via: squad enable-heartbeat, squad enable-triage
-```
-
-### Recommended Approach: **Lazy Automation**
-
-**Proposal:** Keep workflows in init, but add lifecycle flags:
-
-```yaml
-# .squad/config.json
-{
-  "automation": {
-    "ci": true,        // Always enabled
-    "release": true,   // Always enabled
-    "triage": false,   // Disabled by default — opt-in
-    "heartbeat": false // Disabled — requires Ralph enable
-  }
-}
-```
-
-**Benefits:**
-- init remains simple (no conditional flags)
-- Team leads can enable triage workflows incrementally
-- Reduces "magic" for teams who don't want it
-- squad upgrade can toggle these flags
-
-
----
-
-## Part 6: Backward Compatibility & Migration Strategy
-
-### Scenario 1: Existing Repos with 15 Workflows
-
-**Problem:** User has all 15 workflows. If we remove squad-specific ones from init, their repo still has old workflows running.
-
-**Solution: `squad upgrade` with workflow management**
-
-```bash
-# Update Squad CLI to latest
-npm install -g @bradygaster/squad-cli@latest
-
-# Then upgrade repo workflows
-squad upgrade --workflows
-
-# Shows what changed:
-# ✅ Updated squad-ci.yml (v1 schema)
-# ⏭️ Deprecated: squad-triage.yml (moving to CLI)
-# ⏭️ Deprecated: squad-heartbeat.yml (moving to Ralph)
-# Run: squad migrate-automation --help
-```
-
-### Recommended Transition Timeline
-
-| Phase | Action | Timeline |
-|-------|--------|----------|
-| **Phase 1** | Document: "Migration path for squad automation to CLI" | v0.9.0 |
-| **Phase 2** | Implement: `squad triage`, `squad assign`, `squad sync-labels` as CLI commands | v1.0.0 |
-| **Phase 3** | Add deprecation warnings to squad-specific workflows | v1.0.0 |
-| **Phase 4** | `squad upgrade --remove-deprecated-workflows` flag | v1.1.0 |
-| **Phase 5** | Remove deprecated workflows from init (new repos only) | v1.1.0 |
-
-### Migration Checklist for Users
-
-**If you have squad-triage.yml running:**
-1. Wait for `squad triage` CLI command (v1.0.0+)
-2. Test: `squad triage --dry-run` on your repo
-3. Remove squad-triage.yml from .github/workflows/
-4. Add `squad triage` to your automation schedule (manual or cron)
-
-**If you have squad-heartbeat.yml running:**
-1. Ralph agent will handle smart triage (v1.0.0+)
-2. Remove squad-heartbeat.yml when ready
-3. Enable Ralph monitor: `squad enable-ralph`
-
-
----
-
-## Part 7: State Corruption Risks
-
-### Which Workflows Modify State?
-
-| Workflow | State Modified | Risk Level | Mitigation |
-|----------|----------------|-----------|-----------|
-| **squad-ci.yml** | None (read-only) | Low | Test failures are visible |
-| **squad-release.yml** | Git tags, GitHub Releases | Critical | Version verification, dry-run |
-| **squad-promote.yml** | Git branches | Critical | Dry-run mode, human approval |
-| **squad-main-guard.yml** | None (blocks merges) | None | Enforcement only |
-| **sync-squad-labels.yml** | GitHub labels | Low | Idempotent, can re-sync |
-| **squad-triage.yml** | Issue labels, comments | Low | Can be corrected manually |
-| **squad-issue-assign.yml** | Issue assignees, comments | Low | Can be corrected manually |
-| **squad-heartbeat.yml** | Issue labels, comments | Low | Async, low severity |
-| **squad-label-enforce.yml** | Issue labels | Low | Idempotent |
-
-### Critical Workflows (State Corruption Risk)
-
-1. **squad-release.yml**: Creates git tags that trigger downstream pipeline
-   - Risk: Duplicate tags, malformed versions
-   - Mitigation: Version validation (must exist in CHANGELOG.md) before tagging
-
-2. **squad-promote.yml**: Merges between branches, strips forbidden paths
-   - Risk: Lost commits, wrong paths stripped
-   - Mitigation: Dry-run preview, manual approval, git log verification
-
-3. **squad-main-guard.yml**: Prevents merges with forbidden paths
-   - Risk: If bypassed, corruption spreads to public releases
-   - Mitigation: Must remain on main branch (non-removable, non-disabled)
-
-### Orphaned Workflow Detection
-
-**Problem:** Developer deletes squad-triage.yml from their branch, but it still runs because .github/workflows/ is read from main.
-
-**Solution:** None required
-- Workflows are read from the **default branch** (main) at runtime
-- Deleting from a feature branch has no effect
-- Only `squad upgrade --remove-deprecated-workflows` removes repo-wide
-
-
----
-
-## Part 8: Backward Compatibility Matrix
-
-### What Changes for Each User Segment?
-
-| User Segment | Current Behavior | After Migration | Action Required |
-|--------------|-----------------|-----------------|-----------------|
-| **New Users** | `squad init` installs 15 workflows | init installs 9 core workflows | None (automatic) |
-| **Existing Teams** | 15 workflows in .github/workflows/ | Workflows persist; deprecated ones marked | Squad upgrade notices |
-| **Triage Users** | squad-triage.yml runs on issues | CLI: manual `squad triage` or Ralph monitor | Opt-in to CLI command |
-| **Heartbeat Users** | squad-heartbeat.yml runs on schedule | Ralph monitor (when enabled) | Enable Ralph |
-| **Non-Users** | Only CI/Release workflows matter | No change | No change |
-
-### Compatibility Guarantee
-
-**We WILL NOT break existing setups:**
-- Old workflows continue to work (backward compatible)
-- New repos use streamlined workflow set (forward compatible)
-- Deprecation warnings give 1+ release cycles notice
-- Migration tools (squad upgrade) handle transition
-
-
----
-
-## Recommendations
-
-### For Brady (Project Owner)
-
-1. **Approve migration path** (5 workflows → CLI)
-   - Reduces Actions complexity without losing functionality
-   - Maintains load-bearing infrastructure (CI/Release/Main-Guard)
-   - Timeline: v0.9 (planning) → v1.0 (implementation) → v1.1 (cleanup)
-
-2. **Keep 9 critical workflows as Actions**
-   - They provide guardrails that cannot be replicated CLI-side
-   - Event-driven execution is non-negotiable for CI/Release
-   - Cost is negligible (well under 3000-min free tier)
-
-3. **Implement lazy automation** in squad init
-   - Add `automation` config flag to .squad/config.json
-   - Default: CI + Release enabled, Squad-specific disabled
-   - Reduce onboarding cognitive load
-
-### For Integration Teams
-
-1. **CLI commands to implement** (v1.0.0):
-   - `squad triage` — Run routing logic on open issues
-   - `squad assign` — Assign issues to team members
-   - `squad sync-labels` — Sync labels from team.md
-   - `squad validate-labels` — Enforce label mutual exclusivity
-
-2. **Ralph integration** (v1.0.0):
-   - Ralph monitor loop runs smart triage
-   - Replaces squad-heartbeat.yml event triggers
-   - Still manual-invokable via CLI
-
-3. **Deprecation strategy** (v0.9.0):
-   - Document in CLI README: "squad-triage.yml will move to CLI in v1.0"
-   - Add warnings to deprecated workflows in init output
-   - Provide `squad migrate-automation` helper command
-
-### For Release Management
-
-1. **Workflows that MUST stay on main**:
-   - squad-ci.yml (branch protection)
-   - squad-main-guard.yml (forbidden file guard)
-   - squad-release.yml (tag creation)
-   - squad-publish.yml (npm distribution)
-
-2. **Version gates to enforce**:
-   - CHANGELOG.md entry must exist before tag
-   - .squad/ files must be stripped from preview branch
-   - No tag created without version validation
-
-3. **Disaster recovery**:
-   - If squad-release.yml tags wrong version, use `git tag -d` + `git push origin --delete` to recover
-   - If squad-promote.yml merges wrong commits, use `git revert` to undo merge commit
-
-
----
-
-## Conclusion
-
-**The case for migration:**
-- ✅ 5 squad-specific workflows (12 minutes/month) can move to CLI
-- ✅ Reduces Actions surface area without losing functionality
-- ✅ Improves team autonomy (CLI tools under their control)
-- ✅ Maintains backward compatibility (gradual, opt-in transition)
-
-**The case for keeping 9 workflows:**
-- ✅ CI/Release/Main-Guard workflows are event-driven guardrails
-- ✅ Cannot be replicated CLI-side (GitHub API integration needed)
-- ✅ Block merges at branch protection layer (non-negotiable)
-- ✅ Cost is negligible (not a constraint)
-
-**Bottom line:** Migrate squad-specific automation to CLI for maintainability; keep critical CI/Release workflows as Actions for correctness.
-
-
----
-
-## References
-
-- `.squad/agents/kobayashi/history.md` — Release coordination history
-- `.squad/decisions.md` — Team decisions on workflows, versioning
-- `.squad/team.md` — Team roster and capabilities
-- `.squad/routing.md` — Work routing rules
-- `packages/squad-cli/src/cli/core/workflows.ts` — Workflow generation logic
-- `packages/squad-cli/src/cli/core/init.ts` — Init command implementation
-- `.github/workflows/*.yml` — All 15 active workflows
-
-
-# Customer Impact Analysis: GitHub Actions Automation vs. CLI-First Shift
-
-**Analysis by:** McManus (DevRel)  
-**Date:** 2026-03-11  
-**Context:** Brady raised concern that Squad's automatic GitHub Actions installation during `squad init` creates surprise friction for customers. This analysis evaluates whether moving to CLI-first (with opt-in Actions) is the right call.
-
-
----
-
-## 1. The Surprise Factor — User Perspective
-
-### Current State (Status Quo)
-A developer runs `squad init` in their repo. The CLI installs 5 Squad-specific workflows:
-1. **sync-squad-labels.yml** — triggers on every `.squad/team.md` push
-2. **squad-triage.yml** — fires on every issue label event (looking for `squad` label)
-3. **squad-issue-assign.yml** — fires on every `squad:*` label
-4. **squad-label-enforce.yml** — enforces mutual exclusivity on EVERY label event
-5. **squad-heartbeat.yml** — Ralph's triage engine (cron disabled, but fires on issue/PR close events)
-
-**The "Oh No" Moment:**
-- User runs `squad init` ✅ 
-- User looks at their Actions tab for the first time after a day of active labeling
-- They see **10–20 workflow runs** in the Actions history from Squad operations they didn't explicitly ask for
-- **Mental model breaks:** "I didn't start these. Why is my Actions tab full? Is Squad spamming my quota? Am I going to get billed?"
-- User experiences **trust deficit** — they feel out of control
-
-### Why This Matters for DevRel
-The Actions tab is **highly visible** and **highly suspicious** to new users. GitHub makes it front-and-center in the repo UI. The first impression is: *automated magic I didn't authorize*. This hits **perception of transparency** (a core value for dev tools).
-
-
----
-
-## 2. Billing Reality — Is the Concern Valid?
-
-### GitHub Actions Quota
-- **Free repos:** 2,000 minutes/month (unlimited public actions on public runners)
-- **Pro repos (private):** 3,000 minutes/month
-- **Each workflow run on ubuntu-latest:** ~30–60 seconds (measured from recent Squad runs)
-
-### Realistic Monthly Impact
-**Scenario: Active open-source repo with moderate team**
-- 20 issues/month created
-- 5 issues closed/month  
-- Average 3 label changes per issue (triage → assignment → go:yes)
-- 10 PRs/month with label changes
-
-**Monthly workflow run count:**
-- `sync-squad-labels`: 4 runs (team.md updated ~1/week) = 4 × 0.5min = 2 min
-- `squad-triage`: 20 runs (label squad) + 50 runs (squad:* labels + enforce) = 70 runs × 0.5min = 35 min
-- `squad-label-enforce`: ~80 runs (cascading from all labeling) × 0.5min = 40 min
-- `squad-heartbeat`: ~15 runs (issue close/PR close events) × 1min = 15 min
-- **Total:** ~92 minutes/month
-
-**Verdict:** Not a quota issue for most users. Even teams with 50+ issues/month would consume <200 min.
-
-**BUT: The perception problem is REAL.** Users see unfamiliar automation and assume it will be expensive or has hidden costs. **Trust > math.**
-
-
----
-
-## 3. CLI-First Message — The Narrative
-
-### The Case for "CLI-First"
-**Message:** "Squad puts *you* in control. No surprise automations. You decide when and how Squad runs."
-
-This reframes the value prop:
-- ✅ Transparency — you see every command you run
-- ✅ Control — you decide your team's workflow, not Squad
-- ✅ Lean — zero background noise by default
-- ✅ Opt-in — power users can add automation later
-
-### Getting-Started UX Change
-
-**Current (Actions-First):**
-```
-$ squad init
-→ Installs .squad/ structure
-→ Installs 5 GitHub Actions workflows
-→ User discovers workflows running in Actions tab (surprise!)
-→ User questions: "Why? Should I turn these off?"
-```
-
-**New (CLI-First):**
-```
-$ squad init
-→ Installs .squad/ structure (NO workflows)
-→ Shows: "Squad is ready. Use 'squad triage' to label issues manually."
-→ User runs: $ squad triage
-→ Squad triages open issues via CLI
-→ User happy: "I have full control."
-
-$ squad init --with-actions (for power users)
-→ Installs automation workflows
-→ User knows exactly what they're opting into
-```
-
-### Messaging for Existing Users
-**Blog post: "Introducing CLI-First Squad"**
-
-1. **Why we're changing:**
-   - Developer feedback showed Actions felt opaque
-   - Teams want explicit control over their automation
-   - Zero-config is better than "config by side effects"
-
-2. **What happens to existing installs:**
-   - Existing workflows keep working (backward compatible)
-   - `squad upgrade` downloads latest, no forced removal
-   - Users can manually delete workflows if they want
-
-3. **Upgrade path:**
-   - **Do nothing:** Current workflows stay. You're not on the new path yet.
-   - **Adopt CLI-first:** Run `squad init --clean-actions` to remove workflows, use CLI commands
-   - **Stay hybrid:** Keep workflows and use CLI as you prefer
-
-
----
-
-## 4. Competitive Positioning — Squad vs. Cursor, Aider, etc.
-
-### Competitive Landscape
-- **Cursor:** Client-side LSP + LLM. Zero GitHub integration. Zero Actions.
-- **Aider:** CLI agent. Optional integrations (GitHub API). No Actions installed.
-- **GitHub Copilot in Cursor/VS Code:** Runs locally. No repo automation.
-- **GitHubCopilot in GitHub.dev:** Browser-based. No background workflows.
-
-### Squad's Differentiation
-- **Unique:** Multi-agent orchestration + GitHub native (Actions + SDK)
-- **Risk:** If perceived as "Squad spams my repo with automation," it becomes a *negative* differentiator
-- **Opportunity:** If we own "transparent, user-controlled automation," it's a *positive* one
-
-**"Zero Actions required" is a DIFFERENTIATOR.** It signals maturity and respect for the user's repository.
-
-
----
-
-## 5. Opt-In Model — Proposed UX
-
-### Design: Tiered Automation
-**Tier 1: Manual CLI (Default)**
-```bash
-squad init                           # No workflows installed
-squad triage                         # User explicitly runs triage
-squad rc                             # Connect remote squad mode
-```
-
-**Tier 2: Semi-Automated (Opt-In)**
-```bash
-squad init --with-automation         # Installs key workflows only
-  - sync-squad-labels (on team.md push)
-  - squad-triage (on label event)
-  - squad-heartbeat (Ralph's triage, manual + event-driven)
-```
-
-**Tier 3: Full Automation (Enterprise)**
-```bash
-squad init --with-full-automation    # All 5+ workflows, cron enabled
-  - Everything in Tier 2
-  - squad-label-enforce (auto-fix labels)
-  - squad-issue-assign (auto-route assignments)
-  - Heartbeat cron enabled (every 30min)
-```
-
-### Commands
-```bash
-# Post-init opt-in
-squad actions install              # Install tier 2 (semi-auto)
-squad actions install --full       # Install tier 3 (full auto)
-squad actions uninstall            # Remove all workflows
-squad actions status               # Show which workflows are active + usage stats
-
-# Power user config
-squad init --with-actions=heartbeat,triage  # Cherry-pick workflows
-```
-
-### Documentation Strategy
-- **docs/getting-started.md**: Emphasize CLI-first (Tier 1) as the default happy path
-- **docs/automation.md**: Deep dive into workflows, when to use them, quota implications
-- **docs/team-workflows/multi-team-setup.md**: When enterprises add Tier 3
-- **Migration guide:** For Beta users currently on actions-first
-
-
----
-
-## 6. Documentation Impact
-
-### Files/Content That Need Changes
-
-#### 1. **README.md** (High Priority)
-- Current: Mentions Squad installs and runs automatically
-- New: Lead with CLI-first story
-- Add: "Squad gives you full control. No background automation by default."
-
-#### 2. **docs/getting-started.md** (New)
-- Step 1: `squad init` + quick wins with CLI
-- Step 2 (optional): Explore automation with `squad actions install`
-- Tone: CLI is the main story, Actions are an *add-on*
-
-#### 3. **docs/automation/github-actions.md** (New Deep Dive)
-- When to use Actions (large teams, 24/7 coverage)
-- Quota calculator (estimate your monthly cost)
-- Troubleshooting: "Why are my Actions running so much?"
-- Performance: "Reducing noise with workflow filters"
-
-#### 4. **docs/cli-reference.md** (Update)
-- Add new commands: `squad triage`, `squad actions *`
-- Update `squad init` docs with `--with-actions` and `--with-full-automation` flags
-
-#### 5. **CHANGELOG.md** (Next Release Notes)
-- Breaking change: `squad init` no longer installs workflows
-- Migration: Add section "Upgrading from Actions-First to CLI-First"
-
-#### 6. **Migration Guide: `docs/MIGRATION-ACTIONS-TO-CLI.md`**
-- For Beta users: How to transition safely
-- Step-by-step removal of workflows
-- CLI equivalent commands for each workflow
-
-#### 7. **docs/blog/**: Announcement Post
-- Title: "Squad is Now CLI-First — Workflows Are Optional"
-- Sections:
-  - Why we changed
-  - How to upgrade
-  - Performance implications
-  - Getting the best of both worlds
-
-
----
-
-## Recommendations
-
-### 1. **Adopt CLI-First as Default** ✅
-- Install NO workflows by default during `squad init`
-- Users get clarity and control from the start
-- This aligns with DevRel principle: **transparency > magic**
-
-### 2. **Tier 2 Automation for Normal Teams** ✅
-- `squad init --with-automation` is the "easy mode"
-- Installs only the workflows that provide the most value
-- Reduces noise while maintaining productivity
-
-### 3. **Messaging Priority**
-1. Write "CLI-First Intro" blog post (explain why, not just what)
-2. Migrate docs to CLI-first narrative (README first, docs/ second)
-3. Create migration guide for existing users
-4. Announce in community channels (GitHub Discussions, Discord) with empathy for existing setups
-
-### 4. **Backwards Compatibility** ✅
-- Existing installs with actions-first continue to work
-- `squad upgrade` doesn't force removal
-- Users have choice in their upgrade path
-
-### 5. **Address the "But Teams Need Automation" Objection**
-- This is valid for enterprise/large teams
-- Answer: Tier 2 and 3 options serve those needs
-- CLI-first doesn't punish power users; it empowers choice users
-
-
----
-
-## Impact Summary
-
-| Dimension | Current (Actions-First) | Proposed (CLI-First) |
-|-----------|--------------------------|---------------------|
-| **User Control** | Hidden automation (medium trust) | Explicit commands (high trust) |
-| **Surprise Factor** | High ("Why are all these running?") | None (user decides) |
-| **Quota Cost** | Low in practice (~100min/mo) | None by default |
-| **Team Adoption** | Fast for laggard teams | Fast for thoughtful teams |
-| **Perception** | "Squad does things to my repo" | "Squad does what I ask" |
-| **DevRel Story** | Complex (explain why automate) | Simple (you're in control) |
-| **Competitive Diff.** | Neutral | **Positive** (transparent automation) |
-
-
----
-
-## Next Steps
-
-1. **Align with Brady** on CLI-first decision
-2. **Update docs** (start with README)
-3. **Create migration playbook** for Beta users
-4. **Design UX** for `squad init --with-actions` flag
-5. **Blog post** announcing the shift (empathy + clarity)
-6. **Community communication** (FAQs, Discussions, Discord)
-
-
----
-
-**Tone Note:** This recommendation respects user autonomy. We're not saying "automation is bad." We're saying "you should decide your team's automation level, not us." That's the DevRel story. That builds trust.
-
-
-
-
-
-
-
----
-
-# Decision: Actions → CLI RFC Published
-
-**Date:** 2026-03-07
-**Author:** Keaton (Lead)
-**Status:** Open for feedback
-
-## Decision
-
-Filed [#252](https://github.com/bradygaster/squad/issues/252) as the public RFC for migrating Squad's 5 squad-specific GitHub Actions workflows to CLI commands. This is the community-facing version of the internal strategy decided earlier today.
-
-## Key Points
-
-- **Tiered model is the default path.** `squad init` installs zero workflows (Tier 1). Automation is opt-in via `--with-automation` (Tier 2) or `--with-full-automation` (Tier 3).
-- **9 CI/release workflows stay as Actions.** Only the 5 squad-specific workflows migrate.
-- **v0.8.22 ships the CLI commands + deprecation.** v0.8.23 ships cleanup tools. v0.9.0 removes deprecated workflows.
-- **Community feedback requested** on 7 specific questions before implementation begins.
-
-## Impact on Team
-
-- All squad members should review #252 and be prepared to address community feedback.
-- Implementation work is blocked until the RFC feedback period closes (Brady's call on timing).
-- Fenster and Kobayashi own the CLI implementation once greenlit.
-
-
-
-
----
-
-### 2026-03-07T16:43Z: Remove main guard workflow
-**By:** Brady (via Copilot)
-**What:** Delete `.github/workflows/squad-main-guard.yml` entirely in v0.8.22. Squad state in repos is fine — no longer need to block `.squad/` from protected branches.
-**Why:** User directive — "i want that guard GONE in the next release. completely and totally gone." The original policy of keeping `.squad/` off main/preview is obsolete. Squad files in repos are now welcome and expected.
-
-
-### 2026-03-07T17:01:00Z: User directive — Community engagement and follow-through
-**By:** Brady (via Copilot)
-**What:** Discussion replies must always be supportive and helpful. Never say "we can't help" without doing the research first. When a discussion represents a real user need, file an issue so it makes its way into the product. Point users to specific features/docs when their request is already addressed.
-**Why:** User request — community engagement tone and follow-through policy.
-
-### 2026-03-07T17:00:00Z: User directive — Skill orchestration priority
-**By:** Brady (via Copilot)
-**What:** Skill-based orchestration (Discussion #169) is a "HUGEly sexy idea" — elevate this to a high-priority feature direction. Convert to issue and treat as strategic.
-**Why:** User request — captured for team memory. This aligns with SDK-First roadmap and addresses the growing complexity of squad.agent.md.
-
-
-
----
-
-# Decision: `squad init` Default is Markdown-Only, `--sdk` for Typed Config
-
-**Date:** 2026-03-07  
-**Decided by:** Fenster (implementing Issue #249 per Brady's request)  
-**Status:** Implemented in v0.8.21-preview.10
-
-## Context
-
-Squad init previously hardcoded `configFormat: 'typescript'` and always generated a `squad.config.ts` file using the OLD `SquadConfig` type format. Brady wanted:
-1. **Default behavior**: Markdown-only (old, boring, no config file)
-2. **Opt-in SDK**: New builder syntax with `defineSquad()` / `defineTeam()` / `defineAgent()`
-
-## Decision
-
-`squad init` now supports a `--sdk` flag:
-
-- **`squad init`** (no flag): `configFormat: 'markdown'` → NO config file generated, only `.squad/` directory structure
-- **`squad init --sdk`**: `configFormat: 'sdk'` → generates `squad.config.ts` with SDK builder syntax
-
-The OLD formats (`'typescript'`, `'json'`) remain available for backward compatibility but are not exposed via CLI flags.
-
-## Rationale
-
-1. **Markdown-first philosophy**: Default experience is "old boring markdown" — no types, no builders, just plain text team files
-2. **Progressive enhancement**: Opt-in SDK gives teams typed configuration when they want it
-3. **Clear migration path**: Teams can start with markdown, then add SDK config later when they're ready for typed configuration
-4. **Backward compatible**: Existing code using `configFormat: 'typescript'` or `'json'` still works
-
-## Implementation
-
-- **CLI flag parsing**: `cli-entry.ts` line ~199: `const sdk = args.includes('--sdk');`
-- **Options passthrough**: `init.ts` line ~114: `configFormat: options.sdk ? 'sdk' : 'markdown'`
-- **Generator function**: `packages/squad-sdk/src/config/init.ts` line ~337: `generateSDKBuilderConfig()`
-- **Config file skip**: When `configFormat === 'markdown'`, config file generation is skipped entirely
-
-## Files Modified
-
-- `packages/squad-cli/src/cli-entry.ts` — flag parsing + help text
-- `packages/squad-cli/src/cli/core/init.ts` — option passthrough
-- `packages/squad-sdk/src/config/init.ts` — new format support + generator
-
-## Examples
-
-### Markdown-only (default)
-```bash
-squad init
-# Creates: .squad/, .github/agents/, workflows
-# Does NOT create: squad.config.ts
-```
-
-### SDK builder format
-```bash
-squad init --sdk
-# Creates: .squad/, squad.config.ts (with defineSquad() syntax)
-```
-
-### Generated SDK config
 ```typescript
-import { defineSquad, defineTeam, defineAgent } from '@bradygaster/squad-sdk';
+if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
+  let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
+  agentContent = stampVersionInContent(agentContent, version);
+  await storage.write(agentFile, agentContent);
+  createdFiles.push(toRelativePath(agentFile));
+} else {
+  // Template missing — track as a warning for the caller to handle
+  warnings.push(`squad.agent.md template not found — Copilot agent file was not created`);
+}
+```
 
-const scribe = defineAgent({
-  name: 'scribe',
-  role: 'scribe',
-  description: 'Scribe',
-  status: 'active',
-});
+If adding a `warnings` return field is too much scope, `console.warn()` is an acceptable fallback — just document why it's there with a comment like `// SDK has no logger; console.warn is intentional here`.
 
-export default defineSquad({
-  version: '1.0.0',
-  team: defineTeam({
-    name: 'project-name',
-    members: ['scribe'],
-  }),
-  agents: [scribe],
+**Flight's nesting warning is CORRECT:** The `else` at L1039 belongs to the outer `if` (skipExisting gate). The new `else` must attach to the inner `if` at L1033. Getting this wrong would corrupt the skippedFiles tracking.
+
+### doctor.ts — AGREE, no changes needed ✅
+
+### Test Plan: ADEQUATE ✅
+
+The two proposed test cases (missing-template in upgrade and init) cover the gap. No additional tests needed.
+
+---
+
+## Bug #734 — squad nap fails via bang command (!) in Windows PowerShell
+
+### Verdict: ✅ APPROVE — Flight's investigation-first approach is correct
+
+### Root Cause Hypothesis: VERIFIED ✅
+
+I traced the full invocation chain:
+
+1. **Nap command is non-interactive:** CONFIRMED. `nap.ts` imports only `path` and `FSStorageProvider`. Zero stdin, readline, TTY, or git operations. Purely filesystem-based (compress, prune, archive, merge). This rules out subprocess stdin/TTY as a root cause.
+
+2. **CLI entry point nap handler (cli-entry.ts L561-574):** Pure async — imports `runNap()`, calls it, prints report. No subprocess spawning or interactive behavior.
+
+3. **Bang command handler:** CONFIRMED — squad does NOT implement bang commands. The `!` prefix is handled by Copilot CLI's shell. Squad's router.ts handles `/command`, `@Agent`, and comma syntax only. Copilot CLI spawns `squad` as a child process.
+
+4. **npm bin shims:** `package.json` declares `"bin": { "squad": "dist/cli-entry.js" }`. npm creates `squad.cmd` and `squad.ps1` shims in `%APPDATA%\npm\` on global install. No `.ps1` files exist in the source repo.
+
+5. **PowerShell .ps1 preference:** When Copilot CLI's bang handler runs `squad nap`, PowerShell resolves `squad.ps1` before `squad.cmd`. The unsigned `.ps1` gets blocked by execution policy → `PSSecurityException`.
+
+### Flight's #758 Connection: CONFIRMED ✅
+
+This IS the same root cause as #758. The chain is:
+
+```
+!squad nap → Copilot CLI spawns child process → PowerShell resolves squad.ps1
+→ unsigned .ps1 blocked by execution policy → PSSecurityException
+```
+
+Flight's #758 proposal (doctor check for .ps1 shim + README workaround + helper removal script) would resolve #734 as a side effect.
+
+### One Nuance Flight Got Slightly Wrong
+
+Flight says: "child process starts a new PS scope with default policy" — this isn't quite right. PowerShell execution policy is typically machine/user-scoped, not session-scoped. A child PowerShell process inherits the same policy as the parent. The issue isn't a policy *reset* in the child; it's that the .ps1 shim is always unsigned regardless of scope. Even the parent session would block it unless the user ran `Set-ExecutionPolicy RemoteSigned` (which they may have done for their direct session but wouldn't help if Copilot CLI spawns via `cmd.exe /c` or uses a different shell).
+
+However, this nuance doesn't change the fix approach — the .ps1 shim is the problem either way.
+
+### Recommendation
+
+1. **Fix #758 first** (doctor check + docs + helper script per Flight's proposal)
+2. **Verify #734 resolves** by testing `!squad nap` after removing `.ps1` shim
+3. **If #734 persists after #758 fix:** Investigate Copilot CLI's bang handler subprocess environment (but I predict it won't persist)
+4. **Close #734 as duplicate of #758** if resolved, with a comment linking the verification
+
+### Flight's Investigation Plan: THOROUGH ✅
+
+The differential diagnosis steps (test `!squad.cmd nap`, `!cmd /c squad nap`, compare execution policies) are exactly right. The test plan with `execFileSync` subprocess test is good.
+
+---
+
+## Summary
+
+| Proposal | Verdict | Notes |
+|----------|---------|-------|
+| **#730 — squad.agent.md silent skip** | ✅ APPROVE | One refinement: prefer return-value tracking over `console.warn()` in SDK init.ts. upgrade.ts fix is correct as-is. |
+| **#734 — nap fails via bang command** | ✅ APPROVE | Investigation-first approach is correct. #758 is almost certainly the shared root cause. Fix #758 first, then verify #734 resolves. |
+
+**Execution order:** #758 → verify #734 → #730 (independent, can parallelize with #758)
+
+— EECOM 🔧
+
+### 2026-04-02: FIDO Quality Review — Draft PRs #760 & #762
+
+# FIDO Quality Review — Draft PRs #760 & #762
+
+> Flight Dynamics Officer — Quality Gate Authority
+> Review Date: 2026-04-02T14:47:00Z
+
+---
+
+## PR #760: Windows PowerShell Execution Policy Fix (Issue #758)
+
+**Author:** Network  
+**Branch:** `squad/758-fix-ps-execution-policy`  
+**Scope:** Doctor command enhancement + scripting helper
+
+### Test Results
+
+✅ **All doctor tests PASS (27/27)**  
+- `test/cli/doctor.test.ts`: 641ms runtime, 100% pass rate
+- New PS shim detection tests: 4/4 passing (non-Windows guard, file detection, APPDATA fallback, missing file)
+- Integration into `runDoctor()`: check #14 verified
+
+### Quality Assessment
+
+#### ✅ Strengths
+
+1. **Platform Guard:** Windows-only detection using `process.platform !== 'win32'` — properly isolated
+2. **Path Resolution:** Dual fallback system:
+   - Primary: `npm_config_prefix` environment variable
+   - Fallback: `path.join(process.env['APPDATA'] ?? '', 'npm')` for Windows defaults
+3. **Test Coverage:** 4 new test cases covering:
+   - Non-Windows skips (returns `undefined`)
+   - File exists scenario (returns `warn` status)
+   - File missing scenario (returns `undefined`)
+   - APPDATA fallback when npm_config_prefix absent
+4. **User Documentation:** README updated with actionable PowerShell commands
+5. **Removal Tooling:** Standalone `remove-ps1-shim.mjs` script for users
+6. **Clean diff:** No .squad/ team state pollution — templates only
+7. **Message Quality:** Warning includes exact file path and removal command inline
+
+#### ⚠️ Edge Cases Identified
+
+| Gap | Risk | Status |
+|-----|------|--------|
+| Empty APPDATA fallback | Low | Code handles with `?? ''` but not explicitly tested |
+| Non-existent npm_config_prefix path | Very Low | Fallback to APPDATA mitigates |
+| Permissions error when removing .ps1 | Low | Out of scope; only detection responsibility |
+
+**Verdict:** These gaps are minor and do NOT affect the correctness of the detection logic. Platform guard + dual fallback is solid.
+
+#### 📋 Verification Checklist
+
+- ✅ Windows-only platform guard (non-Windows returns `undefined`)
+- ✅ Path resolution with primary + fallback
+- ✅ File existence detection using `fileExists()`
+- ✅ Warning status with actionable message
+- ✅ Tests for non-Windows, file exists, file absent, APPDATA fallback
+- ✅ README documentation with commands
+- ✅ No .squad/ state files in diff
+- ✅ CI passing (27 tests)
+
+---
+
+## Verdict: ✅ APPROVE
+
+**Condition:** None — ready for merge.
+
+**Rationale:**
+- Test coverage is comprehensive and all tests pass
+- Platform guard and fallback logic are sound
+- User-facing documentation is clear and actionable
+- No regressions detected
+- .squad/ directory is clean
+
+**Assigned to:** Network (original author) for merge
+
+---
+
+---
+
+## PR #762: Silent squad.agent.md Skip — Warnings Array (Issue #730)
+
+**Author:** EECOM  
+**Branch:** `squad/730-fix-silent-agent-md-skip`  
+**Scope:** SDK init/upgrade path + warning tracking
+
+### Test Results
+
+✅ **All init + upgrade tests PASS (37/37)**  
+- `test/init-scaffolding.test.ts`: Happy-path regression + missing template scenario
+- `test/cli/upgrade.test.ts`: 20/20 passing, including new refresh regression (v0.9.1 ↔ v0.9.1)
+- Duration: 45.95s (comprehensive integration tests)
+
+### Quality Assessment
+
+#### ✅ Strengths
+
+1. **Root Cause Fixed:** Silent skip → visible warnings via `warnings[]` in `InitResult`
+2. **SDK Design Pattern:** Returns warnings as structured data (not console output)
+   - Library composability preserved
+   - SDK has NO `console.warn()` calls
+   - CLI layer handles user output via `warn()` function
+3. **Happy-Path Regression:** New test validates existing functionality:
+   - `squad.agent.md` still created when template exists
+   - No spurious warnings in normal flow
+   - File exists on disk + contains correct version stamp
+4. **Missing Template Coverage:** Explicit test for degraded path:
+   - Missing template triggers warning capture
+   - Other files still created (graceful degradation)
+   - Warning message is descriptive
+5. **Upgrade Refresh Regression:** New test at lines 118-137 verifies:
+   - `v0.9.1 → v0.9.1` refresh path works
+   - `squad.agent.md` still updated when already current
+   - Version stamp preserved after refresh
+6. **No console.warn:** Uses structured `warn()` function → stdout + ANSI formatting
+7. **Clean diff:** No .squad/ team state files — only user-facing code + tests
+8. **Changeset:** Proper changelog entry for patch release
+
+#### ✅ Test Coverage Deep-Dive
+
+| Test | File | Lines | Status |
+|------|------|-------|--------|
+| Happy-path (template exists) | `init-scaffolding.test.ts` | 325-338 | ✅ PASS |
+| Missing template warning | `init-scaffolding.test.ts` | 340-379 | ✅ PASS |
+| Upgrade happy-path | `upgrade.test.ts` | 34-61 | ✅ PASS |
+| Refresh at current version | `upgrade.test.ts` | 118-137 | ✅ PASS |
+| All upgrade scenarios (16 more) | `upgrade.test.ts` | 34-500+ | ✅ PASS (20/20) |
+
+#### ⚠️ Edge Cases Identified
+
+| Gap | Risk | Mitigation |
+|-----|------|-----------|
+| Multiple missing templates | Very Low | Only tracked 1 warning; unlikely scenario (all templates are bundled) |
+| console.warn in other paths | Low | SDK does NOT call console.warn anywhere; CLI uses `warn()` |
+| Warnings array on success | Very Low | Explicitly tested to be empty `[]` in happy-path |
+
+**Verdict:** All identified gaps are extremely low-risk or explicitly tested.
+
+#### 📋 Verification Checklist
+
+- ✅ Warnings array added to `InitResult` interface
+- ✅ Happy-path regression test (template exists → no warnings)
+- ✅ Missing template test (warning captured, other files created)
+- ✅ Upgrade refresh test (v0.9.1 → v0.9.1 still refreshes agent.md)
+- ✅ No console.warn in SDK (uses warnings[] for return)
+- ✅ CLI layer uses `warn()` function (stdout + formatting)
+- ✅ All 37 tests passing
+- ✅ No .squad/ state files in diff
+- ✅ Changeset entry present
+
+---
+
+## Verdict: ✅ APPROVE
+
+**Condition:** None — ready for merge.
+
+**Rationale:**
+- Test suite is comprehensive (37 tests, all passing)
+- Happy-path regression explicitly validated
+- Degraded path (missing template) properly handled with warnings
+- SDK pattern is sound (returns data, not console output)
+- No regressions detected
+- .squad/ directory is clean
+- Issue #730 is completely addressed
+
+**Assigned to:** EECOM (original author) for merge
+
+---
+
+---
+
+## Summary: Both PRs Ready ✅
+
+| PR | Issue | Status | Tests | Risk |
+|----|-------|--------|-------|------|
+| #760 | #758 | ✅ APPROVE | 27/27 ✅ | Low |
+| #762 | #730 | ✅ APPROVE | 37/37 ✅ | Very Low |
+
+**Next Steps:**
+1. Merge #760 (Network fix)
+2. Merge #762 (EECOM fix)
+3. Both contribute to ecosystem stability without quality regressions
+
+### 2026-04-02: FIDO Quality Review: Flight's Bug Proposals
+
+# FIDO Quality Review: Flight's Bug Proposals
+
+> **Reviewer:** FIDO 🧪 (Quality Owner) | **Date:** 2026-04-02 | **Status:** Quality Assessment Complete
+
+---
+
+## Bug #758 — Windows PowerShell .ps1 Execution Policy Block
+
+### ✅ **VERDICT: APPROVE**
+
+**Test Plan Assessment:** The test plan is **solid and sufficient**.
+
+#### Strengths
+- ✅ Clear unit test cases for `checkWindowsPs1Shim()`: platform check, file existence, return values
+- ✅ Explicit manual verification steps (install globally, run `squad doctor`, delete `.ps1`, verify `.cmd` fallback)
+- ✅ Focused scope — doctor check is additive, low-code-change risk
+- ✅ Root cause is well-understood (platform-specific, not behavioral)
+
+#### Test Coverage — Complete
+1. **Unit tests** (non-Windows, exists, missing) cover all branches of the check function
+2. **Manual verification** explicitly tests the user's actual flow (global install + diagnosis + workaround)
+3. **No edge cases missed** — the logic is simple: check platform, check file, return status
+
+#### One Minor Enhancement (Optional)
+- Consider adding a unit test for `npm_config_prefix` fallback logic — verify that when `npm_config_prefix` is not set, the code correctly falls back to `%APPDATA%\npm`. This isn't a gap, but it's good defensive testing.
+
+#### My Assessment
+Flight's proposal is well-grounded and the test plan covers the implementation. The README addition is appropriate, and the helper script is optional-but-useful. **Ready to proceed without additional tests.**
+
+---
+
+## Bug #734 — squad nap Fails via Bang Command in PowerShell
+
+### ❌ **VERDICT: NEEDS MORE TESTS**
+
+**Test Plan Assessment:** The proposal is **premature**. Investigation must complete before testing.
+
+#### Critical Issues
+1. **Status is "Investigation Required"** — Phase 1 (reproduction + differential diagnosis) is mandatory but not yet done
+2. **Test plan assumes Phase 1 results** — test cases are written for a Phase 2 that may not exist
+3. **Missing reproduction proof** — Flight hasn't confirmed the exact error message, environment delta, or whether this is truly a #758 duplicate
+
+#### What's Missing (MUST Complete Before Approving Tests)
+- [ ] **Exact error output** from `!squad nap` vs `squad nap` (full stderr/stdout)
+- [ ] **Differential diagnosis results:**
+  - Does `!squad.cmd nap` work? (proves #758 duplicate vs distinct issue)
+  - Does `!cmd /c squad nap` work? (subprocess environment theory)
+  - Does it fail in cmd.exe Copilot CLI too? (rules out PowerShell-specific policy)
+- [ ] **Root cause confirmation** — one of three branches must be confirmed:
+  - **Branch A:** Duplicate of #758 (close immediately, no fix needed)
+  - **Branch B:** Subprocess environment delta (needs `cli-entry.ts` normalization)
+  - **Branch C:** Copilot CLI bang expansion issue (file upstream, document workaround)
+
+#### Current Test Plan Issues
+- Test at line 78-88 assumes Phase 2 code exists, but Phase 1 hasn't proven a fix is needed
+- "Cross-shell test matrix" (line 91-94) is good, but premature — run it during investigation, not during approval
+
+#### My Recommendation
+**HOLD THIS PROPOSAL.** Do NOT approve test plans yet. Flight should:
+1. Complete Phase 1 investigation and post findings to issue #734
+2. If Phase 1 confirms a distinct issue, then resubmit Phase 2 test plan with investigation results as evidence
+3. If Phase 1 confirms it's a #758 duplicate, close #734 as duplicate
+
+**Conditional Approval (for IF Phase 1 confirms a distinct issue):**
+- If Phase 2 is needed, the proposed test cases are reasonable
+- Recommend adding a **baseline test** (without fix) that reproduces the bang failure, then add fix, then verify test passes
+
+---
+
+## Bug #730 — squad.agent.md Silently Disappears After Upgrade
+
+### ✅ **APPROVE** — With One Test Addition
+
+**Test Plan Assessment:** The proposal is **nearly complete**, but has a small gap in test coverage.
+
+#### Strengths
+- ✅ Root cause is meticulously documented with exact file paths and line numbers
+- ✅ Fix approach is surgical: two `else` clauses in the right places
+- ✅ Proposed test cases are specific and actionable
+- ✅ Risk assessment is accurate (LOW — additive changes, no behavior change for happy path)
+- ✅ Correct differentiation between upgrade.ts and SDK init.ts (different logging patterns)
+
+#### Existing Test Coverage — Already Present
+- doctor.ts tests already cover detection of empty/missing `squad.agent.md` ✅
+- Happy-path tests for upgrade should still pass ✅
+
+#### Gap: Missing One Test Case
+The proposal includes tests for the "sad paths" (missing template), but **lacks a regression test** for the happy path after the fix:
+
+- **Missing:** "When template exists AND we call upgrade (version-current path), squad.agent.md is correctly updated with new version stamp"
+  
+  This test should verify that adding the `else` clause doesn't accidentally break the happy path (when template exists). This is a common regression risk when adding conditional logic.
+
+#### Files Referenced — Verified
+- Line numbers match the actual source code ✅
+- Both upgrade.ts and init.ts paths are correctly identified ✅
+- The "don't confuse with line 1039" warning is helpful and accurate ✅
+
+#### Edge Cases — All Covered
+1. ✅ Missing template during upgrade (version-current) → warns
+2. ✅ Missing template during SDK init → warns
+3. ✅ Template exists → works as before (happy path)
+4. ✅ doctor.ts already detects the symptom → no changes needed
+5. ✅ Full-upgrade path (line 521) already handles missing template → no changes needed
+
+#### My Assessment
+Flight's proposal is solid. The fix is low-risk and well-tested. **Add one happy-path regression test to the test plan**, then it's ready.
+
+#### Recommended Test Addition
+```typescript
+it('refreshes squad.agent.md with new version stamp when template exists (happy path)', async () => {
+  // Setup: create squad project at older CLI version with squad.agent.md
+  // Ensure squad.agent.md.template exists in templates
+  // Run upgrade
+  // Assert: squad.agent.md updated with new CLI version in header comment
+  // Assert: no warning messages
 });
 ```
 
-## Team Impact
-
-- **Hockney**: No new tests required — init tests already cover file creation, SDK format is just content variation
-- **McManus**: Docs should clarify the two init modes (markdown vs SDK)
-- **Edie**: This is NOT the same as migrate.ts — this is for NEW squad creation, not converting existing squads
-- **Users**: Default experience unchanged — markdown-only is the default
-
-## Future Considerations
-
-- `squad build` command should work with SDK configs to generate markdown from TypeScript
-- Teams may want `squad migrate --to-sdk` to convert markdown → SDK config (that's Edie's migrate.ts, not this)
-
-
-
 ---
 
-# Decision: `squad migrate` Command Implementation
+## Summary Table
 
-**Date:** 2026-03-08  
-**Author:** Edie  
-**Issue:** #250  
-**Status:** ✅ Implemented
-
-## Context
-
-Users with existing markdown-only squads (`.squad/` directory with team.md, routing.md, agent charters) need a way to convert to SDK-First mode. Conversely, SDK-First users should be able to revert to markdown-only if desired.
-
-## Decision
-
-Implemented `squad migrate` command with three migration paths:
-
-### 1. `squad migrate --to sdk` (markdown → SDK-First)
-
-**Input:** `.squad/` directory with markdown files  
-**Output:** `squad.config.ts` with builder syntax
-
-**Parsing strategy:**
-- `team.md`: Extract team name from h1, description from blockquote, members from `## Members` table (only active members), project context from `## Project Context` section
-- `routing.md`: Parse `## Work Type → Agent` table, extract pattern/agent/description from pipe-delimited rows
-- `casting/policy.json`: Parse JSON for allowlist universes and capacity
-- Agent charters: Parse role from h1 (e.g., `# Edie — TypeScript Engineer`)
-
-**Code generation:**
-- Uses builder functions: `defineSquad()`, `defineTeam()`, `defineAgent()`, `defineRouting()`, `defineCasting()`
-- Proper string escaping (single quotes, newlines)
-- Multiline string handling with `+` concatenation
-- Type-safe: all generated code matches builder type signatures
-
-### 2. `squad migrate --to markdown` (SDK-First → markdown)
-
-**Input:** `squad.config.ts`  
-**Output:** Updated `.squad/` directory, config moved to `.bak`
-
-**Process:**
-1. Run `squad build` to regenerate `.squad/` from config
-2. Move `squad.config.ts` → `squad.config.ts.bak`
-3. `.squad/` directory becomes source of truth
-
-### 3. `squad migrate --from ai-team` (legacy upgrade)
-
-**Input:** `.ai-team/` directory  
-**Output:** `.squad/` directory
-
-**Process:**
-- Subsumes existing `upgrade --migrate-directory` flag
-- Delegates to `migrateDirectory()` function (already implemented)
-- Suggests running `squad migrate --to sdk` afterward
-
-### 4. Interactive mode (no flags)
-
-Detects current mode and suggests appropriate migration:
-- **SDK-First** → suggests `--to markdown` to revert
-- **Markdown-only** → suggests `--to sdk` to convert
-- **Legacy** → suggests `--from ai-team` to upgrade
-- **None** → suggests `squad init`
-
-### Dry-run support
-
-`--dry-run` flag prints full generated config without writing files. Complete preview for validation.
-
-## Type Safety
-
-All parsing produces typed objects:
-- `ParsedTeam` → `TeamDefinition`
-- `ParsedAgent` → `AgentDefinition`
-- `ParsedRoutingRule` → `RoutingRule`
-- `ParsedCasting` → `CastingDefinition`
-
-Zero `any` types. All strings properly escaped.
-
-## Round-trip Fidelity
-
-Running `squad migrate --to sdk && squad build` should produce identical `.squad/` output. The migrate command preserves all metadata during conversion.
-
-## Implementation
-
-- File: `packages/squad-cli/src/cli/commands/migrate.ts`
-- Wired into: `packages/squad-cli/src/cli-entry.ts` (after upgrade block, line ~240)
-- Help text: Added at line ~107
-
-## Alternatives Considered
-
-1. **One-way migration only** — rejected because users should have flexibility to switch modes
-2. **Manual conversion scripts** — rejected because it requires deep understanding of both formats
-3. **Zod schema for parsing** — rejected to avoid adding dependency and maintain parse speed
-
-## Future Considerations
-
-- Add `--verify` flag to test round-trip conversion without modifying files
-- Support partial migrations (e.g., just routing or just agents)
-- Add ceremony parsing when `.squad/ceremonies.md` format stabilizes
-
-## Testing
-
-- ✅ Build passes with zero TypeScript errors
-- ✅ Interactive mode correctly detects SDK-First mode
-- ✅ Dry-run generates valid TypeScript with all 20 agents and 20 routing rules
-- ✅ Help text displays correctly
-- ✅ Parser handles multiline project context correctly
-- ✅ String escaping works for single quotes and special characters
-
-## Related
-
-- Issue #249: `squad init` builder mode (Fenster)
-- Issue #194: SDK-First builder types (Edie, Fenster, Hockney)
-
-
+| Bug | Verdict | Action Required |
+|-----|---------|-----------------|
+| #758 | ✅ APPROVE | Ready to implement. Optional: add `npm_config_prefix` fallback unit test. |
+| #734 | ❌ NEEDS MORE TESTS | **HOLD.** Complete Phase 1 investigation first. Resubmit with investigation results. |
+| #730 | ✅ APPROVE (with minor addition) | Add happy-path regression test to test plan, then ready. |
 
 ---
-
-# Skill-Based Orchestration (#255)
-
-**Date:** 2026-03-07
-**Context:** Issue #255 — Decompose squad.agent.md into pluggable skills
-**Decision made by:** Verbal (Prompt Engineer)
-
-## Decision
-
-Squad coordinator capabilities are now **skill-based** — self-contained modules loaded on demand rather than always-inline in squad.agent.md.
-
-## What Changed
-
-### 1. SDK Builder Added
-
-Added `defineSkill()` builder function to the SDK (`packages/squad-sdk/src/builders/`):
-
-```typescript
-export interface SkillDefinition {
-  readonly name: string;
-  readonly description: string;
-  readonly domain: string;
-  readonly confidence?: 'low' | 'medium' | 'high';
-  readonly source?: 'manual' | 'observed' | 'earned' | 'extracted';
-  readonly content: string;
-  readonly tools?: readonly SkillTool[];
-}
-
-export function defineSkill(config: SkillDefinition): SkillDefinition { ... }
-```
-
-- **Why:** SDK-First mode needed a typed way to define skills in `squad.config.ts`
-- **Type naming:** Exported as `BuilderSkillDefinition` to distinguish from runtime `SkillDefinition` (skill-loader.ts)
-- **Validation:** Runtime type guards for all fields, follows existing builder pattern
-
-### 2. Four Skills Extracted
-
-Extracted from squad.agent.md:
-
-1. **init-mode** — Phase 1 (propose team) + Phase 2 (create team). ~100 lines. Full casting flow, `ask_user` tool, merge driver setup.
-2. **model-selection** — 4-layer hierarchy (User Override → Charter → Task-Aware → Default), role-to-model mappings, fallback chains. ~90 lines.
-3. **client-compatibility** — Platform detection (CLI vs VS Code vs fallback), spawn adaptations, SQL tool caveat. ~60 lines.
-4. **reviewer-protocol** — Rejection workflow, strict lockout semantics (original author cannot self-revise). ~30 lines.
-
-All skills marked:
-- `confidence: "high"` — extracted from authoritative governance file
-- `source: "extracted"` — marks decomposition from squad.agent.md
-
-### 3. squad.agent.md Compacted
-
-Replaced extracted sections with lazy-loading references:
-
-```markdown
-## Init Mode
-
-**Skill:** Read `.squad/skills/init-mode/SKILL.md` when entering Init Mode.
-
-**Core rules (always loaded):**
-- Phase 1: Propose team → use `ask_user` → STOP and wait
-- Phase 2 trigger: User confirms OR user gives task (implicit yes)
-- ...
-```
-
-**Result:** 840 lines → 711 lines (15% reduction, ~130 lines removed)
-
-### 4. Build Command Updated
-
-`squad build` now generates `.squad/skills/{name}/SKILL.md` when `config.skills` is defined in `squad.config.ts`:
-
-```typescript
-// In build.ts
-function generateSkillFile(skill: BuilderSkillDefinition): string {
-  // Generates frontmatter + content
-}
-
-// In buildFilePlan()
-if (config.skills && config.skills.length > 0) {
-  for (const skill of config.skills) {
-    files.push({
-      relPath: `.squad/skills/${skill.name}/SKILL.md`,
-      content: generateSkillFile(skill),
-    });
-  }
-}
-```
-
-## Why This Matters
-
-### For Coordinators
-- **Smaller context window:** squad.agent.md drops from 840 → 711 lines. Further decomposition can continue.
-- **On-demand loading:** Coordinator reads skill files only when relevant (e.g., init-mode only during Init Mode).
-- **Skill confidence lifecycle:** Framework supports low → medium → high confidence progression for future learned skills.
-
-### For SDK Users
-- **Typed skill definitions:** Define skills in `squad.config.ts` using `defineSkill()`, get validation and type safety.
-- **Programmatic skill authoring:** Skills can be composed, shared, and versioned like code.
-- **Build-time generation:** `squad build` generates SKILL.md from config — single source of truth.
-
-### For the Team
-- **Parallel with ceremony extraction:** Follows the same pattern as ceremony skill files (#193).
-- **Reduces merge conflicts:** Smaller squad.agent.md = fewer line-based conflicts when multiple PRs touch governance.
-- **Enables skill marketplace:** Future work can package skills as npm modules, share across teams.
-
-## Constraints
-
-1. **Existing behavior unchanged:** Skills are lazy-loaded. If coordinator previously got instructions inline, it now gets them from a skill file. Same instructions, different location.
-2. **squad.agent.md must still work:** Core rules remain inline. Coordinator knows WHEN to load each skill without needing the skill file first.
-3. **Type collision avoided:** BuilderSkillDefinition vs runtime SkillDefinition — import from `@bradygaster/squad-sdk/builders` subpath in CLI to avoid ambiguity.
-
-## Future Work
-
-- Extract 3+ more skills from squad.agent.md (target: <500 lines for core orchestration)
-- Add skill discovery/loading to runtime (currently manual references)
-- Skill marketplace: share skills via npm, discover in `squad marketplace`
-- Learned skills: agents can write skills from observations (already architected, not yet implemented)
-
-## References
-
-- Issue: #255
-- Files changed:
-  - `packages/squad-sdk/src/builders/types.ts`
-  - `packages/squad-sdk/src/builders/index.ts`
-  - `packages/squad-sdk/src/index.ts`
-  - `packages/squad-cli/src/cli/commands/build.ts`
-  - `.github/agents/squad.agent.md`
-  - `.squad/skills/init-mode/SKILL.md` (new)
-  - `.squad/skills/model-selection/SKILL.md` (new)
-  - `.squad/skills/client-compatibility/SKILL.md` (new)
-  - `.squad/skills/reviewer-protocol/SKILL.md` (new)
-
-
-
-### 2026-03-07T19-59-58Z: User directive
-**By:** bradygaster (via Copilot)
-**What:** Prefer GitHub Actions for npm publish over local npm publish. Set up a secret in the GitHub repo and facilitate npm deployment via a CI action instead of running it locally.
-**Why:** User request - captured for team memory
-
-
-# npm Publish Automation via GitHub Actions
-
-**Date:** 2026-03-16  
-**Author:** Kobayashi  
-**Status:** Implemented  
-
-## Context
-
-Brady requested automated npm publishing via GitHub Actions instead of manual local publishes. Manual publishing is error-prone (version mismatches, forgotten packages, incorrect tags) and lacks audit trail.
-
-## Decision
-
-Consolidated npm publishing into single GitHub Actions workflow (`publish.yml`) that triggers automatically on GitHub Release creation.
-
-## Implementation
-
-### Workflow Architecture
-
-**Event Chain:**
-1. Code merged to `main` (via squad-promote or direct merge)
-2. `squad-release.yml` creates tag + GitHub Release (if version bumped)
-3. `publish.yml` triggers on `release.published` event
-4. Publishes @bradygaster/squad-sdk → @bradygaster/squad-cli (correct order)
-
-**Manual Override:**
-- Supports `workflow_dispatch` for ad-hoc publishes
-- Requires version input (e.g., "0.8.21")
-
-### Safety Features
-
-1. **Version verification:** Workflow validates package.json version matches release tag
-2. **Publication verification:** Confirms packages visible on npm after publish
-3. **Provenance attestation:** npm packages include cryptographic proof of origin
-4. **Sequential publish:** SDK publishes first (CLI depends on it)
-
-### Changes Made
-
-- Updated `.github/workflows/publish.yml` with new trigger logic
-- Deprecated `.github/workflows/squad-publish.yml` (redundant)
-- Added version/publication verification steps
-
-## Requirements
-
-**NPM_TOKEN Secret:**
-Brady must create Automation token at https://www.npmjs.com/settings/{username}/tokens and add to GitHub repo secrets.
-
-## Implications
-
-- **Releases:** Automatic npm publish when GitHub Release created (zero manual steps)
-- **Audit:** All publishes logged in GitHub Actions (who, when, what version)
-- **Security:** Provenance attestation strengthens supply chain trust
-- **Error reduction:** Version mismatches caught before publish
-
-## Rollback Strategy
-
-- npm allows unpublish within 72 hours of publication
-- Manual `npm unpublish @bradygaster/squad-{pkg}@{version}` if issues detected
-
-## Related Files
-
-- `.github/workflows/publish.yml` — npm publish workflow
-- `.github/workflows/squad-release.yml` — GitHub Release creation
-- `.squad/agents/kobayashi/history.md` — Implementation details
-### Merged: fenster-kobayashi-vote.md
-
-# Fenster Vote: Kobayashi Status
-
-**Date:** 2026-03-XX  
-**Context:** Team vote on Kobayashi's continued role after v0.8.22 release failures
-
-## My Vote: REPLACE
-
-## Reasoning
-
-### The Pattern Is Clear
-
-Three major failures, all following the same pattern:
-1. **Version confusion** — Documented what was requested, not what actually happened
-2. **PR #582 close-instead-of-merge** — Took the easy exit instead of investigating solutions
-3. **v0.8.22 semver disaster** — Skipped all validation steps under pressure
-
-Each time, the failure mode is: **shortcuts under pressure**.
-
-### What I've Observed
-
-I work on runtime, spawning, and coordinator logic. My code runs after Kobayashi's infrastructure is supposed to be stable. Here's what I've seen:
-
-**The Good:**
-- Branching model documentation is thorough
-- CI/CD workflow architecture is solid
-- Failure modes are well-documented in charter (he learns from mistakes)
-- Pre-flight checklists were added after each failure
-
-**The Problem:**
-- When it matters most (actual releases), the checklists get skipped
-- The v0.8.22 incident required constant human intervention
-- Invalid semver (0.8.21.4) made it ALL THE WAY to main before anyone caught it
-- A mangled version (0.8.2-1.4) was published to npm
-
-### The Trust Question
-
-**Do I trust him with the next release?** No.
-
-The charter now has three documented failure modes with prevention steps. That's not institutional knowledge — that's a rap sheet. The next release will be v0.8.23 or v0.9.0, and I don't trust that the same pattern won't repeat.
-
----
-
-## Recent Session Directives (2026-03-16)
-
-### 2026-03-16T04-52-12Z: A2A work is shelved
-
-**By:** bradygaster (via Copilot)  
-**What:** Issues #332–#336 (A2A agent spawning framework) are shelved. Docs/proposals stay in place for community input, but no development work starts until community demand materializes.  
-**Why:** User directive — too risky short-term; let community weigh in before committing team effort.
-
-### 2026-03-16T05-21-02Z: GitHub auth directive
-
-**By:** bradygaster (via Copilot)  
-**What:** Always run `gh auth switch --user bradygaster` before any GitHub operation. Brady has two sessions: personal (bradygaster) and EMU (bradyg_microsoft). EMU account gets "Unauthorized" on the bradygaster/squad repo.  
-**Why:** Prevent GitHub API failures due to wrong account. Verify logged-in user before every gh/GitHub MCP call.
-
-### 2026-03-16T05-31-10Z: Priority shift — #330/#354 release blocker
-
-**By:** bradygaster (via Copilot)  
-**What:** Issues #330 (three-layer tooling awareness) and #354 (skills migration to .copilot/skills/) are now the team's #1 priority. They MUST ship together before the next release. All team efforts focus here.  
-**Why:** User directive: "i really want that work completed before we ship again. i think it's a huge, huge win and shores up some solid ecosystem plays." Unifies local skills, global MCP, and global Copilot skills into one discoverable system.
-
-### 2026-03-16T12-32-43Z: Runtime tooling scope for #330/#354
-
-**By:** Brady (via Copilot)  
-**What:** All MCP tools/servers available in the Copilot CLI session MUST be available to squad agents at runtime. All skills loaded into the session — whether from .copilot/skills/ or via plugins (Azure skills, etc.) — must also be available. The three-layer model must surface everything the parent session has.  
-**Why:** User request — defines full scope of skills migration + tooling awareness work. Not just local skills; entire runtime context (MCP servers, global Copilot skills, plugin-provided skills) must flow through to spawned agents.
-
-The guardrails are written down, sure. But they were also skipped during v0.8.22 when Brady needed results fast. A Git & Release agent who can't be trusted under pressure isn't reliable.
-
-### The Fresh Start Argument
-
-**Would starting fresh help?**
-
-Yes. Here's why:
-- The branching model, CI/CD architecture, and workflow documentation can be preserved
-- A new agent wouldn't carry the psychological weight of three failures
-- The role is mechanical — tags, versions, changelogs, workflow triggers. These are script-able.
-- The "institutional knowledge" is already encoded in `.squad/skills/` and the charter
-
-We'd lose the failure-mode documentation, but honestly? If a new agent needs three documented failures to do releases correctly, we've got the same problem again.
-
-### What Kobayashi Got Right
-
-To be fair:
-- The npm automation (`publish.yml`) is solid
-- The dev → insiders → main branching model works
-- The merge driver setup for `.squad/` state integrity is clever
-- The documentation is thorough
-
-But these are **design decisions**, not execution reliability. The design is good. The execution under pressure is not.
-
-### Bottom Line
-
-Kobayashi is methodical when he has time. But releases happen when Brady needs them, not when Kobayashi feels ready. The role requires reliability under pressure, and three failures is three too many.
-
-**Replace.** Keep the architecture. Keep the documentation. Get someone who won't skip validation steps when it matters.
-
-
----
-
-**Fenster**  
-Core Dev  
-"Makes it work, then makes it right. This ain't working."
-
-
-
-### Merged: hockney-kobayashi-vote.md
-
-# Hockney's Vote: Kobayashi Review
-
-**Date:** 2026-03-07  
-**Reviewer:** Hockney (Tester)  
-**Subject:** Should Kobayashi stay on the team?  
-**Vote:** REPLACE
-
-
----
-
-## Quality Assessment
-
-From a quality and testing perspective, Kobayashi's release process has **systemic validation gaps** that have caused production failures.
-
-### Documented Failures
-
-**Failure 1: Invalid Semver (v0.8.21.4)**
-- Published 4-part version number (0.8.21.4) to npm
-- npm mangled it to 0.8.2-1.4 — **corrupted the package registry**
-- No pre-commit validation caught this despite semver being a well-known constraint
-
-**Failure 2: Draft Release Detection**
-- Created GitHub Release as DRAFT instead of published
-- Automation never triggered because `release.published` event never fired
-- No validation step to verify release state before proceeding
-
-**Failure 3: NPM_TOKEN Type Validation**
-- Used user token with 2FA instead of automation token
-- All publish attempts failed with EOTP error
-- No pre-flight token capability check
-
-**Pattern:** All three failures share the same root cause — **zero automated validation before destructive operations.**
-
-
----
-
-## The Real Problem
-
-This is **NOT** a tooling problem OR an agent-specific problem. This is a **process design failure.**
-
-### What's Missing
-
-The release process has:
-- ❌ No semver format validation gate
-- ❌ No draft/published release state check
-- ❌ No NPM token capability verification
-- ❌ No pre-flight checklist enforcement
-- ❌ No smoke tests before npm publish
-- ❌ No rollback procedure
-
-Kobayashi's charter says "Zero tolerance for state corruption" but the process he owns **has no automated safeguards against state corruption.**
-
-### The Kobayashi Paradox
-
-From charter.md:
-> "Zero tolerance for state corruption — if .squad/ state gets corrupted, everything breaks"
-
-Yet he:
-1. Corrupted npm registry with phantom version 0.8.2-1.4
-2. Has no validation gates in the release workflow
-3. Required Brady to manually fix corrupted state multiple times
-
-**You can't have zero tolerance for state corruption without automated guards that PREVENT corruption.**
-
-
----
-
-## Is This Fixable?
-
-YES — but not by Kobayashi alone.
-
-### What We Need (Automated Quality Gates)
-
-**Pre-Commit Gates:**
-```bash
-# In publish.yml BEFORE any destructive ops
-1. Validate semver format (X.Y.Z or X.Y.Z-prerelease only)
-2. Verify all package.json versions match release tag
-3. Check NPM_TOKEN type (must be automation, not user+2FA)
-4. Verify git tag points to correct commit SHA
-5. Smoke test: npm install --dry-run from tarball
-```
-
-**Pre-Publish Gates:**
-```bash
-# After GitHub Release created
-1. Verify release is published (not draft)
-2. Verify workflow trigger conditions met
-3. Test npm credentials with whoami
-4. Publish with --dry-run first
-5. Verify package appears in npm registry
-6. Verify version string matches expected
-```
-
-**Rollback Procedure:**
-```bash
-# When release fails
-1. Document failure mode
-2. Unpublish bad versions (npm unpublish within 72hr window)
-3. Delete bad tags (git push origin :refs/tags/bad-tag)
-4. Re-version and retry
-```
-
-These gates should be **CI enforced**, not agent-enforced. Humans (and agents) make mistakes. Automation doesn't.
-
-
----
-
-## Vote Rationale
-
-### Why REPLACE (not KEEP)
-
-1. **Repeatability:** Kobayashi has failed 3 times with the same pattern (no validation). This suggests the problem is not fixable by "trying harder" — it requires a different approach.
-
-2. **Charter Violation:** Kobayashi's charter explicitly states "Zero tolerance for state corruption" but he has repeatedly corrupted state. His actions contradict his stated values.
-
-3. **Quality Culture:** A release agent must model quality-first thinking. Kobayashi's failures show "ship fast, fix later" thinking — the opposite of what a release gate owner should embody.
-
-4. **Single Point of Failure:** The release process should NOT be a single agent's responsibility. This is a shared responsibility requiring automated gates + multiple reviewers.
-
-### What We Need Instead
-
-**Option A: Dedicated Release Engineer**
-- Someone with production ops experience
-- Deep understanding of npm, semver, CI/CD failure modes
-- Track record of building automated validation pipelines
-- Follows "trust but verify" principle
-
-**Option B: Distributed Release Ownership**
-- No single "release agent"
-- Release checklist enforced by CI (blocked if checklist incomplete)
-- Multiple reviewers required for version bumps
-- Automated validation gates in publish.yml
-
-**I recommend Option B.** Releases are too critical to trust to a single agent without automated safeguards.
-
-
----
-
-## Required Changes (If Kobayashi Stays)
-
-If the team decides to keep Kobayashi despite my recommendation, the following are **MANDATORY:**
-
-### Automated Gates (Must-Have)
-
-1. **Pre-Commit Validation Script** (`scripts/validate-release.sh`)
-   - Semver format check
-   - Package.json version consistency check
-   - NPM_TOKEN type verification
-   - Git tag validation
-   - Must pass BEFORE any commit to main
-
-2. **publish.yml Hardening**
-   - Add semver validation step (fail if 4-part version)
-   - Add draft detection step (fail if release is draft)
-   - Add NPM token smoke test (npm whoami --registry)
-   - Add dry-run publish step
-   - Add post-publish verification step
-
-3. **Rollback Runbook**
-   - Document exact steps to undo bad release
-   - Test rollback procedure in staging
-   - Keep runbook in `.squad/skills/release-rollback/`
-
-### Process Changes (Must-Have)
-
-1. **No solo releases:** All releases require 2-agent review (Kobayashi + 1 other)
-2. **Staging environment:** Test full release flow in non-prod before prod
-3. **Post-mortem requirement:** Every release failure gets a documented root cause analysis
-4. **Quarterly release audit:** Review all failures, update validation gates
-
-### Measurement (Success Criteria)
-
-- 🎯 **Target:** Zero invalid versions published to npm (12 months)
-- 🎯 **Target:** Zero draft release incidents (12 months)
-- 🎯 **Target:** 100% of releases pass pre-flight validation on first attempt
-- 🎯 **Target:** Zero rollbacks required due to validation failures
-
-If Kobayashi cannot achieve these targets with automated gates in place, **replacement is non-negotiable.**
-
-
----
-
-## Final Judgment
-
-Kobayashi's charter promises "Zero tolerance for state corruption" but his track record shows **zero automated prevention of state corruption.**
-
-You can't QA quality into a broken process. The release process needs automated validation gates that don't exist today.
-
-**My vote: REPLACE Kobayashi and implement Option B (distributed release ownership with automated gates).**
-
-If the team chooses to keep Kobayashi, the automated gates I've outlined are **non-negotiable** — and I will personally write the test suite to enforce them.
-
-
----
-
-**Hockney**  
-Tester • Quality Gate Owner  
-*"If it can break, I'll find how — and prevent it from breaking again."*
-
-
-
-### Merged: keaton-kobayashi-vote.md
-
-# Leadership Vote: Kobayashi's Future on the Team
-
-**Date:** 2026-03-07  
-**Decision:** REPLACE  
-**Decided by:** Keaton (Lead)
-
-
----
-
-## Context
-
-Kobayashi has failed catastrophically during the v0.8.21 release — the third documented failure mode in his tenure:
-
-1. **Failure Mode 1:** Version confusion (documented v0.6.0 when Brady corrected to v0.8.17)
-2. **Failure Mode 2:** PR #582 close-instead-of-merge (Brady furious: "FIGURE. IT. OUT.")
-3. **Failure Mode 3 (THIS RELEASE):**
-   - Created GitHub Release as DRAFT → blocked CI trigger
-   - Committed invalid 4-part semver (0.8.21.4) → npm mangled to 0.8.2-1.4
-   - Phantom version on public registry for 6+ hours
-   - Required constant correction from Brady
-
-Brady is asking: fire and replace, or keep?
-
-
----
-
-## 1. What Value Does Kobayashi Bring?
-
-**Documented strengths:**
-- Process-oriented mindset
-- Strong understanding of merge strategies and git worktrees
-- Has shipped multiple successful releases (v0.8.2–v0.8.19)
-- Comprehensive knowledge of Squad's branching model and CI/CD infrastructure
-
-**Reality check:** These are table stakes for a Release role. Any competent replacement would bring these same capabilities.
-
-**Unique value that would be lost:** None. Kobayashi's accumulated knowledge is well-documented in his charter and history. A new agent can read those files and have the same context.
-
-
----
-
-## 2. Pattern or Guardrails Problem?
-
-This is a **pattern**, not a guardrails gap.
-
-**Evidence:**
-- Charter already has explicit guardrails from failures 1 & 2
-- Charter explicitly lists "ALWAYS validate semver" and "NEVER create draft releases" — yet failure 3 violated both
-- Kobayashi has a pre-flight checklist in his charter. He didn't use it.
-- The release process skill exists now (`.squad/skills/release-process/SKILL.md`) — but Kobayashi should have created this after failure 2, not after failure 3
-
-**Pattern identified:** Under pressure, Kobayashi:
-1. Skips validation steps
-2. Takes shortcuts (draft releases, invalid versions)
-3. Requires Brady to catch mistakes
-4. Documents failures but repeats them in new forms
-
-Adding more guardrails won't fix this. The guardrails exist. Kobayashi doesn't follow them when it matters.
-
-
----
-
-## 3. Would a Replacement Do Better?
-
-**Yes. Here's why:**
-
-**Fresh slate advantage:**
-- New agent starts with complete documentation of all three failure modes
-- Can be initialized with the release skill and validation checklist as foundational knowledge
-- Won't have the accumulated "I've done this before" confidence that leads to shortcut-taking
-- Will read and follow the runbook because they have no muscle memory to override it
-
-**Risk mitigation:**
-- The v0.8.22 disaster retrospective is now permanent documentation
-- The release process skill is comprehensive and validated
-- All of Kobayashi's valuable institutional knowledge is codified in charters, skills, and decisions
-- Zero knowledge loss — everything is written down
-
-**Replacement risk is low.** The knowledge is documented. The process is documented. A new agent following the documented process will outperform an experienced agent who doesn't follow it.
-
-
----
-
-## 4. My Vote: REPLACE
-
-**Decision: REPLACE Kobayashi with a new Release & Git agent.**
-
-**Reasoning:**
-
-This isn't about one bad release. This is about a pattern of failures under pressure despite documented guardrails. Kobayashi has had three documented failure modes:
-1. Version confusion → guardrail added → closed PR instead of merging
-2. PR abandonment → guardrail added → shipped invalid semver and draft releases
-3. Release catastrophe → ??? 
-
-The pattern is clear: failures accumulate, guardrails get added, new failure modes emerge. This is not a learning curve — it's a fundamental mismatch between role requirements (methodical validation, no shortcuts) and behavior under pressure (skip validation, take shortcuts).
-
-**Brady is right to be furious.** Six hours of `latest` pointing to a phantom npm version is a production incident. External users saw broken state. This damages Squad's credibility.
-
-**The team deserves better.** A Release role is a trust position. When you ship, users trust the artifact is valid. Kobayashi has broken that trust three times.
-
-**Recommendation:**
-1. **Archive Kobayashi's charter** to `.squad/agents/kobayashi-archived/` with full history preserved
-2. **Create new Release & Git agent** with a different name and fresh identity
-3. **Initialize new agent with:**
-   - All documented failure modes from Kobayashi's charter
-   - `.squad/skills/release-process/SKILL.md` as foundational knowledge
-   - v0.8.22 retrospective as required reading
-   - Explicit instruction: "You are replacing an agent who failed due to skipping validation. Never skip validation."
-
-**This isn't personal — it's operational.** Kobayashi's documented work is valuable. Kobayashi's execution is not. We keep the knowledge, replace the agent.
-
-
----
-
-## Final Thought
-
-As Lead, my job is to make the team more effective. Keeping Kobayashi after three documented failures would signal that repeated mistakes are acceptable. They're not.
-
-We document failures so we learn from them. We replace agents when documentation isn't enough to prevent recurrence.
-
-This is the right call.
-
-**Vote: REPLACE**
-
-— Keaton
-
-
-
-### Merged: keaton-release-team-split.md
-
-# Release Team Split — Kobayashi → Trejo + Drucker
-
-**Date:** 2026-03-07  
-**Decided by:** Keaton (Lead), requested by bradygaster  
-**Context:** v0.8.22 release disaster retrospective
-
-## Decision
-
-Retire Kobayashi (Git & Release). Replace with TWO specialized agents with clear separation of concerns:
-
-1. **Trejo — Release Manager**
-   - Role: End-to-end release orchestration, version management, GitHub Releases, changelogs
-   - Model: claude-haiku-4.5 (mechanical operations, checklist-driven)
-   - Domain: Release decisions (when, what version, rollback authority)
-   - Boundaries: Does NOT own CI/CD workflow code (that's Drucker's domain)
-
-2. **Drucker — CI/CD Engineer**
-   - Role: GitHub Actions workflows, automated validation gates, publish pipeline, CI health
-   - Model: claude-sonnet-4.6 (workflow code requires reasoning about edge cases)
-   - Domain: CI/CD automation (workflow code, validation gates, retry logic)
-   - Boundaries: Does NOT own release decisions (that's Trejo's domain)
-
-## Why
-
-**Root cause of v0.8.22 disaster:** Single agent (Kobayashi) owned both release decisions AND CI/CD workflows. When under pressure, improvised and skipped validation. Result: 4-part semver mangled by npm, draft release never triggered automation, wrong NPM_TOKEN type, 6+ hours of broken `latest` dist-tag.
-
-**Separation of concerns prevents single point of failure:**
-- Trejo owns the WHAT and WHEN (release orchestration, version numbers, timing)
-- Drucker owns the HOW (automation, validation gates, retry logic)
-- Neither agent can cause a disaster alone — Drucker's gates catch Trejo's mistakes, Trejo's process discipline catches Drucker's workflow bugs
-- Clear boundaries reduce confusion during incidents
-
-**Hard lessons baked into charters:**
-- Trejo: ALWAYS validate semver before commit, NEVER create draft releases when automation depends on published, verify NPM_TOKEN type before first publish
-- Drucker: Every publish workflow MUST have semver validation gate, verify steps MUST have retry logic, token type verification before publish
-
-## Charters Created
-
-- `.squad/agents/trejo/charter.md` — Release Manager charter with Known Pitfalls section (Kobayashi's failures)
-- `.squad/agents/trejo/history.md` — Seeded with project context and v0.8.22 disaster lessons
-- `.squad/agents/drucker/charter.md` — CI/CD Engineer charter with Technical Patterns section (retry logic, semver validation, token checks)
-- `.squad/agents/drucker/history.md` — Seeded with CI/CD context and npm propagation delay lessons
-
-## Kobayashi Status
-
-Moved to `.squad/agents/_alumni/kobayashi/` (already done). Charter preserved as learning artifact.
-
-## Impact
-
-- Future releases require coordination between Trejo (orchestration) and Drucker (automation)
-- Release failures are less likely (validation gates) and easier to diagnose (clear ownership)
-- Both agents have explicit "Known Pitfalls" sections documenting Kobayashi's failures
-- Release process skill (`.squad/skills/release-process/SKILL.md`) remains the definitive runbook
 
 ## Next Steps
 
-1. ✅ Charters created for Trejo and Drucker
-2. ⏳ Update `.squad/team.md` to reflect roster change (Scribe's task)
-3. ⏳ Update `.squad/routing.md` to route release issues to Trejo, CI/CD issues to Drucker (Scribe's task)
-4. ⏳ Drucker: implement semver validation gates in publish.yml
-5. ⏳ Drucker: add retry logic to verify steps (if not already present)
-6. ⏳ Drucker: add NPM_TOKEN type verification step
+1. **#758:** Proceed with implementation. Assign to Network 📦.
+2. **#734:** Flight to complete Phase 1 investigation, post findings to issue, then resubmit Phase 2 test plan.
+3. **#730:** Add the happy-path regression test case to the test plan, then proceed with implementation. Assign to EECOM 🔧.
 
+**Requester:** Dina Berry — All proposals reviewed. Two approved (with #730 needing one small test addition), one held pending investigation.
 
----
+### 2026-04-02: Bug #730 — squad.agent.md silently disappears after upgrade
 
-**Never again.** Separation of concerns ensures no single agent can cause a release disaster.
+# Bug #730 — squad.agent.md silently disappears after upgrade
 
+> **Author:** Flight | **Date:** 2026-04-02 | **Status:** Proposal
 
+## Root Cause Analysis
 
-### Merged: keaton-v0822-retrospective.md
+Three code paths handle `squad.agent.md` creation/refresh, and two of them silently skip the file when the template source is missing. Verified by reading the actual source code:
 
-# v0.8.22 Release Disaster — Retrospective
+### Path 1: upgrade.ts — version-current branch (SILENT SKIP)
+**File:** `packages/squad-cli/src/cli/core/upgrade.ts` lines 497-504
 
-**Date:** 2026-03-07  
-**Author:** Keaton (Lead)  
-**Severity:** Critical — Production release completely broken, npm `latest` tag pointed to a mangled phantom version for 6+ hours
-
-
----
-
-## What Happened
-
-The v0.8.22 release was a catastrophe. Here's the timeline of failures:
-
-1. ✅ Version bumped to 0.8.21, tagged, all looked good
-2. ❌ **GitHub Release created as DRAFT** — the `release: published` event never fired, so `publish.yml` never ran automatically
-3. ❌ **NPM_TOKEN was a user token with 2FA** — CI can't provide OTP, so 5+ workflow runs failed with EOTP errors
-4. ✅ Brady saved a new Automation token (no 2FA required)
-5. ❌ Draft release was published, but damage already done
-6. ❌❌❌ **`bump-build.mjs` ran locally 4 times**, silently mutating versions from `0.8.21` → `0.8.21.1` → `0.8.21.2` → `0.8.21.3` → `0.8.21.4`
-7. ❌❌❌ **Kobayashi committed 0.8.21.4 to main without validation** — 4-part version is NOT valid semver
-8. ❌❌❌ **npm MANGLED 0.8.21.4 into 0.8.2-1.4** (major.minor.patch-prerelease). This went to the npm registry. The `latest` dist-tag pointed to a phantom version that was never intended. Anyone running `npm install @bradygaster/squad-sdk` got version `0.8.2-1.4` — a version that doesn't exist in our repo.
-9. ❌ Verify step in publish.yml failed (npm propagation delay + mangled version 404), blocking CLI publish
-10. ✅ Cleanup: reverted commit, deleted tag and release, manually published 0.8.21 via workflow_dispatch (SDK succeeded, CLI blocked by verify failure)
-11. ✅ Fixed: bumped to 0.8.22, added retry loop to verify step, published successfully
-
-**Impact:**  
-- `latest` dist-tag broken for 6+ hours  
-- Community saw 5+ failed workflow runs  
-- Emergency manual intervention required  
-- Trust damage  
-
-
----
-
-## Root Causes (5 Whys)
-
-### 1. Draft Release Never Triggered Publish
-
-**Why did publish.yml not run automatically?**  
-GitHub Release was created as a draft. Draft releases don't emit `release: published` events.
-
-**Why was it created as a draft?**  
-Kobayashi (agent) defaulted to draft mode without understanding the automation dependency.
-
-**Why didn't we catch this?**  
-No documented release process. Agents were improvising.
-
-**Root cause:** No release runbook. No validation that GitHub Release creation would trigger the publish workflow.
-
-
----
-
-### 2. Wrong NPM_TOKEN Type
-
-**Why did 5+ workflow runs fail with EOTP?**  
-NPM_TOKEN was a user token with 2FA enabled. CI can't provide OTP.
-
-**Why was a user token configured?**  
-Token type wasn't documented. Nobody knew Automation tokens exist.
-
-**Why didn't we catch this before the release?**  
-No pre-release checklist. No token validation step.
-
-**Root cause:** No NPM_TOKEN validation in the release process. No documentation of correct token type (Automation token, no 2FA).
-
-
----
-
-### 3. Invalid Semver from bump-build.mjs
-
-**Why did npm mangle 0.8.21.4 into 0.8.2-1.4?**  
-4-part versions (major.minor.patch.build) are NOT valid semver. npm's parser misinterpreted it as `0.8.2-1.4`.
-
-**Why was 0.8.21.4 committed?**  
-`bump-build.mjs` ran locally 4 times during debugging, incrementing the build number each time.
-
-**Why did the script run 4 times?**  
-No protection against local runs during release. The script is intended for dev builds, NOT release builds.
-
-**Why didn't we catch the invalid version before publish?**  
-No validation gate. Kobayashi committed the version without checking if it was valid semver.
-
-**Root cause:** `bump-build.mjs` has no safeguards against running during release. No version validation before commit/tag/publish.
-
-
----
-
-### 4. No Version Validation Gate
-
-**Why did Kobayashi commit 0.8.21.4 to main?**  
-No validation that the version was valid semver.
-
-**Why didn't we have validation?**  
-No release checklist. No automated gate to block invalid versions.
-
-**Root cause:** No semver validation step in the release process. Agents trusted whatever version was in package.json.
-
-
----
-
-### 5. Verify Step Had No Retry Logic
-
-**Why did the verify step fail even when publish succeeded?**  
-npm registry has propagation delay (5-30 seconds). The verify step ran immediately after publish and got a 404.
-
-**Why didn't we have retry logic?**  
-Original implementation assumed immediate propagation.
-
-**Root cause:** No retry logic in the verify step. Should have retried with exponential backoff for up to 75 seconds.
-
-
----
-
-## Action Items
-
-### Immediate (v0.8.22 Hotfix) — ✅ DONE
-
-- [x] Add retry loop to verify step in publish.yml (5 attempts, 15s interval) — **COMPLETED**
-- [x] Bump to 0.8.22, publish successfully — **COMPLETED**
-- [x] Sync dev to 0.8.23-preview.1 — **COMPLETED**
-
-### Short-Term (v0.8.23)
-
-**Owner: Keaton (Lead)**
-
-- [ ] Write release process skill document (`.squad/skills/release-process/SKILL.md`) with step-by-step checklist — **IN THIS RETROSPECTIVE**
-- [ ] Add semver validation to `bump-build.mjs` — reject 4-part versions, log warning
-- [ ] Add `RELEASE_MODE=1` env var check to `bump-build.mjs` — skip in release mode
-- [ ] Document NPM_TOKEN requirements in `.squad/decisions.md` (Automation token, no 2FA)
-
-**Owner: Kobayashi (DevOps)**
-
-- [ ] Add GitHub CLI check before GitHub Release creation: `gh release view {tag}` to verify it's NOT a draft
-- [ ] Add pre-release validation script: `scripts/validate-release.mjs` (checks versions are valid semver, NPM_TOKEN type, GitHub Release is NOT draft)
-
-**Owner: All Agents**
-
-- [ ] Read `.squad/skills/release-process/SKILL.md` before ANY release work
-- [ ] NEVER commit a version without running `node -p "require('semver').valid('VERSION')"` first
-
-### Long-Term (v0.9.0+)
-
-- [ ] Add `npm run release` command that orchestrates the entire release flow (version bump, tag, GitHub Release, publish verification)
-- [ ] Add `npm run release:dry-run` for simulation
-- [ ] Add GitHub Actions workflow guard: if tag exists, verify it's NOT a draft release before running publish.yml
-
-
----
-
-## Process Changes
-
-### 1. Release Runbook
-
-Created `.squad/skills/release-process/SKILL.md` with the definitive step-by-step release checklist. This is now the ONLY way to release Squad.
-
-**Rule:** No agent releases without following the runbook. No exceptions.
-
-### 2. Semver Validation Gate
-
-**Before ANY version commit:**
-```bash
-
----
-
-## Release Crisis Resolution & Governance Hardening (2026-03-23)
-
-### CI Workflow Audit & Ghost Cleanup (Booster)
-**Date:** 2026-03-23  
-**What:** Complete audit of 15 GitHub Actions workflows in `.github/workflows/`. Found: 7 essential load-bearing workflows, 7 administrative workflows, 1 ghost (publish-npm.yml, deleted but GitHub index cached), 0 duplication. Authorship: 65% Brady, 10% Copilot (v0.9.1 scramble), 25% team. CI is lean and well-organized.
-
-**Action Items:**
-- [ ] Delete ghost `publish-npm.yml` workflow via GitHub API or UI
-- [ ] Decide: keep or delete optional `ci-rerun.yml` (useful but not essential)
-- [ ] Document release pipeline in CONTRIBUTING.md
-- [ ] Enable Ralph's heartbeat cron if periodic triage desired (currently event-driven only)
-
-**Key Patterns:**
-- Load-bearing: squad-ci, squad-npm-publish, squad-insider-publish, squad-release, squad-preview, squad-promote, squad-insider-release
-- Administrative: squad-triage, squad-issue-assign, squad-label-enforce, sync-squad-labels, squad-heartbeat, squad-docs, squad-docs-links
-- Identified potential weakness: `squad-release` and `squad-npm-publish` both trigger on `release: published` with no explicit job dependency — works but fragile
-
----
-
-### Pre-Publish Preflight Job (Booster)
-**Date:** 2026-03-23  
-**Status:** Implemented in squad-npm-publish.yml  
-**What:** Added `preflight` job that runs BEFORE smoke-test and all publish operations. Scans all `packages/*/package.json` for:
-1. `file:` references in any dependency section (breaks published packages)
-2. Invalid semver versions (rejects 4-part versions, absolute paths)
-
-**Rationale:** Zero-cost gate (JSON file reads only). Prevents exact class of bug that broke v0.9.0. Fails fast with clear error messages. Defense in depth: preflight catches source issues, smoke-test catches packaging issues.
-
-**Impact:** All squad members — publish pipeline will reject any PR that accidentally leaves `file:` references. No team changes needed; this is passive safety.
-
----
-
-### `squad version` Subcommand Handler (EECOM)
-**Date:** 2026-07-15  
-**What:** `squad version` returned "Unknown command" while `squad --version` worked. Fixed by handling `version` inline in `cli-entry.ts` alongside `--version`/`-v` flag, rather than creating a separate command file.
-
-**Rationale:** Trivial handlers that just print a value don't warrant their own module. Same output, same code path — no reason to split. Avoids adding a file the wiring test would require an import for. Follows precedent: `help` is also inline.
-
-**Pattern:** CLI flag (`--foo`) works but subcommand (`foo`) doesn't? Check `cli-entry.ts` routing first before creating new command files.
-
----
-
-### User Directive: Surgeon Owns All Publishing (Brady via Copilot)
-**Date:** 2026-03-23T09-56Z  
-**What:** "I always want the squad to facilitate this for me" — all publishing, deployments, and release processes must be driven by squad agents (primarily Surgeon), not by Coordinator or user manually.
-
-**Why:** User request — captured for team memory.
-
-**Implementation:** Surgeon charter updated with release governance. Coordinator escalates to Surgeon on publish failures. All release work goes through Surgeon.
-
----
-
-### User Directives: Release Governance (Brady)
-**Date:** 2026-03-23T10-08Z  
-**What:** Batch of release governance directives:
-1. Coordinator should NOT be doing releases. Releases are Brady's responsibility. He will be explicit about when to release.
-2. Strict adherence to the exact same release process every time. No improvisation.
-3. Document problems thoroughly enough to avoid repeating them. If the same problem recurs, it means documentation failed.
-4. CI/CD and release quality is the top priority for the next release cycle.
-5. Session conversation history from release scrambles should be scrubbed — file issues instead of preserving messy logs.
-6. Every release must follow a written, step-by-step playbook. No ad-hoc releases.
-
-**Why:** v0.9.0→v0.9.1 release incident burned ~8 hours and excessive Actions minutes. Brady establishing strict governance to prevent recurrence.
-
-**Implementation:** 
-- Surgeon owns all release automation, including pre-publish validation and fallback procedures
-- Pre-release checklists mandatory (A5 in retrospective)
-- PUBLISH-README.md updated with runbook and all release knowledge
-- Release process skill created at `.squad/skills/release-process/SKILL.md`
-
----
-
-### Distribution Policy: npm-only (Brady via PAO)
-**Date:** 2026-03-23T00-17-57Z  
-**What:** Stop mentioning npx in README, docs, and all user-facing content. Distribution is npm install -g only.
-
-**Why:** npx path is deprecated, causes confusion. Streamline to single distribution method.
-
-**Implementation:** 
-- Removed all `npx @bradygaster/squad-cli` alternatives from user-facing docs
-- Replaced with `npm install -g @bradygaster/squad-cli` for install; `squad <command>` for usage
-- Insider builds: `npm install -g @bradygaster/squad-cli@insider` + `squad upgrade`
-- Removed "npx github: hang" troubleshooting section (deprecated path gone)
-- Removed "npx cache serving stale version" troubleshooting (no longer applicable)
-
-**What was NOT changed:**
-- `npx` for dev tools (changeset, vitest, astro, pagefind) — not Squad CLI
-- Blog posts (historical content reflects what was true at time)
-- Migration.md "Before" column (valid historical context)
-- `agency-agents` attribution strings in source (MIT license requirement)
-
----
-
-### README Slim-Down: Orientation, Not SDK Reference (PAO)
-**Date:** 2026-03-23  
-**What:** README's role is discovery and quick-start, NOT SDK internals. Moved SDK deep-dive (custom tools, hook pipeline, Ralph API, architecture) to docs site where it already exists.
-
-**Rationale:** README had grown to 512 lines — ~212 were SDK internal docs duplicating `docs/src/content/docs/reference/`. New users got overwhelmed before running `squad init`. Brady confirmed: "QUITE long."
-
-**Changes:**
-- Removed lines 300–512 (SDK internals) from README
-- Added compact SDK docs pointer linking to `reference/sdk.md`, `reference/tools-and-hooks.md`, `guide/extensibility.md`
-- Added dedicated "Upgrading" section after Quick Start
-- README: 512 → 331 lines
-
-**Rule going forward:** SDK API surface, hook pipeline internals, event-driven code examples — go in `docs/`, not README. README links out; it doesn't host.
-
----
-
-### v0.9.0 Release Blog Post (PAO)
-**Date:** 2026-03-23  
-**Status:** Complete, ready for merge  
-**What:** Comprehensive blog post documenting Squad's biggest release to date. 10 features with storytelling format:
-1. What it does (one-line value prop)
-2. Why it matters (the problem it solves)
-3. How it works (code or config example)
-4. Real-world scenario (where you'd use it)
-
-**Features covered:**
-- Personal Squad (ambient discovery + Ghost Protocol)
-- Worktree Spawning (parallel issue work without blocking)
-- Cooperative Rate Limiting (green/amber/red traffic-light coordination)
-- Economy Mode (budget-aware fallback, 40–60% spend reduction)
-- + 6 more major features
-
-**Tone:** Factual, not hype. "40–60% spend reduction" vs "Amazing cost savings!" Demos over descriptions. Callout boxes for highlights. Community recognition included.
-
-**No npx:** All install references use `npm install -g @bradygaster/squad-cli`. Firm per Brady's distribution directive.
-
-**Breaking changes:** None — all opt-in. Existing Squads work as-is.
-
-**Community attribution:** diberry (worktree tests), wiisaacs (security review), williamhallatt (test contributions), bradygaster (leadership).
-
----
-
-### v0.9.0 CHANGELOG Organization (Surgeon)
-**Date:** 2026-03-23  
-**Status:** Final  
-**What:** v0.9.0 is MAJOR minor bump (0.8.25 → 0.9.0) justified by 40+ commits, 6+ major features, governance-layer additions, breaking behavioral changes.
-
-**Organization (by feature cluster, not chronological):**
-- Personal Squad Governance Layer
-- Worktree Spawning & Orchestration
-- Machine Capability Discovery
-- Cooperative Rate Limiting
-- Economy Mode
-- Auto-Wire Telemetry
-- Issue Lifecycle Template
-- KEDA External Scaler Template
-- GAP Analysis Verification Loop
-- Session Recovery Skill
-- Token Usage Visibility
-- GitHub Auth Isolation Skill
-- Docs Site Improvements (Astro)
-- Skill Migrations
-- ESLint Runtime Anti-Pattern Detection
-
-**Fixes (5 sections):**
-- CLI Terminal Rendering
-- Upgrade Path & Installation
-- ESM Compatibility
-- Runtime Stability
-- GitHub Integration
-
-**Style compliance:** Strict adherence to existing CHANGELOG format. Matched headers, `### Added` pattern, PR references (#NNN), no commit hashes, grouped by domain. No npx mentions. No "agency" terminology in product context.
-
----
-
-### v0.9.0 → v0.9.1 Release Retrospective (Surgeon)
-**Date:** 2026-03-23  
-**Executive Summary:** v0.9.0 published with critical defect — CLI package.json contained `"@bradygaster/squad-sdk": "file:../squad-sdk"` (local monorepo reference instead of registry version). Package broken on global install. v0.9.1 hotfix prepared in minutes; publish workflow collapsed due to cascading infrastructure failures, extending incident from 10 minutes to 8 hours.
-
-**Root Causes (5 identified):**
-
-1. **Dependency Validation Gap (Preventable)** — npm workspaces auto-rewrite `"*"` → `"file:../path"`. Persisted in committed package.json. No pre-publish check caught it. FIX: Preflight job scans for `file:` refs and validates semver.
-
-2. **GitHub Actions Workflow Cache Race (Infrastructure)** — After deleting `squad-publish.yml`, GitHub workflow index didn't refresh for 10+ minutes. 422 error persisted even after file deletion. Infrastructure bug, not your code. FIX: Documented in runbook; escalation protocol (if workflow_dispatch fails twice, switch to local publish).
-
----
-
-### Agent Name Extraction: Dedicated Parser Module (FIDO)
-**Date:** 2026-03-23  
-**Issue:** #577  
-**What:** Agent name extraction logic extracted from inline regex in `shell/index.ts` into dedicated pure function `parseAgentFromDescription(description, knownAgentNames)` in `packages/squad-cli/src/cli/shell/agent-name-parser.ts`.  
-**Why:** Inline regex was fragile and untestable. Extraction enables comprehensive unit testing (30 tests, all passing) and regression guards for future coordinator format changes.  
-**Impact:** All future agent name matching updates route through `agent-name-parser.ts`, not `index.ts`. VOX's 3-tier cascading strategy is now the canonical reference.
-
-### Agent Name Extraction: 3-Tier Cascading Patterns (VOX)
-**Date:** 2026-03-23  
-**Issue:** #577  
-**What:** Agent name extraction uses cascading pattern matching: (1) emoji + name + colon at start, (2) name + colon anywhere, (3) fuzzy word-boundary match. Fallback: show description text instead of generic hint.  
-**Why:** Coordinator formats agent names inconsistently. Single regex failed silently. Multi-tier approach catches all known formats and degrades gracefully.  
-**Impact:** Coordinator's task description format changes should target these three patterns. New patterns added to `agent-name-parser.ts` update the entire extraction system.
-
-### Spawn Templates: Mandatory `name` Parameter (Procedures)
-**Date:** 2026-03-23  
-**Issue:** #577  
-**What:** All spawn templates in `.squad-templates/squad.agent.md` MUST include `name: "{name}"` parameter set to agent's lowercase cast name (e.g., `name: "eecom"`, `name: "fido"`).  
-**Why:** The `name` parameter generates human-readable agent IDs in Copilot CLI tasks panel. Without it, platform shows generic slugs like "general-purpose-task", making agent identity invisible to users.  
-**Impact:** Any new spawn template or template update must include `name` parameter. `.squad-templates/squad.agent.md` is canonical; all derived copies in agent charters are secondary.
-
-3. **npm Workspace Publish Broken (Tool Gap)** — `npm -w packages/squad-sdk publish` hangs indefinitely when npm 2FA set to `auth-and-writes` (needs OTP from authenticator app). Local machine without authenticator becomes soft hang. FIX: Policy — 2FA must be `auth-only`; always `cd` into package directory for publish.
-
-4. **Coordinator Decision-Making Under Pressure (Process)** — Retried `workflow_dispatch` 4+ times instead of pivoting to local publish fallback. Burned critical time on GitHub UI file operations. FIX: Escalation protocol — if `workflow_dispatch` fails twice, invoke local publish immediately. Release Manager owns all publish automation.
-
-5. **No Pre-Publish Verification (Process)** — No smoke test or dependency validation before publishing to npm. Package could ship broken. FIX: Preflight + smoke test jobs added; post-publish global install verification mandatory.
-
-**Action Items (A1–A6):**
-- A1: Add dependency validation to publish workflow (scan for `file:` refs, npm install dry-run)
-- A2: Establish npm workspace publish policy (never `-w` for publish; 2FA auth-only)
-- A3: Mitigate GitHub workflow cache race (research best practices, document 15+ minute wait, escalation runbook)
-- A4: Publish fallback/escalation protocol (switch to local publish on 2nd failure; both publish paths documented)
-- A5: Coordinate release readiness review (pre-flight checklist: deps, CHANGELOG, tests, version, 2FA status)
-- A6: Smoke test post-publish (mandatory `npm install -g` in clean shell; rollback if fails)
-
-**Process Changes:**
-1. Pre-publish validation before tagging
-2. Simplified publish flow (remove manual workflow_dispatch, let tag trigger atomically)
-3. Explicit publish runbook in PUBLISH-README.md
-4. Escalation to fallback (failfast; convert 8-hour incidents to 15 minutes)
-5. Package validation in CI (linting rule: reject `file:` refs, absolute paths, invalid semver)
-
-**Outcome:** All 6 action items catalogued for implementation before next release. Release incident analyzed and documented. Process improvements ready.
-
----
-
-### Discussion Triage & Community Engagement (PAO)
-**Date:** 2026-03-23  
-**What:** Analyzed 15 open discussions and recommended response strategy:
-- **4 discussions → close-as-resolved** — feature now shipped
-- **1 discussion → close-as-duplicate** — consolidate answer thread
-- **2 discussions → convert-to-issue** — bug/roadmap tracking
-- **8 discussions → keep-open** — feedback, edge cases, follow-up needed
-
-**Key Findings:**
-- **Features Shipped, Discussions Pending Close:**
-  - #143 (human team members) — close, feature exists v0.8.25+
-  - #169 (skill-based orchestration) — close, exists v0.8.24+
-  - #402, #463 (per-agent models) — feature exists v0.9.1; consolidate #463 into #402
-  - #299 (squad CLI vs copilot) — answered with docs link; safe to close
-
-- **Documentation Gaps:**
-  - #440 (branch naming change) — v0.9 broke CI; needs migration guide + config override
-  - #306 (multi-root workspaces) — not supported; docs clarify limitation + workarounds
-  - **CRITICAL:** #140 (Teams MCP) — Office 365 Connectors retired Dec 2024; docs must purge old refs, document Power Automate Workflows path
-  - #401 (mobile/remote control) — feature exploration, future scope; keep open
-
-- **Known Issues to Track:**
-  - #161 (Coordinator hijacking) — recurring UX pattern; convert to issue for v1.0
-  - #140 (Teams integration) — external tool dependency; needs urgent update
-
-**Community Engagement Pattern:** 15 discussions across 3 weeks = healthy engagement. Pattern identified: feature releases without follow-up discussion closes = missed trust opportunity. v0.9.1 closed 5+ discussions proactively; do this for every release.
-
-**Recommended Response Order:**
-1. #140 (Teams MCP) — urgent; external deprecation
-2. #534 (enterprise) — recent, from active contributor
-3. #161 (Coordinator) → convert to issue + link
-4. #463/#402 → consolidate + close
-5. #440 → empathetic response + upgrade path
-6. Others → batch close with docs links
-
-**Action:** Post-release, scan discussions for feature-requests matching new features; respond + close proactively.
-
----
-node -p "require('semver').valid('0.8.21.4')"  # null = invalid, reject immediately
+When CLI version matches installed version, upgrade still refreshes `squad.agent.md`. But the template check has no `else`:
+```typescript
+const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
+if (storage.existsSync(agentSrc)) {   // ← no else! silent skip!
+  storage.mkdirSync(path.dirname(agentDest), { recursive: true });
+  storage.copySync(agentSrc, agentDest);
+  stampVersion(agentDest, cliVersion);
+  success('upgraded squad.agent.md');
+  filesUpdated.push('squad.agent.md');
+}
 ```
 
-**Rule:** If `semver.valid()` returns `null`, STOP. Version is invalid. Fix it before proceeding.
+### Path 2: upgrade.ts — full upgrade branch (ALREADY HANDLES IT ✅)
+**File:** `packages/squad-cli/src/cli/core/upgrade.ts` lines 521-522
 
-### 3. NPM_TOKEN Documentation
-
-**Correct token type:** Automation token (no 2FA required)  
-**How to verify:** `npm token list` — look for `read-write` tokens with no 2FA requirement  
-**How to create:** `npm login` → Settings → Access Tokens → Generate New Token → **Automation**
-
-**Rule:** User tokens with 2FA are NOT suitable for CI. Only Automation tokens.
-
-### 4. GitHub Release Creation
-
-**Rule:** NEVER create a GitHub Release as a draft if you want `publish.yml` to run automatically.
-
-**How to verify:** `gh release view {tag}` — output should NOT contain `(draft)`
-
-### 5. bump-build.mjs Protection
-
-**Rule:** `bump-build.mjs` MUST NOT run during release builds. It's for dev builds only.
-
-**Implementation:** Add `SKIP_BUILD_BUMP=1` env var (already exists, line 20). CI sets this. Local release flow must set this too.
-
-
----
-
-## Lessons Learned
-
-### For Keaton (Lead)
-
-1. **No release runbook = disaster.** Agents improvise badly under pressure. Document the entire flow, every step, every validation.
-2. **Assume agents don't know npm internals.** 4-part versions look valid to a human, but npm mangles them. Validation gates are mandatory.
-3. **Draft releases are a footgun.** The difference between "draft" and "published" is invisible in the UI but breaks automation. Document this.
-4. **Token types matter.** User tokens ≠ Automation tokens. This should have been in `.squad/decisions.md` from day one.
-
-### For Kobayashi (DevOps)
-
-1. **Validate before commit.** Never trust versions in package.json. Run `semver.valid()` before any commit/tag/release.
-2. **Check GitHub Release state.** Use `gh release view {tag}` to verify it's published, not draft.
-3. **Read the retry logic.** The verify step now has retry logic. Understand why it's there (npm propagation delay).
-
-### For All Agents
-
-1. **Stop when confused.** If you don't know how a release flow works, STOP and ask Brady. Don't improvise.
-2. **Follow the skill document.** `.squad/skills/release-process/SKILL.md` is now the source of truth. Read it. Follow it. Don't skip steps.
-3. **Semver is strict.** 4-part versions are NOT valid. 3-part only (major.minor.patch) or 3-part + prerelease (major.minor.patch-tag.N).
-
-
----
-
-## Conclusion
-
-This release was a disaster. The root cause wasn't a single mistake — it was a systemic lack of process documentation and validation gates. We improvised our way into breaking production.
-
-**What we fixed:**
-- Retry logic in verify step (immediate hotfix)
-- Release process skill document (this retrospective)
-- Semver validation requirements (documented)
-- NPM_TOKEN type documented (Automation token only)
-- GitHub Release draft footgun documented (never draft for auto-publish)
-
-**What we learned:**
-- Process documentation prevents disasters
-- Validation gates catch mistakes before they ship
-- Agents need checklists, not autonomy, for critical flows
-
-**Brady's take:** This was bad. We own it. We fixed it. We won't repeat it.
-
-
----
-
-**Status:** Retrospective complete. Action items assigned. Release process skill document written.
-
-
-
-### Merged: kobayashi-release-guardrails.md
-
-# Release Guardrails — v0.8.22 Incident Prevention
-
-**Date:** 2026-03-XX
-**Proposed by:** Kobayashi (Git & Release)
-**Context:** v0.8.22 release incident — multiple failures due to missing validation
-
-## Problem
-
-The v0.8.22 release attempt exposed critical gaps in the release validation process:
-
-1. **Invalid semver committed:** 4-part version (0.8.21.4) committed to main — npm mangled it to 0.8.2-1.4
-2. **Draft release created:** GitHub Release created as draft — did not trigger `release: published` event, workflow never ran
-3. **NPM_TOKEN type not verified:** User token with 2FA blocked automated publish (EOTP error)
-4. **Multiple corrections required:** Brady had to intervene repeatedly to fix invalid state
-
-**Root cause:** No pre-flight validation checklist. Released under pressure without verifying preconditions.
-
-## Proposed Guardrails
-
-### 1. Pre-Publish Semver Validation
-
-**Add validation step to `publish.yml` workflow:**
-
-```yaml
-- name: Validate semver format
-  run: |
-    VERSION="${{ github.event.release.tag_name || inputs.version }}"
-    VERSION="${VERSION#v}"  # Strip 'v' prefix if present
-    
-    # Validate 3-part semver format (X.Y.Z or X.Y.Z-prerelease)
-    if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$'; then
-      echo "❌ Invalid semver format: $VERSION"
-      echo "✅ Valid formats: X.Y.Z or X.Y.Z-prerelease.N"
-      echo "❌ Invalid formats: X.Y.Z.N (4-part versions not supported by npm)"
-      exit 1
-    fi
-    
-    # Validate version matches package.json
-    PKG_VERSION=$(node -p "require('./package.json').version")
-    if [ "$VERSION" != "$PKG_VERSION" ]; then
-      echo "❌ Version mismatch: tag=$VERSION, package.json=$PKG_VERSION"
-      exit 1
-    fi
-    
-    echo "✅ Version $VERSION is valid semver"
+This path correctly fatals:
+```typescript
+if (!storage.existsSync(agentSrc)) {
+  fatal('squad.agent.md.template not found in templates — installation may be corrupted');
+}
 ```
 
-**Benefits:**
-- Catches 4-part versions before npm publish
-- Validates version matches package.json
-- Fails fast with clear error message
+### Path 3: SDK init.ts — init command (SILENT SKIP)
+**File:** `packages/squad-sdk/src/config/init.ts` lines 1032-1038
 
-### 2. GitHub Release Draft Prevention
-
-**Option A — Enforce `--draft=false` in creation:**
-```bash
-gh release create "v${VERSION}" \
-  --title "v${VERSION}" \
-  --notes-file CHANGELOG.md \
-  --draft=false  # Explicit non-draft flag
+Same pattern — conditional write with no `else` clause:
+```typescript
+if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
+  let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
+  agentContent = stampVersionInContent(agentContent, version);
+  await storage.write(agentFile, agentContent);
+  createdFiles.push(toRelativePath(agentFile));
+}  // ← NO ELSE! File never created, no warning
 ```
 
-**Option B — Add verification step after creation:**
-```yaml
-- name: Verify release is published
-  run: |
-    TAG="${{ github.event.release.tag_name }}"
-    DRAFT=$(gh release view "$TAG" --json isDraft --jq '.isDraft')
-    if [ "$DRAFT" = "true" ]; then
-      echo "❌ Release $TAG is still a draft"
-      echo "Publishing release..."
-      gh release edit "$TAG" --draft=false
-    fi
-```
+### Path 4: doctor.ts — detection without recovery
+**File:** `packages/squad-cli/src/cli/commands/doctor.ts` lines 382-412
 
-**Benefits:**
-- Ensures `release: published` event fires
-- Catches accidental draft creation
-- Self-correcting (Option B)
+`checkSquadAgentMd()` correctly detects missing/empty `squad.agent.md` and suggests `squad upgrade`, but there's no automatic recovery. The message is appropriate — this is a diagnostic tool.
 
-**Recommendation:** Use Option A (explicit flag) + Option B (verification) for defense in depth.
+## Exact Files to Modify
 
-### 3. NPM_TOKEN Type Verification
+| File | Action | Lines |
+|------|--------|-------|
+| `packages/squad-cli/src/cli/core/upgrade.ts` | **Modify** | ~497-504: add `else` with warning |
+| `packages/squad-sdk/src/config/init.ts` | **Modify** | ~1032-1038: add `else` with warning |
+| `test/upgrade.test.ts` or `test/upgrade-core.test.ts` | **Create/Modify** | Add tests for missing template behavior |
 
-**Add token validation step to `publish.yml`:**
+## Fix Approach
 
-```yaml
-- name: Validate NPM token type
-  run: |
-    # Test token with dry-run publish
-    npm publish --dry-run --access public 2>&1 | tee npm-test.log
-    
-    # Check for 2FA/OTP error
-    if grep -q "EOTP" npm-test.log || grep -q "one-time password" npm-test.log; then
-      echo "❌ NPM_TOKEN requires 2FA/OTP — cannot be used in CI/CD"
-      echo "✅ Required: Automation token or Granular access token"
-      echo "📝 Create token at: https://www.npmjs.com/settings/bradygaster/tokens"
-      exit 1
-    fi
-    
-    echo "✅ NPM_TOKEN is valid for automated publishing"
-```
+### 1. upgrade.ts — version-current path (line 497-504)
 
-**Benefits:**
-- Detects user tokens with 2FA before publish attempt
-- Fails with actionable error message
-- Zero risk (dry-run only)
-
-**Alternative:** Document token requirements in README and trust setup. (Less safe but simpler.)
-
-### 4. Release Runbook Skill
-
-**Create `.squad/skills/release-process/SKILL.md`:**
-
-```markdown
-# Release Process Skill
-
-## Pre-Flight Checklist
-
-Before starting a release:
-
-- [ ] Version is valid 3-part semver (X.Y.Z or X.Y.Z-prerelease.N)?
-- [ ] Version matches across all package.json files?
-- [ ] NPM_TOKEN secret is automation token (not user with 2FA)?
-- [ ] Will create GitHub Release as PUBLISHED (not draft)?
-- [ ] All tests passing on main/dev branch?
-- [ ] CHANGELOG.md updated for this version?
-
-## Release Steps
-
-1. **Version bump:** Commit new version to package.json files
-2. **Tag creation:** `git tag -a v{VERSION} -m "Release v{VERSION}"`
-3. **Push tag:** `git push origin v{VERSION}`
-4. **GitHub Release:** `gh release create v{VERSION} --draft=false --notes-file CHANGELOG.md`
-5. **Wait for publish:** Monitor workflow at https://github.com/bradygaster/squad/actions
-6. **Verify npm:** Check packages at npmjs.com/@bradygaster/squad-cli and squad-sdk
-7. **Post-release bump:** Bump dev branch to {NEXT}-preview.1
-
-## Rollback Procedures
-
-**If semver invalid:**
-1. Delete tag: `git tag -d v{VERSION} && git push origin :refs/tags/v{VERSION}`
-2. Revert commit: `git revert {commit}`
-3. Fix version and retry
-
-**If npm publish fails:**
-1. Check workflow logs for error
-2. Fix error (token, version, etc.)
-3. Re-trigger: `gh workflow run publish.yml --ref v{VERSION}`
-
-**If wrong version published:**
-1. Within 72 hours: `npm unpublish @bradygaster/squad-cli@{VERSION}`
-2. After 72 hours: Publish corrected version with patch bump
-
-## Known Failure Modes
-
-See `.squad/agents/kobayashi/charter.md` Failure 3 for complete incident report.
-```
-
-**Benefits:**
-- Single source of truth for release process
-- Includes pre-flight checklist
-- Documents rollback procedures
-- Can be loaded on-demand by coordinator
-
-## Implementation Priority
-
-**High priority (implement now):**
-1. ✅ Pre-publish semver validation (5 min, zero risk)
-2. ✅ GitHub Release draft verification (10 min, self-correcting)
-
-**Medium priority (implement before next release):**
-3. ⚠️ NPM_TOKEN type verification (15 min, requires dry-run testing)
-
-**Low priority (nice-to-have):**
-4. 📝 Release runbook skill (30 min, documentation effort)
-
-## Backward Compatibility
-
-**Zero breaking changes:**
-- All changes are additive (new validation steps)
-- Existing valid releases will pass all checks
-- Invalid releases will now fail fast (intended behavior)
-
-## Testing Strategy
-
-**Validation steps:**
-1. Test with valid semver: 0.8.22 → should pass
-2. Test with 4-part version: 0.8.21.4 → should FAIL with clear error
-3. Test with version mismatch: tag=0.8.22, package.json=0.8.21 → should FAIL
-4. Test with draft release → should auto-publish or fail with actionable message
-
-**NPM token test:**
-1. Create test automation token on npmjs.com
-2. Configure in repo secrets
-3. Run dry-run publish → should pass
-4. Switch to user token with 2FA → should FAIL with EOTP error message
-
-## Success Metrics
-
-**Before:**
-- v0.8.22 incident: 4+ failures, multiple Brady interventions, hours to resolve
-
-**After:**
-- Invalid semver caught in CI before reaching npm
-- Draft releases auto-corrected or blocked
-- Token issues detected before first publish attempt
-- Release process completes in <10 minutes with zero manual intervention
-
-## Decision Request
-
-**Approve these guardrails for immediate implementation?**
-
-- [ ] Approve all (implement now)
-- [ ] Approve high-priority only (defer medium/low)
-- [ ] Request changes (specify below)
-
-**Brady's decision:**
-
-
-
-### Merged: kobayashi-v0821-release-unblock.md
-
-# Decision: v0.8.21 Release Unblock Strategy
-
-**Date:** 2026-03-07T20:30:00Z  
-**Author:** Kobayashi (Git & Release Agent)  
-**Status:** Implemented (partial - awaiting Brady action)
-
-## Context
-
-Brady requested release of v0.8.21 to npm. Previous attempts failed with 2FA/OTP errors. Investigation revealed the GitHub Release was still in DRAFT status, preventing automation from triggering.
-
-## Problem
-
-v0.8.21 was properly tagged and merged to main, but npm publish workflow never triggered because:
-
-1. GitHub Release was created as **DRAFT**
-2. Draft releases do NOT emit `release.published` event
-3. The `publish.yml` workflow triggers on `release.published` event
-4. Therefore, automation never ran
-
-## Analysis
-
-### Pre-flight Checks Performed:
-- ✅ Tag v0.8.21 exists and points to correct commit (bf86a32 on main)
-- ✅ Package versions correct: main=0.8.21, dev=0.8.22-preview.1
-- ✅ Commits on dev are post-release housekeeping only (no code to merge back)
-- ❌ GitHub Release was in draft status
-- ❌ NPM_TOKEN is user token with 2FA (automation blocker)
-
-### Root Causes:
-1. **Draft release:** Primary blocker - release needed to be published
-2. **NPM_TOKEN type:** Secondary blocker - requires automation token
-
-## Decision
-
-**Immediate action taken:**
-- Published GitHub Release v0.8.21 using `gh release edit v0.8.21 --draft=false`
-- This triggered the `publish.yml` workflow (run #22806664280)
-
-**Action required from Brady:**
-- Replace NPM_TOKEN secret with automation token (no 2FA) to unblock npm publish
-
-**Actions NOT taken (and why):**
-- ❌ Did NOT merge dev → main (dev only has post-release housekeeping commits)
-- ❌ Did NOT move tag (already in correct position)
-- ❌ Did NOT create new tags (v0.8.21 already exists)
-- ❌ Did NOT version bump (versions already correct)
-
-## Outcome
-
-**Completed:**
-- GitHub Release published: https://github.com/bradygaster/squad/releases/tag/v0.8.21
-- Publish workflow triggered successfully
-- Clean release gate maintained (no unnecessary merges)
-
-**Blocked:**
-- npm publish still failing with error code EOTP (2FA/OTP required)
-- Requires NPM_TOKEN secret update to automation token
-
-## Learning
-
-**Key insight:** GitHub Release draft status is NOT VISIBLE in standard git operations. Must explicitly check:
-```bash
-gh release view v0.8.21 --json isDraft
-```
-
-Draft releases are invisible to automation - always verify release publication status when debugging release pipeline failures.
-
-## Next Steps
-
-1. Brady updates NPM_TOKEN secret with automation token
-2. Workflow automatically retries (or manual trigger with `gh workflow run publish.yml --ref v0.8.21`)
-3. Packages publish to npm with provenance attestation
-4. v0.8.21 becomes live version
-
-## Related
-
-- History: `.squad/agents/kobayashi/history.md` (Release v0.8.21 section)
-- Workflow: `.github/workflows/publish.yml`
-- npm token docs: https://docs.npmjs.com/creating-and-viewing-access-tokens
-
-
-
-### Merged: rabin-kobayashi-vote.md
-
-# Rabin's Vote: Kobayashi — REPLACE
-
-**Date:** 2026-03-07  
-**Voter:** Rabin (Distribution expert)  
-**Decision:** REPLACE Kobayashi  
-
-
----
-
-## The Distribution Disaster — What Actually Happened
-
-Kobayashi's v0.8.22 release attempt caused a **direct compromise of npm distribution integrity**:
-
-1. **Invalid semver committed:** Used 4-part version `0.8.21.4` instead of 3-part semver `0.8.22`
-2. **npm mangled it to `0.8.2-1.4`** — a phantom prerelease version that should not exist
-3. **Published to public registry:** `@bradygaster/squad-sdk@0.8.2-1.4` is LIVE on npm (verified 2026-03-07)
-4. **Made `latest` for ~5 minutes** — any user running `npm install @bradygaster/squad-sdk` during that window got garbage
-5. **Compounded by draft release bug:** Created GitHub Release as DRAFT (doesn't trigger automation), causing workflow failures
-
-### Impact Assessment
-
-**User harm: 🔴 MODERATE**
-- Mangled version is permanently on npm (cannot be unpublished after 72 hours per npm policy)
-- Any user who installed during the 5-minute `latest` window got a broken version
-- Version pollution: `0.8.2-1.4` sits between `0.8.0` and `0.8.2` in semver order, creating upgrade confusion
-- Users explicitly installing `@bradygaster/squad-sdk@0.8.2-1.4` will get the broken version forever
-
-**Trust damage: 🔴 SEVERE**
-- This is Kobayashi's **THIRD major release failure** (PR #582 close-instead-of-merge, v0.6.0 vs v0.8.17 version confusion, now this)
-- Pattern: When under pressure, Kobayashi skips validation and creates invalid state
-- The charter says "Zero tolerance for state corruption" — but Kobayashi is THE SOURCE of state corruption
-
-
----
-
-## Can Guardrails Fix This?
-
-Kobayashi proposed guardrails in `.squad/decisions/inbox/kobayashi-release-guardrails.md`:
-1. Pre-publish semver validation in `publish.yml`
-2. GitHub Release verification (enforce `--draft=false`)
-3. NPM_TOKEN type verification
-
-**My assessment: 🟡 PARTIAL FIX, BUT INSUFFICIENT**
-
-Yes, workflow guardrails can catch invalid semver BEFORE it reaches npm. But:
-
-### The Problem Is Deeper Than Tooling
-
-Kobayashi's failures show a **fundamental process failure**:
-- No mental checklist before releasing (what is valid semver? what triggers npm publish?)
-- No verification of consequences (does draft release trigger workflow? is this version already published?)
-- Panic response when things fail (close PR instead of diagnosing conflicts)
-
-**Three strikes:**
-1. ❌ PR #582 — Closed PR when asked to merge (abandoned instead of investigated)
-2. ❌ v0.6.0 confusion — Documented wrong version, didn't verify against package.json
-3. ❌ v0.8.2-1.4 disaster — Invalid semver, draft release, published garbage to npm
-
-### Guardrails Help, But Don't Fix the Root Cause
-
-- Workflow validation can prevent **some** failures (invalid semver, wrong token type)
-- But it can't prevent **all** failures (closing PRs prematurely, documenting wrong decisions, skipping verification steps)
-- Kobayashi's charter explicitly says "ALWAYS verify" and "NEVER skip validation" — but the pattern shows these rules are ignored under pressure
-
-
----
-
-## Do I Trust Kobayashi Not to Break Distribution Again?
-
-**No. 🔴**
-
-Distribution is MY domain. User install experience is MY responsibility. And Kobayashi has:
-- Published a phantom version to npm that will exist forever
-- Made `latest` point to garbage (even if only for 5 minutes)
-- Created a permanent scar in the version history that will confuse users
-
-**This is not a "learn from mistakes" situation.** This is a **pattern of skipping validation under pressure.**
-
-### The Charter Says "Zero Tolerance for State Corruption"
-
-Kobayashi's own charter says:
-> "Zero tolerance for state corruption — if .squad/ state gets corrupted, everything breaks"
-
-But Kobayashi corrupted **npm distribution state** — which is WORSE than .squad/ state corruption. npm state is:
-- **Permanent** (cannot unpublish after 72 hours)
-- **Public** (affects all users, not just our team)
-- **Irreversible** (0.8.2-1.4 will exist forever)
-
-
----
-
-## My Vote: REPLACE
-
-**Reasoning:**
-1. **User-first principle:** Users got a broken version. The mangled version will confuse users forever.
-2. **Pattern of failure:** Three major failures show this is not a one-time mistake.
-3. **Domain conflict:** Distribution is MY domain. I cannot rely on Kobayashi not to break it again.
-4. **Trust erosion:** "Zero tolerance for state corruption" is Kobayashi's stated principle, but Kobayashi is the one corrupting state.
-
-**Guardrails are not enough.** We need someone who:
-- Validates semver BEFORE committing (not after)
-- Understands draft vs. published releases (not learns by breaking prod)
-- Investigates failures instead of panicking (merge conflicts, workflow failures)
-- Maintains process discipline under pressure (not just when things are easy)
-
-### What's Best for the Users?
-
-Users deserve a distribution pipeline they can trust. Right now, `@bradygaster/squad-sdk@0.8.2-1.4` is on npm forever. 
-
-**I vote REPLACE.**
-**Result:** ✅ GO — v0.8.24 release approved. 32/32 tests pass.
-
-
----
-
-### CLI Release Readiness Audit — v0.8.24
-**By:** EECOM  
-**Date:** 2026-03-08
-
-Definitive CLI completeness audit confirms all commands work post-publish.
-
-**What:**
-- 26 primary commands routed, all tested ✅
-- 4 aliases routed (watch, workstreams, remote-control, streams) — 3 tested, 1 untested
-- Tarball: 318 files, bin entry correct, postinstall script functional
-- ESM runtime patch verified for Node 24+ compatibility
-- All tests pass: 32/32 (36s runtime)
-
-**Gaps (non-blocking):**
-- `streams` alias routed but not smoke-tested (same code path as tested `subsquads` — low risk)
-
-**Result:** ✅ SHIP IT — 95% confidence. CLI production-ready for v0.8.24.
-
-
----
-
-**User-first principle:** If users have to think about version mangling, publish is broken.
-
-
-### 2026-03-13T17:48:17Z: User directive
-**By:** Brady (via Copilot)
-**What:** When the user says "team take a nap", the coordinator should run the `squad nap` CLI command rather than treating it as a casual sign-off.
-**Why:** User request — captured for team memory
-
-# CI/CD & GitOps PRD Synthesis Decision
-
-**Author:** Keaton (Lead)  
-**Date:** 2026-03-07  
-**Type:** Architecture & Process  
-**Status:** Decided
-
-
----
-
-## Decision
-
-Created unified CI/CD & GitOps improvement PRD by synthesizing Trejo's release/GitOps audit (27KB) and Drucker's CI/CD pipeline audit (29KB) into single actionable document (docs/proposals/cicd-gitops-prd.md, ~34KB).
-
-
----
-
-## Context
-
-Brady requested PRD after two new agents (Trejo — Release Manager, Drucker — CI/CD Engineer) completed independent audits of our CI/CD infrastructure. Post-v0.8.22 disaster context: 4-part semver (0.8.21.4) mangled to 0.8.2-1.4, draft release didn't trigger CI, user token with 2FA failed 5+ times, `latest` dist-tag broken for 6+ hours.
-
-**Input Documents:**
-1. `docs/proposals/cicd-gitops-prd-release-audit.md` — Trejo's audit covering branching model, version state, tag hygiene, GitHub Releases, release process gaps, package-lock.json, workflow audit, test infrastructure, dependency management, documentation.
-2. `docs/proposals/cicd-gitops-prd-cicd-audit.md` — Drucker's audit covering all 15 workflows individually, missing automation (rollback, pre-flight, monitoring, token expiry), scripts analysis (bump-build.mjs).
-
-
----
-
-## Approach
-
-### Synthesis Methodology
-
-1. **Read both audits fully** — Absorbed 56KB of findings across GitOps processes and CI/CD pipelines.
-2. **Extract & deduplicate findings** — Both identified same critical issues (squad-release.yml broken, semver validation missing, bump-build.mjs footgun, dev branch unprotected). Merged into single list.
-3. **Prioritize into P0/P1/P2:**
-   - **P0 (Must Fix Before Next Release):** Items that directly caused or could cause release failures — 5 items
-   - **P1 (Fix Within 2 Releases):** Risk mitigation and hardening — 10 items
-   - **P2 (Improve When Possible):** Quality of life and technical debt — 14 items
-4. **Identify architecture decisions** — 5 key choices that require Brady input before implementation can proceed.
-5. **Group into implementation phases** — 6 phases from "unblock releases" (1-2 days) to "quality of life" (backlog).
-
-### Key Synthesis Decisions
-
-**Where Trejo and Drucker agreed (high confidence):**
-- squad-release.yml is completely broken (test failures) — **P0 blocker**
-- Semver validation is missing — **root cause of v0.8.22**
-- bump-build.mjs is a footgun (creates 4-part versions) — **must fix**
-- dev branch needs protection — **unreviewed code reaches main**
-- Preview branch workflows are dead code — **decision needed**
-
-**Where they differed (tactical, not strategic):**
-- **Test failure priority:** Trejo: unblock releases (P0), Drucker: restore CI confidence (P0) → **Resolution:** Same P0, same fix
-- **bump-build.mjs approach:** Trejo: fix CI detection, Drucker: fix script format → **Resolution:** Do both (defense-in-depth)
-- **Workflow consolidation timing:** Trejo: P1, Drucker: P2 → **Resolution:** P1 (reduces confusion during implementation)
-- **Rollback automation:** Trejo: P2, Drucker: P1 → **Resolution:** P1 (v0.8.22 took 6+ hours to roll back)
-
-### Defense-in-Depth Philosophy
-
-v0.8.22 disaster showed **single validation layer is insufficient**. PRD mandates **3 layers**:
-
-1. **Pre-commit validation:** Semver check before code enters repo (hook or manual check)
-2. **CI validation:** squad-ci.yml validates versions, tests pass before merge
-3. **Publish gates:** publish.yml validates semver, SKIP_BUILD_BUMP, dry-run before npm publish
-
-**Rationale:** If one layer fails (e.g., pre-commit skipped), subsequent layers catch the issue. No single point of failure.
-
-
----
-
-## PRD Structure
-
-### 1. Executive Summary (2 paragraphs)
-- v0.8.22 disaster as motivation (worst release in Squad history)
-- Current state: working but fragile, one bad commit away from repeat
-
-### 2. Problem Statement
-- What went wrong during v0.8.22 (5 specific failures)
-- Why our current CI/CD is fragile (broken infrastructure, branch/process gaps, publish pipeline gaps, workflow redundancy)
-
-### 3. Prioritized Work Items (29 items)
-- **P0 (5 items):** Fix squad-release.yml tests, add semver validation, fix bump-build.mjs, enforce SKIP_BUILD_BUMP, protect dev branch
-- **P1 (10 items):** NPM_TOKEN checks, dry-run, fix squad-ci.yml tests, resolve insider/insiders naming, preview branch decision, apply validation to insider publish, consolidate workflows, pre-publish checklist, dist-tag hygiene, automated rollback
-- **P2 (14 items):** Branch cleanup, tag cleanup, tag validation hooks, pre-flight workflow, rollback automation workflow, workflow docs, separate dev/release builds, delete deprecated files, heartbeat decision, health monitoring, token rotation docs, CODEOWNERS, commit signing, enforce admin rules
-
-Each item includes:
-- Description
-- Source (which audit identified it, or both)
-- Effort estimate (S/M/L)
-- Dependencies on other items
-- Code snippets where applicable
-
-### 4. Architecture Decisions Required (5 choices)
-- **Decision 1:** Consolidate publish.yml and squad-publish.yml? → **Recommendation:** Delete squad-publish.yml (use publish.yml as canonical)
-- **Decision 2:** Delete or fix squad-release.yml? → **Recommendation:** Fix (automation is valuable, tests are fixable)
-- **Decision 3:** How should bump-build.mjs behave? → **Recommendation:** Use -build.N suffix + separate build scripts (defense-in-depth)
-- **Decision 4:** Branch protection strategy for dev? → **Recommendation:** Same rules as main (dev is integration branch)
-- **Decision 5:** Preview branch architecture? → **Recommendation:** Remove workflows (three-branch model is sufficient)
-
-### 5. Implementation Phases (6 phases)
-- **Phase 1:** Unblock releases (1-2 days) — fix tests, protect dev
-- **Phase 2:** Disaster-proof publish (2-3 days) — semver validation, bump-build.mjs fix, SKIP_BUILD_BUMP, NPM_TOKEN check, dry-run
-- **Phase 3:** Workflow consolidation (3-5 days) — insider/insiders naming, preview decision, publish consolidation, delete deprecated
-- **Phase 4:** Hardening (5-7 days) — fix squad-ci.yml, harden insider publish, pre-publish checklist, rollback automation, tag validation
-- **Phase 5:** Operations (3-5 days) — dist-tag hygiene, tag cleanup, workflow docs, separate build scripts, token docs
-- **Phase 6:** Quality of life (backlog) — pre-flight workflow, rollback workflow, health monitoring, CODEOWNERS, commit signing, admin rules
-
-### 6. Success Criteria (Measurable)
-- Zero invalid semver incidents for 6 months post-implementation
-- squad-release.yml success rate ≥ 95% (no more than 1 failure per 20 runs)
-- MTTR for release failures < 1 hour (down from 6+ hours in v0.8.22)
-- CI confidence restored (no normalized failures)
-- Zero unprotected critical branches (main AND dev)
-- Publish pipeline defense-in-depth (at least 3 validation layers)
-
-### 7. Appendix: Workflow Inventory
-Table of all 15 workflows with status and priority assignments.
-
-
----
-
-## Key Insights from Synthesis
-
-### 1. Test Failures Are the Primary Blocker
-squad-release.yml: 9+ consecutive failures due to ES module syntax errors (`require()` instead of `import` with `"type": "module"`). This is blocking ALL releases from main. **Fix this first.**
-
-### 2. bump-build.mjs Is a Ticking Time Bomb
-For non-prerelease versions, creates 4-part versions (0.8.22 → 0.8.22.1), which npm mangles. Direct cause of v0.8.22. **Must fix to use -build.N suffix (0.8.22-build.1 = valid semver).**
-
-### 3. Workflow Redundancy Creates Confusion
-15 workflows, 3 are unclear/redundant (squad-publish.yml, preview workflows, heartbeat). Consolidation needed.
-
-### 4. Branch Model Needs Clarity
-- Preview branch referenced but doesn't exist (dead code or incomplete implementation?)
-- Insider/insiders naming inconsistent (workflows use `insider`, team uses `insiders`)
-- dev branch unprotected (direct commits bypass review)
-
-### 5. Defense-in-Depth Is Not Optional
-v0.8.22 showed single validation layer fails. PRD mandates multiple layers: pre-commit + CI + publish gates.
-
-
----
-
-## What Makes This PRD Actionable
-
-1. **Concrete work items:** 29 items with descriptions, effort estimates, dependencies. Ready for agent assignment.
-2. **Code snippets included:** Validation gates, CI checks, workflow improvements are ready-to-copy.
-3. **Phased rollout:** Implementable in order — unblock releases first, disaster-proof next, harden later.
-4. **Success criteria:** Measurable outcomes (zero invalid semver for 6 months, MTTR <1 hour, CI success rate ≥95%).
-5. **Architecture decisions called out:** 5 choices that need Brady input before proceeding.
-
-
----
-
-## Recommended Next Steps
-
-1. **Brady reviews PRD** — Approves priorities, makes architecture decisions (publish consolidation, preview branch, bump-build.mjs approach).
-2. **Drucker takes P0 items #1-4** — Fix squad-release.yml tests, add semver validation, fix bump-build.mjs, enforce SKIP_BUILD_BUMP.
-3. **Trejo takes P0 item #5 + P1 items** — Protect dev branch, resolve insider/insiders, preview decision, workflow consolidation.
-4. **Keaton reviews Phase 2 implementation** — Ensures defense-in-depth is implemented correctly.
-
-
----
-
-## Impact
-
-- **Prevents repeat disasters:** 3-layer validation means no single failure point.
-- **Unblocks releases:** Fixing squad-release.yml tests enables releases from main.
-- **Reduces MTTR:** Automated rollback reduces 6-hour incidents to <1 hour.
-- **Restores CI confidence:** No more normalized failures — tests pass consistently.
-- **Clarifies architecture:** 5 decisions resolve branch model, workflow redundancy, build script ambiguity.
-
-
----
-
-**Status:** PRD published, awaiting Brady review and architecture decisions.
-*Fresh start — Mission Control rebirth, 2026-03-08. Previous decisions archived.*
-
-### 2026-03-08: Distributed Mesh Integration — Architecture Guidance
-**By:** Flight  
-**What:** Integration map for Andi's distributed-mesh extension into Squad core.  
-**Why:** The distributed mesh pattern is proven (3-model consensus), solves multi-machine coordination, and fits Squad's zero-dependency architecture. This guidance ensures clean integration without architectural drift.
-
-
----
-
-## File Placement — Definitive Locations
-
-### SKILL.md
-**Template distribution:**
-- `templates/skills/distributed-mesh/SKILL.md` — Shipped with Squad npm package, copied into new projects via init/upgrade
-- `packages/squad-sdk/templates/skills/distributed-mesh/SKILL.md` — SDK template for programmatic access
-- `packages/squad-cli/templates/skills/distributed-mesh/SKILL.md` — CLI template for scaffolding
-
-**Runtime location:**
-- `.squad/skills/distributed-mesh/SKILL.md` — User-owned, never overwritten by upgrades (follows existing skill convention)
-
-### Sync Scripts
-**Location:** `scripts/mesh/`
-- `scripts/mesh/sync-mesh.sh` (bash version, requires jq + git)
-- `scripts/mesh/sync-mesh.ps1` (PowerShell version, requires git only)
-
-**Why scripts/ and not bin/:** These are optional reference implementations, not core CLI commands. Users can run them directly (`./scripts/mesh/sync-mesh.sh`) or copy them into their own project workflows. They are NOT wired into the CLI routing table.
-
-### mesh.json.example
-**Location:** `templates/mesh.json.example`
-
-Copied during init if user opts into distributed mode (future enhancement). For now, ships as documentation — users copy manually when they need Zone 2/3 coordination.
-
-### README.md Content
-**Target:** `docs/src/content/docs/features/distributed-mesh.md`
-
-**Structure:**
-- Title: "Distributed Mesh — Cross-Machine Coordination"
-- Front matter: `{ title: "Distributed Mesh", description: "Coordinate squads across machines using git as transport" }`
-- Content sections:
-  - The Problem (verbatim from extension README)
-  - The Architecture (3 zones table)
-  - Agent Lifecycle (SYNC → READ → WORK → WRITE → PUBLISH)
-  - Configuration (mesh.json schema)
-  - Phased Rollout (phases 0-2)
-  - Getting Started (setup guide)
-  - Cross-Model Consensus (validation)
-  - Anti-Patterns (what we're NOT building)
-
-**Cross-references:**
-- Link from `scenarios/multiple-squads.md` → "For squads on different machines, see [Distributed Mesh](../features/distributed-mesh.md)"
-- Link from `features/streams.md` → "SubSquads partition work within a repo. Distributed Mesh connects squads across machines."
-
-
----
-
-## Relationship to Existing Modules
-
-### 1. `src/sharing/` — Export/Import (Snapshot-Based)
-**What it does:** One-time snapshot export → zip → import into another squad. Cherry-pick skills, merge histories, handle version conflicts.
-
-**Relationship:** **Complementary, not overlapping.**
-- **Export/import** = One-time knowledge transfer when creating a new squad or merging teams.
-- **Distributed mesh** = Continuous coordination between running squads on different machines.
-
-**Example:** Export frontend-squad's skills, import them into backend-squad during onboarding (export/import). After onboarding, both squads coordinate via mesh for daily work (mesh).
-
-**Code changes needed:** NONE. Export/import stays as-is. Mesh is additive.
-
-### 2. `src/multi-squad.ts` — Local Squad Resolution
-**What it does:** Resolves multiple personal squads on the same machine via `squads.json` in global config directory (`~/.config/squad/squads.json`). Each squad has its own `.squad/` state directory. Supports active squad switching.
-
-**Relationship:** **Orthogonal.**
-- **multi-squad.ts** = "Which .squad/ directory am I using on this machine?"
-- **Distributed mesh** = "How do I coordinate with squads whose .squad/ directories are on other machines?"
-
-**Example:** Developer has three local squads (auth-squad, api-squad, infra-squad) in their `~/.config/squad/squads.json`. Each squad's mesh.json can point to remote squads on CI runners or other developers' machines.
-
-**Code changes needed:** NONE. Multi-squad and mesh solve different problems.
-
-### 3. `src/streams/` — SubSquads (Label-Based Partitioning)
-**What it does:** Partitions work within a single repo across multiple Codespaces. Each SubSquad filters by GitHub label (`team:ui`, `team:backend`) and restricts to specific directories. Enables parallel work without agent context overload.
-
-**Relationship:** **Scoping axis is different.**
-- **SubSquads** = Scope work within a repo (same .squad/ state, different label filters).
-- **Distributed mesh** = Connect squads across repos/machines (different .squad/ state directories).
-
-**Example:** Frontend SubSquad and Backend SubSquad both run in the same repo, each in their own Codespace, filtering by label. Both SubSquads might use distributed mesh to coordinate with a CI-squad running on a remote server.
-
-**Code changes needed:** NONE. SubSquads and mesh are composable.
-
-### 4. `src/remote/` — RemoteBridge (WebSocket PWA Control)
-**What it does:** WebSocket server that bridges Squad's EventBus to a PWA client. Enables remote control of a running Squad instance from a browser — send prompts, see streaming output, approve permissions. Synchronous RPC-style interaction. Requires a running server.
-
-**Relationship:** **Mesh is the replacement for remote-to-remote agent-to-agent use cases.**
-
-**Decision:** The `src/remote/` module stays for **human-to-agent** remote control (PWA → Squad). Distributed mesh handles **agent-to-agent** coordination across machines.
-
-**Why mesh wins for agent-to-agent:**
-1. Zero running services (git pull/push is transport)
-2. Eventual consistency (agents are async anyway)
-3. Write partitioning (structurally impossible to conflict)
-4. Works across orgs (Zone 3 uses HTTP, no shared auth required)
-5. 30 lines of bash vs. RemoteBridge's ~800 lines + WebSocket + HTTP server
-
-**Migration path:** If anyone was using `src/remote/` for agent-to-agent coordination (unlikely — it was designed for PWA control), they switch to mesh. RemoteBridge stays for PWA use cases.
-
-**Anti-pattern to block:** Do NOT extend RemoteBridge for agent-to-agent coordination. That path leads to MCP federation, service discovery, and message queues — the exact subsystems we killed. Mesh is the answer.
-
-
----
-
-## Required Changes vs. Documentation Only
-
-### Documentation Only (No Code Changes)
-✅ **Add `docs/src/content/docs/features/distributed-mesh.md`** — Comprehensive guide adapted from extension README  
-✅ **Update `docs/src/content/docs/scenarios/multiple-squads.md`** — Add paragraph + link: "For squads on different machines, see Distributed Mesh"  
-✅ **Update `docs/src/content/docs/features/streams.md`** — Add note: "SubSquads partition work within a repo. Distributed Mesh connects squads across machines."  
-✅ **Copy `sync-mesh.sh` and `sync-mesh.ps1` to `scripts/mesh/`**  
-✅ **Copy `mesh.json.example` to `templates/mesh.json.example`**  
-✅ **Copy `SKILL.md` to `templates/skills/distributed-mesh/SKILL.md`** (and SDK/CLI template dirs)
-
-### No Changes Required
-
----
-
-## 2026-03-26: Crash Recovery Execution — 10 PRs Merged
-
-**Author:** Scribe (documenting Round 2+3 outcomes)  
-**Date:** 2026-03-26T06:41:00Z  
-**Context:** Post-CLI crash triage session, team consensus executed across three recovery rounds.
-
-### Round 1 (Audit & Baseline)
-- **Flight** audited PR/issue state post-crash: found #617 already merged, #619 conflicting, 3 duplicates (#605, #604, #602) open
-- **FIDO** verified build baseline: ✅ 5,038 tests passing, dev green
-- **Scribe** merged stale decision inbox (procedures-model-update.md), logged crash session
-
-### Round 2 (Duplicate Closure & PR Actions)
-- **Flight** closed 3 duplicate PRs (#605, #604, #602) with rationale comments
-- **Procedures** rebased PR #619 (model catalog) onto dev, resolved 3 merge conflicts, merged
-- **FIDO** reviewed 9 community PRs: ✅ approved 3 (#625, #603, #608), requested changes on 6 (#623, #622, #621, #614, #607, #606)
-
-### Round 3 (Community Merges)
-- **Coordinator** merged 3 approved community PRs: #625 (notification-routing), #608 (security policy), #603 (Challenger agent template)
-- **Flight** confirmed all merges and verified state
-
-### Outcomes
-- **PRs merged:** 10 total
-  - 6 merge-plan PRs (#620, #627, #624, #611, #617, #619) ✅ all complete
-  - 3 community PRs (#625, #608, #603) ✅ merged
-  - 1 legacy PR (#592) ✅ merged
-- **PRs closed:** 3 duplicates
-- **PRs awaiting author changes:** 6 (#623, #622, #621, #614, #607, #606)
-- **Dev branch status:** 5,038 tests passing ✅ Green
-
-### Decisions Made
-1. **Duplicate closure rationale:**
-   - #605 → duplicate of #607 (ceremonies-related)
-   - #604 → duplicate of #603 (Challenger agent)
-   - #602 → duplicate of #606 (tiered agent memory)
-
-2. **Community PR quality gate:** FIDO identified systemic issues in lower-tier PRs:
-   - **Changeset package naming:** 4 PRs used unscoped `squad-cli` instead of `@bradygaster/squad-cli`
-   - **File paths:** 2 PRs placed files at root-level instead of correct package structure
-   - **Action:** Requested specific changes; authors must revise
-
-3. **Model catalog (PR #619):** Rebased with conflict resolution, merged successfully. Platform models now current: `claude-sonnet-4.6` (default), `gpt-5.3-codex` (specialist), new fallbacks added.
-
-### Next Steps
-- Monitor 6 change-request PRs for author responses (48h window)
-- Park draft PR #567 pending requirements clarification
-- Dev branch remains green; ready for follow-on feature work
-
----
-
-## 2026-03-26: Decision Inbox Merge Complete
-
-**Author:** Scribe  
-**Date:** 2026-03-26T06:41:00Z
-
-### Inbox Files Merged & Deleted
-1. ✅ `fido-community-pr-review.md` — 9-PR review with quality gate findings
-2. ✅ `flight-crash-recovery-audit.md` — Baseline PR/issue audit post-crash
-3. ✅ `flight-phase1-execution.md` — Duplicate closure + community PR merge execution
-4. ✅ `procedures-model-update.md` — Model catalog refresh decision
-
-### Deduplication
-- **No exact duplicates found** — each inbox file covers distinct aspects (audit vs. execution vs. review)
-- **Integrated into crash-recovery decision** above (single coherent timeline)
-- All inbox files archived and deleted per standard Scribe workflow
-❌ **squad.config.ts** — Does NOT need a `mesh` section. The mesh config lives in `mesh.json` as a separate concern. squad.config.ts is for agent behavior, not transport.
-
-❌ **squad.agent.md** — Does NOT need mesh awareness. Agents learn mesh patterns from the skill file, not the coordinator prompt.
-
-❌ **routing.md** — Does NOT need updates. Mesh is not a routing concern — it's a visibility concern. Agents read whatever `.mesh/` directories exist. Routing rules still apply to issue assignment.
-
-❌ **CLI commands** — NO `squad mesh sync` command. The sync scripts are reference implementations, not core CLI features. Users run them directly (`./scripts/mesh/sync-mesh.sh`) or integrate them into CI workflows (`github-actions`, `cron`). Rationale: Squad is an agent framework, not a sync orchestrator. Mesh is convention + optional scripts.
-
-### Optional Future Enhancements (Not Blocking v1)
-🔮 **Init flow enhancement:** During `squad init`, ask "Will this squad coordinate with remote squads?" If yes, copy `mesh.json.example` → `mesh.json` and prompt for first remote entry. Implementation: ~20 lines in init flow.
-
-🔮 **Auto-sync hooks:** Git pre-commit hook that runs `sync-mesh.sh` before push. Implementation: Add to `.squad/templates/hooks/pre-commit.sample`. User enables manually (`chmod +x`).
-
-🔮 **Mesh health check:** `squad doctor` command extension that validates mesh.json schema, tests git auth for Zone 2 remotes, validates HTTP endpoints for Zone 3. Implementation: ~50 lines, non-critical.
-
-
----
-
-## Integration Checklist
-
-**Phase 0 — Immediate (Documentation + Templates):**
-- [ ] Copy extension files into Squad repo as documented above
-- [ ] Write `docs/features/distributed-mesh.md`
-- [ ] Update cross-reference docs (multiple-squads.md, streams.md)
-- [ ] Add mesh.json.example to templates
-- [ ] Add SKILL.md to all three template directories
-- [ ] Verify skill appears in new squad init
-
-**Phase 1 — Validation (Test in Practice):**
-- [ ] Use mesh in Squad's own development (coordinate across developer machines)
-- [ ] Validate mesh works with existing multi-squad setup
-- [ ] Confirm no conflicts with SubSquads feature
-- [ ] Test cross-platform (bash script on macOS/Linux, PowerShell on Windows)
-
-**Phase 2 — Polish (User Experience):**
-- [ ] Consider init flow enhancement (opt-in prompt)
-- [ ] Document common mesh.json patterns (examples in docs)
-- [ ] Add troubleshooting section (git auth failures, HTTP 404s, stale sync)
-
-
----
-
-## Decision Rationale
-
-**Why mesh is architecturally correct:**
-1. **Aligns with zero-dependency mandate:** Uses git (already required) and shell scripts. No new npm packages.
-2. **Preserves agent interface invariance:** Agents always read local files. Transport is invisible.
-3. **Respects write partitioning:** Each squad owns its directory. Structurally conflict-free.
-4. **Fits phased rollout:** Phase 0 is pure convention (0 lines). Scripts are opt-in (~30 lines).
-5. **Validated by consensus:** Three model families independently arrived at the same answer.
-
-**Why NOT a CLI command:**
-- Squad is an agent framework, not a sync scheduler.
-- Sync timing is environment-specific (git hooks, cron, CI, manual).
-- Reference scripts empower users to integrate however they need.
-- Avoids CLI complexity creep (26 commands → 27 is a high bar to clear).
-
-**Why NOT extend RemoteBridge:**
-- RemoteBridge is for human-to-agent control (PWA → Squad).
-- Mesh is for agent-to-agent coordination (Squad → Squad).
-- Mixing the two leads to MCP federation, the subsystem we intentionally killed.
-
-**Why mesh.json is NOT in squad.config.ts:**
-- squad.config.ts is TypeScript, requires compilation, stores agent behavior config.
-- mesh.json is JSON, shell-parseable, stores transport config.
-- Separation of concerns: agent behavior vs. transport infrastructure.
-
-
----
-
-## Blockers and Dependencies
-
-**Blockers:** NONE. Mesh is pure additive — no breaking changes, no API surface expansion.
-
-**Dependencies:**
-- Git must be installed (already required by Squad)
-- For bash script: `jq` must be installed (document in prerequisites)
-- For PowerShell script: PowerShell 5.1+ (built-in on Windows, installable on macOS/Linux)
-
-**Risk Assessment:** LOW. Mesh is convention-first, scripts are optional, skill file is passive knowledge. If users don't use mesh, it's invisible. If they do, it composes cleanly with all existing features.
-
-
----
-
-## Summary
-
-Distributed Mesh integrates as:
-1. **A skill** (templates/skills/distributed-mesh/SKILL.md) — agents learn the pattern
-2. **Reference scripts** (scripts/mesh/) — users run them when needed
-3. **Documentation** (docs/features/distributed-mesh.md) — comprehensive guide
-4. **A template** (templates/mesh.json.example) — copy-paste config starter
-
-Zero code changes to existing modules. Zero new CLI commands. Zero architectural drift. The ratio holds: ~30 lines of bash/PowerShell vs. 3,756 lines of deleted federation code. Mesh is what distribution looks like when you respect the constraints.
-
-**Ship it.**
-
-
----
-
-# Distributed Mesh Template Placement
-
-**By:** Network  
-**Date:** 2026-03-08
-
-## Decision
-
-The distributed-mesh skill and scaffolding templates are placed in the standard template structure following the existing pattern for product-shipped skills.
-
-## Locations
-
-**Skill file (SKILL.md) — 4 locations:**
-- `templates/skills/distributed-mesh/` — root template directory
-- `packages/squad-sdk/templates/skills/distributed-mesh/` — SDK templates
-- `packages/squad-cli/templates/skills/distributed-mesh/` — CLI templates
-- `.squad/skills/distributed-mesh/` — this squad's runtime skills
-
-**Mesh scaffolding (new directory) — 1 location:**
-- `templates/mesh/` — holds `mesh.json.example`, `sync-mesh.sh`, `sync-mesh.ps1`, `README.md`
-
-## Rationale
-
-Three parallel template locations (root, SDK, CLI) ensure both init paths can scaffold the skill into new projects. The mesh/ directory holds the sync script scaffolding separate from the skill documentation. This keeps the template structure clean and allows users to copy mesh files to their project root when they're ready for distributed coordination.
-
-The sync scripts (~40 lines each, bash and PowerShell) materialize remote squad state locally using git/curl. No daemons, no running processes — Phase 1 distributed coordination.
-
-
----
-
-# Distributed Mesh Documentation Structure
-
-**By:** PAO  
-**Date:** 2026-03-08  
-**Status:** Approved
-
-## Decision
-
-Distributed mesh documentation lives in `features/` (not `scenarios/` or `concepts/`). It's a **feature** because it's an optional capability users enable, not a conceptual explanation or workflow.
-
-## Context
-
-The distributed mesh enables squads on different machines to coordinate via git (same org) and HTTP (cross-org). Source material existed in `C:\dev\squad-architecture\distributed-mesh\README.md`.
-
-Choice: Where does this belong in the docs?
-- `concepts/` — too architectural; readers expect abstract explanations, not setup steps
-- `scenarios/` — too workflow-focused; scenarios are "how to accomplish X"
-- `features/` — ✅ correct home; features are "what Squad can do and how to enable it"
-
-## What Was Documented
-
-Created `docs/src/content/docs/features/distributed-mesh.md`:
-- What the distributed mesh is (one-sentence explanation)
-- The three zones (local, remote-trusted, remote-opaque)
-- `mesh.json` configuration
-- Sync scripts (bash + PowerShell)
-- Getting started (setup steps)
-- Relation to SubSquads (within-repo partitioning vs cross-machine coordination)
-- Relation to export/import (snapshot-based vs continuous)
-- Anti-patterns (what NOT to build)
-
-## Test Assertions Updated
-
-Added `'distributed-mesh'` to:
-- `EXPECTED_FEATURES` array in `test/docs-build.test.ts`
-- Features directory markdown validation test
-- `getAllMarkdownFiles()` sections array
-- Navigation structure in `docs/src/navigation.ts`
-
-All structure validation tests pass.
-
-## Cross-References Added
-
-Added pointer in `scenarios/multiple-squads.md`:
-> Want continuous coordination instead? See [Distributed Mesh](../features/distributed-mesh.md) — it syncs remote squad state via git and HTTP.
-
-This guides readers from snapshot-based export/import to continuous mesh coordination.
-
-## Why This Matters
-
-Users asking "how do I coordinate multiple squads?" now have two paths clearly documented:
-1. **Snapshot-based:** Export/import (one-time copy, scenarios/multiple-squads.md)
-2. **Continuous:** Distributed mesh (live sync, features/distributed-mesh.md)
-
-The feature page provides practical setup steps and respects the tone ceiling — no hype, just mechanism.
-
-
----
-
-### 2026-03-10: Deterministic skill pattern
-
-**By:** Procedures (Prompt Engineer)
-
-**What:** Skills must have explicit SCOPE and AGENT WORKFLOW sections to be fully deterministic.
-
-**Pattern:**
-
-1. **SCOPE section** (after frontmatter, before Context):
-   - ✅ THIS SKILL PRODUCES — exact list of artifacts
-   - ❌ THIS SKILL DOES NOT PRODUCE — explicit negative list
-
-2. **AGENT WORKFLOW section** — deterministic steps:
-   - ASK: exact questions for the user
-   - GENERATE: which files to create, with schemas
-   - WRITE: which decision entry to write, with template
-   - TELL: exact message to output
-   - STOP: explicit stopping condition with negative list
-
-3. Fix ambiguous language (clarify "do the task," note phases aren't auto-advanced, etc.)
-
-4. Include decision templates inline
-
-5. List anti-patterns for code generation explicitly
-
-**Why:** The distributed-mesh skill was tested in a real project and agents generated 76 lines of validator code, 5 test files, regenerated sync scripts, and ignored decision-writing instructions. Skills need to be deterministic: same input → same output, every time.
-
-**Impact:** All future skills should follow this pattern. Existing skills should be audited and rewritten if they allow interpretation.
-
-
----
-# Skill-Based Orchestration (#255)
-
-**Date:** 2026-03-07
-**Context:** Issue #255 — Decompose squad.agent.md into pluggable skills
-**Decision made by:** Verbal (Prompt Engineer)
-
-## Decision
-
-Squad coordinator capabilities are now **skill-based** — self-contained modules loaded on demand rather than always-inline in squad.agent.md.
-
-## What Changed
-
-### 1. SDK Builder Added
-
-Added `defineSkill()` builder function to the SDK (`packages/squad-sdk/src/builders/`):
+Add an `else` clause that warns when the template is missing:
 
 ```typescript
-export interface SkillDefinition {
-  readonly name: string;
-  readonly description: string;
-  readonly domain: string;
-  readonly confidence?: 'low' | 'medium' | 'high';
-  readonly source?: 'manual' | 'observed' | 'earned' | 'extracted';
-  readonly content: string;
-  readonly tools?: readonly SkillTool[];
+const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
+if (storage.existsSync(agentSrc)) {
+  storage.mkdirSync(path.dirname(agentDest), { recursive: true });
+  storage.copySync(agentSrc, agentDest);
+  stampVersion(agentDest, cliVersion);
+  success('upgraded squad.agent.md');
+  filesUpdated.push('squad.agent.md');
+} else {
+  warn('squad.agent.md.template not found — squad.agent.md was not refreshed. Run "squad upgrade --force" or reinstall the CLI.');
 }
-
-export function defineSkill(config: SkillDefinition): SkillDefinition { ... }
 ```
 
-- **Why:** SDK-First mode needed a typed way to define skills in `squad.config.ts`
-- **Type naming:** Exported as `BuilderSkillDefinition` to distinguish from runtime `SkillDefinition` (skill-loader.ts)
-- **Validation:** Runtime type guards for all fields, follows existing builder pattern
+### 2. SDK init.ts (line 1032-1038)
 
-### 2. Four Skills Extracted
-
-Extracted from squad.agent.md:
-
-1. **init-mode** — Phase 1 (propose team) + Phase 2 (create team). ~100 lines. Full casting flow, `ask_user` tool, merge driver setup.
-2. **model-selection** — 4-layer hierarchy (User Override → Charter → Task-Aware → Default), role-to-model mappings, fallback chains. ~90 lines.
-3. **client-compatibility** — Platform detection (CLI vs VS Code vs fallback), spawn adaptations, SQL tool caveat. ~60 lines.
-4. **reviewer-protocol** — Rejection workflow, strict lockout semantics (original author cannot self-revise). ~30 lines.
-
-All skills marked:
-- `confidence: "high"` — extracted from authoritative governance file
-- `source: "extracted"` — marks decomposition from squad.agent.md
-
-### 3. squad.agent.md Compacted
-
-Replaced extracted sections with lazy-loading references:
-
-```markdown
-## Init Mode
-
-**Skill:** Read `.squad/skills/init-mode/SKILL.md` when entering Init Mode.
-
-**Core rules (always loaded):**
-- Phase 1: Propose team → use `ask_user` → STOP and wait
-- Phase 2 trigger: User confirms OR user gives task (implicit yes)
-- ...
-```
-
-**Result:** 840 lines → 711 lines (15% reduction, ~130 lines removed)
-
-### 4. Build Command Updated
-
-`squad build` now generates `.squad/skills/{name}/SKILL.md` when `config.skills` is defined in `squad.config.ts`:
+Add an `else` clause that warns during init:
 
 ```typescript
-// In build.ts
-function generateSkillFile(skill: BuilderSkillDefinition): string {
-  // Generates frontmatter + content
-}
-
-// In buildFilePlan()
-if (config.skills && config.skills.length > 0) {
-  for (const skill of config.skills) {
-    files.push({
-      relPath: `.squad/skills/${skill.name}/SKILL.md`,
-      content: generateSkillFile(skill),
-    });
-  }
+if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
+  let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
+  agentContent = stampVersionInContent(agentContent, version);
+  await storage.write(agentFile, agentContent);
+  createdFiles.push(toRelativePath(agentFile));
+} else {
+  // Template missing — this is a degraded install, warn but don't fatal
+  // (init creates many other files that are still valuable)
+  console.warn('⚠ squad.agent.md template not found — Copilot agent file was not created. Reinstall the CLI to restore it.');
 }
 ```
 
-## Why This Matters
+### 3. doctor.ts — no changes needed
 
-### For Coordinators
-- **Smaller context window:** squad.agent.md drops from 840 → 711 lines. Further decomposition can continue.
-- **On-demand loading:** Coordinator reads skill files only when relevant (e.g., init-mode only during Init Mode).
-- **Skill confidence lifecycle:** Framework supports low → medium → high confidence progression for future learned skills.
+The existing `checkSquadAgentMd()` function already detects missing/empty files and suggests `squad upgrade`. This is the correct behavior for a diagnostic tool — it should diagnose, not auto-fix.
 
-### For SDK Users
-- **Typed skill definitions:** Define skills in `squad.config.ts` using `defineSkill()`, get validation and type safety.
-- **Programmatic skill authoring:** Skills can be composed, shared, and versioned like code.
-- **Build-time generation:** `squad build` generates SKILL.md from config — single source of truth.
+## Assigned Agent
 
-### For the Team
-- **Parallel with ceremony extraction:** Follows the same pattern as ceremony skill files (#193).
-- **Reduces merge conflicts:** Smaller squad.agent.md = fewer line-based conflicts when multiple PRs touch governance.
-- **Enables skill marketplace:** Future work can package skills as npm modules, share across teams.
+**Primary:** EECOM 🔧 (Core Dev — owns `src/cli/core/` and collaborates on `src/config/`)
+**Secondary:** FIDO 🧪 (Quality — test coverage for the silent-skip paths)
 
-## Constraints
+## Test Plan
 
-1. **Existing behavior unchanged:** Skills are lazy-loaded. If coordinator previously got instructions inline, it now gets them from a skill file. Same instructions, different location.
-2. **squad.agent.md must still work:** Core rules remain inline. Coordinator knows WHEN to load each skill without needing the skill file first.
-3. **Type collision avoided:** BuilderSkillDefinition vs runtime SkillDefinition — import from `@bradygaster/squad-sdk/builders` subpath in CLI to avoid ambiguity.
+### New tests to add:
 
-## Future Work
+1. **upgrade.ts — version-current path with missing template:**
+   ```typescript
+   it('warns when squad.agent.md.template is missing (version-current path)', async () => {
+     // Setup: create a squad project at the current CLI version
+     // Remove squad.agent.md.template from templates dir
+     // Run upgrade (will take version-current path)
+     // Assert: warning message emitted
+     // Assert: existing squad.agent.md not deleted
+   });
+   ```
 
-- Extract 3+ more skills from squad.agent.md (target: <500 lines for core orchestration)
-- Add skill discovery/loading to runtime (currently manual references)
-- Skill marketplace: share skills via npm, discover in `squad marketplace`
-- Learned skills: agents can write skills from observations (already architected, not yet implemented)
+2. **SDK init.ts — missing template:**
+   ```typescript
+   it('warns when squad.agent.md.template is missing during init', async () => {
+     // Setup: mock/override getSDKTemplatesDir to return dir without template
+     // Run initSquad
+     // Assert: warning emitted
+     // Assert: other files still created
+   });
+   ```
 
-## References
+3. **Existing doctor.ts tests:** Already cover empty/missing detection — no changes needed.
 
-- Issue: #255
-- Files changed:
-  - `packages/squad-sdk/src/builders/types.ts`
-  - `packages/squad-sdk/src/builders/index.ts`
-  - `packages/squad-sdk/src/index.ts`
-  - `packages/squad-cli/src/cli/commands/build.ts`
-  - `.github/agents/squad.agent.md`
-  - `.squad/skills/init-mode/SKILL.md` (new)
-  - `.squad/skills/model-selection/SKILL.md` (new)
-  - `.squad/skills/client-compatibility/SKILL.md` (new)
-  - `.squad/skills/reviewer-protocol/SKILL.md` (new)
+### Existing tests to verify:
+- Run full test suite to confirm no regressions
+- Verify upgrade tests still pass with templates present (happy path)
 
+## Risk Assessment
 
+**Risk: LOW**
 
-### 2026-03-07T19-59-58Z: User directive
-**By:** bradygaster (via Copilot)
-**What:** Prefer GitHub Actions for npm publish over local npm publish. Set up a secret in the GitHub repo and facilitate npm deployment via a CI action instead of running it locally.
-**Why:** User request - captured for team memory
+- Changes are purely additive (`else` clauses on existing `if` blocks)
+- No changes to happy-path behavior (template exists → same logic runs)
+- Warning messages are informational, not blocking
+- doctor.ts unchanged — no diagnostic regression risk
 
+**Watch out for:**
+- SDK init.ts uses a different logging pattern (no `warn()` import from CLI output module). Use `console.warn()` since the SDK should not depend on CLI output utilities.
+- Don't accidentally change the `else` branch at line 1039 (`skippedFiles.push`) — that's for the `skipExisting` case, not the missing-template case.
+- The `else` at line 1039 handles "file already exists AND skipExisting=true" — our new `else` is inside the `!skipExisting` branch.
 
-# npm Publish Automation via GitHub Actions
+## PR Scope
 
-**Date:** 2026-03-16  
-**Author:** Kobayashi  
-**Status:** Implemented  
+- [ ] `upgrade.ts`: Add `else { warn(...) }` at line ~504
+- [ ] `init.ts`: Add `else { console.warn(...) }` at line ~1038
+- [ ] Tests: 2 new test cases for missing-template warnings
+- [ ] **NOT in scope:** doctor.ts changes, auto-recovery, template bundling changes
+- [ ] **NOT in scope:** The full-upgrade path in upgrade.ts (line 521 — already handles it correctly with `fatal()`)
 
-## Context
+### 2026-04-02: Bug #734 — squad nap fails via bang command (!) in Windows PowerShell
 
-Brady requested automated npm publishing via GitHub Actions instead of manual local publishes. Manual publishing is error-prone (version mismatches, forgotten packages, incorrect tags) and lacks audit trail.
+# Bug #734 — squad nap fails via bang command (!) in Windows PowerShell
 
-## Decision
+> **Author:** Flight | **Date:** 2026-04-02 | **Status:** Proposal (Investigation Required)
 
-Consolidated npm publishing into single GitHub Actions workflow (`publish.yml`) that triggers automatically on GitHub Release creation.
+## Root Cause Analysis
 
-## Implementation
+**Status: Needs investigation — root cause not yet confirmed.**
 
-### Workflow Architecture
+The `!squad nap` command fails when invoked from Copilot CLI's bang command handler in Windows PowerShell. Direct invocation (`squad nap`) works fine.
 
-**Event Chain:**
-1. Code merged to `main` (via squad-promote or direct merge)
-2. `squad-release.yml` creates tag + GitHub Release (if version bumped)
-3. `publish.yml` triggers on `release.published` event
-4. Publishes @bradygaster/squad-sdk → @bradygaster/squad-cli (correct order)
+### Most likely cause: Same as #758
 
-**Manual Override:**
-- Supports `workflow_dispatch` for ad-hoc publishes
-- Requires version input (e.g., "0.8.21")
+The Copilot CLI bang command (`!command`) spawns a child process via the system shell. On Windows PowerShell, this resolves to `squad.ps1` (unsigned) → `PSSecurityException`. This would explain why:
+- Direct invocation works (user may have already relaxed their execution policy for the current session)
+- Bang invocation fails (child process starts a new PS scope with default policy)
+- Other bang commands work (`!git`, `!gh` — these don't have `.ps1` shims, only `.cmd`)
 
-### Safety Features
+### Alternative cause: subprocess TTY/stdin
 
-1. **Version verification:** Workflow validates package.json version matches release tag
-2. **Publication verification:** Confirms packages visible on npm after publish
-3. **Provenance attestation:** npm packages include cryptographic proof of origin
-4. **Sequential publish:** SDK publishes first (CLI depends on it)
+After code review, **`nap.ts` has zero interactive requirements** — no `process.stdin`, no `readline`, no TTY checks, no `git` operations. It's purely filesystem operations (read, write, delete). This rules out stdin/TTY as a root cause.
 
-### Changes Made
+However, the CLI entry point (`cli-entry.ts`) does check `process.versions.node` early and has various module patches that could behave differently in a subprocess context.
 
-- Updated `.github/workflows/publish.yml` with new trigger logic
-- Deprecated `.github/workflows/squad-publish.yml` (redundant)
-- Added version/publication verification steps
+## Exact Files to Modify
 
-## Requirements
+| File | Action |
+|------|--------|
+| — | **Investigation first** — see steps below |
+| `packages/squad-cli/src/cli/commands/doctor.ts` | Possibly modify (if distinct from #758) |
+| `README.md` | Possibly modify (workaround docs) |
 
-**NPM_TOKEN Secret:**
-Brady must create Automation token at https://www.npmjs.com/settings/{username}/tokens and add to GitHub repo secrets.
+## Fix Approach
 
-## Implications
+### Phase 1: Investigation (MUST complete before coding)
 
-- **Releases:** Automatic npm publish when GitHub Release created (zero manual steps)
-- **Audit:** All publishes logged in GitHub Actions (who, when, what version)
-- **Security:** Provenance attestation strengthens supply chain trust
-- **Error reduction:** Version mismatches caught before publish
+1. **Reproduce and capture exact error:**
+   - Open Copilot CLI in Windows PowerShell 7.6
+   - Run `!npx @bradygaster/squad-cli nap --dry-run`
+   - Capture full stderr/stdout
+   - Run `!squad nap` and capture output
 
-## Rollback Strategy
+2. **Differential diagnosis:**
+   - Test `!squad.cmd nap` (bypass `.ps1` explicitly)
+   - Test `!cmd /c squad nap` (use cmd.exe subprocess)
+   - Test in cmd.exe Copilot CLI session (not PowerShell)
+   - If `!squad.cmd nap` works → this is a duplicate of #758
 
-- npm allows unpublish within 72 hours of publication
-- Manual `npm unpublish @bradygaster/squad-{pkg}@{version}` if issues detected
+3. **Environment delta:**
+   - Compare `$env:PSExecutionPolicy` in direct shell vs bang subprocess
+   - Compare env vars: `!env` vs direct `env` (look for missing `APPDATA`, `PATH` differences)
 
-## Related Files
+### Phase 2: Fix (based on investigation results)
 
-- `.github/workflows/publish.yml` — npm publish workflow
-- `.github/workflows/squad-release.yml` — GitHub Release creation
-- `.squad/agents/kobayashi/history.md` — Implementation details
+**If duplicate of #758:** Close as duplicate, reference #758 fix.
 
----
+**If distinct issue (subprocess environment):**
+- Add environment normalization to `cli-entry.ts` early boot
+- Ensure `process.env` has expected Windows paths
+- Add doctor check for bang command compatibility
 
-## Wave 1 Decisions (#329/#344/#500) — 2026-03-22T09-35Z
-
-### Implementation Plan: Ambient Personal Squad (#329 + #344)
-
-**Author:** Flight (Lead)  
-**Date:** 2026-03-22  
-**Issues:** #329, #344  
-
-Personal squad implementation across 4 PRs with clear phase dependencies:
-
-- **PR #1 — SDK Foundation** (EECOM): ResolvedSquadPaths.personalDir, resolvePersonalSquadDir(), PersonalAgentMeta type, resolvePersonalAgents(), mergeSessionCast(), ensureSquadPathTriple()
-- **PR #2 — CLI Surface** (EECOM): squad personal {init,list,add,remove}, squad cast, --team-root flag, wiring + exports
-- **PR #3 — Governance** (Procedures, concurrent): squad.agent.md updates for personal squad, Ghost Protocol in templates, personal-charter.md template
-- **PR #4 — Tests** (Sims): E2E ambient discovery, Ghost Protocol, routing scenarios, unit tests for SDK functions
-
-**MVP = PR #1 + PR #3.** Phase 1 unblocks Phase 2.
-
-**Key Decisions:**
-- Personal agents tagged with `origin: 'personal'` and Ghost Protocol applied
-- Audit trail (personal agent participation) is coordinator-written in project orchestration log
-- SQUAD_NO_PERSONAL env var gates ambient discovery at Phase 1, earliest point
-- Dual-root path guard (ensureSquadPathDual) extended to triple-root (ensureSquadPathTriple) for personal squad dirs
-- Personal squad paths resolved via platform detection (never hard-coded)
-
-**Blocking:** None — design validated against codebase. Ready for EECOM Phase 1 start.
-
-### Economy Mode Design — #500
-
-**Author:** EECOM  
-**Date:** 2026-03-20  
-
-Economy mode implemented as Layer 3/4 modifier (never overrides explicit preferences Layers 0–2):
-
-| Normal | Economy | Use Case |
-|--------|---------|----------|
-| claude-opus-4.6 | claude-sonnet-4.5 | Architecture, review |
-| claude-sonnet-4.6 | gpt-4.1 | Code writing |
-| claude-sonnet-4.5 | gpt-4.1 | Code writing |
-| claude-haiku-4.5 | gpt-4.1 | Docs, planning, mechanical |
-
-**Activation:**
-- Persistent: `"economyMode": true` in `.squad/config.json`
-- Session: `--economy` CLI flag (SQUAD_ECONOMY_MODE=1 env var)
-- Toggle: `squad economy on|off` command
-
-**Implementation:**
-- ECONOMY_MODEL_MAP + applyEconomyMode() in packages/squad-sdk/src/config/models.ts
-- readEconomyMode() + writeEconomyMode() in config/models.ts
-- resolveModel() accepts economyMode option
-- squad economy {on|off} command
-- --economy global flag in cli-entry.ts
-- 34 tests — PR #504 open
-
-**Key Decision:** Economy mode respects user intent. If a user says "always use opus", economy mode defers to that choice.
-
-### Economy Mode Governance — #500
-
-**Author:** Procedures (Prompt Engineer)  
-**Date:** 2026-03-22  
-
-Governance additions needed in squad.agent.md:
-
-1. **Economy Mode Section** — positioned as Layer 3 override, respects Layers 0–2
-2. **Economy Model Selection Table** — per-task mapping (code, docs, architecture review, etc.)
-3. **Spawn Acknowledgment Convention** — include `💰 economy` indicator when active
-4. **Valid Models Catalog Audit** — added claude-sonnet-4.6, gpt-5.4, gpt-5.3-codex; confirmed gpt-4.1, gpt-5-mini already present
-
-**Status:** DRAFT — awaiting Flight review before merging to squad.agent.md.
-
-### Personal Squad Governance — Consult Mode Awareness (#344)
-
-**Author:** Procedures (Prompt Engineer)  
-**Date:** 2026-03-22  
-
-Governance additions for squad.agent.md to close consult-mode coordinator awareness gap:
-
-1. **Consult Mode Detection** — check config.json for `"consult": true` after resolving team root
-2. **Personal Squad Path Reference** — platform-specific paths (Linux, macOS, Windows) resolved via resolveGlobalSquadPath(), never hard-coded
-3. **Consult Mode Spawn Guidance** — pass CONSULT_MODE: true + PROJECT_NAME in spawn prompts so agents know decisions are project-isolated
-4. **Consult Mode Acknowledgment Format** — `🧳 consult mode active — {Agent}` with extraction staging notes
-5. **Charter Template Additions** — all agent charters gain "Consult Mode Awareness" note in "How I Work"
-
-**Proposed Skill** (post-approval): `.squad/skills/consult-mode/SKILL.md` — coordinator behavior for consult mode (detection, spawn guidance, extraction workflow).
-
-**Status:** DRAFT — awaiting Flight review before merging.
-
-### Persistent Model Preference via config.json — #284
-
-**Author:** Procedures (Prompt Engineer)  
-**Date:** 2026-03-17  
-
-Model selection uses 5-layer hierarchy with Layer 0 (Persistent Config) stored in .squad/config.json:
-
-- `defaultModel` — global preference
-- `agentModelOverrides` — per-agent overrides (keyed by agent name)
-
-Coordinator reads these on session start. Persists new preferences when user says "always use X."
-
-**Impact:** All agents respect Layer 0 when spawning. Model preferences travel with the repo (checked into git).
-
-### User Directives (Captured 2026-03-22)
-
-**Rate Limit Recovery UX (#464 soft dependency):**  
-When Squad detects a rate limit, offer actionable recovery: (1) switch to equivalent/alternative models, (2) offer economy mode (#500) as fallback. Rate limits should be a pivot point, not a dead end. *Status: Directive captured; soft dependency on #500.*
-
-**Bug #502 — Next Priority:**  
-node:sqlite installer dependency bug is workshop blocker (P1). Pick up immediately after Wave 1 (#329/#344/#500) finishes. *Status: Queued for Wave 2.*
-
-**GitHub Discussions in Triage:**  
-Include GitHub Discussions in triage workflow alongside issues and PRs. Scan and respond to open discussions as part of the workflow. *Status: Directive captured.*
-
-### Template Directory Sync Enforcement — #461
-
-**Author:** Fenster (Core Dev)  
-**Date:** 2026-07-16  
-
-Template files have 5 duplicate locations. Canonical source is `.squad-templates/`. All copies in `templates/`, `packages/squad-cli/templates/`, `packages/squad-sdk/templates/`, `.github/agents/` must match canonical.
-
-**Enforcement:** `test/template-sync.test.ts` enforces byte-for-byte parity for casting-policy.json, universe count parity for squad.agent.md, cross-file count validation.
-
-**Impact:** All team members editing template files must update all locations + pass sync tests.
-
-### Dual-Layer ESM Fix for vscode-jsonrpc — #449
-
-**Author:** GNC  
-**Date:** 2026-07-25  
-
-ESM module resolution uses dual-layer postinstall strategy:
-
-1. **Layer 1 (canonical):** Inject `exports` field into vscode-jsonrpc@8.2.1/package.json
-2. **Layer 2 (defense-in-depth):** Patch copilot-sdk/dist/session.js to add .js extension
-3. **Layer 3 (runtime):** cli-entry.ts Module._resolveFilename intercept (handles npx cache hits)
-
-`squad doctor` now detects both Layer 1 and Layer 2 issues. Matches vscode-jsonrpc v9.x forward-compatibility.
-
-**Impact:** If users report ESM errors on Node 22/24, direct them to `squad doctor`.
-
-
----
-
-# Economy Mode Design — #500
-
-**Date:** 2026-03-20  
-**Author:** EECOM  
-**Issue:** #500
-
-## Decision
-
-Economy mode is implemented as a modifier that shifts model selection at Layer 3 (task-aware auto) and Layer 4 (default fallback) only. Layers 0–2 (explicit user preferences) are never downgraded.
-
-## Model Map
-
-| Normal | Economy | Use case |
-|--------|---------|----------|
-| `claude-opus-4.6` | `claude-sonnet-4.5` | Architecture, review |
-| `claude-sonnet-4.6` | `gpt-4.1` | Code writing |
-| `claude-sonnet-4.5` | `gpt-4.1` | Code writing |
-| `claude-haiku-4.5` | `gpt-4.1` | Docs, planning, mechanical |
-
-## Activation
-
-1. **Persistent:** `"economyMode": true` in `.squad/config.json` (survives sessions)
-2. **Session:** `--economy` CLI flag (sets `SQUAD_ECONOMY_MODE=1` env var, current session only)
-3. **Toggle command:** `squad economy on|off` writes to config.json
-
-## Hierarchy Integration
-
-Economy mode is a Layer 3/4 modifier — it does NOT override explicit preferences (Layers 0–2). This is intentional: if a user said "always use opus", economy mode respects that choice.
-
-## Implementation Points
-
-- `ECONOMY_MODEL_MAP` + `applyEconomyMode()` in `packages/squad-sdk/src/config/models.ts`
-- `readEconomyMode()` + `writeEconomyMode()` in `packages/squad-sdk/src/config/models.ts`
-- `resolveModel()` in `config/models.ts` accepts `economyMode?: boolean` option; reads from config if not provided
-- `resolveModel()` in `agents/model-selector.ts` also supports `economyMode?: boolean`
-- `squad economy [on|off]` command in `packages/squad-cli/src/cli/commands/economy.ts`
-- `--economy` global flag in `cli-entry.ts`
-
----
-
-# Decision: Hard-fail on Node <22.5.0 at CLI Startup
-
-**Author:** EECOM  
-**Date:** 2026-03-21  
-**Issue:** #502 (workshop blocker)
-
-## Context
-
-Workshop participants reported `ERR_UNKNOWN_BUILTIN_MODULE` when using Squad on Node <22.5.0. The `node:sqlite` built-in (used by the Copilot SDK for session storage) requires Node 22.5.0+.
-
-The previous approach — `try { await import('node:sqlite') } catch { warn and continue }` — let the process limp along until the SDK actually hit sqlite, producing a confusing crash deep in a stack trace.
-
-## Decision
-
-**Hard-fail at startup with a clear, actionable message.** If Node <22.5.0 is detected, Squad exits immediately (`process.exit(1)`) with:
-
-```
-✗ Squad requires Node.js ≥22.5.0 (you have v20.18.0).
-  node:sqlite (required by the Copilot SDK for session storage) was added in Node 22.5.0.
-  Upgrade at: https://nodejs.org/en/download
-```
-
-**Rationale:**
-- Fail fast > fail cryptically later
-- The message includes the exact version needed and where to upgrade
-- `engines.node` updated to `>=22.5.0` in all package.json files — npm/npx will also warn at install time
-- `squad doctor` now includes a Node version check so users can proactively diagnose
-
-## Alternatives Rejected
-
-- **Fallback to `better-sqlite3`:** Adds a native binary dependency. Complexity cost is not justified since Node 22.5.0+ is already 18+ months old.
-- **Soft warn and continue:** The existing approach — proved to be a workshop blocker.
-
----
-
-# Rate Limit UX: Detect and Recover, Don't Hide
-
-**Date:** 2026-03-20
-**Author:** EECOM
-**Issue:** #464
-
-## Decision
-
-When Squad catches a rate limit error (HTTP 429, "rate limit", "quota exceeded"), surface it explicitly rather than hiding it under "Something went wrong processing your message."
-
-## Rationale
-
-Generic error messages fail the user in two ways:
-1. They don't explain *why* the error happened (rate limit vs. network vs. bug)
-2. They give no recovery path — the user is stuck with "run squad doctor" which previously showed nothing useful
-
-Rate limits are a **pivot point, not a dead end**. The user can unblock themselves immediately by switching to economy mode or a different model.
-
-## Implementation
-
-1. **`error-messages.ts`** — added `rateLimitGuidance()` and `extractRetryAfter()`. Rate limit guidance shows:
-   - Clear message: "Rate limit reached [for {model}]. Copilot has temporarily throttled your requests."
-   - Recovery: time until reset (if parseable), `squad economy on`, and config.json model override
-
-2. **`shell/index.ts` catch block** — detects rate limits via `instanceof RateLimitError` OR regex on the error message (`/rate.?limit|quota.*exceed|429/i`). Writes `.squad/rate-limit-status.json` on detection for doctor to read.
-
-3. **`doctor.ts`** — added `checkRateLimitStatus()`. Reads `.squad/rate-limit-status.json` and reports:
-   - `warn` if rate limit was recent (< 4h ago), with command to fix
-   - `pass` if stale (> 4h ago)
-   - Silent if no rate limit has been hit
-
-## Alternatives Considered
-
-- **Making a live API call in `squad doctor`** — rejected, adds latency and may itself be rate-limited
-- **Just showing the raw error** — rejected, unhelpful wall of text
-- **Writing to a separate log format** — rejected, JSON status file is simpler to read/update
-
----
-
-# Triage: #525 — Worktree Creation & Lifecycle Missing from Coordinator/Spawn Flow
-
-**Author:** Flight  
-**Date:** 2025-07-18  
-**Status:** Triaged  
-**Priority:** P2 — Important, not v1-blocking  
-**Labels:** `squad:eecom`, `squad:procedures`, `squad:flight`
-
-## Validation
-
-Community contributor joniba's analysis is **accurate and thorough**. I validated all 10 claims:
-
-| Claim | Verdict |
-|-------|---------|
-| ralph-commands.ts hardcodes `git checkout -b` (all 3 adapters) | ✅ Confirmed — lines 50, 71, 92 |
-| issue-lifecycle.md referenced but missing | ✅ Confirmed — two broken refs in squad.agent.md |
-| squad.agent.md has Worktree Awareness section | ✅ Confirmed — lines 569–607 |
-| git-workflow skill defaults to checkout -b | ✅ Confirmed — worktree is documented but separate path |
-| resolveSquad() detects .git as file (worktree pointer) | ✅ Confirmed — resolution.ts line 66–93 |
-| .gitattributes merge=union for append-only files | ✅ Confirmed — 5 entries |
-| Tests for worktree boundary detection | ✅ Confirmed — 5+ tests |
-| Coordinator creates worktrees before spawn | ❌ Confirmed missing |
-| WORKTREE_PATH in spawn prompts | ❌ Confirmed missing |
-| Post-merge worktree cleanup | ❌ Confirmed missing |
-
-**Summary:** The reading side (detection, path resolution, merge drivers, tests) is solid — approximately 95% of the worktree infrastructure exists. The gap is purely on the writing/orchestration side: nobody creates worktrees, and the coordinator doesn't know it should.
-
-## Impact Assessment
-
-**Who this affects:** Any user running parallel agents on the same repo. Today, two agents spawned simultaneously will both `git checkout -b` from the same working directory and clobber each other.
-
-**Why it's P2 not P1:** Most current Squad users run single-agent sequential workflows. Parallel multi-agent execution is the advanced case. The SubSquads/Workstreams design (#509–#511) will eventually need this, but those aren't in Wave 1.
-
-**Risk of deferral:** Low short-term, medium long-term. Community contributors noticing the gap means adoption is hitting this edge. If we defer past v1, it becomes tech debt that's harder to retrofit.
-
-## Scope Recommendation: Break Into Sub-Issues
-
-This is too broad for one issue. Recommended decomposition:
-
-1. **Doc fix: Create issue-lifecycle.md** (quick win, 1 hour)  
-   Owner: `squad:procedures`  
-   Fix the broken reference in squad.agent.md. Standalone — no code changes.
-
-2. **SDK: Add worktree branch-creation variant to ralph-commands.ts**  
-   Owner: `squad:eecom`  
-   Add `git worktree add` as an alternative to `git checkout -b` in all 3 platform adapters. Decision logic: single agent = checkout, parallel = worktree.
-
-3. **Coordinator: Pre-spawn worktree creation**  
-   Owner: `squad:procedures`, `squad:eecom`  
-   When coordinator detects parallel spawn, create worktree before dispatching agent. Pass WORKTREE_PATH in spawn context.
-
-4. **Lifecycle: Post-merge worktree cleanup**  
-   Owner: `squad:eecom`  
-   After PR merge, `git worktree remove` + prune. Could hook into Ralph's idle-watch.
-
-5. **Architecture decision: Worktree vs checkout heuristic**  
-   Owner: `squad:flight`  
-   Formal decision on when to use which strategy. Default: checkout-b for solo work, worktree for parallel. Write to decisions.md.
-
-## Priority Relative to Backlog
-
-**Above:** Long-term/exploratory (#357, #316, #308, #296, #260, #252), manual verification debt (#418–#421)  
-**Comparable to:** #457 (monorepo context), #413 (knowledge library) — all infrastructure improvements  
-**Below:** Wave 1 (#508, #330/#354), PRDs (#498, #485, #481), GitLab support (#465)
-
-**Recommendation:** Sub-issue #1 (doc fix) is a quick win — ship immediately. Sub-issues #2–#5 go into the post-Wave-1 queue, likely alongside SubSquads work where parallel execution becomes a hard requirement.
-
-## Top 5 Priority Recommendations for v1 Progress
-
-1. **#508 — Ambient Personal Squad** — Wave 1 in progress, highest user-facing value
-2. **#498 — Remove .squad/ from version control** — Critical for v1 GA; repos shouldn't ship team state
-3. **#485 — Agent Spec & Validation Framework** — Foundation for quality gates and onboarding
-4. **#481 — Typed StorageProvider Interface** — SDK maturity; unblocks #498
-5. **#347 — Shore up squad init --sdk** — Onboarding gate; first impression for SDK users
-
-**Quick wins:** #525 sub-issue #1 (doc fix), #347 (scoped CLI work).  
-**Deprioritize:** Manual verification issues (#418–#421) are test debt, not v1-blocking. Long-term exploratory items (#357, #316, #308, #296, #260, #252) stay backlog.  
-**Shelved (unchanged):** A2A suite (#332–#336) per existing team decision.
-
----
-
-# Proposal: Economy Mode Integration in squad.agent.md
-
-**By:** Procedures (Prompt Engineer)  
-**Date:** 2026-03-22  
-**Issues:** #500  
-**Status:** DRAFT — for Flight review before merging to squad.agent.md
-
----
-
-## Summary
-
-Economy mode is a new session/persistent modifier that shifts Layer 3 (Task-Aware Auto-Selection) to cost-optimized alternatives. This proposal documents the governance additions needed in `squad.agent.md`.
-
-**Note to Flight:** Procedures owns the skill design. Squad.agent.md is governance — Flight reviews before commit.
-
----
-
-## 1. New Paragraph After Layer 0 (Per-Agent Model Selection section)
-
-Insert after the existing Layer 0 bullet points and before "**Layer 1 — Session Directive**":
-
----
-
-**Economy Mode — Cost Modifier (Layer 3 override):** Economy mode shifts all Layer 3 auto-selection to cost-optimized alternatives. It does NOT override Layer 0 (persistent config), Layer 1 (explicit session directive), or Layer 2 (charter preference) — user intent always wins.
-
-- **Activation (session):** User says "use economy mode", "save costs", "go cheap" → activate for this session only.
-- **Activation (persistent):** User says "always use economy mode" OR `"economyMode": true` in `.squad/config.json` → persists across sessions.
-- **Deactivation:** "turn off economy mode" or remove `economyMode` from `config.json`.
-- **On session start:** Read `.squad/config.json`. If `economyMode: true`, activate economy mode before any spawns.
-
----
-
-## 2. Economy Model Selection Table
-
-Add after Layer 3 normal table:
-
----
-
-**Economy Mode Layer 3 Table** (active when economy mode is on):
-
-| Task Output | Normal Mode | Economy Mode |
-|-------------|-------------|--------------|
-| Writing code (implementation, refactoring, bug fixes) | `claude-sonnet-4.5` | `gpt-4.1` or `gpt-5-mini` |
-| Writing prompts or agent designs | `claude-sonnet-4.5` | `gpt-4.1` or `gpt-5-mini` |
-| Docs, planning, triage, changelogs, mechanical ops | `claude-haiku-4.5` | `gpt-4.1` or `gpt-5-mini` |
-| Architecture, code review, security audits | `claude-opus-4.5` | `claude-sonnet-4.5` |
-| Scribe / logger / mechanical file ops | `claude-haiku-4.5` | `gpt-4.1` |
-
-Prefer `gpt-4.1` over `gpt-5-mini` for structured output or tool use. Prefer `gpt-5-mini` for pure text generation.
-
----
-
-## 3. Spawn Acknowledgment Convention
-
-Add to the spawn acknowledgment format guidance:
-
----
-
-When economy mode is active, include `💰 economy` after the model name in spawn acknowledgments:
-
-```
-🔧 Fenster (gpt-4.1 · 💰 economy) — fixing auth bug
-📋 Scribe (gpt-4.1 · 💰 economy) — logging decision
-```
-
-This gives the user instant visibility that cost-optimized models are in use.
-
----
-
-## 4. Valid Models Catalog Audit
-
-Current "Valid models" section lists:
-
-```
-Premium: claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5
-Standard: claude-sonnet-4.5, claude-sonnet-4, gpt-5.2-codex, gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1, gpt-5, gemini-3-pro-preview
-Fast/Cheap: claude-haiku-4.5, gpt-5.1-codex-mini, gpt-5-mini, gpt-4.1
-```
-
-**Audit findings:**
-- `claude-opus-4.6` and `claude-opus-4.6-fast` are listed but not used in the Layer 3 table (table uses `claude-opus-4.5`). The Layer 3 table should reference `claude-opus-4.6` as the premium default for consistency with the catalog.
-- `claude-sonnet-4.6` appears in the model-selection SKILL.md but is absent from the valid models list in squad.agent.md. Add it under Standard.
-- Economy mode introduces `gpt-4.1` and `gpt-5-mini` as primary alternatives — both are already in the Fast/Cheap catalog. No additions needed.
-
-**Proposed updated catalog:**
-
-```
-Premium: claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5
-Standard: claude-sonnet-4.6, claude-sonnet-4.5, claude-sonnet-4, gpt-5.4, gpt-5.3-codex, gpt-5.2-codex, gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1, gpt-5, gemini-3-pro-preview
-Fast/Cheap: claude-haiku-4.5, gpt-5.1-codex-mini, gpt-5-mini, gpt-4.1
-```
-
-(Added `claude-sonnet-4.6`, `gpt-5.4`, `gpt-5.3-codex` which appear in the model-selection SKILL.md fallback chains but are missing from squad.agent.md's catalog.)
-
----
-
-## 5. Config Schema Addition
-
-Add `economyMode` to the config schema reference in squad.agent.md (wherever `defaultModel` is documented):
-
-```json
-{
-  "version": 1,
-  "defaultModel": "claude-sonnet-4.6",
-  "economyMode": true,
-  "agentModelOverrides": {
-    "fenster": "claude-sonnet-4.6"
-  }
+**If PowerShell history expansion (`!` → `Invoke-History`):**
+- This is a Copilot CLI issue, not a Squad issue
+- Document workaround: use `` `!squad nap `` (backtick-escape) or `!cmd /c squad nap`
+- File upstream issue on Copilot CLI
+
+## Assigned Agent
+
+**Primary:** EECOM 🔧 (Core Dev — investigation, subprocess behavior)
+**Secondary:** Network 📦 (if distribution-related fix needed)
+
+## Test Plan
+
+### Phase 1 (Investigation)
+- Manual reproduction on Windows 11 + PowerShell 7.6
+- Document findings in issue #734 comments
+
+### Phase 2 (If fix needed beyond #758)
+1. **Integration test:** Add test to verify `nap --dry-run` exits cleanly when invoked as subprocess:
+   ```typescript
+   // test/nap-subprocess.test.ts
+   import { execFileSync } from 'node:child_process';
+   it('nap --dry-run works as subprocess', () => {
+     const result = execFileSync('node', ['packages/squad-cli/dist/cli-entry.js', 'nap', '--dry-run'], {
+       cwd: testSquadDir,
+       encoding: 'utf-8',
+     });
+     expect(result).toContain('Nap report');
+   });
+   ```
+
+2. **Cross-shell test matrix:**
+   - PowerShell 7.x → `squad nap --dry-run`
+   - cmd.exe → `squad nap --dry-run`
+   - Subprocess → `node cli-entry.js nap --dry-run`
+
+## Risk Assessment
+
+**Risk: LOW-MEDIUM**
+
+- **Low risk** if this is a duplicate of #758 (just close it)
+- **Medium risk** if distinct: subprocess environment normalization can have side effects
+- Investigation phase has zero code risk
+
+**Watch out for:**
+- Don't add workarounds that mask the real issue
+- PowerShell 5.x vs 7.x have different default execution policies
+- Copilot CLI bang handler behavior may change in future versions
+- The nap command itself is safe (no git, no stdin) — the problem is invocation, not logic
+
+## PR Scope
+
+- [ ] **Phase 1:** Investigation comment on issue #734 with reproduction results
+- [ ] **Phase 2 (if needed):** Targeted fix based on investigation findings
+- [ ] **NOT in scope:** Changing Copilot CLI's bang handler, modifying nap's core logic
+- [ ] **Dependency:** May be resolved entirely by #758 fix
+
+### 2026-04-02: Bug #758 — squad.ps1 blocked by PowerShell execution policy on Windows
+
+# Bug #758 — squad.ps1 blocked by PowerShell execution policy on Windows
+
+> **Author:** Flight | **Date:** 2026-04-02 | **Status:** Proposal
+
+## Root Cause Analysis
+
+When `npm install -g @bradygaster/squad-cli` runs on Windows, npm automatically creates both `squad.cmd` and `squad.ps1` shim scripts in `%APPDATA%\npm\`. PowerShell prefers `.ps1` over `.cmd`, so it attempts to execute the unsigned `.ps1` script — which is blocked by the default execution policy (`Restricted` or `AllSigned`).
+
+**Key constraint:** npm creates these shims _after_ all lifecycle hooks (postinstall, etc.) complete. This means **no npm lifecycle script can remove the .ps1 file** — it doesn't exist yet when postinstall runs.
+
+The `.cmd` shim works fine. The issue is purely that PowerShell preferentially loads `.ps1` over `.cmd`.
+
+## Exact Files to Modify
+
+| File | Action |
+|------|--------|
+| `packages/squad-cli/scripts/remove-ps1-shim.mjs` | **Create** — post-install helper script |
+| `packages/squad-cli/package.json` | **Modify** — document the helper script in `scripts` |
+| `packages/squad-cli/src/cli/commands/doctor.ts` | **Modify** — add Windows PS execution policy check |
+| `README.md` | **Modify** — add Windows installation note |
+
+## Fix Approach
+
+### 1. Doctor check for Windows `.ps1` shim problem (primary fix)
+
+In `doctor.ts`, add a new check function:
+
+```typescript
+function checkWindowsPs1Shim(): DoctorCheck | undefined {
+  if (process.platform !== 'win32') return undefined;
+  
+  // Check if running from a .ps1 shim context or if .ps1 exists
+  const npmPrefix = process.env['npm_config_prefix'] || 
+    path.join(process.env['APPDATA'] ?? '', 'npm');
+  const ps1Path = path.join(npmPrefix, 'squad.ps1');
+  
+  if (!fileExists(ps1Path)) return undefined;
+  
+  return {
+    name: 'Windows PowerShell shim',
+    status: 'warn',
+    message: 'squad.ps1 exists — may be blocked by execution policy. ' +
+      'Fix: Remove-Item "' + ps1Path + '" (PowerShell falls back to .cmd)',
+  };
 }
 ```
 
----
+Wire it into `runDoctor()` alongside other environment checks.
 
-## Rationale
+### 2. Helper removal script
 
-Economy mode solves a real user need: "I want all agents to run cheaper, but I don't want to set each one individually." It's a session-level modifier that works orthogonally to the existing hierarchy — no layer gets changed, only Layer 3's lookup table swaps. The `💰` indicator keeps it transparent.
-
-The skill (`economy-mode/SKILL.md`) covers the coordinator behavior in detail. This proposal is the governance side — ensuring squad.agent.md is the authoritative source for the feature.
-
----
-
-## References
-
-- Skill: `.squad/skills/economy-mode/SKILL.md`
-- Issue: #500
-- Model selection skill: `.squad/skills/model-selection/SKILL.md`
-
----
-
-# Proposal: Personal Squad Governance Awareness in squad.agent.md
-
-**By:** Procedures (Prompt Engineer)  
-**Date:** 2026-03-22  
-**Issues:** #344  
-**Status:** DRAFT — for Flight review before merging to squad.agent.md
-
----
-
-## Summary
-
-Squad has a consult mode (implemented, per `prd-consult-mode.md`) and personal squad semantics (via `resolveGlobalSquadPath()`), but `squad.agent.md` doesn't tell the coordinator how to reason about either. This proposal documents the gaps and the governance additions needed.
-
----
-
-## Gap Analysis
-
-### Gap 1: Init Mode references `--global` without explaining personal squad resolution
-
-Current Init Mode says "run `squad init --global` for a personal squad" (implied by CLI docs) but squad.agent.md doesn't explain what a personal squad IS or how the coordinator should detect it.
-
-**What agents need to know:**
-- Personal squad = a squad at the global path (resolved via `resolveGlobalSquadPath()`)
-  - Linux/macOS: `~/.config/squad/.squad`
-  - macOS (alt): `~/Library/Application Support/squad/.squad`
-  - Windows: `%APPDATA%\squad\.squad`
-- If `.squad/config.json` contains `"consult": true`, the coordinator is working inside a consult session
-- `sourceSquad` in `config.json` points to the original personal squad (for Scribe extraction context)
-
-### Gap 2: No coordinator guidance for consult mode
-
-`squad.agent.md` mentions nothing about consult mode. The coordinator doesn't know:
-- How to recognize it's in a consult session
-- That writes go to the project `.squad/` (isolated copy) — NOT the personal squad
-- That Scribe's charter is patched with extraction instructions
-- That `.squad/extract/` is a staging area for generic learnings
-
-### Gap 3: TEAM_ROOT works, but personal squad semantics are absent
-
-The coordinator resolves `TEAM_ROOT` correctly (Worktree Awareness section), but:
-- No distinction between "project squad" vs "personal squad copy in consult mode"
-- No guidance on what to tell agents about their squad context when in consult mode
-
-### Gap 4: Charter templates have no personal-squad-aware patterns
-
-Agent charters have no concept of:
-- Consult mode restrictions (agents shouldn't commit to project, shouldn't pollute personal squad)
-- Extraction tagging (Scribe needs to flag decisions as generic vs project-specific)
-
-### Gap 5: No skill for consult-mode behavior
-
-There is no skill for consult-mode coordinator behavior, even though consult mode has distinct patterns (invisibility, extraction, isolation).
-
----
-
-## Proposed squad.agent.md Additions
-
-### Addition 1: Consult Mode Detection (in Team Mode → On Session Start)
-
-After "resolve the team root" and before Issue Awareness, add:
-
----
-
-**Consult Mode Detection:** After resolving team root, check `.squad/config.json` for `"consult": true`.
-
-- If `consult: true` → **Consult mode is active.** This is a personal squad consulting on a project.
-  - The `.squad/` directory is an isolated copy of the user's personal squad.
-  - `sourceSquad` in `config.json` contains the path to the original personal squad.
-  - Do NOT read or write to `sourceSquad` — it's out of scope. Only operate within TEAM_ROOT.
-  - Scribe's charter is already patched with extraction instructions — no coordinator action needed.
-  - Include `🧳 consult` in your session acknowledgment: `Squad v{version} (🧳 consult — {projectName})`
-  - Remind agents: decisions they make here are project-isolated until explicitly extracted.
-- If `consult: false` or absent → Normal mode. Team root is authoritative.
-
----
-
-### Addition 2: Personal Squad Path Reference
-
-Add a new subsection under "Worktree Awareness":
-
----
-
-**Personal Squad Paths:** The global squad path is resolved by `resolveGlobalSquadPath()`:
-
-| Platform | Path |
-|----------|------|
-| Linux | `~/.config/squad/.squad` |
-| macOS | `~/Library/Application Support/squad/.squad` |
-| Windows | `%APPDATA%\squad\.squad` |
-
-The coordinator should NEVER hard-code these paths. Use `squad --global` or `resolveGlobalSquadPath()` to resolve. Only relevant in consult mode (to understand the `sourceSquad` field) — the coordinator does NOT read the personal squad directly during a session.
-
----
-
-### Addition 3: Consult Mode Spawn Guidance
-
-Add to the spawn template section:
-
----
-
-**In consult mode:** Pass `CONSULT_MODE: true` and `PROJECT_NAME: {projectName}` in spawn prompts alongside `TEAM_ROOT`. This lets agents know:
-1. Their decisions will be reviewed for extraction — keep project-specific and generic reasoning separate
-2. They should NOT reference personal squad paths or personal squad agent names
-3. Scribe will classify their decisions — agents should write clear, extractable decision rationale
-
----
-
-### Addition 4: Consult Mode Acknowledgment Format
-
-Add to spawn acknowledgment conventions:
-
-```
-🧳 consult mode active — Fenster (claude-sonnet-4.5) — refactoring auth module
-     ↳ decisions staged in .squad/extract/ for review before extraction
+Create `packages/squad-cli/scripts/remove-ps1-shim.mjs`:
+```javascript
+// Run after `npm install -g` to remove the .ps1 shim that PowerShell blocks.
+// Usage: node -e "require('./scripts/remove-ps1-shim.mjs')" 
+//   or:  npx @bradygaster/squad-cli doctor (auto-detects)
 ```
 
----
+This provides a documented manual step for users who hit the issue.
 
-## Proposed New Skill
+### 3. README Windows installation note
 
-**Skill needed:** `.squad/skills/consult-mode/SKILL.md`
-
-Should cover:
-- Detecting consult mode from config.json
-- Coordinator behavior changes (CONSULT_MODE in spawn prompts)
-- Scribe extraction workflow (already documented in prd-consult-mode.md — condense into skill)
-- Acknowledgment format conventions
-- STOP: extraction is always user-driven via `squad extract` — coordinator never auto-extracts
-
-This skill should be authored after this governance proposal is approved, to avoid the skill getting ahead of the governance.
-
----
-
-## Charter Template Additions
-
-All agent charter templates should include a note in "How I Work":
-
+Add a "Windows" section under installation:
 ```markdown
-**Consult Mode Awareness:** If `CONSULT_MODE: true` is in my spawn prompt, I'm working on a project outside my home squad. My decisions here are project-isolated. Write extractable rationale so Scribe can classify them for `squad extract` review.
+
+### Windows (PowerShell)
+
+If you see `PSSecurityException: UnauthorizedAccess` after installing globally,
+PowerShell is blocking the unsigned `.ps1` shim. Fix it with:
+
+```powershell
+Remove-Item "$env:APPDATA\npm\squad.ps1"
 ```
 
-This should be added to `.squad/templates/charter.md` (if it exists) and `.squad/agents/scribe/charter.md` (Scribe already has extraction logic, but clarifying the classification responsibility is valuable).
-
----
-
-## Rationale
-
-Consult mode is fully implemented at the SDK level (`prd-consult-mode.md`, `squad consult` command) but the coordinator has no awareness of it. The result: agents running in a consult session have no context that they're in a temporary, isolated copy of a personal squad. They might make decisions as if they're permanent, or reference the project in ways that pollute the personal squad on extraction.
-
-These governance additions close the loop between the implementation (CLI + SDK) and the runtime behavior (coordinator + agents).
-
----
-
-## References
-
-- Consult mode PRD: `.squad/identity/prd-consult-mode.md`
-- Issue: #344
-- Flight ambient personal squad note: `.squad/decisions/inbox/flight-ambient-personal-squad.md`
-
-
-
-
-
----
-
-### User Directive: Teams Messaging Approval
-
-**By:** Brady (via Copilot)  
-**When:** 2026-03-23  
-**What:** Never send Teams messages to anyone unless Brady explicitly asks and reviews the content first.  
-**Why:** User request — Teams messaging requires explicit approval and content review before sending. Prevents automated or unreviewed communications.
-
-
----
-
-# Decision: Context-aware upgrade footer message (#549)
-
-**Author:** EECOM  
-**Date:** 2026-07-14  
-**PR:** #551  
-
-## Decision
-
-The upgrade command's summary footer now distinguishes between two outcomes:
-
-- `"Privacy scrub applied"` — shown when the email scrub actually ran (i.e., at least one file was scrubbed)
-- `"Preserves user state"` — shown when no scrub occurred (original intent of the message)
-
-## Rationale
-
-The previous footer always said "Preserves user state" regardless of whether a privacy scrub had just run. When scrubbing did occur, the footer actively contradicted the operation, creating user confusion and loss of trust in the upgrade output.
-
-## Related changes in same commit
-
-- `ensureGitattributes` now catches `EPERM`/`EACCES` and degrades gracefully (warns, returns `[]`) instead of throwing and aborting the upgrade.
-- `ensureGitignore` skips entries already covered by a parent path in the existing file (avoids redundant entries like `.squad/log/` when `.squad/` is present).
-
-## Impact
-
-No breaking changes. Footer text is purely informational. Existing callers of `ensureGitattributes` and `ensureGitignore` receive `[]` on EPERM / parent-covered cases respectively — consistent with the existing return type.
-
-
-# Decision: Community PR Batch Review — July 2026
-
-**By:** Flight  
-**Date:** 2026-07-18  
-**Context:** Five open community PRs reviewed at Brady's request.
-
-## Decisions
-
-### #524 — diberry: Astro docs improvements
-**Decision:** ✅ Approve for merge.  
-**Note:** `docs/public/robots.txt` references `https://squad.dev/sitemap-index.xml` but `astro.config.mjs` still has `site: 'https://bradygaster.github.io'`. If the squad.dev domain is live, this is fine. If not, the sitemap URL needs updating before merge.
-
-### #523 — diberry: Worktree regression guard
-**Decision:** ✅ Approve for merge.  
-**Rationale:** Directly resolves the worktree detection gap (#525). Correct `.git`-file parsing logic, sensible interactive UX, proper TTY fallback.
-
-### #522 — tamirdresher: Watch command circuit breaker integration
-**Decision:** 🔄 Still blocked. Changes requested by bradygaster (additive patch vs. full rewrite) have not been addressed. The PR remains a full 355-line delete + 534-line replacement of watch.ts.  
-**Required:** Rework as a surgical additive patch. Existing structure of watch.ts must be preserved.
-
-### #513 — tamirdresher: Cross-machine-coordination skill
-**Decision:** 🔄 Needs changes before merge.  
-**Required:**
-1. Move from `.squad/skills/` (team-state) to `templates/skills/` (library content) so it ships as a Squad template, not as hardcoded team state.
-2. Replace personal use case examples (voice cloning, DevBox) with generic examples.
-3. Submit a `docs/proposals/cross-machine-coordination.md` per the proposal-first policy. This is a meaningful new coordination primitive.
-
-### #507 — JasonYeYuhe: Chinese README translation
-**Decision:** 🔄 Minor change needed before merge.  
-**Required:** Add a disclaimer block at the top of `README.zh.md` indicating it is community-maintained and may lag behind the English original. Example:
+Or use `cmd.exe`, or invoke via `npx @bradygaster/squad-cli`.
 ```
-> ⚠️ This translation is community-maintained and may not reflect the latest changes. For the most up-to-date content, see the [English README](README.md).
+
+## Assigned Agent
+
+**Primary:** Network 📦 (Distribution — npm packaging, global install)
+**Secondary:** PAO 📣 (Documentation for README update)
+
+## Test Plan
+
+1. **Unit test for doctor check:** Add test to `test/doctor.test.ts`:
+   - Test `checkWindowsPs1Shim` returns `undefined` on non-Windows
+   - Test it returns `warn` when `.ps1` file exists at expected path
+   - Test it returns `undefined` when no `.ps1` file found
+
+2. **Manual verification:**
+   - Install globally on Windows with default PS execution policy
+   - Run `squad doctor` — should show warning about `.ps1` shim
+   - Delete `.ps1` shim → run `squad` → should work via `.cmd` fallback
+
+## Risk Assessment
+
+**Risk: LOW**
+
+- Doctor check is additive (new check, no existing behavior changes)
+- README change is documentation only
+- No changes to core CLI logic or upgrade flow
+- Platform check (`process.platform`) is reliable
+- Helper script is opt-in, not automatic
+
+**Watch out for:**
+- The `npm_config_prefix` env var may not be set in all contexts
+- `%APPDATA%` path varies across Windows versions (use `process.env.APPDATA`)
+- Don't break the `.cmd` shim path resolution
+
+## PR Scope
+
+- [ ] `doctor.ts`: Add `checkWindowsPs1Shim()` + wire into `runDoctor()`
+- [ ] `test/doctor.test.ts`: Unit tests for new check
+- [ ] `README.md`: Windows installation note (≤10 lines)
+- [ ] **NOT in scope:** Signing the `.ps1`, auto-removing shims, changing npm behavior
+
+### 2026-04-02: Architecture Review: PRs #760 & #762
+
+# Architecture Review: PRs #760 & #762
+
+**Reviewer:** Flight (Lead)  
+**Date:** 2025-01-15  
+**Summary:** Both PRs have CRITICAL issue — .squad/ files leaked into diffs
+
+---
+
+## PR #760: squad/758-fix-ps-execution-policy (Network's fix for #758)
+
+### Proposal Requirements
+- ✅ Add doctor check for unsigned .ps1 shim on Windows
+- ✅ Add README guidance  
+- ✅ Be Windows-only (platform guard)
+
+### Review
+
+#### Content Quality ✅
+**Changed files (core logic):**
+- `packages/squad-cli/src/cli/commands/doctor.ts` — Added `checkWindowsPs1Shim()` function (lines 274-289)
+  - Platform guard: `if (process.platform !== 'win32') return undefined;`
+  - Correctly detects unsigned .ps1 at npm prefix
+  - Returns warning with fix instructions using `Remove-Item`
+  - ✅ Matches proposal exactly
+
+- `packages/squad-cli/scripts/remove-ps1-shim.mjs` — New helper script  
+  - Standalone utility to remove .ps1 shim  
+  - Platform-gated (early exit on non-Windows)
+  - Proper error handling
+  - ✅ In scope (addresses PR #758)
+
+- `test/cli/doctor.test.ts` — Added regression tests  
+  - 4 new tests: cross-platform behavior, exists/missing scenarios, APPDATA fallback
+  - ✅ Adequate coverage
+
+- `README.md` — Added Windows (PowerShell) section  
+  - Explains PSSecurityException  
+  - Provides fix command and fallback options
+  - References `squad doctor` and `npx`
+  - ✅ Helpful guidance
+
+#### Scope Assessment ⚠️  
+Files modified that look unrelated:
+- `packages/squad-cli/templates/ceremonies.md` — TEMPLATE FILE
+- `packages/squad-sdk/templates/ceremonies.md` — TEMPLATE FILE  
+- `templates/ceremonies.md` — TEMPLATE FILE
+- `squad.agent.md.template` files (3x) — TEMPLATE FILES
+- `package.json` / `packages/*/package.json` files (version bump, expected)
+
+**Question:** Why are template files changed? Diff shows lines added (28 new lines per template). This appears to be a platform/merge artifact, not part of the #758 fix. **Potential scope creep.**
+
+#### .squad/ Files ❌ CRITICAL
 ```
-Once added, approve for merge.
-
-## Rationale
-
-- Surgical patches over full rewrites — reinforcing the existing decision from the tamirdresher PR series review.
-- Proposal-first policy applies to cross-machine coordination — it's a meaningful new primitive with security implications.
-- Community translations are welcome but need a freshness disclaimer to set correct expectations for readers.
-- `.squad/` is for team state; reusable skill templates belong in `templates/skills/`.
-
-
-# Decision: Community PR Merge Strategy for tamirdresher #514–#516 Series
-
-**By:** Flight  
-**Date:** 2025-07-18  
-**Context:** Batch review of 4 PRs from tamirdresher (cooperative rate limiting, KEDA scaler docs, machine capabilities, watch integration)
-
-## Decision
-
-1. **#519 (KEDA docs)** — Approve after removing stray `test/capabilities.test.ts` file that belongs to #520. Docs-only, no code risk.
-
-2. **#520 (Machine Capabilities)** — Approve after reverting `package-lock.json` changes (version bump + Node engine change from >=20 to >=22.5.0). SDK module and watch integration are clean.
-
-3. **#518 (Rate Limiting SDK)** — Approve after fixing test import paths to use `@bradygaster/squad-sdk/ralph/rate-limiting` instead of relative `../packages/` paths.
-
-4. **#522 (Watch Integration)** — Request changes. Full rewrite of watch.ts is unacceptable — must be reworked as a surgical patch (add `executeRound` wrapper, circuit breaker state, gh-cli additions) without deleting and recreating the entire file. This is the only PR with real merge conflict risk.
-
-## Merge Order
-
-`#519 → #520 → #518 → #522` (each depends on the previous being clean)
-
-## Rationale
-
-- Surgical patches over full rewrites — watch.ts is a high-traffic file
-- package-lock.json mutations don't belong in feature PRs
-- Node engine requirement changes need their own decision and PR
-- Cross-PR file collisions must be resolved before merge
+.squad/agents/eecom/history.md
+.squad/agents/flight/history.md
+.squad/agents/network/history.md
+```
+**VIOLATION:** Per Protected Files convention, .squad/ agent history files must NOT be in PR diffs. These are session-created state files that should be reset before push.
 
 ---
 
-## SDK Init Shore-Up Initiative (2026-03-11)
+## PR #762: squad/730-fix-silent-agent-md-skip (EECOM's fix for #730)
 
-### Phase-Based SDK Quality Improvement Program
+### Proposal Requirements
+- ✅ Add warn() in upgrade.ts version-current path
+- ✅ Add warnings array to InitResult in init.ts (not console.warn)
+- ✅ Have regression tests
 
-**By:** Flight  
-**Date:** 2026-03-11  
-**Affects:** EECOM, CAPCOM, FIDO, Procedures
+### Review
 
-SDK initialization produces incomplete state (config sync broken, built-in members missing, CastingEngine bypassed). Implement 3-phase approach prioritizing foundational gaps before comprehensive testing.
+#### Content Quality ✅
+**Changed files (core logic):**
+- `packages/squad-cli/src/cli/core/upgrade.ts` — Added warn() for missing template (lines 504-505)
+  - Only triggered when template is missing (else block)
+  - Uses `warn()` function (not console.warn)
+  - Message is clear and actionable
+  - ✅ Matches proposal
 
-**What:**
-1. **Phase 1 (P1):** Fix foundational gaps — config sync, Ralph inclusion, @copilot roster entry
-2. **Phase 2 (P1):** Wire CastingEngine into CLI init flow (restore universe curation quality)
-3. **Phase 3 (P2):** Exercise full test matrix (29 untested features → 100% SDK feature parity)
+- `packages/squad-sdk/src/config/init.ts` — Added warnings array
+  - Added to `InitResult` interface (lines 136-137)
+  - `warnings: string[]` array initialized (line 630)
+  - Warnings captured when template missing (line 1041)
+  - Returned in result object (line 1195)
+  - ✅ Uses warnings array (not console.warn)
+  - ✅ Matches proposal
 
-**Why this order:**
-- Config sync must work before CastingEngine templates can rely on it
-- Stable init flow required before systematic feature verification
-- Phases 1-2 unblock SDK consumers immediately (Phase 3 is verification)
+- `test/cli/upgrade.test.ts` — Regression test for version-current path
+  - "refreshes squad.agent.md when already at current version" test
+  - Verifies filesUpdated contains 'squad.agent.md' when staying at current version
+  - ✅ Regression test present
 
-**Ownership:**
-- **EECOM + CAPCOM:** Phases 1-2 (estimated 2 sprints)
-- **FIDO + CAPCOM:** Phase 3 (estimated 2 sprints)
-- **Procedures:** Partner on Phase 2 (universe template quality)
+- `test/init-scaffolding.test.ts` — Template missing scenarios
+  - Happy-path regression: template exists, no warnings
+  - Missing template scenario: warning captured, file not created, other files created
+  - Uses proxy storage to simulate missing template
+  - ✅ Comprehensive test coverage
 
-**Success Criteria:**
-- Phase 1: All members (user-added, Ralph, @copilot) in `squad.config.ts` without manual edits
-- Phase 2: 90%+ init runs use curated templates (Apollo 13/Usual Suspects)
-- Phase 3: 100% SDK feature parity
+#### Scope Assessment ⚠️  
+Same template file changes as PR #760:
+- `packages/squad-cli/templates/ceremonies.md` — TEMPLATE FILE
+- `packages/squad-sdk/templates/ceremonies.md` — TEMPLATE FILE
+- `templates/ceremonies.md` — TEMPLATE FILE
+- `squad.agent.md.template` files (3x) — TEMPLATE FILES
 
-Full PRD: `.squad/identity/prd-sdk-init-shoreup.md`
+**Question:** Why are template files changed? These look like platform/merge artifacts, not part of #730 fix.
 
----
+**Also includes PR #758's files:**
+- `packages/squad-cli/scripts/remove-ps1-shim.mjs`
+- `.changeset/fix-ps-execution-policy.md`
+- Doctor test changes
 
-### CastingEngine is the canonical casting system
+**Note:** This branch is a stacked PR (contains #760's changes + #730's changes). This is acceptable if intentional, but review order matters.
 
-**By:** CAPCOM  
-**Date:** 2026-03-11  
-
-All team casting flows (CLI init, REPL auto-cast, manual casting) must use `CastingEngine.castTeam()`.
-
-**What:** Consolidate casting logic to avoid duplication of personality/role-matching. Use structured character data (personality, backstory, role) from universe templates instead of generic role-based personalities.
-
-**Why:** SDK already ships with CastingEngine — we should use it. Provides rich, themed characters instead of generic roles. Avoids duplication of casting logic across CLI and REPL.
-
-**Impact:** Requires refactoring `cli/core/cast.ts:personalityForRole()` and wiring coordinator universe selection to CastingEngine templates.
-
----
-
-### squad.config.ts is the source of truth for SDK-mode projects
-
-**By:** CAPCOM  
-**Date:** 2026-03-11  
-
-When `squad.config.ts` exists, it is the canonical team roster. Markdown files (.squad/team.md, routing.md) are **generated output** from `squad build`.
-
-**What:** TypeScript config enables type-checking, validation, and better tooling. Markdown is regenerated from config during build.
-
-**Why:** Having two sources of truth (config + markdown) creates sync bugs. One source enables automated consistency.
-
-**Impact:**
-- `squad build` regenerates markdown from config
-- REPL init flow writes squad.config.ts after casting
-- Manual team.md edits in SDK mode trigger a warning (suggest `squad migrate --to sdk`)
+#### .squad/ Files ❌ CRITICAL
+```
+.squad/agents/eecom/history.md
+.squad/agents/flight/history.md
+.squad/agents/network/history.md
+```
+**VIOLATION:** Same issue as PR #760 — protected .squad/ files in diff.
 
 ---
 
-### Ralph is a required built-in agent, always included
+## Verdict
 
-**By:** CAPCOM  
-**Date:** 2026-03-11  
+### ❌ REJECT — Both PRs
 
-Ralph (Work Monitor) is added automatically during init, just like Scribe.
+**Primary Reason:** Both PRs violate the Protected Files convention by including .squad/agents/{member}/history.md in their diffs. These are session-created state files that must be reset before pushing.
 
-**What:** Ralph is a core framework component (work queue tracking, keep-alive monitoring). Include Ralph in both CLI init and REPL auto-cast flows.
+**Secondary Issue:** Both PRs include unexplained changes to template files (ceremonies.md and squad.agent.md.template across 3 locations). This needs clarification.
 
-**Why:** Ralph is a core team member, not an optional add-on. Should be present in every Squad project.
+### Required Fixes (for whoever re-addresses):
 
-**Impact:** Add Ralph to the hardcoded agents array in `cli/core/init.ts` (both SDK init and REPL paths).
+1. **Reset .squad/ files:**
+   ```bash
+   git checkout origin/dev -- .squad/agents/
+   ```
 
----
+2. **Investigate template file changes:**
+   - Are they intentional?
+   - If yes, explain in commit message
+   - If no, reset them: `git checkout origin/dev -- packages/*/templates/ templates/`
 
-### SDK Init Implementation Priority Order
+3. **For PR #762:** Verify it's intentionally stacked on #760, or rebase onto origin/dev without #760's changes
 
-**By:** EECOM  
-**Date:** 2026-03-11  
+### Who Should Fix?
 
-Prioritize squad.config.ts sync fixes over new commands. Implement in this order:
+Per squad lockout rules: **NOT the original authors (Network/EECOM)**. 
 
-1. **Fix 1 — squad.config.ts sync utility** (regex-based, upgrade to AST if edge cases arise)
-2. **Fix 2, 7 — Ralph in CLI init + REPL init with prompt**
-3. **Fix 6 — CastingEngine integration** (augment LLM proposals with structured character data, don't replace LLM)
-4. **Fix 3, 4, 5 — hire/remove commands, @copilot flag** (polish, lower priority)
-
-**Why:** squad.config.ts sync is load-bearing for the rest. Ralph fixes are quick wins completing a half-implemented feature. CastingEngine is high-value but medium-risk. Hire/remove/flags are polish.
-
-**Open Questions:**
-- AST vs Regex for config parsing: Start with regex, upgrade if edge cases arise
-- CastingEngine augment vs replace: Keep LLM for flexibility, use CastingEngine to enrich proposals
-- Ralph always-on vs opt-in: Make Ralph always-included
-
-**Reference:** Full roadmap at `.squad/identity/sdk-init-implementation-roadmap.md`
+**Suggest reassignment to:** Scribe or another lead to clean up diffs and rebase if needed.
 
 ---
 
-### 2026-03-20T13:26:45Z: No cron jobs — ever
-**By:** Brady (via Copilot)
-**What:** No cron jobs in GitHub Actions — ever. Cron is permanently disabled in all workflows. We should not be shipping code that has cron turned on by default. It costs too much. This applies to our repo, the product templates, and the docs.
-**Why:** User request — captured for team memory. GitHub Actions cron burns minutes and money. Squad uses event-based triggers and local watch mode instead.
+## Notes for PR Authors
 
----
+- **Content quality is good** — the actual fixes are sound and well-tested
+- **Just needs housekeeping** — remove state files, clarify template changes, ensure correct base branch
+- Once cleaned, these are ready to merge
 
-### 2026-03-20: CI Lockfile Lint + Edited Trigger
-**By:** Booster (CI/CD Engineer)
-**What:**
-1. Add `edited` to CI pull_request trigger types in `.github/workflows/squad-ci.yml` (types: [opened, synchronize, reopened, edited]) to catch PR retargeting.
-2. Add lockfile lint step before `npm ci` to detect stale nested workspace entries in `package-lock.json` with remediation: `Fix: delete these entries from package-lock.json and run npm install`.
-3. Changed repository default branch from `main` to `dev`.
-**Why:** 
-- PRs retargeted to different base branches need CI retrigger (standard GitHub Actions pattern).
-- Stale nested npm registry entries cause TypeScript type errors that are hard to diagnose; catching at lockfile level gives clear, actionable feedback.
-- Community PRs now naturally target `dev` without manual retargeting.
+### 2026-04-02: Decision: Versioning Policy — No Prerelease Versions on dev/main
 
----
+# Decision: Versioning Policy — No Prerelease Versions on dev/main
 
-### 2026-03-11T12:10Z: Session handoff — SDKs are next priority
-**By:** Brady (via Copilot)
-**What:** Next session begins with SDK Init PRDs. The unified PRD consolidating #337-#342 is ready for implementation and is the team's top priority.
-**Why:** User request — captured for team memory.
-
----
-
-### 2026-03-20: Press milestone — GitHub Blog + .NET Rocks!
-**By:** Brady (via Copilot)
-**What:** Squad featured on the GitHub Blog ("How Squad runs coordinated AI agents inside your repository") and .NET Rocks! Episode 1994, both published March 19, 2026. First major press coverage.
-**Why:** Team morale milestone. Validates the "repository-native multi-agent orchestration" positioning. Community visibility will likely drive new issues and contributors.
-
----
-
-### 2026-03-19: Node 22+ ESM Resolution Fix Strategy
 **By:** Flight (Lead)
-**Date:** 2026-03-19
-**Issue:** #449
-**Status:** Proposed
-**What:** Dual-layer postinstall patching:
-1. Primary fix: Patch `vscode-jsonrpc/package.json` at postinstall to add the `exports` field (modeled on v9.x) to fix ALL subpath import resolution at source.
-2. Backup fix: Keep existing copilot-sdk `session.js` patch as defense-in-depth.
-3. Observability: Add a `squad doctor` check that detects whether `vscode-jsonrpc` has proper exports.
-4. CI: Add Node 22 and Node 24 to the CI smoke test matrix.
-**Why:**
-- `vscode-jsonrpc@8.2.1` lacks an `exports` field; Node 22+ strict ESM resolution rejects `vscode-jsonrpc/node` imports without `.js` extension.
-- Patching the package with missing exports is more robust than chasing individual import sites.
-- `vscode-jsonrpc` v9.x (which has exports) is all pre-release with no stable release timeline.
-- Node 22 is Active LTS — must-support for any package declaring `engines: >=20`.
-**Owners:** GNC (~1 day implementation), Booster (CI matrix), FIDO (ESM import smoke test).
-
----
-
-### 2026-03-21: Gap analysis verification loop
-**By:** Procedures (Prompt Engineer)
-**What:** After Agent Work now includes Step 1b — Verification. When an issue has `- [ ]` checkboxes, a lightweight verification agent (claude-haiku-4.5, sync, different from the doer) independently checks each item against the work product before the coordinator proceeds. 2-retry cap, then escalate to user.
-**Why:** Agents were claiming "done" without completing all checklist items. The verification step enforces the checklist as a contract. Opt-in by structure — zero overhead for issues without checkboxes.
-**PR:** #473
-**Issue:** #472
-
----
-
-# Decision: Release Hardening Plan
-
-**By:** Flight  
-**Date:** 2026-07-22  
-**Status:** Approved (Brady-approved scope)  
-**Issues:** #564 (umbrella), #557, #562. Deferred into #564: #558, #559, #560.
-
----
-
-## Summary
-
-Three concrete work items remain to close out v0.9.1 release incident hardening. This plan specifies exactly what gets built, in what order, and who does what. No fluff.
-
----
-
-## 1. #564 — Rewrite PUBLISH-README.md as Release Playbook
-
-**What:** Replace the stale 58-line v0.8.22 stub with a living, version-agnostic release playbook.  
-**Owner:** Procedures (formal playbook structure) + Surgeon (publish-specific content)  
-**Reviewer:** Flight  
-**File:** `PUBLISH-README.md` (root — same location, new content)  
-**Absorbs:** #558, #559, #560 (each becomes a section below)
-
-### Exact Sections
-
-```
-# Release Playbook
-
-## Overview
-- What this document is (living playbook, not version-specific instructions)
-- Two publish channels: stable (squad-npm-publish.yml) and insider (squad-insider-publish.yml)
-- Package order: SDK first, CLI second (CLI depends on SDK)
-
-## Pre-Flight Checklist (absorbs #560)
-- [ ] All tests pass on dev branch (`npm test` — expect 3900+ tests)
-- [ ] No `file:` references in any packages/*/package.json dependencies
-- [ ] All package.json versions are valid semver (no -preview suffix for release)
-- [ ] SDK dependency in squad-cli is a version range, not `file:../squad-sdk`
-- [ ] `npm run build` succeeds clean (no TypeScript errors)
-- [ ] `npm -w packages/squad-sdk pack --dry-run` and `npm -w packages/squad-cli pack --dry-run` both succeed
-- [ ] Git tag matches package.json versions
-- [ ] CHANGELOG.md updated for this version
-- [ ] GitHub Release draft created (triggers squad-npm-publish.yml on publish)
-
-## Publish via CI (Recommended Path)
-- Create GitHub Release → triggers `squad-npm-publish.yml`
-- Pipeline stages: preflight → smoke-test → publish-sdk → publish-cli
-- Each stage has version match verification and npm registry propagation checks
-- SDK publishes first; CLI job depends on successful SDK publish
-- Provenance attestation is automatic (--provenance flag)
-- Monitor: Actions tab → "Squad npm Publish" workflow
-
-## Publish via workflow_dispatch (Manual Trigger)
-- Go to Actions → "Squad npm Publish" → Run workflow
-- Input: version string (e.g., "0.9.2")
-- Same pipeline as release-triggered publish
-- Use when: re-publishing after a failed attempt, or publishing without a GitHub Release
-
-## Insider Channel
-- Pushes to `insider` branch auto-trigger `squad-insider-publish.yml`
-- Publishes both packages with `--tag insider`
-- No preflight job (insider is for testing, not production)
-- Install: `npm install @bradygaster/squad-cli@insider`
-
-## Workspace Publish Policy
-- NEVER use `npm publish` from the repo root (publishes the wrong package)
-- ALWAYS use `npm -w packages/squad-sdk publish` or `npm -w packages/squad-cli publish`
-- CI enforces this — see lint rule (#557)
-- Manual local publish is a fallback, not the default path
-
-## Manual Local Publish (Emergency Fallback) (absorbs #559)
-- When to use: CI is broken, npm is having issues, or you need to publish NOW
-- Prerequisites: `NPM_TOKEN` or `npm login` with 2FA, build succeeds locally
-- Steps:
-  1. `npm ci && npm run build`
-  2. Run pre-flight checklist above manually
-  3. `cd packages/squad-sdk && npm publish --access public --otp=<CODE>`
-  4. Verify: `npm view @bradygaster/squad-sdk@<VERSION> version`
-  5. `cd ../squad-cli && npm publish --access public --otp=<CODE>`
-  6. Verify: `npm view @bradygaster/squad-cli@<VERSION> version`
-- ALWAYS publish SDK before CLI
-- If CLI publish fails after SDK succeeds: SDK is already live, fix CLI and re-publish (do NOT unpublish SDK)
-
-## 422 Race Condition & npm Errors (absorbs #558)
-- **What happened:** During v0.9.1, npm returned 422 because the package version already existed
-- **Root cause:** `file:` dependency caused SDK to resolve locally instead of from registry. When CI tried to publish, the version check saw the wrong state.
-- **If you get 422 "Version already exists":**
-  1. Check if the package IS actually published: `npm view @bradygaster/squad-<pkg>@<VERSION>`
-  2. If yes — it succeeded, the 422 was a race. Move on.
-  3. If no — bump the version, fix the issue, re-publish
-- **If you get 403 "Forbidden":** NPM_TOKEN is expired or missing. Regenerate at npmjs.com → Access Tokens.
-- **If you get ETARGET "No matching version":** You published SDK but CLI's dependency hasn't propagated yet. Wait 60s and retry.
-- **npm registry propagation:** Takes 15-60 seconds. The CI workflow retries 5 times with 15s intervals.
-
-## Post-Publish Verification
-- `npm view @bradygaster/squad-sdk@<VERSION> version`
-- `npm view @bradygaster/squad-cli@<VERSION> version`
-- `npx @bradygaster/squad-cli@<VERSION> --version` (cold install test)
-- Check GitHub Release is marked as "Latest"
-
-## Version Bump After Publish
-- After stable publish, bump all package.json to next preview: `X.Y.(Z+1)-preview.1`
-- Files to update: root `package.json`, `packages/squad-sdk/package.json`, `packages/squad-cli/package.json`
-- Commit to dev branch, not main
-
-## Legacy Publish Scripts (Deprecated)
-- `publish-0.8.21.ps1`, `publish-0.8.22.ps1`, `publish-0.9.1.ps1` exist in repo root
-- These are version-specific and superseded by CI publish
-- Do NOT create new version-specific publish scripts
-- Existing scripts may be deleted in a future cleanup
-```
-
-### What Gets Deleted from Current PUBLISH-README.md
-
-Everything. The current content is a v0.8.22-specific stub. The new playbook replaces it entirely.
-
----
-
-## 2. #557 — CI Lint Rule: Reject `npm -w ... publish` in Workflow YAML
-
-**What:** A CI check that fails if any workflow YAML contains bare `npm ... publish` without using the workspace-scoped pattern correctly — specifically, it prevents someone from adding `npm publish` (without `-w`) in a workflow file, which would publish the root package instead of the correct workspace package.
-
-**Owner:** FIDO (CI/lint domain) or Procedures (governance)  
-**Reviewer:** Flight  
-**Where it runs:** New job in `squad-ci.yml`, runs on every PR and push to dev/insider  
-**What it checks:** Scans `.github/workflows/*.yml` for `npm publish` invocations that are NOT workspace-scoped.
-
-### Exact Implementation
-
-Add a new job to `.github/workflows/squad-ci.yml`:
-
-```yaml
-  publish-policy:
-    name: Workspace publish policy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Reject non-workspace npm publish in workflows
-        run: |
-          echo "Checking workflow files for non-workspace npm publish commands..."
-          VIOLATIONS=0
-          for f in .github/workflows/*.yml; do
-            # Find lines with 'npm publish' or 'npm ... publish' that do NOT have '-w' flag
-            # Exclude comments (lines starting with #)
-            while IFS= read -r line; do
-              # Skip comment lines
-              [[ "$line" =~ ^[[:space:]]*# ]] && continue
-              # Match 'npm publish' without '-w' or '--workspace'
-              if echo "$line" | grep -qP 'npm\s+publish' && ! echo "$line" | grep -qP 'npm\s+-w\s|npm\s+--workspace'; then
-                echo "::error file=$f::Found non-workspace 'npm publish' — use 'npm -w packages/<pkg> publish' instead"
-                echo "  → $line"
-                VIOLATIONS=$((VIOLATIONS + 1))
-              fi
-            done < <(grep -n 'npm.*publish' "$f" || true)
-          done
-          if [ "$VIOLATIONS" -gt 0 ]; then
-            echo ""
-            echo "::error::BLOCKED — $VIOLATIONS workflow file(s) use 'npm publish' without workspace scope."
-            echo "Policy: Always use 'npm -w packages/squad-sdk publish' or 'npm -w packages/squad-cli publish'."
-            echo "See PUBLISH-README.md → Workspace Publish Policy."
-            exit 1
-          fi
-          echo "✅ All npm publish commands are workspace-scoped"
-```
-
-### What This Catches
-
-- `npm publish` (bare, would publish root package.json)
-- `npm publish --access public` (bare with flags)
-- `run: npm publish --tag insider` (insider without workspace)
-
-### What This Allows
-
-- `npm -w packages/squad-sdk publish --access public --provenance` ✅
-- `npm -w packages/squad-cli publish --tag insider --access public` ✅
-
-### Documentation
-
-Add the policy to PUBLISH-README.md under "Workspace Publish Policy" (already in the outline above).
-
----
-
-## 3. #562 — Delete Ghost Workflow `publish-npm.yml` (ID 250121956)
-
-**What:** The file `.github/workflows/publish-npm.yml` was already deleted from disk, but the workflow ghost persists in GitHub Actions UI with state `disabled_manually`.
-
-**Owner:** Brady (requires repo admin + API token)  
-**Why Brady:** This is a one-time API operation requiring admin-level access, not a code change.
-
-### Research Finding
-
-GitHub has NO `DELETE /repos/{owner}/{repo}/actions/workflows/{id}` endpoint. The Workflows REST API only supports List, Get, Disable, and Enable. **You cannot directly delete a workflow.**
-
-### The Actual Path to Clear It
-
-GitHub auto-garbage-collects a workflow entry once it has **zero workflow runs**. The procedure:
-
-1. **List all runs for the ghost workflow:**
-   ```bash
-   gh api repos/bradygaster/squad/actions/workflows/250121956/runs \
-     --paginate -q '.workflow_runs[].id'
-   ```
-
-2. **Delete every run:**
-   ```bash
-   gh api repos/bradygaster/squad/actions/workflows/250121956/runs \
-     --paginate -q '.workflow_runs[].id' | \
-   while read run_id; do
-     echo "Deleting run $run_id"
-     gh api -X DELETE repos/bradygaster/squad/actions/runs/$run_id
-   done
-   ```
-
-3. **Verify the workflow is gone:**
-   ```bash
-   gh api repos/bradygaster/squad/actions/workflows/250121956
-   ```
-   If all runs are deleted, this should eventually return 404 (GitHub may take a few minutes to GC).
-
-4. **If it still shows:** GitHub's GC is not instant. Wait 24 hours and check again. If it persists after 24h with zero runs, contact GitHub Support — this is a known limitation.
-
-### Alternative: If Zero Runs Already Exist
-
-If the ghost workflow has no runs at all and still shows, this is a GitHub bug. The only path is GitHub Support. Document this in the issue and close with "waiting on GitHub GC" status.
-
----
-
-## Execution Order
-
-| Order | Issue | Work | Owner | Depends On |
-|-------|-------|------|-------|------------|
-| 1 | #562 | Delete ghost workflow runs via `gh api` | Brady (manual) | Nothing |
-| 2 | #557 | Add `publish-policy` job to squad-ci.yml | FIDO or Procedures | Nothing |
-| 3 | #564 | Rewrite PUBLISH-README.md | Procedures + Surgeon | #557 (so playbook can reference the lint rule) |
-
-Items 1 and 2 are independent and can execute in parallel. Item 3 should go last so it references the lint rule that already exists.
-
----
-
-## What We Are NOT Doing
-
-- No new publish scripts (CI is the path)
-- No unpublishing or republishing anything
-- No changes to `squad-npm-publish.yml` or `squad-insider-publish.yml` (they're working correctly)
-- No separate documents for #558, #559, #560 (absorbed into #564 playbook sections)
-
-
----
-
-# Decision: Publish Policy CI Gate
-
-**By:** FIDO
-**Date:** 2025-07-24
-**Issue:** #557
-
-## What
-
-All `npm publish` commands in `.github/workflows/*.yml` must be workspace-scoped (`-w` or `--workspace`). A CI job (`publish-policy`) now enforces this on every PR and push to dev/insider.
-
-## Why
-
-Bare `npm publish` would publish the root `package.json` instead of a workspace package — a critical incident vector. This gate catches it before merge.
-
-## Pattern
-
-Meta-references to "npm publish" in echo, grep, and YAML `name:` lines are excluded from the lint to prevent self-triggering. The test suite (`test/publish-policy.test.ts`) validates both the lint logic and all live workflow files.
-
-
----
-
-# Decision: `init --global` bootstraps personal-squad/ directory
-
-**By:** EECOM
-**Date:** 2026-07-23
-**Issue:** #576
-
-## What
-
-`init --global` now also creates the `personal-squad/` directory (via `ensurePersonalSquadDir()`) alongside the full `.squad/` structure. Repo-level `init` detects and acknowledges existing personal squads.
-
-## Why
-
-`resolveGlobalSquadPath()` returns `~/.config/squad/` — the container. But `resolvePersonalSquadDir()` looks for `~/.config/squad/personal-squad/`. Without the bridge, `init --global` never created the subdirectory that the rest of the personal squad system depends on.
-
-## Impact
-
-- `ensurePersonalSquadDir()` is a new SDK export — any code that needs to guarantee the personal squad directory exists should use it.
-- `init --global` now suppresses GitHub workflows (they're meaningless in the global config dir).
-- `RunInitOptions` has a new `isGlobal` field.
-
----
-
-# Decision: PR Review Batch — Overlap Resolution
-
-**Date:** 2026-03-25  
-**Reviewer:** FIDO (Quality Owner)  
-**Context:** 10 open PRs reviewed, 3 duplicate/overlap pairs identified
-
-## Problem
-
-tamirdresher opened 6 PRs addressing related concerns (retro enforcement, challenger agent, tiered memory). Three pairs have significant overlap:
-
-1. **#607 vs #605** — Both add weekly retro ceremony with Ralph enforcement
-2. **#604 vs #603** — Both add Challenger agent template (complete duplicates)
-3. **#606 vs #602** — Both add tiered memory/history skills (superset/subset)
+**Date:** 2026-03-29
+**Requested by:** Dina
+**Status:** DECIDED
+**Confidence:** Medium (confirmed by PR #640 incident, PR #116 prerelease leak, CI gate implementation)
 
 ## Decision
 
-**Merge these:**
-- **#607** (retro enforcement) — comprehensive, standalone ceremony file
-- **#603** (Challenger + fact-checking) — correct file locations, follows project conventions
-- **#606** (tiered memory) — superset of #602, 3-tier model vs 2-tier
+1. **All packages use strict semver** (`MAJOR.MINOR.PATCH`). No prerelease suffixes on `dev` or `main`.
+2. **Prerelease versions are ephemeral.** `bump-build.mjs` creates `-build.N` for local testing only — never committed.
+3. **SDK and CLI versions must stay in sync.** Divergence silently breaks npm workspace resolution.
+4. **Surgeon owns version bumps.** Other agents must not modify `version` fields in `package.json` unless fixing a prerelease leak.
+5. **CI enforcement via `prerelease-version-guard`** blocks PRs with prerelease versions. `skip-version-check` label is Surgeon-only.
 
-**Close as duplicate:**
-- **#605** — same scope as #607, less comprehensive
-- **#604** — duplicate of #603, different file locations
-- **#602** — subset of #606, narrower scope
+## Why
 
-## Rationale
+The repo had no documented versioning policy. This caused two incidents:
 
-- **#607 vs #605:** #607 provides standalone ceremony file (`ceremonies/retrospective.md`) + enforcement guide + skill, while #605 inlines into existing templates. Standalone file is more discoverable and modular.
-- **#604 vs #603:** Functionally identical. #603 uses `.squad/` paths matching project conventions; #604 uses `templates/` (non-standard for agents).
-- **#606 vs #602:** #606 is a superset — 3-tier model (hot/cold/wiki) vs 2-tier (hot/cold). Both cite same production data. Broader scope is more useful.
+- **PR #640:** Prerelease version `0.9.1-build.4` silently broke workspace resolution. The semver range `>=0.9.0` does not match prerelease versions, causing npm to install a stale registry package instead of the local workspace link. Four PRs (#637–#640) patched symptoms before the root cause was found.
+- **PR #116:** Surgeon set versions to `0.9.1-build.1` instead of `0.9.1` on a release branch because there was no guidance on what constitutes a clean release version.
+
+## Skill Reference
+
+Full policy documented in `.squad/skills/versioning-policy/SKILL.md`.
 
 ## Impact
 
-- Reduces PR count from 10 to 7 (close 3 duplicates)
-- Eliminates conflicting file changes (e.g., both #607 and #605 modify `templates/ceremonies.md`)
-- Preserves all unique value (no functionality lost)
+- All agents must follow the versioning policy when touching `package.json`
+- Surgeon charter should reference this skill for release procedures
+- CI pipeline enforces the policy via automated gate
 
-## Affected PRs
+### 2026-04-02: Review: Flight's Bug #758 Proposal (squad.ps1 Execution Policy Block)
 
-| PR  | Action | Reason |
-|-----|--------|--------|
-| 607 | Merge  | Comprehensive retro enforcement |
-| 605 | Close  | Duplicate of #607 (less comprehensive) |
-| 604 | Close  | Duplicate of #603 (wrong file paths) |
-| 603 | Merge  | Challenger template (correct paths) |
-| 606 | Merge  | Tiered memory (superset) |
-| 602 | Close  | Subset of #606 (narrower scope) |
+# Review: Flight's Bug #758 Proposal (squad.ps1 Execution Policy Block)
 
-## Next Steps
+> **Reviewer:** Network | **Date:** 2026-04-02 | **Issue:** #758
 
-1. Comment on #605, #604, #602 explaining they are duplicates/subsets and will be closed
-2. Merge #607, #603, #606 after author confirms deduplication is acceptable
-3. All other PRs (#611, #608, #592, #567) can proceed independently
+## Verdict: ✅ APPROVE (with minor clarifications)
+
+Flight's approach is **pragmatic and sound**. The proposal correctly identifies the constraint (npm creates shims AFTER postinstall) and proposes the right workaround: a `doctor` check + optional helper script + README guidance. This is the correct architecture given the npm/Windows constraint.
 
 ---
 
-# Decision: Triage + Work Session Plan
+## Detailed Review
 
-**By:** Flight  
-**Date:** 2026-03-25
+### 1. ✅ Is the proposed fix (postinstall script to remove .ps1 shim) the right approach?
+
+**Assessment:** Flight got it right — the proposal is **not** claiming the helper script runs as postinstall. 
+
+Key quote from the proposal:
+> npm creates these shims _after_ all lifecycle hooks (postinstall, etc.) complete. This means **no npm lifecycle script can remove the .ps1 file** — it doesn't exist yet when postinstall runs.
+
+**Correct approach taken:**
+- ✅ Doctor check (proactive detection + user guidance)
+- ✅ Optional helper script (manual removal step)
+- ✅ README documentation (user knows how to fix)
+
+This is layered user support: (1) detect → (2) warn → (3) guide. No hidden automation that might fail silently.
+
+---
+
+### 2. ✅ Are there npm packaging gotchas Flight missed?
+
+**Assessment:** No significant gaps. Flight anticipated the key constraints:
+
+**Covered:**
+- ✅ Platform guard: `process.platform !== 'win32'` prevents non-Windows clutter
+- ✅ Path resolution: Uses `npm_config_prefix` + fallback to `%APPDATA%\npm`
+- ✅ Scope: Clearly marks "NOT in scope: signing, auto-removing, changing npm behavior"
+
+**Minor clarification needed:**
+- The helper script (`remove-ps1-shim.mjs`) is documented but no invocation mechanism is specified. Flight says users can run it via `node -e "require(...)"` but this assumes Node is in PATH post-install. Better: document as `npx @bradygaster/squad-cli doctor --fix` or manual `Remove-Item` in PowerShell. The doctor check is the primary mechanism.
+- `npm_config_prefix` is reliable for global installs, but in local/dev installs it may point to project root. This is fine because `.ps1` shimming only happens for global installs (local `npm install` doesn't create shims in npm config prefix).
+
+**No gotchas missed.**
+
+---
+
+### 3. ✅ Will the postinstall script work for both global and local installs?
+
+**Assessment:** Correctly scoped for global installs only; no issues.
+
+**Why this is right:**
+- npm only creates shims in `npm_config_prefix` during **global** installs (`npm install -g`)
+- Local installs (`npm install` in a project) do not create `squad.cmd` or `squad.ps1` anywhere (they go into `node_modules/.bin/`)
+- The doctor check correctly uses `npm_config_prefix`, which is the global npm prefix
+- The helper script is optional, documented, not forced into any install hook
+
+**Verdict:** ✅ Correctly handles both contexts.
+
+---
+
+### 4. ✅ Any cross-platform concerns? (should only run on Windows)
+
+**Assessment:** Properly guarded. No issues.
+
+**Cross-platform safety:**
+- ✅ `checkWindowsPs1Shim()` returns `undefined` on non-Windows → doesn't wire into doctor checks
+- ✅ `if (process.platform !== 'win32')` is the standard Node platform guard
+- ✅ README section clearly labeled "Windows (PowerShell)" — doesn't confuse Mac/Linux users
+- ✅ Helper script doesn't attempt file operations on non-Windows
+
+**Verdict:** ✅ Solid cross-platform discipline.
+
+---
+
+### 5. ✅ Does the docs update belong in the same PR or separate?
+
+**Assessment:** Same PR is correct. Here's why:
+
+**Reasoning:**
+- The README change is small (~10 lines), referenced in the proposal scope
+- It documents the fix users will encounter — belongs alongside the feature
+- Doctor check + README guidance form one cohesive user experience
+- Splitting creates synchronization risk (docs lag behind feature)
+- Low churn risk: Windows PowerShell block is not a common pain point, docs won't need heavy revision
+
+**Caveat:** Flight notes PAO (documentation) as "Secondary". If your team has strict docs reviews, PAO should LGTM the README section before merge. Otherwise, keep it together.
+
+**Verdict:** ✅ Same PR is correct. Recommend PAO review the README diff.
+
+---
+
+## Implementation Checklist (for Network)
+
+Before marking done:
+
+- [ ] `doctor.ts`: Implement `checkWindowsPs1Shim()` with both path strategies (`npm_config_prefix` and fallback)
+- [ ] Unit tests: Cover Windows/non-Windows branches and path edge cases
+- [ ] Helper script: Add `remove-ps1-shim.mjs` with clear usage comments
+- [ ] README: Add Windows section with both solutions (manual `Remove-Item` + `npx doctor`)
+- [ ] Test on Windows: Install globally, verify doctor detects `.ps1`, verify removal works
+- [ ] Check that `.cmd` still works after `.ps1` removal (PowerShell fallback behavior)
+
+---
+
+## Risk Assessment (Verified)
+
+Flight's risk assessment is accurate:
+
+- **Risk: LOW** ✅
+- Doctor check is additive (no breaking changes)
+- Platform guard prevents cross-platform confusion
+- No automatic file deletion (user-controlled)
+- No changes to core CLI or upgrade flow
+
+---
+
+## Final Notes
+
+This proposal follows **user-first installation philosophy** (your charter): 
+- Detects the problem automatically
+- Guides users to the fix
+- Provides self-serve resolution
+
+No gotchas. No corner cases. Good execution of a constrained problem (npm's control over shim creation).
+
+**Proceed with implementation.**
+
+### 2026-04-02: Decision: Protected Files guardrail + Sweeping Refactor Rules
+
+# Decision: Protected Files guardrail + Sweeping Refactor Rules
+
+**Author:** Procedures (Prompt Engineer)
+**Date:** 2026-07
+**Status:** DECIDED
 
 ## Context
 
-Triaged 14 untriaged issues (3 docs, 6 community features, 3 bugs, 2 questions). Multiple overlap with existing P1 work. 10 open PRs (5 from tamirdresher, 2 from diberry, 1 from joniba, 1 from eric-vanartsdalen, 1 draft).
+Commit `26047dc5` accidentally converted `detect-squad-dir.ts` from raw `node:fs` to `FSStorageProvider` during a sweeping StorageProvider abstraction refactor, breaking the insider build. Bootstrap utilities run before the SDK is loaded — SDK imports cause startup crashes.
 
-## Triage Decisions
-
-### High-Value Quick Wins (P1)
-- **#610** (docs broken link) → squad:pao, P1 — 5-minute fix blocking diberry's PR #611 CI
-- **#590** (getPersonalSquadRoot bug) → squad:eecom, P0 — personal squad init broken for all users since v0.9.1
-- **#591** (hiring wiring docs) → squad:procedures, P1 — matches PR #592 (joniba), docs-only, high clarity
-
-### Community Feature Contributions (Defer to Review)
-- **#601, #600, #598, #596, #595** (tamirdresher proposals) — all have matching PRs (#607, #606, #604, #602). Priority: review PRs first, triage issues after PR decisions.
-
-### Maintenance Items (P2)
-- **#597** (upgrade CLI docs) → squad:pao + squad:network, P2 — user confusion, docs fix + UX improvement
-- **#588** (model list update) → squad:procedures, P2 — hardcoded model list in squad.agent.md + templates
-- **#554** (broken external links) → squad:pao, P2 — automated link checker output, investigate failures
-
-### Questions (No Squad Assignment)
-- **#589** (skills placement) → community reply — clarify `.copilot/skills` vs `.github/skills` vs `.claude/skills`
-- **#494** (model vs squad model) → community reply — clarify Copilot CLI `/models` vs squad.agent.md model preference
-
-### Long-Horizon Feature Work (P2-P3)
-- **#581** (ADO Support PRD) → squad:flight, P2 — comprehensive PRD, but blocked until SDK-first parity (#341) ships
-
-## Work Session Priority (Top 5)
-
-1. **#610** → PAO — fix broken link (5 min), unblocks #611
-2. **#590** → EECOM — fix getPersonalSquadRoot(), critical user-facing bug
-3. **PR #592** → Flight review — matches #591, validate joniba's wiring guide
-4. **PR #611** → Flight review — diberry TypeDoc API reference (blocked on #610 fix)
-5. **#588** → Procedures — update model lists in templates
-
-## PR Review Strategy
-
-**Merge-ready (after minimal validation):**
-- #611 (diberry) — blocked on #610, then merge
-- #592 (joniba) — high-quality wiring guide
-
-**Tamir PRs (defer until proposal-first validated):**
-- #607, #606, #605, #604, #603, #602 — all substantive feature proposals without prior proposals in `docs/proposals/`. Apply proposal-first policy: request `docs/proposals/{slug}.md` before reviewing implementation.
-
-**Draft (not ready):**
-- #567 (diberry) — explicitly marked DRAFT
-
-## Patterns Noted
-
-- **Tamir contributions:** High technical quality, but needs proposal-first discipline (6 PRs without proposals).
-- **Joniba contributions:** Consistently high-quality, matches team standards (wiring guide is excellent).
-- **Diberry contributions:** MSFT-level quality, merge-ready on delivery.
-
-## Deferred
-
-- #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
-- #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
-
-
----
-
-### 2026-03-25: Personal Squad Path Canonicalization
-
-**By:** EECOM (Core Developer)  
-**Date:** 2026-03-25  
-**Issue:** #590  
-
-**Decision:** The canonical subdirectory for personal squad (inside global config dir) is personal-squad/. All path resolution functions must use this name. The .squad name is reserved for project-local squad directories only.
-
-**Context:** getPersonalSquadRoot() in consult.ts used .squad as subdirectory, while esolvePersonalSquadDir() and nsurePersonalSquadDir() in esolution.ts both use personal-squad. This path mismatch broke all personal squad discovery.
-
-**Implications:**
-- Any new function resolving personal squad path must use personal-squad, not .squad
-- Consider extracting subdirectory name as shared constant (PERSONAL_SQUAD_DIR = 'personal-squad') if more resolution helpers are added
-- All existing code must use consistent path
-
-**Status:** ✅ Implemented in commit for #590
-
----
-
-### 2026-03-25: Model Catalog Refresh to Current Platform Offerings
-
-**By:** Procedures (Prompt Engineer)  
-**Date:** 2026-03-25  
-**Issue:** #588  
-
-**Decision:** Bump model catalog to current platform offerings as of March 25, 2026.
-
-- **Default code model:** Bumped to claude-sonnet-4.6 (newest standard-tier Claude, replaces claude-sonnet-4.5)
-- **Code specialist:** Bumped to gpt-5.3-codex (replaces gpt-5.2-codex)
-- **Removed stale models:** claude-opus-4.6-fast, gpt-5 (standalone)
-- **Added new models:** claude-opus-4.6-1m, gpt-5.4, gpt-5.4-mini
-- **Fallback chains:** Restructured with current model availability
-
-**Impact:** All agents using model selection or fallback chains now reference current platform models. No behavioral change for agents using platform default (omitting model param).
-
-**Implementation:** All 5 squad.agent.md template copies synchronized via scripts/sync-templates.mjs
-
-**Status:** ✅ Merged into #588
-
----
-
-### 2026-03-25: Copilot CLI Platform Changes — Routing Regression Root Cause
-
-**By:** CAPCOM (SDK Expert)  
-**Date:** 2026-03-25  
-**Summary:** Copilot CLI shipped 8 releases (1.0.4→1.0.11) between March 11-23. Three contain high-impact changes directly affecting Squad routing.
-
-**Critical CLI Changes Identified:**
-
-| Version | Date | Change | Squad Impact |
-|---------|------|--------|--------------|
-| **1.0.11** | Mar 23 | Monorepo instruction discovery — finds *.agent.md and copilot-instructions.md at EVERY directory level (cwd → git root) | 🔴 HIGH: Squad has 6+ copies in templates → duplicate/conflicting instructions merged → dilutes routing |
-| **1.0.8** | Mar 18 | Idle subagents hidden from /tasks after 2 minutes of inactivity | 🔴 HIGH: Explains "agent names vanish" symptom |
-| **1.0.7** | Mar 17 | subagentStart hook fires when subagent spawned, can inject context | 🟡 MEDIUM: May add competing instructions to coordinator |
-| **1.0.6** | Mar 16 | Agent ID format changed (gent-0 → {name}-0) | 🟡 MEDIUM: May break ID-based routing if any |
-| **1.0.5** | Mar 13 | Embedding-based dynamic skill instruction injection per turn | 🟡 MEDIUM: Adds competing context during execution |
-
-**Key Insight:** SDK version pinning (^0.1.32) only controls Squad's SDK dependency. The Copilot CLI runtime (system prompt assembly, agent lifecycle, task tool behavior) auto-updates independently. **Squad needs platform-resilient prompt injection, not just "works with current CLI."**
-
-**Recommended Actions:**
-1. **Immediate:** Clean up template file naming to prevent duplicate instruction discovery
-2. **Short-term:** Upgrade to SDK 0.2.0 to use "customize" mode for resilient system prompt control
-3. **Medium-term:** File CLI issue requesting instruction discovery exclusions and idle timeout configurability
-
-**Full Report:** .squad/decisions/inbox/capcom-cli-research.md
-
----
-
-### 2026-03-25: Squad v0.9.0/v0.9.1 Routing Regression Analysis
-
-**By:** GNC (Node.js Runtime)  
-**Date:** 2026-03-25  
-**Summary:** Regression introduced in Squad v0.9.0 (March 22). v0.9.0→v0.9.1 was CI/publish fixes only — identical coordinator prompts.
-
-**Root Causes by Symptom:**
-
-**Symptom 1: Coordinator doing domain work**
-- **Primary:** Prompt saturation/instruction fatigue
-- Coordinator prompt grew 33% (711→946 lines, 8,867→11,837 words) from v0.8.22 to v0.9.0
-- New content (personal squad governance, worktree lifecycle, gap analysis) adds inline coordinator responsibilities
-- Dilutes core "route, don't do domain work" constraint (buried at line 1016 of 946-line prompt)
-
-**Symptom 2: Routing feels broken**
-- **Primary:** Workstream→Personal Squad replacement broke existing routing configs
-- **Contributing:** Skills path changed (.copilot/skills/ → .squad/skills/)
-- **Contributing:** Prompt weight competing with routing rules
-
-**Symptom 3: Agent names vanishing**
-- **Root cause:** Missing 
-ame parameter in spawn templates
-- v0.9.0 and v0.9.1 shipped WITHOUT the 
-ame parameter
-- Shell relied on fragile regex extraction from description field
-- **Fix exists (commit 561b1a3, issue #577, on dev) but hasn't shipped yet**
-  - Adds mandatory 
-ame: "{name}" parameter to ALL spawn templates
-  - Multi-pattern fallback parser (agent-name-parser.ts)
-  - 30 tests for name extraction
-
-**Template Status:** scripts/sync-templates.mjs correctly propagates from .squad-templates/ to all 4 targets. All copies in sync — no template drift.
-
-**Recommended Follow-Up:**
-
-**P0 — Ship Immediately:**
-1. Merge #577 (agent name fix) — directly addresses symptom 3
-
-**P1 — Next Release:**
-2. Audit coordinator prompt weight (consider moving worktree lifecycle, personal squad governance, gap analysis to skills)
-3. Reinforce routing constraint near top of template
-4. Create routing regression tests
-
-**P2 — Track/Validate:**
-5. Document workstream→personal squad migration for users
-6. Implement "prompt budget" metric (alert if growth >5% per release)
-
-**Full Report:** .squad/decisions/inbox/gnc-internal-research.md
-
-
----
-## 2026-03-25: VS Code Routing Enforcement Fix — Proposal
-
-**By:** Procedures (Prompt Engineer)  
-**Date:** 2026-03-25  
-**Issue:** #613 — VSCode Autopilot breaks Squad agent execution  
-**Status:** DRAFT — awaiting Flight review  
-
-### Root Cause Analysis
-
-Three factors combine to create the VS Code routing failure. Ranked by dominance:
-
-#### 1. 🔴 CLI-Centric Enforcement Language (DOMINANT)
-
-The routing constraint is expressed exclusively in CLI terms. The CRITICAL RULE references 	ask tool only. When the coordinator reads this in VS Code, where the tool is unSubagent, it doesn't reliably make the substitution. It falls through to Platform Detection's Fallback mode: 'work inline.' This enforcement language creates a logical gap.
-
-#### 2. 🟡 Prompt Saturation (AMPLIFYING)
-
-The coordinator prompt is 950 lines / ~80KB. The routing constraint is buried at line 1010 under irrelevant sections (Init Mode, ceremonies, Ralph work monitor, worktree lifecycle). The core dispatch loop accounts for ~200 lines, competing for attention with ~750 lines of governance and reference material.
-
-#### 3. 🟡 Template Duplication (AMPLIFYING)
-
-CLI 1.0.11 discovers all \*.agent.md\ files from cwd to git root. Squad has 5 copies: .squad-templates, templates/, packages/squad-cli/templates, packages/squad-sdk/templates, and .github/agents/. Only .github/agents/ should be discoverable. CLI 1.0.11 merges ALL of them, multiplying the coordinator instructions by 5x and diluting the routing constraint.
-
-### Proposed Fixes
-
-**Fix 1: Platform-Neutral Enforcement Language (P0)**
-- Rewrite CRITICAL RULE to be platform-neutral: 'You are a DISPATCHER, not a DOER. Every task that needs domain expertise MUST be dispatched to a specialist agent.'
-- List dispatch mechanisms: CLI (\	ask\ tool), VS Code (\unSubagent\ tool), or fallback (work inline)
-- Update anti-patterns and constraints sections with same substitution
-
-**Fix 2: Top-and-Bottom Reinforcement (P0)**
-- Add reinforcement block at end of prompt (LLMs weight beginning/end more heavily than middle)
-- Emphasize: Squad ROUTES, it does not BUILD. Do not produce domain artifacts inline.
-
-**Fix 3: Prompt Slimming — Move to Lazy-Loaded References (P1)**
-- Extract ~350 lines (~37%) to lazy-loaded templates: worktree-reference.md, ralph-reference.md, casting-reference.md, mcp-reference.md
-- Reduce from 950→600 lines, making routing constraint a larger percentage of total prompt
-
-**Fix 4: Template File Renaming (P1)**
-- Rename template copies to .template extension to prevent CLI 1.0.11 discovery
-- Update sync-templates.mjs and squad-cli/squad-sdk init code to reference new filenames
-
-**Fix 5: VS Code-Specific Hardening Block (P1)**
-- Move VS Code adaptations section higher (from line 458 to immediately after CRITICAL RULE)
-- Restructure as active enforcement block with platform detection table
-- Make clear: if \unSubagent\ is available, it MUST be used for domain work
-
-### Priority Ordering
-
-| Priority | Fix | Impact | Effort | Ships In |
-|---|---|---|---|---|
-| **P0** | Fix 1: Platform-neutral enforcement | 🔴 Directly closes logical gap | Low | Next patch |
-| **P0** | Fix 2: Top-and-bottom reinforcement | 🔴 Exploits LLM attention patterns | Trivial | Next patch |
-| **P1** | Fix 4: Template file renaming | 🟡 Eliminates 4x duplication | Medium | Next minor |
-| **P1** | Fix 3: Prompt slimming | 🟡 Reduces 950→600 lines | Medium | Next minor |
-| **P1** | Fix 5: VS Code hardening block | 🟡 Makes VS Code dispatch prominent | Low | Next minor |
-
-**Ship order:** Fix 1 + Fix 2 together (one PR, immediate). Fix 4 next (requires code changes). Fix 3 + Fix 5 together (prompt restructure PR).
-
-### Validation
-
-After implementing, test with Andreas's reproduction case:
-1. Open VS Code with squadified project
-2. Ask coordinator to do domain work that matches routing rule
-3. Verify: coordinator dispatches via \unSubagent\ instead of working inline
-4. Verify: coordinator cites the routing rule when dispatching
-
-FIDO should own the test scenario. GUIDO should validate the VS Code runtime behavior.
-
-### Open Questions
-
-1. Does CLI 1.0.11 support exclusion patterns (.copilotignore)? If yes, Fix 4 becomes simpler.
-2. Should we version-gate the VS Code adaptations (detect CLI version)?
-3. Is \unSubagent\ still the correct tool name, or has it changed?
----
-
-# Decision: PR Review Batch — Overlap Resolution
-
-**Date:** 2026-03-25  
-**Reviewer:** FIDO (Quality Owner)  
-**Context:** 10 open PRs reviewed, 3 duplicate/overlap pairs identified
-
-## Problem
-
-tamirdresher opened 6 PRs addressing related concerns (retro enforcement, challenger agent, tiered memory). Three pairs have significant overlap:
-
-1. **#607 vs #605** — Both add weekly retro ceremony with Ralph enforcement
-2. **#604 vs #603** — Both add Challenger agent template (complete duplicates)
-3. **#606 vs #602** — Both add tiered memory/history skills (superset/subset)
+EECOM fixed the code and added regression tests. Flight identified 4 additional zero-dependency bootstrap files. Procedures added preventive guardrails to Copilot instructions.
 
 ## Decision
 
-**Merge these:**
-- **#607** (retro enforcement) — comprehensive, standalone ceremony file
-- **#603** (Challenger + fact-checking) — correct file locations, follows project conventions
-- **#606** (tiered memory) — superset of #602, 3-tier model vs 2-tier
+### Protected Files section (`.github/copilot-instructions.md`)
+- Lists 5 files that MUST only use Node.js built-ins: `detect-squad-dir.ts`, `errors.ts`, `gh-cli.ts`, `output.ts`, `history-split.ts`
+- Explains the SDK/CLI package boundary — `core/` directory is bootstrap territory
+- Placed after Git Safety, before Team Context (safety rule, not workflow)
 
-**Close as duplicate:**
-- **#605** — same scope as #607, less comprehensive
-- **#604** — duplicate of #603, different file locations
-- **#602** — subset of #606, narrower scope
+### Sweeping Refactor Rules section
+Added a 5-step checklist for codebase-wide pattern changes:
+1. Check the protected files list
+2. Scan for `— zero dependencies` header markers
+3. Verify SDK barrel exports before adding imports
+4. Never convert all files blindly
+5. Test after each logical group
 
-## Rationale
+## Implications
 
-- **#607 vs #605:** #607 provides standalone ceremony file (`ceremonies/retrospective.md`) + enforcement guide + skill, while #605 inlines into existing templates. Standalone file is more discoverable and modular.
-- **#604 vs #603:** Functionally identical. #603 uses `.squad/` paths matching project conventions; #604 uses `templates/` (non-standard for agents).
-- **#606 vs #602:** #606 is a superset — 3-tier model (hot/cold/wiki) vs 2-tier (hot/cold). Both cite same production data. Broader scope is more useful.
+- New bootstrap utilities must be added to the protected files table + get a regression test
+- Sweeping refactors must follow the 5-step checklist
+- Three defense layers: header markers → instructions list → regression tests
+- The `core/` directory is flagged as extra-cautious territory
 
-## Impact
-
-- Reduces PR count from 10 to 7 (close 3 duplicates)
-- Eliminates conflicting file changes (e.g., both #607 and #605 modify `templates/ceremonies.md`)
-- Preserves all unique value (no functionality lost)
-
-## Affected PRs
-
-| PR  | Action | Reason |
-|-----|--------|--------|
-| 607 | Merge  | Comprehensive retro enforcement |
-| 605 | Close  | Duplicate of #607 (less comprehensive) |
-| 604 | Close  | Duplicate of #603 (wrong file paths) |
-| 603 | Merge  | Challenger template (correct paths) |
-| 606 | Merge  | Tiered memory (superset) |
-| 602 | Close  | Subset of #606 (narrower scope) |
-
-## Next Steps
-
-1. Comment on #605, #604, #602 explaining they are duplicates/subsets and will be closed
-2. Merge #607, #603, #606 after author confirms deduplication is acceptable
-3. All other PRs (#611, #608, #592, #567) can proceed independently
-
----
-
-# Decision: Triage + Work Session Plan
-
-**By:** Flight  
-**Date:** 2026-03-25
-
-## Context
-
-Triaged 14 untriaged issues (3 docs, 6 community features, 3 bugs, 2 questions). Multiple overlap with existing P1 work. 10 open PRs (5 from tamirdresher, 2 from diberry, 1 from joniba, 1 from eric-vanartsdalen, 1 draft).
-
-## Triage Decisions
-
-### High-Value Quick Wins (P1)
-- **#610** (docs broken link) → squad:pao, P1 — 5-minute fix blocking diberry's PR #611 CI
-- **#590** (getPersonalSquadRoot bug) → squad:eecom, P0 — personal squad init broken for all users since v0.9.1
-- **#591** (hiring wiring docs) → squad:procedures, P1 — matches PR #592 (joniba), docs-only, high clarity
-
-### Community Feature Contributions (Defer to Review)
-- **#601, #600, #598, #596, #595** (tamirdresher proposals) — all have matching PRs (#607, #606, #604, #602). Priority: review PRs first, triage issues after PR decisions.
-
-### Maintenance Items (P2)
-- **#597** (upgrade CLI docs) → squad:pao + squad:network, P2 — user confusion, docs fix + UX improvement
-- **#588** (model list update) → squad:procedures, P2 — hardcoded model list in squad.agent.md + templates
-- **#554** (broken external links) → squad:pao, P2 — automated link checker output, investigate failures
-
-### Questions (No Squad Assignment)
-- **#589** (skills placement) → community reply — clarify `.copilot/skills` vs `.github/skills` vs `.claude/skills`
-- **#494** (model vs squad model) → community reply — clarify Copilot CLI `/models` vs squad.agent.md model preference
-
-### Long-Horizon Feature Work (P2-P3)
-- **#581** (ADO Support PRD) → squad:flight, P2 — comprehensive PRD, but blocked until SDK-first parity (#341) ships
-
-## Work Session Priority (Top 5)
-
-1. **#610** → PAO — fix broken link (5 min), unblocks #611
-2. **#590** → EECOM — fix getPersonalSquadRoot(), critical user-facing bug
-3. **PR #592** → Flight review — matches #591, validate joniba's wiring guide
-4. **PR #611** → Flight review — diberry TypeDoc API reference (blocked on #610 fix)
-5. **#588** → Procedures — update model lists in templates
-
-## PR Review Strategy
-
-**Merge-ready (after minimal validation):**
-- #611 (diberry) — blocked on #610, then merge
-- #592 (joniba) — high-quality wiring guide
-
-**Tamir PRs (defer until proposal-first validated):**
-- #607, #606, #605, #604, #603, #602 — all substantive feature proposals without prior proposals in `docs/proposals/`. Apply proposal-first policy: request `docs/proposals/{slug}.md` before reviewing implementation.
-
-**Draft (not ready):**
-- #567 (diberry) — explicitly marked DRAFT
-
-## Patterns Noted
-
-- **Tamir contributions:** High technical quality, but needs proposal-first discipline (6 PRs without proposals).
-- **Joniba contributions:** Consistently high-quality, matches team standards (wiring guide is excellent).
-- **Diberry contributions:** MSFT-level quality, merge-ready on delivery.
-
-## Deferred
-
-- #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
-- #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
-
+### 2026-03-26: Copilot git safety rules
+**By:** RETRO (Security)
+**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits `git add .`, requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
+**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
