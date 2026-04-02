@@ -8,9 +8,7 @@
 
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
-
-const storage = new FSStorageProvider();
+import { existsSync, readFileSync } from 'node:fs';
 
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { fatal } from '../core/errors.js';
@@ -263,6 +261,38 @@ async function preflightLoopCapabilities(
   return enabled;
 }
 
+// ── Noop Platform Adapter ────────────────────────────────────────
+
+/** Safe no-op adapter for when no git remote / platform config is available. */
+function createNoopAdapter(): ReturnType<typeof createPlatformAdapter> {
+  const msg = 'No platform adapter available — loop running without git remote';
+  return {
+    type: 'github' as const,
+    listWorkItems: async () => [],
+    getWorkItem: async () => { throw new Error(msg); },
+    createWorkItem: async () => { throw new Error(msg); },
+    addTag: async () => {},
+    removeTag: async () => {},
+    addComment: async () => {},
+    listPullRequests: async () => [],
+    createPullRequest: async () => { throw new Error(msg); },
+    mergePullRequest: async () => {},
+    createBranch: async () => {},
+  } as ReturnType<typeof createPlatformAdapter>;
+}
+
+// ── gh Copilot Preflight ─────────────────────────────────────────
+
+/** Verify `gh` CLI with copilot extension is available. */
+async function checkGhCopilot(): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    execFile('gh', ['copilot', '--version'], (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
 // ── Main Entry Point ─────────────────────────────────────────────
 
 /**
@@ -277,7 +307,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   const teamMd = path.join(squadDirInfo.path, 'team.md');
   const teamRoot = path.dirname(squadDirInfo.path);
 
-  if (!storage.existsSync(teamMd)) {
+  if (!existsSync(teamMd)) {
     fatal('No squad found — run `squad init` first.');
   }
 
@@ -286,13 +316,13 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     ? path.resolve(dest, options.filePath)
     : path.join(dest, 'loop.md');
 
-  if (!storage.existsSync(loopFilePath)) {
+  if (!existsSync(loopFilePath)) {
     console.log(`\n💤 No loop.md found. Create one with: ${BOLD}squad loop --init${RESET}`);
     return;
   }
 
   // Parse loop file
-  const content = storage.readSync(loopFilePath) ?? '';
+  const content = readFileSync(loopFilePath, 'utf-8');
   const { frontmatter, prompt } = parseLoopFile(content);
 
   if (!frontmatter.configured) {
@@ -315,6 +345,15 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     fatal('interval must be a positive number of minutes');
   }
 
+  // Preflight: verify gh copilot is available (skip if user overrides the agent command)
+  if (!options.agentCmd) {
+    try {
+      await checkGhCopilot();
+    } catch {
+      fatal('gh CLI with copilot extension required. Install from https://cli.github.com/ and run `gh extension install github/gh-copilot`');
+    }
+  }
+
   // Build WatchConfig for capability system
   const watchConfig: WatchConfig = {
     interval,
@@ -331,12 +370,12 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   try {
     adapter = createPlatformAdapter(teamRoot);
   } catch {
-    // If no platform config exists, create a minimal stub so capabilities still work
-    adapter = { type: 'github' as const } as ReturnType<typeof createPlatformAdapter>;
+    // If no platform config exists, use a safe no-op adapter so capabilities don't crash
+    adapter = createNoopAdapter();
   }
 
   // Parse roster for context
-  const teamContent = storage.readSync(teamMd) ?? '';
+  const teamContent = readFileSync(teamMd, 'utf-8');
   const roster = parseRoster(teamContent);
 
   const baseContext: WatchContext = {
