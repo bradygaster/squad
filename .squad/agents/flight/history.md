@@ -18,9 +18,6 @@ Three-branch model (main/dev/insiders). Apollo 13 team, 3931 tests. Boundary rev
 
 ## Learnings
 
-### PR Readiness Automation Pattern (2026-07-23)
-Designed and shipped automated PR readiness checks (issue #750, PR #752). Key pattern: **informational Action + upsert comment**. The workflow posts a single checklist comment using an HTML marker (`<!-- squad-pr-readiness -->`) for idempotent updates — no comment spam. Evaluated 3 approaches (Action-only, branch rulesets, hybrid); Action-only won because rulesets can't do custom checks (changeset presence, commit count, Copilot review) and provide poor contributor UX (generic failures vs actionable checklists). The changeset check respects the `skip-changelog` label and auto-exempts non-source PRs. Fork-safe design: uses `pull_request` (not `pull_request_target`) with `pull-requests: write` permission.
-
 ### Issue Filing Patterns (2026-03-23 Release Incident)
 When a major incident occurs, file 9+ GitHub issues documenting root causes and improvements. Pattern: one issue per root cause + one per action item. Use descriptive titles linking to specific improvements (e.g., "#556 Dependency validation in pre-publish checks"). Let team pick up issues in priority order. This accelerates fixes and creates accountability.
 
