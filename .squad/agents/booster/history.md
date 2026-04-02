@@ -129,3 +129,20 @@ Analyzed 20 CI runs from March 15. Identified 3 distinct failure categories:
 5. **YAML fix** — Quoted `file:` in step names that were causing YAML parse ambiguity (both new and pre-existing)
 
 **Pipeline dependency chain:** `preflight → smoke-test → publish-sdk → publish-cli`
+
+### Comment Spam Protection — July 2026
+
+**Context:** Spam account (`nkleadproofficial-del`) posted recruitment ad on PR #725. No automated moderation existed.
+
+**Solution:** Added `squad-comment-moderation.yml` — a GitHub Action auto-moderator using multi-signal scoring:
+- Triggers on `issue_comment` and `pull_request_review_comment` (created)
+- Checks: account age (<7d), repo association (NONE), recruitment keywords, crypto/SEO spam, URL density, comment length
+- Scoring threshold: score ≥ 5 required (prevents false positives from single signals)
+- Actions: minimize (hide) comment via GraphQL API, post moderation notice
+- Trusted users (OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR) are always skipped
+
+**Key design decision:** Chose action-based approach over GitHub native interaction limits. Native limits are too coarse — they block all first-time contributors. The scoring system requires multiple spam signals to combine, so legitimate first-time contributors are never affected.
+
+**Files:** `.github/workflows/squad-comment-moderation.yml`, `docs/proposals/comment-spam-protection.md`, `CONTRIBUTING.md` (moderation notice added).
+
+**Issue:** #751, **PR:** #753
