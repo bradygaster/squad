@@ -27,112 +27,67 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Checkout scoring module
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/comment-moderation.mjs
+          sparse-checkout-cone-mode: false
+
       - name: Check comment for spam signals
         uses: actions/github-script@v7
         with:
           script: |
+            const {
+              shouldSkipComment,
+              scoreComment,
+              buildModerationNotice,
+              SPAM_THRESHOLD,
+            } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/comment-moderation.mjs`);
+
             const comment = context.payload.comment;
             const sender = context.payload.sender;
 
-            // Skip comments from repo members, collaborators, owners
-            const trustedAssociations = ['OWNER', 'MEMBER', 'COLLABORATOR', 'CONTRIBUTOR'];
-            if (trustedAssociations.includes(comment.author_association)) {
-              console.log(`Skipping: author_association=${comment.author_association} (trusted)`);
+            // --- Skip trusted / bot authors ---
+            if (shouldSkipComment(comment.author_association, sender.type)) {
+              console.log(`Skipping: author_association=${comment.author_association}, sender.type=${sender.type}`);
               return;
             }
 
-            // --- Spam signal scoring ---
-            let score = 0;
-            const signals = [];
-
-            // Signal 1: Account age < 7 days
-            // sender.created_at may not be in the webhook payload, so fetch via API
+            // --- Fetch account age (not available in webhook payload) ---
             let userAgeDays = null;
+            let userLookupFailed = false;
             try {
               const { data: user } = await github.rest.users.getByUsername({
-                username: sender.login
+                username: sender.login,
               });
               userAgeDays = (Date.now() - new Date(user.created_at).getTime()) / (1000 * 60 * 60 * 24);
-              if (userAgeDays < 7) {
-                score += 3;
-                signals.push(`account_age=${Math.round(userAgeDays)}d (<7d)`);
-              }
             } catch (e) {
-              // If user lookup fails (deleted account), that's suspicious
-              score += 3;
-              signals.push('account_lookup_failed (possibly deleted)');
+              userLookupFailed = true;
             }
 
-            // Signal 2: No prior repo association
-            if (comment.author_association === 'NONE') {
-              score += 2;
-              signals.push('author_association=NONE');
-            }
+            // --- Score ---
+            const { score, signals } = scoreComment({
+              body: comment.body || '',
+              authorAssociation: comment.author_association,
+              userAgeDays,
+              userLookupFailed,
+            });
 
-            const body = comment.body || '';
-            const bodyLower = body.toLowerCase();
+            console.log(`Spam score: ${score}/${SPAM_THRESHOLD} threshold | Signals: ${signals.join(', ') || 'none'}`);
 
-            // Signal 3: Recruitment spam keywords
-            const recruitmentPatterns = [
-              /\b(hiring|job opening|apply now|remote position|work from home)\b/i,
-              /\b(join our team|we are looking for|urgent requirement|immediate joiner)\b/i,
-              /\b(salary|compensation|ctc|lpa|per annum)\b/i,
-              /\b(hr@|recruitment@|careers@|jobs@)/i,
-              /\b(whatsapp|telegram)\s*(:|group|channel|number|no\.?)/i
-            ];
-            const recruitmentHits = recruitmentPatterns.filter(p => p.test(body));
-            if (recruitmentHits.length > 0) {
-              score += 3;
-              signals.push(`recruitment_keywords=${recruitmentHits.length}_patterns`);
-            }
-
-            // Signal 4: Crypto/SEO/gambling spam
-            const spamPatterns = [
-              /\b(crypto|bitcoin|ethereum|nft|web3|blockchain)\b/i,
-              /\b(seo|backlink|link building|guest post|sponsored post)\b/i,
-              /\b(casino|betting|gambling|forex|trading signals)\b/i,
-              /\b(buy followers|buy likes|social media marketing)\b/i
-            ];
-            const spamHits = spamPatterns.filter(p => p.test(body));
-            if (spamHits.length > 0) {
-              score += 3;
-              signals.push(`spam_keywords=${spamHits.length}_patterns`);
-            }
-
-            // Signal 5: Excessive URLs (3+)
-            const urlCount = (body.match(/https?:\/\/[^\s)>\]]+/g) || []).length;
-            if (urlCount >= 3) {
-              score += 2;
-              signals.push(`urls=${urlCount}`);
-            }
-
-            // Signal 6: Excessively long comment from unknown user
-            if (body.length > 2000 && comment.author_association === 'NONE') {
-              score += 1;
-              signals.push(`long_comment=${body.length}_chars`);
-            }
-
-            console.log(`Spam score: ${score}/5 threshold | Signals: ${signals.join(', ') || 'none'}`);
-
-            // --- Act if threshold met ---
-            if (score < 5) {
+            if (score < SPAM_THRESHOLD) {
               console.log('Below threshold — no action taken.');
               return;
             }
 
+            // --- Act: minimize comment ---
             console.log(`⚠️ Spam detected (score=${score}). Minimizing comment.`);
 
-            // Minimize (hide) the comment using GraphQL
             try {
               await github.graphql(`
                 mutation($id: ID!) {
-                  minimizeComment(input: {
-                    subjectId: $id,
-                    classifier: SPAM
-                  }) {
-                    minimizedComment {
-                      isMinimized
-                    }
+                  minimizeComment(input: { subjectId: $id, classifier: SPAM }) {
+                    minimizedComment { isMinimized }
                   }
                 }
               `, { id: comment.node_id });
@@ -141,31 +96,22 @@ jobs:
               console.error(`Failed to minimize comment: ${e.message}`);
             }
 
-            // Post a moderation notice
-            const notice = [
-              '🤖 **Automated moderation:** This comment was automatically hidden because it matched multiple spam signals.',
-              '',
-              `**Signals:** ${signals.join(', ')}`,
-              '',
-              'If this was a legitimate comment, please reply to this thread or contact the maintainers — we\'ll restore it promptly.',
-              '',
-              `*This check is automated. See [comment-spam-protection proposal](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/dev/docs/proposals/comment-spam-protection.md) for details.*`
-            ].join('\n');
+            // --- Act: post moderation notice ---
+            const notice = buildModerationNotice(
+              signals,
+              context.repo.owner,
+              context.repo.repo,
+            );
 
             try {
-              if (context.payload.issue) {
+              const issueNumber = context.payload.issue?.number
+                ?? context.payload.pull_request?.number;
+              if (issueNumber) {
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
-                  issue_number: context.payload.issue.number,
-                  body: notice
-                });
-              } else if (context.payload.pull_request) {
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.payload.pull_request.number,
-                  body: notice
+                  issue_number: issueNumber,
+                  body: notice,
                 });
               }
               console.log('Moderation notice posted.');
