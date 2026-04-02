@@ -1,5 +1,3 @@
-# Flight History
-
 # Flight — Project History
 
 > Knowledge accumulated through leading Squad development.
