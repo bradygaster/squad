@@ -4,22 +4,6 @@
 
 ## Learnings
 
-### Inline JS removal from workflow YAML (#753) (2025-07-25)
-
-**Context:** PR #753 had orchestration logic (user lookup, scoring dispatch, GraphQL minimize, notice posting) living as ~80 lines of inline JavaScript inside an `actions/github-script` `script:` block in `.github/workflows/squad-comment-moderation.yml`. The goal was ZERO JavaScript in the YAML.
-
-**Fix:** Moved all orchestration into an exported `run()` function in `scripts/comment-moderation.mjs`. Uses native `fetch` (Node 18+) instead of `@octokit/rest` to avoid adding a dependency — GitHub Actions ubuntu-latest has Node 18+. Dependencies (`env`, `fetchFn`) are injectable for testing. The workflow now uses a plain `run: node scripts/comment-moderation.mjs` step with env vars passed from the GitHub context.
-
-**Key design choices:**
-1. `run({ env, fetchFn })` pattern — env and fetch are injectable, making the orchestrator fully testable without global stubs.
-2. Native `fetch` over `@octokit/rest` — zero new dependencies; the script is self-contained.
-3. `COMMENT_NODE_ID` env var added — the GraphQL `minimizeComment` mutation needs the node ID, not the numeric ID.
-4. `import.meta.url` guard for CLI entry — `run()` is called only when the script is executed directly.
-
-**Tests:** Added 11 orchestration tests covering skip paths, threshold behavior, GraphQL minimize call verification, notice posting, error handling, and no-op scenarios. Total: 46 tests passing.
-
-**Pattern:** When extracting inline JS from GitHub Actions workflows, use injectable dependencies (`fetchFn`, `env`) rather than mocking globals. This keeps tests fast, isolated, and free of `vi.stubGlobal` side effects.
-
 ### archiveDecisions() count-based fallback (#626) (2025-07-24)
 
 **Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.

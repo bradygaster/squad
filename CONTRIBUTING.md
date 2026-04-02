@@ -156,22 +156,6 @@ The Co-authored-by trailer is **required** for all commits (added by Copilot CLI
 5. Wait for CI checks to pass
 6. Request review from the team (agents will respond via comments)
 
-### PR Readiness Checklist
-
-An automated readiness check runs on every PR and posts a checklist comment. Address all items before requesting review:
-
-| Check | What it means |
-|-------|---------------|
-| **Single commit** | Squash your commits into one clean commit, or the repo will squash on merge |
-| **Not in draft** | Mark your PR as "Ready for review" when it's done |
-| **Branch up to date** | Rebase on latest `dev` (`git fetch upstream && git rebase upstream/dev`) |
-| **Copilot review** | Wait for the Copilot reviewer bot to post its review |
-| **Changeset present** | Run `npx changeset add` if you changed files in `packages/squad-sdk/src/` or `packages/squad-cli/src/` |
-| **No merge conflicts** | Resolve any conflicts with the target branch |
-| **CI passing** | All CI checks (build, test, lint) must be green |
-
-The readiness check is **informational** — it helps you self-serve before a human reviewer looks at your PR. See `.github/PR_REQUIREMENTS.md` for the full requirements spec.
-
 ## Code Style & Conventions
 
 Squad follows strict TypeScript conventions:
@@ -309,7 +293,7 @@ This repo uses automated comment moderation to minimize (hide) spam. A GitHub Ac
 
 If your comment is mistakenly hidden, reply to the thread or open a new issue and a maintainer will restore it promptly.
 
-> **Scope note:** The PR readiness check (`.github/workflows/squad-pr-readiness.yml`) and the comment moderation workflow (`.github/workflows/squad-comment-moderation.yml`) are separate features introduced together as part of the CI quality initiative. PR readiness addresses #750; comment moderation addresses #751.
+> **Scope note:** This comment moderation workflow addresses #751.
 
 ## Common Tasks
 
