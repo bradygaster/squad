@@ -501,6 +501,8 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       stampVersion(agentDest, cliVersion);
       success('upgraded squad.agent.md');
       filesUpdated.push('squad.agent.md');
+    } else {
+      warn('squad.agent.md.template not found — squad.agent.md was not refreshed. Run "squad upgrade --force" or reinstall the CLI.');
     }
     
     // Run infrastructure ensure checks even when already current

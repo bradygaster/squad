@@ -115,6 +115,27 @@ describe('CLI: upgrade command', () => {
     expect(result.toVersion).toBe(currentVersion);
   });
 
+  it('refreshes squad.agent.md when already at current version (happy-path regression)', async () => {
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const currentVersion = getPackageVersion();
+
+    // Verify initial state — already at current version
+    const before = await readFile(agentPath, 'utf-8');
+    expect(before).toContain(`<!-- version: ${currentVersion} -->`);
+
+    // Run upgrade (takes version-current path)
+    const result = await runUpgrade(TEST_ROOT);
+
+    expect(result.fromVersion).toBe(currentVersion);
+    expect(result.toVersion).toBe(currentVersion);
+    // squad.agent.md should still be refreshed in the version-current path
+    expect(result.filesUpdated).toContain('squad.agent.md');
+
+    // File should still have the correct version stamp
+    const after = await readFile(agentPath, 'utf-8');
+    expect(after).toContain(`<!-- version: ${currentVersion} -->`);
+  });
+
   it('should preserve version stamp after manifest loop (issue #195)', async () => {
     const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
     const currentVersion = getPackageVersion();
