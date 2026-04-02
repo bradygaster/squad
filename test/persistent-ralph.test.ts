@@ -155,7 +155,7 @@ describe('RalphMonitor healthCheck timer', () => {
 describe('watch interval validation', () => {
   it('reportBoard accepts round numbers consistently', async () => {
     const { reportBoard } = await import(
-      '../packages/squad-cli/src/cli/commands/watch.js'
+      '../packages/squad-cli/src/cli/commands/watch/index.js'
     );
 
     const state = {
@@ -176,7 +176,7 @@ describe('watch interval validation', () => {
 
   it('BoardState interface has all required fields', async () => {
     const { reportBoard } = await import(
-      '../packages/squad-cli/src/cli/commands/watch.js'
+      '../packages/squad-cli/src/cli/commands/watch/index.js'
     );
 
     const fullState = {
@@ -192,3 +192,4 @@ describe('watch interval validation', () => {
     expect(() => reportBoard(fullState, 1)).not.toThrow();
   });
 });
+

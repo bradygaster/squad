@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Nap archival budget** (#123) — account for separator newlines in decision archival budget calculation
+
+### Added — Full Work Monitor for squad watch (#708)
+- `--execute` flag spawns Copilot sessions to work on actionable issues autonomously
+- Multi-platform support — auto-detects GitHub vs Azure DevOps from git remote URL
+- Azure DevOps support: uses SDK PlatformAdapter for work items, tags, and PRs
+- `--monitor-teams` / `--monitor-email` scan Teams/email for actionable items via WorkIQ
+- `--board` enables project board lifecycle (In Progress → Done/Blocked + reconciliation)
+- `--two-pass` lightweight scan then hydrate only actionable issues (saves API quota)
+- `--wave-dispatch` parallel sub-task execution within issues (dependency-aware)
+- `--retro` enforces retrospective checks (Fridays or when missed >7 days)
+- `--decision-hygiene` auto-merges decision inbox when >5 files
+- `--max-concurrent N` controls parallel issue execution (default: 1)
+- `--timeout N` sets per-issue execution timeout in minutes (default: 30)
+- `--copilot-flags "..."` passes extra flags to Copilot CLI sessions
+- SubSquad discovery: automatically detects `.squad/subsquads/` for routing
+- All features disabled by default — existing `squad watch` behavior unchanged
+
 ### Added — StorageProvider Abstraction Layer
 - **StorageProvider interface** (#640) — pluggable I/O contract decoupling the runtime from `node:fs`
 - **FSStorageProvider** (#640) — Node.js `fs` wrapper, default provider for CLI and local workflows

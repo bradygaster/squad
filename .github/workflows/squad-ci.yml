@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# CI Hardening Phase 3 item A1: Prevent parallel runs from competing for resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── Path filter for conditional job execution ──────────────────────────
   # Detects which areas of the repo changed so downstream jobs can skip
@@ -206,8 +211,7 @@ jobs:
     #   1. Identify the merge-base: git merge-base dev HEAD
     #   2. Check for SDK/CLI source changes:
     #      git diff --name-only <merge-base>...HEAD | grep -E '^packages/squad-(sdk|cli)/src/'
-    #   3. If any match, verify CHANGELOG.md is also in the diff:
-    #      git diff --name-only <merge-base>...HEAD | grep -E '^CHANGELOG\.md$'
+    #   3. If any match, verify an Added/Modified .changeset/*.md (excluding README) OR CHANGELOG.md:
     # ──────────────────────────────────────────────────────────────────────
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -270,17 +274,60 @@ jobs:
           echo "SDK/CLI source files changed:"
           echo "$SDK_CLI_CHANGED"
 
-          # Regex: ^CHANGELOG\.md$ — exact match on root CHANGELOG.md only
+          # Accept EITHER a .changeset/*.md file OR a direct CHANGELOG.md edit.
+          # Changesets are the preferred workflow — they prevent merge conflicts
+          # when multiple PRs are open simultaneously.
+          # Use --diff-filter=AM to count only Added/Modified files (not deletions),
+          # and exclude .changeset/README.md which is repo documentation, not a changeset.
+          CHANGESET_ADDED=$(git diff --diff-filter=AM --name-only "$BASE"..."$HEAD" | grep -E '^\.changeset/[^/]+\.md$' | grep -vxF '.changeset/README.md' || true)
           CHANGELOG_CHANGED=$(echo "$CHANGED" | grep -E '^CHANGELOG\.md$' || true)
-          if [ -z "$CHANGELOG_CHANGED" ]; then
-            echo ""
-            echo "::error::CHANGELOG.md was not updated but SDK/CLI source files were changed."
-            echo "::error::Please add a CHANGELOG.md entry describing your changes."
-            echo "::error::If this is intentional, add the 'skip-changelog' label to your PR."
-            exit 1
+
+          if [ -n "$CHANGESET_ADDED" ]; then
+            echo "Changeset file(s) detected -- gate passed"
+            echo "$CHANGESET_ADDED"
+            exit 0
           fi
 
-          echo "CHANGELOG.md updated -- gate passed"
+          if [ -n "$CHANGELOG_CHANGED" ]; then
+            echo "CHANGELOG.md updated -- gate passed"
+            exit 0
+          fi
+
+          echo ""
+          echo "::error::No changeset or CHANGELOG.md update found, but SDK/CLI source files were changed."
+          echo "::error::Preferred: run 'npx changeset add' to create a .changeset/*.md file."
+          echo "::error::Alternative: edit CHANGELOG.md directly."
+          echo "::error::Escape hatch: add the 'skip-changelog' label to your PR."
+          exit 1
+
+  changelog-protection:
+    name: CHANGELOG Write Protection
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check CHANGELOG.md modifications
+        env:
+          APPROVED_AUTHORS: 'bradygaster github-actions[bot] copilot-swe-agent[bot]'
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '^CHANGELOG.md$' || true)
+          if [ -n "$CHANGED" ]; then
+            if echo "$APPROVED_AUTHORS" | tr ' ' '\n' | grep -qxF "$PR_AUTHOR"; then
+              echo "✅ $PR_AUTHOR is approved to modify CHANGELOG.md"
+            else
+              echo "❌ $PR_AUTHOR is not approved to modify CHANGELOG.md directly"
+              echo ""
+              echo "CHANGELOG.md is managed by the release process."
+              echo "Use 'npx changeset add' to add a changeset file instead."
+              echo "See CONTRIBUTING.md for details."
+              exit 1
+            fi
+          else
+            echo "✅ CHANGELOG.md not modified"
+          fi
 
   exports-map-check:
     # ── Local testing ──────────────────────────────────────────────────────

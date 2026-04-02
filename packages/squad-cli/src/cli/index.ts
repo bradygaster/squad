@@ -15,7 +15,7 @@ export * from './core/output.js';
 export * from './core/errors.js';
 export * from './core/detect-squad-dir.js';
 export * from './core/gh-cli.js';
-export { runWatch } from './commands/watch.js';
+export { runWatch } from './commands/watch/index.js';
 export * from './core/templates.js';
 export {
   type UpgradeOptions,

@@ -386,17 +386,22 @@ function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
     dated.sort((a, b) => a.daysAgo! - b.daysAgo!);
 
     // Keep the most recent dated entries that fit under the threshold
-    // along with all undated entries and the header
+    // along with all undated entries and the header.
+    // Account for separator newlines added during reassembly:
+    //   recentContent = header + '\n' + entries.join('\n') + '\n'
+    // Each entry contributes +1 byte for its join separator (overestimates
+    // by 1 byte for the last entry, which is a safe margin).
     const headerEnd = entries.length > 0 ? entries[0]!.start : lines.length;
     const headerSize = Buffer.byteLength(lines.slice(0, headerEnd).join('\n'), 'utf8');
+    const reassemblyOverhead = 2; // '\n' after header + trailing '\n'
     const undatedSize = undated.reduce(
-      (sum, e) => sum + Buffer.byteLength(lines.slice(e.start, e.end).join('\n'), 'utf8'), 0,
+      (sum, e) => sum + Buffer.byteLength(lines.slice(e.start, e.end).join('\n'), 'utf8') + 1, 0,
     );
-    let budget = DECISION_THRESHOLD - headerSize - undatedSize;
+    let budget = DECISION_THRESHOLD - headerSize - reassemblyOverhead - undatedSize;
 
     const keptDated: typeof entries = [];
     for (const e of dated) {
-      const entrySize = Buffer.byteLength(lines.slice(e.start, e.end).join('\n'), 'utf8');
+      const entrySize = Buffer.byteLength(lines.slice(e.start, e.end).join('\n'), 'utf8') + 1;
       if (budget >= entrySize) {
         budget -= entrySize;
         keptDated.push(e);
