@@ -393,8 +393,8 @@ function checkSquadAgentMd(cwd: string): DoctorCheck {
     if (content.trim().length === 0) {
       return {
         name: '.github/agents/squad.agent.md',
-        status: 'warn',
-        message: "file is empty — run 'squad upgrade' to restore it",
+        status: 'fail',
+        message: "file is empty — Squad will not be discovered by Copilot. Run 'squad upgrade' to restore it",
       };
     }
   } catch {

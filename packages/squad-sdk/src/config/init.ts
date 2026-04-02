@@ -141,6 +141,8 @@ export interface InitResult {
   agentFile: string;
   /** Path to .squad/ directory */
   squadDir: string;
+  /** Warnings generated during init */
+  warnings?: string[];
 }
 
 // ============================================================================
@@ -625,6 +627,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
   
   const createdFiles: string[] = [];
   const skippedFiles: string[] = [];
+  const warnings: string[] = [];
   const agentDirs: string[] = [];
   
   // Validate inputs
@@ -1035,6 +1038,24 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
       agentContent = stampVersionInContent(agentContent, version);
       await storage.write(agentFile, agentContent);
       createdFiles.push(toRelativePath(agentFile));
+    } else {
+      // Template missing — generate fallback so Copilot can still discover Squad
+      await storage.mkdir(dirname(agentFile), { recursive: true });
+      const fallback = [
+        '# Squad Agent',
+        '',
+        'This is the Squad coordinator agent file.',
+        'It enables GitHub Copilot to discover and route work to your Squad team.',
+        '',
+        'This file was auto-generated because the original template was unavailable.',
+        'Run `squad upgrade` once the CLI is fully installed to get the complete version.',
+        '',
+        `<!-- version: ${version} -->`,
+        '',
+      ].join('\n');
+      await storage.write(agentFile, fallback);
+      createdFiles.push(toRelativePath(agentFile));
+      warnings.push('squad.agent.md.template not found — generated fallback agent file');
     }
   } else {
     skippedFiles.push(toRelativePath(agentFile));
@@ -1191,6 +1212,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     agentDirs,
     agentFile,
     squadDir,
+    warnings,
   };
 }
 

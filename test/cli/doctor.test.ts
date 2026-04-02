@@ -268,7 +268,7 @@ describe('squad doctor', () => {
     expect(agentMdCheck?.status).toBe('pass');
   });
 
-  it('reports WARN when .github/agents/squad.agent.md exists but is empty', async () => {
+  it('reports FAIL when .github/agents/squad.agent.md exists but is empty', async () => {
     await scaffold(TEST_ROOT);
     // Overwrite with empty content
     await writeFile(join(TEST_ROOT, '.github', 'agents', 'squad.agent.md'), '');
@@ -276,7 +276,7 @@ describe('squad doctor', () => {
     const checks = await runDoctor(TEST_ROOT);
     const agentMdCheck = checks.find((c: DoctorCheck) => c.name.includes('squad.agent.md'));
     expect(agentMdCheck).toBeDefined();
-    expect(agentMdCheck?.status).toBe('warn');
+    expect(agentMdCheck?.status).toBe('fail');
   });
 
   it('squad.agent.md fail message includes "squad upgrade" as resolution step', async () => {

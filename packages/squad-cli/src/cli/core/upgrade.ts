@@ -40,6 +40,7 @@ export interface UpdateInfo {
   toVersion: string;
   filesUpdated: string[];
   migrationsRun: string[];
+  warnings?: string[];
 }
 
 /**
@@ -448,6 +449,7 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
 export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Promise<UpdateInfo> {
   const cliVersion = getPackageVersion();
   const filesUpdated: string[] = [];
+  const warnings: string[] = [];
   
   // Detect squad directory
   const squadDirInfo = detectSquadDir(dest);
@@ -495,11 +497,38 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     
     // Refresh squad.agent.md
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
+    const existingAgentContent = storage.existsSync(agentDest) ? (storage.readSync(agentDest) ?? '') : '';
+    const agentFileIsEmpty = !storage.existsSync(agentDest) || existingAgentContent.trim().length < 100;
+
     if (storage.existsSync(agentSrc)) {
       storage.mkdirSync(path.dirname(agentDest), { recursive: true });
       storage.copySync(agentSrc, agentDest);
       stampVersion(agentDest, cliVersion);
       success('upgraded squad.agent.md');
+      filesUpdated.push('squad.agent.md');
+    } else if (agentFileIsEmpty) {
+      // Template missing and file is empty/minimal — generate fallback
+      storage.mkdirSync(path.dirname(agentDest), { recursive: true });
+      const fallback = [
+        '# Squad Agent',
+        '',
+        'This is the Squad coordinator agent file.',
+        'It enables GitHub Copilot to discover and route work to your Squad team.',
+        '',
+        'This file was auto-generated because the original template was unavailable.',
+        'Run `squad upgrade` again once the CLI is fully installed to get the complete version.',
+        '',
+        `<!-- version: ${cliVersion} -->`,
+        '',
+      ].join('\n');
+      storage.writeSync(agentDest, fallback);
+      warn('squad.agent.md.template not found — generated fallback agent file');
+      warnings.push('squad.agent.md.template not found — generated fallback agent file');
+      filesUpdated.push('squad.agent.md');
+    } else {
+      // Template missing but file has content — keep existing, warn, still report
+      warn('squad.agent.md.template not found — keeping existing squad.agent.md');
+      warnings.push('squad.agent.md.template not found — could not refresh agent file');
       filesUpdated.push('squad.agent.md');
     }
     
@@ -511,6 +540,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       toVersion: cliVersion,
       filesUpdated,
       migrationsRun: migrationsApplied,
+      warnings,
     };
   }
   
@@ -603,5 +633,6 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     toVersion: cliVersion,
     filesUpdated,
     migrationsRun: migrationsApplied,
+    warnings,
   };
 }
