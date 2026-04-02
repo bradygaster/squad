@@ -19,6 +19,10 @@ import { StaleReclaimCapability } from './stale-reclaim.js';
 import { HeartbeatCapability } from './heartbeat.js';
 import { WebhookAlertCapability } from './webhook-alerts.js';
 
+// Re-export rate pool for direct consumption (utility, not a phase capability)
+export { RatePool } from './rate-pool.js';
+export type { RatePoolConfig, PoolStatus } from './rate-pool.js';
+
 /** Create a registry pre-loaded with all built-in capabilities. */
 export function createDefaultRegistry(): CapabilityRegistry {
   const registry = new CapabilityRegistry();

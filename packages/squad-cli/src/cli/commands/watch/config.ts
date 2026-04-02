@@ -29,6 +29,13 @@ export interface WatchConfig {
   maxBudget?: number;
   /** Explicit machine capabilities list (e.g., ["gpu", "docker"]). */
   machineCapabilities?: string[];
+  /** Cooperative rate pool settings for multi-instance coordination. */
+  ratePool?: {
+    /** Max API calls per interval window (default: 50). */
+    maxCallsPerInterval: number;
+    /** Interval window in seconds (default: 600). */
+    intervalSeconds: number;
+  };
 }
 
 const DEFAULTS: WatchConfig = {
@@ -39,6 +46,10 @@ const DEFAULTS: WatchConfig = {
   capabilities: {},
   alertThreshold: 3,
   maxBudget: 5,
+  ratePool: {
+    maxCallsPerInterval: 50,
+    intervalSeconds: 600,
+  },
 };
 
 /**
@@ -84,6 +95,16 @@ export function loadWatchConfig(
     alertThreshold: cliOverrides.alertThreshold ?? fileConfig.alertThreshold ?? DEFAULTS.alertThreshold,
     maxBudget: cliOverrides.maxBudget ?? fileConfig.maxBudget ?? DEFAULTS.maxBudget,
     machineCapabilities: cliOverrides.machineCapabilities ?? fileConfig.machineCapabilities ?? DEFAULTS.machineCapabilities,
+    ratePool: {
+      maxCallsPerInterval:
+        cliOverrides.ratePool?.maxCallsPerInterval
+        ?? fileConfig.ratePool?.maxCallsPerInterval
+        ?? DEFAULTS.ratePool!.maxCallsPerInterval,
+      intervalSeconds:
+        cliOverrides.ratePool?.intervalSeconds
+        ?? fileConfig.ratePool?.intervalSeconds
+        ?? DEFAULTS.ratePool!.intervalSeconds,
+    },
   };
 
   // Wire webhook-alerts capability config from top-level flags
@@ -116,11 +137,20 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
     result.machineCapabilities = raw['machineCapabilities'] as string[];
   }
 
+  // Rate pool sub-object
+  if (typeof raw['ratePool'] === 'object' && raw['ratePool'] !== null && !Array.isArray(raw['ratePool'])) {
+    const rp = raw['ratePool'] as Record<string, unknown>;
+    result.ratePool = {
+      maxCallsPerInterval: typeof rp['maxCallsPerInterval'] === 'number' ? rp['maxCallsPerInterval'] : 50,
+      intervalSeconds: typeof rp['intervalSeconds'] === 'number' ? rp['intervalSeconds'] : 600,
+    };
+  }
+
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
   const reserved = new Set([
     'interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd',
-    'webhookUrl', 'alertThreshold', 'maxBudget', 'machineCapabilities',
+    'webhookUrl', 'alertThreshold', 'maxBudget', 'machineCapabilities', 'ratePool',
   ]);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;

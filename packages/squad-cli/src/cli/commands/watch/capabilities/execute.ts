@@ -3,8 +3,10 @@
  */
 
 import { execFile, type ChildProcess } from 'node:child_process';
+import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
+import { RatePool } from './rate-pool.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -139,8 +141,45 @@ export class ExecuteCapability implements WatchCapability {
         return { success: true, summary: 'no executable issues' };
       }
 
+      // Rate pool gate — respect shared API budget across instances
+      const poolCfg = context.config['ratePool'] as Record<string, unknown> | undefined;
+      const squadDir = path.join(context.teamRoot, '.squad');
+      const ratePool = new RatePool(squadDir, {
+        maxCallsPerInterval: (poolCfg?.['maxCallsPerInterval'] as number) ?? undefined,
+        intervalSeconds: (poolCfg?.['intervalSeconds'] as number) ?? undefined,
+        poolFile: (poolCfg?.['poolFile'] as string) ?? undefined,
+      });
+
+      const admitted: ExecutableWorkItem[] = [];
+      const skipped: number[] = [];
+      for (const issue of batch) {
+        if (ratePool.acquireSlot()) {
+          admitted.push(issue);
+        } else {
+          skipped.push(issue.number);
+        }
+      }
+
+      if (admitted.length === 0) {
+        const status = ratePool.getPoolStatus();
+        return {
+          success: true,
+          summary: `rate pool exhausted (${status.slotsUsed}/${status.maxSlots}), ${skipped.length} skipped`,
+        };
+      }
+
+      if (skipped.length > 0) {
+        console.log(`[rate-pool] skipped issues due to budget: ${skipped.join(', ')}`);
+      }
+
       const results = await Promise.all(
-        batch.map(issue => executeOne(issue, context, timeout)),
+        admitted.map(async (issue) => {
+          try {
+            return await executeOne(issue, context, timeout);
+          } finally {
+            ratePool.releaseSlot();
+          }
+        }),
       );
       const succeeded = results.filter(r => r.success).length;
       const failed = results.length - succeeded;
