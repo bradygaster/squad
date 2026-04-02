@@ -203,9 +203,11 @@ npm unlink -w packages/squad-cli
 
 Squad uses [@changesets/cli](https://github.com/changesets/changesets) for independent package versioning.
 
+**When your PR changes SDK or CLI source files** (`packages/squad-sdk/src/` or `packages/squad-cli/src/`), add a changeset file instead of editing `CHANGELOG.md` directly. Changesets prevent merge conflicts when multiple PRs are open simultaneously and are the preferred workflow.
+
 ### Adding a Changeset
 
-Before your PR is merged, add a changeset describing your changes:
+**Option A — Interactive (recommended):**
 
 ```bash
 npx changeset add
@@ -218,16 +220,38 @@ This prompts:
 
 Creates a file in `.changeset/` that's merged with your PR.
 
-### Example Changeset
+**Option B — Manual:**
+
+Create a file at `.changeset/your-change-name.md` with frontmatter specifying the package and bump type, followed by a description:
 
 ```markdown
 ---
-"@bradygaster/squad-sdk": patch
+'@bradygaster/squad-cli': patch
+---
+
+Fix help text rendering for the status command
+```
+
+### Changeset Format
+
+The frontmatter lists each affected package and its semver bump type. The body is a human-readable description that will appear in the generated CHANGELOG:
+
+```markdown
+---
+"@bradygaster/squad-sdk": minor
 "@bradygaster/squad-cli": patch
 ---
 
-Update help text and README for npm distribution. Add squad status command to docs.
+Add streaming support to agent orchestration. Update CLI to display stream progress.
 ```
+
+### CI Changelog Gate
+
+The `changelog-gate` CI check enforces that PRs touching SDK/CLI source files include either:
+- A `.changeset/*.md` file (preferred), **or**
+- A direct `CHANGELOG.md` edit (backward-compatible)
+
+If neither is present, the check fails. You can bypass it with the `skip-changelog` label.
 
 ### Release Workflow
 
