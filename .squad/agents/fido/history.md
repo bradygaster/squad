@@ -1,5 +1,3 @@
-# FIDO History
-
 # FIDO
 
 > Flight Dynamics Officer
