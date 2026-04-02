@@ -1,6 +1,8 @@
 # Comment spam auto-moderator
-# Detects and hides spam comments from bot/spam accounts on issues and PRs.
+# Detects and minimizes (hides) spam comments from bot/spam accounts on issues and PRs.
 # Uses a multi-signal scoring system to minimize false positives.
+# Note: This workflow does NOT block users — it only hides comments classified as spam.
+# Blocking repeat offenders requires admin privileges and is outside the scope of this action.
 # See: docs/proposals/comment-spam-protection.md
 # Issue: #751
 
@@ -39,9 +41,7 @@ jobs:
             const signals = [];
 
             // Signal 1: Account age < 7 days
-            const accountAge = Date.now() - new Date(sender.created_at).getTime();
-            const accountAgeDays = accountAge / (1000 * 60 * 60 * 24);
-            // sender.created_at may not be in the webhook payload, so fetch it
+            // sender.created_at may not be in the webhook payload, so fetch via API
             let userAgeDays = null;
             try {
               const { data: user } = await github.rest.users.getByUsername({
@@ -144,7 +144,7 @@ jobs:
               '',
               'If this was a legitimate comment, please reply to this thread or contact the maintainers — we\'ll restore it promptly.',
               '',
-              '*This check is automated. See [comment-spam-protection proposal](../docs/proposals/comment-spam-protection.md) for details.*'
+              `*This check is automated. See [comment-spam-protection proposal](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/docs/proposals/comment-spam-protection.md) for details.*`
             ].join('\n');
 
             try {

@@ -1,13 +1,17 @@
 name: Squad PR Readiness
 
 on:
-  pull_request:
+  pull_request_target:
     branches: [dev, main, insider]
     types: [opened, synchronize, reopened, edited, ready_for_review]
 
+# NOTE: Using pull_request_target so we get a write token even for fork PRs.
+# This is safe because we never check out or execute PR code — all data
+# comes from the GitHub API.
 permissions:
   contents: read
   pull-requests: write
+  issues: write
   statuses: read
   checks: read
 
@@ -22,10 +26,6 @@ jobs:
     # Skip if the PR is from a bot account (dependabot, renovate, etc.)
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: PR Readiness Check
         uses: actions/github-script@v7
         with:
@@ -39,10 +39,21 @@ jobs:
             const COMMENT_MARKER = '<!-- squad-pr-readiness -->';
 
             async function upsertComment(body) {
-              const { data: comments } = await github.rest.issues.listComments({
-                owner, repo, issue_number: prNumber, per_page: 100
-              });
-              const existing = comments.find(c => c.body.includes(COMMENT_MARKER));
+              const matches = await github.paginate(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number: prNumber, per_page: 100 },
+                (response, done) => {
+                  const match = response.data.find(
+                    (c) => c.body && c.body.includes(COMMENT_MARKER)
+                  );
+                  if (match) {
+                    done();
+                    return [match];
+                  }
+                  return [];
+                }
+              );
+              const existing = matches[0];
               if (existing) {
                 await github.rest.issues.updateComment({
                   owner, repo, comment_id: existing.id, body
@@ -57,17 +68,18 @@ jobs:
             // ── Collect check results ──
             const checks = [];
 
-            // 1. Single commit (or squashable)
-            const { data: commits } = await github.rest.pulls.listCommits({
-              owner, repo, pull_number: prNumber, per_page: 250
-            });
-            const commitCount = commits.length;
+            // 1. Single commit
+            const allCommits = await github.paginate(
+              github.rest.pulls.listCommits,
+              { owner, repo, pull_number: prNumber, per_page: 100 }
+            );
+            const commitCount = allCommits.length;
             checks.push({
-              name: 'Single commit (or squashable)',
+              name: 'Single commit',
               pass: commitCount === 1,
               detail: commitCount === 1
                 ? '1 commit — clean history'
-                : `${commitCount} commits — consider squashing before review (or repo will squash on merge)`
+                : `${commitCount} commits — consider squashing before review`
             });
 
             // 2. Not in draft
@@ -80,19 +92,19 @@ jobs:
             });
 
             // 3. Branch up to date
-            // Compare the PR base to the latest commit on the target branch
+            // Compare the target branch (base) to the PR head to see if the PR is behind
             let branchUpToDate = false;
             let branchDetail = '';
             try {
               const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
                 owner, repo,
-                basehead: `${pr.head.sha}...${pr.base.ref}`
+                basehead: `${pr.base.ref}...${pr.head.sha}`
               });
-              // If the target branch has 0 commits ahead of the PR head, the PR is up to date
-              branchUpToDate = comparison.ahead_by === 0;
+              // If the PR head is not behind the target branch, the PR is up to date
+              branchUpToDate = comparison.behind_by === 0;
               branchDetail = branchUpToDate
                 ? `Up to date with ${pr.base.ref}`
-                : `${pr.base.ref} is ${comparison.ahead_by} commit(s) ahead — rebase recommended`;
+                : `PR branch is ${comparison.behind_by} commit(s) behind ${pr.base.ref} — rebase recommended`;
             } catch (e) {
               branchDetail = 'Could not determine — check manually';
             }
@@ -103,45 +115,58 @@ jobs:
             });
 
             // 4. Copilot review
-            const { data: reviews } = await github.rest.pulls.listReviews({
-              owner, repo, pull_number: prNumber, per_page: 100
-            });
-            const copilotReview = reviews.find(r =>
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              { owner, repo, pull_number: prNumber, per_page: 100 }
+            );
+            const copilotReviews = reviews.filter(r =>
               r.user && r.user.login === 'copilot-pull-request-reviewer'
             );
-            const copilotApproved = copilotReview && copilotReview.state === 'APPROVED';
+            const latestCopilotReview = copilotReviews.length
+              ? copilotReviews.reduce((latest, current) => {
+                  const latestTime = new Date(latest.submitted_at || latest.created_at || 0).getTime();
+                  const currentTime = new Date(current.submitted_at || current.created_at || 0).getTime();
+                  return currentTime > latestTime ? current : latest;
+                })
+              : null;
+            const copilotApproved = latestCopilotReview && latestCopilotReview.state === 'APPROVED';
             checks.push({
               name: 'Copilot review',
-              pass: !!copilotReview,
+              pass: !!copilotApproved,
               detail: copilotApproved
                 ? 'Copilot reviewed and approved'
-                : copilotReview
-                  ? `Copilot reviewed (state: ${copilotReview.state})`
+                : latestCopilotReview
+                  ? `Copilot reviewed (state: ${latestCopilotReview.state})`
                   : 'No Copilot review yet — it may still be processing'
             });
 
             // 5. Changeset present
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner, repo, pull_number: prNumber, per_page: 300
-            });
-            const hasChangeset = files.some(f =>
+            const allFiles = await github.paginate(
+              github.rest.pulls.listFiles,
+              { owner, repo, pull_number: prNumber, per_page: 100 }
+            );
+            const hasChangeset = allFiles.some(f =>
               f.filename.startsWith('.changeset/') && f.filename.endsWith('.md')
             );
+            const hasChangelogEdit = allFiles.some(f => f.filename === 'CHANGELOG.md');
+            const hasChangelogArtifact = hasChangeset || hasChangelogEdit;
             // Check if only non-source files changed (exempt from changeset)
             const sourcePattern = /^packages\/squad-(sdk|cli)\/src\//;
-            const touchesSource = files.some(f => sourcePattern.test(f.filename));
-            let changesetPass = hasChangeset || !touchesSource;
+            const touchesSource = allFiles.some(f => sourcePattern.test(f.filename));
+            let changesetPass = hasChangelogArtifact || !touchesSource;
             let changesetDetail = '';
             if (hasChangeset) {
               changesetDetail = 'Changeset file found';
+            } else if (hasChangelogEdit) {
+              changesetDetail = 'CHANGELOG.md edit found';
             } else if (!touchesSource) {
               changesetDetail = 'No source files changed — changeset not required';
             } else {
-              changesetDetail = 'Missing `.changeset/*.md` — run `npx changeset add` (or add `skip-changelog` label)';
+              changesetDetail = 'Missing `.changeset/*.md` or `CHANGELOG.md` edit — run `npx changeset add` (or add `skip-changelog` label)';
             }
             // Check for skip-changelog label
             const hasSkipLabel = pr.labels.some(l => l.name === 'skip-changelog');
-            if (hasSkipLabel && !hasChangeset) {
+            if (hasSkipLabel && !hasChangelogArtifact) {
               changesetPass = true;
               changesetDetail = 'Changeset skipped via `skip-changelog` label';
             }
@@ -210,17 +235,17 @@ jobs:
                 ciDetail = `${failedChecks.length} check(s) failing: ${failedChecks.map(c => c.name).join(', ')}`;
               } else if (pendingChecks.length > 0) {
                 ciDetail = `${pendingChecks.length} check(s) still running`;
-                ciPass = true; // Don't penalize while CI is in progress
+                // Leave ciPass as false so PR is not marked ready while CI is in progress
               } else if (otherChecks.length === 0 && status.statuses.length === 0) {
                 ciDetail = 'No CI checks have run yet';
-                ciPass = true; // Don't penalize before CI starts
+                // Leave ciPass as false so PR is not marked ready before CI starts
               } else {
                 ciPass = true;
                 ciDetail = 'All checks passing';
               }
             } catch (e) {
               ciDetail = 'Could not check CI status';
-              ciPass = true; // Don't penalize on API errors
+              // Leave ciPass as false so PR is not marked ready when CI status is unknown
             }
             checks.push({
               name: 'CI passing',
@@ -256,7 +281,7 @@ jobs:
               '',
               '---',
               '*This check runs automatically on every push. Fix any ❌ items and push again.*',
-              `*See [CONTRIBUTING.md](../blob/dev/CONTRIBUTING.md#pr-readiness-checklist) and [PR Requirements](../blob/dev/.github/PR_REQUIREMENTS.md) for details.*`
+              `*See [CONTRIBUTING.md](https://github.com/${owner}/${repo}/blob/${pr.base.ref}/CONTRIBUTING.md#pr-readiness-checklist) and [PR Requirements](https://github.com/${owner}/${repo}/blob/${pr.base.ref}/.github/PR_REQUIREMENTS.md) for details.*`
             ].join('\n');
 
             await upsertComment(body);
