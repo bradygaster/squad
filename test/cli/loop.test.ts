@@ -5,11 +5,47 @@
  * loop command without spawning processes or touching the file system.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import {
   parseLoopFile,
   generateLoopFile,
+  runLoop,
+  type LoopConfig,
 } from '../../packages/squad-cli/src/cli/commands/loop.js';
+import { detectSquadDir } from '../../packages/squad-cli/src/cli/core/detect-squad-dir.js';
+import { createDefaultRegistry } from '../../packages/squad-cli/src/cli/commands/watch/index.js';
+import { parseRoster } from '@bradygaster/squad-sdk/ralph/triage';
+
+// ── Module Mocks (hoisted by vitest) ─────────────────────────────
+
+vi.mock('node:fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+}));
+
+vi.mock('node:child_process', () => ({
+  execFile: vi.fn(),
+}));
+
+vi.mock('../../packages/squad-cli/src/cli/core/detect-squad-dir.js', () => ({
+  detectSquadDir: vi.fn(),
+}));
+
+vi.mock('../../packages/squad-cli/src/cli/commands/watch/index.js', () => ({
+  createDefaultRegistry: vi.fn(),
+  CapabilityRegistry: vi.fn(),
+}));
+
+vi.mock('@bradygaster/squad-sdk/platform', () => ({
+  createPlatformAdapter: vi.fn(),
+}));
+
+vi.mock('@bradygaster/squad-sdk/ralph/triage', () => ({
+  parseRoster: vi.fn(),
+}));
 
 // ── parseLoopFile ────────────────────────────────────────────────
 
@@ -189,5 +225,141 @@ describe('generateLoopFile', () => {
     expect(frontmatter.configured).toBe(false);
     expect(frontmatter.interval).toBe(10);
     expect(frontmatter.timeout).toBe(30);
+  });
+});
+
+// ── runLoop ──────────────────────────────────────────────────────
+
+describe('runLoop', () => {
+  const DEST = '/fake/project';
+
+  const validLoopMd = [
+    '---',
+    'configured: true',
+    'interval: 5',
+    'timeout: 15',
+    'description: "Test loop"',
+    '---',
+    '',
+    'Do the work.',
+  ].join('\n');
+
+  const unconfiguredLoopMd = [
+    '---',
+    'configured: false',
+    'interval: 5',
+    'timeout: 15',
+    '---',
+    '',
+    'Do the work.',
+  ].join('\n');
+
+  const emptyBodyLoopMd = [
+    '---',
+    'configured: true',
+    'interval: 5',
+    'timeout: 15',
+    '---',
+  ].join('\n');
+
+  const defaultOptions: LoopConfig = {
+    capabilities: {},
+  };
+
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    vi.mocked(detectSquadDir).mockReturnValue({
+      path: path.resolve(DEST, '.squad'),
+      name: '.squad',
+      isLegacy: false,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns early when loop.md does not exist', async () => {
+    vi.mocked(existsSync).mockImplementation((p) => {
+      if (String(p).endsWith('team.md')) return true;
+      return false;
+    });
+
+    await runLoop(DEST, defaultOptions);
+
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('squad loop --init'),
+    );
+  });
+
+  it('returns early with warning when configured is false', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(unconfiguredLoopMd as any);
+
+    await runLoop(DEST, defaultOptions);
+
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('not configured'),
+    );
+  });
+
+  it('calls fatal when prompt body is empty', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(emptyBodyLoopMd as any);
+
+    await expect(runLoop(DEST, defaultOptions)).rejects.toThrow(
+      /no prompt body/i,
+    );
+  });
+
+  it('calls fatal when interval is less than 1', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(validLoopMd as any);
+
+    await expect(
+      runLoop(DEST, { ...defaultOptions, interval: 0 }),
+    ).rejects.toThrow(/interval/i);
+  });
+
+  it('calls fatal when timeout is less than 1', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(validLoopMd as any);
+
+    await expect(
+      runLoop(DEST, { ...defaultOptions, timeout: 0 }),
+    ).rejects.toThrow(/timeout/i);
+  });
+
+  it('calls fatal when gh copilot preflight fails without agentCmd', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(validLoopMd as any);
+    vi.mocked(execFile).mockImplementation((...args: unknown[]) => {
+      const cb = args[args.length - 1];
+      if (typeof cb === 'function') (cb as Function)(new Error('gh not found'));
+      return {} as any;
+    });
+
+    await expect(runLoop(DEST, defaultOptions)).rejects.toThrow(
+      /gh CLI/i,
+    );
+  });
+
+  it('skips gh copilot preflight when agentCmd is provided', async () => {
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue(validLoopMd as any);
+    vi.mocked(parseRoster).mockReturnValue([]);
+    // Throw sentinel in createDefaultRegistry to halt execution after preflight
+    vi.mocked(createDefaultRegistry).mockImplementation(() => {
+      throw new Error('test-sentinel: stop after preflight');
+    });
+
+    await expect(
+      runLoop(DEST, { ...defaultOptions, agentCmd: 'custom-agent --run' }),
+    ).rejects.toThrow('test-sentinel');
+
+    // execFile should NOT have been called — preflight was skipped
+    expect(execFile).not.toHaveBeenCalled();
   });
 });
