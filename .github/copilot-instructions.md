@@ -106,6 +106,16 @@ When opening a PR:
 - If this is a 🟡 needs-review task, add to the PR description: `⚠️ This task was flagged as "needs review" — please have a squad member review before merging.`
 - Follow any project conventions in `.squad/decisions.md`
 
+## PR Review Skills
+
+When reviewing or creating PRs, consult these skills for domain-specific checklists:
+
+- **Reviewer Protocol:** `.copilot/skills/reviewer-protocol/SKILL.md` — rejection workflow, lockout rules
+- **Architectural Review:** `.copilot/skills/architectural-review/SKILL.md` — module boundaries, dependency safety, pattern consistency
+- **Security Review:** `.copilot/skills/security-review/SKILL.md` — credentials, injection, workflow permissions, supply chain
+
+Read the relevant skill(s) before submitting or reviewing a PR that touches their domain.
+
 ## Decisions
 
 If you make a decision that affects other team members, write it to:
