@@ -8,8 +8,8 @@
  * analysis tracks inside one Copilot invocation.
  */
 
-import { execSync } from 'node:child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { execSync, execFileSync } from 'node:child_process';
+import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
@@ -68,13 +68,17 @@ function invokeFleet(
   writeFileSync(promptFile, prompt, 'utf-8');
 
   try {
-    // Cross-platform: shell-expand the file contents into the -p argument
-    const isWindows = process.platform === 'win32';
-    const cmd = isWindows
-      ? `powershell -NoProfile -Command "copilot -p (Get-Content '${promptFile}' -Raw) --allow-all --no-ask-user --autopilot"`
-      : `copilot -p "$(cat '${promptFile}')" --allow-all --no-ask-user --autopilot`;
+    // Read the prompt from file
+    const promptContent = readFileSync(promptFile, 'utf-8');
 
-    const result = execSync(cmd, {
+    // Use execFileSync with args array — no shell, no injection risk
+    const copilotBin = process.platform === 'win32' ? 'copilot.cmd' : 'copilot';
+    const result = execFileSync(copilotBin, [
+      '-p', promptContent,
+      '--allow-all',
+      '--no-ask-user',
+      '--autopilot',
+    ], {
       cwd,
       timeout: timeoutMs,
       encoding: 'utf-8' as BufferEncoding,
@@ -96,7 +100,7 @@ export class FleetDispatchCapability implements WatchCapability {
   readonly name = 'fleet-dispatch';
   readonly description = 'Batch read-heavy issues into a parallel /fleet Copilot session';
   readonly configShape = 'boolean' as const;
-  readonly requires = ['gh'];
+  readonly requires = ['gh', 'copilot'];
   readonly phase = 'post-execute' as const;
 
   async preflight(_context: WatchContext): Promise<PreflightResult> {

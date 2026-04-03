@@ -370,9 +370,15 @@ async function main(): Promise<void> {
       : undefined;
 
     const dispatchModeIdx = args.indexOf('--dispatch-mode');
-    const dispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
-      ? args[dispatchModeIdx + 1] as 'fleet' | 'task' | 'hybrid'
+    const rawDispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
+      ? args[dispatchModeIdx + 1]
       : undefined;
+    const validModes = ['task', 'fleet', 'hybrid'] as const;
+    const dispatchMode = rawDispatchMode && validModes.includes(rawDispatchMode as any)
+      ? rawDispatchMode as 'fleet' | 'task' | 'hybrid'
+      : rawDispatchMode
+        ? (console.error(`⚠️ Invalid --dispatch-mode "${rawDispatchMode}". Valid: task, fleet, hybrid. Defaulting to task.`), undefined)
+        : undefined;
 
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
