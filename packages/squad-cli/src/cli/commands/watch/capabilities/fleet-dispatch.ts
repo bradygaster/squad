@@ -77,12 +77,10 @@ function invokeFleet(
     const result = execSync(cmd, {
       cwd,
       timeout: timeoutMs,
-      encoding: 'utf-8',
-      shell: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: 'utf-8' as BufferEncoding,
     });
 
-    return { success: true, output: result };
+    return { success: true, output: String(result) };
   } catch (e) {
     const err = e as Error & { killed?: boolean; stderr?: string };
     const msg = err.killed
