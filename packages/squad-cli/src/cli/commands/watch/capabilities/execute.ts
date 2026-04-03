@@ -5,6 +5,7 @@
 import { execFile, type ChildProcess } from 'node:child_process';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
+import { createVerboseLogger } from '../verbose.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -114,9 +115,13 @@ export class ExecuteCapability implements WatchCapability {
   }
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
+    const vlog = createVerboseLogger(context.verbose ?? false);
+
     try {
       const maxConcurrent = (context.config['maxConcurrent'] as number) ?? 1;
       const timeout = ((context.config['timeout'] as number) ?? 30) * 60_000;
+
+      vlog.log(`Execute: agentCmd=${context.agentCmd ?? 'gh copilot'}, maxConcurrent=${maxConcurrent}, timeout=${timeout / 60_000}m`);
 
       // Fetch open issues with squad label
       const sdkItems = await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
@@ -134,6 +139,12 @@ export class ExecuteCapability implements WatchCapability {
 
       const executable = findExecutableIssues(context.roster, capabilities, handled);
       const batch = executable.slice(0, maxConcurrent);
+
+      vlog.log(`Execute: ${issues.length} total issues, ${handled.length} capable, ${executable.length} executable, ${batch.length} in batch`);
+      for (const issue of batch) {
+        const labels = issue.labels.map(l => l.name).join(', ');
+        vlog.log(`  → #${issue.number}: "${issue.title}" [${labels}]`);
+      }
 
       if (batch.length === 0) {
         return { success: true, summary: 'no executable issues' };

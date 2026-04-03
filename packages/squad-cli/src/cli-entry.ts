@@ -349,6 +349,8 @@ async function main(): Promise<void> {
 
     const execute = args.includes('--execute') ? true : undefined;
 
+    const verbose = args.includes('--verbose') || args.includes('-v');
+
     const copilotFlagsIdx = args.indexOf('--copilot-flags');
     const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
       ? args[copilotFlagsIdx + 1]
@@ -394,8 +396,16 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      verbose,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
+
+    // After parsing all flags, check for positional args that look like prompts
+    const watchArgStart = args.indexOf(cmd) + 1;
+    const positionalArgs = args.slice(watchArgStart).filter(a => !a.startsWith('--') && !a.startsWith('-'));
+    if (positionalArgs.length > 0 && config.verbose) {
+      console.log(`[verbose] ⚠️ Positional args ignored by watch: "${positionalArgs.join(' ')}". Use --execute to process issues.`);
+    }
 
     await runWatch(process.cwd(), config);
     return;
