@@ -427,7 +427,7 @@ async function runPhase(
         ...context,
         config: typeof capConfig === 'object' && capConfig !== null
           ? capConfig as Record<string, unknown>
-          : { enabled: !!capConfig, maxConcurrent: config.maxConcurrent, timeout: config.timeout },
+          : { enabled: !!capConfig, maxConcurrent: config.maxConcurrent, timeout: config.timeout, dispatchMode: config.dispatchMode },
       };
       const result = await cap.execute(capContext);
       results.set(cap.name, result);

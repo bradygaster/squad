@@ -369,6 +369,11 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : undefined;
 
+    const dispatchModeIdx = args.indexOf('--dispatch-mode');
+    const dispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
+      ? args[dispatchModeIdx + 1] as 'fleet' | 'task' | 'hybrid'
+      : undefined;
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -394,6 +399,7 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      dispatchMode,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 

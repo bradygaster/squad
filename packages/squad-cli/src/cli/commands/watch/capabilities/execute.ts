@@ -5,6 +5,7 @@
 import { execFile, type ChildProcess } from 'node:child_process';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
+import type { DispatchMode } from '../config.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -27,6 +28,28 @@ const BLOCKED_LABELS: ReadonlySet<string> = new Set([
   'pending-user',
   'do-not-merge',
 ]);
+
+/** Keywords that indicate read-heavy / analysis work. */
+const READ_KEYWORDS = [
+  'research', 'review', 'analyze', 'investigate', 'audit',
+  'check', 'scan', 'assess', 'evaluate', 'fact-check',
+  'document', 'report',
+];
+
+/** Keywords that indicate write-heavy / implementation work. */
+const WRITE_KEYWORDS = [
+  'fix', 'implement', 'create', 'build', 'refactor',
+  'add', 'update', 'migrate', 'deploy', 'feature',
+];
+
+/** Classify an issue as read-heavy or write-heavy by title keywords. */
+export function classifyIssue(title: string): 'read' | 'write' {
+  const lower = title.toLowerCase();
+  const isRead = READ_KEYWORDS.some(k => lower.includes(k));
+  const isWrite = WRITE_KEYWORDS.some(k => lower.includes(k));
+  if (isRead && !isWrite) return 'read';
+  return 'write'; // default to write (safer — gets full agent session)
+}
 
 /** Build agent command for a prompt. */
 function buildAgentCommand(
@@ -117,6 +140,7 @@ export class ExecuteCapability implements WatchCapability {
     try {
       const maxConcurrent = (context.config['maxConcurrent'] as number) ?? 1;
       const timeout = ((context.config['timeout'] as number) ?? 30) * 60_000;
+      const dispatchMode = (context.config['dispatchMode'] as DispatchMode | undefined) ?? 'task';
 
       // Fetch open issues with squad label
       const sdkItems = await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
@@ -133,6 +157,39 @@ export class ExecuteCapability implements WatchCapability {
       const { handled } = filterByCapabilities(issues, capabilities);
 
       const executable = findExecutableIssues(context.roster, capabilities, handled);
+
+      // In fleet or hybrid mode, split read vs write issues
+      if (dispatchMode === 'fleet' || dispatchMode === 'hybrid') {
+        const writeIssues = executable.filter(i => classifyIssue(i.title) === 'write');
+        const batch = dispatchMode === 'fleet'
+          ? [] // fleet mode: all issues go to fleet-dispatch capability
+          : writeIssues.slice(0, maxConcurrent); // hybrid: only write issues here
+
+        if (batch.length === 0) {
+          const readCount = executable.length - writeIssues.length;
+          return {
+            success: true,
+            summary: dispatchMode === 'fleet'
+              ? `fleet mode: all ${executable.length} issues deferred to fleet-dispatch`
+              : `hybrid mode: no write issues (${readCount} read-only deferred to fleet)`,
+            data: { executed: 0, failed: 0, deferredToFleet: executable.length - writeIssues.length },
+          };
+        }
+
+        const results = await Promise.all(
+          batch.map(issue => executeOne(issue, context, timeout)),
+        );
+        const succeeded = results.filter(r => r.success).length;
+        const failed = results.length - succeeded;
+
+        return {
+          success: true,
+          summary: `hybrid: ${succeeded} write-executed, ${failed} failed, ${executable.length - writeIssues.length} read deferred to fleet`,
+          data: { executed: succeeded, failed, deferredToFleet: executable.length - writeIssues.length },
+        };
+      }
+
+      // Default task mode: execute all as before
       const batch = executable.slice(0, maxConcurrent);
 
       if (batch.length === 0) {

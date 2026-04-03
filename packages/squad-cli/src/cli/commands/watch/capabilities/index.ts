@@ -5,6 +5,7 @@
 import { CapabilityRegistry } from '../registry.js';
 import { SelfPullCapability } from './self-pull.js';
 import { ExecuteCapability } from './execute.js';
+import { FleetDispatchCapability } from './fleet-dispatch.js';
 import { BoardCapability } from './board.js';
 import { MonitorTeamsCapability } from './monitor-teams.js';
 import { MonitorEmailCapability } from './monitor-email.js';
@@ -18,6 +19,7 @@ export function createDefaultRegistry(): CapabilityRegistry {
   const registry = new CapabilityRegistry();
   registry.register(new SelfPullCapability());
   registry.register(new ExecuteCapability());
+  registry.register(new FleetDispatchCapability());
   registry.register(new BoardCapability());
   registry.register(new MonitorTeamsCapability());
   registry.register(new MonitorEmailCapability());
