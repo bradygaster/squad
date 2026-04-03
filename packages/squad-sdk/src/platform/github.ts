@@ -128,6 +128,17 @@ export class GitHubAdapter implements PlatformAdapter {
     this.gh(['issue', 'edit', String(workItemId), '--repo', this.repoFlag, '--add-label', tag]);
   }
 
+  async ensureTag(tag: string, options?: { color?: string; description?: string }): Promise<void> {
+    const args = ['label', 'create', tag, '--repo', this.repoFlag, '--force'];
+    if (options?.color) args.push('--color', options.color);
+    if (options?.description) args.push('--description', options.description);
+    try {
+      this.gh(args);
+    } catch {
+      // Label already exists or creation failed — continue either way
+    }
+  }
+
   async removeTag(workItemId: number, tag: string): Promise<void> {
     this.gh(['issue', 'edit', String(workItemId), '--repo', this.repoFlag, '--remove-label', tag]);
   }
