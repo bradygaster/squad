@@ -1,9 +1,14 @@
 ---
-name: history-hygiene
-description: Record final outcomes to history.md, not intermediate requests or reversed decisions
-domain: documentation, team-collaboration
-confidence: high
-source: earned (Kobayashi v0.6.0 incident, team intervention)
+name: "history-hygiene"
+description: "Record final outcomes to history.md, not intermediate requests or reversed decisions"
+license: "MIT"
+metadata:
+  domain: "documentation, team-collaboration"
+  confidence: "high"
+  source: "earned (Kobayashi v0.6.0 incident, team intervention)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [history, hygiene, documentation, decisions, outcomes, history-md]
+  roles: [developer, scribe, lead]
 ---
 
 ## Context

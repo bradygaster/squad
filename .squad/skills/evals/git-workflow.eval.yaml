@@ -1,0 +1,46 @@
+skill: git-workflow
+cases:
+  - prompt: "Follow the git-workflow branching model for this feature"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Apply the git workflow: branch from dev, PR to dev"
+    type: positive
+    expect: match
+    reason: "git+workflow in name = +6"
+  - prompt: "Git workflow rule: always target dev not main in PRs"
+    type: positive
+    expect: match
+    reason: "git+workflow = +6"
+  - prompt: "Use the Squad git workflow with insiders preview channel"
+    type: positive
+    expect: match
+    reason: "git+workflow = +6, insiders from description"
+  - prompt: "The git-workflow skill defines the dev-first branching model"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Squad git workflow: dev-first with insiders preview builds"
+    type: positive
+    expect: match
+    reason: "git+workflow = +6"
+  - prompt: "Create a database migration script"
+    type: negative
+    expect: no-match
+    reason: "Database task, not git branching"
+  - prompt: "Fix the bug in the payment service"
+    type: negative
+    expect: no-match
+    reason: "Code fix, not branching workflow"
+  - prompt: "Deploy to production using the CI pipeline"
+    type: negative
+    expect: no-match
+    reason: "Deployment task"
+  - prompt: "Create the insiders build from dev branch"
+    type: edge
+    expect: match
+    reason: "insiders is a git-workflow description term"
+  - prompt: "Commit the changes to the feature branch"
+    type: edge
+    expect: not:git-workflow
+    reason: "Generic commit — no git+workflow tokens in prompt"

@@ -1,13 +1,15 @@
 ---
 name: "rework-rate"
 description: "Measure and interpret PR rework rate — the emerging 5th DORA metric"
-domain: "metrics, code-review, quality"
-confidence: "high"
-source: "manual"
-tools:
-  - name: "squad rework"
-    description: "Analyze PR rework rate from merged PRs"
-    when: "When measuring code quality, review efficiency, or team health metrics"
+license: "MIT"
+allowed-tools: "squad rework"
+metadata:
+  domain: "metrics, code-review, quality"
+  confidence: "high"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [rework, dora, metrics, pull-request, review, quality, code-review]
+  roles: [developer, tester, lead]
 ---
 
 ## Context

@@ -1,13 +1,15 @@
 ---
 name: "init-mode"
 description: "Team initialization flow (Phase 1 proposal + Phase 2 creation)"
-domain: "orchestration"
-confidence: "high"
-source: "extracted"
-tools:
-  - name: "ask_user"
-    description: "Confirm team roster with selectable menu"
-    when: "Phase 1 proposal — requires explicit user confirmation"
+license: "MIT"
+allowed-tools: "ask_user"
+metadata:
+  domain: "orchestration"
+  confidence: "high"
+  source: "extracted"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [init, initialization, team-setup, onboarding, roster, proposal]
+  roles: [architect, lead, developer]
 ---
 
 ## Context

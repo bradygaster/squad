@@ -1,0 +1,46 @@
+skill: pr-screenshots
+cases:
+  - prompt: "Apply the pr-screenshots skill to this pull request"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Capture screenshots and embed them in the PR description"
+    type: positive
+    expect: match
+    reason: "screenshots in name = +3"
+  - prompt: "Playwright screenshots for the PR: capture and embed"
+    type: positive
+    expect: match
+    reason: "screenshots+pr in name = +6"
+  - prompt: "Add visual screenshots to the pull request description"
+    type: positive
+    expect: match
+    reason: "screenshots in name = +3"
+  - prompt: "PR screenshots: run Playwright and attach images to the description"
+    type: positive
+    expect: match
+    reason: "pr+screenshots in name = +6"
+  - prompt: "Embed Playwright screenshots into the PR for visual review"
+    type: positive
+    expect: match
+    reason: "screenshots = +3"
+  - prompt: "Write end-to-end tests with Playwright"
+    type: negative
+    expect: no-match
+    reason: "Playwright testing, not PR screenshot embedding"
+  - prompt: "Deploy the application to staging"
+    type: negative
+    expect: no-match
+    reason: "Deployment, not screenshots"
+  - prompt: "Apply the git workflow branching model"
+    type: negative
+    expect: no-match
+    reason: "Git workflow task"
+  - prompt: "Review the pull request before merging"
+    type: edge
+    expect: not:pr-screenshots
+    reason: "Reviewer-protocol wins for reviewer+review context"
+  - prompt: "Add images to the PR description for visual context"
+    type: edge
+    expect: match
+    reason: "screenshots implied — pr in name = +3"

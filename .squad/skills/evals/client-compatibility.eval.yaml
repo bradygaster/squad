@@ -1,0 +1,46 @@
+skill: client-compatibility
+cases:
+  - prompt: "Check client compatibility before spawning the agent"
+    type: positive
+    expect: match
+    reason: "client+compatibility in name = +6"
+  - prompt: "Apply client-compatibility detection for VS Code vs CLI"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "The client compatibility layer detects the surface and adapts spawning"
+    type: positive
+    expect: match
+    reason: "client+compatibility in name = +6"
+  - prompt: "Platform detection for client compatibility across surfaces"
+    type: positive
+    expect: match
+    reason: "client+compatibility in name = +6"
+  - prompt: "Handle client compatibility differences between VS Code and terminal"
+    type: positive
+    expect: match
+    reason: "client+compatibility = +6"
+  - prompt: "Use client compatibility checks to adapt agent behavior per surface"
+    type: positive
+    expect: match
+    reason: "client+compatibility = +6"
+  - prompt: "Fix the bug in the payment service"
+    type: negative
+    expect: no-match
+    reason: "Unrelated code fix"
+  - prompt: "Support Windows and macOS builds"
+    type: negative
+    expect: no-match
+    reason: "OS builds, not agent client surface compatibility"
+  - prompt: "Wire the CLI command into the router"
+    type: negative
+    expect: not:client-compatibility
+    reason: "CLI wiring task"
+  - prompt: "Detect if running in VS Code extension context"
+    type: edge
+    expect: match
+    reason: "Surface detection — client-compatibility"
+  - prompt: "Spawn differently depending on available tools"
+    type: edge
+    expect: match
+    reason: "Adaptive spawning — client-compatibility description"

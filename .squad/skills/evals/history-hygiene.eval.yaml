@@ -1,0 +1,46 @@
+skill: history-hygiene
+cases:
+  - prompt: "Apply history-hygiene rules to this session's history.md"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "History hygiene: record final outcomes, not intermediate steps"
+    type: positive
+    expect: match
+    reason: "history+hygiene in name = +6"
+  - prompt: "The history hygiene rule says only write resolved outcomes"
+    type: positive
+    expect: match
+    reason: "history+hygiene = +6"
+  - prompt: "Clean up history.md using history hygiene guidelines"
+    type: positive
+    expect: match
+    reason: "history+hygiene = +6"
+  - prompt: "History hygiene: remove intermediate attempts from history.md"
+    type: positive
+    expect: match
+    reason: "history+hygiene = +6"
+  - prompt: "Enforce history hygiene by only logging final decisions"
+    type: positive
+    expect: match
+    reason: "history+hygiene = +6"
+  - prompt: "Find my interrupted session and resume it"
+    type: negative
+    expect: not:history-hygiene
+    reason: "Session recovery — session-recovery wins"
+  - prompt: "Compress agent context to free up budget"
+    type: negative
+    expect: no-match
+    reason: "Context compression is nap skill"
+  - prompt: "Extract shared patterns from agent charters"
+    type: negative
+    expect: not:history-hygiene
+    reason: "Charter extraction is reskill"
+  - prompt: "Write only the final outcome to history"
+    type: edge
+    expect: match
+    reason: "history in name = +3, outcome from desc = +1"
+  - prompt: "Record what happened in this session"
+    type: edge
+    expect: not:history-hygiene
+    reason: "Generic record — session-recovery may win on session+recovery tokens"

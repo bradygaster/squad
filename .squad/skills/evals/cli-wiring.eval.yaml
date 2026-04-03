@@ -1,0 +1,46 @@
+skill: cli-wiring
+cases:
+  - prompt: "Apply the cli-wiring pattern to route this command"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "The CLI command is missing from the router — fix the wiring"
+    type: positive
+    expect: match
+    reason: "cli+wiring both in name = +6"
+  - prompt: "Wire the new subcommand into cli-entry.ts"
+    type: positive
+    expect: match
+    reason: "wiring in name = +3, cli from desc = +1"
+  - prompt: "CLI wiring is broken — the command exists but is not routed"
+    type: positive
+    expect: match
+    reason: "cli+wiring in name = +6"
+  - prompt: "Fix the command wiring in the CLI router"
+    type: positive
+    expect: match
+    reason: "wiring+cli in name = +6"
+  - prompt: "Add the wiring for the squad nap command in the CLI entry point"
+    type: positive
+    expect: match
+    reason: "wiring = +3, cli = +3"
+  - prompt: "Write the implementation for the analytics command"
+    type: negative
+    expect: no-match
+    reason: "Implementation, not wiring/routing"
+  - prompt: "Add a GitHub Actions workflow for CI"
+    type: negative
+    expect: no-match
+    reason: "CI/CD workflow, not CLI wiring"
+  - prompt: "Configure the MCP server connection"
+    type: negative
+    expect: no-match
+    reason: "MCP config, not CLI command routing"
+  - prompt: "The squad command is missing from the CLI"
+    type: edge
+    expect: match
+    reason: "Missing command = wiring issue"
+  - prompt: "Update the help documentation for the release command"
+    type: edge
+    expect: not:cli-wiring
+    reason: "Docs update — release-process or documentation is more specific"

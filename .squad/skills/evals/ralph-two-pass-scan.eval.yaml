@@ -1,0 +1,46 @@
+skill: ralph-two-pass-scan
+cases:
+  - prompt: "Use ralph-two-pass-scan to reduce GitHub API calls"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Apply the Ralph two pass scan pattern for issue monitoring"
+    type: positive
+    expect: match
+    reason: "ralph+two+pass+scan in name = +12"
+  - prompt: "Two pass scan: list issues first, then hydrate selected ones"
+    type: positive
+    expect: match
+    reason: "two+pass+scan in name = +9"
+  - prompt: "Ralph scan pattern: separate list pass from hydration pass"
+    type: positive
+    expect: match
+    reason: "ralph+scan in name = +6"
+  - prompt: "The ralph two pass scan cuts N+1 API calls by 72 percent"
+    type: positive
+    expect: match
+    reason: "ralph+two+pass+scan = +12"
+  - prompt: "Run ralph two-pass scan to efficiently monitor issues"
+    type: positive
+    expect: match
+    reason: "ralph+two+pass+scan = +12"
+  - prompt: "List all open GitHub issues"
+    type: negative
+    expect: no-match
+    reason: "Simple listing, not two-pass pattern"
+  - prompt: "Create a GitHub issue for the feature request"
+    type: negative
+    expect: no-match
+    reason: "Issue creation, not scanning"
+  - prompt: "Search for bug reports in the repository"
+    type: negative
+    expect: no-match
+    reason: "Search, not two-pass scan"
+  - prompt: "Scan GitHub issues with minimal API calls"
+    type: edge
+    expect: match
+    reason: "scan in name = +3, API efficiency context"
+  - prompt: "Monitor GitHub issues for new work items"
+    type: edge
+    expect: not:ralph-two-pass-scan
+    reason: "Generic monitoring — no ralph/two/pass tokens"

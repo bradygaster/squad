@@ -1,3 +1,16 @@
+---
+name: "nap"
+description: "Context hygiene — compress, prune, archive .squad/ state to reclaim context window budget"
+license: "MIT"
+metadata:
+  domain: "context-management"
+  confidence: "medium"
+  source: "team vote (4-1) and initial implementation"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [nap, context, hygiene, compress, prune, archive, history, cleanup]
+  roles: [architect, lead, scribe]
+---
+
 # Skill: nap
 
 > Context hygiene — compress, prune, archive .squad/ state

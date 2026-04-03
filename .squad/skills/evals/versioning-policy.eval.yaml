@@ -1,0 +1,46 @@
+skill: versioning-policy
+cases:
+  - prompt: "Apply the versioning-policy before publishing"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Use the versioning policy to determine the semver bump"
+    type: positive
+    expect: match
+    reason: "versioning+policy in name = +6"
+  - prompt: "Versioning policy: semver rules for Squad SDK and CLI packages"
+    type: positive
+    expect: match
+    reason: "versioning+policy = +6"
+  - prompt: "The versioning-policy skill prevents prerelease version incidents"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Versioning policy check: is this a major minor or patch bump?"
+    type: positive
+    expect: match
+    reason: "versioning+policy = +6"
+  - prompt: "Apply versioning policy rules to the workspace version resolution"
+    type: positive
+    expect: match
+    reason: "versioning+policy = +6"
+  - prompt: "Write a Python function to parse version strings"
+    type: negative
+    expect: no-match
+    reason: "Code task, no versioning+policy tokens"
+  - prompt: "Deploy the application to production"
+    type: negative
+    expect: no-match
+    reason: "Deployment task"
+  - prompt: "Fix the login bug in the auth module"
+    type: negative
+    expect: no-match
+    reason: "Code fix"
+  - prompt: "Prevent the prerelease tag from leaking into stable npm"
+    type: edge
+    expect: match
+    reason: "prerelease in versioning-policy desc context"
+  - prompt: "Check the semver before running CI validation gates"
+    type: edge
+    expect: not:versioning-policy
+    reason: "ci+validation+gates wins when all three tokens present"

@@ -1,0 +1,46 @@
+skill: agent-collaboration
+cases:
+  - prompt: "Use the agent-collaboration skill for worktree coordination"
+    type: positive
+    expect: match
+    reason: "Exact skill name triggers +5 exact match"
+  - prompt: "Follow collaboration patterns for cross-agent communication"
+    type: positive
+    expect: match
+    reason: "collaboration in name = +3, communication in desc = +1"
+  - prompt: "Check worktree awareness before writing to shared files"
+    type: positive
+    expect: match
+    reason: "worktree is a unique desc word for this skill"
+  - prompt: "Record collaboration decisions in the inbox for the scribe"
+    type: positive
+    expect: match
+    reason: "collaboration + decisions both in description"
+  - prompt: "Agents should follow collaboration protocols across worktrees"
+    type: positive
+    expect: match
+    reason: "collaboration name token + worktree desc token"
+  - prompt: "Apply agent collaboration rules before spawning subagents"
+    type: positive
+    expect: match
+    reason: "collaboration is a name word = +3"
+  - prompt: "Write tests for the auth module"
+    type: negative
+    expect: no-match
+    reason: "Code task, not agent collaboration"
+  - prompt: "Run npm install and build the project"
+    type: negative
+    expect: no-match
+    reason: "Build task, not collaboration"
+  - prompt: "Set up the database schema"
+    type: negative
+    expect: no-match
+    reason: "Unrelated task"
+  - prompt: "Record the final outcome in history.md only"
+    type: edge
+    expect: not:agent-collaboration
+    reason: "History-hygiene wins on hygiene + history tokens"
+  - prompt: "Coordinate agents on multiple machines"
+    type: edge
+    expect: not:agent-collaboration
+    reason: "Machines triggers cross-machine-coordination"

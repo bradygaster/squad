@@ -1,9 +1,14 @@
 ---
 name: "agent-conduct"
 description: "Shared hard rules enforced across all squad agents"
-domain: "team-governance"
-confidence: "high"
-source: "reskill extraction — Product Isolation Rule and Peer Quality Check appeared in all 20 agent charters"
+license: "MIT"
+metadata:
+  domain: "team-governance"
+  confidence: "high"
+  source: "reskill extraction — Product Isolation Rule and Peer Quality Check appeared in all 20 agent charters"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [conduct, rules, product-isolation, quality-check, agent-rules, governance]
+  roles: [developer, tester, lead, architect]
 ---
 
 ## Context

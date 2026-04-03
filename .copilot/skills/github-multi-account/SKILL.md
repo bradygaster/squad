@@ -1,9 +1,15 @@
 ---
-name: github-multi-account
-description: Detect and set up account-locked gh aliases for multi-account GitHub. The AI reads this skill, detects accounts, asks the user which is personal/work, and runs the setup automatically.
-confidence: high
-source: https://github.com/tamirdresher/squad-skills/tree/main/plugins/github-multi-account
-author: tamirdresher
+name: "github-multi-account"
+description: "Detect and set up account-locked gh aliases for multi-account GitHub. The AI reads this skill, detects accounts, asks the user which is personal/work, and runs the setup automatically."
+license: "MIT"
+metadata:
+  domain: "developer-tools"
+  confidence: "high"
+  source: "https://github.com/tamirdresher/squad-skills/tree/main/plugins/github-multi-account"
+  author: "tamirdresher"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [github, multi-account, gh, aliases, personal, work, emu, authentication]
+  roles: [developer]
 ---
 
 # GitHub Multi-Account — AI-Driven Setup

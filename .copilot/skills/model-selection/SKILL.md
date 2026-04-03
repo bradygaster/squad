@@ -1,9 +1,14 @@
 ---
 name: "model-selection"
 description: "Per-agent model selection with 4-layer hierarchy and fallback chains"
-domain: "orchestration"
-confidence: "high"
-source: "extracted"
+license: "MIT"
+metadata:
+  domain: "orchestration"
+  confidence: "high"
+  source: "extracted"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [model, selection, hierarchy, fallback, spawning, cost, haiku, sonnet, opus]
+  roles: [architect, lead, developer]
 ---
 
 ## Context

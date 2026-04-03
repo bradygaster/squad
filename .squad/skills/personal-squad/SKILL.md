@@ -1,3 +1,16 @@
+---
+name: "personal-squad"
+description: "User-level portable agents that travel across projects. Use for initializing a personal squad, managing personal agents, understanding ghost protocol (read-only advisory mode), and configuring ambient agent discovery."
+license: "MIT"
+metadata:
+  domain: "agent-management"
+  confidence: "medium"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [personal-squad, personal-agents, ghost-protocol, portable-agents, squad-personal, ambient-discovery]
+  roles: [developer, coordinator]
+---
+
 # Personal Squad — Skill Document
 
 ## What is a Personal Squad?

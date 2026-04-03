@@ -1,9 +1,14 @@
 ---
 name: "distributed-mesh"
 description: "How to coordinate with squads on different machines using git as transport"
-domain: "distributed-coordination"
-confidence: "high"
-source: "multi-model-consensus (Opus 4.6, Sonnet 4.5, GPT-5.4)"
+license: "MIT"
+metadata:
+  domain: "distributed-coordination"
+  confidence: "high"
+  source: "multi-model-consensus (Opus 4.6, Sonnet 4.5, GPT-5.4)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [distributed, mesh, git, coordination, multi-machine, zones, sync]
+  roles: [architect, developer, lead]
 ---
 
 ## SCOPE

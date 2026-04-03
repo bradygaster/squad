@@ -1,0 +1,46 @@
+skill: model-selection
+cases:
+  - prompt: "Apply the model-selection hierarchy for this agent spawn"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Use the model selection policy to pick the right LLM"
+    type: positive
+    expect: match
+    reason: "model+selection in name = +6"
+  - prompt: "Model selection: resolve the 4-layer hierarchy for this task"
+    type: positive
+    expect: match
+    reason: "model+selection = +6"
+  - prompt: "Configure model selection preferences in squad config"
+    type: positive
+    expect: match
+    reason: "model+selection = +6"
+  - prompt: "The model-selection skill resolves which LLM each agent uses"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Model selection fallback chain: per-agent then global then default"
+    type: positive
+    expect: match
+    reason: "model+selection = +6"
+  - prompt: "Write a data model for the user entity"
+    type: negative
+    expect: no-match
+    reason: "Data model in code — 'model' = +3 but 'selection' not in prompt"
+  - prompt: "Create a database schema"
+    type: negative
+    expect: no-match
+    reason: "Schema/data task"
+  - prompt: "Enable economy mode for cost savings"
+    type: negative
+    expect: not:model-selection
+    reason: "economy+mode wins for economy-mode skill"
+  - prompt: "Which LLM model should I use for this complex task?"
+    type: edge
+    expect: match
+    reason: "model in name = +3, selection context"
+  - prompt: "Use claude-opus for all architectural reasoning"
+    type: edge
+    expect: match
+    reason: "model selection context; architectural-proposals also applies"

@@ -1,9 +1,14 @@
 ---
-name: secret-handling
-description: Never read .env files or write secrets to .squad/ committed files
-domain: security, file-operations, team-collaboration
-confidence: high
-source: earned (issue #267 — credential leak incident)
+name: "secret-handling"
+description: "Never read .env files or write secrets to .squad/ committed files"
+license: "MIT"
+metadata:
+  domain: "security, file-operations, team-collaboration"
+  confidence: "high"
+  source: "earned (issue #267 — credential leak incident)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [secrets, security, env, credentials, leak, committed-files, scribe]
+  roles: [developer, scribe, lead]
 ---
 
 ## Context

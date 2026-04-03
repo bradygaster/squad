@@ -1,0 +1,46 @@
+skill: external-comms
+cases:
+  - prompt: "Run the external-comms PAO workflow for community responses"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Use external comms to draft and present community responses"
+    type: positive
+    expect: match
+    reason: "external+comms in name = +6"
+  - prompt: "External comms workflow: scan, draft, human review, approve"
+    type: positive
+    expect: match
+    reason: "external+comms in name = +6"
+  - prompt: "PAO external comms scan for unanswered community issues"
+    type: positive
+    expect: match
+    reason: "external+comms = +6, PAO workflow context"
+  - prompt: "Present drafted external comms responses for human approval"
+    type: positive
+    expect: match
+    reason: "external+comms = +6"
+  - prompt: "The external comms gate requires human review before posting"
+    type: positive
+    expect: match
+    reason: "external+comms = +6"
+  - prompt: "Send Brady a Teams message about the sprint"
+    type: negative
+    expect: no-match
+    reason: "Internal communication, not community/external comms"
+  - prompt: "Reply to the Slack message from the PM"
+    type: negative
+    expect: no-match
+    reason: "Internal messaging, not PAO workflow"
+  - prompt: "Write the internal release announcement"
+    type: negative
+    expect: no-match
+    reason: "Internal announcement"
+  - prompt: "Scan unanswered community issues for response candidates"
+    type: edge
+    expect: match
+    reason: "Community scan — external-comms context"
+  - prompt: "Draft a community response with appropriate tone"
+    type: edge
+    expect: match
+    reason: "Community response drafting — external-comms primary"

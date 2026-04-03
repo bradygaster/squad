@@ -1,0 +1,46 @@
+skill: session-recovery
+cases:
+  - prompt: "Use session-recovery to resume my interrupted work"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Apply session recovery to find and resume the last session"
+    type: positive
+    expect: match
+    reason: "session+recovery in name = +6"
+  - prompt: "Session recovery: query session_store to find the interrupted work"
+    type: positive
+    expect: match
+    reason: "session+recovery = +6"
+  - prompt: "Use the session-recovery skill to resume the Copilot CLI session"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Session recovery workflow: find session, load context, resume"
+    type: positive
+    expect: match
+    reason: "session+recovery = +6"
+  - prompt: "Recover the session using session_store queries"
+    type: positive
+    expect: match
+    reason: "session+recovery = +6"
+  - prompt: "Write SQL to create a new sessions table"
+    type: negative
+    expect: no-match
+    reason: "SQL schema task, not session recovery"
+  - prompt: "Deploy the application to the cloud"
+    type: negative
+    expect: no-match
+    reason: "Deployment task"
+  - prompt: "Fix the login bug in the auth module"
+    type: negative
+    expect: no-match
+    reason: "Code fix, not session recovery"
+  - prompt: "What was I working on before the interruption?"
+    type: edge
+    expect: match
+    reason: "Session context lookup — session+recovery context"
+  - prompt: "Clear all entries from the session history"
+    type: edge
+    expect: not:session-recovery
+    reason: "History deletion — no session+recovery intent"

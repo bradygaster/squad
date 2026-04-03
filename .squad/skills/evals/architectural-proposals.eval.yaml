@@ -1,0 +1,46 @@
+skill: architectural-proposals
+cases:
+  - prompt: "Write an architectural proposal before starting implementation"
+    type: positive
+    expect: match
+    reason: "architectural+proposals both in name = +6"
+  - prompt: "Create a new architectural proposal in docs/proposals/"
+    type: positive
+    expect: match
+    reason: "architectural+proposals in name = +6"
+  - prompt: "The team needs an architectural proposals document for alignment"
+    type: positive
+    expect: match
+    reason: "architectural+proposals in name = +6"
+  - prompt: "Follow the architectural-proposals workflow for this design change"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Write a comprehensive proposals document for the new architecture"
+    type: positive
+    expect: match
+    reason: "proposals in name = +3, architecture from desc = +1"
+  - prompt: "Draft an architectural proposal to get team buy-in before coding"
+    type: positive
+    expect: match
+    reason: "architectural+proposals = +6"
+  - prompt: "Implement the auth service"
+    type: negative
+    expect: no-match
+    reason: "Implementation task, not proposal"
+  - prompt: "Write unit tests for the payment module"
+    type: negative
+    expect: no-match
+    reason: "Testing task"
+  - prompt: "Fix the bug in the login flow"
+    type: negative
+    expect: no-match
+    reason: "Bug fix, not architectural proposal"
+  - prompt: "Document the architecture before any code"
+    type: edge
+    expect: match
+    reason: "Architecture documentation — proposals is the right skill"
+  - prompt: "Propose changes to the distributed mesh feature"
+    type: edge
+    expect: match
+    reason: "proposals in name = +3 wins over distributed-mesh's context"

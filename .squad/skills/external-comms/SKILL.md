@@ -1,22 +1,15 @@
 ---
 name: "external-comms"
-description: "PAO workflow for scanning, drafting, and presenting community responses with human review gate"
-domain: "community, communication, workflow"
-confidence: "low"
-source: "manual (RFC #426 — PAO External Communications)"
-tools:
-  - name: "github-mcp-server-list_issues"
-    description: "List open issues for scan candidates and lightweight triage"
-    when: "Use for recent open issue scans before thread-level review"
-  - name: "github-mcp-server-issue_read"
-    description: "Read the full issue, comments, and labels before drafting"
-    when: "Use after selecting a candidate so PAO has complete thread context"
-  - name: "github-mcp-server-search_issues"
-    description: "Search for candidate issues or prior squad responses"
-    when: "Use when filtering by keywords, labels, or duplicate response checks"
-  - name: "gh CLI"
-    description: "Fallback for GitHub issue comments and discussions workflows"
-    when: "Use gh issue list/comment and gh api or gh api graphql when MCP coverage is incomplete"
+description: "PAO community response workflow with mandatory human review gate. Use for scanning unanswered GitHub issues and discussions, drafting community responses, classifying by confidence level, and presenting review tables before any post."
+license: "MIT"
+allowed-tools: "github-mcp-server-list_issues github-mcp-server-issue_read github-mcp-server-search_issues gh-cli"
+metadata:
+  domain: "community, communication, workflow"
+  confidence: "low"
+  source: "manual (RFC #426 — PAO External Communications)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [community-response, PAO, check-community, draft-response, external-comms, issue-triage, discussion-reply]
+  roles: [coordinator, scribe]
 ---
 
 ## Context

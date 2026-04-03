@@ -1,0 +1,50 @@
+skill: rework-rate
+cases:
+  - prompt: "Measure the PR rework rate for the last sprint"
+    type: positive
+    expect: match
+    reason: "Core use case — PR rework rate measurement"
+  - prompt: "Run squad rework to analyze merged PRs"
+    type: positive
+    expect: match
+    reason: "squad rework command"
+  - prompt: "Calculate the 5th DORA metric for this team"
+    type: positive
+    expect: match
+    reason: "Rework rate as emerging 5th DORA metric"
+  - prompt: "How efficient is our code review process? Show me rework rates"
+    type: positive
+    expect: match
+    reason: "Code review efficiency via rework rate"
+  - prompt: "Track how often PRs need rework after review"
+    type: positive
+    expect: match
+    reason: "Rework tracking"
+  - prompt: "Show team health metrics including PR rework rate"
+    type: positive
+    expect: match
+    reason: "Team health metric"
+  - prompt: "Check the DORA metrics dashboard"
+    type: positive
+    expect: match
+    reason: "DORA metrics — rework-rate is the DORA extension"
+  - prompt: "Refactor the implementation to use a cleaner approach"
+    type: negative
+    expect: no-match
+    reason: "Refactoring code, not measuring rework rate metric"
+  - prompt: "Fix the PR review comments before merging"
+    type: negative
+    expect: not:rework-rate
+    reason: "Addressing review comments, not measuring rework rate"
+  - prompt: "Show me the deployment frequency"
+    type: negative
+    expect: not:rework-rate
+    reason: "Different DORA metric, not rework rate"
+  - prompt: "How many times did we rework this PR?"
+    type: edge
+    expect: match
+    reason: "Rework count — could be fact-checking or rework-rate"
+  - prompt: "Analyze code review quality across the team"
+    type: edge
+    expect: match
+    reason: "Review quality — rework-rate is the metric for this"

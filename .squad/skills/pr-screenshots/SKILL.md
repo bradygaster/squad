@@ -1,9 +1,14 @@
 ---
 name: "pr-screenshots"
-description: "Capture Playwright screenshots and embed them in GitHub PR descriptions"
-domain: "pull-requests, visual-review, docs, testing"
-confidence: "high"
-source: "earned (multiple sessions establishing the pattern for PR #11 TypeDoc API reference)"
+description: "Playwright screenshots embedded in GitHub PR descriptions. Use for visual PRs touching docs sites, UI components, or generated pages — captures screenshots, hosts on temp branch, and embeds image URLs in PR description body."
+license: "MIT"
+metadata:
+  domain: "pull-requests, visual-review, docs, testing"
+  confidence: "high"
+  source: "earned (multiple sessions establishing the pattern for PR #11 TypeDoc API reference)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [pr-screenshots, playwright, visual-review, screenshot, PR-description, docs-site, embed-images]
+  roles: [developer, tester]
 ---
 
 ## Context

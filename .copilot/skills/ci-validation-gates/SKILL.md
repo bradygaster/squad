@@ -1,9 +1,14 @@
 ---
 name: "ci-validation-gates"
 description: "Defensive CI/CD patterns: semver validation, token checks, retry logic, draft detection — earned from v0.8.22"
-domain: "ci-cd"
-confidence: "high"
-source: "extracted from Drucker and Trejo charters — earned knowledge from v0.8.22 release incident"
+license: "MIT"
+metadata:
+  domain: "ci-cd"
+  confidence: "high"
+  source: "extracted from Drucker and Trejo charters — earned knowledge from v0.8.22 release incident"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [ci, cd, semver, validation, token, npm-publish, release, retry]
+  roles: [developer, release-engineer]
 ---
 
 ## Context

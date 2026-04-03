@@ -1,9 +1,14 @@
 ---
 name: "client-compatibility"
 description: "Platform detection and adaptive spawning for CLI vs VS Code vs other surfaces"
-domain: "orchestration"
-confidence: "high"
-source: "extracted"
+license: "MIT"
+metadata:
+  domain: "orchestration"
+  confidence: "high"
+  source: "extracted"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [platform, detection, vscode, cli, spawning, compatibility, adaptive, surface]
+  roles: [architect, developer, lead]
 ---
 
 ## Context
