@@ -875,13 +875,15 @@ prompt: |
   SPAWN MANIFEST: {spawn_manifest}
 
   Tasks (in order):
-  1. ORCHESTRATION LOG: Write .squad/orchestration-log/{timestamp}-{agent}.md per agent. Use ISO 8601 UTC timestamp.
-  2. SESSION LOG: Write .squad/log/{timestamp}-{topic}.md. Brief. Use ISO 8601 UTC timestamp.
-  3. DECISION INBOX: Merge .squad/decisions/inbox/ → decisions.md, delete inbox files. Deduplicate.
-  4. CROSS-AGENT: Append team updates to affected agents' history.md.
-  5. DECISIONS ARCHIVE: If decisions.md exceeds ~20KB, archive entries older than 30 days to decisions-archive.md.
-  6. GIT COMMIT: git add .squad/ && commit (write msg to temp file, use -F). Skip if nothing staged.
-  7. HISTORY SUMMARIZATION: If any history.md >12KB, summarize old entries to ## Core Context.
+  0. PRE-CHECK: Stat decisions.md size and count inbox/ files. Record measurements.
+  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
+  2. DECISION INBOX: Merge .squad/decisions/inbox/ → decisions.md, delete inbox files. Deduplicate.
+  3. ORCHESTRATION LOG: Write .squad/orchestration-log/{timestamp}-{agent}.md per agent. Use ISO 8601 UTC timestamp.
+  4. SESSION LOG: Write .squad/log/{timestamp}-{topic}.md. Brief. Use ISO 8601 UTC timestamp.
+  5. CROSS-AGENT: Append team updates to affected agents' history.md.
+  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
+  7. GIT COMMIT: git add .squad/ && commit (write msg to temp file, use -F). Skip if nothing staged.
+  8. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files summarized.
 
   Never speak to user. ⚠️ End with plain text summary after all tool calls.
 ```
