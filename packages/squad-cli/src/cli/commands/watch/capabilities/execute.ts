@@ -166,7 +166,7 @@ export class ExecuteCapability implements WatchCapability {
           : writeIssues.slice(0, maxConcurrent); // hybrid: only write issues here
 
         if (batch.length === 0 && (dispatchMode === 'fleet' || (dispatchMode === 'hybrid' && writeIssues.length === 0))) {
-          context.log?.(`⚠️ dispatch-mode=${dispatchMode}: ${executable.length - writeIssues.length} issues deferred to fleet-dispatch capability. Ensure fleet-dispatch is enabled.`);
+          // Note: fleet-dispatch capability handles the deferred read issues
         }
 
         if (batch.length === 0) {
