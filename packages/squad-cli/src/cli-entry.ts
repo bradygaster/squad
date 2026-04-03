@@ -177,12 +177,9 @@ async function main(): Promise<void> {
     console.log(`                    --retro           enforce retrospective checks`);
     console.log(`                    --decision-hygiene auto-merge decision inbox`);
     console.log(`             Disable: --no-<capability> overrides config.json`);
-    console.log(`  ${BOLD}loop${RESET}       Prompt-driven continuous work loop`);
-    console.log(`             Usage: loop [--init] [--file <path>] [--interval <min>]`);
-    console.log(`             Reads loop.md and runs it each cycle (no issues needed)`);
-    console.log(`             Flags: --init (generate boilerplate loop.md)`);
-    console.log(`                    --file <path> (custom loop file)`);
-    console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
+    console.log(`  ${BOLD}loop${RESET}       Continuous work loop (Ralph mode)`);
+    console.log(`             Usage: loop [--filter <label>] [--interval <minutes>]`);
+    console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
     console.log(`  ${BOLD}hire${RESET}       Team creation wizard`);
     console.log(`             Usage: hire [--name <name>] [--role <role>]`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
@@ -402,97 +399,17 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'loop') {
-    // --help
-    if (args.includes('--help') || args.includes('-h')) {
-      console.log(`\n${BOLD}squad loop${RESET} — Prompt-driven continuous work loop\n`);
-      console.log(`Usage: squad loop [options]\n`);
-      console.log(`Reads loop.md and runs it as a continuous work loop.\n`);
-      console.log(`Options:`);
-      console.log(`  ${BOLD}--init${RESET}                Generate a boilerplate loop.md`);
-      console.log(`  ${BOLD}--file <path>${RESET}         Path to loop file (default: loop.md)`);
-      console.log(`  ${BOLD}--interval <min>${RESET}      Override loop interval in minutes`);
-      console.log(`  ${BOLD}--timeout <min>${RESET}       Override max minutes per cycle`);
-      console.log(`  ${BOLD}--copilot-flags "..."${RESET} Extra flags for Copilot CLI`);
-      console.log(`  ${BOLD}--agent-cmd <cmd>${RESET}     Override the agent command`);
-      console.log(`\nCapabilities (composable with the loop):`);
-      console.log(`  ${BOLD}--self-pull${RESET}           git fetch/pull at round start`);
-      console.log(`  ${BOLD}--monitor-email${RESET}       Scan email for actionable items`);
-      console.log(`  ${BOLD}--monitor-teams${RESET}       Scan Teams for actionable messages`);
-      console.log(`  ${BOLD}--decision-hygiene${RESET}    Auto-merge decision inbox`);
-      console.log(`  ${BOLD}--retro${RESET}               Enforce retrospective checks`);
-      console.log(`\nFrontmatter (in loop.md):`);
-      console.log(`  configured: true     ${DIM}(required — confirms intentional setup)${RESET}`);
-      console.log(`  interval: 10         ${DIM}(minutes between cycles)${RESET}`);
-      console.log(`  timeout: 30          ${DIM}(max minutes per cycle)${RESET}`);
-      console.log(`  description: "..."   ${DIM}(shown in status output)${RESET}`);
-      console.log(`\nExamples:`);
-      console.log(`  squad loop                          ${DIM}# run loop.md${RESET}`);
-      console.log(`  squad loop --init                   ${DIM}# generate boilerplate${RESET}`);
-      console.log(`  squad loop --file ops/loop.md       ${DIM}# custom loop file${RESET}`);
-      console.log(`  squad loop --monitor-email          ${DIM}# with email monitoring${RESET}`);
-      return;
-    }
-
-    const { runLoop, generateLoopFile } = await import('./cli/commands/loop.js');
-
-    // --init: scaffold a boilerplate loop.md
-    if (args.includes('--init')) {
-      const fileIdx = args.indexOf('--file');
-      const filePath = (fileIdx !== -1 && args[fileIdx + 1]) ? args[fileIdx + 1]! : 'loop.md';
-      const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
-      const storage = new FSStorageProvider();
-      const pathMod = await import('node:path');
-      const absPath = pathMod.default.resolve(process.cwd(), filePath);
-      if (storage.existsSync(absPath)) {
-        console.log(`⚠️  ${filePath} already exists. Remove it first to regenerate.`);
-      } else {
-        storage.writeSync(absPath, generateLoopFile());
-        console.log(`✅ Created ${filePath} — open it and set \`configured: true\` to activate.`);
-      }
-      return;
-    }
-
-    // Parse flags
-    const fileIdx = args.indexOf('--file');
-    const filePath = (fileIdx !== -1 && args[fileIdx + 1]) ? args[fileIdx + 1] : undefined;
-
+    const filterIdx = args.indexOf('--filter');
+    const filter = (filterIdx !== -1 && args[filterIdx + 1]) ? args[filterIdx + 1] : undefined;
     const intervalIdx = args.indexOf('--interval');
-    const interval = (intervalIdx !== -1 && args[intervalIdx + 1])
+    const intervalMinutes = (intervalIdx !== -1 && args[intervalIdx + 1])
       ? parseInt(args[intervalIdx + 1]!, 10)
-      : undefined;
-
-    const timeoutIdx = args.indexOf('--timeout');
-    const timeout = (timeoutIdx !== -1 && args[timeoutIdx + 1])
-      ? parseInt(args[timeoutIdx + 1]!, 10)
-      : undefined;
-
-    const copilotFlagsIdx = args.indexOf('--copilot-flags');
-    const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
-      ? args[copilotFlagsIdx + 1]
-      : undefined;
-
-    const agentCmdIdx = args.indexOf('--agent-cmd');
-    const agentCmd = (agentCmdIdx !== -1 && args[agentCmdIdx + 1])
-      ? args[agentCmdIdx + 1]
-      : undefined;
-
-    // Capability flags
-    const { createDefaultRegistry: createReg } = await import('./cli/commands/watch/index.js');
-    const reg = createReg();
-    const capabilities: Record<string, boolean | Record<string, unknown>> = {};
-    for (const cap of reg.all()) {
-      if (args.includes(`--${cap.name}`)) capabilities[cap.name] = true;
-      if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
+      : 10;
+    console.log(`🔄 Squad loop starting... (full implementation pending)`);
+    if (filter) {
+      console.log(`   Filter: ${filter}`);
     }
-
-    await runLoop(process.cwd(), {
-      filePath,
-      interval,
-      timeout,
-      copilotFlags,
-      agentCmd,
-      capabilities,
-    });
+    console.log(`   Interval: ${intervalMinutes} minutes`);
     return;
   }
 
