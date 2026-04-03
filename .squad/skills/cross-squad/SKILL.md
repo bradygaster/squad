@@ -1,16 +1,15 @@
 ---
 name: "cross-squad"
-description: "Coordinating work across multiple Squad instances"
-domain: "orchestration"
-confidence: "medium"
-source: "manual"
-tools:
-  - name: "squad-discover"
-    description: "List known squads and their capabilities"
-    when: "When you need to find which squad can handle a task"
-  - name: "squad-delegate"
-    description: "Create work in another squad's repository"
-    when: "When a task belongs to another squad's domain"
+description: "Multi-squad orchestration across repos. Use for delegating work to other squads, discovering squad capabilities, coordinating cross-repository tasks, and managing handoffs between platform, frontend, and data squads."
+license: "MIT"
+allowed-tools: "squad-discover squad-delegate"
+metadata:
+  domain: "orchestration"
+  confidence: "medium"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [cross-squad, multi-squad, squad-delegate, squad-discover, orchestration, cross-repo, delegation]
+  roles: [coordinator, lead]
 ---
 
 ## Context

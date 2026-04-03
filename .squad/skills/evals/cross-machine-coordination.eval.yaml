@@ -1,0 +1,46 @@
+skill: cross-machine-coordination
+cases:
+  - prompt: "Use cross-machine-coordination to share tasks between DevBox and laptop"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Set up cross machine coordination using git-based task queuing"
+    type: positive
+    expect: match
+    reason: "cross+machine+coordination all in name = +9"
+  - prompt: "Machine coordination across DevBox and Azure VM agents"
+    type: positive
+    expect: match
+    reason: "machine+coordination in name = +6"
+  - prompt: "Cross-machine task queuing without manual intervention"
+    type: positive
+    expect: match
+    reason: "cross+machine in name = +6"
+  - prompt: "Coordinate work across machines using the git queue pattern"
+    type: positive
+    expect: match
+    reason: "coordination in name = +3, machine context"
+  - prompt: "Transfer results between machines using cross machine coordination"
+    type: positive
+    expect: match
+    reason: "cross+machine+coordination all in name = +9"
+  - prompt: "Write a data model for user accounts"
+    type: negative
+    expect: no-match
+    reason: "Code task"
+  - prompt: "Send a Teams message to the platform team"
+    type: negative
+    expect: no-match
+    reason: "Internal comms task"
+  - prompt: "Set up the CI validation gates for the release"
+    type: negative
+    expect: no-match
+    reason: "CI task"
+  - prompt: "Sync work between laptop and DevBox"
+    type: edge
+    expect: match
+    reason: "machine coordination context even without exact tokens"
+  - prompt: "Share results between squad instances on different hosts"
+    type: edge
+    expect: not:cross-machine-coordination
+    reason: "Cross-squad or distributed-mesh may win for 'squad instances'"

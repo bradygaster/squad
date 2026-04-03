@@ -1,9 +1,14 @@
 ---
 name: "versioning-policy"
-description: "Semver versioning rules for Squad SDK and CLI — prevents prerelease version incidents"
-domain: "release, versioning, npm, CI"
-confidence: "medium"
-source: "earned (PR #640 workspace resolution incident, PR #116 prerelease leak, CI gate implementation)"
+description: "Semver rules for Squad SDK and CLI packages. Use when bumping versions, reviewing PRs for prerelease leaks, debugging workspace resolution failures, or understanding who owns version changes and when prerelease suffixes are forbidden."
+license: "MIT"
+metadata:
+  domain: "release, versioning, npm, CI"
+  confidence: "medium"
+  source: "earned (PR #640 workspace resolution incident, PR #116 prerelease leak, CI gate implementation)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [versioning, semver, prerelease, version-bump, workspace-resolution, npm-version, version-policy]
+  roles: [developer, coordinator]
 ---
 
 ## Context

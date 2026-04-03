@@ -1,0 +1,46 @@
+skill: reskill
+cases:
+  - prompt: "Run a reskill to optimize team charters"
+    type: positive
+    expect: match
+    reason: "reskill in name = +3"
+  - prompt: "Use reskill to extract repeated patterns from agent charters"
+    type: positive
+    expect: match
+    reason: "reskill = +3, extraction from desc = +1"
+  - prompt: "Apply reskill: move shared knowledge from charters to skills"
+    type: positive
+    expect: match
+    reason: "reskill = +3"
+  - prompt: "Team-wide reskill to reduce per-agent context overhead"
+    type: positive
+    expect: match
+    reason: "reskill = +3"
+  - prompt: "Reskill the team by extracting charter boilerplate into shared skills"
+    type: positive
+    expect: match
+    reason: "reskill = +3"
+  - prompt: "The reskill skill extracts identical content from 18+ agent charters"
+    type: positive
+    expect: match
+    reason: "reskill = +3"
+  - prompt: "Find my interrupted session and resume it"
+    type: negative
+    expect: no-match
+    reason: "Session recovery task"
+  - prompt: "Archive old log files to free up space"
+    type: negative
+    expect: no-match
+    reason: "Log archival — nap skill"
+  - prompt: "Write tests for the auth service"
+    type: negative
+    expect: no-match
+    reason: "Code task"
+  - prompt: "Extract charter boilerplate as a shared skill"
+    type: edge
+    expect: match
+    reason: "extraction+skill in reskill description"
+  - prompt: "Optimize the agents by removing repeated content"
+    type: edge
+    expect: match
+    reason: "optimization matches reskill desc; reskill = +3 from name"

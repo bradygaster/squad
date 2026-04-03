@@ -1,0 +1,46 @@
+skill: agent-conduct
+cases:
+  - prompt: "Apply the agent-conduct rules across the team"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Enforce the shared conduct rules for all agents"
+    type: positive
+    expect: match
+    reason: "conduct name token = +3, shared+rules from desc = +2"
+  - prompt: "What hard rules govern agent conduct in this project?"
+    type: positive
+    expect: match
+    reason: "conduct in name = +3, hard+rules in desc = +2"
+  - prompt: "The conduct policy requires agents to pass peer quality checks"
+    type: positive
+    expect: match
+    reason: "conduct = +3, quality from desc = +1"
+  - prompt: "All agents must follow the agent conduct governance rules"
+    type: positive
+    expect: match
+    reason: "agent+conduct both in name = +6"
+  - prompt: "Review the conduct guidelines before shipping any output"
+    type: positive
+    expect: match
+    reason: "conduct = +3"
+  - prompt: "Write tests for the auth module"
+    type: negative
+    expect: no-match
+    reason: "Code task"
+  - prompt: "Record the decision in the collaboration inbox"
+    type: negative
+    expect: not:agent-conduct
+    reason: "Collaboration task = agent-collaboration"
+  - prompt: "Set up git workflow for the team"
+    type: negative
+    expect: no-match
+    reason: "Git branching task"
+  - prompt: "Enforce quality standards across agent outputs"
+    type: edge
+    expect: match
+    reason: "conduct-adjacent — quality+governance tie to agent-conduct"
+  - prompt: "Agents must not read .env files"
+    type: edge
+    expect: not:agent-conduct
+    reason: "Secret handling rule — secret-handling wins on secret+handling tokens"

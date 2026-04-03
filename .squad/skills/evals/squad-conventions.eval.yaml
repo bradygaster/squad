@@ -1,0 +1,46 @@
+skill: squad-conventions
+cases:
+  - prompt: "Apply the squad-conventions skill before making changes"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Follow the squad conventions for this codebase"
+    type: positive
+    expect: match
+    reason: "squad+conventions in name = +6"
+  - prompt: "Squad conventions: naming, structure, and patterns for this project"
+    type: positive
+    expect: match
+    reason: "squad+conventions = +6"
+  - prompt: "Check squad conventions before submitting the PR"
+    type: positive
+    expect: match
+    reason: "squad+conventions = +6"
+  - prompt: "The squad-conventions skill defines codebase patterns and rules"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Review squad conventions for TypeScript naming patterns"
+    type: positive
+    expect: match
+    reason: "squad+conventions = +6"
+  - prompt: "Write a convention for the new React framework"
+    type: negative
+    expect: no-match
+    reason: "Non-Squad conventions, no squad+conventions tokens"
+  - prompt: "Initialize the team using the init-mode ceremony"
+    type: negative
+    expect: not:squad-conventions
+    reason: "init+mode wins"
+  - prompt: "Deploy the application using the CI pipeline"
+    type: negative
+    expect: no-match
+    reason: "Deployment task"
+  - prompt: "What are the naming conventions in this project?"
+    type: edge
+    expect: match
+    reason: "conventions in name = +3"
+  - prompt: "How should I structure code in the Squad SDK?"
+    type: edge
+    expect: match
+    reason: "squad+conventions context for Squad codebase"

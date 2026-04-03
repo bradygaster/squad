@@ -1,9 +1,14 @@
 ---
 name: "humanizer"
-description: "Tone enforcement patterns for external-facing community responses"
-domain: "communication, tone, community"
-confidence: "low"
-source: "manual (RFC #426 — PAO External Communications)"
+description: "Tone enforcement for external community responses. Use when drafting GitHub issue replies, discussion responses, or any external-facing content to ensure warm, helpful, human tone — not robotic or corporate language."
+license: "MIT"
+metadata:
+  domain: "communication, tone, community"
+  confidence: "low"
+  source: "manual (RFC #426 — PAO External Communications)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [humanize, tone, community-response, warm-tone, external-facing, draft-reply, active-voice]
+  roles: [coordinator, scribe]
 ---
 
 ## Context

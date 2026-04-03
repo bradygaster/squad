@@ -1,16 +1,15 @@
 ---
 name: "architectural-proposals"
 description: "How to write comprehensive architectural proposals that drive alignment before code is written"
-domain: "architecture, product-direction"
-confidence: "high"
-source: "earned (2026-02-21 interactive shell proposal)"
-tools:
-  - name: "view"
-    description: "Read existing codebase, prior decisions, and team context before proposing changes"
-    when: "Always read .squad/decisions.md, relevant PRDs, and current architecture docs before writing proposal"
-  - name: "create"
-    description: "Create proposal in docs/proposals/ with structured format"
-    when: "After gathering context, before any implementation work begins"
+license: "MIT"
+allowed-tools: "view create"
+metadata:
+  domain: "architecture, product-direction"
+  confidence: "high"
+  source: "earned (2026-02-21 interactive shell proposal)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [architecture, proposal, design, alignment, documentation, planning]
+  roles: [architect, lead, developer]
 ---
 
 ## Context

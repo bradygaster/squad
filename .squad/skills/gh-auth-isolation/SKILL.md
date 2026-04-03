@@ -1,13 +1,15 @@
 ---
 name: "gh-auth-isolation"
-description: "Safely manage multiple GitHub identities (EMU + personal) in agent workflows"
-domain: "security, github-integration, authentication, multi-account"
-confidence: "high"
-source: "earned (production usage across 50+ sessions with EMU corp + personal GitHub accounts)"
-tools:
-  - name: "gh"
-    description: "GitHub CLI for authenticated operations"
-    when: "When accessing GitHub resources requiring authentication"
+description: "Multi-GitHub identity management for EMU and personal accounts. Use when pushing to personal repos from an EMU shell, switching GitHub auth contexts, creating PRs from personal forks, or isolating credentials across agent workflows."
+license: "MIT"
+allowed-tools: "gh"
+metadata:
+  domain: "security, github-integration, authentication, multi-account"
+  confidence: "high"
+  source: "earned (production usage across 50+ sessions with EMU corp + personal GitHub accounts)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [gh-auth, EMU, personal-account, github-identity, multi-account, auth-isolation, credential-switching]
+  roles: [developer, coordinator]
 ---
 
 ## Context

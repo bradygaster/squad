@@ -1,0 +1,46 @@
+skill: economy-mode
+cases:
+  - prompt: "Enable economy-mode for this session"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Switch to economy mode to cut costs"
+    type: positive
+    expect: match
+    reason: "economy+mode in name = +6"
+  - prompt: "Use economy mode with cost-optimized model selection"
+    type: positive
+    expect: match
+    reason: "economy+mode in name = +6, cost-optimized from desc = +1"
+  - prompt: "Economy mode activates cheaper model alternatives"
+    type: positive
+    expect: match
+    reason: "economy+mode in name = +6"
+  - prompt: "Activate economy mode to use cost-optimized alternatives"
+    type: positive
+    expect: match
+    reason: "economy+mode = +6, cost-optimized from desc = +1"
+  - prompt: "Use economy mode instead of premium models for this task"
+    type: positive
+    expect: match
+    reason: "economy+mode = +6"
+  - prompt: "Write a data model for user accounts"
+    type: negative
+    expect: no-match
+    reason: "Data model in code, not LLM economy mode"
+  - prompt: "Create a database schema"
+    type: negative
+    expect: no-match
+    reason: "Database task"
+  - prompt: "Initialize the team with the init-mode ceremony"
+    type: negative
+    expect: not:economy-mode
+    reason: "init-mode wins on init+mode tokens"
+  - prompt: "Go cheap on model costs for this batch job"
+    type: edge
+    expect: match
+    reason: "Cost optimization context — economy mode"
+  - prompt: "Use haiku for all low-complexity tasks today"
+    type: edge
+    expect: not:economy-mode
+    reason: "Model-selection wins — no economy+mode tokens"

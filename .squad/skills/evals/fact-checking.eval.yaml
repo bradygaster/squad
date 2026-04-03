@@ -1,0 +1,46 @@
+skill: fact-checking
+cases:
+  - prompt: "Fact-checking required before publishing this claim"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Apply fact checking to validate these technical claims"
+    type: positive
+    expect: match
+    reason: "fact+checking in name = +6"
+  - prompt: "Run fact-checking with counter-hypothesis testing on this content"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5, counter-hypothesis from desc"
+  - prompt: "Fact checking: verify the API endpoint references are accurate"
+    type: positive
+    expect: match
+    reason: "fact+checking = +6"
+  - prompt: "Validate these claims using fact checking methodology"
+    type: positive
+    expect: match
+    reason: "fact+checking = +6"
+  - prompt: "QA fact checking on the deliverable before shipping"
+    type: positive
+    expect: match
+    reason: "fact+checking = +6"
+  - prompt: "Write unit tests for the auth module"
+    type: negative
+    expect: no-match
+    reason: "Test writing, not fact verification"
+  - prompt: "Set up the distributed mesh"
+    type: negative
+    expect: no-match
+    reason: "Mesh setup, not fact-checking"
+  - prompt: "Run the release checklist"
+    type: negative
+    expect: no-match
+    reason: "Release process, not fact-checking"
+  - prompt: "Is the version number in package.json correct?"
+    type: edge
+    expect: not:fact-checking
+    reason: "versioning-policy wins on versioning+policy tokens"
+  - prompt: "Verify the accuracy of the PR description facts"
+    type: edge
+    expect: match
+    reason: "fact-checking context even without name tokens"

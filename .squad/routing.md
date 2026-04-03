@@ -23,6 +23,7 @@
 | TUI implementation | DSKY 🖥️ | Terminal components, layout, input handling, focus management, rendering perf |
 | Terminal E2E tests | Sims 🧪 | node-pty harness, Gherkin features, frame snapshots, UX gate test suite |
 | SDK usability | Handbook 📖 | JSDoc, LLM discoverability, API surface clarity, legacy cleanup, migration guides |
+| Skill quality & eval | SPAN 🔍 | Skill schema validation, description optimization, eval fixtures, trigger testing, domain overlap detection |
 
 ## Module Ownership
 

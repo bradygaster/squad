@@ -1,9 +1,14 @@
 ---
 name: "agent-collaboration"
 description: "Standard collaboration patterns for all squad agents — worktree awareness, decisions, cross-agent communication"
-domain: "team-workflow"
-confidence: "high"
-source: "extracted from charter boilerplate — identical content in 18+ agent charters"
+license: "MIT"
+metadata:
+  domain: "team-workflow"
+  confidence: "high"
+  source: "extracted from charter boilerplate — identical content in 18+ agent charters"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [collaboration, decisions, worktree, cross-agent, communication, squad-patterns]
+  roles: [developer, lead, architect, scribe]
 ---
 
 ## Context

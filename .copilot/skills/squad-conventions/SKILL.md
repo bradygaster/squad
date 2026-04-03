@@ -1,9 +1,14 @@
 ---
 name: "squad-conventions"
 description: "Core conventions and patterns used in the Squad codebase"
-domain: "project-conventions"
-confidence: "high"
-source: "manual"
+license: "MIT"
+metadata:
+  domain: "project-conventions"
+  confidence: "high"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [conventions, patterns, codebase, squad, nodejs, zero-dependencies, windows]
+  roles: [developer, lead, architect]
 ---
 
 ## Context

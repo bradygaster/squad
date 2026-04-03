@@ -1,9 +1,14 @@
 ---
 name: "reviewer-protocol"
 description: "Reviewer rejection workflow and strict lockout semantics"
-domain: "orchestration"
-confidence: "high"
-source: "extracted"
+license: "MIT"
+metadata:
+  domain: "orchestration"
+  confidence: "high"
+  source: "extracted"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [review, rejection, lockout, protocol, approval, quality-gate]
+  roles: [developer, tester, lead, architect]
 ---
 
 ## Context

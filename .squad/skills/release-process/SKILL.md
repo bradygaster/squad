@@ -1,3 +1,16 @@
+---
+name: "release-process"
+description: "npm release workflow for Squad SDK and CLI packages. Use before any release, npm publish, version bump, or CI pipeline work — covers pre-publish validation, correct publish commands, fallback procedures, and post-publish smoke testing."
+license: "MIT"
+metadata:
+  domain: "release"
+  confidence: "high"
+  source: "earned (v0.9.0→v0.9.1 incident)"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [release, npm-publish, version-bump, release-process, publish-workflow, CI-release, smoke-test]
+  roles: [developer, coordinator]
+---
+
 # Release Process
 
 > Earned knowledge from the v0.9.0→v0.9.1 incident. Every agent involved in releases MUST read this before starting release work.

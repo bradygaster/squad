@@ -1,0 +1,46 @@
+skill: distributed-mesh
+cases:
+  - prompt: "Set up distributed-mesh to coordinate squads across machines"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Use distributed mesh for git-based squad transport"
+    type: positive
+    expect: match
+    reason: "distributed+mesh in name = +6"
+  - prompt: "Configure the distributed mesh protocol for team sync"
+    type: positive
+    expect: match
+    reason: "distributed+mesh in name = +6"
+  - prompt: "The distributed mesh syncs squads using git as transport layer"
+    type: positive
+    expect: match
+    reason: "distributed+mesh in name = +6"
+  - prompt: "Run the distributed-mesh sync script to coordinate teams"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Distributed mesh coordination between remote squad hosts"
+    type: positive
+    expect: match
+    reason: "distributed+mesh in name = +6"
+  - prompt: "Merge branches from the feature team"
+    type: negative
+    expect: no-match
+    reason: "Git merge, not distributed mesh"
+  - prompt: "Fix the bug in the billing service"
+    type: negative
+    expect: no-match
+    reason: "Unrelated code task"
+  - prompt: "Run the CI pipeline for the release"
+    type: negative
+    expect: no-match
+    reason: "CI task, not mesh coordination"
+  - prompt: "Coordinate teams across repos using the mesh transport"
+    type: edge
+    expect: match
+    reason: "mesh in name = +3 wins"
+  - prompt: "Sync squad state across different machines"
+    type: edge
+    expect: not:distributed-mesh
+    reason: "machines token helps cross-machine-coordination; ambiguous"

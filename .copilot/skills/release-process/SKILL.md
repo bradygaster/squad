@@ -1,9 +1,14 @@
 ---
 name: "release-process"
 description: "Step-by-step release checklist for Squad — prevents v0.8.22-style disasters"
-domain: "release-management"
-confidence: "high"
-source: "team-decision"
+license: "MIT"
+metadata:
+  domain: "release-management"
+  confidence: "high"
+  source: "team-decision"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [release, publish, npm, semver, checklist, deployment, versioning]
+  roles: [developer, release-engineer, lead]
 ---
 
 ## Context
