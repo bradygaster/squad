@@ -441,9 +441,8 @@ async function main(): Promise<void> {
       const filePath = (fileIdx !== -1 && args[fileIdx + 1]) ? args[fileIdx + 1]! : 'loop.md';
       const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
       const storage = new FSStorageProvider();
-      const absPath = filePath.startsWith('/') || /^[A-Za-z]:/.test(filePath)
-        ? filePath
-        : `${process.cwd()}/${filePath}`;
+      const pathMod = await import('node:path');
+      const absPath = pathMod.default.resolve(process.cwd(), filePath);
       if (storage.existsSync(absPath)) {
         console.log(`⚠️  ${filePath} already exists. Remove it first to regenerate.`);
       } else {

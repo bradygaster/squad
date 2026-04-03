@@ -7,7 +7,7 @@
  */
 
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { detectSquadDir } from '../core/detect-squad-dir.js';
@@ -61,12 +61,10 @@ export interface LoopConfig {
 export function parseLoopFile(content: string): { frontmatter: LoopFrontmatter; prompt: string } {
   const lines = content.split('\n');
 
-  let inFrontmatter = false;
   let frontmatterLines: string[] = [];
   let bodyStart = 0;
 
   if (lines[0]?.trim() === '---') {
-    inFrontmatter = true;
     for (let i = 1; i < lines.length; i++) {
       if (lines[i]?.trim() === '---') {
         bodyStart = i + 1;
@@ -345,6 +343,10 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     fatal('interval must be a positive number of minutes');
   }
 
+  if (isNaN(timeoutMinutes) || timeoutMinutes < 1) {
+    fatal('timeout must be a positive number of minutes');
+  }
+
   // Preflight: verify gh copilot is available (skip if user overrides the agent command)
   if (!options.agentCmd) {
     try {
@@ -402,6 +404,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
 
   let round = 0;
   let roundInProgress = false;
+  let currentChild: ChildProcess | null = null;
 
   async function executeRound(): Promise<void> {
     round++;
@@ -420,7 +423,8 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
 
     await new Promise<void>((resolve) => {
-      execFile(cmd, args, { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+      currentChild = execFile(cmd, args, { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+        currentChild = null;
         if (err) {
           const execErr = err as Error & { killed?: boolean };
           const msg = execErr.killed
@@ -462,6 +466,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     const shutdown = () => {
       if (isShuttingDown) return;
       isShuttingDown = true;
+      if (currentChild) { currentChild.kill(); currentChild = null; }
       clearInterval(intervalId);
       process.off('SIGINT', shutdown);
       process.off('SIGTERM', shutdown);
