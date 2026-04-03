@@ -149,7 +149,7 @@ Loop.md requires YAML frontmatter with:
 | Field | Type | Description |
 |-------|------|-------------|
 | `configured` | boolean | Safety check — must be `true` to run (prevents accidental execution) |
-| `interval` | number | Minutes between cycles (default: 5) |
+| `interval` | number | Minutes between cycles (default: 10) |
 | `timeout` | number | Max runtime in minutes per cycle (default: 30) |
 | `description` | string | Human-readable description of the loop |
 
@@ -180,7 +180,7 @@ squad loop --copilot-flags "--model gpt-4"
 ```markdown
 ---
 configured: true
-interval: 5
+interval: 10
 timeout: 20
 description: "Monitor failing CI and fix issues"
 ---

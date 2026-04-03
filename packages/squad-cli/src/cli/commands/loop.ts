@@ -8,10 +8,8 @@
 
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
-
-const storage = new FSStorageProvider();
-
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { fatal } from '../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../core/output.js';
@@ -23,6 +21,8 @@ import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from
 import type { WatchConfig } from './watch/config.js';
 import { createPlatformAdapter } from '@bradygaster/squad-sdk/platform';
 import { parseRoster } from '@bradygaster/squad-sdk/ralph/triage';
+
+const storage = new FSStorageProvider();
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -63,12 +63,10 @@ export interface LoopConfig {
 export function parseLoopFile(content: string): { frontmatter: LoopFrontmatter; prompt: string } {
   const lines = content.split('\n');
 
-  let inFrontmatter = false;
   let frontmatterLines: string[] = [];
   let bodyStart = 0;
 
   if (lines[0]?.trim() === '---') {
-    inFrontmatter = true;
     for (let i = 1; i < lines.length; i++) {
       if (lines[i]?.trim() === '---') {
         bodyStart = i + 1;
@@ -315,6 +313,10 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     fatal('interval must be a positive number of minutes');
   }
 
+  if (isNaN(timeoutMinutes) || timeoutMinutes < 1) {
+    fatal('timeout must be a positive number of minutes');
+  }
+
   // Build WatchConfig for capability system
   const watchConfig: WatchConfig = {
     interval,
@@ -363,6 +365,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
 
   let round = 0;
   let roundInProgress = false;
+  let currentChild: ChildProcess | null = null;
 
   async function executeRound(): Promise<void> {
     round++;
@@ -381,7 +384,8 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
 
     await new Promise<void>((resolve) => {
-      execFile(cmd, args, { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+      const child = execFile(cmd, args, { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+        currentChild = null;
         if (err) {
           const execErr = err as Error & { killed?: boolean };
           const msg = execErr.killed
@@ -393,6 +397,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
         }
         resolve();
       });
+      currentChild = child;
     });
 
     // Phase 2: housekeeping (monitor-email, monitor-teams, retro, decision-hygiene)
@@ -426,6 +431,11 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
       clearInterval(intervalId);
       process.off('SIGINT', shutdown);
       process.off('SIGTERM', shutdown);
+      // Kill any in-flight child process so we don't wait for it to finish
+      if (currentChild) {
+        currentChild.kill();
+        currentChild = null;
+      }
       console.log(`\n${DIM}🔄 Squad Loop — stopped${RESET}`);
       resolve();
     };

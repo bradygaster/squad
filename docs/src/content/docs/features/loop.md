@@ -67,9 +67,8 @@ This creates a starter `loop.md` file in your project root:
 ```markdown
 ---
 configured: false
-interval: 5
+interval: 10
 timeout: 30
-description: "My work loop"
 ---
 
 # Work Loop Prompt
@@ -136,7 +135,7 @@ The YAML frontmatter at the top of `loop.md` controls Loop's behavior:
 | Field | Type | Required | Default | Description |
 |-------|------|:--------:|:-------:|-------------|
 | `configured` | boolean | Yes | `false` | Safety check — must be `true` to run. Prevents accidental execution of incomplete loops. |
-| `interval` | number | No | `5` | Minutes between cycles. Loop will wait this long after each cycle completes before running again. |
+| `interval` | number | No | `10` | Minutes between cycles. Loop will wait this long after each cycle completes before running again. |
 | `timeout` | number | No | `30` | Max runtime in minutes for each cycle. If Copilot doesn't finish within this time, the cycle is marked incomplete and the next cycle starts. |
 | `description` | string | No | `""` | Human-readable description of what this loop does. Shown in logs and status. |
 
@@ -302,7 +301,7 @@ Instead of command-line flags, you can configure Loop in `.squad/config.json`:
 ```json
 {
   "loop": {
-    "interval": 5,
+    "interval": 10,
     "timeout": 30,
     "file": "loop.md",
     "monitorEmail": true,
@@ -318,7 +317,7 @@ Resolution order (first match wins):
 1. CLI flags (`--interval 10`)
 2. `.squad/config.json` `loop` section
 3. `loop.md` frontmatter
-4. Defaults (interval: 5, timeout: 30)
+4. Defaults (interval: 10, timeout: 30)
 
 ## Notes
 
