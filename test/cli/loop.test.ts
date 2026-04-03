@@ -5,7 +5,7 @@
  * loop command without spawning processes or touching the file system.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -195,6 +195,24 @@ describe('parseLoopFile', () => {
 // ── generateLoopFile ─────────────────────────────────────────────
 
 describe('generateLoopFile', () => {
+  let templateContent: string;
+
+  beforeAll(async () => {
+    const realFs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    templateContent = realFs.readFileSync(
+      path.resolve('packages/squad-cli/templates/loop.md'),
+      'utf-8',
+    ) as string;
+  });
+
+  beforeEach(() => {
+    vi.mocked(readFileSync).mockReturnValue(templateContent);
+  });
+
+  afterEach(() => {
+    vi.mocked(readFileSync).mockReset();
+  });
+
   it('returns a string', () => {
     expect(typeof generateLoopFile()).toBe('string');
   });

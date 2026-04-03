@@ -9,6 +9,7 @@
 import path from 'node:path';
 import { execFile, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { fatal } from '../core/errors.js';
@@ -116,53 +117,10 @@ export function parseLoopFile(content: string): { frontmatter: LoopFrontmatter; 
 
 /** Returns the content of a starter loop.md for --init. */
 export function generateLoopFile(): string {
-  return `---
-configured: false
-interval: 10
-timeout: 30
-description: "My squad work loop"
----
-
-# Squad Work Loop
-
-> ⚠️ Set \`configured: true\` in the frontmatter above to activate this loop.
-> Run with: \`squad loop\`
-
-## What to do each cycle
-
-Describe what your squad should do every time the loop wakes up. Be specific —
-the more context you give, the better your squad performs.
-
-Examples:
-- Check for new messages in a Teams channel and summarize action items
-- Review recent pull requests and flag anything needing attention
-- Run a health check on staging and report anomalies
-- Scan the inbox for anything that needs a response today
-
-<!-- Replace this section with your actual loop instructions. -->
-
-## Monitoring (optional)
-
-If you want your squad to watch external channels, enable monitor capabilities:
-
-\`\`\`bash
-squad loop --monitor-email --monitor-teams
-\`\`\`
-
-## Personality (optional)
-
-If your squad has a specific voice or style, describe it here so each cycle
-stays consistent.
-
-Example: "Be concise. Use bullet points. Flag blockers clearly."
-
-## Tips
-
-- **Be specific.** Vague prompts produce vague results.
-- **Set boundaries.** Tell the squad what NOT to do (e.g., "Don't send messages to anyone but me").
-- **Start small.** Begin with one task per cycle, then expand.
-- **Use frontmatter.** \`interval\` controls how often the loop runs. \`timeout\` caps each cycle.
-`;
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  // Walk up from src/cli/commands (or dist/cli/commands) to package root
+  const templatePath = path.resolve(here, '..', '..', '..', 'templates', 'loop.md');
+  return readFileSync(templatePath, 'utf-8');
 }
 
 // ── Agent Command Builder ────────────────────────────────────────
@@ -305,7 +263,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   // Detect squad directory (must exist)
   const squadDirInfo = detectSquadDir(workTreeRoot);
   const teamMd = path.join(squadDirInfo.path, 'team.md');
-  const teamRoot = workTreeRoot;
+  const teamRoot = path.dirname(squadDirInfo.path);
 
   if (!existsSync(teamMd)) {
     fatal('No squad found — run `squad init` first.');

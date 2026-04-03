@@ -48,11 +48,13 @@ When you run `squad loop`, it:
 
 ## Prerequisites
 
-Loop requires:
+By default, Loop requires:
 
-- **GitHub CLI (`gh`)** — for authentication and GitHub integration (optional, but recommended)
-- **Copilot CLI access** — to send prompts to Copilot
+- **GitHub CLI (`gh`)** — Loop uses `gh` for its default agent integration
+- **GitHub Copilot CLI extension (`gh copilot`)** — Loop uses this by default to send prompts to Copilot
 - **A `loop.md` file** — the prompt file that drives your work
+
+If you don't want to use `gh copilot`, pass `--agent-cmd` to provide an alternative agent command. In that case, `gh` and the Copilot extension are not required for the agent step.
 
 ## Getting started
 
