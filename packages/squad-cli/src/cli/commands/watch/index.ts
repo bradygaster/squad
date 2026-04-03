@@ -657,7 +657,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   vlog.table({
     repo: teamRoot,
     platform: adapter.type,
-    verbose: true,
+    verbose: config.verbose ?? false,
     interval: `${config.interval}m`,
     execute: config.execute ?? false,
     agentCmd: config.agentCmd ?? '(default: gh copilot)',
@@ -665,8 +665,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     maxConcurrent: config.maxConcurrent ?? 1,
   });
 
-  // Auth check (verbose)
-  if (adapter.type === 'github') {
+  // Auth check (verbose only — avoid unnecessary process spawn on every startup)
+  if (config.verbose && adapter.type === 'github') {
     try {
       const authOut = execFileSync('gh', ['auth', 'status'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
       const activeAccount = authOut.match(/Logged in to .* account (\S+)/)?.[1];
