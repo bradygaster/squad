@@ -138,7 +138,7 @@ The YAML frontmatter at the top of `loop.md` controls Loop's behavior:
 | `configured` | boolean | Yes | `false` | Safety check — must be `true` to run. Prevents accidental execution of incomplete loops. |
 | `interval` | number | No | `10` | Minutes between cycles. Loop will wait this long after each cycle completes before running again. |
 | `timeout` | number | No | `30` | Max runtime in minutes for each cycle. If Copilot doesn't finish within this time, the cycle is marked incomplete and the next cycle starts. |
-| `description` | string | No | `""` | Human-readable description of what this loop does. Shown in logs and status. |
+| `description` | string | No | `"Squad Loop"` | Human-readable description of what this loop does. Shown in logs and status when `description` is omitted. |
 
 Example:
 

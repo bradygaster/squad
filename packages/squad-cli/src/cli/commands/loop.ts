@@ -300,19 +300,21 @@ async function checkGhCopilot(): Promise<void> {
  * @param options  - CLI-parsed config overrides.
  */
 export async function runLoop(dest: string, options: LoopConfig): Promise<void> {
+  const workTreeRoot = path.resolve(dest);
+
   // Detect squad directory (must exist)
-  const squadDirInfo = detectSquadDir(dest);
+  const squadDirInfo = detectSquadDir(workTreeRoot);
   const teamMd = path.join(squadDirInfo.path, 'team.md');
-  const teamRoot = path.dirname(squadDirInfo.path);
+  const teamRoot = workTreeRoot;
 
   if (!existsSync(teamMd)) {
     fatal('No squad found — run `squad init` first.');
   }
 
-  // Locate loop.md
+  // Locate loop.md relative to the same work tree used for execution
   const loopFilePath = options.filePath
-    ? path.resolve(dest, options.filePath)
-    : path.join(dest, 'loop.md');
+    ? path.resolve(workTreeRoot, options.filePath)
+    : path.join(workTreeRoot, 'loop.md');
 
   if (!existsSync(loopFilePath)) {
     console.log(`\n💤 No loop.md found. Create one with: ${BOLD}squad loop --init${RESET}`);
@@ -423,18 +425,30 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
 
     await new Promise<void>((resolve) => {
-      currentChild = execFile(cmd, args, { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
-        currentChild = null;
-        if (err) {
-          const execErr = err as Error & { killed?: boolean };
-          const msg = execErr.killed
-            ? `Timed out after ${timeoutMinutes}m`
-            : execErr.message;
-          console.error(`${RED}✗${RESET} [${new Date().toLocaleTimeString()}] Round ${round} failed: ${msg}`);
-        } else {
-          console.log(`${GREEN}✓${RESET} [${new Date().toLocaleTimeString()}] Round ${round} complete`);
-        }
-        resolve();
+      currentChild = execFile(
+        cmd,
+        args,
+        { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
+        (err) => {
+          currentChild = null;
+          if (err) {
+            const execErr = err as Error & { killed?: boolean };
+            const msg = execErr.killed
+              ? `Timed out after ${timeoutMinutes}m`
+              : execErr.message;
+            console.error(`${RED}✗${RESET} [${new Date().toLocaleTimeString()}] Round ${round} failed: ${msg}`);
+          } else {
+            console.log(`${GREEN}✓${RESET} [${new Date().toLocaleTimeString()}] Round ${round} complete`);
+          }
+          resolve();
+        },
+      );
+
+      currentChild.stdout?.on('data', (chunk: Buffer | string) => {
+        process.stdout.write(chunk);
+      });
+      currentChild.stderr?.on('data', (chunk: Buffer | string) => {
+        process.stderr.write(chunk);
       });
     });
 
