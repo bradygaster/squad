@@ -39,7 +39,7 @@ describe('scratchFile', () => {
   it('creates a temp file with prefix and default .tmp extension', () => {
     const filePath = scratchFile(SQUAD_ROOT, 'test-prompt');
     expect(filePath).toContain('.scratch');
-    expect(filePath).toMatch(/test-prompt-\d+\.tmp$/);
+    expect(filePath).toMatch(/test-prompt-\d+-\d+\.tmp$/);
     // File exists only if content was provided — otherwise just returns path
     expect(existsSync(path.dirname(filePath))).toBe(true);
   });
@@ -53,14 +53,16 @@ describe('scratchFile', () => {
 
   it('uses custom extension', () => {
     const filePath = scratchFile(SQUAD_ROOT, 'fleet', '.md');
-    expect(filePath).toMatch(/fleet-\d+\.md$/);
+    expect(filePath).toMatch(/fleet-\d+-\d+\.md$/);
   });
 
   it('generates unique filenames on successive calls', () => {
     const a = scratchFile(SQUAD_ROOT, 'dup', '.txt', 'a');
-    // tiny delay to ensure different timestamp
     const b = scratchFile(SQUAD_ROOT, 'dup', '.txt', 'b');
+    // Counter suffix ensures uniqueness even when Date.now() returns the same value
     expect(a).not.toBe(b);
+    expect(existsSync(a)).toBe(true);
+    expect(existsSync(b)).toBe(true);
   });
 
   it('creates the .scratch/ directory if missing', () => {

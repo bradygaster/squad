@@ -505,9 +505,11 @@ export function scratchDir(squadRoot: string, create: boolean = true): string {
  * @param content   - Optional content to write immediately.
  * @returns Absolute path to the created temp file.
  */
+let _scratchCounter = 0;
+
 export function scratchFile(squadRoot: string, prefix: string, ext: string = '.tmp', content?: string): string {
   const dir = scratchDir(squadRoot);
-  const filename = `${prefix}-${Date.now()}${ext}`;
+  const filename = `${prefix}-${Date.now()}-${_scratchCounter++}${ext}`;
   const filePath = path.join(dir, filename);
   if (content !== undefined) {
     storage.writeSync(filePath, content);
