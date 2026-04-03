@@ -55,12 +55,9 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
     const src = path.join(squadDir, dir);
     if (!storage.existsSync(src)) continue;
     const dest = path.join(externalDir, dir);
-    if (storage.existsSync(dest)) {
-      // Merge: copy contents over (don't clobber existing)
-      copyDirRecursive(src, dest);
-    } else {
-      copyDirRecursive(src, dest);
-    }
+    // Copy contents into the external state directory. If destination files
+    // already exist, they may be overwritten by copyDirRecursive().
+    copyDirRecursive(src, dest);
     storage.deleteDirSync?.(src);
     movedCount++;
   }
@@ -71,7 +68,7 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
     if (!storage.existsSync(src)) continue;
     const dest = path.join(externalDir, file);
     const content = storage.readSync(src);
-    if (content !== null) {
+    if (content != null) {
       storage.mkdirSync(path.dirname(dest), { recursive: true });
       storage.writeSync(dest, content);
     }
@@ -79,15 +76,30 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
     movedCount++;
   }
 
-  // Write thin config.json marker
+  // Write thin config.json marker, preserving any existing config fields
+  const configPath = path.join(squadDir, 'config.json');
+  let existingConfig: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      if (raw != null) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          existingConfig = parsed as Record<string, unknown>;
+        }
+      }
+    } catch { /* start fresh if config is malformed */ }
+  }
+
   const config = {
+    ...existingConfig,
     version: 1,
     teamRoot: '.',
     projectKey: key,
     stateLocation: 'external',
   };
   storage.writeSync(
-    path.join(squadDir, 'config.json'),
+    configPath,
     JSON.stringify(config, null, 2) + '\n',
   );
 
@@ -147,16 +159,16 @@ export function runInternalize(projectDir: string): void {
     const src = path.join(externalDir, file);
     if (!storage.existsSync(src)) continue;
     const content = storage.readSync(src);
-    if (content !== null) {
+    if (content != null) {
       storage.writeSync(path.join(squadDir, file), content);
     }
     movedCount++;
   }
 
-  // Remove the external marker from config.json
-  const updatedConfig = { ...config };
-  delete updatedConfig.stateLocation;
-  storage.writeSync(configPath, JSON.stringify(updatedConfig, null, 2) + '\n');
+  // Remove the config.json marker to restore true local mode.
+  // loadDirConfig() returns null when config.json is absent → resolveSquadPaths()
+  // falls through to local mode (projectDir === teamDir).
+  storage.deleteSync?.(configPath);
 
   console.log(`✅ Internalized ${movedCount} items. State is back in .squad/.`);
 }
@@ -171,7 +183,7 @@ function copyDirRecursive(src: string, dest: string): void {
       copyDirRecursive(srcPath, destPath);
     } else {
       const content = storage.readSync(srcPath);
-      if (content !== null) {
+      if (content != null) {
         storage.writeSync(destPath, content);
       }
     }

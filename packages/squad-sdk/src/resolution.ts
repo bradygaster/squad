@@ -37,7 +37,7 @@ export interface SquadDirConfig {
   /**
    * Where squad state is stored.
    * - 'local' (default): state lives in `.squad/` inside the repo
-   * - 'external': state lives in `~/.squad/projects/{projectKey}/`, only a
+   * - 'external': state lives in `{globalSquadDir}/projects/{projectKey}/`, only a
    *   thin config.json marker remains in the repo. Survives branch switches,
    *   invisible to `git status`, never pollutes PRs.
    */
@@ -363,8 +363,13 @@ export function resolveGlobalSquadPath(): string {
  * @returns Absolute path to the external state directory.
  */
 export function resolveExternalStateDir(projectKey: string, create: boolean = true): string {
+  // Sanitize: reject path traversal attempts
+  const sanitized = projectKey.replace(/[^a-z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
+  if (!sanitized || sanitized === '.' || sanitized === '..' || sanitized.includes('..')) {
+    throw new Error(`Invalid project key: "${projectKey}"`);
+  }
   const globalDir = resolveGlobalSquadPath();
-  const stateDir = path.join(globalDir, 'projects', projectKey);
+  const stateDir = path.join(globalDir, 'projects', sanitized);
   if (create && !storage.existsSync(stateDir)) {
     storage.mkdirSync(stateDir, { recursive: true });
   }
@@ -376,8 +381,10 @@ export function resolveExternalStateDir(projectKey: string, create: boolean = tr
  * Uses the basename of the repo directory, lowercased and sanitized.
  */
 export function deriveProjectKey(repoRoot: string): string {
-  const basename = path.basename(repoRoot);
-  return basename.toLowerCase().replace(/[^a-z0-9._-]/g, '-') || 'unknown-project';
+  // Handle Windows paths on non-Windows platforms (and vice versa)
+  const isWindowsPath = repoRoot.includes('\\') || /^[a-zA-Z]:/.test(repoRoot);
+  const basename = isWindowsPath ? path.win32.basename(repoRoot) : path.basename(repoRoot);
+  return basename.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/^-+|-+$/g, '') || 'unknown-project';
 }
 
 /**

@@ -6,8 +6,27 @@ import os from 'node:os';
 
 const TEST_ROOT = path.join(os.tmpdir(), `squad-external-test-${Date.now()}`);
 
+// Isolate tests from real user state by overriding config dirs
+const origAppData = process.env['APPDATA'];
+const origXdgConfig = process.env['XDG_CONFIG_HOME'];
+
+beforeEach(() => {
+  mkdirSync(TEST_ROOT, { recursive: true });
+  // Redirect global squad dir into test root so we never touch real user state
+  if (process.platform === 'win32') {
+    process.env['APPDATA'] = TEST_ROOT;
+  } else {
+    process.env['XDG_CONFIG_HOME'] = TEST_ROOT;
+  }
+});
+
 afterEach(() => {
   rmSync(TEST_ROOT, { recursive: true, force: true });
+  // Restore env
+  if (origAppData !== undefined) process.env['APPDATA'] = origAppData;
+  else delete process.env['APPDATA'];
+  if (origXdgConfig !== undefined) process.env['XDG_CONFIG_HOME'] = origXdgConfig;
+  else delete process.env['XDG_CONFIG_HOME'];
 });
 
 describe('deriveProjectKey', () => {
@@ -16,7 +35,7 @@ describe('deriveProjectKey', () => {
   });
 
   it('replaces spaces and special chars with dashes', () => {
-    expect(deriveProjectKey('/path/to/My Project (v2)')).toBe('my-project--v2-');
+    expect(deriveProjectKey('/path/to/My Project (v2)')).toBe('my-project--v2');
   });
 
   it('handles Windows paths', () => {
@@ -35,9 +54,6 @@ describe('resolveExternalStateDir', () => {
     expect(existsSync(dir)).toBe(true);
     expect(dir).toContain('projects');
     expect(dir).toContain('test-project-123');
-
-    // Cleanup
-    rmSync(dir, { recursive: true, force: true });
   });
 
   it('returns path without creating when create=false', () => {
@@ -51,7 +67,6 @@ describe('resolveExternalStateDir', () => {
     const dir1 = resolveExternalStateDir('idempotent-test-proj');
     const dir2 = resolveExternalStateDir('idempotent-test-proj');
     expect(dir1).toBe(dir2);
-    rmSync(dir1, { recursive: true, force: true });
   });
 });
 
@@ -88,5 +103,21 @@ describe('SquadDirConfig stateLocation', () => {
     const config = loadDirConfig(configDir);
     expect(config).not.toBeNull();
     expect(config!.stateLocation).toBeUndefined();
+  });
+});
+
+describe('resolveExternalStateDir security', () => {
+  it('rejects path traversal in projectKey', () => {
+    expect(() => resolveExternalStateDir('../../etc/passwd')).toThrow('Invalid project key');
+  });
+
+  it('rejects empty projectKey', () => {
+    expect(() => resolveExternalStateDir('')).toThrow('Invalid project key');
+  });
+
+  it('sanitizes special characters in projectKey', () => {
+    const dir = resolveExternalStateDir('my/project\\name');
+    expect(dir).toContain('my-project-name');
+    expect(dir).not.toContain('/project\\');
   });
 });
