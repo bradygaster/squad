@@ -4,6 +4,32 @@
 
 ## Learnings
 
+### Loop command: second-round review fixes (#767) (2025-07-26)
+
+**Context:** Three Copilot review comments on PR #767: (1) `teamRoot` was set to `workTreeRoot` but `.squad/` may live in the main checkout when running inside a git worktree — should derive from `detectSquadDir().path`, (2) `generateLoopFile()` hardcoded the full loop.md scaffold inline, duplicating `templates/loop.md`, (3) docs said `gh` was optional but code hard-requires `gh copilot` unless `--agent-cmd` is passed.
+
+**Fixes:**
+1. **teamRoot:** Changed `const teamRoot = workTreeRoot` to `path.dirname(squadDirInfo.path)` — `.squad/`-relative operations now always use the directory where `.squad/` was actually found.
+2. **Template dedup:** Replaced 48-line hardcoded template with `readFileSync` reading from `templates/loop.md`. Used `import.meta.url` + `fileURLToPath` to resolve the path from the compiled file (3 levels up to package root). Created `packages/squad-cli/templates/loop.md` since it was missing from the CLI package's templates dir.
+3. **Docs:** Updated prerequisites to state `gh` + `gh copilot` are required by default, with `--agent-cmd` as the escape hatch.
+
+**Test impact:** Tests mock `node:fs` globally, so `readFileSync` in `generateLoopFile()` needed mock setup. Added `beforeAll` using `vi.importActual('node:fs')` to read the REAL template file, then `beforeEach` to set the mock return value. This keeps tests validating the actual template content.
+
+**Pattern:** When reading template files in code that has mocked `node:fs` tests, use `vi.importActual<typeof import('node:fs')>('node:fs')` in `beforeAll` to get real filesystem access for loading test fixtures.
+
+### Loop command: streaming output, worktree CWD, docs alignment (#767) (2025-07-25)
+
+**Context:** Copilot code review on PR #767 flagged three issues in the loop command: (1) `execFile` buffered stdout/stderr but never printed it — users saw no Copilot output during loop rounds, (2) `loop.md` was resolved relative to `dest` but execution used `teamRoot` (derived from `.squad/` parent), creating a CWD mismatch in worktree scenarios, (3) docs said `description` defaults to `""` but code uses `'Squad Loop'`.
+
+**Fixes:**
+1. **Streaming:** Added `.on('data')` listeners to `currentChild.stdout` and `currentChild.stderr` after `execFile` spawn. Since output streams in real-time, the callback no longer re-writes buffered stdout/stderr on error (would duplicate).
+2. **Worktree CWD:** Introduced `workTreeRoot = path.resolve(dest)` and set `teamRoot = workTreeRoot`. Both file resolution and execution CWD now use the same root.
+3. **Docs:** Updated `docs/src/content/docs/features/loop.md` description default from `""` to `"Squad Loop"`.
+
+**Key file:** `packages/squad-cli/src/cli/commands/loop.ts` — `runLoop()` entry point (~line 302), `executeRound()` inner function (~line 427).
+
+**Pattern:** When using Node's `execFile` for interactive/long-running child processes, always attach stream listeners for real-time output. The callback's `stdout`/`stderr` args are the same buffered content — writing both duplicates output.
+
 ### archiveDecisions() count-based fallback (#626) (2025-07-24)
 
 **Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.
