@@ -471,3 +471,46 @@ export function ensureSquadPathTriple(
 export function ensureSquadPathResolved(filePath: string, paths: ResolvedSquadPaths): string {
   return ensureSquadPathDual(filePath, paths.projectDir, paths.teamDir);
 }
+
+/**
+ * Resolve the scratch directory for temporary files.
+ *
+ * Returns `{squadRoot}/.scratch/` — the canonical location for ephemeral files
+ * that Squad and its agents create during operations (prompt files, intermediate
+ * processing artifacts, commit message drafts, etc.).
+ *
+ * If `create` is true (default), the directory is created if it does not exist.
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param create    - Whether to create the directory if missing (default: true).
+ * @returns Absolute path to the scratch directory.
+ */
+export function scratchDir(squadRoot: string, create: boolean = true): string {
+  const dir = path.join(squadRoot, '.scratch');
+  if (create && !storage.existsSync(dir)) {
+    storage.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+/**
+ * Create a temporary file inside the scratch directory.
+ *
+ * Returns the absolute path to the file. The caller is responsible for
+ * deleting the file when done (or relying on the cleanup capability).
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param prefix    - Filename prefix (e.g. `"fleet-prompt"`).
+ * @param ext       - File extension including dot (e.g. `".txt"`). Defaults to `".tmp"`.
+ * @param content   - Optional content to write immediately.
+ * @returns Absolute path to the created temp file.
+ */
+export function scratchFile(squadRoot: string, prefix: string, ext: string = '.tmp', content?: string): string {
+  const dir = scratchDir(squadRoot);
+  const filename = `${prefix}-${Date.now()}${ext}`;
+  const filePath = path.join(dir, filename);
+  if (content !== undefined) {
+    storage.writeSync(filePath, content);
+  }
+  return filePath;
+}
