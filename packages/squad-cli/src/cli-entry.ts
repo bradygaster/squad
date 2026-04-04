@@ -695,7 +695,8 @@ async function main(): Promise<void> {
 
   if (cmd === 'externalize') {
     const { runExternalize } = await import('./cli/commands/externalize.js');
-    const projectKey = args.includes('--key') ? args[args.indexOf('--key') + 1] : undefined;
+    const rawKey = args.includes('--key') ? args[args.indexOf('--key') + 1] : undefined;
+    const projectKey = rawKey ? rawKey.replace(/[\/\\\.]/g, '_') : undefined;
     runExternalize(process.cwd(), projectKey);
     return;
   }

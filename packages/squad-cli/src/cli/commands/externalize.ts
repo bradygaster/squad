@@ -1,8 +1,10 @@
 /**
  * squad externalize — move .squad/ state out of the working tree.
  *
- * Moves all squad state to `~/.squad/projects/{projectKey}/` and writes
- * a thin `.squad/config.json` marker in the repo. After externalization:
+ * Moves all squad state to `{resolveGlobalSquadPath()}/projects/{projectKey}/`
+ * (platform-specific: `%APPDATA%/squad/` on Windows, `~/Library/Application Support/squad/`
+ * on macOS, `$XDG_CONFIG_HOME/squad/` on Linux) and writes a thin `.squad/config.json`
+ * marker in the repo. After externalization:
  * - State survives branch switches (not tied to the working tree)
  * - State is invisible to `git status` and never pollutes PRs
  * - A `.squad/config.json` marker lets the walk-up resolver find state

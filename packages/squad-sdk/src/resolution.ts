@@ -108,10 +108,16 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
  * 1. Walk up from `startDir` checking for `.squad/` — stops at `.git` directory boundary
  * 2. If `.git` is a file (worktree), check the main checkout for `.squad/`
  *
+ * **Note:** In external-state mode, this still returns the in-repo `.squad/` path.
+ * That directory serves as a marker (containing only `config.json`) — the actual
+ * state directory is resolved by `resolveSquadPaths()` via `resolveExternalStateDir()`.
+ *
  * @param startDir - Directory to start searching from. Defaults to `process.cwd()`.
  * @returns Absolute path to `.squad/` or `null`.
  */
 export function resolveSquad(startDir?: string): string | null {
+  // Intentionally returns the in-repo .squad/ marker directory, even when state
+  // is externalized. Callers needing the actual state dir should use resolveSquadPaths().
   let current = path.resolve(startDir ?? process.cwd());
 
   // eslint-disable-next-line no-constant-condition
