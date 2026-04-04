@@ -79,7 +79,7 @@ export interface PlatformAdapter {
 // ─── Communication Adapter ────────────────────────────────────────────
 
 /** Where communication happens — which channel/service */
-export type CommunicationChannel = 'github-discussions' | 'ado-work-items' | 'teams-webhook' | 'file-log';
+export type CommunicationChannel = 'github-discussions' | 'ado-work-items' | 'teams-graph' | 'file-log';
 
 /** A reply from a human on a communication channel */
 export interface CommunicationReply {
@@ -99,6 +99,8 @@ export interface CommunicationConfig {
   postDecisions?: boolean;
   /** Post escalations when agents are blocked */
   postEscalations?: boolean;
+  /** Adapter-specific configuration, keyed by channel name */
+  adapterConfig?: Record<string, unknown>;
 }
 
 /**
