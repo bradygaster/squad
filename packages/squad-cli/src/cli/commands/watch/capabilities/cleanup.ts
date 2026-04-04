@@ -1,18 +1,19 @@
-/**
+﻿/**
  * Cleanup capability — housekeeping for stale temp and log files.
  *
- * Runs in the 'housekeeping' phase. Clears the scratch directory, archives
+ * Runs in the 'housekeeping' phase. Clears the scratch directory, prunes
  * old orchestration-log and session-log entries, and warns about stale
  * decision inbox files.
  */
 
 import path from 'node:path';
+import { rmSync } from 'node:fs';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 
 const storage = new FSStorageProvider();
 
-/** Default: files older than this many days are archived / deleted. */
+/** Default: files older than this many days are pruned. */
 const DEFAULT_MAX_AGE_DAYS = 30;
 /** Default: run cleanup every N rounds (not every round). */
 const DEFAULT_EVERY_N_ROUNDS = 10;
@@ -28,8 +29,12 @@ interface CleanupConfig {
 
 function parseConfig(raw: Record<string, unknown>): CleanupConfig {
   return {
-    everyNRounds: typeof raw.everyNRounds === 'number' ? raw.everyNRounds : DEFAULT_EVERY_N_ROUNDS,
-    maxAgeDays: typeof raw.maxAgeDays === 'number' ? raw.maxAgeDays : DEFAULT_MAX_AGE_DAYS,
+    everyNRounds: typeof raw.everyNRounds === 'number' && Number.isFinite(raw.everyNRounds) && raw.everyNRounds > 0
+      ? raw.everyNRounds
+      : DEFAULT_EVERY_N_ROUNDS,
+    maxAgeDays: typeof raw.maxAgeDays === 'number' && Number.isFinite(raw.maxAgeDays) && raw.maxAgeDays > 0
+      ? raw.maxAgeDays
+      : DEFAULT_MAX_AGE_DAYS,
   };
 }
 
@@ -39,9 +44,8 @@ function isOlderThan(filename: string, days: number): boolean {
   if (!match) return false;
   const fileDate = new Date(match[1]!);
   if (isNaN(fileDate.getTime())) return false;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  return fileDate < cutoff;
+  const cutoffMs = Date.now() - (days * 86400000);
+  return fileDate.getTime() < cutoffMs;
 }
 
 function safeList(dir: string): string[] {
@@ -55,7 +59,7 @@ function safeList(dir: string): string[] {
 
 function safeDelete(filePath: string): boolean {
   try {
-    storage.deleteSync?.(filePath);
+    rmSync(filePath, { recursive: true, force: true });
     return true;
   } catch {
     return false;
@@ -64,7 +68,7 @@ function safeDelete(filePath: string): boolean {
 
 export class CleanupCapability implements WatchCapability {
   readonly name = 'cleanup';
-  readonly description = 'Remove stale scratch files, archive old logs, warn about stale inbox';
+  readonly description = 'Remove stale scratch files, prune old logs, warn about stale inbox';
   readonly configShape = 'object' as const;
   readonly requires: string[] = [];
   readonly phase = 'housekeeping' as const;
@@ -101,30 +105,30 @@ export class CleanupCapability implements WatchCapability {
       actions.push(`scratch: ${scratchDeleted} files cleared`);
     }
 
-    // 2. Archive old orchestration-log entries (older than maxAge days)
+    // 2. Prune old orchestration-log entries (older than maxAge days)
     const orchDir = path.join(squadDir, 'orchestration-log');
     const orchFiles = safeList(orchDir);
-    let orchArchived = 0;
+    let orchPruned = 0;
     for (const f of orchFiles) {
       if (isOlderThan(f, maxAge)) {
-        if (safeDelete(path.join(orchDir, f))) orchArchived++;
+        if (safeDelete(path.join(orchDir, f))) orchPruned++;
       }
     }
-    if (orchArchived > 0) {
-      actions.push(`orchestration-log: ${orchArchived} entries archived (>${maxAge}d)`);
+    if (orchPruned > 0) {
+      actions.push(`orchestration-log: ${orchPruned} entries pruned (>${maxAge}d)`);
     }
 
-    // 3. Archive old session logs
+    // 3. Prune old session logs
     const logDir = path.join(squadDir, 'log');
     const logFiles = safeList(logDir);
-    let logArchived = 0;
+    let logPruned = 0;
     for (const f of logFiles) {
       if (isOlderThan(f, maxAge)) {
-        if (safeDelete(path.join(logDir, f))) logArchived++;
+        if (safeDelete(path.join(logDir, f))) logPruned++;
       }
     }
-    if (logArchived > 0) {
-      actions.push(`log: ${logArchived} entries archived (>${maxAge}d)`);
+    if (logPruned > 0) {
+      actions.push(`log: ${logPruned} entries pruned (>${maxAge}d)`);
     }
 
     // 4. Warn about stale decision inbox files
@@ -142,7 +146,7 @@ export class CleanupCapability implements WatchCapability {
     return {
       success: true,
       summary: `cleanup: ${actions.join('; ')}`,
-      data: { scratchDeleted, orchArchived, logArchived, staleInboxCount: staleInbox.length },
+      data: { scratchDeleted, orchPruned, logPruned, staleInboxCount: staleInbox.length },
     };
   }
 }

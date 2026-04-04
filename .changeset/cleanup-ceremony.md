@@ -1,4 +1,4 @@
----
+﻿---
 "@bradygaster/squad-cli": minor
 ---
 
@@ -9,4 +9,4 @@ Add cleanup watch capability for stale file housekeeping (#791)
 - Archives orchestration-log and session-log entries older than 30 days
 - Warns about stale decision inbox files (>7 days)
 - Configurable: `everyNRounds` (default: 10), `maxAgeDays` (default: 30)
-- 11 new tests
+- 12 new tests
