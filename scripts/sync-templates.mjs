@@ -20,6 +20,21 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
+// ---------------------------------------------------------------------------
+// Guard: require explicit invocation to prevent accidental auto-triggering
+// during agent work (e.g., file watchers, git hooks).
+// Pass --sync flag or set SQUAD_SYNC_TEMPLATES=1 env var.
+// ---------------------------------------------------------------------------
+const explicitFlag = process.argv.includes('--sync');
+const envFlag = process.env.SQUAD_SYNC_TEMPLATES === '1';
+const directInvocation = process.argv.length <= 2;
+if (!directInvocation && !explicitFlag && !envFlag) {
+  console.log('⛔ sync-templates requires explicit invocation.');
+  console.log('   Use: node scripts/sync-templates.mjs --sync');
+  console.log('   Or:  SQUAD_SYNC_TEMPLATES=1 node scripts/sync-templates.mjs');
+  process.exit(0);
+}
+
 const SOURCE = join(ROOT, '.squad-templates');
 
 const MIRROR_TARGETS = [

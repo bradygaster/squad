@@ -99,7 +99,8 @@ Each agent operates inside its worktree exactly like the single-issue workflow:
 cd ../squad-195
 
 # Work normally — commits, tests, pushes
-git add -A && git commit -m "fix: stamp bug (#195)"
+# ⚠️ NEVER use `git add .`, `git add -A`, or other broad staging commands
+git add -- {specific files you modified} && git commit -m "fix: stamp bug (#195)"
 git push -u origin squad/195-fix-stamp-bug
 
 # Create PR targeting dev
