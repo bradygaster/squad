@@ -416,6 +416,32 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     ]);
   }
 
+  async ensureAuth(preferredOrg?: string): Promise<void> {
+    try {
+      let targetOrg = preferredOrg || '';
+
+      if (!targetOrg) {
+        // Auto-detect from remote URL
+        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+        const adoMatch = remoteUrl.match(/dev\.azure\.com\/([^/]+)\//);
+        const vstsMatch = remoteUrl.match(/([^/]+)\.visualstudio\.com\//);
+        if (adoMatch?.[1]) targetOrg = adoMatch[1];
+        else if (vstsMatch?.[1]) targetOrg = vstsMatch[1];
+      }
+
+      if (!targetOrg) return;
+
+      try {
+        const orgUrl = `https://dev.azure.com/${targetOrg}`;
+        execFileSync('az', ['devops', 'configure', '--defaults', `organization=${orgUrl}`], EXEC_OPTS);
+      } catch {
+        // az CLI might not be installed — non-fatal
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
   async createBranch(name: string, fromBranch?: string): Promise<void> {
     const base = fromBranch ?? 'main';
     execFileSync('git', ['checkout', base], EXEC_OPTS);

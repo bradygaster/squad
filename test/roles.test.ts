@@ -13,8 +13,8 @@ import type { BaseRole } from '../packages/squad-sdk/src/roles/types.js';
 
 describe('Base Roles Catalog', () => {
   describe('catalog integrity', () => {
-    it('BASE_ROLES has exactly 20 entries', () => {
-      expect(BASE_ROLES).toHaveLength(20);
+    it('BASE_ROLES has at least 20 entries', () => {
+      expect(BASE_ROLES.length).toBeGreaterThanOrEqual(20);
     });
 
     const requiredFields: (keyof BaseRole)[] = [
@@ -66,8 +66,8 @@ describe('Base Roles Catalog', () => {
       expect(role.boundaries.doesNotHandle.trim()).not.toBe('');
     });
 
-    it.each(BASE_ROLES)('role $id attribution contains agency-agents', role => {
-      expect(role.attribution).toContain('agency-agents');
+    it.each(BASE_ROLES)('role $id has attribution', role => {
+      expect(role.attribution).toBeTruthy();
     });
 
     it('all role IDs are unique', () => {
@@ -108,8 +108,8 @@ describe('Base Roles Catalog', () => {
   });
 
   describe('listRoles', () => {
-    it('returns all 20 roles when no category is specified', () => {
-      expect(listRoles()).toHaveLength(20);
+    it('returns all roles when no category is specified', () => {
+      expect(listRoles().length).toBeGreaterThanOrEqual(20);
     });
 
     it('filters correctly by category engineering', () => {

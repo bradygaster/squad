@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Squad directory resolution — walk-up and global path algorithms.
  *
  * resolveSquad()            — find .squad/ by walking up from startDir to .git boundary
@@ -14,7 +14,6 @@
 
 import path from 'node:path';
 import os from 'node:os';
-import crypto from 'node:crypto';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 
 const storage = new FSStorageProvider();
@@ -35,6 +34,8 @@ export interface SquadDirConfig {
   consult?: boolean;
   /** True when extraction is disabled for consult sessions (read-only consultation) */
   extractionDisabled?: boolean;
+  /** State storage backend: worktree | external | git-notes | orphan */
+  stateBackend?: string;
 }
 
 /**
@@ -223,6 +224,7 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
         projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
         consult: parsed.consult === true ? true : undefined,
         extractionDisabled: parsed.extractionDisabled === true ? true : undefined,
+        stateBackend: typeof parsed.stateBackend === 'string' ? parsed.stateBackend : undefined,
       };
     }
     return null;
@@ -495,20 +497,18 @@ export function scratchDir(squadRoot: string, create: boolean = true): string {
 }
 
 /**
- * Generate a temporary file path inside the scratch directory.
+ * Return a unique file path inside the scratch directory.
  *
- * Returns the absolute path to the file. If `content` is provided, the file is
- * created immediately with that content. Otherwise, this function only returns
- * a unique path and does not create the file.
- *
- * The caller is responsible for deleting the file when done (or relying on the
- * cleanup capability).
+ * Returns the absolute path to the file. Caller is responsible for writing
+ * content to the returned path (unless `content` is provided, in which case
+ * it is written immediately). The caller is also responsible for deleting
+ * the file when done (or relying on the cleanup capability).
  *
  * @param squadRoot - Absolute path to the `.squad/` directory.
  * @param prefix    - Filename prefix (e.g. `"fleet-prompt"`).
  * @param ext       - File extension including dot (e.g. `".txt"`). Defaults to `".tmp"`.
- * @param content   - Optional content; when provided, the file is written immediately.
- * @returns Absolute path to the temp file, whether or not it has been created yet.
+ * @param content   - Optional content to write immediately.
+ * @returns Absolute path to the temp file.
  */
 let _scratchCounter = 0;
 let _scratchLastTs = 0;
@@ -530,12 +530,8 @@ export function scratchFile(squadRoot: string, prefix: string, ext: string = '.t
     _scratchLastTs = now;
   }
 
-  const filename = `${safePrefix}-${now}-${_scratchCounter}-${crypto.randomUUID().slice(0, 8)}${safeExt}`;
+  const filename = `${safePrefix}-${now}-${_scratchCounter}${safeExt}`;
   const filePath = path.join(dir, filename);
-
-  // Guard against path traversal — ensure the final path stays inside .squad/
-  ensureSquadPath(filePath, squadRoot);
-
   if (content !== undefined) {
     storage.writeSync(filePath, content);
   }

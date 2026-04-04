@@ -224,6 +224,37 @@ export class GitHubAdapter implements PlatformAdapter {
     this.gh(['pr', 'merge', String(id), '--repo', this.repoFlag, '--merge']);
   }
 
+  async ensureAuth(preferredUser?: string): Promise<void> {
+    try {
+      // 1. Check current gh auth
+      const authStatus = execFileSync('gh', ['auth', 'status', '--active'], EXEC_OPTS).trim();
+      const activeMatch = authStatus.match(/account\s+(\S+)/);
+      const activeUser = activeMatch?.[1] || '';
+
+      // 2. Determine target user
+      let targetUser = preferredUser || '';
+
+      if (!targetUser) {
+        // Auto-detect from remote URL — works for EMU repos where org = account
+        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+        const httpsMatch = remoteUrl.match(/github\.com[/:]([^/]+)\//);
+        if (httpsMatch?.[1]) targetUser = httpsMatch[1];
+      }
+
+      if (!targetUser || activeUser === targetUser) return; // Already correct or can't determine
+
+      // 3. Switch
+      try {
+        execFileSync('gh', ['auth', 'switch', '--user', targetUser], EXEC_OPTS);
+        console.log(`✅ Auth context switched to ${targetUser}`);
+      } catch {
+        // targetUser might not be a valid account — non-fatal
+      }
+    } catch {
+      // Non-fatal — continue with whatever auth is active
+    }
+  }
+
   async createBranch(name: string, fromBranch?: string): Promise<void> {
     const base = fromBranch ?? 'main';
     execFileSync('git', ['checkout', base], EXEC_OPTS);
