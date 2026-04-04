@@ -366,8 +366,9 @@ describe('checkCIStatus', () => {
 // ---------------------------------------------------------------------------
 
 describe('checkCopilotThreads', () => {
-  const copilotThread = (resolved: boolean) => ({
+  const copilotThread = (resolved: boolean, outdated = false) => ({
     isResolved: resolved,
+    isOutdated: outdated,
     comments: { nodes: [{ author: { login: 'copilot-pull-request-reviewer' } }] },
   });
 
@@ -406,6 +407,36 @@ describe('checkCopilotThreads', () => {
     const result = checkCopilotThreads(threads);
     expect(result.pass).toBe(true);
     expect(result.detail).toContain('All 1 Copilot thread(s) resolved');
+  });
+
+  it('passes when unresolved threads are outdated', () => {
+    const threads = [copilotThread(true), copilotThread(false, true)];
+    const result = checkCopilotThreads(threads);
+    expect(result.pass).toBe(true);
+    expect(result.detail).not.toContain('unresolved');
+  });
+
+  it('handles mix of resolved, unresolved, and outdated threads', () => {
+    const threads = [
+      copilotThread(true),          // resolved
+      copilotThread(false),         // unresolved (active)
+      copilotThread(false, true),   // outdated (skipped)
+    ];
+    const result = checkCopilotThreads(threads);
+    expect(result.pass).toBe(false);
+    expect(result.detail).toContain('1 unresolved');
+  });
+
+  it('includes "outdated skipped" in success message when applicable', () => {
+    const threads = [
+      copilotThread(true),          // resolved
+      copilotThread(true),          // resolved
+      copilotThread(false, true),   // outdated
+    ];
+    const result = checkCopilotThreads(threads);
+    expect(result.pass).toBe(true);
+    expect(result.detail).toContain('2 active Copilot thread(s) resolved');
+    expect(result.detail).toContain('1 outdated skipped');
   });
 
   it('handles threads with missing comment data', () => {

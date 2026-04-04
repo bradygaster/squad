@@ -231,7 +231,8 @@ Working as {member} ({role})
 **Update workflow:**
 ```bash
 # Make changes
-git add .
+# ⚠️ NEVER use `git add .` or `git add -A` — only stage files you intentionally changed
+git add -- {specific files you modified}
 git commit -m "fix: address review feedback"
 git push
 ```
