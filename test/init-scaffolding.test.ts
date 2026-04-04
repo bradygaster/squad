@@ -305,3 +305,76 @@ describe('doctor passes after init (#579)', () => {
     expect(registryCheck?.status).toBe('fail');
   });
 });
+
+// ─── squad.agent.md template handling (#730) ───────────────────────────
+
+describe('squad.agent.md template handling (#730)', () => {
+  beforeEach(async () => {
+    if (existsSync(TEST_ROOT)) {
+      await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+    await mkdir(TEST_ROOT, { recursive: true });
+  });
+
+  afterEach(async () => {
+    if (existsSync(TEST_ROOT)) {
+      await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+  });
+
+  it('initSquad creates squad.agent.md when template exists (happy-path regression)', async () => {
+    const result = await initSquad(sdkOptions(TEST_ROOT));
+
+    // squad.agent.md should be in createdFiles
+    const agentEntry = result.createdFiles.find(f => f.includes('squad.agent.md'));
+    expect(agentEntry).toBeDefined();
+
+    // File should exist on disk
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    expect(existsSync(agentPath)).toBe(true);
+
+    // No warnings should be emitted
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('initSquad returns warning when squad.agent.md template is missing', async () => {
+    const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
+    const realStorage = new FSStorageProvider();
+
+    // Create a proxy storage that hides squad.agent.md.template
+    const maskedStorage = new Proxy(realStorage, {
+      get(target, prop, receiver) {
+        if (prop === 'existsSync') {
+          return (filePath: string) => {
+            if (filePath.endsWith('squad.agent.md.template')) {
+              return false;
+            }
+            return target.existsSync(filePath);
+          };
+        }
+        if (prop === 'readSync') {
+          return (filePath: string) => {
+            if (filePath.endsWith('squad.agent.md.template')) {
+              return undefined;
+            }
+            return target.readSync(filePath);
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+
+    const result = await initSquad(sdkOptions(TEST_ROOT), maskedStorage as typeof realStorage);
+
+    // Warning should be present
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0]).toContain('squad.agent.md template not found');
+
+    // squad.agent.md should NOT be in createdFiles
+    const agentEntry = result.createdFiles.find(f => f.includes('squad.agent.md'));
+    expect(agentEntry).toBeUndefined();
+
+    // Other files should still be created
+    expect(result.createdFiles.length).toBeGreaterThan(0);
+  });
+});

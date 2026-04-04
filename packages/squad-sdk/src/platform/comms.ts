@@ -13,6 +13,7 @@ import type { CommunicationAdapter, CommunicationChannel, CommunicationConfig } 
 import { FileLogCommunicationAdapter } from './comms-file-log.js';
 import { GitHubDiscussionsCommunicationAdapter } from './comms-github-discussions.js';
 import { ADODiscussionCommunicationAdapter } from './comms-ado-discussions.js';
+import { TeamsCommunicationAdapter } from './comms-teams.js';
 import { detectPlatform, getRemoteUrl, parseGitHubRemote, parseAzureDevOpsRemote } from './detect.js';
 
 const storage = new FSStorageProvider();
@@ -46,7 +47,7 @@ export function createCommunicationAdapter(repoRoot: string): CommunicationAdapt
 
   // Explicit config wins
   if (config?.channel) {
-    return createAdapterByChannel(config.channel, repoRoot);
+    return createAdapterByChannel(config.channel, repoRoot, config);
   }
 
   // Auto-detect from platform
@@ -84,7 +85,11 @@ export function createCommunicationAdapter(repoRoot: string): CommunicationAdapt
   return new FileLogCommunicationAdapter(repoRoot);
 }
 
-function createAdapterByChannel(channel: CommunicationChannel, repoRoot: string): CommunicationAdapter {
+function createAdapterByChannel(
+  channel: CommunicationChannel,
+  repoRoot: string,
+  config?: CommunicationConfig,
+): CommunicationAdapter {
   const remoteUrl = getRemoteUrl(repoRoot);
 
   switch (channel) {
@@ -100,13 +105,30 @@ function createAdapterByChannel(channel: CommunicationChannel, repoRoot: string)
       if (!info) throw new Error(`Cannot parse ADO remote: ${remoteUrl}`);
       return new ADODiscussionCommunicationAdapter(info.org, info.project);
     }
-    case 'teams-webhook':
-      // Teams webhook adapter would go here — for now fall back to file log
-      console.warn('Teams webhook adapter not yet implemented — using file log fallback');
-      return new FileLogCommunicationAdapter(repoRoot);
+    case 'teams-webhook': {
+      const teamsConfig = config?.teams ?? readTeamsConfig(repoRoot) ?? {};
+      return new TeamsCommunicationAdapter(teamsConfig);
+    }
     case 'file-log':
       return new FileLogCommunicationAdapter(repoRoot);
     default:
       return new FileLogCommunicationAdapter(repoRoot);
   }
+}
+
+/**
+ * Read Teams-specific config from `.squad/config.json`.
+ */
+function readTeamsConfig(repoRoot: string): CommunicationConfig['teams'] | undefined {
+  const configPath = join(repoRoot, '.squad', 'config.json');
+  if (!storage.existsSync(configPath)) return undefined;
+  try {
+    const raw = storage.readSync(configPath) ?? '';
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const comms = parsed.communications as Record<string, unknown> | undefined;
+    if (comms?.teams && typeof comms.teams === 'object') {
+      return comms.teams as CommunicationConfig['teams'];
+    }
+  } catch { /* ignore */ }
+  return undefined;
 }

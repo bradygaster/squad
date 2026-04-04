@@ -272,6 +272,8 @@ if (cmd === 'watch') {
 
   const content = fs.readFileSync(teamMd, 'utf8');
 
+  function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
   // Parse members from roster
   function parseMembers(text) {
     const lines = text.split('\n');
@@ -283,7 +285,7 @@ if (cmd === 'watch') {
       if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
         const cells = line.split('|').map(c => c.trim()).filter(Boolean);
         if (cells.length >= 2 && !['Scribe', 'Ralph'].includes(cells[0])) {
-          members.push({ name: cells[0], role: cells[1], label: `squad:${cells[0].toLowerCase()}` });
+          members.push({ name: cells[0], role: cells[1], label: `squad:${slugify(cells[0])}` });
         }
       }
     }

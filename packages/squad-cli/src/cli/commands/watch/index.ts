@@ -7,6 +7,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
@@ -39,12 +40,7 @@ import type { WatchConfig } from './config.js';
 import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './types.js';
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
-
-// ── Watch parity imports (#743) ──────────────────────────────────
-import { acquireLock, updateLock, releaseLock } from './capabilities/lockfile.js';
-import { recordFailure, recordSuccess, markRoundStart, getConsecutiveFailures } from './capabilities/heartbeat.js';
-import { runPostFailureRemediation } from './capabilities/post-failure.js';
-import { ModelCircuitBreaker } from './capabilities/circuit-breaker.js';
+import { createVerboseLogger, type VerboseLogger } from './verbose.js';
 
 // ── Re-exports for backward compatibility ────────────────────────
 
@@ -53,22 +49,8 @@ export { loadWatchConfig } from './config.js';
 export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, CapabilityResult } from './types.js';
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
-
-// ── Watch parity re-exports (#743) ──────────────────────────────
-export { ModelCircuitBreaker } from './capabilities/circuit-breaker.js';
-export type { ModelCircuitBreakerState, CircuitBreakerConfig } from './capabilities/circuit-breaker.js';
-export { HealthCheckCapability } from './capabilities/health-check.js';
-export { scoreIssue, rankIssues } from './capabilities/priority.js';
-export type { ScoredIssue, PriorityConfig } from './capabilities/priority.js';
-export { detectCapabilities, checkMachineCapability } from './capabilities/machine-capabilities.js';
-export type { MachineCapabilityConfig, MachineCapabilityResult } from './capabilities/machine-capabilities.js';
-export { StaleReclaimCapability } from './capabilities/stale-reclaim.js';
-export { HeartbeatCapability } from './capabilities/heartbeat.js';
-export { WebhookAlertCapability } from './capabilities/webhook-alerts.js';
-export { checkBudget } from './capabilities/budget-check.js';
-export type { BudgetConfig, BudgetResult } from './capabilities/budget-check.js';
-export { acquireLock, updateLock, releaseLock } from './capabilities/lockfile.js';
-export { runPostFailureRemediation } from './capabilities/post-failure.js';
+export { createVerboseLogger, type VerboseLogger } from './verbose.js';
+export { getWatchHealth, writePidFile, removePidFile, getPidPath, isProcessAlive, type WatchPidInfo } from './health.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
 
@@ -186,13 +168,27 @@ export interface BoardState {
   executed: number;
 }
 
-export function reportBoard(state: BoardState, round: number): void {
+export interface ReportBoardOptions {
+  notifyLevel?: 'all' | 'important' | 'none';
+  machineName?: string;
+  repoName?: string;
+}
+
+export function reportBoard(state: BoardState, round: number, options?: ReportBoardOptions): void {
+  const level = options?.notifyLevel ?? 'all';
   const total = Object.values(state).reduce((a, b) => a + b, 0);
+
+  if (level === 'none') return;
+  if (level === 'important' && total === 0) return;
+
   if (total === 0) {
     console.log(`${DIM}📋 Board is clear — Ralph is idling${RESET}`);
     return;
   }
-  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${RESET}`);
+  const suffix = options?.machineName || options?.repoName
+    ? ` (${[options.machineName, options.repoName].filter(Boolean).join(' · ')})`
+    : '';
+  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${suffix}${RESET}`);
   console.log('━'.repeat(30));
   if (state.untriaged > 0) console.log(`  🔴 Untriaged:         ${state.untriaged}`);
   if (state.assigned > 0) console.log(`  🟡 Assigned:          ${state.assigned}`);
@@ -215,12 +211,17 @@ type PRBoardState = Pick<BoardState, 'drafts' | 'needsReview' | 'changesRequeste
   totalOpen: number;
 };
 
-async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter): Promise<PRBoardState> {
+async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter, vlog?: VerboseLogger): Promise<PRBoardState> {
   const timestamp = new Date().toLocaleTimeString();
   const prs = await listWatchPullRequests(adapter, { state: 'open', limit: 20 });
   const squadPRs = prs.filter(pr =>
     pr.labels.some(l => l.name.startsWith('squad')) || pr.headRefName.startsWith('squad/'),
   );
+
+  vlog?.log(`PRs found: ${prs.length} total`);
+  for (const pr of squadPRs) {
+    vlog?.log(`  PR #${pr.number}: "${pr.title}" draft=${pr.isDraft} review=${pr.reviewDecision ?? 'none'}`);
+  }
 
   if (squadPRs.length === 0) {
     return { drafts: 0, needsReview: 0, changesRequested: 0, ciFailures: 0, readyToMerge: 0, totalOpen: 0 };
@@ -294,10 +295,18 @@ async function runCheck(
   autoAssign: boolean,
   capabilities: MachineCapabilities | null,
   adapter: PlatformAdapter,
+  vlog?: VerboseLogger,
 ): Promise<BoardState> {
   const timestamp = new Date().toLocaleTimeString();
   try {
     const issues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 20 });
+
+    vlog?.log(`Issues found: ${issues.length} total`);
+    for (const issue of issues) {
+      const labels = issue.labels?.map((l: { name: string }) => l.name).join(', ') ?? 'none';
+      const assignees = issue.assignees?.map((a: { login: string }) => a.login).join(', ') ?? 'none';
+      vlog?.log(`  #${issue.number}: "${issue.title}" [${labels}] assignees=[${assignees}]`);
+    }
 
     const { filterByCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
     const { handled: capableIssues, skipped: incapableIssues } = filterByCapabilities(issues, capabilities);
@@ -351,7 +360,7 @@ async function runCheck(
       }
     }
 
-    const prState = await checkPRs(roster, adapter);
+    const prState = await checkPRs(roster, adapter, vlog);
     return { untriaged: untriaged.length, assigned: assignedIssues.length, executed: 0, ...prState };
   } catch (e) {
     console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${(e as Error).message}`);
@@ -449,7 +458,7 @@ async function runPhase(
         ...context,
         config: typeof capConfig === 'object' && capConfig !== null
           ? capConfig as Record<string, unknown>
-          : { enabled: !!capConfig, maxConcurrent: config.maxConcurrent, timeout: config.timeout },
+          : { enabled: !!capConfig, maxConcurrent: config.maxConcurrent, timeout: config.timeout, dispatchMode: config.dispatchMode },
       };
       const result = await cap.execute(capContext);
       results.set(cap.name, result);
@@ -561,7 +570,7 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
 
 // ── Exported helpers (backward compat) ───────────────────────────
 
-export { findExecutableIssues } from './capabilities/execute.js';
+export { findExecutableIssues, classifyIssue } from './capabilities/execute.js';
 
 export function buildAgentCommand(
   issue: WatchWorkItem,
@@ -657,6 +666,33 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     return fatal(`Could not detect platform: ${(err as Error).message}`);
   }
 
+  // Verbose logger
+  const vlog = createVerboseLogger(config.verbose ?? false);
+
+  vlog.section('Startup');
+  vlog.table({
+    repo: teamRoot,
+    platform: adapter.type,
+    // This table only prints when verbose mode is active, so verbose is always true here.
+    verbose: config.verbose ?? false,
+    interval: `${config.interval}m`,
+    execute: config.execute ?? false,
+    agentCmd: config.agentCmd ?? '(default: gh copilot)',
+    dispatchMode: config.capabilities['wave-dispatch'] ? 'wave' : 'task',
+    maxConcurrent: config.maxConcurrent ?? 1,
+  });
+
+  // Auth check (verbose only — avoid unnecessary process spawn on every startup)
+  if (config.verbose && adapter.type === 'github') {
+    try {
+      const authOut = execFileSync('gh', ['auth', 'status'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const activeAccount = authOut.match(/Logged in to .* account (\S+)/)?.[1];
+      vlog.log(`Auth: ${activeAccount ?? 'unknown'}`);
+    } catch {
+      vlog.warn('gh auth status failed — API calls may fail silently');
+    }
+  }
+
   // Verify platform CLI availability
   if (adapter.type === 'github') {
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
@@ -664,12 +700,6 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   } else if (adapter.type === 'azure-devops') {
     try { await execFileAsync('az', ['devops', '-h']); } catch { fatal('az CLI not found'); }
     try { await execFileAsync('az', ['account', 'show']); } catch { fatal('az CLI not authenticated — run: az login'); }
-  }
-
-  // ── Lockfile guard (#743) ────────────────────────────────────────
-  if (!acquireLock(teamRoot)) {
-    console.log(`${YELLOW}⚠️${RESET} Another watch process holds the lock for this directory. Exiting.`);
-    return;
   }
 
   // Parse team.md
@@ -688,6 +718,19 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   if (roster.length === 0) {
     fatal('No squad members found in team.md');
+  }
+
+  // Pre-create squad member labels so addTag never fails on missing labels
+  if (adapter.ensureTag) {
+    for (const member of roster) {
+      try {
+        await adapter.ensureTag(member.label, { color: 'd4c5f9', description: `Squad triage: ${member.name}` });
+      } catch { /* best-effort — continue if label creation fails */ }
+    }
+    try {
+      await adapter.ensureTag('squad:copilot', { color: 'd4c5f9', description: 'Squad triage: Copilot coding agent' });
+    } catch { /* best-effort */ }
+    console.log(`${DIM}Labels: ensured ${roster.length + 1} squad labels exist${RESET}`);
   }
 
   const hasCopilot = content.includes('🤖 Coding Agent') || content.includes('@copilot');
@@ -716,6 +759,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     config: {},
     agentCmd: config.agentCmd,
     copilotFlags: config.copilotFlags,
+    verbose: config.verbose,
   };
 
   const enabledCapabilities = await preflightCapabilities(registry, config, baseContext);
@@ -731,25 +775,42 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   if (config.execute) {
     console.log(`${DIM}Max concurrent: ${config.maxConcurrent} | Timeout: ${config.timeout}m${RESET}`);
   }
+  // Warn when fleet dispatch mode is set but the fleet-dispatch capability is not enabled
+  if ((config.dispatchMode === 'fleet' || config.dispatchMode === 'hybrid') &&
+      !enabledCapabilities.some(c => c.name === 'fleet-dispatch')) {
+    console.warn(`${YELLOW}⚠${RESET}  dispatchMode="${config.dispatchMode}" but fleet-dispatch capability is not enabled. Read-heavy issues will not be batched.`);
+  }
   console.log();
+
+  // Fix 2: Set up log-file tee (after banner so the banner itself is captured too)
+  let logStream: fs.WriteStream | undefined;
+  if (config.logFile) {
+    const resolvedLogFile = path.resolve(config.logFile);
+    logStream = fs.createWriteStream(resolvedLogFile, { flags: 'a' });
+    const origLog = console.log.bind(console);
+    console.log = (...args: unknown[]) => {
+      origLog(...args);
+      const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      const line = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
+      // Strip ANSI escape codes for the file
+      const plain = line.replace(/\x1b\[[0-9;]*m/g, '');
+      logStream!.write(`[${timestamp}] ${plain}\n`);
+    };
+    console.log(`${DIM}Log file: ${resolvedLogFile}${RESET}`);
+  }
+
+  // Fix 3: Immediate visual feedback after banner
+  console.log(`Running first check now...`);
 
   // Initialize circuit breaker (#515)
   const circuitBreaker = new PredictiveCircuitBreaker();
-  // Enhanced model circuit breaker (#743)
-  const modelCB = new ModelCircuitBreaker(squadDirInfo.path, {
-    preferredModel: (config.capabilities['circuit-breaker'] as Record<string, unknown> | undefined)?.['preferredModel'] as string | undefined,
-    fallbackChain: (config.capabilities['circuit-breaker'] as Record<string, unknown> | undefined)?.['fallbackChain'] as string[] | undefined,
-  });
   let cbState = loadCBState(squadDirInfo.path);
   let round = 0;
   let roundInProgress = false;
 
   async function executeRound(): Promise<void> {
     const ts = new Date().toLocaleTimeString();
-    markRoundStart(); // (#743) Track round duration for heartbeat
-
-    // (#743) Update lockfile to running
-    updateLock(teamRoot, 'running', round + 1, 0, getConsecutiveFailures());
+    const roundStart = Date.now();
 
     // Circuit breaker gate
     if (cbState.status === 'open') {
@@ -757,7 +818,6 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       if (elapsed < cbState.cooldownMinutes * 60_000) {
         const left = Math.ceil((cbState.cooldownMinutes * 60_000 - elapsed) / 1000);
         console.log(`${YELLOW}⏸${RESET}  [${ts}] Circuit open — cooling down (${left}s left)`);
-        updateLock(teamRoot, 'idle', round, 0, getConsecutiveFailures());
         return;
       }
       cbState.status = 'half-open';
@@ -781,9 +841,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
             cbState.consecutiveSuccesses = 0;
             cbState.cooldownMinutes = Math.min(cbState.cooldownMinutes * 2, 30);
             saveCBState(squadDirInfo.path, cbState);
-            modelCB.onRateLimit(); // (#743) Cascade to model CB
             console.log(`${RED}🛑${RESET} [${ts}] Circuit opened — quota ${light === 'red' ? 'critical' : 'predicted low'} (${rl.remaining}/${rl.limit})`);
-            updateLock(teamRoot, 'idle', round, 0, getConsecutiveFailures());
             return;
           }
           if (light === 'amber') {
@@ -796,7 +854,11 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     round++;
     const roundContext: WatchContext = { ...baseContext, round };
 
-    // Phase 1: pre-scan (self-pull, health-check, stale-reclaim, subsquad discovery)
+    // Fix 1: Print round start marker
+    console.log(`\n${DIM}Starting round ${round}...${RESET}`);
+    vlog.section(`Round ${round}`);
+
+    // Phase 1: pre-scan (self-pull, subsquad discovery)
     await runPhase('pre-scan', enabledCapabilities, roundContext, config);
 
     // SubSquad discovery (informational, not a capability)
@@ -806,7 +868,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     // Core: triage (always runs — not a capability)
-    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter);
+    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter, vlog);
 
     // Phase 2: post-triage (two-pass hydration)
     await runPhase('post-triage', enabledCapabilities, roundContext, config);
@@ -820,7 +882,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       roundState.executed = execResult.data['executed'] as number;
     }
 
-    // Phase 4: housekeeping (monitoring, retro, decision hygiene, heartbeat, webhook-alerts)
+    // Phase 4: housekeeping (monitoring, retro, decision hygiene)
     await runPhase('housekeeping', enabledCapabilities, roundContext, config);
 
     await eventBus.emit({
@@ -830,11 +892,24 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       timestamp: new Date(),
     });
     await monitor.healthCheck();
+
+    // Verbose board counters
+    vlog.table({
+      untriaged: roundState.untriaged,
+      assigned: roundState.assigned,
+      drafts: roundState.drafts,
+      needsReview: roundState.needsReview,
+      changesRequested: roundState.changesRequested,
+      ciFailures: roundState.ciFailures,
+      readyToMerge: roundState.readyToMerge,
+      executed: roundState.executed,
+    });
+
     reportBoard(roundState, round);
 
-    // (#743) Record success for heartbeat tracking
-    recordSuccess();
-    modelCB.onSuccess();
+    // Fix 1: Print next poll time
+    const nextPollTime = new Date(Date.now() + interval * 60 * 1000);
+    console.log(`${DIM}Next poll at ${nextPollTime.toLocaleTimeString()}${RESET}`);
 
     // Post-round: update circuit breaker on success
     if (cbState.status === 'half-open') {
@@ -851,8 +926,9 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
     saveCBState(squadDirInfo.path, cbState);
 
-    // (#743) Update lockfile to idle
-    updateLock(teamRoot, 'idle', round, 0, getConsecutiveFailures());
+    const roundEnd = Date.now();
+    const elapsed = ((roundEnd - roundStart) / 1000).toFixed(1);
+    vlog.log(`Round ${round} complete (${elapsed}s)`);
   }
 
   // Run immediately, then on interval
@@ -867,7 +943,6 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
           await executeRound();
         } catch (e) {
           const err = e as Error;
-          recordFailure(); // (#743) Track consecutive failures
           if (adapter.type === 'github' && isRateLimitError(err)) {
             cbState.status = 'open';
             cbState.openedAt = new Date().toISOString();
@@ -875,24 +950,9 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
             cbState.consecutiveSuccesses = 0;
             cbState.cooldownMinutes = Math.min(cbState.cooldownMinutes * 2, 30);
             saveCBState(squadDirInfo.path, cbState);
-            modelCB.onRateLimit();
             console.log(`${RED}🛑${RESET} Rate limited — circuit opened, cooldown ${cbState.cooldownMinutes}m`);
           } else {
             console.error(`${RED}✗${RESET} Round error: ${err.message}`);
-          }
-          updateLock(teamRoot, 'error', round, 1, getConsecutiveFailures());
-
-          // (#743) Post-failure remediation — tiered self-healing
-          const failures = getConsecutiveFailures();
-          if (failures >= 3) {
-            const remediation = await runPostFailureRemediation(failures, round, teamRoot, modelCB);
-            for (const action of remediation.actions) {
-              console.log(`${YELLOW}🔧${RESET} [self-heal] ${action}`);
-            }
-            if (remediation.pauseSeconds > 0) {
-              console.log(`${YELLOW}⏸${RESET} Pausing ${remediation.pauseSeconds / 60} minutes due to repeated failures`);
-              await new Promise(r => setTimeout(r, remediation.pauseSeconds * 1000));
-            }
           }
         } finally {
           roundInProgress = false;
@@ -915,8 +975,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       });
       await monitor.stop();
       saveCBState(squadDirInfo.path, cbState);
-      releaseLock(teamRoot); // (#743) Clean up lockfile
       console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
+      logStream?.end();
       resolve();
     };
 

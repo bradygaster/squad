@@ -133,6 +133,8 @@ export interface InitResult {
   createdFiles: string[];
   /** List of skipped file paths (already existed) */
   skippedFiles: string[];
+  /** Warnings for degraded operations (e.g. missing templates) */
+  warnings?: string[];
   /** Configuration file path */
   configPath: string;
   /** Agent directory paths */
@@ -625,6 +627,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
   
   const createdFiles: string[] = [];
   const skippedFiles: string[] = [];
+  const warnings: string[] = [];
   const agentDirs: string[] = [];
   
   // Validate inputs
@@ -692,6 +695,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
     join(squadDir, 'log'),
+    join(squadDir, '.scratch'),
   ];
   
   for (const dir of directories) {
@@ -1008,6 +1012,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/log/',
     '.squad/decisions/inbox/',
     '.squad/sessions/',
+    '.squad/.scratch/',
   ];
   
   let existingIgnore = '';
@@ -1035,6 +1040,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
       agentContent = stampVersionInContent(agentContent, version);
       await storage.write(agentFile, agentContent);
       createdFiles.push(toRelativePath(agentFile));
+    } else {
+      warnings.push(`squad.agent.md template not found (${join(templatesDir || '.squad/templates', 'squad.agent.md.template')}) — Copilot agent file was not created or not refreshed`);
     }
   } else {
     skippedFiles.push(toRelativePath(agentFile));
@@ -1187,6 +1194,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   return {
     createdFiles,
     skippedFiles,
+    warnings,
     configPath,
     agentDirs,
     agentFile,

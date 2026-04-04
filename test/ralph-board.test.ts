@@ -8,9 +8,9 @@ function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, '');
 }
 
-function captureBoardOutput(state: BoardState, round: number): string[] {
+function captureBoardOutput(state: BoardState, round: number, notifyLevel: 'all' | 'important' | 'none' = 'all'): string[] {
   const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-  reportBoard(state, round);
+  reportBoard(state, round, { notifyLevel });
   return logSpy.mock.calls.map((args) => stripAnsi(args.map((arg) => String(arg ?? '')).join(' ')));
 }
 

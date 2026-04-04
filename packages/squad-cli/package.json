@@ -124,6 +124,10 @@
       "types": "./dist/cli/commands/watch/index.d.ts",
       "import": "./dist/cli/commands/watch/index.js"
     },
+    "./commands/watch/health": {
+      "types": "./dist/cli/commands/watch/health.d.ts",
+      "import": "./dist/cli/commands/watch/health.js"
+    },
     "./commands/start": {
       "types": "./dist/cli/commands/start.d.ts",
       "import": "./dist/cli/commands/start.js"
