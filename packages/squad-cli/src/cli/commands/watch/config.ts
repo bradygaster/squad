@@ -29,6 +29,8 @@ export interface WatchConfig {
   capabilities: Record<string, boolean | Record<string, unknown>>;
   /** Enable verbose diagnostic output for debugging. */
   verbose?: boolean;
+  /** Preferred auth user for platform operations (e.g. gh auth switch --user). */
+  authUser?: string;
 }
 
 const DEFAULTS: WatchConfig = {
