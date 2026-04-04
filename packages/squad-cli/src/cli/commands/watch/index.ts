@@ -7,6 +7,7 @@
  */
 
 import path from 'node:path';
+import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
@@ -164,13 +165,31 @@ export interface BoardState {
   executed: number;
 }
 
-export function reportBoard(state: BoardState, round: number): void {
+export interface ReportOptions {
+  notifyLevel: 'all' | 'important' | 'none';
+  machineName?: string;
+  repoName?: string;
+}
+
+export function reportBoard(state: BoardState, round: number, options?: ReportOptions): void {
+  const level = options?.notifyLevel ?? 'important';
+  if (level === 'none') return;
+
   const total = Object.values(state).reduce((a, b) => a + b, 0);
+
+  // In 'important' mode, suppress empty rounds entirely
+  if (total === 0 && level === 'important') return;
+
   if (total === 0) {
     console.log(`${DIM}📋 Board is clear — Ralph is idling${RESET}`);
     return;
   }
-  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${RESET}`);
+
+  // Build context tag for attribution
+  const ctx = [options?.machineName, options?.repoName].filter(Boolean).join(' · ');
+  const ctxSuffix = ctx ? ` ${DIM}(${ctx})${RESET}` : '';
+
+  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${RESET}${ctxSuffix}`);
   console.log('━'.repeat(30));
   if (state.untriaged > 0) console.log(`  🔴 Untriaged:         ${state.untriaged}`);
   if (state.assigned > 0) console.log(`  🟡 Assigned:          ${state.assigned}`);
@@ -803,7 +822,11 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       timestamp: new Date(),
     });
     await monitor.healthCheck();
-    reportBoard(roundState, round);
+    reportBoard(roundState, round, {
+      notifyLevel: config.notifyLevel ?? 'important',
+      machineName: os.hostname(),
+      repoName: path.basename(teamRoot),
+    });
 
     // Post-round: update circuit breaker on success
     if (cbState.status === 'half-open') {

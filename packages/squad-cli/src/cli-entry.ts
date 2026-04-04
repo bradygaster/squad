@@ -386,6 +386,12 @@ async function main(): Promise<void> {
         : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
     }
 
+    // Notify level: --notify-level all|important|none (default: important)
+    const notifyLevelIdx = args.indexOf('--notify-level');
+    const notifyLevelArg = (notifyLevelIdx !== -1 && args[notifyLevelIdx + 1]) ? args[notifyLevelIdx + 1] : undefined;
+    const notifyLevel = (notifyLevelArg === 'all' || notifyLevelArg === 'important' || notifyLevelArg === 'none')
+      ? notifyLevelArg : undefined;
+
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(process.cwd(), {
       interval,
@@ -394,6 +400,7 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      notifyLevel,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
