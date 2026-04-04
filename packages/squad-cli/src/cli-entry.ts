@@ -177,6 +177,7 @@ async function main(): Promise<void> {
     console.log(`                    --retro           enforce retrospective checks`);
     console.log(`                    --decision-hygiene auto-merge decision inbox`);
     console.log(`             Disable: --no-<capability> overrides config.json`);
+    console.log(`             Logging: --log-file <path> tee output to file with timestamps`);
     console.log(`  ${BOLD}loop${RESET}       Prompt-driven continuous work loop`);
     console.log(`             Usage: loop [--init] [--file <path>] [--interval <min>]`);
     console.log(`             Reads loop.md and runs it each cycle (no issues needed)`);
@@ -369,6 +370,11 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : undefined;
 
+    const logFileIdx = args.indexOf('--log-file');
+    const logFile = (logFileIdx !== -1 && args[logFileIdx + 1])
+      ? args[logFileIdx + 1]
+      : undefined;
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -394,6 +400,7 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      logFile,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
