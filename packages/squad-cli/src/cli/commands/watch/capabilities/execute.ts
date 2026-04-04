@@ -3,9 +3,10 @@
  */
 
 import { execFile, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
-import type { DispatchMode } from '../config.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -16,18 +17,10 @@ export interface ExecutableWorkItem {
   assignees: Array<{ login: string }>;
 }
 
-/** Labels that block autonomous execution. */
-const BLOCKED_LABELS: ReadonlySet<string> = new Set([
-  'status:blocked',
-  'status:waiting-external',
-  'status:postponed',
-  'status:scheduled',
-  'status:needs-action',
-  'status:needs-decision',
-  'status:needs-review',
-  'pending-user',
-  'do-not-merge',
-]);
+/** Check whether an issue carries a squad or squad:* label. */
+function hasSquadLabel(issue: ExecutableWorkItem): boolean {
+  return issue.labels.some(l => l.name === 'squad' || l.name.startsWith('squad:'));
+}
 
 /** Keywords that indicate read-heavy / analysis work. */
 const READ_KEYWORDS = [
@@ -69,38 +62,73 @@ function buildAgentCommand(
   return { cmd: 'gh', args };
 }
 
-/** Find issues eligible for autonomous execution. */
+/** Find issues eligible for autonomous execution (squad-labeled only).
+ *
+ * Intentionally minimal — the agent reads .squad/ralph-instructions.md
+ * and decides which issues to act on, matching the PS1 ralph-watch design.
+ */
 export function findExecutableIssues(
-  roster: Array<{ name: string; label: string; expertise: string[] }>,
-  capabilities: MachineCapabilities | null,
+  _roster: Array<{ name: string; label: string; expertise: string[] }>,
+  _capabilities: MachineCapabilities | null,
   issues: ExecutableWorkItem[],
 ): ExecutableWorkItem[] {
-  const memberLabels = new Set(roster.map(m => m.label));
-  return issues.filter(issue => {
-    const labels = issue.labels.map(l => l.name);
-    if (!labels.some(l => memberLabels.has(l))) return false;
-    if (issue.assignees && issue.assignees.length > 0) return false;
-    if (labels.some(l => BLOCKED_LABELS.has(l))) return false;
-    return true;
-  });
+  return issues.filter(hasSquadLabel);
 }
 
-/** Spawn agent for a single issue. */
-async function executeOne(
-  issue: ExecutableWorkItem,
+/** Format issue list for the agent prompt. */
+function formatIssueList(issues: ExecutableWorkItem[]): string {
+  return issues.map(i => {
+    const labels = i.labels.map(l => l.name).join(', ');
+    const assigned = i.assignees?.length
+      ? `assigned: ${i.assignees.map(a => a.login).join(',')}`
+      : 'unassigned';
+    return `- #${i.number}: ${i.title} [${labels}] ${assigned}`;
+  }).join('\n');
+}
+
+/** Build the rich agent prompt matching PS1 ralph-watch design. */
+export function buildAgentPrompt(
+  issues: ExecutableWorkItem[],
+  teamRoot: string,
+): string {
+  const issueList = formatIssueList(issues);
+  const hasInstructions = existsSync(path.join(teamRoot, '.squad', 'ralph-instructions.md'));
+
+  if (hasInstructions) {
+    return [
+      'Ralph, Go! Read .squad/ralph-instructions.md for your full instructions. Follow ALL sections there. MAXIMIZE PARALLELISM — spawn agents for ALL actionable issues simultaneously.',
+      '',
+      'Here are the current open squad issues:',
+      issueList,
+      '',
+      'Task: Read the issues, follow your instructions in .squad/ralph-instructions.md, and work on what\'s actionable.',
+      'WHY: Keep the squad pipeline moving — no idle work.',
+      'Success: Issues get branches, PRs, and progress.',
+      'Escalation: If blocked, comment on the issue and move to next.',
+    ].join('\n');
+  }
+
+  // Fallback when ralph-instructions.md does not exist
+  return [
+    'You are Ralph, the autonomous work monitor. Review the open squad issues below and work on every actionable one. Skip issues that are blocked, waiting on external input, or already assigned.',
+    '',
+    'Here are the current open squad issues:',
+    issueList,
+    '',
+    'Task: Triage the list, pick up unblocked/unassigned issues, create branches and PRs.',
+    'WHY: Keep the squad pipeline moving — no idle work.',
+    'Success: Issues get branches, PRs, and progress.',
+    'Escalation: If blocked, comment on the issue and move to next.',
+  ].join('\n');
+}
+
+/** Spawn a single agent session for all eligible issues. */
+async function executeAll(
+  issues: ExecutableWorkItem[],
   context: WatchContext,
   timeoutMs: number,
 ): Promise<{ success: boolean; error?: string }> {
-  // Claim the issue
-  try {
-    await context.adapter.addTag(issue.number, 'status:in-progress');
-  } catch { /* best-effort */ }
-
-  try {
-    await context.adapter.addComment(issue.number, '🤖 Ralph: starting autonomous work on this issue.');
-  } catch { /* best-effort */ }
-
-  const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
+  const prompt = buildAgentPrompt(issues, context.teamRoot);
   const { cmd, args } = buildAgentCommand(prompt, context);
 
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
@@ -138,9 +166,7 @@ export class ExecuteCapability implements WatchCapability {
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
     try {
-      const maxConcurrent = (context.config['maxConcurrent'] as number) ?? 1;
       const timeout = ((context.config['timeout'] as number) ?? 30) * 60_000;
-      const dispatchMode = (context.config['dispatchMode'] as DispatchMode | undefined) ?? 'task';
 
       // Fetch open issues with squad label
       const sdkItems = await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
@@ -151,66 +177,22 @@ export class ExecuteCapability implements WatchCapability {
         assignees: wi.assignedTo ? [{ login: wi.assignedTo }] : [],
       }));
 
-      // Filter by capabilities
-      const { filterByCapabilities, loadCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
-      const capabilities = await loadCapabilities(context.teamRoot);
-      const { handled } = filterByCapabilities(issues, capabilities);
+      // Minimal filter: must have squad or squad:* label (agent decides the rest)
+      const eligible = findExecutableIssues(context.roster, null, issues);
 
-      const executable = findExecutableIssues(context.roster, capabilities, handled);
-
-      // In fleet or hybrid mode, split read vs write issues
-      if (dispatchMode === 'fleet' || dispatchMode === 'hybrid') {
-        const writeIssues = executable.filter(i => classifyIssue(i.title) === 'write');
-        const batch = dispatchMode === 'fleet'
-          ? [] // fleet mode: all issues go to fleet-dispatch capability
-          : writeIssues.slice(0, maxConcurrent); // hybrid: only write issues here
-
-        if (batch.length === 0 && (dispatchMode === 'fleet' || (dispatchMode === 'hybrid' && writeIssues.length === 0))) {
-          // Note: fleet-dispatch capability handles the deferred read issues
-        }
-
-        if (batch.length === 0) {
-          const readCount = executable.length - writeIssues.length;
-          const deferredToFleet = dispatchMode === 'fleet' ? executable.length : readCount;
-          return {
-            success: true,
-            summary: dispatchMode === 'fleet'
-              ? `fleet mode: all ${executable.length} issues deferred to fleet-dispatch`
-              : `hybrid mode: no write issues (${readCount} read-only deferred to fleet)`,
-            data: { executed: 0, failed: 0, deferredToFleet },
-          };
-        }
-
-        const results = await Promise.all(
-          batch.map(issue => executeOne(issue, context, timeout)),
-        );
-        const succeeded = results.filter(r => r.success).length;
-        const failed = results.length - succeeded;
-
-        return {
-          success: true,
-          summary: `hybrid: ${succeeded} write-executed, ${failed} failed, ${executable.length - writeIssues.length} read deferred to fleet`,
-          data: { executed: succeeded, failed, deferredToFleet: executable.length - writeIssues.length },
-        };
+      if (eligible.length === 0) {
+        return { success: true, summary: 'no squad-labeled issues found' };
       }
 
-      // Default task mode: execute all as before
-      const batch = executable.slice(0, maxConcurrent);
-
-      if (batch.length === 0) {
-        return { success: true, summary: 'no executable issues' };
-      }
-
-      const results = await Promise.all(
-        batch.map(issue => executeOne(issue, context, timeout)),
-      );
-      const succeeded = results.filter(r => r.success).length;
-      const failed = results.length - succeeded;
+      // Single agent invocation with all issues — agent reads ralph-instructions.md
+      const result = await executeAll(eligible, context, timeout);
 
       return {
-        success: true,
-        summary: `${succeeded} executed, ${failed} failed`,
-        data: { executed: succeeded, failed },
+        success: result.success,
+        summary: result.success
+          ? `agent dispatched with ${eligible.length} issues`
+          : `agent failed: ${result.error}`,
+        data: { dispatched: eligible.length, success: result.success },
       };
     } catch (e) {
       return { success: false, summary: `execute error: ${(e as Error).message}` };
