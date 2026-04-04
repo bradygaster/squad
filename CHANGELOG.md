@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Watch — Next Generation
+- **Execute redesign**: Issue selection delegated to agent via `.squad/ralph-instructions.md` prompt (no pre-filtering in TypeScript)
+- **Rich agent prompt**: Task/WHY/Success/Escalation scaffold matching PS1 ralph-watch design
+- **Prompt via temp file**: Uses `-p <tempfile>` flag instead of inline `--message` (matches PS1 pattern)
+- **Generic auth**: `--auth-user` flag + `adapter.ensureAuth(preferredUser)` — no hardcoded usernames
+- **Tiered error recovery**: 4-tier remediation (reset CB → re-probe auth → git pull → pause 30m)
+- **Self-pull with stash**: Stashes dirty state before pull, warns on watch source changes
+- **Overnight window**: `--overnight-start`/`--overnight-end` pause watch during off-hours
+- **Sentinel stop**: `.squad/ralph-stop` file for graceful shutdown
+- **Cleanup capability**: Prune scratch dirs, old logs, stale orchestration files
+- **Notify-level**: Control watch output verbosity (`all`/`important`/`none`)
+- **Watch health**: `--health` flag shows PID, uptime, auth, capabilities
+- **State backends**: `--state-backend` for git-notes and orphan-branch persistence
+- **Fleet dispatch**: Machine capabilities + label-based claim/reclaim
+- **Log file**: `--log-file <path>` mirrors output for diagnostics
+- **Round timing**: Shows "Starting round N..." and "Next poll at HH:MM"
+
 ### Fixed
 - **Nap archival budget** (#123) — account for separator newlines in decision archival budget calculation
 
