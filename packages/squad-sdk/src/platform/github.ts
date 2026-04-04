@@ -224,36 +224,31 @@ export class GitHubAdapter implements PlatformAdapter {
     this.gh(['pr', 'merge', String(id), '--repo', this.repoFlag, '--merge']);
   }
 
-  async ensureAuth(): Promise<void> {
+  async ensureAuth(preferredUser?: string): Promise<void> {
     try {
-      // 1. Get remote URL to determine expected org/user
-      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
-
-      // 2. Extract org/user from URL
-      // Handles: https://github.com/org/repo.git, git@github.com:org/repo.git
-      // Also handles EMU: https://user:token@github.com/org/repo.git
-      let expectedOwner = '';
-      const httpsMatch = remoteUrl.match(/github\.com[/:]([^/]+)\//);
-      if (httpsMatch?.[1]) expectedOwner = httpsMatch[1];
-
-      if (!expectedOwner) return; // Can't determine — skip silently
-
-      // 3. Check current gh auth
+      // 1. Check current gh auth
       const authStatus = execFileSync('gh', ['auth', 'status', '--active'], EXEC_OPTS).trim();
-      // Parse: "Logged in to github.com account XXXX"
       const activeMatch = authStatus.match(/account\s+(\S+)/);
       const activeUser = activeMatch?.[1] || '';
 
-      // 4. Compare — if the remote owner matches an available account, switch
-      if (activeUser && expectedOwner && activeUser !== expectedOwner) {
-        // The remote URL owner might be the org (e.g. tamirdresher_microsoft)
-        // Try switching to it as a user — if it fails, that's fine (might be an org, not a user account)
-        try {
-          execFileSync('gh', ['auth', 'switch', '--user', expectedOwner], EXEC_OPTS);
-          console.log(`✅ Auth context switched to ${expectedOwner}`);
-        } catch {
-          // expectedOwner might be an org name, not a user — continue with current auth (non-fatal)
-        }
+      // 2. Determine target user
+      let targetUser = preferredUser || '';
+
+      if (!targetUser) {
+        // Auto-detect from remote URL — works for EMU repos where org = account
+        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+        const httpsMatch = remoteUrl.match(/github\.com[/:]([^/]+)\//);
+        if (httpsMatch?.[1]) targetUser = httpsMatch[1];
+      }
+
+      if (!targetUser || activeUser === targetUser) return; // Already correct or can't determine
+
+      // 3. Switch
+      try {
+        execFileSync('gh', ['auth', 'switch', '--user', targetUser], EXEC_OPTS);
+        console.log(`✅ Auth context switched to ${targetUser}`);
+      } catch {
+        // targetUser might not be a valid account — non-fatal
       }
     } catch {
       // Non-fatal — continue with whatever auth is active

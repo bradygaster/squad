@@ -55,10 +55,12 @@ export interface PlatformAdapter {
 
   /**
    * Verify and repair authentication context for the current repository.
-   * Parses the git remote URL, checks the active auth account, and switches if needed.
+   * If preferredUser is provided, switch to that account directly.
+   * Otherwise, try to auto-detect from the remote URL (works for EMU repos
+   * where org name = account name, but not for repos where owner ≠ your account).
    * No-op if auth is already correct. Non-fatal — never throws.
    */
-  ensureAuth?(): Promise<void>;
+  ensureAuth?(preferredUser?: string): Promise<void>;
 
   // Pull Requests
   listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]>;

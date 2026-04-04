@@ -26,6 +26,8 @@ export interface WatchConfig {
   overnightEnd?: string;
   /** Path to sentinel file — if exists, stop gracefully after current round. */
   sentinelFile?: string;
+  /** Preferred auth user/org — passed to adapter.ensureAuth(). Auto-detects if not set. */
+  authUser?: string;
 }
 
 const DEFAULTS: WatchConfig = {
@@ -72,6 +74,7 @@ export function loadWatchConfig(
     overnightStart: cliOverrides.overnightStart ?? fileConfig.overnightStart,
     overnightEnd: cliOverrides.overnightEnd ?? fileConfig.overnightEnd,
     sentinelFile: cliOverrides.sentinelFile ?? fileConfig.sentinelFile,
+    authUser: cliOverrides.authUser ?? fileConfig.authUser,
     capabilities: {
       ...DEFAULTS.capabilities,
       ...(fileConfig.capabilities ?? {}),
@@ -95,10 +98,11 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['overnightStart'] === 'string') result.overnightStart = raw['overnightStart'];
   if (typeof raw['overnightEnd'] === 'string') result.overnightEnd = raw['overnightEnd'];
   if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
+  if (typeof raw['authUser'] === 'string') result.authUser = raw['authUser'];
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'overnightStart', 'overnightEnd', 'sentinelFile']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'overnightStart', 'overnightEnd', 'sentinelFile', 'authUser']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

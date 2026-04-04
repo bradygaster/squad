@@ -1,0 +1,13 @@
+fix(watch): generic auth via --auth-user config flag + adapter.ensureAuth(user)
+
+- ensureAuth() now takes optional preferredUser parameter
+- Added --auth-user CLI flag and authUser config option
+- GitHubAdapter: uses preferredUser if provided, falls back to URL-based detection
+- AzureDevOpsAdapter: uses preferredOrg if provided, falls back to URL-based detection
+- Removed all hardcoded usernames from watch code
+- Tier 2 remediation now uses config.authUser via adapter
+
+Usage: squad watch --execute --auth-user tamirdresher_microsoft
+Or in config: { "watch": { "authUser": "tamirdresher_microsoft" } }
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

@@ -384,6 +384,11 @@ async function main(): Promise<void> {
       ? args[sentinelFileIdx + 1]
       : undefined;
 
+    const authUserIdx = args.indexOf('--auth-user');
+    const authUser = (authUserIdx !== -1 && args[authUserIdx + 1])
+      ? args[authUserIdx + 1]
+      : undefined;
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -412,6 +417,7 @@ async function main(): Promise<void> {
       overnightStart,
       overnightEnd,
       sentinelFile,
+      authUser,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 

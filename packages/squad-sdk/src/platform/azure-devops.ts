@@ -416,26 +416,23 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     ]);
   }
 
-  async ensureAuth(): Promise<void> {
+  async ensureAuth(preferredOrg?: string): Promise<void> {
     try {
-      // 1. Get remote URL
-      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+      let targetOrg = preferredOrg || '';
 
-      // 2. Extract ADO org from URL
-      // Handles: https://dev.azure.com/ORG/PROJECT/_git/REPO
-      // Also: https://ORG@dev.azure.com/ORG/PROJECT/_git/REPO
-      // Also: https://ORG.visualstudio.com/PROJECT/_git/REPO
-      let expectedOrg = '';
-      const adoMatch = remoteUrl.match(/dev\.azure\.com\/([^/]+)\//);
-      const vstsMatch = remoteUrl.match(/([^/]+)\.visualstudio\.com\//);
-      if (adoMatch?.[1]) expectedOrg = adoMatch[1];
-      else if (vstsMatch?.[1]) expectedOrg = vstsMatch[1];
+      if (!targetOrg) {
+        // Auto-detect from remote URL
+        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+        const adoMatch = remoteUrl.match(/dev\.azure\.com\/([^/]+)\//);
+        const vstsMatch = remoteUrl.match(/([^/]+)\.visualstudio\.com\//);
+        if (adoMatch?.[1]) targetOrg = adoMatch[1];
+        else if (vstsMatch?.[1]) targetOrg = vstsMatch[1];
+      }
 
-      if (!expectedOrg) return;
+      if (!targetOrg) return;
 
-      // 3. Configure az devops defaults if needed
       try {
-        const orgUrl = `https://dev.azure.com/${expectedOrg}`;
+        const orgUrl = `https://dev.azure.com/${targetOrg}`;
         execFileSync('az', ['devops', 'configure', '--defaults', `organization=${orgUrl}`], EXEC_OPTS);
       } catch {
         // az CLI might not be installed — non-fatal

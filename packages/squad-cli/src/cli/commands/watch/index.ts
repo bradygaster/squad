@@ -638,7 +638,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   // Ensure auth context matches the repo — replaces external Set-GhContext.ps1
   if (adapter.ensureAuth) {
-    await adapter.ensureAuth();
+    await adapter.ensureAuth(config.authUser);
   }
 
   // Verify platform CLI availability
@@ -905,7 +905,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
             console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 2 remediation: re-probing auth`);
             try {
               if (adapter.ensureAuth) {
-                await adapter.ensureAuth();
+                await adapter.ensureAuth(config.authUser);
               }
             } catch {
               console.log(`${YELLOW}⚠️${RESET}  Auth probe failed — will retry next round`);
