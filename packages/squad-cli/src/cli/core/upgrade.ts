@@ -607,3 +607,67 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     migrationsRun: migrationsApplied,
   };
 }
+
+// ============================================================================
+// Self-upgrade: upgrade the CLI package itself
+// ============================================================================
+
+export interface SelfUpgradeOptions {
+  insider?: boolean;
+  force?: boolean;
+}
+
+/**
+ * Detect the package manager that installed the CLI.
+ * Returns 'npm', 'pnpm', 'yarn', or 'npm' as fallback.
+ */
+function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
+  const execPath = process.env['npm_execpath'] ?? '';
+  if (execPath.includes('pnpm')) return 'pnpm';
+  if (execPath.includes('yarn')) return 'yarn';
+  // Check npm_config_user_agent as fallback
+  const userAgent = process.env['npm_config_user_agent'] ?? '';
+  if (userAgent.startsWith('pnpm')) return 'pnpm';
+  if (userAgent.startsWith('yarn')) return 'yarn';
+  return 'npm';
+}
+
+/**
+ * Self-upgrade the Squad CLI package via the detected package manager.
+ *
+ * Detects whether the CLI was installed via npm, pnpm, or yarn and runs the
+ * appropriate global install command. Only suggests `sudo` for npm (pnpm and
+ * yarn typically do not require elevated permissions for global installs).
+ */
+export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
+  const { execSync } = await import('node:child_process');
+  const tag = options.insider ? 'insider' : 'latest';
+  const pkg = `@bradygaster/squad-cli@${tag}`;
+  const pm = detectPackageManager();
+
+  let cmd: string;
+  switch (pm) {
+    case 'pnpm':
+      cmd = `pnpm add -g ${pkg}`;
+      break;
+    case 'yarn':
+      cmd = `yarn global add ${pkg}`;
+      break;
+    default:
+      cmd = `npm install -g ${pkg}`;
+      break;
+  }
+
+  info(`Self-upgrading via ${pm}: ${cmd}`);
+
+  try {
+    execSync(cmd, { stdio: 'inherit' });
+  } catch {
+    // Only suggest sudo for npm — pnpm/yarn rarely need it
+    if (pm === 'npm') {
+      warn(`Permission denied. Try: sudo ${cmd}`);
+    } else {
+      warn(`Upgrade failed. Check ${pm} permissions or try running manually: ${cmd}`);
+    }
+  }
+}

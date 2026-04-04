@@ -304,20 +304,33 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'upgrade') {
-    const { runUpgrade } = await import('./cli/core/upgrade.js');
+    const { runUpgrade, selfUpgradeCli } = await import('./cli/core/upgrade.js');
     const { migrateDirectory } = await import('./cli/core/migrate-directory.js');
     
     const migrateDir = args.includes('--migrate-directory');
     const selfUpgrade = args.includes('--self');
     const forceUpgrade = args.includes('--force');
+    const insider = args.includes('--insider');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
     
+    // Warn when --insider is used without --self (it has no effect on project upgrades)
+    if (insider && !selfUpgrade) {
+      console.warn('⚠ --insider has no effect without --self');
+    }
+
     // Handle --migrate-directory flag
     if (migrateDir) {
       await migrateDirectory(dest);
       // Continue with regular upgrade after migration
     }
     
+    // Handle --self: upgrade the CLI package itself
+    if (selfUpgrade) {
+      await selfUpgradeCli({ insider, force: forceUpgrade });
+      console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
+      return;
+    }
+
     // Run upgrade
     await runUpgrade(dest, { 
       migrateDirectory: migrateDir,
@@ -372,6 +385,18 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : undefined;
 
+    // --dispatch-mode runtime validation: rejects invalid values with a clear error message
+    const dispatchModeIdx = args.indexOf('--dispatch-mode');
+    const rawDispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
+      ? args[dispatchModeIdx + 1]
+      : undefined;
+    const validModes = ['task', 'fleet', 'hybrid'] as const;
+    const dispatchMode = rawDispatchMode && validModes.includes(rawDispatchMode as any)
+      ? rawDispatchMode as 'fleet' | 'task' | 'hybrid'
+      : rawDispatchMode
+        ? (console.error(`⚠️ Invalid --dispatch-mode "${rawDispatchMode}". Valid: task, fleet, hybrid. Defaulting to task.`), undefined)
+        : undefined;
+
     const logFileIdx = args.indexOf('--log-file');
     const logFile = (logFileIdx !== -1 && args[logFileIdx + 1])
       ? args[logFileIdx + 1]
@@ -403,6 +428,7 @@ async function main(): Promise<void> {
       copilotFlags,
       agentCmd,
       verbose,
+      dispatchMode,
       logFile,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
