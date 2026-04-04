@@ -210,24 +210,26 @@ describe('squad doctor', () => {
 
   // ── #565 — Actionable resolution hints in warnings ────────────────
 
-  it('vscode-jsonrpc warn says "expected for global CLI installs" when not in node_modules', async () => {
+  it('vscode-jsonrpc info says "expected for global installs" when not in node_modules', async () => {
     await scaffold(TEST_ROOT);
 
     const checks = await runDoctor(TEST_ROOT);
     const jsonrpcCheck = checks.find((c: DoctorCheck) => c.name === 'vscode-jsonrpc exports field');
     expect(jsonrpcCheck).toBeDefined();
     expect(jsonrpcCheck?.status).toBe('warn');
-    expect(jsonrpcCheck?.message).toContain('expected for global CLI installs');
+    expect(jsonrpcCheck?.severity).toBe('info');
+    expect(jsonrpcCheck?.message).toContain('expected for global installs');
   });
 
-  it('copilot-sdk warn says "expected for global CLI installs" when not in node_modules', async () => {
+  it('copilot-sdk info says "expected for global installs" when not in node_modules', async () => {
     await scaffold(TEST_ROOT);
 
     const checks = await runDoctor(TEST_ROOT);
     const sdkCheck = checks.find((c: DoctorCheck) => c.name === 'copilot-sdk session.js ESM patch');
     expect(sdkCheck).toBeDefined();
     expect(sdkCheck?.status).toBe('warn');
-    expect(sdkCheck?.message).toContain('expected for global CLI installs');
+    expect(sdkCheck?.severity).toBe('info');
+    expect(sdkCheck?.message).toContain('expected for global installs');
   });
 
   it('absolute teamRoot warning includes "Edit .squad/config.json"', async () => {

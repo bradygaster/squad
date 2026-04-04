@@ -37,6 +37,8 @@ export interface WatchContext {
   /** Hidden --agent-cmd override. */
   agentCmd?: string;
   copilotFlags?: string;
+  /** Verbose diagnostic output enabled. */
+  verbose?: boolean;
 }
 
 /** Contract that every watch capability must implement. */

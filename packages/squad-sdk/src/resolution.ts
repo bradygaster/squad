@@ -34,14 +34,8 @@ export interface SquadDirConfig {
   consult?: boolean;
   /** True when extraction is disabled for consult sessions (read-only consultation) */
   extractionDisabled?: boolean;
-  /**
-   * Where squad state is stored.
-   * - 'local' (default): state lives in `.squad/` inside the repo
-   * - 'external': state lives in `{globalSquadDir}/projects/{projectKey}/`, only a
-   *   thin config.json marker remains in the repo. Survives branch switches,
-   *   invisible to `git status`, never pollutes PRs.
-   */
-  stateLocation?: 'local' | 'external';
+  /** State storage backend: worktree | external | git-notes | orphan */
+  stateBackend?: string;
 }
 
 /**
@@ -108,16 +102,10 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
  * 1. Walk up from `startDir` checking for `.squad/` — stops at `.git` directory boundary
  * 2. If `.git` is a file (worktree), check the main checkout for `.squad/`
  *
- * **Note:** In external-state mode, this still returns the in-repo `.squad/` path.
- * That directory serves as a marker (containing only `config.json`) — the actual
- * state directory is resolved by `resolveSquadPaths()` via `resolveExternalStateDir()`.
- *
  * @param startDir - Directory to start searching from. Defaults to `process.cwd()`.
  * @returns Absolute path to `.squad/` or `null`.
  */
 export function resolveSquad(startDir?: string): string | null {
-  // Intentionally returns the in-repo .squad/ marker directory, even when state
-  // is externalized. Callers needing the actual state dir should use resolveSquadPaths().
   let current = path.resolve(startDir ?? process.cwd());
 
   // eslint-disable-next-line no-constant-condition
@@ -236,7 +224,7 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
         projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
         consult: parsed.consult === true ? true : undefined,
         extractionDisabled: parsed.extractionDisabled === true ? true : undefined,
-        stateLocation: parsed.stateLocation === 'external' ? 'external' : undefined,
+        stateBackend: typeof parsed.stateBackend === 'string' ? parsed.stateBackend : undefined,
       };
     }
     return null;
@@ -272,22 +260,6 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
   const { dir: projectDir, name } = resolved;
   const isLegacy = name === '.ai-team';
   const config = loadDirConfig(projectDir);
-
-  if (config && config.stateLocation === 'external') {
-    // External mode: state lives in ~/.squad/projects/{projectKey}/
-    const projectRoot = path.resolve(projectDir, '..');
-    const projectKey = config.projectKey || deriveProjectKey(projectRoot);
-    const externalDir = resolveExternalStateDir(projectKey);
-    return {
-      mode: 'remote',
-      projectDir: externalDir,
-      teamDir: externalDir,
-      personalDir: resolvePersonalSquadDir(),
-      config,
-      name,
-      isLegacy,
-    };
-  }
 
   if (config && config.teamRoot) {
     // Remote mode: teamDir resolved relative to the project root (parent of .squad/)
@@ -352,45 +324,6 @@ export function resolveGlobalSquadPath(): string {
   }
 
   return globalDir;
-}
-
-/**
- * Resolve the external state directory for a project.
- *
- * External state lives under the global squad config:
- * `{globalSquadDir}/projects/{projectKey}/`
- *
- * This is invisible to `git status`, survives branch switches, and never
- * pollutes PRs. The project key is a stable slug derived from the repo name
- * or an explicit key in `.squad/config.json`.
- *
- * @param projectKey - Unique project identifier (slug). Falls back to repo basename.
- * @param create     - Whether to create the directory if missing (default: true).
- * @returns Absolute path to the external state directory.
- */
-export function resolveExternalStateDir(projectKey: string, create: boolean = true): string {
-  // Sanitize: reject path traversal attempts
-  const sanitized = projectKey.replace(/[^a-z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
-  if (!sanitized || sanitized === '.' || sanitized === '..' || sanitized.includes('..')) {
-    throw new Error(`Invalid project key: "${projectKey}"`);
-  }
-  const globalDir = resolveGlobalSquadPath();
-  const stateDir = path.join(globalDir, 'projects', sanitized);
-  if (create && !storage.existsSync(stateDir)) {
-    storage.mkdirSync(stateDir, { recursive: true });
-  }
-  return stateDir;
-}
-
-/**
- * Derive a stable project key from the repo root path.
- * Uses the basename of the repo directory, lowercased and sanitized.
- */
-export function deriveProjectKey(repoRoot: string): string {
-  // Handle Windows paths on non-Windows platforms (and vice versa)
-  const isWindowsPath = repoRoot.includes('\\') || /^[a-zA-Z]:/.test(repoRoot);
-  const basename = isWindowsPath ? path.win32.basename(repoRoot) : path.basename(repoRoot);
-  return basename.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/^-+|-+$/g, '') || 'unknown-project';
 }
 
 /**
@@ -540,4 +473,67 @@ export function ensureSquadPathTriple(
  */
 export function ensureSquadPathResolved(filePath: string, paths: ResolvedSquadPaths): string {
   return ensureSquadPathDual(filePath, paths.projectDir, paths.teamDir);
+}
+
+/**
+ * Resolve the scratch directory for temporary files.
+ *
+ * Returns `{squadRoot}/.scratch/` — the canonical location for ephemeral files
+ * that Squad and its agents create during operations (prompt files, intermediate
+ * processing artifacts, commit message drafts, etc.).
+ *
+ * If `create` is true (default), the directory is created if it does not exist.
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param create    - Whether to create the directory if missing (default: true).
+ * @returns Absolute path to the scratch directory.
+ */
+export function scratchDir(squadRoot: string, create: boolean = true): string {
+  const dir = path.join(squadRoot, '.scratch');
+  if (create && !storage.existsSync(dir)) {
+    storage.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+/**
+ * Return a unique file path inside the scratch directory.
+ *
+ * Returns the absolute path to the file. Caller is responsible for writing
+ * content to the returned path (unless `content` is provided, in which case
+ * it is written immediately). The caller is also responsible for deleting
+ * the file when done (or relying on the cleanup capability).
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param prefix    - Filename prefix (e.g. `"fleet-prompt"`).
+ * @param ext       - File extension including dot (e.g. `".txt"`). Defaults to `".tmp"`.
+ * @param content   - Optional content to write immediately.
+ * @returns Absolute path to the temp file.
+ */
+let _scratchCounter = 0;
+let _scratchLastTs = 0;
+
+export function scratchFile(squadRoot: string, prefix: string, ext: string = '.tmp', content?: string): string {
+  // Sanitize prefix/ext to prevent path traversal via '../' sequences
+  const safePrefix = prefix.replace(/[\/\\]/g, '_');
+  const safeExt = ext.replace(/[\/\\]/g, '_');
+
+  const dir = scratchDir(squadRoot);
+
+  // Monotonic counter: if two calls happen in the same millisecond,
+  // the counter increments to guarantee unique filenames.
+  const now = Date.now();
+  if (now === _scratchLastTs) {
+    _scratchCounter++;
+  } else {
+    _scratchCounter = 0;
+    _scratchLastTs = now;
+  }
+
+  const filename = `${safePrefix}-${now}-${_scratchCounter}${safeExt}`;
+  const filePath = path.join(dir, filename);
+  if (content !== undefined) {
+    storage.writeSync(filePath, content);
+  }
+  return filePath;
 }

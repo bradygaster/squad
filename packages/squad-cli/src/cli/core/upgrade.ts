@@ -284,6 +284,8 @@ const ENSURE_DIRECTORIES = [
   '.squad/log',
   '.squad/sessions',
   '.squad/decisions/inbox',
+  '.squad/casting',
+  '.squad/agents',
   '.copilot/skills',
 ];
 
@@ -373,6 +375,60 @@ export function ensureDirectories(dest: string): string[] {
 }
 
 /**
+ * Scaffold default casting files (registry.json, policy.json, history.json)
+ * if they don't already exist. Sources content from shipped templates when
+ * available, falling back to inline JSON defaults.
+ */
+export function ensureCastingDefaults(dest: string, templatesDir?: string): string[] {
+  const castingDir = path.join(dest, '.squad', 'casting');
+
+  // Map destination file → template file name
+  const templateMap: Array<{ name: string; templateName: string; fallback: string }> = [
+    { name: 'registry.json', templateName: 'casting-registry.json', fallback: JSON.stringify({ agents: {} }, null, 2) + '\n' },
+    { name: 'policy.json', templateName: 'casting-policy.json', fallback: JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n' },
+    { name: 'history.json', templateName: 'casting-history.json', fallback: JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n' },
+  ];
+
+  // Use caller-provided templatesDir when available; resolve once otherwise
+  let tDir = templatesDir;
+  if (!tDir) {
+    try {
+      tDir = getTemplatesDir();
+    } catch {
+      // templates dir not found — will use inline fallbacks
+    }
+  }
+
+  const created: string[] = [];
+  for (const file of templateMap) {
+    const filePath = path.join(castingDir, file.name);
+    if (!storage.existsSync(filePath)) {
+      // Prefer shipped template content; fall back to inline JSON
+      let content = file.fallback;
+      if (tDir) {
+        const tplPath = path.join(tDir, file.templateName);
+        if (storage.existsSync(tplPath)) {
+          const tplContent = storage.readSync(tplPath);
+          if (tplContent) content = tplContent;
+        }
+      }
+      try {
+        storage.mkdirSync(castingDir, { recursive: true });
+        storage.writeSync(filePath, content);
+        created.push(`.squad/casting/${file.name}`);
+      } catch (err: unknown) {
+        if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
+          warn(`Could not write ${file.name} to .squad/casting/ (read-only). Create it manually.`);
+          return created;
+        }
+        throw err;
+      }
+    }
+  }
+  return created;
+}
+
+/**
  * Copy all skills from package templates to .copilot/skills/ (force: false)
  */
 function syncAllSkills(dest: string, templatesDir: string): number {
@@ -429,6 +485,12 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
   if (dirsCreated.length > 0) {
     success(`created ${dirsCreated.length} missing directories`);
     filesUpdated.push(...dirsCreated);
+  }
+
+  const castingFiles = ensureCastingDefaults(dest, templatesDir);
+  if (castingFiles.length > 0) {
+    success(`scaffolded ${castingFiles.length} default casting files`);
+    filesUpdated.push(...castingFiles);
   }
 
   const skillCount = syncAllSkills(dest, templatesDir);
@@ -606,4 +668,68 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     filesUpdated,
     migrationsRun: migrationsApplied,
   };
+}
+
+// ============================================================================
+// Self-upgrade: upgrade the CLI package itself
+// ============================================================================
+
+export interface SelfUpgradeOptions {
+  insider?: boolean;
+  force?: boolean;
+}
+
+/**
+ * Detect the package manager that installed the CLI.
+ * Returns 'npm', 'pnpm', 'yarn', or 'npm' as fallback.
+ */
+function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
+  const execPath = process.env['npm_execpath'] ?? '';
+  if (execPath.includes('pnpm')) return 'pnpm';
+  if (execPath.includes('yarn')) return 'yarn';
+  // Check npm_config_user_agent as fallback
+  const userAgent = process.env['npm_config_user_agent'] ?? '';
+  if (userAgent.startsWith('pnpm')) return 'pnpm';
+  if (userAgent.startsWith('yarn')) return 'yarn';
+  return 'npm';
+}
+
+/**
+ * Self-upgrade the Squad CLI package via the detected package manager.
+ *
+ * Detects whether the CLI was installed via npm, pnpm, or yarn and runs the
+ * appropriate global install command. Only suggests `sudo` for npm (pnpm and
+ * yarn typically do not require elevated permissions for global installs).
+ */
+export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
+  const { execSync } = await import('node:child_process');
+  const tag = options.insider ? 'insider' : 'latest';
+  const pkg = `@bradygaster/squad-cli@${tag}`;
+  const pm = detectPackageManager();
+
+  let cmd: string;
+  switch (pm) {
+    case 'pnpm':
+      cmd = `pnpm add -g ${pkg}`;
+      break;
+    case 'yarn':
+      cmd = `yarn global add ${pkg}`;
+      break;
+    default:
+      cmd = `npm install -g ${pkg}`;
+      break;
+  }
+
+  info(`Self-upgrading via ${pm}: ${cmd}`);
+
+  try {
+    execSync(cmd, { stdio: 'inherit' });
+  } catch {
+    // Only suggest sudo for npm — pnpm/yarn rarely need it
+    if (pm === 'npm') {
+      warn(`Permission denied. Try: sudo ${cmd}`);
+    } else {
+      warn(`Upgrade failed. Check ${pm} permissions or try running manually: ${cmd}`);
+    }
+  }
 }

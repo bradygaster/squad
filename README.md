@@ -99,7 +99,7 @@ Use `--force` to re-apply updates even when your installed version already match
 | `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `hire`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
 | `squad status` | Show which squad is active and why |
-| `squad triage` | Watch issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10) |
+| `squad triage` | **Watch mode** — poll for issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10); with `--execute` dispatch Copilot agents; use `--agent-cmd`, `--copilot-flags`, `--auth-user` to customize agent execution; `--health` shows watch status; `--log-file` for diagnostics |
 | `squad copilot` | Add/remove the Copilot coding agent (@copilot); use `--off` to remove, `--auto-assign` to enable auto-assignment |
 | `squad doctor` | Check your setup and diagnose issues (alias: `heartbeat`) |
 | `squad link <team-repo-path>` | Connect to a remote team |
@@ -111,6 +111,158 @@ Use `--force` to re-apply updates even when your installed version already match
 | `squad nap` | Context hygiene — compress, prune, archive; use `--deep` for aggressive compression, `--dry-run` to preview changes |
 | `squad aspire` | Open Aspire dashboard for observability |
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) |
+
+---
+
+## Watch Mode — Ralph's Autonomous Polling
+
+Ralph continuously polls for work and dispatches agents to handle it. Watch mode is perfect for unmanned squad operations — let agents work while you're away.
+
+### Quick Start
+
+```bash
+# Monitor for issues (triage mode — no execution)
+npx @bradygaster/squad-cli watch
+
+# Monitor and auto-execute against actionable issues
+npx @bradygaster/squad-cli watch --execute --interval 5
+
+# With custom agent runner and copilot flags
+npx @bradygaster/squad-cli watch --execute \
+  --agent-cmd "agency copilot" \
+  --copilot-flags "--yolo --autopilot --mcp mail --agent squad" \
+  --auth-user myaccount
+
+# Run watch with diagnostics
+npx @bradygaster/squad-cli watch --execute --log-file ./watch.log --verbose
+
+# Check health of running watch process
+npx @bradygaster/squad-cli watch --health
+```
+
+### Key Flags
+
+| Flag | Description |
+|------|-------------|
+| `--execute` | Enable agent execution (spawn Copilot sessions for actionable issues) |
+| `--interval N` | Poll every N minutes (default: 10) |
+| `--agent-cmd` | Custom agent command (default: `gh copilot`) |
+| `--copilot-flags` | Flags passed to the agent runner (e.g., `--yolo --autopilot`) |
+| `--auth-user` | GitHub/Azure DevOps account to use for agent auth |
+| `--log-file` | Mirror output to file for later review and diagnostics |
+| `--verbose` | Show extra diagnostic output (auth probes, callbacks, pulls) |
+| `--health` | Show status of running watch: PID, uptime, auth readiness, capabilities |
+| `--overnight-start HH:MM` | Pause watch during off-hours (e.g., `--overnight-start 18:00`) |
+| `--overnight-end HH:MM` | Resume watch at this time (e.g., `--overnight-end 08:00`) |
+| `--notify-level` | Control output verbosity (`all` / `important` / `none`, default: `important`) |
+| `--state-backend` | Persistence strategy (`git-notes` or `orphan-branch`, default: in-memory) |
+
+### How Watch Decides What to Execute
+
+Ralph uses an **agent-delegated selection pattern**:
+
+1. Ralph scans for triage-eligible issues (unassigned, labeled, etc.)
+2. Ralph builds a context snapshot: issue list, squad state, recent decisions
+3. Ralph writes this context to a **temp file** using the `-p <path>` flag
+4. Ralph invokes the agent with that file: `gh copilot -p context.md`
+5. The agent **decides which issue to work on** and **how**
+6. Ralph monitors execution, logs results, updates issue status
+
+This design gives **agents full autonomy** over issue selection while keeping the polling loop lean.
+
+### Issue Selection & Escalation
+
+Ralph provides a rich prompt scaffold to the agent:
+
+```
+## Work Context
+
+### Available Issues (prioritized)
+- #42 Urgent bug in auth (P0)
+- #89 Performance review pending (P1)
+- #123 Docs update (P2)
+
+### Why These Issues Matter
+...context from decision archive...
+
+### Success Criteria
+- Tests pass
+- Changes match team conventions
+- PR linked to issue
+
+### When to Escalate
+If blocker detected → pause, log, notify humans
+```
+
+Agents see **full context** and can decide intelligently rather than blindly executing random work.
+
+### Error Recovery (4-Tier Escalation)
+
+Watch includes a tiered remediation strategy:
+
+1. **Tier 1 — Circuit Breaker Reset**: Clear and retry
+2. **Tier 2 — Auth Reprobe**: Re-verify credentials
+3. **Tier 3 — Git Pull**: Update local state
+4. **Tier 4 — Pause 30m**: Back off for human intervention
+
+This prevents watch from spamming the same failure endlessly.
+
+### State Backends
+
+Watch can persist its state in different ways:
+
+```bash
+# Default: in-memory (loses state on restart)
+squad watch --execute
+
+# Persist to git-notes (survives restarts, no new branches)
+squad watch --execute --state-backend git-notes
+
+# Persist to orphan branch (isolated history, easy to prune)
+squad watch --execute --state-backend orphan-branch
+```
+
+### Graceful Shutdown
+
+To stop a running watch process gracefully:
+
+```bash
+# Create sentinel file
+touch .squad/ralph-stop
+
+# Watch will finish current round and exit cleanly
+# Logs final state, cleans scratch dirs
+```
+
+### Cleanup
+
+Watch automatically prunes stale artifacts:
+- Scratch directories older than 7 days
+- Log files older than 30 days
+- Orphaned orchestration state
+
+### Monitoring Watch
+
+Check on a running watch:
+
+```bash
+squad watch --health
+```
+
+Output example:
+```
+Ralph Watch Status
+
+PID: 12345
+Uptime: 2h 15m
+Last Poll: 2 minutes ago
+
+Auth: Ready (account: myaccount@github.com)
+Capabilities: Issue triage, PR review, ADO sync
+
+Next Poll: 14:35 (in 3 minutes)
+Round: 42 / 1200
+```
 
 ---
 
