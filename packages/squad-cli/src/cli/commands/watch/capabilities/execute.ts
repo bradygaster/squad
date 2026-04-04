@@ -22,26 +22,17 @@ function hasSquadLabel(issue: ExecutableWorkItem): boolean {
   return issue.labels.some(l => l.name === 'squad' || l.name.startsWith('squad:'));
 }
 
-/** Keywords that indicate read-heavy / analysis work. */
-const READ_KEYWORDS = [
-  'research', 'review', 'analyze', 'investigate', 'audit',
-  'check', 'scan', 'assess', 'evaluate', 'fact-check',
-  'document', 'report',
-];
-
-/** Keywords that indicate write-heavy / implementation work. */
-const WRITE_KEYWORDS = [
-  'fix', 'implement', 'create', 'build', 'refactor',
-  'add', 'update', 'migrate', 'deploy', 'feature',
-];
-
-/** Classify an issue as read-heavy or write-heavy by title keywords. */
-export function classifyIssue(title: string): 'read' | 'write' {
-  const lower = title.toLowerCase();
-  const isRead = READ_KEYWORDS.some(k => lower.includes(k));
-  const isWrite = WRITE_KEYWORDS.some(k => lower.includes(k));
-  if (isRead && !isWrite) return 'read';
-  return 'write'; // default to write (safer — gets full agent session)
+/** Find issues eligible for autonomous execution (squad-labeled only).
+ *
+ * Intentionally minimal — the agent reads .squad/ralph-instructions.md
+ * and decides which issues to act on, matching the PS1 ralph-watch design.
+ */
+export function findExecutableIssues(
+  _roster: Array<{ name: string; label: string; expertise: string[] }>,
+  _capabilities: MachineCapabilities | null,
+  issues: ExecutableWorkItem[],
+): ExecutableWorkItem[] {
+  return issues.filter(hasSquadLabel);
 }
 
 /** Build agent command for a prompt. */
@@ -60,38 +51,6 @@ function buildAgentCommand(
     args.push(...context.copilotFlags.trim().split(/\s+/));
   }
   return { cmd: 'gh', args };
-}
-
-/** Labels that indicate an issue should not be auto-executed. */
-const BLOCKING_LABELS = ['status:blocked', 'status:wontfix', 'status:on-hold', 'blocked'];
-
-/** Check whether an issue has a blocking status label. */
-function hasBlockingLabel(issue: ExecutableWorkItem): boolean {
-  return issue.labels.some(l => BLOCKING_LABELS.includes(l.name));
-}
-
-/** Check whether an issue is already assigned to a human. */
-function isAssigned(issue: ExecutableWorkItem): boolean {
-  return issue.assignees.length > 0;
-}
-
-/** Find issues eligible for autonomous execution.
- *
- * Pre-filters to keep only clearly actionable items:
- *  - must have a squad/squad:* label
- *  - must not be assigned to a human (agent decides once it reads ralph-instructions.md)
- *  - must not carry a blocking status label
- *
- * Matches the PS1 ralph-watch pre-filter design.
- */
-export function findExecutableIssues(
-  _roster: Array<{ name: string; label: string; expertise: string[] }>,
-  _capabilities: MachineCapabilities | null,
-  issues: ExecutableWorkItem[],
-): ExecutableWorkItem[] {
-  return issues.filter(
-    issue => hasSquadLabel(issue) && !isAssigned(issue) && !hasBlockingLabel(issue),
-  );
 }
 
 /** Format issue list for the agent prompt. */

@@ -382,17 +382,25 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : undefined;
 
-    // --dispatch-mode runtime validation: rejects invalid values with a clear error message
-    const dispatchModeIdx = args.indexOf('--dispatch-mode');
-    const rawDispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
-      ? args[dispatchModeIdx + 1]
+    const overnightStartIdx = args.indexOf('--overnight-start');
+    const overnightStart = (overnightStartIdx !== -1 && args[overnightStartIdx + 1])
+      ? args[overnightStartIdx + 1]
       : undefined;
-    const validModes = ['task', 'fleet', 'hybrid'] as const;
-    const dispatchMode = rawDispatchMode && validModes.includes(rawDispatchMode as any)
-      ? rawDispatchMode as 'fleet' | 'task' | 'hybrid'
-      : rawDispatchMode
-        ? (console.error(`⚠️ Invalid --dispatch-mode "${rawDispatchMode}". Valid: task, fleet, hybrid. Defaulting to task.`), undefined)
-        : undefined;
+
+    const overnightEndIdx = args.indexOf('--overnight-end');
+    const overnightEnd = (overnightEndIdx !== -1 && args[overnightEndIdx + 1])
+      ? args[overnightEndIdx + 1]
+      : undefined;
+
+    const sentinelFileIdx = args.indexOf('--sentinel-file');
+    const sentinelFile = (sentinelFileIdx !== -1 && args[sentinelFileIdx + 1])
+      ? args[sentinelFileIdx + 1]
+      : undefined;
+
+    const authUserIdx = args.indexOf('--auth-user');
+    const authUser = (authUserIdx !== -1 && args[authUserIdx + 1])
+      ? args[authUserIdx + 1]
+      : undefined;
 
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
@@ -419,7 +427,10 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
-      dispatchMode,
+      overnightStart,
+      overnightEnd,
+      sentinelFile,
+      authUser,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
