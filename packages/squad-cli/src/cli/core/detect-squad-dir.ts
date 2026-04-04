@@ -2,10 +2,8 @@
  * Squad directory detection — zero dependencies
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
-
-const storage = new FSStorageProvider();
 
 export interface SquadDirInfo {
   path: string;
@@ -22,10 +20,9 @@ export interface SquadDirInfo {
 export function resolveWorktreeMainCheckout(dir: string): string | null {
   const gitPath = path.join(dir, '.git');
   try {
-    if (storage.isDirectorySync(gitPath)) return null;
-    const content = storage.readSync(gitPath);
-    if (content === undefined) return null;
-    const match = content.trim().match(/^gitdir:\s*(.+)$/m);
+    if (fs.statSync(gitPath).isDirectory()) return null;
+    const content = fs.readFileSync(gitPath, 'utf-8').trim();
+    const match = content.match(/^gitdir:\s*(.+)$/m);
     if (!match || !match[1]) return null;
     const worktreeGitDir = path.resolve(dir, match[1].trim());
     // worktreeGitDir = /main/.git/worktrees/name
@@ -34,7 +31,7 @@ export function resolveWorktreeMainCheckout(dir: string): string | null {
     const mainGitDir = path.resolve(worktreeGitDir, '..', '..');
     const mainCheckout = path.dirname(mainGitDir);
     // Verify the derived main checkout is a real git repo
-    if (!storage.existsSync(mainGitDir) || !storage.isDirectorySync(mainGitDir)) {
+    if (!fs.existsSync(mainGitDir) || !fs.statSync(mainGitDir).isDirectory()) {
       return null;
     }
     return mainCheckout;
@@ -53,10 +50,10 @@ export function detectSquadDir(dest: string): SquadDirInfo {
   const squadDir = path.join(dest, '.squad');
   const aiTeamDir = path.join(dest, '.ai-team');
 
-  if (storage.existsSync(squadDir)) {
+  if (fs.existsSync(squadDir)) {
     return { path: squadDir, name: '.squad', isLegacy: false };
   }
-  if (storage.existsSync(aiTeamDir)) {
+  if (fs.existsSync(aiTeamDir)) {
     return { path: aiTeamDir, name: '.ai-team', isLegacy: true };
   }
 
@@ -65,10 +62,10 @@ export function detectSquadDir(dest: string): SquadDirInfo {
   if (mainCheckout) {
     const mainSquadDir = path.join(mainCheckout, '.squad');
     const mainAiTeamDir = path.join(mainCheckout, '.ai-team');
-    if (storage.existsSync(mainSquadDir)) {
+    if (fs.existsSync(mainSquadDir)) {
       return { path: mainSquadDir, name: '.squad', isLegacy: false };
     }
-    if (storage.existsSync(mainAiTeamDir)) {
+    if (fs.existsSync(mainAiTeamDir)) {
       return { path: mainAiTeamDir, name: '.ai-team', isLegacy: true };
     }
   }

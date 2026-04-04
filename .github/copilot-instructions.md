@@ -31,6 +31,46 @@ If you see any of these, STOP immediately and comment on the issue asking for gu
 - ANY file deletions you didn't explicitly intend
 - Changes outside the scope of your assigned issue
 
+## Protected Files — Zero External Dependencies
+
+**Some files MUST only use Node.js built-in modules. Do NOT add npm packages, SDK imports, or any non-`node:*` dependencies to them.**
+
+These are bootstrap utilities that run **before** the Squad SDK is loaded. If they import SDK code (e.g., `FSStorageProvider`, anything from `squad-sdk`), the CLI breaks at startup.
+
+### Protected file list
+| File | Purpose |
+|------|---------|
+| `packages/squad-cli/src/cli/core/detect-squad-dir.ts` | Finds `.squad/` directory at startup — runs before SDK init |
+| `packages/squad-cli/src/cli/core/errors.ts` | Error classes (`SquadError`, `fatal()`) — used by all CLI entry points |
+| `packages/squad-cli/src/cli/core/gh-cli.ts` | GitHub CLI wrapper — uses only `node:child_process` and `node:util` |
+| `packages/squad-cli/src/cli/core/output.ts` | Color/emoji console output — pure ANSI codes, zero imports |
+| `packages/squad-cli/src/cli/core/history-split.ts` | Separates portable knowledge from project data — pure string logic |
+
+### Rules
+- ❌ **NEVER** convert these files to use `FSStorageProvider`, `StorageProvider`, or any SDK abstraction
+- ❌ **NEVER** add `import` or `require` statements referencing packages outside `node:*` built-ins
+- ✅ **ONLY** use `node:fs`, `node:path`, `node:child_process`, `node:util`, and other Node.js built-in modules
+- ✅ **DO** check this list before sweeping refactors (e.g., "convert all fs calls to StorageProvider")
+- ✅ **LOOK** for `— zero dependencies` markers in file headers as a signal
+
+### Why this matters
+Regression tests guard these files (`detect-squad-dir-zero-deps.test.ts` verifies zero external dependencies), but **prevention is better than detection**. A broken bootstrap means the entire CLI fails to start — no helpful error, just a crash.
+
+> **When adding new bootstrap utilities**, add them to this table and write a matching zero-dependency regression test.
+
+### SDK/CLI package boundary
+The CLI (`squad-cli`) depends on the SDK (`squad-sdk`). Some CLI files run **before** the SDK is fully loaded. The `packages/squad-cli/src/cli/core/` directory contains a mix of early-startup/bootstrap utilities and later SDK-dependent modules, so treat every file in it with extra caution. The protected list above is the authoritative set of zero-dependency bootstrap files. If you need to add SDK imports to another `core/` file, verify it is not in the protected list above and confirm the SDK is loaded at that point in the startup sequence.
+
+## Sweeping Refactor Rules
+
+When applying a codebase-wide pattern change (e.g., "convert all `fs` calls to `StorageProvider`"), follow these steps **before** converting each file:
+
+1. **Check the Protected Files list above.** If the file is listed, do NOT convert it.
+2. **Scan for zero-dependency markers.** Look for `— zero dependencies` in the file's header comment. If present, do NOT convert it.
+3. **Verify imports resolve.** When adding `import { X } from '@bradygaster/squad-sdk'`, confirm `X` is actually exported from the SDK's barrel file (`packages/squad-sdk/src/index.ts`). Unresolved imports cause build failures.
+4. **Never convert ALL files blindly.** Some files have specific constraints documented in their headers or in this instructions file. Read before you refactor.
+5. **Test after each logical group.** Don't convert 30 files and then run the build — convert in small batches and verify each one compiles.
+
 ## Team Context
 
 Before starting work on any issue:
@@ -65,6 +105,16 @@ When opening a PR:
 - If the issue had a `squad:{member}` label, mention the member: `Working as {member} ({role})`
 - If this is a 🟡 needs-review task, add to the PR description: `⚠️ This task was flagged as "needs review" — please have a squad member review before merging.`
 - Follow any project conventions in `.squad/decisions.md`
+
+## PR Review Skills
+
+When reviewing or creating PRs, consult these skills for domain-specific checklists:
+
+- **Reviewer Protocol:** `.copilot/skills/reviewer-protocol/SKILL.md` — rejection workflow, lockout rules
+- **Architectural Review:** `.copilot/skills/architectural-review/SKILL.md` — module boundaries, dependency safety, pattern consistency
+- **Security Review:** `.copilot/skills/security-review/SKILL.md` — credentials, injection, workflow permissions, supply chain
+
+Read the relevant skill(s) before submitting or reviewing a PR that touches their domain.
 
 ## Decisions
 
