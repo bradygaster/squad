@@ -703,6 +703,19 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     fatal('No squad members found in team.md');
   }
 
+  // Pre-create squad member labels so addTag never fails on missing labels
+  if (adapter.ensureTag) {
+    for (const member of roster) {
+      try {
+        await adapter.ensureTag(member.label, { color: 'd4c5f9', description: `Squad triage: ${member.name}` });
+      } catch { /* best-effort — continue if label creation fails */ }
+    }
+    try {
+      await adapter.ensureTag('squad:copilot', { color: 'd4c5f9', description: 'Squad triage: Copilot coding agent' });
+    } catch { /* best-effort */ }
+    console.log(`${DIM}Labels: ensured ${roster.length + 1} squad labels exist${RESET}`);
+  }
+
   const hasCopilot = content.includes('🤖 Coding Agent') || content.includes('@copilot');
   const autoAssign = content.includes('<!-- copilot-auto-assign: true -->');
   const monitorSessionId = 'ralph-watch';

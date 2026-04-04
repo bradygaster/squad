@@ -50,6 +50,9 @@ export interface PlatformAdapter {
   removeTag(workItemId: number, tag: string): Promise<void>;
   addComment(workItemId: number, comment: string): Promise<void>;
 
+  /** Ensure a tag/label exists (creates it if missing). No-op on platforms with auto-created tags. */
+  ensureTag?(tag: string, options?: { color?: string; description?: string }): Promise<void>;
+
   // Pull Requests
   listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]>;
   createPullRequest(options: {

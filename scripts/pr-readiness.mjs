@@ -183,7 +183,7 @@ export function checkScopeClean(files) {
 
 /**
  * Check 8: All Copilot review threads resolved.
- * @param {Array<{ isResolved: boolean, comments: { nodes: Array<{ author: { login: string } }> } }>} threads
+ * @param {Array<{ isResolved: boolean, isOutdated: boolean, comments: { nodes: Array<{ author: { login: string } }> } }>} threads
  * @returns {{ pass: boolean, detail: string }}
  */
 export function checkCopilotThreads(threads) {
@@ -193,16 +193,22 @@ export function checkCopilotThreads(threads) {
       t.comments.nodes &&
       t.comments.nodes[0]?.author?.login === 'copilot-pull-request-reviewer',
   );
-  const unresolved = copilotThreads.filter((t) => !t.isResolved);
-  return {
-    pass: unresolved.length === 0,
-    detail:
-      unresolved.length === 0
-        ? copilotThreads.length > 0
-          ? `All ${copilotThreads.length} Copilot thread(s) resolved`
-          : 'No Copilot review threads'
-        : `${unresolved.length} unresolved Copilot thread(s) — fix and resolve before merging`,
-  };
+  const unresolved = copilotThreads.filter((t) => !t.isResolved && !t.isOutdated);
+  const outdatedCount = copilotThreads.filter((t) => t.isOutdated).length;
+  const activeCount = copilotThreads.length - outdatedCount;
+
+  let detail;
+  if (unresolved.length > 0) {
+    detail = `${unresolved.length} unresolved Copilot thread(s) — fix and resolve before merging`;
+  } else if (copilotThreads.length === 0) {
+    detail = 'No Copilot review threads';
+  } else if (outdatedCount > 0) {
+    detail = `${activeCount} active Copilot thread(s) resolved (${outdatedCount} outdated skipped)`;
+  } else {
+    detail = `All ${copilotThreads.length} Copilot thread(s) resolved`;
+  }
+
+  return { pass: unresolved.length === 0, detail };
 }
 
 /**
@@ -250,9 +256,10 @@ export function checkCIStatus(checkRuns, statuses) {
  * @param {string} owner
  * @param {string} repo
  * @param {string} baseRef
+ * @param {string} [headSha] — commit SHA that triggered the check
  * @returns {string}
  */
-export function buildChecklist(checks, owner, repo, baseRef) {
+export function buildChecklist(checks, owner, repo, baseRef, headSha) {
   const allPass = checks.every((c) => c.pass);
   const passCount = checks.filter((c) => c.pass).length;
 
@@ -268,6 +275,9 @@ export function buildChecklist(checks, owner, repo, baseRef) {
   return [
     COMMENT_MARKER,
     '## 🛫 PR Readiness Check',
+    ...(headSha
+      ? [`> ℹ️ This comment updates on each push. Last checked: commit \`${headSha.slice(0, 7)}\``]
+      : []),
     '',
     status,
     '',
@@ -425,6 +435,7 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
             reviewThreads(first: 100) {
               nodes {
                 isResolved
+                isOutdated
                 comments(first: 1) {
                   nodes {
                     author { login }
@@ -478,7 +489,7 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
   checks.push({ name: 'CI passing', ...checkCIStatus(checkRuns, statusEntries) });
 
   // ── Build checklist and upsert comment ──
-  const body = buildChecklist(checks, owner, repo, prBaseRef);
+  const body = buildChecklist(checks, owner, repo, prBaseRef, prHeadSha);
 
   // Find existing comment
   const existingComments = await paginate(
