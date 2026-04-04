@@ -471,3 +471,66 @@ export function ensureSquadPathTriple(
 export function ensureSquadPathResolved(filePath: string, paths: ResolvedSquadPaths): string {
   return ensureSquadPathDual(filePath, paths.projectDir, paths.teamDir);
 }
+
+/**
+ * Resolve the scratch directory for temporary files.
+ *
+ * Returns `{squadRoot}/.scratch/` — the canonical location for ephemeral files
+ * that Squad and its agents create during operations (prompt files, intermediate
+ * processing artifacts, commit message drafts, etc.).
+ *
+ * If `create` is true (default), the directory is created if it does not exist.
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param create    - Whether to create the directory if missing (default: true).
+ * @returns Absolute path to the scratch directory.
+ */
+export function scratchDir(squadRoot: string, create: boolean = true): string {
+  const dir = path.join(squadRoot, '.scratch');
+  if (create && !storage.existsSync(dir)) {
+    storage.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+/**
+ * Return a unique file path inside the scratch directory.
+ *
+ * Returns the absolute path to the file. Caller is responsible for writing
+ * content to the returned path (unless `content` is provided, in which case
+ * it is written immediately). The caller is also responsible for deleting
+ * the file when done (or relying on the cleanup capability).
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param prefix    - Filename prefix (e.g. `"fleet-prompt"`).
+ * @param ext       - File extension including dot (e.g. `".txt"`). Defaults to `".tmp"`.
+ * @param content   - Optional content to write immediately.
+ * @returns Absolute path to the temp file.
+ */
+let _scratchCounter = 0;
+let _scratchLastTs = 0;
+
+export function scratchFile(squadRoot: string, prefix: string, ext: string = '.tmp', content?: string): string {
+  // Sanitize prefix/ext to prevent path traversal via '../' sequences
+  const safePrefix = prefix.replace(/[\/\\]/g, '_');
+  const safeExt = ext.replace(/[\/\\]/g, '_');
+
+  const dir = scratchDir(squadRoot);
+
+  // Monotonic counter: if two calls happen in the same millisecond,
+  // the counter increments to guarantee unique filenames.
+  const now = Date.now();
+  if (now === _scratchLastTs) {
+    _scratchCounter++;
+  } else {
+    _scratchCounter = 0;
+    _scratchLastTs = now;
+  }
+
+  const filename = `${safePrefix}-${now}-${_scratchCounter}${safeExt}`;
+  const filePath = path.join(dir, filename);
+  if (content !== undefined) {
+    storage.writeSync(filePath, content);
+  }
+  return filePath;
+}

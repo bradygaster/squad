@@ -539,7 +539,7 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
 
 // ── Exported helpers (backward compat) ───────────────────────────
 
-export { findExecutableIssues } from './capabilities/execute.js';
+export { findExecutableIssues, classifyIssue } from './capabilities/execute.js';
 
 export function buildAgentCommand(
   issue: WatchWorkItem,
@@ -715,6 +715,11 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   }
   if (config.execute) {
     console.log(`${DIM}Max concurrent: ${config.maxConcurrent} | Timeout: ${config.timeout}m${RESET}`);
+  }
+  // Warn when fleet dispatch mode is set but the fleet-dispatch capability is not enabled
+  if ((config.dispatchMode === 'fleet' || config.dispatchMode === 'hybrid') &&
+      !enabledCapabilities.some(c => c.name === 'fleet-dispatch')) {
+    console.warn(`${YELLOW}⚠${RESET}  dispatchMode="${config.dispatchMode}" but fleet-dispatch capability is not enabled. Read-heavy issues will not be batched.`);
   }
   console.log();
 
