@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 

@@ -21,12 +21,12 @@ export interface StateBackend {
 }
 
 export class WorktreeBackend implements StateBackend {
-    if (relativePath.includes('..')) throw new Error('Path traversal not allowed');
-    if (relativePath.includes('..')) throw new Error('Path traversal not allowed');
-    if (relativePath.includes('..')) throw new Error('Path traversal not allowed');
   readonly name = 'worktree';
   private readonly root: string;
-  constructor(squadDir: string) { this.root = squadDir; }
+  constructor(squadDir: string) {
+    if (squadDir.includes('..')) throw new Error('Path traversal not allowed');
+    this.root = squadDir;
+  }
   read(relativePath: string): string | undefined {
     return storage.readSync(path.join(this.root, relativePath)) ?? undefined;
   }
@@ -49,7 +49,7 @@ function gitExec(args: string, cwd: string): string | null {
   } catch { return null; }
 }
 
-function gitExecContent(args, cwd) {
+function gitExecContent(args: string, cwd: string): string | null {
   try {
     return execFileSync('git', args.split(' '), { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trimEnd();
   } catch { return null; }

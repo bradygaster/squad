@@ -474,7 +474,7 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
-      stateBackend: watchStateBackend as any,
+      stateBackend: rawWatchStateBackend as any,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 

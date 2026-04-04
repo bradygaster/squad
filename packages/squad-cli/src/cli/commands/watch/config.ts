@@ -34,6 +34,18 @@ export interface WatchConfig {
   notifyLevel?: 'all' | 'important' | 'none';
   /** Verbose diagnostics (--verbose flag). */
   verbose?: boolean;
+  /** Dispatch strategy: task | fleet | hybrid */
+  dispatchMode?: DispatchMode;
+  /** Overnight window start (HH:MM 24h). */
+  overnightStart?: string;
+  /** Overnight window end (HH:MM 24h). */
+  overnightEnd?: string;
+  /** Path to sentinel stop-file (e.g. .squad/ralph-stop). */
+  sentinelFile?: string;
+  /** Preferred auth user (e.g. GitHub login). */
+  authUser?: string;
+  /** Path to log file for watch output. */
+  logFile?: string;
 }
 
 const DEFAULTS: WatchConfig = {
@@ -79,6 +91,14 @@ export function loadWatchConfig(
     copilotFlags: cliOverrides.copilotFlags ?? fileConfig.copilotFlags ?? DEFAULTS.copilotFlags,
     agentCmd: cliOverrides.agentCmd ?? fileConfig.agentCmd ?? DEFAULTS.agentCmd,
     stateBackend: cliOverrides.stateBackend ?? fileConfig.stateBackend ?? DEFAULTS.stateBackend,
+    notifyLevel: cliOverrides.notifyLevel ?? fileConfig.notifyLevel ?? DEFAULTS.notifyLevel,
+    verbose: cliOverrides.verbose ?? fileConfig.verbose,
+    dispatchMode: cliOverrides.dispatchMode ?? fileConfig.dispatchMode,
+    overnightStart: cliOverrides.overnightStart ?? fileConfig.overnightStart,
+    overnightEnd: cliOverrides.overnightEnd ?? fileConfig.overnightEnd,
+    sentinelFile: cliOverrides.sentinelFile ?? fileConfig.sentinelFile,
+    authUser: cliOverrides.authUser ?? fileConfig.authUser,
+    logFile: cliOverrides.logFile ?? fileConfig.logFile,
     capabilities: {
       ...DEFAULTS.capabilities,
       ...(fileConfig.capabilities ?? {}),
@@ -109,6 +129,9 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
   if (typeof raw['authUser'] === 'string') result.authUser = raw['authUser'];
   if (typeof raw['logFile'] === 'string') result.logFile = raw['logFile'];
+  if (raw['dispatchMode'] === 'task' || raw['dispatchMode'] === 'fleet' || raw['dispatchMode'] === 'hybrid') {
+    result.dispatchMode = raw['dispatchMode'];
+  }
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
