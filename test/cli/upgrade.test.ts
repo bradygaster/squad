@@ -353,4 +353,23 @@ describe('CLI: upgrade command', () => {
     expect(forceResult.filesUpdated.length).toBeGreaterThan(0);
     expect(forceResult.filesUpdated).toContain('squad.agent.md');
   });
+
+  /* ── --self flag (selfUpgradeCli) ──────────────────────────── */
+
+  it('selfUpgradeCli shells out with correct package tag', async () => {
+    const childProcess = await import('node:child_process');
+    const execFileSyncSpy = vi.spyOn(childProcess, 'execFileSync').mockImplementation(() => Buffer.from(''));
+
+    await selfUpgradeCli({ insider: true });
+
+    // First call is the install command, subsequent calls may be version check
+    expect(execFileSyncSpy).toHaveBeenCalled();
+    const firstCall = execFileSyncSpy.mock.calls[0]!;
+    const cmd = firstCall[0] as string;
+    const cmdArgs = firstCall[1] as string[];
+    expect(cmdArgs.some(a => a.includes('@bradygaster/squad-cli@insider'))).toBe(true);
+    expect(['npm', 'pnpm', 'yarn']).toContain(cmd);
+
+    execFileSyncSpy.mockRestore();
+  });
 });

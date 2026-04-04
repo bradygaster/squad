@@ -296,8 +296,33 @@ async function main(): Promise<void> {
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
+
+    // --state-backend: write stateBackend into .squad/config.json on init
+    const stateBackendIdx = args.indexOf('--state-backend');
+    const stateBackendVal = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
+      ? args[stateBackendIdx + 1]
+      : undefined;
+
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).catch(err => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
+      if (stateBackendVal) {
+        const { join } = await import('node:path');
+        const { existsSync, readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
+        const squadDir = join(dest, '.squad');
+        if (!existsSync(squadDir)) mkdirSync(squadDir, { recursive: true });
+        const configPath = join(squadDir, 'config.json');
+        // Read existing config first, then merge (avoids overwriting unrelated keys)
+        let config: Record<string, unknown> = {};
+        try {
+          if (existsSync(configPath)) {
+            config = JSON.parse(readFileSync(configPath, 'utf-8'));
+          }
+        } catch { /* fresh config */ }
+        config['stateBackend'] = stateBackendVal;
+        writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+        console.log(`✓ State backend set to '${stateBackendVal}' in .squad/config.json`);
+      }
+    }).catch(err => {
       fatal(err.message);
     });
     return;
@@ -418,6 +443,12 @@ async function main(): Promise<void> {
       if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
     }
 
+    // --state-backend flag for watch command
+    const watchStateBackendIdx = args.indexOf('--state-backend');
+    const rawWatchStateBackend = (watchStateBackendIdx !== -1 && args[watchStateBackendIdx + 1])
+      ? args[watchStateBackendIdx + 1] as string
+      : undefined;
+
     // Legacy flag compat: --board-project sets board sub-option
     const boardProjectIdx = args.indexOf('--board-project');
     if (boardProjectIdx !== -1 && args[boardProjectIdx + 1]) {
@@ -443,7 +474,7 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
-      notifyLevel,
+      stateBackend: watchStateBackend as any,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
