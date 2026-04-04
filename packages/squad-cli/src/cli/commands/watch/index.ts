@@ -7,6 +7,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
@@ -39,6 +40,7 @@ import type { WatchConfig } from './config.js';
 import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './types.js';
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
+import { createVerboseLogger, type VerboseLogger } from './verbose.js';
 
 // ── Re-exports for backward compatibility ────────────────────────
 
@@ -47,6 +49,7 @@ export { loadWatchConfig } from './config.js';
 export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, CapabilityResult } from './types.js';
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
+export { createVerboseLogger, type VerboseLogger } from './verbose.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
 
@@ -193,12 +196,17 @@ type PRBoardState = Pick<BoardState, 'drafts' | 'needsReview' | 'changesRequeste
   totalOpen: number;
 };
 
-async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter): Promise<PRBoardState> {
+async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter, vlog?: VerboseLogger): Promise<PRBoardState> {
   const timestamp = new Date().toLocaleTimeString();
   const prs = await listWatchPullRequests(adapter, { state: 'open', limit: 20 });
   const squadPRs = prs.filter(pr =>
     pr.labels.some(l => l.name.startsWith('squad')) || pr.headRefName.startsWith('squad/'),
   );
+
+  vlog?.log(`PRs found: ${prs.length} total`);
+  for (const pr of squadPRs) {
+    vlog?.log(`  PR #${pr.number}: "${pr.title}" draft=${pr.isDraft} review=${pr.reviewDecision ?? 'none'}`);
+  }
 
   if (squadPRs.length === 0) {
     return { drafts: 0, needsReview: 0, changesRequested: 0, ciFailures: 0, readyToMerge: 0, totalOpen: 0 };
@@ -272,10 +280,18 @@ async function runCheck(
   autoAssign: boolean,
   capabilities: MachineCapabilities | null,
   adapter: PlatformAdapter,
+  vlog?: VerboseLogger,
 ): Promise<BoardState> {
   const timestamp = new Date().toLocaleTimeString();
   try {
     const issues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 20 });
+
+    vlog?.log(`Issues found: ${issues.length} total`);
+    for (const issue of issues) {
+      const labels = issue.labels?.map((l: { name: string }) => l.name).join(', ') ?? 'none';
+      const assignees = issue.assignees?.map((a: { login: string }) => a.login).join(', ') ?? 'none';
+      vlog?.log(`  #${issue.number}: "${issue.title}" [${labels}] assignees=[${assignees}]`);
+    }
 
     const { filterByCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
     const { handled: capableIssues, skipped: incapableIssues } = filterByCapabilities(issues, capabilities);
@@ -329,7 +345,7 @@ async function runCheck(
       }
     }
 
-    const prState = await checkPRs(roster, adapter);
+    const prState = await checkPRs(roster, adapter, vlog);
     return { untriaged: untriaged.length, assigned: assignedIssues.length, executed: 0, ...prState };
   } catch (e) {
     console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${(e as Error).message}`);
@@ -427,7 +443,7 @@ async function runPhase(
         ...context,
         config: typeof capConfig === 'object' && capConfig !== null
           ? capConfig as Record<string, unknown>
-          : { enabled: !!capConfig, maxConcurrent: config.maxConcurrent, timeout: config.timeout },
+          : { enabled: !!capConfig, maxConcurrent: config.maxConcurrent, timeout: config.timeout, dispatchMode: config.dispatchMode },
       };
       const result = await cap.execute(capContext);
       results.set(cap.name, result);
@@ -539,7 +555,7 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
 
 // ── Exported helpers (backward compat) ───────────────────────────
 
-export { findExecutableIssues } from './capabilities/execute.js';
+export { findExecutableIssues, classifyIssue } from './capabilities/execute.js';
 
 export function buildAgentCommand(
   issue: WatchWorkItem,
@@ -635,6 +651,33 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     return fatal(`Could not detect platform: ${(err as Error).message}`);
   }
 
+  // Verbose logger
+  const vlog = createVerboseLogger(config.verbose ?? false);
+
+  vlog.section('Startup');
+  vlog.table({
+    repo: teamRoot,
+    platform: adapter.type,
+    // This table only prints when verbose mode is active, so verbose is always true here.
+    verbose: config.verbose ?? false,
+    interval: `${config.interval}m`,
+    execute: config.execute ?? false,
+    agentCmd: config.agentCmd ?? '(default: gh copilot)',
+    dispatchMode: config.capabilities['wave-dispatch'] ? 'wave' : 'task',
+    maxConcurrent: config.maxConcurrent ?? 1,
+  });
+
+  // Auth check (verbose only — avoid unnecessary process spawn on every startup)
+  if (config.verbose && adapter.type === 'github') {
+    try {
+      const authOut = execFileSync('gh', ['auth', 'status'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const activeAccount = authOut.match(/Logged in to .* account (\S+)/)?.[1];
+      vlog.log(`Auth: ${activeAccount ?? 'unknown'}`);
+    } catch {
+      vlog.warn('gh auth status failed — API calls may fail silently');
+    }
+  }
+
   // Verify platform CLI availability
   if (adapter.type === 'github') {
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
@@ -701,6 +744,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     config: {},
     agentCmd: config.agentCmd,
     copilotFlags: config.copilotFlags,
+    verbose: config.verbose,
   };
 
   const enabledCapabilities = await preflightCapabilities(registry, config, baseContext);
@@ -716,7 +760,32 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   if (config.execute) {
     console.log(`${DIM}Max concurrent: ${config.maxConcurrent} | Timeout: ${config.timeout}m${RESET}`);
   }
+  // Warn when fleet dispatch mode is set but the fleet-dispatch capability is not enabled
+  if ((config.dispatchMode === 'fleet' || config.dispatchMode === 'hybrid') &&
+      !enabledCapabilities.some(c => c.name === 'fleet-dispatch')) {
+    console.warn(`${YELLOW}⚠${RESET}  dispatchMode="${config.dispatchMode}" but fleet-dispatch capability is not enabled. Read-heavy issues will not be batched.`);
+  }
   console.log();
+
+  // Fix 2: Set up log-file tee (after banner so the banner itself is captured too)
+  let logStream: fs.WriteStream | undefined;
+  if (config.logFile) {
+    const resolvedLogFile = path.resolve(config.logFile);
+    logStream = fs.createWriteStream(resolvedLogFile, { flags: 'a' });
+    const origLog = console.log.bind(console);
+    console.log = (...args: unknown[]) => {
+      origLog(...args);
+      const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      const line = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
+      // Strip ANSI escape codes for the file
+      const plain = line.replace(/\x1b\[[0-9;]*m/g, '');
+      logStream!.write(`[${timestamp}] ${plain}\n`);
+    };
+    console.log(`${DIM}Log file: ${resolvedLogFile}${RESET}`);
+  }
+
+  // Fix 3: Immediate visual feedback after banner
+  console.log(`Running first check now...`);
 
   // Initialize circuit breaker (#515)
   const circuitBreaker = new PredictiveCircuitBreaker();
@@ -726,6 +795,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   async function executeRound(): Promise<void> {
     const ts = new Date().toLocaleTimeString();
+    const roundStart = Date.now();
 
     // Circuit breaker gate
     if (cbState.status === 'open') {
@@ -769,6 +839,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     round++;
     const roundContext: WatchContext = { ...baseContext, round };
 
+    // Fix 1: Print round start marker
+    console.log(`\n${DIM}Starting round ${round}...${RESET}`);
+    vlog.section(`Round ${round}`);
+
     // Phase 1: pre-scan (self-pull, subsquad discovery)
     await runPhase('pre-scan', enabledCapabilities, roundContext, config);
 
@@ -779,7 +853,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     // Core: triage (always runs — not a capability)
-    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter);
+    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter, vlog);
 
     // Phase 2: post-triage (two-pass hydration)
     await runPhase('post-triage', enabledCapabilities, roundContext, config);
@@ -803,7 +877,24 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       timestamp: new Date(),
     });
     await monitor.healthCheck();
+
+    // Verbose board counters
+    vlog.table({
+      untriaged: roundState.untriaged,
+      assigned: roundState.assigned,
+      drafts: roundState.drafts,
+      needsReview: roundState.needsReview,
+      changesRequested: roundState.changesRequested,
+      ciFailures: roundState.ciFailures,
+      readyToMerge: roundState.readyToMerge,
+      executed: roundState.executed,
+    });
+
     reportBoard(roundState, round);
+
+    // Fix 1: Print next poll time
+    const nextPollTime = new Date(Date.now() + interval * 60 * 1000);
+    console.log(`${DIM}Next poll at ${nextPollTime.toLocaleTimeString()}${RESET}`);
 
     // Post-round: update circuit breaker on success
     if (cbState.status === 'half-open') {
@@ -819,6 +910,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       cbState.consecutiveFailures = 0;
     }
     saveCBState(squadDirInfo.path, cbState);
+
+    const roundEnd = Date.now();
+    const elapsed = ((roundEnd - roundStart) / 1000).toFixed(1);
+    vlog.log(`Round ${round} complete (${elapsed}s)`);
   }
 
   // Run immediately, then on interval
@@ -866,6 +961,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       await monitor.stop();
       saveCBState(squadDirInfo.path, cbState);
       console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
+      logStream?.end();
       resolve();
     };
 
