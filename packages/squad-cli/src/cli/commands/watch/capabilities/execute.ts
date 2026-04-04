@@ -190,7 +190,7 @@ export class ExecuteCapability implements WatchCapability {
     try {
       const timeout = ((context.config['timeout'] as number) ?? 30) * 60_000;
 
-      vlog.log(`Execute: agentCmd=${context.agentCmd ?? 'gh copilot'}, maxConcurrent=${maxConcurrent}, timeout=${timeout / 60_000}m`);
+      vlog.log(`Execute: agentCmd=${context.agentCmd ?? 'gh copilot'}, timeout=${timeout / 60_000}m`);
 
       // Fetch open issues with squad label
       const sdkItems = await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
