@@ -273,8 +273,10 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 
 | Flag | Description | Example |
 |------|-------------|---------|
+| `--notify-level LEVEL` | Control round reporting noise: `important` (default), `all`, `none` | `squad watch --notify-level important` |
 | `--retro` | Enforce retrospective checks (Fridays or when missed >7 days) | `squad watch --retro` |
 | `--decision-hygiene` | Auto-merge decision inbox when >5 files | `squad watch --decision-hygiene` |
+| `--cleanup` | Auto-clear scratch files, archive old logs (every 10 rounds) | `squad watch --cleanup` |
 | `--channel-routing` | Route notifications to specific Teams channels (requires `.squad/teams-channels.json`) | `squad watch --channel-routing` |
 
 ### Common Workflows

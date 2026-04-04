@@ -695,6 +695,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
     join(squadDir, 'log'),
+    join(squadDir, '.scratch'),
   ];
   
   for (const dir of directories) {
@@ -1011,6 +1012,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/log/',
     '.squad/decisions/inbox/',
     '.squad/sessions/',
+    '.squad/.scratch/',
   ];
   
   let existingIgnore = '';
