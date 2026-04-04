@@ -657,6 +657,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   vlog.table({
     repo: teamRoot,
     platform: adapter.type,
+    // This table only prints when verbose mode is active, so verbose is always true here.
     verbose: config.verbose ?? false,
     interval: `${config.interval}m`,
     execute: config.execute ?? false,
