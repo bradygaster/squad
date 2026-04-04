@@ -23,6 +23,8 @@ export interface WatchConfig {
   agentCmd?: string;
   /** Dispatch mode: 'task' (default 1:1), 'fleet' (batch read-only), 'hybrid' (auto-classify). */
   dispatchMode?: DispatchMode;
+  /** Optional path to a log file. When set, console output is tee'd to the file with timestamps. */
+  logFile?: string;
   /** Per-capability config: `true` / `false` / object with sub-options. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
 }
@@ -70,6 +72,7 @@ export function loadWatchConfig(
     copilotFlags: cliOverrides.copilotFlags ?? fileConfig.copilotFlags ?? DEFAULTS.copilotFlags,
     agentCmd: cliOverrides.agentCmd ?? fileConfig.agentCmd ?? DEFAULTS.agentCmd,
     dispatchMode: cliOverrides.dispatchMode ?? fileConfig.dispatchMode ?? DEFAULTS.dispatchMode,
+    logFile: cliOverrides.logFile ?? fileConfig.logFile ?? DEFAULTS.logFile,
     capabilities: {
       ...DEFAULTS.capabilities,
       ...(fileConfig.capabilities ?? {}),
@@ -96,10 +99,11 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
       result.dispatchMode = mode;
     }
   }
+  if (typeof raw['logFile'] === 'string') result.logFile = raw['logFile'];
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'dispatchMode']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'dispatchMode', 'logFile']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {
