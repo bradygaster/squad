@@ -79,7 +79,8 @@ try {
     .filter(Boolean)
     .map((line) => JSON.parse(line));
   files = enrichFileStatuses(apiFiles);
-} catch {
+} catch (err) {
+  console.error('API error:', err.message || err);
   // Fallback: name-only diff (no added/deleted distinction)
   console.error('⚠ API file listing unavailable, falling back to gh pr diff --name-only');
   const diffOutput = execSync(`gh pr diff ${prNumber} --name-only`, {

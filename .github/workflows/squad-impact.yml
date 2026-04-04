@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  issues: write
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
@@ -28,9 +28,7 @@ jobs:
         with:
           sparse-checkout: |
             scripts/analyze-impact.mjs
-            scripts/impact-utils/parse-diff.mjs
-            scripts/impact-utils/risk-scorer.mjs
-            scripts/impact-utils/report-generator.mjs
+            scripts/impact-utils/
           sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
