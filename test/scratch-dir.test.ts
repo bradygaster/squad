@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { scratchDir, scratchFile } from '@bradygaster/squad-sdk';
-import { mkdirSync, rmSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -59,7 +59,8 @@ describe('scratchFile', () => {
   it('generates unique filenames on successive calls', () => {
     const a = scratchFile(SQUAD_ROOT, 'dup', '.txt', 'a');
     const b = scratchFile(SQUAD_ROOT, 'dup', '.txt', 'b');
-    // Counter suffix ensures uniqueness even when Date.now() returns the same value
+    // No delay needed: the monotonic counter inside scratchFile guarantees
+    // unique filenames even when Date.now() returns the same millisecond value.
     expect(a).not.toBe(b);
     expect(existsSync(a)).toBe(true);
     expect(existsSync(b)).toBe(true);
