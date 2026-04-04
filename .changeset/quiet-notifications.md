@@ -8,5 +8,6 @@ Add `--notify-level` to control watch round reporting noise (#803)
 - `--notify-level all`: print every round including empty (old behavior)
 - `--notify-level none`: suppress all round output
 - Add machine name (`os.hostname()`) and repo name to round headers for attribution
+  (shown in round headers when the board has items, and in "Board is clear" message)
 - Configurable via `.squad/config.json` watch section: `"notifyLevel": "important"`
 - Empty rounds silenced by default — no more "Round 160, Round 161" spam

@@ -171,6 +171,14 @@ export interface ReportOptions {
   repoName?: string;
 }
 
+/**
+ * Report the current board state for a watch round.
+ *
+ * @param state  - Current board counts
+ * @param round  - Round number
+ * @param options - Reporting options. Defaults: `notifyLevel = 'important'` (empty
+ *                  rounds are suppressed; only rounds with work items are printed).
+ */
 export function reportBoard(state: BoardState, round: number, options?: ReportOptions): void {
   const level = options?.notifyLevel ?? 'important';
   if (level === 'none') return;
@@ -180,14 +188,14 @@ export function reportBoard(state: BoardState, round: number, options?: ReportOp
   // In 'important' mode, suppress empty rounds entirely
   if (total === 0 && level === 'important') return;
 
-  if (total === 0) {
-    console.log(`${DIM}📋 Board is clear — Ralph is idling${RESET}`);
-    return;
-  }
-
-  // Build context tag for attribution
+  // Build context tag for attribution (shown in all modes)
   const ctx = [options?.machineName, options?.repoName].filter(Boolean).join(' · ');
   const ctxSuffix = ctx ? ` ${DIM}(${ctx})${RESET}` : '';
+
+  if (total === 0) {
+    console.log(`${DIM}📋 Board is clear — Ralph is idling${ctxSuffix}${RESET}`);
+    return;
+  }
 
   console.log(`\n${BOLD}🔄 Ralph — Round ${round}${RESET}${ctxSuffix}`);
   console.log('━'.repeat(30));

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { reportBoard } from '../packages/squad-cli/src/cli/commands/watch/index.js';
 import type { BoardState } from '../packages/squad-cli/src/cli/commands/watch/index.js';
 
@@ -7,75 +7,51 @@ function emptyState(): BoardState {
 }
 
 describe('reportBoard notifyLevel', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('suppresses empty rounds in important mode (default)', () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(' '));
-    try {
-      reportBoard(emptyState(), 42, { notifyLevel: 'important' });
-      expect(logs).toHaveLength(0);
-    } finally {
-      console.log = origLog;
-    }
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    reportBoard(emptyState(), 42, { notifyLevel: 'important' });
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('prints empty rounds in all mode', () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(' '));
-    try {
-      reportBoard(emptyState(), 42, { notifyLevel: 'all' });
-      expect(logs.length).toBeGreaterThan(0);
-      expect(logs.some(l => l.includes('Board is clear'))).toBe(true);
-    } finally {
-      console.log = origLog;
-    }
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    reportBoard(emptyState(), 42, { notifyLevel: 'all' });
+    expect(spy).toHaveBeenCalled();
+    const allOutput = spy.mock.calls.map(c => c.join(' ')).join('\n');
+    expect(allOutput).toContain('Board is clear');
   });
 
   it('suppresses everything in none mode', () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(' '));
-    try {
-      const busy = { ...emptyState(), untriaged: 3, ciFailures: 1 };
-      reportBoard(busy, 10, { notifyLevel: 'none' });
-      expect(logs).toHaveLength(0);
-    } finally {
-      console.log = origLog;
-    }
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const busy = { ...emptyState(), untriaged: 3, ciFailures: 1 };
+    reportBoard(busy, 10, { notifyLevel: 'none' });
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('prints busy rounds in important mode', () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(' '));
-    try {
-      const busy = { ...emptyState(), untriaged: 2, readyToMerge: 1 };
-      reportBoard(busy, 5, { notifyLevel: 'important' });
-      expect(logs.some(l => l.includes('Round 5'))).toBe(true);
-      expect(logs.some(l => l.includes('Untriaged'))).toBe(true);
-    } finally {
-      console.log = origLog;
-    }
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const busy = { ...emptyState(), untriaged: 2, readyToMerge: 1 };
+    reportBoard(busy, 5, { notifyLevel: 'important' });
+    const allOutput = spy.mock.calls.map(c => c.join(' ')).join('\n');
+    expect(allOutput).toContain('Round 5');
+    expect(allOutput).toContain('Untriaged');
   });
 
   it('includes machine and repo in output when provided', () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(' '));
-    try {
-      const busy = { ...emptyState(), assigned: 1 };
-      reportBoard(busy, 3, {
-        notifyLevel: 'all',
-        machineName: 'CPC-tamir-WCBED',
-        repoName: 'my-project',
-      });
-      const roundLine = logs.find(l => l.includes('Round 3'));
-      expect(roundLine).toBeDefined();
-      expect(roundLine).toContain('CPC-tamir-WCBED');
-      expect(roundLine).toContain('my-project');
-    } finally {
-      console.log = origLog;
-    }
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const busy = { ...emptyState(), assigned: 1 };
+    reportBoard(busy, 3, {
+      notifyLevel: 'all',
+      machineName: 'CPC-tamir-WCBED',
+      repoName: 'my-project',
+    });
+    const allOutput = spy.mock.calls.map(c => c.join(' ')).join('\n');
+    expect(allOutput).toContain('Round 3');
+    expect(allOutput).toContain('CPC-tamir-WCBED');
+    expect(allOutput).toContain('my-project');
   });
 });

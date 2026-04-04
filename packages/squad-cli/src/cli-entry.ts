@@ -392,6 +392,8 @@ async function main(): Promise<void> {
     const notifyLevel = (notifyLevelArg === 'all' || notifyLevelArg === 'important' || notifyLevelArg === 'none')
       ? notifyLevelArg : undefined;
 
+    // verbose flag parsing is in PR #782 (--verbose)
+
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(process.cwd(), {
       interval,
