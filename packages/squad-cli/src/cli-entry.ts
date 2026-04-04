@@ -505,7 +505,7 @@ async function main(): Promise<void> {
 
     // After parsing all flags, check for positional args that look like prompts.
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
-    const knownValueFlags = new Set([
+    const knownValueFlagsPositional = new Set([
       '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
@@ -513,7 +513,7 @@ async function main(): Promise<void> {
     const positionalArgs: string[] = [];
     for (let i = 0; i < watchArgs.length; i++) {
       const arg = watchArgs[i]!;
-      if (knownValueFlags.has(arg)) { i++; continue; }
+      if (knownValueFlagsPositional.has(arg)) { i++; continue; }
       if (arg.startsWith('-')) continue;
       positionalArgs.push(arg);
     }

@@ -31,6 +31,14 @@ export interface WatchConfig {
   verbose?: boolean;
   /** Preferred auth user for platform operations (e.g. gh auth switch --user). */
   authUser?: string;
+  /** Optional webhook URL for notifications. */
+  webhookUrl?: string;
+  /** Alert threshold for budget warnings. */
+  alertThreshold?: number;
+  /** Maximum budget cap. */
+  maxBudget?: number;
+  /** Machine-level capability tags. */
+  machineCapabilities?: string[];
 }
 
 const DEFAULTS: WatchConfig = {
@@ -83,6 +91,11 @@ export function loadWatchConfig(
       ...(cliOverrides.capabilities ?? {}),
     },
     verbose: cliOverrides.verbose ?? fileConfig.verbose ?? false,
+    authUser: cliOverrides.authUser ?? fileConfig.authUser,
+    webhookUrl: cliOverrides.webhookUrl ?? fileConfig.webhookUrl,
+    alertThreshold: cliOverrides.alertThreshold ?? fileConfig.alertThreshold,
+    maxBudget: cliOverrides.maxBudget ?? fileConfig.maxBudget,
+    machineCapabilities: cliOverrides.machineCapabilities ?? fileConfig.machineCapabilities,
   };
 
   return merged;
