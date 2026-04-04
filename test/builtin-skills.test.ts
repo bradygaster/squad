@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { TEMPLATE_MANIFEST } from '../packages/squad-cli/src/cli/core/templates.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-const TEMPLATES_DIR = path.join(process.cwd(), 'packages', 'squad-cli', 'templates');
+// Use __dirname for reliable resolution regardless of working directory
+const TEMPLATES_DIR = path.resolve(__dirname, '..', 'packages', 'squad-cli', 'templates');
 
 /** Expected built-in skills that ship with squad init/upgrade */
 const EXPECTED_BUILTIN_SKILLS = [
@@ -17,6 +18,8 @@ const EXPECTED_BUILTIN_SKILLS = [
   'agent-collaboration',
 ];
 
+// Unit tests for the skill manifest declarations. End-to-end scaffolding
+// (files actually written to disk) is tested via `squad init` integration tests.
 describe('built-in skills in TEMPLATE_MANIFEST', () => {
   const skillEntries = TEMPLATE_MANIFEST.filter(f => f.destination.includes('.copilot/skills/'));
 
