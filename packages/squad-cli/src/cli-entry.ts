@@ -305,7 +305,7 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'upgrade') {
-    const { runUpgrade } = await import('./cli/core/upgrade.js');
+    const { runUpgrade, selfUpgradeCli } = await import('./cli/core/upgrade.js');
     const { migrateDirectory } = await import('./cli/core/migrate-directory.js');
     
     const migrateDir = args.includes('--migrate-directory');
@@ -314,12 +314,24 @@ async function main(): Promise<void> {
     const insiderUpgrade = args.includes('--insider');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
     
+    // Warn when --insider is used without --self (it has no effect on project upgrades)
+    if (insiderUpgrade && !selfUpgrade) {
+      console.warn('⚠ --insider has no effect without --self');
+    }
+
     // Handle --migrate-directory flag
     if (migrateDir) {
       await migrateDirectory(dest);
-      // Continue with regular upgrade after migration
     }
     
+    // Handle --self: upgrade the CLI package itself, then exit immediately
+    // (running code is stale after the binary is replaced)
+    if (selfUpgrade) {
+      await selfUpgradeCli({ insider: insiderUpgrade, force: forceUpgrade });
+      console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
+      return;
+    }
+
     // Run upgrade
     await runUpgrade(dest, { 
       migrateDirectory: migrateDir,

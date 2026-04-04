@@ -451,9 +451,9 @@ const PACKAGE_NAME = '@bradygaster/squad-cli';
  * Self-upgrade the Squad CLI package to the latest version.
  * Uses npm/npx to install the latest (or insider) version globally.
  */
-async function selfUpgradeCli(insider: boolean): Promise<void> {
+export async function selfUpgradeCli(options: { insider?: boolean; force?: boolean } = {}): Promise<void> {
   const currentVersion = getPackageVersion();
-  const tag = insider ? 'insider' : 'latest';
+  const tag = options.insider ? 'insider' : 'latest';
 
   info(`Self-upgrading Squad CLI (current: v${currentVersion})...`);
   info(`Installing ${PACKAGE_NAME}@${tag}...`);
@@ -485,11 +485,18 @@ async function selfUpgradeCli(insider: boolean): Promise<void> {
   } catch (err) {
     const msg = (err as Error).message;
     if (msg.includes('EACCES') || msg.includes('permission')) {
-      fatal(
-        `Permission denied. Try:\n` +
-        `  sudo npm install -g ${PACKAGE_NAME}@${tag}\n` +
-        `Or use npx: npx ${PACKAGE_NAME}@${tag} upgrade`
-      );
+      // Only suggest sudo for npm — pnpm/yarn rarely need elevated permissions
+      if (isPnpm) {
+        fatal(`Permission denied. Check pnpm global store permissions or try: pnpm add -g ${PACKAGE_NAME}@${tag}`);
+      } else if (isYarn) {
+        fatal(`Permission denied. Check yarn global dir permissions or try: yarn global add ${PACKAGE_NAME}@${tag}`);
+      } else {
+        fatal(
+          `Permission denied. Try:\n` +
+          `  sudo npm install -g ${PACKAGE_NAME}@${tag}\n` +
+          `Or use npx: npx ${PACKAGE_NAME}@${tag} upgrade`
+        );
+      }
     }
     fatal(`Self-upgrade failed: ${msg}`);
   }
@@ -519,15 +526,6 @@ async function selfUpgradeCli(insider: boolean): Promise<void> {
  * Run the upgrade command
  */
 export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Promise<UpdateInfo> {
-  // Handle --self: upgrade the CLI package itself before upgrading repo files
-  if (options.self) {
-    await selfUpgradeCli(options.insider ?? false);
-    // After self-upgrade, the new CLI will have new templates.
-    // Continue with the regular upgrade to apply them to the repo.
-    info('Continuing with repo upgrade using the new CLI version...');
-    console.log();
-  }
-
   const cliVersion = getPackageVersion();
   const filesUpdated: string[] = [];
   

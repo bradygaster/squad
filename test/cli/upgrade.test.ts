@@ -3,13 +3,13 @@
  * Tests that the upgrade command handles version changes correctly
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories } from '@bradygaster/squad-cli/core/upgrade';
+import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, selfUpgradeCli } from '@bradygaster/squad-cli/core/upgrade';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(process.cwd(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
@@ -352,5 +352,23 @@ describe('CLI: upgrade command', () => {
     // or it processes the full manifest)
     expect(forceResult.filesUpdated.length).toBeGreaterThan(0);
     expect(forceResult.filesUpdated).toContain('squad.agent.md');
+  });
+
+  /* ── --self flag (selfUpgradeCli) ──────────────────────────── */
+
+  it('selfUpgradeCli shells out with correct package tag', async () => {
+    const childProcess = await import('node:child_process');
+    const execFileSyncSpy = vi.spyOn(childProcess, 'execFileSync').mockImplementation(() => Buffer.from(''));
+
+    await selfUpgradeCli({ insider: true });
+
+    expect(execFileSyncSpy).toHaveBeenCalled();
+    const firstCall = execFileSyncSpy.mock.calls[0]!;
+    const cmd = firstCall[0] as string;
+    const cmdArgs = firstCall[1] as string[];
+    expect(cmdArgs.some(a => a.includes('@bradygaster/squad-cli@insider'))).toBe(true);
+    expect(['npm', 'pnpm', 'yarn']).toContain(cmd);
+
+    execFileSyncSpy.mockRestore();
   });
 });
