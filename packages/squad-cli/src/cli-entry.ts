@@ -363,6 +363,8 @@ async function main(): Promise<void> {
 
     const execute = args.includes('--execute') ? true : undefined;
 
+    const verbose = args.includes('--verbose') || args.includes('-v');
+
     const copilotFlagsIdx = args.indexOf('--copilot-flags');
     const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
       ? args[copilotFlagsIdx + 1]
@@ -425,10 +427,29 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      verbose,
       dispatchMode,
       logFile,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
+
+    // After parsing all flags, check for positional args that look like prompts.
+    // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
+    const knownValueFlags = new Set([
+      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project',
+    ]);
+    const watchArgStart = args.indexOf(cmd) + 1;
+    const watchArgs = args.slice(watchArgStart);
+    const positionalArgs: string[] = [];
+    for (let i = 0; i < watchArgs.length; i++) {
+      const arg = watchArgs[i]!;
+      if (knownValueFlags.has(arg)) { i++; continue; }
+      if (arg.startsWith('-')) continue;
+      positionalArgs.push(arg);
+    }
+    if (positionalArgs.length > 0 && config.verbose) {
+      console.log(`[verbose] ⚠️ Positional args ignored by watch: "${positionalArgs.join(' ')}". Use --execute to process issues.`);
+    }
 
     await runWatch(process.cwd(), config);
     return;

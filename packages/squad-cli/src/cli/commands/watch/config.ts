@@ -27,6 +27,8 @@ export interface WatchConfig {
   logFile?: string;
   /** Per-capability config: `true` / `false` / object with sub-options. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
+  /** Enable verbose diagnostic output for debugging. */
+  verbose?: boolean;
 }
 
 const DEFAULTS: WatchConfig = {
@@ -78,6 +80,7 @@ export function loadWatchConfig(
       ...(fileConfig.capabilities ?? {}),
       ...(cliOverrides.capabilities ?? {}),
     },
+    verbose: cliOverrides.verbose ?? fileConfig.verbose ?? false,
   };
 
   return merged;
@@ -93,6 +96,7 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['timeout'] === 'number') result.timeout = raw['timeout'];
   if (typeof raw['copilotFlags'] === 'string') result.copilotFlags = raw['copilotFlags'];
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
+  if (typeof raw['verbose'] === 'boolean') result.verbose = raw['verbose'];
   if (typeof raw['dispatchMode'] === 'string') {
     const mode = raw['dispatchMode'] as string;
     if (mode === 'fleet' || mode === 'task' || mode === 'hybrid') {
@@ -103,7 +107,7 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'dispatchMode', 'logFile']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

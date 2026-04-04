@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
+import { createVerboseLogger } from '../verbose.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -184,8 +185,12 @@ export class ExecuteCapability implements WatchCapability {
   }
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
+    const vlog = createVerboseLogger(context.verbose ?? false);
+
     try {
       const timeout = ((context.config['timeout'] as number) ?? 30) * 60_000;
+
+      vlog.log(`Execute: agentCmd=${context.agentCmd ?? 'gh copilot'}, timeout=${timeout / 60_000}m`);
 
       // Fetch open issues with squad label
       const sdkItems = await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
@@ -198,6 +203,12 @@ export class ExecuteCapability implements WatchCapability {
 
       // Minimal filter: must have squad or squad:* label (agent decides the rest)
       const eligible = findExecutableIssues(context.roster, null, issues);
+
+      vlog.log(`Execute: ${issues.length} total issues, ${eligible.length} eligible`);
+      for (const issue of eligible.slice(0, 5)) {
+        const labels = issue.labels.map(l => l.name).join(', ');
+        vlog.log(`  → #${issue.number}: "${issue.title}" [${labels}]`);
+      }
 
       if (eligible.length === 0) {
         return { success: true, summary: 'no squad-labeled issues found' };
