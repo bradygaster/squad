@@ -62,17 +62,36 @@ function buildAgentCommand(
   return { cmd: 'gh', args };
 }
 
-/** Find issues eligible for autonomous execution (squad-labeled only).
+/** Labels that indicate an issue should not be auto-executed. */
+const BLOCKING_LABELS = ['status:blocked', 'status:wontfix', 'status:on-hold', 'blocked'];
+
+/** Check whether an issue has a blocking status label. */
+function hasBlockingLabel(issue: ExecutableWorkItem): boolean {
+  return issue.labels.some(l => BLOCKING_LABELS.includes(l.name));
+}
+
+/** Check whether an issue is already assigned to a human. */
+function isAssigned(issue: ExecutableWorkItem): boolean {
+  return issue.assignees.length > 0;
+}
+
+/** Find issues eligible for autonomous execution.
  *
- * Intentionally minimal — the agent reads .squad/ralph-instructions.md
- * and decides which issues to act on, matching the PS1 ralph-watch design.
+ * Pre-filters to keep only clearly actionable items:
+ *  - must have a squad/squad:* label
+ *  - must not be assigned to a human (agent decides once it reads ralph-instructions.md)
+ *  - must not carry a blocking status label
+ *
+ * Matches the PS1 ralph-watch pre-filter design.
  */
 export function findExecutableIssues(
   _roster: Array<{ name: string; label: string; expertise: string[] }>,
   _capabilities: MachineCapabilities | null,
   issues: ExecutableWorkItem[],
 ): ExecutableWorkItem[] {
-  return issues.filter(hasSquadLabel);
+  return issues.filter(
+    issue => hasSquadLabel(issue) && !isAssigned(issue) && !hasBlockingLabel(issue),
+  );
 }
 
 /** Format issue list for the agent prompt. */
