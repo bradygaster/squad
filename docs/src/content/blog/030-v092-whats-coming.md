@@ -130,7 +130,7 @@ Multi-word agent names (like "Steve Rogers") now correctly generate `squad:steve
 
 ## Bug Fixes
 
-- **PR contamination** — Scribe now stages only `.squad/` files, not `git add .` (#783)
+- **PR contamination** — Scribe now stages only `.squad/` files, not broad staging commands (#783)
 - **Outdated review threads** — PR readiness check ignores threads where code changed (#780)
 - **Filename uniqueness** — `scratchFile()` uses monotonic counter, not just `Date.now()`
 - **Cross-platform paths** — `deriveProjectKey()` handles Windows paths on Linux CI

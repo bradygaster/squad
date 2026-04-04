@@ -75,7 +75,7 @@ describe('CleanupCapability', () => {
 
     const result = await cap.execute(makeContext());
     expect(result.success).toBe(true);
-    expect(result.summary).toContain('orchestration-log: 1 entries archived');
+    expect(result.summary).toContain('orchestration-log: 1 entries pruned');
     // Recent file should still exist
     const remaining = readdirSync(path.join(SQUAD_DIR, 'orchestration-log'));
     expect(remaining).toHaveLength(1);
@@ -89,7 +89,7 @@ describe('CleanupCapability', () => {
 
     const result = await cap.execute(makeContext());
     expect(result.success).toBe(true);
-    expect(result.summary).toContain('log: 1 entries archived');
+    expect(result.summary).toContain('log: 1 entries pruned');
   });
 
   it('warns about stale inbox files (>7 days)', async () => {
