@@ -172,6 +172,10 @@ const AGENT_TEMPLATES: Record<string, { displayName: string; description: string
   'ralph': {
     displayName: 'Ralph',
     description: 'Persistent memory agent that maintains context across sessions.'
+  },
+  'fact-checker': {
+    displayName: 'Fact Checker',
+    description: 'Devil\'s advocate and verification agent — validates claims, detects hallucinations, and runs counter-hypotheses.'
   }
 };
 
@@ -695,6 +699,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
     join(squadDir, 'log'),
+    join(squadDir, '.scratch'),
   ];
   
   for (const dir of directories) {
@@ -1011,6 +1016,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/log/',
     '.squad/decisions/inbox/',
     '.squad/sessions/',
+    '.squad/.scratch/',
   ];
   
   let existingIgnore = '';

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Init command implementation — uses SDK
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
@@ -242,7 +242,10 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   };
   process.on('SIGINT', sigintHandler);
 
-  // Run SDK init
+  // Run SDK init — the CLI init is a thin ceremony wrapper around sdkInitSquad(),
+  // which handles all file scaffolding, template expansion, and directory creation.
+  // This separation allows the SDK to be used headlessly (e.g. in tests or CI)
+  // while the CLI adds interactive UX (typewriter, celebrations, worktree guard).
   let result;
   try {
     result = await sdkInitSquad(initOptions);

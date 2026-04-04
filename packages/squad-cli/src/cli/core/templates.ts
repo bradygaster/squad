@@ -131,6 +131,12 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Scribe charter template',
   },
   {
+    source: 'fact-checker-charter.md',
+    destination: 'fact-checker-charter.md',
+    overwriteOnUpgrade: true,
+    description: 'Fact checker charter template',
+  },
+  {
     source: 'skill.md',
     destination: 'skill.md',
     overwriteOnUpgrade: true,
@@ -179,6 +185,48 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     destination: '../.copilot/skills/squad-conventions/SKILL.md',
     overwriteOnUpgrade: true,
     description: 'Squad conventions skill definition',
+  },
+  {
+    source: 'skills/error-recovery/SKILL.md',
+    destination: '../.copilot/skills/error-recovery/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Graceful error recovery patterns',
+  },
+  {
+    source: 'skills/secret-handling/SKILL.md',
+    destination: '../.copilot/skills/secret-handling/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Secrets management and credential safety',
+  },
+  {
+    source: 'skills/git-workflow/SKILL.md',
+    destination: '../.copilot/skills/git-workflow/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Git workflow conventions and branch management',
+  },
+  {
+    source: 'skills/session-recovery/SKILL.md',
+    destination: '../.copilot/skills/session-recovery/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Session checkpoint and recovery patterns',
+  },
+  {
+    source: 'skills/reviewer-protocol/SKILL.md',
+    destination: '../.copilot/skills/reviewer-protocol/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Code review protocol and reviewer gate patterns',
+  },
+  {
+    source: 'skills/test-discipline/SKILL.md',
+    destination: '../.copilot/skills/test-discipline/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Test-first discipline and coverage expectations',
+  },
+  {
+    source: 'skills/agent-collaboration/SKILL.md',
+    destination: '../.copilot/skills/agent-collaboration/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Multi-agent collaboration and handoff patterns',
   },
   
   // Workflows (squad-owned, overwrite on upgrade)

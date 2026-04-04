@@ -127,6 +127,9 @@ async function main(): Promise<void> {
   const cmd = rawCmd?.trim() || '';
 
   // --version / -v / version
+  // Investigated: routing is correct — cmd matches 'version' directly.
+  // "Unknown command: version" reports may be shell-specific (e.g. alias/wrapper
+  // prepending flags so args[0] is no longer 'version'). No intercepting router found.
   if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
     console.log(VERSION);
     return;
@@ -149,9 +152,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
     console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
-    console.log(`             Flags: --self (upgrade the CLI package itself)`);
-    console.log(`                    --self --insider (upgrade to latest insider build)`);
-    console.log(`                    --global (upgrade personal squad)`);
+    console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
@@ -179,6 +180,7 @@ async function main(): Promise<void> {
     console.log(`                    --retro           enforce retrospective checks`);
     console.log(`                    --decision-hygiene auto-merge decision inbox`);
     console.log(`             Disable: --no-<capability> overrides config.json`);
+    console.log(`             Logging: --log-file <path> tee output to file with timestamps`);
     console.log(`  ${BOLD}loop${RESET}       Prompt-driven continuous work loop`);
     console.log(`             Usage: loop [--init] [--file <path>] [--interval <min>]`);
     console.log(`             Reads loop.md and runs it each cycle (no issues needed)`);
@@ -311,23 +313,23 @@ async function main(): Promise<void> {
     const migrateDir = args.includes('--migrate-directory');
     const selfUpgrade = args.includes('--self');
     const forceUpgrade = args.includes('--force');
-    const insiderUpgrade = args.includes('--insider');
+    const insider = args.includes('--insider');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
     
     // Warn when --insider is used without --self (it has no effect on project upgrades)
-    if (insiderUpgrade && !selfUpgrade) {
+    if (insider && !selfUpgrade) {
       console.warn('⚠ --insider has no effect without --self');
     }
 
     // Handle --migrate-directory flag
     if (migrateDir) {
       await migrateDirectory(dest);
+      // Continue with regular upgrade after migration
     }
     
-    // Handle --self: upgrade the CLI package itself, then exit immediately
-    // (running code is stale after the binary is replaced)
+    // Handle --self: upgrade the CLI package itself
     if (selfUpgrade) {
-      await selfUpgradeCli({ insider: insiderUpgrade, force: forceUpgrade });
+      await selfUpgradeCli({ insider, force: forceUpgrade });
       console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
       return;
     }
@@ -336,8 +338,7 @@ async function main(): Promise<void> {
     await runUpgrade(dest, { 
       migrateDirectory: migrateDir,
       self: selfUpgrade,
-      force: forceUpgrade,
-      insider: insiderUpgrade,
+      force: forceUpgrade
     });
     
     return;
@@ -354,6 +355,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  // --health flag: show watch instance status and exit
+  if (cmd === 'watch' && args.includes('--health')) {
+    const { getWatchHealth } = await import('./cli/commands/watch/health.js');
+    console.log(getWatchHealth(process.cwd()));
+    return;
+  }
+
   if (cmd === 'triage' || cmd === 'watch') {
     const { runWatch, loadWatchConfig, createDefaultRegistry } = await import('./cli/commands/watch/index.js');
 
@@ -364,6 +372,8 @@ async function main(): Promise<void> {
       : undefined;
 
     const execute = args.includes('--execute') ? true : undefined;
+
+    const verbose = args.includes('--verbose') || args.includes('-v');
 
     const copilotFlagsIdx = args.indexOf('--copilot-flags');
     const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
@@ -383,6 +393,28 @@ async function main(): Promise<void> {
     const timeoutIdx = args.indexOf('--timeout');
     const timeout = (timeoutIdx !== -1 && args[timeoutIdx + 1])
       ? parseInt(args[timeoutIdx + 1]!, 10)
+      : undefined;
+
+    // --dispatch-mode runtime validation: rejects invalid values with a clear error message
+    const dispatchModeIdx = args.indexOf('--dispatch-mode');
+    const rawDispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
+      ? args[dispatchModeIdx + 1]
+      : undefined;
+    const validModes = ['task', 'fleet', 'hybrid'] as const;
+    const dispatchMode = rawDispatchMode && validModes.includes(rawDispatchMode as any)
+      ? rawDispatchMode as 'fleet' | 'task' | 'hybrid'
+      : rawDispatchMode
+        ? (console.error(`⚠️ Invalid --dispatch-mode "${rawDispatchMode}". Valid: task, fleet, hybrid. Defaulting to task.`), undefined)
+        : undefined;
+
+    const logFileIdx = args.indexOf('--log-file');
+    const logFile = (logFileIdx !== -1 && args[logFileIdx + 1])
+      ? args[logFileIdx + 1]
+      : undefined;
+
+    const authUserIdx = args.indexOf('--auth-user');
+    const authUser = (authUserIdx !== -1 && args[authUserIdx + 1])
+      ? args[authUserIdx + 1]
       : undefined;
 
     // Build capability overrides from CLI flags and --no-{cap} flags
@@ -410,8 +442,30 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      verbose,
+      dispatchMode,
+      logFile,
+      authUser,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
+
+    // After parsing all flags, check for positional args that look like prompts.
+    // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
+    const knownValueFlags = new Set([
+      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+    ]);
+    const watchArgStart = args.indexOf(cmd) + 1;
+    const watchArgs = args.slice(watchArgStart);
+    const positionalArgs: string[] = [];
+    for (let i = 0; i < watchArgs.length; i++) {
+      const arg = watchArgs[i]!;
+      if (knownValueFlags.has(arg)) { i++; continue; }
+      if (arg.startsWith('-')) continue;
+      positionalArgs.push(arg);
+    }
+    if (positionalArgs.length > 0 && config.verbose) {
+      console.log(`[verbose] ⚠️ Positional args ignored by watch: "${positionalArgs.join(' ')}". Use --execute to process issues.`);
+    }
 
     await runWatch(process.cwd(), config);
     return;
