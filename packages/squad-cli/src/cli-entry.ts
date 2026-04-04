@@ -311,6 +311,7 @@ async function main(): Promise<void> {
         const squadDir = join(dest, '.squad');
         if (!existsSync(squadDir)) mkdirSync(squadDir, { recursive: true });
         const configPath = join(squadDir, 'config.json');
+        // Read existing config first, then merge (avoids overwriting unrelated keys)
         let config: Record<string, unknown> = {};
         try {
           if (existsSync(configPath)) {
@@ -404,7 +405,7 @@ async function main(): Promise<void> {
 
     // --state-backend flag for watch command
     const watchStateBackendIdx = args.indexOf('--state-backend');
-    const watchStateBackend = (watchStateBackendIdx !== -1 && args[watchStateBackendIdx + 1])
+    const rawWatchStateBackend = (watchStateBackendIdx !== -1 && args[watchStateBackendIdx + 1])
       ? args[watchStateBackendIdx + 1] as string
       : undefined;
 
@@ -425,7 +426,7 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
-      stateBackend: watchStateBackend,
+      stateBackend: watchStateBackend as any,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 

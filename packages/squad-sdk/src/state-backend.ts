@@ -4,7 +4,7 @@
  * @module state-backend
  */
 
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 
@@ -21,6 +21,9 @@ export interface StateBackend {
 }
 
 export class WorktreeBackend implements StateBackend {
+    if (relativePath.includes('..')) throw new Error('Path traversal not allowed');
+    if (relativePath.includes('..')) throw new Error('Path traversal not allowed');
+    if (relativePath.includes('..')) throw new Error('Path traversal not allowed');
   readonly name = 'worktree';
   private readonly root: string;
   constructor(squadDir: string) { this.root = squadDir; }
@@ -42,7 +45,13 @@ export class WorktreeBackend implements StateBackend {
 
 function gitExec(args: string, cwd: string): string | null {
   try {
-    return execSync(`git ${args}`, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync('git', args.split(' '), { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch { return null; }
+}
+
+function gitExecContent(args, cwd) {
+  try {
+    return execFileSync('git', args.split(' '), { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trimEnd();
   } catch { return null; }
 }
 
@@ -93,11 +102,12 @@ export class GitNotesBackend implements StateBackend {
     this.saveBlob(blob);
   }
   exists(relativePath: string): boolean {
-    return normalizeKey(relativePath) in this.loadBlob();
+    return Object.hasOwn(this.loadBlob(), normalizeKey(relativePath));
   }
   list(relativeDir: string): string[] {
     const blob = this.loadBlob();
-    const dirPrefix = normalizeKey(relativeDir) + '/';
+    const normalized = normalizeKey(relativeDir);
+    const dirPrefix = normalized ? normalized + '/' : '';
     const entries = new Set<string>();
     for (const key of Object.keys(blob)) {
       if (key.startsWith(dirPrefix)) {
