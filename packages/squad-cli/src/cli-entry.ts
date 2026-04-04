@@ -369,6 +369,21 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : undefined;
 
+    const overnightStartIdx = args.indexOf('--overnight-start');
+    const overnightStart = (overnightStartIdx !== -1 && args[overnightStartIdx + 1])
+      ? args[overnightStartIdx + 1]
+      : undefined;
+
+    const overnightEndIdx = args.indexOf('--overnight-end');
+    const overnightEnd = (overnightEndIdx !== -1 && args[overnightEndIdx + 1])
+      ? args[overnightEndIdx + 1]
+      : undefined;
+
+    const sentinelFileIdx = args.indexOf('--sentinel-file');
+    const sentinelFile = (sentinelFileIdx !== -1 && args[sentinelFileIdx + 1])
+      ? args[sentinelFileIdx + 1]
+      : undefined;
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -394,6 +409,9 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      overnightStart,
+      overnightEnd,
+      sentinelFile,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
