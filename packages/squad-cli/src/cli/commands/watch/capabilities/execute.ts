@@ -2,7 +2,7 @@
  * Execute capability — spawns Copilot sessions for eligible issues.
  */
 
-import { execFile, type ChildProcess } from 'node:child_process';
+import { spawn, execFile, type ChildProcess } from 'node:child_process';
 import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -145,7 +145,9 @@ export function buildAgentPrompt(
   ].join('\n');
 }
 
-/** Spawn a single agent session for all eligible issues. */
+/** Spawn a single agent session for all eligible issues.
+ * Uses spawn with stdio:'inherit' so agency output streams to terminal in real-time.
+ */
 async function executeAll(
   issues: ExecutableWorkItem[],
   context: WatchContext,
@@ -155,21 +157,34 @@ async function executeAll(
   const { cmd, args, promptFile } = buildAgentCommand(prompt, context);
 
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
-    const _cp: ChildProcess = execFile(
-      cmd,
-      args,
-      { cwd: context.teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
-      (err) => {
-        try { unlinkSync(promptFile); } catch { /* ignore */ }
-        if (err) {
-          const execErr = err as Error & { killed?: boolean };
-          const msg = execErr.killed ? `Timed out` : execErr.message;
-          resolve({ success: false, error: msg });
-        } else {
-          resolve({ success: true });
-        }
-      },
-    );
+    const cp = spawn(cmd, args, {
+      cwd: context.teamRoot,
+      stdio: 'inherit',  // Stream output to terminal in real-time
+      env: { ...process.env },
+    });
+
+    // Timeout guard
+    const timer = setTimeout(() => {
+      cp.kill('SIGTERM');
+      try { unlinkSync(promptFile); } catch { /* ignore */ }
+      resolve({ success: false, error: 'Timed out' });
+    }, timeoutMs);
+
+    cp.on('close', (code) => {
+      clearTimeout(timer);
+      try { unlinkSync(promptFile); } catch { /* ignore */ }
+      if (code === 0) {
+        resolve({ success: true });
+      } else {
+        resolve({ success: false, error: `Agent exited with code ${code}` });
+      }
+    });
+
+    cp.on('error', (err) => {
+      clearTimeout(timer);
+      try { unlinkSync(promptFile); } catch { /* ignore */ }
+      resolve({ success: false, error: err.message });
+    });
   });
 }
 
