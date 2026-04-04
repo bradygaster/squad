@@ -7,7 +7,8 @@
  */
 
 import path from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import { execFile, execFileSync, execSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
@@ -635,10 +636,21 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     return fatal(`Could not detect platform: ${(err as Error).message}`);
   }
 
-  // Verify platform CLI availability
+  // Verify platform CLI availability (with auth repair for GitHub)
   if (adapter.type === 'github') {
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
-    if (!(await ghAuthenticated())) fatal('gh CLI not authenticated — run: gh auth login');
+    if (!(await ghAuthenticated())) {
+      console.log(`${YELLOW}⚠️${RESET}  gh CLI not authenticated — attempting auth repair`);
+      try {
+        execSync('gh auth switch --user tamirdresher', { encoding: 'utf-8', timeout: 15_000 });
+        if (!(await ghAuthenticated())) {
+          fatal('gh CLI not authenticated after repair — run: gh auth login');
+        }
+        console.log(`${GREEN}✓${RESET} Auth repaired via account switch`);
+      } catch {
+        fatal('gh CLI not authenticated — run: gh auth login');
+      }
+    }
   } else if (adapter.type === 'azure-devops') {
     try { await execFileAsync('az', ['devops', '-h']); } catch { fatal('az CLI not found'); }
     try { await execFileAsync('az', ['account', 'show']); } catch { fatal('az CLI not authenticated — run: az login'); }
@@ -723,9 +735,40 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   let cbState = loadCBState(squadDirInfo.path);
   let round = 0;
   let roundInProgress = false;
+  let remediationTier = 0;
+  let stopRequested = false;
 
   async function executeRound(): Promise<void> {
     const ts = new Date().toLocaleTimeString();
+
+    // Sentinel file check — graceful stop
+    const sentinelPath = config.sentinelFile || path.join(squadDirInfo.path, 'ralph-stop');
+    if (fs.existsSync(sentinelPath)) {
+      console.log(`${RED}🛑${RESET} [${ts}] Sentinel file detected — stopping after this round`);
+      try { fs.unlinkSync(sentinelPath); } catch { /* best-effort cleanup */ }
+      stopRequested = true;
+      return;
+    }
+
+    // Overnight window check — sleep during off-hours
+    if (config.overnightStart && config.overnightEnd) {
+      const now = new Date();
+      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const inWindow = config.overnightStart > config.overnightEnd
+        ? (currentTime >= config.overnightStart || currentTime < config.overnightEnd) // spans midnight
+        : (currentTime >= config.overnightStart && currentTime < config.overnightEnd);
+      if (inWindow) {
+        const [endH, endM] = config.overnightEnd.split(':').map(Number) as [number, number];
+        const endToday = new Date(now);
+        endToday.setHours(endH, endM, 0, 0);
+        let sleepMs = endToday.getTime() - now.getTime();
+        if (sleepMs <= 0) sleepMs += 24 * 60 * 60 * 1000; // next day
+        const sleepMin = Math.ceil(sleepMs / 60_000);
+        console.log(`${DIM}😴 [${ts}] Overnight window (${config.overnightStart}–${config.overnightEnd}) — sleeping ${sleepMin}m${RESET}`);
+        await new Promise(r => setTimeout(r, sleepMs));
+        return;
+      }
+    }
 
     // Circuit breaker gate
     if (cbState.status === 'open') {
@@ -819,6 +862,9 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       cbState.consecutiveFailures = 0;
     }
     saveCBState(squadDirInfo.path, cbState);
+
+    // De-escalate remediation tier on success
+    remediationTier = Math.max(0, remediationTier - 1);
   }
 
   // Run immediately, then on interval
@@ -828,6 +874,11 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     const intervalId = setInterval(
       async () => {
         if (roundInProgress) return;
+        if (stopRequested) {
+          clearInterval(intervalId);
+          resolve();
+          return;
+        }
         roundInProgress = true;
         try {
           await executeRound();
@@ -843,6 +894,45 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
             console.log(`${RED}🛑${RESET} Rate limited — circuit opened, cooldown ${cbState.cooldownMinutes}m`);
           } else {
             console.error(`${RED}✗${RESET} Round error: ${err.message}`);
+          }
+
+          // Tiered remediation — escalates on consecutive failures
+          remediationTier++;
+          const remTs = new Date().toLocaleTimeString();
+          if (remediationTier === 1) {
+            console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 1 remediation: resetting circuit breaker`);
+            cbState.status = 'closed';
+            cbState.cooldownMinutes = 2;
+            cbState.consecutiveFailures = 0;
+            saveCBState(squadDirInfo.path, cbState);
+          } else if (remediationTier === 2) {
+            console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 2 remediation: re-probing auth`);
+            try {
+              const authCheck = execSync('gh auth status', { encoding: 'utf-8', timeout: 15_000 }).toString();
+              if (!authCheck.includes('Logged in')) {
+                console.log(`${RED}❌${RESET} Auth failed — attempting recovery`);
+                try {
+                  execSync('gh auth switch --user tamirdresher', { encoding: 'utf-8', timeout: 15_000 });
+                } catch { /* best-effort switch */ }
+              }
+            } catch {
+              console.log(`${YELLOW}⚠️${RESET}  Auth probe failed — will retry next round`);
+            }
+          } else if (remediationTier === 3) {
+            console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 3 remediation: pulling latest`);
+            try {
+              execSync('git stash && git pull --ff-only && git stash pop', {
+                encoding: 'utf-8',
+                cwd: teamRoot,
+                timeout: 30_000,
+              });
+            } catch {
+              console.log(`${YELLOW}⚠️${RESET}  Tier 3 pull failed — continuing`);
+            }
+          } else if (remediationTier >= 4) {
+            console.log(`${RED}🔴${RESET} [${remTs}] Tier 4 remediation: pausing 30 minutes`);
+            await new Promise(r => setTimeout(r, 30 * 60 * 1000));
+            remediationTier = 0; // reset after long pause
           }
         } finally {
           roundInProgress = false;
