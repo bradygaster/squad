@@ -34,6 +34,8 @@ export interface SquadDirConfig {
   consult?: boolean;
   /** True when extraction is disabled for consult sessions (read-only consultation) */
   extractionDisabled?: boolean;
+  /** State storage backend: worktree | external | git-notes | orphan */
+  stateBackend?: string;
 }
 
 /**
@@ -222,6 +224,7 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
         projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
         consult: parsed.consult === true ? true : undefined,
         extractionDisabled: parsed.extractionDisabled === true ? true : undefined,
+        stateBackend: typeof parsed.stateBackend === 'string' ? parsed.stateBackend : undefined,
       };
     }
     return null;

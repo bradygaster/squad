@@ -250,6 +250,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
     console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
     console.log(`  ${BOLD}--team-root${RESET}    Override team root path for resolution`);
+    console.log(`  ${BOLD}--state-backend${RESET} State storage: worktree | external | git-notes | orphan`);
     console.log(`\nInstallation:`);
     console.log(`  npm install --save-dev @bradygaster/squad-cli`);
     console.log(`\nInsider channel:`);
@@ -295,8 +296,32 @@ async function main(): Promise<void> {
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
+
+    // --state-backend: write stateBackend into .squad/config.json on init
+    const stateBackendIdx = args.indexOf('--state-backend');
+    const stateBackendVal = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
+      ? args[stateBackendIdx + 1]
+      : undefined;
+
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).catch(err => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
+      if (stateBackendVal) {
+        const { join } = await import('node:path');
+        const { existsSync, readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
+        const squadDir = join(dest, '.squad');
+        if (!existsSync(squadDir)) mkdirSync(squadDir, { recursive: true });
+        const configPath = join(squadDir, 'config.json');
+        let config: Record<string, unknown> = {};
+        try {
+          if (existsSync(configPath)) {
+            config = JSON.parse(readFileSync(configPath, 'utf-8'));
+          }
+        } catch { /* fresh config */ }
+        config['stateBackend'] = stateBackendVal;
+        writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+        console.log(`✓ State backend set to '${stateBackendVal}' in .squad/config.json`);
+      }
+    }).catch(err => {
       fatal(err.message);
     });
     return;
@@ -377,6 +402,12 @@ async function main(): Promise<void> {
       if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
     }
 
+    // --state-backend flag for watch command
+    const watchStateBackendIdx = args.indexOf('--state-backend');
+    const watchStateBackend = (watchStateBackendIdx !== -1 && args[watchStateBackendIdx + 1])
+      ? args[watchStateBackendIdx + 1] as string
+      : undefined;
+
     // Legacy flag compat: --board-project sets board sub-option
     const boardProjectIdx = args.indexOf('--board-project');
     if (boardProjectIdx !== -1 && args[boardProjectIdx + 1]) {
@@ -394,6 +425,7 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      stateBackend: watchStateBackend,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
