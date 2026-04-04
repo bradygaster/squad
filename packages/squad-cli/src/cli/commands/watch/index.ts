@@ -50,6 +50,7 @@ export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, Capabi
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
 export { createVerboseLogger, type VerboseLogger } from './verbose.js';
+export { getWatchHealth, writePidFile, removePidFile, getPidPath, isProcessAlive, type WatchPidInfo } from './health.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
 
