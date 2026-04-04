@@ -1189,6 +1189,84 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     createdFiles.push(toRelativePath(promptFile));
   }
   
+  // -------------------------------------------------------------------------
+  // Generate apm.yml for APM integration (#824)
+  // -------------------------------------------------------------------------
+  
+  const apmYmlPath = join(teamRoot, 'apm.yml');
+  if (!storage.existsSync(apmYmlPath)) {
+    // Try to detect author name from git config
+    let authorName = userName || 'Your Name';
+    try {
+      const gitUserName = execFileSync('git', ['config', 'user.name'], { 
+        cwd: teamRoot, 
+        encoding: 'utf-8', 
+        stdio: ['pipe', 'pipe', 'pipe'] 
+      }).trim();
+      if (gitUserName) {
+        authorName = gitUserName;
+      }
+    } catch {
+      // No git config available, use default
+    }
+    
+    const apmManifest = `# APM (Agent Package Manager) manifest for ${projectName}
+# https://github.com/microsoft/apm
+
+name: ${projectName}
+version: ${version || '0.1.0'}
+description: ${projectDescription || `Squad team for ${projectName}`}
+author: ${authorName}
+license: MIT
+
+# Install skills and agent primitives from APM packages
+# Example: 'microsoft/apm-sample-package#v1.0.0'
+dependencies:
+  apm: []
+  mcp: []
+
+# Compilation settings for agent context
+compilation:
+  target: vscode  # Squad targets GitHub Copilot
+  strategy: distributed
+  exclude:
+    - ".squad/**"
+    - "node_modules/**"
+    - "dist/**"
+`;
+    
+    await storage.write(apmYmlPath, apmManifest);
+    createdFiles.push(toRelativePath(apmYmlPath));
+  } else {
+    skippedFiles.push(toRelativePath(apmYmlPath));
+  }
+  
+  // Create .apmignore to exclude Squad internal files
+  const apmIgnorePath = join(teamRoot, '.apmignore');
+  if (!storage.existsSync(apmIgnorePath)) {
+    const apmIgnore = `# APM ignore patterns
+# Exclude Squad internal state from APM packages
+
+.squad/agents/*/history.md
+.squad/log/**
+.squad/orchestration-log/**
+.squad/.first-run
+.squad/.init-prompt
+.squad-workstream
+
+# Standard exclusions
+node_modules/
+dist/
+.git/
+*.log
+`;
+    
+    await storage.write(apmIgnorePath, apmIgnore);
+    createdFiles.push(toRelativePath(apmIgnorePath));
+  } else {
+    skippedFiles.push(toRelativePath(apmIgnorePath));
+  }
+  
   return {
     createdFiles,
     skippedFiles,
