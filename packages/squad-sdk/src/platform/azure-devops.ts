@@ -416,6 +416,35 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     ]);
   }
 
+  async ensureAuth(): Promise<void> {
+    try {
+      // 1. Get remote URL
+      const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+
+      // 2. Extract ADO org from URL
+      // Handles: https://dev.azure.com/ORG/PROJECT/_git/REPO
+      // Also: https://ORG@dev.azure.com/ORG/PROJECT/_git/REPO
+      // Also: https://ORG.visualstudio.com/PROJECT/_git/REPO
+      let expectedOrg = '';
+      const adoMatch = remoteUrl.match(/dev\.azure\.com\/([^/]+)\//);
+      const vstsMatch = remoteUrl.match(/([^/]+)\.visualstudio\.com\//);
+      if (adoMatch?.[1]) expectedOrg = adoMatch[1];
+      else if (vstsMatch?.[1]) expectedOrg = vstsMatch[1];
+
+      if (!expectedOrg) return;
+
+      // 3. Configure az devops defaults if needed
+      try {
+        const orgUrl = `https://dev.azure.com/${expectedOrg}`;
+        execFileSync('az', ['devops', 'configure', '--defaults', `organization=${orgUrl}`], EXEC_OPTS);
+      } catch {
+        // az CLI might not be installed — non-fatal
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
   async createBranch(name: string, fromBranch?: string): Promise<void> {
     const base = fromBranch ?? 'main';
     execFileSync('git', ['checkout', base], EXEC_OPTS);

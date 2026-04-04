@@ -53,6 +53,13 @@ export interface PlatformAdapter {
   /** Ensure a tag/label exists (creates it if missing). No-op on platforms with auto-created tags. */
   ensureTag?(tag: string, options?: { color?: string; description?: string }): Promise<void>;
 
+  /**
+   * Verify and repair authentication context for the current repository.
+   * Parses the git remote URL, checks the active auth account, and switches if needed.
+   * No-op if auth is already correct. Non-fatal — never throws.
+   */
+  ensureAuth?(): Promise<void>;
+
   // Pull Requests
   listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]>;
   createPullRequest(options: {

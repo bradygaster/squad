@@ -636,20 +636,16 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     return fatal(`Could not detect platform: ${(err as Error).message}`);
   }
 
-  // Verify platform CLI availability (with auth repair for GitHub)
+  // Ensure auth context matches the repo — replaces external Set-GhContext.ps1
+  if (adapter.ensureAuth) {
+    await adapter.ensureAuth();
+  }
+
+  // Verify platform CLI availability
   if (adapter.type === 'github') {
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
     if (!(await ghAuthenticated())) {
-      console.log(`${YELLOW}⚠️${RESET}  gh CLI not authenticated — attempting auth repair`);
-      try {
-        execSync('gh auth switch --user tamirdresher', { encoding: 'utf-8', timeout: 15_000 });
-        if (!(await ghAuthenticated())) {
-          fatal('gh CLI not authenticated after repair — run: gh auth login');
-        }
-        console.log(`${GREEN}✓${RESET} Auth repaired via account switch`);
-      } catch {
-        fatal('gh CLI not authenticated — run: gh auth login');
-      }
+      fatal('gh CLI not authenticated — run: gh auth login');
     }
   } else if (adapter.type === 'azure-devops') {
     try { await execFileAsync('az', ['devops', '-h']); } catch { fatal('az CLI not found'); }
@@ -908,12 +904,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
           } else if (remediationTier === 2) {
             console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 2 remediation: re-probing auth`);
             try {
-              const authCheck = execSync('gh auth status', { encoding: 'utf-8', timeout: 15_000 }).toString();
-              if (!authCheck.includes('Logged in')) {
-                console.log(`${RED}❌${RESET} Auth failed — attempting recovery`);
-                try {
-                  execSync('gh auth switch --user tamirdresher', { encoding: 'utf-8', timeout: 15_000 });
-                } catch { /* best-effort switch */ }
+              if (adapter.ensureAuth) {
+                await adapter.ensureAuth();
               }
             } catch {
               console.log(`${YELLOW}⚠️${RESET}  Auth probe failed — will retry next round`);
