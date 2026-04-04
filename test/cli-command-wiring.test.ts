@@ -85,6 +85,14 @@ describe('CLI command wiring regression (issues #224, #236, #237)', () => {
     const existingFiles = new Set([
       ...commandFiles.map(f => basename(f, '.ts')),
       ...commandDirs.map(d => `${d}/index`),
+      // Also include non-index .ts files inside subdirectories (e.g., watch/health.ts)
+      ...commandDirs.flatMap(d => {
+        try {
+          return readdirSync(join(COMMANDS_DIR, d))
+            .filter(f => f.endsWith('.ts') && !f.endsWith('.d.ts') && !f.endsWith('.test.ts') && f !== 'index.ts')
+            .map(f => `${d}/${basename(f, '.ts')}`);
+        } catch { return []; }
+      }),
     ]);
     for (const mod of importedModules) {
       expect(
