@@ -13,6 +13,7 @@ import { TwoPassCapability } from './two-pass.js';
 import { WaveDispatchCapability } from './wave-dispatch.js';
 import { RetroCapability } from './retro.js';
 import { DecisionHygieneCapability } from './decision-hygiene.js';
+import { CleanupCapability } from './cleanup.js';
 
 /** Create a registry pre-loaded with all built-in capabilities. */
 export function createDefaultRegistry(): CapabilityRegistry {
@@ -27,5 +28,6 @@ export function createDefaultRegistry(): CapabilityRegistry {
   registry.register(new WaveDispatchCapability());
   registry.register(new RetroCapability());
   registry.register(new DecisionHygieneCapability());
+  registry.register(new CleanupCapability());
   return registry;
 }
