@@ -73,6 +73,7 @@ function formatUptime(ms: number): string {
  * Duplicated from index.ts to avoid circular imports — the canonical
  * version lives in `getActiveGhUser()` in the watch index.
  */
+/** Probes gh auth status — captures both stdout and stderr since gh may write to either. */
 function probeCurrentGhUser(): string | undefined {
   try {
     const result = execFileSync('gh', ['auth', 'status', '--active'], {
@@ -120,6 +121,11 @@ export function getWatchHealth(teamRoot: string): string {
   }
 
   // Process is alive — build status report
+  // Validate startedAt before computing uptime
+  if (!info.startedAt || isNaN(new Date(info.startedAt).getTime())) {
+    return `⚠ Invalid PID file (bad startedAt).
+   Delete ${pidPath} and restart.`;
+  }
   const uptime = formatUptime(Date.now() - new Date(info.startedAt).getTime());
 
   const lines = [

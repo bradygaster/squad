@@ -698,14 +698,14 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   // Pre-create squad member labels so addTag never fails on missing labels
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const adapterAny = adapter as any;
-  if (adapterAny.ensureTag) {
+  if (adapter.ensureTag) {
     for (const member of roster) {
       try {
-        await adapterAny.ensureTag(member.label, { color: 'd4c5f9', description: `Squad triage: ${member.name}` });
+        await adapter.ensureTag(member.label, { color: 'd4c5f9', description: `Squad triage: ${member.name}` });
       } catch { /* best-effort — continue if label creation fails */ }
     }
     try {
-      await adapterAny.ensureTag('squad:copilot', { color: 'd4c5f9', description: 'Squad triage: Copilot coding agent' });
+      await adapter.ensureTag('squad:copilot', { color: 'd4c5f9', description: 'Squad triage: Copilot coding agent' });
     } catch { /* best-effort */ }
     console.log(`${DIM}Labels: ensured ${roster.length + 1} squad labels exist${RESET}`);
   }
@@ -761,8 +761,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
     const cleanupPidFile = () => removePidFile(teamRoot);
     process.on('exit', cleanupPidFile);
-    process.on('SIGINT', () => { cleanupPidFile(); process.exit(0); });
-    process.on('SIGTERM', () => { cleanupPidFile(); process.exit(0); });
+    process.on('SIGINT', () => { cleanupPidFile(); process.exit(128 + 2); });
+    process.on('SIGTERM', () => { cleanupPidFile(); process.exit(128 + 15); });
   }
 
   // Print startup banner

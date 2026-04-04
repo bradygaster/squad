@@ -339,6 +339,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  // --health flag: show watch instance status and exit
+  if (cmd === 'watch' && args.includes('--health')) {
+    const { getWatchHealth } = await import('./cli/commands/watch/health.js');
+    console.log(getWatchHealth(process.cwd()));
+    return;
+  }
+
   if (cmd === 'triage' || cmd === 'watch') {
     const { runWatch, loadWatchConfig, createDefaultRegistry } = await import('./cli/commands/watch/index.js');
 

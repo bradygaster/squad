@@ -149,4 +149,20 @@ describe('watch health check', () => {
     const result = getWatchHealth(teamRoot);
     expect(result).toContain('(none)');
   });
+  it('isProcessAlive returns true for EPERM (process exists, no permission)', () => {
+    // PID 1 (init/systemd) typically exists but may return EPERM on signal 0
+    // We test by mocking: if kill throws EPERM, process is alive
+    const originalKill = process.kill;
+    try {
+      process.kill = ((_pid, _signal) => {
+        const err = new Error('EPERM');
+        (err as any).code = 'EPERM';
+        throw err;
+      }) as any;
+      expect(isProcessAlive(12345)).toBe(true);
+    } finally {
+      process.kill = originalKill;
+    }
+  });
+
 });
