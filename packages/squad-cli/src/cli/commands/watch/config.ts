@@ -100,10 +100,19 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['copilotFlags'] === 'string') result.copilotFlags = raw['copilotFlags'];
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
   if (typeof raw['stateBackend'] === 'string') result.stateBackend = raw['stateBackend'];
+  if (raw['notifyLevel'] === 'all' || raw['notifyLevel'] === 'important' || raw['notifyLevel'] === 'none') {
+    result.notifyLevel = raw['notifyLevel'];
+  }
+  if (typeof raw['verbose'] === 'boolean') result.verbose = raw['verbose'];
+  if (typeof raw['overnightStart'] === 'string') result.overnightStart = raw['overnightStart'];
+  if (typeof raw['overnightEnd'] === 'string') result.overnightEnd = raw['overnightEnd'];
+  if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
+  if (typeof raw['authUser'] === 'string') result.authUser = raw['authUser'];
+  if (typeof raw['logFile'] === 'string') result.logFile = raw['logFile'];
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'stateBackend']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'stateBackend', 'notifyLevel', 'verbose', 'overnightStart', 'overnightEnd', 'sentinelFile', 'authUser', 'logFile', 'dispatchMode']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

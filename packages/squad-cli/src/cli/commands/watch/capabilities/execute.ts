@@ -3,7 +3,8 @@
  */
 
 import { execFile, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
@@ -22,35 +23,79 @@ function hasSquadLabel(issue: ExecutableWorkItem): boolean {
   return issue.labels.some(l => l.name === 'squad' || l.name.startsWith('squad:'));
 }
 
-/** Find issues eligible for autonomous execution (squad-labeled only).
+/** Keywords that indicate read-heavy / analysis work. */
+const READ_KEYWORDS = [
+  'research', 'review', 'analyze', 'investigate', 'audit',
+  'check', 'scan', 'assess', 'evaluate', 'fact-check',
+  'document', 'report',
+];
+
+/** Keywords that indicate write-heavy / implementation work. */
+const WRITE_KEYWORDS = [
+  'fix', 'implement', 'create', 'build', 'refactor',
+  'add', 'update', 'migrate', 'deploy', 'feature',
+];
+
+/** Classify an issue as read-heavy or write-heavy by title keywords. */
+export function classifyIssue(title: string): 'read' | 'write' {
+  const lower = title.toLowerCase();
+  const isRead = READ_KEYWORDS.some(k => lower.includes(k));
+  const isWrite = WRITE_KEYWORDS.some(k => lower.includes(k));
+  if (isRead && !isWrite) return 'read';
+  return 'write'; // default to write (safer — gets full agent session)
+}
+
+/** Labels that indicate an issue should not be auto-executed. */
+const BLOCKING_LABELS = ['status:blocked', 'status:wontfix', 'status:on-hold', 'blocked'];
+
+/** Check whether an issue has a blocking status label. */
+function hasBlockingLabel(issue: ExecutableWorkItem): boolean {
+  return issue.labels.some(l => BLOCKING_LABELS.includes(l.name));
+}
+
+/** Check whether an issue is already assigned to a human. */
+function isAssigned(issue: ExecutableWorkItem): boolean {
+  return issue.assignees.length > 0;
+}
+
+/** Find issues eligible for autonomous execution.
  *
- * Intentionally minimal — the agent reads .squad/ralph-instructions.md
- * and decides which issues to act on, matching the PS1 ralph-watch design.
+ * Pre-filters to keep only clearly actionable items:
+ *  - must have a squad/squad:* label
+ *  - must not be assigned to a human (agent decides once it reads ralph-instructions.md)
+ *  - must not carry a blocking status label
+ *
+ * Matches the PS1 ralph-watch pre-filter design.
  */
 export function findExecutableIssues(
   _roster: Array<{ name: string; label: string; expertise: string[] }>,
   _capabilities: MachineCapabilities | null,
   issues: ExecutableWorkItem[],
 ): ExecutableWorkItem[] {
-  return issues.filter(hasSquadLabel);
+  return issues.filter(
+    issue => hasSquadLabel(issue) && !isAssigned(issue) && !hasBlockingLabel(issue),
+  );
 }
 
-/** Build agent command for a prompt. */
+/** Build agent command for a prompt — writes prompt to temp file (-p flag). */
 function buildAgentCommand(
   prompt: string,
   context: WatchContext,
-): { cmd: string; args: string[] } {
+): { cmd: string; args: string[]; promptFile: string } {
+  const promptFile = path.join(os.tmpdir(), `squad-prompt-${Date.now()}.md`);
+  writeFileSync(promptFile, prompt, 'utf8');
+
   if (context.agentCmd) {
     const parts = context.agentCmd.trim().split(/\s+/);
     const cmd = parts[0]!;
-    const args = [...parts.slice(1), '--message', prompt];
-    return { cmd, args };
+    const args = [...parts.slice(1), '-p', promptFile];
+    return { cmd, args, promptFile };
   }
-  const args = ['copilot', '--message', prompt];
+  const args = ['copilot', '-p', promptFile];
   if (context.copilotFlags) {
     args.push(...context.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'gh', args };
+  return { cmd: 'gh', args, promptFile };
 }
 
 /** Format issue list for the agent prompt. */
@@ -107,7 +152,7 @@ async function executeAll(
   timeoutMs: number,
 ): Promise<{ success: boolean; error?: string }> {
   const prompt = buildAgentPrompt(issues, context.teamRoot);
-  const { cmd, args } = buildAgentCommand(prompt, context);
+  const { cmd, args, promptFile } = buildAgentCommand(prompt, context);
 
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
     const _cp: ChildProcess = execFile(
@@ -115,6 +160,7 @@ async function executeAll(
       args,
       { cwd: context.teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
       (err) => {
+        try { unlinkSync(promptFile); } catch { /* ignore */ }
         if (err) {
           const execErr = err as Error & { killed?: boolean };
           const msg = execErr.killed ? `Timed out` : execErr.message;
