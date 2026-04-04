@@ -6,6 +6,7 @@
  * always runs — it is not an opt-in capability.
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
@@ -41,6 +42,31 @@ import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
 
+// ── Auth Guard ───────────────────────────────────────────────────
+
+/**
+ * Returns the currently active `gh` account, or undefined if it
+ * cannot be determined (e.g. gh not installed, not logged in).
+ */
+export function getActiveGhUser(): string | undefined {
+  try {
+    const result = execFileSync('gh', ['auth', 'status', '--active'], {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    // gh auth status outputs: "Logged in to github.com account XXXXX ..."
+    // Capture stderr too — gh writes status info to both streams
+    const match = result.match(/account\s+(\S+)/);
+    return match?.[1];
+  } catch (e) {
+    // gh auth status exits non-zero when not logged in, but still
+    // writes account info to stderr — try to parse it
+    const stderr = (e as { stderr?: string }).stderr ?? '';
+    const match = stderr.match(/account\s+(\S+)/);
+    return match?.[1];
+  }
+}
+
 // ── Re-exports for backward compatibility ────────────────────────
 
 export type { WatchConfig } from './config.js';
@@ -48,6 +74,7 @@ export { loadWatchConfig } from './config.js';
 export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, CapabilityResult } from './types.js';
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
+export { getWatchHealth, writePidFile, removePidFile, getPidPath, isProcessAlive, type WatchPidInfo } from './health.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
 
@@ -678,6 +705,12 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     try { await execFileAsync('az', ['account', 'show']); } catch { fatal('az CLI not authenticated — run: az login'); }
   }
 
+  // Auth guard — capture active account at startup for drift detection
+  let expectedGhUser: string | undefined;
+  if (adapter.type === 'github') {
+    expectedGhUser = getActiveGhUser();
+  }
+
   // Parse team.md
   const content = storage.readSync(teamMd) ?? '';
   const roster = parseRoster(content);
@@ -697,6 +730,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   }
 
   // Pre-create squad member labels so addTag never fails on missing labels
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const adapterAny = adapter as any;
   if (adapter.ensureTag) {
     for (const member of roster) {
       try {
@@ -739,6 +774,31 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   const enabledCapabilities = await preflightCapabilities(registry, config, baseContext);
 
+  // ── PID file for health checks (#808) ──────────────────────────
+  {
+    const { writePidFile, removePidFile } = await import('./health.js');
+    let repoSlug = 'unknown';
+    try {
+      repoSlug = execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], {
+        encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch { /* non-GitHub or offline — use fallback */ }
+
+    writePidFile(teamRoot, {
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+      user: expectedGhUser ?? 'unknown',
+      interval: config.interval,
+      capabilities: enabledCapabilities.map(c => c.name),
+      repo: repoSlug,
+    });
+
+    const cleanupPidFile = () => removePidFile(teamRoot);
+    process.on('exit', cleanupPidFile);
+    process.on('SIGINT', () => { cleanupPidFile(); process.exit(128 + 2); });
+    process.on('SIGTERM', () => { cleanupPidFile(); process.exit(128 + 15); });
+  }
+
   // Print startup banner
   const modeTag = config.execute ? ` ${BOLD}(Execute)${RESET}` : '';
   const platformTag = ` [${adapter.type}]`;
@@ -768,32 +828,20 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   async function executeRound(): Promise<void> {
     const ts = new Date().toLocaleTimeString();
 
-    // Sentinel file check — graceful stop
-    const sentinelPath = config.sentinelFile || path.join(squadDirInfo.path, 'ralph-stop');
-    if (fs.existsSync(sentinelPath)) {
-      console.log(`${RED}🛑${RESET} [${ts}] Sentinel file detected — stopping after this round`);
-      try { fs.unlinkSync(sentinelPath); } catch { /* best-effort cleanup */ }
-      stopRequested = true;
-      return;
-    }
-
-    // Overnight window check — sleep during off-hours
-    if (config.overnightStart && config.overnightEnd) {
-      const now = new Date();
-      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-      const inWindow = config.overnightStart > config.overnightEnd
-        ? (currentTime >= config.overnightStart || currentTime < config.overnightEnd) // spans midnight
-        : (currentTime >= config.overnightStart && currentTime < config.overnightEnd);
-      if (inWindow) {
-        const [endH, endM] = config.overnightEnd.split(':').map(Number) as [number, number];
-        const endToday = new Date(now);
-        endToday.setHours(endH, endM, 0, 0);
-        let sleepMs = endToday.getTime() - now.getTime();
-        if (sleepMs <= 0) sleepMs += 24 * 60 * 60 * 1000; // next day
-        const sleepMin = Math.ceil(sleepMs / 60_000);
-        console.log(`${DIM}😴 [${ts}] Overnight window (${config.overnightStart}–${config.overnightEnd}) — sleeping ${sleepMin}m${RESET}`);
-        await new Promise(r => setTimeout(r, sleepMs));
-        return;
+    // Auth guard — detect if another process switched gh auth mid-run
+    if (adapter.type === 'github' && expectedGhUser) {
+      const currentUser = getActiveGhUser();
+      if (currentUser && currentUser !== expectedGhUser) {
+        console.error(`${YELLOW}⚠${RESET}  Auth switched! Expected ${BOLD}${expectedGhUser}${RESET}, got ${BOLD}${currentUser}${RESET}. Attempting restore...`);
+        try {
+          execFileSync('gh', ['auth', 'switch', '--user', expectedGhUser], {
+            encoding: 'utf-8',
+            stdio: 'pipe',
+          });
+          console.log(`${GREEN}✓${RESET} Auth restored to ${expectedGhUser}`);
+        } catch {
+          console.error(`${RED}✗${RESET} Could not restore auth to ${expectedGhUser}. Watch results may be incorrect.`);
+        }
       }
     }
 

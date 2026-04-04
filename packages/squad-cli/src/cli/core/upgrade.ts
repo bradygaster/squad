@@ -612,20 +612,14 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 // Self-upgrade: upgrade the CLI package itself
 // ============================================================================
 
-export interface SelfUpgradeOptions {
-  insider?: boolean;
-  force?: boolean;
-}
-
 /**
  * Detect the package manager that installed the CLI.
- * Returns 'npm', 'pnpm', 'yarn', or 'npm' as fallback.
+ * Checks npm_execpath and npm_config_user_agent env vars.
  */
 function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
   const execPath = process.env['npm_execpath'] ?? '';
   if (execPath.includes('pnpm')) return 'pnpm';
   if (execPath.includes('yarn')) return 'yarn';
-  // Check npm_config_user_agent as fallback
   const userAgent = process.env['npm_config_user_agent'] ?? '';
   if (userAgent.startsWith('pnpm')) return 'pnpm';
   if (userAgent.startsWith('yarn')) return 'yarn';
@@ -639,7 +633,7 @@ function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
  * appropriate global install command. Only suggests `sudo` for npm (pnpm and
  * yarn typically do not require elevated permissions for global installs).
  */
-export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
+export async function selfUpgradeCli(options: { insider?: boolean; force?: boolean } = {}): Promise<void> {
   const { execSync } = await import('node:child_process');
   const tag = options.insider ? 'insider' : 'latest';
   const pkg = `@bradygaster/squad-cli@${tag}`;

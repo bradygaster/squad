@@ -250,6 +250,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
     console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
     console.log(`  ${BOLD}--team-root${RESET}    Override team root path for resolution`);
+    console.log(`  ${BOLD}--state-backend${RESET} State storage: worktree | external | git-notes | orphan`);
     console.log(`\nInstallation:`);
     console.log(`  npm install --save-dev @bradygaster/squad-cli`);
     console.log(`\nInsider channel:`);
@@ -348,6 +349,13 @@ async function main(): Promise<void> {
     const from = (fromIdx !== -1 && args[fromIdx + 1]) ? args[fromIdx + 1] : undefined;
     const dryRun = args.includes('--dry-run');
     await runMigrate(process.cwd(), { to, from: from as 'ai-team' | undefined, dryRun });
+    return;
+  }
+
+  // --health flag: show watch instance status and exit
+  if (cmd === 'watch' && args.includes('--health')) {
+    const { getWatchHealth } = await import('./cli/commands/watch/health.js');
+    console.log(getWatchHealth(process.cwd()));
     return;
   }
 
