@@ -168,13 +168,27 @@ export interface BoardState {
   executed: number;
 }
 
-export function reportBoard(state: BoardState, round: number): void {
+export interface ReportBoardOptions {
+  notifyLevel?: 'all' | 'important' | 'none';
+  machineName?: string;
+  repoName?: string;
+}
+
+export function reportBoard(state: BoardState, round: number, options?: ReportBoardOptions): void {
+  const level = options?.notifyLevel ?? 'all';
   const total = Object.values(state).reduce((a, b) => a + b, 0);
+
+  if (level === 'none') return;
+  if (level === 'important' && total === 0) return;
+
   if (total === 0) {
     console.log(`${DIM}📋 Board is clear — Ralph is idling${RESET}`);
     return;
   }
-  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${RESET}`);
+  const suffix = options?.machineName || options?.repoName
+    ? ` (${[options.machineName, options.repoName].filter(Boolean).join(' · ')})`
+    : '';
+  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${suffix}${RESET}`);
   console.log('━'.repeat(30));
   if (state.untriaged > 0) console.log(`  🔴 Untriaged:         ${state.untriaged}`);
   if (state.assigned > 0) console.log(`  🟡 Assigned:          ${state.assigned}`);
