@@ -10,8 +10,7 @@ on:
 # PR data is fetched read-only via gh CLI — no untrusted code is executed.
 permissions:
   contents: read
-  pull-requests: read
-  issues: write
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
