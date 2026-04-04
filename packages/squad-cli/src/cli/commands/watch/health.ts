@@ -1,13 +1,15 @@
 /**
  * Watch health check — reports status of a running watch instance.
  *
- * Reads `.squad/.watch-pid.json` written at watch startup to determine
- * whether a watch process is alive, its uptime, auth account, and
+ * Reads the PID file (stored in OS temp dir) written at watch startup to
+ * determine whether a watch process is alive, its uptime, auth account, and
  * whether auth has drifted since launch.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 /** Shape of the PID file written by runWatch at startup. */
@@ -20,9 +22,14 @@ export interface WatchPidInfo {
   repo: string;
 }
 
-/** Path to the PID file inside the .squad directory. */
+/**
+ * Path to the PID file in the OS temp directory.
+ * Uses an MD5 hash of the repo path so different clones/worktrees get
+ * unique PID files without polluting the repo (avoids accidental commits).
+ */
 export function getPidPath(teamRoot: string): string {
-  return path.join(teamRoot, '.squad', '.watch-pid.json');
+  const hash = crypto.createHash('md5').update(teamRoot).digest('hex').slice(0, 12);
+  return path.join(os.tmpdir(), `squad-watch-${hash}.json`);
 }
 
 /**
@@ -97,12 +104,12 @@ export function getWatchHealth(teamRoot: string): string {
   try {
     info = JSON.parse(fs.readFileSync(pidPath, 'utf-8')) as WatchPidInfo;
   } catch {
-    return '⚠ Corrupt PID file — cannot read watch status.\n   Delete .squad/.watch-pid.json and restart.';
+    return `⚠ Corrupt PID file — cannot read watch status.\n   Delete ${pidPath} and restart.`;
   }
 
   // Validate minimal fields
   if (typeof info.pid !== 'number') {
-    return '⚠ Invalid PID file (missing pid).\n   Delete .squad/.watch-pid.json and restart.';
+    return `⚠ Invalid PID file (missing pid).\n   Delete ${pidPath} and restart.`;
   }
 
   // Check if the process is actually running

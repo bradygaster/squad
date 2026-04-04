@@ -11,8 +11,7 @@ coverage/
 .squad/decisions/inbox/
 .squad/sessions/
 .squad/config.json
-# Squad: watch health PID file (runtime, never commit)
-.squad/.watch-pid.json
+
 # Test temp dirs (created in cwd by vitest tests, cleaned in afterEach)
 .test-*
 # Docs site generated files
