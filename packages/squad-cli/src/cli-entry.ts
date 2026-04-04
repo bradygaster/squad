@@ -149,7 +149,9 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
     console.log(`             Overwrites: squad.agent.md, templates dir (.squad/templates/)`);
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
-    console.log(`             Flags: --global (upgrade personal squad)`);
+    console.log(`             Flags: --self (upgrade the CLI package itself)`);
+    console.log(`                    --self --insider (upgrade to latest insider build)`);
+    console.log(`                    --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
@@ -309,6 +311,7 @@ async function main(): Promise<void> {
     const migrateDir = args.includes('--migrate-directory');
     const selfUpgrade = args.includes('--self');
     const forceUpgrade = args.includes('--force');
+    const insiderUpgrade = args.includes('--insider');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
     
     // Handle --migrate-directory flag
@@ -321,7 +324,8 @@ async function main(): Promise<void> {
     await runUpgrade(dest, { 
       migrateDirectory: migrateDir,
       self: selfUpgrade,
-      force: forceUpgrade
+      force: forceUpgrade,
+      insider: insiderUpgrade,
     });
     
     return;

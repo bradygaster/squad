@@ -5,6 +5,7 @@
  */
 
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
@@ -33,6 +34,8 @@ export interface UpgradeOptions {
   migrateDirectory?: boolean;
   self?: boolean;
   force?: boolean;
+  /** When --self, install the insider (prerelease) tag instead of latest. */
+  insider?: boolean;
 }
 
 export interface UpdateInfo {
@@ -442,10 +445,89 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
   filesUpdated.push('.squad/templates/');
 }
 
+const PACKAGE_NAME = '@bradygaster/squad-cli';
+
+/**
+ * Self-upgrade the Squad CLI package to the latest version.
+ * Uses npm/npx to install the latest (or insider) version globally.
+ */
+async function selfUpgradeCli(insider: boolean): Promise<void> {
+  const currentVersion = getPackageVersion();
+  const tag = insider ? 'insider' : 'latest';
+
+  info(`Self-upgrading Squad CLI (current: v${currentVersion})...`);
+  info(`Installing ${PACKAGE_NAME}@${tag}...`);
+  console.log();
+
+  // Detect package manager: prefer the one that installed us
+  const npmUserAgent = process.env['npm_config_user_agent'] ?? '';
+  const isPnpm = npmUserAgent.includes('pnpm');
+  const isYarn = npmUserAgent.includes('yarn');
+
+  try {
+    if (isPnpm) {
+      execFileSync('pnpm', ['add', '-g', `${PACKAGE_NAME}@${tag}`], {
+        stdio: 'inherit',
+        timeout: 120_000,
+      });
+    } else if (isYarn) {
+      execFileSync('yarn', ['global', 'add', `${PACKAGE_NAME}@${tag}`], {
+        stdio: 'inherit',
+        timeout: 120_000,
+      });
+    } else {
+      // Default: npm
+      execFileSync('npm', ['install', '-g', `${PACKAGE_NAME}@${tag}`], {
+        stdio: 'inherit',
+        timeout: 120_000,
+      });
+    }
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes('EACCES') || msg.includes('permission')) {
+      fatal(
+        `Permission denied. Try:\n` +
+        `  sudo npm install -g ${PACKAGE_NAME}@${tag}\n` +
+        `Or use npx: npx ${PACKAGE_NAME}@${tag} upgrade`
+      );
+    }
+    fatal(`Self-upgrade failed: ${msg}`);
+  }
+
+  // Read the new version after install
+  try {
+    const newVersionOutput = execFileSync('npx', ['--yes', PACKAGE_NAME, '--version'], {
+      encoding: 'utf-8',
+      timeout: 30_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    // Version may include extra output; extract semver
+    const semverMatch = newVersionOutput.match(/(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)/);
+    const newVersion = semverMatch?.[1] ?? 'unknown';
+
+    if (newVersion === currentVersion) {
+      info(`Already on the latest ${tag} version (v${currentVersion})`);
+    } else {
+      success(`Upgraded: v${currentVersion} → v${newVersion} (${tag})`);
+    }
+  } catch {
+    success(`Installed ${PACKAGE_NAME}@${tag} (could not verify new version)`);
+  }
+}
+
 /**
  * Run the upgrade command
  */
 export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Promise<UpdateInfo> {
+  // Handle --self: upgrade the CLI package itself before upgrading repo files
+  if (options.self) {
+    await selfUpgradeCli(options.insider ?? false);
+    // After self-upgrade, the new CLI will have new templates.
+    // Continue with the regular upgrade to apply them to the repo.
+    info('Continuing with repo upgrade using the new CLI version...');
+    console.log();
+  }
+
   const cliVersion = getPackageVersion();
   const filesUpdated: string[] = [];
   
