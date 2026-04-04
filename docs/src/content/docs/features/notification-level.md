@@ -34,7 +34,7 @@ When `squad watch` runs continuously, it prints a board report after every round
 Every round header now includes the machine hostname and repo name:
 
 ```
-🔄 Ralph — Round 5 (CPC-tamir-WCBED · my-project)
+🔄 Ralph — Round 5 (DEVBOX-01 · my-project)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   🔴 Untriaged:         2
   🟢 Ready to merge:    1

@@ -43,7 +43,7 @@ squad watch --notify-level none         # fully silent
 Round headers now include **machine name and repo** for attribution:
 
 ```
-🔄 Ralph — Round 5 (CPC-tamir-WCBED · my-project)
+🔄 Ralph — Round 5 (DEVBOX-01 · my-project)
 ```
 
 Persistent config: `{ "watch": { "notifyLevel": "important" } }` in `.squad/config.json`.
