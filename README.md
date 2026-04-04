@@ -92,17 +92,20 @@ Use `--force` to re-apply updates even when your installed version already match
 
 ---
 
-## All Commands (15 commands)
+## All Commands (17 commands)
 
 | Command | What it does |
 |---------|-------------|
 | `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `hire`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
+| `squad upgrade --self` | Update the Squad CLI package itself; add `--insider` for prerelease builds |
 | `squad status` | Show which squad is active and why |
 | `squad triage` | Watch issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10) |
 | `squad copilot` | Add/remove the Copilot coding agent (@copilot); use `--off` to remove, `--auto-assign` to enable auto-assignment |
 | `squad doctor` | Check your setup and diagnose issues (alias: `heartbeat`) |
 | `squad link <team-repo-path>` | Connect to a remote team |
+| `squad externalize` | Move `.squad/` state outside the working tree; survives branch switches; use `--key <name>` for custom project key |
+| `squad internalize` | Move externalized state back into `.squad/` |
 | `squad shell` | Launch interactive shell explicitly |
 | `squad export` | Export squad to a portable JSON snapshot |
 | `squad import <file>` | Import squad from an export file |

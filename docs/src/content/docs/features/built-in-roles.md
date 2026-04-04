@@ -14,7 +14,7 @@
 - **Higher quality** — curated expertise, boundaries, and voice instead of generic boilerplate.
 - **Broad coverage** — not just software dev; marketing, sales, product, game dev, and more.
 
-## Software Development Roles (12)
+## Software Development Roles (13)
 
 | Emoji | ID | Title | Vibe |
 |-------|----|-------|------|
@@ -30,6 +30,7 @@
 | 📝 | `docs` | Technical Writer | Turns complexity into clarity. If the docs are wrong, the product is wrong. |
 | 🤖 | `ai` | AI / ML Engineer | Builds intelligent systems that learn, reason, and adapt. |
 | 🎨 | `designer` | UI/UX Designer | Pixel-aware and user-obsessed. If it looks off by one, it is off by one. |
+| 🔍 | `fact-checker` | Fact Checker | Trust, but verify. Every claim gets a source check before it ships. |
 
 ## Business & Operations Roles (8)
 
