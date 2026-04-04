@@ -8,6 +8,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { buildAgentCommand, findExecutableIssues, reportBoard } from '../../packages/squad-cli/src/cli/commands/watch/index.js';
 import type { WatchWorkItem } from '../../packages/squad-cli/src/cli/commands/watch/index.js';
+import { classifyIssue } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/execute.js';
+import type { ExecutableWorkItem } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/execute.js';
 
 describe('CLI: watch execute mode', () => {
   describe('buildAgentCommand', () => {
@@ -189,6 +191,94 @@ describe('CLI: watch execute mode', () => {
       expect(logOutput).toContain('3');
 
       consoleLogSpy.mockRestore();
+    });
+  });
+
+  describe('classifyIssue', () => {
+    it('classifies research titles as read', () => {
+      expect(classifyIssue('Research auth flow improvements')).toBe('read');
+      expect(classifyIssue('Review PR comments on fleet dispatch')).toBe('read');
+      expect(classifyIssue('Analyze memory usage patterns')).toBe('read');
+      expect(classifyIssue('Investigate timeout errors in CI')).toBe('read');
+      expect(classifyIssue('Audit security labels on open issues')).toBe('read');
+    });
+
+    it('classifies implementation titles as write', () => {
+      expect(classifyIssue('Fix auth redirect bug')).toBe('write');
+      expect(classifyIssue('Implement rate limiter capability')).toBe('write');
+      expect(classifyIssue('Add unit tests for classifyIssue')).toBe('write');
+      expect(classifyIssue('Update dependencies to latest')).toBe('write');
+      expect(classifyIssue('Refactor watch loop into capabilities')).toBe('write');
+    });
+
+    it('defaults to write when no keywords match', () => {
+      expect(classifyIssue('Random task')).toBe('write');
+      expect(classifyIssue('Some squad work')).toBe('write');
+    });
+
+    it('defaults to write when both read and write keywords appear', () => {
+      // "analyze and fix" has both review (read) and fix (write) keywords
+      expect(classifyIssue('Analyze and fix performance issue')).toBe('write');
+    });
+
+    it('is case-insensitive', () => {
+      expect(classifyIssue('RESEARCH auth flow')).toBe('read');
+      expect(classifyIssue('FIX the bug')).toBe('write');
+    });
+  });
+
+  describe('fleet/hybrid dispatch classification routing', () => {
+    const roster = [{ name: 'EECOM', label: 'squad:eecom', expertise: [] }];
+
+    const makeIssue = (number: number, title: string): ExecutableWorkItem => ({
+      number,
+      title,
+      body: '',
+      labels: [{ name: 'squad:eecom' }],
+      assignees: [],
+    });
+
+    it('fleet mode: all executable issues are dispatched (not just read)', () => {
+      const issues = [
+        makeIssue(1, 'Research auth flow'),   // read
+        makeIssue(2, 'Fix auth redirect bug'), // write
+        makeIssue(3, 'Audit labels'),          // read
+      ];
+
+      const executable = findExecutableIssues(roster, null, issues as WatchWorkItem[]);
+      // In fleet mode all executable issues are sent — simulate the fleet=all behavior
+      const fleetIssues = executable; // fleet: no filter
+      expect(fleetIssues).toHaveLength(3);
+    });
+
+    it('hybrid mode: only read-heavy issues are fleet-dispatched', () => {
+      const issues = [
+        makeIssue(10, 'Research auth flow'),   // read → fleet
+        makeIssue(11, 'Fix auth redirect bug'), // write → execute (not fleet)
+        makeIssue(12, 'Review PR comments'),    // read → fleet
+        makeIssue(13, 'Implement rate limiter'), // write → execute
+      ];
+
+      const executable = findExecutableIssues(roster, null, issues as WatchWorkItem[]);
+      const fleetIssues = executable.filter(i => classifyIssue(i.title) === 'read');
+      const executeIssues = executable.filter(i => classifyIssue(i.title) === 'write');
+
+      expect(fleetIssues).toHaveLength(2);
+      expect(fleetIssues.map(i => i.number)).toEqual([10, 12]);
+      expect(executeIssues).toHaveLength(2);
+      expect(executeIssues.map(i => i.number)).toEqual([11, 13]);
+    });
+
+    it('hybrid mode: assigned issues are excluded from both fleet and execute', () => {
+      const issues = [
+        makeIssue(20, 'Research auth flow'),                    // read, unassigned → fleet
+        { ...makeIssue(21, 'Review PR'), assignees: [{ login: 'alice' }] }, // read, assigned → excluded
+        makeIssue(22, 'Fix bug'),                               // write, unassigned → execute
+      ];
+
+      const executable = findExecutableIssues(roster, null, issues as WatchWorkItem[]);
+      expect(executable).toHaveLength(2);
+      expect(executable.map(i => i.number)).toEqual([20, 22]);
     });
   });
 });
