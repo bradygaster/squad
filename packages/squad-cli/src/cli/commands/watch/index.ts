@@ -7,6 +7,7 @@
  */
 
 import path from 'node:path';
+import fs from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
@@ -718,6 +719,26 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   }
   console.log();
 
+  // Fix 2: Set up log-file tee (after banner so the banner itself is captured too)
+  let logStream: fs.WriteStream | undefined;
+  if (config.logFile) {
+    const resolvedLogFile = path.resolve(config.logFile);
+    logStream = fs.createWriteStream(resolvedLogFile, { flags: 'a' });
+    const origLog = console.log.bind(console);
+    console.log = (...args: unknown[]) => {
+      origLog(...args);
+      const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      const line = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
+      // Strip ANSI escape codes for the file
+      const plain = line.replace(/\x1b\[[0-9;]*m/g, '');
+      logStream!.write(`[${timestamp}] ${plain}\n`);
+    };
+    console.log(`${DIM}Log file: ${resolvedLogFile}${RESET}`);
+  }
+
+  // Fix 3: Immediate visual feedback after banner
+  console.log(`Running first check now...`);
+
   // Initialize circuit breaker (#515)
   const circuitBreaker = new PredictiveCircuitBreaker();
   let cbState = loadCBState(squadDirInfo.path);
@@ -769,6 +790,9 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     round++;
     const roundContext: WatchContext = { ...baseContext, round };
 
+    // Fix 1: Print round start marker
+    console.log(`\n${DIM}Starting round ${round}...${RESET}`);
+
     // Phase 1: pre-scan (self-pull, subsquad discovery)
     await runPhase('pre-scan', enabledCapabilities, roundContext, config);
 
@@ -804,6 +828,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     });
     await monitor.healthCheck();
     reportBoard(roundState, round);
+
+    // Fix 1: Print next poll time
+    const nextPollTime = new Date(Date.now() + interval * 60 * 1000);
+    console.log(`${DIM}Next poll at ${nextPollTime.toLocaleTimeString()}${RESET}`);
 
     // Post-round: update circuit breaker on success
     if (cbState.status === 'half-open') {
@@ -866,6 +894,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       await monitor.stop();
       saveCBState(squadDirInfo.path, cbState);
       console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
+      logStream?.end();
       resolve();
     };
 
