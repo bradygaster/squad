@@ -18,6 +18,8 @@ export interface WatchConfig {
   copilotFlags?: string;
   /** Hidden — fully override the agent command. */
   agentCmd?: string;
+  /** Optional path to a log file. When set, console output is tee'd to the file with timestamps. */
+  logFile?: string;
   /** Per-capability config: `true` / `false` / object with sub-options. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
   /** Enable verbose diagnostic output for debugging. */
@@ -65,6 +67,7 @@ export function loadWatchConfig(
     timeout: cliOverrides.timeout ?? fileConfig.timeout ?? DEFAULTS.timeout,
     copilotFlags: cliOverrides.copilotFlags ?? fileConfig.copilotFlags ?? DEFAULTS.copilotFlags,
     agentCmd: cliOverrides.agentCmd ?? fileConfig.agentCmd ?? DEFAULTS.agentCmd,
+    logFile: cliOverrides.logFile ?? fileConfig.logFile ?? DEFAULTS.logFile,
     capabilities: {
       ...DEFAULTS.capabilities,
       ...(fileConfig.capabilities ?? {}),
@@ -87,10 +90,11 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['copilotFlags'] === 'string') result.copilotFlags = raw['copilotFlags'];
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
   if (typeof raw['verbose'] === 'boolean') result.verbose = raw['verbose'];
+  if (typeof raw['logFile'] === 'string') result.logFile = raw['logFile'];
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'logFile']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {
