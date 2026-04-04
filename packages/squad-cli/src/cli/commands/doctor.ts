@@ -20,6 +20,8 @@ export interface DoctorCheck {
   name: string;
   status: 'pass' | 'fail' | 'warn';
   message: string;
+  /** Optional severity hint for display; keeps the status union stable. */
+  severity?: 'info';
 }
 
 /** Detected squad layout mode. */
@@ -327,10 +329,21 @@ function checkVscodeJsonrpcExports(cwd: string): DoctorCheck {
     };
   }
 
+  // Detect whether we're in a local dev context (node_modules exists) or global install
+  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
+  if (hasNodeModules) {
+    return {
+      name: 'vscode-jsonrpc exports field',
+      status: 'warn',
+      message: 'not found in node_modules — run npm install or check dependencies',
+    };
+  }
+
   return {
     name: 'vscode-jsonrpc exports field',
     status: 'warn',
-    message: 'vscode-jsonrpc not found in node_modules — expected for global CLI installs. For local development, run: npm install',
+    severity: 'info',
+    message: 'not found in node_modules (expected for global installs)',
   };
 }
 
@@ -372,10 +385,21 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
     }
   }
 
+  // Detect whether we're in a local dev context (node_modules exists) or global install
+  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
+  if (hasNodeModules) {
+    return {
+      name: 'copilot-sdk session.js ESM patch',
+      status: 'warn',
+      message: 'not found in node_modules — run npm install or check dependencies',
+    };
+  }
+
   return {
     name: 'copilot-sdk session.js ESM patch',
     status: 'warn',
-    message: '@github/copilot-sdk not found in node_modules — expected for global CLI installs. For local development, run: npm install',
+    severity: 'info',
+    message: 'not found in node_modules (expected for global installs)',
   };
 }
 
@@ -487,14 +511,16 @@ export function printDoctorReport(checks: DoctorCheck[], mode: DoctorMode): void
   console.log(`Mode: ${mode}\n`);
 
   for (const c of checks) {
-    console.log(`${STATUS_ICON[c.status]}  ${c.name} — ${c.message}`);
+    const icon = c.severity === 'info' ? 'ℹ️' : STATUS_ICON[c.status];
+    console.log(`${icon}  ${c.name} — ${c.message}`);
   }
 
   const passed = checks.filter(c => c.status === 'pass').length;
   const failed = checks.filter(c => c.status === 'fail').length;
-  const warned = checks.filter(c => c.status === 'warn').length;
+  const warned = checks.filter(c => c.status === 'warn' && c.severity !== 'info').length;
+  const infos = checks.filter(c => c.severity === 'info').length;
 
-  console.log(`\nSummary: ${passed} passed, ${failed} failed, ${warned} warnings\n`);
+  console.log(`\nSummary: ${passed} passed, ${failed} failed, ${warned} warnings, ${infos} info\n`);
 }
 
 /**

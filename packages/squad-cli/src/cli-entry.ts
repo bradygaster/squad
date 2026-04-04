@@ -127,6 +127,9 @@ async function main(): Promise<void> {
   const cmd = rawCmd?.trim() || '';
 
   // --version / -v / version
+  // Investigated: routing is correct — cmd matches 'version' directly.
+  // "Unknown command: version" reports may be shell-specific (e.g. alias/wrapper
+  // prepending flags so args[0] is no longer 'version'). No intercepting router found.
   if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
     console.log(VERSION);
     return;

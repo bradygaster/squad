@@ -9,7 +9,7 @@ import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
-import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories } from '@bradygaster/squad-cli/core/upgrade';
+import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, ensureCastingDefaults, selfUpgradeCli } from '@bradygaster/squad-cli/core/upgrade';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(process.cwd(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
@@ -371,5 +371,65 @@ describe('CLI: upgrade command', () => {
     expect(['npm', 'pnpm', 'yarn']).toContain(cmd);
 
     execFileSyncSpy.mockRestore();
+  });
+
+  /* ── ensureDirectories includes .squad/casting ──────────────── */
+
+  it('ensureDirectories creates .squad/casting/', () => {
+    const dir = join(TEST_ROOT, 'dirs-test-casting');
+    mkdirSync(dir, { recursive: true });
+    const created = ensureDirectories(dir);
+    expect(created).toContain('.squad/casting');
+    expect(existsSync(join(dir, '.squad', 'casting'))).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /* ── ensureCastingDefaults ──────────────────────────────────── */
+
+  it('ensureCastingDefaults scaffolds registry.json, policy.json, history.json', () => {
+    const dir = join(TEST_ROOT, 'casting-defaults-test');
+    mkdirSync(join(dir, '.squad', 'casting'), { recursive: true });
+    const created = ensureCastingDefaults(dir);
+    expect(created).toContain('.squad/casting/registry.json');
+    expect(created).toContain('.squad/casting/policy.json');
+    expect(created).toContain('.squad/casting/history.json');
+    // Verify valid JSON
+    const registry = JSON.parse(readFileSync(join(dir, '.squad', 'casting', 'registry.json'), 'utf8'));
+    expect(registry).toHaveProperty('agents');
+    const policy = JSON.parse(readFileSync(join(dir, '.squad', 'casting', 'policy.json'), 'utf8'));
+    expect(policy).toHaveProperty('casting_policy_version', '1.1');
+    const history = JSON.parse(readFileSync(join(dir, '.squad', 'casting', 'history.json'), 'utf8'));
+    expect(history).toHaveProperty('universe_usage_history');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ensureCastingDefaults does not overwrite existing files', () => {
+    const dir = join(TEST_ROOT, 'casting-defaults-existing');
+    const castingDir = join(dir, '.squad', 'casting');
+    mkdirSync(castingDir, { recursive: true });
+    writeFileSync(join(castingDir, 'registry.json'), '{"agents":{"custom":true}}');
+    const created = ensureCastingDefaults(dir);
+    // registry.json should NOT be in created (already exists)
+    expect(created).not.toContain('.squad/casting/registry.json');
+    // policy.json and history.json should be created
+    expect(created).toContain('.squad/casting/policy.json');
+    expect(created).toContain('.squad/casting/history.json');
+    // Existing file should be preserved
+    const registry = JSON.parse(readFileSync(join(castingDir, 'registry.json'), 'utf8'));
+    expect(registry.agents.custom).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('upgrade scaffolds casting defaults for repos init before casting existed', async () => {
+    // Remove casting directory to simulate pre-casting init
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    if (existsSync(castingDir)) {
+      await rm(castingDir, { recursive: true, force: true });
+    }
+    const result = await runUpgrade(TEST_ROOT);
+    // Casting dir and defaults should be recreated
+    expect(existsSync(join(castingDir, 'registry.json'))).toBe(true);
+    expect(existsSync(join(castingDir, 'policy.json'))).toBe(true);
+    expect(existsSync(join(castingDir, 'history.json'))).toBe(true);
   });
 });
