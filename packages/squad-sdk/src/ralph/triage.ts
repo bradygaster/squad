@@ -1,4 +1,7 @@
 import { normalizeEol } from '../utils/normalize-eol.js';
+import { slugify } from '../utils/slugify.js';
+
+export { slugify } from '../utils/slugify.js';
 
 /** Parsed routing rule from routing.md */
 export interface RoutingRule {
@@ -118,7 +121,7 @@ export function parseRoster(teamMd: string): TeamMember[] {
     members.push({
       name,
       role,
-      label: `squad:${name.toLowerCase()}`,
+      label: `squad:${slugify(name)}`,
     });
   }
 
