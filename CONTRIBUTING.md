@@ -300,6 +300,7 @@ GitHub Actions runs on every push:
 2. **Test:** `npm test`
 3. **Lint:** `npm run lint`
 4. **Changeset status:** `npm run changeset:check` (ensures PRs include a changeset)
+5. **Diff Size Guard:** Warns when a single-commit PR touches 30+ files (likely branch contamination from staging all files at once on a stale branch). Always use explicit `git add <file>` instead.
 
 All checks must pass before merge.
 
