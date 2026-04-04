@@ -130,12 +130,30 @@ jobs:
           rm -rf packages/squad-cli/node_modules/@bradygaster/squad-sdk
           npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
 
-      - name: Publish squad-sdk with insider tag
-        run: npm -w packages/squad-sdk publish --tag insider --access public
+      - name: Auto-bump and publish squad-sdk with insider tag
+        run: |
+          cd packages/squad-sdk
+          VERSION=$(node -p "require('./package.json').version")
+          while npm view "@bradygaster/squad-sdk@${VERSION}" version 2>/dev/null; do
+            echo "⚠️ Version ${VERSION} already exists on npm — auto-bumping..."
+            npm version prerelease --preid=insider --no-git-tag-version
+            VERSION=$(node -p "require('./package.json').version")
+          done
+          echo "✅ Publishing squad-sdk@${VERSION}"
+          npm publish --tag insider --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish squad-cli with insider tag
-        run: npm -w packages/squad-cli publish --tag insider --access public
+      - name: Auto-bump and publish squad-cli with insider tag
+        run: |
+          cd packages/squad-cli
+          VERSION=$(node -p "require('./package.json').version")
+          while npm view "@bradygaster/squad-cli@${VERSION}" version 2>/dev/null; do
+            echo "⚠️ Version ${VERSION} already exists on npm — auto-bumping..."
+            npm version prerelease --preid=insider --no-git-tag-version
+            VERSION=$(node -p "require('./package.json').version")
+          done
+          echo "✅ Publishing squad-cli@${VERSION}"
+          npm publish --tag insider --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
