@@ -21,31 +21,14 @@ export interface WatchConfig {
   copilotFlags?: string;
   /** Hidden — fully override the agent command. */
   agentCmd?: string;
-  /** State storage backend: worktree | external | git-notes | orphan */
-  stateBackend?: string;
+  /** Dispatch mode: 'task' (default 1:1), 'fleet' (batch read-only), 'hybrid' (auto-classify). */
+  dispatchMode?: DispatchMode;
+  /** Optional path to a log file. When set, console output is tee'd to the file with timestamps. */
+  logFile?: string;
   /** Per-capability config: `true` / `false` / object with sub-options. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
-  /**
-   * Controls how verbose watch round reporting is.
-   * - 'all'       — print every round (current behavior)
-   * - 'important' — only print rounds with actual work (default)
-   * - 'none'      — suppress all round reporting
-   */
-  notifyLevel?: 'all' | 'important' | 'none';
-  /** Verbose diagnostics (--verbose flag). */
+  /** Enable verbose diagnostic output for debugging. */
   verbose?: boolean;
-  /** Dispatch strategy: task | fleet | hybrid */
-  dispatchMode?: DispatchMode;
-  /** Overnight window start (HH:MM 24h). */
-  overnightStart?: string;
-  /** Overnight window end (HH:MM 24h). */
-  overnightEnd?: string;
-  /** Path to sentinel stop-file (e.g. .squad/ralph-stop). */
-  sentinelFile?: string;
-  /** Preferred auth user (e.g. GitHub login). */
-  authUser?: string;
-  /** Path to log file for watch output. */
-  logFile?: string;
 }
 
 const DEFAULTS: WatchConfig = {
@@ -53,7 +36,7 @@ const DEFAULTS: WatchConfig = {
   execute: false,
   maxConcurrent: 1,
   timeout: 30,
-  notifyLevel: 'important',
+  dispatchMode: undefined,
   capabilities: {},
 };
 
@@ -90,20 +73,14 @@ export function loadWatchConfig(
     timeout: cliOverrides.timeout ?? fileConfig.timeout ?? DEFAULTS.timeout,
     copilotFlags: cliOverrides.copilotFlags ?? fileConfig.copilotFlags ?? DEFAULTS.copilotFlags,
     agentCmd: cliOverrides.agentCmd ?? fileConfig.agentCmd ?? DEFAULTS.agentCmd,
-    stateBackend: cliOverrides.stateBackend ?? fileConfig.stateBackend ?? DEFAULTS.stateBackend,
-    notifyLevel: cliOverrides.notifyLevel ?? fileConfig.notifyLevel ?? DEFAULTS.notifyLevel,
-    verbose: cliOverrides.verbose ?? fileConfig.verbose,
-    dispatchMode: cliOverrides.dispatchMode ?? fileConfig.dispatchMode,
-    overnightStart: cliOverrides.overnightStart ?? fileConfig.overnightStart,
-    overnightEnd: cliOverrides.overnightEnd ?? fileConfig.overnightEnd,
-    sentinelFile: cliOverrides.sentinelFile ?? fileConfig.sentinelFile,
-    authUser: cliOverrides.authUser ?? fileConfig.authUser,
-    logFile: cliOverrides.logFile ?? fileConfig.logFile,
+    dispatchMode: cliOverrides.dispatchMode ?? fileConfig.dispatchMode ?? DEFAULTS.dispatchMode,
+    logFile: cliOverrides.logFile ?? fileConfig.logFile ?? DEFAULTS.logFile,
     capabilities: {
       ...DEFAULTS.capabilities,
       ...(fileConfig.capabilities ?? {}),
       ...(cliOverrides.capabilities ?? {}),
     },
+    verbose: cliOverrides.verbose ?? fileConfig.verbose ?? false,
   };
 
   return merged;
@@ -119,23 +96,18 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['timeout'] === 'number') result.timeout = raw['timeout'];
   if (typeof raw['copilotFlags'] === 'string') result.copilotFlags = raw['copilotFlags'];
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
-  if (typeof raw['stateBackend'] === 'string') result.stateBackend = raw['stateBackend'];
-  if (raw['notifyLevel'] === 'all' || raw['notifyLevel'] === 'important' || raw['notifyLevel'] === 'none') {
-    result.notifyLevel = raw['notifyLevel'];
-  }
   if (typeof raw['verbose'] === 'boolean') result.verbose = raw['verbose'];
-  if (typeof raw['overnightStart'] === 'string') result.overnightStart = raw['overnightStart'];
-  if (typeof raw['overnightEnd'] === 'string') result.overnightEnd = raw['overnightEnd'];
-  if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
-  if (typeof raw['authUser'] === 'string') result.authUser = raw['authUser'];
-  if (typeof raw['logFile'] === 'string') result.logFile = raw['logFile'];
-  if (raw['dispatchMode'] === 'task' || raw['dispatchMode'] === 'fleet' || raw['dispatchMode'] === 'hybrid') {
-    result.dispatchMode = raw['dispatchMode'];
+  if (typeof raw['dispatchMode'] === 'string') {
+    const mode = raw['dispatchMode'] as string;
+    if (mode === 'fleet' || mode === 'task' || mode === 'hybrid') {
+      result.dispatchMode = mode;
+    }
   }
+  if (typeof raw['logFile'] === 'string') result.logFile = raw['logFile'];
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'stateBackend', 'notifyLevel', 'verbose', 'overnightStart', 'overnightEnd', 'sentinelFile', 'authUser', 'logFile', 'dispatchMode']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

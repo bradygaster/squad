@@ -2,12 +2,12 @@
  * Execute capability — spawns Copilot sessions for eligible issues.
  */
 
-import { spawn, execFile, type ChildProcess } from 'node:child_process';
-import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
-import os from 'node:os';
+import { execFile, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
+import { createVerboseLogger } from '../verbose.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -45,6 +45,24 @@ export function classifyIssue(title: string): 'read' | 'write' {
   return 'write'; // default to write (safer — gets full agent session)
 }
 
+/** Build agent command for a prompt. */
+function buildAgentCommand(
+  prompt: string,
+  context: WatchContext,
+): { cmd: string; args: string[] } {
+  if (context.agentCmd) {
+    const parts = context.agentCmd.trim().split(/\s+/);
+    const cmd = parts[0]!;
+    const args = [...parts.slice(1), '--message', prompt];
+    return { cmd, args };
+  }
+  const args = ['copilot', '--message', prompt];
+  if (context.copilotFlags) {
+    args.push(...context.copilotFlags.trim().split(/\s+/));
+  }
+  return { cmd: 'gh', args };
+}
+
 /** Labels that indicate an issue should not be auto-executed. */
 const BLOCKING_LABELS = ['status:blocked', 'status:wontfix', 'status:on-hold', 'blocked'];
 
@@ -75,27 +93,6 @@ export function findExecutableIssues(
   return issues.filter(
     issue => hasSquadLabel(issue) && !isAssigned(issue) && !hasBlockingLabel(issue),
   );
-}
-
-/** Build agent command for a prompt — writes prompt to temp file (-p flag). */
-function buildAgentCommand(
-  prompt: string,
-  context: WatchContext,
-): { cmd: string; args: string[]; promptFile: string } {
-  const promptFile = path.join(os.tmpdir(), `squad-prompt-${Date.now()}.md`);
-  writeFileSync(promptFile, prompt, 'utf8');
-
-  if (context.agentCmd) {
-    const parts = context.agentCmd.trim().split(/\s+/);
-    const cmd = parts[0]!;
-    const args = [...parts.slice(1), '-p', promptFile];
-    return { cmd, args, promptFile };
-  }
-  const args = ['copilot', '-p', promptFile];
-  if (context.copilotFlags) {
-    args.push(...context.copilotFlags.trim().split(/\s+/));
-  }
-  return { cmd: 'gh', args, promptFile };
 }
 
 /** Format issue list for the agent prompt. */
@@ -145,46 +142,30 @@ export function buildAgentPrompt(
   ].join('\n');
 }
 
-/** Spawn a single agent session for all eligible issues.
- * Uses spawn with stdio:'inherit' so agency output streams to terminal in real-time.
- */
+/** Spawn a single agent session for all eligible issues. */
 async function executeAll(
   issues: ExecutableWorkItem[],
   context: WatchContext,
   timeoutMs: number,
 ): Promise<{ success: boolean; error?: string }> {
   const prompt = buildAgentPrompt(issues, context.teamRoot);
-  const { cmd, args, promptFile } = buildAgentCommand(prompt, context);
+  const { cmd, args } = buildAgentCommand(prompt, context);
 
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
-    const cp = spawn(cmd, args, {
-      cwd: context.teamRoot,
-      stdio: 'inherit',  // Stream output to terminal in real-time
-      env: { ...process.env },
-    });
-
-    // Timeout guard
-    const timer = setTimeout(() => {
-      cp.kill('SIGTERM');
-      try { unlinkSync(promptFile); } catch { /* ignore */ }
-      resolve({ success: false, error: 'Timed out' });
-    }, timeoutMs);
-
-    cp.on('close', (code) => {
-      clearTimeout(timer);
-      try { unlinkSync(promptFile); } catch { /* ignore */ }
-      if (code === 0) {
-        resolve({ success: true });
-      } else {
-        resolve({ success: false, error: `Agent exited with code ${code}` });
-      }
-    });
-
-    cp.on('error', (err) => {
-      clearTimeout(timer);
-      try { unlinkSync(promptFile); } catch { /* ignore */ }
-      resolve({ success: false, error: err.message });
-    });
+    const _cp: ChildProcess = execFile(
+      cmd,
+      args,
+      { cwd: context.teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
+      (err) => {
+        if (err) {
+          const execErr = err as Error & { killed?: boolean };
+          const msg = execErr.killed ? `Timed out` : execErr.message;
+          resolve({ success: false, error: msg });
+        } else {
+          resolve({ success: true });
+        }
+      },
+    );
   });
 }
 
@@ -204,8 +185,12 @@ export class ExecuteCapability implements WatchCapability {
   }
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
+    const vlog = createVerboseLogger(context.verbose ?? false);
+
     try {
       const timeout = ((context.config['timeout'] as number) ?? 30) * 60_000;
+
+      vlog.log(`Execute: agentCmd=${context.agentCmd ?? 'gh copilot'}, timeout=${timeout / 60_000}m`);
 
       // Fetch open issues with squad label
       const sdkItems = await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
@@ -218,6 +203,12 @@ export class ExecuteCapability implements WatchCapability {
 
       // Minimal filter: must have squad or squad:* label (agent decides the rest)
       const eligible = findExecutableIssues(context.roster, null, issues);
+
+      vlog.log(`Execute: ${issues.length} total issues, ${eligible.length} eligible`);
+      for (const issue of eligible.slice(0, 5)) {
+        const labels = issue.labels.map(l => l.name).join(', ');
+        vlog.log(`  → #${issue.number}: "${issue.title}" [${labels}]`);
+      }
 
       if (eligible.length === 0) {
         return { success: true, summary: 'no squad-labeled issues found' };

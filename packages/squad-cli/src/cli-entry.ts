@@ -177,6 +177,7 @@ async function main(): Promise<void> {
     console.log(`                    --retro           enforce retrospective checks`);
     console.log(`                    --decision-hygiene auto-merge decision inbox`);
     console.log(`             Disable: --no-<capability> overrides config.json`);
+    console.log(`             Logging: --log-file <path> tee output to file with timestamps`);
     console.log(`  ${BOLD}loop${RESET}       Prompt-driven continuous work loop`);
     console.log(`             Usage: loop [--init] [--file <path>] [--interval <min>]`);
     console.log(`             Reads loop.md and runs it each cycle (no issues needed)`);
@@ -250,7 +251,6 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
     console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
     console.log(`  ${BOLD}--team-root${RESET}    Override team root path for resolution`);
-    console.log(`  ${BOLD}--state-backend${RESET} State storage: worktree | external | git-notes | orphan`);
     console.log(`\nInstallation:`);
     console.log(`  npm install --save-dev @bradygaster/squad-cli`);
     console.log(`\nInsider channel:`);
@@ -296,33 +296,8 @@ async function main(): Promise<void> {
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
-
-    // --state-backend: write stateBackend into .squad/config.json on init
-    const stateBackendIdx = args.indexOf('--state-backend');
-    const stateBackendVal = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
-      ? args[stateBackendIdx + 1]
-      : undefined;
-
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
-      if (stateBackendVal) {
-        const { join } = await import('node:path');
-        const { existsSync, readFileSync, writeFileSync, mkdirSync } = await import('node:fs');
-        const squadDir = join(dest, '.squad');
-        if (!existsSync(squadDir)) mkdirSync(squadDir, { recursive: true });
-        const configPath = join(squadDir, 'config.json');
-        // Read existing config first, then merge (avoids overwriting unrelated keys)
-        let config: Record<string, unknown> = {};
-        try {
-          if (existsSync(configPath)) {
-            config = JSON.parse(readFileSync(configPath, 'utf-8'));
-          }
-        } catch { /* fresh config */ }
-        config['stateBackend'] = stateBackendVal;
-        writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
-        console.log(`✓ State backend set to '${stateBackendVal}' in .squad/config.json`);
-      }
-    }).catch(err => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).catch(err => {
       fatal(err.message);
     });
     return;
@@ -395,6 +370,8 @@ async function main(): Promise<void> {
 
     const execute = args.includes('--execute') ? true : undefined;
 
+    const verbose = args.includes('--verbose') || args.includes('-v');
+
     const copilotFlagsIdx = args.indexOf('--copilot-flags');
     const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
       ? args[copilotFlagsIdx + 1]
@@ -415,29 +392,26 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : undefined;
 
-    const overnightStartIdx = args.indexOf('--overnight-start');
-    const overnightStart = (overnightStartIdx !== -1 && args[overnightStartIdx + 1])
-      ? args[overnightStartIdx + 1]
+    // --dispatch-mode runtime validation: rejects invalid values with a clear error message
+    const dispatchModeIdx = args.indexOf('--dispatch-mode');
+    const rawDispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
+      ? args[dispatchModeIdx + 1]
       : undefined;
+    const validModes = ['task', 'fleet', 'hybrid'] as const;
+    const dispatchMode = rawDispatchMode && validModes.includes(rawDispatchMode as any)
+      ? rawDispatchMode as 'fleet' | 'task' | 'hybrid'
+      : rawDispatchMode
+        ? (console.error(`⚠️ Invalid --dispatch-mode "${rawDispatchMode}". Valid: task, fleet, hybrid. Defaulting to task.`), undefined)
+        : undefined;
 
-    const overnightEndIdx = args.indexOf('--overnight-end');
-    const overnightEnd = (overnightEndIdx !== -1 && args[overnightEndIdx + 1])
-      ? args[overnightEndIdx + 1]
-      : undefined;
-
-    const sentinelFileIdx = args.indexOf('--sentinel-file');
-    const sentinelFile = (sentinelFileIdx !== -1 && args[sentinelFileIdx + 1])
-      ? args[sentinelFileIdx + 1]
+    const logFileIdx = args.indexOf('--log-file');
+    const logFile = (logFileIdx !== -1 && args[logFileIdx + 1])
+      ? args[logFileIdx + 1]
       : undefined;
 
     const authUserIdx = args.indexOf('--auth-user');
     const authUser = (authUserIdx !== -1 && args[authUserIdx + 1])
       ? args[authUserIdx + 1]
-      : undefined;
-
-    const logFileIdx = args.indexOf('--log-file');
-    const logFile = (logFileIdx !== -1 && args[logFileIdx + 1])
-      ? args[logFileIdx + 1]
       : undefined;
 
     // Build capability overrides from CLI flags and --no-{cap} flags
@@ -448,12 +422,6 @@ async function main(): Promise<void> {
       if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
     }
 
-    // --state-backend flag for watch command
-    const watchStateBackendIdx = args.indexOf('--state-backend');
-    const rawWatchStateBackend = (watchStateBackendIdx !== -1 && args[watchStateBackendIdx + 1])
-      ? args[watchStateBackendIdx + 1] as string
-      : undefined;
-
     // Legacy flag compat: --board-project sets board sub-option
     const boardProjectIdx = args.indexOf('--board-project');
     if (boardProjectIdx !== -1 && args[boardProjectIdx + 1]) {
@@ -463,14 +431,6 @@ async function main(): Promise<void> {
         : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
     }
 
-    // Notify level: --notify-level all|important|none (default: important)
-    const notifyLevelIdx = args.indexOf('--notify-level');
-    const notifyLevelArg = (notifyLevelIdx !== -1 && args[notifyLevelIdx + 1]) ? args[notifyLevelIdx + 1] : undefined;
-    const notifyLevel = (notifyLevelArg === 'all' || notifyLevelArg === 'important' || notifyLevelArg === 'none')
-      ? notifyLevelArg : undefined;
-
-    // verbose flag parsing is in PR #782 (--verbose)
-
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(process.cwd(), {
       interval,
@@ -479,15 +439,30 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
-      stateBackend: rawWatchStateBackend as any,
-      notifyLevel,
-      overnightStart,
-      overnightEnd,
-      sentinelFile,
-      authUser,
+      verbose,
+      dispatchMode,
       logFile,
+      authUser,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
+
+    // After parsing all flags, check for positional args that look like prompts.
+    // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
+    const knownValueFlags = new Set([
+      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+    ]);
+    const watchArgStart = args.indexOf(cmd) + 1;
+    const watchArgs = args.slice(watchArgStart);
+    const positionalArgs: string[] = [];
+    for (let i = 0; i < watchArgs.length; i++) {
+      const arg = watchArgs[i]!;
+      if (knownValueFlags.has(arg)) { i++; continue; }
+      if (arg.startsWith('-')) continue;
+      positionalArgs.push(arg);
+    }
+    if (positionalArgs.length > 0 && config.verbose) {
+      console.log(`[verbose] ⚠️ Positional args ignored by watch: "${positionalArgs.join(' ')}". Use --execute to process issues.`);
+    }
 
     await runWatch(process.cwd(), config);
     return;

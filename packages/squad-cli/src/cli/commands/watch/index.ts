@@ -6,10 +6,9 @@
  * always runs — it is not an opt-in capability.
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
-import { execFile, execFileSync, execSync } from 'node:child_process';
+import fs from 'node:fs';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
@@ -41,31 +40,7 @@ import type { WatchConfig } from './config.js';
 import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './types.js';
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
-
-// ── Auth Guard ───────────────────────────────────────────────────
-
-/**
- * Returns the currently active `gh` account, or undefined if it
- * cannot be determined (e.g. gh not installed, not logged in).
- */
-export function getActiveGhUser(): string | undefined {
-  try {
-    const result = execFileSync('gh', ['auth', 'status', '--active'], {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    // gh auth status outputs: "Logged in to github.com account XXXXX ..."
-    // Capture stderr too — gh writes status info to both streams
-    const match = result.match(/account\s+(\S+)/);
-    return match?.[1];
-  } catch (e) {
-    // gh auth status exits non-zero when not logged in, but still
-    // writes account info to stderr — try to parse it
-    const stderr = (e as { stderr?: string }).stderr ?? '';
-    const match = stderr.match(/account\s+(\S+)/);
-    return match?.[1];
-  }
-}
+import { createVerboseLogger, type VerboseLogger } from './verbose.js';
 
 // ── Re-exports for backward compatibility ────────────────────────
 
@@ -74,7 +49,7 @@ export { loadWatchConfig } from './config.js';
 export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, CapabilityResult } from './types.js';
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
-export { getWatchHealth, writePidFile, removePidFile, getPidPath, isProcessAlive, type WatchPidInfo } from './health.js';
+export { createVerboseLogger, type VerboseLogger } from './verbose.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
 
@@ -192,39 +167,13 @@ export interface BoardState {
   executed: number;
 }
 
-export interface ReportOptions {
-  notifyLevel: 'all' | 'important' | 'none';
-  machineName?: string;
-  repoName?: string;
-}
-
-/**
- * Report the current board state for a watch round.
- *
- * @param state  - Current board counts
- * @param round  - Round number
- * @param options - Reporting options. Defaults: `notifyLevel = 'important'` (empty
- *                  rounds are suppressed; only rounds with work items are printed).
- */
-export function reportBoard(state: BoardState, round: number, options?: ReportOptions): void {
-  const level = options?.notifyLevel ?? 'important';
-  if (level === 'none') return;
-
+export function reportBoard(state: BoardState, round: number): void {
   const total = Object.values(state).reduce((a, b) => a + b, 0);
-
-  // In 'important' mode, suppress empty rounds entirely
-  if (total === 0 && level === 'important') return;
-
-  // Build context tag for attribution (shown in all modes)
-  const ctx = [options?.machineName, options?.repoName].filter(Boolean).join(' · ');
-  const ctxSuffix = ctx ? ` ${DIM}(${ctx})${RESET}` : '';
-
   if (total === 0) {
-    console.log(`${DIM}📋 Board is clear — Ralph is idling${ctxSuffix}${RESET}`);
+    console.log(`${DIM}📋 Board is clear — Ralph is idling${RESET}`);
     return;
   }
-
-  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${RESET}${ctxSuffix}`);
+  console.log(`\n${BOLD}🔄 Ralph — Round ${round}${RESET}`);
   console.log('━'.repeat(30));
   if (state.untriaged > 0) console.log(`  🔴 Untriaged:         ${state.untriaged}`);
   if (state.assigned > 0) console.log(`  🟡 Assigned:          ${state.assigned}`);
@@ -247,12 +196,17 @@ type PRBoardState = Pick<BoardState, 'drafts' | 'needsReview' | 'changesRequeste
   totalOpen: number;
 };
 
-async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter): Promise<PRBoardState> {
+async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter, vlog?: VerboseLogger): Promise<PRBoardState> {
   const timestamp = new Date().toLocaleTimeString();
   const prs = await listWatchPullRequests(adapter, { state: 'open', limit: 20 });
   const squadPRs = prs.filter(pr =>
     pr.labels.some(l => l.name.startsWith('squad')) || pr.headRefName.startsWith('squad/'),
   );
+
+  vlog?.log(`PRs found: ${prs.length} total`);
+  for (const pr of squadPRs) {
+    vlog?.log(`  PR #${pr.number}: "${pr.title}" draft=${pr.isDraft} review=${pr.reviewDecision ?? 'none'}`);
+  }
 
   if (squadPRs.length === 0) {
     return { drafts: 0, needsReview: 0, changesRequested: 0, ciFailures: 0, readyToMerge: 0, totalOpen: 0 };
@@ -326,10 +280,18 @@ async function runCheck(
   autoAssign: boolean,
   capabilities: MachineCapabilities | null,
   adapter: PlatformAdapter,
+  vlog?: VerboseLogger,
 ): Promise<BoardState> {
   const timestamp = new Date().toLocaleTimeString();
   try {
     const issues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 20 });
+
+    vlog?.log(`Issues found: ${issues.length} total`);
+    for (const issue of issues) {
+      const labels = issue.labels?.map((l: { name: string }) => l.name).join(', ') ?? 'none';
+      const assignees = issue.assignees?.map((a: { login: string }) => a.login).join(', ') ?? 'none';
+      vlog?.log(`  #${issue.number}: "${issue.title}" [${labels}] assignees=[${assignees}]`);
+    }
 
     const { filterByCapabilities } = await import('@bradygaster/squad-sdk/ralph/capabilities');
     const { handled: capableIssues, skipped: incapableIssues } = filterByCapabilities(issues, capabilities);
@@ -383,7 +345,7 @@ async function runCheck(
       }
     }
 
-    const prState = await checkPRs(roster, adapter);
+    const prState = await checkPRs(roster, adapter, vlog);
     return { untriaged: untriaged.length, assigned: assignedIssues.length, executed: 0, ...prState };
   } catch (e) {
     console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${(e as Error).message}`);
@@ -670,32 +632,6 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     fatal('--interval must be a positive number of minutes');
   }
 
-  // Set up log file tee if configured
-  let logStream: import('node:fs').WriteStream | null = null;
-  if (config.logFile) {
-    logStream = fs.createWriteStream(config.logFile, { flags: 'a' });
-    const originalLog = console.log;
-    const originalError = console.error;
-    const originalWarn = console.warn;
-
-    const tee = (original: typeof console.log, ...args: unknown[]) => {
-      original(...args);
-      if (logStream) {
-        const timestamp = new Date().toISOString();
-        const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-        // Strip ANSI color codes for the log file
-        const clean = msg.replace(/\x1b\[[0-9;]*m/g, '');
-        logStream.write(`[${timestamp}] ${clean}\n`);
-      }
-    };
-
-    console.log = (...args: unknown[]) => tee(originalLog, ...args);
-    console.error = (...args: unknown[]) => tee(originalError, ...args);
-    console.warn = (...args: unknown[]) => tee(originalWarn, ...args);
-
-    console.log(`📝 Logging to ${config.logFile}`);
-  }
-
   // Detect squad directory
   const squadDirInfo = detectSquadDir(dest);
   const teamMd = path.join(squadDirInfo.path, 'team.md');
@@ -715,26 +651,40 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     return fatal(`Could not detect platform: ${(err as Error).message}`);
   }
 
-  // Ensure auth context matches the repo — replaces external Set-GhContext.ps1
-  if (adapter.ensureAuth) {
-    await adapter.ensureAuth(config.authUser);
+  // Verbose logger
+  const vlog = createVerboseLogger(config.verbose ?? false);
+
+  vlog.section('Startup');
+  vlog.table({
+    repo: teamRoot,
+    platform: adapter.type,
+    // This table only prints when verbose mode is active, so verbose is always true here.
+    verbose: config.verbose ?? false,
+    interval: `${config.interval}m`,
+    execute: config.execute ?? false,
+    agentCmd: config.agentCmd ?? '(default: gh copilot)',
+    dispatchMode: config.capabilities['wave-dispatch'] ? 'wave' : 'task',
+    maxConcurrent: config.maxConcurrent ?? 1,
+  });
+
+  // Auth check (verbose only — avoid unnecessary process spawn on every startup)
+  if (config.verbose && adapter.type === 'github') {
+    try {
+      const authOut = execFileSync('gh', ['auth', 'status'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const activeAccount = authOut.match(/Logged in to .* account (\S+)/)?.[1];
+      vlog.log(`Auth: ${activeAccount ?? 'unknown'}`);
+    } catch {
+      vlog.warn('gh auth status failed — API calls may fail silently');
+    }
   }
 
   // Verify platform CLI availability
   if (adapter.type === 'github') {
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
-    if (!(await ghAuthenticated())) {
-      fatal('gh CLI not authenticated — run: gh auth login');
-    }
+    if (!(await ghAuthenticated())) fatal('gh CLI not authenticated — run: gh auth login');
   } else if (adapter.type === 'azure-devops') {
     try { await execFileAsync('az', ['devops', '-h']); } catch { fatal('az CLI not found'); }
     try { await execFileAsync('az', ['account', 'show']); } catch { fatal('az CLI not authenticated — run: az login'); }
-  }
-
-  // Auth guard — capture active account at startup for drift detection
-  let expectedGhUser: string | undefined;
-  if (adapter.type === 'github') {
-    expectedGhUser = getActiveGhUser();
   }
 
   // Parse team.md
@@ -756,8 +706,6 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   }
 
   // Pre-create squad member labels so addTag never fails on missing labels
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const adapterAny = adapter as any;
   if (adapter.ensureTag) {
     for (const member of roster) {
       try {
@@ -796,34 +744,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     config: {},
     agentCmd: config.agentCmd,
     copilotFlags: config.copilotFlags,
+    verbose: config.verbose,
   };
 
   const enabledCapabilities = await preflightCapabilities(registry, config, baseContext);
-
-  // ── PID file for health checks (#808) ──────────────────────────
-  {
-    const { writePidFile, removePidFile } = await import('./health.js');
-    let repoSlug = 'unknown';
-    try {
-      repoSlug = execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], {
-        encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
-    } catch { /* non-GitHub or offline — use fallback */ }
-
-    writePidFile(teamRoot, {
-      pid: process.pid,
-      startedAt: new Date().toISOString(),
-      user: expectedGhUser ?? 'unknown',
-      interval: config.interval,
-      capabilities: enabledCapabilities.map(c => c.name),
-      repo: repoSlug,
-    });
-
-    const cleanupPidFile = () => removePidFile(teamRoot);
-    process.on('exit', cleanupPidFile);
-    process.on('SIGINT', () => { cleanupPidFile(); process.exit(128 + 2); });
-    process.on('SIGTERM', () => { cleanupPidFile(); process.exit(128 + 15); });
-  }
 
   // Print startup banner
   const modeTag = config.execute ? ` ${BOLD}(Execute)${RESET}` : '';
@@ -843,33 +767,35 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   }
   console.log();
 
+  // Fix 2: Set up log-file tee (after banner so the banner itself is captured too)
+  let logStream: fs.WriteStream | undefined;
+  if (config.logFile) {
+    const resolvedLogFile = path.resolve(config.logFile);
+    logStream = fs.createWriteStream(resolvedLogFile, { flags: 'a' });
+    const origLog = console.log.bind(console);
+    console.log = (...args: unknown[]) => {
+      origLog(...args);
+      const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+      const line = args.map(a => (typeof a === 'string' ? a : String(a))).join(' ');
+      // Strip ANSI escape codes for the file
+      const plain = line.replace(/\x1b\[[0-9;]*m/g, '');
+      logStream!.write(`[${timestamp}] ${plain}\n`);
+    };
+    console.log(`${DIM}Log file: ${resolvedLogFile}${RESET}`);
+  }
+
+  // Fix 3: Immediate visual feedback after banner
+  console.log(`Running first check now...`);
+
   // Initialize circuit breaker (#515)
   const circuitBreaker = new PredictiveCircuitBreaker();
   let cbState = loadCBState(squadDirInfo.path);
   let round = 0;
   let roundInProgress = false;
-  let remediationTier = 0;
-  let stopRequested = false;
 
   async function executeRound(): Promise<void> {
     const ts = new Date().toLocaleTimeString();
-
-    // Auth guard — detect if another process switched gh auth mid-run
-    if (adapter.type === 'github' && expectedGhUser) {
-      const currentUser = getActiveGhUser();
-      if (currentUser && currentUser !== expectedGhUser) {
-        console.error(`${YELLOW}⚠${RESET}  Auth switched! Expected ${BOLD}${expectedGhUser}${RESET}, got ${BOLD}${currentUser}${RESET}. Attempting restore...`);
-        try {
-          execFileSync('gh', ['auth', 'switch', '--user', expectedGhUser], {
-            encoding: 'utf-8',
-            stdio: 'pipe',
-          });
-          console.log(`${GREEN}✓${RESET} Auth restored to ${expectedGhUser}`);
-        } catch {
-          console.error(`${RED}✗${RESET} Could not restore auth to ${expectedGhUser}. Watch results may be incorrect.`);
-        }
-      }
-    }
+    const roundStart = Date.now();
 
     // Circuit breaker gate
     if (cbState.status === 'open') {
@@ -911,8 +837,11 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     round++;
-    console.log(`\n▶ [${ts}] Starting round ${round}...`);
     const roundContext: WatchContext = { ...baseContext, round };
+
+    // Fix 1: Print round start marker
+    console.log(`\n${DIM}Starting round ${round}...${RESET}`);
+    vlog.section(`Round ${round}`);
 
     // Phase 1: pre-scan (self-pull, subsquad discovery)
     await runPhase('pre-scan', enabledCapabilities, roundContext, config);
@@ -924,7 +853,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     // Core: triage (always runs — not a capability)
-    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter);
+    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter, vlog);
 
     // Phase 2: post-triage (two-pass hydration)
     await runPhase('post-triage', enabledCapabilities, roundContext, config);
@@ -948,14 +877,24 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       timestamp: new Date(),
     });
     await monitor.healthCheck();
-    reportBoard(roundState, round, {
-      notifyLevel: config.notifyLevel ?? 'important',
-      machineName: os.hostname(),
-      repoName: path.basename(teamRoot),
+
+    // Verbose board counters
+    vlog.table({
+      untriaged: roundState.untriaged,
+      assigned: roundState.assigned,
+      drafts: roundState.drafts,
+      needsReview: roundState.needsReview,
+      changesRequested: roundState.changesRequested,
+      ciFailures: roundState.ciFailures,
+      readyToMerge: roundState.readyToMerge,
+      executed: roundState.executed,
     });
 
-    const nextTime = new Date(Date.now() + interval * 60 * 1000);
-    console.log(`⏳ Next poll at ${nextTime.toLocaleTimeString()} (in ${interval}m)`);
+    reportBoard(roundState, round);
+
+    // Fix 1: Print next poll time
+    const nextPollTime = new Date(Date.now() + interval * 60 * 1000);
+    console.log(`${DIM}Next poll at ${nextPollTime.toLocaleTimeString()}${RESET}`);
 
     // Post-round: update circuit breaker on success
     if (cbState.status === 'half-open') {
@@ -972,23 +911,18 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
     saveCBState(squadDirInfo.path, cbState);
 
-    // De-escalate remediation tier on success
-    remediationTier = Math.max(0, remediationTier - 1);
+    const roundEnd = Date.now();
+    const elapsed = ((roundEnd - roundStart) / 1000).toFixed(1);
+    vlog.log(`Round ${round} complete (${elapsed}s)`);
   }
 
   // Run immediately, then on interval
-  console.log(`\n▶ Running first check now...`);
   await executeRound();
 
   return new Promise<void>((resolve) => {
     const intervalId = setInterval(
       async () => {
         if (roundInProgress) return;
-        if (stopRequested) {
-          clearInterval(intervalId);
-          resolve();
-          return;
-        }
         roundInProgress = true;
         try {
           await executeRound();
@@ -1004,41 +938,6 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
             console.log(`${RED}🛑${RESET} Rate limited — circuit opened, cooldown ${cbState.cooldownMinutes}m`);
           } else {
             console.error(`${RED}✗${RESET} Round error: ${err.message}`);
-          }
-
-          // Tiered remediation — escalates on consecutive failures
-          remediationTier++;
-          const remTs = new Date().toLocaleTimeString();
-          if (remediationTier === 1) {
-            console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 1 remediation: resetting circuit breaker`);
-            cbState.status = 'closed';
-            cbState.cooldownMinutes = 2;
-            cbState.consecutiveFailures = 0;
-            saveCBState(squadDirInfo.path, cbState);
-          } else if (remediationTier === 2) {
-            console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 2 remediation: re-probing auth`);
-            try {
-              if (adapter.ensureAuth) {
-                await adapter.ensureAuth(config.authUser);
-              }
-            } catch {
-              console.log(`${YELLOW}⚠️${RESET}  Auth probe failed — will retry next round`);
-            }
-          } else if (remediationTier === 3) {
-            console.log(`${YELLOW}⚠️${RESET}  [${remTs}] Tier 3 remediation: pulling latest`);
-            try {
-              execSync('git stash && git pull --ff-only && git stash pop', {
-                encoding: 'utf-8',
-                cwd: teamRoot,
-                timeout: 30_000,
-              });
-            } catch {
-              console.log(`${YELLOW}⚠️${RESET}  Tier 3 pull failed — continuing`);
-            }
-          } else if (remediationTier >= 4) {
-            console.log(`${RED}🔴${RESET} [${remTs}] Tier 4 remediation: pausing 30 minutes`);
-            await new Promise(r => setTimeout(r, 30 * 60 * 1000));
-            remediationTier = 0; // reset after long pause
           }
         } finally {
           roundInProgress = false;
@@ -1062,9 +961,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       await monitor.stop();
       saveCBState(squadDirInfo.path, cbState);
       console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
-      if (logStream) {
-        logStream.end();
-      }
+      logStream?.end();
       resolve();
     };
 
