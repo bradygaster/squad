@@ -670,6 +670,32 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     fatal('--interval must be a positive number of minutes');
   }
 
+  // Set up log file tee if configured
+  let logStream: import('node:fs').WriteStream | null = null;
+  if (config.logFile) {
+    logStream = fs.createWriteStream(config.logFile, { flags: 'a' });
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    const tee = (original: typeof console.log, ...args: unknown[]) => {
+      original(...args);
+      if (logStream) {
+        const timestamp = new Date().toISOString();
+        const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+        // Strip ANSI color codes for the log file
+        const clean = msg.replace(/\x1b\[[0-9;]*m/g, '');
+        logStream.write(`[${timestamp}] ${clean}\n`);
+      }
+    };
+
+    console.log = (...args: unknown[]) => tee(originalLog, ...args);
+    console.error = (...args: unknown[]) => tee(originalError, ...args);
+    console.warn = (...args: unknown[]) => tee(originalWarn, ...args);
+
+    console.log(`📝 Logging to ${config.logFile}`);
+  }
+
   // Detect squad directory
   const squadDirInfo = detectSquadDir(dest);
   const teamMd = path.join(squadDirInfo.path, 'team.md');
@@ -885,6 +911,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     round++;
+    console.log(`\n▶ [${ts}] Starting round ${round}...`);
     const roundContext: WatchContext = { ...baseContext, round };
 
     // Phase 1: pre-scan (self-pull, subsquad discovery)
@@ -927,6 +954,9 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       repoName: path.basename(teamRoot),
     });
 
+    const nextTime = new Date(Date.now() + interval * 60 * 1000);
+    console.log(`⏳ Next poll at ${nextTime.toLocaleTimeString()} (in ${interval}m)`);
+
     // Post-round: update circuit breaker on success
     if (cbState.status === 'half-open') {
       cbState.consecutiveSuccesses++;
@@ -947,6 +977,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   }
 
   // Run immediately, then on interval
+  console.log(`\n▶ Running first check now...`);
   await executeRound();
 
   return new Promise<void>((resolve) => {
@@ -1031,6 +1062,9 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       await monitor.stop();
       saveCBState(squadDirInfo.path, cbState);
       console.log(`\n${DIM}🔄 Ralph — Watch stopped${RESET}`);
+      if (logStream) {
+        logStream.end();
+      }
       resolve();
     };
 

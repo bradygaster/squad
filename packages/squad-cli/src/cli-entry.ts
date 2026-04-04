@@ -435,6 +435,11 @@ async function main(): Promise<void> {
       ? args[authUserIdx + 1]
       : undefined;
 
+    const logFileIdx = args.indexOf('--log-file');
+    const logFile = (logFileIdx !== -1 && args[logFileIdx + 1])
+      ? args[logFileIdx + 1]
+      : undefined;
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -475,6 +480,12 @@ async function main(): Promise<void> {
       copilotFlags,
       agentCmd,
       stateBackend: rawWatchStateBackend as any,
+      notifyLevel,
+      overnightStart,
+      overnightEnd,
+      sentinelFile,
+      authUser,
+      logFile,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
