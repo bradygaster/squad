@@ -1,114 +1,221 @@
 ---
 name: "cross-squad"
-description: "Coordinating work across multiple Squad instances"
-domain: "orchestration"
-confidence: "medium"
-source: "manual"
-tools:
-  - name: "squad-discover"
-    description: "List known squads and their capabilities"
-    when: "When you need to find which squad can handle a task"
-  - name: "squad-delegate"
-    description: "Create work in another squad's repository"
-    when: "When a task belongs to another squad's domain"
+description: "Pathfinder patterns for multi-repo squad orchestration — HQ command, squad-to-squad protocol, fleet dispatch, and Unix-style AI composition"
+domain: "orchestration, multi-repo, fleet"
+confidence: "low"
+source: "first capture from blog Part 8 — Pathfinder: When AI Squads Learn to Talk to Each Other"
 ---
 
 ## Context
-When an organization runs multiple Squad instances (e.g., platform-squad, frontend-squad, data-squad), those squads need to discover each other, share context, and hand off work across repository boundaries. This skill teaches agents how to coordinate across squads without creating tight coupling.
 
-Cross-squad orchestration applies when:
-- A task requires capabilities owned by another squad
-- An architectural decision affects multiple squads
-- A feature spans multiple repositories with different squads
-- A squad needs to request infrastructure, tooling, or support from another squad
+When squads grow beyond a single repository, they need patterns for cross-repo communication, fleet-wide orchestration, and composable pipelines. This skill captures the "Pathfinder" patterns discovered when tamresearch1 became the HQ for a fleet of squads spanning multiple repos and machines.
+
+These patterns apply when:
+- One repo orchestrates work across multiple child repos (fleet command)
+- Independent squads need to share decisions, skills, or status
+- AI-powered steps mix with deterministic CLI tools in pipelines
+- A watch loop monitors multiple repos simultaneously
+- Tasks must route to specific machines based on capabilities (GPU, memory)
 
 ## Patterns
 
-### Discovery via Manifest
-Each squad publishes a `.squad/manifest.json` declaring its name, capabilities, and contact information. Squads discover each other through:
-1. **Well-known paths**: Check `.squad/manifest.json` in known org repos
-2. **Upstream config**: Squads already listed in `.squad/upstream.json` are checked for manifests
-3. **Explicit registry**: A central `squad-registry.json` can list all squads in an org
+### 1. Squad HQ Pattern
 
+One repo acts as fleet command, orchestrating squads across multiple repositories. Issues filed in HQ get triaged and routed to child squads.
+
+**Structure:**
+```
+tamresearch1/          ← HQ repo (fleet command)
+├── .squad/
+│   ├── fleet.json     ← registry of child repos
+│   ├── decisions/     ← fleet-wide decisions
+│   └── agents/
+│       └── ralph/     ← fleet-aware Ralph
+├── squad-pr/          ← child: Squad CLI development
+├── blog-repo/         ← child: blog content
+└── infra-repo/        ← child: infrastructure
+```
+
+**Fleet registry (`fleet.json`):**
 ```json
 {
-  "name": "platform-squad",
-  "version": "1.0.0",
-  "description": "Platform infrastructure team",
-  "capabilities": ["kubernetes", "helm", "monitoring", "ci-cd"],
-  "contact": {
-    "repo": "org/platform",
-    "labels": ["squad:platform"]
-  },
-  "accepts": ["issues", "prs"],
-  "skills": ["helm-developer", "operator-developer", "pipeline-engineer"]
+  "hq": "tamirdresher/tamresearch1",
+  "children": [
+    {
+      "name": "squad-cli",
+      "repo": "tamirdresher/squad-pr",
+      "capabilities": ["typescript", "cli", "sdk"],
+      "labels": ["squad:cli"]
+    },
+    {
+      "name": "blog",
+      "repo": "tamirdresher/blog-repo",
+      "capabilities": ["content", "markdown"],
+      "labels": ["squad:blog"]
+    }
+  ]
 }
 ```
 
-### Context Sharing
-When delegating work, share only what the target squad needs:
-- **Capability list**: What this squad can do (from manifest)
-- **Relevant decisions**: Only decisions that affect the target squad
-- **Handoff context**: A concise description of why this work is being delegated
+**HQ routing:** When an issue arrives at HQ, the coordinator examines labels and content, then files a child issue in the appropriate repo:
 
-Do NOT share:
-- Internal team state (casting history, session logs)
-- Full decision archives (send only relevant excerpts)
-- Authentication credentials or secrets
-
-### Work Handoff Protocol
-1. **Check manifest**: Verify the target squad accepts the work type (issues, PRs)
-2. **Create issue**: Use `gh issue create` in the target repo with:
-   - Title: `[cross-squad] <description>`
-   - Label: `squad:cross-squad` (or the squad's configured label)
-   - Body: Context, acceptance criteria, and link back to originating issue
-3. **Track**: Record the cross-squad issue URL in the originating squad's orchestration log
-4. **Poll**: Periodically check if the delegated issue is closed/completed
-
-### Feedback Loop
-Track delegated work completion:
-- Poll target issue status via `gh issue view`
-- Update originating issue with status changes
-- Close the feedback loop when delegated work merges
-
-## Examples
-
-### Discovering squads
 ```bash
-# List all squads discoverable from upstreams and known repos
-squad discover
-
-# Output:
-#   platform-squad  →  org/platform  (kubernetes, helm, monitoring)
-#   frontend-squad  →  org/frontend  (react, nextjs, storybook)
-#   data-squad      →  org/data      (spark, airflow, dbt)
+# HQ receives: "Add built-in skill for cross-squad patterns"
+# Coordinator routes to squad-cli repo:
+gh issue create --repo tamirdresher/squad-pr \
+  --title "[from-hq] Add cross-squad built-in skill" \
+  --body "Routed from HQ issue #42. Context: ..." \
+  --label "squad:cross-squad"
 ```
 
-### Delegating work
-```bash
-# Delegate a task to the platform squad
-squad delegate platform-squad "Add Prometheus metrics endpoint for the auth service"
+### 2. Squad-to-Squad (S2S) Protocol
 
-# Creates issue in org/platform with cross-squad label and context
+How independent squads communicate without tight coupling. Four mechanisms:
+
+**a) Shared decisions format:**
+Every squad writes decisions in the same format to `.squad/decisions/inbox/`. When a decision affects another squad, the originating squad files a cross-repo issue referencing the decision.
+
+```markdown
+### 2026-03-14: Adopt markdown as universal interface
+**By:** Picard (tamresearch1)
+**What:** All cross-squad data exchange uses markdown
+**Why:** Every agent can read/write it, git tracks it, humans can review it
+**Affects:** squad-cli, blog-repo, infra-repo
 ```
 
-### Manifest in squad.config.ts
-```typescript
-export default defineSquad({
-  manifest: {
-    name: 'platform-squad',
-    capabilities: ['kubernetes', 'helm'],
-    contact: { repo: 'org/platform', labels: ['squad:platform'] },
-    accepts: ['issues', 'prs'],
-    skills: ['helm-developer', 'operator-developer'],
+**b) Cross-repo issue filing:**
+Squad A files an issue in Squad B's repo when work crosses boundaries:
+
+```bash
+# Squad A (blog) needs a CLI feature from Squad B (squad-cli)
+gh issue create --repo tamirdresher/squad-pr \
+  --title "[s2s:blog→cli] Need --fleet flag for watch command" \
+  --body "Blog squad's Ralph needs fleet mode. See blog#78 for context." \
+  --label "squad:s2s"
+```
+
+**c) Shared skills library:**
+Skills earned in one squad are available to others. When a squad learns a reusable pattern, it gets promoted to the built-in skills library so all squads benefit:
+
+```
+Squad A discovers pattern → writes SKILL.md locally
+  → PR to squad-cli repo → merged as built-in skill
+    → all squads get it on next `squad init` or `squad reskill`
+```
+
+**d) Status polling:**
+Ralph checks multiple repos on each watch cycle, aggregating status across the fleet:
+
+```bash
+# Ralph's fleet poll cycle
+for repo in $(jq -r '.children[].repo' .squad/fleet.json); do
+  gh issue list --repo "$repo" --label "squad:active" --json number,title
+done
+```
+
+### 3. Unix Philosophy Applied to AI Squads
+
+Squads as composable Unix-style tools. The key insight: markdown is the universal interface (text in / text out), and AI-powered steps slot into pipelines alongside deterministic tools.
+
+**Core principles:**
+- **Text in / text out** — Markdown as the universal interface between steps
+- **Single responsibility** — Each squad owns one domain
+- **Composable pipelines** — Mix deterministic CLI steps with AI-powered steps
+
+**Example pipeline:**
+```bash
+# Deterministic + AI pipeline
+dir docs/*.md \
+  | sed 's/\.md$//' \
+  | squad ask "Analyze these doc names and suggest missing topics" \
+  | squad ask "For each missing topic, write a one-paragraph outline" \
+  | lint-markdown
+```
+
+**Mixed pipeline with explicit AI steps:**
+```
+INPUT (file list)
+  → deterministic: find + filter
+  → AI: ANALYZE (identify patterns, suggest improvements)
+  → deterministic: lint + format
+  → AI: REWRITE (apply suggestions)
+  → deterministic: test + commit
+```
+
+**Why this works:** Each step consumes text and produces text. The AI steps are interchangeable — swap models, swap agents, swap squads. The deterministic steps provide guardrails and validation between AI steps.
+
+### 4. Fleet Dispatch
+
+The watch command's fleet/hybrid mode for multi-repo monitoring. Ralph runs in one repo but watches the entire fleet.
+
+**Fleet watch cycle:**
+```
+Every 5-10 minutes:
+  1. Pull HQ repo
+  2. Read fleet.json for child repos
+  3. For each child repo:
+     a. Check open issues with squad:* labels
+     b. Check PR status (pending reviews, failing CI)
+     c. Check .squad/cross-machine/tasks/ for pending work
+  4. Aggregate status → write to .squad/log/fleet-status.md
+  5. Route urgent items → file issues or notify
+```
+
+**Hybrid mode:** Ralph on the laptop monitors issues and lightweight tasks. GPU-heavy or resource-intensive work gets routed to DevBox or cloud VMs via the cross-machine coordination pattern.
+
+```bash
+# Start fleet watch (monitors HQ + all children)
+squad watch --fleet
+
+# Hybrid: laptop watches, DevBox executes GPU work
+squad watch --fleet --route-gpu=devbox
+```
+
+### 5. Cross-Machine Coordination
+
+Machines publish capability manifests so the fleet dispatcher routes work to the right hardware.
+
+**Machine capabilities (`machine.json`):**
+```json
+{
+  "name": "devbox",
+  "capabilities": {
+    "gpu": true,
+    "gpu_model": "NVIDIA A100",
+    "memory_gb": 64,
+    "cpu_cores": 16
   },
-});
+  "accepts": ["gpu_workload", "heavy_build", "model_training"],
+  "poll_interval_seconds": 300
+}
 ```
+
+**Routing logic:** When a task requires GPU, the fleet dispatcher checks machine manifests and routes to a capable machine. Tasks flow through git (`.squad/cross-machine/tasks/`), results flow back the same way.
+
+```
+Laptop (no GPU) → creates task YAML → git push
+  → DevBox Ralph pulls → validates → executes on GPU
+    → writes result YAML → git push
+      → Laptop Ralph reads result
+```
+
+See the `cross-machine-coordination` skill for full task/result YAML schemas, security model, and execution details.
 
 ## Anti-Patterns
-- **Direct file writes across repos** — Never modify another squad's `.squad/` directory. Use issues and PRs as the communication protocol.
-- **Tight coupling** — Don't depend on another squad's internal structure. Use the manifest as the public API contract.
-- **Unbounded delegation** — Always include acceptance criteria and a timeout. Don't create open-ended requests.
-- **Skipping discovery** — Don't hardcode squad locations. Use manifests and the discovery protocol.
-- **Sharing secrets** — Never include credentials, tokens, or internal URLs in cross-squad issues.
-- **Circular delegation** — Track delegation chains. If squad A delegates to B which delegates back to A, something is wrong.
+
+- **Tight coupling between squads** — Don't depend on another squad's internal `.squad/` structure. Use issues and PRs as the communication protocol. Manifests are the public API.
+- **Skipping HQ routing** — Don't have squads talk directly when there's an HQ. Route through HQ so there's a single audit trail and consistent triage.
+- **Sharing full context dumps** — Send only what the target squad needs: a concise description, acceptance criteria, and a link back. Not your entire decision history.
+- **Hardcoded repo paths** — Use `fleet.json` or manifest discovery. Repos move, orgs change, forks happen.
+- **AI steps without guardrails** — In composable pipelines, always sandwich AI steps between deterministic validation (lint, test, schema check). Never chain AI → AI → AI without a checkpoint.
+- **Ignoring the text interface** — If a step produces binary output or requires structured RPC, it breaks the Unix composition model. Convert to markdown/text at boundaries.
+- **Circular delegation** — Track delegation chains. If Squad A delegates to B which delegates back to A, something is architecturally wrong. Escalate to HQ.
+- **Fleet watch without rate limiting** — Polling N repos every 5 minutes can hit GitHub API limits. Use conditional requests (ETags) and back off on 403s.
+
+## References
+
+- Blog Part 8: "Pathfinder — When AI Squads Learn to Talk to Each Other"
+- Skill: `cross-machine-coordination` — Full task/result YAML schemas, security model, execution isolation
+- Skill: `agent-collaboration` — Single-repo collaboration patterns (decisions, cross-agent comms)
+- File: `.squad/fleet.json` — Fleet registry (when using HQ pattern)
+- File: `.squad/cross-machine/tasks/` — Cross-machine task queue

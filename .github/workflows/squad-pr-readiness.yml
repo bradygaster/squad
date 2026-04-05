@@ -4,6 +4,9 @@ on:
   pull_request_target:
     branches: [dev, main, insider]
     types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_run:
+    workflows: ["Squad CI"]
+    types: [completed]
 
 # NOTE: Using pull_request_target so we get a write token even for fork PRs.
 # This is safe because we never check out or execute PR code — all data
@@ -16,15 +19,18 @@ permissions:
   checks: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 jobs:
   readiness:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Skip if the PR is from a bot account (dependabot, renovate, etc.)
-    if: github.actor != 'dependabot[bot]'
+    # Skip bots, and skip workflow_run events with no associated PR
+    if: >-
+      github.actor != 'dependabot[bot]'
+      && (github.event_name != 'workflow_run'
+          || github.event.workflow_run.pull_requests[0] != null)
     steps:
       - name: Checkout scripts
         uses: actions/checkout@v4
@@ -34,12 +40,12 @@ jobs:
       - name: Check PR readiness
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_DRAFT: ${{ github.event.pull_request.draft }}
-          PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login || github.event.workflow_run.actor.login }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref || github.event.workflow_run.pull_requests[0].base.ref }}
+          PR_DRAFT: ${{ github.event.pull_request.draft || 'false' }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels || '[]') }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
           RUN_NAME: ${{ github.workflow }}
