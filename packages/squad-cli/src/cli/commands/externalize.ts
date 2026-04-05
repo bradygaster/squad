@@ -44,9 +44,31 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
     fatal('.squad/ directory not found. Run `squad init` first.');
   }
 
-  // Derive project key
-  const key = projectKey || deriveProjectKey(projectDir);
-  const externalDir = resolveExternalStateDir(key, true);
+  const configPath = path.join(squadDir, 'config.json');
+  let existingConfig: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      if (raw != null) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          existingConfig = parsed as Record<string, unknown>;
+        }
+      }
+    } catch { /* start fresh if config is malformed */ }
+  }
+
+  const configuredExternalStateRoot = typeof existingConfig['externalStateRoot'] === 'string'
+    ? existingConfig['externalStateRoot']
+    : undefined;
+  const resolvedExternalStateRoot = configuredExternalStateRoot
+    ? path.resolve(projectDir, configuredExternalStateRoot)
+    : undefined;
+
+  const key = projectKey
+    || (typeof existingConfig['projectKey'] === 'string' ? existingConfig['projectKey'] : undefined)
+    || deriveProjectKey(projectDir);
+  const externalDir = resolveExternalStateDir(key, true, resolvedExternalStateRoot);
 
   console.log(`📦 Externalizing .squad/ state to: ${externalDir}`);
 
@@ -78,28 +100,15 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
     movedCount++;
   }
 
-  // Write thin config.json marker, preserving any existing config fields
-  const configPath = path.join(squadDir, 'config.json');
-  let existingConfig: Record<string, unknown> = {};
-  if (storage.existsSync(configPath)) {
-    try {
-      const raw = storage.readSync(configPath);
-      if (raw != null) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          existingConfig = parsed as Record<string, unknown>;
-        }
-      }
-    } catch { /* start fresh if config is malformed */ }
-  }
-
-  const config = {
+  // Write thin config.json marker, preserving any existing config fields.
+  const config: Record<string, unknown> = {
     ...existingConfig,
     version: 1,
     teamRoot: '.',
     projectKey: key,
-    stateLocation: 'external',
+    stateBackend: 'external',
   };
+  delete config['stateLocation'];
   storage.writeSync(
     configPath,
     JSON.stringify(config, null, 2) + '\n',
@@ -124,7 +133,7 @@ export function runInternalize(projectDir: string): void {
     fatal('.squad/config.json not found. State is already local or not initialized.');
   }
 
-  let config: { stateLocation?: string; projectKey?: string };
+  let config: { stateBackend?: string; stateLocation?: string; projectKey?: string; externalStateRoot?: string };
   try {
     config = JSON.parse(storage.readSync(configPath) ?? '{}');
   } catch {
@@ -132,12 +141,15 @@ export function runInternalize(projectDir: string): void {
     return;
   }
 
-  if (config.stateLocation !== 'external') {
-    fatal('State is already local (stateLocation is not "external").');
+  if (config.stateBackend !== 'external' && config.stateLocation !== 'external') {
+    fatal('State is already local (stateBackend is not "external").');
   }
 
   const key = config.projectKey || deriveProjectKey(projectDir);
-  const externalDir = resolveExternalStateDir(key, false);
+  const externalRoot = typeof config.externalStateRoot === 'string' && config.externalStateRoot.trim()
+    ? path.resolve(projectDir, config.externalStateRoot)
+    : undefined;
+  const externalDir = resolveExternalStateDir(key, false, externalRoot);
 
   if (!storage.existsSync(externalDir)) {
     fatal(`External state directory not found: ${externalDir}`);

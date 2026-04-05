@@ -34,16 +34,15 @@ export interface SquadDirConfig {
   consult?: boolean;
   /** True when extraction is disabled for consult sessions (read-only consultation) */
   extractionDisabled?: boolean;
-   /**
-   * Where squad state is stored.
-   * - 'local' (default): state lives in `.squad/` inside the repo
-   * - 'external': state lives in `{globalSquadDir}/projects/{projectKey}/`, only a
-   *   thin config.json marker remains in the repo. Survives branch switches,
-   *   invisible to `git status`, never pollutes PRs.
-   */
-  stateLocation?: 'local' | 'external';
   /** State storage backend: worktree | external | git-notes | orphan */
   stateBackend?: string;
+  /**
+   * Optional override for the external-state root folder.
+   * When `stateBackend` is `external`, Squad stores state under
+   * `{externalStateRoot}/{projectKey}/` instead of the default
+   * `{resolveGlobalSquadPath()}/projects/{projectKey}/`.
+   */
+  externalStateRoot?: string;
 }
 
 /**
@@ -238,8 +237,14 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
         projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
         consult: parsed.consult === true ? true : undefined,
         extractionDisabled: parsed.extractionDisabled === true ? true : undefined,
-        stateLocation: parsed.stateLocation === 'external' ? 'external' : undefined,
-        stateBackend: typeof parsed.stateBackend === 'string' ? parsed.stateBackend : undefined,
+        stateBackend: typeof parsed.stateBackend === 'string'
+          ? parsed.stateBackend
+          : parsed.stateLocation === 'external'
+            ? 'external'
+            : undefined,
+        externalStateRoot: typeof parsed.externalStateRoot === 'string' && parsed.externalStateRoot.trim()
+          ? parsed.externalStateRoot
+          : undefined,
       };
     }
     return null;
@@ -276,11 +281,14 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
   const isLegacy = name === '.ai-team';
   const config = loadDirConfig(projectDir);
 
-  if (config && config.stateLocation === 'external') {
-    // External mode: state lives in ~/.squad/projects/{projectKey}/
+  if (config && config.stateBackend === 'external') {
+    // External mode: state lives outside the repo, optionally under a custom root.
     const projectRoot = path.resolve(projectDir, '..');
     const projectKey = config.projectKey || deriveProjectKey(projectRoot);
-    const externalDir = resolveExternalStateDir(projectKey);
+    const externalRoot = config.externalStateRoot
+      ? path.resolve(projectRoot, config.externalStateRoot)
+      : undefined;
+    const externalDir = resolveExternalStateDir(projectKey, true, externalRoot);
     return {
       mode: 'remote',
       projectDir: externalDir,
@@ -368,17 +376,24 @@ export function resolveGlobalSquadPath(): string {
  * or an explicit key in `.squad/config.json`.
  *
  * @param projectKey - Unique project identifier (slug). Falls back to repo basename.
- * @param create     - Whether to create the directory if missing (default: true).
+ * @param create - Whether to create the directory if missing (default: true).
+ * @param externalStateRoot - Optional override for the base external-state folder.
  * @returns Absolute path to the external state directory.
  */
-export function resolveExternalStateDir(projectKey: string, create: boolean = true): string {
-  // Sanitize: reject path traversal attempts
+export function resolveExternalStateDir(
+  projectKey: string,
+  create: boolean = true,
+  externalStateRoot?: string,
+): string {
   const sanitized = projectKey.replace(/[^a-z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
   if (!sanitized || sanitized === '.' || sanitized === '..' || sanitized.includes('..')) {
     throw new Error(`Invalid project key: "${projectKey}"`);
   }
-  const globalDir = resolveGlobalSquadPath();
-  const stateDir = path.join(globalDir, 'projects', sanitized);
+
+  const stateRoot = externalStateRoot && externalStateRoot.trim()
+    ? path.resolve(externalStateRoot)
+    : path.join(resolveGlobalSquadPath(), 'projects');
+  const stateDir = path.join(stateRoot, sanitized);
   if (create && !storage.existsSync(stateDir)) {
     storage.mkdirSync(stateDir, { recursive: true });
   }
