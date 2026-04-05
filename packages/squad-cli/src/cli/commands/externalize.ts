@@ -167,10 +167,33 @@ export function runInternalize(projectDir: string): void {
     movedCount++;
   }
 
-  // Remove the config.json marker to restore true local mode.
-  // loadDirConfig() returns null when config.json is absent → resolveSquadPaths()
-  // falls through to local mode (projectDir === teamDir).
-  storage.deleteSync?.(configPath);
+  // Remove external-state fields from config.json (stateLocation, teamRoot,
+  // projectKey) to restore true local mode. Preserve any other settings
+  // (e.g. consult, stateBackend). If nothing meaningful remains, delete the file
+  // so loadDirConfig() returns null and resolveSquadPaths() falls through to
+  // local mode.
+  let fullConfig: Record<string, unknown> = {};
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw != null) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        fullConfig = parsed as Record<string, unknown>;
+      }
+    }
+  } catch { /* treat malformed as empty */ }
+
+  delete fullConfig.stateLocation;
+  delete fullConfig.teamRoot;
+  delete fullConfig.projectKey;
+
+  // Check if any meaningful fields remain beyond version
+  const { version: _v, ...rest } = fullConfig;
+  if (Object.keys(rest).length > 0) {
+    storage.writeSync(configPath, JSON.stringify(fullConfig, null, 2) + '\n');
+  } else {
+    storage.deleteSync?.(configPath);
+  }
 
   console.log(`✅ Internalized ${movedCount} items. State is back in .squad/.`);
 }
