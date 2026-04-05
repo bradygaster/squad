@@ -31,6 +31,16 @@ export interface WatchConfig {
   verbose?: boolean;
   /** Preferred auth user for platform operations (e.g. gh auth switch --user). */
   authUser?: string;
+  /** Notification level for watch events. */
+  notifyLevel?: 'all' | 'important' | 'none';
+  /** Hour to begin overnight mode (e.g. "22:00"). */
+  overnightStart?: string;
+  /** Hour to end overnight mode (e.g. "08:00"). */
+  overnightEnd?: string;
+  /** Path to a sentinel file — watch shuts down gracefully when removed. */
+  sentinelFile?: string;
+  /** State persistence backend. */
+  stateBackend?: 'worktree' | 'git-notes' | 'orphan' | 'external';
 }
 
 const DEFAULTS: WatchConfig = {
@@ -83,6 +93,12 @@ export function loadWatchConfig(
       ...(cliOverrides.capabilities ?? {}),
     },
     verbose: cliOverrides.verbose ?? fileConfig.verbose ?? false,
+    authUser: cliOverrides.authUser ?? fileConfig.authUser,
+    notifyLevel: cliOverrides.notifyLevel ?? fileConfig.notifyLevel,
+    overnightStart: cliOverrides.overnightStart ?? fileConfig.overnightStart,
+    overnightEnd: cliOverrides.overnightEnd ?? fileConfig.overnightEnd,
+    sentinelFile: cliOverrides.sentinelFile ?? fileConfig.sentinelFile,
+    stateBackend: cliOverrides.stateBackend ?? fileConfig.stateBackend,
   };
 
   return merged;
@@ -106,10 +122,27 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
     }
   }
   if (typeof raw['logFile'] === 'string') result.logFile = raw['logFile'];
+  if (typeof raw['authUser'] === 'string') result.authUser = raw['authUser'];
+  if (typeof raw['notifyLevel'] === 'string') {
+    const level = raw['notifyLevel'];
+    if (level === 'all' || level === 'important' || level === 'none') {
+      result.notifyLevel = level;
+    }
+  }
+  if (typeof raw['overnightStart'] === 'string') result.overnightStart = raw['overnightStart'];
+  if (typeof raw['overnightEnd'] === 'string') result.overnightEnd = raw['overnightEnd'];
+  if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
+  if (typeof raw['stateBackend'] === 'string') {
+    const backend = raw['stateBackend'];
+    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    if ((validBackends as readonly string[]).includes(backend)) {
+      result.stateBackend = backend as typeof validBackends[number];
+    }
+  }
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {
