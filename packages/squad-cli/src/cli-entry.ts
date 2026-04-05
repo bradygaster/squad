@@ -318,7 +318,7 @@ async function main(): Promise<void> {
     
     // Warn when --insider is used without --self (it has no effect on project upgrades)
     if (insider && !selfUpgrade) {
-      console.warn('⚠ --insider has no effect without --self');
+      console.warn('⚠️ --insider only applies with --self (squad upgrade --self --insider). Ignoring.');
     }
 
     // Handle --migrate-directory flag

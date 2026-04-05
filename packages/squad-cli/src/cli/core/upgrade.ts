@@ -778,8 +778,8 @@ function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
  * Self-upgrade the Squad CLI package via the detected package manager.
  *
  * Detects whether the CLI was installed via npm, pnpm, or yarn and runs the
- * appropriate global install command. Only suggests `sudo` for npm (pnpm and
- * yarn typically do not require elevated permissions for global installs).
+ * appropriate global install command. On EACCES errors, suggests `sudo` with
+ * the detected installer name.
  */
 export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
   const { execSync } = await import('node:child_process');
@@ -804,12 +804,15 @@ export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<
 
   try {
     execSync(cmd, { stdio: 'inherit' });
-  } catch {
-    // Only suggest sudo for npm — pnpm/yarn rarely need it
-    if (pm === 'npm') {
+  } catch (err: unknown) {
+    const isPermission =
+      err instanceof Error &&
+      'code' in err &&
+      (err as NodeJS.ErrnoException).code === 'EACCES';
+    if (isPermission) {
       warn(`Permission denied. Try: sudo ${cmd}`);
     } else {
-      warn(`Upgrade failed. Check ${pm} permissions or try running manually: ${cmd}`);
+      warn(`Upgrade failed. Try running manually: ${cmd}`);
     }
   }
 }
