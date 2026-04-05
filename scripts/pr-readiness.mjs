@@ -25,6 +25,15 @@ export const SELF_CHECK_NAMES = ['readiness', 'PR Readiness Check'];
 /** Regex for source files that require a changeset. */
 export const SOURCE_PATTERN = /^packages\/squad-(sdk|cli)\/src\//;
 
+/** Bootstrap files that must remain zero-dependency. */
+export const PROTECTED_FILES = [
+  'packages/squad-cli/src/cli/core/detect-squad-dir.ts',
+  'packages/squad-cli/src/cli/core/errors.ts',
+  'packages/squad-cli/src/cli/core/gh-cli.ts',
+  'packages/squad-cli/src/cli/core/output.ts',
+  'packages/squad-cli/src/cli/core/history-split.ts',
+];
+
 // ---------------------------------------------------------------------------
 // Pure check functions
 // ---------------------------------------------------------------------------
@@ -244,6 +253,47 @@ export function checkCIStatus(checkRuns, statuses) {
     return { pass: false, detail: 'No CI checks have run yet' };
   }
   return { pass: true, detail: 'All checks passing' };
+}
+
+/**
+ * Check 10: Issue linkage — PR body or commit message references an issue.
+ * @param {string} prBody — PR description text
+ * @param {Array<{ commit: { message: string } }>} commits
+ * @returns {{ pass: boolean, detail: string }}
+ */
+export function checkIssueLinkage(prBody, commits) {
+  const issuePattern = /(closes|fixes|resolves|part of)\s+#\d+/i;
+  const bodyHasRef = issuePattern.test(prBody || '');
+  const commitHasRef = (commits || []).some(
+    (c) => issuePattern.test(c.commit?.message || ''),
+  );
+  if (bodyHasRef || commitHasRef) {
+    return { pass: true, detail: 'Issue reference found' };
+  }
+  return {
+    pass: false,
+    detail: 'No issue reference — add `Closes #N` to PR body or commit message',
+  };
+}
+
+/**
+ * Check 11: Protected file changes (informational).
+ * Warns when bootstrap zero-dependency files are modified.
+ * @param {Array<{ filename: string }>} files — files changed in the PR
+ * @returns {{ pass: boolean, detail: string }}
+ */
+export function checkProtectedFiles(files) {
+  const touched = (files || []).filter(
+    (f) => PROTECTED_FILES.includes(f.filename),
+  );
+  if (touched.length === 0) {
+    return { pass: true, detail: 'No protected bootstrap files changed' };
+  }
+  const names = touched.map((f) => f.filename.split('/').pop()).join(', ');
+  return {
+    pass: true,
+    detail: `⚠️ ${touched.length} protected bootstrap file(s) changed: ${names} — verify zero-dependency constraint`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -585,6 +635,13 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
     // leave empty
   }
   checks.push({ name: 'CI passing', ...checkCIStatus(checkRuns, statusEntries) });
+
+  // 10. Issue linkage
+  const prBody = prData?.body || '';
+  checks.push({ name: 'Issue linked', ...checkIssueLinkage(prBody, commits) });
+
+  // 11. Protected file changes (informational)
+  checks.push({ name: 'Protected files', ...checkProtectedFiles(files) });
 
   // ── Build checklist and upsert comment ──
   const body = buildChecklist(checks, owner, repo, prBaseRef, prHeadSha, files);

@@ -16,6 +16,8 @@ import {
   checkMergeability,
   checkCopilotThreads,
   checkCIStatus,
+  checkIssueLinkage,
+  checkProtectedFiles,
   buildChecklist,
   buildFileList,
   sanitizeFilename,
@@ -26,6 +28,7 @@ import {
   COMMENT_MARKER,
   SELF_CHECK_NAMES,
   SOURCE_PATTERN,
+  PROTECTED_FILES,
 } from '../scripts/pr-readiness.mjs';
 
 // ---------------------------------------------------------------------------
@@ -457,6 +460,105 @@ describe('checkCopilotThreads', () => {
 // ---------------------------------------------------------------------------
 // buildChecklist
 // ---------------------------------------------------------------------------
+// checkIssueLinkage
+// ---------------------------------------------------------------------------
+
+describe('checkIssueLinkage', () => {
+  it('passes when PR body has Closes #N', () => {
+    const result = checkIssueLinkage('Closes #42', []);
+    expect(result.pass).toBe(true);
+    expect(result.detail).toContain('Issue reference found');
+  });
+
+  it('passes when PR body has Fixes #N (case-insensitive)', () => {
+    const result = checkIssueLinkage('fixes #100', []);
+    expect(result.pass).toBe(true);
+  });
+
+  it('passes when PR body has Resolves #N', () => {
+    const result = checkIssueLinkage('Resolves #7', []);
+    expect(result.pass).toBe(true);
+  });
+
+  it('passes when PR body has Part of #N', () => {
+    const result = checkIssueLinkage('Part of #55', []);
+    expect(result.pass).toBe(true);
+  });
+
+  it('passes when commit message has issue reference', () => {
+    const commits = [{ commit: { message: 'fix: thing\n\nCloses #10' } }];
+    const result = checkIssueLinkage('', commits);
+    expect(result.pass).toBe(true);
+  });
+
+  it('fails when neither body nor commits have issue reference', () => {
+    const commits = [{ commit: { message: 'update docs' } }];
+    const result = checkIssueLinkage('Some description', commits);
+    expect(result.pass).toBe(false);
+    expect(result.detail).toContain('No issue reference');
+  });
+
+  it('handles null/empty inputs gracefully', () => {
+    const result = checkIssueLinkage(null as unknown as string, null as unknown as []);
+    expect(result.pass).toBe(false);
+  });
+
+  it('handles empty string body with empty commits', () => {
+    const result = checkIssueLinkage('', []);
+    expect(result.pass).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkProtectedFiles
+// ---------------------------------------------------------------------------
+
+describe('checkProtectedFiles', () => {
+  it('passes when no protected files are changed', () => {
+    const files = [{ filename: 'packages/squad-sdk/src/index.ts' }];
+    const result = checkProtectedFiles(files);
+    expect(result.pass).toBe(true);
+    expect(result.detail).toContain('No protected bootstrap files');
+  });
+
+  it('passes with warning when protected file is changed', () => {
+    const files = [
+      { filename: 'packages/squad-cli/src/cli/core/errors.ts' },
+      { filename: 'packages/squad-sdk/src/index.ts' },
+    ];
+    const result = checkProtectedFiles(files);
+    expect(result.pass).toBe(true);
+    expect(result.detail).toContain('⚠️');
+    expect(result.detail).toContain('errors.ts');
+    expect(result.detail).toContain('zero-dependency');
+  });
+
+  it('counts multiple protected files', () => {
+    const files = [
+      { filename: 'packages/squad-cli/src/cli/core/errors.ts' },
+      { filename: 'packages/squad-cli/src/cli/core/output.ts' },
+    ];
+    const result = checkProtectedFiles(files);
+    expect(result.pass).toBe(true);
+    expect(result.detail).toContain('2 protected bootstrap file(s)');
+  });
+
+  it('handles null/undefined files gracefully', () => {
+    const result = checkProtectedFiles(null as unknown as []);
+    expect(result.pass).toBe(true);
+    expect(result.detail).toContain('No protected bootstrap files');
+  });
+
+  it('exports PROTECTED_FILES constant', () => {
+    expect(PROTECTED_FILES).toBeDefined();
+    expect(PROTECTED_FILES.length).toBeGreaterThan(0);
+    expect(PROTECTED_FILES).toContain('packages/squad-cli/src/cli/core/errors.ts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildChecklist
+// ---------------------------------------------------------------------------
 
 describe('buildChecklist', () => {
   it('includes the comment marker', () => {
@@ -820,11 +922,11 @@ describe('run()', () => {
 
   function createMockFetch(overrides = {}) {
     const defaults = {
-      commits: [{ sha: 'abc123' }],
+      commits: [{ sha: 'abc123', commit: { message: 'fix: thing\n\nCloses #42' } }],
       compare: { behind_by: 0 },
       reviews: [{ user: { login: 'copilot-pull-request-reviewer' }, state: 'APPROVED', submitted_at: '2025-01-01T00:00:00Z' }],
       files: [{ filename: '.changeset/feat.md', additions: 5, deletions: 0 }],
-      pr: { mergeable: true },
+      pr: { mergeable: true, body: 'Closes #42' },
       checkRuns: { check_runs: [{ name: 'build', conclusion: 'success', status: 'completed' }] },
       status: { statuses: [{ state: 'success' }] },
       comments: [],
@@ -873,7 +975,7 @@ describe('run()', () => {
     const result = await run({ env: baseEnv, fetchFn: mockFetch });
 
     expect(result.action).toBe('created');
-    expect(result.checks).toHaveLength(9);
+    expect(result.checks).toHaveLength(11);
     expect(result.checks.every((c) => c.pass)).toBe(true);
 
     // Verify POST was called for comment creation (not PATCH)
@@ -1006,10 +1108,10 @@ describe('run()', () => {
     expect(copilotCheck.detail).toContain('No Copilot review yet');
   });
 
-  it('always produces 9 checks', async () => {
+  it('always produces 11 checks', async () => {
     const mockFetch = createMockFetch();
     const result = await run({ env: baseEnv, fetchFn: mockFetch });
-    expect(result.checks).toHaveLength(9);
+    expect(result.checks).toHaveLength(11);
 
     const names = result.checks.map((c) => c.name);
     expect(names).toEqual([
@@ -1022,6 +1124,8 @@ describe('run()', () => {
       'No merge conflicts',
       'Copilot threads resolved',
       'CI passing',
+      'Issue linked',
+      'Protected files',
     ]);
   });
 

@@ -183,6 +183,8 @@ const GIT_UNSAFE_PATTERNS = [
 ];
 
 for (const file of changedFiles) {
+  // Skill docs reference unsafe patterns as warnings — skip them
+  if (file.startsWith('.copilot/skills/') && file.endsWith('.md')) continue;
   const added = addedByFile.get(file) || [];
   for (const { line, text } of added) {
     for (const { pattern, label } of GIT_UNSAFE_PATTERNS) {

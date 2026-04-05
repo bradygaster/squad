@@ -196,3 +196,17 @@ Also updated: examples section (showing `name` + `description` pairs), anti-patt
 
 **Pattern:** When a PR branch has accumulated merge commits from dev, use `git rebase --onto dev <parent-of-first-PR-commit>` to cherry-pick only the relevant commits. This avoids conflict noise from old merge commits that are already in dev. Also: after template renames, the sync script may overwrite version stamps in the canonical file — revert those before pushing.
 
+### 2026-07: PR Lifecycle Skill & Readiness Check Enhancements
+
+**Task:** Create comprehensive skill for issue → PR → merge lifecycle; gap analysis of pr-readiness.mjs.
+
+**Skill created:** `.copilot/skills/pr-lifecycle/SKILL.md` — canonical Copilot-agent lifecycle covering 6 phases (issue pickup → implementation → PR creation → readiness → maintenance → merge/cleanup). Documents all readiness checks with fix-it instructions and common gotchas. Declared as authoritative over older lifecycle docs.
+
+**Gap analysis findings (3 gaps, 2 implemented):**
+1. **Issue linkage check** (implemented) — `checkIssueLinkage()` verifies PR body or commits reference an issue. Hard gate.
+2. **Protected file warning** (implemented) — `checkProtectedFiles()` warns when zero-dependency bootstrap files are modified. Informational only.
+3. **Required checks presence** (recommended, not implemented) — would verify expected CI checks actually ran rather than just checking existing ones are green. Deferred — needs agreement on which check names to require.
+
+**Readiness system now has 11 checks** (up from 9): original 9 + issue linkage + protected file warning.
+
+**Pattern:** Lifecycle skills work best as numbered runbooks, not as generic patterns. The critic caught that the original "Patterns/Examples/Anti-Patterns" structure was too reference-like — switching to "Lifecycle Procedure" with numbered phases made it genuinely standalone. Gap analysis should distinguish hard gates from informational warnings and propose function signatures.
