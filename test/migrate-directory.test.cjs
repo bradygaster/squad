@@ -5,7 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const os = require('os');
 
-const CLI = path.join(__dirname, '..', 'index.js');
+const CLI = path.join(__dirname, '..', 'index.cjs');
 const pkg = require('../package.json');
 
 function runSquad(args, cwd) {

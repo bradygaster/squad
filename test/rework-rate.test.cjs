@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const CLI = path.join(__dirname, '..', 'index.js');
+const CLI = path.join(__dirname, '..', 'index.cjs');
 
 // Import rework calculation functions from the pure module (no CLI side effects)
 const { calculatePrRework, calculateReworkSummary } = require(path.join(__dirname, '..', 'lib', 'rework.js'));
