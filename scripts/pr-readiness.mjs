@@ -369,8 +369,25 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
   );
   checks.push({ name: 'Single commit', ...checkCommitCount(commits.length) });
 
-  // 2. Draft status
-  checks.push({ name: 'Not in draft', ...checkDraftStatus(prDraft) });
+  // Fetch PR data once (used for draft status + mergeability)
+  let prData = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const prRes = await fetchFn(`${apiBase}/pulls/${prNumber}`, {
+      headers: apiHeaders,
+    });
+    if (prRes.ok) {
+      prData = await prRes.json();
+      if (prData.mergeable === null && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+    }
+    break;
+  }
+
+  // 2. Draft status — prefer API truth over env var (workflow_run can't provide it)
+  const isDraft = prData?.draft ?? prDraft;
+  checks.push({ name: 'Not in draft', ...checkDraftStatus(isDraft) });
 
   // 3. Branch freshness
   let behindBy = null;
@@ -407,22 +424,8 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
   // 6. Scope cleanliness
   checks.push({ name: 'Scope clean', ...checkScopeClean(files) });
 
-  // 7. Mergeability
-  let mergeable = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const prRes = await fetchFn(`${apiBase}/pulls/${prNumber}`, {
-      headers: apiHeaders,
-    });
-    if (prRes.ok) {
-      const prData = await prRes.json();
-      if (prData.mergeable === null && attempt === 0) {
-        await new Promise((r) => setTimeout(r, 3000));
-        continue;
-      }
-      mergeable = prData.mergeable;
-    }
-    break;
-  }
+  // 7. Mergeability (uses PR data fetched above)
+  const mergeable = prData?.mergeable ?? null;
   checks.push({ name: 'No merge conflicts', ...checkMergeability(mergeable) });
 
   // 8. Copilot review threads resolved (via GraphQL)
