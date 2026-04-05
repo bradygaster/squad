@@ -809,4 +809,56 @@ describe('run()', () => {
     const body = JSON.parse(postCall[1].body).body;
     expect(body).toContain(COMMENT_MARKER);
   });
+
+  // -------------------------------------------------------------------------
+  // API-based draft status override (line 389: prData?.draft ?? prDraft)
+  // -------------------------------------------------------------------------
+
+  it('uses API draft value (true) over env PR_DRAFT=false', async () => {
+    const mockFetch = createMockFetch({ pr: { draft: true, mergeable: true } });
+    const env = { ...baseEnv, PR_DRAFT: 'false' };
+    const result = await run({ env, fetchFn: mockFetch });
+
+    const draftCheck = result.checks.find((c) => c.name === 'Not in draft');
+    expect(draftCheck.pass).toBe(false);
+    expect(draftCheck.detail).toContain('draft');
+  });
+
+  it('uses API draft value (false) over env PR_DRAFT=true', async () => {
+    const mockFetch = createMockFetch({ pr: { draft: false, mergeable: true } });
+    const env = { ...baseEnv, PR_DRAFT: 'true' };
+    const result = await run({ env, fetchFn: mockFetch });
+
+    const draftCheck = result.checks.find((c) => c.name === 'Not in draft');
+    expect(draftCheck.pass).toBe(true);
+    expect(draftCheck.detail).toBe('Ready for review');
+  });
+
+  it('falls back to env PR_DRAFT when PR API fetch fails', async () => {
+    const mockFetch = createMockFetch();
+    mockFetch.mockImplementation(async (url, opts) => {
+      const headers = new Map([['link', '']]);
+      const ok = (json) => ({ ok: true, json: async () => json, headers });
+
+      if (url === 'https://api.github.com/graphql') return ok({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } });
+      // PR endpoint fails
+      if (url.match(/\/pulls\/\d+$/)) return { ok: false, status: 500, headers };
+      if (url.includes('/commits?')) return ok([{ sha: '1' }]);
+      if (url.includes('/compare/')) return ok({ behind_by: 0 });
+      if (url.includes('/reviews?')) return ok([]);
+      if (url.includes('/files?')) return ok([]);
+      if (url.includes('/check-runs?')) return ok({ check_runs: [] });
+      if (url.includes('/status')) return ok({ statuses: [] });
+      if (url.includes('/comments?')) return ok([]);
+      if (url.includes('/comments')) return ok({ id: 1 });
+      return ok({});
+    });
+
+    const env = { ...baseEnv, PR_DRAFT: 'true' };
+    const result = await run({ env, fetchFn: mockFetch });
+
+    const draftCheck = result.checks.find((c) => c.name === 'Not in draft');
+    expect(draftCheck.pass).toBe(false);
+    expect(draftCheck.detail).toContain('draft');
+  });
 });
