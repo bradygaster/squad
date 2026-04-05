@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **Onboarding mode fix** (#843) — CLI no longer bails when configured is false; starts onboarding session instead
 - **Nap archival budget** (#123) — account for separator newlines in decision archival budget calculation
 
 ### Added — Full Work Monitor for squad watch (#708)
