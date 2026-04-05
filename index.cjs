@@ -1061,10 +1061,12 @@ if (cmd === 'export') {
 
   // Read skills
   const skillsDir = path.join(dest, '.ai-team', 'skills');
+  const copilotSkillsDir = path.join(dest, '.copilot', 'skills');
+  const skillsDirs = [skillsDir, copilotSkillsDir].filter(d => fs.existsSync(d));
   try {
-    if (fs.existsSync(skillsDir)) {
-      for (const entry of fs.readdirSync(skillsDir)) {
-        const skillFile = path.join(skillsDir, entry, 'SKILL.md');
+    for (const sDir of skillsDirs) {
+      for (const entry of fs.readdirSync(sDir)) {
+        const skillFile = path.join(sDir, entry, 'SKILL.md');
         if (fs.existsSync(skillFile)) {
           manifest.skills.push(fs.readFileSync(skillFile, 'utf8'));
         }
@@ -1834,9 +1836,11 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
     }
     console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflow files (${workflowFiles.length} workflows)`);
   } else {
+    // During init, only copy framework workflows — CI/CD workflows are installed by upgrade
+    const initWorkflows = workflowFiles.filter(f => !PROJECT_TYPE_SENSITIVE_WORKFLOWS.has(f));
     fs.mkdirSync(workflowsDest, { recursive: true });
     let copied = 0;
-    for (const file of workflowFiles) {
+    for (const file of initWorkflows) {
       const destFile = path.join(workflowsDest, file);
       if (fs.existsSync(destFile)) {
         console.log(`${DIM}${file} already exists — skipping (run 'upgrade' to update)${RESET}`);
