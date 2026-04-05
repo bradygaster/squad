@@ -44,8 +44,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests (skip Playwright — covered by Squad CI)
+        run: npx vitest run --exclude 'test/aspire-integration.test.ts'
 
   # CI Hardening: npm registry health check (item 10)
   # Fail early if registry is unreachable instead of failing mid-publish.
