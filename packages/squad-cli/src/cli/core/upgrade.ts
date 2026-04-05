@@ -432,20 +432,27 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
 }
 
 /**
- * Copy all skills from package templates to .copilot/skills/ (force: false)
+ * Sync manifest-declared skills to .copilot/skills/, respecting overwriteOnUpgrade.
+ * Only skills listed in TEMPLATE_MANIFEST are installed — not the entire templates/skills/ dir.
  */
 function syncAllSkills(dest: string, templatesDir: string): number {
-  const skillsSrc = path.join(templatesDir, 'skills');
-  const skillsDest = path.join(dest, '.copilot', 'skills');
-  if (!storage.existsSync(skillsSrc)) return 0;
-  storage.mkdirSync(skillsDest, { recursive: true });
-  copyDirRecursive(skillsSrc, skillsDest, false);
-  // Count skill directories synced
-  try {
-    return storage.listSync(skillsSrc).filter(e =>
-      storage.isDirectorySync(path.join(skillsSrc, e))
-    ).length;
-  } catch { return 0; }
+  const skillEntries = TEMPLATE_MANIFEST.filter(f => f.source.startsWith('skills/'));
+  if (skillEntries.length === 0) return 0;
+
+  const squadDir = path.join(dest, '.squad');
+  let synced = 0;
+  for (const entry of skillEntries) {
+    const srcPath = path.join(templatesDir, entry.source);
+    const destPath = path.join(squadDir, entry.destination);
+
+    if (!storage.existsSync(srcPath)) continue;
+    if (!entry.overwriteOnUpgrade && storage.existsSync(destPath)) continue;
+
+    storage.mkdirSync(path.dirname(destPath), { recursive: true });
+    storage.copySync(srcPath, destPath);
+    synced++;
+  }
+  return synced;
 }
 
 /**

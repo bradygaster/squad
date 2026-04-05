@@ -14,6 +14,7 @@
 
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 
 const storage = new FSStorageProvider();
@@ -499,10 +500,10 @@ export function scratchDir(squadRoot: string, create: boolean = true): string {
 /**
  * Return a unique file path inside the scratch directory.
  *
- * Returns the absolute path to the file. Caller is responsible for writing
- * content to the returned path (unless `content` is provided, in which case
- * it is written immediately). The caller is also responsible for deleting
- * the file when done (or relying on the cleanup capability).
+ * Writes content to the file if `content` is provided; otherwise returns
+ * the path only and the caller is responsible for writing to it.
+ * The caller is also responsible for deleting the file when done
+ * (or relying on the cleanup capability).
  *
  * @param squadRoot - Absolute path to the `.squad/` directory.
  * @param prefix    - Filename prefix (e.g. `"fleet-prompt"`).
@@ -510,27 +511,17 @@ export function scratchDir(squadRoot: string, create: boolean = true): string {
  * @param content   - Optional content to write immediately.
  * @returns Absolute path to the temp file.
  */
-let _scratchCounter = 0;
-let _scratchLastTs = 0;
-
 export function scratchFile(squadRoot: string, prefix: string, ext: string = '.tmp', content?: string): string {
-  // Sanitize prefix/ext to prevent path traversal via '../' sequences
-  const safePrefix = prefix.replace(/[\/\\]/g, '_');
+  // Sanitize prefix to prevent path traversal — strip directory components
+  const safePrefix = path.basename(prefix);
   const safeExt = ext.replace(/[\/\\]/g, '_');
 
   const dir = scratchDir(squadRoot);
 
-  // Monotonic counter: if two calls happen in the same millisecond,
-  // the counter increments to guarantee unique filenames.
   const now = Date.now();
-  if (now === _scratchLastTs) {
-    _scratchCounter++;
-  } else {
-    _scratchCounter = 0;
-    _scratchLastTs = now;
-  }
+  const rand = crypto.randomBytes(4).toString('hex');
 
-  const filename = `${safePrefix}-${now}-${_scratchCounter}${safeExt}`;
+  const filename = `${safePrefix}-${now}-${rand}${safeExt}`;
   const filePath = path.join(dir, filename);
   if (content !== undefined) {
     storage.writeSync(filePath, content);
