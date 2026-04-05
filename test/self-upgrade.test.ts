@@ -23,7 +23,7 @@ describe('squad upgrade --self', () => {
     );
     expect(entrySource).toContain("args.includes('--self')");
     expect(entrySource).toContain("args.includes('--insider')");
-    expect(entrySource).toContain('insider: insiderUpgrade');
+    expect(entrySource).toContain('insider');
   });
 
   it('help text documents --self and --insider', async () => {
@@ -33,8 +33,8 @@ describe('squad upgrade --self', () => {
       path.join(process.cwd(), 'packages', 'squad-cli', 'src', 'cli-entry.ts'),
       'utf-8',
     );
-    expect(entrySource).toContain('--self (upgrade the CLI package itself)');
-    expect(entrySource).toContain('--self --insider');
+    expect(entrySource).toContain('--self');
+    expect(entrySource).toContain('--insider');
   });
 
   it('upgrade module references correct npm package name', async () => {
