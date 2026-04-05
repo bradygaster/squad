@@ -26,7 +26,12 @@ import { parseRoster } from '@bradygaster/squad-sdk/ralph/triage';
 // ── Types ────────────────────────────────────────────────────────
 
 export interface LoopFrontmatter {
-  /** Safety gate — must be explicitly set to true. */
+  /**
+   * Onboarding-mode switch, not a safety gate.
+   * - `configured: false` (or missing) → run the onboarding flow
+   * - `configured: true` → run the normal loop flow
+   * Do not reintroduce an early-return guard based on this flag.
+   */
   configured: boolean;
   /** Minutes between cycles (default: 10). */
   interval: number;
@@ -287,7 +292,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
 
   if (isOnboarding) {
     console.log(
-      `\n${GREEN}🚀${RESET} ${BOLD}Onboarding mode${RESET} — loop.md has ${BOLD}configured: false${RESET}. Running onboarding flow.\n`,
+      `\n${GREEN}🚀${RESET} ${BOLD}Onboarding mode${RESET} — loop.md ${BOLD}configured${RESET} is ${BOLD}not true${RESET} (false or missing). Running onboarding flow.\n`,
     );
   }
 
