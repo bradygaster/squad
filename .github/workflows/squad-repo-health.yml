@@ -47,6 +47,33 @@ jobs:
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
           exit $EXIT_CODE
 
+  # ─── Diff Size Guard (WARNING) ─────────────────────────────────────
+  diff-guard:
+    name: Diff Size Guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch PR head (data only — not executed)
+        run: git fetch origin ${{ github.event.pull_request.head.sha }}
+      - name: Check for likely contamination
+        run: |
+          git fetch origin dev --quiet
+          FILE_COUNT=$(git diff --name-only origin/dev...${{ github.event.pull_request.head.sha }} | wc -l)
+          COMMIT_COUNT=$(git rev-list --count origin/dev..${{ github.event.pull_request.head.sha }})
+
+          # Heuristic: if a single-commit PR touches more than 30 files, it's likely contaminated
+          if [ "$COMMIT_COUNT" -le 2 ] && [ "$FILE_COUNT" -gt 30 ]; then
+            echo "::warning::⚠️ This PR has $COMMIT_COUNT commit(s) but touches $FILE_COUNT files."
+            echo "::warning::This may indicate branch contamination from broad staging (--all or .) on a stale branch."
+            echo "::warning::Please verify all changed files are intentional: git diff --name-only origin/dev...${{ github.event.pull_request.head.sha }}"
+          else
+            echo "✅ Diff looks proportional: $COMMIT_COUNT commit(s), $FILE_COUNT file(s)."
+          fi
+
   # ─── Squad File Leakage (WARNING) ───────────────────────────────────
   squad-leakage:
     name: Squad File Leakage
