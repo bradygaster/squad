@@ -1180,11 +1180,12 @@ if (cmd === 'import') {
     fs.writeFileSync(path.join(agentDir, 'history.md'), historyContent);
   }
 
-  // Write skills
+  // Write skills to .copilot/skills/ (the canonical location)
+  const copilotSkillsImportDir = path.join(dest, '.copilot', 'skills');
   for (const skillContent of manifest.skills) {
     const nameMatch = skillContent.match(/^name:\s*["']?(.+?)["']?\s*$/m);
     const skillName = nameMatch ? nameMatch[1].trim().toLowerCase().replace(/\s+/g, '-') : `skill-${manifest.skills.indexOf(skillContent)}`;
-    const skillDir = path.join(aiTeamDir, 'skills', skillName);
+    const skillDir = path.join(copilotSkillsImportDir, skillName);
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent);
   }
