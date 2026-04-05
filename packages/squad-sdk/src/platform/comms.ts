@@ -41,12 +41,12 @@ function readCommsConfig(repoRoot: string): CommunicationConfig | undefined {
  * 2. Auto-detect from platform: GitHub → GitHubDiscussions, ADO → ADOWorkItemDiscussions
  * 3. Fallback: FileLog (always works)
  */
-export function createCommunicationAdapter(repoRoot: string): CommunicationAdapter {
+export async function createCommunicationAdapter(repoRoot: string): Promise<CommunicationAdapter> {
   const config = readCommsConfig(repoRoot);
 
   // Explicit config wins
   if (config?.channel) {
-    return createAdapterByChannel(config.channel, repoRoot);
+    return createAdapterByChannel(config.channel, repoRoot, config);
   }
 
   // Auto-detect from platform
@@ -84,7 +84,11 @@ export function createCommunicationAdapter(repoRoot: string): CommunicationAdapt
   return new FileLogCommunicationAdapter(repoRoot);
 }
 
-function createAdapterByChannel(channel: CommunicationChannel, repoRoot: string): CommunicationAdapter {
+async function createAdapterByChannel(
+  channel: CommunicationChannel,
+  repoRoot: string,
+  config?: CommunicationConfig,
+): Promise<CommunicationAdapter> {
   const remoteUrl = getRemoteUrl(repoRoot);
 
   switch (channel) {
@@ -100,13 +104,39 @@ function createAdapterByChannel(channel: CommunicationChannel, repoRoot: string)
       if (!info) throw new Error(`Cannot parse ADO remote: ${remoteUrl}`);
       return new ADODiscussionCommunicationAdapter(info.org, info.project);
     }
-    case 'teams-webhook':
-      // Teams webhook adapter would go here — for now fall back to file log
-      console.warn('Teams webhook adapter not yet implemented — using file log fallback');
-      return new FileLogCommunicationAdapter(repoRoot);
+    case 'teams-graph': {
+      const { TeamsCommunicationAdapter } = await import('./comms-teams.js');
+      const teamsConfig = (config?.adapterConfig?.['teams-graph'] ?? readTeamsConfig(repoRoot) ?? {}) as Record<string, unknown>;
+      return new TeamsCommunicationAdapter(teamsConfig);
+    }
     case 'file-log':
       return new FileLogCommunicationAdapter(repoRoot);
     default:
       return new FileLogCommunicationAdapter(repoRoot);
   }
+}
+
+/**
+ * Read Teams-specific config from `.squad/config.json`.
+ * Looks for `communications.adapterConfig['teams-graph']` (preferred)
+ * then falls back to legacy `communications.teams` key.
+ */
+function readTeamsConfig(repoRoot: string): Record<string, unknown> | undefined {
+  const configPath = join(repoRoot, '.squad', 'config.json');
+  if (!storage.existsSync(configPath)) return undefined;
+  try {
+    const raw = storage.readSync(configPath) ?? '';
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const comms = parsed.communications as Record<string, unknown> | undefined;
+    // Prefer adapterConfig['teams-graph'] for consistency with CommunicationConfig
+    const adapter = comms?.adapterConfig as Record<string, unknown> | undefined;
+    if (adapter?.['teams-graph'] && typeof adapter['teams-graph'] === 'object') {
+      return adapter['teams-graph'] as Record<string, unknown>;
+    }
+    // Legacy fallback: communications.teams
+    if (comms?.teams && typeof comms.teams === 'object') {
+      return comms.teams as Record<string, unknown>;
+    }
+  } catch { /* ignore */ }
+  return undefined;
 }
