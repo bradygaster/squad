@@ -106,6 +106,16 @@ const lazyRunShell = () => import('./cli/shell/index.js');
 // Use local version resolver instead of importing VERSION from squad-sdk
 const VERSION = getPackageVersion();
 
+/**
+ * Return the starting directory for squad resolution.
+ * Respects --team-root / SQUAD_TEAM_ROOT env var so that subprocesses
+ * (e.g. Copilot CLI bang commands) can locate .squad/ even when their
+ * working directory differs from the interactive shell. (#734)
+ */
+function getSquadStartDir(): string {
+  return process.env['SQUAD_TEAM_ROOT'] || process.cwd();
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   
@@ -628,7 +638,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'status') {
     const sdk = await lazySquadSdk();
-    const repoSquad = sdk.resolveSquad(process.cwd());
+    const repoSquad = sdk.resolveSquad(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
     const storage = new FSStorageProvider();
@@ -666,7 +676,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'cost') {
     const sdk = await lazySquadSdk();
-    const localSquad = sdk.resolveSquad(process.cwd());
+    const localSquad = sdk.resolveSquad(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
     const storage = new FSStorageProvider();
@@ -714,10 +724,11 @@ async function main(): Promise<void> {
   if (cmd === 'nap') {
     const { runNap, formatNapReport } = await import('./cli/core/nap.js');
     const sdk = await lazySquadSdk();
+    const startDir = getSquadStartDir();
     // resolveSquad() returns the .squad/ directory itself — use it directly (#207)
-    const squadDir = sdk.resolveSquad(process.cwd());
+    const squadDir = sdk.resolveSquad(startDir);
     if (!squadDir) {
-      fatal('No squad found. Run "squad init" first.');
+      fatal(`No squad found (searched from ${startDir}). Run "squad init" first, or use --team-root to specify the project directory.`);
     }
     const deep = args.includes('--deep');
     const dryRun = args.includes('--dry-run');
