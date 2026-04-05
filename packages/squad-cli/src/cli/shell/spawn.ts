@@ -4,7 +4,7 @@
  * Creates SDK sessions via SquadClient, sends the task, and streams the response.
  */
 
-import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquadInDir } from '@bradygaster/squad-sdk/resolution';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import { SquadState, FSStorageProvider } from '@bradygaster/squad-sdk';
@@ -55,7 +55,7 @@ export async function loadAgentCharter(agentName: string, teamRoot?: string): Pr
   if (teamRoot) {
     rootDir = teamRoot;
   } else {
-    const squadDir = resolveSquad();
+    const squadDir = resolveSquadInDir();
     if (!squadDir) {
       debugLog('loadAgentCharter: no .squad/ directory found');
       throw new Error('No team found. Run `squad init` to set up your project.');

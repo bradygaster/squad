@@ -219,6 +219,8 @@ async function main(): Promise<void> {
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
     console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
+    console.log(`  ${BOLD}pathDiagnostics${RESET}  Show path resolution outputs and decision traces`);
+    console.log(`             Flags: --verbose (show resolver walk-through details)`);
     console.log(`  ${BOLD}consult${RESET}    Enter consult mode with your personal squad`);
     console.log(`             Flags: --status, --check`);
     console.log(`  ${BOLD}extract${RESET}    Extract learnings from consult mode session`);
@@ -638,7 +640,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'status') {
     const sdk = await lazySquadSdk();
-    const repoSquad = sdk.resolveSquad(getSquadStartDir());
+    const repoSquad = sdk.resolveSquadInDir(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
     const storage = new FSStorageProvider();
@@ -676,7 +678,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'cost') {
     const sdk = await lazySquadSdk();
-    const localSquad = sdk.resolveSquad(getSquadStartDir());
+    const localSquad = sdk.resolveSquadInDir(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
     const storage = new FSStorageProvider();
@@ -725,8 +727,8 @@ async function main(): Promise<void> {
     const { runNap, formatNapReport } = await import('./cli/core/nap.js');
     const sdk = await lazySquadSdk();
     const startDir = getSquadStartDir();
-    // resolveSquad() returns the .squad/ directory itself — use it directly (#207)
-    const squadDir = sdk.resolveSquad(startDir);
+    // resolveSquadInDir() returns the .squad/ directory itself — use it directly (#207)
+    const squadDir = sdk.resolveSquadInDir(startDir);
     if (!squadDir) {
       fatal(`No squad found (searched from ${startDir}). Run "squad init" first, or use --team-root to specify the project directory.`);
     }
@@ -740,6 +742,13 @@ async function main(): Promise<void> {
   if (cmd === 'doctor') {
     const { doctorCommand } = await import('./cli/commands/doctor.js');
     await doctorCommand();
+    return;
+  }
+
+  if (cmd === 'pathDiagnostics' || cmd === 'pathdiagnostics' || cmd === 'path-diagnostics') {
+    const { pathDiagnosticsCommand } = await import('./cli/commands/pathDiagnostics.js');
+    const verbose = args.includes('--verbose') || args.includes('-v');
+    pathDiagnosticsCommand(getSquadStartDir(), { verbose });
     return;
   }
 
@@ -771,6 +780,20 @@ async function main(): Promise<void> {
       fatal('Usage: squad link <team-repo-path>');
     }
     runLink(getSquadStartDir(), teamPath);
+    return;
+  }
+
+  if (cmd === 'externalize') {
+    const { runExternalize } = await import('./cli/commands/externalize.js');
+    const rawKey = args.includes('--key') ? args[args.indexOf('--key') + 1] : undefined;
+    const projectKey = rawKey ? rawKey.replace(/[\/\\\.]/g, '_') : undefined;
+    runExternalize(process.cwd(), projectKey);
+    return;
+  }
+
+  if (cmd === 'internalize') {
+    const { runInternalize } = await import('./cli/commands/externalize.js');
+    runInternalize(process.cwd());
     return;
   }
 

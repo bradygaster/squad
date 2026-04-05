@@ -1,7 +1,7 @@
 /**
  * Worktree regression tests — Issue #521
  *
- * Both resolveSquad() and detectSquadDir() must handle .git FILES (worktree
+ * Both `resolveSquadInDir()` and `detectSquadDir()` must handle .git FILES (worktree
  * pointers) by reading the gitdir: pointer and falling back to the main
  * checkout's .squad/. The implementation parses .git via fs.readFileSync —
  * no child_process calls are made.
@@ -16,7 +16,7 @@
  *    worktree/    ← worktree
  *      .git       ← FILE: "gitdir: ../main/.git/worktrees/feature-521"
  *
- * @see packages/squad-sdk/src/resolution.ts       resolveSquad()
+ * @see packages/squad-sdk/src/resolution.ts       resolveSquadInDir()
  * @see packages/squad-cli/src/cli/core/detect-squad-dir.ts  detectSquadDir()
  */
 
@@ -31,7 +31,7 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquadInDir } from '@bradygaster/squad-sdk/resolution';
 import { detectSquadDir } from '@bradygaster/squad-cli/core/detect-squad-dir';
 
 // ---------------------------------------------------------------------------
@@ -51,9 +51,9 @@ describe('worktree regression (#521)', () => {
     }
   });
 
-  // ── resolveSquad() ────────────────────────────────────────────────────────
+  // ── resolveSquadInDir() ───────────────────────────────────────────────────
 
-  describe('resolveSquad()', () => {
+  describe('resolveSquadInDir()', () => {
     it('.git FILE is not treated as a hard stop — falls back to main checkout', () => {
       // Worktree: .git is a FILE (pointer), no .squad/
       const worktree = join(tmp, 'worktree');
@@ -70,7 +70,7 @@ describe('worktree regression (#521)', () => {
 
       // CURRENT CODE → returns null  (treats .git file as hard stop)  ← FAILS
       // AFTER FIX    → returns main/.squad via worktree fallback       ← PASSES
-      expect(resolveSquad(worktree)).toBe(join(main, '.squad'));
+      expect(resolveSquadInDir(worktree)).toBe(join(main, '.squad'));
     });
 
     it('.git DIRECTORY still marks the repo root boundary correctly', () => {
@@ -80,8 +80,8 @@ describe('worktree regression (#521)', () => {
       mkdirSync(join(repo, '.squad'), { recursive: true });
       mkdirSync(join(repo, 'src'), { recursive: true });
 
-      // resolveSquad() should find .squad/ before hitting the .git directory
-      expect(resolveSquad(join(repo, 'src'))).toBe(join(repo, '.squad'));
+      // resolveSquadInDir() should find .squad/ before hitting the .git directory
+      expect(resolveSquadInDir(join(repo, 'src'))).toBe(join(repo, '.squad'));
     });
 
     it('worktree fallback: resolves .squad/ from src/ subdir inside worktree', () => {
@@ -99,7 +99,7 @@ describe('worktree regression (#521)', () => {
 
       // CURRENT CODE → returns null  ← FAILS
       // AFTER FIX    → returns main/.squad  ← PASSES
-      expect(resolveSquad(join(worktree, 'src'))).toBe(join(main, '.squad'));
+      expect(resolveSquadInDir(join(worktree, 'src'))).toBe(join(main, '.squad'));
     });
 
     it('worktree fallback: returns null when main checkout also has no .squad/', () => {
@@ -117,7 +117,7 @@ describe('worktree regression (#521)', () => {
 
       // Neither location has .squad/→ should return null in both old and new code
       // (This is a "should stay null" control test.)
-      expect(resolveSquad(worktree)).toBeNull();
+      expect(resolveSquadInDir(worktree)).toBeNull();
     });
   });
 
@@ -194,13 +194,13 @@ describe('worktree regression (#521)', () => {
   // ── statSync guard ────────────────────────────────────────────────────────
 
   describe('statSync guard — crafted .git redirection', () => {
-    it('resolveSquad(): crafted .git pointing to non-existent path returns null, not crash', () => {
+    it('resolveSquadInDir(): crafted .git pointing to non-existent path returns null, not crash', () => {
       const worktree = join(tmp, 'worktree');
       mkdirSync(worktree);
       // gitdir points to a path where mainCheckout/.git does not exist
       writeFileSync(join(worktree, '.git'), 'gitdir: ../nonexistent/.git/worktrees/malicious');
 
-      expect(resolveSquad(worktree)).toBeNull();
+      expect(resolveSquadInDir(worktree)).toBeNull();
     });
 
     it('detectSquadDir(): crafted .git pointing to non-existent path returns fallback, not crash', () => {

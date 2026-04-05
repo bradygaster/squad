@@ -21,7 +21,7 @@ import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import { RateLimitError } from '@bradygaster/squad-sdk/adapter/errors';
 import type { ShellMessage } from './types.js';
-import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquadInDir, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { parseAgentFromDescription } from './agent-name-parser.js';
@@ -148,7 +148,7 @@ export async function runShell(): Promise<void> {
   // In that case, output a plain-text welcome and init hint so non-interactive
   // contexts (pipes, tests, CI) see useful guidance rather than a TTY error.
   const cwd = process.cwd();
-  const localSquad = resolveSquad(cwd);
+  const localSquad = resolveSquadInDir(cwd);
   const globalSquadDir = join(resolveGlobalSquadPath(), '.squad');
   const hasAnySquad = !!localSquad || storage.existsSync(globalSquadDir);
 
@@ -192,7 +192,7 @@ export async function runShell(): Promise<void> {
   const teamRoot = (() => {
     const cwd = process.cwd();
     // 1. Walk up from cwd looking for a local .squad/
-    const localSquad = resolveSquad(cwd);
+    const localSquad = resolveSquadInDir(cwd);
     if (localSquad) {
       return pathResolve(localSquad, '..');
     }

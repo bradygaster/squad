@@ -16,7 +16,7 @@ describe('SDK package exports', () => {
 
   it('exports from /resolution subpath', async () => {
     const resolution = await import('@bradygaster/squad-sdk/resolution');
-    expect(resolution.resolveSquad).toBeDefined();
+    expect(resolution.resolveSquadInDir).toBeDefined();
   });
 
   it('exports from /parsers subpath', async () => {

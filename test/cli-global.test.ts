@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquadInDir, resolveGlobalSquadPath } from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-cli-global-${randomBytes(4).toString('hex')}`);
 
@@ -37,7 +37,7 @@ describe('squad status routing logic', () => {
 
   it('identifies "repo" type when .squad/ is in the repo tree', () => {
     scaffold('.git', '.squad');
-    const repoSquad = resolveSquad(TMP);
+    const repoSquad = resolveSquadInDir(TMP);
     expect(repoSquad).not.toBeNull();
     // Status logic: if repoSquad is truthy → "repo" type
     const activeType = repoSquad ? 'repo' : 'none';
@@ -46,7 +46,7 @@ describe('squad status routing logic', () => {
 
   it('identifies "none" when no .squad/ exists and no global squad', () => {
     scaffold('.git');
-    const repoSquad = resolveSquad(TMP);
+    const repoSquad = resolveSquadInDir(TMP);
     expect(repoSquad).toBeNull();
     // Without a global personal-squad/ dir, status shows "none"
     const globalPath = resolveGlobalSquadPath();
@@ -60,7 +60,7 @@ describe('squad status routing logic', () => {
 
   it('identifies "personal" when no repo .squad/ but global personal-squad/ exists', () => {
     scaffold('.git');
-    const repoSquad = resolveSquad(TMP);
+    const repoSquad = resolveSquadInDir(TMP);
     expect(repoSquad).toBeNull();
 
     const globalPath = resolveGlobalSquadPath();
@@ -77,7 +77,7 @@ describe('squad status routing logic', () => {
 
   it('repo squad takes priority over personal squad', () => {
     scaffold('.git', '.squad');
-    const repoSquad = resolveSquad(TMP);
+    const repoSquad = resolveSquadInDir(TMP);
     const globalPath = resolveGlobalSquadPath();
     const globalSquadDir = join(globalPath, 'personal-squad');
     mkdirSync(globalSquadDir, { recursive: true });
