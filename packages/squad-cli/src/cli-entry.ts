@@ -774,6 +774,20 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'externalize') {
+    const { runExternalize } = await import('./cli/commands/externalize.js');
+    const rawKey = args.includes('--key') ? args[args.indexOf('--key') + 1] : undefined;
+    const projectKey = rawKey ? rawKey.replace(/[\/\\\.]/g, '_') : undefined;
+    runExternalize(process.cwd(), projectKey);
+    return;
+  }
+
+  if (cmd === 'internalize') {
+    const { runInternalize } = await import('./cli/commands/externalize.js');
+    runInternalize(process.cwd());
+    return;
+  }
+
   if (cmd === 'rc' || cmd === 'remote-control') {
     const { runRC } = await import('./cli/commands/rc.js');
     const hasTunnel = args.includes('--tunnel');
