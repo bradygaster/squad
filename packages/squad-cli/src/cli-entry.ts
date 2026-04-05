@@ -638,7 +638,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'status') {
     const sdk = await lazySquadSdk();
-    const repoSquad = sdk.resolveSquad(getSquadStartDir());
+    const repoSquad = sdk.resolveSquadInDir(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
     const storage = new FSStorageProvider();
@@ -676,7 +676,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'cost') {
     const sdk = await lazySquadSdk();
-    const localSquad = sdk.resolveSquad(getSquadStartDir());
+    const localSquad = sdk.resolveSquadInDir(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
     const storage = new FSStorageProvider();
@@ -725,8 +725,8 @@ async function main(): Promise<void> {
     const { runNap, formatNapReport } = await import('./cli/core/nap.js');
     const sdk = await lazySquadSdk();
     const startDir = getSquadStartDir();
-    // resolveSquad() returns the .squad/ directory itself — use it directly (#207)
-    const squadDir = sdk.resolveSquad(startDir);
+    // resolveSquadInDir() returns the .squad/ directory itself — use it directly (#207)
+    const squadDir = sdk.resolveSquadInDir(startDir);
     if (!squadDir) {
       fatal(`No squad found (searched from ${startDir}). Run "squad init" first, or use --team-root to specify the project directory.`);
     }

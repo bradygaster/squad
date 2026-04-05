@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { 
   resolveSquadPaths, 
-  resolveSquad, 
+  resolveSquadInDir, 
   loadDirConfig,
   isConsultMode,
   ensureSquadPathDual,
@@ -34,7 +34,7 @@ import { tmpdir } from 'node:os';
 // =============================================================================
 
 describe('SDK Feature: Worktree Awareness', () => {
-  it('resolveSquad() stops at .git boundary (worktree file)', () => {
+  it('resolveSquadInDir() stops at .git boundary (worktree file)', () => {
     // Create temp structure: repo/.git (file, not dir) → simulates worktree
     const testRoot = join(tmpdir(), `squad-test-${Date.now()}`);
     mkdirSync(testRoot, { recursive: true });
@@ -43,7 +43,7 @@ describe('SDK Feature: Worktree Awareness', () => {
     writeFileSync(join(testRoot, '.git'), 'gitdir: /some/other/location');
     
     // No .squad/ in this directory
-    const result = resolveSquad(testRoot);
+    const result = resolveSquadInDir(testRoot);
     
     // Should return null — stops at .git boundary
     expect(result).toBeNull();
@@ -51,7 +51,7 @@ describe('SDK Feature: Worktree Awareness', () => {
     rmSync(testRoot, { recursive: true, force: true });
   });
 
-  it('resolveSquad() finds .squad/ in parent before hitting .git', () => {
+  it('resolveSquadInDir() finds .squad/ in parent before hitting .git', () => {
     const testRoot = join(tmpdir(), `squad-test-${Date.now()}`);
     const subdir = join(testRoot, 'src', 'components');
     mkdirSync(subdir, { recursive: true });
@@ -63,7 +63,7 @@ describe('SDK Feature: Worktree Awareness', () => {
     mkdirSync(join(testRoot, '.squad'));
     
     // Resolve from deep subdirectory
-    const result = resolveSquad(subdir);
+    const result = resolveSquadInDir(subdir);
     
     expect(result).toBe(join(testRoot, '.squad'));
     

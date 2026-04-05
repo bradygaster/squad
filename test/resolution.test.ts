@@ -1,5 +1,5 @@
 /**
- * Tests for resolveSquad() and resolveGlobalSquadPath()
+ * Tests for `resolveSquadInDir()` and `resolveGlobalSquadPath()`.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -7,7 +7,7 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { resolveSquad, resolveGlobalSquadPath, ensureSquadPath, ensurePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquadInDir, resolveGlobalSquadPath, ensureSquadPath, ensurePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-resolution-${randomBytes(4).toString('hex')}`);
 
@@ -17,7 +17,7 @@ function scaffold(...dirs: string[]): void {
   }
 }
 
-describe('resolveSquad()', () => {
+describe('resolveSquadInDir()', () => {
   beforeEach(() => {
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
     mkdirSync(TMP, { recursive: true });
@@ -29,23 +29,23 @@ describe('resolveSquad()', () => {
 
   it('returns path when .squad/ exists at startDir', () => {
     scaffold('.git', '.squad');
-    expect(resolveSquad(TMP)).toBe(join(TMP, '.squad'));
+    expect(resolveSquadInDir(TMP)).toBe(join(TMP, '.squad'));
   });
 
   it('returns null when no .squad/ exists and .git is at startDir', () => {
     scaffold('.git');
-    expect(resolveSquad(TMP)).toBeNull();
+    expect(resolveSquadInDir(TMP)).toBeNull();
   });
 
   it('walks up and finds .squad/ in parent', () => {
     scaffold('.git', '.squad', 'packages', 'packages/app');
-    expect(resolveSquad(join(TMP, 'packages', 'app'))).toBe(join(TMP, '.squad'));
+    expect(resolveSquadInDir(join(TMP, 'packages', 'app'))).toBe(join(TMP, '.squad'));
   });
 
   it('stops at .git boundary and does not walk above repo root', () => {
     // outer has .squad, inner is its own repo without .squad
     scaffold('outer/.squad', 'outer/inner/.git');
-    expect(resolveSquad(join(TMP, 'outer', 'inner'))).toBeNull();
+    expect(resolveSquadInDir(join(TMP, 'outer', 'inner'))).toBeNull();
   });
 
   it('handles .git worktree file (not directory)', () => {
@@ -53,13 +53,13 @@ describe('resolveSquad()', () => {
     // .git as a file (worktree pointer)
     writeFileSync(join(TMP, 'repo', '.git'), 'gitdir: /somewhere/.git/worktrees/repo');
     mkdirSync(join(TMP, 'repo', 'src'), { recursive: true });
-    expect(resolveSquad(join(TMP, 'repo', 'src'))).toBeNull();
+    expect(resolveSquadInDir(join(TMP, 'repo', 'src'))).toBeNull();
   });
 
   it('finds .squad in worktree that has it', () => {
     scaffold('repo/.squad', 'repo/src');
     writeFileSync(join(TMP, 'repo', '.git'), 'gitdir: /somewhere/.git/worktrees/repo');
-    expect(resolveSquad(join(TMP, 'repo', 'src'))).toBe(join(TMP, 'repo', '.squad'));
+    expect(resolveSquadInDir(join(TMP, 'repo', 'src'))).toBe(join(TMP, 'repo', '.squad'));
   });
 
   it('falls back to main checkout .squad/ when worktree has none', () => {
@@ -73,7 +73,7 @@ describe('resolveSquad()', () => {
       'gitdir: ../../.git/worktrees/feature',
     );
     // Starting from worktree src/, should find main checkout's .squad/
-    expect(resolveSquad(join(TMP, 'main', '.worktrees', 'feature', 'src')))
+    expect(resolveSquadInDir(join(TMP, 'main', '.worktrees', 'feature', 'src')))
       .toBe(join(TMP, 'main', '.squad'));
   });
 
@@ -89,30 +89,30 @@ describe('resolveSquad()', () => {
       'gitdir: ../../.git/worktrees/feature',
     );
     // Worktree-local .squad/ wins
-    expect(resolveSquad(join(TMP, 'main', '.worktrees', 'feature', 'src')))
+    expect(resolveSquadInDir(join(TMP, 'main', '.worktrees', 'feature', 'src')))
       .toBe(join(TMP, 'main', '.worktrees', 'feature', '.squad'));
   });
 
   it('defaults to cwd when no argument given', () => {
     // Just verify it doesn't throw
-    const result = resolveSquad();
+    const result = resolveSquadInDir();
     expect(result === null || typeof result === 'string').toBe(true);
   });
 
   it('finds .squad/ at root from a deeply nested directory (3+ levels)', () => {
     scaffold('.git', '.squad', 'a/b/c/d');
-    expect(resolveSquad(join(TMP, 'a', 'b', 'c', 'd'))).toBe(join(TMP, '.squad'));
+    expect(resolveSquadInDir(join(TMP, 'a', 'b', 'c', 'd'))).toBe(join(TMP, '.squad'));
   });
 
   it('finds the nearest .squad/ when multiple exist', () => {
     scaffold('.git', '.squad', 'packages/.squad', 'packages/app');
     // Starting from packages/app, the nearest .squad/ is packages/.squad
-    expect(resolveSquad(join(TMP, 'packages', 'app'))).toBe(join(TMP, 'packages', '.squad'));
+    expect(resolveSquadInDir(join(TMP, 'packages', 'app'))).toBe(join(TMP, 'packages', '.squad'));
   });
 
   it('finds root .squad/ when no closer one exists', () => {
     scaffold('.git', '.squad', 'packages/app/src');
-    expect(resolveSquad(join(TMP, 'packages', 'app', 'src'))).toBe(join(TMP, '.squad'));
+    expect(resolveSquadInDir(join(TMP, 'packages', 'app', 'src'))).toBe(join(TMP, '.squad'));
   });
 
   it('follows symlinked .squad/ directory', function () {
@@ -123,7 +123,7 @@ describe('resolveSquad()', () => {
     const { symlinkSync } = require('node:fs') as typeof import('node:fs');
     scaffold('.git', 'real-squad', 'project/src');
     symlinkSync(join(TMP, 'real-squad'), join(TMP, 'project', '.squad'));
-    expect(resolveSquad(join(TMP, 'project', 'src'))).toBe(join(TMP, 'project', '.squad'));
+    expect(resolveSquadInDir(join(TMP, 'project', 'src'))).toBe(join(TMP, 'project', '.squad'));
   });
 });
 

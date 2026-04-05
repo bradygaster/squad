@@ -1,7 +1,7 @@
 /**
  * Squad directory resolution — walk-up and global path algorithms.
  *
- * resolveSquad()            — find .squad/ by walking up from startDir to .git boundary
+ * resolveSquadInDir()       — find .squad/ by walking up from startDir to .git boundary
  * resolveSquadPaths()       — dual-root resolution (projectDir / teamDir) for remote squad mode
  * resolveGlobalSquadPath()  — platform-specific global config directory
  *
@@ -116,7 +116,7 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
  * @param startDir - Directory to start searching from. Defaults to `process.cwd()`.
  * @returns Absolute path to `.squad/` or `null`.
  */
-export function resolveSquad(startDir?: string): string | null {
+export function resolveSquadInDir(startDir?: string): string | null {
   // Intentionally returns the in-repo .squad/ marker directory, even when state
   // is externalized. Callers needing the actual state dir should use resolveSquadPaths().
   let current = path.resolve(startDir ?? process.cwd());
@@ -463,7 +463,7 @@ export function ensurePersonalSquadDir(): string {
  * never clutters the repo root or arbitrary filesystem locations.
  *
  * @param filePath  - Absolute path to validate.
- * @param squadRoot - Absolute path to the `.squad/` directory (e.g. from `resolveSquad()`).
+ * @param squadRoot - Absolute path to the `.squad/` directory (e.g. from `resolveSquadInDir()`).
  * @returns The resolved absolute `filePath` if it is safe.
  * @throws If `filePath` is outside `.squad/` and not in the system temp directory.
  */
