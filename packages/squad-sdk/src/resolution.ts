@@ -556,7 +556,8 @@ export function scratchFile(squadRoot: string, prefix: string, ext: string = '.t
  * @returns A sanitized, lowercase project key suitable for use as a directory name.
  */
 export function deriveProjectKey(projectDir: string): string {
-  const base = path.basename(projectDir);
+  const normalized = projectDir.replace(/\\/g, '/');
+  const base = path.basename(normalized);
   if (!base) return 'unknown-project';
 
   const sanitized = base
