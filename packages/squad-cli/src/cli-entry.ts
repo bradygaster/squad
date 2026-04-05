@@ -473,8 +473,10 @@ async function main(): Promise<void> {
       if (arg.startsWith('-')) continue;
       positionalArgs.push(arg);
     }
-    if (positionalArgs.length > 0 && config.verbose) {
-      console.log(`[verbose] ⚠️ Positional args ignored by watch: "${positionalArgs.join(' ')}". Use --execute to process issues.`);
+    if (positionalArgs.length > 0) {
+      const message = positionalArgs.join(' ');
+      console.warn(`\n⚠️  Watch mode does not route messages to agents. Ignoring: "${message}"`);
+      console.warn(`   To address an agent directly, use an interactive session instead.\n`);
     }
 
     await runWatch(getSquadStartDir(), config);
