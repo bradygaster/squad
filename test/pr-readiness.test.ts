@@ -17,6 +17,10 @@ import {
   checkCopilotThreads,
   checkCIStatus,
   buildChecklist,
+  buildFileList,
+  sanitizeFilename,
+  MAX_FILE_LIST,
+  classifyScope,
   paginate,
   run,
   COMMENT_MARKER,
@@ -495,6 +499,229 @@ describe('buildChecklist', () => {
     expect(body).toContain('| ✅ | **A** | OK |');
     expect(body).toContain('| ❌ | **B** | Bad |');
   });
+
+  it('includes file list when files are provided', () => {
+    const checks = [{ name: 'Test', pass: true, detail: 'OK' }];
+    const files = [
+      { filename: 'src/index.ts', additions: 10, deletions: 3 },
+      { filename: 'README.md', additions: 2, deletions: 1 },
+    ];
+    const body = buildChecklist(checks, 'o', 'r', 'dev', undefined, files);
+    expect(body).toContain('### Files Changed (2 files, +12 −4)');
+    expect(body).toContain('| `src/index.ts` | +10 −3 |');
+    expect(body).toContain('| `README.md` | +2 −1 |');
+    expect(body).toContain('**Total: +12 −4**');
+  });
+
+  it('omits file list when files are undefined', () => {
+    const checks = [{ name: 'Test', pass: true, detail: 'OK' }];
+    const body = buildChecklist(checks, 'o', 'r', 'dev');
+    expect(body).not.toContain('Files Changed');
+  });
+
+  it('omits file list when files array is empty', () => {
+    const checks = [{ name: 'Test', pass: true, detail: 'OK' }];
+    const body = buildChecklist(checks, 'o', 'r', 'dev', undefined, []);
+    expect(body).not.toContain('Files Changed');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildFileList
+// ---------------------------------------------------------------------------
+
+describe('buildFileList', () => {
+  it('returns empty string for null/undefined input', () => {
+    expect(buildFileList(null)).toBe('');
+    expect(buildFileList(undefined)).toBe('');
+  });
+
+  it('returns empty string for empty array', () => {
+    expect(buildFileList([])).toBe('');
+  });
+
+  it('renders a single file with correct stats', () => {
+    const files = [{ filename: 'scripts/moderate-spam.mjs', additions: 142, deletions: 0 }];
+    const result = buildFileList(files);
+    expect(result).toContain('### Files Changed (1 file, +142 −0)');
+    expect(result).toContain('| `scripts/moderate-spam.mjs` | +142 −0 |');
+    expect(result).toContain('**Total: +142 −0**');
+  });
+
+  it('renders multiple files with totals', () => {
+    const files = [
+      { filename: 'scripts/moderate-spam.mjs', additions: 142, deletions: 0 },
+      { filename: 'test/scripts/moderate-spam.test.ts', additions: 98, deletions: 0 },
+      { filename: '.github/workflows/squad-comment-moderation.yml', additions: 45, deletions: 0 },
+    ];
+    const result = buildFileList(files);
+    expect(result).toContain('### Files Changed (3 files, +285 −0)');
+    expect(result).toContain('| `scripts/moderate-spam.mjs` | +142 −0 |');
+    expect(result).toContain('| `test/scripts/moderate-spam.test.ts` | +98 −0 |');
+    expect(result).toContain('| `.github/workflows/squad-comment-moderation.yml` | +45 −0 |');
+    expect(result).toContain('**Total: +285 −0**');
+  });
+
+  it('handles files with 0 additions and 0 deletions', () => {
+    const files = [{ filename: 'empty-change.ts', additions: 0, deletions: 0 }];
+    const result = buildFileList(files);
+    expect(result).toContain('| `empty-change.ts` | +0 −0 |');
+    expect(result).toContain('**Total: +0 −0**');
+  });
+
+  it('handles files with both additions and deletions', () => {
+    const files = [
+      { filename: 'src/refactored.ts', additions: 50, deletions: 30 },
+      { filename: 'src/old.ts', additions: 0, deletions: 100 },
+    ];
+    const result = buildFileList(files);
+    expect(result).toContain('### Files Changed (2 files, +50 −130)');
+    expect(result).toContain('| `src/refactored.ts` | +50 −30 |');
+    expect(result).toContain('| `src/old.ts` | +0 −100 |');
+    expect(result).toContain('**Total: +50 −130**');
+  });
+
+  it('treats missing additions/deletions as 0', () => {
+    const files = [{ filename: 'binary-file.png' }];
+    const result = buildFileList(files);
+    expect(result).toContain('| `binary-file.png` | +0 −0 |');
+    expect(result).toContain('**Total: +0 −0**');
+  });
+
+  it('uses singular "file" for single file', () => {
+    const files = [{ filename: 'one.ts', additions: 1, deletions: 0 }];
+    const result = buildFileList(files);
+    expect(result).toContain('1 file,');
+    expect(result).not.toContain('1 files,');
+  });
+
+  it('includes table headers', () => {
+    const files = [{ filename: 'a.ts', additions: 1, deletions: 0 }];
+    const result = buildFileList(files);
+    expect(result).toContain('| File | +/− |');
+    expect(result).toContain('|------|-----|');
+  });
+
+  it('truncates file list beyond MAX_FILE_LIST and shows summary row', () => {
+    const files = Array.from({ length: 60 }, (_, i) => ({
+      filename: `src/file-${i}.ts`,
+      additions: 1,
+      deletions: 0,
+    }));
+    const result = buildFileList(files);
+    // Header should show the total count (60), not the truncated count
+    expect(result).toContain('### Files Changed (60 files, +60 −0)');
+    // First 50 files should be present
+    expect(result).toContain('`src/file-0.ts`');
+    expect(result).toContain('`src/file-49.ts`');
+    // File 50 should NOT be present
+    expect(result).not.toContain('`src/file-50.ts`');
+    // Summary row
+    expect(result).toContain('**+10 more files**');
+    // Totals should include ALL files
+    expect(result).toContain('**Total: +60 −0**');
+  });
+
+  it('does not truncate when file count equals MAX_FILE_LIST', () => {
+    const files = Array.from({ length: MAX_FILE_LIST }, (_, i) => ({
+      filename: `src/file-${i}.ts`,
+      additions: 1,
+      deletions: 0,
+    }));
+    const result = buildFileList(files);
+    expect(result).not.toContain('more files');
+    expect(result).toContain(`${MAX_FILE_LIST} files`);
+  });
+
+  it('sanitizes pipe characters in filenames', () => {
+    const files = [{ filename: 'path/with|pipe.ts', additions: 1, deletions: 0 }];
+    const result = buildFileList(files);
+    expect(result).toContain("path/with\\|pipe.ts");
+    expect(result).not.toContain('| path/with|pipe.ts');
+  });
+
+  it('sanitizes backticks in filenames', () => {
+    const files = [{ filename: 'file`name.ts', additions: 1, deletions: 0 }];
+    const result = buildFileList(files);
+    expect(result).toContain("file'name.ts");
+  });
+
+  it('sanitizes newlines in filenames', () => {
+    const files = [{ filename: 'file\nname.ts', additions: 1, deletions: 0 }];
+    const result = buildFileList(files);
+    expect(result).toContain('file name.ts');
+    // The sanitized filename should not contain the literal newline
+    expect(result).not.toContain('file\nname.ts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sanitizeFilename
+// ---------------------------------------------------------------------------
+
+describe('sanitizeFilename', () => {
+  it('escapes pipe characters', () => {
+    expect(sanitizeFilename('a|b|c')).toBe('a\\|b\\|c');
+  });
+
+  it('replaces backticks with single quotes', () => {
+    expect(sanitizeFilename('file`name`test')).toBe("file'name'test");
+  });
+
+  it('replaces newlines with spaces', () => {
+    expect(sanitizeFilename('line1\nline2\r\nline3')).toBe('line1 line2 line3');
+  });
+
+  it('handles all special characters together', () => {
+    expect(sanitizeFilename('a|b`c\nd')).toBe("a\\|b'c d");
+  });
+
+  it('returns normal filenames unchanged', () => {
+    expect(sanitizeFilename('src/components/App.tsx')).toBe('src/components/App.tsx');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// classifyScope
+// ---------------------------------------------------------------------------
+
+describe('classifyScope', () => {
+  it('returns Infrastructure for only infrastructure files', () => {
+    const files = [
+      { filename: '.github/workflows/ci.yml' },
+      { filename: 'scripts/build.mjs' },
+      { filename: 'test/foo.test.ts' },
+    ];
+    const result = classifyScope(files);
+    expect(result.label).toBe('Infrastructure');
+    expect(result.emoji).toBe('🔧');
+  });
+
+  it('returns Product for only product source files', () => {
+    const files = [
+      { filename: 'packages/squad-sdk/src/index.ts' },
+      { filename: 'packages/squad-cli/src/main.ts' },
+    ];
+    const result = classifyScope(files);
+    expect(result.label).toBe('Product');
+    expect(result.emoji).toBe('📦');
+  });
+
+  it('returns Mixed for both product and infrastructure files', () => {
+    const files = [
+      { filename: 'packages/squad-sdk/src/index.ts' },
+      { filename: 'scripts/build.mjs' },
+    ];
+    const result = classifyScope(files);
+    expect(result.label).toBe('Mixed (product + infrastructure)');
+    expect(result.emoji).toBe('📦🔧');
+  });
+
+  it('returns Infrastructure for empty array', () => {
+    const result = classifyScope([]);
+    expect(result.label).toBe('Infrastructure');
+    expect(result.emoji).toBe('🔧');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -596,7 +823,7 @@ describe('run()', () => {
       commits: [{ sha: 'abc123' }],
       compare: { behind_by: 0 },
       reviews: [{ user: { login: 'copilot-pull-request-reviewer' }, state: 'APPROVED', submitted_at: '2025-01-01T00:00:00Z' }],
-      files: [{ filename: '.changeset/feat.md' }],
+      files: [{ filename: '.changeset/feat.md', additions: 5, deletions: 0 }],
       pr: { mergeable: true },
       checkRuns: { check_runs: [{ name: 'build', conclusion: 'success', status: 'completed' }] },
       status: { statuses: [{ state: 'success' }] },
@@ -860,5 +1087,25 @@ describe('run()', () => {
     const draftCheck = result.checks.find((c) => c.name === 'Not in draft');
     expect(draftCheck.pass).toBe(false);
     expect(draftCheck.detail).toContain('draft');
+  });
+
+  it('includes file list with line stats in upserted comment', async () => {
+    const mockFetch = createMockFetch({
+      files: [
+        { filename: 'src/index.ts', additions: 25, deletions: 10 },
+        { filename: 'test/index.test.ts', additions: 50, deletions: 0 },
+      ],
+    });
+    await run({ env: baseEnv, fetchFn: mockFetch });
+
+    const postCall = mockFetch.mock.calls.find(
+      ([url, opts]) => opts && opts.method === 'POST' && url.includes('/comments'),
+    );
+    expect(postCall).toBeDefined();
+    const body = JSON.parse(postCall[1].body).body;
+    expect(body).toContain('### Files Changed (2 files, +75 −10)');
+    expect(body).toContain('| `src/index.ts` | +25 −10 |');
+    expect(body).toContain('| `test/index.test.ts` | +50 −0 |');
+    expect(body).toContain('**Total: +75 −10**');
   });
 });

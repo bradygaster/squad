@@ -113,7 +113,7 @@ jobs:
 
   # ─── Architectural Review (INFORMATIONAL) ───────────────────────────
   architectural-review:
-    name: Architectural Review
+    name: Architectural Review — Structure & Design Rules
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.actor != 'dependabot[bot]'
@@ -150,7 +150,7 @@ jobs:
 
   # ─── Security Review (INFORMATIONAL) ────────────────────────────────
   security-review:
-    name: Security Review
+    name: Security Review — Permissions & Secrets
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.actor != 'dependabot[bot]'
