@@ -152,7 +152,7 @@ If your PR includes `.squad/` changes, you'll be asked to remove them before rev
 **Proposed topics:**
 - "My PR CI is failing" — how to read CI output, common causes (missing changeset, build errors, lint failures)
 - "Which branch do I target?" — always `dev`, never `main`. With a bold callout box.
-- "Do I need a changeset?" — yes, always. How `npx changeset add` works. What to pick for patch/minor/major.
+- "Do I need a changeset?" — yes, always. How `changeset add` works. What to pick for patch/minor/major.
 - "How do I know what's safe to work on?" — look for `good first issue`, `status:contributor-invited`, `help wanted` labels. Avoid issues with `squad:*` labels (team-internal). Check the issue isn't already assigned.
 - "My fork is out of date" — step-by-step rebase instructions (already in CONTRIBUTING.md, but worth a FAQ entry pointing to it)
 - "What's the `.squad/` directory?" — link to the explainer section

@@ -46,13 +46,13 @@ Sub-metrics:
 
 ```bash
 # Analyze last 30 days (default)
-npx github:bradygaster/squad rework
+squad rework
 
 # Custom period
-npx github:bradygaster/squad rework --days 7 --limit 50
+squad rework --days 7 --limit 50
 
 # Machine-readable output
-npx github:bradygaster/squad rework --json
+squad rework --json
 ```
 
 ### Improvement Strategies

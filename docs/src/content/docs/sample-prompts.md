@@ -178,7 +178,7 @@ Build a project management dashboard (React + TypeScript, Node.js/Express):
 - User auth: login/signup (JWT, bcrypt)
 - SQLite + Drizzle ORM
 
-Full Playwright test suite covering login, CRUD, drag-and-drop, filtering, real-time sync (two browser contexts). Write Gherkin feature files FIRST, then implement Playwright step definitions. Runnable with `npx playwright test`.
+Full Playwright test suite covering login, CRUD, drag-and-drop, filtering, real-time sync (two browser contexts). Write Gherkin feature files FIRST, then implement Playwright step definitions. Runnable with `playwright test`.
 
 Set up the team. Write Gherkin specs and test skeletons before implementation starts, update as UI takes shape.
 ```

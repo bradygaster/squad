@@ -16,7 +16,7 @@
 
 ### 2026-02-21: Distribution is npm-only (GitHub-native removed)
 **By:** Rabin (Distribution) + Fenster (Core Dev)
-**What:** Squad packages (`@bradygaster/squad-sdk` and `@bradygaster/squad-cli`) are distributed exclusively via npmjs.com. The GitHub-native `npx github:bradygaster/squad` path has been removed.
+**What:** Squad packages (`@bradygaster/squad-sdk` and `@bradygaster/squad-cli`) are distributed exclusively via npmjs.com. The GitHub-native `squad github:bradygaster/squad` path has been removed.
 **Why:** npm is the standard distribution channel. One distribution path reduces confusion and maintenance burden. Root `cli.js` prints deprecation warning if anyone still hits the old path.
 
 ### 2026-02-21: Coordinator prompt structure — three routing modes
@@ -444,13 +444,13 @@ Scribe and Ralph are always injected if missing from the proposal. Casting state
 
 **Why:** Completes the missing link in origin's tag history. Indicates to users which commit was released as v0.8.17.
 
-### 2026-03-02: npx Distribution Migration: Error-Only Shim Strategy
+### 2026-03-02: squad Distribution Migration: Error-Only Shim Strategy
 
 **By:** Rabin (Distribution)  
 **Date:** 2026-03-02  
-**Context:** Beta repo currently uses GitHub-native distribution (`npx github:bradygaster/squad`). Origin uses npm distribution (`npm install -g @bradygaster/squad-cli`). After merge, old path will break.
+**Context:** Beta repo currently uses GitHub-native distribution (`squad github:bradygaster/squad`). Origin uses npm distribution (`npm install -g @bradygaster/squad-cli`). After merge, old path will break.
 
-**Problem:** After migration, `npx github:bradygaster/squad` fails (root `package.json` has no `bin` entry). Users hitting the old path get cryptic npm error.
+**Problem:** After migration, `squad github:bradygaster/squad` fails (root `package.json` has no `bin` entry). Users hitting the old path get cryptic npm error.
 
 **Solution — Option 5 (Error-only shim):**
 1. Add root `bin` entry pointing to `cli.js`
@@ -490,7 +490,7 @@ npm install -g @bradygaster/squad-cli
 **Related Decision:** See 2026-02-21 decision "Distribution is npm-only (GitHub-native removed)"
 
 **User Impact:**
-- Users running `npx github:bradygaster/squad` see bold error with `npm install -g @bradygaster/squad-cli` instruction
+- Users running `squad github:bradygaster/squad` see bold error with `npm install -g @bradygaster/squad-cli` instruction
 - Existing projects running `squad upgrade` work seamlessly (upgrade logic built-in)
 - No data loss or silent breakage
 
@@ -1189,14 +1189,14 @@ External contributors are engaging with Squad's architecture. We need to guide t
 
 **By:** Fenster  
 **Date:** 2025-07  
-**What:** `cli.js` at repo root is a 14-line shim that imports `./packages/squad-cli/dist/cli-entry.js`. It no longer contains bundled CLI code. The deprecation notice only displays when invoked via npm/npx.  
+**What:** `cli.js` at repo root is a 14-line shim that imports `./packages/squad-cli/dist/cli-entry.js`. It no longer contains bundled CLI code. The deprecation notice only displays when invoked via npm/squad.  
 **Why:** The old bundled cli.js was stale and missing commands added after the monorepo migration (e.g., `aspire`). A shim ensures `node cli.js` always runs the latest built CLI.  
 **Impact:** `node cli.js` now requires `npm run build` to have been run first (so `packages/squad-cli/dist/cli-entry.js` exists). This was already the case for any development workflow.
 
 
 ### 2026-03-02T01-09-49Z: User directive
 **By:** Brady (via Copilot)
-**What:** Stop distributing the package via NPX and GitHub. Only distribute via NPM from now on. Go from the public version to whatever version we're in now in the private repo. Adopt the versioning scheme from issue #692.
+**What:** Stop distributing the package via squad and GitHub. Only distribute via npm from now on. Go from the public version to whatever version we're in now in the private repo. Adopt the versioning scheme from issue #692.
 **Why:** User request — captured for team memory
 
 # Release Plan Update — npm-only Distribution & Semver Fix (#692)
@@ -1209,8 +1209,8 @@ External contributors are engaging with Squad's architecture. We need to guide t
 ## Decisions
 
 ### 1. NPM-Only Distribution
-- **What:** End GitHub-native distribution (`npx github:bradygaster/squad`). Install exclusively via npm registry.
-- **How:** Users install via `npm install -g @bradygaster/squad-cli` (global) or `npx @bradygaster/squad-cli` (per-project).
+- **What:** End GitHub-native distribution (`squad github:bradygaster/squad`). Install exclusively via npm registry.
+- **How:** Users install via `npm install -g @bradygaster/squad-cli` (global) or `squad @bradygaster/squad-cli` (per-project).
 - **Why:** Simplified distribution, centralized source of truth, standard npm tooling conventions.
 - **Scope:** Affects all future releases, all external documentation, and CI/CD publish workflows.
 - **Owners:** Rabin (docs), Fenster (scripts), all team members (update docs/sample references).
@@ -1257,7 +1257,7 @@ External contributors are engaging with Squad's architecture. We need to guide t
 
 ## What Changed
 
-All distribution now goes through npm. The `npx github:bradygaster/squad` path has been fully removed from:
+All distribution now goes through npm. The `squad github:bradygaster/squad` path has been fully removed from:
 - Source code (github-dist.ts default template, install-migration.ts, init.ts)
 - All 4 copies of squad.agent.md (Ralph Watch Mode commands)
 - All 4 copies of squad-insider-release.yml (release notes)
@@ -1272,7 +1272,7 @@ All distribution now goes through npm. The `npx github:bradygaster/squad` path h
 npm install -g @bradygaster/squad-cli
 
 # Per-use (no install)
-npx @bradygaster/squad-cli
+squad @bradygaster/squad-cli
 
 # SDK for programmatic use
 npm install @bradygaster/squad-sdk
@@ -1284,7 +1284,7 @@ One distribution channel means less confusion, fewer edge cases, and zero SSH-ag
 
 ## Impact
 
-- **All team members:** When writing docs or examples, use `npm install -g @bradygaster/squad-cli` or `npx @bradygaster/squad-cli`. Never reference `npx github:`.
+- **All team members:** When writing docs or examples, use `npm install -g @bradygaster/squad-cli` or `squad @bradygaster/squad-cli`. Never reference `squad github:`.
 - **CI/CD:** Insider release workflow now shows npm install commands in release notes.
 - **Tests:** bundle.test.ts assertions updated to match new default template.
 
@@ -1851,7 +1851,7 @@ Recent activity (last 10 commits):
 - `ensureSquadPathDual()` / `ensureSquadPathResolved()`
 
 ### Changed — Distribution & Versioning
-- npm-only distribution (no more GitHub-native `npx github:bradygaster/squad`)
+- npm-only distribution (no more GitHub-native `squad github:bradygaster/squad`)
 - Semantic Versioning fix (X.Y.Z-preview.N format, compliant with semver spec)
 - Version transition from public repo (0.8.5.1) to private repo (0.8.x cadence)
 
@@ -2749,7 +2749,7 @@ squad labels check 42
     issues: [labeled]
   jobs:
     run-cli:
-      - run: npx @bradygaster/squad-cli triage ${{ github.event.issue.number }}
+      - run: squad @bradygaster/squad-cli triage ${{ github.event.issue.number }}
   ```
 - Users who want automation can install this workflow themselves.
 - Key difference: They CHOOSE to install it. Not a default.
@@ -4903,10 +4903,10 @@ Created `.squad/skills/release-process/SKILL.md` with the definitive step-by-ste
 **Why:** npx path is deprecated, causes confusion. Streamline to single distribution method.
 
 **Implementation:** 
-- Removed all `npx @bradygaster/squad-cli` alternatives from user-facing docs
+- Removed all `squad @bradygaster/squad-cli` alternatives from user-facing docs
 - Replaced with `npm install -g @bradygaster/squad-cli` for install; `squad <command>` for usage
 - Insider builds: `npm install -g @bradygaster/squad-cli@insider` + `squad upgrade`
-- Removed "npx github: hang" troubleshooting section (deprecated path gone)
+- Removed "squad github: hang" troubleshooting section (deprecated path gone)
 - Removed "npx cache serving stale version" troubleshooting (no longer applicable)
 
 **What was NOT changed:**
@@ -7406,7 +7406,7 @@ Three concrete work items remain to close out v0.9.1 release incident hardening.
 ## Post-Publish Verification
 - `npm view @bradygaster/squad-sdk@<VERSION> version`
 - `npm view @bradygaster/squad-cli@<VERSION> version`
-- `npx @bradygaster/squad-cli@<VERSION> --version` (cold install test)
+- `squad @bradygaster/squad-cli@<VERSION> --version` (cold install test)
 - Check GitHub Release is marked as "Latest"
 
 ## Version Bump After Publish

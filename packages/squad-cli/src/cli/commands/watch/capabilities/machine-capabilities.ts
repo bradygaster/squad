@@ -39,7 +39,7 @@ const CAPABILITY_PROBES: Record<string, () => Promise<boolean>> = {
   },
   browser: async () => {
     try {
-      await execFileAsync('npx', ['playwright', '--version'], { timeout: 10_000 });
+      await execFileAsync('playwright', ['--version'], { timeout: 10_000 });
       return true;
     } catch { return false; }
   },

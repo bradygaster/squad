@@ -153,7 +153,7 @@ The Co-authored-by trailer is **required** for all commits (added by Copilot CLI
 
 ### Pull Request Process
 
-1. Add a changeset: `npx changeset add` (required before PR — see Changesets section)
+1. Add a changeset: `changeset add` (required before PR — see Changesets section)
 2. Push your branch: `git push origin {yourusername}/217-readme-help-update`
 3. Create a PR with explicit base and head: `gh pr create --base dev --repo bradygaster/squad --head {yourusername}:your-branch`
 4. Link the issue: Add `Closes #217` to PR description
@@ -212,7 +212,7 @@ Squad uses [@changesets/cli](https://github.com/changesets/changesets) for indep
 Before your PR is merged, add a changeset describing your changes:
 
 ```bash
-npx changeset add
+changeset add
 ```
 
 This prompts:
@@ -238,7 +238,7 @@ Update help text and README for npm distribution. Add squad status command to do
 The team runs changesets on the `main` branch (via GitHub Actions):
 
 ```bash
-npx changeset publish
+changeset publish
 ```
 
 This:

@@ -129,8 +129,8 @@ For environments where MCP tools are available, Squad also supports the Azure De
 {
   "mcpServers": {
     "azure-devops": {
-      "command": "npx",
-      "args": ["-y", "@azure/devops-mcp-server"]
+      "command": "node",
+      "args": ["/absolute/path/to/azure-devops-mcp.js"]
     }
   }
 }

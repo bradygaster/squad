@@ -65,7 +65,7 @@
 - name: Validate semver
   run: |
     VERSION="${{ steps.version.outputs.version }}"
-    if ! npx semver "$VERSION" > /dev/null 2>&1; then
+    if ! semver "$VERSION" > /dev/null 2>&1; then
       echo "❌ Invalid semver: $VERSION"
       echo "Only 3-part versions (X.Y.Z) or prerelease (X.Y.Z-tag.N) are valid."
       exit 1
@@ -595,7 +595,7 @@ function formatVersion({ base, build, prerelease }) {
 
 2. **Add semver validation to publish.yml** ❌ CRITICAL
    - Risk: 4-part versions can still reach npm
-   - Fix: Add `npx semver` validation step before publish
+   - Fix: Add `semver` validation step before publish
 
 3. **Add SKIP_BUILD_BUMP enforcement to publish.yml** ❌ CRITICAL
    - Risk: bump-build.mjs could create 4-part versions during release
@@ -667,7 +667,7 @@ function formatVersion({ base, build, prerelease }) {
 - name: Validate semver format
   run: |
     VERSION="${{ steps.version.outputs.version }}"
-    if ! npx semver "$VERSION" > /dev/null 2>&1; then
+    if ! semver "$VERSION" > /dev/null 2>&1; then
       echo "❌ Invalid semver: $VERSION"
       echo "Only 3-part versions (X.Y.Z) or prerelease (X.Y.Z-tag.N) are valid."
       echo "4-part versions (X.Y.Z.N) are NOT valid semver and will be mangled by npm."

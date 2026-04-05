@@ -158,13 +158,13 @@ Commit: 7660a27 on branch squad/579-init-scaffolding-hardening.
 
 ### Personal Squad Init Discovery Tests (#576)
 
-**Task:** Write tests for personal squad discovery and init flows (Issue #576 — npx init --global not discovering personal squad).
+**Task:** Write tests for personal squad discovery and init flows (Issue #576 — squad init --global not discovering personal squad).
 
 **Test file:** `test/personal-squad-init.test.ts` — 35 tests, 10 describe blocks, all passing.
 
 **Coverage areas:**
 1. `resolveGlobalSquadPath()` — platform-specific path resolution (Windows APPDATA, Linux XDG_CONFIG_HOME, consistency)
-2. `resolvePersonalSquadDir()` — kill-switch (SQUAD_NO_PERSONAL), directory existence, npx-agnostic discovery
+2. `resolvePersonalSquadDir()` — kill-switch (SQUAD_NO_PERSONAL), directory existence, squad-agnostic discovery
 3. `personalInit` contract — directory structure creation, config.json shape, idempotency
 4. `resolveSquadPaths()` — personalDir field inclusion, null when disabled
 5. Edge: empty personal-squad dir (exists but no agents/)
@@ -173,9 +173,9 @@ Commit: 7660a27 on branch squad/579-init-scaffolding-hardening.
 8. `ensureSquadPathTriple()` — personal dir in allowed roots, null personalDir graceful handling
 9. Charter metadata parsing edge cases (whitespace trimming, sourceDir correctness, multi-agent discovery)
 
-**Key finding:** `resolvePersonalSquadDir()` is install-method-agnostic — it resolves from env vars and `os.homedir()`, never from `process.argv`. The npx issue (#576) is therefore NOT in path resolution but likely in the CLI command wiring or the `--global` flag routing. Tests confirm the SDK layer works correctly.
+**Key finding:** `resolvePersonalSquadDir()` is install-method-agnostic — it resolves from env vars and `os.homedir()`, never from `process.argv`. The squad issue (#576) is therefore NOT in path resolution but likely in the CLI command wiring or the `--global` flag routing. Tests confirm the SDK layer works correctly.
 
-**Commit:** c307187 on branch squad/576-personal-squad-init-npx
+**Commit:** c307187 on branch squad/576-personal-squad-init-squad
 ### Publish Policy CI Gate (#557)
 
 Added `publish-policy` job to squad-ci.yml — lightweight lint that scans all `.github/workflows/*.yml` for bare `npm publish` commands missing `-w`/`--workspace`. Catches the incident class where root package.json gets published instead of a workspace package. Also wrote `test/publish-policy.test.ts` (36 tests) covering: workspace-scoped passes, bare publish fails, comment/echo/grep/YAML-name line skipping, findViolations line numbering, and live validation of all 15 workflow files. Key pattern: meta-references (echo, grep, YAML name keys containing "npm publish") must be excluded from lint — the CI script's own text would otherwise self-trigger.

@@ -14,7 +14,7 @@ const DEFAULT_CONFIG: GitHubDistConfig = {
   owner: 'bradygaster',
   repo: 'squad',
   binaryName: 'squad',
-  installCommandTemplate: 'npx @bradygaster/squad-cli',
+  installCommandTemplate: 'squad',
 };
 
 /**
@@ -85,7 +85,7 @@ export function validateGitHubRelease(config: GitHubDistConfig, version: string)
 }
 
 /**
- * Get the npx install command string.
+ * Get the install command string.
  */
 export function getInstallCommand(config?: Partial<GitHubDistConfig>): string {
   const c = resolveConfig(config);
@@ -95,7 +95,7 @@ export function getInstallCommand(config?: Partial<GitHubDistConfig>): string {
 }
 
 /**
- * Generate the bin script that runs when npx invokes the package.
+ * Generate the bin script that runs when the CLI is invoked.
  */
 export function generateNpxEntryPoint(): string {
   return `#!/usr/bin/env node

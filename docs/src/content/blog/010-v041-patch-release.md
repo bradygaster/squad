@@ -43,7 +43,7 @@ npm install -g @bradygaster/squad-cli@latest
 
 or upgrade if you have it:
 ```
-npx @bradygaster/create-squad upgrade
+squad upgrade
 ```
 
 ---

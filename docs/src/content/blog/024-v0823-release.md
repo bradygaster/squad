@@ -138,7 +138,7 @@ Then:
 
 ```bash
 npm install @bradygaster/squad-sdk
-npx squad build
+squad build
 # Generates .squad/team.md, .squad/routing.md, .squad/agents/*/charter.md
 ```
 
@@ -242,13 +242,13 @@ Remote Squad Mode enables teams to share squad identity across multiple projects
 
 #### **Installation Crash Fix (#247) — The Big One**
 
-**Problem:** `npx @bradygaster/squad-cli` was crashing on fresh installs with:
+**Problem:** `squad init` was crashing on fresh installs with:
 
 ```
 Error: Cannot find module '@opentelemetry/api'
 ```
 
-**Root cause:** `@opentelemetry/api` was a hard dependency that failed to resolve in npx's isolated install environment, causing the entire CLI to fail immediately.
+**Root cause:** `@opentelemetry/api` was a hard dependency that failed to resolve in isolated install environments, causing the entire CLI to fail immediately.
 
 **Fix:** 
 
@@ -530,10 +530,10 @@ npm install --save-dev @bradygaster/squad-cli@latest
 
 ### Fresh Install (Crash Fix Benefit)
 
-If you've had issues with `npx @bradygaster/squad-cli` on fresh machines, v0.8.22 resolves the OTel dependency crash:
+If you've had issues with `squad init` on fresh machines, v0.8.22 resolves the OTel dependency crash:
 
 ```bash
-npx @bradygaster/squad-cli@latest doctor
+squad doctor
 # Now works reliably without dependency resolution errors
 ```
 

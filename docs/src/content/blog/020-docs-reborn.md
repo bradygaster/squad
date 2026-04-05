@@ -55,7 +55,7 @@ Credit to [@spboyer](https://github.com/spboyer) for the original beta site CSS 
 Every ported document got a tone pass:
 
 - **Removed "⚠️ INTERNAL ONLY" banners.** The v1 docs are public now.
-- **Updated CLI commands.** `npx github:bradygaster/squad` → `npx @bradygaster/squad-cli`. npm is the only distribution path.
+- **Updated CLI commands.** Old distribution removed. The CLI is now installed with `npm install -g @bradygaster/squad-cli` and run with `squad`.
 - **Preserved the beta voice.** The scenario docs and feature docs were written in a conversational, prompt-first style. We kept that. No corporate rewrite.
 
 62 documents. Each one touched. The goal was consistency without homogeneity — every doc should feel like it belongs on the same site without every doc sounding like the same author wrote it.

@@ -45,10 +45,10 @@ cd your-project
 squad init
 ```
 
-**Or run without installing:**
+**Or run with squad directly (after global install):**
 
 ```bash
-npx @bradygaster/squad-cli
+squad init
 ```
 
 **Upgrading from beta?** Check the [Migration Guide](../get-started/migration.md) for step-by-step upgrade instructions covering 9 scenarios from brand-new users to CI/CD pipelines.
@@ -62,7 +62,7 @@ Here's the side-by-side comparison of beta vs. v0.8.18:
 | Area | Beta (v0.5.x) | New (v0.8.18) |
 |------|---------------|---------------|
 | **Language** | JavaScript | TypeScript (strict mode) |
-| **Distribution** | `npx github:bradygaster/squad` | `npm install -g @bradygaster/squad-cli` |
+| **Distribution** | GitHub-native (`npm install -g @bradygaster/squad-cli`) | `npm install -g @bradygaster/squad-cli` |
 | **Packages** | Monolithic | SDK + CLI (independent versioning) |
 | **Config** | JSON only | Markdown + optional `squad.config.ts` |
 | **Shell** | Basic | Rich REPL with streaming, sessions, keyboard shortcuts |
@@ -82,7 +82,7 @@ The CLI went from "a few scripts" to "a full terminal experience." Here's what y
 
 ### 1. **Global Install** — `squad` Works Everywhere
 
-No more `npx github:` commands. Install once, run anywhere:
+No more old CLI commands. Install once, run anywhere:
 
 ```bash
 npm install -g @bradygaster/squad-cli

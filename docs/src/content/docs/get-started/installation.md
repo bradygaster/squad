@@ -36,14 +36,16 @@ squad status
 squad watch
 ```
 
-### One-off with npx
+### One-off approach
 
-No install needed — run the latest version directly:
+Already installed globally? Just run:
 
 ```bash
-npx @bradygaster/squad-cli init
-npx @bradygaster/squad-cli status
+squad init
+squad status
 ```
+
+No reinstall needed for each project.
 
 ### Verify
 
@@ -65,7 +67,7 @@ Pick based on what you're doing:
 
 | **You want to...** | **Use** | **Why** |
 |--------------------|---------|---------|
-| Try Squad quickly | **CLI** with `npx` | No install needed. Run `npx @bradygaster/squad-cli init` and you're testing it. |
+| Try Squad quickly | **CLI** with `npm install -g` | Install once: `npm install -g @bradygaster/squad-cli`. Then run `squad init` and you're testing it. |
 | Use Squad across all projects | **CLI** with `--global` | One install. Works everywhere. Run `squad` from any terminal. |
 | Work inside VS Code | **VS Code** (just open your project) | Already using Copilot? Squad just works. Same `.squad/` directory as CLI. |
 | Build tools on top of Squad | **SDK** | Typed APIs, routing config, agent lifecycle hooks. Programmatic access to everything. |

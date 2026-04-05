@@ -17,11 +17,11 @@ hero: "Export your squad. Import it somewhere else. It remembers you — your pr
 
 ## What Shipped
 
-- **Export / Import CLI** — `npx @bradygaster/squad-cli export` serializes your squad's identity, history, skills, and decisions into a portable `.squad` package. `npx @bradygaster/squad-cli import` reconstitutes it in a new project. Your squad remembers YOU, not the repo it came from. _(Built by Fenster)_
+- **Export / Import CLI** — `squad export` serializes your squad's identity, history, skills, and decisions into a portable `.squad` package. `squad import` reconstitutes it in a new project. Your squad remembers YOU, not the repo it came from. _(Built by Fenster)_
 - **Skills Phase 1: Template + Read** — Agents read `SKILL.md` files from `.squad/skills/` before working. Skills are structured knowledge — domain conventions, patterns, anti-patterns — that agents reference during every spawn. _(Built by Verbal)_
 - **Skills Phase 2: Earned Skills** — Agents write `SKILL.md` files from real work. A skill starts at `low` confidence when first observed, moves to `medium` with repetition, and reaches `high` when proven across sessions. Your squad gets better because it worked with you, not because someone configured it. _(Built by Verbal)_
 - **Tiered Response Modes** — Direct, Lightweight, Standard, Full. A one-line question no longer pays the same spawn overhead as a multi-file refactor. The coordinator picks the tier based on complexity. _(Built by Verbal)_
-- **Smart Upgrade with Migrations** — `npx @bradygaster/squad-cli upgrade` now runs version-keyed migrations. Upgrading from v0.1.0 to v0.2.0 applies only the migrations for versions you haven't seen. Your team state is never touched. _(Built by Fenster)_
+- **Smart Upgrade with Migrations** — `squad upgrade` now runs version-keyed migrations. Upgrading from v0.1.0 to v0.2.0 applies only the migrations for versions you haven't seen. Your team state is never touched. _(Built by Fenster)_
 - **GitHub Issues Mode** — Full lifecycle: pick up an issue, create a `squad/{issue-number}-{slug}` branch, do the work, open a PR with `Closes #N`, handle review comments, merge. Squad connects to how teams actually track work. _(Built by [@spboyer](https://github.com/spboyer), PR #2)_
 - **PRD Mode** — Paste a Product Requirements Document. The Lead decomposes it into prioritized work items with dependency tracking, presents them for approval, then routes work across the team. From document to executing backlog in one prompt. _(Built by [@spboyer](https://github.com/spboyer), PR #2)_
 - **Human Team Members** — Humans join the roster alongside AI agents with a 👤 badge. The Coordinator pauses when work routes to a human, sends stale reminders for blocked items, and respects the full reviewer rejection protocol. Not every teammate is an AI. _(Built by [@spboyer](https://github.com/spboyer), PR #2)_
@@ -63,24 +63,24 @@ The test suite tells the reliability story. v0.1.0 shipped with 27 tests. v0.2.0
 
 **New install:**
 ```bash
-npx @bradygaster/squad-cli
+squad init
 ```
 
 **Upgrade from v0.1.0:**
 ```bash
-npx @bradygaster/squad-cli upgrade
+squad upgrade
 ```
 
 Smart upgrade runs version-keyed migrations automatically. Your team state (`.squad/`) is never overwritten.
 
 **Export your squad:**
 ```bash
-npx @bradygaster/squad-cli export
+squad export
 ```
 
 **Import into a new project:**
 ```bash
-npx @bradygaster/squad-cli import
+squad import
 ```
 
 ## What's Next

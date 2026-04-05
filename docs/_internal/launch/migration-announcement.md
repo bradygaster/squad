@@ -11,7 +11,7 @@ Squad, the AI agent team framework for GitHub Copilot, moves from private repo t
 | | Before | Now |
 |---------|--------|-----|
 | Repository | Private (bradygaster/squad-pr) | **[Public](https://github.com/bradygaster/squad)** |
-| Distribution | `npx github:bradygaster/squad` (removed) | `npm install -g @bradygaster/squad-cli` |
+| Distribution | `npm install -g @bradygaster/squad-cli` | `npm install -g @bradygaster/squad-cli` |
 | Versioning | Git commits | Semantic versioning (v0.8.18) |
 | Packages | Monolithic `@bradygaster/create-squad` | **Separate:** `@bradygaster/squad-cli` + `@bradygaster/squad-sdk` |
 

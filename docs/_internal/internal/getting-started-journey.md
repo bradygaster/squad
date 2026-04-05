@@ -37,7 +37,7 @@ Set ESM mode in `package.json`:
 ## 2. Create Your Team
 
 ```bash
-npx squad init
+squad init
 ```
 
 This is idempotent — run it again and nothing breaks. It scaffolds `.squad/` in your repo root.
@@ -125,7 +125,7 @@ for (const member of cast) {
 
 Run it:
 ```bash
-npx tsx src/hello.ts
+node --loader tsx src/hello.ts
 ```
 
 Output:
@@ -429,22 +429,22 @@ Ralph persists its state to disk. If your process restarts, Ralph reads `ralph-s
 ### Export your team
 
 ```bash
-npx squad export
+squad export
 # → squad-export.json (portable snapshot of entire .squad/ directory)
 ```
 
 ### Import into another repo
 
 ```bash
-npx squad import squad-export.json
+squad import squad-export.json
 ```
 
 ### Share via upstream inheritance
 
 ```bash
 # In the downstream repo:
-npx squad upstream add --source ../shared-team --name org-standards
-npx squad upstream sync
+squad upstream add --source ../shared-team --name org-standards
+squad upstream sync
 ```
 
 Upstream inheritance lets you maintain org-wide agent charters, routing rules, and governance policies in one place. Downstream repos inherit and can override.
@@ -452,7 +452,7 @@ Upstream inheritance lets you maintain org-wide agent charters, routing rules, a
 ### Remote team mode
 
 ```bash
-npx squad init --mode remote /path/to/shared-team
+squad init --mode remote /path/to/shared-team
 ```
 
 This creates a dual-root setup: project-specific state lives in `.squad/`, but team identity (charters, casting, routing) lives in the shared location. Multiple repos share one team.
@@ -555,5 +555,5 @@ await ralph.stop();
 
 - **Explore the samples** — `samples/` has 6 working examples from basic to advanced.
 - **Read the SDK README** — `packages/squad-sdk/README.md` for full API reference.
-- **Try the interactive shell** — Run `npx squad` with no args for the REPL experience.
+- **Try the interactive shell** — Run `squad` with no args for the REPL experience.
 - **Add governance first** — `HookPipeline` should be in every production script. Don't skip it.

@@ -42,7 +42,7 @@ const DEFAULT_STEPS: CIPipelineStep[] = [
   { name: 'Lint', command: 'npm run lint' },
   { name: 'Build', command: 'npm run build' },
   { name: 'Test', command: 'npm test' },
-  { name: 'Bundle', command: 'npx esbuild src/index.ts --bundle --format=esm --outdir=dist' },
+  { name: 'Bundle', command: 'esbuild src/index.ts --bundle --format=esm --outdir=dist' },
 ];
 
 const PUBLISH_STEP: CIPipelineStep = {

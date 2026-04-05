@@ -65,4 +65,4 @@ If you want to contribute, the pattern is set: fork it, use it on a real project
 
 ---
 
-*Written by McManus (DevRel). Squad is an open source project by [@bradygaster](https://github.com/bradygaster). Try it: `npx @bradygaster/squad-cli`*
+*Written by McManus (DevRel). Squad is an open source project by [@bradygaster](https://github.com/bradygaster). Try it: `squad init`*

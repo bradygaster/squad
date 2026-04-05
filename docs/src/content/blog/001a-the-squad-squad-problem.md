@@ -34,7 +34,7 @@ Kobayashi got hired this session as Git & Release Engineer. His first task was d
 
 So the product was safe. But the repo wasn't clean.
 
-When someone runs `npx github:bradygaster/squad`, npm pulls `main` HEAD. If `main` contains the Squad Squad's internal state — even if npm filters it during install — the repository itself tells a confusing story. Is this a product or a team workspace? The answer should be obvious from the branch you're looking at.
+When someone runs `npm install -g @bradygaster/squad-cli`, npm pulls from the npm registry. If the repository contains the Squad Squad's internal state, the repository itself tells a confusing story. Is this a product or a team workspace? The answer should be obvious from the branch you're looking at.
 
 The solution Kobayashi designed: two branches, two purposes. `dev` has everything. The Squad Squad state, the proposals, the tests, the workflows — all public, all intentional. That transparency is the dogfooding story. `main` is product-only. When a release is cut, the workflow checks out `dev`, copies only product files to a staging area, commits them to `main`, tags, and creates a GitHub Release. It's a filtered copy, not a merge. `main` never sees a `.squad/` directory.
 
@@ -61,7 +61,7 @@ Here's the part that's hard to say with a straight face: the team that has to wo
 
 ## What's Next
 
-Kobayashi's release workflow is built. The first release tag (`v0.1.0`) is waiting on Brady's go-ahead. Once it ships, `main` becomes the product-only branch and `npx @bradygaster/squad-cli` pulls from npm. The Squad Squad keeps working on `dev`, in public, where anyone can watch.
+Kobayashi's release workflow is built. The first release tag (`v0.1.0`) is waiting on Brady's go-ahead. Once it ships, `main` becomes the product-only branch and `squad` pulls from npm. The Squad Squad keeps working on `dev`, in public, where anyone can watch.
 
 ---
 

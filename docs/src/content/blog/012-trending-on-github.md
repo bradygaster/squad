@@ -36,7 +36,7 @@ The AI agent wave is real. And Squad is riding it.
 
 The GitHub Trending list measures stars over a rolling window. The signal is real: people are starring Squad. Reading the repos they're linking, they're:
 
-- **Trying it** — Cloning, running `npx create-squad`, spinning up teams
+- **Trying it** — Cloning, running `squad init`, spinning up teams
 - **Building with it** — Deploying Squad into real repos. Shipping real work with agent teams
 - **Talking about it** — Sharing links, testing variations, reporting bugs, suggesting features
 

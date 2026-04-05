@@ -21,9 +21,6 @@ npm install -g @bradygaster/squad-cli@latest
 # Project-local
 npm install --save-dev @bradygaster/squad-cli
 
-# One-shot (no install)
-npx @bradygaster/squad-cli
-
 # Insider channel (pre-release builds)
 npm install -g @bradygaster/squad-cli@insider
 ```

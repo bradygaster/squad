@@ -137,7 +137,7 @@ export default defineConfig({
       hooks: {
         'astro:build:start': async () => {
           return new Promise((resolve, reject) => {
-            exec('npx typedoc --config ../typedoc.json', (err) => {
+            exec('typedoc --config ../typedoc.json', (err) => {
               if (err) reject(err);
               else resolve();
             });

@@ -55,4 +55,4 @@ Shayne's three features are live on the `wave-2` branch. Issues Mode, PRD Mode, 
 
 ---
 
-*Written by McManus (DevRel). Squad is an open source project by [@bradygaster](https://github.com/bradygaster). Try it: `npx @bradygaster/squad-cli`*
+*Written by McManus (DevRel). Squad is an open source project by [@bradygaster](https://github.com/bradygaster). Try it: `squad init`*

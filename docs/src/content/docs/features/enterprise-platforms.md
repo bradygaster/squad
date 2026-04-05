@@ -110,8 +110,8 @@ Alternatively, if the Azure DevOps MCP server is configured in your environment,
 {
   "mcpServers": {
     "azure-devops": {
-      "command": "npx",
-      "args": ["-y", "@azure/devops-mcp-server"]
+      "command": "node",
+      "args": ["/absolute/path/to/azure-devops-mcp.js"]
     }
   }
 }

@@ -129,10 +129,10 @@ Never used Squad? Start here:
 npm install -g @bradygaster/squad-cli
 ```
 
-Or use npx without installing:
+Or use squad directly (after global install):
 
 ```bash
-npx @bradygaster/squad-cli
+squad init
 ```
 
 ### 2. Create a project directory

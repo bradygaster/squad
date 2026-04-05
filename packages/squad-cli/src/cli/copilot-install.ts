@@ -100,19 +100,19 @@ export function getInstallInstructions(env: CopilotEnvironment): InstallStep[] {
     case 'cli':
       return [
         { description: 'Install the Squad SDK globally', command: 'npm install -g @bradygaster/squad' },
-        { description: 'Initialise a new Squad project', command: 'npx create-squad' },
+        { description: 'Initialise a new Squad project', command: 'squad init' },
         { description: 'Start the Squad orchestrator', command: 'squad start' },
       ];
     case 'vscode':
       return [
         { description: 'Install Squad SDK as a project dependency', command: 'npm install @bradygaster/squad' },
-        { description: 'Run Squad init via the VS Code terminal', command: 'npx create-squad' },
+        { description: 'Run Squad init via the VS Code terminal', command: 'squad init' },
         { description: 'Reload the VS Code window to activate Squad agents' },
       ];
     case 'web':
       return [
         { description: 'Install Squad SDK in the Codespace', command: 'npm install @bradygaster/squad' },
-        { description: 'Initialise Squad scaffolding', command: 'npx create-squad' },
+        { description: 'Initialise Squad scaffolding', command: 'squad init' },
         { description: 'Squad agents are available in the Codespace Copilot Chat' },
       ];
     case 'unknown':
@@ -120,7 +120,7 @@ export function getInstallInstructions(env: CopilotEnvironment): InstallStep[] {
       return [
         { description: 'Install Node.js 20+ if not already installed' },
         { description: 'Install the Squad SDK', command: 'npm install @bradygaster/squad' },
-        { description: 'Initialise a new Squad project', command: 'npx create-squad' },
+        { description: 'Initialise a new Squad project', command: 'squad init' },
       ];
   }
 }

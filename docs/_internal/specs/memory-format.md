@@ -522,7 +522,7 @@ Old entries look like:
 The `squad convert-memory` command attempts automatic conversion but flags ambiguous entries for agent review:
 
 ```bash
-npx github:bradygaster/squad convert-memory --dry-run
+squad convert-memory --dry-run
 
 Converting .ai-team/decisions.md...
   ✅ Entry 1: Auto-converted (high confidence)

@@ -49,12 +49,12 @@ const MIGRATION_STEPS: Record<string, MigrationStep[]> = {
   'npx-github->npm-local': [
     { description: 'Add squad as a local dev dependency', command: 'npm install --save-dev @bradygaster/squad' },
     { description: 'Add a script entry in package.json', manual: true, command: undefined },
-    { description: 'Verify the installation', command: 'npx squad --version' },
+    { description: 'Verify the installation', command: 'squad --version' },
   ],
   'npm-global->npm-local': [
     { description: 'Add squad as a local dev dependency', command: 'npm install --save-dev @bradygaster/squad' },
     { description: 'Optionally uninstall the global version', command: 'npm uninstall -g @bradygaster/squad' },
-    { description: 'Use npx squad or add an npm script to run locally' },
+    { description: 'Use squad or add an npm script to run locally' },
   ],
   'npm-local->npm-global': [
     { description: 'Install squad globally', command: 'npm install -g @bradygaster/squad' },
@@ -63,11 +63,11 @@ const MIGRATION_STEPS: Record<string, MigrationStep[]> = {
   ],
   'npm-global->npx-github': [
     { description: 'Uninstall the global npm package', command: 'npm uninstall -g @bradygaster/squad' },
-    { description: 'Use npx to run from npm', command: 'npx @bradygaster/squad-cli' },
+    { description: 'Install squad globally and run directly', command: 'npm install -g @bradygaster/squad-cli && squad' },
   ],
   'npm-local->npx-github': [
     { description: 'Remove squad from local dependencies', command: 'npm uninstall @bradygaster/squad' },
-    { description: 'Use npx to run from npm', command: 'npx @bradygaster/squad-cli' },
+    { description: 'Install squad globally and run directly', command: 'npm install -g @bradygaster/squad-cli && squad' },
   ],
 };
 

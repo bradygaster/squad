@@ -16,13 +16,13 @@ Your first 5 minutes with Squad. Prove it works before you learn anything.
 ## Install
 
 ```bash
-npm install --save-dev @bradygaster/squad-cli
+npm install -g @bradygaster/squad-cli
 ```
 
 Then initialize:
 
 ```bash
-npx squad init
+squad init
 ```
 
 You'll see:
@@ -50,7 +50,7 @@ You should see: `team.md`, `routing.md`, `decisions.md`, `agents/`, and more.
 Confirm Squad is ready:
 
 ```bash
-npx squad status
+squad status
 ```
 
 ---

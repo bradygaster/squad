@@ -36,7 +36,7 @@ npm run build
 Runs two steps:
 
 1. **`astro build`** — Compiles all pages to static HTML in `dist/`
-2. **`npx pagefind --site dist`** — Indexes the HTML output to generate the search index at `dist/pagefind/`
+2. **`pagefind --site dist`** — Indexes the HTML output to generate the search index at `dist/pagefind/`
 
 The output in `dist/` is what gets deployed to GitHub Pages.
 
@@ -87,7 +87,7 @@ docs/
 
 1. Create a markdown file under `src/content/docs/{section}/your-page.md`
 2. Add a sidebar entry in `src/navigation.ts` under the appropriate `NAV_SECTIONS` section
-3. Run the docs build test to verify: `npx vitest run test/docs-build.test.ts` (from repo root)
+3. Run the docs build test to verify: `vitest run test/docs-build.test.ts` (from repo root)
 
 ## Adding a Blog Post
 

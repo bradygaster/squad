@@ -122,22 +122,22 @@ Ralph continuously polls for work and dispatches agents to handle it. Watch mode
 
 ```bash
 # Monitor for issues (triage mode — no execution)
-npx @bradygaster/squad-cli watch
+squad watch
 
 # Monitor and auto-execute against actionable issues
-npx @bradygaster/squad-cli watch --execute --interval 5
+squad watch --execute --interval 5
 
 # With custom agent runner and copilot flags
-npx @bradygaster/squad-cli watch --execute \
+squad watch --execute \
   --agent-cmd "agency copilot" \
   --copilot-flags "--yolo --autopilot --mcp mail --agent squad" \
   --auth-user myaccount
 
 # Run watch with diagnostics
-npx @bradygaster/squad-cli watch --execute --log-file ./watch.log --verbose
+squad watch --execute --log-file ./watch.log --verbose
 
 # Check health of running watch process
-npx @bradygaster/squad-cli watch --health
+squad watch --health
 ```
 
 ### Key Flags

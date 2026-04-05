@@ -21,7 +21,7 @@ hero: "We asked Squad to build itself a team. It wrote 16 proposals, discovered 
 - **16 proposals (~350KB)** ΓÇö Architecture, messaging, demo scripts, video strategy, portable squads, skills system, tiered response modes, agent experience evolution, and more. All written, cross-referenced, and reviewed in a single session. _(Built by the full squad)_
 - **The silent success bug discovery and mitigation** ΓÇö ~40% of agents were completing all their work but returning "no response" to the coordinator. The agents that did the most work were the ones that failed. Three zero-risk mitigations shipped same-session. _(Discovered by Kujan, mitigated in squad.agent.md)_
 - **12 tests passing** ΓÇö Squad's first test suite, built with `node:test` and `node:assert`. Zero external dependencies. Init, idempotency, recursive copy ΓÇö the foundation. _(Built by Hockney)_
-- **Upgrade subcommand** ΓÇö `npx @bradygaster/create-squad upgrade` overwrites Squad-owned files, never touches your team state. The delivery mechanism for bug fixes to existing users. _(Built by Fenster)_
+- **Upgrade subcommand** ΓÇö `squad upgrade` overwrites Squad-owned files, never touches your team state. The delivery mechanism for bug fixes to existing users. _(Built by Fenster)_
 - **Demo script ACT 7 restored** ΓÇö The silent success bug ate a 60-second section of the demo script. The KEY THEMES reference table referenced content that didn't exist. Found it, reconstructed it, shipped it. _(Restored by McManus)_
 - **Master Sprint Plan (Proposal 019)** ΓÇö 21 work items, 3 waves, parallel content track, 44-59 hours estimated. One document the entire team executes from. No ambiguity, no redundancy. _(Authored by Keaton)_
 
@@ -61,7 +61,7 @@ The team self-diagnosed. Kujan identified the pattern. Three mitigations shipped
 
 ## What's Next
 
-Wave 1 is all about trust. Error handling in `index.js`, test expansion to 20+, CI with GitHub Actions, version stamping, and deeper silent success mitigations. Nothing else ships until the foundation is bulletproof. Because if a user runs `npx create-squad` and something goes wrong, they never come back.
+Wave 1 is all about trust. Error handling in `index.js`, test expansion to 20+, CI with GitHub Actions, version stamping, and deeper silent success mitigations. Nothing else ships until the foundation is bulletproof. Because if a user runs `squad init` and something goes wrong, they never come back.
 
 ---
 

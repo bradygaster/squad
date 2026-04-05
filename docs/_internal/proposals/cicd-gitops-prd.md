@@ -92,7 +92,7 @@ Beyond v0.8.22, broader systemic issues exist:
 - name: Validate semver format
   run: |
     VERSION="${{ steps.version.outputs.version }}"
-    if ! npx semver "$VERSION" > /dev/null 2>&1; then
+    if ! semver "$VERSION" > /dev/null 2>&1; then
       echo "❌ Invalid semver: $VERSION"
       echo "Only 3-part versions (X.Y.Z) or prerelease (X.Y.Z-tag.N) are valid."
       echo "4-part versions (X.Y.Z.N) are NOT valid semver and will be mangled by npm."

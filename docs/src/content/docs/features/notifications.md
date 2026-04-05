@@ -156,7 +156,7 @@ https://www.npmjs.com/package/mcp-notifications supports Discord, Slack, Teams, 
     ```
 
     * Server Type: [2] stdio
-    * Command: `npx -y mcp-notifications`
+    * Command: `mcp-notifications`
     * Environment Variables: `{ "WEBHOOK_URL": "https://discord.com/api/webhooks/...", "WEBHOOK_TYPE": "discord" }`
 
 #### Add MCP Server in VSCode
@@ -165,7 +165,7 @@ https://www.npmjs.com/package/mcp-notifications supports Discord, Slack, Teams, 
 1. When you run MCP: Add Server, enter the following information
 
     * Type: Command (stdio)
-    * Command: `npx -y mcp-notifications`
+    * Command: `mcp-notifications`
     * Server Id: notifications
     * Configuration target: Global
     * When the mcp.json file in your user profile opens, add the following to the mcp server configuration

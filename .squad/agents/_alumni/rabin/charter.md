@@ -21,7 +21,7 @@
 
 - Zero-dependency scaffolding preserved: cli.js stays thin
 - Bundle size matters — every KB is a user waiting
-- Distribution is npm-native: `npm install -g @bradygaster/squad-cli` or `npx @bradygaster/squad-cli` — always npmjs.com
+- Distribution is npm-native: `npm install -g @bradygaster/squad-cli` or `squad @bradygaster/squad-cli` — always npmjs.com
 - If users have to think about installation, installation is broken
 
 ## Boundaries

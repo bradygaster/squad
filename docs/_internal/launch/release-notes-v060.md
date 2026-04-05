@@ -73,8 +73,8 @@
 ## Migration Instructions
 
 1. **Install**: `npm install @bradygaster/squad@0.6.0`
-2. **Init**: `npx squad init` — generates `squad.config.ts` from existing setup
-3. **Verify**: `npx squad status` — confirms config loads and agents resolve
+2. **Init**: `squad init` — generates `squad.config.ts` from existing setup
+3. **Verify**: `squad status` — confirms config loads and agents resolve
 4. **Test**: Run your project's test suite to confirm no regressions
 5. **Finalize**: Ensure `.squad/` contains all required team state files
 

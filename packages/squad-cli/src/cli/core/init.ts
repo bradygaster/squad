@@ -87,7 +87,7 @@ const INIT_LANDMARKS = [
 function showDeprecationWarning(): void {
   console.log();
   console.log(`${YELLOW}⚠️  DEPRECATION: .ai-team/ is deprecated and will be removed in v1.0.0${RESET}`);
-  console.log(`${YELLOW}    Run 'npx @bradygaster/squad-cli upgrade --migrate-directory' to migrate to .squad/${RESET}`);
+  console.log(`${YELLOW}    Run 'squad upgrade --migrate-directory' to migrate to .squad/${RESET}`);
   console.log(`${YELLOW}    Details: https://github.com/bradygaster/squad/issues/101${RESET}`);
   console.log();
 }

@@ -248,7 +248,7 @@ export async function performUpgrade(
     };
   }
 
-  // In a real implementation this would shell out to npm/npx.
+  // In a real implementation this would shell out to npm.
   // The abstraction allows consumers to supply their own installer.
   return {
     success: true,

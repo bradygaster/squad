@@ -54,8 +54,8 @@ This is the kind of bug you only find by actually publishing. Local `npm run bui
 The v0.8.2 snap was a one-time alignment. Going forward, the SDK and CLI version independently using Changesets:
 
 ```bash
-npx changeset        # describe what changed
-npx changeset version # bump versions
+changeset        # describe what changed
+changeset version # bump versions
 npm publish           # push to registry
 ```
 

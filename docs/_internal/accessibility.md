@@ -51,10 +51,10 @@ All components import `isNoColor()` and conditionally omit `color` props from In
 
 ```bash
 # Run with no color
-NO_COLOR=1 npx squad
+NO_COLOR=1 squad
 
 # Simulate dumb terminal
-TERM=dumb npx squad
+TERM=dumb squad
 ```
 
 ## Color Contrast Guidelines for Contributors

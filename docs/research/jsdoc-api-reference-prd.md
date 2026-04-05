@@ -130,7 +130,7 @@ npm run build (from docs/)
   ↓
 Astro.build()
   ↓
-astro:build:start hook → exec('npx typedoc --config ../typedoc.json')
+astro:build:start hook → exec('typedoc --config ../typedoc.json')
   ↓
 TypeDoc generates markdown → docs/src/content/docs/reference/api/
   ↓
@@ -237,7 +237,7 @@ export default defineConfig({
         'astro:build:start': async () => {
           console.log('Generating TypeDoc API reference...');
           try {
-            execSync('npx typedoc --config ../typedoc.json', { stdio: 'inherit' });
+            execSync('typedoc --config ../typedoc.json', { stdio: 'inherit' });
             console.log('✅ TypeDoc generation complete');
           } catch (error) {
             console.error('❌ TypeDoc generation failed:', error.message);
@@ -291,7 +291,7 @@ Estimated effort: **8–12 hours** across 1–2 sprints.
 - [ ] Document state/io/ parser/serializer functions (@param content, @returns ParsedCharter)
 - [ ] Review StorageProvider interface docs (interface methods, error types, examples)
 - [ ] Audit runtime/ and platform/ for missing @param tags
-- [ ] Run TypeDoc locally: `npx typedoc --config typedoc.json`
+- [ ] Run TypeDoc locally: `typedoc --config typedoc.json`
 - [ ] Review generated markdown for accuracy
 - [ ] Spot-check 5–10 generated pages in browser
 
@@ -306,7 +306,7 @@ Estimated effort: **8–12 hours** across 1–2 sprints.
 **Tasks:**
 - [ ] Install TypeDoc + typedoc-plugin-markdown: `npm install --save-dev typedoc typedoc-plugin-markdown`
 - [ ] Create typedoc.json at repository root (copy from "Configuration" section)
-- [ ] Run TypeDoc locally: `npx typedoc --config typedoc.json`
+- [ ] Run TypeDoc locally: `typedoc --config typedoc.json`
 - [ ] Verify generated markdown in docs/src/content/docs/reference/api/
 - [ ] Add Astro integration hook to docs/astro.config.mjs
 - [ ] Test full Astro build: `npm run build` from docs/
@@ -328,7 +328,7 @@ Estimated effort: **8–12 hours** across 1–2 sprints.
 - [ ] Audit state/io/*.ts — add @param/@return tags to parser/serializer functions
 - [ ] Review StorageProvider interface — enhance JSDoc clarity
 - [ ] Light spot-check of runtime/config.ts, coordinator/coordinator.ts
-- [ ] Regenerate TypeDoc: `npx typedoc --config typedoc.json`
+- [ ] Regenerate TypeDoc: `typedoc --config typedoc.json`
 - [ ] Review generated markdown for new/improved documentation
 
 **Success Criteria:**
