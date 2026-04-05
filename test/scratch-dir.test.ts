@@ -39,7 +39,7 @@ describe('scratchFile', () => {
   it('creates a temp file with prefix and default .tmp extension', () => {
     const filePath = scratchFile(SQUAD_ROOT, 'test-prompt');
     expect(filePath).toContain('.scratch');
-    expect(filePath).toMatch(/test-prompt-\d+-\d+-[0-9a-f]{8}\.tmp$/);
+    expect(filePath).toMatch(/test-prompt-\d+-[0-9a-f]{8}\.tmp$/);
     // File exists only if content was provided — otherwise just returns path
     expect(existsSync(path.dirname(filePath))).toBe(true);
   });
@@ -53,14 +53,14 @@ describe('scratchFile', () => {
 
   it('uses custom extension', () => {
     const filePath = scratchFile(SQUAD_ROOT, 'fleet', '.md');
-    expect(filePath).toMatch(/fleet-\d+-\d+-[0-9a-f]{8}\.md$/);
+    expect(filePath).toMatch(/fleet-\d+-[0-9a-f]{8}\.md$/);
   });
 
   it('generates unique filenames on successive calls', () => {
     const a = scratchFile(SQUAD_ROOT, 'dup', '.txt', 'a');
     const b = scratchFile(SQUAD_ROOT, 'dup', '.txt', 'b');
-    // No delay needed: the monotonic counter inside scratchFile guarantees
-    // unique filenames even when Date.now() returns the same millisecond value.
+    // Random hex suffix from crypto.randomBytes guarantees uniqueness
+    // even when Date.now() returns the same millisecond value.
     expect(a).not.toBe(b);
     expect(existsSync(a)).toBe(true);
     expect(existsSync(b)).toBe(true);
