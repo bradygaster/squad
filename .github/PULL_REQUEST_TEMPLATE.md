@@ -9,6 +9,9 @@
 
 ---
 
+### ⚠️ Quick Check
+- [ ] If SDK/CLI source files changed: completed the applicable Changeset step below (`npx changeset add` / `.changeset/*.md`, direct `CHANGELOG.md` entry for maintainers, or `skip-changelog` label for no user-facing changes)
+
 ### PR Readiness Checklist
 
 > The PR readiness bot will validate these automatically after push.
@@ -17,6 +20,7 @@
 #### Branch & Commit
 - [ ] Branch created from `dev` (not `main`)
 - [ ] Branch is up to date with `dev` (`git fetch upstream && git rebase upstream/dev`)
+- [ ] Verified diff contains only intended changes (`git diff --cached --stat`)
 - [ ] PR is **not** in draft mode (mark ready when checks pass)
 - [ ] Commit history is clean (squash fixups before review)
 

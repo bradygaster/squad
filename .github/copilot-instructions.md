@@ -25,6 +25,13 @@ Before pushing any commit, verify:
 3. `npm run build` — build succeeds with your changes
 4. Commit message references the issue: `Closes #N`
 
+### Branch Contamination Prevention
+- When creating PR branches, always branch from the latest upstream dev: `git fetch upstream && git checkout dev && git rebase upstream/dev && git checkout -b <branch>`
+- NEVER use `git reset --soft` to squash on branches behind dev — it picks up all the delta between your branch and dev, contaminating the commit
+- To squash safely: use `git rebase -i` or amend the single commit with `git commit --amend`
+- Before committing, ALWAYS verify the diff: `git diff --cached --stat` should show ONLY your intended files
+- If you see unexpected files in the diff, unstage them: `git reset HEAD <file>`
+
 ### Red Flags — STOP and Ask
 If you see any of these, STOP immediately and comment on the issue asking for guidance:
 - More than 20 files in your diff
@@ -115,6 +122,29 @@ When reviewing or creating PRs, consult these skills for domain-specific checkli
 - **Security Review:** `.copilot/skills/security-review/SKILL.md` — credentials, injection, workflow permissions, supply chain
 
 Read the relevant skill(s) before submitting or reviewing a PR that touches their domain.
+
+## PR Scope Rules
+
+Scope is determined by PR labels, not by branch name. Continue using the squad branch convention: `squad/{issue-number}-{slug}`.
+- **Repo-health PRs** (label `repo-health`): Only modify `.github/`, `scripts/`, root config files, test files, and docs. NEVER modify files under `packages/*/src/`.
+- **Product PRs** (label `fix` or `feat`): May modify product source code. Must include changesets when required by the rules below.
+- If a task requires both infrastructure and product changes, create separate PRs.
+
+## Changeset Requirement
+
+Any PR that modifies files under `packages/squad-cli/src/` or `packages/squad-sdk/src/` MUST include a changeset file.
+
+- Run `npx changeset add` and select the affected package(s)
+- Or manually create `.changeset/{descriptive-name}.md` with format:
+  ```
+  ---
+  '@bradygaster/squad-cli': patch
+  ---
+  Brief description of the change
+  ```
+- Use `patch` for bug fixes, `minor` for new features, `major` for breaking changes
+- The `changelog-gate` CI check will fail without this
+- Escape hatch: add the `skip-changelog` label (use sparingly)
 
 ## Decisions
 
