@@ -16,6 +16,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
+import { Trace } from 'vscode-jsonrpc';
 
 const storage = new FSStorageProvider();
 
@@ -322,6 +323,7 @@ export function resolveSquadPaths(
   startDir: string = process.cwd(),
   trace?: ResolutionTracer,
 ): ResolvedSquadPaths | null {
+
   const resolvedStart = path.resolve(startDir);
   traceLine(trace, 'resolveSquadPaths', `start: ${resolvedStart}`);
   const resolved = findSquadDir(resolvedStart, trace);
@@ -442,14 +444,16 @@ export function resolveGlobalSquadPath(trace?: ResolutionTracer): string {
  * External state lives under the global squad config:
  * `{globalSquadDir}/projects/{projectKey}/`
  *
- * This is invisible to `git status`, survives branch switches, and never
- * pollutes PRs. The project key is a stable slug derived from the repo name
- * or an explicit key in `.squad/config.json`.
+ * Returns `{globalDir}/projects/{sanitizedKey}/` where `globalDir` is the
+ * platform-specific global config directory (e.g., `%APPDATA%/squad` on Windows,
+ * `~/Library/Application Support/squad` on macOS, `$XDG_CONFIG_HOME/squad` or
+ * `~/.config/squad` on Linux).
  *
  * @param projectKey - Unique project identifier (slug). Falls back to repo basename.
  * @param create - Whether to create the directory if missing (default: true).
  * @param externalStateRoot - Optional override for the base external-state folder.
  * @returns Absolute path to the external state directory.
+ * @throws If projectKey is empty or contains path traversal sequences.
  */
 export function resolveExternalStateDir(
   projectKey: string,
@@ -457,42 +461,83 @@ export function resolveExternalStateDir(
   externalStateRoot?: string,
   trace?: ResolutionTracer,
 ): string {
-  traceLine(trace, 'resolveExternalStateDir', `projectKey=${projectKey}`);
-  const sanitized = projectKey.replace(/[^a-z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
-  traceLine(trace, 'resolveExternalStateDir', `sanitized projectKey=${sanitized}`);
-  if (!sanitized || sanitized === '.' || sanitized === '..' || sanitized.includes('..')) {
-    traceLine(trace, 'resolveExternalStateDir', 'project key validation failed');
-    throw new Error(`Invalid project key: "${projectKey}"`);
+
+   traceLine(trace, 'resolveExternalStateDir', `projectKey=${projectKey}, create=${create}, externalStateRoot=${externalStateRoot ?? '(default)'}`);  
+
+  if (!projectKey || projectKey.includes('..')) {
+      traceLine(trace, 'resolveExternalStateDir', 'invalid project key');
+    throw new Error('Invalid project key');
   }
 
+
+  // Sanitize: replace path separators and unsafe chars with dashes
+  const sanitized = projectKey
+    .replace(/[/\\]/g, '-')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/^-+|-+$/g, '');
+  traceLine(trace, 'resolveExternalStateDir', `sanitized projectKey=${sanitized}`);
+
+  if (!sanitized) {
+    traceLine(trace, 'resolveExternalStateDir', 'invalid project key after sanitization');
+    throw new Error('Invalid project key');
+  }
+
+  // Determine the root for external state: either the override from config or the default global path
   const stateRoot = externalStateRoot && externalStateRoot.trim()
     ? path.resolve(externalStateRoot)
     : path.join(resolveGlobalSquadPath(trace), 'projects');
-  traceLine(trace, 'resolveExternalStateDir', `state root=${stateRoot}`);
-  const stateDir = path.join(stateRoot, sanitized);
-  if (create && !storage.existsSync(stateDir)) {
-    traceLine(trace, 'resolveExternalStateDir', `creating ${stateDir}`);
-    storage.mkdirSync(stateDir, { recursive: true });
-  } else {
-    traceLine(trace, 'resolveExternalStateDir', `using existing/non-created ${stateDir}`);
+  traceLine(trace, 'resolveExternalStateDir', `projects root=${stateRoot}`);
+  
+  const projectsDir = path.join(stateRoot,sanitized);
+  traceLine(trace, 'resolveExternalStateDir', `candidate project state dir=${projectsDir}`);
+
+  if (create && !storage.existsSync(projectsDir)) {
+    traceLine(trace, 'resolveExternalStateDir', `creating ${projectsDir}`);
+    storage.mkdirSync(projectsDir, { recursive: true });
   }
-  traceLine(trace, 'resolveExternalStateDir', `returning ${stateDir}`);
-  return stateDir;
+
+  traceLine(trace, 'resolveExternalStateDir', `returning ${projectsDir}`);
+  return projectsDir;
 }
 
+// ============================================================================
+// External state storage (Issue #792)
+// ============================================================================
+
 /**
- * Derive a stable project key from the repo root path.
- * Uses the basename of the repo directory, lowercased and sanitized.
+ * Derive a stable project key from a project directory path.
+ *
+ * Takes the basename of the path, lowercases it, and replaces unsafe characters
+ * with dashes. Returns `'unknown-project'` if the basename is empty (e.g.,
+ * filesystem root).
+ *
+ * @param projectDir - Absolute path to the project root.
+ * @param 
+ * @returns A sanitized, lowercase project key suitable for use as a directory name.
  */
-export function deriveProjectKey(repoRoot: string, trace?: ResolutionTracer): string {
-  traceLine(trace, 'deriveProjectKey', `repoRoot=${repoRoot}`);
-  const isWindowsPath = repoRoot.includes('\\') || /^[a-zA-Z]:/.test(repoRoot);
-  traceLine(trace, 'deriveProjectKey', `isWindowsPath=${isWindowsPath}`);
-  const basename = isWindowsPath ? path.win32.basename(repoRoot) : path.basename(repoRoot);
-  traceLine(trace, 'deriveProjectKey', `basename=${basename}`);
-  const projectKey = basename.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/^-+|-+$/g, '') || 'unknown-project';
-  traceLine(trace, 'deriveProjectKey', `returning ${projectKey}`);
-  return projectKey;
+
+export function deriveProjectKey(projectDir: string, trace?: ResolutionTracer): string {
+  traceLine(trace, 'deriveProjectKey', `projectDir=${projectDir}`);
+
+  const normalized = projectDir.replace(/\\/g, '/');
+  traceLine(trace, 'deriveProjectKey', `normalized projectDir=${normalized}`);
+
+  const base = path.basename(normalized);
+  traceLine(trace, 'deriveProjectKey', `basename=${base}`);
+
+  
+  if (!base) {
+    traceLine(trace, 'deriveProjectKey', 'basename is empty; returning unknown-project');
+    return 'unknown-project';
+  }
+
+  const sanitized = base
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/^-+|-+$/g, '');
+  traceLine(trace, 'deriveProjectKey', `sanitized projectKey=${sanitized}`);
+
+  return sanitized || 'unknown-project';
 }
 
 /**
@@ -705,70 +750,5 @@ export function scratchFile(squadRoot: string, prefix: string, ext: string = '.t
   return filePath;
 }
 
-// ============================================================================
-// External state storage (Issue #792)
-// ============================================================================
 
-/**
- * Derive a stable project key from a project directory path.
- *
- * Takes the basename of the path, lowercases it, and replaces unsafe characters
- * with dashes. Returns `'unknown-project'` if the basename is empty (e.g.,
- * filesystem root).
- *
- * @param projectDir - Absolute path to the project root.
- * @returns A sanitized, lowercase project key suitable for use as a directory name.
- */
-export function deriveProjectKeyIncoming(projectDir: string): string {
-  const normalized = projectDir.replace(/\\/g, '/');
-  const base = path.basename(normalized);
-  if (!base) return 'unknown-project';
 
-  const sanitized = base
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return sanitized || 'unknown-project';
-}
-
-/**
- * Resolve the external state directory for a project.
- *
- * Returns `{globalDir}/projects/{sanitizedKey}/` where `globalDir` is the
- * platform-specific global config directory (e.g., `%APPDATA%/squad` on Windows,
- * `~/Library/Application Support/squad` on macOS, `$XDG_CONFIG_HOME/squad` or
- * `~/.config/squad` on Linux).
- *
- * Validates the project key to prevent path traversal. Throws if the key
- * is empty or contains `..` sequences.
- *
- * @param projectKey - The project key (from deriveProjectKey or user-supplied).
- * @param create     - Whether to create the directory if it doesn't exist (default: true).
- * @returns Absolute path to the project's external state directory.
- * @throws If projectKey is empty or contains path traversal sequences.
- */
-export function resolveExternalStateDirIncoming(projectKey: string, create: boolean = true): string {
-  if (!projectKey || projectKey.includes('..')) {
-    throw new Error('Invalid project key');
-  }
-
-  // Sanitize: replace path separators and unsafe chars with dashes
-  const sanitized = projectKey
-    .replace(/[/\\]/g, '-')
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  if (!sanitized) {
-    throw new Error('Invalid project key');
-  }
-
-  const globalDir = resolveGlobalSquadPath();
-  const projectsDir = path.join(globalDir, 'projects', sanitized);
-
-  if (create && !storage.existsSync(projectsDir)) {
-    storage.mkdirSync(projectsDir, { recursive: true });
-  }
-
-  return projectsDir;
-}
