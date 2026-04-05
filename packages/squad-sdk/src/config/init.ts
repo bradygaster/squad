@@ -20,6 +20,25 @@ import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
 import { getRoleById } from '../roles/index.js';
 
 // ============================================================================
+// Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
+// ============================================================================
+
+/**
+ * The curated built-in skills shipped on init.
+ * Only these skills are installed — not the full templates/skills/ directory.
+ */
+const MANIFEST_SKILL_NAMES = [
+  'squad-conventions',
+  'error-recovery',
+  'secret-handling',
+  'git-workflow',
+  'session-recovery',
+  'reviewer-protocol',
+  'test-discipline',
+  'agent-collaboration',
+] as const;
+
+// ============================================================================
 // Template Resolution
 // ============================================================================
 
@@ -973,7 +992,13 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     const skillsSrc = join(templatesDir, 'skills');
     const existingSkills = storage.existsSync(skillsDir) ? storage.listSync(skillsDir) : [];
     if (existingSkills.length === 0) {
-      copyRecursiveSync(skillsSrc, skillsDir, storage);
+      storage.mkdirSync(skillsDir, { recursive: true });
+      for (const skillName of MANIFEST_SKILL_NAMES) {
+        const srcSkill = join(skillsSrc, skillName);
+        if (storage.existsSync(srcSkill)) {
+          copyRecursiveSync(srcSkill, join(skillsDir, skillName), storage);
+        }
+      }
       createdFiles.push('.copilot/skills');
     }
   }
