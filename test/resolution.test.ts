@@ -7,7 +7,16 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { resolveSquadInDir, resolveGlobalSquadPath, ensureSquadPath, ensurePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
+import {
+  deriveProjectKey,
+  ensurePersonalSquadDir,
+  ensureSquadPath,
+  resolveExternalStateDir,
+  resolveGlobalSquadPath,
+  resolvePersonalSquadDir,
+  resolveSquadInDir,
+  resolveSquadPaths,
+} from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-resolution-${randomBytes(4).toString('hex')}`);
 
@@ -127,6 +136,48 @@ describe('resolveSquadInDir()', () => {
   });
 });
 
+describe('resolver tracing', () => {
+  beforeEach(() => {
+    if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+    mkdirSync(join(TMP, 'repo', 'src'), { recursive: true });
+    mkdirSync(join(TMP, 'repo', '.git'), { recursive: true });
+    mkdirSync(join(TMP, 'repo', '.squad'), { recursive: true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+  });
+
+  it('emits trace lines for the resolver helpers', () => {
+    vi.stubEnv('HOME', TMP);
+    if (process.platform === 'win32') {
+      vi.stubEnv('APPDATA', join(TMP, 'AppData', 'Roaming'));
+    } else {
+      vi.stubEnv('XDG_CONFIG_HOME', join(TMP, '.config'));
+    }
+
+    const lines: string[] = [];
+    const nestedStart = join(TMP, 'repo', 'src');
+
+    expect(resolveSquadInDir(nestedStart, (line: string) => lines.push(line))).toBe(join(TMP, 'repo', '.squad'));
+    expect(resolveSquadPaths(nestedStart, (line: string) => lines.push(line))?.mode).toBe('local');
+    expect(resolveGlobalSquadPath((line: string) => lines.push(line))).toContain('squad');
+    expect(resolvePersonalSquadDir((line: string) => lines.push(line))).toBeNull();
+    expect(resolveExternalStateDir('trace-project', false, undefined, (line: string) => lines.push(line))).toContain('trace-project');
+    expect(deriveProjectKey(TMP, (line: string) => lines.push(line))).toBeTruthy();
+
+    expect(lines.some((line) => line.includes('[resolveSquadInDir]'))).toBe(true);
+    expect(lines.some((line) => line.includes('[findSquadDir]'))).toBe(true);
+    expect(lines.some((line) => line.includes('[loadDirConfig]'))).toBe(true);
+    expect(lines.some((line) => line.includes('[resolveSquadPaths]'))).toBe(true);
+    expect(lines.some((line) => line.includes('[resolveGlobalSquadPath]'))).toBe(true);
+    expect(lines.some((line) => line.includes('[resolvePersonalSquadDir]'))).toBe(true);
+    expect(lines.some((line) => line.includes('[resolveExternalStateDir]'))).toBe(true);
+    expect(lines.some((line) => line.includes('[deriveProjectKey]'))).toBe(true);
+  });
+});
+
 describe('resolveGlobalSquadPath()', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -199,6 +250,15 @@ describe('ensureSquadPath()', () => {
 });
 
 describe('ensurePersonalSquadDir()', () => {
+  beforeEach(() => {
+    vi.stubEnv('HOME', TMP);
+    if (process.platform === 'win32') {
+      vi.stubEnv('APPDATA', join(TMP, 'AppData', 'Roaming'));
+    } else {
+      vi.stubEnv('XDG_CONFIG_HOME', join(TMP, '.config'));
+    }
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
   });

@@ -20,7 +20,7 @@ import {
   resolveSquadInDir,
   resolveSquadPaths,
 } from '@bradygaster/squad-sdk';
-import { detectSquadDir, resolveWorktreeMainCheckout } from '../core/detect-squad-dir.js';
+import { detectSquadDir } from '../core/detect-squad-dir.js';
 
 const storage = new FSStorageProvider();
 
@@ -52,146 +52,68 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
-function traceResolveSquadInDir(startDir: string): PathDiagnosticsTrace {
-  let current = path.resolve(startDir);
-  const steps: string[] = [`start at ${current}`];
+function captureTrace<T>(
+  method: string,
+  run: (trace: (line: string) => void) => T,
+): PathDiagnosticsTrace {
+  const steps: string[] = [];
 
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const candidate = path.join(current, '.squad');
-    const candidateExists = storage.existsSync(candidate) && storage.isDirectorySync(candidate);
-    steps.push(`checked ${candidate} -> ${candidateExists ? 'found' : 'missing'}`);
-    if (candidateExists) {
-      return { method: 'resolveSquadInDir', result: candidate, steps };
+  try {
+    const result = run((line) => steps.push(line));
+    if (steps.length === 0) {
+      steps.push(`[${method}] no trace emitted`);
     }
-
-    const gitMarker = path.join(current, '.git');
-    if (storage.existsSync(gitMarker)) {
-      if (storage.isDirectorySync(gitMarker)) {
-        steps.push(`encountered ${gitMarker} directory -> stop at repo boundary`);
-        return { method: 'resolveSquadInDir', result: 'null', steps };
-      }
-
-      steps.push(`encountered ${gitMarker} file -> worktree fallback path`);
-      const mainCheckout = resolveWorktreeMainCheckout(current);
-      if (!mainCheckout) {
-        steps.push('could not resolve a main checkout from the worktree pointer');
-        return { method: 'resolveSquadInDir', result: 'null', steps };
-      }
-
-      steps.push(`resolved main checkout to ${mainCheckout}`);
-      const mainCandidate = path.join(mainCheckout, '.squad');
-      const mainExists = storage.existsSync(mainCandidate) && storage.isDirectorySync(mainCandidate);
-      steps.push(`checked ${mainCandidate} -> ${mainExists ? 'found fallback' : 'missing'}`);
-      return { method: 'resolveSquadInDir', result: mainExists ? mainCandidate : 'null', steps };
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) {
-      steps.push(`reached filesystem root at ${current}`);
-      return { method: 'resolveSquadInDir', result: 'null', steps };
-    }
-
-    steps.push(`moving up to ${parent}`);
-    current = parent;
+    return {
+      method,
+      result: formatValue(result),
+      steps,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    steps.push(`[${method}] threw: ${message}`);
+    return {
+      method,
+      result: `error: ${message}`,
+      steps,
+    };
   }
+}
+
+function traceResolveSquadInDir(startDir: string): PathDiagnosticsTrace {
+  return captureTrace('resolveSquadInDir', (trace) => resolveSquadInDir(startDir, trace));
+}
+
+function traceLoadDirConfig(markerDir: string | null): PathDiagnosticsTrace {
+  if (!markerDir) {
+    return {
+      method: 'loadDirConfig',
+      result: 'null',
+      steps: ['[loadDirConfig] no squad marker directory available'],
+    };
+  }
+  return captureTrace('loadDirConfig', (trace) => loadDirConfig(markerDir, trace));
 }
 
 function traceResolveSquadPaths(startDir: string): PathDiagnosticsTrace {
-  const steps: string[] = [`start at ${path.resolve(startDir)}`];
-  const markerDir = resolveSquadInDir(startDir);
-  const resolved = resolveSquadPaths(startDir);
+  return captureTrace('resolveSquadPaths', (trace) => resolveSquadPaths(startDir, trace));
+}
 
-  if (!markerDir) {
-    steps.push('no .squad/ marker found, so resolveSquadPaths() returned null');
-    return { method: 'resolveSquadPaths', result: 'null', steps };
-  }
-
-  steps.push(`marker directory resolved to ${markerDir}`);
-
-  const config = loadDirConfig(markerDir);
-  if (!config) {
-    steps.push('no config.json found -> local mode');
-  } else {
-    steps.push(`loaded config.json -> ${JSON.stringify(config)}`);
-    if (config.stateBackend === 'external') {
-      const projectRoot = path.resolve(markerDir, '..');
-      const projectKey = config.projectKey || deriveProjectKey(projectRoot);
-      const externalRoot = config.externalStateRoot
-        ? path.resolve(projectRoot, config.externalStateRoot)
-        : path.join(resolveGlobalSquadPath(), 'projects');
-      steps.push(`stateBackend=external -> projectKey=${projectKey}`);
-      steps.push(`external root resolved to ${externalRoot}`);
-      steps.push(`external state dir = ${resolveExternalStateDir(projectKey, false, externalRoot)}`);
-    } else if (config.teamRoot) {
-      const projectRoot = path.resolve(markerDir, '..');
-      steps.push(`teamRoot=${config.teamRoot}`);
-      steps.push(`teamDir resolved to ${path.resolve(projectRoot, config.teamRoot)}`);
-    }
-  }
-
-  if (!resolved) {
-    steps.push('resolveSquadPaths() returned null');
-    return { method: 'resolveSquadPaths', result: 'null', steps };
-  }
-
-  steps.push(`mode=${resolved.mode}`);
-  steps.push(`projectDir=${resolved.projectDir}`);
-  steps.push(`teamDir=${resolved.teamDir}`);
-  steps.push(`personalDir=${resolved.personalDir ?? 'null'}`);
-  return {
-    method: 'resolveSquadPaths',
-    result: JSON.stringify({
-      mode: resolved.mode,
-      projectDir: resolved.projectDir,
-      teamDir: resolved.teamDir,
-      personalDir: resolved.personalDir,
-    }),
-    steps,
-  };
+function traceDeriveProjectKey(projectRoot: string): PathDiagnosticsTrace {
+  return captureTrace('deriveProjectKey', (trace) => deriveProjectKey(projectRoot, trace));
 }
 
 function traceResolveGlobalSquadPath(): PathDiagnosticsTrace {
-  const steps: string[] = [`platform=${process.platform}`];
-
-  if (process.platform === 'win32') {
-    steps.push(`APPDATA=${process.env['APPDATA'] ?? '(unset)'}`);
-    steps.push(`LOCALAPPDATA=${process.env['LOCALAPPDATA'] ?? '(unset)'}`);
-  } else if (process.platform === 'darwin') {
-    steps.push(`HOME=${process.env['HOME'] ?? '(unset)'}`);
-    steps.push('using ~/Library/Application Support as the base config directory');
-  } else {
-    steps.push(`XDG_CONFIG_HOME=${process.env['XDG_CONFIG_HOME'] ?? '(unset)'}`);
-    steps.push(`HOME=${process.env['HOME'] ?? '(unset)'}`);
-  }
-
-  const result = resolveGlobalSquadPath();
-  steps.push(`returned ${result}`);
-  return { method: 'resolveGlobalSquadPath', result, steps };
+  return captureTrace('resolveGlobalSquadPath', (trace) => resolveGlobalSquadPath(trace));
 }
 
-function traceResolvePersonalSquadDir(globalDir: string): PathDiagnosticsTrace {
-  const personalCandidate = path.join(globalDir, 'personal-squad');
-  const steps: string[] = [
-    `SQUAD_NO_PERSONAL=${process.env['SQUAD_NO_PERSONAL'] ?? '(unset)'}`,
-    `checked ${personalCandidate} -> ${storage.existsSync(personalCandidate) ? 'exists' : 'missing'}`,
-  ];
-  const result = resolvePersonalSquadDir();
-  steps.push(`returned ${result ?? 'null'}`);
-  return { method: 'resolvePersonalSquadDir', result: result ?? 'null', steps };
+function traceResolvePersonalSquadDir(): PathDiagnosticsTrace {
+  return captureTrace('resolvePersonalSquadDir', (trace) => resolvePersonalSquadDir(trace));
 }
 
 function traceResolveExternalStateDir(projectKey: string, externalStateRoot?: string): PathDiagnosticsTrace {
-  const steps: string[] = [`projectKey=${projectKey}`];
-  if (externalStateRoot) {
-    steps.push(`using custom externalStateRoot=${externalStateRoot}`);
-  } else {
-    steps.push(`using default external root ${path.join(resolveGlobalSquadPath(), 'projects')}`);
-  }
-
-  const result = resolveExternalStateDir(projectKey, false, externalStateRoot);
-  steps.push(`returned ${result}`);
-  return { method: 'resolveExternalStateDir', result, steps };
+  return captureTrace('resolveExternalStateDir', (trace) =>
+    resolveExternalStateDir(projectKey, false, externalStateRoot, trace),
+  );
 }
 
 export function collectPathDiagnostics(
@@ -240,9 +162,11 @@ export function collectPathDiagnostics(
   const traces = options.verbose
     ? [
         traceResolveSquadInDir(resolvedStart),
+        traceLoadDirConfig(markerDir),
         traceResolveSquadPaths(resolvedStart),
+        traceDeriveProjectKey(projectRoot),
         traceResolveGlobalSquadPath(),
-        traceResolvePersonalSquadDir(globalDir),
+        traceResolvePersonalSquadDir(),
         traceResolveExternalStateDir(projectKey, externalStateRoot),
       ]
     : [];

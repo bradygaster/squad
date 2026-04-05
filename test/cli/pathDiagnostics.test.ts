@@ -42,7 +42,12 @@ describe('CLI: pathDiagnostics command', () => {
 
     expect(report.traces.length).toBeGreaterThan(0);
     expect(report.traces.some((trace) => trace.method === 'resolveSquadInDir')).toBe(true);
-    expect(report.traces.find((trace) => trace.method === 'resolveSquadInDir')?.steps.join('\n')).toContain('checked');
+    expect(report.traces.some((trace) => trace.method === 'loadDirConfig')).toBe(true);
+    expect(report.traces.some((trace) => trace.method === 'resolveSquadPaths')).toBe(true);
+    expect(report.traces.some((trace) => trace.method === 'resolveGlobalSquadPath')).toBe(true);
+    expect(report.traces.some((trace) => trace.method === 'resolvePersonalSquadDir')).toBe(true);
+    expect(report.traces.some((trace) => trace.method === 'resolveExternalStateDir')).toBe(true);
+    expect(report.traces.find((trace) => trace.method === 'resolveSquadInDir')?.steps.join('\n')).toContain('[resolveSquadInDir] checked');
   });
 
   it('prints summary and verbose analysis to stdout', async () => {
@@ -56,5 +61,7 @@ describe('CLI: pathDiagnostics command', () => {
     expect(output).toContain('Path Diagnostics');
     expect(output).toContain('resolveSquadInDir(startDir)');
     expect(output).toContain('Verbose analysis');
+    expect(output).toContain('[resolveGlobalSquadPath]');
+    expect(output).toContain('[resolveExternalStateDir]');
   });
 });
