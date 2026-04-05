@@ -324,7 +324,7 @@ async function main(): Promise<void> {
     const selfUpgrade = args.includes('--self');
     const forceUpgrade = args.includes('--force');
     const insider = args.includes('--insider');
-    const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
+    const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : getSquadStartDir();
     
     // Warn when --insider is used without --self (it has no effect on project upgrades)
     if (insider && !selfUpgrade) {
@@ -361,14 +361,14 @@ async function main(): Promise<void> {
     const fromIdx = args.indexOf('--from');
     const from = (fromIdx !== -1 && args[fromIdx + 1]) ? args[fromIdx + 1] : undefined;
     const dryRun = args.includes('--dry-run');
-    await runMigrate(process.cwd(), { to, from: from as 'ai-team' | undefined, dryRun });
+    await runMigrate(getSquadStartDir(), { to, from: from as 'ai-team' | undefined, dryRun });
     return;
   }
 
   // --health flag: show watch instance status and exit
   if (cmd === 'watch' && args.includes('--health')) {
     const { getWatchHealth } = await import('./cli/commands/watch/health.js');
-    console.log(getWatchHealth(process.cwd()));
+    console.log(getWatchHealth(getSquadStartDir()));
     return;
   }
 
@@ -445,7 +445,7 @@ async function main(): Promise<void> {
     }
 
     // Load config: .squad/config.json merged with CLI overrides
-    const config = loadWatchConfig(process.cwd(), {
+    const config = loadWatchConfig(getSquadStartDir(), {
       interval,
       execute,
       maxConcurrent,
@@ -477,7 +477,7 @@ async function main(): Promise<void> {
       console.log(`[verbose] ⚠️ Positional args ignored by watch: "${positionalArgs.join(' ')}". Use --execute to process issues.`);
     }
 
-    await runWatch(process.cwd(), config);
+    await runWatch(getSquadStartDir(), config);
     return;
   }
 
@@ -522,7 +522,7 @@ async function main(): Promise<void> {
       const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
       const storage = new FSStorageProvider();
       const pathMod = await import('node:path');
-      const absPath = pathMod.default.resolve(process.cwd(), filePath);
+      const absPath = pathMod.default.resolve(getSquadStartDir(), filePath);
       if (storage.existsSync(absPath)) {
         console.log(`⚠️  ${filePath} already exists. Remove it first to regenerate.`);
       } else {
@@ -565,7 +565,7 @@ async function main(): Promise<void> {
       if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
     }
 
-    await runLoop(process.cwd(), {
+    await runLoop(getSquadStartDir(), {
       filePath,
       interval,
       timeout,
@@ -595,7 +595,7 @@ async function main(): Promise<void> {
     const { runExport } = await import('./cli/commands/export.js');
     const outIdx = args.indexOf('--out');
     const outPath = (outIdx !== -1 && args[outIdx + 1]) ? args[outIdx + 1] : undefined;
-    await runExport(process.cwd(), outPath);
+    await runExport(getSquadStartDir(), outPath);
     return;
   }
 
@@ -606,13 +606,13 @@ async function main(): Promise<void> {
       fatal('Usage: squad import <file> [--force]');
     }
     const hasForce = args.includes('--force');
-    await runImport(process.cwd(), importFile, hasForce);
+    await runImport(getSquadStartDir(), importFile, hasForce);
     return;
   }
 
   if (cmd === 'plugin') {
     const { runPlugin } = await import('./cli/commands/plugin.js');
-    await runPlugin(process.cwd(), args.slice(1));
+    await runPlugin(getSquadStartDir(), args.slice(1));
     return;
   }
 
@@ -620,7 +620,7 @@ async function main(): Promise<void> {
     const { runCopilot } = await import('./cli/commands/copilot.js');
     const isOff = args.includes('--off');
     const autoAssign = args.includes('--auto-assign');
-    await runCopilot(process.cwd(), { off: isOff, autoAssign });
+    await runCopilot(getSquadStartDir(), { off: isOff, autoAssign });
     return;
   }
 
@@ -697,13 +697,13 @@ async function main(): Promise<void> {
     const hasCheck = args.includes('--check');
     const hasDryRun = args.includes('--dry-run');
     const hasWatch = args.includes('--watch');
-    await runBuild(process.cwd(), { check: hasCheck, dryRun: hasDryRun, watch: hasWatch });
+    await runBuild(getSquadStartDir(), { check: hasCheck, dryRun: hasDryRun, watch: hasWatch });
     return;
   }
 
   if (cmd === 'subsquads' || cmd === 'workstreams' || cmd === 'streams') {
     const { runSubSquads } = await import('./cli/commands/streams.js');
-    await runSubSquads(process.cwd(), args.slice(1));
+    await runSubSquads(getSquadStartDir(), args.slice(1));
     return;
   }
 
@@ -717,7 +717,7 @@ async function main(): Promise<void> {
     const customCmd = (cmdIdx !== -1 && args[cmdIdx + 1]) ? args[cmdIdx + 1] : undefined;
     const squadFlags = ['start', '--tunnel', '--port', port.toString(), '--command', customCmd || ''].filter(Boolean);
     const copilotArgs = args.slice(1).filter(a => !squadFlags.includes(a));
-    await runStart(process.cwd(), { tunnel: hasTunnel, port, copilotArgs, command: customCmd });
+    await runStart(getSquadStartDir(), { tunnel: hasTunnel, port, copilotArgs, command: customCmd });
     return;
   }
 
@@ -745,13 +745,13 @@ async function main(): Promise<void> {
 
   if (cmd === 'consult') {
     const { runConsult } = await import('./cli/commands/consult.js');
-    await runConsult(process.cwd(), args.slice(1));
+    await runConsult(getSquadStartDir(), args.slice(1));
     return;
   }
 
   if (cmd === 'extract') {
     const { runExtract } = await import('./cli/commands/extract.js');
-    await runExtract(process.cwd(), args.slice(1));
+    await runExtract(getSquadStartDir(), args.slice(1));
     return;
   }
 
@@ -770,7 +770,7 @@ async function main(): Promise<void> {
     if (!teamPath) {
       fatal('Usage: squad link <team-repo-path>');
     }
-    runLink(process.cwd(), teamPath);
+    runLink(getSquadStartDir(), teamPath);
     return;
   }
 
@@ -781,7 +781,7 @@ async function main(): Promise<void> {
     const port = (portIdx !== -1 && args[portIdx + 1]) ? parseInt(args[portIdx + 1]!, 10) : 0;
     const pathIdx = args.indexOf('--path');
     const rcPath = (pathIdx !== -1 && args[pathIdx + 1]) ? args[pathIdx + 1] : undefined;
-    await runRC(rcPath || process.cwd(), { tunnel: hasTunnel, port });
+    await runRC(rcPath || getSquadStartDir(), { tunnel: hasTunnel, port });
     return;
   }
 
@@ -821,20 +821,20 @@ async function main(): Promise<void> {
   if (cmd === 'schedule') {
     const { runSchedule } = await import('./cli/commands/schedule.js');
     const subcommand = args[1] || 'list';
-    await runSchedule(process.cwd(), subcommand, args.slice(2));
+    await runSchedule(getSquadStartDir(), subcommand, args.slice(2));
     return;
   }
 
   if (cmd === 'personal') {
     const { runPersonal } = await import('./cli/commands/personal.js');
     const subcommand = args[1] || 'list';
-    await runPersonal(process.cwd(), subcommand, args.slice(2));
+    await runPersonal(getSquadStartDir(), subcommand, args.slice(2));
     return;
   }
 
   if (cmd === 'cast') {
     const { runCast } = await import('./cli/commands/cast.js');
-    await runCast(process.cwd());
+    await runCast(getSquadStartDir());
     return;
   }
 
@@ -858,13 +858,13 @@ async function main(): Promise<void> {
 
   if (cmd === 'economy') {
     const { runEconomy } = await import('./cli/commands/economy.js');
-    await runEconomy(process.cwd(), args.slice(1));
+    await runEconomy(getSquadStartDir(), args.slice(1));
     return;
   }
 
   if (cmd === 'config') {
     const { runConfig } = await import('./cli/commands/config.js');
-    await runConfig(process.cwd(), args.slice(1));
+    await runConfig(getSquadStartDir(), args.slice(1));
     return;
   }
 
