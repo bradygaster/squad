@@ -49,14 +49,16 @@ test.describe('Docs sidebar navigation', () => {
     }, TARGET);
 
     await page.waitForURL(new RegExp(TARGET.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    await page.waitForTimeout(100);
+
+    await expect.poll(async () => page.evaluate(() => {
+      const sidebar = document.getElementById('sidebar');
+      if (!sidebar) throw new Error('Sidebar not found');
+      return sidebar.scrollTop;
+    }), { timeout: 5000 }).toBeGreaterThan(initialSidebarScroll - 10);
 
     const restoredSidebarScroll = await page.evaluate(() => {
       const sidebar = document.getElementById('sidebar');
-      if (!sidebar) {
-        throw new Error('Sidebar not found');
-      }
-
+      if (!sidebar) throw new Error('Sidebar not found');
       return sidebar.scrollTop;
     });
 

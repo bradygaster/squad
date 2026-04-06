@@ -77,11 +77,24 @@ const base = import.meta.env.BASE_URL;
     overlay?.classList.add('hidden');
   }
 
-  function saveSidebarScroll() {
+  let lastScrollTop = 0;
+  let rafPending = false;
+
+  function trackSidebarScroll() {
     const { sidebar } = getSidebarElements();
     if (!sidebar) return;
 
-    sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(sidebar.scrollTop));
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => {
+        lastScrollTop = sidebar.scrollTop;
+        rafPending = false;
+      });
+    }
+  }
+
+  function flushSidebarScroll() {
+    sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(lastScrollTop));
   }
 
   function restoreSidebarScroll() {
@@ -95,6 +108,7 @@ const base = import.meta.env.BASE_URL;
     if (Number.isNaN(scrollTop)) return false;
 
     sidebar.scrollTop = scrollTop;
+    lastScrollTop = scrollTop;
     return true;
   }
 
@@ -103,7 +117,7 @@ const base = import.meta.env.BASE_URL;
     if (!sidebar) return;
 
     if (!sidebar.dataset.scrollPersistenceBound) {
-      sidebar.addEventListener('scroll', saveSidebarScroll, { passive: true });
+      sidebar.addEventListener('scroll', trackSidebarScroll, { passive: true });
       sidebar.dataset.scrollPersistenceBound = 'true';
     }
 
@@ -122,9 +136,10 @@ const base = import.meta.env.BASE_URL;
   }
 
   if (!window.__squadDocsSidebarStateSetup) {
+    document.addEventListener('astro:before-swap', flushSidebarScroll);
     document.addEventListener('astro:after-swap', initSidebar);
     document.addEventListener('astro:page-load', initSidebar);
-    window.addEventListener('pagehide', saveSidebarScroll);
+    window.addEventListener('pagehide', flushSidebarScroll);
     window.__squadDocsSidebarStateSetup = true;
   }
 
