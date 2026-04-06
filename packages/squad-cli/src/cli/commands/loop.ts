@@ -26,7 +26,12 @@ import { parseRoster } from '@bradygaster/squad-sdk/ralph/triage';
 // ── Types ────────────────────────────────────────────────────────
 
 export interface LoopFrontmatter {
-  /** Safety gate — must be explicitly set to true. */
+  /**
+   * Onboarding-mode switch, not a safety gate.
+   * - `configured: false` (or missing) → run the onboarding flow
+   * - `configured: true` → run the normal loop flow
+   * Do not reintroduce an early-return guard based on this flag.
+   */
   configured: boolean;
   /** Minutes between cycles (default: 10). */
   interval: number;
@@ -283,11 +288,12 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   const content = readFileSync(loopFilePath, 'utf-8');
   const { frontmatter, prompt } = parseLoopFile(content);
 
-  if (!frontmatter.configured) {
+  const isOnboarding = !frontmatter.configured;
+
+  if (isOnboarding) {
     console.log(
-      `\n⚠️  loop.md found but not configured. Set ${BOLD}configured: true${RESET} in the frontmatter to enable the loop.`,
+      `\n${GREEN}🚀${RESET} ${BOLD}Onboarding mode${RESET} — loop.md ${BOLD}configured${RESET} is ${BOLD}not true${RESET} (false or missing). Running onboarding flow.\n`,
     );
-    return;
   }
 
   if (!prompt) {
@@ -297,7 +303,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   // CLI overrides take precedence over frontmatter
   const interval = options.interval ?? frontmatter.interval;
   const timeoutMinutes = options.timeout ?? frontmatter.timeout;
-  const description = frontmatter.description ?? 'Squad Loop';
+  const description = frontmatter.description ?? (isOnboarding ? 'Squad Onboarding' : 'Squad Loop');
 
   if (isNaN(interval) || interval < 1) {
     fatal('interval must be a positive number of minutes');

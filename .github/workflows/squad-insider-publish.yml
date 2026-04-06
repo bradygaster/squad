@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +41,14 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Run tests
-        run: npm test
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run tests (skip docs-build — needs Docker unavailable on publish runner)
+        run: npx vitest run --exclude 'test/docs-build.test.ts'
 
   # CI Hardening: npm registry health check (item 10)
   # Fail early if registry is unreachable instead of failing mid-publish.
@@ -81,7 +87,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 

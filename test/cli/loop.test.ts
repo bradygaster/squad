@@ -312,14 +312,19 @@ describe('runLoop', () => {
     );
   });
 
-  it('returns early with warning when configured is false', async () => {
+  it('runs in onboarding mode when configured is false', async () => {
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readFileSync).mockReturnValue(unconfiguredLoopMd as any);
+    vi.mocked(parseRoster).mockReturnValue([]);
+    // Throw sentinel in createDefaultRegistry to halt execution after onboarding log
+    vi.mocked(createDefaultRegistry).mockImplementation(() => {
+      throw new Error('test-sentinel: stop after preflight');
+    });
 
-    await runLoop(DEST, defaultOptions);
+    await expect(runLoop(DEST, { ...defaultOptions, agentCmd: 'custom-agent' })).rejects.toThrow('test-sentinel');
 
     expect(console.log).toHaveBeenCalledWith(
-      expect.stringContaining('not configured'),
+      expect.stringContaining('Onboarding mode'),
     );
   });
 
