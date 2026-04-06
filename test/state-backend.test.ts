@@ -89,7 +89,7 @@ describe('resolveStateBackend()', () => {
     expect(resolveStateBackend(squadDir(), TMP).name).toBe('worktree');
   });
   it('falls back on malformed JSON', () => { writeFileSync(join(squadDir(), 'config.json'), 'bad'); expect(resolveStateBackend(squadDir(), TMP).name).toBe('worktree'); });
-  it('external returns worktree stub', () => { expect(resolveStateBackend(squadDir(), TMP, 'external').name).toBe('worktree'); });
+  it('external returns external backend', () => { expect(resolveStateBackend(squadDir(), TMP, 'external').name).toBe('external'); });
   it('all valid types accepted', () => {
     for (const t of ['worktree', 'external', 'git-notes', 'orphan'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
   });

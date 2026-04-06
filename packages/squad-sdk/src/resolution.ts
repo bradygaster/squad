@@ -354,7 +354,7 @@ export function resolveSquadPaths(
     traceLine(trace, 'resolveSquadPaths', `resolved external projectDir/teamDir=${externalDir}`);
     return {
       mode: 'remote',
-      projectDir: cwd(),
+      projectDir: externalDir,
       teamDir: externalDir,
       personalDir,
       config,

@@ -60,8 +60,11 @@ export class ExternalBackend implements StateBackend {
     const config = resolution.loadDirConfig(resolvedSquadDir);
     const projectRoot = path.resolve(resolvedSquadDir, '..');
     const projectKey = config?.projectKey || resolution.deriveProjectKey(projectRoot);
+    const externalRoot = config?.externalStateRoot
+      ? path.resolve(projectRoot, config.externalStateRoot)
+      : undefined;
 
-    this.root = resolution.resolveExternalStateDir(projectKey, true);
+    this.root = resolution.resolveExternalStateDir(projectKey, true, externalRoot);
   }
 
   read(relativePath: string): string | undefined {
