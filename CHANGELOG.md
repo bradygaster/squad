@@ -33,6 +33,10 @@ All notable changes to this project will be documented in this file.
 - **Contract test suite** (#640) — provider conformance tests ensuring all implementations satisfy the StorageProvider interface
 - **Sample projects** (#640) — `storage-provider-azure` and `storage-provider-sqlite` in `samples/`
 
+### Added — APM Integration
+- `squad skill publish/install/list` commands for APM (Agent Package Manager) integration (#824)
+- `squad init` now generates `apm.yml` at project root
+
 ## [0.9.0] - 2026-03-23
 
 ### Added — Personal Squad Governance Layer
