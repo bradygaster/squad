@@ -17,26 +17,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ─── Bootstrap Protection (BLOCKING) ────────────────────────────────
-  bootstrap-protection:
-    name: Bootstrap Protection
+  # ═══════════════════════════════════════════════════════════════════════
+  # Consolidated repo-health job — runs all checks on a single runner.
+  # Each check is a step with if: always() so all checks run even if
+  # one fails. Saves ~4 runner boots per PR push vs separate jobs.
+  # ═══════════════════════════════════════════════════════════════════════
+  repo-health:
+    name: Repo Health
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: |
-            scripts/check-bootstrap-deps.mjs
-          sparse-checkout-cone-mode: false
+          fetch-depth: 0
+
       - name: Fetch PR head (data only — not executed)
-        run: git fetch origin ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch origin ${{ github.event.pull_request.head.sha }}
+          git fetch origin dev --quiet
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check bootstrap dependencies
+
+      # ─── Bootstrap Protection (BLOCKING) ──────────────────────────────
+      - name: "Check: Bootstrap Protection"
         id: bootstrap
+        if: always()
         run: |
+          echo "## 🔒 Bootstrap Protection" >> $GITHUB_STEP_SUMMARY
           set +e
           OUTPUT=$(node scripts/check-bootstrap-deps.mjs --ref ${{ github.event.pull_request.head.sha }} 2>&1)
           EXIT_CODE=$?
@@ -45,142 +55,127 @@ jobs:
           echo "$OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "✅ Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$OUTPUT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           exit $EXIT_CODE
 
-  # ─── Diff Size Guard (WARNING) ─────────────────────────────────────
-  diff-guard:
-    name: Diff Size Guard
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    if: github.actor != 'dependabot[bot]'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Fetch PR head (data only — not executed)
-        run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - name: Check for likely contamination
+      # ─── Diff Size Guard (WARNING) ────────────────────────────────────
+      - name: "Check: Diff Size Guard"
+        if: always()
         run: |
-          git fetch origin dev --quiet
+          echo "## 📏 Diff Size Guard" >> $GITHUB_STEP_SUMMARY
           FILE_COUNT=$(git diff --name-only origin/dev...${{ github.event.pull_request.head.sha }} | wc -l)
           COMMIT_COUNT=$(git rev-list --count origin/dev..${{ github.event.pull_request.head.sha }})
-
-          # Heuristic: if a single-commit PR touches more than 30 files, it's likely contaminated
           if [ "$COMMIT_COUNT" -le 2 ] && [ "$FILE_COUNT" -gt 30 ]; then
             echo "::warning::⚠️ This PR has $COMMIT_COUNT commit(s) but touches $FILE_COUNT files."
             echo "::warning::This may indicate branch contamination from broad staging (--all or .) on a stale branch."
             echo "::warning::Please verify all changed files are intentional: git diff --name-only origin/dev...${{ github.event.pull_request.head.sha }}"
+            echo "⚠️ Warning: $COMMIT_COUNT commit(s) but $FILE_COUNT file(s) — possible contamination" >> $GITHUB_STEP_SUMMARY
           else
-            echo "✅ Diff looks proportional: $COMMIT_COUNT commit(s), $FILE_COUNT file(s)."
+            echo "✅ Diff looks proportional: $COMMIT_COUNT commit(s), $FILE_COUNT file(s)." >> $GITHUB_STEP_SUMMARY
           fi
 
-  # ─── Squad File Leakage (WARNING) ───────────────────────────────────
-  squad-leakage:
-    name: Squad File Leakage
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    if: github.actor != 'dependabot[bot]'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Fetch PR head (data only — not executed)
-        run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Detect .squad/ leakage
+      # ─── Squad File Leakage (WARNING) ─────────────────────────────────
+      - name: "Check: Squad File Leakage"
         id: leakage
+        if: always()
         run: |
-          git fetch origin dev --quiet
+          echo "## 🔍 Squad File Leakage" >> $GITHUB_STEP_SUMMARY
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "(no output)" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           OUTPUT=$(node scripts/check-squad-leakage.mjs origin/dev ${{ github.event.pull_request.head.sha }} 2>&1)
           echo "$OUTPUT"
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      - name: Comment on leakage
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$OUTPUT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: "Comment: Leakage"
         if: always()
         uses: actions/github-script@v7
+        env:
+          LEAKAGE_OUTPUT: ${{ steps.leakage.outputs.result }}
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
             await run({
               github,
               context,
-              output: `${{ steps.leakage.outputs.result }}`,
+              output: process.env.LEAKAGE_OUTPUT ?? '',
               job: 'leakage',
             });
 
-  # ─── Architectural Review (INFORMATIONAL) ───────────────────────────
-  architectural-review:
-    name: Architectural Review — Structure & Design Rules
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: github.actor != 'dependabot[bot]'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Fetch PR head (data only — not executed)
-        run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Run architectural review
+      # ─── Architectural Review (INFORMATIONAL) ─────────────────────────
+      - name: "Check: Architectural Review"
         id: arch
+        if: always()
         run: |
-          git fetch origin dev --quiet
+          echo "## 🏗️ Architectural Review" >> $GITHUB_STEP_SUMMARY
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "(no output)" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           OUTPUT=$(node scripts/architectural-review.mjs origin/dev ${{ github.event.pull_request.head.sha }} 2>&1)
           echo "$OUTPUT"
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      - name: Comment on findings
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$OUTPUT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: "Comment: Architectural Review"
         if: always()
         uses: actions/github-script@v7
+        env:
+          ARCH_OUTPUT: ${{ steps.arch.outputs.result }}
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
             await run({
               github,
               context,
-              output: `${{ steps.arch.outputs.result }}`,
+              output: process.env.ARCH_OUTPUT ?? '',
               job: 'architectural',
             });
 
-  # ─── Security Review (INFORMATIONAL) ────────────────────────────────
-  security-review:
-    name: Security Review — Permissions & Secrets
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: github.actor != 'dependabot[bot]'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Fetch PR head (data only — not executed)
-        run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Run security review
+      # ─── Security Review (INFORMATIONAL) ──────────────────────────────
+      - name: "Check: Security Review"
         id: security
+        if: always()
         run: |
-          git fetch origin dev --quiet
+          echo "## 🔐 Security Review" >> $GITHUB_STEP_SUMMARY
+          echo "result<<EOF" >> $GITHUB_OUTPUT
+          echo "(no output)" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           OUTPUT=$(node scripts/security-review.mjs origin/dev ${{ github.event.pull_request.head.sha }} 2>&1)
           echo "$OUTPUT"
           echo "result<<EOF" >> $GITHUB_OUTPUT
           echo "$OUTPUT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-      - name: Comment on findings
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$OUTPUT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: "Comment: Security Review"
         if: always()
         uses: actions/github-script@v7
+        env:
+          SECURITY_OUTPUT: ${{ steps.security.outputs.result }}
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
             await run({
               github,
               context,
-              output: `${{ steps.security.outputs.result }}`,
+              output: process.env.SECURITY_OUTPUT ?? '',
               job: 'security',
             });

@@ -3,7 +3,9 @@ name: Squad PR Readiness
 on:
   pull_request_target:
     branches: [dev, main, insider]
-    types: [opened, synchronize, reopened, edited, ready_for_review]
+    # opened + synchronize + reopened removed: redundant with workflow_run
+    # trigger (Squad CI fires on those events, then workflow_run fires PR readiness)
+    types: [edited, ready_for_review]
   workflow_run:
     workflows: ["Squad CI"]
     types: [completed]
