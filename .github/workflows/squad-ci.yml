@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 3
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,6 +44,12 @@ jobs:
             echo "docs=true" >> "$GITHUB_OUTPUT"
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Detect non-docs changes (code, config, workflows, etc.)
+          if echo "$CHANGED" | grep -qvE '^(docs/|README\.md|\.markdownlint|\.cspell|cspell\.json)'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
           fi
 
   docs-quality:
@@ -80,6 +87,13 @@ jobs:
         run: npx cspell --no-progress --dot "docs/src/content/**/*.md" "README.md"
 
   test:
+    needs: changes
+    # Fail-open: run test if changes job failed (don't let path filter break testing)
+    if: >-
+      always() && !cancelled()
+      && (github.event_name == 'push'
+          || needs.changes.result != 'success'
+          || needs.changes.outputs.code == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -205,15 +219,20 @@ jobs:
   # to the label sync config to auto-create them in new repos.
   # ════════════════════════════════════════════════════════════════════════
 
-  changelog-gate:
-    # ── Local testing ──────────────────────────────────────────────────────
-    # To test this gate locally:
-    #   1. Identify the merge-base: git merge-base dev HEAD
-    #   2. Check for SDK/CLI source changes:
-    #      git diff --name-only <merge-base>...HEAD | grep -E '^packages/squad-(sdk|cli)/src/'
-    #   3. If any match, verify an Added/Modified .changeset/*.md (excluding README) OR CHANGELOG.md:
-    # ──────────────────────────────────────────────────────────────────────
-    if: github.event_name == 'pull_request'
+  # ═══════════════════════════════════════════════════════════════════════
+  # Consolidated policy gates — runs 4 lightweight checks on a single
+  # runner. Saves ~3 runner boots per PR push vs separate jobs.
+  # Individual gates: changelog-gate, changelog-protection,
+  # workspace-integrity, prerelease-version-guard.
+  # ═══════════════════════════════════════════════════════════════════════
+  policy-gates:
+    name: Policy Gates
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request'
+      && !cancelled()
+      && (needs.changes.outputs.code == 'true'
+          || needs.changes.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -221,115 +240,174 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check feature flag
-        id: flag
-        # Default: gate is ENABLED. When vars.SQUAD_CHANGELOG_CHECK is
-        # undefined (not set in repo/org variables), the bash comparison
-        # [ "" = "false" ] evaluates to false, so skip stays "false" and
-        # the gate runs. Set vars.SQUAD_CHANGELOG_CHECK to "false" to
-        # explicitly disable.
-        run: |
-          if [ "${{ vars.SQUAD_CHANGELOG_CHECK }}" = "false" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "CHANGELOG gate disabled via vars.SQUAD_CHANGELOG_CHECK"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
+      - name: Fetch PR labels
+        id: labels
         run: |
           LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
-          if echo "$LABELS" | grep -q "skip-changelog"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping CHANGELOG gate (skip-changelog label present)"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "all<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$LABELS" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          # Per-gate skip flags
+          echo "$LABELS" | grep -q "skip-changelog" && echo "skip_changelog=true" >> "$GITHUB_OUTPUT" || echo "skip_changelog=false" >> "$GITHUB_OUTPUT"
+          echo "$LABELS" | grep -q "skip-workspace-check" && echo "skip_workspace=true" >> "$GITHUB_OUTPUT" || echo "skip_workspace=false" >> "$GITHUB_OUTPUT"
+          echo "$LABELS" | grep -q "skip-version-check" && echo "skip_version=true" >> "$GITHUB_OUTPUT" || echo "skip_version=false" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Require CHANGELOG update for SDK/CLI source changes
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
+      # ─── Changelog Gate ───────────────────────────────────────────────
+      - name: "Gate: Changelog"
+        if: >-
+          always()
+          && steps.labels.outputs.skip_changelog != 'true'
+          && vars.SQUAD_CHANGELOG_CHECK != 'false'
         run: |
+          echo "## 📋 Changelog Gate" >> $GITHUB_STEP_SUMMARY
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          # Three-dot diff (base...head) finds the merge-base automatically,
-          # so it works correctly even when the PR branch contains merge
-          # commits from syncing with the base branch. It compares against
-          # the common ancestor, not the literal base SHA.
           CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
-
-          # Change detection regex: ^packages/squad-(sdk|cli)/src/
-          #   Matches any file under packages/squad-sdk/src/ or packages/squad-cli/src/
-          #   This intentionally excludes config files, tests, and docs — only source changes
-          #   require a CHANGELOG entry.
           SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E '^packages/squad-(sdk|cli)/src/' || true)
           if [ -z "$SDK_CLI_CHANGED" ]; then
             echo "No SDK/CLI source changes detected -- CHANGELOG gate not applicable"
+            echo "✅ Not applicable (no SDK/CLI source changes)" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-
           echo "SDK/CLI source files changed:"
           echo "$SDK_CLI_CHANGED"
-
-          # Accept EITHER a .changeset/*.md file OR a direct CHANGELOG.md edit.
-          # Changesets are the preferred workflow — they prevent merge conflicts
-          # when multiple PRs are open simultaneously.
-          # Use --diff-filter=AM to count only Added/Modified files (not deletions),
-          # and exclude .changeset/README.md which is repo documentation, not a changeset.
           CHANGESET_ADDED=$(git diff --diff-filter=AM --name-only "$BASE"..."$HEAD" | grep -E '^\.changeset/[^/]+\.md$' | grep -vxF '.changeset/README.md' || true)
           CHANGELOG_CHANGED=$(echo "$CHANGED" | grep -E '^CHANGELOG\.md$' || true)
-
           if [ -n "$CHANGESET_ADDED" ]; then
             echo "Changeset file(s) detected -- gate passed"
             echo "$CHANGESET_ADDED"
+            echo "✅ Changeset file detected" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-
           if [ -n "$CHANGELOG_CHANGED" ]; then
             echo "CHANGELOG.md updated -- gate passed"
+            echo "✅ CHANGELOG.md updated" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-
           echo ""
           echo "::error::No changeset or CHANGELOG.md update found, but SDK/CLI source files were changed."
           echo "::error::Preferred: run 'npx changeset add' to create a .changeset/*.md file."
           echo "::error::Alternative: edit CHANGELOG.md directly."
           echo "::error::Escape hatch: add the 'skip-changelog' label to your PR."
+          echo "❌ No changeset or CHANGELOG.md update" >> $GITHUB_STEP_SUMMARY
           exit 1
 
-  changelog-protection:
-    name: CHANGELOG Write Protection
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check CHANGELOG.md modifications
+      # ─── CHANGELOG Write Protection ──────────────────────────────────
+      - name: "Gate: CHANGELOG Write Protection"
+        if: always()
         env:
           APPROVED_AUTHORS: 'bradygaster github-actions[bot] copilot-swe-agent[bot]'
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
+          echo "## 🔒 CHANGELOG Write Protection" >> $GITHUB_STEP_SUMMARY
           CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '^CHANGELOG.md$' || true)
           if [ -n "$CHANGED" ]; then
             if echo "$APPROVED_AUTHORS" | tr ' ' '\n' | grep -qxF "$PR_AUTHOR"; then
               echo "✅ $PR_AUTHOR is approved to modify CHANGELOG.md"
+              echo "✅ $PR_AUTHOR is approved" >> $GITHUB_STEP_SUMMARY
             else
               echo "❌ $PR_AUTHOR is not approved to modify CHANGELOG.md directly"
               echo ""
               echo "CHANGELOG.md is managed by the release process."
               echo "Use 'npx changeset add' to add a changeset file instead."
               echo "See CONTRIBUTING.md for details."
+              echo "❌ $PR_AUTHOR is not approved to modify CHANGELOG.md" >> $GITHUB_STEP_SUMMARY
               exit 1
             fi
           else
             echo "✅ CHANGELOG.md not modified"
+            echo "✅ CHANGELOG.md not modified" >> $GITHUB_STEP_SUMMARY
           fi
 
+      # ─── Workspace Integrity ──────────────────────────────────────────
+      - name: "Gate: Workspace Integrity"
+        if: >-
+          always()
+          && steps.labels.outputs.skip_workspace != 'true'
+          && vars.SQUAD_WORKSPACE_CHECK != 'false'
+        run: |
+          echo "## 🔗 Workspace Integrity" >> $GITHUB_STEP_SUMMARY
+          node -e "
+            const fs = require('fs');
+            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+            const pkgs = lock.packages || {};
+            const problems = [];
+            for (const [key, val] of Object.entries(pkgs)) {
+              if (!key.includes('node_modules/@bradygaster/squad-')) continue;
+              if (val.resolved && val.resolved.startsWith('https://')) {
+                problems.push({ path: key, resolved: val.resolved });
+              }
+            }
+            if (problems.length > 0) {
+              console.error('::error::WORKSPACE INTEGRITY FAILURE — npm resolved registry packages instead of local workspace copies.');
+              console.error('::error::This likely means a version mismatch between workspace packages (see PR #640).');
+              console.error('');
+              problems.forEach(p => {
+                console.error('  STALE: ' + p.path + (p.resolved ? ' → ' + p.resolved : ' (version: ' + p.version + ', not a workspace link)'));
+              });
+              console.error('');
+              console.error('To fix: ensure all workspace package version ranges match local versions,');
+              console.error('then run npm install at the repo root to regenerate the lockfile.');
+              process.exit(1);
+            }
+            console.log('✅ All workspace packages resolve to local file: links');
+          "
+          echo "✅ All workspace packages resolve to local links" >> $GITHUB_STEP_SUMMARY
+
+      # ─── Prerelease Version Guard ─────────────────────────────────────
+      - name: "Gate: Prerelease Version Guard"
+        if: >-
+          always()
+          && steps.labels.outputs.skip_version != 'true'
+          && vars.SQUAD_VERSION_CHECK != 'false'
+        run: |
+          echo "## 🏷️ Prerelease Version Guard" >> $GITHUB_STEP_SUMMARY
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const pkgDirs = fs.readdirSync('packages', { withFileTypes: true })
+              .filter(d => d.isDirectory())
+              .map(d => d.name);
+            const violations = [];
+            for (const dir of pkgDirs) {
+              const pkgPath = path.join('packages', dir, 'package.json');
+              if (!fs.existsSync(pkgPath)) continue;
+              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+              if (pkg.version && /-/.test(pkg.version)) {
+                violations.push({ name: pkg.name, version: pkg.version, path: pkgPath });
+              }
+            }
+            if (violations.length > 0) {
+              console.error('::error::PRERELEASE VERSION DETECTED — packages with prerelease versions cannot merge to dev/main.');
+              console.error('');
+              violations.forEach(v => {
+                console.error('  ' + v.name + '@' + v.version + ' (' + v.path + ')');
+              });
+              console.error('');
+              console.error('Prerelease suffixes (-build, -alpha, -beta, -rc) must be removed before merging.');
+              console.error('To fix: update the version field in each listed package.json to a release version.');
+              console.error('To skip: add the \"skip-version-check\" label to your PR.');
+              process.exit(1);
+            }
+            console.log('✅ All package versions are release versions (no prerelease suffixes)');
+            pkgDirs.forEach(dir => {
+              const pkgPath = path.join('packages', dir, 'package.json');
+              if (fs.existsSync(pkgPath)) {
+                const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+                if (pkg.version) console.log('  ' + pkg.name + '@' + pkg.version);
+              }
+            });
+          "
+          echo "✅ All versions are release versions" >> $GITHUB_STEP_SUMMARY
+
   exports-map-check:
+    needs: changes
     # ── Local testing ──────────────────────────────────────────────────────
     # To test this gate locally:
     #   1. Check for SDK source changes:
@@ -337,7 +415,11 @@ jobs:
     #   2. If any match, run the exports map script:
     #      node scripts/check-exports-map.mjs
     # ──────────────────────────────────────────────────────────────────────
-    if: github.event_name == 'pull_request'
+    if: >-
+      !cancelled()
+      && (github.event_name != 'pull_request'
+          || needs.changes.outputs.code == 'true'
+          || needs.changes.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -405,13 +487,18 @@ jobs:
         run: node scripts/check-exports-map.mjs
 
   samples-build:
+    needs: changes
     # ── Local testing ──────────────────────────────────────────────────────
     # To test this gate locally:
     #   1. Build the SDK: npm run build -w packages/squad-sdk
     #   2. Loop over samples: for d in samples/*/; do (cd "$d" && npm install && npm run build); done
     #   3. Or test a single sample: cd samples/<name> && npm install && npm run build && npm test
     # ──────────────────────────────────────────────────────────────────────
-    if: github.event_name == 'pull_request'
+    if: >-
+      !cancelled()
+      && (github.event_name != 'pull_request'
+          || needs.changes.outputs.code == 'true'
+          || needs.changes.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -571,192 +658,11 @@ jobs:
           fi
           echo "✅ All npm publish commands are workspace-scoped"
 
-  workspace-integrity:
-    # ──────────────────────────────────────────────────────────────────────
-    # Workspace Integrity Check
-    # Purpose:  Verify workspace packages resolve to local file: links,
-    #           not stale registry versions in the lockfile.
-    # Catches:  npm silently resolving a published registry copy instead
-    #           of the local workspace symlink due to version mismatches.
-    # Why:      Added after PR #640 prerelease version incident where
-    #           >=0.9.0 didn't match 0.9.1-build.4, so npm pulled the
-    #           stale published SDK from the registry.
-    # Cost:     Zero-install — reads package-lock.json only.
-    # ──────────────────────────────────────────────────────────────────────
-    # ── Local testing ──────────────────────────────────────────────────────
-    # To test this gate locally:
-    #   1. Inspect lockfile entries for workspace packages:
-    #      node -e "const l=JSON.parse(require('fs').readFileSync('package-lock.json','utf8'));
-    #        Object.entries(l.packages||{}).filter(([k])=>k.includes('@bradygaster/squad-'))
-    #        .forEach(([k,v])=>console.log(k, v.resolved||v.version, v.link?'(link)':''))"
-    #   2. All entries should show "(link)" — any with https:// URLs are stale.
-    # ──────────────────────────────────────────────────────────────────────
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check feature flag
-        id: flag
-        # Default: gate is ENABLED. When vars.SQUAD_WORKSPACE_CHECK is
-        # undefined (not set in repo/org variables), the bash comparison
-        # [ "" = "false" ] evaluates to false, so skip stays "false" and
-        # the gate runs. Set vars.SQUAD_WORKSPACE_CHECK to "false" to
-        # explicitly disable.
-        run: |
-          if [ "${{ vars.SQUAD_WORKSPACE_CHECK }}" = "false" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Workspace integrity check disabled via vars.SQUAD_WORKSPACE_CHECK"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
-        run: |
-          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
-          if echo "$LABELS" | grep -q "skip-workspace-check"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping workspace integrity check (skip-workspace-check label present)"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Verify workspace packages resolve locally
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
-        run: |
-          node -e "
-            const fs = require('fs');
-            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-            const pkgs = lock.packages || {};
-            const problems = [];
-
-            for (const [key, val] of Object.entries(pkgs)) {
-              if (!key.includes('node_modules/@bradygaster/squad-')) continue;
-              if (val.resolved && val.resolved.startsWith('https://')) {
-                problems.push({ path: key, resolved: val.resolved });
-              }
-            }
-
-            if (problems.length > 0) {
-              console.error('::error::WORKSPACE INTEGRITY FAILURE — npm resolved registry packages instead of local workspace copies.');
-              console.error('::error::This likely means a version mismatch between workspace packages (see PR #640).');
-              console.error('');
-              problems.forEach(p => {
-                console.error('  STALE: ' + p.path + (p.resolved ? ' → ' + p.resolved : ' (version: ' + p.version + ', not a workspace link)'));
-              });
-              console.error('');
-              console.error('To fix: ensure all workspace package version ranges match local versions,');
-              console.error('then run npm install at the repo root to regenerate the lockfile.');
-              process.exit(1);
-            }
-
-            console.log('✅ All workspace packages resolve to local file: links');
-          "
-
-  prerelease-version-guard:
-    # ──────────────────────────────────────────────────────────────────────
-    # Prerelease Version Guard
-    # Purpose:  Prevent prerelease version strings (-build, -alpha, -beta,
-    #           -rc) from being committed to dev or main.
-    # Catches:  Forgotten prerelease suffixes that break semver range
-    #           resolution in workspace dependencies.
-    # Why:      Added after PR #640 prerelease version incident where a
-    #           -build.N suffix caused npm to skip the local workspace
-    #           copy during dependency resolution.
-    # Cost:     Zero-install — reads package.json files only.
-    # ──────────────────────────────────────────────────────────────────────
-    # ── Local testing ──────────────────────────────────────────────────────
-    # To test this gate locally:
-    #   1. Scan for prerelease versions:
-    #      node -e "require('fs').readdirSync('packages').forEach(d=>{
-    #        const p=require('./packages/'+d+'/package.json');
-    #        if(/-/.test(p.version)) console.log(p.name+'@'+p.version+' ← prerelease!')})"
-    #   2. A clean run should produce no output.
-    # ──────────────────────────────────────────────────────────────────────
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check feature flag
-        id: flag
-        # Default: gate is ENABLED. When vars.SQUAD_VERSION_CHECK is
-        # undefined (not set in repo/org variables), the bash comparison
-        # [ "" = "false" ] evaluates to false, so skip stays "false" and
-        # the gate runs. Set vars.SQUAD_VERSION_CHECK to "false" to
-        # explicitly disable.
-        run: |
-          if [ "${{ vars.SQUAD_VERSION_CHECK }}" = "false" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Prerelease version guard disabled via vars.SQUAD_VERSION_CHECK"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
-        run: |
-          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
-          if echo "$LABELS" | grep -q "skip-version-check"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping prerelease version guard (skip-version-check label present)"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Scan packages for prerelease versions
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
-        run: |
-          node -e "
-            const fs = require('fs');
-            const path = require('path');
-            const pkgDirs = fs.readdirSync('packages', { withFileTypes: true })
-              .filter(d => d.isDirectory())
-              .map(d => d.name);
-
-            const violations = [];
-            for (const dir of pkgDirs) {
-              const pkgPath = path.join('packages', dir, 'package.json');
-              if (!fs.existsSync(pkgPath)) continue;
-              const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-              // Version regex: /-/ — matches any hyphen in the version string.
-              // In semver, a hyphen after the patch number indicates a prerelease
-              // suffix (e.g. 1.0.0-alpha.1, 0.9.1-build.4). Stable releases
-              // like 1.0.0 contain no hyphen and pass this check.
-              if (pkg.version && /-/.test(pkg.version)) {
-                violations.push({ name: pkg.name, version: pkg.version, path: pkgPath });
-              }
-            }
-
-            if (violations.length > 0) {
-              console.error('::error::PRERELEASE VERSION DETECTED — packages with prerelease versions cannot merge to dev/main.');
-              console.error('');
-              violations.forEach(v => {
-                console.error('  ' + v.name + '@' + v.version + ' (' + v.path + ')');
-              });
-              console.error('');
-              console.error('Prerelease suffixes (-build, -alpha, -beta, -rc) must be removed before merging.');
-              console.error('To fix: update the version field in each listed package.json to a release version.');
-              console.error('To skip: add the \"skip-version-check\" label to your PR.');
-              process.exit(1);
-            }
-
-            console.log('✅ All package versions are release versions (no prerelease suffixes)');
-            pkgDirs.forEach(dir => {
-              const pkgPath = path.join('packages', dir, 'package.json');
-              if (fs.existsSync(pkgPath)) {
-                const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-                if (pkg.version) console.log('  ' + pkg.name + '@' + pkg.version);
-              }
-            });
-          "
+  # workspace-integrity and prerelease-version-guard are now part of
+  # the consolidated policy-gates job above.
 
   export-smoke-test:
+    needs: changes
     # ──────────────────────────────────────────────────────────────────────
     # Export Smoke Test
     # Purpose:  Verify that subpath exports actually resolve after build.
@@ -782,7 +688,11 @@ jobs:
     #   3. To create a test PR to verify this gate:
     #      gh pr edit <number> --add-label skip-export-smoke
     # ──────────────────────────────────────────────────────────────────────
-    if: github.event_name == 'pull_request'
+    if: >-
+      !cancelled()
+      && (github.event_name != 'pull_request'
+          || needs.changes.outputs.code == 'true'
+          || needs.changes.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
