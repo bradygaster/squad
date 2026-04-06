@@ -6,6 +6,7 @@
 
 import { execSync, execFileSync } from 'node:child_process';
 import path from 'node:path';
+import * as resolution from './resolution.js';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 
 const storage = new FSStorageProvider();
@@ -23,19 +24,58 @@ export interface StateBackend {
 export class WorktreeBackend implements StateBackend {
   readonly name = 'worktree';
   private readonly root: string;
+
   constructor(squadDir: string) {
     if (squadDir.includes('..')) throw new Error('Path traversal not allowed');
-    this.root = squadDir;
+    this.root = path.resolve(squadDir);
   }
+
   read(relativePath: string): string | undefined {
     return storage.readSync(path.join(this.root, relativePath)) ?? undefined;
   }
+
   write(relativePath: string, content: string): void {
     storage.writeSync(path.join(this.root, relativePath), content);
   }
+
   exists(relativePath: string): boolean {
     return storage.existsSync(path.join(this.root, relativePath));
   }
+
+  list(relativeDir: string): string[] {
+    const full = path.join(this.root, relativeDir);
+    if (!storage.existsSync(full) || !storage.isDirectorySync(full)) return [];
+    return storage.listSync(full);
+  }
+}
+
+export class ExternalBackend implements StateBackend {
+  readonly name = 'external';
+  private readonly root: string;
+
+  constructor(squadDir: string) {
+    if (squadDir.includes('..')) throw new Error('Path traversal not allowed');
+
+    const resolvedSquadDir = path.resolve(squadDir);
+    const config = resolution.loadDirConfig(resolvedSquadDir);
+    const projectRoot = path.resolve(resolvedSquadDir, '..');
+    const projectKey = config?.projectKey || resolution.deriveProjectKey(projectRoot);
+
+    this.root = resolution.resolveExternalStateDir(projectKey, true);
+  }
+
+  read(relativePath: string): string | undefined {
+    return storage.readSync(path.join(this.root, relativePath)) ?? undefined;
+  }
+
+  write(relativePath: string, content: string): void {
+    storage.writeSync(path.join(this.root, relativePath), content);
+  }
+
+  exists(relativePath: string): boolean {
+    return storage.existsSync(path.join(this.root, relativePath));
+  }
+
   list(relativeDir: string): string[] {
     const full = path.join(this.root, relativeDir);
     if (!storage.existsSync(full) || !storage.isDirectorySync(full)) return [];
@@ -235,6 +275,8 @@ export interface StateBackendConfig { stateBackend?: StateBackendType; }
 
 export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverride?: StateBackendType): StateBackend {
   let configBackend: StateBackendType | undefined;
+  let externalMode = false;
+
   try {
     const configPath = path.join(squadDir, 'config.json');
     const raw = storage.readSync(configPath);
@@ -243,9 +285,12 @@ export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverr
       if (typeof parsed['stateBackend'] === 'string' && isValidBackendType(parsed['stateBackend'])) {
         configBackend = parsed['stateBackend'] as StateBackendType;
       }
+      externalMode = parsed['stateLocation'] === 'external';
     }
   } catch { /* fall through */ }
-  const chosen = cliOverride ?? configBackend ?? 'worktree';
+
+  const chosen = cliOverride ?? configBackend ?? (externalMode ? 'external' : 'worktree');
+
   try {
     return createBackend(chosen, squadDir, repoRoot);
   } catch (err) {
@@ -264,7 +309,7 @@ function createBackend(type: StateBackendType, squadDir: string, repoRoot: strin
     case 'worktree': return new WorktreeBackend(squadDir);
     case 'git-notes': return new GitNotesBackend(repoRoot);
     case 'orphan': return new OrphanBranchBackend(repoRoot);
-    case 'external': return new WorktreeBackend(squadDir); // Stub — PR #797
+    case 'external': return new ExternalBackend(squadDir);
     default: throw new Error(`Unknown state backend type: ${type}`);
   }
 }

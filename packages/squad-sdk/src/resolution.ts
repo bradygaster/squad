@@ -17,6 +17,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 import { Trace } from 'vscode-jsonrpc';
+import { cwd } from 'node:process';
 
 const storage = new FSStorageProvider();
 
@@ -353,7 +354,7 @@ export function resolveSquadPaths(
     traceLine(trace, 'resolveSquadPaths', `resolved external projectDir/teamDir=${externalDir}`);
     return {
       mode: 'remote',
-      projectDir: externalDir,
+      projectDir: cwd(),
       teamDir: externalDir,
       personalDir,
       config,
