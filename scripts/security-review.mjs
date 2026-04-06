@@ -23,6 +23,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const baseRef = process.argv[2] || 'origin/dev';
 const headRef = process.argv[3] || 'HEAD';
@@ -106,9 +107,197 @@ function parseAddedLines(patch) {
 }
 
 // ---------------------------------------------------------------------------
+// Skill security scanning — Phase 1 (PRD #881)
+// ---------------------------------------------------------------------------
+
+const SKILL_CREDENTIAL_PATTERNS = [
+  { name: 'AWS Access Key', regex: /AKIA[0-9A-Z]{16}/ },
+  { name: 'GitHub PAT', regex: /ghp_[A-Za-z0-9]{36,}/ },
+  { name: 'GitHub OAuth', regex: /gho_[A-Za-z0-9]{36,}/ },
+  { name: 'GitHub App Token', regex: /ghu_[A-Za-z0-9]{36,}/ },
+  { name: 'OpenAI Key', regex: /sk-[A-Za-z0-9]{20,}/ },
+  { name: 'Private Key', regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { name: 'JWT Token', regex: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/ },
+  { name: 'npm Token', regex: /npm_[A-Za-z0-9]{36,}/ },
+  { name: 'Slack Token', regex: /xox[bpors]-[A-Za-z0-9-]+/ },
+  { name: 'Generic Secret Assign', regex: /(?:API_KEY|SECRET|TOKEN|PASSWORD)\s*=\s*["']?[A-Za-z0-9+/=_-]{20,}/ },
+];
+
+const SKILL_DOWNLOAD_EXEC_PATTERNS = [
+  { name: 'curl pipe bash', regex: /curl\s+.*\|\s*(?:bash|sh|zsh)/ },
+  { name: 'wget pipe bash', regex: /wget\s+.*\|\s*(?:bash|sh|zsh)/ },
+  { name: 'irm pipe iex', regex: /irm\s+.*\|\s*iex/ },
+  { name: 'Invoke-Expression', regex: /Invoke-Expression\s+.*(?:http|ftp|Invoke-WebRequest|irm)/ },
+  { name: 'powershell -enc', regex: /powershell\s+.*-[Ee]nc(?:oded)?[Cc]ommand/ },
+  { name: 'eval curl', regex: /eval\s+"\$\(curl/ },
+  { name: 'source curl', regex: /source\s+<\(curl/ },
+  { name: 'bash process sub', regex: /bash\s+<\(curl/ },
+];
+
+const SKILL_CRED_FILE_READ_PATTERNS = [
+  { name: '.env read (cmd)', regex: /(?:cat|type|Get-Content|less|more|head|tail)\s+.*\.env(?!\.example|\.sample|\.template)\b/ },
+  { name: '.env read (js)', regex: /(?:readFileSync|readFile)\s*\(.*\.env(?!\.example|\.sample|\.template)\b/ },
+  { name: 'Private key read (cmd)', regex: /(?:cat|type|Get-Content)\s+.*(?:id_rsa|id_ed25519|\.pem|\.key)\b/ },
+  { name: 'Private key read (js)', regex: /(?:readFileSync|readFile)\s*\(.*(?:id_rsa|id_ed25519|\.pem|\.key)\b/ },
+  { name: 'AWS credentials read', regex: /(?:cat|type|readFileSync|Get-Content)\s*[\s(].*\.aws\/credentials/ },
+  { name: '.npmrc read', regex: /(?:cat|type|readFileSync|Get-Content)\s*[\s(].*\.npmrc/ },
+  { name: '.netrc read', regex: /(?:cat|type|readFileSync|Get-Content)\s*[\s(].*\.netrc/ },
+];
+
+const SKILL_PRIV_ESC_PATTERNS = [
+  { name: 'sudo bash/sh', regex: /sudo\s+(?:bash|sh|zsh|su)/ },
+  { name: 'sudo rm', regex: /sudo\s+rm\b/ },
+  { name: 'RunAs admin', regex: /Start-Process\s+.*-Verb\s+RunAs/ },
+  { name: 'SetExecutionPolicy', regex: /Set-ExecutionPolicy\s+(?:Bypass|Unrestricted)/ },
+  { name: 'chmod 777', regex: /chmod\s+777/ },
+];
+
+const PLACEHOLDER_RE = /\.{2,}|x{4,}|X{4,}|_{4,}|<[^>]+>/;
+
+/** Regex syntax markers — character classes [..] or quantifiers {n,m}. */
+const REGEX_SYNTAX_RE = /\[[^\]]+\]|\{\d+[,\d]*\}/;
+
+/**
+ * Check whether a line is a markdown table row documenting regex patterns.
+ * Used to suppress credential findings on pattern-documentation tables.
+ */
+function isRegexDocRow(line) {
+  return /^\s*\|/.test(line) && REGEX_SYNTAX_RE.test(line);
+}
+
+/**
+ * Detect fenced code block regions in markdown.
+ * Handles backtick and tilde fences, variable-length delimiters,
+ * and up to 3 leading spaces per CommonMark.
+ */
+function parseFencedRegions(lines) {
+  let inFence = false;
+  let fenceChar = '';
+  let fenceLen = 0;
+  const fenced = new Set();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!inFence) {
+      const m = line.match(/^\s{0,3}((`{3,})|(~{3,}))/);
+      if (m) {
+        inFence = true;
+        fenceChar = m[2] ? '`' : '~';
+        fenceLen = (m[2] || m[3]).length;
+        fenced.add(i);
+      }
+    } else {
+      fenced.add(i);
+      const closeRe = new RegExp(
+        `^\\s{0,3}${fenceChar === '`' ? '`' : '~'}{${fenceLen},}\\s*$`,
+      );
+      if (closeRe.test(line)) {
+        inFence = false;
+      }
+    }
+  }
+  return { fenced, unclosed: inFence };
+}
+
+/** Remove inline code spans (backtick-delimited) from a line. */
+function stripInlineCode(line) {
+  return line.replace(/`[^`]*`/g, '');
+}
+
+/** Check whether a regex match looks like a placeholder token. */
+function isPlaceholder(matched) {
+  return PLACEHOLDER_RE.test(matched);
+}
+
+/**
+ * Scan skill markdown content for high-confidence security patterns.
+ * Pure function — no side effects, no git calls.
+ *
+ * Suppression (Phase 1):
+ *  - Lines inside fenced code blocks are skipped.
+ *  - Inline code spans (backtick pairs) are stripped before matching.
+ *  - Markdown table rows documenting regex patterns are suppressed for credentials.
+ *  - Placeholder tokens (sk-..., ghp_xxxx, AKIA...) are ignored.
+ *  - Fail-safe: unclosed fences = UNSUPPRESSED (fail-open for security).
+ *
+ * @param {string} content  Full markdown file content
+ * @param {string} filePath Repo-relative file path (for findings)
+ * @returns {Array<{category:string, severity:string, message:string, file:string, line:number}>}
+ */
+export function scanSkillContent(content, filePath) {
+  const findings = [];
+  const lines = content.split('\n');
+  const { fenced, unclosed } = parseFencedRegions(lines);
+  const suppressFenced = !unclosed;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (suppressFenced && fenced.has(i)) continue;
+
+    const scanText = stripInlineCode(lines[i]);
+    const regexDocRow = isRegexDocRow(lines[i]);
+
+    // P1: Embedded credentials (suppress on regex-doc table rows)
+    if (!regexDocRow) {
+      for (const { name, regex } of SKILL_CREDENTIAL_PATTERNS) {
+        const m = scanText.match(regex);
+        if (m && !isPlaceholder(m[0])) {
+          findings.push({
+            category: 'skill-credentials',
+            severity: 'error',
+            message: `Possible embedded credential (${name}) in skill file.`,
+            file: filePath,
+            line: i + 1,
+          });
+        }
+      }
+    }
+
+    // P2: Credential file reads
+    for (const { name, regex } of SKILL_CRED_FILE_READ_PATTERNS) {
+      if (regex.test(scanText)) {
+        findings.push({
+          category: 'skill-credential-file-read',
+          severity: 'error',
+          message: `Credential file read instruction (${name}) in skill file.`,
+          file: filePath,
+          line: i + 1,
+        });
+      }
+    }
+
+    for (const { name, regex } of SKILL_DOWNLOAD_EXEC_PATTERNS) {
+      if (regex.test(scanText)) {
+        findings.push({
+          category: 'skill-download-exec',
+          severity: 'error',
+          message: `Download-and-execute pattern (${name}) in skill file.`,
+          file: filePath,
+          line: i + 1,
+        });
+      }
+    }
+
+    for (const { name, regex } of SKILL_PRIV_ESC_PATTERNS) {
+      if (regex.test(scanText)) {
+        findings.push({
+          category: 'skill-privilege-escalation',
+          severity: 'error',
+          message: `Privilege escalation pattern (${name}) in skill file.`,
+          file: filePath,
+          line: i + 1,
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+// ---------------------------------------------------------------------------
 // Security checks
 // ---------------------------------------------------------------------------
 
+function run() {
 const findings = [];
 const changedFiles = gitDiffNames();
 const patch = gitDiffPatch();
@@ -185,6 +374,7 @@ const GIT_UNSAFE_PATTERNS = [
 for (const file of changedFiles) {
   // Skill docs reference unsafe patterns as warnings — skip them
   if (file.startsWith('.copilot/skills/') && file.endsWith('.md')) continue;
+  if (file.startsWith('.squad/skills/') && file.endsWith('.md')) continue;
   const added = addedByFile.get(file) || [];
   for (const { line, text } of added) {
     for (const { pattern, label } of GIT_UNSAFE_PATTERNS) {
@@ -296,6 +486,16 @@ for (const file of workflowFiles) {
   }
 }
 
+// 9. Skill security scanning (Phase 1 — PRD #881)
+const skillFiles = changedFiles.filter((f) =>
+  (f.startsWith('.copilot/skills/') || f.startsWith('.squad/skills/')) && f.endsWith('.md'),
+);
+for (const file of skillFiles) {
+  const content = readFileSafe(file);
+  if (!content) continue;
+  findings.push(...scanSkillContent(content, file));
+}
+
 // ---------------------------------------------------------------------------
 // Output
 // ---------------------------------------------------------------------------
@@ -318,3 +518,10 @@ if (findings.length === 0) {
 const result = { findings, summary };
 console.log(JSON.stringify(result, null, 2));
 console.log(`\n${summary}`);
+}
+
+// Only run when executed directly (not imported for testing)
+const __filename = fileURLToPath(import.meta.url);
+if (process.argv[1] === __filename) {
+  run();
+}

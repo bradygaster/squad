@@ -166,6 +166,10 @@ describe('security-review script', () => {
         'pii-env-var',
         'workflow-permissions',
         'pr-target-checkout',
+        'skill-credentials',
+        'skill-credential-file-read',
+        'skill-download-exec',
+        'skill-privilege-escalation',
       ]);
 
       for (const f of findings) {
