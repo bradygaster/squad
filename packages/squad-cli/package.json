@@ -208,5 +208,9 @@
     "type": "git",
     "url": "git+https://github.com/bradygaster/squad.git",
     "directory": "packages/squad-cli"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }
