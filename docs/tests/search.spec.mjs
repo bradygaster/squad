@@ -162,3 +162,72 @@ test.describe('Search results', () => {
     expect(text.trim()).not.toBe('Start typing to search…');
   });
 });
+
+test.describe('Search after View Transition navigation', () => {
+
+  test('search modal works after navigating via search result', async ({ page }) => {
+    // Initial page load
+    await page.goto(BASE);
+
+    // Open search and perform a query
+    const searchBtn = page.locator('#search-btn');
+    await expect(searchBtn).toBeVisible();
+    await searchBtn.click();
+    const modal = page.locator('#search-modal');
+    await expect(modal).not.toHaveClass(/hidden/);
+
+    // Type a query and wait for results
+    const input = page.locator('#search-input');
+    await input.fill('agent');
+    const resultLinks = page.locator('#search-results a');
+    await expect(resultLinks.first()).toBeVisible({ timeout: 10_000 });
+
+    // Click first result to navigate (View Transition occurs)
+    const href = await resultLinks.first().getAttribute('href');
+    await resultLinks.first().click();
+    await page.waitForURL(new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: 10_000 });
+
+    // After navigation, search should still work
+    const searchBtnAfter = page.locator('#search-btn');
+    await expect(searchBtnAfter).toBeVisible();
+    await searchBtnAfter.click();
+
+    const modalAfter = page.locator('#search-modal');
+    await expect(modalAfter).not.toHaveClass(/hidden/);
+
+    // Verify input is focused and we can type a new query
+    const inputAfter = page.locator('#search-input');
+    await expect(inputAfter).toBeFocused();
+    await inputAfter.fill('test');
+
+    // Results should appear for the new query
+    const resultLinksAfter = page.locator('#search-results a');
+    await expect(resultLinksAfter.first()).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('Ctrl+K opens search after View Transition navigation', async ({ page }) => {
+    // Initial page load
+    await page.goto(BASE);
+
+    // Perform a search and navigate via result
+    const searchBtn = page.locator('#search-btn');
+    await searchBtn.click();
+    const input = page.locator('#search-input');
+    await input.fill('agent');
+
+    const resultLinks = page.locator('#search-results a');
+    await expect(resultLinks.first()).toBeVisible({ timeout: 10_000 });
+
+    const href = await resultLinks.first().getAttribute('href');
+    await resultLinks.first().click();
+    await page.waitForURL(new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: 10_000 });
+
+    // After View Transition navigation, Ctrl+K should open search
+    const modal = page.locator('#search-modal');
+    await expect(modal).toHaveClass(/hidden/);
+
+    await page.keyboard.press('Control+k');
+    await expect(modal).not.toHaveClass(/hidden/);
+    await expect(page.locator('#search-input')).toBeFocused();
+  });
+});
