@@ -162,7 +162,7 @@ External contributors don't have write access, so the review-to-merge flow has a
 
 **Your side (contributor):**
 
-1. ✅ All CI checks are green (build, test, lint, changeset)
+1. ✅ All required CI checks are green (build, test, lint; changeset/CHANGELOG gate only applies when `packages/squad-cli/src/` or `packages/squad-sdk/src/` files change)
 2. ✅ PR is no longer a draft — mark as **"Ready for review"**
 3. ✅ Copilot reviewer bot posts its review automatically
 4. ✅ Accept any Copilot suggestions you agree with (you have permission to accept suggestions)
