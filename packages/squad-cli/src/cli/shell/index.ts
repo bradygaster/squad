@@ -986,6 +986,26 @@ export async function runShell(): Promise<void> {
       files: result.filesCreated.length,
     });
 
+    // Production guard: verify roster was actually populated before proceeding
+    const verifyTeamPath = join(teamRoot, '.squad', 'team.md');
+    const verifyContent = storage.readSync(verifyTeamPath) ?? '';
+    if (!hasRosterEntries(verifyContent)) {
+      debugLog('finalizeCast: roster empty after createTeam — aborting dispatch');
+      // Clean up .init-prompt to prevent auto-retry loop on next startup
+      const initPromptCleanup = join(teamRoot, '.squad', '.init-prompt');
+      if (storage.existsSync(initPromptCleanup)) {
+        try { await storage.delete(initPromptCleanup); } catch { /* ignore */ }
+      }
+      shellApi?.addMessage({
+        role: 'system',
+        content: '⚠ Team creation completed but roster is empty — skipping dispatch. Check .squad/team.md.',
+        timestamp: new Date(),
+      });
+      shellApi?.setActivityHint(undefined);
+      shellApi?.setProcessing(false);
+      return;
+    }
+
     shellApi?.addMessage({
       role: 'system',
       content: `✅ Team hired! ${result.membersCreated.length} members created.`,
