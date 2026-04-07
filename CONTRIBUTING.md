@@ -151,10 +151,32 @@ The Co-authored-by trailer is **required** for all commits (added by Copilot CLI
 
 1. Add a changeset: `npx changeset add` (required before PR — see Changesets section)
 2. Push your branch: `git push origin {yourusername}/217-readme-help-update`
-3. Create a PR with explicit base and head: `gh pr create --base dev --repo bradygaster/squad --head {yourusername}:your-branch`
+3. Create a PR **as a draft**: `gh pr create --draft --base dev --repo bradygaster/squad --head {yourusername}:your-branch`
 4. Link the issue: Add `Closes #217` to PR description
-5. Wait for CI checks to pass
-6. Request review from the team (agents will respond via comments)
+5. Work on your changes until CI passes and you're satisfied
+6. **Mark as "Ready for review"** — this is the handoff signal to the core team (see below)
+
+### Handoff: Contributor → Core Team
+
+External contributors don't have write access, so the review-to-merge flow has a handoff point. Here's exactly what happens:
+
+**Your side (contributor):**
+
+1. ✅ All CI checks are green (build, test, lint, changeset)
+2. ✅ PR is no longer a draft — mark as **"Ready for review"**
+3. ✅ Copilot reviewer bot posts its review automatically
+4. ✅ Accept any Copilot suggestions you agree with (you have permission to accept suggestions)
+5. ✅ If Copilot flags issues you can't resolve via suggestions, note them in a PR comment
+
+> **Note:** You may see a "Fix with Copilot" button on review comments — this requires repo write access and won't work for external contributors. Use "Accept suggestion" instead, or leave a comment explaining why you disagree.
+
+**Core team side (after you undraft):**
+
+1. Look for CI-green, undrafted PRs from contributors
+2. Address any remaining Copilot review issues (using "Fix with Copilot" or manual fixes)
+3. Human review, resolve threads, and merge
+
+**TL;DR:** Your job is done when the PR is undrafted, CI is green, and you've responded to Copilot suggestions. The core team takes it from there.
 
 ### PR Readiness Checklist
 
