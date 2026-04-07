@@ -165,10 +165,11 @@ External contributors don't have write access, so the review-to-merge flow has a
 1. ✅ All required CI checks are green (build, test, lint; changeset/CHANGELOG gate only applies when `packages/squad-cli/src/` or `packages/squad-sdk/src/` files change)
 2. ✅ PR is no longer a draft — mark as **"Ready for review"**
 3. ✅ Copilot reviewer bot posts its review automatically
-4. ✅ Accept any Copilot suggestions you agree with (you have permission to accept suggestions)
-5. ✅ If Copilot flags issues you can't resolve via suggestions, note them in a PR comment
+4. ✅ Review Copilot's suggestions and manually apply any you agree with in your fork
+5. ✅ Push updates to your branch to address Copilot's feedback
+6. ✅ If Copilot flags issues you can't resolve, note them in a PR comment
 
-> **Note:** You may see a "Fix with Copilot" button on review comments — this requires repo write access and won't work for external contributors. Use "Accept suggestion" instead, or leave a comment explaining why you disagree.
+> **Note:** Copilot review suggestions appear as comments, but the "Commit suggestion" and "Fix with Copilot" buttons require repo write access and won't work for external contributors. Review the suggestions, apply them manually in your fork, and push your changes.
 
 **Core team side (after you undraft):**
 
