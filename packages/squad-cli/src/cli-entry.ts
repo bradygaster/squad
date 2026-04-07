@@ -427,6 +427,45 @@ async function main(): Promise<void> {
       ? args[authUserIdx + 1]
       : undefined;
 
+    // --notify-level runtime validation
+    const notifyLevelIdx = args.indexOf('--notify-level');
+    const rawNotifyLevel = (notifyLevelIdx !== -1 && args[notifyLevelIdx + 1])
+      ? args[notifyLevelIdx + 1]
+      : undefined;
+    const validNotifyLevels = ['all', 'important', 'none'] as const;
+    const notifyLevel = rawNotifyLevel && (validNotifyLevels as readonly string[]).includes(rawNotifyLevel)
+      ? rawNotifyLevel as typeof validNotifyLevels[number]
+      : rawNotifyLevel
+        ? (console.error(`\u26a0\ufe0f Invalid --notify-level "${rawNotifyLevel}". Valid: all, important, none.`), undefined)
+        : undefined;
+
+    const overnightStartIdx = args.indexOf('--overnight-start');
+    const overnightStart = (overnightStartIdx !== -1 && args[overnightStartIdx + 1])
+      ? args[overnightStartIdx + 1]
+      : undefined;
+
+    const overnightEndIdx = args.indexOf('--overnight-end');
+    const overnightEnd = (overnightEndIdx !== -1 && args[overnightEndIdx + 1])
+      ? args[overnightEndIdx + 1]
+      : undefined;
+
+    const sentinelFileIdx = args.indexOf('--sentinel-file');
+    const sentinelFile = (sentinelFileIdx !== -1 && args[sentinelFileIdx + 1])
+      ? args[sentinelFileIdx + 1]
+      : undefined;
+
+    // --state-backend runtime validation: reject invalid values upfront
+    const stateBackendIdx = args.indexOf('--state-backend');
+    const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
+      ? args[stateBackendIdx + 1]
+      : undefined;
+    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
+      console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
+      process.exit(1);
+    }
+    const stateBackend = rawStateBackend as typeof validBackends[number] | undefined;
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -456,6 +495,11 @@ async function main(): Promise<void> {
       dispatchMode,
       logFile,
       authUser,
+      notifyLevel,
+      overnightStart,
+      overnightEnd,
+      sentinelFile,
+      stateBackend,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
@@ -463,6 +507,7 @@ async function main(): Promise<void> {
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
       '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+      '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
     const watchArgs = args.slice(watchArgStart);
