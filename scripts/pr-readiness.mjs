@@ -247,6 +247,86 @@ export function checkCIStatus(checkRuns, statuses) {
 }
 
 // ---------------------------------------------------------------------------
+// Scope classification
+// ---------------------------------------------------------------------------
+
+/**
+ * Classify the PR scope based on changed files.
+ * @param {Array<{ filename: string }>} files
+ * @returns {{ label: string, emoji: string }}
+ */
+export function classifyScope(files) {
+  const hasProduct = (files || []).some((f) => SOURCE_PATTERN.test(f.filename));
+  const hasInfra = (files || []).some((f) => !SOURCE_PATTERN.test(f.filename));
+
+  if (hasProduct && hasInfra) {
+    return { label: 'Mixed (product + infrastructure)', emoji: '📦🔧' };
+  }
+  if (hasProduct) {
+    return { label: 'Product', emoji: '📦' };
+  }
+  return { label: 'Infrastructure', emoji: '🔧' };
+}
+
+// ---------------------------------------------------------------------------
+// File list builder
+// ---------------------------------------------------------------------------
+
+/** Maximum files shown in the file list before truncation. */
+export const MAX_FILE_LIST = 50;
+
+/**
+ * Sanitize a filename for safe inclusion in a markdown table cell.
+ * Escapes pipe characters, replaces backticks, and collapses newlines.
+ * @param {string} name
+ * @returns {string}
+ */
+export function sanitizeFilename(name) {
+  return name
+    .replace(/\|/g, '\\|')
+    .replace(/`/g, "'")
+    .replace(/[\r\n]+/g, ' ');
+}
+
+/**
+ * Build a markdown section listing changed files with per-file line stats.
+ * @param {Array<{ filename: string, additions?: number, deletions?: number }>} files
+ * @returns {string}
+ */
+export function buildFileList(files) {
+  if (!files || files.length === 0) {
+    return '';
+  }
+
+  const totalAdded = files.reduce((sum, f) => sum + (f.additions || 0), 0);
+  const totalDeleted = files.reduce((sum, f) => sum + (f.deletions || 0), 0);
+
+  const displayed = files.slice(0, MAX_FILE_LIST);
+  const truncated = files.length > MAX_FILE_LIST;
+
+  const rows = displayed.map((f) => {
+    const added = f.additions || 0;
+    const deleted = f.deletions || 0;
+    return `| \`${sanitizeFilename(f.filename)}\` | +${added} −${deleted} |`;
+  });
+
+  if (truncated) {
+    const remaining = files.length - MAX_FILE_LIST;
+    rows.push(`| ... | **+${remaining} more files** | |`);
+  }
+
+  return [
+    `### Files Changed (${files.length} file${files.length === 1 ? '' : 's'}, +${totalAdded} −${totalDeleted})`,
+    '',
+    '| File | +/− |',
+    '|------|-----|',
+    ...rows,
+    '',
+    `**Total: +${totalAdded} −${totalDeleted}**`,
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Checklist markdown builder
 // ---------------------------------------------------------------------------
 
@@ -257,9 +337,10 @@ export function checkCIStatus(checkRuns, statuses) {
  * @param {string} repo
  * @param {string} baseRef
  * @param {string} [headSha] — commit SHA that triggered the check
+ * @param {Array<{ filename: string, additions?: number, deletions?: number }>} [files]
  * @returns {string}
  */
-export function buildChecklist(checks, owner, repo, baseRef, headSha) {
+export function buildChecklist(checks, owner, repo, baseRef, headSha, files) {
   const allPass = checks.every((c) => c.pass);
   const passCount = checks.filter((c) => c.pass).length;
 
@@ -272,23 +353,37 @@ export function buildChecklist(checks, owner, repo, baseRef, headSha) {
     return `| ${icon} | **${c.name}** | ${c.detail} |`;
   });
 
-  return [
+  const scope = classifyScope(files);
+
+  const sections = [
     COMMENT_MARKER,
     '## 🛫 PR Readiness Check',
     ...(headSha
       ? [`> ℹ️ This comment updates on each push. Last checked: commit \`${headSha.slice(0, 7)}\``]
       : []),
     '',
+    `**PR Scope:** ${scope.emoji} ${scope.label}`,
+    '',
     status,
     '',
     '| Status | Check | Details |',
     '|--------|-------|---------|',
     ...rows,
+  ];
+
+  const fileList = buildFileList(files);
+  if (fileList) {
+    sections.push('', fileList);
+  }
+
+  sections.push(
     '',
     '---',
     '*This check runs automatically on every push. Fix any ❌ items and push again.*',
     `*See [CONTRIBUTING.md](https://github.com/${owner}/${repo}/blob/${baseRef}/CONTRIBUTING.md#pr-readiness-checklist) and [PR Requirements](https://github.com/${owner}/${repo}/blob/${baseRef}/.github/PR_REQUIREMENTS.md) for details.*`,
-  ].join('\n');
+  );
+
+  return sections.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -492,7 +587,7 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
   checks.push({ name: 'CI passing', ...checkCIStatus(checkRuns, statusEntries) });
 
   // ── Build checklist and upsert comment ──
-  const body = buildChecklist(checks, owner, repo, prBaseRef, prHeadSha);
+  const body = buildChecklist(checks, owner, repo, prBaseRef, prHeadSha, files);
 
   // Find existing comment
   const existingComments = await paginate(
