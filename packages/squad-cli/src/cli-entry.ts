@@ -212,7 +212,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser ${YELLOW}[DEPRECATED]${RESET}`);
     console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>]`);
     console.log(`                    [copilot flags...]`);
-    console.log(`             ${DIM}⚠ Deprecated: --tunnel and remote access will be removed in a future release.${RESET}`);
+    console.log(`             ${DIM}⚠ Deprecated: will be removed in a future release.${RESET}`);
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
