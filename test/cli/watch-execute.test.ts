@@ -13,7 +13,7 @@ import type { ExecutableWorkItem } from '../../packages/squad-cli/src/cli/comman
 
 describe('CLI: watch execute mode', () => {
   describe('buildAgentCommand', () => {
-    it('builds default gh copilot command', async () => {
+    it('builds default copilot command (standalone CLI)', async () => {
             const issue: WatchWorkItem = {
         number: 42,
         title: 'Fix auth redirect bug',
@@ -26,8 +26,7 @@ describe('CLI: watch execute mode', () => {
 
       const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
 
-      expect(cmd).toBe('gh');
-      expect(args).toContain('copilot');
+      expect(cmd).toBe('copilot');
       expect(args).toContain('--message');
       expect(args.some((a) => a.includes('issue #42'))).toBe(true);
     });
@@ -45,7 +44,7 @@ describe('CLI: watch execute mode', () => {
 
       const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
 
-      expect(cmd).toBe('gh');
+      expect(cmd).toBe('copilot');
       expect(args).toContain('--model');
       expect(args).toContain('gpt-4');
       expect(args).toContain('--yolo');
