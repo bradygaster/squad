@@ -150,7 +150,7 @@ async function main(): Promise<void> {
     console.log(`\n${BOLD}squad${RESET} v${VERSION} — Add an AI agent team to any project\n`);
     console.log(`Usage: squad [command] [options]\n`);
     console.log(`Commands:`);
-    console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
+    console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args) ${YELLOW}[DEPRECATED]${RESET}`);
     console.log(`             Flags: --global (init in personal squad directory)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
     console.log(`             Flags: --sdk (SDK builder syntax)`);
@@ -209,12 +209,10 @@ async function main(): Promise<void> {
     console.log(`             Usage: import <file> [--force]`);
     console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
     console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
-    console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser`);
+    console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser ${YELLOW}[DEPRECATED]${RESET}`);
     console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>]`);
     console.log(`                    [copilot flags...]`);
-    console.log(`             Examples: start --tunnel --yolo`);
-    console.log(`                       start --tunnel --model claude-sonnet-4`);
-    console.log(`                       start --tunnel --command "gh copilot"`);
+    console.log(`             ${DIM}⚠ Deprecated: will be removed in a future release.${RESET}`);
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
@@ -239,12 +237,12 @@ async function main(): Promise<void> {
     console.log(`             Usage: personal init | list | add <name>`);
     console.log(`                    --role <role> | remove <name>`);
     console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
-    console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
+    console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot) ${YELLOW}[DEPRECATED]${RESET}`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
     console.log(`  ${BOLD}copilot-bridge${RESET}  Check Copilot ACP stdio compatibility`);
     console.log(`  ${BOLD}init-remote${RESET}    Link project to remote team root (shorthand)`);
     console.log(`             Usage: init-remote <team-repo-path>`);
-    console.log(`  ${BOLD}rc-tunnel${RESET}      Check devtunnel CLI availability`);
+    console.log(`  ${BOLD}rc-tunnel${RESET}      Check devtunnel CLI availability ${YELLOW}[DEPRECATED]${RESET}`);
     console.log(`  ${BOLD}discover${RESET}   List known squads and their capabilities`);
     console.log(`  ${BOLD}delegate${RESET}   Create work in another squad`);
     console.log(`             Usage: delegate <squad-name> <description>`);
@@ -273,6 +271,8 @@ async function main(): Promise<void> {
 
   // No args → launch interactive shell; whitespace-only arg → show help
   if (rawCmd === undefined) {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} The interactive REPL shell is deprecated and will be removed in a future release.`);
+    console.log(`  Use the GitHub Copilot CLI instead: ${BOLD}gh copilot${RESET} (squad.agent.md is picked up automatically)\n`);
     // Fire-and-forget update check — non-blocking, never delays shell startup
     import('./cli/self-update.js').then(m => m.notifyIfUpdateAvailable(VERSION)).catch(() => {});
     const { runShell } = await lazyRunShell();
@@ -708,8 +708,13 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'start') {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad start" is deprecated and will be removed in a future release.`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}copilot${RESET} or ${BOLD}gh copilot${RESET}\n`);
     const { runStart } = await import('./cli/commands/start.js');
     const hasTunnel = args.includes('--tunnel');
+    if (hasTunnel) {
+      console.log(`${YELLOW}⚠ DEPRECATED:${RESET} --tunnel is deprecated and will be removed in a future release.\n`);
+    }
     const portIdx = args.indexOf('--port');
     const port = (portIdx !== -1 && args[portIdx + 1]) ? parseInt(args[portIdx + 1]!, 10) : 0;
     // Collect all remaining args to pass through to copilot
@@ -789,6 +794,8 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'rc' || cmd === 'remote-control') {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad rc" is deprecated and will be removed in a future release.`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}copilot${RESET} or ${BOLD}gh copilot${RESET}\n`);
     const { runRC } = await import('./cli/commands/rc.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');
@@ -823,6 +830,7 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'rc-tunnel') {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad rc-tunnel" is deprecated and will be removed in a future release.\n`);
     const { isDevtunnelAvailable } = await import('./cli/commands/rc-tunnel.js');
     if (isDevtunnelAvailable()) {
       console.log(`${GREEN}✓${RESET} devtunnel CLI is available`);
