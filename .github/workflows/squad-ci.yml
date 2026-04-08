@@ -366,6 +366,7 @@ jobs:
           always()
           && steps.labels.outputs.skip_version != 'true'
           && vars.SQUAD_VERSION_CHECK != 'false'
+          && github.event.pull_request.base.ref != 'insider'
         run: |
           echo "## 🏷️ Prerelease Version Guard" >> $GITHUB_STEP_SUMMARY
           node -e "
