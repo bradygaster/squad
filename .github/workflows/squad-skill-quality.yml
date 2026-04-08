@@ -1,0 +1,209 @@
+name: Skill Quality (waza)
+
+on:
+  pull_request:
+    paths:
+      - '.copilot/skills/**'
+      - '.squad/skills/**'
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      skills:
+        description: 'Comma-separated skill names (blank = all)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  WAZA_VERSION: '0.23.0'
+
+jobs:
+  skill-check:
+    name: 'Skill Quality Check'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Phase 1: informational only — don't block merges
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install waza
+        run: |
+          ASSET="waza_${WAZA_VERSION}_linux_amd64.tar.gz"
+          URL="https://github.com/microsoft/waza/releases/download/v${WAZA_VERSION}/${ASSET}"
+          echo "Downloading waza v${WAZA_VERSION} from ${URL}"
+          curl -fsSL -o waza.tar.gz "${URL}"
+          tar -xzf waza.tar.gz
+          chmod +x waza
+          sudo mv waza /usr/local/bin/waza
+          rm -f waza.tar.gz
+          waza --version
+
+      - name: Detect changed skills
+        id: detect
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE"..."$HEAD" -- \
+            '.copilot/skills/' \
+            '.squad/skills/' \
+          )
+
+          # Extract unique skill directories that contain SKILL.md changes
+          SKILL_DIRS=""
+          for file in $CHANGED; do
+            dir=$(dirname "$file")
+            if [ -f "${dir}/SKILL.md" ]; then
+              SKILL_DIRS=$(printf '%s\n%s' "$SKILL_DIRS" "$dir")
+            fi
+          done
+
+          # Deduplicate
+          SKILL_DIRS=$(echo "$SKILL_DIRS" | sort -u | grep -v '^$' || true)
+
+          if [ -z "$SKILL_DIRS" ]; then
+            echo "No skill directories changed."
+            echo "has_skills=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed skill directories:"
+            echo "$SKILL_DIRS"
+            # Store as newline-separated list
+            echo "has_skills=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "skill_dirs<<EOF"
+              echo "$SKILL_DIRS"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect all skills (scheduled/dispatch)
+        id: collect
+        if: github.event_name != 'pull_request'
+        run: |
+          SKILL_DIRS=""
+
+          # Explicit input skills
+          if [ -n "${{ inputs.skills }}" ]; then
+            IFS=',' read -ra NAMES <<< "${{ inputs.skills }}"
+            for name in "${NAMES[@]}"; do
+              name=$(echo "$name" | xargs)  # trim whitespace
+              for root in .copilot/skills .squad/skills; do
+                if [ -f "${root}/${name}/SKILL.md" ]; then
+                  SKILL_DIRS=$(printf '%s\n%s' "$SKILL_DIRS" "${root}/${name}")
+                fi
+              done
+            done
+          else
+            # Discover all skills in governed roots
+            for root in .copilot/skills .squad/skills; do
+              if [ -d "$root" ]; then
+                for skill_dir in "$root"/*/; do
+                  if [ -f "${skill_dir}SKILL.md" ]; then
+                    SKILL_DIRS=$(printf '%s\n%s' "$SKILL_DIRS" "${skill_dir%/}")
+                  fi
+                done
+              fi
+            done
+          fi
+
+          SKILL_DIRS=$(echo "$SKILL_DIRS" | sort -u | grep -v '^$' || true)
+
+          if [ -z "$SKILL_DIRS" ]; then
+            echo "No skills found."
+            echo "has_skills=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skills to check:"
+            echo "$SKILL_DIRS"
+            echo "has_skills=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "skill_dirs<<EOF"
+              echo "$SKILL_DIRS"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run waza check
+        id: check
+        run: |
+          # Determine which skills to check
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            HAS_SKILLS="${{ steps.detect.outputs.has_skills }}"
+            SKILL_DIRS="${{ steps.detect.outputs.skill_dirs }}"
+          else
+            HAS_SKILLS="${{ steps.collect.outputs.has_skills }}"
+            SKILL_DIRS="${{ steps.collect.outputs.skill_dirs }}"
+          fi
+
+          if [ "$HAS_SKILLS" != "true" ]; then
+            echo "No skills to check — skipping."
+            echo "## Skill Quality Check" >> "$GITHUB_STEP_SUMMARY"
+            echo "No skill files changed in this PR." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          TOTAL=0
+          PASSED=0
+          FAILED=0
+          ERRORS=0
+          RESULTS=""
+
+          while IFS= read -r skill_dir; do
+            [ -z "$skill_dir" ] && continue
+            TOTAL=$((TOTAL + 1))
+            skill_name=$(basename "$skill_dir")
+            echo "──────────────────────────────────────────"
+            echo "Checking: ${skill_dir}/SKILL.md"
+
+            set +e
+            OUTPUT=$(waza check "${skill_dir}" 2>&1)
+            EXIT_CODE=$?
+            set -e
+
+            case $EXIT_CODE in
+              0)
+                PASSED=$((PASSED + 1))
+                STATUS="✅ Pass"
+                ;;
+              2)
+                ERRORS=$((ERRORS + 1))
+                STATUS="⚠️ Config error"
+                ;;
+              *)
+                FAILED=$((FAILED + 1))
+                STATUS="❌ Fail"
+                ;;
+            esac
+
+            echo "  Result: ${STATUS} (exit ${EXIT_CODE})"
+            RESULTS="${RESULTS}| \`${skill_name}\` | ${STATUS} | ${EXIT_CODE} |\n"
+          done <<< "$SKILL_DIRS"
+
+          echo "──────────────────────────────────────────"
+          echo "Total: ${TOTAL}, Passed: ${PASSED}, Failed: ${FAILED}, Errors: ${ERRORS}"
+
+          # Write job summary
+          {
+            echo "## 🥋 Skill Quality Check (waza v${WAZA_VERSION})"
+            echo ""
+            echo "| Skill | Status | Exit Code |"
+            echo "|-------|--------|-----------|"
+            echo -e "$RESULTS"
+            echo ""
+            echo "**Summary:** ${PASSED}/${TOTAL} passed"
+            if [ $FAILED -gt 0 ] || [ $ERRORS -gt 0 ]; then
+              echo ""
+              echo "> ⚠️ **Phase 1 (informational):** Failures do not block merge."
+              echo "> See [waza docs](https://github.com/microsoft/waza) for skill authoring guidance."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
