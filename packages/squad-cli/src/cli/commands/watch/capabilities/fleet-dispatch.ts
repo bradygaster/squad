@@ -8,13 +8,14 @@
  * analysis tracks inside one Copilot invocation.
  */
 
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import type { DispatchMode } from '../config.js';
+import { IS_WINDOWS } from '../agent-spawn.js';
 import {
   type ExecutableWorkItem,
   findExecutableIssues,
@@ -71,9 +72,9 @@ function invokeFleet(
     // Read the prompt from file
     const promptContent = readFileSync(promptFile, 'utf-8');
 
-    // Use execFileSync with args array — no shell, no injection risk
-    const copilotBin = process.platform === 'win32' ? 'copilot.cmd' : 'copilot';
-    const result = execFileSync(copilotBin, [
+    // Use execFileSync with args array — no shell injection risk
+    // shell: IS_WINDOWS ensures PATH/.cmd resolution works on Windows
+    const result = execFileSync('copilot', [
       '-p', promptContent,
       '--allow-all',
       '--no-ask-user',
@@ -82,6 +83,7 @@ function invokeFleet(
       cwd,
       timeout: timeoutMs,
       encoding: 'utf-8' as BufferEncoding,
+      shell: IS_WINDOWS,
     });
 
     return { success: true, output: String(result) };
@@ -106,7 +108,7 @@ export class FleetDispatchCapability implements WatchCapability {
   async preflight(_context: WatchContext): Promise<PreflightResult> {
     // Fleet dispatch requires the copilot CLI — quick sanity check
     try {
-      execSync('copilot --version', { encoding: 'utf-8', stdio: 'pipe' });
+      execFileSync('copilot', ['--version'], { encoding: 'utf-8', stdio: 'pipe', shell: IS_WINDOWS });
       return { ok: true };
     } catch {
       return { ok: false, reason: 'copilot CLI not found — required for fleet dispatch' };
@@ -124,8 +126,9 @@ export class FleetDispatchCapability implements WatchCapability {
 
       const timeoutMs = ((context.config['timeout'] as number) ?? 30) * 60_000;
 
-      // Fetch the same issue set as the execute capability
-      const sdkItems = await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
+      // Use shared round data when available (#923), otherwise fetch
+      const sdkItems = context.roundData?.issues
+        ?? await context.adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 50 });
       const issues: ExecutableWorkItem[] = sdkItems.map(wi => ({
         number: wi.id,
         title: wi.title,

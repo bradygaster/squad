@@ -7,6 +7,7 @@
 
 import { execFile, execFileSync } from 'node:child_process';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
+import { IS_WINDOWS } from '../agent-spawn.js';
 
 export class SelfPullCapability implements WatchCapability {
   readonly name = 'self-pull';
@@ -17,7 +18,7 @@ export class SelfPullCapability implements WatchCapability {
 
   async preflight(_context: WatchContext): Promise<PreflightResult> {
     return new Promise<PreflightResult>((resolve) => {
-      execFile('git', ['--version'], (err) => {
+      execFile('git', ['--version'], { shell: IS_WINDOWS }, (err) => {
         resolve(err ? { ok: false, reason: 'git not found' } : { ok: true });
       });
     });
@@ -29,27 +30,27 @@ export class SelfPullCapability implements WatchCapability {
       // Capture HEAD before pull for change detection
       let headBefore = '';
       try {
-        headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' }).trim();
+        headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8', shell: IS_WINDOWS }).trim();
       } catch { /* non-fatal */ }
 
       // Stash if there are local changes
       let didStash = false;
       try {
-        const status = execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' }).trim();
+        const status = execFileSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8', shell: IS_WINDOWS }).trim();
         if (status.length > 0) {
-          execFileSync('git', ['stash', '--include-untracked'], { cwd, encoding: 'utf-8' });
+          execFileSync('git', ['stash', '--include-untracked'], { cwd, encoding: 'utf-8', shell: IS_WINDOWS });
           didStash = true;
         }
       } catch { /* non-fatal — proceed without stash */ }
 
       // Fetch + pull
       await new Promise<void>((resolve, reject) => {
-        execFile('git', ['fetch', '--quiet'], { cwd }, (err) =>
+        execFile('git', ['fetch', '--quiet'], { cwd, shell: IS_WINDOWS }, (err) =>
           err ? reject(err) : resolve(),
         );
       });
       await new Promise<void>((resolve, reject) => {
-        execFile('git', ['pull', '--ff-only', '--quiet'], { cwd }, (err) =>
+        execFile('git', ['pull', '--ff-only', '--quiet'], { cwd, shell: IS_WINDOWS }, (err) =>
           err ? reject(err) : resolve(),
         );
       });
@@ -57,7 +58,7 @@ export class SelfPullCapability implements WatchCapability {
       // Pop stash if we created one
       if (didStash) {
         try {
-          execFileSync('git', ['stash', 'pop'], { cwd, encoding: 'utf-8' });
+          execFileSync('git', ['stash', 'pop'], { cwd, encoding: 'utf-8', shell: IS_WINDOWS });
         } catch {
           console.log('⚠️  git stash pop failed (possible merge conflict) — changes remain in stash');
         }
@@ -67,11 +68,11 @@ export class SelfPullCapability implements WatchCapability {
       let sourceChanged = false;
       if (headBefore) {
         try {
-          const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' }).trim();
+          const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8', shell: IS_WINDOWS }).trim();
           if (headBefore !== headAfter) {
             const diff = execFileSync(
               'git', ['diff', '--name-only', headBefore, headAfter, '--', 'packages/squad-cli/src/'],
-              { cwd, encoding: 'utf-8' },
+              { cwd, encoding: 'utf-8', shell: IS_WINDOWS },
             ).trim();
             if (diff.length > 0) {
               sourceChanged = true;

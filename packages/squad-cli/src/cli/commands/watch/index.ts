@@ -15,6 +15,8 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 const storage = new FSStorageProvider();
 const execFileAsync = promisify(execFile);
 
+import { IS_WINDOWS, buildAgentCommand as buildAgentCommandShared, spawnAgent } from './agent-spawn.js';
+
 import { detectSquadDir } from '../../core/detect-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
@@ -37,7 +39,7 @@ import { createPlatformAdapter } from '@bradygaster/squad-sdk/platform';
 import type { PlatformAdapter, WorkItem, PullRequest as SdkPullRequest } from '@bradygaster/squad-sdk/platform';
 
 import type { WatchConfig } from './config.js';
-import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './types.js';
+import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult, RoundData } from './types.js';
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
 import { createVerboseLogger, type VerboseLogger } from './verbose.js';
@@ -46,11 +48,12 @@ import { createVerboseLogger, type VerboseLogger } from './verbose.js';
 
 export type { WatchConfig } from './config.js';
 export { loadWatchConfig } from './config.js';
-export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, CapabilityResult } from './types.js';
+export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, CapabilityResult, RoundData } from './types.js';
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
 export { createVerboseLogger, type VerboseLogger } from './verbose.js';
 export { getWatchHealth, writePidFile, removePidFile, getPidPath, isProcessAlive, type WatchPidInfo } from './health.js';
+export { IS_WINDOWS, buildAgentCommand as buildAgentCommandShared, spawnWithTimeout, spawnAgent } from './agent-spawn.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
 
@@ -137,7 +140,7 @@ async function editWorkItem(
   if (options.addAssignee) {
     if (adapter.type === 'github') {
       try {
-        await execFileAsync('gh', ['issue', 'edit', String(id), '--add-assignee', options.addAssignee]);
+        await execFileAsync('gh', ['issue', 'edit', String(id), '--add-assignee', options.addAssignee], { shell: IS_WINDOWS });
       } catch { /* best-effort */ }
     } else if (adapter.type === 'azure-devops') {
       const assignee = options.addAssignee === '@me' ? '' : options.addAssignee;
@@ -148,7 +151,7 @@ async function editWorkItem(
             '--id', String(id),
             '--fields', `System.AssignedTo=${assignee}`,
             '--output', 'json',
-          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], shell: IS_WINDOWS });
         } catch { /* best-effort */ }
       }
     }
@@ -211,9 +214,12 @@ type PRBoardState = Pick<BoardState, 'drafts' | 'needsReview' | 'changesRequeste
   totalOpen: number;
 };
 
-async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter, vlog?: VerboseLogger): Promise<PRBoardState> {
+async function checkPRs(roster: ReturnType<typeof parseRoster>, adapter: PlatformAdapter, vlog?: VerboseLogger, roundData?: RoundData): Promise<PRBoardState> {
   const timestamp = new Date().toLocaleTimeString();
-  const prs = await listWatchPullRequests(adapter, { state: 'open', limit: 20 });
+  // Use shared round data when available (#923), otherwise fetch
+  const prs: WatchPullRequest[] = roundData
+    ? roundData.pullRequests.map(toWatchPullRequest)
+    : await listWatchPullRequests(adapter, { state: 'open', limit: 20 });
   const squadPRs = prs.filter(pr =>
     pr.labels.some(l => l.name.startsWith('squad')) || pr.headRefName.startsWith('squad/'),
   );
@@ -296,10 +302,14 @@ async function runCheck(
   capabilities: MachineCapabilities | null,
   adapter: PlatformAdapter,
   vlog?: VerboseLogger,
+  roundData?: RoundData,
 ): Promise<BoardState> {
   const timestamp = new Date().toLocaleTimeString();
   try {
-    const issues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 20 });
+    // Use shared round data when available (#923), otherwise fetch
+    const issues: WatchWorkItem[] = roundData
+      ? roundData.issues.map(toWatchWorkItem)
+      : await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 20 });
 
     vlog?.log(`Issues found: ${issues.length} total`);
     for (const issue of issues) {
@@ -328,7 +338,12 @@ async function runCheck(
     let unassignedCopilot: WatchWorkItem[] = [];
     if (hasCopilot && autoAssign) {
       try {
-        const copilotIssues = await listWatchWorkItems(adapter, { label: 'squad:copilot', state: 'open', limit: 10 });
+        // Use shared round data when available (#923) — filter from already-fetched issues
+        const copilotIssues: WatchWorkItem[] = roundData
+          ? roundData.issues
+              .filter(wi => wi.tags.includes('squad:copilot'))
+              .map(toWatchWorkItem)
+          : await listWatchWorkItems(adapter, { label: 'squad:copilot', state: 'open', limit: 10 });
         unassignedCopilot = copilotIssues.filter(i => !i.assignees || i.assignees.length === 0);
       } catch { /* label may not exist */ }
     }
@@ -360,7 +375,7 @@ async function runCheck(
       }
     }
 
-    const prState = await checkPRs(roster, adapter, vlog);
+    const prState = await checkPRs(roster, adapter, vlog, roundData);
     return { untriaged: untriaged.length, assigned: assignedIssues.length, executed: 0, ...prState };
   } catch (e) {
     console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${(e as Error).message}`);
@@ -582,18 +597,19 @@ export function buildAgentCommand(
     const parts = options.agentCmd.trim().split(/\s+/);
     return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
   }
-  const args = ['copilot', '--message', prompt];
+  // Default: standalone copilot CLI (not gh copilot which is deprecated)
+  const args = ['--message', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'gh', args };
+  return { cmd: 'copilot', args };
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {
   try {
     await new Promise<void>((resolve, reject) => {
-      execFile('git', ['fetch', '--quiet'], { cwd: teamRoot }, (err) => (err ? reject(err) : resolve()));
+      execFile('git', ['fetch', '--quiet'], { cwd: teamRoot, shell: IS_WINDOWS }, (err) => (err ? reject(err) : resolve()));
     });
     await new Promise<void>((resolve, reject) => {
-      execFile('git', ['pull', '--ff-only', '--quiet'], { cwd: teamRoot }, (err) => (err ? reject(err) : resolve()));
+      execFile('git', ['pull', '--ff-only', '--quiet'], { cwd: teamRoot, shell: IS_WINDOWS }, (err) => (err ? reject(err) : resolve()));
     });
   } catch {
     console.log(`${DIM}⚠ selfPull: git pull skipped (not on a tracking branch or conflicts)${RESET}`);
@@ -613,7 +629,7 @@ export async function executeIssue(
   const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
   console.log(`${GREEN}▶${RESET} [${ts}] Executing #${issue.number} "${issue.title}" → ${cmd} ${args.join(' ')}`);
   return new Promise((resolve) => {
-    execFile(cmd, args, { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+    execFile(cmd, args, { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024, shell: IS_WINDOWS }, (err) => {
       if (err) {
         const execErr = err as Error & { killed?: boolean };
         const msg = execErr.killed ? `Timed out after ${options.issueTimeoutMinutes ?? 30}m` : execErr.message;
@@ -685,7 +701,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   // Auth check (verbose only — avoid unnecessary process spawn on every startup)
   if (config.verbose && adapter.type === 'github') {
     try {
-      const authOut = execFileSync('gh', ['auth', 'status'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const authOut = execFileSync('gh', ['auth', 'status'], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], shell: IS_WINDOWS }).trim();
       const activeAccount = authOut.match(/Logged in to .* account (\S+)/)?.[1];
       vlog.log(`Auth: ${activeAccount ?? 'unknown'}`);
     } catch {
@@ -698,8 +714,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
     if (!(await ghAuthenticated())) fatal('gh CLI not authenticated — run: gh auth login');
   } else if (adapter.type === 'azure-devops') {
-    try { await execFileAsync('az', ['devops', '-h']); } catch { fatal('az CLI not found'); }
-    try { await execFileAsync('az', ['account', 'show']); } catch { fatal('az CLI not authenticated — run: az login'); }
+    try { await execFileAsync('az', ['devops', '-h'], { shell: IS_WINDOWS }); } catch { fatal('az CLI not found'); }
+    try { await execFileAsync('az', ['account', 'show'], { shell: IS_WINDOWS }); } catch { fatal('az CLI not authenticated — run: az login'); }
   }
 
   // Parse team.md
@@ -852,11 +868,17 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     round++;
-    const roundContext: WatchContext = { ...baseContext, round };
+
+    // ── Shared round data (#923): fetch issues + PRs ONCE ────────
+    const roundIssues = await adapter.listWorkItems({ tags: ['squad'], state: 'open', limit: 200 });
+    const roundPRs = await adapter.listPullRequests({ status: 'active', limit: 20 });
+    const roundData = { issues: roundIssues, pullRequests: roundPRs, fetchedAt: new Date() };
+    const roundContext: WatchContext = { ...baseContext, round, roundData };
 
     // Fix 1: Print round start marker
     console.log(`\n${DIM}Starting round ${round}...${RESET}`);
     vlog.section(`Round ${round}`);
+    vlog.log(`Shared fetch: ${roundIssues.length} issues, ${roundPRs.length} PRs`);
 
     // Phase 1: pre-scan (self-pull, subsquad discovery)
     await runPhase('pre-scan', enabledCapabilities, roundContext, config);
@@ -867,8 +889,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       console.log(`${DIM}📂 Discovered ${subSquads.length} subsquad(s): ${subSquads.map(s => s.name).join(', ')}${RESET}`);
     }
 
-    // Core: triage (always runs — not a capability)
-    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter, vlog);
+    // Core: triage (always runs — not a capability) — uses shared roundData
+    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter, vlog, roundData);
 
     // Phase 2: post-triage (two-pass hydration)
     await runPhase('post-triage', enabledCapabilities, roundContext, config);
