@@ -18,6 +18,7 @@ const execFileAsync = promisify(execFile);
 import { detectSquadDir } from '../../core/detect-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
+import { buildCopilotArgs } from '../copilot-args.js';
 import {
   parseRoutingRules,
   parseModuleOwnership,
@@ -578,13 +579,10 @@ export function buildAgentCommand(
   options: WatchOptions,
 ): { cmd: string; args: string[] } {
   const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
-  if (options.agentCmd) {
-    const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
-  }
-  const args = ['copilot', '--message', prompt];
-  if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'gh', args };
+  return buildCopilotArgs(prompt, {
+    agentCmd: options.agentCmd,
+    copilotFlags: options.copilotFlags,
+  });
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {

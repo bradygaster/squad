@@ -4,15 +4,13 @@
 
 import { execFile } from 'node:child_process';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
+import { buildCopilotArgs } from '../../copilot-args.js';
 
 function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string; args: string[] } {
-  if (context.agentCmd) {
-    const parts = context.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
-  }
-  const args = ['copilot', '--message', prompt];
-  if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'gh', args };
+  return buildCopilotArgs(prompt, {
+    agentCmd: context.agentCmd,
+    copilotFlags: context.copilotFlags,
+  });
 }
 
 function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {

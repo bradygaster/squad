@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import { createVerboseLogger } from '../verbose.js';
+import { buildCopilotArgs } from '../../copilot-args.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -50,17 +51,10 @@ function buildAgentCommand(
   prompt: string,
   context: WatchContext,
 ): { cmd: string; args: string[] } {
-  if (context.agentCmd) {
-    const parts = context.agentCmd.trim().split(/\s+/);
-    const cmd = parts[0]!;
-    const args = [...parts.slice(1), '--message', prompt];
-    return { cmd, args };
-  }
-  const args = ['copilot', '--message', prompt];
-  if (context.copilotFlags) {
-    args.push(...context.copilotFlags.trim().split(/\s+/));
-  }
-  return { cmd: 'gh', args };
+  return buildCopilotArgs(prompt, {
+    agentCmd: context.agentCmd,
+    copilotFlags: context.copilotFlags,
+  });
 }
 
 /** Labels that indicate an issue should not be auto-executed. */

@@ -28,8 +28,12 @@ describe('CLI: watch execute mode', () => {
 
       expect(cmd).toBe('gh');
       expect(args).toContain('copilot');
-      expect(args).toContain('--message');
-      expect(args.some((a) => a.includes('issue #42'))).toBe(true);
+      expect(args).toContain('-p');
+
+      const promptIndex = args.indexOf('-p');
+      expect(promptIndex).toBeGreaterThan(-1);
+      expect(args[promptIndex + 1]).toContain('42');
+      expect(args[promptIndex + 1]).toContain('Fix auth redirect bug');
     });
 
     it('passes through copilotFlags', async () => {
@@ -67,7 +71,7 @@ describe('CLI: watch execute mode', () => {
       expect(cmd).toBe('custom-agent');
       expect(args).toContain('--flag');
       expect(args).toContain('value');
-      expect(args).toContain('--message');
+      expect(args).toContain('-p');
     });
   });
 

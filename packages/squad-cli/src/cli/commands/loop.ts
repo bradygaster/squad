@@ -18,6 +18,7 @@ import {
   CapabilityRegistry,
   createDefaultRegistry,
 } from './watch/index.js';
+import { buildCopilotArgs } from './copilot-args.js';
 import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './watch/types.js';
 import type { WatchConfig } from './watch/config.js';
 import { createPlatformAdapter } from '@bradygaster/squad-sdk/platform';
@@ -134,15 +135,7 @@ function buildLoopAgentCommand(
   prompt: string,
   options: { agentCmd?: string; copilotFlags?: string },
 ): { cmd: string; args: string[] } {
-  if (options.agentCmd) {
-    const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
-  }
-  const args = ['copilot', '--message', prompt];
-  if (options.copilotFlags) {
-    args.push(...options.copilotFlags.trim().split(/\s+/));
-  }
-  return { cmd: 'gh', args };
+  return buildCopilotArgs(prompt, options);
 }
 
 // ── Capability Phase Runner ──────────────────────────────────────
@@ -314,7 +307,8 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   }
 
   // Preflight: verify gh copilot is available (skip if user overrides the agent command)
-  if (!options.agentCmd) {
+  const normalizedAgentCmd = options.agentCmd?.trim() || undefined;
+  if (!normalizedAgentCmd) {
     try {
       await checkGhCopilot();
     } catch {
@@ -329,7 +323,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     maxConcurrent: 1,
     timeout: timeoutMinutes,
     copilotFlags: options.copilotFlags,
-    agentCmd: options.agentCmd,
+    agentCmd: normalizedAgentCmd,
     capabilities: options.capabilities,
   };
 
@@ -352,7 +346,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     round: 0,
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),
     config: {},
-    agentCmd: options.agentCmd,
+    agentCmd: normalizedAgentCmd,
     copilotFlags: options.copilotFlags,
   };
 
@@ -383,7 +377,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     // Core: run the loop prompt
     const timeoutMs = timeoutMinutes * 60_000;
     const { cmd, args } = buildLoopAgentCommand(prompt, {
-      agentCmd: options.agentCmd,
+      agentCmd: normalizedAgentCmd,
       copilotFlags: options.copilotFlags,
     });
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
