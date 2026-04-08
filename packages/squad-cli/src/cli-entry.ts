@@ -753,6 +753,8 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'start') {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad start" is deprecated and will be removed in a future release.`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
     const { runStart } = await import('./cli/commands/start.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');
@@ -834,6 +836,8 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'rc' || cmd === 'remote-control') {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad rc" is deprecated and will be removed in a future release.`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
     const { runRC } = await import('./cli/commands/rc.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');

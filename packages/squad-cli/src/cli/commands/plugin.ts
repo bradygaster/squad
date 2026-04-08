@@ -156,8 +156,9 @@ export async function runPlugin(dest: string, args: string[]): Promise<void> {
         { timeout: TIMEOUTS.PLUGIN_FETCH_MS }
       );
       entries = JSON.parse(stdout.trim());
-    } catch (err: any) {
-      fatal(`Could not browse ${marketplace.source} — ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      fatal(`Could not browse ${marketplace.source} — ${message}`);
     }
 
     if (!entries || entries.length === 0) {

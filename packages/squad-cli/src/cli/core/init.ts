@@ -245,9 +245,10 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   let result;
   try {
     result = await sdkInitSquad(initOptions);
-  } catch (err: any) {
+  } catch (err: unknown) {
     process.off('SIGINT', sigintHandler);
-    fatal(`Failed to initialize squad: ${err.message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    fatal(`Failed to initialize squad: ${message}`);
     return; // Unreachable but makes TS happy
   }
 
