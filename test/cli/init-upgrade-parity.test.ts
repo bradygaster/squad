@@ -6,19 +6,24 @@
  * guard against that class of drift.
  *
  * @see https://github.com/bradygaster/squad/issues/822
+ * @see https://github.com/bradygaster/squad/issues/817
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, rmSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import {
   runUpgrade,
   ensureGitattributes,
   ensureDirectories,
+  ensureCastingDefaults,
+  ENSURE_DIRECTORIES,
 } from '@bradygaster/squad-cli/core/upgrade';
+import { runDoctor } from '@bradygaster/squad-cli/commands/doctor';
+import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 
 const TEST_ROOT = join(
   process.cwd(),
@@ -235,6 +240,158 @@ describe('Init / Upgrade parity', () => {
     for (const rule of EXPECTED_GITATTRIBUTES_RULES) {
       const count = content.split(rule).length - 1;
       expect(count).toBe(1);
+    }
+  });
+
+  // =========================================================================
+  // FR-2 (#817): Extended parity tests
+  // =========================================================================
+
+  // -------------------------------------------------------------------------
+  // 8. agents/ is user data, NOT scaffolding — intentionally excluded
+  //    from ENSURE_DIRECTORIES is acceptable (NFR-1)
+  // -------------------------------------------------------------------------
+  it('agents/ IS in ENSURE_DIRECTORIES (infrastructure, not user content)', () => {
+    // agents/ directory is a structural requirement — doctor checks for it.
+    // But the *contents* (charter.md, history.md) are user data.
+    // ENSURE_DIRECTORIES covers the parent directory, which is correct.
+    expect(ENSURE_DIRECTORIES).toContain('.squad/agents');
+  });
+
+  // -------------------------------------------------------------------------
+  // 9. Parametric: each ENSURE_DIRECTORIES entry is recreated after deletion
+  // -------------------------------------------------------------------------
+  it.each(ENSURE_DIRECTORIES)(
+    'ensureDirectories recreates %s after deletion',
+    async (dir) => {
+      await runInit(TEST_ROOT);
+
+      // Make sure the dir exists first (init or ensureDirectories creates it)
+      const fullPath = join(TEST_ROOT, dir);
+      if (!existsSync(fullPath)) {
+        await mkdir(fullPath, { recursive: true });
+      }
+      expect(existsSync(fullPath)).toBe(true);
+
+      // Delete it
+      rmSync(fullPath, { recursive: true, force: true });
+      expect(existsSync(fullPath)).toBe(false);
+
+      // ensureDirectories should recreate it
+      const created = ensureDirectories(TEST_ROOT);
+      expect(existsSync(fullPath)).toBe(true);
+      expect(created).toContain(dir);
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // 10. init → delete casting/ → upgrade → verify casting files recreated
+  // -------------------------------------------------------------------------
+  it('upgrade recreates casting/ with default files after deletion', async () => {
+    await runInit(TEST_ROOT);
+
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    expect(existsSync(castingDir)).toBe(true);
+
+    // Delete casting dir entirely
+    rmSync(castingDir, { recursive: true, force: true });
+    expect(existsSync(castingDir)).toBe(false);
+
+    // Upgrade should recreate it with defaults
+    await runUpgrade(TEST_ROOT, { force: true });
+
+    expect(existsSync(castingDir)).toBe(true);
+    for (const file of CASTING_FILES) {
+      const filePath = join(castingDir, file);
+      expect(existsSync(filePath)).toBe(true);
+
+      const content = await readFile(filePath, 'utf-8');
+      expect(() => JSON.parse(content)).not.toThrow();
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. upgrade creates sessions/ on a fresh init (init doesn't create it)
+  // -------------------------------------------------------------------------
+  it('upgrade creates .squad/sessions/ even though init does not', async () => {
+    await runInit(TEST_ROOT);
+
+    const sessionsDir = join(TEST_ROOT, '.squad', 'sessions');
+    // init may or may not create sessions/ — the key assertion is
+    // that after upgrade, it MUST exist
+    if (existsSync(sessionsDir)) {
+      rmSync(sessionsDir, { recursive: true, force: true });
+    }
+    expect(existsSync(sessionsDir)).toBe(false);
+
+    await runUpgrade(TEST_ROOT, { force: true });
+
+    expect(existsSync(sessionsDir)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Pre-casting repo: upgrade adds missing casting dir + files
+  // -------------------------------------------------------------------------
+  it('upgrade on a pre-casting repo structure adds casting with defaults', async () => {
+    await runInit(TEST_ROOT);
+
+    // Simulate a pre-casting repo: remove casting entirely
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    if (existsSync(castingDir)) {
+      rmSync(castingDir, { recursive: true, force: true });
+    }
+
+    // Also remove sessions and orchestration-log to simulate older layout
+    const sessionsDir = join(TEST_ROOT, '.squad', 'sessions');
+    if (existsSync(sessionsDir)) {
+      rmSync(sessionsDir, { recursive: true, force: true });
+    }
+
+    await runUpgrade(TEST_ROOT, { force: true });
+
+    // casting should now exist with all defaults
+    expect(existsSync(castingDir)).toBe(true);
+    for (const file of CASTING_FILES) {
+      expect(existsSync(join(castingDir, file))).toBe(true);
+    }
+
+    // sessions should also be created
+    expect(existsSync(sessionsDir)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. After init → upgrade, doctor reports no failures
+  // -------------------------------------------------------------------------
+  it('doctor reports no failures after init + upgrade', async () => {
+    await runInit(TEST_ROOT);
+    await runUpgrade(TEST_ROOT, { force: true });
+
+    const checks = await runDoctor(TEST_ROOT);
+    const failures = checks.filter((c: DoctorCheck) => c.status === 'fail');
+
+    // Any failures indicate a parity gap
+    expect(failures).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // 14. ENSURE_DIRECTORIES covers all critical infrastructure dirs
+  //     Excludes: .squad/plugins, .squad/.scratch (non-critical),
+  //     .squad/decisions (parent of decisions/inbox, created implicitly)
+  // -------------------------------------------------------------------------
+  it('ENSURE_DIRECTORIES covers critical infrastructure', () => {
+    const expected = [
+      '.squad/identity',
+      '.squad/orchestration-log',
+      '.squad/log',
+      '.squad/sessions',
+      '.squad/decisions/inbox',
+      '.squad/casting',
+      '.squad/agents',
+      '.copilot/skills',
+    ];
+
+    for (const dir of expected) {
+      expect(ENSURE_DIRECTORIES).toContain(dir);
     }
   });
 });

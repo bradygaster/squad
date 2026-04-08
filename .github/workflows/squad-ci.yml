@@ -820,3 +820,93 @@ jobs:
 
             console.log('✅ All ' + passed + ' subpath exports resolve and import successfully');
           "
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # Upgrade → Doctor validation (FR-3, Issue #817)
+  # Verifies that init → upgrade → doctor produces no failures.
+  # Only runs when init/upgrade/doctor/templates code changes.
+  # ═══════════════════════════════════════════════════════════════════════
+  upgrade-doctor-check:
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request'
+      && !cancelled()
+      && (needs.changes.outputs.code == 'true'
+          || needs.changes.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Check for relevant changes
+        id: relevant
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
+          RELEVANT=$(echo "$CHANGED" | grep -E '^packages/squad-cli/src/cli/(commands/doctor|core/init|core/upgrade|core/templates)\.ts$' || true)
+          if [ -z "$RELEVANT" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No init/upgrade/doctor/templates changes — skipping"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Relevant files changed:"
+            echo "$RELEVANT"
+          fi
+
+      - name: Install dependencies
+        if: steps.relevant.outputs.skip != 'true'
+        run: npm install
+
+      - name: Build
+        if: steps.relevant.outputs.skip != 'true'
+        run: npm run build
+
+      - name: "🩺 Init → Upgrade → Doctor validation"
+        if: steps.relevant.outputs.skip != 'true'
+        run: |
+          node --input-type=module -e "
+            import { join } from 'path';
+            import { mkdirSync, rmSync, existsSync } from 'fs';
+            import { randomBytes } from 'crypto';
+
+            // Dynamic imports for built CLI modules
+            const { runInit } = await import('./packages/squad-cli/dist/cli/core/init.js');
+            const { runUpgrade } = await import('./packages/squad-cli/dist/cli/core/upgrade.js');
+            const { runDoctor } = await import('./packages/squad-cli/dist/cli/commands/doctor.js');
+
+            const testDir = join(process.cwd(), '.ci-upgrade-doctor-' + randomBytes(4).toString('hex'));
+            try {
+              mkdirSync(testDir, { recursive: true });
+
+              console.log('Step 1: squad init');
+              await runInit(testDir);
+
+              console.log('Step 2: squad upgrade');
+              await runUpgrade(testDir, { force: true });
+
+              console.log('Step 3: squad doctor');
+              const checks = await runDoctor(testDir);
+              const failures = checks.filter(c => c.status === 'fail');
+
+              if (failures.length > 0) {
+                console.error('');
+                console.error('::error::Doctor reported ' + failures.length + ' failure(s) after init + upgrade:');
+                failures.forEach(f => console.error('  ❌ ' + f.name + ' — ' + f.message));
+                process.exit(1);
+              }
+
+              console.log('✅ Doctor passed — no failures after init + upgrade (' + checks.length + ' checks)');
+            } finally {
+              if (existsSync(testDir)) {
+                rmSync(testDir, { recursive: true, force: true });
+              }
+            }
+          "

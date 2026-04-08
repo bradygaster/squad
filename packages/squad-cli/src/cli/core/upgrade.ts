@@ -281,7 +281,7 @@ const GITIGNORE_ENTRIES = [
   '.squad-workstream',
 ];
 
-const ENSURE_DIRECTORIES = [
+export const ENSURE_DIRECTORIES = [
   '.squad/identity',
   '.squad/orchestration-log',
   '.squad/log',

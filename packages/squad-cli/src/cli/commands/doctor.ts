@@ -55,6 +55,15 @@ function tryReadJson(p: string): unknown | undefined {
   }
 }
 
+/**
+ * Detect whether we appear to be running from a global npm install.
+ * Heuristic: no node_modules directory in the cwd means the CLI was
+ * likely installed globally (npm i -g) rather than as a project dependency.
+ */
+export function looksLikeGlobalInstall(cwd: string): boolean {
+  return !isDirectory(path.join(cwd, 'node_modules'));
+}
+
 // ── mode detection ──────────────────────────────────────────────────
 
 function detectMode(cwd: string): ModeInfo {
@@ -330,20 +339,19 @@ function checkVscodeJsonrpcExports(cwd: string): DoctorCheck {
   }
 
   // Detect whether we're in a local dev context (node_modules exists) or global install
-  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
-  if (hasNodeModules) {
+  if (looksLikeGlobalInstall(cwd)) {
     return {
       name: 'vscode-jsonrpc exports field',
       status: 'warn',
-      message: 'not found in node_modules — run npm install or check dependencies',
+      severity: 'info',
+      message: 'Expected for global CLI installs — ESM patches applied at package install time',
     };
   }
 
   return {
     name: 'vscode-jsonrpc exports field',
     status: 'warn',
-    severity: 'info',
-    message: 'not found in node_modules (expected for global installs)',
+    message: 'not found in node_modules — run npm install or check dependencies',
   };
 }
 
@@ -386,20 +394,19 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
   }
 
   // Detect whether we're in a local dev context (node_modules exists) or global install
-  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
-  if (hasNodeModules) {
+  if (looksLikeGlobalInstall(cwd)) {
     return {
       name: 'copilot-sdk session.js ESM patch',
       status: 'warn',
-      message: 'not found in node_modules — run npm install or check dependencies',
+      severity: 'info',
+      message: 'Expected for global CLI installs — ESM patches applied at package install time',
     };
   }
 
   return {
     name: 'copilot-sdk session.js ESM patch',
     status: 'warn',
-    severity: 'info',
-    message: 'not found in node_modules (expected for global installs)',
+    message: 'not found in node_modules — run npm install or check dependencies',
   };
 }
 

@@ -11,7 +11,7 @@ import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { runDoctor, getDoctorMode, checkNodeVersion } from '@bradygaster/squad-cli/commands/doctor';
+import { runDoctor, getDoctorMode, checkNodeVersion, looksLikeGlobalInstall } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
@@ -210,7 +210,7 @@ describe('squad doctor', () => {
 
   // ── #565 — Actionable resolution hints in warnings ────────────────
 
-  it('vscode-jsonrpc info says "expected for global installs" when not in node_modules', async () => {
+  it('vscode-jsonrpc info says "Expected for global CLI installs" when not in node_modules', async () => {
     await scaffold(TEST_ROOT);
 
     const checks = await runDoctor(TEST_ROOT);
@@ -218,10 +218,11 @@ describe('squad doctor', () => {
     expect(jsonrpcCheck).toBeDefined();
     expect(jsonrpcCheck?.status).toBe('warn');
     expect(jsonrpcCheck?.severity).toBe('info');
-    expect(jsonrpcCheck?.message).toContain('expected for global installs');
+    expect(jsonrpcCheck?.message).toContain('Expected for global CLI installs');
+    expect(jsonrpcCheck?.message).toContain('ESM patches applied at package install time');
   });
 
-  it('copilot-sdk info says "expected for global installs" when not in node_modules', async () => {
+  it('copilot-sdk info says "Expected for global CLI installs" when not in node_modules', async () => {
     await scaffold(TEST_ROOT);
 
     const checks = await runDoctor(TEST_ROOT);
@@ -229,7 +230,8 @@ describe('squad doctor', () => {
     expect(sdkCheck).toBeDefined();
     expect(sdkCheck?.status).toBe('warn');
     expect(sdkCheck?.severity).toBe('info');
-    expect(sdkCheck?.message).toContain('expected for global installs');
+    expect(sdkCheck?.message).toContain('Expected for global CLI installs');
+    expect(sdkCheck?.message).toContain('ESM patches applied at package install time');
   });
 
   it('absolute teamRoot warning includes "Edit .squad/config.json"', async () => {
@@ -290,5 +292,32 @@ describe('squad doctor', () => {
     expect(agentMdCheck).toBeDefined();
     expect(agentMdCheck?.status).toBe('fail');
     expect(agentMdCheck?.message).toContain('squad upgrade');
+  });
+
+  // ── #817 — Global install detection ──────────────────────────────
+
+  it('looksLikeGlobalInstall returns true when no node_modules exists', async () => {
+    await scaffold(TEST_ROOT);
+    // TEST_ROOT has no node_modules — should detect as global
+    expect(looksLikeGlobalInstall(TEST_ROOT)).toBe(true);
+  });
+
+  it('looksLikeGlobalInstall returns false when node_modules exists', async () => {
+    await scaffold(TEST_ROOT);
+    await mkdir(join(TEST_ROOT, 'node_modules'), { recursive: true });
+    expect(looksLikeGlobalInstall(TEST_ROOT)).toBe(false);
+  });
+
+  it('ESM checks show warn (not info) when node_modules exists but packages missing', async () => {
+    await scaffold(TEST_ROOT);
+    // Create node_modules to simulate local install where packages are missing
+    await mkdir(join(TEST_ROOT, 'node_modules'), { recursive: true });
+
+    const checks = await runDoctor(TEST_ROOT);
+    const jsonrpcCheck = checks.find((c: DoctorCheck) => c.name === 'vscode-jsonrpc exports field');
+    expect(jsonrpcCheck).toBeDefined();
+    expect(jsonrpcCheck?.status).toBe('warn');
+    expect(jsonrpcCheck?.severity).toBeUndefined();
+    expect(jsonrpcCheck?.message).toContain('run npm install');
   });
 });
