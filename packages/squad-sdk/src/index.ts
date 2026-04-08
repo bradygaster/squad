@@ -103,9 +103,9 @@ export * from './roles/index.js';
 export * from './platform/index.js';
 export * from './storage/index.js';
 
-// Git-native state backends (Issue #807)
+// Git-native state backends (Issue #807, hardened in #864)
 export type { StateBackend, StateBackendType, StateBackendConfig } from './state-backend.js';
-export { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend } from './state-backend.js';
+export { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, CircuitBreaker, GitExecError, resolveStateBackend, verifyStateBackend } from './state-backend.js';
 
 // State facade (Phase 2) — namespaced to avoid conflicts with existing config/sharing exports
 export {
