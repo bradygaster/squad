@@ -350,6 +350,61 @@ await telemetry.shutdown();
 
 ---
 
+## Platform & Adapters
+
+### Pluggable Interfaces
+
+Squad's architecture uses pluggable interfaces for platform abstraction, storage, scheduling, and communication:
+
+```typescript
+import {
+  // Platform adapters
+  PlatformAdapter, PlatformType, WorkItem, PullRequest,
+  
+  // Storage provider
+  StorageProvider, StorageStats,
+  
+  // State backend
+  StateBackend, StateBackendType,
+  
+  // Communication adapter
+  CommunicationAdapter, CommunicationChannel, CommunicationReply,
+  
+} from '@bradygaster/squad-sdk';
+```
+
+> **Note:** Schedule types (`ScheduleProvider`, `ScheduleEntry`, `ScheduleManifest`, `TaskResult`) are not re-exported from the root barrel. Import them from the scheduler submodule:
+>
+> ```typescript
+> import type { ScheduleProvider, ScheduleEntry, ScheduleManifest, TaskResult } from '@bradygaster/squad-sdk/runtime/scheduler';
+> ```
+
+**Platform Adapters:**
+- `PlatformAdapter` — GitHub, Azure DevOps, or Planner integration
+- `WorkItem` — Normalized issue/work item type
+- `PullRequest` — Normalized PR type
+
+**Storage:**
+- `StorageProvider` — Abstract file I/O (filesystem, SQLite, cloud)
+- `StorageStats` — File metadata (size, mtime, isDirectory)
+
+**State Backends:**
+- `StateBackend` — Git-native state storage (worktree, git-notes, orphan branches)
+- `StateBackendType` — Backend type: 'worktree' | 'external' | 'git-notes' | 'orphan'
+
+**Communication:**
+- `CommunicationAdapter` — Teams, GitHub Discussions, ADO, or file logs
+- `CommunicationChannel` — Channel type: 'github-discussions' | 'ado-work-items' | 'teams-graph' | 'file-log'
+- `CommunicationReply` — Human reply from a channel
+
+**Scheduling** (import from `@bradygaster/squad-sdk/runtime/scheduler`)**:**
+- `ScheduleProvider` — Execute schedules (local polling, GitHub Actions, webhooks)
+- `ScheduleEntry` — A single scheduled task
+- `ScheduleManifest` — Collection of schedules
+- `TaskResult` — Result of a task execution
+
+---
+
 ## Streaming
 
 ### `createReadableStream(response: unknown): ReadableStream<string>`
