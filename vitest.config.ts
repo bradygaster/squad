@@ -1,6 +1,17 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  plugins: [
+    {
+      name: 'strip-shebang',
+      enforce: 'pre',
+      transform(code) {
+        if (code.startsWith('#!')) {
+          return code.replace(/^#![^\n]*\n/, '');
+        }
+      },
+    },
+  ],
   resolve: {
     // Force vitest to resolve @bradygaster/squad-sdk from the workspace root,
     // not from a duplicate copy under packages/squad-cli/node_modules/.

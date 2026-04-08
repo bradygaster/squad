@@ -327,6 +327,16 @@ GitHub Actions runs on every push:
 
 All checks must pass before merge.
 
+### Comment Moderation
+
+The `squad-comment-moderation` workflow protects the repo from comment spam:
+
+- **Comment filter** — on every new or edited issue comment, a third-party action blocks malicious links and mass-mentions (contributors are excluded).
+- **Spam scoring** — on newly opened issues, `scripts/moderate-spam.mjs` evaluates the content and closes suspected spam.
+- **Auto-lock stale** — a daily cron job (`scripts/lock-stale.mjs`) locks closed issues and PRs with no activity for 30+ days to prevent necro-spam.
+
+No contributor action is required — this runs automatically.
+
 ## Common Tasks
 
 ### Add a CLI Command

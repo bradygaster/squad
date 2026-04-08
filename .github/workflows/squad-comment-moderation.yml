@@ -1,0 +1,73 @@
+name: Squad Comment Moderation
+
+on:
+  issue_comment:
+    types: [created, edited]
+  issues:
+    types: [opened]
+  schedule:
+    - cron: '0 6 * * *'
+
+jobs:
+  # ── Job 1: Third-party filter for malicious links / mass-mentions ──
+  comment-filter:
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Run Comment Filter
+        uses: DecimalTurn/Comment-Filter@9c95bdb06ae1dd6b8185d58f52a07a2a71e19d94 # v0
+        with:
+          exclude-contributors: 'true'
+
+  # ── Job 2: Custom spam scoring for newly-opened issues ──
+  moderate-new-content:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/moderate-spam.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Evaluate issue for spam
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/moderate-spam.mjs
+
+  # ── Job 3: Auto-lock closed issues/PRs with no activity for 30+ days ──
+  auto-lock-stale:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/lock-stale.mjs
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Lock stale closed issues and PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          LOCK_AFTER_DAYS: '30'
+          MAX_ITEMS: '50'
+        run: node scripts/lock-stale.mjs
