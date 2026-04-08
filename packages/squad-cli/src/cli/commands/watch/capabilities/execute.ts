@@ -152,7 +152,7 @@ async function executeAll(
   const { cmd, args } = buildAgentCommand(prompt, context);
 
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
-    const _cp: ChildProcess = execFile(
+    const cp: ChildProcess = execFile(
       cmd,
       args,
       { cwd: context.teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
@@ -166,6 +166,18 @@ async function executeAll(
         }
       },
     );
+
+    // Track child PID for cleanup on exit/crash
+    if (context.pidTracker && cp.pid) {
+      const issueNums = issues.map(i => `#${i.number}`).join(',');
+      context.pidTracker.track(cp.pid, `copilot-session-${issueNums}`);
+    }
+
+    cp.on('exit', () => {
+      if (context.pidTracker && cp.pid) {
+        context.pidTracker.untrack(cp.pid);
+      }
+    });
   });
 }
 

@@ -39,6 +39,8 @@ export interface WatchContext {
   copilotFlags?: string;
   /** Verbose diagnostic output enabled. */
   verbose?: boolean;
+  /** PID tracker for child process cleanup (optional — only set when watch is running). */
+  pidTracker?: { track(pid: number, name: string): void; untrack(pid: number): void };
 }
 
 /** Contract that every watch capability must implement. */
