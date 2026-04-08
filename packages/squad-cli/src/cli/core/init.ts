@@ -3,6 +3,7 @@
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
