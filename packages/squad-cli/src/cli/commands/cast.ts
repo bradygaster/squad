@@ -24,7 +24,7 @@ export async function runCast(cwd: string): Promise<void> {
   }
   
   // Discover project agents
-  const projectSource = new LocalAgentSource(paths.teamDir);
+  const projectSource = new LocalAgentSource(cwd);
   const projectAgents = await projectSource.listAgents();
   
   // Discover personal agents
