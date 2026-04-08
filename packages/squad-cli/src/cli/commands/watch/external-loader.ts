@@ -15,6 +15,8 @@ import { GREEN, YELLOW, RESET } from '../../core/output.js';
 const REQUIRED_FIELDS: ReadonlyArray<keyof WatchCapability> = [
   'name',
   'description',
+  'configShape',
+  'requires',
   'phase',
   'preflight',
   'execute',
@@ -38,7 +40,7 @@ export async function loadExternalCapabilities(
   }
 
   const entries = await readdir(capDir);
-  const jsFiles = entries.filter(f => f.endsWith('.js'));
+  const jsFiles = entries.filter(f => f.endsWith('.js')).sort();
 
   let loaded = 0;
 
@@ -58,6 +60,21 @@ export async function loadExternalCapabilities(
       if (missing.length > 0) {
         console.log(
           `${YELLOW}⚠️ Failed to load capability from ${filename}: missing fields: ${missing.join(', ')}${RESET}`,
+        );
+        continue;
+      }
+
+      // Validate field types
+      if (typeof cap.preflight !== 'function' || typeof cap.execute !== 'function') {
+        console.log(
+          `${YELLOW}⚠️ Failed to load capability from ${filename}: preflight and execute must be functions${RESET}`,
+        );
+        continue;
+      }
+      const validPhases = ['pre-scan', 'post-triage', 'post-execute', 'housekeeping'];
+      if (!validPhases.includes(cap.phase)) {
+        console.log(
+          `${YELLOW}⚠️ Failed to load capability from ${filename}: invalid phase '${cap.phase}' (must be one of: ${validPhases.join(', ')})${RESET}`,
         );
         continue;
       }

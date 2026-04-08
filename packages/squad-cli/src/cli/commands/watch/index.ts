@@ -756,7 +756,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   // Load external capabilities from .squad/capabilities/
   const { loadExternalCapabilities } = await import('./external-loader.js');
-  const externalCount = await loadExternalCapabilities(teamRoot, registry);
+  await loadExternalCapabilities(teamRoot, registry);
 
   // PID tracking for child process cleanup
   const { PidTracker } = await import('./pid-tracker.js');

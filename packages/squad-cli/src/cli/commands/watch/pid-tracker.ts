@@ -5,8 +5,8 @@
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
-import { GREEN, YELLOW, DIM, RESET } from '../../core/output.js';
+import { execFileSync } from 'node:child_process';
+import { YELLOW, DIM, RESET } from '../../core/output.js';
 
 export interface TrackedProcess {
   pid: number;
@@ -48,14 +48,12 @@ export class PidTracker {
   private killTree(pid: number): boolean {
     try {
       if (process.platform === 'win32') {
-        execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', timeout: 5000 });
+        execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 });
       } else {
-        // Try process group kill first, fall back to single PID
-        try {
-          process.kill(-pid, 'SIGKILL'); // negative PID = process group
-        } catch {
-          process.kill(pid, 'SIGKILL');
-        }
+        // Note: We only kill the direct PID. Grandchild cleanup requires
+        // spawning with detached:true, which is controlled by the Execute
+        // capability. For now, direct PID kill is the honest approach.
+        process.kill(pid, 'SIGKILL');
       }
       return true;
     } catch {

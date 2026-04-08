@@ -10,6 +10,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+// Mock execFileSync so taskkill is never actually called
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  return {
+    ...actual,
+    execFileSync: vi.fn(() => Buffer.from('')),
+  };
+});
+
+import { execFileSync } from 'node:child_process';
 import { PidTracker, type TrackedProcess } from '../../packages/squad-cli/src/cli/commands/watch/pid-tracker.js';
 
 /** Create a temp directory with a .squad subdirectory for testing. */
@@ -93,6 +103,10 @@ describe('PidTracker', () => {
   });
 
   describe('cleanup', () => {
+    beforeEach(() => {
+      vi.mocked(execFileSync).mockClear();
+    });
+
     it('kills alive processes and reports count', () => {
       const tracker = new PidTracker(teamRoot);
       tracker.track(111, 'alive-proc');
@@ -156,6 +170,10 @@ describe('PidTracker', () => {
   });
 
   describe('cleanupStale', () => {
+    beforeEach(() => {
+      vi.mocked(execFileSync).mockClear();
+    });
+
     it('reads stale PID file and kills alive orphans', () => {
       // Write a stale PID file as if from a previous crashed run
       writePidFile(teamRoot, [
