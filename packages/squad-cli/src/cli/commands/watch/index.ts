@@ -50,6 +50,7 @@ export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, Capabi
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
 export { createVerboseLogger, type VerboseLogger } from './verbose.js';
+export { loadExternalCapabilities } from './external-loader.js';
 export { getWatchHealth, writePidFile, removePidFile, getPidPath, isProcessAlive, type WatchPidInfo } from './health.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
@@ -751,6 +752,11 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   // ── Capability system setup ────────────────────────────────────
   const registry = createDefaultRegistry();
+
+  // Load external capabilities from .squad/capabilities/
+  const { loadExternalCapabilities } = await import('./external-loader.js');
+  const externalCount = await loadExternalCapabilities(teamRoot, registry);
+
   const baseContext: WatchContext = {
     teamRoot,
     adapter,
