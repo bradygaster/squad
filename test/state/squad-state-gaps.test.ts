@@ -179,7 +179,7 @@ describe('resolveCollectionPath', () => {
 
   it('resolves function paths with id', () => {
     expect(resolveCollectionPath('agents', 'eecom')).toBe('.squad/agents/eecom');
-    expect(resolveCollectionPath('skills', 'typescript-testing')).toBe('.squad/skills/typescript-testing');
+    expect(resolveCollectionPath('skills', 'typescript-testing')).toBe('.copilot/skills/typescript-testing');
     expect(resolveCollectionPath('templates', 'charter.md')).toBe('.squad/templates/charter.md');
   });
 
@@ -194,7 +194,7 @@ describe('resolveCollectionPath', () => {
 
   it('handles Unicode ids', () => {
     expect(resolveCollectionPath('agents', '文件')).toBe('.squad/agents/文件');
-    expect(resolveCollectionPath('skills', 'résumé-writing')).toBe('.squad/skills/résumé-writing');
+    expect(resolveCollectionPath('skills', 'résumé-writing')).toBe('.copilot/skills/résumé-writing');
   });
 
   it('handles ids with special characters', () => {

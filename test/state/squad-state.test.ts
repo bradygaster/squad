@@ -168,8 +168,8 @@ function seedStorage(storage: InMemoryStorageProvider): void {
   storage.writeSync(`${ROOT}/.squad/decisions.md`, DECISIONS_MD);
   storage.writeSync(`${ROOT}/.squad/routing.md`, ROUTING_MD);
   // Skills
-  storage.writeSync(`${ROOT}/.squad/skills/typescript-testing/SKILL.md`, SKILL_TYPESCRIPT_TESTING);
-  storage.writeSync(`${ROOT}/.squad/skills/code-review/SKILL.md`, SKILL_CODE_REVIEW);
+  storage.writeSync(`${ROOT}/.copilot/skills/typescript-testing/SKILL.md`, SKILL_TYPESCRIPT_TESTING);
+  storage.writeSync(`${ROOT}/.copilot/skills/code-review/SKILL.md`, SKILL_CODE_REVIEW);
   // Templates
   storage.writeSync(`${ROOT}/.squad/templates/charter.md`, TEMPLATE_CHARTER);
   storage.writeSync(`${ROOT}/.squad/templates/decision.md`, TEMPLATE_DECISION);

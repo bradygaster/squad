@@ -24,7 +24,7 @@ export const COLLECTION_PATHS: Record<CollectionName, CollectionPathResolver> = 
   decisions: '.squad/decisions.md',
   routing: '.squad/routing.md',
   team: '.squad/team.md',
-  skills: (id: string) => `.squad/skills/${id}`,
+  skills: (id: string) => `.copilot/skills/${id}`,
   templates: (id: string) => `.squad/templates/${id}`,
   log: '.squad/log',
   config: '.squad/config.json',

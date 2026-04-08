@@ -246,9 +246,9 @@ export class SkillsCollection {
     private readonly rootDir: string,
   ) {}
 
-  /** List all skill IDs (directory names under .squad/skills/). */
+  /** List all skill IDs (directory names under .copilot/skills/). */
   async list(): Promise<string[]> {
-    const skillsDir = `${this.rootDir}/.squad/skills`;
+    const skillsDir = `${this.rootDir}/.copilot/skills`;
     return this.storage.list(skillsDir);
   }
 

@@ -253,9 +253,9 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | Ambiguous | Pick the most likely agent; say who you chose |
 | Multi-agent task (auto) | Check `ceremonies.md` for `when: "before"` ceremonies whose condition matches; run before spawning work |
 
-**Skill-aware routing:** Before spawning, check BOTH skill directories for skills relevant to the task domain:
+**Skill-aware routing:** Before spawning, check `.copilot/skills/` for skills relevant to the task domain:
 1. `.copilot/skills/` — **Copilot-level skills.** Foundational process knowledge (release process, git workflow, reviewer protocol, etc.). These are the coordinator's own playbook — check first.
-2. `.squad/skills/` — **Team-level skills.** Patterns and practices agents discovered during work.
+2. `.copilot/skills/` — **Team-level skills.** Patterns and practices agents discovered during work.
 
 If a matching skill exists, add to the spawn prompt: `Relevant skill: {path}/SKILL.md — read before starting.` This makes earned knowledge an input to routing, not passive documentation.
 
@@ -499,7 +499,7 @@ The `sql` tool is **CLI-only**. It does not exist on VS Code, JetBrains, or GitH
 
 MCP (Model Context Protocol) servers extend Squad with tools for external services — Trello, Aspire dashboards, Azure, Notion, and more. The user configures MCP servers in their environment; Squad discovers and uses them.
 
-> **Full patterns:** Read `.squad/skills/mcp-tool-discovery/SKILL.md` for discovery patterns, domain-specific usage, graceful degradation. Read `.squad/templates/mcp-config.md` for config file locations, sample configs, and authentication notes.
+> **Full patterns:** Read `.copilot/skills/mcp-tool-discovery/SKILL.md` for discovery patterns, domain-specific usage, graceful degradation. Read `.squad/templates/mcp-config.md` for config file locations, sample configs, and authentication notes.
 
 #### Detection
 
@@ -799,7 +799,7 @@ prompt: |
   If .squad/identity/wisdom.md exists, read it before starting work.
   If .squad/identity/now.md exists, read it at spawn time.
   Check .copilot/skills/ for copilot-level skills (process, workflow, protocol).
-  Check .squad/skills/ for team-level skills (patterns discovered during work).
+  Check .copilot/skills/ for team-level skills (patterns discovered during work).
   Read any relevant SKILL.md files before working.
   
   {only if MCP tools detected — omit entirely if none:}
@@ -822,7 +822,7 @@ prompt: |
   2. If you made a team-relevant decision, write to:
      .squad/decisions/inbox/{name}-{brief-slug}.md
   3. SKILL EXTRACTION: If you found a reusable pattern, write/update
-     .squad/skills/{skill-name}/SKILL.md (read templates/skill.md for format).
+     .copilot/skills/{skill-name}/SKILL.md (read templates/skill.md for format).
   
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a 2-3 sentence plain text
   summary as your FINAL output. No tool calls after this summary.
@@ -910,7 +910,7 @@ Ceremonies are structured team meetings where agents align before or after work.
 
 If the user says "I need a designer" or "add someone for DevOps":
 1. **Allocate a name** from the current assignment's universe (read from `.squad/casting/history.json`). If the universe is exhausted, apply overflow handling (see Casting & Persistent Naming → Overflow Handling).
-2. **Check plugin marketplaces.** If `.squad/plugins/marketplaces.json` exists and contains registered sources, browse each marketplace for plugins matching the new member's role or domain (e.g., "azure-cloud-development" for an Azure DevOps role). Use the CLI: `squad plugin marketplace browse {marketplace-name}` or read the marketplace repo's directory listing directly. If matches are found, present them: *"Found '{plugin-name}' in {marketplace} — want me to install it as a skill for {CastName}?"* If the user accepts, copy the plugin content into `.squad/skills/{plugin-name}/SKILL.md` or merge relevant instructions into the agent's charter. If no marketplaces are configured, skip silently. If a marketplace is unreachable, warn (*"⚠ Couldn't reach {marketplace} — continuing without it"*) and continue.
+2. **Check plugin marketplaces.** If `.squad/plugins/marketplaces.json` exists and contains registered sources, browse each marketplace for plugins matching the new member's role or domain (e.g., "azure-cloud-development" for an Azure DevOps role). Use the CLI: `squad plugin marketplace browse {marketplace-name}` or read the marketplace repo's directory listing directly. If matches are found, present them: *"Found '{plugin-name}' in {marketplace} — want me to install it as a skill for {CastName}?"* If the user accepts, copy the plugin content into `.copilot/skills/{plugin-name}/SKILL.md` or merge relevant instructions into the agent's charter. If no marketplaces are configured, skip silently. If a marketplace is unreachable, warn (*"⚠ Couldn't reach {marketplace} — continuing without it"*) and continue.
 3. Generate a new charter.md + history.md (seeded with project context from team.md), using the cast name. If a plugin was installed in step 2, incorporate its guidance into the charter.
 4. **Update `.squad/casting/registry.json`** with the new agent entry.
 5. Add to team.md roster.
@@ -933,7 +933,7 @@ If the user wants to remove someone:
 **Core rules (always loaded):**
 - Check `.squad/plugins/marketplaces.json` during Add Team Member flow (after name allocation, before charter)
 - Present matching plugins for user approval
-- Install: copy to `.squad/skills/{plugin-name}/SKILL.md`, log to history.md
+- Install: copy to `.copilot/skills/{plugin-name}/SKILL.md`, log to history.md
 - Skip silently if no marketplaces configured
 
 ---
