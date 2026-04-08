@@ -9,7 +9,7 @@ name: Squad Heartbeat (Ralph)
 on:
   # React to completed work or new squad work
   issues:
-    types: [closed, labeled]
+    types: [opened, closed, labeled]
   pull_request:
     types: [closed]
 
