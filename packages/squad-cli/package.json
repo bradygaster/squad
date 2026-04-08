@@ -172,7 +172,7 @@
     "README.md"
   ],
   "scripts": {
-    "postinstall": "node scripts/patch-esm-imports.mjs && node scripts/patch-ink-rendering.mjs",
+    "postinstall": "node scripts/patch-esm-imports.mjs && node scripts/verify-patches.mjs && node scripts/patch-ink-rendering.mjs",
     "prepublishOnly": "npm run build",
     "build": "tsc -p tsconfig.json && npm run postbuild",
     "postbuild": "node -e \"require('fs').cpSync('src/remote-ui', 'dist/remote-ui', {recursive: true})\""

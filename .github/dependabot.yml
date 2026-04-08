@@ -1,0 +1,22 @@
+# Dependabot — SDK compatibility monitoring
+# Tracks @github/copilot-sdk and vscode-jsonrpc for breaking changes.
+# Pre-release versions are tested separately via the nightly canary workflow.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+    allow:
+      - dependency-name: "@github/copilot-sdk"
+      - dependency-name: "vscode-jsonrpc"
+    ignore:
+      # Pre-releases are tested by squad-canary-sdk.yml — don't open PRs for them
+      - dependency-name: "*"
+        update-types: ["version-update:semver-pre-release"]
+    commit-message:
+      prefix: "deps"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
