@@ -136,6 +136,11 @@ export interface InitOptions {
   streams?: SubSquadDefinition[];
   /** If true, use built-in base roles with useRole() in SDK config (default: false) */
   roles?: boolean;
+  /** Root directory for the .github/agents/squad.agent.md file.
+   *  Defaults to teamRoot. In monorepos, this should be the git root
+   *  so Copilot can discover the agent file, while teamRoot stays in
+   *  the subfolder where .squad/ lives. */
+  agentFileRoot?: string;
   /** ADO work item configuration — used when platform is azure-devops */
   adoConfig?: {
     defaultWorkItemType?: string;
@@ -1062,7 +1067,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Create .github/agents/squad.agent.md
   // -------------------------------------------------------------------------
   
-  const agentFile = join(teamRoot, '.github', 'agents', 'squad.agent.md');
+  const agentFile = join(options.agentFileRoot ?? teamRoot, '.github', 'agents', 'squad.agent.md');
   if (!storage.existsSync(agentFile) || !skipExisting) {
     if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
       let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
