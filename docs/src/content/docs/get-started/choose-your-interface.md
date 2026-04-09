@@ -60,9 +60,13 @@ See [CLI Reference](../reference/cli.md) for all commands.
 
 ### Interactive shell (`squad start` / `squad shell`)
 
-REPL mode for conversational interaction directly via the Squad CLI. Enter `squad` with no arguments to start a persistent shell session. See [Interactive Shell Guide](../guide/shell.md).
+> ⚠️ **Deprecated:** The interactive shell is no longer recommended. Use [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) instead for a richer agent experience.
+>
+> ```bash
+> copilot --agent squad
+> ```
 
-This works, but **GitHub Copilot CLI is recommended** — richer agent experience, better tools, full MCP integration.
+REPL mode for conversational interaction directly via the Squad CLI. Enter `squad` with no arguments to start a persistent shell session. See [Interactive Shell Guide](../guide/shell.md).
 
 ### SDK (`@bradygaster/squad-sdk`)
 
@@ -104,16 +108,16 @@ See [Copilot Coding Agent](../features/copilot-coding-agent.md) for setup.
 
 Not every feature works everywhere. Here's what's available where:
 
-| Feature | GitHub Copilot CLI | VS Code | Squad CLI | SDK |
-|---------|:------------------:|:-------:|:---------:|:---:|
-| Agent spawning | ✅ | ✅ | ✅ (via shell) | ✅ |
-| Ralph / work monitoring | ✅ | ✅ | ✅ (`squad watch`) | ✅ |
-| Per-spawn model selection | ✅ | ⚠️ (session model only) | ✅ | ✅ |
-| Background execution | ✅ | ⚠️ (parallel sync) | ✅ | ✅ |
-| SQL tool | ✅ | ❌ | ✅ | ✅ |
-| Aspire dashboard | ❌ | ❌ | ✅ | ❌ |
-| `squad doctor` diagnostics | ❌ | ❌ | ✅ | ✅ |
-| Issue assignment to `@copilot` | ❌ | ❌ | ✅ (setup) | ❌ |
+| Feature | GitHub Copilot CLI | VS Code | Squad CLI | Interactive shell | SDK |
+|---------|:------------------:|:-------:|:---------:|:--------:|:---:|
+| Agent spawning | ✅ | ✅ | ✅ | ⚠️ (deprecated) | ✅ |
+| Ralph / work monitoring | ✅ | ✅ | ✅ (`squad watch`) | ❌ | ✅ |
+| Per-spawn model selection | ✅ | ⚠️ (session model only) | ✅ | ❌ | ✅ |
+| Background execution | ✅ | ⚠️ (parallel sync) | ✅ | ❌ | ✅ |
+| SQL tool | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Aspire dashboard | ❌ | ❌ | ✅ | ❌ | ❌ |
+| `squad doctor` diagnostics | ❌ | ❌ | ✅ | ❌ | ✅ |
+| Issue assignment to `@copilot` | ❌ | ❌ | ✅ (setup) | ❌ | ❌ |
 
 **Legend:**
 - ✅ Fully supported

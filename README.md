@@ -106,7 +106,7 @@ Use `--force` to re-apply updates even when your installed version already match
 | `squad link <team-repo-path>` | Connect to a remote team |
 | `squad externalize` | Move `.squad/` state outside the working tree; survives branch switches; use `--key <name>` for custom project key |
 | `squad internalize` | Move externalized state back into `.squad/` |
-| `squad shell` | Launch interactive shell explicitly |
+| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. |
 | `squad export` | Export squad to a portable JSON snapshot |
 | `squad import <file>` | Import squad from an export file |
 | `squad plugin marketplace add\|remove\|list\|browse` | Manage plugin marketplaces |
@@ -270,6 +270,14 @@ Round: 42 / 1200
 ---
 
 ## Interactive Shell
+
+> ⚠️ **Deprecated:** The interactive shell (`squad` with no arguments) has been deprecated. For the best Squad experience, use the [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) instead.
+>
+> ```bash
+> copilot --agent squad
+> ```
+>
+> See [Choose your interface](docs/src/content/docs/get-started/choose-your-interface.md) for current options.
 
 Tired of typing `squad` followed by a command every time? Enter the interactive shell.
 

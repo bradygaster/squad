@@ -26,7 +26,7 @@ squad init
 
 | Command | Description | Requires `.squad/` |
 |---------|-------------|:------------------:|
-| `squad` | Enter interactive shell (no args) | No |
+| `squad` | **Deprecated** — Enter interactive shell (no args). Use `copilot --agent squad` instead. | No |
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
 | `squad init --global` | Create a personal squad in your platform-specific directory | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
@@ -52,6 +52,7 @@ squad init
 | `squad watch --max-concurrent N` | Max parallel issues per round (default: 1) | Yes |
 | `squad watch --timeout N` | Per-issue timeout in minutes (default: 30) | Yes |
 | `squad watch --copilot-flags "..."` | Extra flags for Copilot CLI | Yes |
+| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. |
 | `squad copilot` | Add the @copilot coding agent to the team | Yes |
 | `squad copilot --off` | Remove @copilot from the team | Yes |
 | `squad copilot --auto-assign` | Enable auto-assignment for @copilot | Yes |
