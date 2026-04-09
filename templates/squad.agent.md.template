@@ -625,15 +625,17 @@ Squad and all spawned agents may be running inside a **git worktree** rather tha
 
 **How the Coordinator resolves the team root (on every session start):**
 
-1. Run `git rev-parse --show-toplevel` to get the current worktree root.
-2. Check if `.squad/` exists at that root (fall back to `.ai-team/` for repos that haven't migrated yet).
+1. **Check CWD first** — does `.squad/` exist in the current working directory?
+   - **Yes** → Team root = CWD. This handles monorepos where `.squad/` lives in a subfolder.
+2. If not, run `git rev-parse --show-toplevel` to get the current worktree root.
+3. Check if `.squad/` exists at that root (fall back to `.ai-team/` for repos that haven't migrated yet).
    - **Yes** → use **worktree-local** strategy. Team root = current worktree root.
    - **No** → use **main-checkout** strategy. Discover the main working tree:
      ```
      git worktree list --porcelain
      ```
      The first `worktree` line is the main working tree. Team root = that path.
-3. The user may override the strategy at any time (e.g., *"use main checkout for team state"* or *"keep team state in this worktree"*).
+4. The user may override the strategy at any time (e.g., *"use main checkout for team state"* or *"keep team state in this worktree"*).
 
 **Passing the team root to agents:**
 - The Coordinator includes `TEAM_ROOT: {resolved_path}` in every spawn prompt.

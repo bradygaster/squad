@@ -8,7 +8,7 @@
  * @module config/init
  */
 
-import { join, dirname } from 'path';
+import { join, dirname, relative as pathRelative } from 'path';
 import { fileURLToPath } from 'url';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
@@ -674,15 +674,10 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
   
   // Helper to convert absolute path to relative
   const toRelativePath = (absolutePath: string): string => {
-    // Use path separator-agnostic approach
-    if (absolutePath.startsWith(teamRoot)) {
-      const relative = absolutePath.slice(teamRoot.length);
-      // Remove leading separator if present
-      return relative.startsWith('/') || relative.startsWith('\\') 
-        ? relative.slice(1) 
-        : relative;
-    }
-    return absolutePath;
+    // Use path.relative for correct cross-root handling (monorepo: agentFileRoot != teamRoot)
+    const rel = pathRelative(teamRoot, absolutePath);
+    // path.relative returns '' for same path, use '.' instead
+    return rel || '.';
   };
 
   // Helper to write file (respects skipExisting)

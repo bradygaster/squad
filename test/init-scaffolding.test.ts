@@ -223,6 +223,31 @@ describe('no-remote resilience (#579)', () => {
     await expect(initSquad(sdkOptions(TEST_ROOT))).resolves.toBeDefined();
     expect(existsSync(join(TEST_ROOT, '.squad', 'casting', 'registry.json'))).toBe(true);
   });
+
+  it('monorepo subfolder: no nested git init, agent at root, .squad in subfolder (#939)', async () => {
+    // Set up a monorepo with a subfolder
+    gitInit(TEST_ROOT);
+    const subfolder = join(TEST_ROOT, 'team-alpha');
+    await mkdir(subfolder, { recursive: true });
+
+    // Run SDK init with agentFileRoot pointing to the git root
+    const result = await initSquad({
+      ...sdkOptions(subfolder),
+      agentFileRoot: TEST_ROOT,
+    });
+
+    // 1. No nested .git/ in subfolder
+    expect(existsSync(join(subfolder, '.git'))).toBe(false);
+    // 2. .squad/ created in subfolder
+    expect(existsSync(join(subfolder, '.squad'))).toBe(true);
+    expect(existsSync(join(subfolder, '.squad', 'casting', 'registry.json'))).toBe(true);
+    // 3. squad.agent.md created at monorepo root
+    expect(existsSync(join(TEST_ROOT, '.github', 'agents', 'squad.agent.md'))).toBe(true);
+    // 4. squad.agent.md NOT in subfolder
+    expect(existsSync(join(subfolder, '.github', 'agents', 'squad.agent.md'))).toBe(false);
+    // 5. createdFiles should include relative path with ..
+    expect(result.createdFiles.some(f => f.includes('squad.agent.md'))).toBe(true);
+  });
 });
 
 // ─── Doctor validation after init ──────────────────────────────────────

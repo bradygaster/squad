@@ -129,27 +129,19 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // squad.agent.md at the git root and .squad/ in the subfolder.
   // Never run `git init` — it creates broken nested repos (#939).
   let agentFileRoot = dest; // default: place agent file relative to dest
-  try {
-    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim().replace(/\//g, path.sep);
-    const normalDest = path.resolve(dest);
-    const normalGitRoot = path.resolve(gitRoot);
-    if (normalDest.toLowerCase() !== normalGitRoot.toLowerCase()) {
-      console.log();
-      console.log(`${CYAN}${BOLD}📦 Monorepo detected${RESET}`);
-      console.log(`${DIM}   Git root:  ${normalGitRoot}${RESET}`);
-      console.log(`${DIM}   You're in: ${normalDest}${RESET}`);
-      console.log();
-      console.log(`${DIM}squad.agent.md → git root (.github/agents/)${RESET}`);
-      console.log(`${DIM}.squad/        → here (${path.basename(normalDest)}/)${RESET}`);
-      console.log();
-      // Place the agent file at the git root so Copilot can find it.
-      // Team state (.squad/) stays in cwd — resolved via cwd at runtime.
-      agentFileRoot = normalGitRoot;
-    }
-  } catch {
-    // No git available or not in a git repo — continue normally.
+  const parentGitRoot = detectParentGitRepo(dest);
+  if (parentGitRoot) {
+    console.log();
+    console.log(`${CYAN}${BOLD}📦 Monorepo detected${RESET}`);
+    console.log(`${DIM}   Git root:  ${parentGitRoot}${RESET}`);
+    console.log(`${DIM}   You're in: ${path.resolve(dest)}${RESET}`);
+    console.log();
+    console.log(`${DIM}squad.agent.md → git root (.github/agents/)${RESET}`);
+    console.log(`${DIM}.squad/        → here (${path.basename(path.resolve(dest))}/)${RESET}`);
+    console.log();
+    // Place the agent file at the git root so Copilot can find it.
+    // Team state (.squad/) stays in cwd — resolved via cwd at runtime.
+    agentFileRoot = parentGitRoot;
   }
 
   // Detect squad directory
