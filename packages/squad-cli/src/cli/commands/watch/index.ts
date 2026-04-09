@@ -15,7 +15,7 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 const storage = new FSStorageProvider();
 const execFileAsync = promisify(execFile);
 
-import { IS_WINDOWS, buildAgentCommand as buildAgentCommandShared, spawnAgent } from './agent-spawn.js';
+import { IS_WINDOWS, buildAgentCommand as buildAgentCommandShared, spawnAgent, resolveCopilotCmd } from './agent-spawn.js';
 
 import { detectSquadDir } from '../../core/detect-squad-dir.js';
 import { fatal } from '../../core/errors.js';
@@ -597,10 +597,11 @@ export function buildAgentCommand(
     const parts = options.agentCmd.trim().split(/\s+/);
     return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
   }
-  // Default: standalone copilot CLI (not gh copilot which is deprecated)
-  const args = ['--message', prompt];
+  // Default: detect available copilot CLI at runtime (cached)
+  const { cmd, cmdPrefix } = resolveCopilotCmd();
+  const args = [...cmdPrefix, '--message', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'copilot', args };
+  return { cmd, args };
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {

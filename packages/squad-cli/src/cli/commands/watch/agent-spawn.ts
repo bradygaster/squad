@@ -9,21 +9,62 @@
  * @see https://github.com/bradygaster/squad/issues/923
  */
 
-import { execFile, type ChildProcess } from 'node:child_process';
+import { execFile, execFileSync, type ChildProcess } from 'node:child_process';
 import type { WatchContext } from './types.js';
 
 /** True when running on Windows — used to gate `shell: true`. */
 export const IS_WINDOWS = process.platform === 'win32';
 
 /**
+ * Cached result of copilot CLI detection.
+ * `null` means we haven't checked yet.
+ */
+let _copilotResolved: { cmd: string; cmdPrefix: string[] } | null = null;
+
+/**
+ * Detect which copilot CLI is available at runtime.
+ *
+ * Tries standalone `copilot` first (modern default).  If that fails,
+ * falls back to `gh copilot` (legacy).  The result is cached for the
+ * lifetime of the process so we only shell-out once.
+ *
+ * @returns `{ cmd, cmdPrefix }` — e.g. `{ cmd: 'copilot', cmdPrefix: [] }`
+ *          or `{ cmd: 'gh', cmdPrefix: ['copilot'] }`.
+ */
+export function resolveCopilotCmd(): { cmd: string; cmdPrefix: string[] } {
+  if (_copilotResolved) return _copilotResolved;
+
+  try {
+    execFileSync('copilot', ['--version'], {
+      stdio: 'ignore',
+      timeout: 5_000,
+      shell: IS_WINDOWS,
+    });
+    _copilotResolved = { cmd: 'copilot', cmdPrefix: [] };
+  } catch {
+    // Standalone copilot not found — fall back to gh copilot
+    _copilotResolved = { cmd: 'gh', cmdPrefix: ['copilot'] };
+  }
+
+  return _copilotResolved;
+}
+
+/**
+ * Reset the cached copilot detection.  Exported for testing only.
+ * @internal
+ */
+export function _resetCopilotDetection(): void {
+  _copilotResolved = null;
+}
+
+/**
  * Build the command + args array for an agent invocation.
  *
  * Resolution order:
  *   1. `context.agentCmd` (explicit override from config / CLI)
- *   2. `copilot --message` (standalone Copilot CLI — the modern default)
- *
- * The previous default `gh copilot` is deprecated; standalone `copilot`
- * is now the fallback.
+ *   2. Runtime detection via `resolveCopilotCmd()`:
+ *      - standalone `copilot` if available on PATH
+ *      - `gh copilot` as fallback
  */
 export function buildAgentCommand(
   prompt: string,
@@ -36,12 +77,13 @@ export function buildAgentCommand(
     return { cmd, args };
   }
 
-  // Default: standalone copilot CLI
-  const args = ['--message', prompt];
+  // Default: detect available copilot CLI at runtime (cached)
+  const { cmd, cmdPrefix } = resolveCopilotCmd();
+  const args = [...cmdPrefix, '--message', prompt];
   if (context.copilotFlags) {
     args.push(...context.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'copilot', args };
+  return { cmd, args };
 }
 
 /**
