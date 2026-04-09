@@ -146,10 +146,6 @@ Any PR that modifies files under `packages/squad-cli/src/` or `packages/squad-sd
 - The `changelog-gate` CI check will fail without this
 - Escape hatch: add the `skip-changelog` label (use sparingly)
 
-## Automated PR Nudge
-
-The **PR Nudge** workflow (`.github/workflows/squad-pr-nudge.yml`) runs on weekdays at 2pm UTC and posts actionable comments on open PRs that have been stale for 7+ days. It diagnoses specific blockers — failing CI checks, unresolved review threads, missing approvals, outdated branches, and draft status — so PR authors know exactly what to do next. Draft PRs get a 14-day grace period. The workflow won't nudge the same PR more than once per week.
-
 ## Decisions
 
 If you make a decision that affects other team members, write it to:

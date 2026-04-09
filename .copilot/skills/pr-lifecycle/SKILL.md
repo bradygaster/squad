@@ -3,7 +3,7 @@ name: "pr-lifecycle"
 description: "Complete issue → PR → merge lifecycle with readiness checks"
 domain: "workflow"
 confidence: "high"
-source: "extracted from pr-readiness.mjs, CONTRIBUTING.md, PR_REQUIREMENTS.md, squad-ci.yml"
+source: "extracted from CONTRIBUTING.md, PR_REQUIREMENTS.md, squad-ci.yml"
 ---
 
 ## Context
@@ -419,7 +419,7 @@ Adds profile resolution API to the SDK.
 
 ## Readiness Check Gaps & Recommendations
 
-After analyzing `scripts/pr-readiness.mjs`, `.github/workflows/squad-ci.yml`, and `.github/workflows/squad-repo-health.yml`, three gaps were identified. Gaps 1 and 3 are now implemented (checks 10 and 11). Gap 2 is deferred.
+After analyzing `.github/workflows/squad-ci.yml`, three gaps were identified. Gaps 1 and 3 are now implemented (checks 10 and 11). Gap 2 is deferred.
 
 ### Gap 1: Issue Linkage Check (Check 10) — IMPLEMENTED
 
