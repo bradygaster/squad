@@ -9,7 +9,7 @@
  * @see https://github.com/bradygaster/squad/issues/923
  */
 
-import { execFile, execFileSync, type ChildProcess } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import type { WatchContext } from './types.js';
 
 /** True when running on Windows — used to gate `shell: true`. */
@@ -131,7 +131,7 @@ export function spawnAgent(
   timeoutMs: number,
 ): Promise<{ success: boolean; error?: string }> {
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
-    const _cp: ChildProcess = execFile(
+    execFile(
       cmd,
       args,
       {

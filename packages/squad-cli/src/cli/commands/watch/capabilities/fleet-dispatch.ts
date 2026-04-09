@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import type { DispatchMode } from '../config.js';
-import { IS_WINDOWS } from '../agent-spawn.js';
+import { IS_WINDOWS, resolveCopilotCmd } from '../agent-spawn.js';
 import {
   type ExecutableWorkItem,
   findExecutableIssues,
@@ -74,7 +74,9 @@ function invokeFleet(
 
     // Use execFileSync with args array — no shell injection risk
     // shell: IS_WINDOWS ensures PATH/.cmd resolution works on Windows
-    const result = execFileSync('copilot', [
+    const { cmd, cmdPrefix } = resolveCopilotCmd();
+    const result = execFileSync(cmd, [
+      ...cmdPrefix,
       '-p', promptContent,
       '--allow-all',
       '--no-ask-user',
@@ -108,7 +110,8 @@ export class FleetDispatchCapability implements WatchCapability {
   async preflight(_context: WatchContext): Promise<PreflightResult> {
     // Fleet dispatch requires the copilot CLI — quick sanity check
     try {
-      execFileSync('copilot', ['--version'], { encoding: 'utf-8', stdio: 'pipe', shell: IS_WINDOWS });
+      const { cmd, cmdPrefix } = resolveCopilotCmd();
+      execFileSync(cmd, [...cmdPrefix, '--version'], { encoding: 'utf-8', stdio: 'pipe', shell: IS_WINDOWS });
       return { ok: true };
     } catch {
       return { ok: false, reason: 'copilot CLI not found — required for fleet dispatch' };
