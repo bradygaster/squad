@@ -231,9 +231,11 @@ describe('no-remote resilience (#579)', () => {
     await mkdir(subfolder, { recursive: true });
 
     // Run SDK init with agentFileRoot pointing to the git root
+    // Enable workflows to test monorepo skip behavior
     const result = await initSquad({
       ...sdkOptions(subfolder),
       agentFileRoot: TEST_ROOT,
+      includeWorkflows: true,
     });
 
     // 1. No nested .git/ in subfolder
@@ -247,6 +249,10 @@ describe('no-remote resilience (#579)', () => {
     expect(existsSync(join(subfolder, '.github', 'agents', 'squad.agent.md'))).toBe(false);
     // 5. createdFiles should include relative path with ..
     expect(result.createdFiles.some(f => f.includes('squad.agent.md'))).toBe(true);
+    // 6. Workflows NOT placed in subfolder (GitHub Actions ignores them there)
+    expect(existsSync(join(subfolder, '.github', 'workflows'))).toBe(false);
+    // 7. Warning emitted about skipped workflows
+    expect(result.warnings?.some(w => w.includes('monorepo-subfolder'))).toBe(true);
   });
 });
 

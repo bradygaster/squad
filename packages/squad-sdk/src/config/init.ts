@@ -1110,6 +1110,14 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
   
   if (includeWorkflows && isGitHub && templatesDir && storage.existsSync(join(templatesDir, 'workflows'))) {
+    // In monorepo mode (agentFileRoot != teamRoot), skip workflow placement.
+    // GitHub Actions only reads from <repo-root>/.github/workflows/ — placing
+    // workflows in a subfolder has no effect. Multiple squads in one monorepo
+    // would also conflict on the same workflow files. (#939)
+    const isMonorepoSubfolder = options.agentFileRoot && options.agentFileRoot !== teamRoot;
+    if (isMonorepoSubfolder) {
+      warnings.push('Skipped GitHub Actions workflows in monorepo-subfolder mode — workflows must be at the git root. Set up workflows manually or use a single shared workflow for all squads.');
+    } else {
     const workflowsSrc = join(templatesDir, 'workflows');
     const workflowsDest = join(teamRoot, '.github', 'workflows');
     
@@ -1127,6 +1135,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
           skippedFiles.push(toRelativePath(destFile));
         }
       }
+    }
     }
   }
   
