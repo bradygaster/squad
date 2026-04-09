@@ -52,7 +52,7 @@ squad init
 | `squad watch --max-concurrent N` | Max parallel issues per round (default: 1) | Yes |
 | `squad watch --timeout N` | Per-issue timeout in minutes (default: 30) | Yes |
 | `squad watch --copilot-flags "..."` | Extra flags for Copilot CLI | Yes |
-| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. |
+| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. | No |
 | `squad copilot` | Add the @copilot coding agent to the team | Yes |
 | `squad copilot --off` | Remove @copilot from the team | Yes |
 | `squad copilot --auto-assign` | Enable auto-assignment for @copilot | Yes |
