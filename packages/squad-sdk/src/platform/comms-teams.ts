@@ -75,7 +75,7 @@ function loadTokens(tenantId: string, clientId: string): StoredTokens | null {
     const raw = readFileSync(tokenPath, 'utf-8');
     const parsed = JSON.parse(raw) as StoredTokens;
     // Validate minimum required shape
-    if (typeof parsed.accessToken !== 'string' || typeof parsed.expiresAt !== 'number') return null;
+    if (typeof parsed.accessToken !== 'string' || typeof parsed.expiresAt !== 'number' || typeof parsed.refreshToken !== 'string') return null;
     // Reject tokens from a different config (stale/corrupted cache)
     if (parsed.configTenantId && parsed.configTenantId !== tenantId) return null;
     if (parsed.clientId && parsed.clientId !== clientId) return null;
