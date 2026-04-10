@@ -66,7 +66,7 @@ See [CLI Reference](../reference/cli.md) for all commands.
 > copilot --agent squad
 > ```
 
-REPL mode for conversational interaction directly via the Squad CLI. Enter `squad` with no arguments to start a persistent shell session. See [Interactive Shell Guide](../guide/shell.md).
+REPL mode for conversational interaction directly via the Squad CLI. Enter `squad` with no arguments to start a persistent shell session.
 
 ### SDK (`@bradygaster/squad-sdk`)
 
