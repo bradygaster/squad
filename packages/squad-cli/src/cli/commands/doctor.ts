@@ -13,6 +13,7 @@
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { resolveStateDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
 
@@ -493,11 +494,13 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
 
   // 5–9 standard files (only if .squad/ exists)
   if (isDirectory(squadDir)) {
-    checks.push(checkTeamMd(squadDir));
-    checks.push(checkRoutingMd(squadDir));
-    checks.push(checkAgentsDir(squadDir));
-    checks.push(checkCastingRegistry(squadDir));
-    checks.push(checkDecisionsMd(squadDir));
+    // Resolve effective state dir for externalized files
+    const stateDir = resolveStateDir(squadDir);
+    checks.push(checkTeamMd(stateDir));
+    checks.push(checkRoutingMd(stateDir));
+    checks.push(checkAgentsDir(stateDir));
+    checks.push(checkCastingRegistry(stateDir));
+    checks.push(checkDecisionsMd(stateDir));
     const rateLimitCheck = checkRateLimitStatus(squadDir);
     if (rateLimitCheck) checks.push(rateLimitCheck);
   }
