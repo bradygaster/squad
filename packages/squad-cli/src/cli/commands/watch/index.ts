@@ -15,7 +15,7 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 const storage = new FSStorageProvider();
 const execFileAsync = promisify(execFile);
 
-import { detectSquadDir } from '../../core/detect-squad-dir.js';
+import { effectiveSquadDir } from '../../core/effective-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
 import {
@@ -647,10 +647,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     fatal('--interval must be a positive number of minutes');
   }
 
-  // Detect squad directory
-  const squadDirInfo = detectSquadDir(dest);
-  const teamMd = path.join(squadDirInfo.path, 'team.md');
-  const routingMdPath = path.join(squadDirInfo.path, 'routing.md');
+  // Detect squad directory — follows external state if configured
+  const { local: squadDirInfo, stateDir } = effectiveSquadDir(dest);
+  const teamMd = path.join(stateDir, 'team.md');
+  const routingMdPath = path.join(stateDir, 'routing.md');
   const teamRoot = path.dirname(squadDirInfo.path);
 
   if (!storage.existsSync(teamMd)) {

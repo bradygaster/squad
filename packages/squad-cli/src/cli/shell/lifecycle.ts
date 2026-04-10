@@ -9,6 +9,7 @@
 
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { resolveStateDir } from '../core/effective-squad-dir.js';
 import { SessionRegistry } from './sessions.js';
 import { ShellRenderer } from './render.js';
 import type { ShellState, ShellMessage } from './types.js';
@@ -64,15 +65,18 @@ export class ShellLifecycle {
     this.state.status = 'initializing';
     const storage = new FSStorageProvider();
 
-    const squadDir = path.resolve(this.options.teamRoot, '.squad');
-    if (!await storage.exists(squadDir) || !await storage.isDirectory(squadDir)) {
+    const localSquadDir = path.resolve(this.options.teamRoot, '.squad');
+    if (!await storage.exists(localSquadDir) || !await storage.isDirectory(localSquadDir)) {
       this.state.status = 'error';
       const err = new Error(
         `No team found. Run \`squad init\` to create one.`
       );
-      debugLog('initialize: .squad/ directory not found at', squadDir);
+      debugLog('initialize: .squad/ directory not found at', localSquadDir);
       throw err;
     }
+
+    // Resolve effective state dir (external when externalized)
+    const squadDir = resolveStateDir(localSquadDir);
 
     const teamPath = path.join(squadDir, 'team.md');
     const teamContent = await storage.read(teamPath);
@@ -88,7 +92,7 @@ export class ShellLifecycle {
     this.discoveredAgents = parseTeamManifest(teamContent);
 
     if (this.discoveredAgents.length === 0) {
-      const initPromptPath = path.join(squadDir, '.init-prompt');
+      const initPromptPath = path.join(localSquadDir, '.init-prompt');
       if (!await storage.exists(initPromptPath)) {
         console.warn('⚠ No agents found in team.md. Run `squad init "describe your project"` to cast a team.');
       }
@@ -295,7 +299,9 @@ export interface WelcomeData {
 export function loadWelcomeData(teamRoot: string): WelcomeData | null {
   try {
     const storage = new FSStorageProvider();
-    const teamPath = path.join(teamRoot, '.squad', 'team.md');
+    const localSquadDir = path.join(teamRoot, '.squad');
+    const stateDir = resolveStateDir(localSquadDir);
+    const teamPath = path.join(stateDir, 'team.md');
     const content = storage.readSync(teamPath);
     if (content === undefined) return null;
 
@@ -309,7 +315,7 @@ export function loadWelcomeData(teamRoot: string): WelcomeData | null {
       .map(a => ({ name: a.name, role: a.role, emoji: getRoleEmoji(a.role) }));
 
     let focus: string | null = null;
-    const nowPath = path.join(teamRoot, '.squad', 'identity', 'now.md');
+    const nowPath = path.join(stateDir, 'identity', 'now.md');
     const nowContent = storage.readSync(nowPath);
     if (nowContent !== undefined) {
       const focusMatch = nowContent.match(/focus_area:\s*(.+)/);
@@ -317,7 +323,7 @@ export function loadWelcomeData(teamRoot: string): WelcomeData | null {
     }
 
     // Detect and consume first-run marker from `squad init`
-    const firstRunPath = path.join(teamRoot, '.squad', '.first-run');
+    const firstRunPath = path.join(stateDir, '.first-run');
     let isFirstRun = false;
     if (storage.existsSync(firstRunPath)) {
       isFirstRun = true;

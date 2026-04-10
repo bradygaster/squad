@@ -11,7 +11,7 @@ import { execFile, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { detectSquadDir } from '../core/detect-squad-dir.js';
+import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { fatal } from '../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../core/output.js';
 import {
@@ -265,9 +265,9 @@ async function checkGhCopilot(): Promise<void> {
 export async function runLoop(dest: string, options: LoopConfig): Promise<void> {
   const workTreeRoot = path.resolve(dest);
 
-  // Detect squad directory (must exist)
-  const squadDirInfo = detectSquadDir(workTreeRoot);
-  const teamMd = path.join(squadDirInfo.path, 'team.md');
+  // Detect squad directory (must exist) — follows external state if configured
+  const { local: squadDirInfo, stateDir } = effectiveSquadDir(workTreeRoot);
+  const teamMd = path.join(stateDir, 'team.md');
   const teamRoot = path.dirname(squadDirInfo.path);
 
   if (!existsSync(teamMd)) {

@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { listRoles, searchRoles, FSStorageProvider } from '@bradygaster/squad-sdk';
+import { listRoles, searchRoles, FSStorageProvider, loadDirConfig, resolveExternalStateDir } from '@bradygaster/squad-sdk';
 
 import type { ShellMessage } from './types.js';
 
@@ -233,8 +233,15 @@ export async function buildCoordinatorPrompt(config: CoordinatorConfig): Promise
   const squadRoot = config.teamRoot;
   const storage = new FSStorageProvider();
 
+  // Resolve effective state dir (external when externalized)
+  const localSquadDir = join(squadRoot, '.squad');
+  const dirConfig = loadDirConfig(localSquadDir);
+  const stateDir = (dirConfig?.stateLocation === 'external' && dirConfig.projectKey)
+    ? resolveExternalStateDir(dirConfig.projectKey, false)
+    : localSquadDir;
+
   // Load team.md for roster
-  const teamPath = config.teamPath ?? join(squadRoot, '.squad', 'team.md');
+  const teamPath = config.teamPath ?? join(stateDir, 'team.md');
   let teamContent = '';
   try {
     const raw = await storage.read(teamPath);
@@ -252,7 +259,7 @@ export async function buildCoordinatorPrompt(config: CoordinatorConfig): Promise
   }
 
   // Load routing.md for routing rules
-  const routingPath = config.routingPath ?? join(squadRoot, '.squad', 'routing.md');
+  const routingPath = config.routingPath ?? join(stateDir, 'routing.md');
   let routingContent = '';
   try {
     const raw = await storage.read(routingPath);
