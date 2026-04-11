@@ -16,7 +16,7 @@ It is not a chatbot wearing hats. Each team member is spawned as a real sub-agen
 - Initial setup: `squad init`
 - Build from config: `squad build`
 - Diagnostics: `squad doctor`
-- Interactive shell: `squad shell`
+- Interactive shell: `squad shell` — **Deprecated** (use `copilot --agent squad`)
 - Continuous triage: `squad triage --interval 10`
 - Watch mode: `squad watch`
 - Aspire dashboard: `squad aspire`
@@ -547,7 +547,7 @@ Squad maintains a clear ownership model:
 | `squad build` | Generate `.squad/` from `squad.config.ts` |
 | `squad build --check` | Validate generated files match disk (for CI) |
 | `squad doctor` | Run 9 setup validation checks |
-| `squad shell` | Enter the interactive shell |
+| `squad shell` | **Deprecated** — Enter the interactive shell (use `copilot --agent squad`) |
 | `squad triage` | Run a single triage pass |
 | `squad triage --interval 10` | Continuous triage every 10 minutes |
 | `squad watch` | Ralph watchdog mode |
