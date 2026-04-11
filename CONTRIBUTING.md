@@ -9,6 +9,31 @@ Welcome to Squad development. This guide explains how to build, test, and contri
 - **Git** with SSH agent (for package resolution)
 - **gh CLI** (for GitHub integration testing)
 
+## Community Guidelines & Spam Protection
+
+Our repository uses automated spam detection to maintain a safe, productive community. Here's what you need to know:
+
+### Spam Detection Guidelines
+- **Comment screening** — Malicious links (shortened URLs, file-sharing services) and mass-mentions are monitored
+- **Issue evaluation** — New issues are reviewed for spam patterns; suspected spam may be auto-closed
+- **Auto-lock stale content** — Issues and PRs inactive for 30+ days are locked to prevent spam on old threads
+
+### What Gets Flagged
+- Shortened URLs (bit.ly, tinyurl, t.co, goo.gl, rb.gy)
+- File-sharing links (Dropbox, Google Drive, Mega, MediaFire)
+- Crypto/investment scams ("free bitcoin", "guaranteed profit", etc.)
+- Adult content patterns
+- Mass-mentions (4+ @-mentions in one comment)
+- New accounts (< 30 days old) with 0 repos, 0 followers + suspicious content
+
+### If Your Content Is Flagged
+- **Comment not posted** — If your comment contains flagged patterns, it may be held for review
+- **Issue closed as spam** (clear violation) — Likely closed with explanation; contact maintainers if you believe this is a mistake
+- **Issue labeled "suspicious"** — Flagged for maintainer review but remains open
+- **Issue locked** — If inactive for 30+ days, locked to prevent spam replies
+
+If your legitimate issue/comment is caught by spam detection, please contact a maintainer. We're here to help.
+
 ## Monorepo Structure
 
 Squad is an npm workspace monorepo with two packages:
