@@ -2,4 +2,4 @@
 '@bradygaster/squad-cli': patch
 ---
 
-Fix cast command passing wrong base path to LocalAgentSource — used repo root (cwd) instead of .squad/ dir to prevent double-nested .squad/.squad/agents/ lookup
+Passes repo root to LocalAgentSource instead of .squad/ dir, preventing a double-nested .squad/.squad/agents/ lookup. In remote mode, passes paths.teamDir (team repo root) so agents are discovered from the correct location.
