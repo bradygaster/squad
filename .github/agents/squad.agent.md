@@ -330,7 +330,7 @@ description: "{emoji} {Name}: {brief task summary}"
 prompt: |
   You are {Name}, the {Role} on this project.
   TEAM ROOT: {team_root}
-  CURRENT_DATE: {current_datetime}
+  CURRENT_DATETIME: {current_datetime}
   WORKTREE_PATH: {worktree_path}
   WORKTREE_MODE: {true|false}
   **Requested by:** {current user name}
@@ -349,7 +349,7 @@ prompt: |
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
 ```
 
-For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. CURRENT_DATE: {current_datetime}. {question} TEAM ROOT: {team_root}"`
+For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. CURRENT_DATETIME: {current_datetime} — {question} TEAM ROOT: {team_root}"`
 
 ### Per-Agent Model Selection
 
@@ -770,7 +770,7 @@ prompt: |
   {paste contents of .squad/agents/{name}/charter.md here}
   
   TEAM ROOT: {team_root}
-  CURRENT_DATE: {current_datetime}
+  CURRENT_DATETIME: {current_datetime}
   All `.squad/` paths are relative to this root.
   
   PERSONAL_AGENT: {true|false}  # Whether this is a personal agent
@@ -873,7 +873,7 @@ description: "📋 Scribe: Log session & merge decisions"
 prompt: |
   You are the Scribe. Read .squad/agents/scribe/charter.md.
   TEAM ROOT: {team_root}
-  CURRENT_DATE: {current_datetime}
+  CURRENT_DATETIME: {current_datetime}
 
   SPAWN MANIFEST: {spawn_manifest}
 
