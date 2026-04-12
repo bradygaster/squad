@@ -5,8 +5,12 @@
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
+import { IS_WINDOWS } from '../agent-spawn.js';
 
 const execFileAsync = promisify(execFile);
+
+/** Shared exec options — adds shell:true on Windows for PATH/.cmd resolution. */
+const shellOpt = { shell: IS_WINDOWS };
 
 export class BoardCapability implements WatchCapability {
   readonly name = 'board';
@@ -17,7 +21,7 @@ export class BoardCapability implements WatchCapability {
 
   async preflight(_context: WatchContext): Promise<PreflightResult> {
     try {
-      await execFileAsync('gh', ['project', '--help']);
+      await execFileAsync('gh', ['project', '--help'], shellOpt);
       return { ok: true };
     } catch {
       return { ok: false, reason: 'gh project CLI not available or not authenticated' };
@@ -35,7 +39,7 @@ export class BoardCapability implements WatchCapability {
         '--owner', '@me',
         '--format', 'json',
         '--limit', '300',
-      ], { maxBuffer: 10 * 1024 * 1024 });
+      ], { maxBuffer: 10 * 1024 * 1024, ...shellOpt });
 
       const items = JSON.parse(itemsJson) as {
         items?: Array<{
@@ -74,7 +78,7 @@ export class BoardCapability implements WatchCapability {
                     'gh',
                     ['issue', 'close', String(item.content!.number!), '--comment',
                      '🤖 Ralph: Auto-closing — issue has been in Done for >3 days.'],
-                    { maxBuffer: 5 * 1024 * 1024 },
+                    { maxBuffer: 5 * 1024 * 1024, ...shellOpt },
                     (err) => (err ? reject(err) : resolve()),
                   );
                 });
@@ -109,7 +113,7 @@ export async function updateBoardStatus(
     let repoUrl: string;
     try {
       const repoName = execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], {
-        encoding: 'utf-8', timeout: 10_000,
+        encoding: 'utf-8', timeout: 10_000, ...shellOpt,
       }).trim();
       repoUrl = `https://github.com/${repoName}/issues/${issueNumber}`;
     } catch {
@@ -120,7 +124,7 @@ export async function updateBoardStatus(
       'project', 'item-add', String(projectNum),
       '--owner', options.owner ?? '@me',
       '--url', repoUrl,
-    ], { maxBuffer: 5 * 1024 * 1024 });
+    ], { maxBuffer: 5 * 1024 * 1024, ...shellOpt });
 
     const statusMap: Record<string, string> = {
       'todo': 'Todo', 'in-progress': 'In Progress', 'done': 'Done', 'blocked': 'Blocked',
@@ -132,7 +136,7 @@ export async function updateBoardStatus(
       '--owner', options.owner ?? '@me',
       '--format', 'json',
       '--limit', '300',
-    ], { maxBuffer: 10 * 1024 * 1024 });
+    ], { maxBuffer: 10 * 1024 * 1024, ...shellOpt });
 
     const items = JSON.parse(itemsJson) as { items?: Array<{ id: string; content?: { number?: number } }> };
     const item = items.items?.find(i => i.content?.number === issueNumber);
@@ -144,6 +148,6 @@ export async function updateBoardStatus(
       '--id', item.id,
       '--field-id', 'Status',
       '--single-select-option-id', statusValue,
-    ], { maxBuffer: 5 * 1024 * 1024 });
+    ], { maxBuffer: 5 * 1024 * 1024, ...shellOpt });
   } catch { /* best-effort */ }
 }

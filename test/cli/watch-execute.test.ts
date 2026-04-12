@@ -5,15 +5,20 @@
  * Mocks gh CLI and execFile to avoid network dependencies.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { buildAgentCommand, findExecutableIssues, reportBoard } from '../../packages/squad-cli/src/cli/commands/watch/index.js';
 import type { WatchWorkItem } from '../../packages/squad-cli/src/cli/commands/watch/index.js';
 import { classifyIssue } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/execute.js';
 import type { ExecutableWorkItem } from '../../packages/squad-cli/src/cli/commands/watch/capabilities/execute.js';
+import { _resetCopilotDetection } from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
 
 describe('CLI: watch execute mode', () => {
   describe('buildAgentCommand', () => {
-    it('builds default gh copilot command', async () => {
+    beforeEach(() => {
+      _resetCopilotDetection();
+    });
+
+    it('builds default copilot command (standalone or gh fallback)', async () => {
             const issue: WatchWorkItem = {
         number: 42,
         title: 'Fix auth redirect bug',
@@ -26,10 +31,13 @@ describe('CLI: watch execute mode', () => {
 
       const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
 
-      expect(cmd).toBe('gh');
-      expect(args).toContain('copilot');
+      // Runtime detection: cmd is 'copilot' if standalone is installed, 'gh' otherwise
+      expect(['copilot', 'gh']).toContain(cmd);
       expect(args).toContain('--message');
       expect(args.some((a) => a.includes('issue #42'))).toBe(true);
+      if (cmd === 'gh') {
+        expect(args[0]).toBe('copilot');
+      }
     });
 
     it('passes through copilotFlags', async () => {
@@ -45,7 +53,8 @@ describe('CLI: watch execute mode', () => {
 
       const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
 
-      expect(cmd).toBe('gh');
+      // Runtime detection: cmd is 'copilot' if standalone is installed, 'gh' otherwise
+      expect(['copilot', 'gh']).toContain(cmd);
       expect(args).toContain('--model');
       expect(args).toContain('gpt-4');
       expect(args).toContain('--yolo');

@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { IS_WINDOWS } from './agent-spawn.js';
 
 /** Shape of the PID file written by runWatch at startup. */
 export interface WatchPidInfo {
@@ -83,6 +84,7 @@ function probeCurrentGhUser(): string | undefined {
     const result = execFileSync('gh', ['auth', 'status', '--active'], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: IS_WINDOWS,
     });
     const match = result.match(/account\s+(\S+)/);
     return match?.[1];
