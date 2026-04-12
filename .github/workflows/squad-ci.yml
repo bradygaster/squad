@@ -366,6 +366,7 @@ jobs:
           always()
           && steps.labels.outputs.skip_version != 'true'
           && vars.SQUAD_VERSION_CHECK != 'false'
+          && github.event.pull_request.base.ref != 'insider'
         run: |
           echo "## 🏷️ Prerelease Version Guard" >> $GITHUB_STEP_SUMMARY
           node -e "
@@ -820,3 +821,32 @@ jobs:
 
             console.log('✅ All ' + passed + ' subpath exports resolve and import successfully');
           "
+
+  scope-check:
+    # Enforces PR scope boundary: repo-health PRs must not touch product source code.
+    # Replaces the removed squad-scope-check.yml workflow.
+    if: >-
+      github.event_name == 'pull_request'
+      && contains(github.event.pull_request.labels.*.name, 'repo-health')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for product source changes in repo-health PR
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-(cli|sdk)/src/' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "::error::SCOPE VIOLATION — repo-health PRs must not modify product source code."
+            echo "The following product source files were changed:"
+            echo "$CHANGED" | while read -r f; do echo "  - $f"; done
+            echo ""
+            echo "Product source (packages/squad-cli/src/ and packages/squad-sdk/src/) is off-limits for repo-health PRs."
+            echo "If this change requires product source edits, use a 'fix' or 'feat' label instead."
+            exit 1
+          fi
+          echo "✅ No product source files modified — scope boundary respected"

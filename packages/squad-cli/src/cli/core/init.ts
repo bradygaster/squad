@@ -141,11 +141,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       console.log();
       console.log(`${DIM}Copilot resolves .github/agents/ from the git root, not from here.${RESET}`);
       console.log(`${DIM}The Squad agent won't be visible to copilot in this folder.${RESET}`);
-      console.log();
-      // Auto-fix: run git init to create a repo boundary here
-      console.log(`${CYAN}${BOLD}→${RESET} Running ${CYAN}git init${RESET} to create a repo boundary...`);
-      execFileSync('git', ['init'], { cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-      console.log(`${GREEN}${BOLD}✓${RESET} Initialized git repo at ${normalDest}`);
+      console.log(`${DIM}Consider running squad init from the git root instead.${RESET}`);
       console.log();
     }
   } catch {
@@ -249,9 +245,10 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   let result;
   try {
     result = await sdkInitSquad(initOptions);
-  } catch (err: any) {
+  } catch (err: unknown) {
     process.off('SIGINT', sigintHandler);
-    fatal(`Failed to initialize squad: ${err.message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    fatal(`Failed to initialize squad: ${message}`);
     return; // Unreachable but makes TS happy
   }
 

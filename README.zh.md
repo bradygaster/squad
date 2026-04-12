@@ -103,7 +103,7 @@ squad upgrade
 | `squad copilot` | 添加/移除 Copilot 编码智能体 (@copilot)；使用 `--off` 移除，`--auto-assign` 启用自动分配 |
 | `squad doctor` | 检查环境配置并诊断问题（别名：`heartbeat`） |
 | `squad link <team-repo-path>` | 连接到远程团队仓库 |
-| `squad shell` | 显式启动交互式 shell |
+| `squad shell` | **已弃用** — 显式启动交互式 shell。请改用 `copilot --agent squad`。 |
 | `squad export` | 将小队导出为可移植的 JSON 快照 |
 | `squad import <file>` | 从导出文件导入小队 |
 | `squad plugin marketplace add\|remove\|list\|browse` | 管理插件市场 |
@@ -115,6 +115,14 @@ squad upgrade
 ---
 
 ## 交互式 Shell
+
+> ⚠️ **已弃用：** 交互式 shell（`squad` 无参数）已弃用。为了获得最佳的 Squad 体验，请改用 [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli)。
+>
+> ```bash
+> copilot --agent squad
+> ```
+>
+> 详见[选择您的界面](docs/src/content/docs/get-started/choose-your-interface.md)了解当前选项。
 
 厌倦了每次都输入 `squad` 加命令？进入交互式 shell。
 

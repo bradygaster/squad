@@ -103,7 +103,9 @@ function saveTokens(tenantId: string, clientId: string, tokens: StoredTokens): v
 
   // Ensure permissions are correct even if file already existed
   if (platform() === 'win32') {
-    execFile('icacls', [tokenPath, '/inheritance:r', '/grant:r', `${process.env.USERNAME ?? 'CURRENT_USER'}:(R,W)`], () => {});
+    execFile('icacls', [TOKEN_PATH, '/inheritance:r', '/grant:r', `${process.env.USERNAME ?? 'CURRENT_USER'}:(R,W)`], (err) => {
+      if (err) console.warn('⚠️ Could not restrict token file permissions:', err.message);
+    });
   } else {
     chmodSync(SQUAD_DIR, 0o700);
     chmodSync(tokenPath, 0o600);
@@ -659,7 +661,7 @@ export class TeamsCommunicationAdapter implements CommunicationAdapter {
       // Return stable composite ID so pollForReplies can locate the channel
       return {
         id: `${this.config.teamId}|${this.config.channelId}`,
-        url: `https://teams.microsoft.com/l/channel/${this.config.channelId}`,
+        url: `https://teams.microsoft.com/l/channel/${encodeURIComponent(this.config.channelId)}`,
       };
     }
 
