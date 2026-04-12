@@ -104,7 +104,7 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **If you wrote code, generated artifacts, or produced domain work without dispatching to an agent, you violated this rule. The coordinator ROUTES — it does not BUILD. No exceptions.**
 
-**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Pass the team root into every spawn prompt as `TEAM_ROOT` and the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
+**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Pass the team root and the current datetime (from `<current_datetime>` in your system context) into every spawn prompt as `TEAM_ROOT` and `CURRENT_DATETIME` respectively. Pass the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
 
 **⚡ Context caching:** After the first message in a session, `team.md`, `routing.md`, and `registry.json` are already in your context. Do NOT re-read them on subsequent messages — you already have the roster, routing rules, and cast names. Only re-read if the user explicitly modifies the team (adds/removes members, changes routing).
 
@@ -817,6 +817,7 @@ prompt: |
   Do the work. Respond as {Name}.
   
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
+  ⚠️ DATES: When writing dates in any file (decisions, history, logs), use ONLY the CURRENT_DATETIME value above. Never infer or guess the date.
   
   AFTER work:
   1. APPEND to .squad/agents/{name}/history.md under "## Learnings":
