@@ -11,9 +11,9 @@ const base = import.meta.env.BASE_URL;
     <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
     </svg>
-    <span class="hidden sm:inline">Search docs…</span>
+    <span class="hidden sm:inline">Search docsΓÇª</span>
     <kbd class="hidden sm:inline-flex ml-auto text-xs border border-surface-300 dark:border-surface-600 rounded px-1.5 py-0.5 text-surface-400" id="search-shortcut-kbd">
-      <span class="text-xs" id="search-modifier">⌘</span>K
+      <span class="text-xs" id="search-modifier">Γîÿ</span>K
     </kbd>
   </button>
 </div>
@@ -30,7 +30,7 @@ const base = import.meta.env.BASE_URL;
         <input
           id="search-input"
           type="text"
-          placeholder="Search documentation…"
+          placeholder="Search documentationΓÇª"
           class="flex-1 py-3 bg-transparent text-surface-900 dark:text-white placeholder-surface-400 outline-none text-base"
           autocomplete="off"
         />
@@ -39,7 +39,7 @@ const base = import.meta.env.BASE_URL;
       <div id="search-status" class="hidden px-4 py-2 text-xs text-surface-500 dark:text-surface-400 border-b border-surface-100 dark:border-surface-800"></div>
       <div id="search-results" class="max-h-[60vh] overflow-y-auto p-2">
         <div class="p-8 text-center text-surface-400 text-sm" id="search-empty">
-          Start typing to search…
+          Start typing to searchΓÇª
         </div>
       </div>
 
@@ -48,7 +48,7 @@ const base = import.meta.env.BASE_URL;
 </div>
 
 <script define:vars={{ base }}>
-  // Pagefind instance persists across View Transitions — no need to re-import
+  // Pagefind instance persists across View Transitions ΓÇö no need to re-import
   let pagefind = null;
 
   async function loadPagefind() {
@@ -96,7 +96,7 @@ const base = import.meta.env.BASE_URL;
     if (searchResults) searchResults.innerHTML = '';
     if (searchEmpty) {
       searchResults?.appendChild(searchEmpty);
-      searchEmpty.textContent = 'Start typing to search…';
+      searchEmpty.textContent = 'Start typing to searchΓÇª';
     }
     searchStatus?.classList.add('hidden');
     document.body.style.overflow = '';
@@ -107,7 +107,7 @@ const base = import.meta.env.BASE_URL;
     if (!query) {
       if (searchResults && searchEmpty) {
         searchResults.innerHTML = '';
-        searchEmpty.textContent = 'Start typing to search…';
+        searchEmpty.textContent = 'Start typing to searchΓÇª';
         searchResults.appendChild(searchEmpty);
       }
       searchStatus?.classList.add('hidden');
@@ -148,18 +148,18 @@ const base = import.meta.env.BASE_URL;
           </div>
           <div class="text-sm text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">${result.excerpt || ''}</div>
         `;
-        // Close modal on click — navigation proceeds via View Transitions
+        // Close modal on click ΓÇö navigation proceeds via View Transitions
         a.addEventListener('click', closeSearch);
         searchResults.appendChild(a);
       });
     } catch {
       if (searchResults) {
-        searchResults.innerHTML = '<div class="p-8 text-center text-surface-400 text-sm">Search index loading…</div>';
+        searchResults.innerHTML = '<div class="p-8 text-center text-surface-400 text-sm">Search index loadingΓÇª</div>';
       }
     }
   }
 
-  // Global keydown — register exactly once, never duplicated
+  // Global keydown ΓÇö register exactly once, never duplicated
   let _globalKeydownRegistered = false;
   function handleGlobalKeydown(e) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -197,7 +197,7 @@ const base = import.meta.env.BASE_URL;
     const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
     const modifierEl = document.getElementById('search-modifier');
     if (modifierEl) {
-      modifierEl.textContent = isMac ? '⌘' : 'Ctrl+';
+      modifierEl.textContent = isMac ? 'Γîÿ' : 'Ctrl+';
     }
 
     // Create fresh bound handlers
