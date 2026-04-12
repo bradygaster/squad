@@ -2,4 +2,4 @@
 '@bradygaster/squad-cli': patch
 ---
 
-fix: address post-merge review findings — YAML escaping, type safety, deprecation messages
+fix: address post-merge review findings — catch unknown narrowing and deprecation warnings for start/rc commands
