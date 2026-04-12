@@ -50,6 +50,8 @@ export type { WatchCapability, WatchContext, WatchPhase, PreflightResult, Capabi
 export { CapabilityRegistry } from './registry.js';
 export { createDefaultRegistry } from './capabilities/index.js';
 export { createVerboseLogger, type VerboseLogger } from './verbose.js';
+export { loadExternalCapabilities } from './external-loader.js';
+export { PidTracker, type TrackedProcess } from './pid-tracker.js';
 export { getWatchHealth, writePidFile, removePidFile, getPidPath, isProcessAlive, type WatchPidInfo } from './health.js';
 
 // ── Watch Platform Abstraction ───────────────────────────────────
@@ -778,6 +780,24 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   // ── Capability system setup ────────────────────────────────────
   const registry = createDefaultRegistry();
+
+  // Load external capabilities from .squad/capabilities/
+  const { loadExternalCapabilities } = await import('./external-loader.js');
+  await loadExternalCapabilities(teamRoot, registry);
+
+  // PID tracking for child process cleanup
+  const { PidTracker } = await import('./pid-tracker.js');
+  const pidTracker = new PidTracker(teamRoot);
+
+  // Clean up orphans from previous crashed run
+  const staleKilled = pidTracker.cleanupStale();
+  if (staleKilled > 0) {
+    console.log(`${YELLOW}⚠️ Cleaned up ${staleKilled} orphaned process(es) from previous run${RESET}`);
+  }
+
+  // Register exit handlers for graceful cleanup
+  pidTracker.registerExitHandlers();
+
   const baseContext: WatchContext = {
     teamRoot,
     adapter,
@@ -787,6 +807,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     agentCmd: config.agentCmd,
     copilotFlags: config.copilotFlags,
     verbose: config.verbose,
+    pidTracker,
   };
 
   const enabledCapabilities = await preflightCapabilities(registry, config, baseContext);
