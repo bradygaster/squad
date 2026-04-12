@@ -4,7 +4,7 @@
  * @module state-backend
  */
 
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 
@@ -28,41 +28,76 @@ export class WorktreeBackend implements StateBackend {
     this.root = squadDir;
   }
   read(relativePath: string): string | undefined {
-    return storage.readSync(path.join(this.root, relativePath)) ?? undefined;
+    const key = normalizeKey(relativePath);
+    return storage.readSync(path.join(this.root, key)) ?? undefined;
   }
   write(relativePath: string, content: string): void {
-    storage.writeSync(path.join(this.root, relativePath), content);
+    const key = normalizeKey(relativePath);
+    storage.writeSync(path.join(this.root, key), content);
   }
   exists(relativePath: string): boolean {
-    return storage.existsSync(path.join(this.root, relativePath));
+    const key = normalizeKey(relativePath);
+    return storage.existsSync(path.join(this.root, key));
   }
   list(relativeDir: string): string[] {
-    const full = path.join(this.root, relativeDir);
+    const key = normalizeKey(relativeDir);
+    const full = path.join(this.root, key);
     if (!storage.existsSync(full) || !storage.isDirectorySync(full)) return [];
     return storage.listSync(full);
   }
 }
 
-function gitExec(args: string, cwd: string): string | null {
+function gitExec(args: string[], cwd: string): string | null {
   try {
-    return execFileSync('git', args.split(' '), { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch { return null; }
 }
 
-function gitExecContent(args: string, cwd: string): string | null {
-  try {
-    return execFileSync('git', args.split(' '), { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trimEnd();
-  } catch { return null; }
+function gitExecWithInput(args: string[], input: string, cwd: string): string {
+  return execFileSync('git', args, { cwd, input, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
-function gitExecOrThrow(args: string, cwd: string): string {
+function gitExecOrThrow(args: string[], cwd: string): string {
   const result = gitExec(args, cwd);
-  if (result === null) throw new Error(`git command failed: git ${args}`);
+  if (result === null) throw new Error(`git command failed: git ${args.join(' ')}`);
   return result;
 }
 
+/**
+ * Validate a state key against characters that could corrupt git plumbing
+ * input (mktree stdin format, branch:path refs) or cause path confusion.
+ */
+export function validateStateKey(key: string): void {
+  if (!key || key.length === 0) {
+    throw new Error('State key must be non-empty');
+  }
+  if (key.includes('\0')) {
+    throw new Error('State key must not contain null bytes');
+  }
+  if (/[\n\r]/.test(key)) {
+    throw new Error('State key must not contain newline characters');
+  }
+  if (key.includes('\t')) {
+    throw new Error('State key must not contain tab characters');
+  }
+  const segments = key.split('/');
+  for (const seg of segments) {
+    if (seg === '') {
+      throw new Error('State key must not contain empty path segments');
+    }
+    if (seg === '.' || seg === '..') {
+      throw new Error('State key must not contain . or .. path segments');
+    }
+  }
+}
+
 function normalizeKey(relativePath: string): string {
-  return relativePath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  // Empty string after normalization means "root" — valid for list() operations
+  if (normalized.length > 0) {
+    validateStateKey(normalized);
+  }
+  return normalized;
 }
 
 export class GitNotesBackend implements StateBackend {
@@ -72,7 +107,7 @@ export class GitNotesBackend implements StateBackend {
   constructor(repoRoot: string) { this.cwd = repoRoot; }
 
   private loadBlob(): Record<string, string> {
-    const raw = gitExec(`notes --ref=${this.ref} show HEAD`, this.cwd);
+    const raw = gitExec(['notes', `--ref=${this.ref}`, 'show', 'HEAD'], this.cwd);
     if (!raw) return {};
     try {
       const parsed: unknown = JSON.parse(raw);
@@ -86,9 +121,7 @@ export class GitNotesBackend implements StateBackend {
   private saveBlob(blob: Record<string, string>): void {
     const json = JSON.stringify(blob, null, 2);
     try {
-      execSync(`git notes --ref=${this.ref} add -f --file - HEAD`, {
-        cwd: this.cwd, input: json, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-      });
+      gitExecWithInput(['notes', `--ref=${this.ref}`, 'add', '-f', '--file', '-', 'HEAD'], json, this.cwd);
     } catch { throw new Error('git-notes backend: failed to write note on HEAD'); }
   }
 
@@ -129,22 +162,22 @@ export class OrphanBranchBackend implements StateBackend {
   }
 
   private ensureBranch(): void {
-    if (gitExec(`rev-parse --verify refs/heads/${this.branch}`, this.cwd)) return;
+    if (gitExec(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd)) return;
     let tree: string;
     try {
-      tree = execSync('git mktree', { cwd: this.cwd, input: '', encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      tree = gitExecWithInput(['mktree'], '', this.cwd);
     } catch { throw new Error('orphan backend: failed to create empty tree'); }
     let commit: string;
     try {
-      commit = execSync(`git commit-tree ${tree} -m "Initialize squad-state branch"`, {
+      commit = execFileSync('git', ['commit-tree', tree, '-m', 'Initialize squad-state branch'], {
         cwd: this.cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
       }).trim();
     } catch { throw new Error('orphan backend: failed to create initial commit'); }
-    gitExecOrThrow(`update-ref refs/heads/${this.branch} ${commit}`, this.cwd);
+    gitExecOrThrow(['update-ref', `refs/heads/${this.branch}`, commit], this.cwd);
   }
 
   read(relativePath: string): string | undefined {
-    const result = gitExec(`show ${this.branch}:${normalizeKey(relativePath)}`, this.cwd);
+    const result = gitExec(['show', `${this.branch}:${normalizeKey(relativePath)}`], this.cwd);
     return result ?? undefined;
   }
 
@@ -153,39 +186,37 @@ export class OrphanBranchBackend implements StateBackend {
     const key = normalizeKey(relativePath);
     let blobHash: string;
     try {
-      blobHash = execSync('git hash-object -w --stdin', {
-        cwd: this.cwd, input: content, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim();
+      blobHash = gitExecWithInput(['hash-object', '-w', '--stdin'], content, this.cwd);
     } catch { throw new Error(`orphan backend: failed to hash content for ${key}`); }
 
     let currentTree: string;
-    const treeResult = gitExec(`log --format=%T -1 ${this.branch}`, this.cwd);
+    const treeResult = gitExec(['log', '--format=%T', '-1', this.branch], this.cwd);
     if (!treeResult) {
       try {
-        currentTree = execSync('git mktree', { cwd: this.cwd, input: '', encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        currentTree = gitExecWithInput(['mktree'], '', this.cwd);
       } catch { throw new Error('orphan backend: failed to create empty tree'); }
     } else { currentTree = treeResult; }
 
     const newTree = this.updateTree(currentTree, key.split('/'), blobHash);
-    const parentCommit = gitExec(`rev-parse ${this.branch}`, this.cwd);
+    const parentCommit = gitExec(['rev-parse', this.branch], this.cwd);
     let newCommit: string;
     try {
-      const parentArg = parentCommit ? `-p ${parentCommit}` : '';
-      newCommit = execSync(`git commit-tree ${newTree} ${parentArg} -m "Update ${key}"`, {
+      const parentArgs = parentCommit ? ['-p', parentCommit] : [];
+      newCommit = execFileSync('git', ['commit-tree', newTree, ...parentArgs, '-m', `Update ${key}`], {
         cwd: this.cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
       }).trim();
     } catch { throw new Error(`orphan backend: failed to commit update for ${key}`); }
-    gitExecOrThrow(`update-ref refs/heads/${this.branch} ${newCommit}`, this.cwd);
+    gitExecOrThrow(['update-ref', `refs/heads/${this.branch}`, newCommit], this.cwd);
   }
 
   exists(relativePath: string): boolean {
-    return gitExec(`cat-file -t ${this.branch}:${normalizeKey(relativePath)}`, this.cwd) !== null;
+    return gitExec(['cat-file', '-t', `${this.branch}:${normalizeKey(relativePath)}`], this.cwd) !== null;
   }
 
   list(relativeDir: string): string[] {
     const key = normalizeKey(relativeDir);
     const target = key ? `${this.branch}:${key}` : `${this.branch}:`;
-    const result = gitExec(`ls-tree --name-only ${target}`, this.cwd);
+    const result = gitExec(['ls-tree', '--name-only', target], this.cwd);
     if (!result) return [];
     return result.split('\n').filter(Boolean);
   }
@@ -201,14 +232,14 @@ export class OrphanBranchBackend implements StateBackend {
     if (subTreeHash) {
       childTree = this.updateTree(subTreeHash, rest, blobHash);
     } else {
-      const emptyTree = execSync('git mktree', { cwd: this.cwd, input: '', encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      const emptyTree = gitExecWithInput(['mktree'], '', this.cwd);
       childTree = this.updateTree(emptyTree, rest, blobHash);
     }
     return this.replaceEntry(baseTree, dir!, '040000', 'tree', childTree);
   }
 
   private getSubtreeHash(treeHash: string, name: string): string | null {
-    const listing = gitExec(`ls-tree ${treeHash}`, this.cwd);
+    const listing = gitExec(['ls-tree', treeHash], this.cwd);
     if (!listing) return null;
     for (const line of listing.split('\n')) {
       const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
@@ -218,7 +249,7 @@ export class OrphanBranchBackend implements StateBackend {
   }
 
   private replaceEntry(treeHash: string, name: string, mode: string, type: string, hash: string): string {
-    const listing = gitExec(`ls-tree ${treeHash}`, this.cwd) ?? '';
+    const listing = gitExec(['ls-tree', treeHash], this.cwd) ?? '';
     const lines = listing.split('\n').filter(Boolean);
     const filtered = lines.filter((line) => {
       const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
@@ -226,7 +257,7 @@ export class OrphanBranchBackend implements StateBackend {
     });
     filtered.push(`${mode} ${type} ${hash}\t${name}`);
     try {
-      return execSync('git mktree', { cwd: this.cwd, input: filtered.join('\n') + '\n', encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      return gitExecWithInput(['mktree'], filtered.join('\n') + '\n', this.cwd);
     } catch { throw new Error(`orphan backend: failed to create tree with entry ${name}`); }
   }
 }
