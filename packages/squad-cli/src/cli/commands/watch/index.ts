@@ -168,15 +168,36 @@ export interface BoardState {
   executed: number;
 }
 
+/** Outcome of a runCheck call — wraps BoardState with scan status. */
+export type RunCheckStatus = 'ok' | 'rate-limited' | 'error';
+
+export interface RunCheckResult {
+  state: BoardState;
+  status: RunCheckStatus;
+}
+
 export interface ReportBoardOptions {
   notifyLevel?: 'all' | 'important' | 'none';
   machineName?: string;
   repoName?: string;
+  /** When set, overrides the "Board is clear" message for failed scans. */
+  scanStatus?: RunCheckStatus;
 }
 
 export function reportBoard(state: BoardState, round: number, options?: ReportBoardOptions): void {
   const level = options?.notifyLevel ?? 'all';
   const total = Object.values(state).reduce((a, b) => a + b, 0);
+  const scanStatus = options?.scanStatus ?? 'ok';
+
+  // Rate-limit / error warnings always print (bypass notifyLevel suppression)
+  if (total === 0 && scanStatus === 'rate-limited') {
+    console.log(`${YELLOW}⚠ API rate limited — skipping this round (retry in next interval)${RESET}`);
+    return;
+  }
+  if (total === 0 && scanStatus === 'error') {
+    console.log(`${YELLOW}⚠ Board scan failed — skipping this round (retry in next interval)${RESET}`);
+    return;
+  }
 
   if (level === 'none') return;
   if (level === 'important' && total === 0) return;
@@ -296,7 +317,7 @@ async function runCheck(
   capabilities: MachineCapabilities | null,
   adapter: PlatformAdapter,
   vlog?: VerboseLogger,
-): Promise<BoardState> {
+): Promise<RunCheckResult> {
   const timestamp = new Date().toLocaleTimeString();
   try {
     const issues = await listWatchWorkItems(adapter, { label: 'squad', state: 'open', limit: 20 });
@@ -361,10 +382,16 @@ async function runCheck(
     }
 
     const prState = await checkPRs(roster, adapter, vlog);
-    return { untriaged: untriaged.length, assigned: assignedIssues.length, executed: 0, ...prState };
+    return { state: { untriaged: untriaged.length, assigned: assignedIssues.length, executed: 0, ...prState }, status: 'ok' };
   } catch (e) {
-    console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${(e as Error).message}`);
-    return emptyBoardState();
+    const err = e as Error;
+    const limited = isRateLimitError(err);
+    if (limited) {
+      console.log(`${YELLOW}⚠${RESET} [${timestamp}] API rate limited — board scan skipped`);
+    } else {
+      console.error(`${RED}✗${RESET} [${timestamp}] Check failed: ${err.message}`);
+    }
+    return { state: emptyBoardState(), status: limited ? 'rate-limited' : 'error' };
   }
 }
 
@@ -868,7 +895,21 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     }
 
     // Core: triage (always runs — not a capability)
-    const roundState = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter, vlog);
+    const checkResult = await runCheck(rules, modules, roster, hasCopilot, autoAssign, capabilities, adapter, vlog);
+    const roundState = checkResult.state;
+
+    // Short-circuit remaining phases when the scan failed or was rate-limited
+    if (checkResult.status !== 'ok') {
+      reportBoard(roundState, round, { scanStatus: checkResult.status });
+      const nextPollTime = new Date(Date.now() + interval * 60 * 1000);
+      console.log(`${DIM}Next poll at ${nextPollTime.toLocaleTimeString()}${RESET}`);
+      // Do NOT count a failed scan as a circuit-breaker success
+      if (cbState.status === 'half-open') {
+        cbState.consecutiveSuccesses = 0;
+      }
+      saveCBState(squadDirInfo.path, cbState);
+      return;
+    }
 
     // Phase 2: post-triage (two-pass hydration)
     await runPhase('post-triage', enabledCapabilities, roundContext, config);
