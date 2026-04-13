@@ -1,30 +1,23 @@
 import { join } from 'node:path';
 import { listRoles, searchRoles, FSStorageProvider } from '@bradygaster/squad-sdk';
 
-import type { ShellMessage } from './types.js';
+// Re-export pure parsing functions from SDK
+export {
+  type MessageLike,
+  type RoutingDecision,
+  parseCoordinatorResponse,
+  hasRosterEntries,
+  formatConversationContext,
+} from '@bradygaster/squad-sdk/runtime/coordinator-parser';
+
+// Import hasRosterEntries for local use in buildCoordinatorPrompt
+import { hasRosterEntries } from '@bradygaster/squad-sdk/runtime/coordinator-parser';
 
 /** Debug logger — writes to stderr only when SQUAD_DEBUG=1. */
 function debugLog(...args: unknown[]): void {
   if (process.env['SQUAD_DEBUG'] === '1') {
     console.error('[SQUAD_DEBUG]', ...args);
   }
-}
-
-/**
- * Check if team.md has actual roster entries in the ## Members section.
- * Returns true if there is at least one table data row.
- */
-export function hasRosterEntries(teamContent: string): boolean {
-  const membersMatch = teamContent.match(/## Members\s*\n([\s\S]*?)(?=\n## |\n*$)/);
-  if (!membersMatch) return false;
-  const membersSection = membersMatch[1] ?? '';
-  const rows = membersSection.split('\n').filter(line => {
-    const trimmed = line.trim();
-    return trimmed.startsWith('|') &&
-           !trimmed.match(/^\|\s*Name\s*\|/) &&
-           !trimmed.match(/^\|\s*-+\s*\|/);
-  });
-  return rows.length > 0;
 }
 
 export interface CoordinatorConfig {
@@ -291,78 +284,4 @@ MULTI:
 - {agent1}: {task1}
 - {agent2}: {task2}
 `;
-}
-
-/**
- * Parse coordinator response to extract routing decisions.
- */
-export interface RoutingDecision {
-  type: 'direct' | 'route' | 'multi';
-  directAnswer?: string;
-  routes?: Array<{ agent: string; task: string; context?: string }>;
-}
-
-export function parseCoordinatorResponse(response: string): RoutingDecision {
-  const trimmed = response.trim();
-
-  // Direct answer
-  if (trimmed.startsWith('DIRECT:')) {
-    return {
-      type: 'direct',
-      directAnswer: trimmed.slice('DIRECT:'.length).trim(),
-    };
-  }
-
-  // Multi-agent routing
-  if (trimmed.startsWith('MULTI:')) {
-    const lines = trimmed.split('\n').slice(1);
-    const routes = lines
-      .filter(l => l.trim().startsWith('-'))
-      .map(l => {
-        const match = l.match(/^-\s*(\w+):\s*(.+)$/);
-        if (match) {
-          return { agent: match[1], task: match[2] };
-        }
-        return null;
-      })
-      .filter((r): r is { agent: string; task: string } => r !== null);
-    return { type: 'multi', routes };
-  }
-
-  // Single agent routing
-  if (trimmed.startsWith('ROUTE:')) {
-    const agentMatch = trimmed.match(/ROUTE:\s*(\w+)/);
-    const taskMatch = trimmed.match(/TASK:\s*(.+)/);
-    const contextMatch = trimmed.match(/CONTEXT:\s*(.+)/);
-    if (agentMatch) {
-      return {
-        type: 'route',
-        routes: [{
-          agent: agentMatch[1]!,
-          task: taskMatch?.[1] ?? '',
-          context: contextMatch?.[1],
-        }],
-      };
-    }
-  }
-
-  // Fallback — treat as direct answer
-  return { type: 'direct', directAnswer: trimmed };
-}
-
-/**
- * Format conversation history for the coordinator context window.
- * Keeps recent messages, summarizes older ones.
- */
-export function formatConversationContext(
-  messages: ShellMessage[],
-  maxMessages: number = 20,
-): string {
-  const recent = messages.slice(-maxMessages);
-  return recent
-    .map(m => {
-      const prefix = m.agentName ? `[${m.agentName}]` : `[${m.role}]`;
-      return `${prefix}: ${m.content}`;
-    })
-    .join('\n');
 }

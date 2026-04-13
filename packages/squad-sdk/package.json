@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "0.9.1",
+  "version": "0.9.1-build.3",
   "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
@@ -169,6 +169,14 @@
     "./runtime/constants": {
       "types": "./dist/runtime/constants.d.ts",
       "import": "./dist/runtime/constants.js"
+    },
+    "./runtime/error-messages": {
+      "types": "./dist/runtime/error-messages.d.ts",
+      "import": "./dist/runtime/error-messages.js"
+    },
+    "./runtime/coordinator-parser": {
+      "types": "./dist/runtime/coordinator-parser.d.ts",
+      "import": "./dist/runtime/coordinator-parser.js"
     },
     "./builders": {
       "types": "./dist/builders/index.d.ts",

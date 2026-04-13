@@ -33,6 +33,8 @@ export * from './runtime/benchmarks.js';
 export * from './runtime/otel-init.js';
 export * from './runtime/otel-metrics.js';
 export * from './runtime/rework.js';
+export * from './runtime/error-messages.js';
+export * from './runtime/coordinator-parser.js';
 export { getMeter, getTracer } from './runtime/otel.js';
 export { safeTimestamp } from './utils/safe-timestamp.js';
 export { EventBus as RuntimeEventBus } from './runtime/event-bus.js';
