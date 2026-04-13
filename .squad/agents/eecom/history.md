@@ -4,6 +4,18 @@
 
 ## Learnings
 
+### SDK extraction Batch 1 — error-messages + coordinator-parser (2026-04-13)
+
+**Context:** Phase 1 of REPL removal. Extracted pure functions from CLI shell into SDK runtime:
+- `error-messages.ts`: All error guidance factories (sdkDisconnectGuidance, teamConfigGuidance, etc.)
+- `coordinator-parser.ts`: parseCoordinatorResponse, hasRosterEntries, formatConversationContext + new MessageLike interface
+
+Shell files became thin re-export wrappers so existing imports keep working. Created SDK-path test files (`test/sdk-error-messages.test.ts`, `test/sdk-coordinator-parser.test.ts`).
+
+**Key pattern:** When extracting functions that depend on shell-specific types (e.g., `ShellMessage`), define a minimal interface (`MessageLike`) in the SDK with only the fields the function actually uses. This decouples the SDK from CLI types.
+
+**Pre-existing build issues:** `comms-teams.ts` had a `TOKEN_PATH` typo (should be `tokenPath`), and `start.ts` has a missing `node-pty` module. Fixed the typo as a drive-by.
+
 ### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
 
 **Context:** PR #942 from tamirdresher's fork was retargeted from `insider` to `dev`, causing 29 files in the diff when only 3 commits (4 files relevant to dev) were the actual fix. Cherry-picked the 3 fix commits onto a clean `squad/942-rebase-type-safety` branch from dev, resolving conflicts where insider-only files (skill.ts, cross-package-exports.test.ts) didn't exist on dev. Dropped the `escapeYamlValue` import and APM YAML generation function from init.ts since skill.ts doesn't exist on dev. Opened #963 as the clean replacement, closed #942.
