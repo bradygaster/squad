@@ -4,6 +4,20 @@
 
 ## Learnings
 
+### Batch 10 — Remove interactive shell (REPL) (2026-04-13)
+
+**Context:** Final batch of REPL removal. Deleted the entire `packages/squad-cli/src/cli/shell/` directory (20 source files + components/), removed ink/react deps, removed shell/* package exports, cleaned tsconfig JSX settings, and deleted 33 REPL-only test files. Updated 3 KEEP test files (`shell.test.ts`, `error-messages.test.ts`, `session-store.test.ts`) to import from SDK runtime paths instead of shell paths. Trimmed `shell.test.ts` to only test SDK-available modules (SessionRegistry, coordinator parser) — removed spawn, lifecycle, and stream-bridge sections since those classes were never extracted to SDK. Also deleted `agent-name-extraction.test.ts` and `sdk-failure-scenarios.test.ts` since their primary imports (`parseAgentFromDescription`, shell/index.js) no longer exist and coverage is provided by SDK test files (`sdk-ghost-retry.test.ts`, `sdk-coordinator-parser.test.ts`, `sdk-session-registry.test.ts`).
+
+**Key lesson:** When deleting a module that other test files import from, check each KEEP file's imports against the SDK barrel exports *before* deciding to keep it. If the imported symbols don't exist in the SDK (e.g. `ShellLifecycle`, `StreamBridge`, `ShellRenderer`, `parseAgentFromDescription`), the test must either be trimmed to SDK-available symbols or deleted entirely.
+
+### SDK extraction Batch 6 — team-manifest (2026-04-13)
+
+**Context:** Final extraction batch. Moved team.md parsing (parseTeamManifest, getRoleEmoji, loadWelcomeData + DiscoveredAgent/WelcomeData interfaces) from CLI shell/lifecycle.ts to SDK runtime/team-manifest.ts. Shell file became thin re-export wrapper. ShellLifecycle class stays in CLI — it depends on ShellRenderer and SessionRegistry.
+
+**Key pattern:** getRoleEmoji does keyword matching in priority order — 'lead' matches before 'qa', so "QA Lead" returns the lead emoji (🏗️), not tester (🧪). Tests must respect the match ordering.
+
+**FSStorageProvider import within SDK:** Other runtime files use `import { FSStorageProvider } from '../storage/fs-storage-provider.js'` (relative path, not the package name).
+
 ### SDK extraction Batch 1 — error-messages + coordinator-parser (2026-04-13)
 
 **Context:** Phase 1 of REPL removal. Extracted pure functions from CLI shell into SDK runtime:

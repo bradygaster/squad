@@ -5,10 +5,8 @@
     "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
     "composite": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts"],
   "references": [{ "path": "../squad-sdk" }]
 }
