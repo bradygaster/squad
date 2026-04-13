@@ -42,6 +42,7 @@ export * from './runtime/input-router.js';
 export * from './runtime/session-registry.js';
 export * from './runtime/memory-manager.js';
 export * from './runtime/session-store.js';
+export * from './runtime/team-manifest.js';
 export { getMeter, getTracer } from './runtime/otel.js';
 export { safeTimestamp } from './utils/safe-timestamp.js';
 export { EventBus as RuntimeEventBus } from './runtime/event-bus.js';

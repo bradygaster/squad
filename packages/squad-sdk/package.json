@@ -206,6 +206,10 @@
       "types": "./dist/runtime/session-store.d.ts",
       "import": "./dist/runtime/session-store.js"
     },
+    "./runtime/team-manifest": {
+      "types": "./dist/runtime/team-manifest.d.ts",
+      "import": "./dist/runtime/team-manifest.js"
+    },
     "./builders": {
       "types": "./dist/builders/index.d.ts",
       "import": "./dist/builders/index.js"
