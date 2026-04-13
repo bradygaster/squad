@@ -47,11 +47,12 @@ function createSpyMeter(): SpyMeter {
 
 let spyMeter: SpyMeter;
 
-vi.mock('@bradygaster/squad-sdk', () => ({
+vi.mock('@bradygaster/squad-sdk/runtime/otel', () => ({
   getMeter: () => spyMeter,
+  getTracer: vi.fn(),
 }));
 
-// Import after mock setup
+// Import after mock setup — CLI shim re-exports from SDK
 import {
   enableShellMetrics,
   recordShellSessionDuration,
