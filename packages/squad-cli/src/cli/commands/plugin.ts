@@ -1,11 +1,11 @@
 /**
- * Plugin marketplace commands — add/remove/list/browse
- * Port from beta index.js lines 716-833
+ * Plugin commands — install extensions + marketplace management
  */
 
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { existsSync, mkdirSync, readdirSync, copyFileSync, rmSync } from 'node:fs';
 import { TIMEOUTS, FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold, DIM, BOLD, RESET } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -26,14 +26,170 @@ export interface MarketplacesRegistry {
   marketplaces: Marketplace[];
 }
 
+/** Extension directories we look for in the cloned repo. */
+const EXTENSION_DIRS = ['skills', 'ceremonies', 'directives'] as const;
+
+export interface InstalledFile {
+  source: string;
+  dest: string;
+}
+
+export interface InstalledPlugin {
+  name: string;
+  repo: string;
+  installed_at: string;
+  files: InstalledFile[];
+}
+
+export interface InstalledRegistry {
+  plugins: InstalledPlugin[];
+}
+
+// --- Helpers ---
+
+/**
+ * Parse a repo reference like "github/owner/repo" or "owner/repo"
+ * into { owner, repo } for git clone URL construction.
+ */
+export function parseRepoRef(ref: string): { owner: string; repo: string } {
+  const parts = ref.split('/').filter(Boolean);
+
+  // "github/owner/repo" → strip "github" prefix
+  if (parts.length === 3 && parts[0]!.toLowerCase() === 'github') {
+    return { owner: parts[1]!, repo: parts[2]! };
+  }
+
+  // "owner/repo"
+  if (parts.length === 2) {
+    return { owner: parts[0]!, repo: parts[1]! };
+  }
+
+  fatal(`Invalid repo reference: "${ref}". Expected "owner/repo" or "github/owner/repo".`);
+}
+
+/**
+ * Collect all .md files from a directory (non-recursive).
+ * Returns an empty array if the directory doesn't exist.
+ */
+export function collectMdFiles(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter(f => f.endsWith('.md'));
+}
+
+// --- Install subcommand ---
+
+export async function runPluginInstall(dest: string, repoRef: string): Promise<void> {
+  const squadDirInfo = detectSquadDir(dest);
+
+  // Verify .squad directory actually exists on disk
+  if (!existsSync(squadDirInfo.path)) {
+    fatal(`.squad/ directory not found in ${dest}. Run "squad init" first.`);
+  }
+
+  const { owner, repo } = parseRepoRef(repoRef);
+  const cloneUrl = `https://github.com/${owner}/${repo}.git`;
+  const cloneDir = join(dest, `.squad-plugin-clone-${repo}-${Date.now()}`);
+
+  info(`${DIM}Cloning ${owner}/${repo}…${RESET}`);
+
+  try {
+    await execFileAsync('git', ['clone', '--depth', '1', cloneUrl, cloneDir], {
+      timeout: TIMEOUTS.PLUGIN_FETCH_MS,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    fatal(`Failed to clone ${owner}/${repo} — ${message}`);
+  }
+
+  try {
+    // Detect extension structure and copy files
+    const installedFiles: InstalledFile[] = [];
+    let anyFound = false;
+
+    for (const dirName of EXTENSION_DIRS) {
+      const srcDir = join(cloneDir, dirName);
+      const mdFiles = collectMdFiles(srcDir);
+      if (mdFiles.length === 0) continue;
+      anyFound = true;
+
+      const destDir = join(squadDirInfo.path, dirName);
+      mkdirSync(destDir, { recursive: true });
+
+      for (const file of mdFiles) {
+        const srcPath = join(srcDir, file);
+        const destPath = join(destDir, file);
+        copyFileSync(srcPath, destPath);
+        installedFiles.push({
+          source: `${dirName}/${file}`,
+          dest: destPath,
+        });
+        info(`  📄 ${dirName}/${file} → .squad/${dirName}/${file}`);
+      }
+    }
+
+    if (!anyFound) {
+      warn(`No skills/, ceremonies/, or directives/ directories found in ${owner}/${repo}. Nothing installed.`);
+      return;
+    }
+
+    // Track in installed.json
+    const storage = new FSStorageProvider();
+    const pluginsDir = join(squadDirInfo.path, 'plugins');
+    const installedFile = join(pluginsDir, 'installed.json');
+
+    let registry: InstalledRegistry = { plugins: [] };
+    const existing = await storage.read(installedFile);
+    if (existing) {
+      try {
+        registry = JSON.parse(existing);
+      } catch {
+        // corrupted file — start fresh
+      }
+    }
+
+    // Remove previous entry for same repo (upgrade scenario)
+    const canonicalRepo = `${owner}/${repo}`;
+    registry.plugins = registry.plugins.filter(p => p.repo !== canonicalRepo);
+
+    registry.plugins.push({
+      name: repo,
+      repo: canonicalRepo,
+      installed_at: new Date().toISOString(),
+      files: installedFiles,
+    });
+
+    await storage.mkdir(pluginsDir, { recursive: true });
+    await storage.write(installedFile, JSON.stringify(registry, null, 2) + '\n');
+
+    success(`Installed ${BOLD}${repo}${RESET} — ${installedFiles.length} file(s) copied`);
+  } finally {
+    // Cleanup temp clone directory
+    try {
+      rmSync(cloneDir, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
 // --- Main command handler ---
 
 export async function runPlugin(dest: string, args: string[]): Promise<void> {
   const subCmd = args[0];
   const action = args[1];
 
+  // --- Install subcommand ---
+  if (subCmd === 'install') {
+    const repoRef = args[1];
+    if (!repoRef) {
+      fatal('Usage: squad plugin install <owner/repo>');
+    }
+    await runPluginInstall(dest, repoRef);
+    return;
+  }
+
   if (subCmd !== 'marketplace' || !action) {
-    fatal('Usage: squad plugin marketplace add|remove|list|browse');
+    fatal('Usage: squad plugin install <repo> | squad plugin marketplace add|remove|list|browse');
   }
 
   const squadDirInfo = detectSquadDir(dest);

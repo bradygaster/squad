@@ -4,6 +4,8 @@
 
 ## Learnings
 
+📌 **Plugin install command (2026-04-14T05:31:39.453Z — Issue #972):** Added `squad plugin install <repo>` CLI command. Key patterns: (1) `parseRepoRef()` accepts both `owner/repo` and `github/owner/repo` formats, stripping the `github` prefix case-insensitively. (2) Extension detection is flat — looks for `skills/`, `ceremonies/`, `directives/` at repo root, copies only `.md` files. (3) Installed plugins tracked in `.squad/plugins/installed.json` with file manifest for future upgrade/remove. (4) Temp clone dir uses timestamp suffix and `rmSync` in `finally` block for cleanup. (5) For ESM test mocking of `node:child_process`, use top-level `vi.mock()` (hoisted by vitest) — `vi.spyOn` doesn't work on ESM namespace objects.
+
 ### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
 
 **Context:** PR #942 from tamirdresher's fork was retargeted from `insider` to `dev`, causing 29 files in the diff when only 3 commits (4 files relevant to dev) were the actual fix. Cherry-picked the 3 fix commits onto a clean `squad/942-rebase-type-safety` branch from dev, resolving conflicts where insider-only files (skill.ts, cross-package-exports.test.ts) didn't exist on dev. Dropped the `escapeYamlValue` import and APM YAML generation function from init.ts since skill.ts doesn't exist on dev. Opened #963 as the clean replacement, closed #942.
