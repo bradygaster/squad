@@ -83,9 +83,9 @@ export function collectMdFiles(dir: string): string[] {
 export async function runPluginInstall(dest: string, repoRef: string): Promise<void> {
   const squadDirInfo = detectSquadDir(dest);
 
-  // Verify .squad directory actually exists on disk
+  // Verify detected squad directory actually exists on disk
   if (!existsSync(squadDirInfo.path)) {
-    fatal(`.squad/ directory not found in ${dest}. Run "squad init" first.`);
+    fatal(`${squadDirInfo.name}/ directory not found in ${dest}. Run "squad init" first.`);
   }
 
   const { owner, repo } = parseRepoRef(repoRef);
