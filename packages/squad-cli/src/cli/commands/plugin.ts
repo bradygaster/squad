@@ -73,7 +73,9 @@ export function parseRepoRef(ref: string): { owner: string; repo: string } {
  */
 export function collectMdFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter(f => f.endsWith('.md'));
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
+    .map(entry => entry.name);
 }
 
 // --- Install subcommand ---
