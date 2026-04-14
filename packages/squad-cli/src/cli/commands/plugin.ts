@@ -118,11 +118,12 @@ export async function runPluginInstall(dest: string, repoRef: string): Promise<v
 
       for (const file of mdFiles) {
         const srcPath = join(srcDir, file);
-        const destPath = join(destDir, file);
+        const installedRelativePath = `${dirName}/${file}`;
+        const destPath = join(squadDirInfo.path, installedRelativePath);
         copyFileSync(srcPath, destPath);
         installedFiles.push({
           source: `${dirName}/${file}`,
-          dest: destPath,
+          dest: installedRelativePath,
         });
         info(`  📄 ${dirName}/${file} → .squad/${dirName}/${file}`);
       }
