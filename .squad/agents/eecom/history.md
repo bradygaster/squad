@@ -6,6 +6,16 @@
 
 📌 **Plugin install command (2026-04-14T05:31:39.453Z — Issue #972):** Added `squad plugin install <repo>` CLI command. Key patterns: (1) `parseRepoRef()` accepts both `owner/repo` and `github/owner/repo` formats, stripping the `github` prefix case-insensitively. (2) Extension detection is flat — looks for `skills/`, `ceremonies/`, `directives/` at repo root, copies only `.md` files. (3) Installed plugins tracked in `.squad/plugins/installed.json` with file manifest for future upgrade/remove. (4) Temp clone dir uses timestamp suffix and `rmSync` in `finally` block for cleanup. (5) For ESM test mocking of `node:child_process`, use top-level `vi.mock()` (hoisted by vitest) — `vi.spyOn` doesn't work on ESM namespace objects.
 
+📌 **Plugin uninstall command (2026-04-14T05:59:32.036Z):** Added `squad plugin uninstall <name>` subcommand to plugin.ts. Mirrors install patterns: reads `installed.json` via `FSStorageProvider`, finds plugin by `name` field, deletes each file in the `files` array using `existsSync` + `rmSync`, handles already-deleted files gracefully with `dim()` skip message, warns on delete errors instead of crashing. Corrupted `installed.json` is a hard fatal (unlike install which silently resets) — uninstall must know what's installed to avoid deleting wrong files. Uses `splice()` to remove the entry, writes back. Key file: `packages/squad-cli/src/cli/commands/plugin.ts`.
+
+📌 **Plugin update command (2026-04-14T06:02:28.548Z):** Added `squad plugin update <name>` subcommand. Design: intentionally thin — looks up the plugin by name in `installed.json`, extracts the `repo` field, delegates to `runPluginInstall()` which already handles replacing the existing entry (dedup by repo). No new dependencies or complex logic needed. Tests follow the same `TEST_ROOT`/`mockCloneWith`/`seedInstalledJson` pattern as install and uninstall suites. 4 new tests: not-installed (no file), not-in-registry, successful update with file verification, and timestamp freshness assertion.
+
+## See Also
+
+Earlier learnings (pre-2026-04-14) archived in history-archive.md: loop command, init scaffolding, CastingEngine integration, rate limit UX, CLI packaging, cross-platform fixes, version subcommand, privacy scrub.
+
+
+
 ### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
 
 **Context:** PR #942 from tamirdresher's fork was retargeted from `insider` to `dev`, causing 29 files in the diff when only 3 commits (4 files relevant to dev) were the actual fix. Cherry-picked the 3 fix commits onto a clean `squad/942-rebase-type-safety` branch from dev, resolving conflicts where insider-only files (skill.ts, cross-package-exports.test.ts) didn't exist on dev. Dropped the `escapeYamlValue` import and APM YAML generation function from init.ts since skill.ts doesn't exist on dev. Opened #963 as the clean replacement, closed #942.

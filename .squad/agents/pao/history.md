@@ -6,81 +6,29 @@
 
 Docs live in docs/ with blog/, concepts/, cookbook/, getting-started/, guide/, features/, scenarios/ sections. Blog tests use filesystem discovery (dynamic); other sections use hardcoded expected arrays. Microsoft Style Guide enforced: sentence-case headings, active voice, second person, present tense. Docs format: plain markdown, H1 title, experimental warning, "Try this" code blocks, overview, HR, H2 content sections. Scannability framework: paragraphs for narrative, bullets for scannable items, tables for comparisons.
 
+## Current Work
+
+📌 **Plugin documentation update (2026-04-14T06:02:28Z):** Updating plugin system documentation to reflect `squad plugin uninstall <name>` and `squad plugin update <name>` commands. In progress. See orchestration log for details.
+
 ## Learnings
 
-### Discussion Triage Patterns (2026-03-23 Release Incident)
-**Context:** v0.9.1 release completed; 15 open discussions analyzing whether community response patterns matched feature releases.
+### Discussion Triage & Community Engagement (v0.9.1, 2026-03-23–24)
 
-**Pattern identified:** Feature releases without follow-up discussion closes = missed trust opportunity. When you ship features (personal squad, worktrees, economy mode, rate limiting), search discussions for matching feature-requests → respond + close proactively. This signals to community that you listen.
+Pattern: Feature releases without follow-up discussion closes = missed trust opportunity. Triage workflow maps features to discussions → respond + close proactively. v0.9.1 result: 4 closed, 1 consolidated, 2 converted to issue, 8 kept. Community triage operational: 14 discussions reviewed, 6 closed, 8 kept = 43% closure rate. Critical finding: Office 365 Connectors deprecated Dec 2024 → Power Automate Workflows is successor. Teams MCP docs urgently need update.
 
-**Triage workflow:**
-1. Map new features to open discussions (which discussions are solved by this release?)
-2. Respond: "This feature is now available in v0.9.1. See docs link."
-3. Close as resolved
-4. Consolidate: if discussion #463 is duplicate of #402, merge responses into #402, close #463
-5. Convert: if discussion reveals a bug or roadmap item, convert to issue with label (e.g., squad:eecom)
-6. Keep: if discussion is feedback or edge case, keep open; respond substantively
+### Release Hardening: PUBLISH-README Playbook (2026-07-22)
 
-**For v0.9.1 release:** 4 closed, 1 consolidated, 2 converted to issue, 8 kept. Result: community sees responsiveness; discussions become productivity tool, not backlog.
+Rewrote PUBLISH-README.md from 58-line stub to living 232-line playbook with 11 sections. Absorbed issues #558, #559, #560. Structure: Overview, Pre-Flight Checklist, Publish via CI (recommended), workflow_dispatch fallback, Insider Channel, Workspace Publish Policy, Manual Local Publish, 422 Race Condition & npm Errors, Post-Publish Verification, Version Bump, Legacy Scripts. Version-agnostic, all commands runnable, Microsoft Style enforced.
 
-**Critical finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024. Docs must purge old connector references and document Power Automate Workflows path (new successor).
+### JSDoc API Reference PRD (2026-07-22)
 
-### Chinese README Workflow (2026-03-23 Release Incident)
-Community contributor (PR #572) provided Chinese README translation. Approved and merged as part of v0.9.1 release. Pattern: accept community translations; list contributors in CONTRIBUTORS.md; acknowledge in release notes.
+Completed full PRD for TypeDoc integration. Decision: TypeDoc + typedoc-plugin-markdown (not Starlight). Astro integration hook auto-runs TypeDoc on build. Generated output: docs/src/content/docs/reference/api/ (one file per symbol). Total effort: 13–18 hours (8–12 JSDoc audit + 5–6 setup). Four phases: PoC (1–2 days), JSDoc audit (5–6 hrs), integration (3–4 hrs), CI/CD optional (2–4 hrs). Approved for handoff to implementation.
 
-### Teams MCP Urgency Pattern (2026-03-23)
-External tool integrations deprecate. Office 365 Connectors retired Dec 2024. Docs mentioning deprecated tools create support burden and user confusion. Action: audit all external tool integration docs for deprecation; update with successor guidance (Power Automate Workflows for Teams).
+## See Also
 
-### Blog Post Format
-YAML frontmatter: title, date, author, wave, tags, status, hero. Body: experimental warning, What Shipped, Why This Matters, Quick Stats, What's Next. 200-400 words for infrastructure releases. No hype — explain value.
+Earlier learnings (pre-2026-04-14) archived in history-archive.md: boundary review heuristic, DOCS-TEST sync, contributor recognition, Astro docs format, proactive communication, git rebase patterns, CLI docs link validation, Pagefind search, TypeDoc API reference review.
 
-### Boundary Review Heuristic
-"Squad Ships It" litmus test: if Squad doesn't ship the code/config, it's IRL content. Platform features used alongside Squad: clarify whose feature it is. Squad behavior/config docs stay. External infrastructure docs (ralph-operations, proactive-communication) → IRL.
 
-### DOCS-TEST SYNC
-When adding docs pages, update test assertions in docs-build.test.ts in the SAME commit. When rebasing doc PRs, main branch (already merged) takes priority.
-
-### Contributor Recognition
-CONTRIBUTORS.md tracks team roster and community contributors. Each release includes recognition updates. Append PR counts, don't replace.
-
-### Skill Scope Documentation Pattern
-Explicitly state what a skill produces and does NOT produce. Deterministic skills prevent agents from generating unnecessary code when templates exist.
-
-### Teams MCP Audit
-External tool integrations require explicit "where to get it" guidance. Placeholder paths need clarification that users must provide actual MCP server implementations.
-
-### Cross-Org Authentication Docs
-Problem/solution structure for multi-account auth: gh auth switch, Copilot instructions, Squad skill pattern. Cover credential helpers, EMU variations, common error messages. Cross-reference in troubleshooting and enterprise-platforms pages.
-
-### Roster & Contributor Recognition (v0.8.25)
-Squad moved to Apollo 13/NASA Mission Control naming scheme (Flight, Procedures, EECOM, FIDO, PAO, CAPCOM, CONTROL, Surgeon, Booster, GNC, Network, RETRO, INCO, GUIDO, Telemetry, VOX, DSKY, Sims, Handbook). CONTRIBUTORS.md tracks both team roster and community contributors; contributor table entries grow with PRs (append PR counts rather than replace, maintaining attribution history).
-
-### Git Rebase for Doc Merges
-When rebasing doc PRs with conflicts from other merged doc PRs, the main branch version (already merged) should generally take priority. For Node.js version references, maintain LTS terminology when present (e.g., `nvm install --lts` over specific version numbers like `nvm install 20`). Conflict resolution pattern: preserve new content from PR branch only where it doesn't duplicate or contradict already-merged changes. Use `git -c core.editor=true rebase --continue` to bypass interactive editor issues on Windows.
-
-### Astro Docs Format (v0.8.26)
-Squad docs use plain markdown without Astro frontmatter. Structure: title (H1), experimental warning callout, "Try this" code blocks at top, overview paragraph, horizontal rule, then content sections with H2 headings. Microsoft Style Guide enforced: sentence-case headings, active voice, second person ("you"), present tense, no ampersands except in code/brand names. Features and scenarios directories added to test coverage in docs-build.test.ts. Reference implementations linked where available (e.g., ralph-watch.ps1 for operational patterns).
-
-### Proactive Communication Patterns (v0.8.26)
-Two-way communication layer between Squad and work environment. Outbound: Teams webhook notifications (breaking, briefings, recaps, flashes) sent via Adaptive Cards — only when newsworthy. Inbound: WorkIQ/Playwright scanning of Teams channels and email → auto-create GitHub issues with teams-bridge label, anti-duplicate logic enforced. Loop: inbound creates issues → Ralph dispatches → agents work → outbound notifies results. Human stays informed on mobile. Prerequisites are enhancements, not requirements.
-
-📌 **Team update (2026-03-11T01:27:57Z):** Proactive communication patterns and PR trust levels (full/selective/self-managing spectrum) documented in decisions.md. Pattern rationale reinforced: Ralph 24/7 autonomous deployment requires awareness loop (Teams webhooks for outbound) and external work integration (WorkIQ scanning for inbound). Trust levels enable context-appropriate oversight without bottlenecking teams.
-
-### PR #487 Review & Merge — CLI Docs Expansion (2026-03-22)
-
-Reviewed and merged PR #487 (CLI documentation expansion + broken docs link fix). Improved CLI command reference coverage and fixed internal link validation.
-
-**Pattern identified:** Broken internal links hurt user navigation and SEO. Recommendations: (1) add link validation to docs build pipeline (crawl all internal references, report 404s), (2) make validation a CI gate (fail build on broken links), (3) maintain link checklist when refactoring docs structure.
-
-**Key learning:** Documentation maintenance requires systematic link validation. A single broken link creates friction for users following guides. Automated validation should be non-negotiable in CI/CD.
-
-### PR #482 Review & Merge — Pagefind Search Integration (2026-03-22)
-
-Reviewed and merged PR #482. Search functionality integrated into docs site for improved discoverability.
-
-### PR #11 Docs Quality Review — TypeDoc API Reference (2026-03-24)
-
-**Status:** REQUEST CHANGES (3 fixes required, 2 recommended)
 
 **Key findings:**
 - **Research + PRD:** Excellent quality. Clear problem statement, realistic effort estimate, pragmatic tool choice (TypeDoc over Starlight/api-extractor). Scannability framework applied correctly (tables for audit data, bullets for findings, paragraphs for narrative).
