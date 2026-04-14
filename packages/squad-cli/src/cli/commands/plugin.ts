@@ -93,15 +93,14 @@ export async function runPluginInstall(dest: string, repoRef: string): Promise<v
   info(`${DIM}Cloning ${owner}/${repo}…${RESET}`);
 
   try {
-    await execFileAsync('git', ['clone', '--depth', '1', cloneUrl, cloneDir], {
-      timeout: TIMEOUTS.PLUGIN_FETCH_MS,
-    });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    fatal(`Failed to clone ${owner}/${repo} — ${message}`);
-  }
-
-  try {
+    try {
+      await execFileAsync('git', ['clone', '--depth', '1', cloneUrl, cloneDir], {
+        timeout: TIMEOUTS.PLUGIN_FETCH_MS,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      fatal(`Failed to clone ${owner}/${repo} — ${message}`);
+    }
     // Detect extension structure and copy files
     const installedFiles: InstalledFile[] = [];
     let anyFound = false;
