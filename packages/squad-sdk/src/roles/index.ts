@@ -12,38 +12,55 @@
 
 export type { BaseRole, RoleCategory, UseRoleOptions } from './types.js';
 export { BASE_ROLES, ENGINEERING_ROLE_IDS, CATEGORY_ROLE_IDS } from './catalog.js';
+export {
+  registerPluginRoles,
+  unregisterPluginRole,
+  clearPluginRoles,
+  getPluginRoles,
+  getPluginRoleRegistrations,
+  getAllRoles,
+} from './registry.js';
+export type { PluginRoleRegistration, RegisterPluginRolesResult } from './registry.js';
+export { loadPluginRolesFromDir } from './loader.js';
+export type { PluginRoleLoadSummary } from './loader.js';
 
 import type { BaseRole, RoleCategory, UseRoleOptions } from './types.js';
 import type { AgentDefinition } from '../builders/types.js';
-import { BASE_ROLES } from './catalog.js';
+import { getAllRoles } from './registry.js';
 
 /**
- * Get all available base roles, optionally filtered by category.
+ * Get all available roles (built-in + plugin), optionally filtered by category.
+ *
+ * Plugin roles registered via {@link registerPluginRoles} are included
+ * after the built-in base roles.
  */
 export function listRoles(category?: RoleCategory): readonly BaseRole[] {
-  if (!category) return BASE_ROLES;
-  return BASE_ROLES.filter(r => r.category === category);
+  const all = getAllRoles();
+  if (!category) return all;
+  return all.filter(r => r.category === category);
 }
 
 /**
- * Look up a base role by ID.
+ * Look up a role by ID. Searches built-in base roles and plugin-registered
+ * roles. Built-ins are checked first; plugin roles cannot override a built-in.
  *
- * @param id - Role ID (e.g., 'backend', 'marketing')
+ * @param id - Role ID (e.g., 'backend', '@acme/frontend')
  * @returns The role definition, or undefined if not found
  */
 export function getRoleById(id: string): BaseRole | undefined {
-  return BASE_ROLES.find(r => r.id === id);
+  return getAllRoles().find(r => r.id === id);
 }
 
 /**
  * Search roles by keyword across title, vibe, expertise, and routing patterns.
+ * Includes plugin-registered roles.
  *
  * @param query - Search query (case-insensitive)
  * @returns Matching roles sorted by relevance
  */
 export function searchRoles(query: string): readonly BaseRole[] {
   const q = query.toLowerCase();
-  return BASE_ROLES.filter(r => {
+  return getAllRoles().filter(r => {
     return (
       r.title.toLowerCase().includes(q) ||
       r.vibe.toLowerCase().includes(q) ||
@@ -55,11 +72,12 @@ export function searchRoles(query: string): readonly BaseRole[] {
 }
 
 /**
- * Get all unique categories in the catalog.
+ * Get all unique categories in the catalog, including categories
+ * contributed by plugin roles.
  */
 export function getCategories(): readonly RoleCategory[] {
   const cats = new Set<RoleCategory>();
-  for (const r of BASE_ROLES) cats.add(r.category);
+  for (const r of getAllRoles()) cats.add(r.category);
   return [...cats];
 }
 
@@ -87,7 +105,7 @@ export function getCategories(): readonly RoleCategory[] {
 export function useRole(roleId: string, options: UseRoleOptions): AgentDefinition {
   const role = getRoleById(roleId);
   if (!role) {
-    const available = BASE_ROLES.map(r => r.id).join(', ');
+    const available = getAllRoles().map(r => r.id).join(', ');
     throw new Error(
       `Unknown base role '${roleId}'. Available roles: ${available}`
     );

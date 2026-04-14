@@ -275,6 +275,8 @@ async function main(): Promise<void> {
   if (rawCmd === undefined) {
     // Fire-and-forget update check — non-blocking, never delays shell startup
     import('./cli/self-update.js').then(m => m.notifyIfUpdateAvailable(VERSION)).catch(() => {});
+    const { loadPluginRolesForDest } = await import('./cli/core/plugin-roles.js');
+    loadPluginRolesForDest(getSquadStartDir());
     const { runShell } = await lazyRunShell();
     await runShell();
     return;
@@ -309,6 +311,9 @@ async function main(): Promise<void> {
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
+    // Load plugin-contributed roles so init scaffolding can discover them.
+    const { loadPluginRolesForDest } = await import('./cli/core/plugin-roles.js');
+    loadPluginRolesForDest(dest);
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
     runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).catch(err => {
       fatal(err.message);
@@ -714,6 +719,8 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'roles') {
+    const { loadPluginRolesForDest } = await import('./cli/core/plugin-roles.js');
+    loadPluginRolesForDest(getSquadStartDir());
     const { runRoles } = await import('./cli/commands/roles.js');
     await runRoles(args.slice(1));
     return;
