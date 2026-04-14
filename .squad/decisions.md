@@ -240,3 +240,34 @@ Triaged 14 untriaged issues (3 docs, 6 community features, 3 bugs, 2 questions).
 - #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
 - #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
 
+---
+
+### 2026-03-26: CI deletion guard and source tree canary
+**By:** Booster (CI/CD)
+**What:** Added two safety checks to squad-ci.yml: (1) source tree canary verifying critical files exist, (2) large deletion guard failing PRs that delete >50 files without 'large-deletion-approved' label. Branch protection on dev requested (may need manual setup).
+**Why:** Incident #631 — @copilot deleted 361 files on dev with no CI gate catching it.
+
+---
+
+### 2026-03-29: Versioning Policy — No Prerelease Versions on dev/main
+**By:** Flight (Lead)
+**Date:** 2026-03-29
+**Requested by:** Dina
+**Status:** DECIDED
+**Confidence:** Medium (confirmed by PR #640 incident, PR #116 prerelease leak, CI gate implementation)
+
+**Decision:** (1) All packages use strict semver (MAJOR.MINOR.PATCH), no prerelease suffixes on dev/main. (2) Prerelease versions are ephemeral; bump-build.mjs creates -build.N for local testing only. (3) SDK and CLI versions must stay in sync. (4) Surgeon owns version bumps; other agents must not modify version fields unless fixing a prerelease leak. (5) CI enforcement via prerelease-version-guard blocks PRs with prerelease versions.
+
+**Why:** The repo had no documented versioning policy. PR #640: Prerelease version 0.9.1-build.4 silently broke workspace resolution; semver range >=0.9.0 does not match prerelease versions, causing npm to install stale registry package. PR #116: Surgeon set versions to 0.9.1-build.1 on release branch due to lack of guidance.
+
+**Skill Reference:** Full policy documented in .squad/skills/versioning-policy/SKILL.md.
+
+**Impact:** All agents must follow the versioning policy when touching package.json. Surgeon charter should reference this skill for release procedures. CI pipeline enforces the policy via automated gate.
+
+---
+
+### 2026-03-26: Copilot git safety rules
+**By:** RETRO (Security)
+**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits git add ., requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
+**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
+

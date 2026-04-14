@@ -319,3 +319,6 @@ Executed 3 tasks across 2 waves: economy mode (#500, PR #504), node:sqlite fix (
 **Pattern:** `resolveGlobalSquadPath()` returns the container; `ensurePersonalSquadDir()` creates the subdirectory the rest of the system looks for.
 📌 **Team update (2026-03-25T18:11Z):** Fixed #590 personal squad path regression — getPersonalSquadRoot() now uses canonical personal-squad/ subdirectory like esolvePersonalSquadDir() and nsurePersonalSquadDir(). Committed on squad/590-fix-personal-squad-root. FIDO found same bug in shell/index.ts → work passed to CONTROL for full sweep revision. Awaiting FIDO re-review.
 
+
+
+📌 **Team update (2026-04-14T05:31:39Z):** Plugin install command (#972) shipped. Implemented `squad plugin install <repo>` with plugin discovery, validation, and .squad/plugins/ installation tracking. All 17 tests pass, 0 regressions. PR #973 awaiting review. [SCRIBE: Merged orchestration log from EECOM background agent spawn.]
