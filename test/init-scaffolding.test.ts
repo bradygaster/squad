@@ -218,6 +218,25 @@ describe('no-remote resilience (#579)', () => {
     expect(existsSync(join(TEST_ROOT, '.github', 'agents', 'squad.agent.md'))).toBe(true);
   });
 
+  it('runInit CLI: monorepo subfolder — no nested .git, agent at git root (#939)', async () => {
+    // Set up a monorepo: git init at TEST_ROOT, run from a subfolder
+    gitInit(TEST_ROOT);
+    const subfolder = join(TEST_ROOT, 'services', 'api');
+    await mkdir(subfolder, { recursive: true });
+
+    // runInit from the subfolder — CLI should detect the parent git repo
+    await expect(runInit(subfolder)).resolves.toBeUndefined();
+
+    // 1. No nested .git/ in subfolder (the original bug)
+    expect(existsSync(join(subfolder, '.git'))).toBe(false);
+    // 2. .squad/ created in the subfolder
+    expect(existsSync(join(subfolder, '.squad'))).toBe(true);
+    expect(existsSync(join(subfolder, '.squad', 'casting', 'registry.json'))).toBe(true);
+    // 3. squad.agent.md placed at the git root, not the subfolder
+    expect(existsSync(join(TEST_ROOT, '.github', 'agents', 'squad.agent.md'))).toBe(true);
+    expect(existsSync(join(subfolder, '.github', 'agents', 'squad.agent.md'))).toBe(false);
+  });
+
   it('initSquad succeeds when git is not initialized at all', async () => {
     // TEST_ROOT is a plain directory — no git init
     await expect(initSquad(sdkOptions(TEST_ROOT))).resolves.toBeDefined();
