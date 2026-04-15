@@ -91,6 +91,51 @@ $ squad roles --search "security"      # search by keyword
 - Add extra ownership or approach items with `extraOwnership`/`extraApproach`.
 - Base roles are starting points — the coordinator refines them for your project context during casting.
 
+## Plugin-contributed roles
+
+Marketplace plugins can extend the catalog with their own roles. A plugin ships a `roles/` directory containing JSON role definitions; Squad loads `.squad/plugins/<plugin>/roles/*.json` automatically when you run `squad`, `squad roles`, or `squad init`.
+
+Plugin roles are **additive** — they cannot override a built-in role id. Use a namespaced id (for example `@acme/react-frontend`) so there's no collision:
+
+```json
+// .squad/plugins/@acme-frontend/roles/react.json
+{
+  "id": "@acme/react-frontend",
+  "title": "Acme React Frontend",
+  "category": "engineering",
+  "emoji": "⚛️",
+  "vibe": "Acme-flavored React specialist.",
+  "expertise": ["React", "Testing Library", "State management"],
+  "style": "Direct. Tested.",
+  "ownership": ["Acme UI layer"],
+  "approach": ["Measure-first"],
+  "boundaries": { "handles": "React UI", "doesNotHandle": "Backend APIs" },
+  "voice": "Crisp and opinionated.",
+  "routingPatterns": ["react", "frontend", "acme"],
+  "attribution": "Contributed by the @acme marketplace plugin."
+}
+```
+
+Once the plugin is installed, the role resolves identically to a built-in:
+
+```typescript
+useRole('@acme/react-frontend', { name: 'ada' });
+```
+
+It also appears in `squad roles` under a **🔌 Plugin Roles** section grouped by plugin, and in `searchRoles()` / `listRoles()` / `getCategories()`.
+
+For programmatic registration (tests, hot-reload, or a custom loader), import:
+
+```typescript
+import {
+  registerPluginRoles,
+  getPluginRoleRegistrations,
+  loadPluginRolesFromDir,
+} from '@bradygaster/squad-sdk';
+```
+
+`registerPluginRoles(plugin, roles)` throws if any `role.id` collides with a built-in and skips ids already registered by another plugin (reported via the `skipped` list).
+
 ## Attribution
 
 Built-in role content is adapted from [agency-agents](https://github.com/msitarzewski/agency-agents) by AgentLand Contributors, released under the MIT License.
