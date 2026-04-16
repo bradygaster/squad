@@ -9,11 +9,11 @@ import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult }
 function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string; args: string[] } {
   if (context.agentCmd) {
     const parts = context.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
+    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
   }
-  const args = ['copilot', '--message', prompt];
+  const args = ['-p', prompt];
   if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'gh', args };
+  return { cmd: 'copilot', args };
 }
 
 function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {
