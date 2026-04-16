@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-**AI agent teams for any project.** One command. A team that grows with your code.
+**Human-led AI agent teams for any project.** One command. A team that helps you move faster with your code.
 
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
 [![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
@@ -13,9 +13,13 @@
 
 ## What is Squad?
 
-Squad gives you an AI development team through GitHub Copilot. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and get better the more you use them.
+Squad gives you a human-directed AI development team through GitHub Copilot. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and help you move faster without giving up oversight.
 
-It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned.
+Squad is a productivity tool for humans, not a replacement for engineers, reviewers, or decision-makers. People stay accountable for priorities, approvals, and final changes; Squad helps with coordination, repetition, and parallel execution.
+
+It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned so the work stays inspectable.
+
+> **Responsible AI stance** — Squad is built to amplify a human operator with GitHub Copilot, not to remove humans from the loop. Use it to delegate faster, review better, and keep governance close to the code.
 
 ---
 
@@ -117,9 +121,9 @@ Use `--force` to re-apply updates even when your installed version already match
 
 ---
 
-## Watch Mode — Ralph's Autonomous Polling
+## Watch Mode — Ralph's Automated Polling
 
-Ralph continuously polls for work and dispatches agents to handle it. Watch mode is perfect for unmanned squad operations — let agents work while you're away.
+Ralph continuously polls for work and dispatches agents to handle it. Watch mode helps a human team stay responsive — Ralph automates triage, execution handoffs, and monitoring, then escalates back to people when judgment or approval is needed.
 
 ### Quick Start
 
@@ -171,7 +175,7 @@ Ralph uses an **agent-delegated selection pattern**:
 5. The agent **decides which issue to work on** and **how**
 6. Ralph monitors execution, logs results, updates issue status
 
-This design gives **agents full autonomy** over issue selection while keeping the polling loop lean.
+This design keeps the polling loop lean while letting agents handle issue selection automatically under the team's rules, review gates, and escalation policy.
 
 ### Issue Selection & Escalation
 
@@ -339,9 +343,9 @@ Eight working examples from beginner to advanced — casting, governance, stream
 
 ---
 
-## Agents Work in Parallel— You Catch Up When You're Ready
+## Agents Work in Parallel — You Stay in Control
 
-Squad doesn't work on a human schedule. When you give a task, the coordinator launches every agent that can usefully start — simultaneously.
+Squad helps one human coordinate more work at once. When you give a task, the coordinator launches every agent that can usefully start — simultaneously — while you keep priorities, review, and final decisions.
 
 ```
 You: "Team, build the login page"
@@ -353,7 +357,7 @@ You: "Team, build the login page"
   📋 Scribe — logging everything...             ⎦
 ```
 
-When agents finish, the coordinator immediately chains follow-up work. If you step away, a breadcrumb trail is waiting when you get back:
+When agents finish, the coordinator records follow-up work and leaves a breadcrumb trail so you can review what happened with full context:
 
 - **`decisions.md`** — every decision any agent made
 - **`orchestration-log/`** — what was spawned, why, and what happened
