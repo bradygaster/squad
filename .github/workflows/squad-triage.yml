@@ -8,12 +8,37 @@ permissions:
   issues: write
   contents: read
 
+# CI Hardening Phase 3 item A1: Prevent parallel runs from competing for resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   triage:
     if: github.event.label.name == 'squad'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # CI Hardening: GitHub API rate limit monitoring (item 9)
+      # Triage makes multiple API calls (list issues, add labels, create comments).
+      - name: "📊 Check GitHub API rate limit"
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: rateLimit } = await github.rest.rateLimit.get();
+            const { remaining, limit, reset } = rateLimit.rate;
+            // Security: mask numeric values to prevent fingerprinting via CI logs
+            core.setSecret(String(remaining));
+            core.setSecret(String(limit));
+            const resetDate = new Date(reset * 1000).toISOString();
+            if (remaining < 10) {
+              core.setFailed(`❌ Rate limit: CRITICAL — below minimum threshold. Aborting to prevent silent failures.`);
+            } else if (remaining < 100) {
+              core.warning(`⚠️ Rate limit: WARNING — below safe threshold (resets ${resetDate})`);
+            } else {
+              core.info(`✅ Rate limit: OK — above safe threshold (resets ${resetDate})`);
+            }
 
       - name: Triage issue via Lead agent
         uses: actions/github-script@v7
@@ -110,9 +135,11 @@ jobs:
               return;
             }
 
+            function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
             // Build triage context
             const memberList = members.map(m =>
-              `- **${m.name}** (${m.role}) → label: \`squad:${m.name.toLowerCase()}\``
+              `- **${m.name}** (${m.role}) → label: \`squad:${slugify(m.name)}\``
             ).join('\n');
 
             // Determine best assignee based on issue content and routing
@@ -189,7 +216,7 @@ jobs:
             }
 
             const isCopilot = assignedMember.name === '@copilot';
-            const assignLabel = isCopilot ? 'squad:copilot' : `squad:${assignedMember.name.toLowerCase()}`;
+            const assignLabel = isCopilot ? 'squad:copilot' : `squad:${slugify(assignedMember.name)}`;
 
             // Add the member-specific label
             await github.rest.issues.addLabels({

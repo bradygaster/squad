@@ -1,0 +1,77 @@
+# Composite action: Setup Node.js with npm cache and retry logic
+# Created to DRY up the repeated setup-node + npm install retry pattern
+# used across squad-ci.yml, ci-rerun.yml, squad-npm-publish.yml,
+# and squad-insider-publish.yml.
+#
+# Usage:
+#   - uses: ./.github/actions/setup-squad-node
+#     with:
+#       node-version: '22'          # default: 22
+#       install-command: 'ci'       # default: ci (alternatives: install)
+#       registry-url: ''            # optional, for publish workflows
+#       working-directory: '.'      # optional, for subdirectory installs
+
+name: 'Setup Squad Node.js'
+description: 'Setup Node.js with npm cache and retry install logic for Squad CI'
+
+inputs:
+  node-version:
+    description: 'Node.js version to install'
+    required: false
+    default: '22'
+  registry-url:
+    description: 'npm registry URL (set for publish workflows that need .npmrc)'
+    required: false
+    default: ''
+  install-command:
+    description: 'npm install command to run: ci (strict lockfile) or install (flexible)'
+    required: false
+    default: 'ci'
+  working-directory:
+    description: 'Working directory for npm install'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        INPUT_CMD: ${{ inputs.install-command }}
+        INPUT_DIR: ${{ inputs.working-directory }}
+      run: |
+        if [[ "$INPUT_CMD" != "ci" && "$INPUT_CMD" != "install" ]]; then
+          echo "::error::install-command must be 'ci' or 'install'"
+          exit 1
+        fi
+        if ! echo "$INPUT_DIR" | LC_ALL=C grep -qE '^[A-Za-z0-9/_.\-]+$'; then
+          echo "::error::working-directory contains invalid characters (only alphanumeric, /, ., -, _ allowed)"
+          exit 1
+        fi
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        registry-url: ${{ inputs.registry-url }}
+        cache: 'npm'
+
+    - name: Install dependencies (with retry)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_CMD: ${{ inputs.install-command }}
+      run: |
+        success=false
+        for i in 1 2 3; do
+          if npm "$INPUT_CMD"; then
+            success=true
+            break
+          fi
+          echo "Retry $i/3 — npm \"$INPUT_CMD\" failed, retrying in 5s..."
+          sleep 5
+        done
+        if [ "$success" = false ]; then
+          echo "::error::npm \"$INPUT_CMD\" failed after 3 attempts"
+          exit 1
+        fi

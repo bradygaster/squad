@@ -8,9 +8,10 @@
  * @see https://github.com/bradygaster/squad/issues/514
  */
 
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 import os from 'node:os';
 
 /** Deployment mode for capability routing */
@@ -104,9 +105,9 @@ export async function loadCapabilities(
   candidates.push(path.join(os.homedir(), '.squad', 'machine-capabilities.json'));
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (storage.existsSync(candidate)) {
       try {
-        const raw = await readFile(candidate, 'utf8');
+        const raw = await storage.read(candidate) ?? '';
         const parsed = JSON.parse(raw) as MachineCapabilities;
         // Stamp podId onto the loaded manifest when running in pod mode
         if (mode === 'squad-per-pod' && podId) {

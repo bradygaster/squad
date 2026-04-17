@@ -4,10 +4,12 @@
  * @module platform/azure-devops
  */
 
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { PlatformAdapter, PlatformType, WorkItem, PullRequest } from './types.js';
 
+const IS_WINDOWS = process.platform === 'win32';
 const EXEC_OPTS: { encoding: 'utf-8'; stdio: ['pipe', 'pipe', 'pipe'] } = { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] };
+const AZ_OPTS = { ...EXEC_OPTS, shell: IS_WINDOWS };
 
 /** Descriptor for a work item type returned by process template introspection. */
 export interface WorkItemTypeInfo {
@@ -22,7 +24,7 @@ export interface WorkItemTypeInfo {
 /** Check whether the az CLI with devops extension is available */
 function assertAzCliAvailable(): void {
   try {
-    execSync('az devops -h', EXEC_OPTS);
+    execFileSync('az', ['devops', '-h'], AZ_OPTS);
   } catch {
     throw new Error(
       'Azure DevOps CLI not found. Install it with:\n' +
@@ -67,7 +69,7 @@ export function getAvailableWorkItemTypes(org: string, project: string): WorkIte
       '--org', orgUrl,
       '--project', project,
       '--output', 'json',
-    ], { ...EXEC_OPTS, timeout: 3_000 }).trim();
+    ], { ...AZ_OPTS, timeout: 3_000 }).trim();
 
     const types = parseJson<Array<{
       name?: string;
@@ -158,7 +160,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
   }
 
   private az(args: string[]): string {
-    return execFileSync('az', args, EXEC_OPTS).trim();
+    return execFileSync('az', args, AZ_OPTS).trim();
   }
 
   async listWorkItems(options: { tags?: string[]; state?: string; limit?: number }): Promise<WorkItem[]> {
@@ -414,6 +416,32 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
       'repos', 'pr', 'update', '--id', String(id),
       '--status', 'completed', ...this.defaultArgs, '--output', 'json',
     ]);
+  }
+
+  async ensureAuth(preferredOrg?: string): Promise<void> {
+    try {
+      let targetOrg = preferredOrg || '';
+
+      if (!targetOrg) {
+        // Auto-detect from remote URL
+        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+        const adoMatch = remoteUrl.match(/dev\.azure\.com\/([^/]+)\//);
+        const vstsMatch = remoteUrl.match(/([^/]+)\.visualstudio\.com\//);
+        if (adoMatch?.[1]) targetOrg = adoMatch[1];
+        else if (vstsMatch?.[1]) targetOrg = vstsMatch[1];
+      }
+
+      if (!targetOrg) return;
+
+      try {
+        const orgUrl = `https://dev.azure.com/${targetOrg}`;
+        execFileSync('az', ['devops', 'configure', '--defaults', `organization=${orgUrl}`], AZ_OPTS);
+      } catch {
+        // az CLI might not be installed — non-fatal
+      }
+    } catch {
+      // Non-fatal
+    }
   }
 
   async createBranch(name: string, fromBranch?: string): Promise<void> {

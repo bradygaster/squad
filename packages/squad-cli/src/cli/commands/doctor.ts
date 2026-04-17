@@ -10,14 +10,18 @@
  * @module cli/commands/doctor
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 /** Result of a single diagnostic check. */
 export interface DoctorCheck {
   name: string;
   status: 'pass' | 'fail' | 'warn';
   message: string;
+  /** Optional severity hint for display; keeps the status union stable. */
+  severity?: 'info';
 }
 
 /** Detected squad layout mode. */
@@ -34,20 +38,18 @@ interface ModeInfo {
 // ── helpers ─────────────────────────────────────────────────────────
 
 function fileExists(p: string): boolean {
-  return fs.existsSync(p);
+  return storage.existsSync(p);
 }
 
 function isDirectory(p: string): boolean {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
+  return storage.isDirectorySync(p);
 }
 
 function tryReadJson(p: string): unknown | undefined {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    const raw = storage.readSync(p);
+    if (!raw) return undefined;
+    return JSON.parse(raw);
   } catch {
     return undefined;
   }
@@ -158,7 +160,7 @@ function checkTeamMd(squadDir: string): DoctorCheck {
   if (!fileExists(teamPath)) {
     return { name: 'team.md found with ## Members header', status: 'fail', message: 'file not found' };
   }
-  const content = fs.readFileSync(teamPath, 'utf8');
+  const content = storage.readSync(teamPath) ?? '';
   if (!content.includes('## Members')) {
     return { name: 'team.md found with ## Members header', status: 'warn', message: 'file exists but missing ## Members header' };
   }
@@ -181,8 +183,8 @@ function checkAgentsDir(squadDir: string): DoctorCheck {
   }
   let count = 0;
   try {
-    for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
-      if (entry.isDirectory()) count++;
+    for (const entry of storage.listSync(agentsDir)) {
+      if (storage.isDirectorySync(path.join(agentsDir, entry))) count++;
     }
   } catch { /* empty */ }
   return {
@@ -327,10 +329,21 @@ function checkVscodeJsonrpcExports(cwd: string): DoctorCheck {
     };
   }
 
+  // Detect whether we're in a local dev context (node_modules exists) or global install
+  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
+  if (hasNodeModules) {
+    return {
+      name: 'vscode-jsonrpc exports field',
+      status: 'warn',
+      message: 'not found in node_modules — run npm install or check dependencies',
+    };
+  }
+
   return {
     name: 'vscode-jsonrpc exports field',
     status: 'warn',
-    message: 'vscode-jsonrpc not found in node_modules — expected for global CLI installs. For local development, run: npm install',
+    severity: 'info',
+    message: 'not found in node_modules (expected for global installs)',
   };
 }
 
@@ -348,7 +361,7 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
     if (!fileExists(sessionPath)) continue;
 
     try {
-      const content = fs.readFileSync(sessionPath, 'utf8');
+      const content = storage.readSync(sessionPath) ?? '';
 
       if (/from\s+["']vscode-jsonrpc\/node["']/.test(content)) {
         return {
@@ -372,10 +385,21 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
     }
   }
 
+  // Detect whether we're in a local dev context (node_modules exists) or global install
+  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
+  if (hasNodeModules) {
+    return {
+      name: 'copilot-sdk session.js ESM patch',
+      status: 'warn',
+      message: 'not found in node_modules — run npm install or check dependencies',
+    };
+  }
+
   return {
     name: 'copilot-sdk session.js ESM patch',
     status: 'warn',
-    message: '@github/copilot-sdk not found in node_modules — expected for global CLI installs. For local development, run: npm install',
+    severity: 'info',
+    message: 'not found in node_modules (expected for global installs)',
   };
 }
 
@@ -389,7 +413,7 @@ function checkSquadAgentMd(cwd: string): DoctorCheck {
     };
   }
   try {
-    const content = fs.readFileSync(agentMdPath, 'utf8');
+    const content = storage.readSync(agentMdPath) ?? '';
     if (content.trim().length === 0) {
       return {
         name: '.github/agents/squad.agent.md',
@@ -487,14 +511,16 @@ export function printDoctorReport(checks: DoctorCheck[], mode: DoctorMode): void
   console.log(`Mode: ${mode}\n`);
 
   for (const c of checks) {
-    console.log(`${STATUS_ICON[c.status]}  ${c.name} — ${c.message}`);
+    const icon = c.severity === 'info' ? 'ℹ️' : STATUS_ICON[c.status];
+    console.log(`${icon}  ${c.name} — ${c.message}`);
   }
 
   const passed = checks.filter(c => c.status === 'pass').length;
   const failed = checks.filter(c => c.status === 'fail').length;
-  const warned = checks.filter(c => c.status === 'warn').length;
+  const warned = checks.filter(c => c.status === 'warn' && c.severity !== 'info').length;
+  const infos = checks.filter(c => c.severity === 'info').length;
 
-  console.log(`\nSummary: ${passed} passed, ${failed} failed, ${warned} warnings\n`);
+  console.log(`\nSummary: ${passed} passed, ${failed} failed, ${warned} warnings, ${infos} info\n`);
 }
 
 /**

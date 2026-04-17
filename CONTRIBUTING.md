@@ -9,6 +9,31 @@ Welcome to Squad development. This guide explains how to build, test, and contri
 - **Git** with SSH agent (for package resolution)
 - **gh CLI** (for GitHub integration testing)
 
+## Community Guidelines & Spam Protection
+
+Our repository uses automated spam detection to maintain a safe, productive community. Here's what you need to know:
+
+### Spam Detection Guidelines
+- **Comment screening** — Malicious links (shortened URLs, file-sharing services) and mass-mentions are monitored
+- **Issue evaluation** — New issues are reviewed for spam patterns; suspected spam may be auto-closed
+- **Auto-lock stale content** — Issues and PRs inactive for 30+ days are locked to prevent spam on old threads
+
+### What Gets Flagged
+- Shortened URLs (bit.ly, tinyurl, t.co, goo.gl, rb.gy)
+- File-sharing links (Dropbox, Google Drive, Mega, MediaFire)
+- Crypto/investment scams ("free bitcoin", "guaranteed profit", etc.)
+- Adult content patterns
+- Mass-mentions (4+ @-mentions in one comment)
+- New accounts (< 30 days old) with 0 repos, 0 followers + suspicious content
+
+### If Your Content Is Flagged
+- **Comment not posted** — If your comment contains flagged patterns, it may be held for review
+- **Issue closed as spam** (clear violation) — Likely closed with explanation; contact maintainers if you believe this is a mistake
+- **Issue labeled "suspicious"** — Flagged for maintainer review but remains open
+- **Issue locked** — If inactive for 30+ days, locked to prevent spam replies
+
+If your legitimate issue/comment is caught by spam detection, please contact a maintainer. We're here to help.
+
 ## Monorepo Structure
 
 Squad is an npm workspace monorepo with two packages:
@@ -151,10 +176,49 @@ The Co-authored-by trailer is **required** for all commits (added by Copilot CLI
 
 1. Add a changeset: `npx changeset add` (required before PR — see Changesets section)
 2. Push your branch: `git push origin {yourusername}/217-readme-help-update`
-3. Create a PR with explicit base and head: `gh pr create --base dev --repo bradygaster/squad --head {yourusername}:your-branch`
+3. Create a PR **as a draft**: `gh pr create --draft --base dev --repo bradygaster/squad --head {yourusername}:your-branch`
 4. Link the issue: Add `Closes #217` to PR description
-5. Wait for CI checks to pass
-6. Request review from the team (agents will respond via comments)
+5. Work on your changes until CI passes and you're satisfied
+6. **Mark as "Ready for review"** — this is the handoff signal to the core team (see below)
+
+### Handoff: Contributor → Core Team
+
+External contributors don't have write access, so the review-to-merge flow has a handoff point. Here's exactly what happens:
+
+**Your side (contributor):**
+
+1. ✅ All required CI checks are green (build, test, lint; changeset/CHANGELOG gate only applies when `packages/squad-cli/src/` or `packages/squad-sdk/src/` files change)
+2. ✅ PR is no longer a draft — mark as **"Ready for review"**
+3. ✅ Copilot reviewer bot posts its review automatically
+4. ✅ Review Copilot's suggestions and manually apply any you agree with in your fork
+5. ✅ Push updates to your branch to address Copilot's feedback
+6. ✅ If Copilot flags issues you can't resolve, note them in a PR comment
+
+> **Note:** Copilot review suggestions appear as comments, but the "Commit suggestion" and "Fix with Copilot" buttons require repo write access and won't work for external contributors. Review the suggestions, apply them manually in your fork, and push your changes.
+
+**Core team side (after you undraft):**
+
+1. Look for CI-green, undrafted PRs from contributors
+2. Address any remaining Copilot review issues (using "Fix with Copilot" or manual fixes)
+3. Human review, resolve threads, and merge
+
+**TL;DR:** Your job is done when the PR is undrafted, CI is green, and you've responded to Copilot suggestions. The core team takes it from there.
+
+### PR Readiness Checklist
+
+An automated readiness check runs on every PR and posts a checklist comment. Address all items before requesting review:
+
+| Check | What it means |
+|-------|---------------|
+| **Single commit** | Squash your commits into one clean commit, or the repo will squash on merge |
+| **Not in draft** | Mark your PR as "Ready for review" when it's done |
+| **Branch up to date** | Rebase on latest `dev` (`git fetch upstream && git rebase upstream/dev`) |
+| **Copilot review** | Wait for the Copilot reviewer bot to post its review |
+| **Changeset present** | Run `npx changeset add` if you changed files in `packages/squad-sdk/src/` or `packages/squad-cli/src/` |
+| **No merge conflicts** | Resolve any conflicts with the target branch |
+| **CI passing** | All CI checks (build, test, lint) must be green |
+
+The readiness check is **informational** — it helps you self-serve before a human reviewer looks at your PR. It automatically re-runs after Squad CI completes, so the checklist stays up to date without manual intervention. See `.github/PR_REQUIREMENTS.md` for the full requirements spec.
 
 ## Code Style & Conventions
 
@@ -203,9 +267,11 @@ npm unlink -w packages/squad-cli
 
 Squad uses [@changesets/cli](https://github.com/changesets/changesets) for independent package versioning.
 
+**When your PR changes SDK or CLI source files** (`packages/squad-sdk/src/` or `packages/squad-cli/src/`), add a changeset file instead of editing `CHANGELOG.md` directly. Changesets prevent merge conflicts when multiple PRs are open simultaneously and are the preferred workflow.
+
 ### Adding a Changeset
 
-Before your PR is merged, add a changeset describing your changes:
+**Option A — Interactive (recommended):**
 
 ```bash
 npx changeset add
@@ -218,16 +284,38 @@ This prompts:
 
 Creates a file in `.changeset/` that's merged with your PR.
 
-### Example Changeset
+**Option B — Manual:**
+
+Create a file at `.changeset/your-change-name.md` with frontmatter specifying the package and bump type, followed by a description:
 
 ```markdown
 ---
-"@bradygaster/squad-sdk": patch
+'@bradygaster/squad-cli': patch
+---
+
+Fix help text rendering for the status command
+```
+
+### Changeset Format
+
+The frontmatter lists each affected package and its semver bump type. The body is a human-readable description that will appear in the generated CHANGELOG:
+
+```markdown
+---
+"@bradygaster/squad-sdk": minor
 "@bradygaster/squad-cli": patch
 ---
 
-Update help text and README for npm distribution. Add squad status command to docs.
+Add streaming support to agent orchestration. Update CLI to display stream progress.
 ```
+
+### CI Changelog Gate
+
+The `changelog-gate` CI check enforces that PRs touching SDK/CLI source files include either:
+- A `.changeset/*.md` file (preferred), **or**
+- A direct `CHANGELOG.md` edit (backward-compatible)
+
+If neither is present, the check fails. You can bypass it with the `skip-changelog` label.
 
 ### Release Workflow
 
@@ -260,6 +348,7 @@ GitHub Actions runs on every push:
 2. **Test:** `npm test`
 3. **Lint:** `npm run lint`
 4. **Changeset status:** `npm run changeset:check` (ensures PRs include a changeset)
+5. **Diff Size Guard:** Warns when a single-commit PR touches 30+ files (likely branch contamination from staging all files at once on a stale branch). Always use explicit `git add <file>` instead.
 
 All checks must pass before merge.
 

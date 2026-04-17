@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- `squad init` no longer runs `git init` automatically when initialized inside a monorepo subdirectory (#939). It now shows a warning and suggests running from the git root instead.
+- Azure DevOps adapter (`az` CLI calls) now use `shell: true` on Windows so `.cmd` wrapper scripts resolve correctly (#941).
+- **Nap archival budget** (#123) — account for separator newlines in decision archival budget calculation
+
+### Added — Full Work Monitor for squad watch (#708)
+- `--execute` flag spawns Copilot sessions to work on actionable issues autonomously
+- Multi-platform support — auto-detects GitHub vs Azure DevOps from git remote URL
+- Azure DevOps support: uses SDK PlatformAdapter for work items, tags, and PRs
+- `--monitor-teams` / `--monitor-email` scan Teams/email for actionable items via WorkIQ
+- `--board` enables project board lifecycle (In Progress → Done/Blocked + reconciliation)
+- `--two-pass` lightweight scan then hydrate only actionable issues (saves API quota)
+- `--wave-dispatch` parallel sub-task execution within issues (dependency-aware)
+- `--retro` enforces retrospective checks (Fridays or when missed >7 days)
+- `--decision-hygiene` auto-merges decision inbox when >5 files
+- `--max-concurrent N` controls parallel issue execution (default: 1)
+- `--timeout N` sets per-issue execution timeout in minutes (default: 30)
+- `--copilot-flags "..."` passes extra flags to Copilot CLI sessions
+- SubSquad discovery: automatically detects `.squad/subsquads/` for routing
+- All features disabled by default — existing `squad watch` behavior unchanged
+
+### Added — StorageProvider Abstraction Layer
+- **StorageProvider interface** (#640) — pluggable I/O contract decoupling the runtime from `node:fs`
+- **FSStorageProvider** (#640) — Node.js `fs` wrapper, default provider for CLI and local workflows
+- **InMemoryStorageProvider** (#640) — Map-backed, test-friendly provider for deterministic unit tests
+- **SQLiteStorageProvider** (#640) — portable single-file provider using WASM-based sql.js
+- **StorageError** (#640) — typed error handling with `operation` and `code` fields for structured diagnostics
+- **24-method async + sync API** (#640) — full file-system surface (read, write, list, mkdir, stat, etc.); sync variants deprecated, Wave 2 removal
+- **Contract test suite** (#640) — provider conformance tests ensuring all implementations satisfy the StorageProvider interface
+- **Sample projects** (#640) — `storage-provider-azure` and `storage-provider-sqlite` in `samples/`
+
 ## [0.9.0] - 2026-03-23
 
 ### Added — Personal Squad Governance Layer
@@ -285,5 +316,6 @@ All notable changes to this project will be documented in this file.
 - New entry point: `src/cli-entry.ts` (CLI bootstrap separated from library exports)
 - Migrated to npm workspace publishing (`@bradygaster/squad-sdk`, `@bradygaster/squad-cli`)
 - Changesets infrastructure for independent package versioning
+
 
 

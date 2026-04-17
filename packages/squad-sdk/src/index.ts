@@ -10,7 +10,7 @@ const pkg = require('../package.json');
 export const VERSION: string = pkg.version;
 
 // Export public API
-export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode } from './resolution.js';
+export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir } from './resolution.js';
 export type { SquadDirConfig, ResolvedSquadPaths } from './resolution.js';
 export * from './config/index.js';
 export * from './agents/onboarding.js';
@@ -101,3 +101,49 @@ export type {
 // Base Roles (built-in role catalog)
 export * from './roles/index.js';
 export * from './platform/index.js';
+export * from './storage/index.js';
+
+// Git-native state backends (Issue #807)
+export type { StateBackend, StateBackendType, StateBackendConfig } from './state-backend.js';
+export { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey } from './state-backend.js';
+
+// State facade (Phase 2) — namespaced to avoid conflicts with existing config/sharing exports
+export {
+  // Error classes
+  StateError,
+  NotFoundError,
+  ParseError,
+  WriteConflictError,
+  ProviderError,
+  // Schema
+  COLLECTION_PATHS,
+  resolveCollectionPath,
+  // Handle factory
+  createAgentHandle,
+  // Collection facades
+  AgentsCollection,
+  ConfigCollection,
+  DecisionsCollection,
+  LogCollection,
+  RoutingCollection,
+  SkillsCollection,
+  TeamCollection,
+  TemplatesCollection,
+  // Top-level facade
+  SquadState,
+} from './state/index.js';
+export type { ConfigFileData } from './state/index.js';
+export type {
+  Agent,
+  Decision,
+  LogEntry,
+  RoutingConfigRule,
+  SquadStateConfig,
+  StateErrorKind,
+  TeamMember,
+  Template,
+  CollectionEntityMap,
+  CollectionName,
+  AgentHandle,
+  CollectionPathResolver,
+} from './state/index.js';

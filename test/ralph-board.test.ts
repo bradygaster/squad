@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { triageIssue, type RoutingRule, type TeamMember, type TriageIssue } from '../packages/squad-sdk/src/ralph/triage.js';
-import { reportBoard, type BoardState } from '../packages/squad-cli/src/cli/commands/watch.js';
+import { reportBoard, type BoardState } from '../packages/squad-cli/src/cli/commands/watch/index.js';
 
 type BoardIssueState = Pick<BoardState, 'untriaged' | 'assigned'>;
 
@@ -8,9 +8,9 @@ function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, '');
 }
 
-function captureBoardOutput(state: BoardState, round: number): string[] {
+function captureBoardOutput(state: BoardState, round: number, notifyLevel: 'all' | 'important' | 'none' = 'all'): string[] {
   const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-  reportBoard(state, round);
+  reportBoard(state, round, { notifyLevel });
   return logSpy.mock.calls.map((args) => stripAnsi(args.map((arg) => String(arg ?? '')).join(' ')));
 }
 
@@ -127,3 +127,4 @@ describe('board state compatibility with triage output', () => {
     expect(after).toEqual({ untriaged: 0, assigned: 1 });
   });
 });
+

@@ -12,9 +12,12 @@
  * @module resolution
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
+import { FSStorageProvider } from './storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Dual-root path resolution types (Issue #311)
@@ -32,6 +35,10 @@ export interface SquadDirConfig {
   consult?: boolean;
   /** True when extraction is disabled for consult sessions (read-only consultation) */
   extractionDisabled?: boolean;
+  /** Where state is stored: 'external' when moved out of the working tree */
+  stateLocation?: string;
+  /** State storage backend: worktree | external | git-notes | orphan */
+  stateBackend?: string;
 }
 
 /**
@@ -67,7 +74,7 @@ export interface ResolvedSquadPaths {
  */
 function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string | null {
   try {
-    const content = fs.readFileSync(gitFilePath, 'utf-8').trim();
+    const content = (storage.readSync(gitFilePath) ?? '').trim();
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (!match || !match[1]) return null;
     // worktreeGitDir = /main/.git/worktrees/name
@@ -77,7 +84,7 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
     // mainCheckout   = /main        (dirname of mainGitDir)
     const mainCheckout = path.dirname(mainGitDir);
     // Verify the derived main checkout is a real git repo
-    if (!fs.existsSync(mainGitDir) || !fs.statSync(mainGitDir).isDirectory()) {
+    if (!storage.existsSync(mainGitDir) || !storage.isDirectorySync(mainGitDir)) {
       return null;
     }
     return mainCheckout;
@@ -108,13 +115,13 @@ export function resolveSquad(startDir?: string): string | null {
   while (true) {
     const candidate = path.join(current, '.squad');
 
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+    if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
       return candidate;
     }
 
     const gitMarker = path.join(current, '.git');
-    if (fs.existsSync(gitMarker)) {
-      if (fs.statSync(gitMarker).isDirectory()) {
+    if (storage.existsSync(gitMarker)) {
+      if (storage.isDirectorySync(gitMarker)) {
         // Real repo root — stop walking, no .squad/ found in this checkout
         return null;
       }
@@ -123,7 +130,7 @@ export function resolveSquad(startDir?: string): string | null {
       const mainCheckout = getMainWorktreePath(current, gitMarker);
       if (mainCheckout) {
         const mainCandidate = path.join(mainCheckout, '.squad');
-        if (fs.existsSync(mainCandidate) && fs.statSync(mainCandidate).isDirectory()) {
+        if (storage.existsSync(mainCandidate) && storage.isDirectorySync(mainCandidate)) {
           return mainCandidate;
         }
       }
@@ -164,14 +171,14 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
   while (true) {
     for (const name of SQUAD_DIR_NAMES) {
       const candidate = path.join(current, name);
-      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+      if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
         return { dir: candidate, name };
       }
     }
 
     const gitMarker = path.join(current, '.git');
-    if (fs.existsSync(gitMarker)) {
-      if (fs.statSync(gitMarker).isDirectory()) {
+    if (storage.existsSync(gitMarker)) {
+      if (storage.isDirectorySync(gitMarker)) {
         // Real repo root — stop, no squad dir found in this checkout
         return null;
       }
@@ -180,7 +187,7 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
       if (mainCheckout) {
         for (const name of SQUAD_DIR_NAMES) {
           const candidate = path.join(mainCheckout, name);
-          if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+          if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
             return { dir: candidate, name };
           }
         }
@@ -202,11 +209,11 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
  */
 export function loadDirConfig(squadDir: string): SquadDirConfig | null {
   const configPath = path.join(squadDir, 'config.json');
-  if (!fs.existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return null;
   }
   try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath) ?? '';
     const parsed = JSON.parse(raw);
     if (
       parsed !== null &&
@@ -220,6 +227,8 @@ export function loadDirConfig(squadDir: string): SquadDirConfig | null {
         projectKey: typeof parsed.projectKey === 'string' ? parsed.projectKey : null,
         consult: parsed.consult === true ? true : undefined,
         extractionDisabled: parsed.extractionDisabled === true ? true : undefined,
+        stateLocation: typeof parsed.stateLocation === 'string' ? parsed.stateLocation : undefined,
+        stateBackend: typeof parsed.stateBackend === 'string' ? parsed.stateBackend : undefined,
       };
     }
     return null;
@@ -314,8 +323,8 @@ export function resolveGlobalSquadPath(): string {
 
   const globalDir = path.join(base, 'squad');
 
-  if (!fs.existsSync(globalDir)) {
-    fs.mkdirSync(globalDir, { recursive: true });
+  if (!storage.existsSync(globalDir)) {
+    storage.mkdirSync(globalDir, { recursive: true });
   }
 
   return globalDir;
@@ -336,7 +345,7 @@ export function resolvePersonalSquadDir(): string | null {
   const globalDir = resolveGlobalSquadPath();
   const personalDir = path.join(globalDir, 'personal-squad');
   
-  if (!fs.existsSync(personalDir)) return null;
+  if (!storage.existsSync(personalDir)) return null;
   return personalDir;
 }
 
@@ -353,14 +362,14 @@ export function ensurePersonalSquadDir(): string {
   const personalDir = path.join(globalDir, 'personal-squad');
   const agentsDir = path.join(personalDir, 'agents');
 
-  if (!fs.existsSync(agentsDir)) {
-    fs.mkdirSync(agentsDir, { recursive: true });
+  if (!storage.existsSync(agentsDir)) {
+    storage.mkdirSync(agentsDir, { recursive: true });
   }
 
   const configPath = path.join(personalDir, 'config.json');
-  if (!fs.existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     const config = { defaultModel: 'auto', ghostProtocol: true };
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+    storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
   }
 
   return personalDir;
@@ -468,4 +477,125 @@ export function ensureSquadPathTriple(
  */
 export function ensureSquadPathResolved(filePath: string, paths: ResolvedSquadPaths): string {
   return ensureSquadPathDual(filePath, paths.projectDir, paths.teamDir);
+}
+
+/**
+ * Resolve the scratch directory for temporary files.
+ *
+ * Returns `{squadRoot}/.scratch/` — the canonical location for ephemeral files
+ * that Squad and its agents create during operations (prompt files, intermediate
+ * processing artifacts, commit message drafts, etc.).
+ *
+ * If `create` is true (default), the directory is created if it does not exist.
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param create    - Whether to create the directory if missing (default: true).
+ * @returns Absolute path to the scratch directory.
+ */
+export function scratchDir(squadRoot: string, create: boolean = true): string {
+  const dir = path.join(squadRoot, '.scratch');
+  if (create && !storage.existsSync(dir)) {
+    storage.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+/**
+ * Return a unique file path inside the scratch directory.
+ *
+ * Writes content to the file if `content` is provided; otherwise returns
+ * the path only and the caller is responsible for writing to it.
+ * The caller is also responsible for deleting the file when done
+ * (or relying on the cleanup capability).
+ *
+ * @param squadRoot - Absolute path to the `.squad/` directory.
+ * @param prefix    - Filename prefix (e.g. `"fleet-prompt"`).
+ * @param ext       - File extension including dot (e.g. `".txt"`). Defaults to `".tmp"`.
+ * @param content   - Optional content to write immediately.
+ * @returns Absolute path to the temp file.
+ */
+export function scratchFile(squadRoot: string, prefix: string, ext: string = '.tmp', content?: string): string {
+  // Sanitize prefix to prevent path traversal — strip directory components
+  const safePrefix = path.basename(prefix);
+  const safeExt = ext.replace(/[\/\\]/g, '_');
+
+  const dir = scratchDir(squadRoot);
+
+  const now = Date.now();
+  const rand = crypto.randomBytes(4).toString('hex');
+
+  const filename = `${safePrefix}-${now}-${rand}${safeExt}`;
+  const filePath = path.join(dir, filename);
+  if (content !== undefined) {
+    storage.writeSync(filePath, content);
+  }
+  return filePath;
+}
+
+// ============================================================================
+// External state storage (Issue #792)
+// ============================================================================
+
+/**
+ * Derive a stable project key from a project directory path.
+ *
+ * Takes the basename of the path, lowercases it, and replaces unsafe characters
+ * with dashes. Returns `'unknown-project'` if the basename is empty (e.g.,
+ * filesystem root).
+ *
+ * @param projectDir - Absolute path to the project root.
+ * @returns A sanitized, lowercase project key suitable for use as a directory name.
+ */
+export function deriveProjectKey(projectDir: string): string {
+  const normalized = projectDir.replace(/\\/g, '/');
+  const base = path.basename(normalized);
+  if (!base) return 'unknown-project';
+
+  const sanitized = base
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return sanitized || 'unknown-project';
+}
+
+/**
+ * Resolve the external state directory for a project.
+ *
+ * Returns `{globalDir}/projects/{sanitizedKey}/` where `globalDir` is the
+ * platform-specific global config directory (e.g., `%APPDATA%/squad` on Windows,
+ * `~/Library/Application Support/squad` on macOS, `$XDG_CONFIG_HOME/squad` or
+ * `~/.config/squad` on Linux).
+ *
+ * Validates the project key to prevent path traversal. Throws if the key
+ * is empty or contains `..` sequences.
+ *
+ * @param projectKey - The project key (from deriveProjectKey or user-supplied).
+ * @param create     - Whether to create the directory if it doesn't exist (default: true).
+ * @returns Absolute path to the project's external state directory.
+ * @throws If projectKey is empty or contains path traversal sequences.
+ */
+export function resolveExternalStateDir(projectKey: string, create: boolean = true): string {
+  if (!projectKey || projectKey.includes('..')) {
+    throw new Error('Invalid project key');
+  }
+
+  // Sanitize: replace path separators and unsafe chars with dashes
+  const sanitized = projectKey
+    .replace(/[/\\]/g, '-')
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  if (!sanitized) {
+    throw new Error('Invalid project key');
+  }
+
+  const globalDir = resolveGlobalSquadPath();
+  const projectsDir = path.join(globalDir, 'projects', sanitized);
+
+  if (create && !storage.existsSync(projectsDir)) {
+    storage.mkdirSync(projectsDir, { recursive: true });
+  }
+
+  return projectsDir;
 }

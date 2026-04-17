@@ -7,8 +7,10 @@
  * @module runtime/cross-squad
  */
 
-import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Types
@@ -118,9 +120,9 @@ export function validateManifest(data: unknown): data is SquadManifest {
  */
 export function readManifest(repoPath: string): SquadManifest | null {
   const manifestPath = join(repoPath, '.squad', 'manifest.json');
-  if (!existsSync(manifestPath)) return null;
+  if (!storage.existsSync(manifestPath)) return null;
   try {
-    const raw = readFileSync(manifestPath, 'utf8');
+    const raw = storage.readSync(manifestPath) ?? '';
     const parsed: unknown = JSON.parse(raw);
     if (!validateManifest(parsed)) return null;
     return parsed;
@@ -153,11 +155,11 @@ interface UpstreamJsonFile {
  */
 export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
   const upstreamPath = join(squadDir, 'upstream.json');
-  if (!existsSync(upstreamPath)) return [];
+  if (!storage.existsSync(upstreamPath)) return [];
 
   let config: UpstreamJsonFile;
   try {
-    config = JSON.parse(readFileSync(upstreamPath, 'utf8')) as UpstreamJsonFile;
+    config = JSON.parse(storage.readSync(upstreamPath) ?? '') as UpstreamJsonFile;
   } catch {
     return [];
   }
@@ -197,11 +199,11 @@ export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
  * A registry is a JSON file listing repo paths to check for manifests.
  */
 export function discoverFromRegistry(registryPath: string): DiscoveredSquad[] {
-  if (!existsSync(registryPath)) return [];
+  if (!storage.existsSync(registryPath)) return [];
 
   let entries: Array<{ name: string; path: string }>;
   try {
-    const raw = readFileSync(registryPath, 'utf8');
+    const raw = storage.readSync(registryPath) ?? '';
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     entries = parsed as Array<{ name: string; path: string }>;

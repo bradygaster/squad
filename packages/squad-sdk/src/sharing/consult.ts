@@ -15,12 +15,15 @@
  * @module sharing/consult
  */
 
-import fs from 'node:fs';
+import { cpSync } from 'node:fs'; // cpSync retained for recursive directory copy — StorageProvider.copySync is file-only
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { AgentHistory, HistoryEntry } from './history-split.js';
 import { resolveGlobalSquadPath } from '../resolution.js';
+
+const storage = new FSStorageProvider();
 
 // Re-export types for convenience
 export type { AgentHistory, HistoryEntry } from './history-split.js';
@@ -91,13 +94,13 @@ function getSquadAgentTemplatePath(): string | null {
   
   // Try relative to this file (in dist/)
   const distPath = path.resolve(currentDir, '../../templates/squad.agent.md.template');
-  if (fs.existsSync(distPath)) {
+  if (storage.existsSync(distPath)) {
     return distPath;
   }
   
   // Try relative to package root
   const pkgPath = path.resolve(currentDir, '../../../templates/squad.agent.md.template');
-  if (fs.existsSync(pkgPath)) {
+  if (storage.existsSync(pkgPath)) {
     return pkgPath;
   }
   
@@ -139,8 +142,8 @@ function getGitRemoteUrl(projectRoot: string): string | undefined {
 function getConsultAgentContent(projectName: string): string {
   const templatePath = getSquadAgentTemplatePath();
   
-  if (templatePath && fs.existsSync(templatePath)) {
-    const template = fs.readFileSync(templatePath, 'utf-8');
+  if (templatePath && storage.existsSync(templatePath)) {
+    const template = storage.readSync(templatePath) ?? '';
     
     // Find the end of frontmatter (second ---)
     const frontmatterEnd = template.indexOf('---', template.indexOf('---') + 3);
@@ -230,34 +233,34 @@ Run \`squad extract\` to review and merge these to your personal squad.
 function patchScribeCharterForConsultMode(squadDir: string): void {
   const charterPath = path.join(squadDir, 'agents', 'scribe', 'charter.md');
   
-  if (!fs.existsSync(charterPath)) {
+  if (!storage.existsSync(charterPath)) {
     // No scribe charter to patch — skip silently
     return;
   }
 
-  const existing = fs.readFileSync(charterPath, 'utf-8');
+  const existing = storage.readSync(charterPath) ?? '';
   
   // Don't patch if already patched
   if (existing.includes('Consult Mode Extraction')) {
     return;
   }
 
-  fs.appendFileSync(charterPath, CONSULT_MODE_SCRIBE_PATCH);
+  storage.appendSync(charterPath, CONSULT_MODE_SCRIBE_PATCH);
 }
 
 /**
  * List files recursively in a directory.
  */
 function listFilesInDir(dir: string, basePath = ''): string[] {
-  if (!fs.existsSync(dir)) return [];
+  if (!storage.existsSync(dir)) return [];
   
   const files: string[] = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const entries = storage.listSync(dir);
   
   for (const entry of entries) {
-    const relativePath = basePath ? path.join(basePath, entry.name) : entry.name;
-    if (entry.isDirectory()) {
-      files.push(...listFilesInDir(path.join(dir, entry.name), relativePath));
+    const relativePath = basePath ? path.join(basePath, entry) : entry;
+    if (storage.isDirectorySync(path.join(dir, entry))) {
+      files.push(...listFilesInDir(path.join(dir, entry), relativePath));
     } else {
       files.push(relativePath);
     }
@@ -357,7 +360,7 @@ export async function setupConsultMode(
 
   // Check if we're in a git repository (handle worktrees/submodules where .git is a file)
   const gitPath = path.resolve(projectRoot, '.git');
-  if (!fs.existsSync(gitPath)) {
+  if (!storage.existsSync(gitPath)) {
     throw new Error('Not a git repository. Consult mode requires git.');
   }
 
@@ -369,7 +372,7 @@ export async function setupConsultMode(
   })();
 
   // Check if personal squad exists
-  if (!fs.existsSync(personalSquadRoot)) {
+  if (!storage.existsSync(personalSquadRoot)) {
     throw new PersonalSquadNotFoundError();
   }
 
@@ -377,9 +380,9 @@ export async function setupConsultMode(
   // Option takes precedence, then fall back to source config
   let extractionDisabled = options.extractionDisabled ?? false;
   const sourceConfigPath = path.join(personalSquadRoot, 'config.json');
-  if (fs.existsSync(sourceConfigPath)) {
+  if (storage.existsSync(sourceConfigPath)) {
     try {
-      const sourceConfig = JSON.parse(fs.readFileSync(sourceConfigPath, 'utf-8'));
+      const sourceConfig = JSON.parse(storage.readSync(sourceConfigPath) ?? '{}');
       // Inherit from source unless explicitly overridden in options
       if (options.extractionDisabled === undefined && sourceConfig.extractionDisabled) {
         extractionDisabled = true;
@@ -390,7 +393,7 @@ export async function setupConsultMode(
   }
 
   // Check if project already has .squad/
-  if (fs.existsSync(squadDir)) {
+  if (storage.existsSync(squadDir)) {
     throw new Error(
       'This project already has a .squad/ directory. Cannot use consult mode on squadified projects.',
     );
@@ -402,7 +405,7 @@ export async function setupConsultMode(
   if (!dryRun) {
     // Copy personal squad contents into project's .squad/
     // This isolates changes during the consult session
-    fs.cpSync(personalSquadRoot, squadDir, { recursive: true });
+    cpSync(personalSquadRoot, squadDir, { recursive: true });
 
     // Write/overwrite config.json with consult: true
     // Include SquadDirConfig fields so loadDirConfig() can read it
@@ -416,39 +419,38 @@ export async function setupConsultMode(
       createdAt: new Date().toISOString(),
       extractionDisabled,
     };
-    fs.writeFileSync(
+    storage.writeSync(
       path.join(squadDir, 'config.json'),
       JSON.stringify(config, null, 2),
-      'utf-8',
     );
 
     // Create sessions directory for tracking (if not copied)
     const sessionsDir = path.join(squadDir, 'sessions');
-    if (!fs.existsSync(sessionsDir)) {
-      fs.mkdirSync(sessionsDir, { recursive: true });
+    if (!storage.existsSync(sessionsDir)) {
+      storage.mkdirSync(sessionsDir, { recursive: true });
     }
 
     // Create extract/ directory for staging generic learnings
     const extractDir = path.join(squadDir, 'extract');
-    fs.mkdirSync(extractDir, { recursive: true });
+    storage.mkdirSync(extractDir, { recursive: true });
 
     // Patch scribe-charter.md with consult mode extraction instructions
     patchScribeCharterForConsultMode(squadDir);
 
     // Create .github/agents/squad.agent.md for `gh copilot --agent squad`
     const agentDir = path.dirname(agentFile);
-    if (!fs.existsSync(agentDir)) {
-      fs.mkdirSync(agentDir, { recursive: true });
+    if (!storage.existsSync(agentDir)) {
+      storage.mkdirSync(agentDir, { recursive: true });
     }
-    fs.writeFileSync(agentFile, getConsultAgentContent(projectName), 'utf-8');
+    storage.writeSync(agentFile, getConsultAgentContent(projectName));
 
     // Add .squad/ and .github/agents/squad.agent.md to .git/info/exclude
     const excludeDir = path.dirname(gitExclude);
-    if (!fs.existsSync(excludeDir)) {
-      fs.mkdirSync(excludeDir, { recursive: true });
+    if (!storage.existsSync(excludeDir)) {
+      storage.mkdirSync(excludeDir, { recursive: true });
     }
-    const excludeContent = fs.existsSync(gitExclude)
-      ? fs.readFileSync(gitExclude, 'utf-8')
+    const excludeContent = storage.existsSync(gitExclude)
+      ? storage.readSync(gitExclude) ?? ''
       : '';
     const excludeLines: string[] = [];
     if (!excludeContent.includes('.squad/')) {
@@ -458,7 +460,7 @@ export async function setupConsultMode(
       excludeLines.push('.github/agents/squad.agent.md');
     }
     if (excludeLines.length > 0) {
-      fs.appendFileSync(gitExclude, '\n# Squad consult mode (local only)\n' + excludeLines.join('\n') + '\n');
+      storage.appendSync(gitExclude, '\n# Squad consult mode (local only)\n' + excludeLines.join('\n') + '\n');
     }
   }
 
@@ -529,17 +531,17 @@ export function loadSessionHistory(squadDir: string): AgentHistory {
   const sessionsDir = path.join(squadDir, 'sessions');
   const entries: HistoryEntry[] = [];
 
-  if (!fs.existsSync(sessionsDir)) {
+  if (!storage.existsSync(sessionsDir)) {
     return { entries };
   }
 
-  const files = fs.readdirSync(sessionsDir)
+  const files = storage.listSync(sessionsDir)
     .filter(f => f.endsWith('.json'))
     .sort();
 
   for (const file of files) {
     try {
-      const content = fs.readFileSync(path.join(sessionsDir, file), 'utf-8');
+      const content = storage.readSync(path.join(sessionsDir, file)) ?? '';
       const session = JSON.parse(content);
 
       // Extract learnings from session data
@@ -599,16 +601,16 @@ export async function extractLearnings(
   const projectName = options.projectName || path.basename(projectRoot);
 
   // Check if we're in consult mode
-  if (!fs.existsSync(squadDir)) {
+  if (!storage.existsSync(squadDir)) {
     throw new Error('Not in consult mode. No .squad/ directory found.');
   }
 
   const configPath = path.join(squadDir, 'config.json');
-  if (!fs.existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     throw new Error('Invalid consult mode: missing config.json');
   }
 
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  const config = JSON.parse(storage.readSync(configPath) ?? '{}');
   if (!config.consult) {
     throw new Error(
       'This project has a .squad/ but is not in consult mode. Use normal squad commands.',
@@ -622,8 +624,8 @@ export async function extractLearnings(
 
   // Detect license
   const licensePath = path.join(projectRoot, 'LICENSE');
-  const licenseContent = fs.existsSync(licensePath)
-    ? fs.readFileSync(licensePath, 'utf-8')
+  const licenseContent = storage.existsSync(licensePath)
+    ? storage.readSync(licensePath) ?? ''
     : '';
   const license = detectLicense(licenseContent);
 
@@ -687,13 +689,13 @@ export async function extractLearnings(
 
     // Remove extracted files from .squad/extract/
     for (const learning of staged) {
-      fs.rmSync(learning.filepath, { force: true });
+      storage.deleteSync(learning.filepath);
     }
   }
 
   // Clean up entire .squad/ if requested
   if (clean && !dryRun) {
-    fs.rmSync(squadDir, { recursive: true, force: true });
+    storage.deleteDirSync(squadDir);
     cleaned = true;
   }
 
@@ -838,16 +840,16 @@ export function loadStagedLearnings(squadDir: string): StagedLearning[] {
   const extractDir = path.join(squadDir, 'extract');
   const learnings: StagedLearning[] = [];
 
-  if (!fs.existsSync(extractDir)) {
+  if (!storage.existsSync(extractDir)) {
     return learnings;
   }
 
-  const files = fs.readdirSync(extractDir).filter(f => f.endsWith('.md'));
+  const files = storage.listSync(extractDir).filter(f => f.endsWith('.md'));
 
   for (const file of files) {
     const filepath = path.join(extractDir, file);
     try {
-      const content = fs.readFileSync(filepath, 'utf-8');
+      const content = storage.readSync(filepath) ?? '';
       learnings.push({
         filename: file,
         filepath,
@@ -907,15 +909,15 @@ export async function logConsultation(
   const logPath = path.join(consultDir, `${result.projectName}.md`);
 
   // Create consultations directory if needed
-  if (!fs.existsSync(consultDir)) {
-    fs.mkdirSync(consultDir, { recursive: true });
+  if (!storage.existsSync(consultDir)) {
+    storage.mkdirSync(consultDir, { recursive: true });
   }
 
   const today = result.timestamp.split('T')[0] ?? new Date().toISOString().split('T')[0]!; // YYYY-MM-DD format
 
-  if (fs.existsSync(logPath)) {
+  if (storage.existsSync(logPath)) {
     // Append to existing log — update "Last session" and add new entry
-    let content = fs.readFileSync(logPath, 'utf-8');
+    let content = storage.readSync(logPath) ?? '';
 
     // Update "Last session" date
     content = content.replace(
@@ -927,12 +929,12 @@ export async function logConsultation(
     const sessionEntry = formatSessionEntry(result, today);
 
     // Append to file
-    fs.writeFileSync(logPath, content + sessionEntry, 'utf-8');
+    storage.writeSync(logPath, content + sessionEntry);
   } else {
     // Create new consultation log with full header
     const header = formatLogHeader(result, today);
     const sessionEntry = formatSessionEntry(result, today);
-    fs.writeFileSync(logPath, header + sessionEntry, 'utf-8');
+    storage.writeSync(logPath, header + sessionEntry);
   }
 
   return logPath;
@@ -1042,14 +1044,14 @@ export async function mergeToPersonalSquad(
     const skillDir = path.join(skillsDir, skillName);
 
     // Create skill directory if needed
-    if (!fs.existsSync(skillDir)) {
-      fs.mkdirSync(skillDir, { recursive: true });
+    if (!storage.existsSync(skillDir)) {
+      storage.mkdirSync(skillDir, { recursive: true });
     }
 
     const skillPath = path.join(skillDir, 'SKILL.md');
 
     // Write skill (overwrites if exists — newer extraction wins)
-    fs.writeFileSync(skillPath, skill.content, 'utf-8');
+    storage.writeSync(skillPath, skill.content);
     skillsAdded++;
   }
 
@@ -1058,8 +1060,8 @@ export async function mergeToPersonalSquad(
     const decisionsPath = path.join(personalSquadRoot, 'decisions.md');
     const newContent = decisions.map(d => d.content.trim()).join('\n\n');
 
-    if (fs.existsSync(decisionsPath)) {
-      const existing = fs.readFileSync(decisionsPath, 'utf-8');
+    if (storage.existsSync(decisionsPath)) {
+      const existing = storage.readSync(decisionsPath) ?? '';
 
       // Check if we already have an "Extracted from Consultations" section
       if (existing.includes('## Extracted from Consultations')) {
@@ -1074,7 +1076,7 @@ export async function mergeToPersonalSquad(
           // Insert before next section
           const sectionContent = afterSection.slice(0, nextSectionMatch.index);
           const rest = afterSection.slice(nextSectionMatch.index);
-          fs.writeFileSync(
+          storage.writeSync(
             decisionsPath,
             beforeSection +
               '## Extracted from Consultations' +
@@ -1083,30 +1085,26 @@ export async function mergeToPersonalSquad(
               newContent +
               '\n' +
               rest,
-            'utf-8',
           );
         } else {
           // No next section — append to end
-          fs.writeFileSync(
+          storage.writeSync(
             decisionsPath,
             existing.trimEnd() + '\n\n' + newContent + '\n',
-            'utf-8',
           );
         }
       } else {
         // No extraction section yet — create one
-        fs.writeFileSync(
+        storage.writeSync(
           decisionsPath,
           existing.trimEnd() + '\n\n## Extracted from Consultations\n\n' + newContent + '\n',
-          'utf-8',
         );
       }
     } else {
       // Create new decisions file
-      fs.writeFileSync(
+      storage.writeSync(
         decisionsPath,
         `# Squad Decisions\n\n## Extracted from Consultations\n\n${newContent}\n`,
-        'utf-8',
       );
     }
     decisionsAdded = decisions.length;

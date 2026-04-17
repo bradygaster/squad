@@ -90,7 +90,7 @@ function _handleTopLevelSignal(signal: 'SIGINT' | 'SIGTERM'): void {
 process.on('SIGINT', () => _handleTopLevelSignal('SIGINT'));
 process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
 
-import fs from 'node:fs';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
 import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
@@ -105,6 +105,16 @@ const lazyRunShell = () => import('./cli/shell/index.js');
 
 // Use local version resolver instead of importing VERSION from squad-sdk
 const VERSION = getPackageVersion();
+
+/**
+ * Return the starting directory for squad resolution.
+ * Respects --team-root / SQUAD_TEAM_ROOT env var so that subprocesses
+ * (e.g. Copilot CLI bang commands) can locate .squad/ even when their
+ * working directory differs from the interactive shell. (#734)
+ */
+function getSquadStartDir(): string {
+  return process.env['SQUAD_TEAM_ROOT'] || process.cwd();
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -127,6 +137,9 @@ async function main(): Promise<void> {
   const cmd = rawCmd?.trim() || '';
 
   // --version / -v / version
+  // Investigated: routing is correct — cmd matches 'version' directly.
+  // "Unknown command: version" reports may be shell-specific (e.g. alias/wrapper
+  // prepending flags so args[0] is no longer 'version'). No intercepting router found.
   if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
     console.log(VERSION);
     return;
@@ -159,11 +172,31 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}cost${RESET}       Report token usage from orchestration logs`);
     console.log(`             Flags: --all, --agent <name>`);
     console.log(`  ${BOLD}triage${RESET}     Scan for work and categorize issues`);
-    console.log(`             Usage: triage [--interval <minutes>]`);
+    console.log(`             Usage: triage [--interval <minutes>] [--execute]`);
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
-    console.log(`  ${BOLD}loop${RESET}       Continuous work loop (Ralph mode)`);
-    console.log(`             Usage: loop [--filter <label>] [--interval <minutes>]`);
-    console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
+    console.log(`             Core flags:`);
+    console.log(`                    --execute (spawn agents to work on issues)`);
+    console.log(`                    --copilot-flags "..." (extra copilot CLI flags)`);
+    console.log(`                    --max-concurrent N (parallel issue limit, default 1)`);
+    console.log(`                    --timeout N (max minutes per issue, default 30)`);
+    console.log(`             Capabilities (opt-in via --<name> or config.json):`);
+    console.log(`                    --self-pull       git fetch/pull at round start`);
+    console.log(`                    --board           project board lifecycle + reconciliation`);
+    console.log(`                    --board-project N project number (default 1)`);
+    console.log(`                    --monitor-teams   scan Teams for actionable messages`);
+    console.log(`                    --monitor-email   scan email for actionable items`);
+    console.log(`                    --two-pass        lightweight list then hydrate actionable`);
+    console.log(`                    --wave-dispatch   wave-based parallel sub-task dispatch`);
+    console.log(`                    --retro           enforce retrospective checks`);
+    console.log(`                    --decision-hygiene auto-merge decision inbox`);
+    console.log(`             Disable: --no-<capability> overrides config.json`);
+    console.log(`             Logging: --log-file <path> tee output to file with timestamps`);
+    console.log(`  ${BOLD}loop${RESET}       Prompt-driven continuous work loop`);
+    console.log(`             Usage: loop [--init] [--file <path>] [--interval <min>]`);
+    console.log(`             Reads loop.md and runs it each cycle (no issues needed)`);
+    console.log(`             Flags: --init (generate boilerplate loop.md)`);
+    console.log(`                    --file <path> (custom loop file)`);
+    console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
     console.log(`  ${BOLD}hire${RESET}       Team creation wizard`);
     console.log(`             Usage: hire [--name <name>] [--role <role>]`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
@@ -284,20 +317,33 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'upgrade') {
-    const { runUpgrade } = await import('./cli/core/upgrade.js');
+    const { runUpgrade, selfUpgradeCli } = await import('./cli/core/upgrade.js');
     const { migrateDirectory } = await import('./cli/core/migrate-directory.js');
     
     const migrateDir = args.includes('--migrate-directory');
     const selfUpgrade = args.includes('--self');
     const forceUpgrade = args.includes('--force');
-    const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : process.cwd();
+    const insider = args.includes('--insider');
+    const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : getSquadStartDir();
     
+    // Warn when --insider is used without --self (it has no effect on project upgrades)
+    if (insider && !selfUpgrade) {
+      console.warn('⚠️ --insider only applies with --self (squad upgrade --self --insider). Ignoring.');
+    }
+
     // Handle --migrate-directory flag
     if (migrateDir) {
       await migrateDirectory(dest);
       // Continue with regular upgrade after migration
     }
     
+    // Handle --self: upgrade the CLI package itself
+    if (selfUpgrade) {
+      await selfUpgradeCli({ insider, force: forceUpgrade });
+      console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
+      return;
+    }
+
     // Run upgrade
     await runUpgrade(dest, { 
       migrateDirectory: migrateDir,
@@ -315,32 +361,263 @@ async function main(): Promise<void> {
     const fromIdx = args.indexOf('--from');
     const from = (fromIdx !== -1 && args[fromIdx + 1]) ? args[fromIdx + 1] : undefined;
     const dryRun = args.includes('--dry-run');
-    await runMigrate(process.cwd(), { to, from: from as 'ai-team' | undefined, dryRun });
+    await runMigrate(getSquadStartDir(), { to, from: from as 'ai-team' | undefined, dryRun });
+    return;
+  }
+
+  // --health flag: show watch instance status and exit
+  if (cmd === 'watch' && args.includes('--health')) {
+    const { getWatchHealth } = await import('./cli/commands/watch/health.js');
+    console.log(getWatchHealth(getSquadStartDir()));
     return;
   }
 
   if (cmd === 'triage' || cmd === 'watch') {
-    const { runWatch } = await import('./cli/commands/watch.js');
+    const { runWatch, loadWatchConfig, createDefaultRegistry } = await import('./cli/commands/watch/index.js');
+
+    // Parse core flags
     const intervalIdx = args.indexOf('--interval');
-    const intervalMinutes = (intervalIdx !== -1 && args[intervalIdx + 1])
+    const interval = (intervalIdx !== -1 && args[intervalIdx + 1])
       ? parseInt(args[intervalIdx + 1]!, 10)
-      : 10;
-    await runWatch(process.cwd(), intervalMinutes);
+      : undefined;
+
+    const execute = args.includes('--execute') ? true : undefined;
+
+    const verbose = args.includes('--verbose') || args.includes('-v');
+
+    const copilotFlagsIdx = args.indexOf('--copilot-flags');
+    const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
+      ? args[copilotFlagsIdx + 1]
+      : undefined;
+
+    const agentCmdIdx = args.indexOf('--agent-cmd');
+    const agentCmd = (agentCmdIdx !== -1 && args[agentCmdIdx + 1])
+      ? args[agentCmdIdx + 1]
+      : undefined;
+
+    const maxConcurrentIdx = args.indexOf('--max-concurrent');
+    const maxConcurrent = (maxConcurrentIdx !== -1 && args[maxConcurrentIdx + 1])
+      ? parseInt(args[maxConcurrentIdx + 1]!, 10)
+      : undefined;
+
+    const timeoutIdx = args.indexOf('--timeout');
+    const timeout = (timeoutIdx !== -1 && args[timeoutIdx + 1])
+      ? parseInt(args[timeoutIdx + 1]!, 10)
+      : undefined;
+
+    // --dispatch-mode runtime validation: rejects invalid values with a clear error message
+    const dispatchModeIdx = args.indexOf('--dispatch-mode');
+    const rawDispatchMode = (dispatchModeIdx !== -1 && args[dispatchModeIdx + 1])
+      ? args[dispatchModeIdx + 1]
+      : undefined;
+    const validModes = ['task', 'fleet', 'hybrid'] as const;
+    const dispatchMode = rawDispatchMode && validModes.includes(rawDispatchMode as any)
+      ? rawDispatchMode as 'fleet' | 'task' | 'hybrid'
+      : rawDispatchMode
+        ? (console.error(`⚠️ Invalid --dispatch-mode "${rawDispatchMode}". Valid: task, fleet, hybrid. Defaulting to task.`), undefined)
+        : undefined;
+
+    const logFileIdx = args.indexOf('--log-file');
+    const logFile = (logFileIdx !== -1 && args[logFileIdx + 1])
+      ? args[logFileIdx + 1]
+      : undefined;
+
+    const authUserIdx = args.indexOf('--auth-user');
+    const authUser = (authUserIdx !== -1 && args[authUserIdx + 1])
+      ? args[authUserIdx + 1]
+      : undefined;
+
+    // --notify-level runtime validation
+    const notifyLevelIdx = args.indexOf('--notify-level');
+    const rawNotifyLevel = (notifyLevelIdx !== -1 && args[notifyLevelIdx + 1])
+      ? args[notifyLevelIdx + 1]
+      : undefined;
+    const validNotifyLevels = ['all', 'important', 'none'] as const;
+    const notifyLevel = rawNotifyLevel && (validNotifyLevels as readonly string[]).includes(rawNotifyLevel)
+      ? rawNotifyLevel as typeof validNotifyLevels[number]
+      : rawNotifyLevel
+        ? (console.error(`\u26a0\ufe0f Invalid --notify-level "${rawNotifyLevel}". Valid: all, important, none.`), undefined)
+        : undefined;
+
+    const overnightStartIdx = args.indexOf('--overnight-start');
+    const overnightStart = (overnightStartIdx !== -1 && args[overnightStartIdx + 1])
+      ? args[overnightStartIdx + 1]
+      : undefined;
+
+    const overnightEndIdx = args.indexOf('--overnight-end');
+    const overnightEnd = (overnightEndIdx !== -1 && args[overnightEndIdx + 1])
+      ? args[overnightEndIdx + 1]
+      : undefined;
+
+    const sentinelFileIdx = args.indexOf('--sentinel-file');
+    const sentinelFile = (sentinelFileIdx !== -1 && args[sentinelFileIdx + 1])
+      ? args[sentinelFileIdx + 1]
+      : undefined;
+
+    // --state-backend runtime validation: reject invalid values upfront
+    const stateBackendIdx = args.indexOf('--state-backend');
+    const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
+      ? args[stateBackendIdx + 1]
+      : undefined;
+    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
+      console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
+      process.exit(1);
+    }
+    const stateBackend = rawStateBackend as typeof validBackends[number] | undefined;
+
+    // Build capability overrides from CLI flags and --no-{cap} flags
+    const capabilities: Record<string, boolean | Record<string, unknown>> = {};
+    const registry = createDefaultRegistry();
+    for (const cap of registry.all()) {
+      if (args.includes(`--${cap.name}`)) capabilities[cap.name] = true;
+      if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
+    }
+
+    // Legacy flag compat: --board-project sets board sub-option
+    const boardProjectIdx = args.indexOf('--board-project');
+    if (boardProjectIdx !== -1 && args[boardProjectIdx + 1]) {
+      const existing = capabilities['board'];
+      capabilities['board'] = typeof existing === 'object' && existing !== null
+        ? { ...existing, projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) }
+        : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
+    }
+
+    // Load config: .squad/config.json merged with CLI overrides
+    const config = loadWatchConfig(getSquadStartDir(), {
+      interval,
+      execute,
+      maxConcurrent,
+      timeout,
+      copilotFlags,
+      agentCmd,
+      verbose,
+      dispatchMode,
+      logFile,
+      authUser,
+      notifyLevel,
+      overnightStart,
+      overnightEnd,
+      sentinelFile,
+      stateBackend,
+      capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
+    });
+
+    // After parsing all flags, check for positional args that look like prompts.
+    // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
+    const knownValueFlags = new Set([
+      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+      '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
+    ]);
+    const watchArgStart = args.indexOf(cmd) + 1;
+    const watchArgs = args.slice(watchArgStart);
+    const positionalArgs: string[] = [];
+    for (let i = 0; i < watchArgs.length; i++) {
+      const arg = watchArgs[i]!;
+      if (knownValueFlags.has(arg)) { i++; continue; }
+      if (arg.startsWith('-')) continue;
+      positionalArgs.push(arg);
+    }
+    if (positionalArgs.length > 0 && config.verbose) {
+      console.log(`[verbose] ⚠️ Positional args ignored by watch: "${positionalArgs.join(' ')}". Use --execute to process issues.`);
+    }
+
+    await runWatch(getSquadStartDir(), config);
     return;
   }
 
   if (cmd === 'loop') {
-    const filterIdx = args.indexOf('--filter');
-    const filter = (filterIdx !== -1 && args[filterIdx + 1]) ? args[filterIdx + 1] : undefined;
-    const intervalIdx = args.indexOf('--interval');
-    const intervalMinutes = (intervalIdx !== -1 && args[intervalIdx + 1])
-      ? parseInt(args[intervalIdx + 1]!, 10)
-      : 10;
-    console.log(`🔄 Squad loop starting... (full implementation pending)`);
-    if (filter) {
-      console.log(`   Filter: ${filter}`);
+    // --help
+    if (args.includes('--help') || args.includes('-h')) {
+      console.log(`\n${BOLD}squad loop${RESET} — Prompt-driven continuous work loop\n`);
+      console.log(`Usage: squad loop [options]\n`);
+      console.log(`Reads loop.md and runs it as a continuous work loop.\n`);
+      console.log(`Options:`);
+      console.log(`  ${BOLD}--init${RESET}                Generate a boilerplate loop.md`);
+      console.log(`  ${BOLD}--file <path>${RESET}         Path to loop file (default: loop.md)`);
+      console.log(`  ${BOLD}--interval <min>${RESET}      Override loop interval in minutes`);
+      console.log(`  ${BOLD}--timeout <min>${RESET}       Override max minutes per cycle`);
+      console.log(`  ${BOLD}--copilot-flags "..."${RESET} Extra flags for Copilot CLI`);
+      console.log(`  ${BOLD}--agent-cmd <cmd>${RESET}     Override the agent command`);
+      console.log(`\nCapabilities (composable with the loop):`);
+      console.log(`  ${BOLD}--self-pull${RESET}           git fetch/pull at round start`);
+      console.log(`  ${BOLD}--monitor-email${RESET}       Scan email for actionable items`);
+      console.log(`  ${BOLD}--monitor-teams${RESET}       Scan Teams for actionable messages`);
+      console.log(`  ${BOLD}--decision-hygiene${RESET}    Auto-merge decision inbox`);
+      console.log(`  ${BOLD}--retro${RESET}               Enforce retrospective checks`);
+      console.log(`\nFrontmatter (in loop.md):`);
+      console.log(`  configured: true     ${DIM}(required — confirms intentional setup)${RESET}`);
+      console.log(`  interval: 10         ${DIM}(minutes between cycles)${RESET}`);
+      console.log(`  timeout: 30          ${DIM}(max minutes per cycle)${RESET}`);
+      console.log(`  description: "..."   ${DIM}(shown in status output)${RESET}`);
+      console.log(`\nExamples:`);
+      console.log(`  squad loop                          ${DIM}# run loop.md${RESET}`);
+      console.log(`  squad loop --init                   ${DIM}# generate boilerplate${RESET}`);
+      console.log(`  squad loop --file ops/loop.md       ${DIM}# custom loop file${RESET}`);
+      console.log(`  squad loop --monitor-email          ${DIM}# with email monitoring${RESET}`);
+      return;
     }
-    console.log(`   Interval: ${intervalMinutes} minutes`);
+
+    const { runLoop, generateLoopFile } = await import('./cli/commands/loop.js');
+
+    // --init: scaffold a boilerplate loop.md
+    if (args.includes('--init')) {
+      const fileIdx = args.indexOf('--file');
+      const filePath = (fileIdx !== -1 && args[fileIdx + 1]) ? args[fileIdx + 1]! : 'loop.md';
+      const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
+      const storage = new FSStorageProvider();
+      const pathMod = await import('node:path');
+      const absPath = pathMod.default.resolve(getSquadStartDir(), filePath);
+      if (storage.existsSync(absPath)) {
+        console.log(`⚠️  ${filePath} already exists. Remove it first to regenerate.`);
+      } else {
+        storage.writeSync(absPath, generateLoopFile());
+        console.log(`✅ Created ${filePath} — open it and set \`configured: true\` to activate.`);
+      }
+      return;
+    }
+
+    // Parse flags
+    const fileIdx = args.indexOf('--file');
+    const filePath = (fileIdx !== -1 && args[fileIdx + 1]) ? args[fileIdx + 1] : undefined;
+
+    const intervalIdx = args.indexOf('--interval');
+    const interval = (intervalIdx !== -1 && args[intervalIdx + 1])
+      ? parseInt(args[intervalIdx + 1]!, 10)
+      : undefined;
+
+    const timeoutIdx = args.indexOf('--timeout');
+    const timeout = (timeoutIdx !== -1 && args[timeoutIdx + 1])
+      ? parseInt(args[timeoutIdx + 1]!, 10)
+      : undefined;
+
+    const copilotFlagsIdx = args.indexOf('--copilot-flags');
+    const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
+      ? args[copilotFlagsIdx + 1]
+      : undefined;
+
+    const agentCmdIdx = args.indexOf('--agent-cmd');
+    const agentCmd = (agentCmdIdx !== -1 && args[agentCmdIdx + 1])
+      ? args[agentCmdIdx + 1]
+      : undefined;
+
+    // Capability flags
+    const { createDefaultRegistry: createReg } = await import('./cli/commands/watch/index.js');
+    const reg = createReg();
+    const capabilities: Record<string, boolean | Record<string, unknown>> = {};
+    for (const cap of reg.all()) {
+      if (args.includes(`--${cap.name}`)) capabilities[cap.name] = true;
+      if (args.includes(`--no-${cap.name}`)) capabilities[cap.name] = false;
+    }
+
+    await runLoop(getSquadStartDir(), {
+      filePath,
+      interval,
+      timeout,
+      copilotFlags,
+      agentCmd,
+      capabilities,
+    });
     return;
   }
 
@@ -363,7 +640,7 @@ async function main(): Promise<void> {
     const { runExport } = await import('./cli/commands/export.js');
     const outIdx = args.indexOf('--out');
     const outPath = (outIdx !== -1 && args[outIdx + 1]) ? args[outIdx + 1] : undefined;
-    await runExport(process.cwd(), outPath);
+    await runExport(getSquadStartDir(), outPath);
     return;
   }
 
@@ -374,13 +651,13 @@ async function main(): Promise<void> {
       fatal('Usage: squad import <file> [--force]');
     }
     const hasForce = args.includes('--force');
-    await runImport(process.cwd(), importFile, hasForce);
+    await runImport(getSquadStartDir(), importFile, hasForce);
     return;
   }
 
   if (cmd === 'plugin') {
     const { runPlugin } = await import('./cli/commands/plugin.js');
-    await runPlugin(process.cwd(), args.slice(1));
+    await runPlugin(getSquadStartDir(), args.slice(1));
     return;
   }
 
@@ -388,7 +665,7 @@ async function main(): Promise<void> {
     const { runCopilot } = await import('./cli/commands/copilot.js');
     const isOff = args.includes('--off');
     const autoAssign = args.includes('--auto-assign');
-    await runCopilot(process.cwd(), { off: isOff, autoAssign });
+    await runCopilot(getSquadStartDir(), { off: isOff, autoAssign });
     return;
   }
 
@@ -406,10 +683,11 @@ async function main(): Promise<void> {
 
   if (cmd === 'status') {
     const sdk = await lazySquadSdk();
-    const repoSquad = sdk.resolveSquad(process.cwd());
+    const repoSquad = sdk.resolveSquad(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
-    const globalExists = fs.existsSync(globalSquadDir);
+    const storage = new FSStorageProvider();
+    const globalExists = await storage.exists(globalSquadDir);
 
     console.log(`\n${BOLD}Squad Status${RESET}\n`);
 
@@ -443,12 +721,13 @@ async function main(): Promise<void> {
 
   if (cmd === 'cost') {
     const sdk = await lazySquadSdk();
-    const localSquad = sdk.resolveSquad(process.cwd());
+    const localSquad = sdk.resolveSquad(getSquadStartDir());
     const globalPath = sdk.resolveGlobalSquadPath();
     const globalSquadDir = path.join(globalPath, '.squad');
+    const storage = new FSStorageProvider();
     const teamRoot = localSquad
       ? path.resolve(localSquad, '..')
-      : (fs.existsSync(globalSquadDir) ? globalPath : null);
+      : (await storage.exists(globalSquadDir) ? globalPath : null);
 
     if (!teamRoot) {
       fatal('No squad found. Run "squad init" first.');
@@ -463,17 +742,19 @@ async function main(): Promise<void> {
     const hasCheck = args.includes('--check');
     const hasDryRun = args.includes('--dry-run');
     const hasWatch = args.includes('--watch');
-    await runBuild(process.cwd(), { check: hasCheck, dryRun: hasDryRun, watch: hasWatch });
+    await runBuild(getSquadStartDir(), { check: hasCheck, dryRun: hasDryRun, watch: hasWatch });
     return;
   }
 
   if (cmd === 'subsquads' || cmd === 'workstreams' || cmd === 'streams') {
     const { runSubSquads } = await import('./cli/commands/streams.js');
-    await runSubSquads(process.cwd(), args.slice(1));
+    await runSubSquads(getSquadStartDir(), args.slice(1));
     return;
   }
 
   if (cmd === 'start') {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad start" is deprecated and will be removed in a future release.`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
     const { runStart } = await import('./cli/commands/start.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');
@@ -483,17 +764,18 @@ async function main(): Promise<void> {
     const customCmd = (cmdIdx !== -1 && args[cmdIdx + 1]) ? args[cmdIdx + 1] : undefined;
     const squadFlags = ['start', '--tunnel', '--port', port.toString(), '--command', customCmd || ''].filter(Boolean);
     const copilotArgs = args.slice(1).filter(a => !squadFlags.includes(a));
-    await runStart(process.cwd(), { tunnel: hasTunnel, port, copilotArgs, command: customCmd });
+    await runStart(getSquadStartDir(), { tunnel: hasTunnel, port, copilotArgs, command: customCmd });
     return;
   }
 
   if (cmd === 'nap') {
     const { runNap, formatNapReport } = await import('./cli/core/nap.js');
     const sdk = await lazySquadSdk();
+    const startDir = getSquadStartDir();
     // resolveSquad() returns the .squad/ directory itself — use it directly (#207)
-    const squadDir = sdk.resolveSquad(process.cwd());
+    const squadDir = sdk.resolveSquad(startDir);
     if (!squadDir) {
-      fatal('No squad found. Run "squad init" first.');
+      fatal(`No squad found (searched from ${startDir}). Run "squad init" first, or use --team-root to specify the project directory.`);
     }
     const deep = args.includes('--deep');
     const dryRun = args.includes('--dry-run');
@@ -510,13 +792,13 @@ async function main(): Promise<void> {
 
   if (cmd === 'consult') {
     const { runConsult } = await import('./cli/commands/consult.js');
-    await runConsult(process.cwd(), args.slice(1));
+    await runConsult(getSquadStartDir(), args.slice(1));
     return;
   }
 
   if (cmd === 'extract') {
     const { runExtract } = await import('./cli/commands/extract.js');
-    await runExtract(process.cwd(), args.slice(1));
+    await runExtract(getSquadStartDir(), args.slice(1));
     return;
   }
 
@@ -535,18 +817,34 @@ async function main(): Promise<void> {
     if (!teamPath) {
       fatal('Usage: squad link <team-repo-path>');
     }
-    runLink(process.cwd(), teamPath);
+    runLink(getSquadStartDir(), teamPath);
+    return;
+  }
+
+  if (cmd === 'externalize') {
+    const { runExternalize } = await import('./cli/commands/externalize.js');
+    const rawKey = args.includes('--key') ? args[args.indexOf('--key') + 1] : undefined;
+    const projectKey = rawKey ? rawKey.replace(/[\/\\\.]/g, '_') : undefined;
+    runExternalize(process.cwd(), projectKey);
+    return;
+  }
+
+  if (cmd === 'internalize') {
+    const { runInternalize } = await import('./cli/commands/externalize.js');
+    runInternalize(process.cwd());
     return;
   }
 
   if (cmd === 'rc' || cmd === 'remote-control') {
+    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad rc" is deprecated and will be removed in a future release.`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
     const { runRC } = await import('./cli/commands/rc.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');
     const port = (portIdx !== -1 && args[portIdx + 1]) ? parseInt(args[portIdx + 1]!, 10) : 0;
     const pathIdx = args.indexOf('--path');
     const rcPath = (pathIdx !== -1 && args[pathIdx + 1]) ? args[pathIdx + 1] : undefined;
-    await runRC(rcPath || process.cwd(), { tunnel: hasTunnel, port });
+    await runRC(rcPath || getSquadStartDir(), { tunnel: hasTunnel, port });
     return;
   }
 
@@ -586,20 +884,20 @@ async function main(): Promise<void> {
   if (cmd === 'schedule') {
     const { runSchedule } = await import('./cli/commands/schedule.js');
     const subcommand = args[1] || 'list';
-    await runSchedule(process.cwd(), subcommand, args.slice(2));
+    await runSchedule(getSquadStartDir(), subcommand, args.slice(2));
     return;
   }
 
   if (cmd === 'personal') {
     const { runPersonal } = await import('./cli/commands/personal.js');
     const subcommand = args[1] || 'list';
-    await runPersonal(process.cwd(), subcommand, args.slice(2));
+    await runPersonal(getSquadStartDir(), subcommand, args.slice(2));
     return;
   }
 
   if (cmd === 'cast') {
     const { runCast } = await import('./cli/commands/cast.js');
-    await runCast(process.cwd());
+    await runCast(getSquadStartDir());
     return;
   }
 
@@ -623,13 +921,13 @@ async function main(): Promise<void> {
 
   if (cmd === 'economy') {
     const { runEconomy } = await import('./cli/commands/economy.js');
-    await runEconomy(process.cwd(), args.slice(1));
+    await runEconomy(getSquadStartDir(), args.slice(1));
     return;
   }
 
   if (cmd === 'config') {
     const { runConfig } = await import('./cli/commands/config.js');
-    await runConfig(process.cwd(), args.slice(1));
+    await runConfig(getSquadStartDir(), args.slice(1));
     return;
   }
 

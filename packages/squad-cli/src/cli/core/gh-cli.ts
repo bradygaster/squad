@@ -153,12 +153,13 @@ export async function ghRateLimitCheck(): Promise<GhRateLimit> {
 }
 
 /**
- * Detect if an error is a GitHub 429 rate limit error.
+ * Detect if an error is a GitHub rate-limit error (429 or explicit rate-limit messages).
+ * Does NOT match bare 403 — that indicates an auth/permissions error, not a transient rate limit.
  */
 export function isRateLimitError(err: unknown): boolean {
   if (err instanceof Error) {
     const msg = err.message.toLowerCase();
-    return msg.includes('rate limit') || msg.includes('secondary rate') || msg.includes('403');
+    return msg.includes('rate limit') || msg.includes('secondary rate') || msg.includes('429');
   }
   return false;
 }

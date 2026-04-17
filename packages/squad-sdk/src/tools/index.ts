@@ -10,11 +10,13 @@
  *   - squad_skill:  Read/write agent skills
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { SquadTool, SquadToolResult } from '../adapter/types.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { SquadState } from '../state/squad-state.js';
 
 const tracer = trace.getTracer('squad-sdk');
 
@@ -68,6 +70,13 @@ export interface DecisionRecord {
   /** Related agents or PRDs */
   references?: string[];
 }
+
+/** Map tool-facing section names to valid HistorySection values. */
+const SECTION_MAP: Record<string, 'Learnings' | 'Decisions' | 'Context'> = {
+  learnings: 'Learnings',
+  updates: 'Decisions',
+  sessions: 'Context',
+};
 
 export interface MemoryEntry {
   /** Agent name */
@@ -173,10 +182,14 @@ export class ToolRegistry {
   private tools: Map<string, SquadTool<any>> = new Map();
   private squadRoot: string;
   private sessionPoolGetter?: () => any;
+  private storage: StorageProvider;
+  private state?: SquadState;
 
-  constructor(squadRoot = '.squad', sessionPoolGetter?: () => any) {
+  constructor(squadRoot = '.squad', sessionPoolGetter?: () => any, storage: StorageProvider = new FSStorageProvider(), state?: SquadState) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
+    this.storage = storage;
+    this.state = state;
     this.registerSquadTools();
   }
 
@@ -268,7 +281,6 @@ export class ToolRegistry {
         }
         try {
           const inboxDir = path.join(this.squadRoot, 'decisions', 'inbox');
-          fs.mkdirSync(inboxDir, { recursive: true });
 
           const decisionId = randomUUID();
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -283,7 +295,7 @@ export class ToolRegistry {
             `### ${timestamp}: ${args.summary}`,
             '',
             `**By:** ${args.author}`,
-            `**What:** ${args.body}`,
+            `**What:** ${args.summary}`,
             args.references && args.references.length > 0
               ? `**References:** ${args.references.join(', ')}`
               : '',
@@ -292,7 +304,7 @@ export class ToolRegistry {
             '',
           ].filter(Boolean).join('\n');
 
-          fs.writeFileSync(filename, content, 'utf-8');
+          this.storage.writeSync(filename, content);
 
           return {
             textResultForLlm: `Decision written: ${args.author}-${slug}.md (ID: ${decisionId})`,
@@ -337,9 +349,36 @@ export class ToolRegistry {
           return { textResultForLlm: 'Invalid agent name: must contain only letters, numbers, hyphens, and underscores', resultType: 'failure', error: 'Invalid agent name' };
         }
         try {
+          // Use SquadState agents collection when available
+          if (this.state) {
+            const handle = this.state.agents.get(args.agent);
+            // Verify the agent exists by attempting to read charter
+            try {
+              await handle.charter();
+            } catch {
+              return {
+                textResultForLlm: `Agent history file not found: agents/${args.agent}/history.md`,
+                resultType: 'failure',
+                error: 'History file does not exist',
+              };
+            }
+            const sectionName = SECTION_MAP[args.section] ?? 'Learnings';
+            const timestamp = new Date().toISOString().slice(0, 10);
+            await handle.appendHistory(
+              sectionName,
+              { section: sectionName, content: args.content, timestamp },
+            );
+            return {
+              textResultForLlm: `Appended to ${args.agent} history (${args.section})`,
+              resultType: 'success',
+              toolTelemetry: { agent: args.agent, section: args.section },
+            };
+          }
+
+          // Fallback: raw StorageProvider
           const historyFile = path.join(this.squadRoot, 'agents', args.agent, 'history.md');
           
-          if (!fs.existsSync(historyFile)) {
+          if (!this.storage.existsSync(historyFile)) {
             return {
               textResultForLlm: `Agent history file not found: agents/${args.agent}/history.md`,
               resultType: 'failure',
@@ -347,11 +386,18 @@ export class ToolRegistry {
             };
           }
 
-          const sectionHeader = `## ${args.section.charAt(0).toUpperCase() + args.section.slice(1)}`;
-          const timestamp = new Date().toISOString();
+          const sectionHeader = `## ${SECTION_MAP[args.section] ?? 'Learnings'}`;
+          const timestamp = new Date().toISOString().slice(0, 10);
           const entry = `\n### ${timestamp}\n${args.content}\n`;
 
-          let content = fs.readFileSync(historyFile, 'utf-8');
+          let content = this.storage.readSync(historyFile);
+          if (content === undefined) {
+            return {
+              textResultForLlm: `Agent history file not readable: agents/${args.agent}/history.md`,
+              resultType: 'failure',
+              error: 'History file could not be read',
+            };
+          }
           
           // Find section and append
           const sectionIndex = content.indexOf(sectionHeader);
@@ -365,7 +411,7 @@ export class ToolRegistry {
             content += `\n${sectionHeader}\n${entry}`;
           }
 
-          fs.writeFileSync(historyFile, content, 'utf-8');
+          this.storage.writeSync(historyFile, content);
 
           return {
             textResultForLlm: `Appended to ${args.agent} history (${args.section})`,
@@ -525,13 +571,14 @@ export class ToolRegistry {
           const copilotSkillDir = path.join(projectRoot, '.copilot', 'skills', args.skillName);
           const skillDir = args.operation === 'write'
             ? copilotSkillDir
-            : fs.existsSync(path.join(copilotSkillDir, 'SKILL.md'))
+            : this.storage.existsSync(path.join(copilotSkillDir, 'SKILL.md'))
               ? copilotSkillDir
               : legacySkillDir;
           const skillFile = path.join(skillDir, 'SKILL.md');
 
           if (args.operation === 'read') {
-            if (!fs.existsSync(skillFile)) {
+            const content = this.storage.readSync(skillFile);
+            if (content === undefined) {
               return {
                 textResultForLlm: `Skill not found: ${args.skillName}`,
                 resultType: 'failure',
@@ -539,7 +586,6 @@ export class ToolRegistry {
               };
             }
 
-            const content = fs.readFileSync(skillFile, 'utf-8');
             return {
               textResultForLlm: `Skill: ${args.skillName}\n\n${content}`,
               resultType: 'success',
@@ -555,8 +601,6 @@ export class ToolRegistry {
               };
             }
 
-            fs.mkdirSync(skillDir, { recursive: true });
-
             const skillContent = [
               `# ${args.skillName}`,
               '',
@@ -566,7 +610,7 @@ export class ToolRegistry {
               args.content,
             ].join('\n');
 
-            fs.writeFileSync(skillFile, skillContent, 'utf-8');
+            this.storage.writeSync(skillFile, skillContent);
 
             return {
               textResultForLlm: `Skill written: ${args.skillName} (.copilot/skills/${args.skillName}/SKILL.md)`,

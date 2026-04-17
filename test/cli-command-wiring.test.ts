@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
 const COMMANDS_DIR = join(process.cwd(), 'packages', 'squad-cli', 'src', 'cli', 'commands');
@@ -21,6 +21,10 @@ const KNOWN_UNWIRED = new Set<string>([]);
 describe('CLI command wiring regression (issues #224, #236, #237)', () => {
   const commandFiles = readdirSync(COMMANDS_DIR)
     .filter(f => f.endsWith('.ts') && !f.endsWith('.d.ts') && !f.endsWith('.test.ts'));
+
+  // Also discover subdirectory commands (e.g., watch/index.ts)
+  const commandDirs = readdirSync(COMMANDS_DIR)
+    .filter(f => statSync(join(COMMANDS_DIR, f)).isDirectory() && existsSync(join(COMMANDS_DIR, f, 'index.ts')));
 
   const entrySource = readFileSync(CLI_ENTRY, 'utf-8');
 
@@ -53,6 +57,20 @@ describe('CLI command wiring regression (issues #224, #236, #237)', () => {
     });
   }
 
+  // Check subdirectory commands (e.g., watch/index.ts) are wired too
+  for (const dir of commandDirs) {
+    const stem = `${dir}/index`;
+    it(`commands/${stem}.ts is imported in cli-entry.ts`, () => {
+      const importPattern = new RegExp(
+        `['"]\\./cli/commands/${dir}/index\\.js['"]`,
+      );
+      expect(
+        entrySource,
+        `Command directory "${dir}/" has index.ts but is never imported in cli-entry.ts.`,
+      ).toMatch(importPattern);
+    });
+  }
+
   it('all command imports in cli-entry.ts point to existing files', () => {
     const importRegex = /import\(['"]\.\/cli\/commands\/([^'"]+)\.js['"]\)/g;
     let match;
@@ -64,11 +82,22 @@ describe('CLI command wiring regression (issues #224, #236, #237)', () => {
 
     expect(importedModules.length).toBeGreaterThan(0);
 
-    const existingFiles = new Set(commandFiles.map(f => basename(f, '.ts')));
+    const existingFiles = new Set([
+      ...commandFiles.map(f => basename(f, '.ts')),
+      ...commandDirs.map(d => `${d}/index`),
+      // Also include non-index .ts files inside subdirectories (e.g., watch/health.ts)
+      ...commandDirs.flatMap(d => {
+        try {
+          return readdirSync(join(COMMANDS_DIR, d))
+            .filter(f => f.endsWith('.ts') && !f.endsWith('.d.ts') && !f.endsWith('.test.ts') && f !== 'index.ts')
+            .map(f => `${d}/${basename(f, '.ts')}`);
+        } catch { return []; }
+      }),
+    ]);
     for (const mod of importedModules) {
       expect(
         existingFiles.has(mod),
-        `cli-entry.ts imports "./cli/commands/${mod}.js" but no "${mod}.ts" file exists in commands/`,
+        `cli-entry.ts imports "./cli/commands/${mod}.js" but no matching source file exists in commands/`,
       ).toBe(true);
     }
   });

@@ -8,10 +8,12 @@
  * @module platform/comms-file-log
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { safeTimestamp } from '../utils/safe-timestamp.js';
 import type { CommunicationAdapter, CommunicationChannel, CommunicationReply } from './types.js';
+
+const storage = new FSStorageProvider();
 
 export class FileLogCommunicationAdapter implements CommunicationAdapter {
   readonly channel: CommunicationChannel = 'file-log';
@@ -19,8 +21,8 @@ export class FileLogCommunicationAdapter implements CommunicationAdapter {
 
   constructor(private readonly squadRoot: string) {
     this.commsDir = join(squadRoot, '.squad', 'comms');
-    if (!existsSync(this.commsDir)) {
-      mkdirSync(this.commsDir, { recursive: true });
+    if (!storage.existsSync(this.commsDir)) {
+      storage.mkdirSync(this.commsDir, { recursive: true });
     }
   }
 
@@ -52,7 +54,7 @@ export class FileLogCommunicationAdapter implements CommunicationAdapter {
       '',
     ].join('\n');
 
-    writeFileSync(filepath, content, 'utf-8');
+    storage.writeSync(filepath, content);
 
     return { id: filename.replace(/\.md$/, ''), url: undefined };
   }
@@ -62,9 +64,9 @@ export class FileLogCommunicationAdapter implements CommunicationAdapter {
     since: Date;
   }): Promise<CommunicationReply[]> {
     const filepath = join(this.commsDir, `${options.threadId}.md`);
-    if (!existsSync(filepath)) return [];
+    if (!storage.existsSync(filepath)) return [];
 
-    const content = readFileSync(filepath, 'utf-8');
+    const content = storage.readSync(filepath) ?? '';
     const replyMarker = '<!-- Replies: add your response below this line -->';
     const markerIdx = content.indexOf(replyMarker);
     if (markerIdx === -1) return [];

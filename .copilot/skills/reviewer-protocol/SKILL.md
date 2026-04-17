@@ -68,6 +68,12 @@ When an artifact is **rejected** by a Reviewer:
 4. Hockney: "Verbal, then"
 5. Coordinator spawns Verbal
 
+## Related Review Skills
+
+For domain-specific review checklists, see:
+- **Architectural Review:** `.copilot/skills/architectural-review/SKILL.md` — module boundaries, dependency direction, export surface, sweeping refactor safety
+- **Security Review:** `.copilot/skills/security-review/SKILL.md` — credentials, injection, workflow permissions, supply chain
+
 ## Anti-Patterns
 
 - ❌ Allowing the original author to self-revise after rejection

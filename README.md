@@ -2,7 +2,7 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-**AI agent teams for any project.** One command. A team that grows with your code.
+**Human-led AI agent teams for any project.** One command. A team that helps you move faster with your code.
 
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
 [![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
@@ -13,9 +13,13 @@
 
 ## What is Squad?
 
-Squad gives you an AI development team through GitHub Copilot. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and get better the more you use them.
+Squad gives you a human-directed AI development team through GitHub Copilot. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and help you move faster without giving up oversight.
 
-It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned.
+Squad is a productivity tool for humans, not a replacement for engineers, reviewers, or decision-makers. People stay accountable for priorities, approvals, and final changes; Squad helps with coordination, repetition, and parallel execution.
+
+It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned so the work stays inspectable.
+
+> **Responsible AI stance** — Squad is built to amplify a human operator with GitHub Copilot, not to remove humans from the loop. Use it to delegate faster, review better, and keep governance close to the code.
 
 ---
 
@@ -92,18 +96,21 @@ Use `--force` to re-apply updates even when your installed version already match
 
 ---
 
-## All Commands (15 commands)
+## All Commands (17 commands)
 
 | Command | What it does |
 |---------|-------------|
 | `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `hire`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
+| `squad upgrade --self` | Update the Squad CLI package itself; add `--insider` for prerelease builds |
 | `squad status` | Show which squad is active and why |
-| `squad triage` | Watch issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10) |
+| `squad triage` | **Watch mode** — poll for issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10); with `--execute` dispatch Copilot agents; use `--agent-cmd`, `--copilot-flags`, `--auth-user` to customize agent execution; `--health` shows watch status; `--log-file` for diagnostics |
 | `squad copilot` | Add/remove the Copilot coding agent (@copilot); use `--off` to remove, `--auto-assign` to enable auto-assignment |
 | `squad doctor` | Check your setup and diagnose issues (alias: `heartbeat`) |
 | `squad link <team-repo-path>` | Connect to a remote team |
-| `squad shell` | Launch interactive shell explicitly |
+| `squad externalize` | Move `.squad/` state outside the working tree; survives branch switches; use `--key <name>` for custom project key |
+| `squad internalize` | Move externalized state back into `.squad/` |
+| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. |
 | `squad export` | Export squad to a portable JSON snapshot |
 | `squad import <file>` | Import squad from an export file |
 | `squad plugin marketplace add\|remove\|list\|browse` | Manage plugin marketplaces |
@@ -114,7 +121,167 @@ Use `--force` to re-apply updates even when your installed version already match
 
 ---
 
+## Watch Mode — Ralph's Automated Polling
+
+Ralph continuously polls for work and dispatches agents to handle it. Watch mode helps a human team stay responsive — Ralph automates triage, execution handoffs, and monitoring, then escalates back to people when judgment or approval is needed.
+
+### Quick Start
+
+```bash
+# Monitor for issues (triage mode — no execution)
+npx @bradygaster/squad-cli watch
+
+# Monitor and auto-execute against actionable issues
+npx @bradygaster/squad-cli watch --execute --interval 5
+
+# With custom agent runner and copilot flags
+npx @bradygaster/squad-cli watch --execute \
+  --agent-cmd "agency copilot" \
+  --copilot-flags "--yolo --autopilot --mcp mail --agent squad" \
+  --auth-user myaccount
+
+# Run watch with diagnostics
+npx @bradygaster/squad-cli watch --execute --log-file ./watch.log --verbose
+
+# Check health of running watch process
+npx @bradygaster/squad-cli watch --health
+```
+
+### Key Flags
+
+| Flag | Description |
+|------|-------------|
+| `--execute` | Enable agent execution (spawn Copilot sessions for actionable issues) |
+| `--interval N` | Poll every N minutes (default: 10) |
+| `--agent-cmd` | Custom agent command (default: `gh copilot`) |
+| `--copilot-flags` | Flags passed to the agent runner (e.g., `--yolo --autopilot`) |
+| `--auth-user` | GitHub/Azure DevOps account to use for agent auth |
+| `--log-file` | Mirror output to file for later review and diagnostics |
+| `--verbose` | Show extra diagnostic output (auth probes, callbacks, pulls) |
+| `--health` | Show status of running watch: PID, uptime, auth readiness, capabilities |
+| `--overnight-start HH:MM` | Pause watch during off-hours (e.g., `--overnight-start 18:00`) |
+| `--overnight-end HH:MM` | Resume watch at this time (e.g., `--overnight-end 08:00`) |
+| `--notify-level` | Control output verbosity (`all` / `important` / `none`, default: `important`) |
+| `--state-backend` | Persistence strategy (`git-notes` or `orphan-branch`, default: in-memory) |
+
+### How Watch Decides What to Execute
+
+Ralph uses an **agent-delegated selection pattern**:
+
+1. Ralph scans for triage-eligible issues (unassigned, labeled, etc.)
+2. Ralph builds a context snapshot: issue list, squad state, recent decisions
+3. Ralph writes this context to a **temp file** using the `-p <path>` flag
+4. Ralph invokes the agent with that file: `gh copilot -p context.md`
+5. The agent **decides which issue to work on** and **how**
+6. Ralph monitors execution, logs results, updates issue status
+
+This design keeps the polling loop lean while letting agents handle issue selection automatically under the team's rules, review gates, and escalation policy.
+
+### Issue Selection & Escalation
+
+Ralph provides a rich prompt scaffold to the agent:
+
+```
+## Work Context
+
+### Available Issues (prioritized)
+- #42 Urgent bug in auth (P0)
+- #89 Performance review pending (P1)
+- #123 Docs update (P2)
+
+### Why These Issues Matter
+...context from decision archive...
+
+### Success Criteria
+- Tests pass
+- Changes match team conventions
+- PR linked to issue
+
+### When to Escalate
+If blocker detected → pause, log, notify humans
+```
+
+Agents see **full context** and can decide intelligently rather than blindly executing random work.
+
+### Error Recovery (4-Tier Escalation)
+
+Watch includes a tiered remediation strategy:
+
+1. **Tier 1 — Circuit Breaker Reset**: Clear and retry
+2. **Tier 2 — Auth Reprobe**: Re-verify credentials
+3. **Tier 3 — Git Pull**: Update local state
+4. **Tier 4 — Pause 30m**: Back off for human intervention
+
+This prevents watch from spamming the same failure endlessly.
+
+### State Backends
+
+Watch can persist its state in different ways:
+
+```bash
+# Default: in-memory (loses state on restart)
+squad watch --execute
+
+# Persist to git-notes (survives restarts, no new branches)
+squad watch --execute --state-backend git-notes
+
+# Persist to orphan branch (isolated history, easy to prune)
+squad watch --execute --state-backend orphan-branch
+```
+
+### Graceful Shutdown
+
+To stop a running watch process gracefully:
+
+```bash
+# Create sentinel file
+touch .squad/ralph-stop
+
+# Watch will finish current round and exit cleanly
+# Logs final state, cleans scratch dirs
+```
+
+### Cleanup
+
+Watch automatically prunes stale artifacts:
+- Scratch directories older than 7 days
+- Log files older than 30 days
+- Orphaned orchestration state
+
+### Monitoring Watch
+
+Check on a running watch:
+
+```bash
+squad watch --health
+```
+
+Output example:
+```
+Ralph Watch Status
+
+PID: 12345
+Uptime: 2h 15m
+Last Poll: 2 minutes ago
+
+Auth: Ready (account: myaccount@github.com)
+Capabilities: Issue triage, PR review, ADO sync
+
+Next Poll: 14:35 (in 3 minutes)
+Round: 42 / 1200
+```
+
+---
+
 ## Interactive Shell
+
+> ⚠️ **Deprecated:** The interactive shell (`squad` with no arguments) has been deprecated. For the best Squad experience, use the [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) instead.
+>
+> ```bash
+> copilot --agent squad
+> ```
+>
+> See [Choose your interface](docs/src/content/docs/get-started/choose-your-interface.md) for current options.
 
 Tired of typing `squad` followed by a command every time? Enter the interactive shell.
 
@@ -176,9 +343,9 @@ Eight working examples from beginner to advanced — casting, governance, stream
 
 ---
 
-## Agents Work in Parallel— You Catch Up When You're Ready
+## Agents Work in Parallel — You Stay in Control
 
-Squad doesn't work on a human schedule. When you give a task, the coordinator launches every agent that can usefully start — simultaneously.
+Squad helps one human coordinate more work at once. When you give a task, the coordinator launches every agent that can usefully start — simultaneously — while you keep priorities, review, and final decisions.
 
 ```
 You: "Team, build the login page"
@@ -190,7 +357,7 @@ You: "Team, build the login page"
   📋 Scribe — logging everything...             ⎦
 ```
 
-When agents finish, the coordinator immediately chains follow-up work. If you step away, a breadcrumb trail is waiting when you get back:
+When agents finish, the coordinator records follow-up work and leaves a breadcrumb trail so you can review what happened with full context:
 
 - **`decisions.md`** — every decision any agent made
 - **`orchestration-log/`** — what was spawned, why, and what happened

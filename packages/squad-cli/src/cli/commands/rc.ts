@@ -6,9 +6,12 @@
  */
 
 import path from 'node:path';
-import fs from 'node:fs';
+// createReadStream retained — streaming not in StorageProvider scope
+import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { RemoteBridge } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, RemoteBridge } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import type { RemoteBridgeConfig } from '@bradygaster/squad-sdk';
 import {
   isDevtunnelAvailable,
@@ -36,9 +39,9 @@ export async function runRC(cwd: string, options: RCOptions): Promise<void> {
   const machine = getMachineId();
 
   // Resolve squad directory
-  const squadDir = fs.existsSync(path.join(cwd, '.squad'))
+  const squadDir = storage.existsSync(path.join(cwd, '.squad'))
     ? path.join(cwd, '.squad')
-    : fs.existsSync(path.join(cwd, '.ai-team'))
+    : storage.existsSync(path.join(cwd, '.ai-team'))
       ? path.join(cwd, '.ai-team')
       : '';
 
@@ -52,7 +55,7 @@ export async function runRC(cwd: string, options: RCOptions): Promise<void> {
   const agents: Array<{name: string; role: string}> = [];
   if (squadDir) {
     try {
-      const teamMd = fs.readFileSync(path.join(squadDir, 'team.md'), 'utf-8');
+      const teamMd = storage.readSync(path.join(squadDir, 'team.md')) ?? '';
       const memberLines = teamMd.split('\n').filter(l => l.startsWith('|') && l.includes('Active'));
       for (const line of memberLines) {
         const cols = line.split('|').map(c => c.trim()).filter(Boolean);
@@ -134,11 +137,11 @@ export async function runRC(cwd: string, options: RCOptions): Promise<void> {
 
     // #2: EISDIR guard — check if path is a directory before createReadStream
     try {
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) {
+      const stat = storage.statSync(filePath);
+      if (stat?.isDirectory) {
         filePath = path.join(filePath, 'index.html');
-        if (!fs.existsSync(filePath)) { res.writeHead(404); res.end(); return; }
-      }
+        if (!storage.existsSync(filePath)) { res.writeHead(404); res.end(); return; }
+      } else if (!stat) { res.writeHead(404); res.end(); return; }
     } catch { res.writeHead(404); res.end(); return; }
 
     const ext = path.extname(filePath);
@@ -160,7 +163,7 @@ export async function runRC(cwd: string, options: RCOptions): Promise<void> {
       'Cache-Control': 'no-store',
     });
     // #8: Handle createReadStream errors
-    const stream = fs.createReadStream(filePath);
+    const stream = createReadStream(filePath);
     stream.on('error', () => { if (!res.headersSent) { res.writeHead(500); } res.end(); });
     stream.pipe(res);
   });
@@ -190,7 +193,7 @@ export async function runRC(cwd: string, options: RCOptions): Promise<void> {
       'C:', 'ProgramData', 'global-npm', 'node_modules', '@github', 'copilot',
       'node_modules', '@github', 'copilot-win32-x64', 'copilot.exe'
     );
-    if (fs.existsSync(winPath)) {
+    if (storage.existsSync(winPath)) {
       copilotCmd = winPath;
     }
   }

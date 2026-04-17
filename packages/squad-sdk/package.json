@@ -185,6 +185,34 @@
     "./config/models": {
       "types": "./dist/config/models.d.ts",
       "import": "./dist/config/models.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "import": "./dist/storage/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js"
+    },
+    "./remote": {
+      "types": "./dist/remote/index.d.ts",
+      "import": "./dist/remote/index.js"
+    },
+    "./roles": {
+      "types": "./dist/roles/index.d.ts",
+      "import": "./dist/roles/index.js"
+    },
+    "./state": {
+      "types": "./dist/state/index.d.ts",
+      "import": "./dist/state/index.js"
+    },
+    "./streams": {
+      "types": "./dist/streams/index.d.ts",
+      "import": "./dist/streams/index.js"
+    },
+    "./upstream": {
+      "types": "./dist/upstream/index.d.ts",
+      "import": "./dist/upstream/index.js"
     }
   },
   "files": [
@@ -213,10 +241,12 @@
     "@opentelemetry/sdk-trace-base": "^1.30.0",
     "@opentelemetry/sdk-trace-node": "^1.30.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
+    "sql.js": "^1.14.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/sql.js": "^1.4.10",
     "@types/ws": "^8.5.13",
     "typedoc": "~0.28.18",
     "typedoc-plugin-markdown": "~4.11.0",

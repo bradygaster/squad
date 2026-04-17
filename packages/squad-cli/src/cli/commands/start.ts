@@ -10,9 +10,12 @@
  */
 
 import path from 'node:path';
-import fs from 'node:fs';
+// createReadStream retained — streaming not in StorageProvider scope
+import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { RemoteBridge } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, RemoteBridge } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import type { RemoteBridgeConfig } from '@bradygaster/squad-sdk';
 import {
   isDevtunnelAvailable,
@@ -27,6 +30,8 @@ const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
+const MISSING_MODULE_RE =
+  /\b(?:MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND)\b|Cannot find module|Cannot find package/i;
 
 export interface StartOptions {
   tunnel: boolean;
@@ -35,16 +40,44 @@ export interface StartOptions {
   command?: string;
 }
 
+async function checkNodePty(): Promise<any> {
+  try {
+    return await import('node-pty');
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    if (MISSING_MODULE_RE.test(detail)) {
+      throw new Error('node-pty not available. Install it for PTY support:');
+    }
+    throw new Error('node-pty not available. Install it for PTY support:', {
+      cause: detail,
+    });
+  }
+}
+
 export async function runStart(cwd: string, options: StartOptions): Promise<void> {
+  // ─── Verify node-pty availability FIRST (before any side effects) ───
+  let nodePty: any;
+  try {
+    nodePty = await checkNodePty();
+  } catch (err) {
+    const detail = err instanceof Error && typeof err.cause === 'string' ? err.cause : undefined;
+    console.error(`${YELLOW}\u2717${RESET} ${(err as Error).message}`);
+    console.error(`  ${DIM}npm install -g node-pty${RESET}`);
+    if (detail) {
+      console.error(`\n${DIM}Error: ${detail}${RESET}`);
+    }
+    process.exit(1);
+  }
+
   const { repo, branch } = getGitInfo(cwd);
   const machine = getMachineId();
-  const squadDir = fs.existsSync(path.join(cwd, '.squad'))
+  const squadDir = storage.existsSync(path.join(cwd, '.squad'))
     ? path.join(cwd, '.squad')
-    : fs.existsSync(path.join(cwd, '.ai-team'))
+    : storage.existsSync(path.join(cwd, '.ai-team'))
       ? path.join(cwd, '.ai-team')
       : '';
 
-  // ─── Setup remote bridge FIRST (before PTY takes over terminal) ───
+  // ─── Setup remote bridge (after verifying PTY is available) ───
   let bridge: RemoteBridge | null = null;
   let tunnelUrl = '';
 
@@ -69,13 +102,13 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     let filePath = path.resolve(uiDir, decodedUrl === '/' ? 'index.html' : decodedUrl.replace(/^\//, ''));
     if (!filePath.startsWith(uiDir)) { res.writeHead(403); res.end(); return; }
     try {
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) {
+      const stat = storage.statSync(filePath);
+      if (stat?.isDirectory) {
         filePath = path.join(filePath, 'index.html');
-        if (!fs.existsSync(filePath)) { res.writeHead(404); res.end(); return; }
-      }
+        if (!storage.existsSync(filePath)) { res.writeHead(404); res.end(); return; }
+      } else if (!stat) { res.writeHead(404); res.end(); return; }
     } catch { res.writeHead(404); res.end(); return; }
-    const servePath = fs.existsSync(filePath) ? filePath : path.join(uiDir, 'index.html');
+    const servePath = storage.existsSync(filePath) ? filePath : path.join(uiDir, 'index.html');
     const ext = path.extname(servePath);
     const mimes: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.json': 'application/json' };
     const headers: Record<string, string> = {
@@ -87,7 +120,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; font-src 'self' https://cdn.jsdelivr.net";
     }
     res.writeHead(200, headers);
-    const stream = fs.createReadStream(servePath);
+    const stream = createReadStream(servePath);
     stream.on('error', () => { if (!res.headersSent) { res.writeHead(500); } res.end(); });
     stream.pipe(res);
   });
@@ -102,7 +135,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       tunnelUrl = tunnelUrlWithToken;
       console.log(`${GREEN}✓${RESET} Remote: ${BOLD}${tunnelUrlWithToken}${RESET}`);
       try {
-        // @ts-ignore
+        // @ts-expect-error — qrcode-terminal is an optional dependency
         const qrcode = (await import('qrcode-terminal')) as any;
         qrcode.default.generate(tunnelUrlWithToken, { small: true }, (code: string) => { console.log(code); });
       } catch {}
@@ -117,15 +150,12 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
   }
 
   // ─── Spawn copilot in PTY ─────────────────────────────────
-  // Dynamic import node-pty (native module)
-  // @ts-expect-error — node-pty is an optional native dependency
-  const nodePty = await import('node-pty');
 
   const copilotExePath = path.join(
     'C:', 'ProgramData', 'global-npm', 'node_modules', '@github', 'copilot',
     'node_modules', '@github', 'copilot-win32-x64', 'copilot.exe'
   );
-  const defaultCmd = fs.existsSync(copilotExePath) ? copilotExePath : 'copilot';
+  const defaultCmd = storage.existsSync(copilotExePath) ? copilotExePath : 'copilot';
   const copilotCmd = options.command || defaultCmd;
 
   const cols = process.stdout.columns || 120;
@@ -218,7 +248,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       // Only log, do NOT write raw input to PTY
       const auditPath = bridge?.getAuditLogPath();
       if (auditPath) {
-        fs.appendFileSync(auditPath, `${new Date().toISOString()} [remote] [RAW] ${JSON.stringify(msg)}\n`);
+        storage.appendSync(auditPath, `${new Date().toISOString()} [remote] [RAW] ${JSON.stringify(msg)}\n`);
       }
     }
   });

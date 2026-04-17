@@ -5,63 +5,91 @@ on:
     branches:
       - insider
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-squad-node
         with:
           node-version: ${{ matrix.node-version }}
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Build
         run: npm run build
 
-  test:
-    needs: build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20]
-    steps:
-      - uses: actions/checkout@v4
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
+      - name: Run tests (skip docs-build — needs Docker unavailable on publish runner)
+        run: npx vitest run --exclude 'test/docs-build.test.ts'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-  publish:
+  # CI Hardening: npm registry health check (item 10)
+  # Fail early if registry is unreachable instead of failing mid-publish.
+  registry-check:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: "🌐 Verify npm registry is reachable"
+        run: |
+          echo "Checking npm registry health before insider publish..."
+          success=false
+          for i in 1 2 3; do
+            if npm ping 2>&1; then
+              success=true
+              break
+            fi
+            echo "Registry ping attempt $i/3 failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm registry is unreachable after 3 attempts — publish aborted"
+            echo "::error::Check https://status.npmjs.org/ for registry status"
+            exit 1
+          fi
+          echo "✅ npm registry is reachable"
+          if ! npm view @bradygaster/squad-sdk version 2>/dev/null; then
+            echo "::warning::Cannot verify @bradygaster/squad-sdk on registry — package may not exist yet or registry is degraded"
+          else
+            echo "✅ @bradygaster package namespace is accessible"
+          fi
+
+  publish:
+    needs: [test, registry-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-squad-node
         with:
           node-version: ${{ matrix.node-version }}
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Validate npm token
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured — publish will fail"
+            exit 1
+          fi
+          echo "✅ NPM_TOKEN is set"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Build packages
         run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build

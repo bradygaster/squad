@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { calculatePrRework, calculateReworkSummary } = require('./lib/rework');
+const { calculatePrRework, calculateReworkSummary } = require('./lib/rework.cjs');
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
@@ -272,6 +272,8 @@ if (cmd === 'watch') {
 
   const content = fs.readFileSync(teamMd, 'utf8');
 
+  function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
   // Parse members from roster
   function parseMembers(text) {
     const lines = text.split('\n');
@@ -283,7 +285,7 @@ if (cmd === 'watch') {
       if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
         const cells = line.split('|').map(c => c.trim()).filter(Boolean);
         if (cells.length >= 2 && !['Scribe', 'Ralph'].includes(cells[0])) {
-          members.push({ name: cells[0], role: cells[1], label: `squad:${cells[0].toLowerCase()}` });
+          members.push({ name: cells[0], role: cells[1], label: `squad:${slugify(cells[0])}` });
         }
       }
     }
@@ -1059,10 +1061,12 @@ if (cmd === 'export') {
 
   // Read skills
   const skillsDir = path.join(dest, '.ai-team', 'skills');
+  const copilotSkillsDir = path.join(dest, '.copilot', 'skills');
+  const skillsDirs = [skillsDir, copilotSkillsDir].filter(d => fs.existsSync(d));
   try {
-    if (fs.existsSync(skillsDir)) {
-      for (const entry of fs.readdirSync(skillsDir)) {
-        const skillFile = path.join(skillsDir, entry, 'SKILL.md');
+    for (const sDir of skillsDirs) {
+      for (const entry of fs.readdirSync(sDir)) {
+        const skillFile = path.join(sDir, entry, 'SKILL.md');
         if (fs.existsSync(skillFile)) {
           manifest.skills.push(fs.readFileSync(skillFile, 'utf8'));
         }
@@ -1176,11 +1180,35 @@ if (cmd === 'import') {
     fs.writeFileSync(path.join(agentDir, 'history.md'), historyContent);
   }
 
-  // Write skills
-  for (const skillContent of manifest.skills) {
+  // Write skills to .copilot/skills/ (the canonical location)
+  const copilotSkillsImportDir = path.join(dest, '.copilot', 'skills');
+  const importedSkills = manifest.skills.map((skillContent, index) => {
     const nameMatch = skillContent.match(/^name:\s*["']?(.+?)["']?\s*$/m);
-    const skillName = nameMatch ? nameMatch[1].trim().toLowerCase().replace(/\s+/g, '-') : `skill-${manifest.skills.indexOf(skillContent)}`;
-    const skillDir = path.join(aiTeamDir, 'skills', skillName);
+    const skillName = nameMatch
+      ? nameMatch[1].trim().toLowerCase().replace(/\s+/g, '-')
+      : `skill-${index}`;
+    return { skillContent, skillName };
+  });
+  const hasForce = typeof force !== 'undefined' && force;
+
+  if (fs.existsSync(copilotSkillsImportDir)) {
+    if (hasForce) {
+      const archivedSkillsDir = path.join(dest, '.copilot', `skills.backup.${Date.now()}`);
+      fs.renameSync(copilotSkillsImportDir, archivedSkillsDir);
+    } else {
+      const collidingSkills = importedSkills
+        .map(({ skillName }) => skillName)
+        .filter((skillName) => fs.existsSync(path.join(copilotSkillsImportDir, skillName)));
+
+      if (collidingSkills.length > 0) {
+        fatal(`Import would overwrite existing Copilot skills: ${collidingSkills.join(', ')}. Re-run with --force to replace the existing .copilot/skills directory.`);
+      }
+    }
+  }
+
+  fs.mkdirSync(copilotSkillsImportDir, { recursive: true });
+  for (const { skillContent, skillName } of importedSkills) {
+    const skillDir = path.join(copilotSkillsImportDir, skillName);
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent);
   }
@@ -1832,9 +1860,11 @@ if (fs.existsSync(workflowsSrc) && fs.statSync(workflowsSrc).isDirectory()) {
     }
     console.log(`${GREEN}✓${RESET} ${BOLD}upgraded${RESET} squad workflow files (${workflowFiles.length} workflows)`);
   } else {
+    // During init, only copy framework workflows — CI/CD workflows are installed by upgrade
+    const initWorkflows = workflowFiles.filter(f => !PROJECT_TYPE_SENSITIVE_WORKFLOWS.has(f));
     fs.mkdirSync(workflowsDest, { recursive: true });
     let copied = 0;
-    for (const file of workflowFiles) {
+    for (const file of initWorkflows) {
       const destFile = path.join(workflowsDest, file);
       if (fs.existsSync(destFile)) {
         console.log(`${DIM}${file} already exists — skipping (run 'upgrade' to update)${RESET}`);

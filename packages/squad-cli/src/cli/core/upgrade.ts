@@ -4,8 +4,9 @@
  * @module cli/core/upgrade
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -14,10 +15,27 @@ import { runMigrations } from './migrations.js';
 import { scrubEmails } from './email-scrub.js';
 import { getPackageVersion, stampVersion, readInstalledVersion } from './version.js';
 
+const storage = new FSStorageProvider();
+
+function copyDirRecursive(src: string, dest: string, force = true): void {
+  storage.mkdirSync(dest, { recursive: true });
+  for (const entry of storage.listSync(src)) {
+    const srcEntry = path.join(src, entry);
+    const destEntry = path.join(dest, entry);
+    if (storage.isDirectorySync(srcEntry)) {
+      copyDirRecursive(srcEntry, destEntry, force);
+    } else if (force || !storage.existsSync(destEntry)) {
+      storage.copySync(srcEntry, destEntry);
+    }
+  }
+}
+
 export interface UpgradeOptions {
   migrateDirectory?: boolean;
   self?: boolean;
   force?: boolean;
+  /** When --self, install the insider (prerelease) tag instead of latest. */
+  insider?: boolean;
 }
 
 export interface UpdateInfo {
@@ -53,16 +71,16 @@ function compareSemver(a: string, b: string): number {
  * Detect project type by checking marker files
  */
 function detectProjectType(dir: string): string {
-  if (fs.existsSync(path.join(dir, 'package.json'))) return 'npm';
-  if (fs.existsSync(path.join(dir, 'go.mod'))) return 'go';
-  if (fs.existsSync(path.join(dir, 'requirements.txt')) ||
-      fs.existsSync(path.join(dir, 'pyproject.toml'))) return 'python';
-  if (fs.existsSync(path.join(dir, 'pom.xml')) ||
-      fs.existsSync(path.join(dir, 'build.gradle')) ||
-      fs.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
+  if (storage.existsSync(path.join(dir, 'package.json'))) return 'npm';
+  if (storage.existsSync(path.join(dir, 'go.mod'))) return 'go';
+  if (storage.existsSync(path.join(dir, 'requirements.txt')) ||
+      storage.existsSync(path.join(dir, 'pyproject.toml'))) return 'python';
+  if (storage.existsSync(path.join(dir, 'pom.xml')) ||
+      storage.existsSync(path.join(dir, 'build.gradle')) ||
+      storage.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
   
   try {
-    const entries = fs.readdirSync(dir);
+    const entries = storage.listSync(dir);
     if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln') || 
                          e.endsWith('.slnx') || e.endsWith('.fsproj') || 
                          e.endsWith('.vbproj'))) return 'dotnet';
@@ -239,11 +257,11 @@ function writeWorkflowFile(file: string, srcPath: string, destPath: string, proj
   if (projectType !== 'npm' && PROJECT_TYPE_SENSITIVE_WORKFLOWS.has(file)) {
     const stub = generateProjectWorkflowStub(file, projectType);
     if (stub) {
-      fs.writeFileSync(destPath, stub);
+      storage.writeSync(destPath, stub);
       return;
     }
   }
-  fs.copyFileSync(srcPath, destPath);
+  storage.copySync(srcPath, destPath);
 }
 
 /* ── Infrastructure ensure functions ────────────────────────────── */
@@ -269,6 +287,8 @@ const ENSURE_DIRECTORIES = [
   '.squad/log',
   '.squad/sessions',
   '.squad/decisions/inbox',
+  '.squad/casting',
+  '.squad/agents',
   '.copilot/skills',
 ];
 
@@ -278,8 +298,8 @@ const ENSURE_DIRECTORIES = [
 export function ensureGitattributes(dest: string): string[] {
   const filePath = path.join(dest, '.gitattributes');
   let content = '';
-  if (fs.existsSync(filePath)) {
-    content = fs.readFileSync(filePath, 'utf8');
+  if (storage.existsSync(filePath)) {
+    content = storage.readSync(filePath) ?? '';
   }
   const added: string[] = [];
   for (const rule of GITATTRIBUTES_RULES) {
@@ -290,7 +310,7 @@ export function ensureGitattributes(dest: string): string[] {
   if (added.length > 0) {
     const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
     try {
-      fs.writeFileSync(filePath, content + suffix + added.join('\n') + '\n');
+      storage.writeSync(filePath, content + suffix + added.join('\n') + '\n');
     } catch (err: unknown) {
       if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
         warn('Could not update .gitattributes (read-only). Add merge=union entries manually.');
@@ -325,8 +345,8 @@ function isAlreadyCoveredByParent(entry: string, lines: string[]): boolean {
 export function ensureGitignore(dest: string): string[] {
   const filePath = path.join(dest, '.gitignore');
   let content = '';
-  if (fs.existsSync(filePath)) {
-    content = fs.readFileSync(filePath, 'utf8');
+  if (storage.existsSync(filePath)) {
+    content = storage.readSync(filePath) ?? '';
   }
   const existingLines = content.split('\n');
   const added: string[] = [];
@@ -337,7 +357,7 @@ export function ensureGitignore(dest: string): string[] {
   }
   if (added.length > 0) {
     const suffix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
-    fs.writeFileSync(filePath, content + suffix + added.join('\n') + '\n');
+    storage.writeSync(filePath, content + suffix + added.join('\n') + '\n');
   }
   return added;
 }
@@ -349,8 +369,8 @@ export function ensureDirectories(dest: string): string[] {
   const created: string[] = [];
   for (const dir of ENSURE_DIRECTORIES) {
     const fullPath = path.join(dest, dir);
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
+    if (!storage.existsSync(fullPath)) {
+      storage.mkdirSync(fullPath, { recursive: true });
       created.push(dir);
     }
   }
@@ -358,20 +378,96 @@ export function ensureDirectories(dest: string): string[] {
 }
 
 /**
- * Copy all skills from package templates to .copilot/skills/ (force: false)
+ * Scaffold default casting files (registry.json, policy.json, history.json)
+ * if they don't already exist. Sources content from shipped templates when
+ * available, falling back to inline JSON defaults.
+ */
+export function ensureCastingDefaults(dest: string, templatesDir?: string): string[] {
+  const castingDir = path.join(dest, '.squad', 'casting');
+
+  // Map destination file → template file name
+  const templateMap: Array<{ name: string; templateName: string; fallback: string }> = [
+    { name: 'registry.json', templateName: 'casting-registry.json', fallback: JSON.stringify({ agents: {} }, null, 2) + '\n' },
+    { name: 'policy.json', templateName: 'casting-policy.json', fallback: JSON.stringify({ casting_policy_version: '1.1', allowlist_universes: [], universe_capacity: {} }, null, 2) + '\n' },
+    { name: 'history.json', templateName: 'casting-history.json', fallback: JSON.stringify({ universe_usage_history: [], assignment_cast_snapshots: {} }, null, 2) + '\n' },
+  ];
+
+  // Use caller-provided templatesDir when available; resolve once otherwise
+  let tDir = templatesDir;
+  if (!tDir) {
+    try {
+      tDir = getTemplatesDir();
+    } catch {
+      // templates dir not found — will use inline fallbacks
+    }
+  }
+
+  const created: string[] = [];
+  for (const file of templateMap) {
+    const filePath = path.join(castingDir, file.name);
+    if (!storage.existsSync(filePath)) {
+      // Prefer shipped template content; fall back to inline JSON
+      let content = file.fallback;
+      if (tDir) {
+        const tplPath = path.join(tDir, file.templateName);
+        if (storage.existsSync(tplPath)) {
+          const tplContent = storage.readSync(tplPath);
+          if (tplContent) content = tplContent;
+        }
+      }
+      try {
+        storage.mkdirSync(castingDir, { recursive: true });
+        storage.writeSync(filePath, content);
+        created.push(`.squad/casting/${file.name}`);
+      } catch (err: unknown) {
+        if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
+          warn(`Could not write ${file.name} to .squad/casting/ (read-only). Create it manually.`);
+          return created;
+        }
+        throw err;
+      }
+    }
+  }
+  return created;
+}
+
+/**
+ * Warn when a built-in skill has been customized and is about to be overwritten.
+ * Normalizes line endings before comparison to avoid false positives from CRLF differences.
+ */
+function warnIfSkillCustomized(srcPath: string, destPath: string, sourceName: string): void {
+  if (!storage.existsSync(destPath)) return;
+  const existing = (storage.readSync(destPath) ?? '').replace(/\r\n/g, '\n');
+  const template = (storage.readSync(srcPath) ?? '').replace(/\r\n/g, '\n');
+  if (existing && existing !== template) {
+    const skillName = sourceName.split('/')[1] ?? sourceName;
+    warn(`Skill '${skillName}' has been customized — overwriting with built-in version`);
+  }
+}
+
+/**
+ * Sync manifest-declared skills to .copilot/skills/, respecting overwriteOnUpgrade.
+ * Only skills listed in TEMPLATE_MANIFEST are installed — not the entire templates/skills/ dir.
  */
 function syncAllSkills(dest: string, templatesDir: string): number {
-  const skillsSrc = path.join(templatesDir, 'skills');
-  const skillsDest = path.join(dest, '.copilot', 'skills');
-  if (!fs.existsSync(skillsSrc)) return 0;
-  fs.mkdirSync(skillsDest, { recursive: true });
-  fs.cpSync(skillsSrc, skillsDest, { recursive: true, force: false });
-  // Count skill directories synced
-  try {
-    return fs.readdirSync(skillsSrc).filter(e =>
-      fs.statSync(path.join(skillsSrc, e)).isDirectory()
-    ).length;
-  } catch { return 0; }
+  const skillEntries = TEMPLATE_MANIFEST.filter(f => f.source.startsWith('skills/'));
+  if (skillEntries.length === 0) return 0;
+
+  const squadDir = path.join(dest, '.squad');
+  let synced = 0;
+  for (const entry of skillEntries) {
+    const srcPath = path.join(templatesDir, entry.source);
+    const destPath = path.join(squadDir, entry.destination);
+
+    if (!storage.existsSync(srcPath)) continue;
+    if (!entry.overwriteOnUpgrade && storage.existsSync(destPath)) continue;
+
+    warnIfSkillCustomized(srcPath, destPath, entry.source);
+    storage.mkdirSync(path.dirname(destPath), { recursive: true });
+    storage.copySync(srcPath, destPath);
+    synced++;
+  }
+  return synced;
 }
 
 /**
@@ -379,18 +475,17 @@ function syncAllSkills(dest: string, templatesDir: string): number {
  */
 function refreshSquadTemplatesDir(dest: string, templatesDir: string): void {
   const squadTemplatesDest = path.join(dest, '.squad', 'templates');
-  fs.mkdirSync(squadTemplatesDest, { recursive: true });
+  storage.mkdirSync(squadTemplatesDest, { recursive: true });
   // Copy everything except workflows and skills (those have dedicated handling)
-  const entries = fs.readdirSync(templatesDir);
+  const entries = storage.listSync(templatesDir);
   for (const entry of entries) {
     if (entry === 'workflows' || entry === 'skills') continue;
     const srcPath = path.join(templatesDir, entry);
     const destPath = path.join(squadTemplatesDest, entry);
-    const stat = fs.statSync(srcPath);
-    if (stat.isDirectory()) {
-      fs.cpSync(srcPath, destPath, { recursive: true, force: true });
+    if (storage.isDirectorySync(srcPath)) {
+      copyDirRecursive(srcPath, destPath);
     } else {
-      fs.copyFileSync(srcPath, destPath);
+      storage.copySync(srcPath, destPath);
     }
   }
 }
@@ -415,6 +510,12 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
   if (dirsCreated.length > 0) {
     success(`created ${dirsCreated.length} missing directories`);
     filesUpdated.push(...dirsCreated);
+  }
+
+  const castingFiles = ensureCastingDefaults(dest, templatesDir);
+  if (castingFiles.length > 0) {
+    success(`scaffolded ${castingFiles.length} default casting files`);
+    filesUpdated.push(...castingFiles);
   }
 
   const skillCount = syncAllSkills(dest, templatesDir);
@@ -445,7 +546,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   }
   
   // Verify squad exists
-  if (!fs.existsSync(squadDirInfo.path)) {
+  if (!storage.existsSync(squadDirInfo.path)) {
     fatal('No squad found — run init first.');
   }
   
@@ -468,9 +569,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     const workflowsSrc = path.join(templatesDir, 'workflows');
     const workflowsDest = path.join(dest, '.github', 'workflows');
     
-    if (fs.existsSync(workflowsSrc)) {
-      const wfFiles = fs.readdirSync(workflowsSrc).filter(f => f.endsWith('.yml'));
-      fs.mkdirSync(workflowsDest, { recursive: true });
+    if (storage.existsSync(workflowsSrc)) {
+      const wfFiles = storage.listSync(workflowsSrc).filter(f => f.endsWith('.yml'));
+      storage.mkdirSync(workflowsDest, { recursive: true });
       
       for (const file of wfFiles) {
         writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
@@ -481,12 +582,14 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     
     // Refresh squad.agent.md
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
-    if (fs.existsSync(agentSrc)) {
-      fs.mkdirSync(path.dirname(agentDest), { recursive: true });
-      fs.copyFileSync(agentSrc, agentDest);
+    if (storage.existsSync(agentSrc)) {
+      storage.mkdirSync(path.dirname(agentDest), { recursive: true });
+      storage.copySync(agentSrc, agentDest);
       stampVersion(agentDest, cliVersion);
       success('upgraded squad.agent.md');
       filesUpdated.push('squad.agent.md');
+    } else {
+      warn('squad.agent.md.template not found — squad.agent.md was not refreshed. Reinstall or repair the CLI to restore the missing template.');
     }
     
     // Run infrastructure ensure checks even when already current
@@ -504,12 +607,12 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   const templatesDir = getTemplatesDir();
   const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
   
-  if (!fs.existsSync(agentSrc)) {
+  if (!storage.existsSync(agentSrc)) {
     fatal('squad.agent.md.template not found in templates — installation may be corrupted');
   }
   
-  fs.mkdirSync(path.dirname(agentDest), { recursive: true });
-  fs.copyFileSync(agentSrc, agentDest);
+  storage.mkdirSync(path.dirname(agentDest), { recursive: true });
+  storage.copySync(agentSrc, agentDest);
   stampVersion(agentDest, cliVersion);
   
   const fromLabel = oldVersion === '0.0.0' || !oldVersion ? 'unknown' : oldVersion;
@@ -524,10 +627,13 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     const srcPath = path.join(templatesDir, file.source);
     const destPath = path.join(squadDirInfo.path, file.destination);
     
-    if (!fs.existsSync(srcPath)) continue;
+    if (!storage.existsSync(srcPath)) continue;
     
-    fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    fs.copyFileSync(srcPath, destPath);
+    if (file.source.startsWith('skills/')) {
+      warnIfSkillCustomized(srcPath, destPath, file.source);
+    }
+    storage.mkdirSync(path.dirname(destPath), { recursive: true });
+    storage.copySync(srcPath, destPath);
     
     filesUpdated.push(file.destination);
   }
@@ -540,9 +646,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   const workflowsSrc = path.join(templatesDir, 'workflows');
   const workflowsDest = path.join(dest, '.github', 'workflows');
   
-  if (fs.existsSync(workflowsSrc)) {
-    const wfFiles = fs.readdirSync(workflowsSrc).filter(f => f.endsWith('.yml'));
-    fs.mkdirSync(workflowsDest, { recursive: true });
+  if (storage.existsSync(workflowsSrc)) {
+    const wfFiles = storage.listSync(workflowsSrc).filter(f => f.endsWith('.yml'));
+    storage.mkdirSync(workflowsDest, { recursive: true });
     
     for (const file of wfFiles) {
       writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
@@ -560,13 +666,13 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   const copilotInstructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
   const teamMdPath = path.join(squadDirInfo.path, 'team.md');
   
-  if (fs.existsSync(teamMdPath)) {
-    const teamContent = fs.readFileSync(teamMdPath, 'utf8');
+  if (storage.existsSync(teamMdPath)) {
+    const teamContent = storage.readSync(teamMdPath) ?? '';
     const copilotEnabled = teamContent.includes('🤖 Coding Agent');
     
-    if (copilotEnabled && fs.existsSync(copilotInstructionsSrc)) {
-      fs.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
-      fs.copyFileSync(copilotInstructionsSrc, copilotInstructionsDest);
+    if (copilotEnabled && storage.existsSync(copilotInstructionsSrc)) {
+      storage.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
+      storage.copySync(copilotInstructionsSrc, copilotInstructionsDest);
       success('upgraded .github/copilot-instructions.md');
       filesUpdated.push('copilot-instructions.md');
     }
@@ -590,4 +696,71 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     filesUpdated,
     migrationsRun: migrationsApplied,
   };
+}
+
+// ============================================================================
+// Self-upgrade: upgrade the CLI package itself
+// ============================================================================
+
+export interface SelfUpgradeOptions {
+  insider?: boolean;
+  force?: boolean;
+}
+
+/**
+ * Detect the package manager that installed the CLI.
+ * Returns 'npm', 'pnpm', 'yarn', or 'npm' as fallback.
+ */
+function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
+  const execPath = process.env['npm_execpath'] ?? '';
+  if (execPath.includes('pnpm')) return 'pnpm';
+  if (execPath.includes('yarn')) return 'yarn';
+  // Check npm_config_user_agent as fallback
+  const userAgent = process.env['npm_config_user_agent'] ?? '';
+  if (userAgent.startsWith('pnpm')) return 'pnpm';
+  if (userAgent.startsWith('yarn')) return 'yarn';
+  return 'npm';
+}
+
+/**
+ * Self-upgrade the Squad CLI package via the detected package manager.
+ *
+ * Detects whether the CLI was installed via npm, pnpm, or yarn and runs the
+ * appropriate global install command. On EACCES errors, suggests `sudo` with
+ * the detected installer name.
+ */
+export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
+  const { execSync } = await import('node:child_process');
+  const tag = options.insider ? 'insider' : 'latest';
+  const pkg = `@bradygaster/squad-cli@${tag}`;
+  const pm = detectPackageManager();
+
+  let cmd: string;
+  switch (pm) {
+    case 'pnpm':
+      cmd = `pnpm add -g ${pkg}`;
+      break;
+    case 'yarn':
+      cmd = `yarn global add ${pkg}`;
+      break;
+    default:
+      cmd = `npm install -g ${pkg}`;
+      break;
+  }
+
+  info(`Self-upgrading via ${pm}: ${cmd}`);
+
+  try {
+    execSync(cmd, { stdio: 'inherit' });
+  } catch (err: unknown) {
+    const isPermission =
+      err instanceof Error &&
+      'code' in err &&
+      (err as NodeJS.ErrnoException).code === 'EACCES';
+    if (isPermission) {
+      warn(`Permission denied. Try: sudo ${cmd}`);
+    } else {
+      warn(`Upgrade failed. Try running manually: ${cmd}`);
+    }
+  }
 }

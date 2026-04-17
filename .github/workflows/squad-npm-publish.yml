@@ -8,6 +8,10 @@ on:
         description: 'Version to publish (e.g., 0.9.1)'
         required: true
         type: string
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 permissions:
   contents: read
   id-token: write
@@ -15,6 +19,7 @@ jobs:
   preflight:
     name: Pre-publish dependency validation
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +55,41 @@ jobs:
             exit 1
           fi
           echo "✅ No file: references found — safe to publish"
+      # CI Hardening: Lockfile stability check (item 6)
+      # Ensures workspace packages in package-lock.json resolve to local links,
+      # not stale registry URLs. Catches lockfile drift before publish —
+      # prevents v0.9.1-style incidents where stale entries break installs.
+      - name: "🔒 Lockfile stability check"
+        run: |
+          echo "Validating package-lock.json hasn't drifted..."
+          node -e "
+            const fs = require('fs');
+            const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+            const pkgs = lock.packages || {};
+            const stale = Object.keys(pkgs).filter(k =>
+              k.includes('node_modules/@bradygaster/squad-') &&
+              pkgs[k].resolved && pkgs[k].resolved.startsWith('https://')
+            );
+            if (stale.length) {
+              console.error('::error::LOCKFILE DRIFT DETECTED — workspace packages resolve to registry URLs instead of local links.');
+              stale.forEach(k => console.error('  STALE: ' + k + ' → ' + pkgs[k].resolved));
+              console.error('');
+              console.error('Fix: Run npm install at the repo root to regenerate the lockfile.');
+              process.exit(1);
+            }
+            const missingIntegrity = Object.keys(pkgs).filter(k =>
+              k.includes('node_modules/@bradygaster/squad-') &&
+              pkgs[k].resolved && !pkgs[k].resolved.startsWith('file:') &&
+              (!pkgs[k].integrity || !pkgs[k].integrity.startsWith('sha512-'))
+            );
+            if (missingIntegrity.length) {
+              console.error('::error::MISSING INTEGRITY HASHES — workspace packages resolved from registry lack sha512 hashes:');
+              missingIntegrity.forEach(k => console.error('  ' + k + ' (resolved: ' + pkgs[k].resolved + ')'));
+              console.error('Fix: Run npm install at the repo root to regenerate the lockfile.');
+              process.exit(1);
+            }
+            console.log('✅ Lockfile stable — all workspace packages resolve to local links');
+          "
       - name: Validate semver versions
         run: |
           echo "Validating version numbers are valid semver..."
@@ -77,6 +117,7 @@ jobs:
     name: CLI packaging smoke test
     needs: preflight
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -84,8 +125,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'npm'
       - name: Install dependencies
-        run: npm ci
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm ci; then
+              success=true
+              break
+            fi
+            echo "Retry $i/3 — npm ci failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
       - name: Build
         run: npm run build
         env:
@@ -98,10 +153,43 @@ jobs:
           echo "✅ Both packages pack successfully"
       - name: Run CLI smoke tests
         run: npx vitest run test/cli-packaging-smoke.test.ts
-  publish-sdk:
-    name: Publish @bradygaster/squad-sdk
+  # CI Hardening: npm registry health check (item 10)
+  # Verify the npm registry is reachable before starting any publish jobs.
+  # Prevents wasted CI time and partial publishes when the registry is down.
+  registry-check:
+    name: npm registry health check
     needs: [preflight, smoke-test]
     runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: "🌐 Verify npm registry is reachable"
+        run: |
+          echo "Checking npm registry health before publish..."
+          success=false
+          for i in 1 2 3; do
+            if npm ping 2>&1; then
+              success=true
+              break
+            fi
+            echo "Registry ping attempt $i/3 failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm registry is unreachable after 3 attempts — publish aborted"
+            echo "::error::Check https://status.npmjs.org/ for registry status"
+            exit 1
+          fi
+          echo "✅ npm registry is reachable"
+          if ! npm view @bradygaster/squad-sdk version 2>/dev/null; then
+            echo "::warning::Cannot verify @bradygaster/squad-sdk on registry — package may not exist yet or registry is degraded"
+          else
+            echo "✅ @bradygaster package namespace is accessible"
+          fi
+  publish-sdk:
+    name: Publish @bradygaster/squad-sdk
+    needs: [preflight, smoke-test, registry-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,6 +198,16 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+      - name: Validate npm token
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured — publish will fail"
+            exit 1
+          fi
+          echo "✅ NPM_TOKEN is set"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Determine version
         id: version
         run: |
@@ -122,7 +220,20 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Publishing version: ${VERSION}"
       - name: Install dependencies
-        run: npm ci
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm ci; then
+              success=true
+              break
+            fi
+            echo "Retry $i/3 — npm ci failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
       - name: Build squad-sdk
         run: npm -w packages/squad-sdk run build
       - name: Verify package version matches target
@@ -150,8 +261,9 @@ jobs:
           echo "Registry propagation slow but package was published successfully"
   publish-cli:
     name: Publish @bradygaster/squad-cli
-    needs: [preflight, smoke-test, publish-sdk]
+    needs: [preflight, smoke-test, registry-check, publish-sdk]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -160,6 +272,16 @@ jobs:
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+      - name: Validate npm token
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured — publish will fail"
+            exit 1
+          fi
+          echo "✅ NPM_TOKEN is set"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Determine version
         id: version
         run: |
@@ -172,7 +294,20 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Publishing version: ${VERSION}"
       - name: Install dependencies
-        run: npm ci
+        run: |
+          success=false
+          for i in 1 2 3; do
+            if npm ci; then
+              success=true
+              break
+            fi
+            echo "Retry $i/3 — npm ci failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm ci failed after 3 attempts"
+            exit 1
+          fi
       - name: "Guard against file: dependencies"
         run: |
           SDK_DEP=$(node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']")

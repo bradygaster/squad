@@ -11,6 +11,7 @@ coverage/
 .squad/decisions/inbox/
 .squad/sessions/
 .squad/config.json
+
 # Test temp dirs (created in cwd by vitest tests, cleaned in afterEach)
 .test-*
 # Docs site generated files
@@ -22,6 +23,7 @@ docs/tests/screenshots/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 .squad/.first-run
+.squad/.watch-pids
 
 # Images folder (root only — don't ignore docs/public/images/)
 /images/

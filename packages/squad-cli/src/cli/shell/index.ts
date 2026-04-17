@@ -6,7 +6,6 @@
  */
 
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve as pathResolve } from 'node:path';
 import React from 'react';
 import { render } from 'ink';
@@ -22,7 +21,7 @@ import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import { RateLimitError } from '@bradygaster/squad-sdk/adapter/errors';
 import type { ShellMessage } from './types.js';
-import { initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { parseAgentFromDescription } from './agent-name-parser.js';
@@ -81,6 +80,8 @@ export {
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../../package.json') as { version: string };
+
+const storage = new FSStorageProvider();
 
 /**
  * Approve all permission requests. CLI runs locally with user trust,
@@ -148,8 +149,8 @@ export async function runShell(): Promise<void> {
   // contexts (pipes, tests, CI) see useful guidance rather than a TTY error.
   const cwd = process.cwd();
   const localSquad = resolveSquad(cwd);
-  const globalSquadDir = join(resolveGlobalSquadPath(), 'personal-squad');
-  const hasAnySquad = !!localSquad || existsSync(globalSquadDir);
+  const globalSquadDir = join(resolveGlobalSquadPath(), '.squad');
+  const hasAnySquad = !!localSquad || storage.existsSync(globalSquadDir);
 
   if (!hasAnySquad && !process.stdin.isTTY) {
     console.log('Welcome to Squad\n');
@@ -198,7 +199,7 @@ export async function runShell(): Promise<void> {
     // 2. Fall back to global (personal) squad path
     const globalPath = resolveGlobalSquadPath();
     const globalSquadDir = join(globalPath, '.squad');
-    if (existsSync(globalSquadDir)) {
+    if (storage.existsSync(globalSquadDir)) {
       return globalPath;
     }
     // 3. No squad found — use cwd (triggers init mode)
@@ -207,8 +208,8 @@ export async function runShell(): Promise<void> {
 
   // Session persistence — create or resume a previous session
   // Skip resume on first run (no team.md or .first-run marker present)
-  const hasTeam = existsSync(join(teamRoot, '.squad', 'team.md'));
-  const isFirstRun = existsSync(join(teamRoot, '.squad', '.first-run'));
+  const hasTeam = storage.existsSync(join(teamRoot, '.squad', 'team.md'));
+  const isFirstRun = storage.existsSync(join(teamRoot, '.squad', '.first-run'));
   let persistedSession: SessionData = createSession();
   const recentSession = (hasTeam && !isFirstRun) ? loadLatestSession(teamRoot) : null;
   if (recentSession) {
@@ -256,7 +257,7 @@ export async function runShell(): Promise<void> {
   (async () => {
     try {
       debugLog('eager warm-up: creating coordinator session');
-      const systemPrompt = buildCoordinatorPrompt({ teamRoot });
+      const systemPrompt = await buildCoordinatorPrompt({ teamRoot });
       coordinatorSession = await client.createSession({
         streaming: true,
         systemMessage: { mode: 'append', content: systemPrompt },
@@ -396,7 +397,7 @@ export async function runShell(): Promise<void> {
       shellApi?.setAgentActivity(agentName, 'connecting...');
       // Give React a tick to render the connection hint before blocking on SDK
       await new Promise(resolve => setImmediate(resolve));
-      const charter = loadAgentCharter(agentName, teamRoot);
+      const charter = await loadAgentCharter(agentName, teamRoot);
       const systemPrompt = buildAgentPrompt(charter);
 
       if (!registry.get(agentName)) {
@@ -583,7 +584,7 @@ export async function runShell(): Promise<void> {
       shellApi?.setActivityHint('Connecting to SDK...');
       // Give React a tick to render the connection hint before blocking on SDK
       await new Promise(resolve => setImmediate(resolve));
-      const systemPrompt = buildCoordinatorPrompt({ teamRoot });
+      const systemPrompt = await buildCoordinatorPrompt({ teamRoot });
       coordinatorSession = await client.createSession({
         streaming: true,
         systemMessage: { mode: 'append', content: systemPrompt },
@@ -844,8 +845,8 @@ export async function runShell(): Promise<void> {
     // Check for a stored init prompt (from `squad init "prompt"`)
     const initPromptFile = join(teamRoot, '.squad', '.init-prompt');
     let castPrompt = parsed.raw;
-    if (existsSync(initPromptFile)) {
-      const storedPrompt = readFileSync(initPromptFile, 'utf-8').trim();
+    if (storage.existsSync(initPromptFile)) {
+      const storedPrompt = (storage.readSync(initPromptFile) ?? '').trim();
       if (storedPrompt) {
         debugLog('handleInitCast: using stored init prompt', storedPrompt.slice(0, 100));
         castPrompt = storedPrompt;
@@ -864,10 +865,10 @@ export async function runShell(): Promise<void> {
     try {
       // Check for .init-roles marker (set by `squad init --roles` or `/init --roles`)
       const initRolesMarker = join(teamRoot, '.squad', '.init-roles');
-      const useBaseRoles = existsSync(initRolesMarker);
+      const useBaseRoles = storage.existsSync(initRolesMarker);
       // Consume the marker immediately — it's been read, no need to persist
       if (useBaseRoles) {
-        try { unlinkSync(initRolesMarker); } catch { /* ignore */ }
+        try { await storage.delete(initRolesMarker); } catch { /* ignore */ }
       }
       const initSysPrompt = buildInitModePrompt({ teamRoot, useBaseRoles });
       initSession = await client.createSession({
@@ -985,6 +986,26 @@ export async function runShell(): Promise<void> {
       files: result.filesCreated.length,
     });
 
+    // Production guard: verify roster was actually populated before proceeding
+    const verifyTeamPath = join(teamRoot, '.squad', 'team.md');
+    const verifyContent = storage.readSync(verifyTeamPath) ?? '';
+    if (!hasRosterEntries(verifyContent)) {
+      debugLog('finalizeCast: roster empty after createTeam — aborting dispatch');
+      // Clean up .init-prompt to prevent auto-retry loop on next startup
+      const initPromptCleanup = join(teamRoot, '.squad', '.init-prompt');
+      if (storage.existsSync(initPromptCleanup)) {
+        try { await storage.delete(initPromptCleanup); } catch { /* ignore */ }
+      }
+      shellApi?.addMessage({
+        role: 'system',
+        content: '⚠ Team creation completed but roster is empty — skipping dispatch. Check .squad/team.md.',
+        timestamp: new Date(),
+      });
+      shellApi?.setActivityHint(undefined);
+      shellApi?.setProcessing(false);
+      return;
+    }
+
     shellApi?.addMessage({
       role: 'system',
       content: `✅ Team hired! ${result.membersCreated.length} members created.`,
@@ -993,8 +1014,8 @@ export async function runShell(): Promise<void> {
 
     // Clean up stored init prompt (it's been consumed)
     const initPromptFile = join(teamRoot, '.squad', '.init-prompt');
-    if (existsSync(initPromptFile)) {
-      try { unlinkSync(initPromptFile); } catch { /* ignore */ }
+    if (storage.existsSync(initPromptFile)) {
+      try { await storage.delete(initPromptFile); } catch { /* ignore */ }
     }
 
     // Note: .init-roles marker is already cleaned up in handleInitCast (consumed on read)
@@ -1058,7 +1079,7 @@ export async function runShell(): Promise<void> {
 
     // Guard: require a Squad team before processing work requests
     const teamFile = join(teamRoot, '.squad', 'team.md');
-    if (!existsSync(teamFile)) {
+    if (!storage.existsSync(teamFile)) {
       // When skipCastConfirmation is explicitly set (true or false), the message
       // was routed from an /init flow (inline or follow-up), so bypass the guard
       // and go straight to Init Mode casting even without a team.md.
@@ -1075,7 +1096,7 @@ export async function runShell(): Promise<void> {
     }
 
     // Check if roster is actually populated — if not, enter Init Mode (cast a team)
-    const teamContent = readFileSync(teamFile, 'utf-8');
+    const teamContent = storage.readSync(teamFile) ?? '';
     if (!hasRosterEntries(teamContent)) {
       await handleInitCast(parsed, parsed.skipCastConfirmation);
       return;
@@ -1140,7 +1161,7 @@ export async function runShell(): Promise<void> {
           // Persist rate limit status so `squad doctor` can surface it.
           try {
             const squadDir = join(teamRoot, '.squad');
-            writeFileSync(
+            storage.writeSync(
               join(squadDir, 'rate-limit-status.json'),
               JSON.stringify({
                 timestamp: new Date().toISOString(),
@@ -1225,19 +1246,19 @@ export async function runShell(): Promise<void> {
           // Bug fix #3: Clean up orphan .init-prompt if team already exists
           const initPromptPath = join(teamRoot, '.squad', '.init-prompt');
           const teamFilePath = join(teamRoot, '.squad', 'team.md');
-          if (existsSync(teamFilePath)) {
-            const tc = readFileSync(teamFilePath, 'utf-8');
-            if (hasRosterEntries(tc) && existsSync(initPromptPath)) {
+          if (storage.existsSync(teamFilePath)) {
+            const tc = storage.readSync(teamFilePath) ?? '';
+            if (hasRosterEntries(tc) && storage.existsSync(initPromptPath)) {
               debugLog('Cleaning up orphan .init-prompt (team already exists)');
-              try { unlinkSync(initPromptPath); } catch { /* ignore */ }
+              void storage.delete(initPromptPath).catch(() => { /* ignore */ });
             }
           }
 
           // Bug fix #1: Auto-cast after shellApi is guaranteed to be set (no race condition)
-          if (existsSync(initPromptPath) && existsSync(teamFilePath)) {
-            const tc = readFileSync(teamFilePath, 'utf-8');
+          if (storage.existsSync(initPromptPath) && storage.existsSync(teamFilePath)) {
+            const tc = storage.readSync(teamFilePath) ?? '';
             if (!hasRosterEntries(tc)) {
-              const storedPrompt = readFileSync(initPromptPath, 'utf-8').trim();
+              const storedPrompt = (storage.readSync(initPromptPath) ?? '').trim();
               if (storedPrompt) {
                 debugLog('Auto-cast: .init-prompt found with empty roster, triggering cast');
                 // Trigger cast after Ink settles, but now shellApi is guaranteed to be set
@@ -1298,8 +1319,8 @@ export async function runShell(): Promise<void> {
     // Use the resolved teamRoot instead of cwd so this works from subdirectories (#207)
     const squadDir = join(teamRoot, '.squad');
     const configPath = join(squadDir, 'config.json');
-    if (existsSync(configPath)) {
-      const raw = readFileSync(configPath, 'utf8');
+    if (storage.existsSync(configPath)) {
+      const raw = storage.readSync(configPath) ?? '';
       const parsed = JSON.parse(raw) as unknown;
       if (parsed && typeof parsed === 'object' && (parsed as { consult?: boolean }).consult === true) {
         const nc = process.env['NO_COLOR'] != null && process.env['NO_COLOR'] !== '';

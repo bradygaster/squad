@@ -121,8 +121,12 @@
       "import": "./dist/cli/commands/init-remote.js"
     },
     "./commands/watch": {
-      "types": "./dist/cli/commands/watch.d.ts",
-      "import": "./dist/cli/commands/watch.js"
+      "types": "./dist/cli/commands/watch/index.d.ts",
+      "import": "./dist/cli/commands/watch/index.js"
+    },
+    "./commands/watch/health": {
+      "types": "./dist/cli/commands/watch/health.d.ts",
+      "import": "./dist/cli/commands/watch/health.js"
     },
     "./commands/start": {
       "types": "./dist/cli/commands/start.d.ts",
@@ -204,5 +208,9 @@
     "type": "git",
     "url": "git+https://github.com/bradygaster/squad.git",
     "directory": "packages/squad-cli"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }

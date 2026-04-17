@@ -10,8 +10,10 @@
  * @module cli/commands/personal
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
 import { resolvePersonalAgents } from '@bradygaster/squad-sdk/agents/personal';
 import { success, warn, info, BOLD, RESET, DIM } from '../core/output.js';
@@ -63,7 +65,7 @@ async function personalInit(): Promise<void> {
   const globalDir = resolveGlobalSquadPath();
   const personalDir = path.join(globalDir, 'personal-squad');
   
-  if (fs.existsSync(personalDir)) {
+  if (storage.existsSync(personalDir)) {
     warn(`Personal squad already initialized at ${personalDir}`);
     return;
   }
@@ -141,22 +143,22 @@ async function personalAdd(name: string, role: string): Promise<void> {
   
   const agentDir = path.join(personalDir, 'agents', name);
   
-  if (fs.existsSync(agentDir)) {
+  if (storage.existsSync(agentDir)) {
     warn(`Agent '${name}' already exists at ${agentDir}`);
     return;
   }
   
   // Create agent directory
-  fs.mkdirSync(agentDir, { recursive: true });
+  storage.mkdirSync(agentDir, { recursive: true });
   
   // Create charter.md
   const charterContent = generatePersonalCharterTemplate(name, role);
   const charterPath = path.join(agentDir, 'charter.md');
-  fs.writeFileSync(charterPath, charterContent, 'utf-8');
+  storage.writeSync(charterPath, charterContent);
   
   // Create empty history.md
   const historyPath = path.join(agentDir, 'history.md');
-  fs.writeFileSync(historyPath, '# History\n\n<!-- Agent activity log -->\n', 'utf-8');
+  storage.writeSync(historyPath, '# History\n\n<!-- Agent activity log -->\n');
   
   success(`Added personal agent: ${name}`);
   info(`  Role: ${role}`);
@@ -177,12 +179,12 @@ async function personalRemove(name: string): Promise<void> {
   
   const agentDir = path.join(personalDir, 'agents', name);
   
-  if (!fs.existsSync(agentDir)) {
+  if (!storage.existsSync(agentDir)) {
     fatal(`Agent '${name}' not found in personal squad`);
   }
   
   // Remove agent directory recursively
-  fs.rmSync(agentDir, { recursive: true, force: true });
+  storage.deleteDirSync(agentDir);
   
   success(`Removed personal agent: ${name}`);
 }

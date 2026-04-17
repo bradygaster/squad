@@ -10,9 +10,11 @@
  * @module streams/resolver
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { join } from 'path';
 import type { SubSquadConfig, SubSquadDefinition, ResolvedSubSquad } from './types.js';
+
+const storage = new FSStorageProvider();
 
 /**
  * Load SubSquads configuration from .squad/workstreams.json.
@@ -22,12 +24,12 @@ import type { SubSquadConfig, SubSquadDefinition, ResolvedSubSquad } from './typ
  */
 export function loadSubSquadsConfig(squadRoot: string): SubSquadConfig | null {
   const configPath = join(squadRoot, '.squad', 'workstreams.json');
-  if (!existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return null;
   }
 
   try {
-    const raw = readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath) ?? '';
     const rawConfig = JSON.parse(raw) as unknown;
 
     if (!rawConfig || typeof rawConfig !== 'object') {
@@ -144,9 +146,9 @@ export function resolveSubSquad(squadRoot: string): ResolvedSubSquad | null {
 
   // 2. .squad-workstream file
   const workstreamFilePath = join(squadRoot, '.squad-workstream');
-  if (existsSync(workstreamFilePath)) {
+  if (storage.existsSync(workstreamFilePath)) {
     try {
-      const subsquadName = readFileSync(workstreamFilePath, 'utf-8').trim();
+      const subsquadName = (storage.readSync(workstreamFilePath) ?? '').trim();
       if (subsquadName) {
         if (config) {
           const def = findSubSquad(config, subsquadName);
