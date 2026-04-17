@@ -609,11 +609,11 @@ export function buildAgentCommand(
   const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
   if (options.agentCmd) {
     const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
+    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
   }
-  const args = ['copilot', '--message', prompt];
+  const args = ['-p', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'gh', args };
+  return { cmd: 'copilot', args };
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {

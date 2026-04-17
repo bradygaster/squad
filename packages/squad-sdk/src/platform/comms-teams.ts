@@ -103,7 +103,7 @@ function saveTokens(tenantId: string, clientId: string, tokens: StoredTokens): v
 
   // Ensure permissions are correct even if file already existed
   if (platform() === 'win32') {
-    execFile('icacls', [TOKEN_PATH, '/inheritance:r', '/grant:r', `${process.env.USERNAME ?? 'CURRENT_USER'}:(R,W)`], (err) => {
+    execFile('icacls', [tokenPath, '/inheritance:r', '/grant:r', `${process.env.USERNAME ?? 'CURRENT_USER'}:(R,W)`], (err) => {
       if (err) console.warn('⚠️ Could not restrict token file permissions:', err.message);
     });
   } else {
