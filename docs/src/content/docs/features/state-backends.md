@@ -136,10 +136,11 @@ squad watch --state-backend orphan
 
 ### CLI Flag (per-invocation)
 
-Pass `--state-backend` to any squad command:
+Pass `--state-backend` to `squad watch` or `squad triage`:
 
 ```bash
 squad watch --state-backend git-notes
+squad triage --state-backend git-notes
 squad watch --state-backend orphan
 squad watch --state-backend worktree
 ```
@@ -182,7 +183,7 @@ Warning: State backend 'git-notes' failed: <reason>. Falling back to 'worktree'.
 | Appears in PRs | Yes (if committed) | No | No |
 | Human-readable on disk | ✅ Files | ❌ JSON blob | ⚠️ Via `git show` |
 | Git history | Via normal commits | Per-note | Per-branch commits |
-| Branch-switch safe | ❌ (if uncommitted) | ✅ | ✅ |
+| Branch-switch safe | ❌ (if uncommitted) | ⚠️ | ✅ |
 | Easy to inspect | ✅ `cat .squad/...` | ⚠️ `git notes show` | ⚠️ `git show squad-state:...` |
 | Sharing across clones | Normal push/pull | Requires notes fetch config | Normal branch push/pull |
 | Concurrent-write safe | ✅ (filesystem) | ⚠️ (last writer wins) | ⚠️ (single writer) |
@@ -279,6 +280,6 @@ All validation is centralized in `validateStateKey()` and applied uniformly acro
 
 - State backends are **opt-in** — the default is `worktree` (no behavior change)
 - All backends implement the same interface — agents don't know or care which backend is active
-- The `external` backend type exists as a stub for future external storage (see [External State](./external-state))
+- The `external` backend type exists as a stub for future external storage (see [External State](./external-state.md))
 - State backends are available in the **insider** release channel (`@bradygaster/squad-cli@insider`)
 - 30+ tests cover all backends including security hardening scenarios
