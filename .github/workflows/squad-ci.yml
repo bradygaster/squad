@@ -10,21 +10,20 @@ on:
 permissions:
   contents: read
 
-# CI Hardening Phase 3 item A1: Prevent parallel runs from competing for resources
+# Prevent parallel runs from competing for resources
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   # ── Path filter for conditional job execution ──────────────────────────
-  # Detects which areas of the repo changed so downstream jobs can skip
-  # when their inputs haven't changed (e.g., skip docs-quality on code-only PRs).
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
       code: ${{ steps.filter.outputs.code }}
+      workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,11 +44,15 @@ jobs:
           else
             echo "docs=false" >> "$GITHUB_OUTPUT"
           fi
-          # Detect non-docs changes (code, config, workflows, etc.)
           if echo "$CHANGED" | grep -qvE '^(docs/|README\.md|\.markdownlint|\.cspell|cspell\.json)'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$CHANGED" | grep -qE '^\.github/workflows/'; then
+            echo "workflows=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "workflows=false" >> "$GITHUB_OUTPUT"
           fi
 
   docs-quality:
@@ -59,30 +62,19 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: Install docs tools
         run: |
           success=false
           for i in 1 2 3; do
-            if npm install --no-save markdownlint-cli2 cspell; then
-              success=true
-              break
-            fi
-            echo "Retry $i/3 — npm install failed, retrying in 5s..."
-            sleep 5
+            if npm install --no-save markdownlint-cli2 cspell; then success=true; break; fi
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."; sleep 5
           done
-          if [ "$success" = false ]; then
-            echo "::error::npm install failed after 3 attempts"
-            exit 1
-          fi
-
+          [ "$success" = true ] || { echo "::error::npm install failed after 3 attempts"; exit 1; }
       - name: Lint docs markdown
         run: npx markdownlint-cli2
-
       - name: Spell check docs
         run: npx cspell --no-progress --dot "docs/src/content/**/*.md" "README.md"
 
@@ -98,12 +90,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'npm'
-
       - name: Fix stale lockfile entries
         run: |
           node -e "
@@ -121,46 +111,27 @@ jobs:
               console.log('Lockfile clean');
             }
           "
-
       - name: Install dependencies
         run: |
           success=false
           for i in 1 2 3; do
-            if npm install; then
-              success=true
-              break
-            fi
-            echo "Retry $i/3 — npm install failed, retrying in 5s..."
-            sleep 5
+            if npm install; then success=true; break; fi
+            echo "Retry $i/3 — npm install failed, retrying in 5s..."; sleep 5
           done
-          if [ "$success" = false ]; then
-            echo "::error::npm install failed after 3 attempts"
-            exit 1
-          fi
-
+          [ "$success" = true ] || { echo "::error::npm install failed after 3 attempts"; exit 1; }
       - name: Install docs dependencies
         run: |
           success=false
           for i in 1 2 3; do
-            if npm ci; then
-              success=true
-              break
-            fi
-            echo "Retry $i/3 — npm ci failed, retrying in 5s..."
-            sleep 5
+            if npm ci; then success=true; break; fi
+            echo "Retry $i/3 — npm ci failed, retrying in 5s..."; sleep 5
           done
-          if [ "$success" = false ]; then
-            echo "::error::npm ci failed after 3 attempts"
-            exit 1
-          fi
+          [ "$success" = true ] || { echo "::error::npm ci failed after 3 attempts"; exit 1; }
         working-directory: docs
-
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
-
       - name: "🔒 Source tree canary check"
         run: |
-          echo "Verifying critical source files exist..."
           MISSING=0
           for f in \
             "packages/squad-sdk/src/index.ts" \
@@ -177,7 +148,6 @@ jobs:
             exit 1
           fi
           echo "✅ All critical source files present"
-
       - name: "🔒 Large deletion guard"
         if: github.event_name == 'pull_request'
         run: |
@@ -194,37 +164,17 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
-
       - name: Build
         run: npm run build
-
       - name: Run tests
         run: npm test
 
-  # ════════════════════════════════════════════════════════════════════════
-  # Skip Labels Reference
-  # ────────────────────────────────────────────────────────────────────────
-  # The following PR labels can be used to bypass specific health gates.
-  # Add them via the GitHub UI or `gh pr edit --add-label <label>`.
-  #
-  #   skip-changelog         — skip the changelog-gate job
-  #   skip-exports-check     — skip the exports-map-check job
-  #   skip-samples-ci        — skip the samples-build job
-  #   skip-workspace-check   — skip the workspace-integrity job
-  #   skip-version-check     — skip the prerelease-version-guard job
-  #   skip-export-smoke      — skip the export-smoke-test job
-  #   large-deletion-approved — bypass the large-deletion guard (test job)
-  #
-  # These labels are compatible with sync-squad-labels.yml — add them
-  # to the label sync config to auto-create them in new repos.
-  # ════════════════════════════════════════════════════════════════════════
+  # Skip labels: skip-changelog, skip-exports-check, skip-samples-ci,
+  # skip-workspace-check, skip-version-check, skip-export-smoke, large-deletion-approved
 
-  # ═══════════════════════════════════════════════════════════════════════
-  # Consolidated policy gates — runs 4 lightweight checks on a single
-  # runner. Saves ~3 runner boots per PR push vs separate jobs.
-  # Individual gates: changelog-gate, changelog-protection,
-  # workspace-integrity, prerelease-version-guard.
-  # ═══════════════════════════════════════════════════════════════════════
+  # ── Consolidated policy gates ───────────────────────────────────────────
+  # Runs changelog, changelog-protection, workspace-integrity,
+  # prerelease-version-guard, publish-policy, and scope-check on one runner.
   policy-gates:
     name: Policy Gates
     needs: changes
@@ -232,6 +182,7 @@ jobs:
       github.event_name == 'pull_request'
       && !cancelled()
       && (needs.changes.outputs.code == 'true'
+          || needs.changes.outputs.workflows == 'true'
           || needs.changes.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -239,11 +190,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
       - name: Fetch PR labels
         id: labels
         run: |
@@ -251,14 +200,13 @@ jobs:
           echo "all<<EOF" >> "$GITHUB_OUTPUT"
           echo "$LABELS" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
-          # Per-gate skip flags
           echo "$LABELS" | grep -q "skip-changelog" && echo "skip_changelog=true" >> "$GITHUB_OUTPUT" || echo "skip_changelog=false" >> "$GITHUB_OUTPUT"
           echo "$LABELS" | grep -q "skip-workspace-check" && echo "skip_workspace=true" >> "$GITHUB_OUTPUT" || echo "skip_workspace=false" >> "$GITHUB_OUTPUT"
           echo "$LABELS" | grep -q "skip-version-check" && echo "skip_version=true" >> "$GITHUB_OUTPUT" || echo "skip_version=false" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # ─── Changelog Gate ───────────────────────────────────────────────
+      # ─── Changelog Gate ────────────────────────────────────────────────
       - name: "Gate: Changelog"
         if: >-
           always()
@@ -271,7 +219,6 @@ jobs:
           CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
           SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E '^packages/squad-(sdk|cli)/src/' || true)
           if [ -z "$SDK_CLI_CHANGED" ]; then
-            echo "No SDK/CLI source changes detected -- CHANGELOG gate not applicable"
             echo "✅ Not applicable (no SDK/CLI source changes)" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
@@ -280,25 +227,19 @@ jobs:
           CHANGESET_ADDED=$(git diff --diff-filter=AM --name-only "$BASE"..."$HEAD" | grep -E '^\.changeset/[^/]+\.md$' | grep -vxF '.changeset/README.md' || true)
           CHANGELOG_CHANGED=$(echo "$CHANGED" | grep -E '^CHANGELOG\.md$' || true)
           if [ -n "$CHANGESET_ADDED" ]; then
-            echo "Changeset file(s) detected -- gate passed"
-            echo "$CHANGESET_ADDED"
             echo "✅ Changeset file detected" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
           if [ -n "$CHANGELOG_CHANGED" ]; then
-            echo "CHANGELOG.md updated -- gate passed"
             echo "✅ CHANGELOG.md updated" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-          echo ""
           echo "::error::No changeset or CHANGELOG.md update found, but SDK/CLI source files were changed."
-          echo "::error::Preferred: run 'npx changeset add' to create a .changeset/*.md file."
-          echo "::error::Alternative: edit CHANGELOG.md directly."
-          echo "::error::Escape hatch: add the 'skip-changelog' label to your PR."
+          echo "::error::Run 'npx changeset add' or edit CHANGELOG.md. Escape hatch: add 'skip-changelog' label."
           echo "❌ No changeset or CHANGELOG.md update" >> $GITHUB_STEP_SUMMARY
           exit 1
 
-      # ─── CHANGELOG Write Protection ──────────────────────────────────
+      # ─── CHANGELOG Write Protection ────────────────────────────────────
       - name: "Gate: CHANGELOG Write Protection"
         if: always()
         env:
@@ -309,23 +250,17 @@ jobs:
           CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '^CHANGELOG.md$' || true)
           if [ -n "$CHANGED" ]; then
             if echo "$APPROVED_AUTHORS" | tr ' ' '\n' | grep -qxF "$PR_AUTHOR"; then
-              echo "✅ $PR_AUTHOR is approved to modify CHANGELOG.md"
               echo "✅ $PR_AUTHOR is approved" >> $GITHUB_STEP_SUMMARY
             else
-              echo "❌ $PR_AUTHOR is not approved to modify CHANGELOG.md directly"
-              echo ""
-              echo "CHANGELOG.md is managed by the release process."
-              echo "Use 'npx changeset add' to add a changeset file instead."
-              echo "See CONTRIBUTING.md for details."
-              echo "❌ $PR_AUTHOR is not approved to modify CHANGELOG.md" >> $GITHUB_STEP_SUMMARY
+              echo "::error::$PR_AUTHOR is not approved to modify CHANGELOG.md directly. Use 'npx changeset add' instead."
+              echo "❌ $PR_AUTHOR is not approved" >> $GITHUB_STEP_SUMMARY
               exit 1
             fi
           else
-            echo "✅ CHANGELOG.md not modified"
             echo "✅ CHANGELOG.md not modified" >> $GITHUB_STEP_SUMMARY
           fi
 
-      # ─── Workspace Integrity ──────────────────────────────────────────
+      # ─── Workspace Integrity ───────────────────────────────────────────
       - name: "Gate: Workspace Integrity"
         if: >-
           always()
@@ -345,22 +280,16 @@ jobs:
               }
             }
             if (problems.length > 0) {
-              console.error('::error::WORKSPACE INTEGRITY FAILURE — npm resolved registry packages instead of local workspace copies.');
-              console.error('::error::This likely means a version mismatch between workspace packages (see PR #640).');
-              console.error('');
-              problems.forEach(p => {
-                console.error('  STALE: ' + p.path + (p.resolved ? ' → ' + p.resolved : ' (version: ' + p.version + ', not a workspace link)'));
-              });
-              console.error('');
-              console.error('To fix: ensure all workspace package version ranges match local versions,');
-              console.error('then run npm install at the repo root to regenerate the lockfile.');
+              console.error('::error::WORKSPACE INTEGRITY FAILURE — stale registry packages in lockfile.');
+              problems.forEach(p => console.error('  STALE: ' + p.path + ' → ' + p.resolved));
+              console.error('Fix: ensure workspace versions match, then npm install at repo root.');
               process.exit(1);
             }
             console.log('✅ All workspace packages resolve to local file: links');
           "
           echo "✅ All workspace packages resolve to local links" >> $GITHUB_STEP_SUMMARY
 
-      # ─── Prerelease Version Guard ─────────────────────────────────────
+      # ─── Prerelease Version Guard ──────────────────────────────────────
       - name: "Gate: Prerelease Version Guard"
         if: >-
           always()
@@ -373,8 +302,7 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             const pkgDirs = fs.readdirSync('packages', { withFileTypes: true })
-              .filter(d => d.isDirectory())
-              .map(d => d.name);
+              .filter(d => d.isDirectory()).map(d => d.name);
             const violations = [];
             for (const dir of pkgDirs) {
               const pkgPath = path.join('packages', dir, 'package.json');
@@ -385,18 +313,12 @@ jobs:
               }
             }
             if (violations.length > 0) {
-              console.error('::error::PRERELEASE VERSION DETECTED — packages with prerelease versions cannot merge to dev/main.');
-              console.error('');
-              violations.forEach(v => {
-                console.error('  ' + v.name + '@' + v.version + ' (' + v.path + ')');
-              });
-              console.error('');
-              console.error('Prerelease suffixes (-build, -alpha, -beta, -rc) must be removed before merging.');
-              console.error('To fix: update the version field in each listed package.json to a release version.');
-              console.error('To skip: add the \"skip-version-check\" label to your PR.');
+              console.error('::error::PRERELEASE VERSION DETECTED — cannot merge to dev/main.');
+              violations.forEach(v => console.error('  ' + v.name + '@' + v.version + ' (' + v.path + ')'));
+              console.error('Fix: remove prerelease suffixes. Skip: add \"skip-version-check\" label.');
               process.exit(1);
             }
-            console.log('✅ All package versions are release versions (no prerelease suffixes)');
+            console.log('✅ All package versions are release versions');
             pkgDirs.forEach(dir => {
               const pkgPath = path.join('packages', dir, 'package.json');
               if (fs.existsSync(pkgPath)) {
@@ -407,243 +329,12 @@ jobs:
           "
           echo "✅ All versions are release versions" >> $GITHUB_STEP_SUMMARY
 
-  exports-map-check:
-    needs: changes
-    # ── Local testing ──────────────────────────────────────────────────────
-    # To test this gate locally:
-    #   1. Check for SDK source changes:
-    #      git diff --name-only $(git merge-base dev HEAD)...HEAD | grep -E '^packages/squad-sdk/src/'
-    #   2. If any match, run the exports map script:
-    #      node scripts/check-exports-map.mjs
-    # ──────────────────────────────────────────────────────────────────────
-    if: >-
-      !cancelled()
-      && (github.event_name != 'pull_request'
-          || needs.changes.outputs.code == 'true'
-          || needs.changes.result == 'failure')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Check feature flag
-        id: flag
-        # Default: gate is ENABLED. When vars.SQUAD_EXPORTS_CHECK is
-        # undefined (not set in repo/org variables), the bash comparison
-        # [ "" = "false" ] evaluates to false, so skip stays "false" and
-        # the gate runs. Set vars.SQUAD_EXPORTS_CHECK to "false" to
-        # explicitly disable.
+      # ─── Publish Policy ────────────────────────────────────────────────
+      - name: "Gate: Workspace-scoped npm publish"
+        if: always()
         run: |
-          if [ "${{ vars.SQUAD_EXPORTS_CHECK }}" = "false" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Exports map check disabled via vars.SQUAD_EXPORTS_CHECK"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
-        run: |
-          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
-          if echo "$LABELS" | grep -q "skip-exports-check"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping exports map check (skip-exports-check label present)"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Check for SDK source changes
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
-        id: changes
-        run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          HEAD="${{ github.event.pull_request.head.sha }}"
-          # Three-dot diff (base...head) finds the merge-base automatically,
-          # so it works correctly even when the PR branch contains merge
-          # commits from syncing with the base branch.
-          # Change detection regex: ^packages/squad-sdk/src/
-          #   Matches any file under the SDK source directory.
-          #   Config or test-only changes don't require exports validation.
-          SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
-          if [ -z "$SDK_CHANGED" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No SDK source changes detected -- exports check not applicable"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "SDK source files changed:"
-            echo "$SDK_CHANGED"
-          fi
-
-      - name: Verify exports map matches barrel files
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
-        run: node scripts/check-exports-map.mjs
-
-  samples-build:
-    needs: changes
-    # ── Local testing ──────────────────────────────────────────────────────
-    # To test this gate locally:
-    #   1. Build the SDK: npm run build -w packages/squad-sdk
-    #   2. Loop over samples: for d in samples/*/; do (cd "$d" && npm install && npm run build); done
-    #   3. Or test a single sample: cd samples/<name> && npm install && npm run build && npm test
-    # ──────────────────────────────────────────────────────────────────────
-    if: >-
-      !cancelled()
-      && (github.event_name != 'pull_request'
-          || needs.changes.outputs.code == 'true'
-          || needs.changes.result == 'failure')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-          cache-dependency-path: |
-            package-lock.json
-            samples/**/package-lock.json
-
-      - name: Check feature flag
-        id: flag
-        # Default: gate is ENABLED. Set vars.SQUAD_SAMPLES_CI to "false"
-        # to explicitly disable.
-        run: |
-          if [ "${{ vars.SQUAD_SAMPLES_CI }}" = "false" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Samples build gate disabled via vars.SQUAD_SAMPLES_CI"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
-        run: |
-          SKIP="false"
-          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
-          if echo "$LABELS" | grep -q "skip-samples-ci"; then
-            SKIP="true"
-            echo "Skipping samples build gate (skip-samples-ci label present)"
-          fi
-          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
-
-      - name: Check for SDK source changes
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
-        id: changes
-        run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          HEAD="${{ github.event.pull_request.head.sha }}"
-          # Change detection regex: ^packages/squad-sdk/src/
-          #   Only SDK source changes trigger sample rebuilds — doc or config changes are skipped.
-          SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
-          if [ -z "$SDK_CHANGED" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No SDK source changes detected -- samples build not applicable"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "SDK source files changed:"
-            echo "$SDK_CHANGED"
-          fi
-
-      - name: Install root dependencies and build SDK
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
-        run: |
-          npm ci --ignore-scripts
-          node packages/squad-cli/scripts/patch-esm-imports.mjs
-          npm run build -w packages/squad-sdk
-
-      - name: Build and test samples
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
-        run: |
-          FAILED=0
-          PASSED=0
-          SKIPPED=0
-
-          for sample_dir in samples/*/; do
-            sample_dir="${sample_dir%/}"
-            sample=$(basename "$sample_dir")
-
-            if [ ! -f "$sample_dir/package.json" ]; then
-              echo "::notice::[$sample] No package.json -- skipping"
-              SKIPPED=$((SKIPPED + 1))
-              continue
-            fi
-
-            HAS_BUILD=$(node -e "const p=require('./$sample_dir/package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null && echo "true" || echo "false")
-            HAS_TEST=$(node -e "const p=require('./$sample_dir/package.json'); process.exit(p.scripts?.test ? 0 : 1)" 2>/dev/null && echo "true" || echo "false")
-
-            if [ "$HAS_BUILD" = "false" ] && [ "$HAS_TEST" = "false" ]; then
-              echo "::notice::[$sample] No build or test scripts -- skipping"
-              SKIPPED=$((SKIPPED + 1))
-              continue
-            fi
-
-            echo ""
-            echo "========================================="
-            echo "[$sample] Installing dependencies..."
-            echo "========================================="
-            if ! (cd "$sample_dir" && npm install --ignore-scripts 2>&1); then
-              echo "::error::[$sample] npm install failed"
-              FAILED=$((FAILED + 1))
-              continue
-            fi
-
-            if [ "$HAS_BUILD" = "true" ]; then
-              echo "[$sample] Running build..."
-              if ! (cd "$sample_dir" && npm run build 2>&1); then
-                echo "::error::[$sample] npm run build failed"
-                FAILED=$((FAILED + 1))
-                continue
-              fi
-            fi
-
-            if [ "$HAS_TEST" = "true" ]; then
-              echo "[$sample] Running tests..."
-              if ! (cd "$sample_dir" && npm test 2>&1); then
-                echo "::error::[$sample] npm test failed"
-                FAILED=$((FAILED + 1))
-                continue
-              fi
-            fi
-
-            echo "::notice::[$sample] Passed"
-            PASSED=$((PASSED + 1))
-          done
-
-          echo ""
-          echo "========================================="
-          echo "Samples build summary: $PASSED passed, $FAILED failed, $SKIPPED skipped"
-          echo "========================================="
-
-          if [ "$FAILED" -gt 0 ]; then
-            echo "::error::$FAILED sample(s) failed build/test validation"
-            exit 1
-          fi
-
-  publish-policy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Enforce workspace-scoped npm publish
-        run: |
-          echo "Scanning workflow files for bare npm publish commands..."
           VIOLATIONS=0
           for wf in .github/workflows/*.yml; do
-            # Strip comment lines, then check for npm publish without -w/--workspace
             BARE=$(grep -n 'npm.*publish' "$wf" | grep -v '#' | grep -v '\-w ' | grep -v '\-\-workspace' | grep -v 'echo ' | grep -v 'grep ' | grep -v 'name:' || true)
             if [ -n "$BARE" ]; then
               echo "::error file=$wf::Bare npm publish found (missing -w/--workspace):"
@@ -652,43 +343,32 @@ jobs:
             fi
           done
           if [ "$VIOLATIONS" -eq 1 ]; then
-            echo ""
-            echo "::error::PUBLISH POLICY VIOLATION — all npm publish commands must be workspace-scoped (-w or --workspace)"
-            echo "See: https://github.com/bradygaster/squad/issues/557"
+            echo "::error::PUBLISH POLICY VIOLATION — all npm publish commands must be workspace-scoped"
             exit 1
           fi
           echo "✅ All npm publish commands are workspace-scoped"
 
-  # workspace-integrity and prerelease-version-guard are now part of
-  # the consolidated policy-gates job above.
+      # ─── Scope Check (repo-health PRs only) ────────────────────────────
+      - name: "Gate: Repo-health scope boundary"
+        if: >-
+          always()
+          && contains(github.event.pull_request.labels.*.name, 'repo-health')
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+          CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-(cli|sdk)/src/' || true)
+          if [ -n "$CHANGED" ]; then
+            echo "::error::SCOPE VIOLATION — repo-health PRs must not modify product source code."
+            echo "$CHANGED" | while read -r f; do echo "  - $f"; done
+            echo "Use a 'fix' or 'feat' label instead for product source changes."
+            exit 1
+          fi
+          echo "✅ No product source files modified — scope boundary respected"
 
-  export-smoke-test:
+  # ── SDK exports validation ──────────────────────────────────────────────
+  # Merged gate: validates exports map config AND built artifact resolution.
+  sdk-exports-validation:
     needs: changes
-    # ──────────────────────────────────────────────────────────────────────
-    # Export Smoke Test
-    # Purpose:  Verify that subpath exports actually resolve after build.
-    #           The exports-map-check validates config (barrel files match
-    #           export entries); this gate validates built artifacts exist
-    #           and are importable.
-    # Catches:  Missing dist/ files for declared subpath exports — e.g. a
-    #           new export added to package.json but the build doesn't
-    #           produce the referenced .js file.
-    # Why:      Added after PR #640 prerelease version incident to
-    #           strengthen build artifact validation.
-    # Cost:     Requires install + SDK build (~30s).
-    # ──────────────────────────────────────────────────────────────────────
-    # ── Local testing ──────────────────────────────────────────────────────
-    # To test this gate locally:
-    #   1. Build the SDK:  npm run build -w packages/squad-sdk
-    #   2. Run the smoke test inline:
-    #      node -e "const p=require('./packages/squad-sdk/package.json');
-    #        Object.entries(p.exports||{}).forEach(async([k,v])=>{
-    #          const f=typeof v==='string'?v:(v.import||v.default);
-    #          try{await import('./packages/squad-sdk/'+f);console.log('✅',k)}
-    #          catch(e){console.error('❌',k,e.message)}})"
-    #   3. To create a test PR to verify this gate:
-    #      gh pr edit <number> --add-label skip-export-smoke
-    # ──────────────────────────────────────────────────────────────────────
     if: >-
       !cancelled()
       && (github.event_name != 'pull_request'
@@ -700,70 +380,63 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Check feature flag
-        id: flag
-        # Default: gate is ENABLED. When vars.SQUAD_EXPORT_SMOKE is
-        # undefined (not set in repo/org variables), the bash comparison
-        # [ "" = "false" ] evaluates to false, so skip stays "false" and
-        # the gate runs. Set vars.SQUAD_EXPORT_SMOKE to "false" to
-        # explicitly disable.
+      - name: Check skip conditions
+        id: gate
         run: |
-          if [ "${{ vars.SQUAD_EXPORT_SMOKE }}" = "false" ]; then
+          SKIP_MAP="false"
+          SKIP_SMOKE="false"
+          if [ "${{ vars.SQUAD_EXPORTS_CHECK }}" = "false" ]; then SKIP_MAP="true"; fi
+          if [ "${{ vars.SQUAD_EXPORT_SMOKE }}" = "false" ]; then SKIP_SMOKE="true"; fi
+          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+          echo "$LABELS" | grep -q "skip-exports-check" && SKIP_MAP="true"
+          echo "$LABELS" | grep -q "skip-export-smoke" && SKIP_SMOKE="true"
+          if [ "$SKIP_MAP" = "true" ] && [ "$SKIP_SMOKE" = "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Export smoke test disabled via vars.SQUAD_EXPORT_SMOKE"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Check skip label
-        if: steps.flag.outputs.skip == 'false'
-        id: label
-        run: |
-          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
-          if echo "$LABELS" | grep -q "skip-export-smoke"; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping export smoke test (skip-export-smoke label present)"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check for SDK source changes
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true'
-        id: changes
+          echo "skip_map=$SKIP_MAP" >> "$GITHUB_OUTPUT"
+          echo "skip_smoke=$SKIP_SMOKE" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Check for SDK changes
+        if: steps.gate.outputs.skip != 'true'
+        id: sdk
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          # Three-dot diff (base...head) finds the merge-base automatically,
-          # so it works correctly even when the PR branch contains merge
-          # commits from syncing with the base branch.
-          # Change detection regex: ^packages/squad-sdk/(src/|package\.json)
-          #   Matches SDK source files OR the SDK package.json (which contains the
-          #   exports map). This is broader than other gates because changes to
-          #   the exports map in package.json also need smoke testing.
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/(src/|package\.json)' || true)
           if [ -z "$SDK_CHANGED" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No SDK source/config changes detected -- export smoke test not applicable"
+            echo "No SDK changes detected — exports validation not applicable"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "SDK files changed:"
             echo "$SDK_CHANGED"
           fi
-
+      - name: Verify exports map matches barrel files
+        if: >-
+          steps.gate.outputs.skip != 'true'
+          && steps.gate.outputs.skip_map != 'true'
+          && steps.sdk.outputs.skip != 'true'
+        run: node scripts/check-exports-map.mjs
       - name: Install and build SDK
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        if: >-
+          steps.gate.outputs.skip != 'true'
+          && steps.gate.outputs.skip_smoke != 'true'
+          && steps.sdk.outputs.skip != 'true'
         run: |
           npm ci --ignore-scripts
           node packages/squad-cli/scripts/patch-esm-imports.mjs
           npm run build -w packages/squad-sdk
-
       - name: Smoke test all subpath exports
-        if: steps.flag.outputs.skip == 'false' && steps.label.outputs.skip != 'true' && steps.changes.outputs.skip != 'true'
+        if: >-
+          steps.gate.outputs.skip != 'true'
+          && steps.gate.outputs.skip_smoke != 'true'
+          && steps.sdk.outputs.skip != 'true'
         run: |
           node --input-type=module -e "
             import fs from 'fs';
@@ -787,66 +460,126 @@ jobs:
                 continue;
               }
               const resolvedPath = path.resolve('packages/squad-sdk', filePath);
-
-              // Phase 1: File existence check
               if (!fs.existsSync(resolvedPath)) {
                 failures.push({ subpath, importPath, filePath, error: 'File not found: ' + resolvedPath });
                 continue;
               }
-
-              // Phase 2: Dynamic import() — verifies the module actually loads
-              // without syntax errors, missing dependencies, or broken re-exports.
               try {
                 await import(pathToFileURL(resolvedPath).href);
                 passed++;
-                console.log('  ✅ ' + importPath + ' → ' + filePath + ' (exists + imports OK)');
+                console.log('  ✅ ' + importPath + ' → ' + filePath);
               } catch (e) {
                 failures.push({ subpath, importPath, filePath, error: 'import() failed: ' + e.message });
               }
             }
 
-            console.log('');
             if (failures.length > 0) {
-              console.error('::error::EXPORT SMOKE TEST FAILED — ' + failures.length + ' subpath export(s) do not resolve to built artifacts.');
-              console.error('');
-              failures.forEach(f => {
-                console.error('  ❌ ' + (f.importPath || f.subpath) + ': ' + f.error);
-              });
-              console.error('');
-              console.error('This means consumers importing these subpaths will get runtime errors.');
-              console.error('To fix: ensure the build produces all files referenced in package.json exports.');
-              console.error('To skip: add the \\\"skip-export-smoke\\\" label to your PR.');
+              console.error('::error::EXPORT SMOKE TEST FAILED — ' + failures.length + ' subpath export(s) broken.');
+              failures.forEach(f => console.error('  ❌ ' + (f.importPath || f.subpath) + ': ' + f.error));
+              console.error('Fix: ensure build produces all files in package.json exports. Skip: add \\\"skip-export-smoke\\\" label.');
               process.exit(1);
             }
-
             console.log('✅ All ' + passed + ' subpath exports resolve and import successfully');
           "
 
-  scope-check:
-    # Enforces PR scope boundary: repo-health PRs must not touch product source code.
-    # Replaces the removed squad-scope-check.yml workflow.
+  samples-build:
+    needs: changes
     if: >-
-      github.event_name == 'pull_request'
-      && contains(github.event.pull_request.labels.*.name, 'repo-health')
+      !cancelled()
+      && (github.event_name != 'pull_request'
+          || needs.changes.outputs.code == 'true'
+          || needs.changes.result == 'failure')
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Check for product source changes in repo-health PR
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            samples/**/package-lock.json
+      - name: Check skip conditions
+        id: gate
+        run: |
+          SKIP="false"
+          if [ "${{ vars.SQUAD_SAMPLES_CI }}" = "false" ]; then
+            SKIP="true"
+            echo "Samples build disabled via vars.SQUAD_SAMPLES_CI"
+          fi
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q "skip-samples-ci"; then
+            SKIP="true"
+            echo "Skipping (skip-samples-ci label)"
+          fi
+          echo "skip=$SKIP" >> "$GITHUB_OUTPUT"
+      - name: Check for SDK source changes
+        if: steps.gate.outputs.skip != 'true'
+        id: sdk
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
-          CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-(cli|sdk)/src/' || true)
-          if [ -n "$CHANGED" ]; then
-            echo "::error::SCOPE VIOLATION — repo-health PRs must not modify product source code."
-            echo "The following product source files were changed:"
-            echo "$CHANGED" | while read -r f; do echo "  - $f"; done
-            echo ""
-            echo "Product source (packages/squad-cli/src/ and packages/squad-sdk/src/) is off-limits for repo-health PRs."
-            echo "If this change requires product source edits, use a 'fix' or 'feat' label instead."
+          SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
+          if [ -z "$SDK_CHANGED" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No SDK source changes — samples build not applicable"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install root dependencies and build SDK
+        if: steps.gate.outputs.skip != 'true' && steps.sdk.outputs.skip != 'true'
+        run: |
+          npm ci --ignore-scripts
+          node packages/squad-cli/scripts/patch-esm-imports.mjs
+          npm run build -w packages/squad-sdk
+      - name: Build and test samples
+        if: steps.gate.outputs.skip != 'true' && steps.sdk.outputs.skip != 'true'
+        run: |
+          FAILED=0
+          PASSED=0
+          SKIPPED=0
+          for sample_dir in samples/*/; do
+            sample_dir="${sample_dir%/}"
+            sample=$(basename "$sample_dir")
+            if [ ! -f "$sample_dir/package.json" ]; then
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+            HAS_BUILD=$(node -e "const p=require('./$sample_dir/package.json'); process.exit(p.scripts?.build ? 0 : 1)" 2>/dev/null && echo "true" || echo "false")
+            HAS_TEST=$(node -e "const p=require('./$sample_dir/package.json'); process.exit(p.scripts?.test ? 0 : 1)" 2>/dev/null && echo "true" || echo "false")
+            if [ "$HAS_BUILD" = "false" ] && [ "$HAS_TEST" = "false" ]; then
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+            echo "[$sample] Installing..."
+            if ! (cd "$sample_dir" && npm install --ignore-scripts 2>&1); then
+              echo "::error::[$sample] npm install failed"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
+            if [ "$HAS_BUILD" = "true" ]; then
+              echo "[$sample] Building..."
+              if ! (cd "$sample_dir" && npm run build 2>&1); then
+                echo "::error::[$sample] build failed"
+                FAILED=$((FAILED + 1))
+                continue
+              fi
+            fi
+            if [ "$HAS_TEST" = "true" ]; then
+              echo "[$sample] Testing..."
+              if ! (cd "$sample_dir" && npm test 2>&1); then
+                echo "::error::[$sample] test failed"
+                FAILED=$((FAILED + 1))
+                continue
+              fi
+            fi
+            PASSED=$((PASSED + 1))
+          done
+          echo "Samples: $PASSED passed, $FAILED failed, $SKIPPED skipped"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED sample(s) failed build/test validation"
             exit 1
           fi
-          echo "✅ No product source files modified — scope boundary respected"
