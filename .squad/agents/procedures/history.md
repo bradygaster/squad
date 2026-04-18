@@ -196,3 +196,21 @@ Also updated: examples section (showing `name` + `description` pairs), anti-patt
 
 **Pattern:** When a PR branch has accumulated merge commits from dev, use `git rebase --onto dev <parent-of-first-PR-commit>` to cherry-pick only the relevant commits. This avoids conflict noise from old merge commits that are already in dev. Also: after template renames, the sync script may overwrite version stamps in the canonical file — revert those before pushing.
 
+### 2026-04-17: Trim copilot-instructions.md (#999)
+
+**Task:** Reduce `.github/copilot-instructions.md` from ~1,300 words / 9KB to ≤750 words / ≤4KB to reduce attention dilution for the Copilot coding agent.
+
+**Key decisions:**
+- Extracted Protected Files (file list, rules, SDK/CLI boundary, anti-patterns) to `.copilot/skills/protected-files/SKILL.md` — replaced with 2-sentence pointer
+- Consolidated Git Safety from 4 sub-sections (Staging, Pushing, Pre-Push Checklist, Branch Contamination Prevention) into a single 7-item flat list; resolved contradictory `git fetch upstream` vs `git fetch origin` (kept `origin`)
+- Compacted Changeset Requirement from 7 lines + code block to 2 sentences
+- Reordered: Team Context, Capability Self-Check, Branch Naming now appear before Git Safety (essential workflow first, safety rules second)
+- Removed duplication with `.squad/copilot-instructions.md` (5 sections were verbatim copies; kept compact versions since both files load)
+- Sweeping Refactor Rules condensed from 5-step list to 2-sentence pointer
+
+**Result:** 397 words / 3KB — well within target. PR #1002.
+
+**Files modified:** `.github/copilot-instructions.md`, `.copilot/skills/protected-files/SKILL.md` (new).
+
+**Pattern:** When trimming agent instructions, extract domain-specific reference content to skills (lazy-loaded on demand) and keep the main instructions file as a routing/workflow document. Skills are the right abstraction for "read this when you touch X" — they don't consume tokens until needed.
+
