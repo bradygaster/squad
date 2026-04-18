@@ -417,9 +417,14 @@ jobs:
           else
             BASE="${{ github.event.before }}"
             HEAD="${{ github.sha }}"
-            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-              BASE="HEAD~1"
-              HEAD="HEAD"
+            NULL_SHA="0000000000000000000000000000000000000000"
+            if [ -z "$BASE" ] || [ "$BASE" = "$NULL_SHA" ]; then
+              HEAD="$(git rev-parse HEAD)"
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                BASE="$(git rev-parse HEAD~1)"
+              else
+                BASE="$HEAD"
+              fi
             fi
           fi
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/(src/|package\.json)' || true)
@@ -540,9 +545,14 @@ jobs:
           else
             BASE="${{ github.event.before }}"
             HEAD="${{ github.sha }}"
-            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-              BASE="HEAD~1"
-              HEAD="HEAD"
+            NULL_SHA="0000000000000000000000000000000000000000"
+            if [ -z "$BASE" ] || [ "$BASE" = "$NULL_SHA" ]; then
+              HEAD="$(git rev-parse HEAD)"
+              if git rev-parse HEAD~1 >/dev/null 2>&1; then
+                BASE="$(git rev-parse HEAD~1)"
+              else
+                BASE="$HEAD"
+              fi
             fi
           fi
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
