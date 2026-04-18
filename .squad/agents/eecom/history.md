@@ -4,6 +4,8 @@
 
 ## Learnings
 
+📌 **Team update (2026-04-14T03:05:00Z — PR #970 Review Feedback Fixes):** EECOM completed 4 review feedback fixes for PR #970 (identity/token handling): (1) fixed `resolve-token.mjs` cwd bug — now uses `process.cwd()` correctly in spawned child, (2) fixed `waitForManifestCode` timeout leak — moved cleanup out of error-only path into finally block, (3) removed dead choice '3' handler in e2e script, (4) added `.gitignore` entry for identity key files. All fixes committed and pushed to dev. Impact: token resolution now works correctly in non-project directories; resource cleanup guaranteed; test output cleaner.
+
 ### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
 
 **Context:** PR #942 from tamirdresher's fork was retargeted from `insider` to `dev`, causing 29 files in the diff when only 3 commits (4 files relevant to dev) were the actual fix. Cherry-picked the 3 fix commits onto a clean `squad/942-rebase-type-safety` branch from dev, resolving conflicts where insider-only files (skill.ts, cross-package-exports.test.ts) didn't exist on dev. Dropped the `escapeYamlValue` import and APM YAML generation function from init.ts since skill.ts doesn't exist on dev. Opened #963 as the clean replacement, closed #942.

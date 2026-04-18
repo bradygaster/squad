@@ -8,6 +8,7 @@ import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import { SquadState, FSStorageProvider } from '@bradygaster/squad-sdk';
+import { resolveRoleSlug, resolveToken } from '@bradygaster/squad-sdk';
 import { SessionRegistry } from './sessions.js';
 import { dirname } from 'node:path';
 
@@ -113,6 +114,29 @@ export async function spawnAgent(
   registry.register(name, role);
   registry.updateStatus(name, 'working');
 
+  // Resolve GH_TOKEN for the agent's role identity.
+  // Graceful: if identity isn't configured, token is null and we skip injection.
+  let injectedToken: string | null = null;
+  let previousGhToken: string | undefined;
+  try {
+    const slug = resolveRoleSlug(role);
+    injectedToken = await resolveToken(teamRoot, slug);
+    // Fallback to 'lead' if role-specific token not available
+    if (!injectedToken && slug !== 'lead') {
+      injectedToken = await resolveToken(teamRoot, 'lead');
+      debugLog('spawnAgent: identity token for', name, `(role=${role}, slug=${slug}): fallback to lead:`, injectedToken ? 'resolved' : 'none');
+    } else {
+      debugLog('spawnAgent: identity token for', name, `(role=${role}, slug=${slug}):`, injectedToken ? 'resolved' : 'none');
+    }
+  } catch (err) {
+    debugLog('spawnAgent: identity token resolution failed for', name, '— continuing without token:', err);
+  }
+
+  if (injectedToken) {
+    previousGhToken = process.env['GH_TOKEN'];
+    process.env['GH_TOKEN'] = injectedToken;
+  }
+
   try {
     const systemPrompt = buildAgentPrompt(charter, { systemContext: options.systemContext });
 
@@ -163,5 +187,14 @@ export async function spawnAgent(
       status: 'error',
       error: `Failed to spawn ${name}: ${msg.replace(/^Error:\s*/i, '')}. Try again or run \`squad doctor\`.`,
     };
+  } finally {
+    // Restore previous GH_TOKEN to avoid leaking identity across spawns
+    if (injectedToken) {
+      if (previousGhToken !== undefined) {
+        process.env['GH_TOKEN'] = previousGhToken;
+      } else {
+        delete process.env['GH_TOKEN'];
+      }
+    }
   }
 }

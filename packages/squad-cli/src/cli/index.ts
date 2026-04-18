@@ -36,6 +36,7 @@ export * from './core/team-md.js';
 export { runCopilot, type CopilotFlags } from './commands/copilot.js';
 export { runCost } from './commands/cost.js';
 export { runDoctor, doctorCommand, type DoctorCheck, type DoctorMode } from './commands/doctor.js';
+export { runIdentity } from './commands/identity.js';
 export { runExport } from './commands/export.js';
 export { runImport } from './commands/import.js';
 export { splitHistory } from './core/history-split.js';

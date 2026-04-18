@@ -98,6 +98,8 @@ export type {
   SkillTool as BuilderSkillTool,
   SquadSDKConfig,
 } from './builders/index.js';
+// Identity (GitHub App-based agent identity)
+export * from './identity/index.js';
 // Base Roles (built-in role catalog)
 export * from './roles/index.js';
 export * from './platform/index.js';
