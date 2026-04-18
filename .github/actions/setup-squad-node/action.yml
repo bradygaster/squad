@@ -1,6 +1,6 @@
 # Composite action: Setup Node.js with npm cache and retry logic
 # Created to DRY up the repeated setup-node + npm install retry pattern
-# used across squad-ci.yml, ci-rerun.yml, squad-npm-publish.yml,
+# used across squad-ci.yml, squad-npm-publish.yml,
 # and squad-insider-publish.yml.
 #
 # Usage:
