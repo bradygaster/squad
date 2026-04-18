@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 # Prevent parallel runs from competing for resources
 concurrency:
@@ -390,7 +391,11 @@ jobs:
           SKIP_SMOKE="false"
           if [ "${{ vars.SQUAD_EXPORTS_CHECK }}" = "false" ]; then SKIP_MAP="true"; fi
           if [ "${{ vars.SQUAD_EXPORT_SMOKE }}" = "false" ]; then SKIP_SMOKE="true"; fi
-          LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            LABELS=$(gh pr view ${{ github.event.pull_request.number }} --json labels --jq '.labels[].name' 2>/dev/null || echo "")
+          else
+            LABELS=""
+          fi
           echo "$LABELS" | grep -q "skip-exports-check" && SKIP_MAP="true"
           echo "$LABELS" | grep -q "skip-export-smoke" && SKIP_SMOKE="true"
           if [ "$SKIP_MAP" = "true" ] && [ "$SKIP_SMOKE" = "true" ]; then
@@ -406,8 +411,17 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         id: sdk
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          HEAD="${{ github.event.pull_request.head.sha }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="HEAD~1"
+              HEAD="HEAD"
+            fi
+          fi
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/(src/|package\.json)' || true)
           if [ -z "$SDK_CHANGED" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -520,8 +534,17 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         id: sdk
         run: |
-          BASE="${{ github.event.pull_request.base.sha }}"
-          HEAD="${{ github.event.pull_request.head.sha }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+              BASE="HEAD~1"
+              HEAD="HEAD"
+            fi
+          fi
           SDK_CHANGED=$(git diff --name-only "$BASE"..."$HEAD" | grep -E '^packages/squad-sdk/src/' || true)
           if [ -z "$SDK_CHANGED" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
