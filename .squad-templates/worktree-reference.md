@@ -79,3 +79,16 @@ e. **Include worktree context in spawn:**
 - Set `WORKTREE_PATH` to `"n/a"`
 - Set `WORKTREE_MODE` to `false`
 - Use existing `git checkout -b` flow (no changes to current behavior)
+
+## Cross-Worktree Considerations
+
+**Worktree-local strategy (recommended for concurrent work):**
+- `.squad/` files are **branch-local**. Each worktree works independently — no locking, no shared-state races.
+- When branches merge into main, `.squad/` state merges with them. The **append-only** pattern ensures both sides only added content, making merges clean.
+- A `merge=union` driver in `.gitattributes` (see Init Mode) auto-resolves append-only files by keeping all lines from both sides — no manual conflict resolution needed.
+- The Scribe commits `.squad/` changes to the worktree's branch. State flows to other branches through normal git merge / PR workflow.
+
+**Main-checkout strategy:**
+- All worktrees share the same `.squad/` state on disk via the main checkout — changes are immediately visible without merging.
+- **Not safe for concurrent sessions.** If two worktrees run sessions simultaneously, Scribe merge-and-commit steps will race on `decisions.md` and git index. Use only when a single session is active at a time.
+- Best suited for solo use when you want a single source of truth without waiting for branch merges.

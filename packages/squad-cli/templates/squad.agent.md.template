@@ -291,6 +291,29 @@ After routing determines WHO handles work, select the response MODE based on tas
 | **Standard** | Normal tasks, single-agent work requiring full context | Spawn one agent with full ceremony — charter inline, history read, decisions read. This is the current default | ~25-35s |
 | **Full** | Multi-agent work, complex tasks touching 3+ concerns, "Team" requests | Parallel fan-out, full ceremony, Scribe included | ~40-60s |
 
+**Direct Mode exemplars** (coordinator answers instantly, no spawn):
+- "Where are we?" → Summarize current state from context: branch, recent work, what the team's been doing.
+- "How many tests do we have?" → Run a quick command, answer directly.
+- "What branch are we on?" → `git branch --show-current`, answer directly.
+- "Who's on the team?" → Answer from team.md already in context.
+- "What did we decide about X?" → Answer from decisions.md already in context.
+
+**Lightweight Mode exemplars** (one agent, minimal prompt):
+- "Fix the typo in README" → Spawn one agent, no charter, no history read.
+- "Add a comment to line 42" → Small scoped edit, minimal context needed.
+- "What does this function do?" → `agent_type: "explore"` (Haiku model, fast).
+- Follow-up edits after a Standard/Full response — context is fresh, skip ceremony.
+
+**Standard Mode exemplars** (one agent, full ceremony):
+- "{AgentName}, add error handling to the export function"
+- "{AgentName}, review the prompt structure"
+- Any task requiring architectural judgment or multi-file awareness.
+
+**Full Mode exemplars** (multi-agent, parallel fan-out):
+- "Team, build the login page"
+- "Add OAuth support"
+- Any request that touches 3+ agent domains.
+
 **Mode upgrade rules:**
 - If a Lightweight task turns out to need history or decisions context → treat as Standard.
 - If uncertain between Direct and Lightweight → choose Lightweight.
@@ -464,7 +487,16 @@ Squad and all spawned agents may be running inside a **git worktree** rather tha
 - Agents resolve ALL `.squad/` paths from the provided team root — charter, history, decisions inbox, logs.
 - Agents never discover the team root themselves. They trust the value from the Coordinator.
 
-**⚠️ Cross-worktree safety:** The main-checkout strategy (all worktrees sharing one `.squad/` state) is NOT safe for concurrent sessions — simultaneous writes to decisions.md, history.md, and logs can race. Use **worktree-local** strategy for concurrent work (each worktree gets its own `.squad/` state that merges via `merge=union` in `.gitattributes`).
+**Cross-worktree considerations (worktree-local strategy — recommended for concurrent work):**
+- `.squad/` files are **branch-local**. Each worktree works independently — no locking, no shared-state races.
+- When branches merge into main, `.squad/` state merges with them. The **append-only** pattern ensures both sides only added content, making merges clean.
+- A `merge=union` driver in `.gitattributes` (see Init Mode) auto-resolves append-only files by keeping all lines from both sides — no manual conflict resolution needed.
+- The Scribe commits `.squad/` changes to the worktree's branch. State flows to other branches through normal git merge / PR workflow.
+
+**Cross-worktree considerations (main-checkout strategy):**
+- All worktrees share the same `.squad/` state on disk via the main checkout — changes are immediately visible without merging.
+- **Not safe for concurrent sessions.** If two worktrees run sessions simultaneously, Scribe merge-and-commit steps will race on `decisions.md` and git index. Use only when a single session is active at a time.
+- Best suited for solo use when you want a single source of truth without waiting for branch merges.
 
 **On-demand reference:** Read `.squad/templates/worktree-reference.md` for worktree lifecycle management (creation, reuse, cleanup), dependency setup, and pre-spawn worktree configuration steps.
 
