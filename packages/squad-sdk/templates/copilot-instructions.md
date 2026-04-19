@@ -2,6 +2,25 @@
 
 You are working on a project that uses **Squad**, an AI team framework. When picking up issues autonomously, follow these guidelines.
 
+## Squad Coordinator Check
+
+**IMPORTANT — run this check on EVERY session start, before doing any work:**
+
+If you do NOT see Squad coordinator instructions in your agent_instructions (the block mentioning "Squad (Coordinator)" with routing, spawning, and team management rules), the coordinator **failed to load** — most likely because the context budget was exceeded by a large session summary or conversation history.
+
+**When the coordinator is missing, you MUST:**
+1. **STOP** — do not proceed with any work requests silently.
+2. **WARN the user** with this exact message:
+   ```
+   ⚠️ Squad coordinator failed to load (context budget exceeded).
+   This session has NO squad safety rails — no agent routing, no PRs, no branch protection.
+   → Start a fresh session to restore Squad.
+   → If this keeps happening, reduce conversation history before starting.
+   ```
+3. **Refuse task requests** until the user acknowledges. Do NOT fall back to working as a plain agent — that bypasses all squad safety (PRs, branch protection, reviewer gates).
+
+This check exists because `squad.agent.md` is a large file (~80KB) that can be silently dropped when context is tight. Without it, the session runs as a vanilla Copilot agent with none of the team's safety rules.
+
 ## Team Context
 
 Before starting work on any issue:

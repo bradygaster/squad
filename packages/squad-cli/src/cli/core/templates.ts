@@ -179,6 +179,38 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Issue lifecycle process template',
   },
 
+  // On-demand reference files (squad-owned, overwrite on upgrade)
+  {
+    source: 'model-selection-reference.md',
+    destination: 'templates/model-selection-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Model selection hierarchy and fallback chains',
+  },
+  {
+    source: 'client-compatibility-reference.md',
+    destination: 'templates/client-compatibility-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Platform detection and adaptive spawning',
+  },
+  {
+    source: 'spawn-reference.md',
+    destination: 'templates/spawn-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Agent spawn templates (full and lightweight)',
+  },
+  {
+    source: 'after-agent-reference.md',
+    destination: 'templates/after-agent-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Post-work steps and Scribe spawn template',
+  },
+  {
+    source: 'worktree-reference.md',
+    destination: 'templates/worktree-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Worktree lifecycle and pre-spawn setup',
+  },
+
   // Skills subdirectory (squad-owned)
   {
     source: 'skills/squad-conventions/SKILL.md',
