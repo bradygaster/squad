@@ -2,52 +2,16 @@
 
 > Public Affairs Officer
 
-## Core Context
+## Current Focus
 
-Docs live in docs/ with blog/, concepts/, cookbook/, getting-started/, guide/, features/, scenarios/ sections. Blog tests use filesystem discovery (dynamic); other sections use hardcoded expected arrays. Microsoft Style Guide enforced: sentence-case headings, active voice, second person, present tense. Docs format: plain markdown, H1 title, experimental warning, "Try this" code blocks, overview, HR, H2 content sections. Scannability framework: paragraphs for narrative, bullets for scannable items, tables for comparisons.
+Docs live in `docs/` with blog/, concepts/, cookbook/, getting-started/, guide/, features/, scenarios/ sections. Microsoft Style Guide: sentence-case headings, active voice, second person, present tense. Blog tests use filesystem discovery; other sections use hardcoded expected arrays.
 
-## Learnings
+📌 **See `history-archive.md` for detailed learnings prior to 2026-04-01**
 
-### Discussion Triage Patterns (2026-03-23 Release Incident)
-**Context:** v0.9.1 release completed; 15 open discussions analyzing whether community response patterns matched feature releases.
+## Latest Session
 
-**Pattern identified:** Feature releases without follow-up discussion closes = missed trust opportunity. When you ship features (personal squad, worktrees, economy mode, rate limiting), search discussions for matching feature-requests → respond + close proactively. This signals to community that you listen.
-
-**Triage workflow:**
-1. Map new features to open discussions (which discussions are solved by this release?)
-2. Respond: "This feature is now available in v0.9.1. See docs link."
-3. Close as resolved
-4. Consolidate: if discussion #463 is duplicate of #402, merge responses into #402, close #463
-5. Convert: if discussion reveals a bug or roadmap item, convert to issue with label (e.g., squad:eecom)
-6. Keep: if discussion is feedback or edge case, keep open; respond substantively
-
-**For v0.9.1 release:** 4 closed, 1 consolidated, 2 converted to issue, 8 kept. Result: community sees responsiveness; discussions become productivity tool, not backlog.
-
-**Critical finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024. Docs must purge old connector references and document Power Automate Workflows path (new successor).
-
-### Chinese README Workflow (2026-03-23 Release Incident)
-Community contributor (PR #572) provided Chinese README translation. Approved and merged as part of v0.9.1 release. Pattern: accept community translations; list contributors in CONTRIBUTORS.md; acknowledge in release notes.
-
-### Teams MCP Urgency Pattern (2026-03-23)
-External tool integrations deprecate. Office 365 Connectors retired Dec 2024. Docs mentioning deprecated tools create support burden and user confusion. Action: audit all external tool integration docs for deprecation; update with successor guidance (Power Automate Workflows for Teams).
-
-### Blog Post Format
-YAML frontmatter: title, date, author, wave, tags, status, hero. Body: experimental warning, What Shipped, Why This Matters, Quick Stats, What's Next. 200-400 words for infrastructure releases. No hype — explain value.
-
-### Boundary Review Heuristic
-"Squad Ships It" litmus test: if Squad doesn't ship the code/config, it's IRL content. Platform features used alongside Squad: clarify whose feature it is. Squad behavior/config docs stay. External infrastructure docs (ralph-operations, proactive-communication) → IRL.
-
-### DOCS-TEST SYNC
-When adding docs pages, update test assertions in docs-build.test.ts in the SAME commit. When rebasing doc PRs, main branch (already merged) takes priority.
-
-### Contributor Recognition
-CONTRIBUTORS.md tracks team roster and community contributors. Each release includes recognition updates. Append PR counts, don't replace.
-
-### Skill Scope Documentation Pattern
-Explicitly state what a skill produces and does NOT produce. Deterministic skills prevent agents from generating unnecessary code when templates exist.
-
-### Teams MCP Audit
-External tool integrations require explicit "where to get it" guidance. Placeholder paths need clarification that users must provide actual MCP server implementations.
+- **2026-04-19:** Decision inbox merged (4 decisions); no new community engagement or doc updates
+- **Previous:** v0.9.1 release discussion triage, Teams MCP deprecation audit, docs-test sync discipline
 
 ### Cross-Org Authentication Docs
 Problem/solution structure for multi-account auth: gh auth switch, Copilot instructions, Squad skill pattern. Cover credential helpers, EMU variations, common error messages. Cross-reference in troubleshooting and enterprise-platforms pages.
