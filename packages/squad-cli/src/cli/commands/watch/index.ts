@@ -10,7 +10,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../../sdk-local.js';
 
 const storage = new FSStorageProvider();
 const execFileAsync = promisify(execFile);
@@ -24,17 +24,17 @@ import {
   parseRoster,
   triageIssue,
   type TriageIssue,
-} from '@bradygaster/squad-sdk/ralph/triage';
-import { RalphMonitor } from '@bradygaster/squad-sdk/ralph';
-import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
-import { ghAvailable, ghAuthenticated, ghRateLimitCheck, isRateLimitError } from '../../core/gh-cli.js';
-import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
-import {
+  RalphMonitor,
+  EventBus,
   PredictiveCircuitBreaker,
   getTrafficLight,
-} from '@bradygaster/squad-sdk/ralph/rate-limiting';
-import { createPlatformAdapter } from '@bradygaster/squad-sdk/platform';
-import type { PlatformAdapter, WorkItem, PullRequest as SdkPullRequest } from '@bradygaster/squad-sdk/platform';
+  createPlatformAdapter,
+  type MachineCapabilities,
+  type PlatformAdapter,
+  type WorkItem,
+  type SdkPullRequest,
+} from '../../sdk-local.js';
+import { ghAvailable, ghAuthenticated, ghRateLimitCheck, isRateLimitError } from '../../core/gh-cli.js';
 
 import type { WatchConfig } from './config.js';
 import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './types.js';
@@ -1046,3 +1046,5 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     process.on('SIGTERM', shutdown);
   });
 }
+
+

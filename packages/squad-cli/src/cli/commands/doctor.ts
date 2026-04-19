@@ -11,7 +11,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 
@@ -532,3 +532,5 @@ export async function doctorCommand(cwd?: string): Promise<void> {
   const checks = await runDoctor(resolvedCwd);
   printDoctorReport(checks, mode);
 }
+
+

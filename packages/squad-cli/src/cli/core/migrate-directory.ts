@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { success, warn, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { scrubEmails } from './email-scrub.js';
@@ -81,3 +81,5 @@ export async function migrateDirectory(dest: string): Promise<void> {
   console.log('  git commit -m "chore: migrate .ai-team/ → .squad/"');
   console.log();
 }
+
+

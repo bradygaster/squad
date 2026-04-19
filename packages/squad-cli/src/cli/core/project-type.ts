@@ -3,7 +3,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 
@@ -26,3 +26,5 @@ export function detectProjectType(dir: string): ProjectType {
   } catch {}
   return 'unknown';
 }
+
+

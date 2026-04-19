@@ -7,7 +7,7 @@
 import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
-import { SquadState, FSStorageProvider } from '@bradygaster/squad-sdk';
+import { SquadState, FSStorageProvider } from '../sdk-local.js';
 import { SessionRegistry } from './sessions.js';
 import { dirname } from 'node:path';
 
@@ -165,3 +165,5 @@ export async function spawnAgent(
     };
   }
 }
+
+

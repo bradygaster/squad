@@ -90,7 +90,7 @@ function _handleTopLevelSignal(signal: 'SIGINT' | 'SIGTERM'): void {
 process.on('SIGINT', () => _handleTopLevelSignal('SIGINT'));
 process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
 
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from './cli/sdk-local.js';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
 import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
@@ -564,7 +564,7 @@ async function main(): Promise<void> {
     if (args.includes('--init')) {
       const fileIdx = args.indexOf('--file');
       const filePath = (fileIdx !== -1 && args[fileIdx + 1]) ? args[fileIdx + 1]! : 'loop.md';
-      const { FSStorageProvider } = await import('@bradygaster/squad-sdk');
+      const { FSStorageProvider } = await import('./cli/sdk-local.js');
       const storage = new FSStorageProvider();
       const pathMod = await import('node:path');
       const absPath = pathMod.default.resolve(getSquadStartDir(), filePath);
@@ -943,6 +943,7 @@ main().catch(err => {
   }
   process.exit(1);
 });
+
 
 
 

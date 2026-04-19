@@ -9,7 +9,7 @@
 
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 import { loadSubSquadsConfig, resolveSubSquad } from '@bradygaster/squad-sdk';
@@ -176,3 +176,5 @@ function activateSubSquad(cwd: string, name: string): void {
   console.log(`  Written to: ${workstreamFilePath}`);
   console.log(`${DIM}  (This file is gitignored — it's local to your machine/Codespace)${RESET}\n`);
 }
+
+

@@ -15,7 +15,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider, resolveExternalStateDir, deriveProjectKey } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, resolveExternalStateDir, deriveProjectKey } from '../sdk-local.js';
 import { fatal } from '../core/errors.js';
 
 const storage = new FSStorageProvider();
@@ -227,3 +227,5 @@ function ensureGitignored(projectDir: string, entry: string): void {
     storage.appendSync(gitignorePath, block);
   }
 }
+
+

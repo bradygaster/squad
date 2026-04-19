@@ -8,7 +8,7 @@
  */
 
 import { join } from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { writeEconomyMode, readEconomyMode } from '@bradygaster/squad-sdk/config';
 
 const storage = new FSStorageProvider();
@@ -68,3 +68,5 @@ export async function runEconomy(cwd: string, subArgs: string[]): Promise<void> 
     console.log(`  Usage: squad economy on | off\n`);
   }
 }
+
+

@@ -10,7 +10,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { fatal } from '../core/errors.js';
 
 const storage = new FSStorageProvider();
@@ -54,3 +54,5 @@ export function writeRemoteConfig(projectDir: string, teamRepoPath: string): voi
     storage.appendSync(gitignorePath, block);
   }
 }
+
+

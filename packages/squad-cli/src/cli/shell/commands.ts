@@ -6,7 +6,7 @@ import { listSessions, loadSessionById, type SessionData } from './session-store
 import { formatAgentLine, getStatusTag } from './agent-status.js';
 import type { ShellMessage } from './types.js';
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { runNapSync, formatNapReport } from '../core/nap.js';
 
 const storage = new FSStorageProvider();
@@ -273,3 +273,5 @@ function handleInit(args: string[], context: CommandContext): CommandResult {
     ].join('\n'),
   };
 }
+
+

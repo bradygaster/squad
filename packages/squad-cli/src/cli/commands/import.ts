@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -144,3 +144,5 @@ export async function runImport(dest: string, importPath: string, force: boolean
   info('  2. Tell the team about this project — they\'ll adapt');
   console.log();
 }
+
+

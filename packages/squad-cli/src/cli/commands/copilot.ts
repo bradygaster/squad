@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 import { success, dim, bold, info, BOLD, RESET, DIM } from '../core/output.js';
@@ -109,3 +109,5 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
   console.log(`  2. Set secret:    ${DIM}gh secret set COPILOT_ASSIGN_TOKEN${RESET}`);
   console.log();
 }
+
+

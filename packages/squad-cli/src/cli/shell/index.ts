@@ -21,7 +21,8 @@ import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import { RateLimitError } from '@bradygaster/squad-sdk/adapter/errors';
 import type { ShellMessage } from './types.js';
-import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
+import { initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { parseAgentFromDescription } from './agent-name-parser.js';
@@ -1371,3 +1372,5 @@ export async function runShell(): Promise<void> {
     process.exit(_shellSignalCode);
   }
 }
+
+

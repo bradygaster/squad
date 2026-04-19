@@ -4,7 +4,7 @@
 
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../../../sdk-local.js';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 
 const storage = new FSStorageProvider();
@@ -78,3 +78,5 @@ export class DecisionHygieneCapability implements WatchCapability {
     }
   }
 }
+
+

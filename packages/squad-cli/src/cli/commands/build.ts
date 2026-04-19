@@ -19,7 +19,7 @@
 
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { success, warn, info, dim, BOLD, RESET, YELLOW, GREEN, RED } from '../core/output.js';
 import { fatal } from '../core/errors.js';
 
@@ -571,3 +571,5 @@ function formatStatus(status?: string): string {
       return '✅ Active';
   }
 }
+
+

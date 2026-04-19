@@ -12,7 +12,7 @@
 
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 import { success, warn, info } from '../core/output.js';
@@ -248,3 +248,5 @@ export async function upstreamCommand(args: string[]): Promise<void> {
     info(`\n${synced}/${toSync.length} upstream(s) synced.\n`);
   }
 }
+
+

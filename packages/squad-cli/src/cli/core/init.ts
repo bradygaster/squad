@@ -1,17 +1,23 @@
-﻿/**
+/**
  * Init command implementation — uses SDK
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
 
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import {
+  FSStorageProvider,
+  initSquad as sdkInitSquad,
+  cleanupOrphanInitPrompt,
+  ensurePersonalSquadDir,
+  resolvePersonalSquadDir,
+  type InitOptions,
+} from '../sdk-local.js';
 import { detectSquadDir, resolveWorktreeMainCheckout } from './detect-squad-dir.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, type InitOptions } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 
@@ -316,3 +322,5 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     showDeprecationWarning();
   }
 }
+
+

@@ -9,7 +9,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 import { detectSquadDir } from '../core/detect-squad-dir.js';
@@ -243,3 +243,5 @@ function formatTrigger(entry: ScheduleEntry): string {
       return 'unknown trigger';
   }
 }
+
+

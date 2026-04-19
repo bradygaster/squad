@@ -5,7 +5,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { success } from './output.js';
 import { scrubEmails } from './email-scrub.js';
 
@@ -137,3 +137,5 @@ export async function runMigrations(
   
   return applied;
 }
+
+
