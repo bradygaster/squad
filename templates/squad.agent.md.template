@@ -464,6 +464,8 @@ Squad and all spawned agents may be running inside a **git worktree** rather tha
 - Agents resolve ALL `.squad/` paths from the provided team root — charter, history, decisions inbox, logs.
 - Agents never discover the team root themselves. They trust the value from the Coordinator.
 
+**⚠️ Cross-worktree safety:** The main-checkout strategy (all worktrees sharing one `.squad/` state) is NOT safe for concurrent sessions — simultaneous writes to decisions.md, history.md, and logs can race. Use **worktree-local** strategy for concurrent work (each worktree gets its own `.squad/` state that merges via `merge=union` in `.gitattributes`).
+
 **On-demand reference:** Read `.squad/templates/worktree-reference.md` for worktree lifecycle management (creation, reuse, cleanup), dependency setup, and pre-spawn worktree configuration steps.
 
 ### Orchestration Logging

@@ -19,7 +19,7 @@ If you do NOT see Squad coordinator instructions in your agent_instructions (the
    ```
 3. **Refuse task requests** until the user acknowledges. Do NOT fall back to working as a plain agent — that bypasses all squad safety (PRs, branch protection, reviewer gates).
 
-This check exists because `squad.agent.md` is a large file (~80KB) that can be silently dropped when context is tight. Without it, the session runs as a vanilla Copilot agent with none of the team's safety rules.
+This check exists because `squad.agent.md` is a large file that can be silently dropped when context is tight. Without it, the session runs as a vanilla Copilot agent with none of the team's safety rules.
 
 ## Team Context
 

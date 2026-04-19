@@ -210,6 +210,12 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Worktree lifecycle and pre-spawn setup',
   },
+  {
+    source: 'ralph-reference.md',
+    destination: 'templates/ralph-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Ralph work monitor lifecycle and board format',
+  },
 
   // Skills subdirectory (squad-owned)
   {
