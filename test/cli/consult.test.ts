@@ -19,11 +19,12 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { isConsultMode, type SquadDirConfig } from '@bradygaster/squad-sdk';
 
 const TEST_ROOT = join(
-  process.cwd(),
+  tmpdir(),
   `.test-cli-consult-${randomBytes(4).toString('hex')}`,
 );
 
