@@ -13,6 +13,7 @@ import { mkdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
+import { tmpdir } from 'os';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import {
   runUpgrade,
@@ -21,7 +22,7 @@ import {
 } from '@bradygaster/squad-cli/core/upgrade';
 
 const TEST_ROOT = join(
-  process.cwd(),
+  tmpdir(),
   `.test-init-upgrade-parity-${randomBytes(4).toString('hex')}`,
 );
 
