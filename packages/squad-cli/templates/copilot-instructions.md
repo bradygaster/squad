@@ -6,13 +6,13 @@ You are working on a project that uses **Squad**, an AI team framework. When pic
 
 **IMPORTANT — run this check on EVERY session start, before doing any work:**
 
-If you do NOT see Squad coordinator instructions in your agent_instructions (the block mentioning "Squad (Coordinator)" with routing, spawning, and team management rules), the coordinator **failed to load** — most likely because the context budget was exceeded by a large session summary or conversation history.
+Look for the exact canary token `SQUAD_COORDINATOR_CANARY_a8f3` in your agent_instructions. This token is placed at the end of `squad.agent.md` — if it's missing, the coordinator either failed to load or was truncated.
 
-**When the coordinator is missing, you MUST:**
+**When the canary token is missing, you MUST:**
 1. **STOP** — do not proceed with any work requests silently.
 2. **WARN the user** with this exact message:
    ```
-   ⚠️ Squad coordinator failed to load (context budget exceeded).
+   ⚠️ Squad coordinator failed to load (context budget exceeded or file truncated).
    This session has NO squad safety rails — no agent routing, no PRs, no branch protection.
    → Start a fresh session to restore Squad.
    → If this keeps happening, reduce conversation history before starting.
