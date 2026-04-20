@@ -90,7 +90,8 @@ function _handleTopLevelSignal(signal: 'SIGINT' | 'SIGTERM'): void {
 process.on('SIGINT', () => _handleTopLevelSignal('SIGINT'));
 process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
 
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, resolveSquadState } from '@bradygaster/squad-sdk';
+import type { SquadStateContext } from '@bradygaster/squad-sdk';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
 import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
@@ -316,8 +317,11 @@ async function main(): Promise<void> {
     const roles = args.includes('--roles');
     const presetIdx = args.indexOf('--preset');
     const presetName = (presetIdx !== -1 && args[presetIdx + 1]) ? args[presetIdx + 1] : undefined;
+    // Parse --state-backend flag for init
+    const sbIdx = args.indexOf('--state-backend');
+    const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
         const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
@@ -505,6 +509,10 @@ async function main(): Promise<void> {
     }
     const stateBackend = rawStateBackend as typeof validBackends[number] | undefined;
 
+    // Resolve the full state context (paths + backend) once at entry.
+    // Commands can thread this through instead of re-resolving independently.
+    const stateContext: SquadStateContext | null = resolveSquadState(getSquadStartDir(), stateBackend);
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -539,6 +547,7 @@ async function main(): Promise<void> {
       overnightEnd,
       sentinelFile,
       stateBackend,
+      stateContext,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 

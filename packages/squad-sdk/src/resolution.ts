@@ -15,7 +15,10 @@
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
+import { resolveStateBackend, StateBackendStorageAdapter, type StateBackend, type StateBackendType } from './state-backend.js';
+import type { StorageProvider } from './storage/storage-provider.js';
 
 const storage = new FSStorageProvider();
 
@@ -678,4 +681,70 @@ export function resolvePresetsDir(): string | null {
   if (!storage.existsSync(presetsDir) || !storage.isDirectorySync(presetsDir)) return null;
 
   return presetsDir;
+}
+
+// ============================================================================
+// State backend resolution (Issue #1003)
+// ============================================================================
+
+/**
+ * Resolved state context for a squad session.
+ *
+ * Combines the resolved paths with the active state backend. Commands
+ * and SDK functions that need state I/O use this context instead of
+ * directly instantiating an FSStorageProvider.
+ *
+ * **Boundary:** Only mutable squad state flows through the backend.
+ * Bootstrap artifacts (config.json, team.md structure checks) stay on
+ * the local filesystem because they are needed before a backend can be
+ * resolved.
+ */
+export interface SquadStateContext {
+  /** Dual-root resolved paths (projectDir, teamDir, etc.) */
+  paths: ResolvedSquadPaths;
+  /** The active state backend (worktree, git-notes, or orphan) */
+  backend: StateBackend;
+  /** The repo root directory (for git-native backends) */
+  repoRoot: string;
+  /** StorageProvider backed by the active state backend — pass to SDK modules */
+  storage: StorageProvider;
+}
+
+/**
+ * Resolve the full squad state context: paths + state backend.
+ *
+ * Call once at command entry and thread the context through to SDK functions.
+ * This ensures the configured state backend (worktree, git-notes, orphan)
+ * applies to all squad operations — not just the watch command.
+ *
+ * @param startDir - Directory to start searching from. Defaults to cwd.
+ * @param cliOverride - CLI flag override for state backend type.
+ * @returns Resolved context, or null if no squad directory is found.
+ */
+export function resolveSquadState(startDir?: string, cliOverride?: StateBackendType): SquadStateContext | null {
+  const paths = resolveSquadPaths(startDir);
+  if (!paths) return null;
+
+  // Resolve actual repo root via git — handles linked worktrees correctly
+  const effectiveStart = startDir ?? process.cwd();
+  let repoRoot: string;
+  try {
+    repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: effectiveStart, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    // Fallback: derive from .squad/ parent if git is unavailable
+    repoRoot = path.resolve(paths.projectDir, '..');
+  }
+
+  // Resolve the backend from config + CLI override
+  const backend = resolveStateBackend(paths.projectDir, repoRoot, cliOverride);
+
+  // For worktree backend, use FSStorageProvider directly (more capable).
+  // For git-notes/orphan, bridge via StateBackendStorageAdapter.
+  const stateStorage: StorageProvider = backend.name === 'worktree'
+    ? new FSStorageProvider()
+    : new StateBackendStorageAdapter(backend, paths.projectDir);
+
+  return { paths, backend, repoRoot, storage: stateStorage };
 }
