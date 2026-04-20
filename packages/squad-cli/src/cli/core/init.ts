@@ -108,6 +108,8 @@ export interface RunInitOptions {
   roles?: boolean;
   /** If true, this is a global (personal squad) init — bootstrap personal-squad/ dir */
   isGlobal?: boolean;
+  /** State backend to configure at init time (worktree, git-notes, orphan, two-layer) */
+  stateBackend?: string;
 }
 
 /**
@@ -261,6 +263,58 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     const rolesMarker = path.join(squadDir, '.init-roles');
     storage.writeSync(rolesMarker, '1');
     success(`base roles enabled — team will use built-in role catalog`);
+  }
+
+  // Configure state backend if specified at init time
+  if (options.stateBackend) {
+    const validBackends = ['worktree', 'git-notes', 'orphan', 'two-layer'];
+    if (validBackends.includes(options.stateBackend)) {
+      const configPath = path.join(squadDir, 'config.json');
+      let config: Record<string, unknown> = {};
+      try {
+        const raw = storage.readSync(configPath);
+        if (raw) config = JSON.parse(raw);
+      } catch { /* start fresh */ }
+      config['stateBackend'] = options.stateBackend;
+      storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      success(`state backend: ${options.stateBackend}`);
+
+      // Auto-create orphan branch for orphan/two-layer backends
+      if (options.stateBackend === 'orphan' || options.stateBackend === 'two-layer') {
+        try {
+          // Check if squad-state branch already exists
+          execFileSync('git', ['rev-parse', '--verify', 'squad-state'], {
+            cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          success(`squad-state branch already exists`);
+        } catch {
+          // Commit current state to main first (so checkout --orphan doesn't lose it)
+          try {
+            execFileSync('git', ['add', '-A'], { cwd: dest, stdio: 'pipe' });
+            execFileSync('git', ['commit', '-m', 'squad: init with ' + options.stateBackend + ' backend'], { cwd: dest, stdio: 'pipe' });
+          } catch { /* may already be committed or nothing to commit */ }
+
+          // Create orphan branch
+          try {
+            const currentBranch = execFileSync('git', ['branch', '--show-current'], { cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+            execFileSync('git', ['checkout', '--orphan', 'squad-state'], { cwd: dest, stdio: 'pipe' });
+            execFileSync('git', ['rm', '-rf', '.'], { cwd: dest, stdio: 'pipe' });
+            const stateDir = path.join(dest, '.squad');
+            storage.mkdirSync(stateDir);
+            storage.writeSync(path.join(stateDir, 'README.md'), '# Squad State Branch\n\nThis branch stores mutable squad state (decisions, history, logs).\nIt is managed by Scribe and should not be edited manually.\n');
+            execFileSync('git', ['add', '.squad/'], { cwd: dest, stdio: 'pipe' });
+            execFileSync('git', ['commit', '-m', 'init: squad-state orphan branch'], { cwd: dest, stdio: 'pipe' });
+            execFileSync('git', ['checkout', currentBranch || 'main'], { cwd: dest, stdio: 'pipe' });
+            success(`squad-state orphan branch created`);
+          } catch {
+            try { execFileSync('git', ['checkout', '-'], { cwd: dest, stdio: 'pipe' }); } catch { /* best effort */ }
+            console.warn(`${YELLOW}⚠ Could not auto-create squad-state branch. Create it manually.${RESET}`);
+          }
+        }
+      }
+    } else {
+      console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (worktree).${RESET}`);
+    }
   }
 
   // Report .init-prompt storage

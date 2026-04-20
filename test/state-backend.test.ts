@@ -3,8 +3,9 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey } from '../packages/squad-sdk/src/state-backend.js';
+import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey, StateBackendStorageAdapter } from '../packages/squad-sdk/src/state-backend.js';
 import type { StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
+import { resolveSquadState } from '../packages/squad-sdk/src/resolution.js';
 
 const TMP = join(process.cwd(), `.test-state-backend-${randomBytes(4).toString('hex')}`);
 function git(args: string, cwd = TMP): string {
@@ -47,6 +48,33 @@ describe('GitNotesBackend', () => {
   it('multiple writes update the same key', () => { const b = new GitNotesBackend(TMP); b.write('c.json', '1'); expect(b.read('c.json')).toBe('1'); b.write('c.json', '2'); expect(b.read('c.json')).toBe('2'); });
   it('normalizes Windows paths', () => { const b = new GitNotesBackend(TMP); b.write('agents\\data.md', 'D'); expect(b.read('agents/data.md')).toBe('D'); });
   it('name is git-notes', () => { expect(new GitNotesBackend(TMP).name).toBe('git-notes'); });
+  it('state persists across branch switches (root-commit anchor)', { timeout: 15_000 }, () => {
+    // 1. Write state on main
+    const b = new GitNotesBackend(TMP);
+    b.write('decisions.md', '# Team Decisions');
+    b.write('agents/data.md', 'Data config');
+    expect(b.read('decisions.md')).toBe('# Team Decisions');
+
+    // 2. Create and switch to a feature branch
+    git('checkout -b feature-xyz');
+
+    // 3. Make a new commit on the feature branch (HEAD now differs from main)
+    writeFileSync(join(TMP, 'feature.txt'), 'new feature\n');
+    git('add feature.txt');
+    git('commit -m "add feature"');
+
+    // 4. Read state — should still be there (anchor is root commit, not HEAD)
+    const b2 = new GitNotesBackend(TMP);
+    expect(b2.read('decisions.md')).toBe('# Team Decisions');
+    expect(b2.read('agents/data.md')).toBe('Data config');
+    expect(b2.list('agents')).toContain('data.md');
+
+    // 5. Switch back to main — state still there
+    git('checkout main');
+    const b3 = new GitNotesBackend(TMP);
+    expect(b3.read('decisions.md')).toBe('# Team Decisions');
+    expect(b3.read('agents/data.md')).toBe('Data config');
+  });
 });
 
 describe('OrphanBranchBackend', () => {
@@ -179,5 +207,277 @@ describe('State Backend: Key injection blocked at backend level', () => {
     const b = new WorktreeBackend(squadDir);
     // WorktreeBackend uses path.join which handles traversal, but normalizeKey now validates
     expect(() => b.write('../../../etc/passwd', 'pwned')).toThrow('. or ..');
+  });
+});
+
+// ============================================================================
+// delete() and append() tests (Issue #1003)
+// ============================================================================
+
+describe('WorktreeBackend delete/append', () => {
+  const squadDir = () => join(TMP, '.squad');
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('delete removes an existing file and returns true', () => {
+    const b = new WorktreeBackend(squadDir());
+    b.write('decisions.md', '# Decisions');
+    expect(b.delete('decisions.md')).toBe(true);
+    expect(b.exists('decisions.md')).toBe(false);
+  });
+
+  it('delete returns false for non-existent file', () => {
+    const b = new WorktreeBackend(squadDir());
+    expect(b.delete('nonexistent.md')).toBe(false);
+  });
+
+  it('append creates file if it does not exist', () => {
+    const b = new WorktreeBackend(squadDir());
+    b.append('log.md', 'line 1\n');
+    expect(b.read('log.md')).toBe('line 1\n');
+  });
+
+  it('append adds to existing content', () => {
+    const b = new WorktreeBackend(squadDir());
+    b.write('log.md', 'line 1\n');
+    b.append('log.md', 'line 2\n');
+    expect(b.read('log.md')).toBe('line 1\nline 2\n');
+  });
+});
+
+describe('GitNotesBackend delete/append', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('delete removes a key from the blob', { timeout: 15_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    b.write('team.md', '# Team');
+    b.write('routing.md', '# Routing');
+    expect(b.delete('team.md')).toBe(true);
+    expect(b.exists('team.md')).toBe(false);
+    expect(b.read('routing.md')).toBe('# Routing');
+  });
+
+  it('delete returns false for non-existent key', { timeout: 10_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    expect(b.delete('nonexistent.md')).toBe(false);
+  });
+
+  it('append creates entry if it does not exist', { timeout: 10_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    b.append('log.md', 'entry 1\n');
+    expect(b.read('log.md')).toBe('entry 1\n');
+  });
+
+  it('append concatenates to existing entry', { timeout: 15_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    b.write('log.md', 'entry 1\n');
+    b.append('log.md', 'entry 2\n');
+    expect(b.read('log.md')).toBe('entry 1\nentry 2\n');
+  });
+});
+
+describe('OrphanBranchBackend delete/append', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('delete removes a file from the orphan branch', { timeout: 15_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    b.write('team.md', '# Team');
+    b.write('routing.md', '# Routing');
+    expect(b.delete('team.md')).toBe(true);
+    expect(b.exists('team.md')).toBe(false);
+    expect(b.read('routing.md')).toBe('# Routing');
+  });
+
+  it('delete returns false for non-existent file', () => {
+    const b = new OrphanBranchBackend(TMP);
+    expect(b.delete('nonexistent.md')).toBe(false);
+  });
+
+  it('append creates file if it does not exist', { timeout: 15_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    b.append('log.md', 'entry 1\n');
+    expect(b.read('log.md')).toBe('entry 1\n');
+  });
+
+  it('append concatenates to existing file', { timeout: 15_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    b.write('log.md', 'entry 1\n');
+    b.append('log.md', 'entry 2\n');
+    expect(b.read('log.md')).toBe('entry 1\nentry 2\n');
+  });
+
+  it('delete does not disturb working tree', { timeout: 15_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    b.write('s.json', '{}');
+    const before = readFileSync(join(TMP, 'README.md'), 'utf-8');
+    b.delete('s.json');
+    expect(readFileSync(join(TMP, 'README.md'), 'utf-8')).toBe(before);
+    expect(git('status --porcelain')).toBe('');
+  });
+
+  it('delete last file in directory prunes the empty directory', { timeout: 15_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    b.write('agents/data.md', '# Data');
+    b.write('team.md', '# Team');
+    expect(b.list('')).toContain('agents');
+    b.delete('agents/data.md');
+    expect(b.exists('agents/data.md')).toBe(false);
+    // The agents directory should be pruned since it's now empty
+    expect(b.list('')).not.toContain('agents');
+    // Other files should still be intact
+    expect(b.read('team.md')).toBe('# Team');
+  });
+
+  it('delete in nested directory prunes empty parents', { timeout: 30_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    b.write('a/b/c.md', 'deep');
+    b.write('top.md', 'root');
+    expect(b.list('')).toContain('a');
+    b.delete('a/b/c.md');
+    expect(b.exists('a/b/c.md')).toBe(false);
+    // Both 'a' and 'a/b' should be pruned
+    expect(b.list('')).not.toContain('a');
+    expect(b.read('top.md')).toBe('root');
+  });
+});
+
+describe('resolveSquadState()', () => {
+  const squadDir = () => join(TMP, '.squad');
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('returns null when no squad dir exists', () => {
+    rmSync(squadDir(), { recursive: true, force: true });
+    expect(resolveSquadState(TMP)).toBeNull();
+  });
+
+  it('returns context with worktree backend by default', () => {
+    writeFileSync(join(squadDir(), 'team.md'), '# Team');
+    writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.' }));
+    const ctx = resolveSquadState(TMP);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.backend.name).toBe('worktree');
+    expect(ctx!.paths.projectDir).toBe(squadDir());
+  });
+
+  it('respects stateBackend in config.json', () => {
+    writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
+    const ctx = resolveSquadState(TMP);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.backend.name).toBe('git-notes');
+  });
+
+  it('CLI override wins over config', () => {
+    writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
+    const ctx = resolveSquadState(TMP, 'orphan');
+    expect(ctx).not.toBeNull();
+    expect(ctx!.backend.name).toBe('orphan');
+  });
+
+  it('repoRoot uses git rev-parse --show-toplevel, not path.resolve parent', () => {
+    writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.' }));
+    const ctx = resolveSquadState(TMP);
+    expect(ctx).not.toBeNull();
+    // repoRoot should match the actual git toplevel, which is TMP
+    const expected = execSync('git rev-parse --show-toplevel', { cwd: TMP, encoding: 'utf-8' }).trim();
+    // Normalize path separators for cross-platform comparison
+    expect(ctx!.repoRoot.replace(/\\/g, '/')).toBe(expected.replace(/\\/g, '/'));
+  });
+
+  it('returns FSStorageProvider for worktree backend', () => {
+    writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.' }));
+    const ctx = resolveSquadState(TMP);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.storage).toBeDefined();
+    // Worktree backend should use FSStorageProvider, not the adapter
+    expect(ctx!.storage.constructor.name).toBe('FSStorageProvider');
+  });
+
+  it('returns StateBackendStorageAdapter for git-notes backend', () => {
+    writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
+    const ctx = resolveSquadState(TMP);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.storage.constructor.name).toBe('StateBackendStorageAdapter');
+  });
+});
+
+// ============================================================================
+// StateBackendStorageAdapter tests
+// ============================================================================
+
+describe('StateBackendStorageAdapter', () => {
+  const squadDir = () => join(TMP, '.squad');
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('readSync/writeSync/existsSync round-trip via git-notes', () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    expect(adapter.existsSync('team.md')).toBe(false);
+    adapter.writeSync('team.md', '# Team');
+    expect(adapter.existsSync('team.md')).toBe(true);
+    expect(adapter.readSync('team.md')).toBe('# Team');
+  });
+
+  it('listSync returns backend entries', () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    adapter.writeSync('agents/data.md', '# Data');
+    adapter.writeSync('agents/picard.md', '# Picard');
+    const entries = adapter.listSync('agents');
+    expect(entries).toContain('data.md');
+    expect(entries).toContain('picard.md');
+  });
+
+  it('appendSync via adapter', () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    adapter.writeSync('log.md', 'line 1\n');
+    adapter.appendSync('log.md', 'line 2\n');
+    expect(adapter.readSync('log.md')).toBe('line 1\nline 2\n');
+  });
+
+  it('toRelative strips absolute squad dir prefix', () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    // Write via absolute path, read via relative — should work
+    const absPath = join(squadDir(), 'decisions.md');
+    adapter.writeSync(absPath, '# Decisions');
+    expect(adapter.readSync('decisions.md')).toBe('# Decisions');
+  });
+
+  it('deleteSync removes entries', () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    adapter.writeSync('temp.md', 'data');
+    expect(adapter.existsSync('temp.md')).toBe(true);
+    adapter.deleteSync('temp.md');
+    expect(adapter.existsSync('temp.md')).toBe(false);
+  });
+
+  it('async read/write round-trip', async () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    await adapter.write('async.md', '# Async');
+    expect(await adapter.read('async.md')).toBe('# Async');
+    expect(await adapter.exists('async.md')).toBe(true);
+  });
+
+  it('stat returns size and isDirectory false for files', async () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    adapter.writeSync('s.md', 'hello');
+    const st = await adapter.stat('s.md');
+    expect(st).toBeDefined();
+    expect(st!.size).toBe(5);
+    expect(st!.isDirectory).toBe(false);
+  });
+
+  it('stat returns undefined for non-existent path', async () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    expect(await adapter.stat('nope.md')).toBeUndefined();
   });
 });

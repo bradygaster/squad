@@ -10,8 +10,8 @@ const pkg = require('../package.json');
 export const VERSION: string = pkg.version;
 
 // Export public API
-export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir } from './resolution.js';
-export type { SquadDirConfig, ResolvedSquadPaths } from './resolution.js';
+export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadState } from './resolution.js';
+export type { ResolvedSquadPaths, SquadDirConfig, SquadStateContext } from './resolution.js';
 export * from './config/index.js';
 export * from './agents/onboarding.js';
 export { resolvePersonalAgents, mergeSessionCast } from './agents/personal.js';
@@ -105,7 +105,7 @@ export * from './storage/index.js';
 
 // Git-native state backends (Issue #807)
 export type { StateBackend, StateBackendType, StateBackendConfig } from './state-backend.js';
-export { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey } from './state-backend.js';
+export { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey, StateBackendStorageAdapter } from './state-backend.js';
 
 // State facade (Phase 2) — namespaced to avoid conflicts with existing config/sharing exports
 export {

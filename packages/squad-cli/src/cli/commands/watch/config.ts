@@ -6,6 +6,7 @@
 
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import type { SquadStateContext } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 
@@ -41,6 +42,8 @@ export interface WatchConfig {
   sentinelFile?: string;
   /** State persistence backend. */
   stateBackend?: 'worktree' | 'git-notes' | 'orphan' | 'external';
+  /** Pre-resolved state context from CLI entry (avoids redundant resolution). */
+  stateContext?: SquadStateContext | null;
 }
 
 const DEFAULTS: WatchConfig = {
@@ -99,6 +102,7 @@ export function loadWatchConfig(
     overnightEnd: cliOverrides.overnightEnd ?? fileConfig.overnightEnd,
     sentinelFile: cliOverrides.sentinelFile ?? fileConfig.sentinelFile,
     stateBackend: cliOverrides.stateBackend ?? fileConfig.stateBackend,
+    stateContext: cliOverrides.stateContext,
   };
 
   return merged;
