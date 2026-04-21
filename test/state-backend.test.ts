@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend } from '../packages/squad-sdk/src/state-backend.js';
+import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey } from '../packages/squad-sdk/src/state-backend.js';
 import type { StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
 
 const TMP = join(process.cwd(), `.test-state-backend-${randomBytes(4).toString('hex')}`);
@@ -92,5 +92,92 @@ describe('resolveStateBackend()', () => {
   it('external returns worktree stub', () => { expect(resolveStateBackend(squadDir(), TMP, 'external').name).toBe('worktree'); });
   it('all valid types accepted', () => {
     for (const t of ['worktree', 'external', 'git-notes', 'orphan'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
+  });
+});
+
+// ============================================================================
+// Security: Shell Injection Prevention Tests
+// ============================================================================
+
+describe('State Backend: validateStateKey', () => {
+  it('should accept valid keys', () => {
+    expect(() => validateStateKey('team.md')).not.toThrow();
+    expect(() => validateStateKey('agents/data.md')).not.toThrow();
+    expect(() => validateStateKey('deep/nested/path/file.json')).not.toThrow();
+  });
+
+  it('should reject null bytes', () => {
+    expect(() => validateStateKey('key\x00injected')).toThrow('null bytes');
+  });
+
+  it('should reject newline characters', () => {
+    expect(() => validateStateKey('key\ninjected')).toThrow('newline');
+    expect(() => validateStateKey('key\rinjected')).toThrow('newline');
+  });
+
+  it('should reject tab characters', () => {
+    expect(() => validateStateKey('key\tinjected')).toThrow('tab');
+  });
+
+  it('should reject empty key', () => {
+    expect(() => validateStateKey('')).toThrow('non-empty');
+  });
+
+  it('should reject path traversal with .. segments', () => {
+    expect(() => validateStateKey('../../../etc/passwd')).toThrow('. or ..');
+    expect(() => validateStateKey('agents/../../../etc/passwd')).toThrow('. or ..');
+    expect(() => validateStateKey('..')).toThrow('. or ..');
+  });
+
+  it('should reject . segments', () => {
+    expect(() => validateStateKey('.')).toThrow('. or ..');
+    expect(() => validateStateKey('agents/./data.md')).toThrow('. or ..');
+  });
+
+  it('should reject empty path segments', () => {
+    expect(() => validateStateKey('agents//data.md')).toThrow('empty path segments');
+  });
+});
+
+describe('State Backend: Key injection blocked at backend level', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('GitNotesBackend rejects path traversal in write', () => {
+    const b = new GitNotesBackend(TMP);
+    expect(() => b.write('../../../etc/passwd', 'pwned')).toThrow('. or ..');
+  });
+
+  it('GitNotesBackend rejects null bytes in read', () => {
+    const b = new GitNotesBackend(TMP);
+    expect(() => b.read('key\x00injected')).toThrow('null bytes');
+  });
+
+  it('GitNotesBackend rejects tab injection in key', () => {
+    const b = new GitNotesBackend(TMP);
+    expect(() => b.write('key\tvalue', 'data')).toThrow('tab');
+  });
+
+  it('OrphanBranchBackend rejects path traversal in write', { timeout: 10_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    expect(() => b.write('../../../etc/passwd', 'pwned')).toThrow('. or ..');
+  });
+
+  it('OrphanBranchBackend rejects null bytes in read', () => {
+    const b = new OrphanBranchBackend(TMP);
+    expect(() => b.read('key\x00injected')).toThrow('null bytes');
+  });
+
+  it('OrphanBranchBackend rejects newline injection in exists', () => {
+    const b = new OrphanBranchBackend(TMP);
+    expect(() => b.exists('key\ninjected')).toThrow('newline');
+  });
+
+  it('WorktreeBackend normalizes and rejects traversal in write', () => {
+    const squadDir = join(TMP, '.squad');
+    mkdirSync(squadDir, { recursive: true });
+    const b = new WorktreeBackend(squadDir);
+    // WorktreeBackend uses path.join which handles traversal, but normalizeKey now validates
+    expect(() => b.write('../../../etc/passwd', 'pwned')).toThrow('. or ..');
   });
 });

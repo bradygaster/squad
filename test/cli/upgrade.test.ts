@@ -417,4 +417,103 @@ describe('CLI: upgrade command', () => {
     expect(existsSync(join(castingDir, 'policy.json'))).toBe(true);
     expect(existsSync(join(castingDir, 'history.json'))).toBe(true);
   });
+
+  /* ── warnIfSkillCustomized ──────────────────────────────────── */
+
+  it('warnIfSkillCustomized warns when a skill has been modified', async () => {
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+    expect(existsSync(skillPath)).toBe(true);
+
+    // Simulate old version so upgrade goes through the full manifest path
+    let agentContent = readFileSync(agentPath, 'utf8');
+    agentContent = agentContent.replace(/<!-- version: [^>]+ -->/m, '<!-- version: 0.1.0 -->');
+    writeFileSync(agentPath, agentContent);
+
+    // Modify the skill to simulate user customization
+    const original = readFileSync(skillPath, 'utf8');
+    writeFileSync(skillPath, original + '\n## My Custom Section\nCustom content here.\n');
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runUpgrade(TEST_ROOT);
+      const calls = spy.mock.calls.map(c => String(c[0]));
+      expect(calls.some(c => c.includes('has been customized'))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('warnIfSkillCustomized does NOT warn for CRLF-only differences', async () => {
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+    if (!existsSync(skillPath)) {
+      await runUpgrade(TEST_ROOT);
+    }
+
+    // Simulate old version to go through full manifest path
+    let agentContent = readFileSync(agentPath, 'utf8');
+    agentContent = agentContent.replace(/<!-- version: [^>]+ -->/m, '<!-- version: 0.1.0 -->');
+    writeFileSync(agentPath, agentContent);
+
+    // Re-write content with CRLF line endings (no semantic change)
+    const original = readFileSync(skillPath, 'utf8');
+    const crlf = original.replace(/\r?\n/g, '\r\n');
+    writeFileSync(skillPath, crlf);
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runUpgrade(TEST_ROOT);
+      const calls = spy.mock.calls.map(c => String(c[0]));
+      expect(calls.some(c => c.includes('has been customized'))).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('warnIfSkillCustomized does NOT warn for identical content', async () => {
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+
+    // Simulate old version to go through full manifest path
+    let agentContent = readFileSync(agentPath, 'utf8');
+    agentContent = agentContent.replace(/<!-- version: [^>]+ -->/m, '<!-- version: 0.1.0 -->');
+    writeFileSync(agentPath, agentContent);
+
+    // After init, skill content should match the template exactly — no customization
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runUpgrade(TEST_ROOT);
+      const calls = spy.mock.calls.map(c => String(c[0]));
+      expect(calls.some(c => c.includes('has been customized'))).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('warnIfSkillCustomized warns during full version upgrade path', async () => {
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+    if (!existsSync(skillPath)) {
+      await runUpgrade(TEST_ROOT);
+    }
+
+    // Simulate old version to force full upgrade path
+    let content = readFileSync(agentPath, 'utf8');
+    content = content.replace(/<!-- version: [^>]+ -->/m, '<!-- version: 0.1.0 -->');
+    writeFileSync(agentPath, content);
+
+    // Modify skill to simulate customization
+    const original = readFileSync(skillPath, 'utf8');
+    writeFileSync(skillPath, original + '\n## Custom Addition\n');
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runUpgrade(TEST_ROOT, { force: true });
+      const calls = spy.mock.calls.map(c => String(c[0]));
+      const customizedWarnings = calls.filter(c => c.includes('has been customized'));
+      expect(customizedWarnings.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

@@ -65,6 +65,7 @@ Ralph is the work monitor. He watches your GitHub or GitLab issues, tracks work 
 
 ## Learn more
 
-- [**Work routing**](../features/routing) — How the coordinator decides which agents to spawn
-- [**Memory and knowledge**](memory-and-knowledge) — How decisions, skills, and history persist
-- [**Parallel work**](parallel-work) — How agents work simultaneously without conflicts
+- [**Your Team**](./your-team.md) — How agents form, specialize, and work together
+- [**Work routing**](../features/routing.md) — How the coordinator decides which agents to spawn
+- [**Memory and knowledge**](memory-and-knowledge.md) — How decisions, skills, and history persist
+- [**Parallel work**](parallel-work.md) — How agents work simultaneously without conflicts

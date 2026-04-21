@@ -264,3 +264,11 @@ squad watch --interval 5
 ```
 
 Starts persistent local polling — checks GitHub every 5 minutes for new work and triages automatically.
+
+---
+
+## See Also
+
+- [Your Team](./your-team.md) — How work routes to the right agent
+- [Work Routing](../features/routing.md) — Domain routing and agent assignment
+- [Parallel Work](./parallel-work.md) — Multi-agent parallel execution on batched issues
