@@ -89,7 +89,17 @@ if (!existsSync(SOURCE)) {
 const sourceFiles = collectFiles(SOURCE);
 let totalCopied = 0;
 
+// Files owned by dedicated generators. Do not mirror them here — their
+// canonical source lives outside .squad-templates/ and a separate script
+// propagates them (see packages/squad-cli/scripts/sync-resolve-token.mjs).
+const SKIP_FILES = new Set([
+  'scripts/resolve-token.mjs',
+]);
+
 for (const relFile of sourceFiles) {
+  if (SKIP_FILES.has(relFile.replaceAll('\\', '/'))) {
+    continue;
+  }
   const srcPath = join(SOURCE, relFile);
   const targets = [];
 
