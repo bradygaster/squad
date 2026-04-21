@@ -9,31 +9,6 @@ Welcome to Squad development. This guide explains how to build, test, and contri
 - **Git** with SSH agent (for package resolution)
 - **gh CLI** (for GitHub integration testing)
 
-## Community Guidelines & Spam Protection
-
-Our repository uses automated spam detection to maintain a safe, productive community. Here's what you need to know:
-
-### Spam Detection Guidelines
-- **Comment screening** — Malicious links (shortened URLs, file-sharing services) and mass-mentions are monitored
-- **Issue evaluation** — New issues are reviewed for spam patterns; suspected spam may be auto-closed
-- **Auto-lock stale content** — Issues and PRs inactive for 30+ days are locked to prevent spam on old threads
-
-### What Gets Flagged
-- Shortened URLs (bit.ly, tinyurl, t.co, goo.gl, rb.gy)
-- File-sharing links (Dropbox, Google Drive, Mega, MediaFire)
-- Crypto/investment scams ("free bitcoin", "guaranteed profit", etc.)
-- Adult content patterns
-- Mass-mentions (4+ @-mentions in one comment)
-- New accounts (< 30 days old) with 0 repos, 0 followers + suspicious content
-
-### If Your Content Is Flagged
-- **Comment not posted** — If your comment contains flagged patterns, it may be held for review
-- **Issue closed as spam** (clear violation) — Likely closed with explanation; contact maintainers if you believe this is a mistake
-- **Issue labeled "suspicious"** — Flagged for maintainer review but remains open
-- **Issue locked** — If inactive for 30+ days, locked to prevent spam replies
-
-If your legitimate issue/comment is caught by spam detection, please contact a maintainer. We're here to help.
-
 ## Monorepo Structure
 
 Squad is an npm workspace monorepo with two packages:
@@ -176,33 +151,10 @@ The Co-authored-by trailer is **required** for all commits (added by Copilot CLI
 
 1. Add a changeset: `npx changeset add` (required before PR — see Changesets section)
 2. Push your branch: `git push origin {yourusername}/217-readme-help-update`
-3. Create a PR **as a draft**: `gh pr create --draft --base dev --repo bradygaster/squad --head {yourusername}:your-branch`
+3. Create a PR with explicit base and head: `gh pr create --base dev --repo bradygaster/squad --head {yourusername}:your-branch`
 4. Link the issue: Add `Closes #217` to PR description
-5. Work on your changes until CI passes and you're satisfied
-6. **Mark as "Ready for review"** — this is the handoff signal to the core team (see below)
-
-### Handoff: Contributor → Core Team
-
-External contributors don't have write access, so the review-to-merge flow has a handoff point. Here's exactly what happens:
-
-**Your side (contributor):**
-
-1. ✅ All required CI checks are green (build, test, lint; changeset/CHANGELOG gate only applies when `packages/squad-cli/src/` or `packages/squad-sdk/src/` files change)
-2. ✅ PR is no longer a draft — mark as **"Ready for review"**
-3. ✅ Copilot reviewer bot posts its review automatically
-4. ✅ Review Copilot's suggestions and manually apply any you agree with in your fork
-5. ✅ Push updates to your branch to address Copilot's feedback
-6. ✅ If Copilot flags issues you can't resolve, note them in a PR comment
-
-> **Note:** Copilot review suggestions appear as comments, but the "Commit suggestion" and "Fix with Copilot" buttons require repo write access and won't work for external contributors. Review the suggestions, apply them manually in your fork, and push your changes.
-
-**Core team side (after you undraft):**
-
-1. Look for CI-green, undrafted PRs from contributors
-2. Address any remaining Copilot review issues (using "Fix with Copilot" or manual fixes)
-3. Human review, resolve threads, and merge
-
-**TL;DR:** Your job is done when the PR is undrafted, CI is green, and you've responded to Copilot suggestions. The core team takes it from there.
+5. Wait for CI checks to pass
+6. Request review from the team (agents will respond via comments)
 
 ### PR Readiness Checklist
 

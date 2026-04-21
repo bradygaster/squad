@@ -218,60 +218,10 @@ describe('no-remote resilience (#579)', () => {
     expect(existsSync(join(TEST_ROOT, '.github', 'agents', 'squad.agent.md'))).toBe(true);
   });
 
-  it('runInit CLI: monorepo subfolder — no nested .git, agent at git root (#939)', async () => {
-    // Set up a monorepo: git init at TEST_ROOT, run from a subfolder
-    gitInit(TEST_ROOT);
-    const subfolder = join(TEST_ROOT, 'services', 'api');
-    await mkdir(subfolder, { recursive: true });
-
-    // runInit from the subfolder — CLI should detect the parent git repo
-    await expect(runInit(subfolder)).resolves.toBeUndefined();
-
-    // 1. No nested .git/ in subfolder (the original bug)
-    expect(existsSync(join(subfolder, '.git'))).toBe(false);
-    // 2. .squad/ created in the subfolder
-    expect(existsSync(join(subfolder, '.squad'))).toBe(true);
-    expect(existsSync(join(subfolder, '.squad', 'casting', 'registry.json'))).toBe(true);
-    // 3. squad.agent.md placed at the git root, not the subfolder
-    expect(existsSync(join(TEST_ROOT, '.github', 'agents', 'squad.agent.md'))).toBe(true);
-    expect(existsSync(join(subfolder, '.github', 'agents', 'squad.agent.md'))).toBe(false);
-  });
-
   it('initSquad succeeds when git is not initialized at all', async () => {
     // TEST_ROOT is a plain directory — no git init
     await expect(initSquad(sdkOptions(TEST_ROOT))).resolves.toBeDefined();
     expect(existsSync(join(TEST_ROOT, '.squad', 'casting', 'registry.json'))).toBe(true);
-  });
-
-  it('monorepo subfolder: no nested git init, agent at root, .squad in subfolder (#939)', async () => {
-    // Set up a monorepo with a subfolder
-    gitInit(TEST_ROOT);
-    const subfolder = join(TEST_ROOT, 'team-alpha');
-    await mkdir(subfolder, { recursive: true });
-
-    // Run SDK init with agentFileRoot pointing to the git root
-    // Enable workflows to test monorepo skip behavior
-    const result = await initSquad({
-      ...sdkOptions(subfolder),
-      agentFileRoot: TEST_ROOT,
-      includeWorkflows: true,
-    });
-
-    // 1. No nested .git/ in subfolder
-    expect(existsSync(join(subfolder, '.git'))).toBe(false);
-    // 2. .squad/ created in subfolder
-    expect(existsSync(join(subfolder, '.squad'))).toBe(true);
-    expect(existsSync(join(subfolder, '.squad', 'casting', 'registry.json'))).toBe(true);
-    // 3. squad.agent.md created at monorepo root
-    expect(existsSync(join(TEST_ROOT, '.github', 'agents', 'squad.agent.md'))).toBe(true);
-    // 4. squad.agent.md NOT in subfolder
-    expect(existsSync(join(subfolder, '.github', 'agents', 'squad.agent.md'))).toBe(false);
-    // 5. createdFiles should include relative path with ..
-    expect(result.createdFiles.some(f => f.includes('squad.agent.md'))).toBe(true);
-    // 6. Workflows NOT placed in subfolder (GitHub Actions ignores them there)
-    expect(existsSync(join(subfolder, '.github', 'workflows'))).toBe(false);
-    // 7. Warning emitted about skipped workflows
-    expect(result.warnings?.some(w => w.includes('monorepo-subfolder'))).toBe(true);
   });
 });
 

@@ -10,8 +10,6 @@ hero: "We built an interactive shell that makes you forget you're talking to age
 
 # Wave 2: The REPL Moment
 
-> 📌 **Archive note:** The interactive shell described in this post has been deprecated. For the best Squad experience, use the [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli). See [Choose your interface](/docs/get-started/choose-your-interface/) for current options.
-
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
 

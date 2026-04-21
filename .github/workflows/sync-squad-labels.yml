@@ -7,10 +7,6 @@ on:
       - '.ai-team/team.md'
   workflow_dispatch:
 
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: true
-
 permissions:
   issues: write
   contents: read

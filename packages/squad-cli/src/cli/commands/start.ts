@@ -30,8 +30,6 @@ const RESET = '\x1b[0m';
 const DIM = '\x1b[2m';
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
-const MISSING_MODULE_RE =
-  /\b(?:MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND)\b|Cannot find module|Cannot find package/i;
 
 export interface StartOptions {
   tunnel: boolean;
@@ -40,35 +38,7 @@ export interface StartOptions {
   command?: string;
 }
 
-async function checkNodePty(): Promise<any> {
-  try {
-    return await import('node-pty');
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    if (MISSING_MODULE_RE.test(detail)) {
-      throw new Error('node-pty not available. Install it for PTY support:');
-    }
-    throw new Error('node-pty not available. Install it for PTY support:', {
-      cause: detail,
-    });
-  }
-}
-
 export async function runStart(cwd: string, options: StartOptions): Promise<void> {
-  // ─── Verify node-pty availability FIRST (before any side effects) ───
-  let nodePty: any;
-  try {
-    nodePty = await checkNodePty();
-  } catch (err) {
-    const detail = err instanceof Error && typeof err.cause === 'string' ? err.cause : undefined;
-    console.error(`${YELLOW}\u2717${RESET} ${(err as Error).message}`);
-    console.error(`  ${DIM}npm install -g node-pty${RESET}`);
-    if (detail) {
-      console.error(`\n${DIM}Error: ${detail}${RESET}`);
-    }
-    process.exit(1);
-  }
-
   const { repo, branch } = getGitInfo(cwd);
   const machine = getMachineId();
   const squadDir = storage.existsSync(path.join(cwd, '.squad'))
@@ -77,7 +47,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       ? path.join(cwd, '.ai-team')
       : '';
 
-  // ─── Setup remote bridge (after verifying PTY is available) ───
+  // ─── Setup remote bridge FIRST (before PTY takes over terminal) ───
   let bridge: RemoteBridge | null = null;
   let tunnelUrl = '';
 
@@ -135,7 +105,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
       tunnelUrl = tunnelUrlWithToken;
       console.log(`${GREEN}✓${RESET} Remote: ${BOLD}${tunnelUrlWithToken}${RESET}`);
       try {
-        // @ts-expect-error — qrcode-terminal is an optional dependency
+        // @ts-ignore
         const qrcode = (await import('qrcode-terminal')) as any;
         qrcode.default.generate(tunnelUrlWithToken, { small: true }, (code: string) => { console.log(code); });
       } catch {}
@@ -150,6 +120,9 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
   }
 
   // ─── Spawn copilot in PTY ─────────────────────────────────
+  // Dynamic import node-pty (native module)
+  // @ts-expect-error — node-pty is an optional native dependency
+  const nodePty = await import('node-pty');
 
   const copilotExePath = path.join(
     'C:', 'ProgramData', 'global-npm', 'node_modules', '@github', 'copilot',

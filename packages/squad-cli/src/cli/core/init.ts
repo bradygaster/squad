@@ -166,25 +166,34 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // Detect project type
   const projectType = detectProjectType(dest);
 
-  // ── Monorepo / subfolder detection ───────────────────────────────
+  // ── Parent git repo detection ─────────────────────────────────────
   // Copilot resolves .github/agents/ relative to the git root.
-  // If CWD is a subfolder of a larger repo (monorepo), we place
-  // squad.agent.md at the git root and .squad/ in the subfolder.
-  // Never run `git init` — it creates broken nested repos (#939).
-  let agentFileRoot = dest; // default: place agent file relative to dest
-  const parentGitRoot = detectParentGitRepo(dest);
-  if (parentGitRoot) {
-    console.log();
-    console.log(`${CYAN}${BOLD}📦 Monorepo detected${RESET}`);
-    console.log(`${DIM}   Git root:  ${parentGitRoot}${RESET}`);
-    console.log(`${DIM}   You're in: ${path.resolve(dest)}${RESET}`);
-    console.log();
-    console.log(`${DIM}squad.agent.md → git root (.github/agents/)${RESET}`);
-    console.log(`${DIM}.squad/        → here (${path.basename(path.resolve(dest))}/)${RESET}`);
-    console.log();
-    // Place the agent file at the git root so Copilot can find it.
-    // Team state (.squad/) stays in cwd — resolved via cwd at runtime.
-    agentFileRoot = parentGitRoot;
+  // If CWD is inside a parent git repo, the agent file will be
+  // invisible to copilot because the git root points elsewhere.
+  try {
+    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim().replace(/\//g, path.sep);
+    const normalDest = path.resolve(dest);
+    const normalGitRoot = path.resolve(gitRoot);
+    if (normalDest.toLowerCase() !== normalGitRoot.toLowerCase()) {
+      console.log();
+      console.log(`${YELLOW}${BOLD}⚠  Parent git repo detected${RESET}`);
+      console.log(`${YELLOW}   Git root:  ${normalGitRoot}${RESET}`);
+      console.log(`${YELLOW}   You're in: ${normalDest}${RESET}`);
+      console.log();
+      console.log(`${DIM}Copilot resolves .github/agents/ from the git root, not from here.${RESET}`);
+      console.log(`${DIM}The Squad agent won't be visible to copilot in this folder.${RESET}`);
+      console.log();
+      // Auto-fix: run git init to create a repo boundary here
+      console.log(`${CYAN}${BOLD}→${RESET} Running ${CYAN}git init${RESET} to create a repo boundary...`);
+      execFileSync('git', ['init'], { cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      console.log(`${GREEN}${BOLD}✓${RESET} Initialized git repo at ${normalDest}`);
+      console.log();
+    }
+  } catch {
+    // No git available or not in a git repo — that's fine, continue normally.
+    // Copilot will fall back to CWD for .github/agents/ discovery.
   }
 
   // Detect squad directory
@@ -243,7 +252,6 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // Build SDK options
   const initOptions: InitOptions = {
     teamRoot: dest,
-    agentFileRoot,
     projectName: path.basename(dest) || 'my-project',
     agents: [
       {
@@ -284,17 +292,16 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   let result;
   try {
     result = await sdkInitSquad(initOptions);
-  } catch (err: unknown) {
+  } catch (err: any) {
     process.off('SIGINT', sigintHandler);
-    const message = err instanceof Error ? err.message : String(err);
-    fatal(`Failed to initialize squad: ${message}`);
+    fatal(`Failed to initialize squad: ${err.message}`);
     return; // Unreachable but makes TS happy
   }
 
   process.off('SIGINT', sigintHandler);
 
   // Ensure version is fully stamped in squad.agent.md
-  const agentPath = path.join(agentFileRoot, '.github', 'agents', 'squad.agent.md');
+  const agentPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
   if (storage.existsSync(agentPath)) {
     stampVersion(agentPath, version);
   }

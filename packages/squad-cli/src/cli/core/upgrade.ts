@@ -432,20 +432,6 @@ export function ensureCastingDefaults(dest: string, templatesDir?: string): stri
 }
 
 /**
- * Warn when a built-in skill has been customized and is about to be overwritten.
- * Normalizes line endings before comparison to avoid false positives from CRLF differences.
- */
-function warnIfSkillCustomized(srcPath: string, destPath: string, sourceName: string): void {
-  if (!storage.existsSync(destPath)) return;
-  const existing = (storage.readSync(destPath) ?? '').replace(/\r\n/g, '\n');
-  const template = (storage.readSync(srcPath) ?? '').replace(/\r\n/g, '\n');
-  if (existing && existing !== template) {
-    const skillName = sourceName.split('/')[1] ?? sourceName;
-    warn(`Skill '${skillName}' has been customized — overwriting with built-in version`);
-  }
-}
-
-/**
  * Sync manifest-declared skills to .copilot/skills/, respecting overwriteOnUpgrade.
  * Only skills listed in TEMPLATE_MANIFEST are installed — not the entire templates/skills/ dir.
  */
@@ -462,7 +448,6 @@ function syncAllSkills(dest: string, templatesDir: string): number {
     if (!storage.existsSync(srcPath)) continue;
     if (!entry.overwriteOnUpgrade && storage.existsSync(destPath)) continue;
 
-    warnIfSkillCustomized(srcPath, destPath, entry.source);
     storage.mkdirSync(path.dirname(destPath), { recursive: true });
     storage.copySync(srcPath, destPath);
     synced++;
@@ -629,9 +614,6 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     
     if (!storage.existsSync(srcPath)) continue;
     
-    if (file.source.startsWith('skills/')) {
-      warnIfSkillCustomized(srcPath, destPath, file.source);
-    }
     storage.mkdirSync(path.dirname(destPath), { recursive: true });
     storage.copySync(srcPath, destPath);
     

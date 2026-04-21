@@ -361,11 +361,3 @@ Use the main worktree's Squad team
 ```
 
 Creates a symlink so this worktree shares the main checkout's `.squad/` state.
-
----
-
-## See Also
-
-- [Your Team](./your-team.md) — How agents form and specialize for different roles
-- [Architecture](./architecture.md) — How the coordinator orchestrates parallel execution
-- [Memory & Knowledge](./memory-and-knowledge.md) — How agents share context across parallel work

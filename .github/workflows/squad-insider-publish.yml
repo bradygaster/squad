@@ -5,15 +5,30 @@ on:
     branches:
       - insider
 
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
-
 permissions:
   contents: read
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node-version: [22]
+    steps:
+      - uses: actions/checkout@v4
+
+      # CI Hardening: Composite action replaces duplicated setup-node + retry
+      # pattern (item 7). See .github/actions/setup-squad-node/action.yml.
+      - uses: ./.github/actions/setup-squad-node
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Build
+        run: npm run build
+
   test:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:

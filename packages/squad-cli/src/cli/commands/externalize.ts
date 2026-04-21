@@ -20,24 +20,17 @@ import { fatal } from '../core/errors.js';
 
 const storage = new FSStorageProvider();
 
-/** Entries under .squad/ that must NOT be externalized (they stay in the repo).
- *  All of these are read from the working tree by runtime code that does not
- *  go through external-state resolution (detectSquadDir → local .squad/).
- *  - config.json: thin marker read by the walk-up resolver
- *  - manifest.json: public contract read by cross-squad discovery
- *  - workstreams.json: workstream config read by streams resolver
- *  - upstream.json: upstream registry read by cross-squad discover/delegate
- *  - squad-registry.json: squad registry read by cross-squad discovery
- *  - _upstream_repos: git clone cache read locally by upstream/cross-squad resolvers
- */
-const KEEP_LOCAL = new Set([
-  'config.json',
-  'manifest.json',
-  'workstreams.json',
-  'upstream.json',
-  'squad-registry.json',
-  '_upstream_repos',
-]);
+/** Directories under .squad/ that hold the actual state */
+const STATE_DIRS = [
+  'agents', 'casting', 'decisions', 'identity', 'orchestration-log',
+  'log', 'plugins', 'templates', 'skills', 'sessions', '.scratch',
+];
+
+/** Files under .squad/ that hold state (not config.json — that stays) */
+const STATE_FILES = [
+  'team.md', 'routing.md', 'ceremonies.md', 'decisions.md',
+  'decisions-archive.md', '.first-run',
+];
 
 /**
  * Move .squad/ state to the external directory.
@@ -59,24 +52,29 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
 
   let movedCount = 0;
 
-  // Dynamically discover everything in .squad/ — move it all except KEEP_LOCAL.
-  // This eliminates silent orphaning when new state artifacts are added.
-  const entries = storage.listSync?.(squadDir) ?? [];
-  for (const entry of entries) {
-    if (KEEP_LOCAL.has(entry)) continue;
-    const src = path.join(squadDir, entry);
-    const dest = path.join(externalDir, entry);
-    if (storage.isDirectorySync(src)) {
-      copyDirRecursive(src, dest);
-      storage.deleteDirSync?.(src);
-    } else {
-      const content = storage.readSync(src);
-      if (content != null) {
-        storage.mkdirSync(path.dirname(dest), { recursive: true });
-        storage.writeSync(dest, content);
-      }
-      storage.deleteSync?.(src);
+  // Move directories
+  for (const dir of STATE_DIRS) {
+    const src = path.join(squadDir, dir);
+    if (!storage.existsSync(src)) continue;
+    const dest = path.join(externalDir, dir);
+    // Copy contents into the external state directory. If destination files
+    // already exist, they may be overwritten by copyDirRecursive().
+    copyDirRecursive(src, dest);
+    storage.deleteDirSync?.(src);
+    movedCount++;
+  }
+
+  // Move files
+  for (const file of STATE_FILES) {
+    const src = path.join(squadDir, file);
+    if (!storage.existsSync(src)) continue;
+    const dest = path.join(externalDir, file);
+    const content = storage.readSync(src);
+    if (content != null) {
+      storage.mkdirSync(path.dirname(dest), { recursive: true });
+      storage.writeSync(dest, content);
     }
+    storage.deleteSync?.(src);
     movedCount++;
   }
 
@@ -149,19 +147,22 @@ export function runInternalize(projectDir: string): void {
 
   let movedCount = 0;
 
-  // Dynamically discover everything in the external dir and copy it back.
-  const entries = storage.listSync?.(externalDir) ?? [];
-  for (const entry of entries) {
-    if (KEEP_LOCAL.has(entry)) continue;
-    const src = path.join(externalDir, entry);
-    const dest = path.join(squadDir, entry);
-    if (storage.isDirectorySync(src)) {
-      copyDirRecursive(src, dest);
-    } else {
-      const content = storage.readSync(src);
-      if (content != null) {
-        storage.writeSync(dest, content);
-      }
+  // Copy directories back
+  for (const dir of STATE_DIRS) {
+    const src = path.join(externalDir, dir);
+    if (!storage.existsSync(src)) continue;
+    const dest = path.join(squadDir, dir);
+    copyDirRecursive(src, dest);
+    movedCount++;
+  }
+
+  // Copy files back
+  for (const file of STATE_FILES) {
+    const src = path.join(externalDir, file);
+    if (!storage.existsSync(src)) continue;
+    const content = storage.readSync(src);
+    if (content != null) {
+      storage.writeSync(path.join(squadDir, file), content);
     }
     movedCount++;
   }

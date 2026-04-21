@@ -10,10 +10,6 @@ on:
         type: choice
         options: ['false', 'true']
 
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
-
 permissions:
   contents: write
 

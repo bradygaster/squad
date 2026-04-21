@@ -94,11 +94,3 @@ $ squad roles --search "security"      # search by keyword
 ## Attribution
 
 Built-in role content is adapted from [agency-agents](https://github.com/msitarzewski/agency-agents) by AgentLand Contributors, released under the MIT License.
-
----
-
-## See Also
-
-- [Your Team](../concepts/your-team.md) — Team setup, roster, and role composition
-- [Architecture](../concepts/architecture.md) — How agents with specific roles are orchestrated
-- [Work Routing](./routing.md) — How work routes to agents based on their roles

@@ -23,7 +23,6 @@ docs/tests/screenshots/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 .squad/.first-run
-.squad/.watch-pids
 
 # Images folder (root only — don't ignore docs/public/images/)
 /images/

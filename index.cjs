@@ -1180,35 +1180,11 @@ if (cmd === 'import') {
     fs.writeFileSync(path.join(agentDir, 'history.md'), historyContent);
   }
 
-  // Write skills to .copilot/skills/ (the canonical location)
-  const copilotSkillsImportDir = path.join(dest, '.copilot', 'skills');
-  const importedSkills = manifest.skills.map((skillContent, index) => {
+  // Write skills
+  for (const skillContent of manifest.skills) {
     const nameMatch = skillContent.match(/^name:\s*["']?(.+?)["']?\s*$/m);
-    const skillName = nameMatch
-      ? nameMatch[1].trim().toLowerCase().replace(/\s+/g, '-')
-      : `skill-${index}`;
-    return { skillContent, skillName };
-  });
-  const hasForce = typeof force !== 'undefined' && force;
-
-  if (fs.existsSync(copilotSkillsImportDir)) {
-    if (hasForce) {
-      const archivedSkillsDir = path.join(dest, '.copilot', `skills.backup.${Date.now()}`);
-      fs.renameSync(copilotSkillsImportDir, archivedSkillsDir);
-    } else {
-      const collidingSkills = importedSkills
-        .map(({ skillName }) => skillName)
-        .filter((skillName) => fs.existsSync(path.join(copilotSkillsImportDir, skillName)));
-
-      if (collidingSkills.length > 0) {
-        fatal(`Import would overwrite existing Copilot skills: ${collidingSkills.join(', ')}. Re-run with --force to replace the existing .copilot/skills directory.`);
-      }
-    }
-  }
-
-  fs.mkdirSync(copilotSkillsImportDir, { recursive: true });
-  for (const { skillContent, skillName } of importedSkills) {
-    const skillDir = path.join(copilotSkillsImportDir, skillName);
+    const skillName = nameMatch ? nameMatch[1].trim().toLowerCase().replace(/\s+/g, '-') : `skill-${manifest.skills.indexOf(skillContent)}`;
+    const skillDir = path.join(aiTeamDir, 'skills', skillName);
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent);
   }

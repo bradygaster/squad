@@ -4,14 +4,14 @@
  * Auth priority: cached token → refresh → browser PKCE → device code fallback.
  * Uses the Microsoft Graph PowerShell first-party client ID by default (works
  * in every Microsoft tenant with no custom Entra registration required).
- * Tokens stored per-identity in ~/.squad/teams-tokens-{hash(tenantId:clientId)}.json.
+ * Tokens stored in ~/.squad/teams-tokens.json.
  *
  * @module platform/comms-teams
  */
 
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -38,130 +38,43 @@ export interface TeamsCommsConfig {
   teamId?: string;
 }
 
-// ─── Token Storage (identity-scoped) ─────────────────────────────────
+// ─── Token Storage ───────────────────────────────────────────────────
 
 interface StoredTokens {
   accessToken: string;
   refreshToken: string;
   expiresAt: number; // epoch ms
-  /** Configured tenant authority — validated on load to prevent cross-config reuse */
-  configTenantId?: string;
-  /** Client ID (app registration) — validated on load */
-  clientId?: string;
-  /** Actual tenant GUID from JWT `tid` claim — tracks real authenticated identity */
-  authenticatedTenantId?: string;
-  /** Actual user object ID from JWT `oid` claim — tracks real authenticated identity */
-  authenticatedUserId?: string;
 }
 
 const SQUAD_DIR = join(homedir(), '.squad');
-/** Legacy single-file path (pre-tenant-scoped) — migrated away on first use */
-const LEGACY_TOKEN_PATH = join(SQUAD_DIR, 'teams-tokens.json');
+const TOKEN_PATH = join(SQUAD_DIR, 'teams-tokens.json');
 
-/**
- * Derive a safe, collision-resistant filename for a token cache entry.
- * Uses SHA-256 hash of `tenantId + clientId` to avoid path traversal,
- * special character issues, and to provide collision-resistant separation for different app registrations. Uses 16 hex chars (~64 bits) of SHA-256 — sufficient for practical uniqueness across tenant/app combinations.
- */
-function getTokenPath(tenantId: string, clientId: string): string {
-  const hash = createHash('sha256').update(`${tenantId}:${clientId}`).digest('hex').slice(0, 16);
-  return join(SQUAD_DIR, `teams-tokens-${hash}.json`);
-}
-
-function loadTokens(tenantId: string, clientId: string): StoredTokens | null {
-  const tokenPath = getTokenPath(tenantId, clientId);
+function loadTokens(): StoredTokens | null {
   try {
-    if (!existsSync(tokenPath)) return null;
-    const raw = readFileSync(tokenPath, 'utf-8');
-    const parsed = JSON.parse(raw) as StoredTokens;
-    // Validate minimum required shape
-    if (typeof parsed.accessToken !== 'string' || typeof parsed.expiresAt !== 'number' || typeof parsed.refreshToken !== 'string') return null;
-    // Reject tokens from a different config (stale/corrupted cache)
-    if (parsed.configTenantId && parsed.configTenantId !== tenantId) return null;
-    if (parsed.clientId && parsed.clientId !== clientId) return null;
-    return parsed;
+    if (!existsSync(TOKEN_PATH)) return null;
+    const raw = readFileSync(TOKEN_PATH, 'utf-8');
+    return JSON.parse(raw) as StoredTokens;
   } catch {
     return null;
   }
 }
 
 // Security: tokens stored with 0o600 permissions (owner-only read/write).
-function saveTokens(tenantId: string, clientId: string, tokens: StoredTokens): void {
-  const tokenPath = getTokenPath(tenantId, clientId);
+// Consider OS keychain integration for production use.
+function saveTokens(tokens: StoredTokens): void {
   if (!existsSync(SQUAD_DIR)) {
     mkdirSync(SQUAD_DIR, { recursive: true, mode: 0o700 });
   }
-  const jwtClaims = extractJwtClaims(tokens.accessToken);
-  const withMeta: StoredTokens = {
-    ...tokens,
-    configTenantId: tenantId,
-    clientId,
-    authenticatedTenantId: jwtClaims.tid,
-    authenticatedUserId: jwtClaims.oid,
-  };
-  writeFileSync(tokenPath, JSON.stringify(withMeta, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2), { encoding: 'utf-8', mode: 0o600 });
 
   // Ensure permissions are correct even if file already existed
   if (platform() === 'win32') {
-    execFile('icacls', [tokenPath, '/inheritance:r', '/grant:r', `${process.env.USERNAME ?? 'CURRENT_USER'}:(R,W)`], (err) => {
-      if (err) console.warn('⚠️ Could not restrict token file permissions:', err.message);
-    });
+    execFile('icacls', [TOKEN_PATH, '/inheritance:r', '/grant:r', `${process.env.USERNAME ?? 'CURRENT_USER'}:(R,W)`], () => {});
   } else {
     chmodSync(SQUAD_DIR, 0o700);
-    chmodSync(tokenPath, 0o600);
+    chmodSync(TOKEN_PATH, 0o600);
   }
 }
-
-/**
- * Remove cached tokens from disk for a specific config.
- * Used on permanent auth errors and explicit logout.
- */
-function clearTokens(tenantId: string, clientId: string): void {
-  const tokenPath = getTokenPath(tenantId, clientId);
-  try {
-    if (existsSync(tokenPath)) unlinkSync(tokenPath);
-  } catch { /* best-effort cleanup */ }
-}
-
-/**
- * Migrate legacy single-file token cache to identity-scoped storage.
- * Moves tokens from `teams-tokens.json` → `teams-tokens-{hash}.json`,
- * then deletes the legacy file.
- */
-function migrateLegacyTokens(tenantId: string, clientId: string): void {
-  try {
-    if (!existsSync(LEGACY_TOKEN_PATH)) return;
-    const raw = readFileSync(LEGACY_TOKEN_PATH, 'utf-8');
-    const tokens = JSON.parse(raw) as StoredTokens;
-    if (tokens.accessToken) {
-      saveTokens(tenantId, clientId, tokens);
-    }
-    unlinkSync(LEGACY_TOKEN_PATH);
-  } catch { /* best-effort migration */ }
-}
-
-/**
- * Extract `tid` (tenant GUID) and `oid` (user object ID) from a JWT access token.
- * Best-effort: returns empty object if the token can't be decoded.
- * Does NOT verify the signature — the token was just received over TLS from Microsoft.
- */
-function extractJwtClaims(accessToken: string): { tid?: string; oid?: string } {
-  try {
-    const parts = accessToken.split('.');
-    if (parts.length !== 3 || !parts[1]) return {};
-    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8')) as Record<string, unknown>;
-    return {
-      tid: typeof decoded.tid === 'string' ? decoded.tid : undefined,
-      oid: typeof decoded.oid === 'string' ? decoded.oid : undefined,
-    };
-  } catch {
-    return {};
-  }
-}
-
-/** Errors that indicate a permanently invalid refresh token (do not retry) */
-const PERMANENT_AUTH_ERRORS = ['invalid_grant', 'interaction_required', 'consent_required', 'invalid_client'];
 
 // ─── Graph Helpers ───────────────────────────────────────────────────
 
@@ -312,7 +225,7 @@ async function startBrowserAuthFlow(tenantId: string, clientId: string): Promise
             throw new Error(`Token exchange failed: ${data.error} — ${data.error_description}`);
           }
           const tokens = parseTokens(data);
-          saveTokens(tenantId, clientId, tokens);
+          saveTokens(tokens);
 
           res.writeHead(200, { 'Content-Type': 'text/html' });
           res.end(SUCCESS_HTML);
@@ -376,13 +289,6 @@ interface DeviceCodeResponse {
   message: string;
 }
 
-/** Maximum time allowed for device-code auth flow (15 minutes) */
-const DEVICE_CODE_TIMEOUT_MS = 15 * 60 * 1000;
-/** Minimum poll interval for device-code flow (2 seconds) */
-const DEVICE_CODE_MIN_POLL_MS = 2_000;
-/** Maximum poll interval for device-code flow (30 seconds) */
-const DEVICE_CODE_MAX_POLL_MS = 30_000;
-
 async function startDeviceCodeFlow(tenantId: string, clientId: string): Promise<StoredTokens> {
   const deviceCodeUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/devicecode`;
   const tokenUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
@@ -403,11 +309,8 @@ async function startDeviceCodeFlow(tenantId: string, clientId: string): Promise<
   console.log(`\n🔐 Teams authentication required`);
   console.log(`   ${dcData.message}\n`);
 
-  // Clamp poll interval and timeout to sane bounds
-  const rawInterval = (dcData.interval || 5) * 1000;
-  const pollInterval = Math.max(DEVICE_CODE_MIN_POLL_MS, Math.min(rawInterval, DEVICE_CODE_MAX_POLL_MS));
-  const serverTimeout = dcData.expires_in > 0 ? dcData.expires_in * 1000 : DEVICE_CODE_TIMEOUT_MS;
-  const deadline = Date.now() + Math.min(serverTimeout, DEVICE_CODE_TIMEOUT_MS);
+  const pollInterval = (dcData.interval || 5) * 1000;
+  const deadline = Date.now() + dcData.expires_in * 1000;
 
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, pollInterval));
@@ -426,7 +329,7 @@ async function startDeviceCodeFlow(tenantId: string, clientId: string): Promise<
 
     if (tokenData.access_token) {
       const tokens = parseTokens(tokenData);
-      saveTokens(tenantId, clientId, tokens);
+      saveTokens(tokens);
       console.log(`✅ Teams authentication successful — tokens saved\n`);
       return tokens;
     }
@@ -466,10 +369,7 @@ async function refreshAccessToken(
 
   const data = (await res.json()) as TokenResponse;
   if (!data.access_token) {
-    const err = new Error(`Token refresh failed: ${data.error} — ${data.error_description}`);
-    // Attach error code for callers to distinguish permanent vs transient failures
-    (err as Error & { authError?: string }).authError = data.error ?? 'unknown';
-    throw err;
+    throw new Error(`Token refresh failed: ${data.error} — ${data.error_description}`);
   }
 
   const tokens: StoredTokens = {
@@ -477,8 +377,24 @@ async function refreshAccessToken(
     refreshToken: data.refresh_token ?? refreshToken,
     expiresAt: Date.now() + data.expires_in * 1000,
   };
-  saveTokens(tenantId, clientId, tokens);
+  saveTokens(tokens);
   return tokens;
+}
+
+// ─── User ID Cache ───────────────────────────────────────────────────
+
+let cachedUserId: string | null = null;
+
+async function getMyUserId(accessToken: string): Promise<string | null> {
+  if (cachedUserId) return cachedUserId;
+  try {
+    const me = (await graphFetch(`${GRAPH_BASE}/me`, accessToken)) as { id: string };
+    cachedUserId = me.id;
+    return cachedUserId;
+  } catch (err) {
+    console.warn(`⚠️ Teams /me fetch failed: ${(err as Error).message}`);
+    return null;
+  }
 }
 
 // ─── Adapter ─────────────────────────────────────────────────────────
@@ -490,21 +406,11 @@ export class TeamsCommunicationAdapter implements CommunicationAdapter {
   private resolvedChatId: string | null;
   private readonly clientId: string;
   private readonly tenantId: string;
-  /** Per-instance user ID cache — cleared on every token change to prevent cross-account leaks */
-  private cachedUserId: string | null = null;
 
   constructor(private readonly config: TeamsCommsConfig) {
     this.resolvedChatId = config.chatId ?? null;
     this.clientId = config.clientId ?? DEFAULT_CLIENT_ID;
     this.tenantId = config.tenantId ?? DEFAULT_TENANT_ID;
-    // One-time migration from legacy single-file token storage
-    migrateLegacyTokens(this.tenantId, this.clientId);
-  }
-
-  /** Reset all identity-sensitive caches. Called on every token change. */
-  private resetIdentityCaches(): void {
-    this.cachedUserId = null;
-    this.resolvedChatId = this.config.chatId ?? null;
   }
 
   /**
@@ -513,12 +419,7 @@ export class TeamsCommunicationAdapter implements CommunicationAdapter {
    */
   private async ensureAuthenticated(): Promise<string> {
     if (!this.tokens) {
-      this.tokens = loadTokens(this.tenantId, this.clientId);
-      if (this.tokens) {
-        // Loaded from disk — reset identity caches since this may be
-        // a different session or the identity may have changed
-        this.resetIdentityCaches();
-      }
+      this.tokens = loadTokens();
     }
 
     // Valid token — return it
@@ -534,26 +435,15 @@ export class TeamsCommunicationAdapter implements CommunicationAdapter {
           this.clientId,
           this.tokens.refreshToken,
         );
-        this.resetIdentityCaches();
         return this.tokens.accessToken;
-      } catch (err) {
-        const authError = (err as Error & { authError?: string }).authError ?? '';
-        if (PERMANENT_AUTH_ERRORS.includes(authError)) {
-          // Permanent failure — clear stale tokens so they're not reloaded
-          clearTokens(this.tenantId, this.clientId);
-          this.tokens = null;
-          this.resetIdentityCaches();
-          console.warn(`⚠️  Token refresh permanently failed (${authError}) — re-authenticating...`);
-        } else {
-          console.warn('⚠️  Token refresh failed (transient) — re-authenticating...');
-        }
+      } catch {
+        console.warn('⚠️  Token refresh failed — re-authenticating...');
       }
     }
 
     // Try browser auth code flow with PKCE first
     try {
       this.tokens = await startBrowserAuthFlow(this.tenantId, this.clientId);
-      this.resetIdentityCaches();
       console.log('✅ Teams authentication successful — tokens saved');
       return this.tokens.accessToken;
     } catch {
@@ -562,32 +452,7 @@ export class TeamsCommunicationAdapter implements CommunicationAdapter {
 
     // Fallback — device code flow (works in headless/SSH environments)
     this.tokens = await startDeviceCodeFlow(this.tenantId, this.clientId);
-    this.resetIdentityCaches();
     return this.tokens.accessToken;
-  }
-
-  /**
-   * Logout: clear cached credentials (memory + disk) for this adapter's config.
-   * This is a local credential purge — does not call Microsoft's revocation endpoint
-   * (public-client refresh tokens cannot be reliably revoked server-side).
-   */
-  async logout(): Promise<void> {
-    clearTokens(this.tenantId, this.clientId);
-    this.tokens = null;
-    this.resetIdentityCaches();
-  }
-
-  /** Resolve the current user's Graph ID, cached per auth session. */
-  private async getMyUserId(accessToken: string): Promise<string | null> {
-    if (this.cachedUserId) return this.cachedUserId;
-    try {
-      const me = (await graphFetch(`${GRAPH_BASE}/me`, accessToken)) as { id: string };
-      this.cachedUserId = me.id;
-      return this.cachedUserId;
-    } catch (err) {
-      console.warn(`⚠️ Teams /me fetch failed: ${(err as Error).message}`);
-      return null;
-    }
   }
 
   /**
@@ -661,7 +526,7 @@ export class TeamsCommunicationAdapter implements CommunicationAdapter {
       // Return stable composite ID so pollForReplies can locate the channel
       return {
         id: `${this.config.teamId}|${this.config.channelId}`,
-        url: `https://teams.microsoft.com/l/channel/${encodeURIComponent(this.config.channelId)}`,
+        url: `https://teams.microsoft.com/l/channel/${this.config.channelId}`,
       };
     }
 
@@ -727,7 +592,7 @@ export class TeamsCommunicationAdapter implements CommunicationAdapter {
       return [];
     }
 
-    const myId = await this.getMyUserId(accessToken);
+    const myId = await getMyUserId(accessToken);
 
     return data.value
       .filter((m) => {
@@ -775,9 +640,4 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim();
 }
 
-export {
-  escapeHtml, stripHtml, formatTeamsMessage, parseTokens, base64url, validateGraphId,
-  getTokenPath, clearTokens, loadTokens, saveTokens, migrateLegacyTokens, extractJwtClaims,
-  DEVICE_CODE_TIMEOUT_MS, DEVICE_CODE_MIN_POLL_MS, DEVICE_CODE_MAX_POLL_MS,
-  LEGACY_TOKEN_PATH, PERMANENT_AUTH_ERRORS,
-};
+export { escapeHtml, stripHtml, formatTeamsMessage, parseTokens, base64url, validateGraphId };

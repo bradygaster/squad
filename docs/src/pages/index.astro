@@ -6,7 +6,7 @@ import Footer from '../components/Footer.astro';
 const base = import.meta.env.BASE_URL;
 ---
 
-<BaseLayout title="Human-Led AI Development Team">
+<BaseLayout title="Your AI Development Team">
   <Header />
 
   <!-- Hero -->
@@ -32,11 +32,13 @@ const base = import.meta.env.BASE_URL;
           </div>
 
           <h1 class="animate-fade-up-scale delay-100 text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-surface-900 dark:text-white mb-6 leading-[1.1]">
-            Your agents <span class="bg-gradient-to-r from-squad-600 via-squad-500 to-squad-400 bg-clip-text text-transparent">bring your ideas to life</span>
+            Your AI<br />
+            <span class="bg-gradient-to-r from-squad-600 via-squad-500 to-squad-400 bg-clip-text text-transparent">Development Team</span>
           </h1>
 
           <p class="animate-fade-up delay-300 text-lg sm:text-xl text-surface-600 dark:text-surface-300 mb-10 leading-relaxed max-w-xl mx-auto lg:mx-0">
-            Describe what you're building. Squad coordinates agents that live in your repo and grow with your code. You spend less time prompting, more time deciding, and convert ideas into product more efficiently than ever before.
+            Describe what you're building. Get a team of specialists that live in your repo.
+            Agents fan out, build in parallel, and land pull requests in minutes.
           </p>
 
           <div class="animate-fade-up delay-500 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 mb-12">
@@ -74,80 +76,72 @@ const base = import.meta.env.BASE_URL;
         </div>
 
         <!-- Right: Terminal demo -->
-        <div class="animate-fade-up delay-400 space-y-6">
-          <div class="relative">
-            <!-- Glow behind terminal -->
-            <div class="absolute -inset-4 bg-gradient-to-r from-squad-500/20 via-accent-400/15 to-navy-500/20 dark:from-squad-500/10 dark:via-accent-400/8 dark:to-navy-500/10 rounded-2xl blur-2xl"></div>
-            <div class="relative bg-surface-900 dark:bg-surface-800 rounded-2xl overflow-hidden shadow-2xl border border-surface-700/50">
-              <div class="flex items-center gap-2 px-4 py-3 bg-surface-800/80 dark:bg-surface-700/80 border-b border-surface-700/50">
-                <div class="flex gap-1.5">
-                  <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
-                  <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
-                  <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
-                </div>
-                <span class="text-xs text-surface-400 ml-2 font-mono">Copilot Chat</span>
+        <div class="animate-fade-up delay-400 relative">
+          <!-- Glow behind terminal -->
+          <div class="absolute -inset-4 bg-gradient-to-r from-squad-500/20 via-accent-400/15 to-navy-500/20 dark:from-squad-500/10 dark:via-accent-400/8 dark:to-navy-500/10 rounded-2xl blur-2xl"></div>
+          <div class="relative bg-surface-900 dark:bg-surface-800 rounded-2xl overflow-hidden shadow-2xl border border-surface-700/50">
+            <div class="flex items-center gap-2 px-4 py-3 bg-surface-800/80 dark:bg-surface-700/80 border-b border-surface-700/50">
+              <div class="flex gap-1.5">
+                <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
               </div>
-              <div class="p-5 sm:p-6 font-mono text-xs sm:text-sm space-y-4">
-                <div>
-                  <p class="text-surface-500 text-xs mb-1.5">YOU</p>
-                  <p class="text-surface-200 leading-relaxed">Team, build the recipe listing page. We need an API endpoint that returns recipes and a React component that displays them.</p>
-                </div>
-                <div class="border-t border-surface-700/50 pt-4">
-                  <p class="text-surface-500 text-xs mb-3">SQUAD RESPONSE</p>
-                  <div class="space-y-2.5">
-                    <div class="flex items-start gap-3 agent-line" style="--delay: 0">
-                      <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-yellow-500/15 text-yellow-400 text-xs shrink-0">🏗️</span>
-                      <div>
-                        <span class="text-yellow-400 font-medium">Flight</span>
-                        <span class="text-surface-400"> — reviewing requirements, defining API contract</span>
-                      </div>
+              <span class="text-xs text-surface-400 ml-2 font-mono">Copilot Chat</span>
+            </div>
+            <div class="p-5 sm:p-6 font-mono text-xs sm:text-sm space-y-4">
+              <div>
+                <p class="text-surface-500 text-xs mb-1.5">YOU</p>
+                <p class="text-surface-200 leading-relaxed">Team, build the recipe listing page. We need an API endpoint that returns recipes and a React component that displays them.</p>
+              </div>
+              <div class="border-t border-surface-700/50 pt-4">
+                <p class="text-surface-500 text-xs mb-3">SQUAD RESPONSE</p>
+                <div class="space-y-2.5">
+                  <div class="flex items-start gap-3 agent-line" style="--delay: 0">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-yellow-500/15 text-yellow-400 text-xs shrink-0">🏗️</span>
+                    <div>
+                      <span class="text-yellow-400 font-medium">Flight</span>
+                      <span class="text-surface-400"> — reviewing requirements, defining API contract</span>
                     </div>
-                    <div class="flex items-start gap-3 agent-line" style="--delay: 1">
-                      <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-blue-500/15 text-blue-400 text-xs shrink-0">⚛️</span>
-                      <div>
-                        <span class="text-blue-400 font-medium">EECOM</span>
-                        <span class="text-surface-400"> — building RecipeList component</span>
-                      </div>
+                  </div>
+                  <div class="flex items-start gap-3 agent-line" style="--delay: 1">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-blue-500/15 text-blue-400 text-xs shrink-0">⚛️</span>
+                    <div>
+                      <span class="text-blue-400 font-medium">EECOM</span>
+                      <span class="text-surface-400"> — building RecipeList component</span>
                     </div>
-                    <div class="flex items-start gap-3 agent-line" style="--delay: 2">
-                      <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-green-500/15 text-green-400 text-xs shrink-0">🔧</span>
-                      <div>
-                        <span class="text-green-400 font-medium">CAPCOM</span>
-                        <span class="text-surface-400"> — creating GET /api/recipes endpoint</span>
-                      </div>
+                  </div>
+                  <div class="flex items-start gap-3 agent-line" style="--delay: 2">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-green-500/15 text-green-400 text-xs shrink-0">🔧</span>
+                    <div>
+                      <span class="text-green-400 font-medium">CAPCOM</span>
+                      <span class="text-surface-400"> — creating GET /api/recipes endpoint</span>
                     </div>
-                    <div class="flex items-start gap-3 agent-line" style="--delay: 3">
-                      <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-purple-500/15 text-purple-400 text-xs shrink-0">🧪</span>
-                      <div>
-                        <span class="text-purple-400 font-medium">FIDO</span>
-                        <span class="text-surface-400"> — writing test cases from requirements</span>
-                      </div>
+                  </div>
+                  <div class="flex items-start gap-3 agent-line" style="--delay: 3">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-purple-500/15 text-purple-400 text-xs shrink-0">🧪</span>
+                    <div>
+                      <span class="text-purple-400 font-medium">FIDO</span>
+                      <span class="text-surface-400"> — writing test cases from requirements</span>
                     </div>
-                    <div class="flex items-start gap-3 agent-line" style="--delay: 4">
-                      <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-surface-500/15 text-surface-400 text-xs shrink-0">📋</span>
-                      <div>
-                        <span class="text-surface-400 font-medium">Scribe</span>
-                        <span class="text-surface-500"> — logging decisions</span>
-                      </div>
+                  </div>
+                  <div class="flex items-start gap-3 agent-line" style="--delay: 4">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-surface-500/15 text-surface-400 text-xs shrink-0">📋</span>
+                    <div>
+                      <span class="text-surface-400 font-medium">Scribe</span>
+                      <span class="text-surface-500"> — logging decisions</span>
                     </div>
                   </div>
                 </div>
-                <div class="flex items-center gap-2 pt-2 border-t border-surface-700/50">
-                  <div class="flex -space-x-1">
-                    <div class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
-                    <div class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style="animation-delay: 150ms"></div>
-                    <div class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style="animation-delay: 300ms"></div>
-                  </div>
-                  <span class="text-sm sm:text-base font-medium text-surface-500 animate-pulse">5 agents working in parallel…</span>
+              </div>
+              <div class="flex items-center gap-2 pt-2 border-t border-surface-700/50">
+                <div class="flex -space-x-1">
+                  <div class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style="animation-delay: 150ms"></div>
+                  <div class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style="animation-delay: 300ms"></div>
                 </div>
+                <span class="text-surface-500 text-xs">5 agents working in parallel…</span>
               </div>
             </div>
-          </div>
-
-          <div class="rounded-2xl border border-squad-300/80 dark:border-squad-400/30 bg-gradient-to-br from-squad-50 via-accent-50/80 to-white dark:from-squad-500/12 dark:via-accent-500/10 dark:to-white/5 backdrop-blur-sm px-5 py-4 text-left shadow-lg shadow-squad-500/10">
-            <p class="text-sm sm:text-base text-surface-700 dark:text-surface-300 leading-relaxed">
-              <strong class="text-squad-700 dark:text-squad-300">Responsible AI, explicitly:</strong> Squad democratizes multi-agentic work and extends human development teams' capabilities. Its goal is to make an individual more productive while enabling human oversight, review, and accountability at agentic speed.
-            </p>
           </div>
         </div>
       </div>
@@ -160,15 +154,15 @@ const base = import.meta.env.BASE_URL;
       <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-lg">
         <div class="flex items-center gap-2 text-surface-600 dark:text-surface-300">
           <span class="w-1.5 h-1.5 rounded-full bg-squad-500"></span>
-          <span>Humans stay in charge</span>
+          <span>Persistent team memory</span>
         </div>
         <div class="flex items-center gap-2 text-surface-600 dark:text-surface-300">
           <span class="w-1.5 h-1.5 rounded-full bg-accent-500"></span>
-          <span>Built-in governance</span>
+          <span>Parallel execution</span>
         </div>
         <div class="flex items-center gap-2 text-surface-600 dark:text-surface-300">
           <span class="w-1.5 h-1.5 rounded-full bg-navy-500"></span>
-          <span>Persistent team memory</span>
+          <span>Setup in seconds</span>
         </div>
         <div class="flex items-center gap-2 text-surface-600 dark:text-surface-300">
           <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
@@ -183,9 +177,9 @@ const base = import.meta.env.BASE_URL;
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="text-center mb-16">
         <p class="text-squad-600 dark:text-squad-400 font-semibold text-sm tracking-wide uppercase mb-3">Why Squad?</p>
-        <h2 class="text-3xl sm:text-4xl font-bold text-surface-900 dark:text-white mb-5">Multi-agent orchestration,<br class="hidden sm:block" /> with humans in charge</h2>
+        <h2 class="text-3xl sm:text-4xl font-bold text-surface-900 dark:text-white mb-5">Multi-agent orchestration,<br class="hidden sm:block" /> moved from prompts into code</h2>
         <p class="text-lg text-surface-600 dark:text-surface-400 max-w-2xl mx-auto">
-          Enforced rules, persistent teams, and accountable workflows — everything you need for AI that helps people ship responsibly.
+          Enforced rules, persistent teams, parallel execution — everything you need for AI that actually ships.
         </p>
       </div>
 
@@ -194,8 +188,8 @@ const base = import.meta.env.BASE_URL;
           <div class="md:flex md:items-start md:gap-5">
             <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-squad-500 to-squad-600 flex items-center justify-center mb-4 md:mb-0 text-white text-lg shadow-lg shadow-squad-500/20 shrink-0">🚀</div>
             <div>
-              <h3 class="text-lg font-semibold text-surface-900 dark:text-white mb-2">Human-Directed Parallel Work</h3>
-              <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">Give a task to the team and specialists fan out together. You set the direction, review the results, and keep the final decision. Squad uses AI-emulated specialist roles to make a real human more productive, not to replace real humans.</p>
+              <h3 class="text-lg font-semibold text-surface-900 dark:text-white mb-2">Parallel AI Teamwork</h3>
+              <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">Give a task to the team and multiple agents fan out simultaneously. No waiting in line — results land in minutes.</p>
             </div>
           </div>
         </div>
@@ -203,13 +197,13 @@ const base = import.meta.env.BASE_URL;
         <div class="group relative p-6 rounded-2xl bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-800 hover:border-accent-300/50 dark:hover:border-accent-600/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-accent-500/5">
           <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-accent-500 to-accent-600 flex items-center justify-center mb-5 text-white text-lg shadow-lg shadow-accent-500/20">🧠</div>
           <h3 class="text-lg font-semibold text-surface-900 dark:text-white mb-2">Persistent Memory</h3>
-          <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">Agents remember decisions and conventions across sessions so people spend less time repeating context and more time reviewing the work that matters.</p>
+          <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">Agents remember decisions and conventions across sessions. Your team gets smarter every time you work together.</p>
         </div>
 
         <div class="group relative p-6 rounded-2xl bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-800 hover:border-navy-300/50 dark:hover:border-navy-600/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-navy-500/5">
           <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-navy-600 to-navy-700 flex items-center justify-center mb-5 text-white text-lg shadow-lg shadow-navy-500/20">🐙</div>
           <h3 class="text-lg font-semibold text-surface-900 dark:text-white mb-2">GitHub-Native</h3>
-          <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">Squad lives in your repo as <code class="bg-surface-100 dark:bg-surface-800 px-1.5 py-0.5 rounded text-xs font-mono">.squad/</code>. Commit it, share it, clone it. Team state, decisions, and context stay inspectable with your code.</p>
+          <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">Squad lives in your repo as <code class="bg-surface-100 dark:bg-surface-800 px-1.5 py-0.5 rounded text-xs font-mono">.squad/</code>. Commit it, share it, clone it. Your team travels with your code.</p>
         </div>
 
         <div class="group relative p-6 rounded-2xl bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-800 hover:border-navy-300/50 dark:hover:border-navy-600/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-navy-500/5 md:col-span-2 lg:col-span-2">
@@ -217,7 +211,7 @@ const base = import.meta.env.BASE_URL;
             <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-navy-600 to-navy-700 flex items-center justify-center mb-4 md:mb-0 text-white text-lg shadow-lg shadow-navy-500/20 shrink-0">🛡️</div>
             <div>
               <h3 class="text-lg font-semibold text-surface-900 dark:text-white mb-2">Built-in Governance</h3>
-              <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">File-write guards, PII scrubbing, reviewer lockout, and clear escalation points — rules enforced in code, not suggestions in prompts.</p>
+              <p class="text-surface-600 dark:text-surface-400 text-sm leading-relaxed">File-write guards, PII scrubbing, reviewer lockout — rules enforced in code, not suggestions in prompts.</p>
             </div>
           </div>
         </div>
@@ -262,7 +256,7 @@ const base = import.meta.env.BASE_URL;
         <div class="flex-1 relative text-center flex flex-col items-center">
           <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-squad-600 text-white font-bold text-lg mb-5 shadow-lg shadow-squad-600/25">2</div>
           <h3 class="font-semibold text-surface-900 dark:text-white mb-2">Initialize</h3>
-          <p class="text-sm text-surface-600 dark:text-surface-400 mb-4 flex-1">Describe your project and Squad generates a team you direct.</p>
+          <p class="text-sm text-surface-600 dark:text-surface-400 mb-4 flex-1">Describe your project and Squad generates your team.</p>
           <code class="text-sm font-mono bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-green-400 px-3 py-1.5 rounded-lg border border-surface-200 dark:border-transparent">squad init</code>
         </div>
         <div class="hidden sm:flex items-start pt-4 shrink-0">
@@ -271,7 +265,7 @@ const base = import.meta.env.BASE_URL;
         <div class="flex-1 relative text-center flex flex-col items-center">
           <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-squad-600 text-white font-bold text-lg mb-5 shadow-lg shadow-squad-600/25">3</div>
           <h3 class="font-semibold text-surface-900 dark:text-white mb-2">Build</h3>
-          <p class="text-sm text-surface-600 dark:text-surface-400 mb-4 flex-1">Talk to your team — they help you build, test, and prepare changes for review.</p>
+          <p class="text-sm text-surface-600 dark:text-surface-400 mb-4 flex-1">Talk to your team — they build, test, and land PRs.</p>
           <code class="text-sm font-mono bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-green-400 px-3 py-1.5 rounded-lg border border-surface-200 dark:border-transparent">copilot --agent squad</code>
         </div>
       </div>
@@ -328,8 +322,8 @@ const base = import.meta.env.BASE_URL;
     <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(240,79,127,0.15),transparent_70%)]"></div>
     <div class="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:40px_40px]"></div>
     <div class="relative max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-      <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-6">Ship faster with<br />a human-led AI team</h2>
-      <p class="text-lg text-navy-200/80 mb-10 max-w-xl mx-auto">One install. One command. Keep people accountable while Squad handles the repetitive coordination.</p>
+      <h2 class="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-6">Ship faster with<br />your AI team</h2>
+      <p class="text-lg text-navy-200/80 mb-10 max-w-xl mx-auto">One install. One command. Your full team, ready to build.</p>
       <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
         <a
           href={`${base}docs/get-started/installation/`}

@@ -345,12 +345,3 @@ Who handles authentication work?
 ```
 
 Coordinator checks routing and skills, reports the responsible agent(s).
-
----
-
-## See Also
-
-- [Architecture](./architecture.md) — How the coordinator, agents, and shared memory work together
-- [Work Routing](../features/routing.md) — How work gets assigned to the right agent
-- [Parallel Work & Models](./parallel-work.md) — Agents working simultaneously without conflicts
-- [Memory & Knowledge](./memory-and-knowledge.md) — How decisions and agent history persist

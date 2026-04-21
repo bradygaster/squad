@@ -14,7 +14,6 @@ import {
   LocalPollingProvider,
   GitHubActionsProvider,
   ScheduleValidationError,
-  validateTaskRef,
 } from '../packages/squad-sdk/src/runtime/scheduler.js';
 import type {
   ScheduleManifest,
@@ -38,7 +37,7 @@ function validManifest(overrides?: Partial<ScheduleManifest>): ScheduleManifest 
         name: 'Test Task',
         enabled: true,
         trigger: { type: 'interval', intervalSeconds: 60 },
-        task: { type: 'script', ref: `${process.execPath} -e console.log('hello')` },
+        task: { type: 'script', ref: 'echo hello' },
         providers: ['local-polling'],
       },
     ],
@@ -52,7 +51,7 @@ function validEntry(overrides?: Partial<ScheduleEntry>): ScheduleEntry {
     name: 'Test Task',
     enabled: true,
     trigger: { type: 'interval', intervalSeconds: 60 },
-    task: { type: 'script', ref: `${process.execPath} -e console.log('hello')` },
+    task: { type: 'script', ref: 'echo hello' },
     providers: ['local-polling'],
     ...overrides,
   };
@@ -414,7 +413,7 @@ describe('Scheduler: LocalPollingProvider', () => {
   it('should execute script tasks', async () => {
     const provider = new LocalPollingProvider();
     const entry = validEntry({
-      task: { type: 'script', ref: `${process.execPath} -e console.log('hello-from-scheduler')` },
+      task: { type: 'script', ref: 'echo hello-from-scheduler' },
     });
     const result = await provider.execute(entry);
     expect(result.success).toBe(true);
@@ -444,7 +443,7 @@ describe('Scheduler: LocalPollingProvider', () => {
   it('should handle script execution failure', async () => {
     const provider = new LocalPollingProvider();
     const entry = validEntry({
-      task: { type: 'script', ref: `${process.execPath} -e process.exit(1)` },
+      task: { type: 'script', ref: 'exit 1' },
     });
     const result = await provider.execute(entry);
     expect(result.success).toBe(false);
@@ -616,127 +615,5 @@ describe('Scheduler: Default Template', () => {
     expect(template.version).toBe(1);
     expect(template.schedules).toHaveLength(1);
     expect(template.schedules[0]!.id).toBe('ralph-heartbeat');
-  });
-});
-
-// ============================================================================
-// Security: Shell Injection Prevention Tests
-// ============================================================================
-
-describe('Scheduler: Shell Injection Prevention', () => {
-  describe('validateTaskRef', () => {
-    it('should accept a valid script path', () => {
-      expect(() => validateTaskRef('./scripts/deploy.sh')).not.toThrow();
-      expect(() => validateTaskRef(`${process.execPath} -e console.log(1)`)).not.toThrow();
-    });
-
-    it('should reject null bytes', () => {
-      expect(() => validateTaskRef('script\x00injected')).toThrow('null bytes');
-    });
-
-    it('should reject newline characters', () => {
-      expect(() => validateTaskRef('script\ninjected')).toThrow('newline');
-      expect(() => validateTaskRef('script\rinjected')).toThrow('newline');
-    });
-
-    it('should reject empty ref', () => {
-      expect(() => validateTaskRef('')).toThrow('non-empty');
-      expect(() => validateTaskRef('   ')).toThrow('non-empty');
-    });
-  });
-
-  describe('manifest validation rejects dangerous script refs', () => {
-    it('should reject script refs with null bytes at parse time', () => {
-      const manifest = {
-        version: 1,
-        schedules: [{
-          id: 'bad', name: 'Bad', enabled: true,
-          trigger: { type: 'interval', intervalSeconds: 60 },
-          task: { type: 'script', ref: 'cmd\x00--evil' },
-          providers: ['local-polling'],
-        }],
-      };
-      expect(() => validateManifest(manifest)).toThrow('null bytes');
-    });
-
-    it('should reject script refs with newlines at parse time', () => {
-      const manifest = {
-        version: 1,
-        schedules: [{
-          id: 'bad', name: 'Bad', enabled: true,
-          trigger: { type: 'interval', intervalSeconds: 60 },
-          task: { type: 'script', ref: 'cmd\n--evil' },
-          providers: ['local-polling'],
-        }],
-      };
-      expect(() => validateManifest(manifest)).toThrow('newline');
-    });
-  });
-
-  describe('LocalPollingProvider blocks injection via execFileSync', () => {
-    const provider = new LocalPollingProvider();
-
-    it('should not execute shell operators (semicolon injection)', async () => {
-      const entry = validEntry({
-        task: { type: 'script', ref: `${process.execPath} -e console.log('safe'); echo INJECTED` },
-      });
-      const result = await provider.execute(entry);
-      // execFileSync passes '; echo INJECTED' as arguments to node, not as a shell command
-      // node will fail because the -e script has invalid syntax with the semicolon+args
-      // The key assertion: INJECTED should never appear in output as a separate command
-      if (result.success) {
-        expect(result.output).not.toContain('INJECTED');
-      }
-    });
-
-    it('should not execute command substitution $()', async () => {
-      const entry = validEntry({
-        task: { type: 'script', ref: `${process.execPath} -e $(whoami)` },
-      });
-      const result = await provider.execute(entry);
-      // Without shell, $(whoami) is passed as a literal string argument
-      if (result.success) {
-        expect(result.output).not.toMatch(/^[a-zA-Z]/); // Should not return a username
-      }
-    });
-
-    it('should not execute backtick injection', async () => {
-      const entry = validEntry({
-        task: { type: 'script', ref: `${process.execPath} -e \`whoami\`` },
-      });
-      const result = await provider.execute(entry);
-      // Backticks are literal without shell interpretation
-      if (result.success) {
-        expect(result.output).not.toMatch(/^[a-zA-Z]/);
-      }
-    });
-
-    it('should not execute pipe injection', async () => {
-      const entry = validEntry({
-        task: { type: 'script', ref: `${process.execPath} -e console.log('safe') | cat` },
-      });
-      const result = await provider.execute(entry);
-      // Without shell, '|' and 'cat' are just arguments to node
-      // This should either fail or not produce piped output
-    });
-
-    it('should not execute && chaining', async () => {
-      const entry = validEntry({
-        task: { type: 'script', ref: `${process.execPath} -e console.log('safe') && echo INJECTED` },
-      });
-      const result = await provider.execute(entry);
-      if (result.output) {
-        expect(result.output).not.toContain('INJECTED');
-      }
-    });
-
-    it('should reject null byte injection at runtime', async () => {
-      const entry = validEntry({
-        task: { type: 'script', ref: `${process.execPath}\x00-e console.log('pwned')` },
-      });
-      const result = await provider.execute(entry);
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('null bytes');
-    });
   });
 });
