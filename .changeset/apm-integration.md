@@ -1,5 +1,5 @@
 ---
-"squad": minor
+"@bradygaster/squad-cli": minor
 ---
 
 feat: APM integration — squad skill publish/install + apm.yml in init

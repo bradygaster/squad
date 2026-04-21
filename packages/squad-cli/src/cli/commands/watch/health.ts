@@ -85,6 +85,7 @@ function probeCurrentGhUser(): string | undefined {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: IS_WINDOWS,
+      timeout: 10_000,
     });
     const match = result.match(/account\s+(\S+)/);
     return match?.[1];

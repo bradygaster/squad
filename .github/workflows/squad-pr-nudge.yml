@@ -143,8 +143,8 @@ jobs:
               const comparison = await github.rest.repos.compareCommits({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                base: pr.head.sha,
-                head: pr.base.ref
+                base: pr.base.ref,
+                head: pr.head.sha
               });
               if (comparison.data.ahead_by > 10) {
                 actions.push(`⬇️ **${comparison.data.ahead_by} commits behind ${pr.base.ref}.** Rebase to pick up latest changes.`);

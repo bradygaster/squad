@@ -119,7 +119,7 @@ jobs:
             pkg.dependencies['@bradygaster/squad-sdk'] = '$SDK_VERSION';
             require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
           "
-          echo "Verified: $(node -p "require('./package.json').dependencies['@bradygaster/squad-sdk']")"
+          echo "Verified: $(node -p 'require("./package.json").dependencies["@bradygaster/squad-sdk"]')"
 
       - name: Publish squad-sdk with insider tag
         run: npm -w packages/squad-sdk publish --tag insider --access public

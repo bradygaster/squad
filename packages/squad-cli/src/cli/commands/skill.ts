@@ -17,6 +17,7 @@ import { fatal } from '../core/errors.js';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { ghAvailable } from '../core/gh-cli.js';
 
+const IS_WINDOWS = process.platform === 'win32';
 const execFileAsync = promisify(execFile);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -262,7 +263,7 @@ async function install(dest: string, source: string): Promise<void> {
   const repo = parts[1]!;
   const skillFilter = parts.length >= 3 ? parts.slice(2).join('/') : undefined;
 
-  if (!ghAvailable()) {
+  if (!(await ghAvailable())) {
     fatal('GitHub CLI (gh) is required for APM install. Install from https://cli.github.com/');
   }
 
@@ -316,7 +317,7 @@ async function installFromGitHub(
       'api',
       `repos/${owner}/${repo}/contents/apm.yml`,
       '--jq', '.content',
-    ]);
+    ], { shell: IS_WINDOWS });
     apmContent = Buffer.from(stdout.trim(), 'base64').toString('utf8');
   } catch {
     // No apm.yml — fall back to scanning skills directories
@@ -378,7 +379,7 @@ async function installFromGitHub(
         'api',
         `repos/${owner}/${repo}/contents/${skill.path}`,
         '--jq', '.content',
-      ]);
+      ], { shell: IS_WINDOWS });
       const content = Buffer.from(rawContent.trim(), 'base64').toString('utf8');
       const skillDir = join(skillsDir, skill.name);
       await mkdir(skillDir, { recursive: true });
@@ -421,7 +422,7 @@ async function installSkillsFromSquadDir(
         'api',
         `repos/${owner}/${repo}/contents/${candidate}`,
         '--jq', '[.[] | {name: .name, path: .path, type: .type}]',
-      ]);
+      ], { shell: IS_WINDOWS });
       entries = JSON.parse(stdout);
       break;
     } catch {
@@ -453,7 +454,7 @@ async function installSkillsFromSquadDir(
         'api',
         `repos/${owner}/${repo}/contents/${skillFilePath}`,
         '--jq', '.content',
-      ]);
+      ], { shell: IS_WINDOWS });
       const content = Buffer.from(rawContent.trim(), 'base64').toString('utf8');
       const skillDir = join(skillsDir, dir.name);
       await mkdir(skillDir, { recursive: true });
