@@ -121,7 +121,6 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
 
   // ─── Spawn copilot in PTY ─────────────────────────────────
   // Dynamic import node-pty (native module)
-  // @ts-expect-error — node-pty is an optional native dependency
   const nodePty = await import('node-pty');
 
   const copilotExePath = path.join(
