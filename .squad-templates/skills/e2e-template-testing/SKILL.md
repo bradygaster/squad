@@ -83,17 +83,17 @@ cat .squad/config.json      # should reflect any CLI flags you passed
 Use the Copilot CLI's `-p` flag for non-interactive single-turn sessions:
 
 ```bash
-copilot -p "Picard, decide what testing framework to use. Write your decision." \
+copilot --agent squad -p "Picard, decide what testing framework to use. Write your decision." \
   2>&1 | tee evidence/session-task.log
 ```
 
 For multi-turn workflows, run sequential sessions:
 ```bash
 # Session A: give the team a task
-copilot -p "prompt A" 2>&1 | tee evidence/session-A.log
+copilot --agent squad -p "prompt A" 2>&1 | tee evidence/session-A.log
 
 # Session B: verify state persisted
-copilot -p "What decisions has the team made?" 2>&1 | tee evidence/session-B.log
+copilot --agent squad -p "What decisions has the team made?" 2>&1 | tee evidence/session-B.log
 ```
 
 ### Step 5 — Verify the outcome
