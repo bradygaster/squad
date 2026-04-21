@@ -25,6 +25,7 @@ export {
   loadAppRegistration,
   saveAppRegistration,
   hasPrivateKey,
+  getKeyAgeDays,
 } from './storage.js';
 
 export {
@@ -36,6 +37,7 @@ export {
   generateAppJWT,
   getInstallationToken,
   resolveToken,
+  resolveTokenSync,
   resolveTokenWithDiagnostics,
   clearTokenCache,
   peekTokenCache,

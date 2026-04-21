@@ -36,6 +36,7 @@ import {
   loadAppRegistration,
   saveAppRegistration,
   hasPrivateKey,
+  getKeyAgeDays,
   clearTokenCache,
   generateAppJWT,
   resolveTokenWithDiagnostics,
@@ -61,6 +62,21 @@ const DEFAULT_PERMISSIONS = {
   checks: 'read',
   actions: 'read',
 } as const;
+
+/**
+ * H-14: Key rotation thresholds (days).
+ * Warn at ≥60, fail at ≥ SQUAD_IDENTITY_KEY_MAX_AGE_DAYS (default 90).
+ */
+const KEY_AGE_WARN_DAYS = 60;
+const KEY_AGE_MAX_DAYS_DEFAULT = 90;
+
+function getKeyAgeMaxDays(): number {
+  const raw = process.env['SQUAD_IDENTITY_KEY_MAX_AGE_DAYS'];
+  if (!raw) return KEY_AGE_MAX_DAYS_DEFAULT;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return KEY_AGE_MAX_DAYS_DEFAULT;
+  return Math.floor(parsed);
+}
 
 /** Human-readable descriptions per role for the GitHub App profile. */
 const ROLE_DESCRIPTIONS: Record<string, string> = {
@@ -447,8 +463,25 @@ function runStatus(projectRoot: string): void {
       const installStatus = reg.installationId === 0
         ? `  ${RED}⚠ no installation${RESET}`
         : `  ${DIM}install ${reg.installationId}${RESET}`;
+
+      // H-14: key age hint — inline, silent when file stat is unavailable (mounts).
+      let ageStatus = '';
+      if (keyExists) {
+        const ageDays = getKeyAgeDays(projectRoot, key);
+        if (ageDays !== null) {
+          const maxAge = getKeyAgeMaxDays();
+          if (ageDays >= maxAge) {
+            ageStatus = `  ${RED}key age: ${ageDays}d${RESET}`;
+          } else if (ageDays >= KEY_AGE_WARN_DAYS) {
+            ageStatus = `  ${YELLOW}key age: ${ageDays}d${RESET}`;
+          } else {
+            ageStatus = `  ${DIM}key age: ${ageDays}d${RESET}`;
+          }
+        }
+      }
+
       console.log(
-        `    ${BOLD}${key}${RESET}  ${DIM}→${RESET}  ${reg.appSlug} (app ${reg.appId})  ${keyStatus}${installStatus}`,
+        `    ${BOLD}${key}${RESET}  ${DIM}→${RESET}  ${reg.appSlug} (app ${reg.appId})  ${keyStatus}${installStatus}${ageStatus}`,
       );
       if (reg.installationId === 0 && keyExists) {
         brokenRoles.push(key);
@@ -1264,6 +1297,24 @@ async function runDoctorForRole(
     } catch (e) {
       return { ok: false, detail: e instanceof Error ? e.message : String(e) };
     }
+  }));
+
+  // H-14: key age — warn at ≥60d, fail at ≥SQUAD_IDENTITY_KEY_MAX_AGE_DAYS (default 90).
+  // Silently passes when the file stat is unavailable (e.g., restricted mounts).
+  checks.push(doctorCheck(`keys/${roleKey}.pem age within rotation window`, () => {
+    if (!existsSync(pemPath)) return { ok: false, skipped: true, detail: 'key not present — skip' };
+    const ageDays = getKeyAgeDays(projectRoot, roleKey);
+    if (ageDays === null) {
+      return { ok: true, skipped: true, detail: 'key mtime unavailable — skip' };
+    }
+    const maxAge = getKeyAgeMaxDays();
+    if (ageDays >= maxAge) {
+      return { ok: false, detail: `key age ${ageDays}d ≥ ${maxAge}d (SQUAD_IDENTITY_KEY_MAX_AGE_DAYS) — run: squad identity rotate --role ${roleKey}` };
+    }
+    if (ageDays >= KEY_AGE_WARN_DAYS) {
+      return { ok: false, warning: true, detail: `key age ${ageDays}d ≥ ${KEY_AGE_WARN_DAYS}d — consider: squad identity rotate --role ${roleKey}` };
+    }
+    return { ok: true, detail: `key age ${ageDays}d (max ${maxAge}d)` };
   }));
 
   // Check 6: .gitignore covers keys/

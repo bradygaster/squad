@@ -369,3 +369,19 @@ Executed 3 tasks across 2 waves: economy mode (#500, PR #504), node:sqlite fix (
 
 
 📌 **Team update (2026-04-21T00:28Z — Identity Quick Wins PR):** EECOM implemented identity hardening + kickstart sync quick wins on branch `squad/identity-quick-wins`. Delivered: (1) structured `TokenResolveError` type with `kind`/`message` fields, (2) H-01 fetch timeout via AbortController+Promise.race 10s cap, (3) H-02 PEM validation via createPrivateKey, (4) H-03 partial env detection with loud error, (5) H-07 mock hook (SQUAD_IDENTITY_MOCK / SQUAD_IDENTITY_MOCK_TOKEN), (6) role aliases + resolveRoleSlug(), (7) scribe role added to RoleSlug + ALL_ROLES constant, (8) isCliInvocation ESM dual-mode guard in resolve-token.mjs, (9) resolveTokenWithDiagnostics() + clearTokenCache(), (10) cache keyed by projectRoot:roleKey. All 142 identity tests pass.
+
+### Identity dedup + key-age + sync resolver (H-09, H-12, H-14) (2026-04-21)
+
+**Context:** Three identity hardening items shipped in one PR to avoid merge churn on `tokens.ts`.
+
+**H-12 — Concurrent same-role dedup:** Added `inFlight: Map<string, Promise<TokenResolveResult>>` in front of the token cache. Two callers for the same `(squadDir, role)` that both miss cache now share one `getInstallationToken` call. In-flight slot released via `.finally` on success AND failure so next call is fresh. Cache hits never enter the map.
+
+**H-14 — Key age warnings:** New `getKeyAgeDays(projectRoot, role)` in `storage.ts` returns integer days since PEM `mtime` (or `null` when file is missing / stat fails). Wired into `squad identity status` (inline `key age: Nd` dim/yellow/red) and `squad identity doctor` (new check: ok <60d, ⚠ warn ≥60d, ✗ fail ≥ `SQUAD_IDENTITY_KEY_MAX_AGE_DAYS` default 90). Silently skips when mtime is unavailable (WSL drvfs, restricted mounts).
+
+**H-09 — Sync cache-only resolver:** Added `resolveTokenSync(squadDir, role)` — returns cached token synchronously, `null` otherwise. No disk I/O, no JWT sign, no network, no cache population. `spawn.ts` (`spawnAgent`) now tries the sync path first, falling through to async `resolveToken` on miss. This is additive, not breaking — existing `resolveToken` async API unchanged.
+
+**Semver:** SDK minor (`resolveTokenSync` + `getKeyAgeDays` are new exports). CLI patch.
+
+**Tests:** 17 new tests across `test/identity/{dedup,key-age,sync-resolve}.test.ts`. All 194 identity tests pass on `npx vitest run test/identity/`.
+
+**Env churn:** Concurrent session switched the working tree mid-edit once — reapplied cleanly and committed immediately.

@@ -314,14 +314,29 @@ interface CachedToken {
 /** Module-level token cache, keyed by `${squadDir}:${roleKey}` to prevent cross-project pollution. */
 const tokenCache = new Map<string, CachedToken>();
 
+/**
+ * In-flight resolution promises keyed by `${squadDir}:${roleKey}`.
+ *
+ * H-12: When two callers ask for the same role's token simultaneously and both
+ * miss the cache, both would otherwise issue independent GitHub API calls. This
+ * map dedups concurrent requests — the second caller joins the first caller's
+ * promise. Entries are deleted on resolution (success OR failure) so the next
+ * fresh call issues a real request.
+ *
+ * This sits in FRONT of the token cache — cache hits never touch this map.
+ */
+const inFlight = new Map<string, Promise<TokenResolveResult>>();
+
 /** Tokens are refreshed when within this many ms of expiry. */
 const REFRESH_MARGIN_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
  * Clear the token cache. Exposed for testing.
+ * Also clears any in-flight dedup entries so tests start from a known state.
  */
 export function clearTokenCache(): void {
   tokenCache.clear();
+  inFlight.clear();
 }
 
 /**
@@ -460,9 +475,8 @@ export async function resolveTokenWithDiagnostics(
   roleKey: string,
   options?: { retryPolicy?: RetryPolicy },
 ): Promise<TokenResolveResult> {
-  const retryPolicy = options?.retryPolicy;
-
-  // SQUAD_IDENTITY_MOCK hook — returns deterministic mock token without any I/O
+  // SQUAD_IDENTITY_MOCK hook — returns deterministic mock token without any I/O.
+  // Checked before dedup so mock tests don't hit the in-flight map.
   if (process.env['SQUAD_IDENTITY_MOCK'] === '1') {
     const mockToken = process.env['SQUAD_IDENTITY_MOCK_TOKEN'] ?? `mock-token-${roleKey}`;
     return {
@@ -474,17 +488,42 @@ export async function resolveTokenWithDiagnostics(
 
   const cacheKey = `${squadDir}:${roleKey}`;
 
-  try {
-    // Check cache — return if still valid
-    const cached = tokenCache.get(cacheKey);
-    if (cached) {
-      const remainingMs = cached.expiresAt.getTime() - Date.now();
-      if (remainingMs > REFRESH_MARGIN_MS) {
-        return { token: cached.token, resolvedRoleKey: roleKey, error: null };
-      }
-      tokenCache.delete(cacheKey);
+  // Fast path: valid cached token — no dedup needed, cache hits are free.
+  const cached = tokenCache.get(cacheKey);
+  if (cached) {
+    const remainingMs = cached.expiresAt.getTime() - Date.now();
+    if (remainingMs > REFRESH_MARGIN_MS) {
+      return { token: cached.token, resolvedRoleKey: roleKey, error: null };
     }
+    tokenCache.delete(cacheKey);
+  }
 
+  // H-12: Dedup concurrent misses — second caller joins the first caller's promise.
+  const existing = inFlight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = resolveTokenInternal(squadDir, roleKey, cacheKey, options)
+    .finally(() => {
+      // Release the slot on both success AND failure so the next call is fresh.
+      inFlight.delete(cacheKey);
+    });
+  inFlight.set(cacheKey, promise);
+  return promise;
+}
+
+/**
+ * Internal resolution logic — invoked by resolveTokenWithDiagnostics after
+ * the in-flight dedup check. Must not be called directly (bypasses dedup).
+ */
+async function resolveTokenInternal(
+  squadDir: string,
+  roleKey: string,
+  cacheKey: string,
+  options?: { retryPolicy?: RetryPolicy },
+): Promise<TokenResolveResult> {
+  const retryPolicy = options?.retryPolicy;
+
+  try {
     // --- Path 1: Environment variables (CI/CD override) ---
     const { credentials: envCreds, error: envError } = resolveEnvCredentials(roleKey);
 
@@ -617,4 +656,42 @@ export async function resolveToken(
 ): Promise<string | null> {
   const result = await resolveTokenWithDiagnostics(squadDir, roleKey, options);
   return result.token ?? null;
+}
+
+/**
+ * Synchronous, cache-only token lookup.
+ *
+ * H-09: Many hot paths (e.g. agent spawn) just want to answer "is there a
+ * cached token for this role right now?" without committing to an async
+ * filesystem read, JWT sign, or network call. This function returns:
+ *   - the cached token string if one is cached AND more than 10 minutes from expiry
+ *   - the deterministic mock token when SQUAD_IDENTITY_MOCK=1 (matches async behaviour)
+ *   - null otherwise (no cache, cache expired, no mock)
+ *
+ * It does NOT:
+ *   - Read from disk (no PEM load, no registration load)
+ *   - Generate a JWT
+ *   - Call the GitHub API
+ *   - Populate the cache
+ *
+ * Callers should treat `null` as "fall through to the async `resolveToken`",
+ * not as "identity is not configured" — absence here means "not hot right now".
+ *
+ * @param squadDir - Project root directory (parent of `.squad/`)
+ * @param roleKey - Role key (e.g., 'lead', 'backend')
+ * @returns Cached token string, or null if no valid cached entry exists
+ */
+export function resolveTokenSync(squadDir: string, roleKey: string): string | null {
+  if (process.env['SQUAD_IDENTITY_MOCK'] === '1') {
+    return process.env['SQUAD_IDENTITY_MOCK_TOKEN'] ?? `mock-token-${roleKey}`;
+  }
+
+  const cacheKey = `${squadDir}:${roleKey}`;
+  const cached = tokenCache.get(cacheKey);
+  if (!cached) return null;
+
+  const remainingMs = cached.expiresAt.getTime() - Date.now();
+  if (remainingMs <= REFRESH_MARGIN_MS) return null;
+
+  return cached.token;
 }
