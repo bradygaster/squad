@@ -341,7 +341,7 @@ prompt: |
   {% endif %}
 
   {only if identity configured:}
-  GIT IDENTITY: Commit as `{app_slug}[bot]`. Push with token: `TOKEN=$(node {team_root}/.squad/scripts/resolve-token.mjs '{role_slug}'); if [ -n "$TOKEN" ]; then git push https://x-access-token:${TOKEN}@github.com/{owner}/{repo}.git {branch}; else git push; fi`. PR: `if [ -n "$TOKEN" ]; then GH_TOKEN=$TOKEN gh pr create --repo {owner}/{repo} ...; else gh pr create ...; fi`. PR body: `🤖 [{app_slug}](https://github.com/apps/{app_slug})`.
+  GIT IDENTITY: Commit as `{app_slug}[bot]`. Push with token: `TOKEN=$(node {team_root}/.squad/scripts/resolve-token.mjs '{role_slug}'); if [ -n "$TOKEN" ]; then export GH_TOKEN="$TOKEN"; fi; git push`. PR: `GH_TOKEN=$TOKEN gh pr create --repo {owner}/{repo} ...` (falls back to default auth if TOKEN is empty). PR body: `🤖 [{app_slug}](https://github.com/apps/{app_slug})`.
   {end identity block}
 
   TASK: {specific task description}
@@ -852,12 +852,12 @@ prompt: |
   **Git commit identity:**
   - `git -c user.name="{app_slug}[bot]" -c user.email="{app_slug}[bot]@users.noreply.github.com" commit ...`
   
-  **Push:** `if [ -n "$TOKEN" ]; then git push https://x-access-token:${TOKEN}@github.com/{owner}/{repo}.git {branch}; else git push; fi`
-  **PR create:** `if [ -n "$TOKEN" ]; then GH_TOKEN=$TOKEN gh pr create --repo {owner}/{repo} ...; else gh pr create ...; fi`
+  **Push:** `if [ -n "$TOKEN" ]; then export GH_TOKEN="$TOKEN"; fi; git push`
+  **PR create:** `GH_TOKEN=$TOKEN gh pr create --repo {owner}/{repo} ...`
   **PR body must include:** `🤖 Created by [{app_slug}](https://github.com/apps/{app_slug})`
   
   **Never log or echo the token value.**
-  **Parallel safety:** Each agent resolves exactly one token. If you need multiple tokens in one shell block (e.g., batch operations), use newline-separated statements — NOT `&&` chains — before backgrounding with `&`. Bash variable scoping causes `&&`-chained assignments to lose values in child subshells.
+  **Parallel safety:** Each agent resolves exactly one token. If you need multiple tokens in one shell block (e.g., batch operations), be aware that backgrounding with `&` or wrapping in `(...)` creates subshells where variable assignments are lost. Use exported environment variables or separate sequential statements.
   {end identity block}
   
   **Requested by:** {current user name}

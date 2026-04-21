@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ============================================================================
-// Mocks — intercept resolveToken so we never hit real GitHub API.
+// Mocks — intercept resolveTokenWithDiagnostics so we never hit real GitHub API.
 // We mock the tokens module directly because exec.ts imports from ./tokens.js.
 // ============================================================================
 
@@ -18,18 +18,30 @@ vi.mock('../../packages/squad-sdk/src/identity/tokens.js', async (importOriginal
   const actual = await importOriginal<typeof import('../../packages/squad-sdk/src/identity/tokens.js')>();
   return {
     ...actual,
-    resolveToken: vi.fn().mockResolvedValue(null),
+    resolveTokenWithDiagnostics: vi.fn().mockResolvedValue({ token: null, resolvedRoleKey: null, error: null }),
   };
 });
 
-import { resolveToken } from '../../packages/squad-sdk/src/identity/tokens.js';
-const mockResolveToken = vi.mocked(resolveToken);
+import { resolveTokenWithDiagnostics } from '../../packages/squad-sdk/src/identity/tokens.js';
+const mockResolve = vi.mocked(resolveTokenWithDiagnostics);
 
 // Import under test — must come after mock setup
 import { execWithRoleToken, withRoleToken } from '../../packages/squad-sdk/src/identity/exec.js';
 
 // ============================================================================
-// Test helpers
+// Helpers
+// ============================================================================
+
+function mockToken(token: string, roleKey = 'backend') {
+  mockResolve.mockResolvedValue({ token, resolvedRoleKey: roleKey, error: null });
+}
+
+function mockNoToken() {
+  mockResolve.mockResolvedValue({ token: null, resolvedRoleKey: null, error: null });
+}
+
+// ============================================================================
+// execWithRoleToken
 // ============================================================================
 
 describe('execWithRoleToken', () => {
@@ -38,8 +50,8 @@ describe('execWithRoleToken', () => {
   beforeEach(() => {
     savedGhToken = process.env['GH_TOKEN'];
     delete process.env['GH_TOKEN'];
-    mockResolveToken.mockReset();
-    mockResolveToken.mockResolvedValue(null);
+    mockResolve.mockReset();
+    mockNoToken();
   });
 
   afterEach(() => {
@@ -51,17 +63,17 @@ describe('execWithRoleToken', () => {
   });
 
   it('sets GH_TOKEN during command execution', async () => {
-    mockResolveToken.mockResolvedValue('ghs_bot_token_123');
+    mockToken('ghs_bot_token_123');
 
     // echo $GH_TOKEN captures the value during execution
     const result = await execWithRoleToken('/fake/root', 'backend', 'echo $GH_TOKEN');
 
     expect(result.stdout.trim()).toBe('ghs_bot_token_123');
-    expect(mockResolveToken).toHaveBeenCalledWith('/fake/root', 'backend');
+    expect(mockResolve).toHaveBeenCalledWith('/fake/root', 'backend');
   });
 
   it('restores GH_TOKEN to undefined after execution', async () => {
-    mockResolveToken.mockResolvedValue('ghs_temp');
+    mockToken('ghs_temp');
 
     await execWithRoleToken('/fake/root', 'backend', 'echo hello');
 
@@ -70,7 +82,7 @@ describe('execWithRoleToken', () => {
 
   it('restores previous GH_TOKEN value after execution', async () => {
     process.env['GH_TOKEN'] = 'user_personal_token';
-    mockResolveToken.mockResolvedValue('ghs_bot_override');
+    mockToken('ghs_bot_override', 'lead');
 
     await execWithRoleToken('/fake/root', 'lead', 'echo hi');
 
@@ -79,7 +91,7 @@ describe('execWithRoleToken', () => {
 
   it('restores GH_TOKEN even when command fails', async () => {
     process.env['GH_TOKEN'] = 'original_value';
-    mockResolveToken.mockResolvedValue('ghs_injected');
+    mockToken('ghs_injected');
 
     await expect(
       execWithRoleToken('/fake/root', 'backend', 'exit 1'),
@@ -89,7 +101,7 @@ describe('execWithRoleToken', () => {
   });
 
   it('proceeds without injection when resolveToken returns null', async () => {
-    mockResolveToken.mockResolvedValue(null);
+    mockNoToken();
 
     const result = await execWithRoleToken('/fake/root', 'backend', 'echo ok');
 
@@ -97,8 +109,8 @@ describe('execWithRoleToken', () => {
     expect(process.env['GH_TOKEN']).toBeUndefined();
   });
 
-  it('proceeds without injection when resolveToken throws', async () => {
-    mockResolveToken.mockRejectedValue(new Error('PEM not found'));
+  it('proceeds without injection when resolveToken returns an error', async () => {
+    mockResolve.mockResolvedValue({ token: null, resolvedRoleKey: null, error: { kind: 'runtime', message: 'PEM not found' } });
 
     const result = await execWithRoleToken('/fake/root', 'backend', 'echo fallback');
 
@@ -108,7 +120,7 @@ describe('execWithRoleToken', () => {
 
   it('does not overwrite GH_TOKEN when resolveToken returns null', async () => {
     process.env['GH_TOKEN'] = 'user_token_keep';
-    mockResolveToken.mockResolvedValue(null);
+    mockNoToken();
 
     const result = await execWithRoleToken('/fake/root', 'backend', 'echo $GH_TOKEN');
 
@@ -117,14 +129,18 @@ describe('execWithRoleToken', () => {
   });
 });
 
+// ============================================================================
+// withRoleToken
+// ============================================================================
+
 describe('withRoleToken', () => {
   let savedGhToken: string | undefined;
 
   beforeEach(() => {
     savedGhToken = process.env['GH_TOKEN'];
     delete process.env['GH_TOKEN'];
-    mockResolveToken.mockReset();
-    mockResolveToken.mockResolvedValue(null);
+    mockResolve.mockReset();
+    mockNoToken();
   });
 
   afterEach(() => {
@@ -136,7 +152,7 @@ describe('withRoleToken', () => {
   });
 
   it('sets GH_TOKEN during function execution', async () => {
-    mockResolveToken.mockResolvedValue('ghs_fn_token');
+    mockToken('ghs_fn_token', 'frontend');
     let captured: string | undefined;
 
     await withRoleToken('/fake/root', 'frontend', async () => {
@@ -147,7 +163,7 @@ describe('withRoleToken', () => {
   });
 
   it('returns the value from the callback', async () => {
-    mockResolveToken.mockResolvedValue('ghs_token');
+    mockToken('ghs_token');
 
     const result = await withRoleToken('/fake/root', 'backend', async () => {
       return 42;
@@ -158,7 +174,7 @@ describe('withRoleToken', () => {
 
   it('restores GH_TOKEN after function completes', async () => {
     process.env['GH_TOKEN'] = 'original';
-    mockResolveToken.mockResolvedValue('ghs_override');
+    mockToken('ghs_override');
 
     await withRoleToken('/fake/root', 'backend', async () => {
       // do nothing
@@ -169,7 +185,7 @@ describe('withRoleToken', () => {
 
   it('restores GH_TOKEN when function throws', async () => {
     process.env['GH_TOKEN'] = 'keep_me';
-    mockResolveToken.mockResolvedValue('ghs_temp');
+    mockToken('ghs_temp');
 
     await expect(
       withRoleToken('/fake/root', 'backend', async () => {
@@ -181,7 +197,7 @@ describe('withRoleToken', () => {
   });
 
   it('falls back gracefully when no identity configured', async () => {
-    mockResolveToken.mockResolvedValue(null);
+    mockNoToken();
 
     const result = await withRoleToken('/fake/root', 'backend', async () => {
       return process.env['GH_TOKEN'];

@@ -15,6 +15,7 @@ export type {
   CommentInput,
   CommitMessageInput,
 } from './types.js';
+export { ALL_ROLES } from './types.js';
 
 export { resolveRoleSlug } from './role-slugs.js';
 
@@ -35,8 +36,14 @@ export {
   generateAppJWT,
   getInstallationToken,
   resolveToken,
+  resolveTokenWithDiagnostics,
   clearTokenCache,
+  peekTokenCache,
+  getInstallationPermissions,
+  GitHubApiError,
+  RetryExhaustedError,
 } from './tokens.js';
+export type { TokenResolveError, TokenResolveResult, RetryPolicy } from './tokens.js';
 
 export {
   execWithRoleToken,

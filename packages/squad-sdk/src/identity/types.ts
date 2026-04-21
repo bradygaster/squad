@@ -11,7 +11,12 @@
 export type IdentityTier = 'shared' | 'per-role' | 'per-agent';
 
 /** Canonical role slugs for identity mapping. */
-export type RoleSlug = 'lead' | 'frontend' | 'backend' | 'tester' | 'devops' | 'docs' | 'security' | 'data';
+export type RoleSlug = 'lead' | 'frontend' | 'backend' | 'tester' | 'devops' | 'docs' | 'security' | 'data' | 'scribe';
+
+/** All canonical role slugs — single source of truth for SDK and CLI. */
+export const ALL_ROLES: readonly RoleSlug[] = [
+  'lead', 'frontend', 'backend', 'tester', 'devops', 'docs', 'security', 'data', 'scribe',
+] as const;
 
 /** A registered GitHub App linked to a role or shared across agents. */
 export interface AppRegistration {

@@ -12,7 +12,7 @@
 
 import { exec as execCb } from 'node:child_process';
 import { promisify } from 'node:util';
-import { resolveToken } from './tokens.js';
+import { resolveTokenWithDiagnostics } from './tokens.js';
 
 const execAsync = promisify(execCb);
 
@@ -43,16 +43,15 @@ export async function execWithRoleToken(
 ): Promise<ExecResult> {
   const previousToken = process.env['GH_TOKEN'];
 
-  // Attempt to resolve a bot token — failures are non-fatal
-  let token: string | null = null;
-  try {
-    token = await resolveToken(teamRoot, roleSlug);
-  } catch {
-    // Identity not configured or PEM missing — proceed without injection
-  }
-
-  if (token) {
-    process.env['GH_TOKEN'] = token;
+  // resolveTokenWithDiagnostics never throws — always returns a result
+  const result = await resolveTokenWithDiagnostics(teamRoot, roleSlug);
+  if (result.token) {
+    process.env['GH_TOKEN'] = result.token;
+  } else if (result.error) {
+    // Surface identity failures that would otherwise go completely unnoticed
+    process.stderr.write(
+      `[identity] Token resolution failed for role "${roleSlug}": ${result.error.message}\n`,
+    );
   }
 
   try {
@@ -85,15 +84,14 @@ export async function withRoleToken<T>(
 ): Promise<T> {
   const previousToken = process.env['GH_TOKEN'];
 
-  let token: string | null = null;
-  try {
-    token = await resolveToken(teamRoot, roleSlug);
-  } catch {
-    // Graceful fallback — proceed with existing env
-  }
-
-  if (token) {
-    process.env['GH_TOKEN'] = token;
+  // resolveTokenWithDiagnostics never throws — always returns a result
+  const result = await resolveTokenWithDiagnostics(teamRoot, roleSlug);
+  if (result.token) {
+    process.env['GH_TOKEN'] = result.token;
+  } else if (result.error) {
+    process.stderr.write(
+      `[identity] Token resolution failed for role "${roleSlug}": ${result.error.message}\n`,
+    );
   }
 
   try {

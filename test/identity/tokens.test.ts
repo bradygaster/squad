@@ -300,15 +300,15 @@ describe('resolveToken with env vars', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to filesystem when only partial env vars are set', async () => {
-    // Only set 2 of 3 env vars — should NOT use env path
+  it('returns null when only partial env vars are set (loud failure, no fallthrough)', async () => {
+    // Only set 2 of 3 env vars — should NOT fall through to filesystem; should return null
     process.env.SQUAD_BACKEND_APP_ID = '55555';
     process.env.SQUAD_BACKEND_INSTALLATION_ID = '99999';
     // SQUAD_BACKEND_PRIVATE_KEY is intentionally NOT set
 
     const dir = makeTmpDir();
 
-    // Set up filesystem credentials so we can verify fallback
+    // Set up filesystem credentials to verify there is NO fallback
     const appsDir = join(dir, '.squad', 'identity', 'apps');
     const keysDir = join(dir, '.squad', 'identity', 'keys');
     mkdirSync(appsDir, { recursive: true });
@@ -319,21 +319,14 @@ describe('resolveToken with env vars', () => {
     );
     writeFileSync(join(keysDir, 'backend.pem'), TEST_PEM);
 
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        token: 'ghs_filesystem_token',
-        expires_at: expiresAt,
-      }),
-    });
+    const mockFetch = vi.fn();
     vi.stubGlobal('fetch', mockFetch);
 
     const result = await resolveToken(dir, 'backend');
 
-    // Should have used filesystem credentials (appId 77), not env var (55555)
-    expect(result).toBe('ghs_filesystem_token');
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // Partial env vars = loud runtime error, not a filesystem fallback
+    expect(result).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('env var takes precedence over filesystem credentials', async () => {

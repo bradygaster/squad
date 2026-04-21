@@ -4,6 +4,23 @@
 
 ---
 
+### PR #23 Review — H-03 Retry Resilience + PR #22 Nits (2026-04-21)
+
+**Verdict:** ✅ Approve  
+**PR:** https://github.com/sabbour/squad/pull/23  
+**Author:** EECOM (Core Dev)  
+**Scope:** H-03 retry with exponential backoff + 3 nit fixes from PR #22 review
+
+**Review highlights:**
+- All 10 hard checks passed: changeset names correct (`@bradygaster/squad-sdk: minor`, `@bradygaster/squad-cli: patch`), opt-in retry with zero behavior change for existing callers, retry filter covers all 7 conditions (network/5xx/429 retry; 4xx/AbortError/not-configured propagate), fresh AbortController per attempt, injectable `random` seam for deterministic jitter tests, Retry-After honoring on 429, `retriesExhausted` field correct on all paths, no token leakage, `resolve-token.mjs` untouched, no scope creep.
+- PR #22 nits verified: N-1 single GET (removed redundant preflight), N-2 dedicated AbortController (moot with N-1), N-3 drvfs 0o777 detection with specific mode check.
+- One new nit flagged: dead import `withRetry as _withRetry` in test file (module-private, never used). Non-blocking.
+- Call-outs: opt-in design pattern, `GitHubApiError` typed error class, injectable randomness skill, Retry-After honoring, 12 focused tests, clean docs.
+
+**Pattern:** Third PR in identity hardening series (PR #21 quick wins → PR #22 doctor+explain → PR #23 retry). Series demonstrates disciplined incremental hardening — each PR is self-contained, backward-compatible, well-tested.
+
+---
+
 📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution Complete):** Post-CLI crash recovery executed in 3 rounds. Round 1: Flight audited PR/issue state (found #617 merged, #619 conflicting, 3 dupes #605/#604/#602 open); FIDO verified baseline (5,038 tests ✅ green); Scribe merged stale inbox. Round 2: Flight closed 3 duplicate PRs with rationale; Procedures rebased PR #619 (model catalog) onto dev, resolved 3 merge conflicts, merged; FIDO reviewed 9 community PRs—approved 3 (#625/#603/#608), requested changes on 6 (package naming, file paths). Round 3: Coordinator merged 3 approved PRs. **10 PRs merged total** (6 merge-plan, 3 community, 1 legacy #592). **3 PRs closed** as duplicates. **6 PRs awaiting author revisions**. **Dev branch green** (5,038 tests). All merge-plan sequence complete. Draft #567 parked pending requirements. Decision inbox merged to decisions.md and deleted. Next: Monitor change-request PRs for author responses.
 
 📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review):** Flight triaged 14 untriaged GitHub issues, created prioritized work session plan. Identified high-value quick wins (P1): #610 (docs broken link, 5-min fix), #590 (getPersonalSquadRoot bug, P0), #591 (hiring wiring docs). Deferred community feature contributions (#601–#595) pending PR review. Categorized maintenance (P2) and questions for community. FIDO reviewed 10 open PRs, identified 3 duplicate/overlap pairs (6 PRs consolidate to 4: merge #607/#603/#606, close #605/#604/#602). Work session priority: #610→PAO, #590→EECOM, #592/#611→Flight review, #588→Procedures. Established PR review strategy: Tamir PRs require proposal-first discipline before review. Merge-ready identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). A2A protocol PRs remain shelved. All 14 issues fully categorized with squad assignments. Decision inbox merged to decisions.md. Session complete; team ready for execution.
@@ -185,3 +202,21 @@ Decision written to `.squad/decisions/inbox/flight-release-hardening-plan.md`.
 **Pattern:** Tamir is a high-output contributor (6 PRs in 2 weeks) but needs proposal-first discipline. Joniba and diberry deliver MSFT-level quality.
 
 Decision written to `.squad/decisions/inbox/flight-triage-session-plan.md`.
+
+---
+
+📌 **PR Review (2026-04-20T23:42Z — PR #21 identity hardening + kickstart sync)**
+
+Reviewed EECOM's implementation of 13 findings from two Flight proposals (kickstart-identity-sync + identity-hardening-roadmap). Build green, 142/142 identity tests pass (12 files).
+
+**Verdict: Request changes** — two blocking issues:
+1. Changeset `identity-hardening.md` uses `@squad/sdk` / `@squad/cli` instead of `@bradygaster/squad-sdk` / `@bradygaster/squad-cli`. Will be silently ignored by changesets CLI.
+2. Three of four `resolve-token.mjs` template copies are stale (224 lines vs 283-line hardened version in CLI templates). Users receiving templates from SDK/root get unhardened script.
+
+All 13 findings correctly implemented in SDK `tokens.ts` and CLI template `resolve-token.mjs`. Implementation quality is excellent — error taxonomy consistent, timeout wired with AbortController + Promise.race, PEM validation via createPrivateKey, mock hook clean. Test coverage strong on failure paths.
+
+Non-blocking: role slug resolution asymmetry (SDK doesn't auto-resolve aliases; CLI template does). H-06 gitignore tests simulate behavior rather than exercising `ensureKeysIgnored()` directly. FIDO's fake-timer and stderr spy concerns both resolved cleanly.
+
+Decision written to `.squad/decisions/inbox/flight-pr21-review.md`.
+
+📌 **Re-review (2026-04-21T01:07Z):** EECOM fixed both blockers in aeaba5c3. Changeset names corrected, all 4 resolve-token.mjs copies byte-identical at 283 lines. 142/142 tests green. Verdict upgraded to APPROVE. Merge is Ahmed's call.
