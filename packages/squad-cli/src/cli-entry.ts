@@ -931,6 +931,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'skill') {
+    const { runSkill } = await import('./cli/commands/skill.js');
+    await runSkill(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
   // Unknown command
   fatal(`Unknown command: ${cmd}\n       Run 'squad doctor' to check your setup, or 'squad help' for usage information.`);
 }
