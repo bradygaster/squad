@@ -15,10 +15,13 @@ import type { RoleSlug } from './types.js';
  * Order matters — first match wins.
  */
 const ROLE_PATTERNS: ReadonlyArray<readonly [string, RoleSlug]> = [
-  // Lead / Architect
+  // Lead / Architect / Reviewer
+  ['code review', 'lead'],
   ['lead', 'lead'],
   ['architect', 'lead'],
   ['tech lead', 'lead'],
+  ['reviewer', 'lead'],
+  ['watchdog', 'lead'],
 
   // Frontend / UI
   ['frontend', 'frontend'],
