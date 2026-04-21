@@ -5,8 +5,6 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- `squad init` no longer runs `git init` automatically when initialized inside a monorepo subdirectory (#939). It now shows a warning and suggests running from the git root instead.
-- Azure DevOps adapter (`az` CLI calls) now use `shell: true` on Windows so `.cmd` wrapper scripts resolve correctly (#941).
 - **Nap archival budget** (#123) — account for separator newlines in decision archival budget calculation
 
 ### Added — Full Work Monitor for squad watch (#708)
@@ -316,6 +314,5 @@ All notable changes to this project will be documented in this file.
 - New entry point: `src/cli-entry.ts` (CLI bootstrap separated from library exports)
 - Migrated to npm workspace publishing (`@bradygaster/squad-sdk`, `@bradygaster/squad-cli`)
 - Changesets infrastructure for independent package versioning
-
 
 
