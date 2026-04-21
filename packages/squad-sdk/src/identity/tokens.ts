@@ -189,6 +189,75 @@ export function clearTokenCache(): void {
   tokenCache.clear();
 }
 
+/**
+ * Peek at the cached token state for a role without triggering a fetch.
+ * Useful for diagnostic commands (e.g., `squad identity explain`).
+ *
+ * @param squadDir - Project root directory
+ * @param roleKey - Role key (e.g., 'lead', 'backend')
+ * @returns Cache entry info if present, or `{ cached: false }`
+ */
+export function peekTokenCache(
+  squadDir: string,
+  roleKey: string,
+): { cached: true; expiresAt: Date; remainingMs: number } | { cached: false } {
+  const cacheKey = `${squadDir}:${roleKey}`;
+  const entry = tokenCache.get(cacheKey);
+  if (!entry) return { cached: false };
+  return {
+    cached: true,
+    expiresAt: entry.expiresAt,
+    remainingMs: entry.expiresAt.getTime() - Date.now(),
+  };
+}
+
+/**
+ * Fetch the permissions associated with a GitHub App installation token.
+ * Calls `GET /installation` with the token to retrieve the current permissions set.
+ *
+ * Used by `squad identity doctor` to verify the expected scopes are present.
+ *
+ * @param token - GitHub App installation token
+ * @returns Record of permission name → access level, or null on failure
+ */
+export async function getInstallationPermissions(
+  token: string,
+): Promise<Record<string, string> | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    const response = await fetch('https://api.github.com/installation/repositories?per_page=1', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    // The token's own permissions are in the response's X headers or can be
+    // queried via GET /installation — use the token to call that endpoint.
+    // Fallback: call GET /app/installations/{id} is not possible without JWT.
+    // Instead, parse from the token itself via GET /installation.
+    const permResponse = await fetch('https://api.github.com/installation', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      signal: controller.signal,
+    });
+    if (!permResponse.ok) return null;
+    const data = (await permResponse.json()) as { permissions?: Record<string, string> };
+    return data.permissions ?? null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ============================================================================
 // High-level token resolution
 // ============================================================================

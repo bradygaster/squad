@@ -38,6 +38,8 @@ export {
   resolveToken,
   resolveTokenWithDiagnostics,
   clearTokenCache,
+  peekTokenCache,
+  getInstallationPermissions,
 } from './tokens.js';
 export type { TokenResolveError, TokenResolveResult } from './tokens.js';
 
