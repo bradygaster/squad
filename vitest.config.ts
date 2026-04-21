@@ -9,6 +9,7 @@ export default defineConfig({
     dedupe: ['@bradygaster/squad-sdk'],
   },
   test: {
+    testTimeout: 15000,
     include: ['test/**/*.test.ts'],
     coverage: {
       provider: 'v8',

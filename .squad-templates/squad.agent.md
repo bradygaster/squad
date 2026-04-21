@@ -340,6 +340,10 @@ prompt: |
   **WORKTREE:** Working in `{WORKTREE_PATH}`. All operations relative to this path. Do NOT switch branches.
   {% endif %}
 
+  {only if identity configured:}
+  GIT IDENTITY: Commit as `{app_slug}[bot]`. Push with token: `TOKEN=$(node {team_root}/.squad/scripts/resolve-token.mjs '{role_slug}'); if [ -n "$TOKEN" ]; then export GH_TOKEN="$TOKEN"; fi; git push`. PR: `GH_TOKEN=$TOKEN gh pr create --repo {owner}/{repo} ...` (falls back to default auth if TOKEN is empty). PR body: `🤖 [{app_slug}](https://github.com/apps/{app_slug})`.
+  {end identity block}
+
   TASK: {specific task description}
   TARGET FILE(S): {exact file path(s)}
 
@@ -694,6 +698,30 @@ The coordinator passes a **spawn manifest** (who ran, why, what mode, outcome) t
 
 Each entry records: agent routed, why chosen, mode (background/sync), files authorized to read, files produced, and outcome. See `.squad/templates/orchestration-log.md` for the field format.
 
+### Pre-Spawn: Identity Resolution
+
+When spawning an agent that may do git operations (commit, push, PR), resolve the identity context:
+
+1. **Check identity config:** Does `.squad/identity/config.json` exist?
+   - **No** → omit the identity block entirely. Agents use default auth.
+   - **Yes** → read the config to get the tier and app registrations.
+
+2. **Resolve the role slug:** Map the agent's role to an identity role slug using `resolveRoleSlug()` semantics:
+   - Lead/Architect → `lead`
+   - Backend/Core Dev → `backend` (falls back to `lead` if no backend app)
+   - Frontend → `frontend` (falls back to `lead`)
+   - Tester → `tester` (falls back to `lead`)
+   - For `shared` tier: all agents use the single shared app
+   - For `per-role` tier: try role-specific app first, fall back to `lead`
+
+3. **Get the app slug:** From the identity config, look up the app registration for the resolved role slug. The `appSlug` is the GitHub App's URL slug (e.g., `sabbour-squad-lead`).
+
+4. **Get the repo owner/name:** From the git remote origin URL, parse `{owner}/{repo}`.
+
+5. **Include the identity block** in the spawn prompt with the resolved values.
+
+**If any step fails, omit the identity block silently.** Identity is always graceful — never block a spawn because identity resolution failed.
+
 ### Pre-Spawn: Worktree Setup
 
 When spawning an agent for issue-based work (user request references an issue number, or agent is working on a GitHub issue):
@@ -810,6 +838,27 @@ prompt: |
   {only if MCP tools detected — omit entirely if none:}
   MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
   {end MCP block}
+  
+  {only if .squad/identity/config.json exists — omit entirely if no identity configured:}
+  ## GIT IDENTITY — Bot Authentication
+  This project uses GitHub App identity for git operations. When pushing code or creating PRs, authenticate as the bot.
+  
+  **Resolve token at runtime:**
+  ```bash
+  TOKEN=$(node {team_root}/.squad/scripts/resolve-token.mjs '{role_slug}')
+  ```
+  If token resolution fails (no identity configured), fall back to default git auth — do NOT block on identity.
+  
+  **Git commit identity:**
+  - `git -c user.name="{app_slug}[bot]" -c user.email="{app_slug}[bot]@users.noreply.github.com" commit ...`
+  
+  **Push:** `if [ -n "$TOKEN" ]; then export GH_TOKEN="$TOKEN"; fi; git push`
+  **PR create:** `GH_TOKEN=$TOKEN gh pr create --repo {owner}/{repo} ...`
+  **PR body must include:** `🤖 Created by [{app_slug}](https://github.com/apps/{app_slug})`
+  
+  **Never log or echo the token value.**
+  **Parallel safety:** Each agent resolves exactly one token. If you need multiple tokens in one shell block (e.g., batch operations), be aware that backgrounding with `&` or wrapping in `(...)` creates subshells where variable assignments are lost. Use exported environment variables or separate sequential statements.
+  {end identity block}
   
   **Requested by:** {current user name}
   

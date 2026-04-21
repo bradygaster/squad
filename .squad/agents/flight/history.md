@@ -185,3 +185,21 @@ Decision written to `.squad/decisions/inbox/flight-release-hardening-plan.md`.
 **Pattern:** Tamir is a high-output contributor (6 PRs in 2 weeks) but needs proposal-first discipline. Joniba and diberry deliver MSFT-level quality.
 
 Decision written to `.squad/decisions/inbox/flight-triage-session-plan.md`.
+
+---
+
+📌 **PR Review (2026-04-20T23:42Z — PR #21 identity hardening + kickstart sync)**
+
+Reviewed EECOM's implementation of 13 findings from two Flight proposals (kickstart-identity-sync + identity-hardening-roadmap). Build green, 142/142 identity tests pass (12 files).
+
+**Verdict: Request changes** — two blocking issues:
+1. Changeset `identity-hardening.md` uses `@squad/sdk` / `@squad/cli` instead of `@bradygaster/squad-sdk` / `@bradygaster/squad-cli`. Will be silently ignored by changesets CLI.
+2. Three of four `resolve-token.mjs` template copies are stale (224 lines vs 283-line hardened version in CLI templates). Users receiving templates from SDK/root get unhardened script.
+
+All 13 findings correctly implemented in SDK `tokens.ts` and CLI template `resolve-token.mjs`. Implementation quality is excellent — error taxonomy consistent, timeout wired with AbortController + Promise.race, PEM validation via createPrivateKey, mock hook clean. Test coverage strong on failure paths.
+
+Non-blocking: role slug resolution asymmetry (SDK doesn't auto-resolve aliases; CLI template does). H-06 gitignore tests simulate behavior rather than exercising `ensureKeysIgnored()` directly. FIDO's fake-timer and stderr spy concerns both resolved cleanly.
+
+Decision written to `.squad/decisions/inbox/flight-pr21-review.md`.
+
+📌 **Re-review (2026-04-21T01:07Z):** EECOM fixed both blockers in aeaba5c3. Changeset names corrected, all 4 resolve-token.mjs copies byte-identical at 283 lines. 142/142 tests green. Verdict upgraded to APPROVE. Merge is Ahmed's call.

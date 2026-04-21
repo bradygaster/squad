@@ -171,6 +171,14 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Agent accumulated wisdom',
   },
   
+  // Standalone scripts (squad-owned, overwrite on upgrade)
+  {
+    source: 'scripts/resolve-token.mjs',
+    destination: 'scripts/resolve-token.mjs',
+    overwriteOnUpgrade: true,
+    description: 'Standalone token resolution script for agent identity',
+  },
+
   // Issue lifecycle (squad-owned)
   {
     source: 'issue-lifecycle.md',

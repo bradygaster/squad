@@ -718,6 +718,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
     join(squadDir, 'log'),
+    join(squadDir, 'scripts'),
     join(squadDir, '.scratch'),
   ];
   

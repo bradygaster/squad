@@ -4,6 +4,8 @@
 
 ## Learnings
 
+📌 **Team update (2026-04-14T03:05:00Z — PR #970 Review Feedback Fixes):** EECOM completed 4 review feedback fixes for PR #970 (identity/token handling): (1) fixed `resolve-token.mjs` cwd bug — now uses `process.cwd()` correctly in spawned child, (2) fixed `waitForManifestCode` timeout leak — moved cleanup out of error-only path into finally block, (3) removed dead choice '3' handler in e2e script, (4) added `.gitignore` entry for identity key files. All fixes committed and pushed to dev. Impact: token resolution now works correctly in non-project directories; resource cleanup guaranteed; test output cleaner.
+
 ### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
 
 **Context:** PR #942 from tamirdresher's fork was retargeted from `insider` to `dev`, causing 29 files in the diff when only 3 commits (4 files relevant to dev) were the actual fix. Cherry-picked the 3 fix commits onto a clean `squad/942-rebase-type-safety` branch from dev, resolving conflicts where insider-only files (skill.ts, cross-package-exports.test.ts) didn't exist on dev. Dropped the `escapeYamlValue` import and APM YAML generation function from init.ts since skill.ts doesn't exist on dev. Opened #963 as the clean replacement, closed #942.
@@ -317,3 +319,5 @@ Executed 3 tasks across 2 waves: economy mode (#500, PR #504), node:sqlite fix (
 **Pattern:** `resolveGlobalSquadPath()` returns the container; `ensurePersonalSquadDir()` creates the subdirectory the rest of the system looks for.
 📌 **Team update (2026-03-25T18:11Z):** Fixed #590 personal squad path regression — getPersonalSquadRoot() now uses canonical personal-squad/ subdirectory like esolvePersonalSquadDir() and nsurePersonalSquadDir(). Committed on squad/590-fix-personal-squad-root. FIDO found same bug in shell/index.ts → work passed to CONTROL for full sweep revision. Awaiting FIDO re-review.
 
+
+📌 **Team update (2026-04-21T00:28Z — Identity Quick Wins PR):** EECOM implemented identity hardening + kickstart sync quick wins on branch `squad/identity-quick-wins`. Delivered: (1) structured `TokenResolveError` type with `kind`/`message` fields, (2) H-01 fetch timeout via AbortController+Promise.race 10s cap, (3) H-02 PEM validation via createPrivateKey, (4) H-03 partial env detection with loud error, (5) H-07 mock hook (SQUAD_IDENTITY_MOCK / SQUAD_IDENTITY_MOCK_TOKEN), (6) role aliases + resolveRoleSlug(), (7) scribe role added to RoleSlug + ALL_ROLES constant, (8) isCliInvocation ESM dual-mode guard in resolve-token.mjs, (9) resolveTokenWithDiagnostics() + clearTokenCache(), (10) cache keyed by projectRoot:roleKey. All 142 identity tests pass.

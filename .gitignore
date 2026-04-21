@@ -20,6 +20,9 @@ docs/src/content/docs/reference/api/
 
 # Docs test screenshots (local verification only)
 docs/tests/screenshots/
+# Squad: private keys must never be committed
+.squad/identity/keys/
+
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 .squad/.first-run
