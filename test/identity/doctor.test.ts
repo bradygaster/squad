@@ -397,4 +397,42 @@ describe('squad identity doctor', () => {
     expect(skippedChecks.length).toBeGreaterThan(0);
     expect(skippedChecks.some(c => c.label.toLowerCase().includes('network') || c.label.toLowerCase().includes('token'))).toBe(true);
   });
+
+  it('drvfs quirk: mode 0o777 is skipped with drvfs detail instead of failing', async () => {
+    if (process.platform === 'win32') return;
+
+    const dir = makeTmpDir();
+    scaffoldIdentity(dir, 'lead');
+
+    // Simulate drvfs stat: chmod to 0o777 (all bits set, as returned by NTFS-mounted paths)
+    const pemPath = join(dir, '.squad', 'identity', 'keys', 'lead.pem');
+    const { chmodSync } = await import('node:fs');
+    chmodSync(pemPath, 0o777);
+
+    const lines: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { lines.push(args.join(' ')); };
+
+    process.env['SQUAD_IDENTITY_MOCK'] = '1';
+    try {
+      await runIdentity(dir, ['doctor', '--no-network', '--json']);
+    } catch {
+      // may exit
+    } finally {
+      console.log = origLog;
+      delete process.env['SQUAD_IDENTITY_MOCK'];
+    }
+
+    const jsonOutput = lines.find(l => l.trim().startsWith('{'));
+    expect(jsonOutput).toBeDefined();
+    const parsed = JSON.parse(jsonOutput!) as {
+      roles: Array<{ checks: Array<{ label: string; passed: boolean; skipped: boolean; detail: string }> }>
+    };
+    const modeCheck = parsed.roles[0]?.checks.find(c => c.label.includes('mode 0o600'));
+    expect(modeCheck).toBeDefined();
+    // With drvfs (0o777), should be skipped, not failed
+    expect(modeCheck!.skipped).toBe(true);
+    expect(modeCheck!.passed).toBe(true);
+    expect(modeCheck!.detail).toContain('drvfs');
+  });
 });

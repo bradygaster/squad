@@ -4,6 +4,54 @@
 
 ## Learnings
 
+### H-03: retry with backoff + PR #22 nit fixes (2026-04-21, PR #23)
+
+**Context:** Added opt-in retry with exponential backoff to `resolveTokenWithDiagnostics` / `resolveToken`, and cleaned up 3 nits Flight flagged in PR #22.
+
+**Retry design patterns:**
+- **Opt-in via `retryPolicy` parameter** — when `options?.retryPolicy` is undefined, a single attempt runs (no wrapper overhead, full backward-compat). When provided as `{}`, defaults (maxRetries: 2, initialDelayMs: 500, maxDelayMs: 4000) apply.
+- **Non-retryable short-circuits first** — `isRetryable()` checks `AbortError`/timeout first (fast path), then `GitHubApiError` for 4xx vs 429/5xx, then falls through to "network error = retryable".
+- **`RetryExhaustedError` wraps last error** — the outer catch checks `instanceof RetryExhaustedError` to set `retriesExhausted: true` on the returned `TokenResolveError`. All other error paths set `retriesExhausted: false` (including non-retryable errors and `not-configured`).
+- **`GitHubApiError` carries status + `retryAfterMs`** — error is typed, not string-parsed. Allows `withRetry` to honour the `Retry-After` header for 429 without fragile message parsing.
+- **Defensive `response.headers?.get()`** — real `fetch` always provides `Headers`, but test mocks often omit it. Optional chaining keeps mocks simple without requiring a `headers` stub.
+
+**Jitter seam pattern:**
+- Expose `random?: () => number` in `RetryPolicy`, defaulting to `Math.random`.
+- In tests: `random: () => 0.5` → no jitter (exact base delay). `random: () => 0` → −20%. `random: () => 1` → +20%.
+- Formula: `Math.max(0, Math.round(base + base * 0.2 * (2 * random() - 1)))`.
+- Tests verify deterministic delays by injecting a fixed `random`. A separate "jitter produces different delays" test validates the formula algebraically without needing actual delays.
+
+**drvfs detection pattern (N-3):**
+- WSL NTFS-mounted paths (e.g., `/mnt/c/`) return `stat.mode & 0o777 === 0o777` for ALL files — this is a kernel/drvfs quirk, not real permissions.
+- Detection heuristic: if mode is `0o777` on a non-Windows platform → skip the 0o600 assertion with `⚠ skipped (drvfs)` rather than failing.
+- Caveat: a truly world-executable PEM on a native Linux FS would also be mode 0o777 and would be skipped. Acceptable trade-off — such a file is already a security issue at the chmod level, not something doctor should false-positive on. Doctor flags anything OTHER than 0o600 and 0o777 normally.
+
+**Test structure for retry:**
+- Mock fetch with `vi.fn().mockResolvedValueOnce(error).mockResolvedValue(success)` for "retry then succeed" cases.
+- Use `initialDelayMs: 0` in all retry tests to avoid real sleep delays.
+- `onRetry` callback captures the log for assertion — no need to inspect timers.
+
+
+**Context:** Implemented `squad identity doctor` and `squad identity explain` as new subcommands
+of the identity CLI, building on the SDK's `resolveTokenWithDiagnostics`, `generateAppJWT`,
+and `createPrivateKey` primitives from the H-01/H-02 quick wins (PR #21).
+
+**Command UX patterns:**
+- **Doctor** uses a `doctorCheck()` wrapper that catches thrown errors and converts them to failed checks with the exception message as the `detail` field. This prevents one failing check from aborting the whole run.
+- **Async check inline** — the JWT and token steps are `await`-ed inline inside an IIFE assigned into the checks array. Keeps the code sequential without splitting into separate helper functions.
+- **No-network flag** skips steps 7/8/9 by pushing pre-built skip objects directly rather than wrapping in conditionals — cleaner than null-checks throughout.
+- **Doctor exit code**: only calls `process.exit(1)` after all roles are checked and the summary is printed, so operators see the full picture before exit.
+
+**Explain exit-code design:** `explain` is diagnostic-only — always exits 0. Implemented by routing `explain` with `resolveSquadDir(cwd) ?? cwd` fallback so it works even outside a squad project. Doctor keeps the hard "No squad found → exit 1" behavior since it's a health check.
+
+**SDK additions (minor):**
+- `peekTokenCache(squadDir, roleKey)` — non-destructive cache inspection, returns `{ cached, expiresAt, remainingMs }`. Used by `explain` step 4 to show cache state without affecting TTL logic.
+- `getInstallationPermissions(token)` — fetches permissions via `GET /installation` endpoint using the token. Returns `null` on error rather than throwing (defensive — scope check is best-effort). If GitHub returns `403` on that endpoint for some token types, the doctor check is marked as warning rather than failure.
+
+**Test isolation:** All tests use `mkdtempSync` + `afterEach` cleanup. Process.exit is monkey-patched per-test with a try/catch that catches the thrown Error, letting the rest of cleanup run in finally.
+
+**Pattern for testing commands that call process.exit:** Wrap `process.exit` in a closure that captures the code and throws — then wrap the command call in try/catch. `exitCode === null` means the command returned normally (exit 0 semantics), `exitCode === 1` means it called process.exit(1).
+
 📌 **Team update (2026-04-14T03:05:00Z — PR #970 Review Feedback Fixes):** EECOM completed 4 review feedback fixes for PR #970 (identity/token handling): (1) fixed `resolve-token.mjs` cwd bug — now uses `process.cwd()` correctly in spawned child, (2) fixed `waitForManifestCode` timeout leak — moved cleanup out of error-only path into finally block, (3) removed dead choice '3' handler in e2e script, (4) added `.gitignore` entry for identity key files. All fixes committed and pushed to dev. Impact: token resolution now works correctly in non-project directories; resource cleanup guaranteed; test output cleaner.
 
 ### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)

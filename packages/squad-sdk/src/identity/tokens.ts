@@ -32,9 +32,30 @@ function base64url(input: string | Buffer): string {
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // ============================================================================
 // Error taxonomy
 // ============================================================================
+
+/**
+ * Error thrown by getInstallationToken for non-OK HTTP responses.
+ * Carries the HTTP status code so callers can decide whether to retry.
+ */
+export class GitHubApiError extends Error {
+  readonly status: number;
+  /** Milliseconds to wait before retrying, parsed from Retry-After header. Present only on 429. */
+  readonly retryAfterMs: number | null;
+
+  constructor(status: number, body: string, retryAfterMs: number | null = null) {
+    super(`GitHub API error ${status}: ${body}`);
+    this.name = 'GitHubApiError';
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
 
 /**
  * Structured error returned by resolveTokenWithDiagnostics.
@@ -44,6 +65,49 @@ function base64url(input: string | Buffer): string {
 export interface TokenResolveError {
   kind: 'not-configured' | 'runtime';
   message: string;
+  /**
+   * True when all retry attempts were exhausted before the call succeeded.
+   * Only meaningful when kind is 'runtime' and a retryPolicy was provided.
+   */
+  retriesExhausted: boolean;
+}
+
+// ============================================================================
+// Retry policy
+// ============================================================================
+
+/**
+ * Retry policy for token resolution network calls.
+ *
+ * Applies exponential backoff with ±20% jitter to transient failures.
+ * Only retries: network errors (fetch rejection), 5xx responses, 429 rate
+ * limits (honours Retry-After header when present).
+ * Never retries: AbortError/timeout (budget already expired), 4xx except 429,
+ * not-configured errors.
+ *
+ * Timeout semantics: each attempt has its own 10-second AbortController budget
+ * (one per getInstallationToken call). Total wall time is at most
+ * (maxRetries + 1) × 10s plus cumulative backoff delays.
+ */
+export interface RetryPolicy {
+  /** Maximum number of retries after the initial attempt. Default: 2. */
+  maxRetries?: number;
+  /** Initial backoff delay in milliseconds. Default: 500. */
+  initialDelayMs?: number;
+  /** Maximum backoff delay cap in milliseconds. Default: 4000. */
+  maxDelayMs?: number;
+  /**
+   * Callback fired before each retry — useful for observability hooks (e.g. doctor).
+   * @param attempt  - Retry number (1-based)
+   * @param reason   - Error message that triggered the retry
+   * @param delayMs  - Milliseconds to wait before this retry
+   */
+  onRetry?: (attempt: number, reason: string, delayMs: number) => void;
+  /**
+   * Random number generator — injectable seam for deterministic tests.
+   * Must return a value in [0, 1). Defaults to Math.random.
+   */
+  random?: () => number;
 }
 
 /**
@@ -109,6 +173,76 @@ export async function generateAppJWT(appId: number, privateKeyPem: string, nowOv
 // Installation token exchange
 // ============================================================================
 
+// ============================================================================
+// Retry internals
+// ============================================================================
+
+/**
+ * Marker error thrown by withRetry when all retry attempts are exhausted for
+ * a retryable error. Wraps the last underlying error for diagnosis.
+ */
+export class RetryExhaustedError extends Error {
+  readonly cause: Error;
+  constructor(cause: Error, attempts: number) {
+    super(`All ${attempts} attempt(s) failed. Last error: ${cause.message}`);
+    this.name = 'RetryExhaustedError';
+    this.cause = cause;
+  }
+}
+
+function isRetryable(e: Error): boolean {
+  // Never retry timeouts — the per-attempt budget is already expired
+  if (e.name === 'AbortError' || e.message.startsWith('fetch timeout')) return false;
+  // HTTP errors: only 429 and 5xx are transient
+  if (e instanceof GitHubApiError) return e.status === 429 || e.status >= 500;
+  // Network-level errors (fetch rejection, ECONNRESET, etc.) → retryable
+  return true;
+}
+
+/**
+ * Execute fn with exponential backoff retry.
+ * Throws RetryExhaustedError if all retryable attempts fail.
+ * Propagates non-retryable errors immediately without wrapping.
+ */
+async function withRetry<T>(fn: () => Promise<T>, policy: RetryPolicy): Promise<T> {
+  const {
+    maxRetries = 2,
+    initialDelayMs = 500,
+    maxDelayMs = 4000,
+    onRetry,
+    random = Math.random,
+  } = policy;
+
+  let lastError: Error = new Error('unexpected: no attempts made');
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (!isRetryable(lastError)) throw lastError;
+      if (attempt === maxRetries) break;
+
+      // Honour Retry-After for 429; otherwise exponential backoff + ±20% jitter
+      let delayMs: number;
+      if (lastError instanceof GitHubApiError && lastError.status === 429 && lastError.retryAfterMs !== null) {
+        delayMs = lastError.retryAfterMs;
+      } else {
+        const base = Math.min(maxDelayMs, initialDelayMs * Math.pow(2, attempt));
+        const jitter = base * 0.2 * (2 * random() - 1);
+        delayMs = Math.max(0, Math.round(base + jitter));
+      }
+
+      onRetry?.(attempt + 1, lastError.message, delayMs);
+      await sleep(delayMs);
+    }
+  }
+  throw new RetryExhaustedError(lastError, maxRetries + 1);
+}
+
+// ============================================================================
+// Installation token exchange
+// ============================================================================
+
 /**
  * Exchange a JWT for an installation access token.
  * Uses globalThis.fetch (Node.js 18+ built-in) to call GitHub API.
@@ -155,9 +289,10 @@ export async function getInstallationToken(
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(
-      `GitHub API error ${response.status} creating installation token: ${body}`,
-    );
+    const retryAfterHeader = response.headers?.get('Retry-After') ?? null;
+    const retryAfterSec = retryAfterHeader !== null ? parseInt(retryAfterHeader, 10) : NaN;
+    const retryAfterMs = Number.isFinite(retryAfterSec) ? retryAfterSec * 1000 : null;
+    throw new GitHubApiError(response.status, body, retryAfterMs);
   }
 
   const data = (await response.json()) as { token: string; expires_at: string };
@@ -216,6 +351,8 @@ export function peekTokenCache(
  * Calls `GET /installation` with the token to retrieve the current permissions set.
  *
  * Used by `squad identity doctor` to verify the expected scopes are present.
+ * N-1 fix: single request to /installation (removed redundant /installation/repositories preflight).
+ * N-2 fix: dedicated AbortController per fetch (not shared across multiple calls).
  *
  * @param token - GitHub App installation token
  * @returns Record of permission name → access level, or null on failure
@@ -227,7 +364,7 @@ export async function getInstallationPermissions(
   const timer = setTimeout(() => controller.abort(), 10_000);
 
   try {
-    const response = await fetch('https://api.github.com/installation/repositories?per_page=1', {
+    const response = await fetch('https://api.github.com/installation', {
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github+json',
@@ -236,20 +373,7 @@ export async function getInstallationPermissions(
       signal: controller.signal,
     });
     if (!response.ok) return null;
-    // The token's own permissions are in the response's X headers or can be
-    // queried via GET /installation — use the token to call that endpoint.
-    // Fallback: call GET /app/installations/{id} is not possible without JWT.
-    // Instead, parse from the token itself via GET /installation.
-    const permResponse = await fetch('https://api.github.com/installation', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-      signal: controller.signal,
-    });
-    if (!permResponse.ok) return null;
-    const data = (await permResponse.json()) as { permissions?: Record<string, string> };
+    const data = (await response.json()) as { permissions?: Record<string, string> };
     return data.permissions ?? null;
   } catch {
     return null;
@@ -327,11 +451,17 @@ function resolveEnvCredentials(roleKey: string): {
  *
  * @param squadDir - Project root directory (parent of `.squad/`)
  * @param roleKey - Role key (e.g., 'lead', 'backend', or 'shared')
+ * @param options.retryPolicy - Optional retry policy for transient network failures.
+ *   When provided, retries on network errors, 5xx, and 429 with exponential backoff.
+ *   When omitted, a single attempt is made (backward-compatible default).
  */
 export async function resolveTokenWithDiagnostics(
   squadDir: string,
   roleKey: string,
+  options?: { retryPolicy?: RetryPolicy },
 ): Promise<TokenResolveResult> {
+  const retryPolicy = options?.retryPolicy;
+
   // SQUAD_IDENTITY_MOCK hook — returns deterministic mock token without any I/O
   if (process.env['SQUAD_IDENTITY_MOCK'] === '1') {
     const mockToken = process.env['SQUAD_IDENTITY_MOCK_TOKEN'] ?? `mock-token-${roleKey}`;
@@ -363,13 +493,15 @@ export async function resolveTokenWithDiagnostics(
       return {
         token: null,
         resolvedRoleKey: null,
-        error: { kind: 'runtime', message: envError },
+        error: { kind: 'runtime', message: envError, retriesExhausted: false },
       };
     }
 
     if (envCreds) {
       const jwt = buildJWT(envCreds.appId, envCreds.pem);
-      const { token, expiresAt } = await getInstallationToken(jwt, envCreds.installationId);
+      const { token, expiresAt } = retryPolicy !== undefined
+        ? await withRetry(() => getInstallationToken(jwt, envCreds.installationId), retryPolicy)
+        : await getInstallationToken(jwt, envCreds.installationId);
       tokenCache.set(cacheKey, { token, expiresAt });
       return { token, resolvedRoleKey: roleKey, error: null };
     }
@@ -383,6 +515,7 @@ export async function resolveTokenWithDiagnostics(
         error: {
           kind: 'not-configured',
           message: `No app registration found for role "${roleKey}" in .squad/identity/apps/${roleKey}.json.`,
+          retriesExhausted: false,
         },
       };
     }
@@ -394,6 +527,7 @@ export async function resolveTokenWithDiagnostics(
         error: {
           kind: 'not-configured',
           message: `No installation ID set for role "${roleKey}". Run: squad identity update --role ${roleKey}`,
+          retriesExhausted: false,
         },
       };
     }
@@ -406,6 +540,7 @@ export async function resolveTokenWithDiagnostics(
         error: {
           kind: 'not-configured',
           message: `No private key found for role "${roleKey}" at ${pemPath}.`,
+          retriesExhausted: false,
         },
       };
     }
@@ -429,14 +564,18 @@ export async function resolveTokenWithDiagnostics(
 
     // Generate JWT and exchange for installation token
     const jwt = buildJWT(reg.appId, pem);
-    const { token, expiresAt } = await getInstallationToken(jwt, reg.installationId);
+    const { token, expiresAt } = retryPolicy !== undefined
+      ? await withRetry(() => getInstallationToken(jwt, reg.installationId), retryPolicy)
+      : await getInstallationToken(jwt, reg.installationId);
 
     // Cache
     tokenCache.set(cacheKey, { token, expiresAt });
     return { token, resolvedRoleKey: roleKey, error: null };
 
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    const retriesExhausted = e instanceof RetryExhaustedError;
+    const underlying = retriesExhausted ? (e as RetryExhaustedError).cause : e;
+    const message = underlying instanceof Error ? underlying.message : String(underlying);
     // Unexpected runtime error — log to stderr, return runtime error
     process.stderr.write(
       `[squad identity] unexpected error resolving "${roleKey}": ${message}\n`,
@@ -444,7 +583,7 @@ export async function resolveTokenWithDiagnostics(
     return {
       token: null,
       resolvedRoleKey: null,
-      error: { kind: 'runtime', message },
+      error: { kind: 'runtime', message, retriesExhausted },
     };
   }
 }
@@ -468,12 +607,14 @@ export async function resolveTokenWithDiagnostics(
  *
  * @param squadDir - Project root directory (parent of `.squad/`)
  * @param roleKey - Role key (e.g., 'lead', 'backend', or 'shared')
+ * @param options.retryPolicy - Optional retry policy (see resolveTokenWithDiagnostics)
  * @returns Installation access token string, or null if credentials are missing
  */
 export async function resolveToken(
   squadDir: string,
   roleKey: string,
+  options?: { retryPolicy?: RetryPolicy },
 ): Promise<string | null> {
-  const result = await resolveTokenWithDiagnostics(squadDir, roleKey);
+  const result = await resolveTokenWithDiagnostics(squadDir, roleKey, options);
   return result.token ?? null;
 }

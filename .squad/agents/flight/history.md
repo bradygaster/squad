@@ -4,6 +4,23 @@
 
 ---
 
+### PR #23 Review — H-03 Retry Resilience + PR #22 Nits (2026-04-21)
+
+**Verdict:** ✅ Approve  
+**PR:** https://github.com/sabbour/squad/pull/23  
+**Author:** EECOM (Core Dev)  
+**Scope:** H-03 retry with exponential backoff + 3 nit fixes from PR #22 review
+
+**Review highlights:**
+- All 10 hard checks passed: changeset names correct (`@bradygaster/squad-sdk: minor`, `@bradygaster/squad-cli: patch`), opt-in retry with zero behavior change for existing callers, retry filter covers all 7 conditions (network/5xx/429 retry; 4xx/AbortError/not-configured propagate), fresh AbortController per attempt, injectable `random` seam for deterministic jitter tests, Retry-After honoring on 429, `retriesExhausted` field correct on all paths, no token leakage, `resolve-token.mjs` untouched, no scope creep.
+- PR #22 nits verified: N-1 single GET (removed redundant preflight), N-2 dedicated AbortController (moot with N-1), N-3 drvfs 0o777 detection with specific mode check.
+- One new nit flagged: dead import `withRetry as _withRetry` in test file (module-private, never used). Non-blocking.
+- Call-outs: opt-in design pattern, `GitHubApiError` typed error class, injectable randomness skill, Retry-After honoring, 12 focused tests, clean docs.
+
+**Pattern:** Third PR in identity hardening series (PR #21 quick wins → PR #22 doctor+explain → PR #23 retry). Series demonstrates disciplined incremental hardening — each PR is self-contained, backward-compatible, well-tested.
+
+---
+
 📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution Complete):** Post-CLI crash recovery executed in 3 rounds. Round 1: Flight audited PR/issue state (found #617 merged, #619 conflicting, 3 dupes #605/#604/#602 open); FIDO verified baseline (5,038 tests ✅ green); Scribe merged stale inbox. Round 2: Flight closed 3 duplicate PRs with rationale; Procedures rebased PR #619 (model catalog) onto dev, resolved 3 merge conflicts, merged; FIDO reviewed 9 community PRs—approved 3 (#625/#603/#608), requested changes on 6 (package naming, file paths). Round 3: Coordinator merged 3 approved PRs. **10 PRs merged total** (6 merge-plan, 3 community, 1 legacy #592). **3 PRs closed** as duplicates. **6 PRs awaiting author revisions**. **Dev branch green** (5,038 tests). All merge-plan sequence complete. Draft #567 parked pending requirements. Decision inbox merged to decisions.md and deleted. Next: Monitor change-request PRs for author responses.
 
 📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review):** Flight triaged 14 untriaged GitHub issues, created prioritized work session plan. Identified high-value quick wins (P1): #610 (docs broken link, 5-min fix), #590 (getPersonalSquadRoot bug, P0), #591 (hiring wiring docs). Deferred community feature contributions (#601–#595) pending PR review. Categorized maintenance (P2) and questions for community. FIDO reviewed 10 open PRs, identified 3 duplicate/overlap pairs (6 PRs consolidate to 4: merge #607/#603/#606, close #605/#604/#602). Work session priority: #610→PAO, #590→EECOM, #592/#611→Flight review, #588→Procedures. Established PR review strategy: Tamir PRs require proposal-first discipline before review. Merge-ready identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). A2A protocol PRs remain shelved. All 14 issues fully categorized with squad assignments. Decision inbox merged to decisions.md. Session complete; team ready for execution.

@@ -40,8 +40,10 @@ export {
   clearTokenCache,
   peekTokenCache,
   getInstallationPermissions,
+  GitHubApiError,
+  RetryExhaustedError,
 } from './tokens.js';
-export type { TokenResolveError, TokenResolveResult } from './tokens.js';
+export type { TokenResolveError, TokenResolveResult, RetryPolicy } from './tokens.js';
 
 export {
   execWithRoleToken,

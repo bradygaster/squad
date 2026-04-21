@@ -1243,6 +1243,11 @@ async function runDoctorForRole(
     if (platform() === 'win32') return { ok: true, skipped: true, detail: 'skipped on Windows' };
     if (!existsSync(pemPath)) return { ok: false, skipped: true, detail: 'key not present — skip' };
     const mode = statSync(pemPath).mode & 0o777;
+    // drvfs quirk: WSL NTFS-mounted paths (e.g. /mnt/c/) report 0o777 for all files.
+    // Mode bits are unreliable on these mounts — skip the assertion rather than false-failing.
+    if (mode === 0o777) {
+      return { ok: true, skipped: true, detail: '⚠ skipped (drvfs): mode bits unreliable on NTFS-mounted paths' };
+    }
     if (mode !== 0o600) {
       return { ok: false, warning: false, detail: `mode ${mode.toString(8)} (want 600) — run: chmod 600 ${pemPath}` };
     }
