@@ -30,7 +30,6 @@ import {
   clearTokenCache,
   GitHubApiError,
   RetryExhaustedError,
-  withRetry as _withRetry, // not exported — we test via the public API
 } from '@bradygaster/squad-sdk/identity';
 
 // ============================================================================
