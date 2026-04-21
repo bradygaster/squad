@@ -616,26 +616,40 @@ To enable full parallelism, shared writes use a drop-box pattern that eliminates
 
 Squad and all spawned agents may be running inside a **git worktree** rather than the main checkout. All `.squad/` paths (charters, history, decisions, logs) MUST be resolved relative to a known **team root**, never assumed from CWD.
 
-**Two strategies for resolving the team root:**
+**Three strategies for resolving the team root:**
 
 | Strategy | Team root | State scope | When to use |
 |----------|-----------|-------------|-------------|
 | **worktree-local** | Current worktree root | Branch-local — each worktree has its own `.squad/` state | Feature branches that need isolated decisions and history |
+| **shared** | Git-backed squad repo (via `~/.squad/squad-repos.json` pointer) or platform app data | User-global — team identity shared across all clones of the same repo | Multiple clones of the same repo that share one squad, repos that can't commit `.squad/` |
 | **main-checkout** | Main working tree root | Shared — all worktrees read/write the main checkout's `.squad/` | Single source of truth for memories, decisions, and logs across all branches |
+
+**Validation:** A `.squad/` directory must contain `team.md` or an `agents/` subdirectory to be recognized as a team root. This prevents false positives from the `~/.squad/` config directory.
 
 **How the Coordinator resolves the team root (on every session start):**
 
-1. **Check CWD first** — does `.squad/` exist in the current working directory?
+1. **Check CWD first** — does `.squad/` exist (with `team.md` or `agents/`) in the current working directory?
    - **Yes** → Team root = CWD. This handles monorepos where `.squad/` lives in a subfolder.
-2. If not, run `git rev-parse --show-toplevel` to get the current worktree root.
-3. Check if `.squad/` exists at that root (fall back to `.ai-team/` for repos that haven't migrated yet).
+2. Run `git rev-parse --show-toplevel` to get the current worktree root. Check if `.squad/` exists at that root (fall back to `.ai-team/` for repos that haven't migrated yet).
    - **Yes** → use **worktree-local** strategy. Team root = current worktree root.
-   - **No** → use **main-checkout** strategy. Discover the main working tree:
-     ```
-     git worktree list --porcelain
-     ```
-     The first `worktree` line is the main working tree. Team root = that path.
-4. The user may override the strategy at any time (e.g., *"use main checkout for team state"* or *"keep team state in this worktree"*).
+3. No local `.squad/` → check **shared squad registry**:
+   a. If `SQUAD_REPO_KEY` env var is set, use it as the lookup key (skip URL matching).
+   b. Check `~/.squad/squad-repos.json` for git-backed repo pointers.
+      - For each squad repo clone path listed, read its `repos.json`.
+      - If using `SQUAD_REPO_KEY`: match by `entry.key`.
+      - If using URL: run `git remote get-url origin`, normalize, match against `urlPatterns`.
+      - Match found → Team root = `{squad-repo-clone}/{key}/`
+   c. Fall back to platform app data directory (e.g. `~/.local/share/squad/repos.json` on Linux, the standard app data directory on other platforms).
+      - Same key/URL matching as above.
+      - Match found → Team root = `{appdata}/squad/repos/{key}/`
+   d. No match → continue to step 4.
+4. No shared match → use **main-checkout** strategy. Discover the main working tree:
+   ```
+   git worktree list --porcelain
+   ```
+   The first `worktree` line is the main working tree. Team root = that path.
+5. Nothing found → **Init Mode**. No team root resolved — offer to initialize a new squad.
+6. The user may override the strategy at any time (e.g., *"use main checkout for team state"*, *"keep team state in this worktree"*, or *"use shared squad for this repo"*).
 
 **Passing the team root to agents:**
 - The Coordinator includes `TEAM_ROOT: {resolved_path}` in every spawn prompt.
@@ -647,6 +661,13 @@ Squad and all spawned agents may be running inside a **git worktree** rather tha
 - When branches merge into main, `.squad/` state merges with them. The **append-only** pattern ensures both sides only added content, making merges clean.
 - A `merge=union` driver in `.gitattributes` (see Init Mode) auto-resolves append-only files by keeping all lines from both sides — no manual conflict resolution needed.
 - The Scribe commits `.squad/` changes to the worktree's branch. State flows to other branches through normal git merge / PR workflow.
+
+**Cross-worktree considerations (shared strategy):**
+- Team root is outside the repo — in a git-backed squad repo clone or under platform app data. No repo writes needed.
+- All clones of the same repo share one squad: same agents, charters, decisions, casting, and skills.
+- Agent writes (history inbox, decisions inbox) go to the shared dir using the journal pattern (unique filenames, atomic creation, no contention across clones).
+- Safe for concurrent sessions across clones.
+- `TEAM_ROOT` passed to agents will be the external path. Agents don't need to know the mode.
 
 **Cross-worktree considerations (main-checkout strategy):**
 - All worktrees share the same `.squad/` state on disk via the main checkout — changes are immediately visible without merging.
