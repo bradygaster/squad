@@ -5,7 +5,7 @@
  * main loop stays thin and each feature is testable in isolation.
  */
 
-import type { PlatformAdapter } from '@bradygaster/squad-sdk/platform';
+import type { PlatformAdapter, WorkItem } from '@bradygaster/squad-sdk/platform';
 
 /** Phase within a single watch round. */
 export type WatchPhase = 'pre-scan' | 'post-triage' | 'post-execute' | 'housekeeping';
@@ -39,6 +39,8 @@ export interface WatchContext {
   copilotFlags?: string;
   /** Verbose diagnostic output enabled. */
   verbose?: boolean;
+  /** Shared round data populated by earlier phases so later capabilities skip redundant fetches (#923). */
+  roundData?: { issues?: WorkItem[] };
   /** PID tracker for child process cleanup (optional — only set when watch is running). */
   pidTracker?: { track(pid: number, name: string): void; untrack(pid: number): void };
 }
