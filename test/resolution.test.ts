@@ -28,7 +28,7 @@ describe('resolveSquad()', () => {
   });
 
   it('returns path when .squad/ exists at startDir', () => {
-    scaffold('.git', '.squad');
+    scaffold('.git', '.squad', '.squad/agents');
     expect(resolveSquad(TMP)).toBe(join(TMP, '.squad'));
   });
 
@@ -38,7 +38,7 @@ describe('resolveSquad()', () => {
   });
 
   it('walks up and finds .squad/ in parent', () => {
-    scaffold('.git', '.squad', 'packages', 'packages/app');
+    scaffold('.git', '.squad', '.squad/agents', 'packages', 'packages/app');
     expect(resolveSquad(join(TMP, 'packages', 'app'))).toBe(join(TMP, '.squad'));
   });
 
@@ -57,7 +57,7 @@ describe('resolveSquad()', () => {
   });
 
   it('finds .squad in worktree that has it', () => {
-    scaffold('repo/.squad', 'repo/src');
+    scaffold('repo/.squad', 'repo/.squad/agents', 'repo/src');
     writeFileSync(join(TMP, 'repo', '.git'), 'gitdir: /somewhere/.git/worktrees/repo');
     expect(resolveSquad(join(TMP, 'repo', 'src'))).toBe(join(TMP, 'repo', '.squad'));
   });
@@ -65,7 +65,7 @@ describe('resolveSquad()', () => {
   it('falls back to main checkout .squad/ when worktree has none', () => {
     // main checkout: TMP/main with .git dir + .squad dir
     mkdirSync(join(TMP, 'main', '.git'), { recursive: true });
-    mkdirSync(join(TMP, 'main', '.squad'), { recursive: true });
+    mkdirSync(join(TMP, 'main', '.squad', 'agents'), { recursive: true });
     // worktree: TMP/main/.worktrees/feature with .git FILE
     mkdirSync(join(TMP, 'main', '.worktrees', 'feature', 'src'), { recursive: true });
     writeFileSync(
@@ -80,9 +80,9 @@ describe('resolveSquad()', () => {
   it('prefers worktree-local .squad/ over main checkout when both exist', () => {
     // main checkout with .squad/
     mkdirSync(join(TMP, 'main', '.git'), { recursive: true });
-    mkdirSync(join(TMP, 'main', '.squad'), { recursive: true });
+    mkdirSync(join(TMP, 'main', '.squad', 'agents'), { recursive: true });
     // worktree with its own .squad/
-    mkdirSync(join(TMP, 'main', '.worktrees', 'feature', '.squad'), { recursive: true });
+    mkdirSync(join(TMP, 'main', '.worktrees', 'feature', '.squad', 'agents'), { recursive: true });
     mkdirSync(join(TMP, 'main', '.worktrees', 'feature', 'src'), { recursive: true });
     writeFileSync(
       join(TMP, 'main', '.worktrees', 'feature', '.git'),
@@ -100,18 +100,18 @@ describe('resolveSquad()', () => {
   });
 
   it('finds .squad/ at root from a deeply nested directory (3+ levels)', () => {
-    scaffold('.git', '.squad', 'a/b/c/d');
+    scaffold('.git', '.squad', '.squad/agents', 'a/b/c/d');
     expect(resolveSquad(join(TMP, 'a', 'b', 'c', 'd'))).toBe(join(TMP, '.squad'));
   });
 
   it('finds the nearest .squad/ when multiple exist', () => {
-    scaffold('.git', '.squad', 'packages/.squad', 'packages/app');
+    scaffold('.git', '.squad', '.squad/agents', 'packages/.squad', 'packages/.squad/agents', 'packages/app');
     // Starting from packages/app, the nearest .squad/ is packages/.squad
     expect(resolveSquad(join(TMP, 'packages', 'app'))).toBe(join(TMP, 'packages', '.squad'));
   });
 
   it('finds root .squad/ when no closer one exists', () => {
-    scaffold('.git', '.squad', 'packages/app/src');
+    scaffold('.git', '.squad', '.squad/agents', 'packages/app/src');
     expect(resolveSquad(join(TMP, 'packages', 'app', 'src'))).toBe(join(TMP, '.squad'));
   });
 
@@ -121,7 +121,7 @@ describe('resolveSquad()', () => {
       return;
     }
     const { symlinkSync } = require('node:fs') as typeof import('node:fs');
-    scaffold('.git', 'real-squad', 'project/src');
+    scaffold('.git', 'real-squad', 'real-squad/agents', 'project/src');
     symlinkSync(join(TMP, 'real-squad'), join(TMP, 'project', '.squad'));
     expect(resolveSquad(join(TMP, 'project', 'src'))).toBe(join(TMP, 'project', '.squad'));
   });

@@ -102,6 +102,18 @@
       "types": "./dist/resolution.d.ts",
       "import": "./dist/resolution.js"
     },
+    "./shared-squad": {
+      "types": "./dist/shared-squad.d.ts",
+      "import": "./dist/shared-squad.js"
+    },
+    "./clone-state": {
+      "types": "./dist/clone-state.d.ts",
+      "import": "./dist/clone-state.js"
+    },
+    "./scribe-merge": {
+      "types": "./dist/scribe-merge.d.ts",
+      "import": "./dist/scribe-merge.js"
+    },
     "./adapter/errors": {
       "types": "./dist/adapter/errors.d.ts",
       "import": "./dist/adapter/errors.js"

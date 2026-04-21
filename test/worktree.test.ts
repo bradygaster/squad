@@ -78,6 +78,7 @@ describe('worktree regression (#521)', () => {
       const repo = join(tmp, 'repo');
       mkdirSync(join(repo, '.git'), { recursive: true });
       mkdirSync(join(repo, '.squad'), { recursive: true });
+      writeFileSync(join(repo, '.squad', 'team.md'), '# Test Team\n');
       mkdirSync(join(repo, 'src'), { recursive: true });
 
       // resolveSquad() should find .squad/ before hitting the .git directory

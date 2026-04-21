@@ -14,6 +14,10 @@ const TMP = join(process.cwd(), `.test-dual-root-${randomBytes(4).toString('hex'
 function scaffold(...dirs: string[]): void {
   for (const d of dirs) {
     mkdirSync(join(TMP, d), { recursive: true });
+    // resolveSquad() requires team.md, agents/, or config.json to recognize a squad dir
+    if (d === '.squad' || d === '.ai-team') {
+      writeFileSync(join(TMP, d, 'team.md'), '# Team\n');
+    }
   }
 }
 

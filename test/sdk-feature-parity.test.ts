@@ -59,8 +59,9 @@ describe('SDK Feature: Worktree Awareness', () => {
     // Put .git at root
     mkdirSync(join(testRoot, '.git'));
     
-    // Put .squad/ at root
+    // Put .squad/ at root with a team.md so resolveSquad() recognizes it
     mkdirSync(join(testRoot, '.squad'));
+    writeFileSync(join(testRoot, '.squad', 'team.md'), '# Team\n');
     
     // Resolve from deep subdirectory
     const result = resolveSquad(subdir);
@@ -73,6 +74,7 @@ describe('SDK Feature: Worktree Awareness', () => {
   it('resolveSquadPaths() handles local mode (no config.json)', () => {
     const testRoot = join(tmpdir(), `squad-test-${Date.now()}`);
     mkdirSync(join(testRoot, '.squad'), { recursive: true });
+    writeFileSync(join(testRoot, '.squad', 'team.md'), '# Team\n');
     
     const result = resolveSquadPaths(testRoot);
     

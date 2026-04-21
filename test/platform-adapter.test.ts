@@ -7,7 +7,9 @@ import {
   detectPlatformFromUrl,
   parseGitHubRemote,
   parseAzureDevOpsRemote,
+  normalizeRemoteUrl,
 } from '../packages/squad-sdk/src/platform/detect.js';
+import type { NormalizedRemote } from '../packages/squad-sdk/src/platform/detect.js';
 import { detectWorkItemSource } from '../packages/squad-sdk/src/platform/detect.js';
 import { getRalphScanCommands } from '../packages/squad-sdk/src/platform/ralph-commands.js';
 import { mapPlannerTaskToWorkItem } from '../packages/squad-sdk/src/platform/planner.js';
@@ -1034,5 +1036,231 @@ describe('ADO exports from platform index', () => {
     const types = mod.getAvailableWorkItemTypes('test-org', 'test-proj');
     expect(Array.isArray(types)).toBe(true);
     expect(types.length).toBeGreaterThan(0);
+  });
+});
+
+// ─── normalizeRemoteUrl ───────────────────────────────────────────────
+
+describe('normalizeRemoteUrl', () => {
+  // ── GitHub ────────────────────────────────────────────────────────────
+
+  it('normalizes GitHub HTTPS URL', () => {
+    const r = normalizeRemoteUrl('https://github.com/owner/repo.git');
+    expect(r.provider).toBe('github');
+    expect(r.org).toBe('owner');
+    expect(r.repo).toBe('repo');
+    expect(r.key).toBe('owner/repo');
+    expect(r.normalizedUrl).toBe('github.com/owner/repo');
+    expect(r.project).toBeUndefined();
+  });
+
+  it('normalizes GitHub HTTPS URL without .git', () => {
+    const r = normalizeRemoteUrl('https://github.com/bradygaster/squad');
+    expect(r.key).toBe('bradygaster/squad');
+    expect(r.normalizedUrl).toBe('github.com/bradygaster/squad');
+  });
+
+  it('normalizes GitHub SSH URL', () => {
+    const r = normalizeRemoteUrl('git@github.com:owner/repo.git');
+    expect(r.provider).toBe('github');
+    expect(r.key).toBe('owner/repo');
+    expect(r.normalizedUrl).toBe('github.com/owner/repo');
+  });
+
+  it('normalizes GitHub SSH URL without .git', () => {
+    const r = normalizeRemoteUrl('git@github.com:bradygaster/squad');
+    expect(r.key).toBe('bradygaster/squad');
+    expect(r.normalizedUrl).toBe('github.com/bradygaster/squad');
+  });
+
+  // ── GitHub — ssh:// form ──────────────────────────────────────────────
+
+  it('normalizes GitHub ssh:// URL', () => {
+    const r = normalizeRemoteUrl('ssh://git@github.com/owner/repo.git');
+    expect(r.provider).toBe('github');
+    expect(r.org).toBe('owner');
+    expect(r.repo).toBe('repo');
+    expect(r.key).toBe('owner/repo');
+    expect(r.normalizedUrl).toBe('github.com/owner/repo');
+  });
+
+  it('normalizes GitHub ssh:// URL without .git', () => {
+    const r = normalizeRemoteUrl('ssh://git@github.com/bradygaster/squad');
+    expect(r.key).toBe('bradygaster/squad');
+    expect(r.normalizedUrl).toBe('github.com/bradygaster/squad');
+  });
+
+  it('normalizes GitHub ssh:// URL without user@', () => {
+    const r = normalizeRemoteUrl('ssh://github.com/owner/repo.git');
+    expect(r.provider).toBe('github');
+    expect(r.key).toBe('owner/repo');
+  });
+
+  it('produces same key for GitHub HTTPS, SSH, and ssh:// forms', () => {
+    const https = normalizeRemoteUrl('https://github.com/bradygaster/squad');
+    const ssh = normalizeRemoteUrl('git@github.com:bradygaster/squad.git');
+    const sshUrl = normalizeRemoteUrl('ssh://git@github.com/bradygaster/squad.git');
+    expect(https.key).toBe(ssh.key);
+    expect(https.key).toBe(sshUrl.key);
+  });
+
+  // ── Azure DevOps — modern HTTPS ──────────────────────────────────────
+
+  it('normalizes ADO HTTPS modern URL', () => {
+    const r = normalizeRemoteUrl('https://dev.azure.com/microsoft/OS/_git/os.2020');
+    expect(r.provider).toBe('azure-devops');
+    expect(r.org).toBe('microsoft');
+    expect(r.project).toBe('os');
+    expect(r.repo).toBe('os.2020');
+    expect(r.key).toBe('microsoft/os/os.2020');
+    expect(r.normalizedUrl).toBe('dev.azure.com/microsoft/os/_git/os.2020');
+  });
+
+  it('normalizes ADO HTTPS with user prefix', () => {
+    const r = normalizeRemoteUrl('https://myorg@dev.azure.com/myorg/MyProject/_git/my-repo');
+    expect(r.key).toBe('myorg/myproject/my-repo');
+    expect(r.org).toBe('myorg');
+    expect(r.project).toBe('myproject');
+  });
+
+  // ── Azure DevOps — SSH ───────────────────────────────────────────────
+
+  it('normalizes ADO SSH URL', () => {
+    const r = normalizeRemoteUrl('git@ssh.dev.azure.com:v3/microsoft/OS/os.2020');
+    expect(r.provider).toBe('azure-devops');
+    expect(r.key).toBe('microsoft/os/os.2020');
+    expect(r.normalizedUrl).toBe('ssh.dev.azure.com/microsoft/os/os.2020');
+  });
+
+  // ── Azure DevOps — legacy visualstudio.com ───────────────────────────
+
+  it('normalizes ADO legacy URL with DefaultCollection', () => {
+    const r = normalizeRemoteUrl(
+      'https://microsoft.visualstudio.com/DefaultCollection/OS/_git/os.2020',
+    );
+    expect(r.provider).toBe('azure-devops');
+    expect(r.key).toBe('microsoft/os/os.2020');
+    expect(r.normalizedUrl).toBe('microsoft.visualstudio.com/os/_git/os.2020');
+  });
+
+  it('normalizes ADO legacy URL without DefaultCollection', () => {
+    const r = normalizeRemoteUrl(
+      'https://microsoft.visualstudio.com/OS/_git/os.2020',
+    );
+    expect(r.key).toBe('microsoft/os/os.2020');
+    expect(r.normalizedUrl).toBe('microsoft.visualstudio.com/os/_git/os.2020');
+  });
+
+  // ── Azure DevOps — ssh:// form ────────────────────────────────────────
+
+  it('normalizes ADO ssh:// URL', () => {
+    const r = normalizeRemoteUrl('ssh://git@ssh.dev.azure.com/v3/microsoft/OS/os.2020');
+    expect(r.provider).toBe('azure-devops');
+    expect(r.org).toBe('microsoft');
+    expect(r.project).toBe('os');
+    expect(r.repo).toBe('os.2020');
+    expect(r.key).toBe('microsoft/os/os.2020');
+    expect(r.normalizedUrl).toBe('ssh.dev.azure.com/microsoft/os/os.2020');
+  });
+
+  it('normalizes ADO ssh:// URL with .git suffix', () => {
+    const r = normalizeRemoteUrl('ssh://git@ssh.dev.azure.com/v3/myorg/MyProject/my-repo.git');
+    expect(r.provider).toBe('azure-devops');
+    expect(r.key).toBe('myorg/myproject/my-repo');
+  });
+
+  it('normalizes ADO ssh:// URL without user@', () => {
+    const r = normalizeRemoteUrl('ssh://ssh.dev.azure.com/v3/microsoft/OS/os.2020');
+    expect(r.provider).toBe('azure-devops');
+    expect(r.key).toBe('microsoft/os/os.2020');
+  });
+
+  // ── Cross-format key equivalence ─────────────────────────────────────
+
+  it('produces same key for all ADO URL formats including ssh://', () => {
+    const urls = [
+      'https://microsoft.visualstudio.com/DefaultCollection/OS/_git/os.2020',
+      'https://microsoft.visualstudio.com/OS/_git/os.2020',
+      'https://dev.azure.com/microsoft/OS/_git/os.2020',
+      'git@ssh.dev.azure.com:v3/microsoft/OS/os.2020',
+      'ssh://git@ssh.dev.azure.com/v3/microsoft/OS/os.2020',
+    ];
+    const keys = urls.map((u) => normalizeRemoteUrl(u).key);
+    const unique = new Set(keys);
+    expect(unique.size).toBe(1);
+    expect(keys[0]).toBe('microsoft/os/os.2020');
+  });
+
+  // ── Lowercasing ──────────────────────────────────────────────────────
+
+  it('always lowercases the key', () => {
+    expect(normalizeRemoteUrl('https://github.com/Owner/Repo.git').key).toBe('owner/repo');
+    expect(normalizeRemoteUrl('https://dev.azure.com/ORG/PROJECT/_git/REPO').key).toBe(
+      'org/project/repo',
+    );
+    expect(
+      normalizeRemoteUrl('https://ORG.visualstudio.com/PROJECT/_git/REPO').key,
+    ).toBe('org/project/repo');
+  });
+
+  // ── Edge cases ───────────────────────────────────────────────────────
+
+  it('handles dotted repo names (os.2020)', () => {
+    const r = normalizeRemoteUrl('https://github.com/owner/some.dotted.repo.git');
+    expect(r.repo).toBe('some.dotted.repo');
+    expect(r.key).toBe('owner/some.dotted.repo');
+  });
+
+  it('handles empty string as unknown', () => {
+    const r = normalizeRemoteUrl('');
+    expect(r.provider).toBe('unknown');
+    expect(r.key).toBe('');
+  });
+
+  it('handles whitespace-only input as unknown', () => {
+    const r = normalizeRemoteUrl('   ');
+    expect(r.provider).toBe('unknown');
+  });
+
+  it('handles unknown provider URL', () => {
+    const r = normalizeRemoteUrl('https://gitlab.com/group/subgroup/repo.git');
+    expect(r.provider).toBe('unknown');
+    expect(r.repo).toBe('repo');
+    expect(r.org).toBe('');
+    expect(r.key).toBe('gitlab.com/group/subgroup/repo');
+  });
+
+  it('returns unknown for GitHub URL with extra path segments', () => {
+    const r = normalizeRemoteUrl('https://github.com/owner/repo/issues');
+    expect(r.provider).toBe('unknown');
+  });
+
+  it('returns unknown for ADO URL with extra path segments', () => {
+    const r = normalizeRemoteUrl('https://dev.azure.com/org/proj/_git/repo/extra');
+    expect(r.provider).toBe('unknown');
+  });
+
+  it('strips .git from ADO SSH repo name', () => {
+    const r = normalizeRemoteUrl('git@ssh.dev.azure.com:v3/org/proj/repo.git');
+    expect(r.repo).toBe('repo');
+    expect(r.key).toBe('org/proj/repo');
+  });
+
+  it('strips .git from ADO legacy repo name', () => {
+    const r = normalizeRemoteUrl('https://org.visualstudio.com/proj/_git/repo.git');
+    expect(r.repo).toBe('repo');
+  });
+
+  it('strips trailing slash from GitHub HTTPS', () => {
+    const r = normalizeRemoteUrl('https://github.com/owner/repo/');
+    expect(r.provider).toBe('github');
+    expect(r.key).toBe('owner/repo');
+  });
+
+  // ── Barrel re-export verification ────────────────────────────────────
+
+  it('is re-exported from platform/index.ts', async () => {
+    const mod = await import('../packages/squad-sdk/src/platform/index.js');
+    expect(typeof mod.normalizeRemoteUrl).toBe('function');
   });
 });

@@ -4,7 +4,15 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import fs from 'node:fs';
+import { execSync } from 'node:child_process';
+import {
+  FSStorageProvider,
+  createSharedSquad,
+  normalizeRemoteUrl,
+  getRemoteUrl,
+  validateRepoKey,
+} from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 import { success, warn, dim, bold, BOLD, RESET, DIM } from '../core/output.js';
@@ -18,9 +26,11 @@ import type {
 } from '@bradygaster/squad-sdk';
 
 export interface MigrateOptions {
-  to?: 'sdk' | 'markdown';
+  to?: 'sdk' | 'markdown' | 'shared';
   from?: 'ai-team';
   dryRun?: boolean;
+  key?: string;
+  keepLocal?: boolean;
 }
 
 interface ParsedTeam {
@@ -398,6 +408,230 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
     return;
   }
   
+  // Helper: recursively copy a directory using StorageProvider
+  function copyDirRecursive(src: string, dest: string): void {
+    storage.mkdirSync(dest, { recursive: true });
+    const entries = storage.listSync?.(src) ?? [];
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry);
+      const destPath = path.join(dest, entry);
+      if (storage.isDirectorySync(srcPath)) {
+        copyDirRecursive(srcPath, destPath);
+      } else {
+        const content = storage.readSync(srcPath);
+        if (content != null) {
+          storage.writeSync(destPath, content);
+        }
+      }
+    }
+  }
+
+  // Handle --to shared (local .squad/ → shared mode)
+  if (options.to === 'shared') {
+    if (mode === 'none') {
+      fatal('No squad found. Run `squad init` first.');
+    }
+    if (mode === 'legacy') {
+      fatal('Found .ai-team/ directory. Run `squad migrate --from ai-team` first.');
+    }
+
+    const squadDir = path.join(cwd, '.squad');
+    if (!storage.existsSync(squadDir)) {
+      fatal('No .squad/ directory found.');
+    }
+
+    // Determine repo key
+    let key = options.key;
+    let urlPatterns: string[] = [];
+
+    const remoteUrl = getRemoteUrl(cwd);
+    if (!key) {
+      if (!remoteUrl) {
+        fatal(
+          'Cannot auto-detect repo key: no git remote "origin" found.\n' +
+          '       Use --key <owner/repo> to specify the key explicitly.',
+        );
+      }
+      const normalized = normalizeRemoteUrl(remoteUrl);
+      if (normalized.provider === 'unknown') {
+        fatal(
+          `Could not derive a supported repo key from origin URL.\n` +
+          `       Remote: ${remoteUrl}\n` +
+          `       Use --key <owner/repo> to specify the key explicitly.`,
+        );
+      }
+      key = normalized.key;
+      urlPatterns = [normalized.normalizedUrl];
+    } else {
+      if (remoteUrl) {
+        const normalized = normalizeRemoteUrl(remoteUrl);
+        urlPatterns = [normalized.normalizedUrl];
+      }
+    }
+
+    try {
+      validateRepoKey(key);
+    } catch (err) {
+      fatal((err as Error).message);
+    }
+
+    console.log(`\n${BOLD}Squad Migrate${RESET} — local .squad/ → shared\n`);
+    console.log(`📦 Migrating local squad to shared...`);
+    console.log(`   Source: ${squadDir}`);
+
+    // Create shared squad
+    let teamDir: string;
+    try {
+      teamDir = createSharedSquad(key, urlPatterns);
+    } catch (err) {
+      fatal((err as Error).message);
+    }
+
+    console.log(`   Target: ${teamDir}`);
+    console.log('');
+
+    // Copy team-state directories and files
+    const teamDirs = ['agents', 'casting', 'skills', 'decisions', 'decisions/inbox'];
+    for (const dir of teamDirs) {
+      const srcDir = path.join(squadDir, dir);
+      const destDir = path.join(teamDir, dir);
+      if (storage.existsSync(srcDir)) {
+        copyDirRecursive(srcDir, destDir);
+        success(`Copying: ${dir}/`);
+      }
+    }
+
+    const teamFiles = ['team.md', 'routing.md', 'decisions.md'];
+    for (const file of teamFiles) {
+      const srcFile = path.join(squadDir, file);
+      const destFile = path.join(teamDir, file);
+      if (storage.existsSync(srcFile)) {
+        const content = storage.readSync(srcFile) ?? '';
+        storage.writeSync(destFile, content);
+        success(`Copying: ${file}`);
+      }
+    }
+
+    // Copy .github/agents/ to .github-template/agents/ in the shared squad
+    // so future `squad init --shared` connections can source the agent file
+    const githubAgentsDir = path.join(cwd, '.github', 'agents');
+    if (storage.existsSync(githubAgentsDir)) {
+      const templateAgentsDir = path.join(teamDir, '.github-template', 'agents');
+      copyDirRecursive(githubAgentsDir, templateAgentsDir);
+      success(`Copying: .github/agents/ → .github-template/agents/`);
+    }
+
+    if (urlPatterns.length > 0) {
+      console.log(`   Registered URL pattern: ${urlPatterns[0]}`);
+    }
+
+    console.log('');
+    console.log(`✅ Migrated to shared squad "${key}"`);
+
+    // Cleanup local files after successful migration
+    if (!options.keepLocal) {
+      console.log('');
+      console.log(`🧹 Cleaning up local squad files...`);
+
+      // Clean up .squad/ directory
+      if (storage.existsSync(squadDir)) {
+        // Check if .squad/ contains any git-tracked files
+        let hasTrackedFiles = false;
+        try {
+          const tracked = execSync('git ls-files .squad/', { cwd, encoding: 'utf-8' }).trim();
+          hasTrackedFiles = tracked.length > 0;
+        } catch {
+          // git ls-files failed — treat as untracked to be safe
+        }
+
+        if (hasTrackedFiles) {
+          warn(`  .squad/ contains git-tracked files — left in place`);
+          console.log(`         ${DIM}Run \`git rm -r .squad/\` to remove tracked files${RESET}`);
+        } else {
+          try {
+            fs.rmSync(squadDir, { recursive: true, force: true });
+            success('  Removed .squad/');
+          } catch (err) {
+            warn(`  Could not remove .squad/: ${(err as Error).message}`);
+          }
+        }
+      }
+
+      // Clean up .github/agents/squad.agent.md (only if untracked)
+      const agentFile = path.join(cwd, '.github', 'agents', 'squad.agent.md');
+      if (storage.existsSync(agentFile)) {
+        let isTracked = false;
+        try {
+          const tracked = execSync('git ls-files .github/agents/squad.agent.md', { cwd, encoding: 'utf-8' }).trim();
+          isTracked = tracked.length > 0;
+        } catch { /* ignore */ }
+
+        if (isTracked) {
+          warn(`  .github/agents/squad.agent.md is git-tracked — left in place`);
+        } else {
+          try {
+            fs.unlinkSync(agentFile);
+            success('  Removed .github/agents/squad.agent.md');
+            // Clean up empty .github/agents/ dir
+            const agentsDir = path.join(cwd, '.github', 'agents');
+            try {
+              const remaining = fs.readdirSync(agentsDir);
+              if (remaining.length === 0) fs.rmdirSync(agentsDir);
+            } catch { /* ignore */ }
+          } catch (err) {
+            warn(`  Could not remove agent file: ${(err as Error).message}`);
+          }
+        }
+      }
+
+      // Clean up .gitattributes if it was squad-generated and untracked
+      const gitattributes = path.join(cwd, '.gitattributes');
+      if (storage.existsSync(gitattributes)) {
+        let isTracked = false;
+        try {
+          const tracked = execSync('git ls-files .gitattributes', { cwd, encoding: 'utf-8' }).trim();
+          isTracked = tracked.length > 0;
+        } catch { /* ignore */ }
+
+        if (!isTracked) {
+          // Only remove if it looks squad-generated (contains merge=union for .squad/)
+          const content = storage.readSync(gitattributes) ?? '';
+          if (content.includes('.squad/') && content.includes('merge=union')) {
+            try {
+              fs.unlinkSync(gitattributes);
+              success('  Removed .gitattributes (squad-generated)');
+            } catch { /* ignore */ }
+          }
+        }
+      }
+
+      // Clean up .copilot/ if untracked
+      const copilotDir = path.join(cwd, '.copilot');
+      if (storage.existsSync(copilotDir)) {
+        let isTracked = false;
+        try {
+          const tracked = execSync('git ls-files .copilot/', { cwd, encoding: 'utf-8' }).trim();
+          isTracked = tracked.length > 0;
+        } catch { /* ignore */ }
+
+        if (!isTracked) {
+          try {
+            fs.rmSync(copilotDir, { recursive: true, force: true });
+            success('  Removed .copilot/');
+          } catch { /* ignore */ }
+        }
+      }
+
+      console.log('');
+      console.log(`   ${DIM}Use --keep-local to skip cleanup next time.${RESET}`);
+    } else {
+      console.log('');
+      console.log(`   ${DIM}Local files left in place (--keep-local).${RESET}`);
+      console.log(`   ${DIM}Run \`git clean -xdf .squad .github/agents .gitattributes .copilot\` to remove manually.${RESET}`);
+    }
+    return;
+  }
+
   // Handle --to markdown (reverse migration)
   if (options.to === 'markdown') {
     if (mode !== 'sdk') {

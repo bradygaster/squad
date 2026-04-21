@@ -5,8 +5,8 @@
  */
 
 export type { PlatformType, WorkItem, PullRequest, PlatformAdapter, WorkItemSource, HybridPlatformConfig, CommunicationChannel, CommunicationReply, CommunicationConfig, CommunicationAdapter } from './types.js';
-export type { GitHubRemoteInfo, AzureDevOpsRemoteInfo } from './detect.js';
-export { detectPlatform, detectPlatformFromUrl, detectWorkItemSource, parseGitHubRemote, parseAzureDevOpsRemote, getRemoteUrl } from './detect.js';
+export type { GitHubRemoteInfo, AzureDevOpsRemoteInfo, NormalizedRemote } from './detect.js';
+export { detectPlatform, detectPlatformFromUrl, detectWorkItemSource, parseGitHubRemote, parseAzureDevOpsRemote, getRemoteUrl, normalizeRemoteUrl } from './detect.js';
 export { GitHubAdapter } from './github.js';
 export { AzureDevOpsAdapter } from './azure-devops.js';
 export type { AdoWorkItemConfig, WorkItemTypeInfo } from './azure-devops.js';

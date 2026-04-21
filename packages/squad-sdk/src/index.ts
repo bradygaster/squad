@@ -10,8 +10,46 @@ const pkg = require('../package.json');
 export const VERSION: string = pkg.version;
 
 // Export public API
-export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir } from './resolution.js';
-export type { SquadDirConfig, ResolvedSquadPaths } from './resolution.js';
+export { resolveSquad, resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir, ensureSquadPath, ensureSquadPathTriple, loadDirConfig, isConsultMode, scratchDir, scratchFile, deriveProjectKey, resolveExternalStateDir, resolveSquadPaths } from './resolution.js';
+export { ensureCloneState, resolveCloneStateDir } from './clone-state.js';
+export { normalizeRemoteUrl, getRemoteUrl } from './platform/detect.js';
+export type { NormalizedRemote } from './platform/detect.js';
+export type { CloneStateMetadata } from './clone-state.js';
+export type { SquadDirConfig } from './resolution.js';
+export type { ResolvedSquadPaths } from './resolution-base.js';
+export {
+  validateRepoKey,
+  /** @internal Used by CLI — not part of the public SDK API surface. */
+  validateWritePath,
+  /** @internal Used by CLI — not part of the public SDK API surface. */
+  sanitizeJournalFilenameComponent,
+  loadRepoRegistry,
+  saveRepoRegistry,
+  createSharedSquad,
+  lookupByUrl,
+  lookupByUrlAcrossRepos,
+  lookupByKeyAcrossRepos,
+  /** @internal Used by CLI — not part of the public SDK API surface. */
+  loadSquadRepoPointers,
+  resolveSharedSquad,
+  addUrlPattern,
+} from './shared-squad.js';
+export type {
+  RepoRegistryEntry,
+  RepoRegistry,
+  SharedSquadManifest,
+  LocatedRegistryEntry,
+} from './shared-squad.js';
+export {
+  /** @internal Used by CLI — not part of the public SDK API surface. */
+  mergeInbox,
+  /** @internal Used by CLI — not part of the public SDK API surface. */
+  recoverStaleProcessing,
+  mergeDecisionsInbox,
+  mergeAgentHistoryInbox,
+  mergeAllHistoryInboxes,
+} from './scribe-merge.js';
+export type { MergeOptions, MergeResult } from './scribe-merge.js';
 export * from './config/index.js';
 export * from './agents/onboarding.js';
 export { resolvePersonalAgents, mergeSessionCast } from './agents/personal.js';

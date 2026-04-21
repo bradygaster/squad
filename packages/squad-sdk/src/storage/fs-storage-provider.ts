@@ -15,7 +15,9 @@ import { StorageError } from './storage-error.js';
  * - Optional `rootDir` confines all operations to a specific directory tree.
  */
 export class FSStorageProvider implements StorageProvider {
-  private static readonly CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
+  private static readonly CASE_INSENSITIVE =
+    !process.env['SQUAD_CASE_SENSITIVE'] &&
+    (process.platform === 'win32' || process.platform === 'darwin');
   private readonly rootDir?: string;
 
   constructor(rootDir?: string) {

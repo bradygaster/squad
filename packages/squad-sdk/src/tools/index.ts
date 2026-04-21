@@ -11,12 +11,14 @@
  */
 
 import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import type { SquadTool, SquadToolResult } from '../adapter/types.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { SquadState } from '../state/squad-state.js';
+import type { ResolvedSquadPaths } from '../resolution-base.js';
+import { sanitizeJournalFilenameComponent, validateWritePath } from '../shared-squad.js';
 
 const tracer = trace.getTracer('squad-sdk');
 
@@ -184,12 +186,22 @@ export class ToolRegistry {
   private sessionPoolGetter?: () => any;
   private storage: StorageProvider;
   private state?: SquadState;
+  private resolvedPaths: ResolvedSquadPaths;
 
-  constructor(squadRoot = '.squad', sessionPoolGetter?: () => any, storage: StorageProvider = new FSStorageProvider(), state?: SquadState) {
+  constructor(squadRoot = '.squad', sessionPoolGetter?: () => any, storage: StorageProvider = new FSStorageProvider(), state?: SquadState, resolvedPaths?: ResolvedSquadPaths) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
     this.storage = storage;
     this.state = state;
+    this.resolvedPaths = resolvedPaths ?? {
+      mode: 'local' as const,
+      projectDir: squadRoot,
+      teamDir: squadRoot,
+      personalDir: null,
+      config: null,
+      name: '.squad',
+      isLegacy: false,
+    };
     this.registerSquadTools();
   }
 
@@ -280,16 +292,19 @@ export class ToolRegistry {
           return { textResultForLlm: 'Invalid author name: must contain only letters, numbers, hyphens, and underscores', resultType: 'failure', error: 'Invalid author' };
         }
         try {
-          const inboxDir = path.join(this.squadRoot, 'decisions', 'inbox');
+          const inboxDir = path.join(this.resolvedPaths.teamDir, 'decisions', 'inbox');
+
+          // Validate write target stays within the resolved shared squad root
+          // (shared squads may be rooted outside global app data, e.g. git-backed pointers)
+          if (this.resolvedPaths.mode === 'shared') {
+            validateWritePath(inboxDir, this.resolvedPaths.teamDir);
+          }
 
           const decisionId = randomUUID();
           const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-          const slug = args.summary
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '')
-            .slice(0, 50);
-          const filename = path.join(inboxDir, `${args.author}-${slug}.md`);
+          const sanitizedAuthor = sanitizeJournalFilenameComponent(args.author);
+          const hex = randomBytes(4).toString('hex');
+          const filename = path.join(inboxDir, `${sanitizedAuthor}-${timestamp}-${hex}.md`);
 
           const content = [
             `### ${timestamp}: ${args.summary}`,
@@ -306,10 +321,11 @@ export class ToolRegistry {
 
           this.storage.writeSync(filename, content);
 
+          const basename = path.basename(filename);
           return {
-            textResultForLlm: `Decision written: ${args.author}-${slug}.md (ID: ${decisionId})`,
+            textResultForLlm: `Decision written: ${basename} (ID: ${decisionId})`,
             resultType: 'success',
-            toolTelemetry: { decisionId, filename, slug },
+            toolTelemetry: { decisionId, filename: basename, slug: basename },
           };
         } catch (error) {
           return {
@@ -375,8 +391,8 @@ export class ToolRegistry {
             };
           }
 
-          // Fallback: raw StorageProvider
-          const historyFile = path.join(this.squadRoot, 'agents', args.agent, 'history.md');
+          // Fallback: journal pattern — write to history/inbox/ instead of mutating history.md
+          const historyFile = path.join(this.resolvedPaths.teamDir, 'agents', args.agent, 'history.md');
           
           if (!this.storage.existsSync(historyFile)) {
             return {
@@ -386,32 +402,23 @@ export class ToolRegistry {
             };
           }
 
-          const sectionHeader = `## ${SECTION_MAP[args.section] ?? 'Learnings'}`;
+          const sectionName = SECTION_MAP[args.section] ?? 'Learnings';
           const timestamp = new Date().toISOString().slice(0, 10);
-          const entry = `\n### ${timestamp}\n${args.content}\n`;
+          const entry = `## ${sectionName}\n\n### ${timestamp}\n${args.content}\n`;
 
-          let content = this.storage.readSync(historyFile);
-          if (content === undefined) {
-            return {
-              textResultForLlm: `Agent history file not readable: agents/${args.agent}/history.md`,
-              resultType: 'failure',
-              error: 'History file could not be read',
-            };
-          }
-          
-          // Find section and append
-          const sectionIndex = content.indexOf(sectionHeader);
-          if (sectionIndex !== -1) {
-            // Find next section or end of file
-            const nextSectionIndex = content.indexOf('\n## ', sectionIndex + sectionHeader.length);
-            const insertIndex = nextSectionIndex === -1 ? content.length : nextSectionIndex;
-            content = content.slice(0, insertIndex) + entry + content.slice(insertIndex);
-          } else {
-            // Section doesn't exist, append at end
-            content += `\n${sectionHeader}\n${entry}`;
-          }
+          const inboxDir = path.join(this.resolvedPaths.teamDir, 'agents', args.agent, 'history', 'inbox');
 
-          this.storage.writeSync(historyFile, content);
+          // Validate write target stays within the resolved shared squad root
+          // (shared squads may be rooted outside global app data, e.g. git-backed pointers)
+          if (this.resolvedPaths.mode === 'shared') {
+            validateWritePath(inboxDir, this.resolvedPaths.teamDir);
+          }
+          const sanitizedAgent = sanitizeJournalFilenameComponent(args.agent);
+          const isoSafe = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const hex = randomBytes(4).toString('hex');
+          const inboxFile = path.join(inboxDir, `${sanitizedAgent}-${isoSafe}-${hex}.md`);
+
+          this.storage.writeSync(inboxFile, entry);
 
           return {
             textResultForLlm: `Appended to ${args.agent} history (${args.section})`,
