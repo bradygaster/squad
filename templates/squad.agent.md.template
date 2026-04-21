@@ -1063,6 +1063,19 @@ When an artifact is **rejected** by a Reviewer:
 6. **Lockout duration:** The lockout persists for that revision cycle. If the revision is also rejected, the same rule applies again — the revision author is now also locked out, and a third agent must revise.
 7. **Deadlock handling:** If all eligible agents have been locked out of an artifact, the Coordinator MUST escalate to the user rather than re-admitting a locked-out author.
 
+### Reviewer attestation gate (for projects with CI disabled)
+
+> **When to apply:** Enable this gate when a project has CI disabled (repo-wide or on a branch) and needs a behavioural correctness check before approval. Skip entirely when CI is green-on-head and the CI gate is sufficient.
+
+**Before approving any PR**, a squad reviewer agent MUST:
+
+1. Verify the PR body contains the **local-test attestation** section with the checkbox ticked (`- [x]`).
+2. Verify the **attested SHA** in the PR body exactly matches the PR's current `headRefOid` (latest commit SHA).
+3. If either check fails, the reviewer MUST leave a `REQUEST_CHANGES` review citing "missing or stale local-test attestation — please run the full test suite locally, tick the attestation checkbox in the PR body, and update the attested SHA to the current HEAD." Do NOT approve.
+4. **Re-verify on every new push.** Any approval is implicitly invalidated by a new commit; the reviewer must re-check the attestation SHA against the new `headRefOid` and re-approve (or request changes) accordingly.
+
+This gate replaces CI as the behavioural correctness check while CI is disabled. When CI is re-enabled, restore the normal CI-green requirement in addition to (not in place of) this gate.
+
 ---
 
 ## Multi-Agent Artifact Format
@@ -1164,14 +1177,16 @@ gh pr list --state open --draft --json number,title,author,labels,checks --limit
 |----------|--------|--------|
 | **Untriaged issues** | `squad` label, no `squad:{member}` label | Lead triages: reads issue, assigns `squad:{member}` label |
 | **Assigned but unstarted** | `squad:{member}` label, no assignee or no PR | Spawn the assigned agent to pick it up |
-| **Draft PRs** | PR in draft from squad member | Check if agent needs to continue; if stalled, nudge |
+| **Draft PRs** | PR in draft from squad member | Check if agent needs to continue; if stalled, nudge; when PR leaves draft, next round will classify it as Awaiting review |
+| **Awaiting review** | PR non-draft, `reviewDecision` is null/`REVIEW_REQUIRED`, no squad reviewer assigned | Route to appropriate squad reviewer(s) based on changed paths + labels; request review via `gh pr edit --add-reviewer` and spawn reviewer agent(s) to perform the review |
 | **Review feedback** | PR has `CHANGES_REQUESTED` review | Route feedback to PR author agent to address |
-| **CI failures** | PR checks failing | Notify assigned agent to fix, or create a fix issue |
-| **Approved PRs** | PR approved, CI green, ready to merge | Merge and close related issue |
+| **CI failures** | PR checks failing (when CI is enabled) | Notify assigned agent to fix, or create a fix issue. *If the project has CI disabled and uses the attestation gate instead, Ralph verifies the local-test attestation (checkbox + SHA matching `headRefOid`) and treats stale/missing attestation as the "Missing attestation" category.* |
+| **Missing attestation** | (Attestation-gate projects only) Local-test attestation checkbox is unticked, or the attested SHA does not match the current `headRefOid` | Comment on the PR asking the author agent to run the full test suite locally, tick the attestation checkbox, and update the SHA to the latest commit. Do NOT advance to merge. |
+| **Approved PRs** | PR approved, automated reviewer (e.g. Copilot) clean, **CI green on head SHA (or local-test attestation present and SHA matches head, for attestation-gate projects)**, ready to merge | Merge and close related issue |
 | **No work found** | All clear | Report: "📋 Board is clear. Ralph is idling." Suggest `npx @bradygaster/squad-cli watch` for persistent polling. |
 
 **Step 3 — Act on highest-priority item:**
-- Process one category at a time, highest priority first (untriaged > assigned > CI failures > review feedback > approved PRs)
+- Process one category at a time, highest priority first (untriaged > assigned > missing attestation > awaiting review > CI failures > review feedback > approved PRs). *Attestation-gate projects substitute "missing attestation" for CI failures as the behavioural correctness check.*
 - Spawn agents as needed, collect results
 - **⚡ CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again.** This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
 - If multiple items exist in the same category, process them in parallel (spawn multiple agents)
@@ -1188,6 +1203,51 @@ After every 3-5 rounds, pause and report before continuing:
 ```
 
 **Do NOT ask for permission to continue.** Just report and keep going. The user must explicitly say "idle" or "stop" to break the loop. If the user provides other input during a round, process it and then resume the loop.
+
+### Reviewer routing (Step 2: Awaiting review)
+
+When a PR leaves draft and has no squad reviewer assigned, Ralph routes it to one or more squad reviewers based on the changed paths and labels.
+
+**Approval gate — Ralph only advances a PR to "Approved / mergeable" when ALL of:**
+
+1. Any automated reviewer (e.g. GitHub Copilot's automatic PR review, if enabled by the project's branch protection) has **zero unaddressed comments**, AND
+2. **≥1 squad reviewer** has approved. If branch protection requires a second reviewer and the automated reviewer counts, ≥1 squad reviewer is sufficient; otherwise require ≥2 human/squad reviewers. If the PR touches **≥2 domains**, route to **≥2 squad reviewers** in parallel regardless, AND
+3. Either **CI is green on the head SHA**, OR (for projects using the attestation gate) **the PR body contains the local-test attestation checkbox ticked AND the attested SHA matches the PR's current `headRefOid`**.
+
+Only then does the PR graduate to the **Approved PRs** category for merge.
+
+**Path / label → reviewer mapping (example — each squad defines its own in `routing.md`):**
+
+| Changed paths / labels | Reviewer role | Domain |
+|------------------------|---------------|--------|
+| `.github/**`, `.squad/**`, governance, agent charters | **Lead** | Governance, code review |
+| `tests/**`, `*.test.*`, `*.spec.*`, `src/**` touching behavior | **Tester / QA** | Test gate |
+| `auth/**`, secrets, IAM, RBAC, any security-tagged label | **Security reviewer** | Security |
+| `infra/**`, IaC files, networking, WAF | **Infra reviewer** | WAF / infra |
+| Multiple domains hit | Route to multiple reviewers **in parallel** | — |
+
+Squads customise this table via their `.squad/routing.md`. The principle is: map changed-file patterns and labels to the roles on the roster who own that domain. When a PR hits ≥2 domains, route to ≥2 reviewers in parallel.
+
+**Dispatch rules:**
+
+- **Reviewers are spawned as background agents** (via the `task` tool with `mode: "background"`) so multiple reviewers run **in parallel**, not sequentially. When a PR hits ≥2 domains, dispatch all required reviewers in a single response — Ralph waits on completion notifications, not on each reviewer in turn.
+- Reviewer agents run in **their own worktrees or feature branches**, never on `main`. Ralph must never dispatch a reviewer (or any agent) that works directly on `main`.
+- Reviewer gates are "bump UP to premium" work per §Model Selection — use the premium tier for reviewer spawns.
+- Request review on the PR with `gh pr edit {N} --add-reviewer {handle}` (or the squad equivalent) before spawning the reviewer agent, so the GitHub-side reviewer state matches.
+
+**Commit → re-review loop:**
+
+- Any new commit to the PR triggers a fresh automated review (if enabled). The approval gate **re-opens** on every new commit and only closes again when the latest automated review has zero unaddressed comments.
+- After a new commit, Ralph waits for the new automated review, re-inspects `reviewDecision`, and **re-dispatches any squad reviewer whose previous verdict is now outdated** (e.g., they approved an earlier SHA that has since been force-pushed or had new commits added).
+
+**On `CHANGES_REQUESTED`:**
+
+- Hand off to the existing **Review feedback** step. The **Reviewer Rejection Protocol** applies. The original author is **locked out** of self-revision; a different agent (or a newly spawned specialist) must perform the fix. Ralph and the Coordinator enforce this lockout.
+
+**Re-verification on every new commit:** After any new commit is pushed to a PR, Ralph MUST:
+1. Re-check CI status on the new head SHA. For attestation-gate projects, re-check the attestation checkbox is still ticked AND the attested SHA equals the new `headRefOid`. A stale SHA invalidates the attestation; Ralph demotes the PR back to **Missing attestation** and asks the author agent to re-run tests locally and update the SHA.
+2. Wait for and re-inspect any new automated review.
+3. Re-dispatch any squad reviewer whose previous approval is now outdated.
 
 ### Watch Mode (`squad watch`)
 
