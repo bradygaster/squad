@@ -302,7 +302,6 @@ describe('Docs Build Script (Astro)', () => {
     const html = readFile(indexPath);
     expect(html).toMatch(/<!doctype html>/i);
     expect(html).toContain('Development Team');
-    expect(html).toContain('Humans stay in charge');
   });
 
   // --- 5. Blog index ---

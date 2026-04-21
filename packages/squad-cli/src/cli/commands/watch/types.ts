@@ -5,10 +5,27 @@
  * main loop stays thin and each feature is testable in isolation.
  */
 
-import type { PlatformAdapter } from '@bradygaster/squad-sdk/platform';
+import type { PlatformAdapter, WorkItem, PullRequest } from '@bradygaster/squad-sdk/platform';
 
 /** Phase within a single watch round. */
 export type WatchPhase = 'pre-scan' | 'post-triage' | 'post-execute' | 'housekeeping';
+
+/**
+ * Shared data fetched ONCE at round start and passed to every capability.
+ *
+ * Avoids redundant API calls — each capability filters this data instead
+ * of making its own `listWorkItems()` call.
+ *
+ * @see https://github.com/bradygaster/squad/issues/923
+ */
+export interface RoundData {
+  /** All open squad-labelled work items, fetched once with a generous limit. */
+  issues: WorkItem[];
+  /** All open pull requests, fetched once. */
+  pullRequests: PullRequest[];
+  /** When this data was fetched. */
+  fetchedAt: Date;
+}
 
 /** Result of a capability preflight check. */
 export interface PreflightResult {
@@ -39,8 +56,12 @@ export interface WatchContext {
   copilotFlags?: string;
   /** Verbose diagnostic output enabled. */
   verbose?: boolean;
-  /** PID tracker for child process cleanup (optional — only set when watch is running). */
-  pidTracker?: { track(pid: number, name: string): void; untrack(pid: number): void };
+  /**
+   * Shared round data — fetched once at the start of each round.
+   * Capabilities should read from here instead of calling adapter.listWorkItems().
+   * @see https://github.com/bradygaster/squad/issues/923
+   */
+  roundData?: RoundData;
 }
 
 /** Contract that every watch capability must implement. */

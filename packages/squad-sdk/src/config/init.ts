@@ -8,7 +8,7 @@
  * @module config/init
  */
 
-import { join, dirname, relative as pathRelative, resolve as pathResolve } from 'path';
+import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
@@ -136,11 +136,6 @@ export interface InitOptions {
   streams?: SubSquadDefinition[];
   /** If true, use built-in base roles with useRole() in SDK config (default: false) */
   roles?: boolean;
-  /** Root directory for the .github/agents/squad.agent.md file.
-   *  Defaults to teamRoot. In monorepos, this should be the git root
-   *  so Copilot can discover the agent file, while teamRoot stays in
-   *  the subfolder where .squad/ lives. */
-  agentFileRoot?: string;
   /** ADO work item configuration — used when platform is azure-devops */
   adoConfig?: {
     defaultWorkItemType?: string;
@@ -674,10 +669,15 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
   
   // Helper to convert absolute path to relative
   const toRelativePath = (absolutePath: string): string => {
-    // Use path.relative for correct cross-root handling (monorepo: agentFileRoot != teamRoot)
-    const rel = pathRelative(teamRoot, absolutePath);
-    // path.relative returns '' for same path, use '.' instead
-    return rel || '.';
+    // Use path separator-agnostic approach
+    if (absolutePath.startsWith(teamRoot)) {
+      const relative = absolutePath.slice(teamRoot.length);
+      // Remove leading separator if present
+      return relative.startsWith('/') || relative.startsWith('\\') 
+        ? relative.slice(1) 
+        : relative;
+    }
+    return absolutePath;
   };
 
   // Helper to write file (respects skipExisting)
@@ -1062,7 +1062,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Create .github/agents/squad.agent.md
   // -------------------------------------------------------------------------
   
-  const agentFile = join(options.agentFileRoot ?? teamRoot, '.github', 'agents', 'squad.agent.md');
+  const agentFile = join(teamRoot, '.github', 'agents', 'squad.agent.md');
   if (!storage.existsSync(agentFile) || !skipExisting) {
     if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
       let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
@@ -1110,15 +1110,6 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
   
   if (includeWorkflows && isGitHub && templatesDir && storage.existsSync(join(templatesDir, 'workflows'))) {
-    // In monorepo mode (agentFileRoot != teamRoot), skip workflow placement.
-    // GitHub Actions only reads from <repo-root>/.github/workflows/ — placing
-    // workflows in a subfolder has no effect. Multiple squads in one monorepo
-    // would also conflict on the same workflow files. (#939)
-    const isMonorepoSubfolder = !!options.agentFileRoot &&
-      pathResolve(options.agentFileRoot).toLowerCase() !== pathResolve(teamRoot).toLowerCase();
-    if (isMonorepoSubfolder) {
-      warnings.push('Skipped GitHub Actions workflows in monorepo-subfolder mode — workflows must be at the git root. Set up workflows manually or use a single shared workflow for all squads.');
-    } else {
     const workflowsSrc = join(templatesDir, 'workflows');
     const workflowsDest = join(teamRoot, '.github', 'workflows');
     
@@ -1136,7 +1127,6 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
           skippedFiles.push(toRelativePath(destFile));
         }
       }
-    }
     }
   }
   

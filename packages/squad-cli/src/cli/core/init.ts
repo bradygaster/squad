@@ -3,6 +3,7 @@
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
@@ -16,6 +17,48 @@ import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquad
 const storage = new FSStorageProvider();
 
 const CYAN = '\x1b[36m';
+
+// ── APM manifest generation ───────────────────────────────────────────────────
+
+/**
+ * Generate a starter apm.yml at the project root.
+ *
+ * Only creates the file if it doesn't already exist, so repeat `squad init`
+ * invocations are safe (skipExisting semantics mirror the SDK's behaviour).
+ *
+ * APM (Agent Package Manager) is package.json for AI agent context.
+ * See: https://github.com/microsoft/apm
+ */
+export function generateApmYml(dest: string, projectName: string): void {
+  const apmPath = path.join(dest, 'apm.yml');
+  if (fs.existsSync(apmPath)) return; // skip if already present
+
+  const content = [
+    `# apm.yml — Agent Package Manager manifest`,
+    `# See: https://github.com/microsoft/apm`,
+    `#`,
+    `# This file makes your Squad skills versioned, portable, and community-shareable.`,
+    `# Run 'squad skill publish' to populate the skills section after adding skills.`,
+    ``,
+    `name: ${projectName}`,
+    `version: 1.0.0`,
+    ``,
+    `# Skills — add entries here or run 'squad skill publish' to auto-populate`,
+    `skills: []`,
+    ``,
+    `# Instruction files deployed by 'apm install'`,
+    `instructions:`,
+    `  - path: .squad/copilot-instructions.md`,
+    `    target: .github/copilot-instructions.md`,
+    ``,
+    `# Prompts deployed by 'apm install'`,
+    `prompts:`,
+    `  - path: .squad/skills/*/skill.md`,
+    `    target: .github/prompts/`,
+  ].join('\n') + '\n';
+
+  fs.writeFileSync(apmPath, content, 'utf8');
+}
 
 /**
  * Detect if the target directory is inside a parent git repo.
@@ -123,25 +166,34 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // Detect project type
   const projectType = detectProjectType(dest);
 
-  // ── Monorepo / subfolder detection ───────────────────────────────
+  // ── Parent git repo detection ─────────────────────────────────────
   // Copilot resolves .github/agents/ relative to the git root.
-  // If CWD is a subfolder of a larger repo (monorepo), we place
-  // squad.agent.md at the git root and .squad/ in the subfolder.
-  // Never run `git init` — it creates broken nested repos (#939).
-  let agentFileRoot = dest; // default: place agent file relative to dest
-  const parentGitRoot = detectParentGitRepo(dest);
-  if (parentGitRoot) {
-    console.log();
-    console.log(`${CYAN}${BOLD}📦 Monorepo detected${RESET}`);
-    console.log(`${DIM}   Git root:  ${parentGitRoot}${RESET}`);
-    console.log(`${DIM}   You're in: ${path.resolve(dest)}${RESET}`);
-    console.log();
-    console.log(`${DIM}squad.agent.md → git root (.github/agents/)${RESET}`);
-    console.log(`${DIM}.squad/        → here (${path.basename(path.resolve(dest))}/)${RESET}`);
-    console.log();
-    // Place the agent file at the git root so Copilot can find it.
-    // Team state (.squad/) stays in cwd — resolved via cwd at runtime.
-    agentFileRoot = parentGitRoot;
+  // If CWD is inside a parent git repo, the agent file will be
+  // invisible to copilot because the git root points elsewhere.
+  try {
+    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim().replace(/\//g, path.sep);
+    const normalDest = path.resolve(dest);
+    const normalGitRoot = path.resolve(gitRoot);
+    if (normalDest.toLowerCase() !== normalGitRoot.toLowerCase()) {
+      console.log();
+      console.log(`${YELLOW}${BOLD}⚠  Parent git repo detected${RESET}`);
+      console.log(`${YELLOW}   Git root:  ${normalGitRoot}${RESET}`);
+      console.log(`${YELLOW}   You're in: ${normalDest}${RESET}`);
+      console.log();
+      console.log(`${DIM}Copilot resolves .github/agents/ from the git root, not from here.${RESET}`);
+      console.log(`${DIM}The Squad agent won't be visible to copilot in this folder.${RESET}`);
+      console.log();
+      // Auto-fix: run git init to create a repo boundary here
+      console.log(`${CYAN}${BOLD}→${RESET} Running ${CYAN}git init${RESET} to create a repo boundary...`);
+      execFileSync('git', ['init'], { cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      console.log(`${GREEN}${BOLD}✓${RESET} Initialized git repo at ${normalDest}`);
+      console.log();
+    }
+  } catch {
+    // No git available or not in a git repo — that's fine, continue normally.
+    // Copilot will fall back to CWD for .github/agents/ discovery.
   }
 
   // Detect squad directory
@@ -200,7 +252,6 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // Build SDK options
   const initOptions: InitOptions = {
     teamRoot: dest,
-    agentFileRoot,
     projectName: path.basename(dest) || 'my-project',
     agents: [
       {
@@ -241,17 +292,16 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   let result;
   try {
     result = await sdkInitSquad(initOptions);
-  } catch (err: unknown) {
+  } catch (err: any) {
     process.off('SIGINT', sigintHandler);
-    const message = err instanceof Error ? err.message : String(err);
-    fatal(`Failed to initialize squad: ${message}`);
+    fatal(`Failed to initialize squad: ${err.message}`);
     return; // Unreachable but makes TS happy
   }
 
   process.off('SIGINT', sigintHandler);
 
   // Ensure version is fully stamped in squad.agent.md
-  const agentPath = path.join(agentFileRoot, '.github', 'agents', 'squad.agent.md');
+  const agentPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
   if (storage.existsSync(agentPath)) {
     stampVersion(agentPath, version);
   }
@@ -278,6 +328,19 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   for (const file of result.skippedFiles) {
     // Files are already relative to teamRoot, just display as-is
     console.log(`${DIM}${file} already exists — skipping${RESET}`);
+  }
+
+  // ── APM manifest ─────────────────────────────────────────────────────────────
+  // Generate apm.yml so skills are ready for APM publishing/installation.
+  // Uses the project name derived from the directory basename.
+  const projectName = path.basename(dest) || 'my-project';
+  const apmPath = path.join(dest, 'apm.yml');
+  const apmAlreadyExisted = fs.existsSync(apmPath);
+  generateApmYml(dest, projectName);
+  if (!apmAlreadyExisted) {
+    success('apm.yml');
+  } else {
+    console.log(`${DIM}apm.yml already exists — skipping${RESET}`);
   }
 
   // ── Celebration ceremony ──────────────────────────────────────────

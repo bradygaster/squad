@@ -169,11 +169,3 @@ Coordinator explains the routing decision based on pattern match or skill fit.
 Fenster, implement the new search API. Hockney, write integration tests for it.
 ```
 Named routing to two agents. Both spawn in parallel.
-
----
-
-## See Also
-
-- [Your Team](../concepts/your-team.md) — How team members and roles are defined
-- [Architecture](../concepts/architecture.md) — How the coordinator uses routing to dispatch work
-- [Parallel Work](../concepts/parallel-work.md) — Multi-agent parallel execution

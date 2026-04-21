@@ -136,13 +136,13 @@ function buildLoopAgentCommand(
 ): { cmd: string; args: string[] } {
   if (options.agentCmd) {
     const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+    return { cmd: parts[0]!, args: [...parts.slice(1), '--message', prompt] };
   }
-  const args = ['-p', prompt];
+  const args = ['copilot', '--message', prompt];
   if (options.copilotFlags) {
     args.push(...options.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'copilot', args };
+  return { cmd: 'gh', args };
 }
 
 // ── Capability Phase Runner ──────────────────────────────────────
@@ -244,10 +244,10 @@ function createNoopAdapter(): ReturnType<typeof createPlatformAdapter> {
 
 // ── gh Copilot Preflight ─────────────────────────────────────────
 
-/** Verify the copilot CLI is available. */
-async function checkCopilotCli(): Promise<void> {
+/** Verify `gh` CLI with copilot extension is available. */
+async function checkGhCopilot(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    execFile('copilot', ['--version'], (err) => {
+    execFile('gh', ['copilot', '--version'], (err) => {
       if (err) reject(err);
       else resolve();
     });
@@ -313,12 +313,12 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     fatal('timeout must be a positive number of minutes');
   }
 
-  // Preflight: verify copilot CLI is available (skip if user overrides the agent command)
+  // Preflight: verify gh copilot is available (skip if user overrides the agent command)
   if (!options.agentCmd) {
     try {
-      await checkCopilotCli();
+      await checkGhCopilot();
     } catch {
-      fatal('Copilot CLI required. Install from https://cli.github.com/ and run `gh extension install github/gh-copilot`');
+      fatal('gh CLI with copilot extension required. Install from https://cli.github.com/ and run `gh extension install github/gh-copilot`');
     }
   }
 

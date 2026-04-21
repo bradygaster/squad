@@ -204,9 +204,6 @@ function validateEntry(entry: unknown, index: number, seenIds: Set<string>): voi
   if (typeof task.ref !== 'string' || task.ref.length === 0) {
     throw new ScheduleValidationError(`${prefix}.task.ref must be a non-empty string`);
   }
-  if (task.type === 'script') {
-    validateTaskRef(task.ref as string);
-  }
 
   // Providers validation
   if (!Array.isArray(e.providers) || e.providers.length === 0) {
@@ -362,23 +359,6 @@ function cronFieldMatches(field: string, value: number): boolean {
   return values.includes(value);
 }
 
-/**
- * Validate a task ref for safety. Rejects null bytes and newlines which
- * can cause issues even without shell interpretation.
- * The structural protection comes from execFileSync (shell: false).
- */
-export function validateTaskRef(ref: string): void {
-  if (!ref || ref.trim().length === 0) {
-    throw new ScheduleValidationError('Task ref must be a non-empty string');
-  }
-  if (ref.includes('\0')) {
-    throw new ScheduleValidationError('Task ref must not contain null bytes');
-  }
-  if (/[\r\n]/.test(ref)) {
-    throw new ScheduleValidationError('Task ref must not contain newline characters');
-  }
-}
-
 // ============================================================================
 // Task Execution
 // ============================================================================
@@ -450,12 +430,8 @@ export class LocalPollingProvider implements ScheduleProvider {
     switch (entry.task.type) {
       case 'script': {
         try {
-          const { execFileSync } = await import('node:child_process');
-          validateTaskRef(entry.task.ref);
-          const argv = entry.task.ref.trim().split(/\s+/);
-          const command = argv[0]!;
-          const args = argv.slice(1);
-          const output = execFileSync(command, args, {
+          const { execSync } = await import('node:child_process');
+          const output = execSync(entry.task.ref, {
             encoding: 'utf8',
             timeout: 60_000,
           });

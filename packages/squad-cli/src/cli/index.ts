@@ -40,3 +40,5 @@ export { runExport } from './commands/export.js';
 export { runImport } from './commands/import.js';
 export { splitHistory } from './core/history-split.js';
 export { discoverCommand, delegateCommand } from './commands/cross-squad.js';
+export { runSkill, type ApmSkill, type ApmManifest } from './commands/skill.js';
+export { generateApmYml } from './core/init.js';

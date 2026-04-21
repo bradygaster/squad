@@ -8,10 +8,6 @@ on:
         description: 'Version to publish (e.g., 0.9.1)'
         required: true
         type: string
-
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
 permissions:
   contents: read
   id-token: write

@@ -62,86 +62,19 @@ const base = import.meta.env.BASE_URL;
 <div id="sidebar-overlay" class="fixed inset-0 z-40 bg-black/50 hidden lg:hidden"></div>
 
 <script>
-  const SIDEBAR_SCROLL_KEY = 'squad-docs-sidebar-scroll';
-
-  function getSidebarElements() {
-    return {
-      sidebar: document.getElementById('sidebar'),
-      overlay: document.getElementById('sidebar-overlay'),
-    };
-  }
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
 
   function closeSidebar() {
-    const { sidebar, overlay } = getSidebarElements();
     sidebar?.classList.add('-translate-x-full');
     overlay?.classList.add('hidden');
   }
 
-  let lastScrollTop = 0;
-  let rafPending = false;
+  overlay?.addEventListener('click', closeSidebar);
 
-  function trackSidebarScroll() {
-    const { sidebar } = getSidebarElements();
-    if (!sidebar) return;
-
-    if (!rafPending) {
-      rafPending = true;
-      requestAnimationFrame(() => {
-        lastScrollTop = sidebar.scrollTop;
-        rafPending = false;
-      });
-    }
+  // Scroll the active TOC link into view on page load
+  const activeLink = sidebar?.querySelector('.sidebar-link.active');
+  if (activeLink && sidebar) {
+    activeLink.scrollIntoView({ block: 'center', behavior: 'instant' });
   }
-
-  function flushSidebarScroll() {
-    sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(lastScrollTop));
-  }
-
-  function restoreSidebarScroll() {
-    const { sidebar } = getSidebarElements();
-    if (!sidebar) return false;
-
-    const savedScrollTop = sessionStorage.getItem(SIDEBAR_SCROLL_KEY);
-    if (savedScrollTop === null) return false;
-
-    const scrollTop = Number(savedScrollTop);
-    if (Number.isNaN(scrollTop)) return false;
-
-    sidebar.scrollTop = scrollTop;
-    lastScrollTop = scrollTop;
-    return true;
-  }
-
-  function initSidebar() {
-    const { sidebar, overlay } = getSidebarElements();
-    if (!sidebar) return;
-
-    if (!sidebar.dataset.scrollPersistenceBound) {
-      sidebar.addEventListener('scroll', trackSidebarScroll, { passive: true });
-      sidebar.dataset.scrollPersistenceBound = 'true';
-    }
-
-    if (overlay && !overlay.dataset.closeHandlerBound) {
-      overlay.addEventListener('click', closeSidebar);
-      overlay.dataset.closeHandlerBound = 'true';
-    }
-
-    requestAnimationFrame(() => {
-      const restoredScroll = restoreSidebarScroll();
-      if (restoredScroll) return;
-
-      const activeLink = sidebar.querySelector('.sidebar-link.active');
-      activeLink?.scrollIntoView({ block: 'center', behavior: 'instant' });
-    });
-  }
-
-  if (!window.__squadDocsSidebarStateSetup) {
-    document.addEventListener('astro:before-swap', flushSidebarScroll);
-    document.addEventListener('astro:after-swap', initSidebar);
-    document.addEventListener('astro:page-load', initSidebar);
-    window.addEventListener('pagehide', flushSidebarScroll);
-    window.__squadDocsSidebarStateSetup = true;
-  }
-
-  initSidebar();
 </script>
