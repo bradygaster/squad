@@ -8,7 +8,7 @@ import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import { SquadState, FSStorageProvider } from '@bradygaster/squad-sdk';
-import { resolveRoleSlug, resolveToken } from '@bradygaster/squad-sdk';
+import { resolveRoleSlug, resolveToken, resolveTokenSync } from '@bradygaster/squad-sdk';
 import { SessionRegistry } from './sessions.js';
 import { dirname } from 'node:path';
 
@@ -116,14 +116,21 @@ export async function spawnAgent(
 
   // Resolve GH_TOKEN for the agent's role identity.
   // Graceful: if identity isn't configured, token is null and we skip injection.
+  //
+  // H-09: Try the cache-only sync path first — most spawns happen after identity
+  // has been warmed by a prior call, and avoiding the `await` removes microtask
+  // latency on the hot path. Fall through to the async resolver on miss.
   let injectedToken: string | null = null;
   let previousGhToken: string | undefined;
   try {
     const slug = resolveRoleSlug(role);
-    injectedToken = await resolveToken(teamRoot, slug);
+    injectedToken = resolveTokenSync(teamRoot, slug);
+    if (!injectedToken) {
+      injectedToken = await resolveToken(teamRoot, slug);
+    }
     // Fallback to 'lead' if role-specific token not available
     if (!injectedToken && slug !== 'lead') {
-      injectedToken = await resolveToken(teamRoot, 'lead');
+      injectedToken = resolveTokenSync(teamRoot, 'lead') ?? await resolveToken(teamRoot, 'lead');
       debugLog('spawnAgent: identity token for', name, `(role=${role}, slug=${slug}): fallback to lead:`, injectedToken ? 'resolved' : 'none');
     } else {
       debugLog('spawnAgent: identity token for', name, `(role=${role}, slug=${slug}):`, injectedToken ? 'resolved' : 'none');

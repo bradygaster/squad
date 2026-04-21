@@ -1,5 +1,5 @@
-// GENERATED FILE — DO NOT EDIT. Source: packages/squad-cli/scripts/resolve-token.source.mjs
-// Run `npm run sync:resolve-token` at the repo root to regenerate.
+// CANONICAL SOURCE. Do not edit the generated copies under templates/.
+// Run `npm run sync:resolve-token` to propagate.
 // -- zero dependencies --
 //
 // Standalone token resolution for agent identity.

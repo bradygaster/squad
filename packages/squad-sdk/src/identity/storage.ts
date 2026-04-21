@@ -15,7 +15,7 @@
  * @module identity/storage
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IdentityConfig, AppRegistration } from './types.js';
 
@@ -84,4 +84,34 @@ export function saveAppRegistration(projectRoot: string, key: string, reg: AppRe
 export function hasPrivateKey(projectRoot: string, key: string): boolean {
   const keyPath = join(projectRoot, '.squad', 'identity', 'keys', `${key}.pem`);
   return existsSync(keyPath);
+}
+
+/**
+ * Return the age of a private key file in whole days (UTC floor of mtime diff).
+ *
+ * H-14: Surfaced in `squad identity status` (inline per role) and in
+ * `squad identity doctor` (warn at 60d, fail at 90d). Used to nudge operators
+ * toward rotating long-lived keys.
+ *
+ * Silently returns `null` when:
+ *   - The PEM file does not exist
+ *   - `statSync` throws (e.g. unreadable mounted volume — don't warn or fail
+ *     for inaccessible mounts; treat missing mtime as "unknown")
+ *
+ * @param projectRoot - Project root directory (parent of `.squad/`)
+ * @param key - Registration key (role slug or 'shared')
+ * @returns Integer age in days, or null if stat is unavailable
+ */
+export function getKeyAgeDays(projectRoot: string, key: string): number | null {
+  const keyPath = join(projectRoot, '.squad', 'identity', 'keys', `${key}.pem`);
+  if (!existsSync(keyPath)) return null;
+  try {
+    const stat = statSync(keyPath);
+    const ageMs = Date.now() - stat.mtime.getTime();
+    if (!Number.isFinite(ageMs) || ageMs < 0) return 0;
+    return Math.floor(ageMs / (24 * 60 * 60 * 1000));
+  } catch {
+    // Silently skip — mounted/locked volumes, permission errors, etc.
+    return null;
+  }
 }

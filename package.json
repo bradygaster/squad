@@ -8,9 +8,11 @@
     "packages/*"
   ],
   "scripts": {
-    "prebuild": "node scripts/bump-build.mjs && node scripts/sync-skill-templates.mjs && node scripts/sync-templates.mjs",
+    "prebuild": "node scripts/bump-build.mjs && node scripts/sync-skill-templates.mjs && node scripts/sync-templates.mjs && node packages/squad-cli/scripts/sync-resolve-token.mjs",
     "build": "npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli",
     "sync-templates": "node scripts/sync-templates.mjs",
+    "sync:resolve-token": "node packages/squad-cli/scripts/sync-resolve-token.mjs",
+    "sync:resolve-token:check": "node packages/squad-cli/scripts/sync-resolve-token.mjs --check",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit -p packages/squad-sdk/tsconfig.json && tsc --noEmit -p packages/squad-cli/tsconfig.json",
