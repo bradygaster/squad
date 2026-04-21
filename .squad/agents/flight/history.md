@@ -4,6 +4,24 @@
 
 ---
 
+### PR #27 Review — Identity Consistency Fix (2026-04-21)
+
+**Verdict:** ✅ Approve  
+**PR:** https://github.com/sabbour/squad/pull/27  
+**Authors:** EECOM (impl), FIDO (tests)  
+**Scope:** Template session-export pattern + reviewer role-slug patterns
+
+**Review highlights:**
+- All 6 hard checks passed (A-F): template correctness, role-slug patterns, test adequacy, changeset, scope discipline, build & tests.
+- Template fix: changed from URL-embedded tokens to `export GH_TOKEN` pattern, which persists for all subsequent gh commands in the session.
+- Role-slugs fix: added `code review`, `reviewer`, `watchdog` → `lead` at positions 0, 4, 5 respectively — ensures compound roles like "Code Reviewer & Watchdog" resolve to lead before backend/frontend patterns fire.
+- Production regression test confirmed: "Code Reviewer & Watchdog" → lead asserted explicitly.
+- FIDO `it.todo` ruling: "Backend & Reviewer" and "Frontend Reviewer" both resolve to lead (reviewer wins) — **this is semantically correct**. Reviewer is lead-tier activity; agents doing review work should use lead bot identity regardless of domain. No compound-matching needed.
+
+**Pattern:** Session-level export for gh authentication is cleaner than per-command `GH_TOKEN=$TOKEN` prefixes. Export once, all subsequent commands inherit.
+
+---
+
 ### PR #23 Review — H-03 Retry Resilience + PR #22 Nits (2026-04-21)
 
 **Verdict:** ✅ Approve  
