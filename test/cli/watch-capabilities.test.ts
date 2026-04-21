@@ -356,7 +356,7 @@ describe('Watch Capabilities', () => {
         await cap.execute(ctx);
         expect(mockExecFile).toHaveBeenCalledWith(
           'my-agent',
-          expect.arrayContaining(['--flag', '-p']),
+          expect.arrayContaining(['--flag', '--message']),
           expect.any(Object),
           expect.any(Function),
         );
