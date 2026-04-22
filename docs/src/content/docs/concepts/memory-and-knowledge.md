@@ -290,3 +290,11 @@ Search past decisions for database choices
 ```
 
 Finds historical decisions related to a specific topic or keyword.
+
+---
+
+## See Also
+
+- [Your Team](./your-team.md) — How agents use shared memory to coordinate
+- [Architecture](./architecture.md) — How the coordinator and agents share state
+- [Parallel Work](./parallel-work.md) — How agents maintain consistency while working in parallel
