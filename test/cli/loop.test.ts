@@ -365,7 +365,7 @@ describe('runLoop', () => {
     });
 
     await expect(runLoop(DEST, defaultOptions)).rejects.toThrow(
-      /gh CLI/i,
+      /Copilot CLI/i,
     );
   });
 

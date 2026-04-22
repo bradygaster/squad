@@ -129,3 +129,26 @@ Analyzed 20 CI runs from March 15. Identified 3 distinct failure categories:
 5. **YAML fix** — Quoted `file:` in step names that were causing YAML parse ambiguity (both new and pre-existing)
 
 **Pipeline dependency chain:** `preflight → smoke-test → publish-sdk → publish-cli`
+
+### CI Cleanup — Issue #1000 (2026-04-17)
+
+**Changes shipped in PR #1001:**
+
+1. **Deleted `ci-rerun.yml`** — Redundant fork PR workflow with 100% failure rate (5/5 runs). GitHub's native "Approve and Run" handles fork PR CI. Removed reference from `setup-squad-node` comment header.
+
+2. **Streamlined `squad-ci.yml`** — 852 → 585 lines, 9 → 6 jobs:
+   - **Merged** `exports-map-check` + `export-smoke-test` → single `sdk-exports-validation` job (saves one runner boot, deduplicates checkout/setup/change-detection)
+   - **Folded** `publish-policy` + `scope-check` into `policy-gates` as additional gate steps (saves two runner boots)
+   - **Added** `workflows` output to `changes` path filter (policy-gates now properly skips on docs-only PRs)
+   - **Trimmed** verbose local-testing instruction comments and skip-labels reference block
+   - **Preserved** all genuine safety checks — no gates removed, only consolidated
+
+**Key decisions:**
+- Merging exports-map-check + export-smoke-test is safe because they share identical prerequisites (SDK change detection, feature flags, skip labels) and both only need SDK build
+- publish-policy (static grep of workflow files) fits naturally in policy-gates since it's a lightweight lint
+- scope-check (label-gated) works inside policy-gates because the step has its own `if` condition for the `repo-health` label
+
+**Files modified:**
+- `.github/workflows/ci-rerun.yml` (deleted)
+- `.github/actions/setup-squad-node/action.yml` (comment update)
+- `.github/workflows/squad-ci.yml` (streamlined)

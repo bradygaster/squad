@@ -535,3 +535,11 @@ streaming.clear();
 - Read the [SDK reference](/reference/sdk/) for the complete API surface
 - See the [extensibility guide](/guide/extensibility/) for where your agent fits in the Squad ecosystem
 - Check the [Aspire dashboard scenario](/scenarios/aspire-dashboard/) for observability setup
+
+---
+
+## See Also
+
+- [Your Team](../concepts/your-team.md) — Agent roles, charters, and team composition
+- [Architecture](../concepts/architecture.md) — How the coordinator orchestrates work
+- [SDK Reference](../reference/sdk.md) — SDK API for autonomous agents

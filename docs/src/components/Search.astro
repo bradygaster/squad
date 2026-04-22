@@ -11,9 +11,9 @@ const base = import.meta.env.BASE_URL;
     <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
     </svg>
-    <span class="hidden sm:inline">Search docs…</span>
+    <span class="hidden sm:inline">Search docs...</span>
     <kbd class="hidden sm:inline-flex ml-auto text-xs border border-surface-300 dark:border-surface-600 rounded px-1.5 py-0.5 text-surface-400" id="search-shortcut-kbd">
-      <span class="text-xs" id="search-modifier">⌘</span>K
+      <span class="text-xs" id="search-modifier">Ctrl+</span>K
     </kbd>
   </button>
 </div>
@@ -30,7 +30,7 @@ const base = import.meta.env.BASE_URL;
         <input
           id="search-input"
           type="text"
-          placeholder="Search documentation…"
+          placeholder="Search documentation..."
           class="flex-1 py-3 bg-transparent text-surface-900 dark:text-white placeholder-surface-400 outline-none text-base"
           autocomplete="off"
         />
@@ -39,7 +39,7 @@ const base = import.meta.env.BASE_URL;
       <div id="search-status" class="hidden px-4 py-2 text-xs text-surface-500 dark:text-surface-400 border-b border-surface-100 dark:border-surface-800"></div>
       <div id="search-results" class="max-h-[60vh] overflow-y-auto p-2">
         <div class="p-8 text-center text-surface-400 text-sm" id="search-empty">
-          Start typing to search…
+          Start typing to search...
         </div>
       </div>
 
@@ -48,14 +48,8 @@ const base = import.meta.env.BASE_URL;
 </div>
 
 <script define:vars={{ base }}>
+  // Pagefind instance persists across View Transitions - no need to re-import
   let pagefind = null;
-
-  // Detect OS and update shortcut badge
-  const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
-  const modifierEl = document.getElementById('search-modifier');
-  if (modifierEl) {
-    modifierEl.textContent = isMac ? '⌘' : 'Ctrl+';
-  }
 
   async function loadPagefind() {
     if (pagefind) return pagefind;
@@ -64,16 +58,7 @@ const base = import.meta.env.BASE_URL;
     return pagefind;
   }
 
-  const searchBtn = document.getElementById('search-btn');
-  const searchModal = document.getElementById('search-modal');
-  const searchBackdrop = document.getElementById('search-backdrop');
-  const searchInput = document.getElementById('search-input');
-  const searchResults = document.getElementById('search-results');
-  const searchEmpty = document.getElementById('search-empty');
-  const searchCloseKbd = document.getElementById('search-close-kbd');
-  const searchStatus = document.getElementById('search-status');
-
-  // Section badge color mapping
+  // Section badge color mapping (static, no DOM dependency)
   const SECTION_COLORS = {
     'Get Started': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     'Guide': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
@@ -91,6 +76,14 @@ const base = import.meta.env.BASE_URL;
     return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${colors}">${section}</span>`;
   }
 
+  // --- DOM-dependent state, refreshed on each navigation ---
+  let searchBtn, searchModal, searchBackdrop, searchInput,
+      searchResults, searchEmpty, searchCloseKbd, searchStatus;
+  let debounceTimer;
+
+  // Bound handler refs so we can removeEventListener cleanly
+  let _onBtnClick, _onBackdropClick, _onCloseKbdClick, _onInput;
+
   function openSearch() {
     searchModal?.classList.remove('hidden');
     searchInput?.focus();
@@ -103,42 +96,18 @@ const base = import.meta.env.BASE_URL;
     if (searchResults) searchResults.innerHTML = '';
     if (searchEmpty) {
       searchResults?.appendChild(searchEmpty);
-      searchEmpty.textContent = 'Start typing to search…';
+      searchEmpty.textContent = 'Start typing to search...';
     }
     searchStatus?.classList.add('hidden');
     document.body.style.overflow = '';
   }
-
-  searchBtn?.addEventListener('click', openSearch);
-  searchBackdrop?.addEventListener('click', closeSearch);
-  searchCloseKbd?.addEventListener('click', closeSearch);
-
-
-
-  document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-      e.preventDefault();
-      if (searchModal?.classList.contains('hidden')) {
-        openSearch();
-      } else {
-        closeSearch();
-      }
-    }
-    if (e.key === 'Escape') closeSearch();
-  });
-
-  let debounceTimer;
-  searchInput?.addEventListener('input', () => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => performSearch(), 200);
-  });
 
   async function performSearch() {
     const query = searchInput?.value?.trim();
     if (!query) {
       if (searchResults && searchEmpty) {
         searchResults.innerHTML = '';
-        searchEmpty.textContent = 'Start typing to search…';
+        searchEmpty.textContent = 'Start typing to search...';
         searchResults.appendChild(searchEmpty);
       }
       searchStatus?.classList.add('hidden');
@@ -162,13 +131,11 @@ const base = import.meta.env.BASE_URL;
         return;
       }
 
-      // Update status bar
       if (searchStatus) {
         searchStatus.textContent = `${search.results.length} result${search.results.length === 1 ? '' : 's'}`;
         searchStatus.classList.remove('hidden');
       }
 
-      // Render results with section badges
       results.forEach((result) => {
         const section = result.meta?.section || '';
         const a = document.createElement('a');
@@ -181,13 +148,79 @@ const base = import.meta.env.BASE_URL;
           </div>
           <div class="text-sm text-surface-500 dark:text-surface-400 mt-0.5 line-clamp-2">${result.excerpt || ''}</div>
         `;
+        // Close modal on click - navigation proceeds via View Transitions
         a.addEventListener('click', closeSearch);
         searchResults.appendChild(a);
       });
     } catch {
       if (searchResults) {
-        searchResults.innerHTML = '<div class="p-8 text-center text-surface-400 text-sm">Search index loading…</div>';
+        searchResults.innerHTML = '<div class="p-8 text-center text-surface-400 text-sm">Search index loading...</div>';
       }
     }
   }
+
+  // Global keydown - register exactly once, never duplicated
+  let _globalKeydownRegistered = false;
+  function handleGlobalKeydown(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      if (searchModal?.classList.contains('hidden')) {
+        openSearch();
+      } else {
+        closeSearch();
+      }
+    }
+    if (e.key === 'Escape') closeSearch();
+  }
+
+  function initSearch() {
+    // Cancel any in-flight debounce from the previous page
+    clearTimeout(debounceTimer);
+
+    // Tear down old element listeners (old refs may be detached)
+    if (_onBtnClick && searchBtn) searchBtn.removeEventListener('click', _onBtnClick);
+    if (_onBackdropClick && searchBackdrop) searchBackdrop.removeEventListener('click', _onBackdropClick);
+    if (_onCloseKbdClick && searchCloseKbd) searchCloseKbd.removeEventListener('click', _onCloseKbdClick);
+    if (_onInput && searchInput) searchInput.removeEventListener('input', _onInput);
+
+    // Re-query all DOM elements (fresh references after View Transition swap)
+    searchBtn = document.getElementById('search-btn');
+    searchModal = document.getElementById('search-modal');
+    searchBackdrop = document.getElementById('search-backdrop');
+    searchInput = document.getElementById('search-input');
+    searchResults = document.getElementById('search-results');
+    searchEmpty = document.getElementById('search-empty');
+    searchCloseKbd = document.getElementById('search-close-kbd');
+    searchStatus = document.getElementById('search-status');
+
+    // Detect OS and update shortcut badge
+    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    const modifierEl = document.getElementById('search-modifier');
+    if (modifierEl) {
+      modifierEl.textContent = isMac ? 'Cmd+' : 'Ctrl+';
+    }
+
+    // Create fresh bound handlers
+    _onBtnClick = () => openSearch();
+    _onBackdropClick = () => closeSearch();
+    _onCloseKbdClick = () => closeSearch();
+    _onInput = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => performSearch(), 200);
+    };
+
+    searchBtn?.addEventListener('click', _onBtnClick);
+    searchBackdrop?.addEventListener('click', _onBackdropClick);
+    searchCloseKbd?.addEventListener('click', _onCloseKbdClick);
+    searchInput?.addEventListener('input', _onInput);
+
+    // Register global keydown exactly once
+    if (!_globalKeydownRegistered) {
+      document.addEventListener('keydown', handleGlobalKeydown);
+      _globalKeydownRegistered = true;
+    }
+  }
+
+  // astro:page-load fires on initial load AND after each View Transition
+  document.addEventListener('astro:page-load', initSearch);
 </script>

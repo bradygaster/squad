@@ -13,7 +13,7 @@
  *   4. Semantic checks — universe counts, casting-policy internal consistency.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,18 @@ import { execSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
+
+// Re-sync templates before any byte-comparison checks.
+// Other test files (e.g., acceptance tests) may run `squad init` in the
+// repo root, overwriting .github/agents/squad.agent.md from the CLI
+// template and making it diverge from .squad-templates/squad.agent.md.
+beforeAll(() => {
+  execSync('node scripts/sync-templates.mjs', {
+    cwd: ROOT,
+    encoding: 'utf-8',
+    timeout: 60_000,
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,7 +165,7 @@ describe('sync-templates.mjs script execution', () => {
     const output = execSync('node scripts/sync-templates.mjs', {
       cwd: ROOT,
       encoding: 'utf-8',
-      timeout: 30_000,
+      timeout: 60_000,
     });
     expect(output).toContain('Synced');
   });

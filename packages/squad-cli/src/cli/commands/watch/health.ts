@@ -10,8 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { IS_WINDOWS } from './agent-spawn.js';
+import { spawnSync } from 'node:child_process';
 
 /** Shape of the PID file written by runWatch at startup. */
 export interface WatchPidInfo {
@@ -78,20 +77,19 @@ function formatUptime(ms: number): string {
  * Duplicated from index.ts to avoid circular imports — the canonical
  * version lives in `getActiveGhUser()` in the watch index.
  */
-/** Probes gh auth status — captures both stdout and stderr since gh may write to either. */
+/** Probes current gh user — uses `gh api user` which writes to stdout reliably. */
 function probeCurrentGhUser(): string | undefined {
   try {
-    const result = execFileSync('gh', ['auth', 'status', '--active'], {
+    const result = spawnSync('gh', ['api', 'user', '-q', '.login'], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'pipe'],
-      shell: IS_WINDOWS,
+      timeout: 5000,
     });
-    const match = result.match(/account\s+(\S+)/);
-    return match?.[1];
-  } catch (e) {
-    const stderr = (e as { stderr?: string }).stderr ?? '';
-    const match = stderr.match(/account\s+(\S+)/);
-    return match?.[1];
+    const login = (result.stdout ?? '').trim();
+    if (login && result.status === 0) return login;
+    return undefined;
+  } catch {
+    return undefined;
   }
 }
 

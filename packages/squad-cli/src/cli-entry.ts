@@ -150,7 +150,7 @@ async function main(): Promise<void> {
     console.log(`\n${BOLD}squad${RESET} v${VERSION} — Add an AI agent team to any project\n`);
     console.log(`Usage: squad [command] [options]\n`);
     console.log(`Commands:`);
-    console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args) ${YELLOW}[DEPRECATED]${RESET}`);
+    console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
     console.log(`             Flags: --global (init in personal squad directory)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
     console.log(`             Flags: --sdk (SDK builder syntax)`);
@@ -203,20 +203,18 @@ async function main(): Promise<void> {
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
     console.log(`             Usage: plugin marketplace add|remove|list|browse`);
-    console.log(`  ${BOLD}skill${RESET}      APM (Agent Package Manager) integration`);
-    console.log(`             Usage: skill publish [<name>]  — export to APM format`);
-    console.log(`                    skill install <source>  — install from APM registry`);
-    console.log(`                    skill list              — list installed skills`);
     console.log(`  ${BOLD}export${RESET}     Export squad to a portable JSON snapshot`);
     console.log(`             Default: squad-export.json (use --out <path> to override)`);
     console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
     console.log(`             Usage: import <file> [--force]`);
     console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
     console.log(`             Usage: scrub-emails [directory] (default: .ai-team/)`);
-    console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser ${YELLOW}[DEPRECATED]${RESET}`);
+    console.log(`  ${BOLD}start${RESET}      Start Copilot with remote access from phone/browser`);
     console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>]`);
     console.log(`                    [copilot flags...]`);
-    console.log(`             ${DIM}⚠ Deprecated: will be removed in a future release.${RESET}`);
+    console.log(`             Examples: start --tunnel --yolo`);
+    console.log(`                       start --tunnel --model claude-sonnet-4`);
+    console.log(`                       start --tunnel --command "gh copilot"`);
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
@@ -241,12 +239,12 @@ async function main(): Promise<void> {
     console.log(`             Usage: personal init | list | add <name>`);
     console.log(`                    --role <role> | remove <name>`);
     console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
-    console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot) ${YELLOW}[DEPRECATED]${RESET}`);
+    console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
     console.log(`  ${BOLD}copilot-bridge${RESET}  Check Copilot ACP stdio compatibility`);
     console.log(`  ${BOLD}init-remote${RESET}    Link project to remote team root (shorthand)`);
     console.log(`             Usage: init-remote <team-repo-path>`);
-    console.log(`  ${BOLD}rc-tunnel${RESET}      Check devtunnel CLI availability ${YELLOW}[DEPRECATED]${RESET}`);
+    console.log(`  ${BOLD}rc-tunnel${RESET}      Check devtunnel CLI availability`);
     console.log(`  ${BOLD}discover${RESET}   List known squads and their capabilities`);
     console.log(`  ${BOLD}delegate${RESET}   Create work in another squad`);
     console.log(`             Usage: delegate <squad-name> <description>`);
@@ -275,8 +273,6 @@ async function main(): Promise<void> {
 
   // No args → launch interactive shell; whitespace-only arg → show help
   if (rawCmd === undefined) {
-    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} The interactive REPL shell is deprecated and will be removed in a future release.`);
-    console.log(`  Use the GitHub Copilot CLI instead: ${BOLD}gh copilot${RESET} (squad.agent.md is picked up automatically)\n`);
     // Fire-and-forget update check — non-blocking, never delays shell startup
     import('./cli/self-update.js').then(m => m.notifyIfUpdateAvailable(VERSION)).catch(() => {});
     const { runShell } = await lazyRunShell();
@@ -431,6 +427,45 @@ async function main(): Promise<void> {
       ? args[authUserIdx + 1]
       : undefined;
 
+    // --notify-level runtime validation
+    const notifyLevelIdx = args.indexOf('--notify-level');
+    const rawNotifyLevel = (notifyLevelIdx !== -1 && args[notifyLevelIdx + 1])
+      ? args[notifyLevelIdx + 1]
+      : undefined;
+    const validNotifyLevels = ['all', 'important', 'none'] as const;
+    const notifyLevel = rawNotifyLevel && (validNotifyLevels as readonly string[]).includes(rawNotifyLevel)
+      ? rawNotifyLevel as typeof validNotifyLevels[number]
+      : rawNotifyLevel
+        ? (console.error(`\u26a0\ufe0f Invalid --notify-level "${rawNotifyLevel}". Valid: all, important, none.`), undefined)
+        : undefined;
+
+    const overnightStartIdx = args.indexOf('--overnight-start');
+    const overnightStart = (overnightStartIdx !== -1 && args[overnightStartIdx + 1])
+      ? args[overnightStartIdx + 1]
+      : undefined;
+
+    const overnightEndIdx = args.indexOf('--overnight-end');
+    const overnightEnd = (overnightEndIdx !== -1 && args[overnightEndIdx + 1])
+      ? args[overnightEndIdx + 1]
+      : undefined;
+
+    const sentinelFileIdx = args.indexOf('--sentinel-file');
+    const sentinelFile = (sentinelFileIdx !== -1 && args[sentinelFileIdx + 1])
+      ? args[sentinelFileIdx + 1]
+      : undefined;
+
+    // --state-backend runtime validation: reject invalid values upfront
+    const stateBackendIdx = args.indexOf('--state-backend');
+    const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
+      ? args[stateBackendIdx + 1]
+      : undefined;
+    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
+      console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
+      process.exit(1);
+    }
+    const stateBackend = rawStateBackend as typeof validBackends[number] | undefined;
+
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
     const registry = createDefaultRegistry();
@@ -460,6 +495,11 @@ async function main(): Promise<void> {
       dispatchMode,
       logFile,
       authUser,
+      notifyLevel,
+      overnightStart,
+      overnightEnd,
+      sentinelFile,
+      stateBackend,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 
@@ -467,6 +507,7 @@ async function main(): Promise<void> {
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
       '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+      '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
     const watchArgs = args.slice(watchArgStart);
@@ -620,12 +661,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cmd === 'skill') {
-    const { runSkill } = await import('./cli/commands/skill.js');
-    await runSkill(process.cwd(), args.slice(1));
-    return;
-  }
-
   if (cmd === 'copilot') {
     const { runCopilot } = await import('./cli/commands/copilot.js');
     const isOff = args.includes('--off');
@@ -719,12 +754,9 @@ async function main(): Promise<void> {
 
   if (cmd === 'start') {
     console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad start" is deprecated and will be removed in a future release.`);
-    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}copilot${RESET} or ${BOLD}gh copilot${RESET}\n`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
     const { runStart } = await import('./cli/commands/start.js');
     const hasTunnel = args.includes('--tunnel');
-    if (hasTunnel) {
-      console.log(`${YELLOW}⚠ DEPRECATED:${RESET} --tunnel is deprecated and will be removed in a future release.\n`);
-    }
     const portIdx = args.indexOf('--port');
     const port = (portIdx !== -1 && args[portIdx + 1]) ? parseInt(args[portIdx + 1]!, 10) : 0;
     // Collect all remaining args to pass through to copilot
@@ -805,7 +837,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'rc' || cmd === 'remote-control') {
     console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad rc" is deprecated and will be removed in a future release.`);
-    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}copilot${RESET} or ${BOLD}gh copilot${RESET}\n`);
+    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
     const { runRC } = await import('./cli/commands/rc.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');
@@ -840,7 +872,6 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'rc-tunnel') {
-    console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad rc-tunnel" is deprecated and will be removed in a future release.\n`);
     const { isDevtunnelAvailable } = await import('./cli/commands/rc-tunnel.js');
     if (isDevtunnelAvailable()) {
       console.log(`${GREEN}✓${RESET} devtunnel CLI is available`);
@@ -897,6 +928,12 @@ async function main(): Promise<void> {
   if (cmd === 'config') {
     const { runConfig } = await import('./cli/commands/config.js');
     await runConfig(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
+  if (cmd === 'skill') {
+    const { runSkill } = await import('./cli/commands/skill.js');
+    await runSkill(getSquadStartDir(), args.slice(1));
     return;
   }
 
