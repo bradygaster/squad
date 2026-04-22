@@ -1189,10 +1189,10 @@ if (cmd === 'import') {
       : `skill-${index}`;
     return { skillContent, skillName };
   });
-  const hasForce = typeof force !== 'undefined' && force;
+  const shouldForce = typeof force !== 'undefined' && force;
 
   if (fs.existsSync(copilotSkillsImportDir)) {
-    if (hasForce) {
+    if (shouldForce) {
       const archivedSkillsDir = path.join(dest, '.copilot', `skills.backup.${Date.now()}`);
       fs.renameSync(copilotSkillsImportDir, archivedSkillsDir);
     } else {
