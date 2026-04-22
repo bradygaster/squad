@@ -140,4 +140,11 @@ export interface CommunicationAdapter {
    * Returns undefined if the channel has no web UI (e.g., file-log).
    */
   getNotificationUrl(threadId: string): string | undefined;
+
+  /**
+   * Logout: clear cached credentials for this adapter.
+   * Local credential purge — does not revoke server-side tokens.
+   * Optional — not all adapters require authentication.
+   */
+  logout?(): Promise<void>;
 }

@@ -148,7 +148,7 @@ test.describe('Search results', () => {
     await openSearchViaButton(page);
     const input = page.locator('#search-input');
     // Use a single random character that pagefind won't match
-    await input.fill('ÿ');
+    await input.fill('├┐');
 
     // Wait for search debounce, then check for either "No results" or
     // the default "Start typing" (pagefind may not index this character).
@@ -157,8 +157,74 @@ test.describe('Search results', () => {
     await page.waitForTimeout(1500);
     const resultsContainer = page.locator('#search-results');
     const text = await resultsContainer.textContent();
-    // Either we get "No results" or actual results — either way the
+    // Either we get "No results" or actual results ΓÇö either way the
     // search pipeline processed the query (not still on "Start typing")
-    expect(text.trim()).not.toBe('Start typing to search…');
+    expect(text.trim()).not.toBe('Start typing to searchΓÇª');
+  });
+});
+
+test.describe('Search after View Transition navigation', () => {
+
+  // Helper: search, click first result, wait for navigation to complete
+  async function searchAndNavigate(page) {
+    await page.goto(BASE);
+    const searchBtn = page.locator('#search-btn');
+    await expect(searchBtn).toBeVisible();
+    await searchBtn.click();
+
+    const modal = page.locator('#search-modal');
+    await expect(modal).not.toHaveClass(/hidden/);
+
+    const input = page.locator('#search-input');
+    await input.fill('agent');
+
+    const resultLinks = page.locator('#search-results a');
+    await expect(resultLinks.first()).toBeVisible({ timeout: 10_000 });
+
+    const href = await resultLinks.first().getAttribute('href');
+    expect(href).toBeTruthy();
+    await resultLinks.first().click();
+
+    // Wait for View Transition navigation to complete
+    await page.waitForURL(new RegExp(href.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), { timeout: 10_000 });
+    // Allow astro:page-load handlers to re-initialize
+    await page.waitForTimeout(500);
+    return href;
+  }
+
+  test('search modal works after navigating via search result (View Transition)', async ({ page }) => {
+    await searchAndNavigate(page);
+
+    // On the new page, try to open search again
+    const searchBtn = page.locator('#search-btn');
+    await expect(searchBtn).toBeVisible({ timeout: 5_000 });
+    await searchBtn.click();
+
+    const modal = page.locator('#search-modal');
+    await expect(modal).not.toHaveClass(/hidden/);
+
+    // Verify input is focused and can receive text
+    const input = page.locator('#search-input');
+    await expect(input).toBeFocused({ timeout: 3_000 });
+
+    // Type a new query and verify results appear
+    await input.fill('charter');
+    const resultLinks = page.locator('#search-results a');
+    await expect(resultLinks.first()).toBeVisible({ timeout: 10_000 });
+    const count = await resultLinks.count();
+    expect(count).toBeGreaterThan(0);
+  });
+
+  test('Ctrl+K opens search after View Transition navigation', async ({ page }) => {
+    await searchAndNavigate(page);
+
+    // Press Ctrl+K on the post-navigation page
+    await page.keyboard.press('Control+k');
+
+    const modal = page.locator('#search-modal');
+    await expect(modal).not.toHaveClass(/hidden/);
+
+    const input = page.locator('#search-input');
+    await expect(input).toBeFocused({ timeout: 3_000 });
   });
 });

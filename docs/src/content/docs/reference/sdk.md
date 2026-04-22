@@ -4,7 +4,7 @@
 
 Complete reference for `@bradygaster/squad-sdk` — the programmatic API for Squad.
 
-> **See also:** [API Reference (TypeDoc)](/reference/api/) — Complete auto-generated reference with full type signatures for all exports.
+> **See also:** [API Reference](api-reference.md) — Complete auto-generated reference with full type signatures for all exports.
 
 ```bash
 npm install @bradygaster/squad-sdk
