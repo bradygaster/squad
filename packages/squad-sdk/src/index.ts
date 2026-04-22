@@ -26,6 +26,8 @@ export {
   loadRepoRegistry,
   saveRepoRegistry,
   createSharedSquad,
+  createSharedSquadInRepo,
+  addSquadRepoPointer,
   lookupByUrl,
   lookupByUrlAcrossRepos,
   lookupByKeyAcrossRepos,

@@ -20,7 +20,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { realpathSync } from 'node:fs';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
-import { resolveGlobalSquadPath, resolvePersonalSquadDir, pathStartsWith } from './resolution-base.js';
+import { resolveGlobalSquadPath, resolvePersonalSquadDir, pathStartsWith, CASE_INSENSITIVE } from './resolution-base.js';
 import type { ResolvedSquadPaths } from './resolution-base.js';
 import { normalizeRemoteUrl, getRemoteUrl } from './platform/detect.js';
 import { resolveCloneStateDir } from './clone-state.js';
@@ -507,6 +507,111 @@ export function createSharedSquad(repoKey: string, urlPatterns: string[]): strin
   saveRepoRegistry(registry);
 
   return teamDir;
+}
+
+/**
+ * Create a shared squad inside a git-backed squad repo clone.
+ *
+ * Unlike `createSharedSquad` (which writes to platform app data), this
+ * writes team scaffolding to `{squadRepoRoot}/{key}/` and registers the
+ * entry in `{squadRepoRoot}/repos.json`. Also ensures the squad repo
+ * clone is listed in `~/.squad/squad-repos.json` for auto-discovery.
+ *
+ * @param squadRepoRoot - Absolute path to the squad repo clone (e.g. "D:\\git\\akubly.squad").
+ * @param repoKey - Canonical repo key (e.g. "microsoft/os/os.2020").
+ * @param urlPatterns - Normalized URL patterns for clone matching.
+ * @returns Absolute path to the shared squad's team directory.
+ */
+export function createSharedSquadInRepo(
+  squadRepoRoot: string,
+  repoKey: string,
+  urlPatterns: string[],
+): string {
+  validateRepoKey(repoKey);
+
+  const resolvedRoot = path.resolve(squadRepoRoot);
+  const teamDir = path.join(resolvedRoot, ...repoKey.split('/'));
+
+  // Ensure squad repo root exists
+  if (!storage.existsSync(resolvedRoot)) {
+    storage.mkdirSync(resolvedRoot, { recursive: true });
+  }
+
+  // Validate target path stays inside squad repo root
+  validateWritePath(teamDir, resolvedRoot);
+
+  // Check for existing entry in this repo's registry
+  let registry = loadRegistryFrom(resolvedRoot);
+  if (!registry) {
+    registry = { version: 1, repos: [] };
+  }
+  if (registry.repos.some(r => r.key === repoKey)) {
+    throw new Error(`Shared squad for repo "${repoKey}" already exists in ${resolvedRoot}.`);
+  }
+
+  // Create team directory
+  storage.mkdirSync(teamDir, { recursive: true });
+
+  // Verify with realpathSync post-creation
+  const realTeamDir = realpathSync(teamDir);
+  const realRoot = realpathSync(resolvedRoot);
+  if (!pathStartsWith(realTeamDir, realRoot + path.sep) && realTeamDir !== realRoot) {
+    throw new Error(`Path traversal detected: team directory escapes squad repo root.`);
+  }
+
+  // Write manifest.json
+  const now = new Date().toISOString();
+  const manifest: SharedSquadManifest = {
+    version: 1,
+    repoKey,
+    urlPatterns,
+    created_at: now,
+  };
+  storage.writeSync(
+    path.join(teamDir, 'manifest.json'),
+    JSON.stringify(manifest, null, 2) + '\n',
+  );
+
+  // Register in this repo's repos.json
+  registry.repos.push({ key: repoKey, urlPatterns, created_at: now });
+  const registryPath = path.join(resolvedRoot, REPOS_JSON);
+  storage.writeSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+
+  // Ensure this squad repo clone is in ~/.squad/squad-repos.json
+  addSquadRepoPointer(resolvedRoot);
+
+  return teamDir;
+}
+
+/**
+ * Add a squad repo clone path to `~/.squad/squad-repos.json`.
+ * Idempotent — skips if already listed.
+ *
+ * @param squadRepoRoot - Absolute path to the squad repo clone.
+ */
+export function addSquadRepoPointer(squadRepoRoot: string): void {
+  const resolvedRoot = path.resolve(squadRepoRoot);
+  const squadDir = path.join(os.homedir(), '.squad');
+  const pointerPath = path.join(squadDir, SQUAD_REPOS_POINTER);
+
+  // Load existing pointers
+  const existing = loadSquadRepoPointers();
+
+  // Check if already listed (case-insensitive on Windows/macOS)
+  const alreadyListed = existing.some(p =>
+    CASE_INSENSITIVE
+      ? p.toLowerCase() === resolvedRoot.toLowerCase()
+      : p === resolvedRoot,
+  );
+  if (alreadyListed) return;
+
+  // Add and save
+  existing.push(resolvedRoot);
+  storage.mkdirSync(squadDir, { recursive: true });
+  storage.writeSync(
+    pointerPath,
+    JSON.stringify({ squadRepos: existing }, null, 2) + '\n',
+  );
 }
 
 /**

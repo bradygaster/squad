@@ -306,8 +306,10 @@ async function main(): Promise<void> {
     if (args.includes('--shared')) {
       const keyIdx = args.indexOf('--key');
       const key = (keyIdx !== -1 && args[keyIdx + 1]) ? args[keyIdx + 1] : undefined;
+      const repoIdx = args.indexOf('--squad-repo');
+      const squadRepo = (repoIdx !== -1 && args[repoIdx + 1]) ? args[repoIdx + 1] : undefined;
       const { runInitShared } = await import('./cli/commands/init-shared.js');
-      runInitShared(process.cwd(), key);
+      runInitShared(process.cwd(), key, squadRepo);
       return;
     }
 

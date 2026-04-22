@@ -21,7 +21,9 @@ import { execSync } from 'node:child_process';
 import {
   FSStorageProvider,
   createSharedSquad,
+  createSharedSquadInRepo,
   loadRepoRegistry,
+  lookupByKeyAcrossRepos,
   addUrlPattern,
   normalizeRemoteUrl,
   getRemoteUrl,
@@ -81,7 +83,7 @@ function defaultDecisionsMd(): string {
  * @param cwd - Current working directory (git repository root).
  * @param keyArg - Optional explicit repo key. Auto-detected from origin if omitted.
  */
-export function runInitShared(cwd: string, keyArg?: string): void {
+export function runInitShared(cwd: string, keyArg?: string, squadRepoArg?: string): void {
   // Step 1: Determine repo key
   let key = keyArg;
   let urlPatterns: string[] = [];
@@ -124,17 +126,21 @@ export function runInitShared(cwd: string, keyArg?: string): void {
   }
 
   // Step 3: Check if shared squad already exists — connect to it
-  const registry = loadRepoRegistry();
-  const existing = registry?.repos.find(r => r.key === key);
-  if (existing) {
-    // Already registered — resolve teamDir and add URL pattern if new
+  // Check git-backed pointers (~/.squad/squad-repos.json) first, then legacy %APPDATA%
+  const located = lookupByKeyAcrossRepos(key);
+  if (located) {
+    const { entry: existing, squadRepoRoot } = located;
+    // Derive teamDir from where the entry was actually found
     let globalDir: string;
     try {
       globalDir = resolveGlobalSquadPath();
-    } catch (err) {
-      fatal((err as Error).message);
+    } catch {
+      globalDir = '';
     }
-    const teamDir = path.join(globalDir, 'repos', ...key.split('/'));
+    const isLegacyAppData = squadRepoRoot === globalDir;
+    const teamDir = isLegacyAppData
+      ? path.join(squadRepoRoot, 'repos', ...key.split('/'))
+      : path.join(squadRepoRoot, ...key.split('/'));
 
     // Add URL pattern if we have one and it's not already registered
     if (urlPatterns.length > 0 && !existing.urlPatterns.includes(urlPatterns[0]!)) {
@@ -178,7 +184,7 @@ export function runInitShared(cwd: string, keyArg?: string): void {
     console.log('');
     console.log(`✅ Connected to shared squad "${key}"`);
     console.log(`   Team dir: ${teamDir}`);
-    console.log(`   Resolution: via ${path.join(globalDir, 'repos.json')} (origin URL match)`);
+    console.log(`   Resolution: via ${isLegacyAppData ? path.join(squadRepoRoot, 'repos.json') : path.join(squadRepoRoot, 'repos.json')} (origin URL match)`);
     console.log(`   Agent file: ~/.copilot/agents/squad.agent.md (user-global)`);
     console.log('');
     console.log(`   ${DIM}No files written to repository. The coordinator discovers this${RESET}`);
@@ -191,7 +197,13 @@ export function runInitShared(cwd: string, keyArg?: string): void {
   // Step 4: Create shared squad (writes manifest + registry)
   let teamDir: string;
   try {
-    teamDir = createSharedSquad(key, urlPatterns);
+    if (squadRepoArg) {
+      // Create in a git-backed squad repo clone
+      teamDir = createSharedSquadInRepo(squadRepoArg, key, urlPatterns);
+    } else {
+      // Create in platform app data (legacy default)
+      teamDir = createSharedSquad(key, urlPatterns);
+    }
   } catch (err) {
     fatal((err as Error).message);
   }
@@ -227,6 +239,10 @@ export function runInitShared(cwd: string, keyArg?: string): void {
   console.log(`   Team dir: ${teamDir}`);
   if (urlPatterns.length > 0) {
     console.log(`   Registered URL pattern: ${urlPatterns[0]}`);
+  }
+  if (squadRepoArg) {
+    console.log(`   Squad repo: ${path.resolve(squadRepoArg)}`);
+    console.log(`   Pointer: ~/.squad/squad-repos.json`);
   }
   console.log('');
   console.log('   Other clones of this repo will auto-discover this squad.');
