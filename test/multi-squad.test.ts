@@ -115,7 +115,7 @@ describe('getSquadRoot()', () => {
   it('returns a platform-appropriate path containing "squad"', () => {
     // The function should return something like:
     //   Linux/macOS: ~/.config/squad  (or $XDG_CONFIG_HOME/squad)
-    //   Windows:     %APPDATA%/squad  (or %LOCALAPPDATA%/squad)
+    //   Windows:     <AppData>/squad  (roaming or local app data dir)
     const expectedSegments = platform() === 'win32'
       ? ['squad']
       : ['.config', 'squad'];

@@ -234,9 +234,13 @@ describe('Integration: Tool → Hook Pipeline', () => {
 
       const scrubbedResult = await pipeline.runPostToolHooks(postCtx);
       
-      // Check file content was written (PII in file system is OK for squad_memory)
-      const historyContent = fs.readFileSync(path.join(agentDir, 'history.md'), 'utf-8');
-      expect(historyContent).toContain('john.doe@example.com');
+      // Check file content was written to inbox (journal pattern — no direct history.md mutation)
+      const inboxDir = path.join(agentDir, 'history', 'inbox');
+      expect(fs.existsSync(inboxDir)).toBe(true);
+      const inboxFiles = fs.readdirSync(inboxDir);
+      expect(inboxFiles.length).toBe(1);
+      const inboxContent = fs.readFileSync(path.join(inboxDir, inboxFiles[0]), 'utf-8');
+      expect(inboxContent).toContain('john.doe@example.com');
 
       // But if we return the result to LLM, it should be scrubbed
       const resultText = JSON.stringify(scrubbedResult.result);

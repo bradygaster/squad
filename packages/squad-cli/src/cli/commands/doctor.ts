@@ -11,7 +11,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, resolveSharedSquad } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 
@@ -25,13 +25,13 @@ export interface DoctorCheck {
 }
 
 /** Detected squad layout mode. */
-export type DoctorMode = 'local' | 'remote' | 'hub';
+export type DoctorMode = 'local' | 'remote' | 'hub' | 'shared';
 
 /** Resolved mode + base directory for the squad. */
 interface ModeInfo {
   mode: DoctorMode;
   squadDir: string;
-  /** Only set when mode === 'remote' */
+  /** Only set when mode === 'remote' or 'shared' */
   teamRoot?: string;
 }
 
@@ -75,6 +75,12 @@ function detectMode(cwd: string): ModeInfo {
   // Hub mode: squad-hub.json in cwd
   if (fileExists(path.join(cwd, 'squad-hub.json'))) {
     return { mode: 'hub', squadDir };
+  }
+
+  // Shared mode: origin remote matches shared squad registry
+  const sharedResult = resolveSharedSquad(cwd);
+  if (sharedResult) {
+    return { mode: 'shared', squadDir: sharedResult.teamDir, teamRoot: sharedResult.teamDir };
   }
 
   // Default: local
@@ -460,6 +466,16 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
   // 4. Remote team root resolution
   if (mode === 'remote' && teamRoot) {
     checks.push(checkTeamRootResolves(squadDir, teamRoot));
+  }
+
+  // 4b. Shared mode: verify teamDir is accessible
+  if (mode === 'shared' && teamRoot) {
+    const teamDirExists = isDirectory(teamRoot);
+    checks.push({
+      name: 'shared team directory',
+      status: teamDirExists ? 'pass' : 'fail',
+      message: teamDirExists ? `team dir: ${teamRoot}` : `team dir not found: ${teamRoot}`,
+    });
   }
 
   // 5–9 standard files (only if .squad/ exists)

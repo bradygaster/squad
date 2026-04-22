@@ -157,6 +157,7 @@ async function main(): Promise<void> {
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
+    console.log(`                    --shared [--key <repo-key>] (shared multi-clone mode)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -165,7 +166,9 @@ async function main(): Promise<void> {
     console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
-    console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
+    console.log(`             Flags: --to sdk|markdown|shared, --from ai-team, --dry-run`);
+    console.log(`                    --key <repo-key> (with --to shared)`);
+    console.log(`                    --keep-local (with --to shared: skip local file cleanup)`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
     console.log(`  ${BOLD}roles${RESET}      List built-in Squad roles`);
     console.log(`             Usage: roles [--category <name>] [--search <query>]`);
@@ -255,6 +258,13 @@ async function main(): Promise<void> {
     console.log(`                    upstream sync [name]`);
     console.log(`  ${BOLD}economy${RESET}    Toggle economy mode (cost-conscious model selection)`);
     console.log(`             Usage: economy [on|off]`);
+    console.log(`  ${BOLD}shared${RESET}     Manage shared squad (multi-clone)`);
+    console.log(`             Usage: shared <status|add-url|list|doctor|diagnose>`);
+    console.log(`             status   — show shared squad info for current clone`);
+    console.log(`             add-url  — register an additional URL pattern`);
+    console.log(`             list     — list all shared squads in registry`);
+    console.log(`             doctor   — health check for shared squad config`);
+    console.log(`             diagnose — step-by-step resolution trace for debugging`);
 
     console.log(`  ${BOLD}version${RESET}    Print installed version`);
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
@@ -291,6 +301,17 @@ async function main(): Promise<void> {
   if (cmd === 'init') {
     const modeIdx = args.indexOf('--mode');
     const mode = (modeIdx !== -1 && args[modeIdx + 1]) ? args[modeIdx + 1] : undefined;
+
+    // Handle --shared flag for shared squad init
+    if (args.includes('--shared')) {
+      const keyIdx = args.indexOf('--key');
+      const key = (keyIdx !== -1 && args[keyIdx + 1]) ? args[keyIdx + 1] : undefined;
+      const repoIdx = args.indexOf('--squad-repo');
+      const squadRepo = (repoIdx !== -1 && args[repoIdx + 1]) ? args[repoIdx + 1] : undefined;
+      const { runInitShared } = await import('./cli/commands/init-shared.js');
+      runInitShared(process.cwd(), key, squadRepo);
+      return;
+    }
 
     if (mode === 'remote') {
       const teamPath = args[modeIdx + 2];
@@ -357,11 +378,14 @@ async function main(): Promise<void> {
   if (cmd === 'migrate') {
     const { runMigrate } = await import('./cli/commands/migrate.js');
     const toIdx = args.indexOf('--to');
-    const to = (toIdx !== -1 && args[toIdx + 1]) ? args[toIdx + 1] as 'sdk' | 'markdown' : undefined;
+    const to = (toIdx !== -1 && args[toIdx + 1]) ? args[toIdx + 1] as 'sdk' | 'markdown' | 'shared' : undefined;
     const fromIdx = args.indexOf('--from');
     const from = (fromIdx !== -1 && args[fromIdx + 1]) ? args[fromIdx + 1] : undefined;
     const dryRun = args.includes('--dry-run');
-    await runMigrate(getSquadStartDir(), { to, from: from as 'ai-team' | undefined, dryRun });
+    const keepLocal = args.includes('--keep-local');
+    const keyIdx = args.indexOf('--key');
+    const key = (keyIdx !== -1 && args[keyIdx + 1]) ? args[keyIdx + 1] : undefined;
+    await runMigrate(getSquadStartDir(), { to, from: from as 'ai-team' | undefined, dryRun, key, keepLocal });
     return;
   }
 
@@ -695,13 +719,23 @@ async function main(): Promise<void> {
       console.log(`  Active squad: ${BOLD}repo${RESET}`);
       console.log(`  Path:         ${repoSquad}`);
       console.log(`  Reason:       Found .squad/ in repository tree`);
-    } else if (globalExists) {
-      console.log(`  Active squad: ${BOLD}personal (global)${RESET}`);
-      console.log(`  Path:         ${globalSquadDir}`);
-      console.log(`  Reason:       No repo .squad/ found; personal squad exists at global path`);
     } else {
-      console.log(`  Active squad: ${DIM}none${RESET}`);
-      console.log(`  Reason:       No .squad/ found in repo tree or at global path`);
+      // Check for shared squad before falling back to global/none
+      const { resolveSquadPaths } = await lazySquadSdk();
+      const sharedPaths = resolveSquadPaths(process.cwd());
+      if (sharedPaths && sharedPaths.mode === 'shared') {
+        console.log(`  Active squad: ${BOLD}shared${RESET}`);
+        console.log(`  Team dir:     ${sharedPaths.teamDir}`);
+        console.log(`  Clone state:  ${sharedPaths.projectDir}`);
+        console.log(`  Reason:       Matched origin remote to shared squad registry`);
+      } else if (globalExists) {
+        console.log(`  Active squad: ${BOLD}personal (global)${RESET}`);
+        console.log(`  Path:         ${globalSquadDir}`);
+        console.log(`  Reason:       No repo .squad/ found; personal squad exists at global path`);
+      } else {
+        console.log(`  Active squad: ${DIM}none${RESET}`);
+        console.log(`  Reason:       No .squad/ found in repo tree or at global path`);
+      }
     }
 
     console.log();
@@ -922,6 +956,13 @@ async function main(): Promise<void> {
   if (cmd === 'economy') {
     const { runEconomy } = await import('./cli/commands/economy.js');
     await runEconomy(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
+  if (cmd === 'shared') {
+    const { runShared } = await import('./cli/commands/shared.js');
+    const subcommand = args[1] || 'status';
+    runShared(process.cwd(), subcommand, args.slice(2));
     return;
   }
 

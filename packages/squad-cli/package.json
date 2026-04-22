@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.9.1",
+  "version": "0.9.1-build.25",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -120,6 +120,14 @@
       "types": "./dist/cli/commands/init-remote.d.ts",
       "import": "./dist/cli/commands/init-remote.js"
     },
+    "./commands/init-shared": {
+      "types": "./dist/cli/commands/init-shared.d.ts",
+      "import": "./dist/cli/commands/init-shared.js"
+    },
+    "./commands/shared": {
+      "types": "./dist/cli/commands/shared.d.ts",
+      "import": "./dist/cli/commands/shared.js"
+    },
     "./commands/watch": {
       "types": "./dist/cli/commands/watch/index.d.ts",
       "import": "./dist/cli/commands/watch/index.js"
@@ -163,6 +171,10 @@
     "./commands/cast": {
       "types": "./dist/cli/commands/cast.d.ts",
       "import": "./dist/cli/commands/cast.js"
+    },
+    "./commands/migrate": {
+      "types": "./dist/cli/commands/migrate.d.ts",
+      "import": "./dist/cli/commands/migrate.js"
     }
   },
   "files": [

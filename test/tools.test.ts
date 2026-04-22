@@ -12,6 +12,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ToolRegistry, defineTool, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
 import { SessionPool } from '@bradygaster/squad-sdk/client';
+import type { ResolvedSquadPaths } from '@bradygaster/squad-sdk';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -264,7 +265,7 @@ describe('squad_decide handler', () => {
 
     const files = fs.readdirSync(inboxDir);
     expect(files.length).toBe(1);
-    expect(files[0]).toMatch(/^fenster-use-typescript-for-all-new-code\.md$/);
+    expect(files[0]).toMatch(/^fenster-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[0-9a-f]{8}\.md$/);
 
     const content = fs.readFileSync(path.join(inboxDir, files[0]), 'utf-8');
     expect(content).toContain('Use TypeScript for all new code');
@@ -343,7 +344,7 @@ Initial session entry.
     }
   });
 
-  it('should append to existing section', async () => {
+  it('should write entry to history inbox (journal pattern)', async () => {
     const tool = registry.getTool('squad_memory')!;
     const result = await tool.handler(
       {
@@ -363,22 +364,24 @@ Initial session entry.
       resultType: 'success',
     });
 
-    const historyFile = path.join(testRoot, 'agents', 'fenster', 'history.md');
-    const content = fs.readFileSync(historyFile, 'utf-8');
-    
-    expect(content).toContain('Learned how to implement ToolRegistry');
-    expect(content).toContain('## Learnings');
-    
-    // Check it's in the right section
-    const learningsIndex = content.indexOf('## Learnings');
-    const updatesIndex = content.indexOf('## Updates');
-    const newEntryIndex = content.indexOf('Learned how to implement ToolRegistry');
-    
-    expect(newEntryIndex).toBeGreaterThan(learningsIndex);
-    expect(newEntryIndex).toBeLessThan(updatesIndex);
+    // Verify inbox file was created instead of mutating history.md
+    const inboxDir = path.join(testRoot, 'agents', 'fenster', 'history', 'inbox');
+    expect(fs.existsSync(inboxDir)).toBe(true);
+
+    const files = fs.readdirSync(inboxDir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(/^fenster-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[0-9a-f]{8}\.md$/);
+
+    const inboxContent = fs.readFileSync(path.join(inboxDir, files[0]), 'utf-8');
+    expect(inboxContent).toContain('## Learnings');
+    expect(inboxContent).toContain('Learned how to implement ToolRegistry');
+
+    // Verify history.md was NOT mutated
+    const historyContent = fs.readFileSync(path.join(testRoot, 'agents', 'fenster', 'history.md'), 'utf-8');
+    expect(historyContent).not.toContain('Learned how to implement ToolRegistry');
   });
 
-  it('should create section if it does not exist', async () => {
+  it('should write journal entry with correct section header for new section', async () => {
     // Create a history file without Context section (sessions maps to Context via SECTION_MAP)
     const agentDir = path.join(testRoot, 'agents', 'brady');
     fs.mkdirSync(agentDir, { recursive: true });
@@ -403,11 +406,15 @@ Initial session entry.
       resultType: 'success',
     });
 
-    const historyFile = path.join(testRoot, 'agents', 'brady', 'history.md');
-    const content = fs.readFileSync(historyFile, 'utf-8');
-    
-    expect(content).toContain('## Context');
-    expect(content).toContain('Session on M1-1 implementation');
+    // Verify journal file in inbox
+    const inboxDir = path.join(testRoot, 'agents', 'brady', 'history', 'inbox');
+    expect(fs.existsSync(inboxDir)).toBe(true);
+    const files = fs.readdirSync(inboxDir);
+    expect(files.length).toBe(1);
+
+    const inboxContent = fs.readFileSync(path.join(inboxDir, files[0]), 'utf-8');
+    expect(inboxContent).toContain('## Context');
+    expect(inboxContent).toContain('Session on M1-1 implementation');
   });
 
   it('should fail if agent history does not exist', async () => {
@@ -431,9 +438,142 @@ Initial session entry.
       error: 'History file does not exist',
     });
   });
+  it('should create separate inbox files for concurrent writes', async () => {
+    const tool = registry.getTool('squad_memory')!;
+    const callCtx = {
+      sessionId: 'test-session',
+      toolCallId: 'test-call',
+      toolName: 'squad_memory' as const,
+      arguments: {},
+    };
+
+    // Write two entries concurrently
+    const [result1, result2] = await Promise.all([
+      tool.handler(
+        { agent: 'fenster', section: 'learnings', content: 'First learning.' } as MemoryEntry,
+        callCtx,
+      ),
+      tool.handler(
+        { agent: 'fenster', section: 'learnings', content: 'Second learning.' } as MemoryEntry,
+        callCtx,
+      ),
+    ]);
+
+    expect(result1).toMatchObject({ resultType: 'success' });
+    expect(result2).toMatchObject({ resultType: 'success' });
+
+    const inboxDir = path.join(testRoot, 'agents', 'fenster', 'history', 'inbox');
+    const files = fs.readdirSync(inboxDir);
+    expect(files.length).toBe(2);
+
+    // Each file should have unique name
+    expect(files[0]).not.toBe(files[1]);
+  });
 });
 
-describe('squad_status handler', () => {
+describe('ToolRegistry with ResolvedSquadPaths', () => {
+  let testRoot: string;
+
+  afterEach(() => {
+    if (fs.existsSync(testRoot)) {
+      fs.rmSync(testRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('should use injected ResolvedSquadPaths for decision inbox path', async () => {
+    testRoot = path.join('.', '.test-squad-locator-' + randomUUID());
+    const teamDir = path.join(testRoot, 'team');
+    const projectDir = path.join(testRoot, 'project');
+
+    const resolvedPaths: ResolvedSquadPaths = {
+      mode: 'local',
+      projectDir,
+      teamDir,
+      personalDir: null,
+      config: null,
+      name: '.squad',
+      isLegacy: false,
+    };
+
+    const registry = new ToolRegistry(testRoot, undefined, undefined, undefined, resolvedPaths);
+    const tool = registry.getTool('squad_decide')!;
+
+    const result = await tool.handler(
+      {
+        author: 'eecom',
+        summary: 'Test locator routing',
+        body: 'Decisions should go to teamDir.',
+      } as DecisionRecord,
+      {
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_decide',
+        arguments: {},
+      }
+    );
+
+    expect(result.resultType).toBe('success');
+
+    // Verify file was written under teamDir, not testRoot
+    const inboxDir = path.join(teamDir, 'decisions', 'inbox');
+    expect(fs.existsSync(inboxDir)).toBe(true);
+    const files = fs.readdirSync(inboxDir);
+    expect(files.length).toBe(1);
+  });
+
+  it('should use injected ResolvedSquadPaths for memory inbox path', async () => {
+    testRoot = path.join('.', '.test-squad-locator-mem-' + randomUUID());
+    const teamDir = path.join(testRoot, 'team');
+    const projectDir = path.join(testRoot, 'project');
+
+    const resolvedPaths: ResolvedSquadPaths = {
+      mode: 'local',
+      projectDir,
+      teamDir,
+      personalDir: null,
+      config: null,
+      name: '.squad',
+      isLegacy: false,
+    };
+
+    // Create the history file under teamDir (where squad_memory checks for it)
+    const agentDir = path.join(teamDir, 'agents', 'eecom');
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.writeFileSync(path.join(agentDir, 'history.md'), '# EECOM\n\n## Learnings\n', 'utf-8');
+
+    const registry = new ToolRegistry(testRoot, undefined, undefined, undefined, resolvedPaths);
+    const tool = registry.getTool('squad_memory')!;
+
+    const result = await tool.handler(
+      {
+        agent: 'eecom',
+        section: 'learnings',
+        content: 'Locator routes inbox correctly.',
+      } as MemoryEntry,
+      {
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_memory',
+        arguments: {},
+      }
+    );
+
+    expect(result.resultType).toBe('success');
+
+    // Verify file was written under teamDir, not testRoot
+    const inboxDir = path.join(teamDir, 'agents', 'eecom', 'history', 'inbox');
+    expect(fs.existsSync(inboxDir)).toBe(true);
+    const files = fs.readdirSync(inboxDir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(/^eecom-.*-[0-9a-f]{8}\.md$/);
+  });
+
+  it('should default to local-mode ResolvedSquadPaths when none provided', () => {
+    testRoot = path.join('.', '.test-squad-default-' + randomUUID());
+    const registry = new ToolRegistry(testRoot);
+    // Should not throw — backward compatible
+    expect(registry.getTools().length).toBeGreaterThan(0);
+  });
   let registry: ToolRegistry;
   let sessionPool: SessionPool;
 

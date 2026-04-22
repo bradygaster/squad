@@ -5,7 +5,7 @@
 
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, resolveSharedSquad } from '@bradygaster/squad-sdk';
 import { detectSquadDir, resolveWorktreeMainCheckout } from './detect-squad-dir.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
@@ -190,6 +190,21 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       console.log(`${GREEN}${BOLD}→${RESET} Creating worktree-local .squad/ in ${dest}`);
       console.log();
     }
+  }
+
+  // Check if a shared squad already exists for this repo
+  const sharedResult = resolveSharedSquad(dest);
+  if (sharedResult) {
+    console.log('');
+    console.log('⚠️  A shared squad already exists for this repository.');
+    console.log(`   Team dir: ${sharedResult.teamDir}`);
+    console.log('');
+    console.log('   Creating a local .squad/ will shadow the shared squad.');
+    console.log('   To connect to the shared squad instead, run:');
+    console.log('     squad init --shared');
+    console.log('');
+    console.log('   Proceeding will create an independent local squad.');
+    console.log('');
   }
 
   // Show deprecation warning if using .ai-team/

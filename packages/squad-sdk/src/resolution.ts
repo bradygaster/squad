@@ -9,57 +9,37 @@
  * PR bradygaster/squad#131. Original concept: resolveSquadPaths() with config.json
  * pointer for team identity separation.
  *
+ * Note on circular import with shared-squad.ts:
+ * resolution.ts imports { resolveSharedSquad, lookupByKeyAcrossRepos, validateRepoKey }
+ * from shared-squad.ts, which imports { resolveGlobalSquadPath, resolvePersonalSquadDir }
+ * from resolution.ts. This cycle is safe because all cross-module references are to
+ * hoisted function declarations (never used at module evaluation time). Both modules'
+ * top-level code (const storage = ...) uses only their own local imports.
+ *
  * @module resolution
  */
 
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
+import { SquadError, ErrorSeverity, ErrorCategory } from './adapter/errors.js';
+import { resolveSharedSquad, lookupByKeyAcrossRepos, validateRepoKey } from './shared-squad.js';
+import { resolveCloneStateDir } from './clone-state.js';
+import {
+  resolveGlobalSquadPath,
+  resolvePersonalSquadDir,
+  pathStartsWith,
+  CASE_INSENSITIVE,
+} from './resolution-base.js';
+import type { SquadDirConfig, ResolvedSquadPaths } from './resolution-base.js';
+
+// Re-export shared primitives from resolution-base for backward compatibility
+export { resolveGlobalSquadPath, resolvePersonalSquadDir, CASE_INSENSITIVE, pathStartsWith };
+export type { SquadDirConfig, ResolvedSquadPaths };
 
 const storage = new FSStorageProvider();
-
-// ============================================================================
-// Dual-root path resolution types (Issue #311)
-// ============================================================================
-
-/**
- * Schema for `.squad/config.json` — controls remote squad mode.
- * Named SquadDirConfig to avoid collision with the runtime SquadConfig.
- */
-export interface SquadDirConfig {
-  version: number;
-  teamRoot: string;
-  projectKey: string | null;
-  /** True when in consult mode (personal squad consulting on external project) */
-  consult?: boolean;
-  /** True when extraction is disabled for consult sessions (read-only consultation) */
-  extractionDisabled?: boolean;
-  /** Where state is stored: 'external' when moved out of the working tree */
-  stateLocation?: string;
-  /** State storage backend: worktree | external | git-notes | orphan */
-  stateBackend?: string;
-}
-
-/**
- * Resolved paths for dual-root squad mode.
- *
- * In **local** mode, projectDir and teamDir point to the same `.squad/` directory.
- * In **remote** mode, config.json specifies a `teamRoot` that resolves to a
- * separate directory for team identity (agents, casting, skills).
- */
-export interface ResolvedSquadPaths {
-  mode: 'local' | 'remote';
-  /** Project-local .squad/ (decisions, logs) */
-  projectDir: string;
-  /** Team identity root (agents, casting, skills) */
-  teamDir: string;
-  /** User's personal squad dir, null if not found or disabled */
-  personalDir: string | null;
-  config: SquadDirConfig | null;
-  name: '.squad' | '.ai-team';
-  isLegacy: boolean;
-}
 
 /**
  * Given a directory containing a `.git` worktree pointer file, parse the file
@@ -116,7 +96,14 @@ export function resolveSquad(startDir?: string): string | null {
     const candidate = path.join(current, '.squad');
 
     if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
-      return candidate;
+      // Validate this is a real squad team root, not just a config directory
+      // (e.g. ~/.squad/ which only contains squad-repos.json pointer files).
+      const hasTeam = storage.existsSync(path.join(candidate, 'team.md'));
+      const hasAgents = storage.existsSync(path.join(candidate, 'agents'));
+      const hasConfig = storage.existsSync(path.join(candidate, 'config.json'));
+      if (hasTeam || hasAgents || hasConfig) {
+        return candidate;
+      }
     }
 
     const gitMarker = path.join(current, '.git');
@@ -172,7 +159,13 @@ function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-te
     for (const name of SQUAD_DIR_NAMES) {
       const candidate = path.join(current, name);
       if (storage.existsSync(candidate) && storage.isDirectorySync(candidate)) {
-        return { dir: candidate, name };
+        // Validate this is a real squad team root, not just a config directory
+        const hasTeam = storage.existsSync(path.join(candidate, 'team.md'));
+        const hasAgents = storage.existsSync(path.join(candidate, 'agents'));
+        const hasConfig = storage.existsSync(path.join(candidate, 'config.json'));
+        if (hasTeam || hasAgents || hasConfig) {
+          return { dir: candidate, name };
+        }
       }
     }
 
@@ -256,23 +249,35 @@ export function isConsultMode(config: SquadDirConfig | null): boolean {
  * @returns Resolved paths, or `null` if no squad directory is found.
  */
 export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null {
-  const resolved = findSquadDir(startDir ?? process.cwd());
-  if (!resolved) {
-    return null;
-  }
+  const start = startDir ?? process.cwd();
+  const resolved = findSquadDir(start);
 
-  const { dir: projectDir, name } = resolved;
-  const isLegacy = name === '.ai-team';
-  const config = loadDirConfig(projectDir);
+  // Step 1-2: Local or remote mode (existing behavior — unchanged)
+  if (resolved) {
+    const { dir: projectDir, name } = resolved;
+    const isLegacy = name === '.ai-team';
+    const config = loadDirConfig(projectDir);
 
-  if (config && config.teamRoot) {
-    // Remote mode: teamDir resolved relative to the project root (parent of .squad/)
-    const projectRoot = path.resolve(projectDir, '..');
-    const teamDir = path.resolve(projectRoot, config.teamRoot);
+    if (config && config.teamRoot) {
+      // Remote mode: teamDir resolved relative to the project root (parent of .squad/)
+      const projectRoot = path.resolve(projectDir, '..');
+      const teamDir = path.resolve(projectRoot, config.teamRoot);
+      return {
+        mode: 'remote',
+        projectDir,
+        teamDir,
+        personalDir: resolvePersonalSquadDir(),
+        config,
+        name,
+        isLegacy,
+      };
+    }
+
+    // Local mode: projectDir === teamDir
     return {
-      mode: 'remote',
+      mode: 'local',
       projectDir,
-      teamDir,
+      teamDir: projectDir,
       personalDir: resolvePersonalSquadDir(),
       config,
       name,
@@ -280,73 +285,141 @@ export function resolveSquadPaths(startDir?: string): ResolvedSquadPaths | null 
     };
   }
 
-  // Local mode: projectDir === teamDir
+  // Step 3: Shared squad discovery (no local .squad/ found)
+  return resolveSharedMode(start);
+}
+
+// ============================================================================
+// Shared mode resolution (Issue #311 — shared-squad-across-clones)
+// ============================================================================
+
+/**
+ * Walk up the directory tree to find the git repository root.
+ * Returns the directory that contains `.git` (as a directory or file).
+ */
+function findGitRoot(startDir: string): string | null {
+  let current = path.resolve(startDir);
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const gitMarker = path.join(current, '.git');
+    if (storage.existsSync(gitMarker)) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+let _appdataOverrideWarned = false;
+
+/** @internal Reset the warn-once flag — for testing only. */
+export function _resetAppdataOverrideWarned(): void {
+  _appdataOverrideWarned = false;
+}
+
+/**
+ * Shared mode resolution — discovers squad via origin remote URL lookup
+ * or explicit SQUAD_REPO_KEY environment variable.
+ *
+ * Called by resolveSquadPaths() as step 3 when no local `.squad/` is found.
+ *
+ * Supports two environment variables:
+ * - `SQUAD_REPO_KEY`: Direct repo key for registry lookup (skips URL matching).
+ *   Useful in CI or for repos without an `origin` remote.
+ * - `SQUAD_APPDATA_OVERRIDE`: Override the global app data path. Logged as a
+ *   warning (once per process). Used when `%APPDATA%` is unreachable
+ *   (offline roaming profile).
+ *
+ * @throws {SquadError} If `%APPDATA%` (or override) is unreachable (F11).
+ */
+function resolveSharedMode(startDir: string): ResolvedSquadPaths | null {
+  const repoRoot = findGitRoot(startDir);
+  if (!repoRoot) return null;
+
+  // SQUAD_APPDATA_OVERRIDE: log once per process when entering shared discovery
+  if (process.env['SQUAD_APPDATA_OVERRIDE'] && !_appdataOverrideWarned) {
+    console.warn(
+      '[squad] SQUAD_APPDATA_OVERRIDE is set — using override path for app data.'
+    );
+    _appdataOverrideWarned = true;
+  }
+
+  // Verify global squad path is accessible (F11: fail hard if unreachable)
+  let globalDir: string;
+  try {
+    globalDir = resolveGlobalSquadPath();
+  } catch (err) {
+    throw new SquadError(
+      'Shared squad unavailable — roaming profile may be offline. ' +
+        'Hint: check network connectivity or set SQUAD_APPDATA_OVERRIDE env var.',
+      ErrorSeverity.ERROR,
+      ErrorCategory.CONFIGURATION,
+      { operation: 'resolveSquadPaths', timestamp: new Date() },
+      false,
+      err instanceof Error ? err : undefined,
+    );
+  }
+
+  // SQUAD_REPO_KEY — direct key lookup, skips URL matching
+  const repoKey = process.env['SQUAD_REPO_KEY'];
+  if (repoKey) {
+    validateRepoKey(repoKey);
+    return resolveSharedByKey(repoKey, repoRoot, globalDir);
+  }
+
+  // URL-based discovery via origin remote (F4: origin only)
+  return resolveSharedSquad(repoRoot);
+}
+
+/**
+ * Resolve shared squad paths by explicit repo key.
+ * Looks up the key in the global registry, derives teamDir and projectDir.
+ */
+function resolveSharedByKey(
+  repoKey: string,
+  repoRoot: string,
+  globalDir: string,
+): ResolvedSquadPaths | null {
+  const located = lookupByKeyAcrossRepos(repoKey);
+  if (!located) return null;
+
+  const { entry, squadRepoRoot } = located;
+
+  // For git-backed repos: {squadRepoRoot}/{key} (files live directly in the clone)
+  // For legacy %APPDATA%: {squadRepoRoot}/repos/{key}
+  const isLegacyAppData = squadRepoRoot === globalDir;
+  const teamDir = isLegacyAppData
+    ? path.join(squadRepoRoot, 'repos', ...entry.key.split('/'))
+    : path.join(squadRepoRoot, ...entry.key.split('/'));
+
+  // Validate teamDir with realpathSync (same check as resolveSharedSquad — F7)
+  try {
+    if (storage.existsSync(teamDir)) {
+      const realTeamDir = realpathSync(teamDir);
+      const realRoot = realpathSync(squadRepoRoot);
+      if (
+        !pathStartsWith(realTeamDir, realRoot + path.sep) &&
+        realTeamDir !== realRoot
+      ) {
+        return null;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  const projectDir = resolveCloneStateDir(repoRoot, entry.key);
+
   return {
-    mode: 'local',
+    mode: 'shared',
     projectDir,
-    teamDir: projectDir,
+    teamDir,
     personalDir: resolvePersonalSquadDir(),
-    config,
-    name,
-    isLegacy,
+    config: null,
+    name: '.squad',
+    isLegacy: false,
   };
-}
-
-/**
- * Return the platform-specific global Squad configuration directory.
- *
- * | Platform | Path                                       |
- * |----------|--------------------------------------------|
- * | Windows  | `%APPDATA%/squad/`                         |
- * | macOS    | `~/Library/Application Support/squad/`      |
- * | Linux    | `$XDG_CONFIG_HOME/squad/` (default `~/.config/squad/`) |
- *
- * The directory is created (recursively) if it does not already exist.
- *
- * @returns Absolute path to the global squad config directory.
- */
-export function resolveGlobalSquadPath(): string {
-  const platform = process.platform;
-  let base: string;
-
-  if (platform === 'win32') {
-    // %APPDATA% is always set on Windows; fall back to %LOCALAPPDATA%, then homedir
-    base = process.env['APPDATA']
-      ?? process.env['LOCALAPPDATA']
-      ?? path.join(os.homedir(), 'AppData', 'Roaming');
-  } else if (platform === 'darwin') {
-    base = path.join(os.homedir(), 'Library', 'Application Support');
-  } else {
-    // Linux / other POSIX — respect XDG_CONFIG_HOME
-    base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
-  }
-
-  const globalDir = path.join(base, 'squad');
-
-  if (!storage.existsSync(globalDir)) {
-    storage.mkdirSync(globalDir, { recursive: true });
-  }
-
-  return globalDir;
-}
-
-/**
- * Resolves the user's personal squad directory.
- * Returns null if SQUAD_NO_PERSONAL is set or directory doesn't exist.
- * 
- * Platform paths:
- * - Windows: %APPDATA%/squad/personal-squad
- * - macOS: ~/Library/Application Support/squad/personal-squad
- * - Linux: $XDG_CONFIG_HOME/squad/personal-squad or ~/.config/squad/personal-squad
- */
-export function resolvePersonalSquadDir(): string | null {
-  if (process.env['SQUAD_NO_PERSONAL']) return null;
-  
-  const globalDir = resolveGlobalSquadPath();
-  const personalDir = path.join(globalDir, 'personal-squad');
-  
-  if (!storage.existsSync(personalDir)) return null;
-  return personalDir;
 }
 
 /**

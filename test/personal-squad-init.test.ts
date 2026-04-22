@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, rm, writeFile, readFile } from 'fs/promises';
 import { join, sep } from 'path';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
 import {
   resolveGlobalSquadPath,
@@ -220,6 +220,8 @@ describe('resolveSquadPaths — includes personalDir', () => {
   beforeEach(() => {
     cleanup();
     mkdirSync(squadDir, { recursive: true });
+    // .squad/ must contain team.md to be recognized as a team root
+    writeFileSync(join(squadDir, 'team.md'), '# Test Team\n');
   });
   afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
