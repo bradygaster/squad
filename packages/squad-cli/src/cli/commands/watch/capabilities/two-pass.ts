@@ -5,7 +5,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
-import { IS_WINDOWS } from '../agent-spawn.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -31,11 +30,10 @@ export class TwoPassCapability implements WatchCapability {
     try {
       const memberLabels = new Set(context.roster.map(m => m.label));
 
-      // Use shared round data when available (#923), otherwise fetch
-      const allItems = context.roundData?.issues
-        ?? await context.adapter.listWorkItems({
-          tags: ['squad'], state: 'open', limit: 200,
-        });
+      // Pass 1: lightweight list
+      const allItems = await context.adapter.listWorkItems({
+        tags: ['squad'], state: 'open', limit: 200,
+      });
       const total = allItems.length;
 
       // Filter to actionable
@@ -54,7 +52,7 @@ export class TwoPassCapability implements WatchCapability {
           const { stdout: detailJson } = await execFileAsync('gh', [
             'issue', 'view', String(item.id),
             '--json', 'number,title,body,labels,assignees',
-          ], { maxBuffer: 5 * 1024 * 1024, shell: IS_WINDOWS });
+          ], { maxBuffer: 5 * 1024 * 1024 });
           hydrated.push(JSON.parse(detailJson));
         } catch {
           hydrated.push({ number: item.id, title: item.title });

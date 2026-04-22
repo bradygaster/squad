@@ -5,30 +5,15 @@ on:
     branches:
       - insider
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      matrix:
-        node-version: [22]
-    steps:
-      - uses: actions/checkout@v4
-
-      # CI Hardening: Composite action replaces duplicated setup-node + retry
-      # pattern (item 7). See .github/actions/setup-squad-node/action.yml.
-      - uses: ./.github/actions/setup-squad-node
-        with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Build
-        run: npm run build
-
   test:
-    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -109,37 +94,10 @@ jobs:
       - name: Build packages
         run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
 
-      - name: Pin CLI SDK dependency to exact workspace version
-        run: |
-          SDK_VERSION=$(node -p "require('./packages/squad-sdk/package.json').version")
-          echo "Pinning CLI SDK dep to exact version: $SDK_VERSION"
-          cd packages/squad-cli
-          node -e "
-            const pkg = require('./package.json');
-            pkg.dependencies['@bradygaster/squad-sdk'] = '$SDK_VERSION';
-            require('fs').writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
-          "
-          echo "Verified: $(node -p 'require("./package.json").dependencies["@bradygaster/squad-sdk"]')"
-
       - name: Publish squad-sdk with insider tag
         run: npm -w packages/squad-sdk publish --tag insider --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Verify SDK is available on registry
-        run: |
-          SDK_VERSION=$(node -p "require('./packages/squad-sdk/package.json').version")
-          echo "Waiting for @bradygaster/squad-sdk@$SDK_VERSION on npm..."
-          for i in 1 2 3 4 5; do
-            if npm view "@bradygaster/squad-sdk@$SDK_VERSION" version 2>/dev/null; then
-              echo "✅ SDK $SDK_VERSION is live on npm"
-              exit 0
-            fi
-            echo "Attempt $i/5 — not yet visible, waiting 10s..."
-            sleep 10
-          done
-          echo "::error::SDK $SDK_VERSION not visible on npm after 50s"
-          exit 1
 
       - name: Publish squad-cli with insider tag
         run: npm -w packages/squad-cli publish --tag insider --access public

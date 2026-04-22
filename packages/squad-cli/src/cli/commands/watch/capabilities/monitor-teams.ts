@@ -2,8 +2,32 @@
  * MonitorTeams capability — scan Teams for actionable messages via WorkIQ.
  */
 
+import { execFile } from 'node:child_process';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
-import { buildAgentCommand, spawnWithTimeout } from '../agent-spawn.js';
+
+/** Build agent command from prompt, respecting --agent-cmd. */
+function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string; args: string[] } {
+  if (context.agentCmd) {
+    const parts = context.agentCmd.trim().split(/\s+/);
+    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+  }
+  const args = ['-p', prompt];
+  if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));
+  return { cmd: 'copilot', args };
+}
+
+function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+      if (err) {
+        const execErr = err as Error & { killed?: boolean };
+        reject(new Error(execErr.killed ? `Timed out after ${Math.round(timeoutMs / 1000)}s` : execErr.message));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
 
 export class MonitorTeamsCapability implements WatchCapability {
   readonly name = 'monitor-teams';

@@ -5,7 +5,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-const IS_WINDOWS = process.platform === 'win32';
 const execFileAsync = promisify(execFile);
 
 export interface GhIssue {
@@ -52,7 +51,7 @@ export interface GhPrListOptions {
  */
 export async function ghAvailable(): Promise<boolean> {
   try {
-    await execFileAsync('gh', ['--version'], { shell: IS_WINDOWS });
+    await execFileAsync('gh', ['--version']);
     return true;
   } catch {
     return false;
@@ -64,7 +63,7 @@ export async function ghAvailable(): Promise<boolean> {
  */
 export async function ghAuthenticated(): Promise<boolean> {
   try {
-    await execFileAsync('gh', ['auth', 'status'], { shell: IS_WINDOWS });
+    await execFileAsync('gh', ['auth', 'status']);
     return true;
   } catch {
     return false;
@@ -87,7 +86,7 @@ export async function ghIssueList(options: GhListOptions = {}): Promise<GhIssue[
     args.push('--limit', String(options.limit));
   }
   
-  const { stdout } = await execFileAsync('gh', args, { shell: IS_WINDOWS });
+  const { stdout } = await execFileAsync('gh', args);
   return JSON.parse(stdout || '[]');
 }
 
@@ -104,7 +103,7 @@ export async function ghPrList(options: GhPrListOptions = {}): Promise<GhPullReq
     args.push('--label', options.label);
   }
   
-  const { stdout } = await execFileAsync('gh', args, { shell: IS_WINDOWS });
+  const { stdout } = await execFileAsync('gh', args);
   return JSON.parse(stdout || '[]');
 }
 
@@ -127,7 +126,7 @@ export async function ghIssueEdit(issueNumber: number, options: GhEditOptions): 
     args.push('--remove-assignee', options.removeAssignee);
   }
   
-  await execFileAsync('gh', args, { shell: IS_WINDOWS });
+  await execFileAsync('gh', args);
 }
 
 // ── Rate limit helpers (#515) ──────────────────────────────────
@@ -144,7 +143,7 @@ export interface GhRateLimit {
 export async function ghRateLimitCheck(): Promise<GhRateLimit> {
   const { stdout } = await execFileAsync('gh', [
     'api', 'rate_limit', '--jq', '.resources.core | {remaining, limit, reset}',
-  ], { shell: IS_WINDOWS });
+  ]);
   const data = JSON.parse(stdout);
   return {
     remaining: data.remaining,
@@ -154,12 +153,13 @@ export async function ghRateLimitCheck(): Promise<GhRateLimit> {
 }
 
 /**
- * Detect if an error is a GitHub 429 rate limit error.
+ * Detect if an error is a GitHub rate-limit error (429 or explicit rate-limit messages).
+ * Does NOT match bare 403 — that indicates an auth/permissions error, not a transient rate limit.
  */
 export function isRateLimitError(err: unknown): boolean {
   if (err instanceof Error) {
     const msg = err.message.toLowerCase();
-    return msg.includes('rate limit') || msg.includes('secondary rate') || msg.includes('403');
+    return msg.includes('rate limit') || msg.includes('secondary rate') || msg.includes('429');
   }
   return false;
 }

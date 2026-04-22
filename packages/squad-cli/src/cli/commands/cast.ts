@@ -7,6 +7,7 @@
  * @module cli/commands/cast
  */
 
+import * as path from 'node:path';
 import { LocalAgentSource } from '@bradygaster/squad-sdk/config/agent-source';
 import { resolvePersonalAgents, mergeSessionCast } from '@bradygaster/squad-sdk/agents/personal';
 import { resolveSquadPaths } from '@bradygaster/squad-sdk/resolution';
@@ -23,8 +24,15 @@ export async function runCast(cwd: string): Promise<void> {
     fatal('No squad found. Run "squad init" first.');
   }
   
-  // Discover project agents
-  const projectSource = new LocalAgentSource(paths.teamDir);
+  // Discover project agents.
+  // LocalAgentSource appends .squad/agents to its base path, so we must supply:
+  //   - local mode: parent of paths.projectDir (the repo root)
+  //   - remote mode: paths.teamDir (the team repo root, which itself contains .squad/agents)
+  const agentBase =
+    paths.mode === 'remote'
+      ? paths.teamDir
+      : path.resolve(paths.projectDir, '..');
+  const projectSource = new LocalAgentSource(agentBase);
   const projectAgents = await projectSource.listAgents();
   
   // Discover personal agents
