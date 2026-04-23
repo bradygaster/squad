@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.9.1",
+  "version": "0.9.1-build.6",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -19,62 +19,6 @@
     "./copilot-install": {
       "types": "./dist/cli/copilot-install.d.ts",
       "import": "./dist/cli/copilot-install.js"
-    },
-    "./shell/sessions": {
-      "types": "./dist/cli/shell/sessions.d.ts",
-      "import": "./dist/cli/shell/sessions.js"
-    },
-    "./shell/spawn": {
-      "types": "./dist/cli/shell/spawn.d.ts",
-      "import": "./dist/cli/shell/spawn.js"
-    },
-    "./shell/coordinator": {
-      "types": "./dist/cli/shell/coordinator.d.ts",
-      "import": "./dist/cli/shell/coordinator.js"
-    },
-    "./shell/lifecycle": {
-      "types": "./dist/cli/shell/lifecycle.d.ts",
-      "import": "./dist/cli/shell/lifecycle.js"
-    },
-    "./shell/stream-bridge": {
-      "types": "./dist/cli/shell/stream-bridge.d.ts",
-      "import": "./dist/cli/shell/stream-bridge.js"
-    },
-    "./shell/sdk-bridge": {
-      "types": "./dist/cli/shell/sdk-bridge.d.ts",
-      "import": "./dist/cli/shell/sdk-bridge.js"
-    },
-    "./shell/router": {
-      "types": "./dist/cli/shell/router.d.ts",
-      "import": "./dist/cli/shell/router.js"
-    },
-    "./shell/commands": {
-      "types": "./dist/cli/shell/commands.d.ts",
-      "import": "./dist/cli/shell/commands.js"
-    },
-    "./shell/render": {
-      "types": "./dist/cli/shell/render.d.ts",
-      "import": "./dist/cli/shell/render.js"
-    },
-    "./shell/types": {
-      "types": "./dist/cli/shell/types.d.ts",
-      "import": "./dist/cli/shell/types.js"
-    },
-    "./shell/session-store": {
-      "types": "./dist/cli/shell/session-store.d.ts",
-      "import": "./dist/cli/shell/session-store.js"
-    },
-    "./shell/error-messages": {
-      "types": "./dist/cli/shell/error-messages.d.ts",
-      "import": "./dist/cli/shell/error-messages.js"
-    },
-    "./shell/shell-metrics": {
-      "types": "./dist/cli/shell/shell-metrics.d.ts",
-      "import": "./dist/cli/shell/shell-metrics.js"
-    },
-    "./shell/agent-name-parser": {
-      "types": "./dist/cli/shell/agent-name-parser.d.ts",
-      "import": "./dist/cli/shell/agent-name-parser.js"
     },
     "./core/detect-squad-dir": {
       "types": "./dist/cli/core/detect-squad-dir.d.ts",
@@ -172,7 +116,7 @@
     "README.md"
   ],
   "scripts": {
-    "postinstall": "node scripts/patch-esm-imports.mjs && node scripts/patch-ink-rendering.mjs",
+    "postinstall": "node scripts/patch-esm-imports.mjs",
     "prepublishOnly": "npm run build",
     "build": "tsc -p tsconfig.json && npm run postbuild",
     "postbuild": "node -e \"require('fs').cpSync('src/remote-ui', 'dist/remote-ui', {recursive: true})\""
@@ -182,16 +126,12 @@
   },
   "dependencies": {
     "@bradygaster/squad-sdk": ">=0.9.0",
-    "ink": "^6.8.0",
-    "react": "^19.2.4",
     "vscode-jsonrpc": "^8.2.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "@types/react": "^19.2.14",
     "esbuild": "^0.25.0",
-    "typescript": "^5.7.0",
-    "ink-testing-library": "^4.0.0"
+    "typescript": "^5.7.0"
   },
   "keywords": [
     "copilot",
