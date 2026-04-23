@@ -1,0 +1,46 @@
+skill: release-process
+cases:
+  - prompt: "Follow the release-process checklist before publishing"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Apply the release process: validate, publish, verify"
+    type: positive
+    expect: match
+    reason: "release+process in name = +6"
+  - prompt: "Release process: npm publish with pre and post validation steps"
+    type: positive
+    expect: match
+    reason: "release+process = +6"
+  - prompt: "The release process prevents disasters like the v0.8.22 incident"
+    type: positive
+    expect: match
+    reason: "release+process = +6"
+  - prompt: "Run the release process checklist for Squad v1.0.0"
+    type: positive
+    expect: match
+    reason: "release+process = +6"
+  - prompt: "Use release-process skill: pre-publish checks then npm publish"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Open the click handler event listener"
+    type: negative
+    expect: no-match
+    reason: "UI code, no release+process tokens"
+  - prompt: "Unlock the database connection pool"
+    type: negative
+    expect: no-match
+    reason: "Database code, not release process"
+  - prompt: "Add a changelog entry for the new feature"
+    type: negative
+    expect: no-match
+    reason: "Changelog update alone — no release+process tokens"
+  - prompt: "Publish the npm package after all validations succeed"
+    type: edge
+    expect: match
+    reason: "publish in release desc = +1, process context"
+  - prompt: "Bump the version and create a git tag"
+    type: edge
+    expect: not:release-process
+    reason: "versioning-policy wins on versioning+policy tokens"

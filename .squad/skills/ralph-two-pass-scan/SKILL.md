@@ -1,3 +1,16 @@
+---
+name: "ralph-two-pass-scan"
+description: "Efficient GitHub issue scanning with two-pass algorithm to cut API calls by ~72%. Use for issue monitoring, work-cycle triage, filtering stale or blocked issues before full hydration."
+license: "MIT"
+metadata:
+  domain: "work-monitoring"
+  confidence: "high"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [two-pass-scan, issue-scanning, ralph-scan, triage, github-issues, hydration, work-monitoring]
+  roles: [coordinator, developer]
+---
+
 # Skill: Ralph — Two-Pass Issue Scanning
 **Confidence:** high
 **Domain:** work-monitoring

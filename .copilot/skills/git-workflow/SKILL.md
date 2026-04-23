@@ -1,9 +1,14 @@
 ---
 name: "git-workflow"
 description: "Squad branching model: dev-first workflow with insiders preview channel"
-domain: "version-control"
-confidence: "high"
-source: "team-decision"
+license: "MIT"
+metadata:
+  domain: "version-control"
+  confidence: "high"
+  source: "team-decision"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [git, branching, workflow, worktrees, pull-request, dev, insiders]
+  roles: [developer, lead, release-engineer]
 ---
 
 ## Context

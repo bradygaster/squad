@@ -1,0 +1,46 @@
+skill: init-mode
+cases:
+  - prompt: "Use init-mode to initialize the team"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Run the init mode ceremony for a new project"
+    type: positive
+    expect: match
+    reason: "init+mode in name = +6"
+  - prompt: "Apply init mode: Phase 1 proposal then Phase 2 creation"
+    type: positive
+    expect: match
+    reason: "init+mode = +6, phase from desc = +1"
+  - prompt: "Init mode flow: propose roster, confirm, then cast agents"
+    type: positive
+    expect: match
+    reason: "init+mode = +6"
+  - prompt: "The init-mode skill runs the team initialization ceremony"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Use init mode to propose and confirm the team roster"
+    type: positive
+    expect: match
+    reason: "init+mode = +6"
+  - prompt: "Write tests for the billing module"
+    type: negative
+    expect: no-match
+    reason: "Code task, not init ceremony"
+  - prompt: "Deploy the application to production"
+    type: negative
+    expect: no-match
+    reason: "Deployment, not initialization"
+  - prompt: "Set up cross-squad delegation for the platform team"
+    type: negative
+    expect: not:init-mode
+    reason: "cross+squad wins for cross-squad delegation"
+  - prompt: "Initialize agents for a new squad project"
+    type: edge
+    expect: match
+    reason: "initialization context — init+mode relevant"
+  - prompt: "Start a new session and load the team configuration"
+    type: edge
+    expect: not:init-mode
+    reason: "Session start without init ceremony — ambiguous"

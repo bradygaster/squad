@@ -1,0 +1,46 @@
+skill: nap
+cases:
+  - prompt: "Run squad nap to compress the context before heavy work"
+    type: positive
+    expect: match
+    reason: "Explicit nap command invocation"
+  - prompt: "Context window is getting full, prune and archive .squad/ state"
+    type: positive
+    expect: match
+    reason: "Context hygiene — core nap use case"
+  - prompt: "Run /nap --deep to free up context before the fan-out"
+    type: positive
+    expect: match
+    reason: "Deep nap mode"
+  - prompt: "history.md is over 15KB, compress it"
+    type: positive
+    expect: match
+    reason: "History size threshold trigger for nap"
+  - prompt: ".squad/ total size exceeds 1MB, clean it up"
+    type: positive
+    expect: match
+    reason: "Squad directory size threshold"
+  - prompt: "Archive stale decisions and clean orphaned inbox files"
+    type: positive
+    expect: match
+    reason: "Nap cleanup operations"
+  - prompt: "Write a nap function in Python"
+    type: negative
+    expect: no-match
+    reason: "Python sleep(), not squad nap command"
+  - prompt: "Recover the interrupted session"
+    type: negative
+    expect: not:nap
+    reason: "Session recovery, not context compression"
+  - prompt: "Extract shared patterns from agent charters"
+    type: negative
+    expect: not:nap
+    reason: "Charter optimization is reskill, not nap"
+  - prompt: "Clean up old log files"
+    type: edge
+    expect: match
+    reason: "Log cleanup — nap domain, but could be general maintenance"
+  - prompt: "Before spawning 10 agents, prepare the context"
+    type: edge
+    expect: match
+    reason: "Pre-fan-out context prep — nap trigger"

@@ -1,9 +1,14 @@
 ---
 name: "reskill"
 description: "Team-wide charter and history optimization through skill extraction"
-domain: "team-optimization"
-confidence: "high"
-source: "manual — Brady directive to reduce per-agent context overhead"
+license: "MIT"
+metadata:
+  domain: "team-optimization"
+  confidence: "high"
+  source: "manual — Brady directive to reduce per-agent context overhead"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [reskill, optimize, charter, context, extraction, skill, bloat]
+  roles: [architect, lead, scribe]
 ---
 
 ## Context

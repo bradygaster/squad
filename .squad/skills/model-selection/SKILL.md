@@ -1,3 +1,16 @@
+---
+name: "model-selection"
+description: "LLM model resolution hierarchy for Squad agent spawns. Use for selecting the right model per agent, resolving 5-layer precedence (config overrides, session directives, charter preferences, task-aware auto-selection), and saving persistent model preferences."
+license: "MIT"
+metadata:
+  domain: "model-selection"
+  confidence: "high"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [model-selection, LLM, agent-model, always-use, default-model, model-preference, spawn-model]
+  roles: [coordinator, developer]
+---
+
 # Model Selection
 
 > Determines which LLM model to use for each agent spawn.

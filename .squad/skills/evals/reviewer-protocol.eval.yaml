@@ -1,0 +1,46 @@
+skill: reviewer-protocol
+cases:
+  - prompt: "Apply the reviewer-protocol for this rejected pull request"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Follow the reviewer protocol lockout after rejection"
+    type: positive
+    expect: match
+    reason: "reviewer+protocol in name = +6"
+  - prompt: "The reviewer protocol defines lockout semantics for rejections"
+    type: positive
+    expect: match
+    reason: "reviewer+protocol = +6"
+  - prompt: "Use reviewer protocol: rejection triggers lockout workflow"
+    type: positive
+    expect: match
+    reason: "reviewer+protocol = +6"
+  - prompt: "Reviewer protocol: stop changes after reviewer lockout"
+    type: positive
+    expect: match
+    reason: "reviewer+protocol = +6"
+  - prompt: "The reviewer-protocol skill enforces strict rejection semantics"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Request a code review from a team member"
+    type: negative
+    expect: no-match
+    reason: "Requesting review, not rejection protocol"
+  - prompt: "Approve the pull request and merge"
+    type: negative
+    expect: no-match
+    reason: "PR approval, not rejection"
+  - prompt: "Deploy the application after CI passes"
+    type: negative
+    expect: no-match
+    reason: "Deployment task"
+  - prompt: "The reviewer has locked out further changes"
+    type: edge
+    expect: match
+    reason: "reviewer+lockout maps to reviewer-protocol"
+  - prompt: "A reviewer left blocking comments — what should I do?"
+    type: edge
+    expect: match
+    reason: "reviewer in name = +3 wins"

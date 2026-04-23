@@ -1,13 +1,15 @@
 ---
 name: "session-recovery"
-description: "Find and resume interrupted Copilot CLI sessions using session_store queries"
-domain: "workflow-recovery"
-confidence: "high"
-source: "earned"
-tools:
-  - name: "sql"
-    description: "Query session_store database for past session history"
-    when: "Always — session_store is the source of truth for session history"
+description: "Resume interrupted Copilot CLI sessions via session_store SQL queries. Use after terminal crashes, network drops, or accidental window closes to find in-progress branches, orphaned issue work, and incomplete checkpoints."
+license: "MIT"
+allowed-tools: "sql"
+metadata:
+  domain: "workflow-recovery"
+  confidence: "high"
+  source: "earned"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [session-recovery, resume-session, interrupted-session, crash-recovery, orphaned-work, session-store]
+  roles: [developer, coordinator]
 ---
 
 ## Context

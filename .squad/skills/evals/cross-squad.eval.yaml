@@ -1,0 +1,46 @@
+skill: cross-squad
+cases:
+  - prompt: "Apply cross-squad coordination for this inter-team task"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Delegate this task using the cross squad workflow"
+    type: positive
+    expect: match
+    reason: "cross+squad both in name = +6"
+  - prompt: "Use cross-squad delegation to assign work to the platform team"
+    type: positive
+    expect: match
+    reason: "cross+squad in name = +6"
+  - prompt: "Cross squad work assignment across multiple Squad instances"
+    type: positive
+    expect: match
+    reason: "cross+squad = +6"
+  - prompt: "The cross squad protocol discovers which team handles billing"
+    type: positive
+    expect: match
+    reason: "cross+squad = +6"
+  - prompt: "Route this issue to another squad using cross-squad delegation"
+    type: positive
+    expect: match
+    reason: "cross+squad in name = +6"
+  - prompt: "Fix the login bug in the auth module"
+    type: negative
+    expect: no-match
+    reason: "Local task, not cross-squad"
+  - prompt: "Write tests for the payment service"
+    type: negative
+    expect: no-match
+    reason: "Local implementation task"
+  - prompt: "Set up the distributed mesh for coordination"
+    type: negative
+    expect: not:cross-squad
+    reason: "distributed+mesh wins for distributed-mesh skill"
+  - prompt: "Which squad handles infrastructure work?"
+    type: edge
+    expect: match
+    reason: "Squad discovery — cross-squad context"
+  - prompt: "Initialize the team with the casting algorithm"
+    type: edge
+    expect: not:cross-squad
+    reason: "init-mode wins on init+team tokens"

@@ -1,3 +1,16 @@
+---
+name: "cli-wiring"
+description: "Checklist for adding new CLI commands — create command file, add routing in cli-entry.ts, add help text"
+license: "MIT"
+metadata:
+  domain: "cli-development"
+  confidence: "high"
+  source: "extracted from issue #237 / PR #244"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [cli, command, routing, wiring, cli-entry, typescript, new-command]
+  roles: [developer]
+---
+
 # Skill: CLI Command Wiring
 
 **Bug class:** Commands implemented in `packages/squad-cli/src/cli/commands/` but never routed in `cli-entry.ts`.

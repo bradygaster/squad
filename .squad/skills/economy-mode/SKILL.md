@@ -1,9 +1,14 @@
 ---
 name: "economy-mode"
-description: "Shifts Layer 3 model selection to cost-optimized alternatives when economy mode is active."
-domain: "model-selection"
-confidence: "low"
-source: "manual"
+description: "Cost-optimized model selection for Squad sessions. Activate with 'economy mode', 'save costs', 'go cheap', or 'reduce costs'. Shifts Layer 3 auto-selection to cheaper models without overriding user-set preferences."
+license: "MIT"
+metadata:
+  domain: "model-selection"
+  confidence: "low"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [economy-mode, save-costs, go-cheap, reduce-costs, cost-optimized, cheap-models, economyMode]
+  roles: [coordinator, developer]
 ---
 
 ## SCOPE

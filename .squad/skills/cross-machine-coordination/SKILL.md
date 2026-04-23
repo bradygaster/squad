@@ -1,3 +1,16 @@
+---
+name: "cross-machine-coordination"
+description: "Cross-machine task dispatch via git-based queuing. Use for dispatching GPU workloads, scripts, or commands from one machine (laptop, DevBox, VM) to another using YAML task files and GitHub Issues."
+license: "MIT"
+metadata:
+  domain: "infrastructure"
+  confidence: "medium"
+  source: "manual"
+  compatibility: "GitHub Copilot CLI, VS Code Copilot Chat"
+  triggers: [cross-machine, task-dispatch, devbox, gpu-workload, machine-coordination, git-queue, remote-execution]
+  roles: [developer, coordinator]
+---
+
 # Skill: Cross-Machine Coordination Pattern
 
 **Skill ID:** `cross-machine-coordination`  

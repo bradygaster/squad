@@ -1,0 +1,46 @@
+skill: personal-squad
+cases:
+  - prompt: "Set up a personal-squad that travels with me across projects"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Configure my personal squad of agents in global config"
+    type: positive
+    expect: match
+    reason: "personal+squad in name = +6"
+  - prompt: "Personal squad: user-level agents auto-discovered in every project"
+    type: positive
+    expect: match
+    reason: "personal+squad = +6"
+  - prompt: "Add an agent to my personal squad configuration"
+    type: positive
+    expect: match
+    reason: "personal+squad = +6"
+  - prompt: "The personal-squad skill manages user-level agents"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Personal squad agents persist across different repositories"
+    type: positive
+    expect: match
+    reason: "personal+squad = +6"
+  - prompt: "Write tests for the billing service"
+    type: negative
+    expect: no-match
+    reason: "Code task"
+  - prompt: "Initialize the cross-squad delegation workflow"
+    type: negative
+    expect: not:personal-squad
+    reason: "cross+squad wins"
+  - prompt: "Set up the git workflow for the team"
+    type: negative
+    expect: no-match
+    reason: "Git workflow task"
+  - prompt: "Create a user-level agent configuration"
+    type: edge
+    expect: match
+    reason: "user-level maps to personal squad context"
+  - prompt: "List the squad agents for this repository"
+    type: edge
+    expect: not:personal-squad
+    reason: "cross-squad wins on cross+squad tokens for multi-instance"

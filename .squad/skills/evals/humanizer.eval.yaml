@@ -1,0 +1,46 @@
+skill: humanizer
+cases:
+  - prompt: "Apply the humanizer skill to this community response"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Run the humanizer on this draft before posting"
+    type: positive
+    expect: match
+    reason: "humanizer in name = +3"
+  - prompt: "Use the humanizer to enforce tone patterns on external replies"
+    type: positive
+    expect: match
+    reason: "humanizer = +3, tone from desc = +1"
+  - prompt: "Humanizer tone enforcement for this PAO community response"
+    type: positive
+    expect: match
+    reason: "humanizer = +3"
+  - prompt: "Apply humanizer patterns to make this response sound less robotic"
+    type: positive
+    expect: match
+    reason: "humanizer = +3"
+  - prompt: "The humanizer skill enforces community tone guidelines"
+    type: positive
+    expect: match
+    reason: "humanizer = +3"
+  - prompt: "Write unit tests for the auth module"
+    type: negative
+    expect: no-match
+    reason: "Code task, not tone enforcement"
+  - prompt: "Set up the distributed mesh"
+    type: negative
+    expect: no-match
+    reason: "Infrastructure task"
+  - prompt: "Run the release checklist for v1.0.0"
+    type: negative
+    expect: no-match
+    reason: "Release task"
+  - prompt: "Rewrite the community response with a warmer tone"
+    type: edge
+    expect: match
+    reason: "Tone rewrite — humanizer context without keyword, tone in desc = +1"
+  - prompt: "Draft a response to the external GitHub issue"
+    type: edge
+    expect: not:humanizer
+    reason: "external+comms wins for drafting community responses"

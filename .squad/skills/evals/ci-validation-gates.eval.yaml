@@ -1,0 +1,46 @@
+skill: ci-validation-gates
+cases:
+  - prompt: "Apply ci-validation-gates before the release runs"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Add CI validation gates to the pipeline"
+    type: positive
+    expect: match
+    reason: "ci+validation+gates all in name = +9"
+  - prompt: "The CI validation gate must check the semver before publishing"
+    type: positive
+    expect: match
+    reason: "ci+validation+gates in name = +9"
+  - prompt: "Defensive CI gates: semver check, token check, draft detection"
+    type: positive
+    expect: match
+    reason: "ci+gates in name = +6"
+  - prompt: "Add retry logic and validation gates to the CI workflow"
+    type: positive
+    expect: match
+    reason: "validation+gates in name = +6"
+  - prompt: "CI validation gates prevent broken releases like the v0.8.22 incident"
+    type: positive
+    expect: match
+    reason: "ci+validation+gates in name = +9"
+  - prompt: "Write unit tests for the billing service"
+    type: negative
+    expect: no-match
+    reason: "Unit tests, not CI pipeline patterns"
+  - prompt: "Merge the feature branch to dev"
+    type: negative
+    expect: no-match
+    reason: "Git merge, not CI validation"
+  - prompt: "Deploy the app to production"
+    type: negative
+    expect: no-match
+    reason: "Deployment, not CI gates"
+  - prompt: "Validate the semver before publishing the package"
+    type: edge
+    expect: match
+    reason: "ci+validation relevant; versioning-policy also applies but validation wins"
+  - prompt: "Check if the release token is set in CI"
+    type: edge
+    expect: match
+    reason: "CI token check — ci-validation-gates primary"

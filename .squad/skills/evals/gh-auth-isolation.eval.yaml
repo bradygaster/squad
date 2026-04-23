@@ -1,0 +1,46 @@
+skill: gh-auth-isolation
+cases:
+  - prompt: "Apply gh-auth-isolation for my EMU and personal accounts"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Use gh auth isolation to separate EMU from personal identity"
+    type: positive
+    expect: match
+    reason: "gh+auth+isolation all in name = +9"
+  - prompt: "gh auth isolation prevents mixing corporate and personal tokens"
+    type: positive
+    expect: match
+    reason: "gh+auth+isolation = +9"
+  - prompt: "Set up gh auth token isolation for multi-account workflows"
+    type: positive
+    expect: match
+    reason: "gh+auth+isolation = +9"
+  - prompt: "Use the gh-auth-isolation skill to switch between EMU and personal"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "gh auth isolation: safely manage EMU and personal GitHub identities"
+    type: positive
+    expect: match
+    reason: "gh+auth+isolation = +9"
+  - prompt: "git commit the auth module changes"
+    type: negative
+    expect: no-match
+    reason: "Git commit, not auth isolation"
+  - prompt: "Create a new GitHub repository"
+    type: negative
+    expect: no-match
+    reason: "Repo creation, not auth isolation"
+  - prompt: "Write a GitHub Actions workflow"
+    type: negative
+    expect: no-match
+    reason: "CI/CD, not auth management"
+  - prompt: "Switch GitHub accounts between work and personal"
+    type: edge
+    expect: match
+    reason: "Account switching — gh+auth+isolation context"
+  - prompt: "Configure gh aliases for multiple GitHub accounts"
+    type: edge
+    expect: not:gh-auth-isolation
+    reason: "Alias config — github-multi-account wins on github+multi+account tokens"

@@ -1,0 +1,46 @@
+skill: github-multi-account
+cases:
+  - prompt: "Use github-multi-account to set up my work and personal aliases"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "Set up github multi account aliases for my two profiles"
+    type: positive
+    expect: match
+    reason: "github+multi+account in name = +9"
+  - prompt: "GitHub multi account setup: detect accounts and create gh aliases"
+    type: positive
+    expect: match
+    reason: "github+multi+account = +9"
+  - prompt: "Configure github multi account so both profiles work in the terminal"
+    type: positive
+    expect: match
+    reason: "github+multi+account = +9"
+  - prompt: "The github-multi-account skill auto-detects my accounts"
+    type: positive
+    expect: match
+    reason: "Exact skill name = +5"
+  - prompt: "GitHub multi account: which is personal and which is work?"
+    type: positive
+    expect: match
+    reason: "github+multi+account = +9"
+  - prompt: "Write a GitHub Actions CI workflow"
+    type: negative
+    expect: no-match
+    reason: "CI workflow, not multi-account management"
+  - prompt: "Fix the bug in the repository"
+    type: negative
+    expect: no-match
+    reason: "Code fix, not account management"
+  - prompt: "Deploy the release to npm"
+    type: negative
+    expect: no-match
+    reason: "Release task"
+  - prompt: "I need to use two GitHub accounts simultaneously"
+    type: edge
+    expect: match
+    reason: "Multi-account scenario — github-multi-account context"
+  - prompt: "Isolate my EMU GitHub identity from personal token"
+    type: edge
+    expect: not:github-multi-account
+    reason: "gh+auth+isolation wins for EMU isolation"
