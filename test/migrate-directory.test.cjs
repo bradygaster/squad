@@ -249,13 +249,17 @@ describe('detectProjectType: .NET extensions (.slnx, .fsproj, .vbproj)', () => {
   beforeEach(() => { tmpDir = makeTempDir(); });
   afterEach(() => cleanDir(tmpDir));
 
-  it('init in a dir with .slnx generates a dotnet stub CI workflow', () => {
+  it('upgrade in a dir with .slnx generates a dotnet stub CI workflow', () => {
     fs.writeFileSync(path.join(tmpDir, 'MyApp.slnx'), '');
-    const result = runSquad([], tmpDir);
-    assert.equal(result.exitCode, 0, `init should succeed: ${result.stdout}`);
+    // init creates .squad/ structure but skips CI workflows (by design since PR #847)
+    const initResult = runSquad([], tmpDir);
+    assert.equal(initResult.exitCode, 0, `init should succeed: ${initResult.stdout}`);
+    // upgrade installs CI/CD workflows including project-type-specific ones
+    const result = runSquad(['upgrade'], tmpDir);
+    assert.equal(result.exitCode, 0, `upgrade should succeed: ${result.stdout}`);
 
     const ciPath = path.join(tmpDir, '.github', 'workflows', 'squad-ci.yml');
-    assert.ok(fs.existsSync(ciPath), 'squad-ci.yml should be created');
+    assert.ok(fs.existsSync(ciPath), 'squad-ci.yml should be created by upgrade');
     const ciContent = fs.readFileSync(ciPath, 'utf8');
     assert.ok(
       ciContent.includes('dotnet') || ciContent.toLowerCase().includes('dotnet'),
@@ -268,10 +272,12 @@ describe('detectProjectType: .NET extensions (.slnx, .fsproj, .vbproj)', () => {
     );
   });
 
-  it('init in a dir with .fsproj generates a dotnet stub CI workflow', () => {
+  it('upgrade in a dir with .fsproj generates a dotnet stub CI workflow', () => {
     fs.writeFileSync(path.join(tmpDir, 'MyLib.fsproj'), '');
-    const result = runSquad([], tmpDir);
-    assert.equal(result.exitCode, 0, `init should succeed: ${result.stdout}`);
+    const initResult = runSquad([], tmpDir);
+    assert.equal(initResult.exitCode, 0, `init should succeed: ${initResult.stdout}`);
+    const result = runSquad(['upgrade'], tmpDir);
+    assert.equal(result.exitCode, 0, `upgrade should succeed: ${result.stdout}`);
 
     const ciPath = path.join(tmpDir, '.github', 'workflows', 'squad-ci.yml');
     const ciContent = fs.readFileSync(ciPath, 'utf8');
@@ -281,10 +287,12 @@ describe('detectProjectType: .NET extensions (.slnx, .fsproj, .vbproj)', () => {
     );
   });
 
-  it('init in a dir with .vbproj generates a dotnet stub CI workflow', () => {
+  it('upgrade in a dir with .vbproj generates a dotnet stub CI workflow', () => {
     fs.writeFileSync(path.join(tmpDir, 'MyApp.vbproj'), '');
-    const result = runSquad([], tmpDir);
-    assert.equal(result.exitCode, 0, `init should succeed: ${result.stdout}`);
+    const initResult = runSquad([], tmpDir);
+    assert.equal(initResult.exitCode, 0, `init should succeed: ${initResult.stdout}`);
+    const result = runSquad(['upgrade'], tmpDir);
+    assert.equal(result.exitCode, 0, `upgrade should succeed: ${result.stdout}`);
 
     const ciPath = path.join(tmpDir, '.github', 'workflows', 'squad-ci.yml');
     const ciContent = fs.readFileSync(ciPath, 'utf8');
