@@ -285,6 +285,8 @@ my-team-plugins/
 │   ├── charter.md          # Agent template
 │   ├── skills/
 │   │   └── awesome-skill.md
+│   ├── roles/              # Optional: additional base roles
+│   │   └── react.json      # Resolves via useRole('@your-plugin/react')
 │   └── decisions.md        # Conventions
 ├── microservices-template/
 │   ├── charter.md
@@ -293,6 +295,8 @@ my-team-plugins/
 │       └── fault-tolerance.md
 └── README.md               # Plugin descriptions
 ```
+
+Role files in `roles/` are loaded into the SDK role catalog. See [Built-in Roles → Plugin-contributed roles](./built-in-roles.md#plugin-contributed-roles) for the file format and collision rules.
 
 ### Step 1: Create the repository
 

@@ -1,4 +1,10 @@
-import { listRoles, searchRoles, getCategories } from '@bradygaster/squad-sdk';
+import {
+  listRoles,
+  searchRoles,
+  getCategories,
+  getPluginRoleRegistrations,
+  BASE_ROLES,
+} from '@bradygaster/squad-sdk';
 
 type RoleRecord = ReturnType<typeof listRoles>[number];
 
@@ -51,10 +57,14 @@ export async function runRoles(args: string[]): Promise<void> {
     return;
   }
 
-  const softwareRoles = roles.filter(r => SOFTWARE_DEVELOPMENT_CATEGORIES.has(r.category));
-  const businessRoles = roles.filter(r => !SOFTWARE_DEVELOPMENT_CATEGORIES.has(r.category));
+  const builtinIds = new Set(BASE_ROLES.map(r => r.id));
+  const builtinRoles = roles.filter(r => builtinIds.has(r.id));
+  const pluginRoles = roles.filter(r => !builtinIds.has(r.id));
 
-  console.log(`\n📦 Built-in Roles (${listRoles().length} base roles)`);
+  const softwareRoles = builtinRoles.filter(r => SOFTWARE_DEVELOPMENT_CATEGORIES.has(r.category));
+  const businessRoles = builtinRoles.filter(r => !SOFTWARE_DEVELOPMENT_CATEGORIES.has(r.category));
+
+  console.log(`\n📦 Built-in Roles (${BASE_ROLES.length} base roles)`);
   console.log('   Adapted from agency-agents by AgentLand Contributors (MIT)\n');
 
   if (softwareRoles.length > 0) {
@@ -67,5 +77,23 @@ export async function runRoles(args: string[]): Promise<void> {
     console.log('  Business & Operations:');
     printRoleRows(businessRoles);
     console.log();
+  }
+
+  if (pluginRoles.length > 0) {
+    const registrations = getPluginRoleRegistrations();
+    const byPlugin = new Map<string, typeof pluginRoles>();
+    for (const reg of registrations) {
+      if (!pluginRoles.some(r => r.id === reg.role.id)) continue;
+      const bucket = byPlugin.get(reg.plugin) ?? [];
+      bucket.push(reg.role);
+      byPlugin.set(reg.plugin, bucket);
+    }
+
+    console.log(`🔌 Plugin Roles (${pluginRoles.length} from ${byPlugin.size} plugin${byPlugin.size === 1 ? '' : 's'})\n`);
+    for (const [plugin, pluginRoleList] of byPlugin) {
+      console.log(`  ${plugin}:`);
+      printRoleRows(pluginRoleList);
+      console.log();
+    }
   }
 }

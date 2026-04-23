@@ -23,6 +23,8 @@ my-extension/
 │   └── CEREMONY.md
 ├── directives/
 │   └── DIRECTIVE.md
+├── roles/
+│   └── ROLE.json       # Optional: additional base roles (see built-in-roles doc)
 └── README.md
 ```
 
