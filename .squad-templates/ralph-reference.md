@@ -1,7 +1,5 @@
 # Ralph Reference — Work Monitor Lifecycle
 
-## Ralph's Work-Check Cycle
-
 When Ralph is active, run this check cycle after every batch of agent work completes (or immediately on activation):
 
 **Step 1 — Scan for work** (run these in parallel):
@@ -33,7 +31,9 @@ gh pr list --state open --draft --json number,title,author,labels,checks --limit
 | **No work found** | All clear | Report: "📋 Board is clear. Ralph is idling." Suggest `npx @bradygaster/squad-cli watch` for persistent polling. |
 
 **Step 3 — Act on highest-priority item:**
-- ⚡ CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again. This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
+- Process one category at a time, highest priority first (untriaged > assigned > CI failures > review feedback > approved PRs)
+- Spawn agents as needed, collect results
+- **⚡ CRITICAL: After results are collected, DO NOT stop. DO NOT wait for user input. IMMEDIATELY go back to Step 1 and scan again.** This is a loop — Ralph keeps cycling until the board is clear or the user says "idle". Each cycle is one "round".
 - If multiple items exist in the same category, process them in parallel (spawn multiple agents)
 
 **Step 4 — Periodic check-in** (every 3-5 rounds):
@@ -49,55 +49,7 @@ After every 3-5 rounds, pause and report before continuing:
 
 **Do NOT ask for permission to continue.** Just report and keep going. The user must explicitly say "idle" or "stop" to break the loop. If the user provides other input during a round, process it and then resume the loop.
 
-## Board Format
-
-Ralph tracks work items in these states:
-
-```
-Board State → Ralph Action
-──────────────────────────
-untriaged    → Triage using routing.md, assign agent
-assigned     → Wait for agent to start, or spawn if stalled
-inProgress   → Check for PR creation, review feedback
-needsReview  → Wait for approval or request changes
-ciFailure    → Notify agent, wait for fix
-readyToMerge → Merge PR, close issue
-done         → Remove from board
-```
-
-**Issue labels used:**
-- `squad` — Issue is in squad backlog
-- `squad:{member}` — Assigned to specific agent
-
-**PR API fields used for state tracking (not labels):**
-- `reviewDecision` — `CHANGES_REQUESTED` or `APPROVED`
-- `statusCheckRollup` — check states like `FAILURE`, `ERROR`, or `PENDING`
-
-## Ralph on the Board
-
-When Ralph reports status, use this format:
-
-```
-🔄 Ralph — Work Monitor
-══════════════════════
-📊 Board Status:
-  🔴 Untriaged:    2 issues need triage
-  🏃 In Progress:  3 issues assigned, 1 draft PR
-  🏁 Ready:        1 PR approved, awaiting merge
-  ✅ Done:         5 issues closed this session
-
-Next action: Triaging #42 — "Fix auth endpoint timeout"
-```
-
-## Ralph State
-
-Ralph's state is session-scoped (not persisted to disk):
-- **Active/idle** — whether the loop is running
-- **Round count** — how many check cycles completed
-- **Scope** — what categories to monitor (default: all)
-- **Stats** — issues closed, PRs merged, items processed this session
-
-## Watch Mode (`squad watch`)
+### Watch Mode (`squad watch`)
 
 Ralph's in-session loop processes work while it exists, then idles. For **persistent polling** between sessions or when you're away from the keyboard, use the `squad watch` CLI command:
 
@@ -113,7 +65,7 @@ This runs as a standalone local process (not inside Copilot) that:
 - Assigns @copilot to `squad:copilot` issues (if auto-assign is enabled)
 - Runs until Ctrl+C
 
-## Three Layers of Ralph
+**Three layers of Ralph:**
 
 | Layer | When | How |
 |-------|------|-----|
@@ -121,22 +73,33 @@ This runs as a standalone local process (not inside Copilot) that:
 | **Local watchdog** | You're away but machine is on | `npx @bradygaster/squad-cli watch --interval 10` |
 | **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` — event-based only (cron disabled) |
 
-## Idle-Watch Mode
+### Ralph State
 
-When the board is clear (all work done/merged), Ralph enters **idle mode**. In this state:
-- In-session Ralph stops the active loop (agents can still be called manually)
-- Watch mode Ralph pauses polling until next interval
-- Heartbeat Ralph waits for next event trigger (cron permanently disabled)
+Ralph's state is session-scoped (not persisted to disk):
+- **Active/idle** — whether the loop is running
+- **Round count** — how many check cycles completed
+- **Scope** — what categories to monitor (default: all)
+- **Stats** — issues closed, PRs merged, items processed this session
 
-Ralph wakes from idle when:
-- New issue is created with `squad` label
-- PR is opened by a squad agent
-- Existing issue is reopened
-- Manual activation via "Ralph, go" or `squad watch`
+### Ralph on the Board
 
-## Integration with Follow-Up Work
+When Ralph reports status, use this format:
 
-After the coordinator's post-work step ("Immediately assess: Does anything trigger follow-up work?"), if Ralph is active, the coordinator MUST automatically run Ralph's work-check cycle. **Do NOT return control to the user.** This creates a continuous pipeline:
+```
+🔄 Ralph — Work Monitor
+══════════════════════
+📊 Board Status:
+  🔴 Untriaged:    2 issues need triage
+  🏃 In Progress:  3 issues assigned, 1 draft PR
+  🏁 Ready:        1 PR approved, awaiting merge
+  ✅ Done:         5 issues closed this session
+
+Next action: Triaging #42 — "Fix auth endpoint timeout"
+```
+
+### Integration with Follow-Up Work
+
+After the coordinator's step 6 ("Immediately assess: Does anything trigger follow-up work?"), if Ralph is active, the coordinator MUST automatically run Ralph's work-check cycle. **Do NOT return control to the user.** This creates a continuous pipeline:
 
 1. User activates Ralph → work-check cycle runs
 2. Work found → agents spawned → results collected
@@ -147,26 +110,4 @@ After the coordinator's post-work step ("Immediately assess: Does anything trigg
 
 **Ralph does NOT ask "should I continue?" — Ralph KEEPS GOING.** Only stops on explicit "idle"/"stop" or session end. A clear board → idle-watch, not full stop. For persistent monitoring after the board clears, use `npx @bradygaster/squad-cli watch`.
 
-## Activation Triggers
-
-**Text-based (in Copilot Chat):**
-- `Ralph, go` → Start active loop
-- `Ralph, status` → Check board once, report results
-- `Ralph, idle` → Stop active loop
-
-**CLI-based:**
-- `squad watch --interval 10` → Start persistent polling
-- Ctrl+C → Stop watch mode
-
-**Event-based (Heartbeat):**
-- Issue closed/labeled → Check GitHub
-- PR opened/merged → Check GitHub
-- Manual dispatch → Check GitHub
-
-## Work-Check Termination
-
-Ralph stops checking when:
-1. Board is clear (all items done)
-2. User says "Ralph, idle" or "stop"
-3. Session ends (in-session layer only)
-4. Process killed (watch mode)
+These are intent signals, not exact strings — match the user's meaning, not their exact words.
