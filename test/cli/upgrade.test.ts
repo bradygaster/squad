@@ -7,12 +7,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'fs';
+import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, ensureCastingDefaults, selfUpgradeCli } from '@bradygaster/squad-cli/core/upgrade';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
-const TEST_ROOT = join(process.cwd(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
+const TEST_ROOT = join(tmpdir(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
 
 describe('CLI: upgrade command', () => {
   beforeEach(async () => {
