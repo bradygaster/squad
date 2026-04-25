@@ -319,10 +319,21 @@ async function main(): Promise<void> {
     runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
-        const path = await import('node:path');
-        // Ensure built-in presets are available
-        seedBuiltinPresets();
-        const targetAgentsDir = path.join(dest, '.squad', 'agents');
+        const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
+        const nodePath = await import('node:path');
+
+        // Auto-initialize squad home + presets if they don't exist yet
+        if (!resolvePresetsDir()) {
+          console.log(`\n⚙️  No presets found — setting up squad home...`);
+          ensureSquadHome();
+          seedBuiltinPresets();
+          console.log(`✅ Squad home initialized at ${ensureSquadHome()}`);
+          console.log(`   Built-in presets ready. Run 'squad preset init --remote' to back with a GitHub repo.\n`);
+        } else {
+          seedBuiltinPresets();
+        }
+
+        const targetAgentsDir = nodePath.join(dest, '.squad', 'agents');
         const results = applyPreset(presetName, targetAgentsDir);
         const installed = results.filter(r => r.status === 'installed');
         const skipped = results.filter(r => r.status === 'skipped');
@@ -330,10 +341,11 @@ async function main(): Promise<void> {
         if (installed.length > 0) {
           console.log(`✅ Applied preset '${presetName}': ${installed.length} agents installed`);
         }
+        if (skipped.length > 0) {
+          console.log(`   ${skipped.length} agents skipped (already exist)`);
+        }
         if (errors.length > 0 && installed.length === 0) {
-          console.error(`❌ Preset '${presetName}' not found.`);
-          console.error(`   Set up your squad home first: squad preset init --remote`);
-          console.error(`   Then try again: squad init --preset ${presetName}`);
+          console.error(`❌ Preset '${presetName}' not found. Run 'squad preset list' to see available presets.`);
         }
       }
     }).catch(err => {
