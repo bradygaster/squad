@@ -19,6 +19,8 @@
  */
 
 import path from 'node:path';
+import { execSync } from 'node:child_process';
+import fs from 'node:fs';
 import { resolveSquadHome, ensureSquadHome, resolvePresetsDir } from '@bradygaster/squad-sdk/resolution';
 import { listPresets, loadPreset, applyPreset, savePreset, seedBuiltinPresets } from '@bradygaster/squad-sdk/presets';
 import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
@@ -50,9 +52,11 @@ export async function runPreset(cwd: string, subcommand: string, args: string[])
       await presetApply(cwd, name!, force);
       break;
     }
-    case 'init':
-      await presetInit();
+    case 'init': {
+      const remote = args.includes('--remote');
+      await presetInit(remote);
       break;
+    }
     case 'save': {
       const name = args[0];
       if (!name) {
@@ -67,7 +71,7 @@ export async function runPreset(cwd: string, subcommand: string, args: string[])
     default:
       fatal(
         `Unknown preset subcommand: ${subcommand}\n` +
-        `       Available: list | show <name> | apply <name> [--force] | save <name> | init`,
+        `       Available: list | show <name> | apply <name> [--force] | save <name> | init [--remote]`,
       );
   }
 }
@@ -76,7 +80,12 @@ export async function runPreset(cwd: string, subcommand: string, args: string[])
 // Subcommand: init
 // ============================================================================
 
-async function presetInit(): Promise<void> {
+async function presetInit(remote: boolean): Promise<void> {
+  if (remote) {
+    await presetInitRemote();
+    return;
+  }
+
   const homeDir = ensureSquadHome();
   const presetsDir = path.join(homeDir, 'presets');
 
@@ -88,6 +97,147 @@ async function presetInit(): Promise<void> {
     info(`  Built-in presets installed: ${seeded.join(', ')}`);
   }
   info(`  Run 'squad preset list' to see available presets.`);
+  console.log();
+  info(`${DIM}Tip: Run 'squad preset init --remote' to back your squad home`);
+  info(`with a private GitHub repo so presets roam across machines.${RESET}`);
+}
+
+async function presetInitRemote(): Promise<void> {
+  // Check gh CLI is available
+  try {
+    execSync('gh --version', { stdio: 'pipe' });
+  } catch {
+    fatal('GitHub CLI (gh) is required for --remote. Install it: https://cli.github.com');
+  }
+
+  // Check gh auth
+  try {
+    execSync('gh auth status', { stdio: 'pipe' });
+  } catch {
+    fatal('Not logged in to GitHub CLI. Run: gh auth login');
+  }
+
+  const os = await import('node:os');
+  const envHome = process.env['SQUAD_HOME'];
+  const homeDir = envHome ? path.resolve(envHome) : path.join(os.homedir(), '.squad');
+  const repoName = 'squad-home';
+
+  // Get GitHub username
+  let ghUser: string;
+  try {
+    ghUser = execSync('gh api user --jq .login', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+  } catch {
+    fatal('Could not determine GitHub username. Run: gh auth login');
+    return;
+  }
+
+  const repoFullName = `${ghUser}/${repoName}`;
+
+  // Check if SQUAD_HOME is already a git repo
+  if (fs.existsSync(path.join(homeDir, '.git'))) {
+    info(`Squad home is already a git repo: ${homeDir}`);
+    const seeded = seedBuiltinPresets();
+    if (seeded.length > 0) {
+      info(`  Built-in presets installed: ${seeded.join(', ')}`);
+    }
+    success('Squad home ready — presets roam via git push/pull.');
+    return;
+  }
+
+  // If ~/.squad/ doesn't exist yet, try to clone existing remote repo
+  if (!fs.existsSync(homeDir)) {
+    let repoExists = false;
+    try {
+      execSync(`gh repo view ${repoFullName} --json name`, { stdio: 'pipe' });
+      repoExists = true;
+    } catch {
+      repoExists = false;
+    }
+
+    if (repoExists) {
+      // Second machine — clone existing squad home
+      info(`Found existing repo ${repoFullName} — cloning...`);
+      try {
+        execSync(`gh repo clone ${repoFullName} "${homeDir}"`, { stdio: 'inherit' });
+        const seeded = seedBuiltinPresets();
+        if (seeded.length > 0) {
+          info(`  New built-in presets added: ${seeded.join(', ')}`);
+          try {
+            execSync(`git -C "${homeDir}" add -A && git -C "${homeDir}" commit -m "seed built-in presets" --allow-empty`, { stdio: 'pipe' });
+          } catch { /* nothing new to commit */ }
+        }
+        success(`Squad home cloned from ${repoFullName}`);
+        info(`  Path: ${homeDir}`);
+        success('Presets synced — you\'re ready to go.');
+        return;
+      } catch {
+        fatal(`Failed to clone ${repoFullName}. Check permissions.`);
+      }
+    }
+
+    // Repo doesn't exist — create fresh
+    info(`Creating private repo ${repoFullName}...`);
+    try {
+      fs.mkdirSync(homeDir, { recursive: true });
+      execSync(`git init`, { cwd: homeDir, stdio: 'pipe' });
+      execSync(`gh repo create ${repoName} --private --source "${homeDir}" --push --description "Squad home — presets and config"`, {
+        stdio: 'inherit',
+      });
+    } catch {
+      fatal(`Failed to create repo. Try manually: gh repo create ${repoName} --private`);
+    }
+  } else {
+    // ~/.squad/ exists but isn't a git repo — init and connect
+    info(`Initializing git in existing squad home: ${homeDir}`);
+    execSync(`git init`, { cwd: homeDir, stdio: 'pipe' });
+
+    let repoExists = false;
+    try {
+      execSync(`gh repo view ${repoFullName} --json name`, { stdio: 'pipe' });
+      repoExists = true;
+    } catch {
+      repoExists = false;
+    }
+
+    if (!repoExists) {
+      info(`Creating private repo ${repoFullName}...`);
+      try {
+        execSync(`gh repo create ${repoName} --private --source "${homeDir}" --push --description "Squad home — presets and config"`, {
+          stdio: 'inherit',
+        });
+      } catch {
+        fatal(`Failed to create repo ${repoFullName}.`);
+      }
+    } else {
+      info(`Connecting to existing repo ${repoFullName}...`);
+      try {
+        execSync(`git remote add origin https://github.com/${repoFullName}.git`, { cwd: homeDir, stdio: 'pipe' });
+        execSync(`git pull origin main --allow-unrelated-histories`, { cwd: homeDir, stdio: 'pipe' });
+      } catch {
+        warn('Could not pull from remote. You may need to resolve manually.');
+      }
+    }
+  }
+
+  // Seed built-in presets and push
+  const seeded = seedBuiltinPresets();
+
+  try {
+    execSync(`git -C "${homeDir}" add -A`, { stdio: 'pipe' });
+    execSync(`git -C "${homeDir}" commit -m "Initialize squad home with presets"`, { stdio: 'pipe' });
+    execSync(`git -C "${homeDir}" push -u origin main`, { stdio: 'pipe' });
+  } catch {
+    // May fail if nothing to commit or push
+  }
+
+  success(`Squad home initialized with private repo: ${repoFullName}`);
+  info(`  Path: ${homeDir}`);
+  if (seeded.length > 0) {
+    info(`  Built-in presets installed: ${seeded.join(', ')}`);
+  }
+  console.log();
+  info(`On another machine, run the same command to sync your presets:`);
+  info(`  ${BOLD}squad preset init --remote${RESET}`);
 }
 
 // ============================================================================
@@ -99,8 +249,8 @@ async function presetList(): Promise<void> {
 
   if (!presetsDir) {
     info('No presets directory found.');
-    info('  Run `squad preset init` to set up presets in squad home.');
-    info('  Or set SQUAD_HOME to point to your squad home directory.');
+    info('  Run `squad preset init --remote` to set up with a GitHub repo (recommended).');
+    info('  Or `squad preset init` for local-only setup.');
     return;
   }
 

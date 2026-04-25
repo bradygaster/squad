@@ -240,7 +240,7 @@ async function main(): Promise<void> {
     console.log(`             Usage: personal init | list | add <name>`);
     console.log(`                    --role <role> | remove <name>`);
     console.log(`  ${BOLD}preset${RESET}     Manage squad presets (curated agent collections)`);
-    console.log(`             Usage: preset list | show <name> | apply <name> | save <name> | init`);
+    console.log(`             Usage: preset list | show <name> | apply <name> | save <name> | init [--remote]`);
     console.log(`                    [--force] | init`);
     console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
@@ -331,7 +331,9 @@ async function main(): Promise<void> {
           console.log(`✅ Applied preset '${presetName}': ${installed.length} agents installed`);
         }
         if (errors.length > 0 && installed.length === 0) {
-          console.error(`❌ Failed to apply preset '${presetName}'. Run 'squad preset list' to see available presets.`);
+          console.error(`❌ Preset '${presetName}' not found.`);
+          console.error(`   Set up your squad home first: squad preset init --remote`);
+          console.error(`   Then try again: squad init --preset ${presetName}`);
         }
       }
     }).catch(err => {

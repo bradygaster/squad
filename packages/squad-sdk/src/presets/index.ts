@@ -84,7 +84,7 @@ export function applyPreset(
 ): PresetApplyResult[] {
   const presetsDir = resolvePresetsDir();
   if (!presetsDir) {
-    return [{ agent: presetName, status: 'error', reason: 'No presets directory found. Run `squad preset init` first.' }];
+    return [{ agent: presetName, status: 'error', reason: 'No presets directory found. Run `squad preset init --remote` to set up, or `squad preset init` for local-only.' }];
   }
 
   const presetDir = path.join(presetsDir, presetName);
