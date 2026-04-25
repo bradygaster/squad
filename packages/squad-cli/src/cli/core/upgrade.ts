@@ -491,6 +491,32 @@ function refreshSquadTemplatesDir(dest: string, templatesDir: string): void {
 }
 
 /**
+ * Create missing Codex bootstrap files without overwriting local knowledge.
+ */
+function ensureCodexSetup(dest: string, templatesDir: string): string[] {
+  const created: string[] = [];
+  const squadDir = path.join(dest, '.squad');
+  const codexEntries = TEMPLATE_MANIFEST.filter(f =>
+    f.source === 'codex-bootstrap.md' ||
+    f.source === 'codex.md' ||
+    f.source === 'shared-knowledge.md' ||
+    f.source.startsWith('agents/codex/')
+  );
+
+  for (const entry of codexEntries) {
+    const srcPath = path.join(templatesDir, entry.source);
+    const destPath = path.join(squadDir, entry.destination);
+    if (!storage.existsSync(srcPath) || storage.existsSync(destPath)) continue;
+
+    storage.mkdirSync(path.dirname(destPath), { recursive: true });
+    storage.copySync(srcPath, destPath);
+    created.push(path.relative(dest, destPath) || '.');
+  }
+
+  return created;
+}
+
+/**
  * Run all ensure* checks and skill/template sync — shared by both code paths
  */
 function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): void {
@@ -522,6 +548,12 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
   if (skillCount > 0) {
     success(`synced ${skillCount} skills to .copilot/skills/`);
     filesUpdated.push(`skills (${skillCount})`);
+  }
+
+  const codexFiles = ensureCodexSetup(dest, templatesDir);
+  if (codexFiles.length > 0) {
+    success(`created ${codexFiles.length} missing Codex setup files`);
+    filesUpdated.push(...codexFiles);
   }
 
   refreshSquadTemplatesDir(dest, templatesDir);
