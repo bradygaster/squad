@@ -1,3 +1,11 @@
+---
+name: "release-process"
+description: "Pre-release validation, npm publish procedures, and post-publish verification"
+domain: "release"
+confidence: "high"
+source: "earned"
+---
+
 # Release Process
 
 > Earned knowledge from the v0.9.0→v0.9.1 and v0.9.4 incidents. Every agent involved in releases MUST read this before starting release work.
