@@ -10,7 +10,7 @@
  */
 
 import path from 'node:path';
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync, lstatSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { resolvePresetsDir, ensureSquadHome } from '../resolution.js';
@@ -21,7 +21,7 @@ export type { PresetManifest, PresetAgent, PresetApplyResult } from './types.js'
 const storage = new FSStorageProvider();
 
 function isDirSync(p: string): boolean {
-  try { return statSync(p).isDirectory(); } catch { return false; }
+  try { return lstatSync(p).isDirectory(); } catch { return false; }
 }
 
 /** Validate a preset or agent name — must be a safe basename (no path separators, no ..) */
@@ -127,6 +127,10 @@ export function applyPreset(
     }
 
     try {
+      // When forcing, remove dest first so renamed/deleted files don't linger
+      if (options.force && storage.existsSync(destDir)) {
+        rmSync(destDir, { recursive: true, force: true });
+      }
       copyDirRecursive(sourceDir, destDir);
       results.push({ agent: agent.name, status: 'installed' });
     } catch (err) {
@@ -264,8 +268,12 @@ function copyDirRecursive(src: string, dest: string): void {
   for (const entry of entries) {
     const srcPath = path.join(src, entry);
     const destPath = path.join(dest, entry);
+    const stat = lstatSync(srcPath);
 
-    if (isDirSync(srcPath)) {
+    // Skip symlinks — don't follow them into unintended locations
+    if (stat.isSymbolicLink()) continue;
+
+    if (stat.isDirectory()) {
       copyDirRecursive(srcPath, destPath);
     } else {
       const content = storage.readSync(srcPath);

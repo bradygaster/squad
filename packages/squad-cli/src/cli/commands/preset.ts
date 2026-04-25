@@ -339,11 +339,11 @@ async function presetApply(cwd: string, name: string, force: boolean): Promise<v
   for (const result of results) {
     switch (result.status) {
       case 'installed':
-        success(`  ✓ ${result.agent}`);
+        success(`  ${result.agent}`);
         installed++;
         break;
       case 'skipped':
-        warn(`  ⊘ ${result.agent} — ${result.reason}`);
+        warn(`  ${result.agent} — ${result.reason}`);
         skipped++;
         break;
       case 'error':
