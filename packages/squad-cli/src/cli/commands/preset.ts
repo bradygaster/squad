@@ -71,7 +71,12 @@ export async function runPreset(cwd: string, subcommand: string, args: string[])
     default:
       fatal(
         `Unknown preset subcommand: ${subcommand}\n` +
-        `       Available: list | show <name> | apply <name> [--force] | save <name> | init [--remote]`,
+        `Usage:\n` +
+        `  squad preset list\n` +
+        `  squad preset show <name>\n` +
+        `  squad preset apply <name> [--force]\n` +
+        `  squad preset save <name>\n` +
+        `  squad preset init [--remote]`,
       );
   }
 }
