@@ -27,7 +27,7 @@ const ROOT = resolve(__dirname, '..');
 // repo root, overwriting .github/agents/squad.agent.md from the CLI
 // template and making it diverge from .squad-templates/squad.agent.md.
 beforeAll(() => {
-  execSync('node scripts/sync-templates.mjs', {
+  execSync('node scripts/sync-templates.mjs --sync', {
     cwd: ROOT,
     encoding: 'utf-8',
     timeout: 60_000,
