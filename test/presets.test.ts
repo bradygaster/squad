@@ -44,7 +44,7 @@ describe('resolveSquadHome()', () => {
     }
   });
 
-  it('returns null when SQUAD_HOME is not set and ~/.squad does not exist', () => {
+  it('returns null when SQUAD_HOME points to a nonexistent path', () => {
     // Point SQUAD_HOME to a nonexistent path
     process.env['SQUAD_HOME'] = join(TMP, 'nonexistent');
     expect(resolveSquadHome()).toBeNull();

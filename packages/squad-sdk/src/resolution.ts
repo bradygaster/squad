@@ -626,6 +626,9 @@ export function resolveSquadHome(create: boolean = false): string | null {
     : path.join(os.homedir(), '.squad');
 
   if (storage.existsSync(homeDir)) {
+    if (!storage.isDirectorySync(homeDir)) {
+      throw new Error(`SQUAD_HOME path exists but is not a directory: ${homeDir}`);
+    }
     return homeDir;
   }
 
@@ -672,7 +675,7 @@ export function resolvePresetsDir(): string | null {
   if (!homeDir) return null;
 
   const presetsDir = path.join(homeDir, 'presets');
-  if (!storage.existsSync(presetsDir)) return null;
+  if (!storage.existsSync(presetsDir) || !storage.isDirectorySync(presetsDir)) return null;
 
   return presetsDir;
 }

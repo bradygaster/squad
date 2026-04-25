@@ -24,6 +24,13 @@ function isDirSync(p: string): boolean {
   try { return statSync(p).isDirectory(); } catch { return false; }
 }
 
+/** Validate a preset or agent name — must be a safe basename (no path separators, no ..) */
+function validateName(name: string, label: string): void {
+  if (!name || name !== path.basename(name) || name === '..' || name === '.') {
+    throw new Error(`Invalid ${label} name: '${name}'. Must be a simple directory name.`);
+  }
+}
+
 
 /**
  * List all available presets from the squad home presets directory.
@@ -82,6 +89,10 @@ export function applyPreset(
   targetDir: string,
   options: { force?: boolean } = {},
 ): PresetApplyResult[] {
+  try { validateName(presetName, 'preset'); } catch (err) {
+    return [{ agent: presetName, status: 'error', reason: String(err) }];
+  }
+
   const presetsDir = resolvePresetsDir();
   if (!presetsDir) {
     return [{ agent: presetName, status: 'error', reason: 'No presets directory found. Run `squad preset init --remote` to set up, or `squad preset init` for local-only.' }];
@@ -97,6 +108,11 @@ export function applyPreset(
   const results: PresetApplyResult[] = [];
 
   for (const agent of manifest.agents) {
+    try { validateName(agent.name, 'agent'); } catch {
+      results.push({ agent: agent.name, status: 'error', reason: `Invalid agent name: '${agent.name}'` });
+      continue;
+    }
+
     const sourceDir = path.join(presetAgentsDir, agent.name);
     const destDir = path.join(targetDir, agent.name);
 
@@ -154,6 +170,8 @@ export function savePreset(
   squadDir: string,
   options: { force?: boolean; description?: string } = {},
 ): string {
+  validateName(name, 'preset');
+
   const agentsDir = path.join(squadDir, 'agents');
   if (!storage.existsSync(agentsDir) || !isDirSync(agentsDir)) {
     throw new Error(`No agents/ directory found in ${squadDir}`);

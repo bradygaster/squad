@@ -226,7 +226,7 @@
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc -p tsconfig.json && node -e \"const{cpSync}=require('fs');cpSync('src/presets/builtin','dist/presets/builtin',{recursive:true,filter:(s)=>!s.endsWith('.ts')})\""
+    "build": "tsc -p tsconfig.json && node -e \"const{rmSync,cpSync}=require('fs');rmSync('dist/presets/builtin',{recursive:true,force:true});cpSync('src/presets/builtin','dist/presets/builtin',{recursive:true,filter:(s)=>!s.endsWith('.ts')})\""
   },
   "engines": {
     "node": ">=22.5.0"
