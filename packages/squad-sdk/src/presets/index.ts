@@ -137,6 +137,87 @@ export function installPreset(sourceDir: string, name: string): string {
   return destDir;
 }
 
+/**
+ * Save the current project's squad agents as a reusable preset.
+ *
+ * Reads agents from the given squad directory (e.g. `.squad/agents/`),
+ * generates a `preset.json` manifest, and copies everything into
+ * `<squad-home>/presets/<name>/`.
+ *
+ * @param name      - Name for the new preset.
+ * @param squadDir  - Path to the project's .squad/ directory containing agents/.
+ * @param options   - force: overwrite existing preset; description: preset description.
+ * @returns Path to the saved preset directory.
+ */
+export function savePreset(
+  name: string,
+  squadDir: string,
+  options: { force?: boolean; description?: string } = {},
+): string {
+  const agentsDir = path.join(squadDir, 'agents');
+  if (!storage.existsSync(agentsDir) || !isDirSync(agentsDir)) {
+    throw new Error(`No agents/ directory found in ${squadDir}`);
+  }
+
+  const homeDir = ensureSquadHome();
+  const destDir = path.join(homeDir, 'presets', name);
+
+  if (storage.existsSync(destDir) && !options.force) {
+    throw new Error(`Preset '${name}' already exists. Use --force to overwrite.`);
+  }
+
+  // Discover agents
+  const agentEntries = readdirSync(agentsDir, { encoding: 'utf-8' });
+  const agents: { name: string; role: string; description: string }[] = [];
+
+  for (const entry of agentEntries) {
+    const agentDir = path.join(agentsDir, entry);
+    if (!isDirSync(agentDir)) continue;
+
+    // Try to extract role from charter.md front matter
+    let role = entry;
+    let description = '';
+    const charterPath = path.join(agentDir, 'charter.md');
+    if (storage.existsSync(charterPath)) {
+      const content = storage.readSync(charterPath);
+      if (content) {
+        const roleMatch = content.match(/^##?\s+.*?[-–—]\s*(.+)/m);
+        if (roleMatch) role = roleMatch[1]!.trim();
+        // First non-empty, non-heading line as description
+        const lines = content.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('---')) {
+            description = trimmed.slice(0, 120);
+            break;
+          }
+        }
+      }
+    }
+
+    agents.push({ name: entry, role, description });
+  }
+
+  if (agents.length === 0) {
+    throw new Error(`No agents found in ${agentsDir}`);
+  }
+
+  // Build manifest
+  const manifest: PresetManifest = {
+    name,
+    version: '1.0.0',
+    description: options.description ?? `Custom preset '${name}'`,
+    agents: agents.map(a => ({ name: a.name, role: a.role, description: a.description })),
+  };
+
+  // Write preset directory
+  storage.mkdirSync(destDir, { recursive: true });
+  storage.writeSync(path.join(destDir, 'preset.json'), JSON.stringify(manifest, null, 2));
+  copyDirRecursive(agentsDir, path.join(destDir, 'agents'));
+
+  return destDir;
+}
+
 // ============================================================================
 // Internal helpers
 // ============================================================================

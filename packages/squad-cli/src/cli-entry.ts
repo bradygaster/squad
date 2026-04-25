@@ -239,7 +239,7 @@ async function main(): Promise<void> {
     console.log(`             Usage: personal init | list | add <name>`);
     console.log(`                    --role <role> | remove <name>`);
     console.log(`  ${BOLD}preset${RESET}     Manage squad presets (curated agent collections)`);
-    console.log(`             Usage: preset list | show <name> | apply <name>`);
+    console.log(`             Usage: preset list | show <name> | apply <name> | save <name> | init`);
     console.log(`                    [--force] | init`);
     console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);

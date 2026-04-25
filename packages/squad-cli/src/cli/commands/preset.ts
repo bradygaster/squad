@@ -12,7 +12,7 @@
 
 import path from 'node:path';
 import { resolveSquadHome, ensureSquadHome, resolvePresetsDir } from '@bradygaster/squad-sdk/resolution';
-import { listPresets, loadPreset, applyPreset, seedBuiltinPresets } from '@bradygaster/squad-sdk/presets';
+import { listPresets, loadPreset, applyPreset, savePreset, seedBuiltinPresets } from '@bradygaster/squad-sdk/presets';
 import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { success, warn, info, BOLD, RESET, DIM } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -45,10 +45,21 @@ export async function runPreset(cwd: string, subcommand: string, args: string[])
     case 'init':
       await presetInit();
       break;
+    case 'save': {
+      const name = args[0];
+      if (!name) {
+        fatal('Usage: squad preset save <name> [--force] [--description "..."]');
+      }
+      const force = args.includes('--force');
+      const descIdx = args.indexOf('--description');
+      const description = descIdx >= 0 ? args[descIdx + 1] : undefined;
+      await presetSave(cwd, name!, force, description);
+      break;
+    }
     default:
       fatal(
         `Unknown preset subcommand: ${subcommand}\n` +
-        `       Available: list | show <name> | apply <name> [--force] | init`,
+        `       Available: list | show <name> | apply <name> [--force] | save <name> | init`,
       );
   }
 }
@@ -188,4 +199,23 @@ async function presetApply(cwd: string, name: string, force: boolean): Promise<v
   if (installed > 0) success(`Applied preset '${name}': ${installed} agents installed`);
   if (skipped > 0) info(`  ${skipped} agents skipped (already exist)`);
   if (errors > 0) warn(`  ${errors} agents had errors`);
+}
+
+// ============================================================================
+// Subcommand: save
+// ============================================================================
+
+async function presetSave(cwd: string, name: string, force: boolean, description?: string): Promise<void> {
+  const squadDir = resolveSquad(cwd);
+  if (!squadDir) {
+    fatal('No .squad/ directory found. Initialize a squad first with `squad init`.');
+  }
+
+  try {
+    const destDir = savePreset(name, squadDir, { force, description });
+    success(`Preset '${name}' saved to ${destDir}`);
+    info(`  Use it in any project: squad preset apply ${name}`);
+  } catch (err) {
+    fatal(String(err));
+  }
 }
