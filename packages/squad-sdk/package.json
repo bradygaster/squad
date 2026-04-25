@@ -102,6 +102,10 @@
       "types": "./dist/resolution.d.ts",
       "import": "./dist/resolution.js"
     },
+    "./presets": {
+      "types": "./dist/presets/index.d.ts",
+      "import": "./dist/presets/index.js"
+    },
     "./adapter/errors": {
       "types": "./dist/adapter/errors.d.ts",
       "import": "./dist/adapter/errors.js"
@@ -222,7 +226,7 @@
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node -e \"const{cpSync}=require('fs');cpSync('src/presets/builtin','dist/presets/builtin',{recursive:true,filter:(s)=>!s.endsWith('.ts')})\""
   },
   "engines": {
     "node": ">=22.5.0"
