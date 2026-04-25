@@ -599,3 +599,83 @@ export function resolveExternalStateDir(projectKey: string, create: boolean = tr
 
   return projectsDir;
 }
+
+// ============================================================================
+// SQUAD_HOME — roaming squad root (Issue #1038)
+// ============================================================================
+
+/**
+ * Resolve the squad home directory — a roaming squad root for personal agents
+ * and presets that follows the user across machines.
+ *
+ * Resolution order:
+ * 1. `SQUAD_HOME` env var (explicit override, e.g. a synced folder)
+ * 2. `~/.squad/` (conventional default — user's home dir)
+ *
+ * Unlike `resolveGlobalSquadPath()` (which returns platform-specific app config),
+ * squad home is a **squad root** — it can contain `agents/`, `presets/`, etc.
+ *
+ * @param create - Whether to create the directory if missing (default: false).
+ * @returns Absolute path to the squad home directory, or null if it doesn't
+ *          exist and `create` is false.
+ */
+export function resolveSquadHome(create: boolean = false): string | null {
+  const envHome = process.env['SQUAD_HOME'];
+  const homeDir = envHome
+    ? path.resolve(envHome)
+    : path.join(os.homedir(), '.squad');
+
+  if (storage.existsSync(homeDir)) {
+    if (!storage.isDirectorySync(homeDir)) {
+      throw new Error(`SQUAD_HOME path exists but is not a directory: ${homeDir}`);
+    }
+    return homeDir;
+  }
+
+  if (create) {
+    storage.mkdirSync(homeDir, { recursive: true });
+    return homeDir;
+  }
+
+  return null;
+}
+
+/**
+ * Ensure the squad home directory exists with standard structure.
+ * Creates `agents/` and `presets/` subdirectories.
+ *
+ * Idempotent — safe to call multiple times.
+ *
+ * @returns Absolute path to the squad home directory.
+ */
+export function ensureSquadHome(): string {
+  const homeDir = resolveSquadHome(true)!;
+
+  const agentsDir = path.join(homeDir, 'agents');
+  if (!storage.existsSync(agentsDir)) {
+    storage.mkdirSync(agentsDir, { recursive: true });
+  }
+
+  const presetsDir = path.join(homeDir, 'presets');
+  if (!storage.existsSync(presetsDir)) {
+    storage.mkdirSync(presetsDir, { recursive: true });
+  }
+
+  return homeDir;
+}
+
+/**
+ * Resolve the presets directory within squad home.
+ *
+ * @returns Absolute path to `<squad-home>/presets/`, or null if squad home
+ *          doesn't exist.
+ */
+export function resolvePresetsDir(): string | null {
+  const homeDir = resolveSquadHome();
+  if (!homeDir) return null;
+
+  const presetsDir = path.join(homeDir, 'presets');
+  if (!storage.existsSync(presetsDir) || !storage.isDirectorySync(presetsDir)) return null;
+
+  return presetsDir;
+}

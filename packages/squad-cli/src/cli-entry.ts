@@ -157,6 +157,7 @@ async function main(): Promise<void> {
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
+    console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -238,6 +239,10 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}personal${RESET}   Manage your personal squad (ambient agents)`);
     console.log(`             Usage: personal init | list | add <name>`);
     console.log(`                    --role <role> | remove <name>`);
+    console.log(`  ${BOLD}preset${RESET}     Manage squad presets (curated agent collections)`);
+    console.log(`             Usage: preset list | show <name>`);
+    console.log(`                    apply <name> [--force] | save <name>`);
+    console.log(`                    init [--remote]`);
     console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
@@ -309,8 +314,42 @@ async function main(): Promise<void> {
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
+    const presetIdx = args.indexOf('--preset');
+    const presetName = (presetIdx !== -1 && args[presetIdx + 1]) ? args[presetIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).catch(err => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
+      if (presetName) {
+        const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
+        const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
+        const nodePath = await import('node:path');
+
+        // Auto-initialize squad home + presets if they don't exist yet
+        if (!resolvePresetsDir()) {
+          console.log(`\n⚙️  No presets found — setting up squad home...`);
+          ensureSquadHome();
+          seedBuiltinPresets();
+          console.log(`✅ Squad home initialized at ${ensureSquadHome()}`);
+          console.log(`   Built-in presets ready. Run 'squad preset init --remote' to back with a GitHub repo.\n`);
+        } else {
+          seedBuiltinPresets();
+        }
+
+        const targetAgentsDir = nodePath.join(dest, '.squad', 'agents');
+        const results = applyPreset(presetName, targetAgentsDir);
+        const installed = results.filter(r => r.status === 'installed');
+        const skipped = results.filter(r => r.status === 'skipped');
+        const errors = results.filter(r => r.status === 'error');
+        if (installed.length > 0) {
+          console.log(`✅ Applied preset '${presetName}': ${installed.length} agents installed`);
+        }
+        if (skipped.length > 0) {
+          console.log(`   ${skipped.length} agents skipped (already exist)`);
+        }
+        if (errors.length > 0 && installed.length === 0) {
+          console.error(`❌ Preset '${presetName}' not found. Run 'squad preset list' to see available presets.`);
+        }
+      }
+    }).catch(err => {
       fatal(err.message);
     });
     return;
@@ -892,6 +931,13 @@ async function main(): Promise<void> {
     const { runPersonal } = await import('./cli/commands/personal.js');
     const subcommand = args[1] || 'list';
     await runPersonal(getSquadStartDir(), subcommand, args.slice(2));
+    return;
+  }
+
+  if (cmd === 'preset') {
+    const { runPreset } = await import('./cli/commands/preset.js');
+    const subcommand = args[1] || 'list';
+    await runPreset(getSquadStartDir(), subcommand, args.slice(2));
     return;
   }
 
