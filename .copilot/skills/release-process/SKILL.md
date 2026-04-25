@@ -1,6 +1,6 @@
 ---
 name: "release-process"
-description: "Step-by-step release checklist for Squad — prevents v0.8.22-style disasters"
+description: "Step-by-step release checklist for Squad — prevents v0.8.22 and v0.9.4-style disasters"
 domain: "release-management"
 confidence: "high"
 source: "team-decision"
@@ -8,7 +8,9 @@ source: "team-decision"
 
 ## Context
 
-This is the **definitive release runbook** for Squad. Born from the v0.8.22 release disaster (4-part semver mangled by npm, draft release never triggered publish, wrong NPM_TOKEN type, 6+ hours of broken `latest` dist-tag).
+This is the **definitive release runbook** for Squad. Born from the v0.8.22 release disaster (4-part semver mangled by npm, draft release never triggered publish, wrong NPM_TOKEN type, 6+ hours of broken `latest` dist-tag) and hardened by v0.9.4 lessons (root package.json drift, CHANGELOG validation, GITHUB_TOKEN propagation limitation — PRs #1042, #1043, #1044).
+
+See also: `.squad/skills/release-process/SKILL.md` for the team-level skill with full incident history.
 
 **Rule:** No agent releases Squad without following this checklist. No exceptions. No improvisation.
 
@@ -92,6 +94,36 @@ $env:SKIP_BUILD_BUMP = "1"
 ```
 
 **If not set:** `bump-build.mjs` will run and mutate versions. This causes disasters (see v0.8.22).
+
+### 5. Root package.json Version Sync (v0.9.4 Lesson — PR #1043)
+
+**Rule:** `squad-release.yml` reads version from ROOT `package.json` (lines 31-35). If root is behind sub-packages (e.g., 0.9.1 while sub-packages are 0.9.4), the release workflow FAILS.
+
+```bash
+# Verify all 3 package.json files match
+grep '"version"' package.json packages/squad-sdk/package.json packages/squad-cli/package.json
+# All 3 MUST show the same version
+
+# Fix if mismatched:
+npm version $VERSION --workspaces --include-workspace-root --no-git-tag-version
+```
+
+**If versions don't match:** STOP. Run the `npm version` command above. This was the root cause of the v0.9.4 release delay.
+
+### 6. CHANGELOG.md Version Entry (v0.9.4 Lesson — PR #1042)
+
+**Rule:** `squad-release.yml` validates that `CHANGELOG.md` contains `## [$VERSION]`. An `[Unreleased]` section alone is NOT sufficient.
+
+```bash
+# Check CHANGELOG has the version entry
+grep -q "## \[$VERSION\]" CHANGELOG.md && echo "OK" || echo "MISSING — add version section"
+```
+
+**Before promoting to main:**
+1. Convert `[Unreleased]` to `[$VERSION] - YYYY-MM-DD` in CHANGELOG.md
+2. Add a fresh `[Unreleased]` section above it
+
+**If `## [$VERSION]` is missing:** STOP. Update CHANGELOG.md before promoting.
 
 ---
 
@@ -278,14 +310,27 @@ git push origin dev
 If `publish.yml` workflow fails or needs to be bypassed, use `workflow_dispatch` to manually trigger publish.
 
 ```bash
-# Trigger manual publish
-gh workflow run publish.yml -f version="0.8.22"
+# Trigger manual publish — ALWAYS use --ref main
+gh workflow run squad-npm-publish.yml --ref main -f version="0.8.22"
 
 # Monitor the run
 gh run watch
 ```
 
 **Rule:** Only use this if automated publish failed. Always investigate why automation failed and fix it for next release.
+
+### GITHUB_TOKEN Event Propagation Limitation (v0.9.4 — CRITICAL)
+
+When `squad-release.yml` creates a GitHub Release using the default `GITHUB_TOKEN`, the `release: published` event does **NOT** trigger `squad-npm-publish.yml`. This is a GitHub security feature to prevent infinite workflow loops.
+
+**After the release workflow succeeds**, check if `squad-npm-publish.yml` started automatically. If it didn't:
+```bash
+gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
+```
+
+IMPORTANT: Use `--ref main` — the repo default branch is `dev`, and the workflow must run against `main` where the release tag and artifacts exist.
+
+**Permanent fix (TODO):** Use a PAT or GitHub App token in `squad-release.yml` instead of `GITHUB_TOKEN`.
 
 ---
 
@@ -372,6 +417,42 @@ git push origin main
 **Root cause:** Release was created as a draft. Draft releases don't emit `release: published` event.  
 **Fix:** Edit release and change to published: `gh release edit "v$VERSION" --draft=false`. Workflow should trigger immediately.
 
+### Root package.json Version Drift (v0.9.4 — PR #1043)
+
+**Symptom:** `squad-release.yml` fails with "Version $VERSION not found in CHANGELOG.md" even though CHANGELOG looks correct.  
+**Root cause:** Root `package.json` version is behind sub-packages. The workflow reads version from root, not from workspace packages.  
+**Fix:** Run `npm version $VERSION --workspaces --include-workspace-root --no-git-tag-version` to sync all 3 package.json files.
+
+### CHANGELOG Missing Version Section (v0.9.4 — PR #1042)
+
+**Symptom:** `squad-release.yml` fails with "Version $VERSION not found in CHANGELOG.md".  
+**Root cause:** CHANGELOG.md still has `[Unreleased]` but no `## [$VERSION]` section.  
+**Fix:** Convert `[Unreleased]` to `[$VERSION] - YYYY-MM-DD` and add a fresh `[Unreleased]` above it.
+
+### Publish Workflow Not Triggered After Release (v0.9.4 — GITHUB_TOKEN)
+
+**Symptom:** `squad-release.yml` succeeds, creates tag + GitHub Release, but `squad-npm-publish.yml` never starts.  
+**Root cause:** `GITHUB_TOKEN`-created events don't trigger other workflows (GitHub security feature).  
+**Fix:** Manually trigger: `gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z`
+
+### Lockfile Integrity Check Rejects Workspace Packages (v0.9.4 — PR #1044)
+
+**Symptom:** `squad-npm-publish.yml` lockfile stability check fails on workspace packages.  
+**Root cause:** Workspace packages resolve to bare relative paths (`packages/squad-sdk`), not `file:` URLs. The check tried to validate integrity hashes on non-registry packages.  
+**Fix:** Filter lockfile integrity check to only validate packages resolved from npm registry (`startsWith('https://')`).
+
+### Prebuild Bump Breaks Workspace Linking (v0.9.4)
+
+**Symptom:** Local `npm run build` fails with resolution errors after running prebuild.  
+**Root cause:** `scripts/bump-build.mjs` bumps `0.9.4` → `0.9.4-build.1`, breaking exact version match in CLI's dependency on SDK.  
+**Fix:** Reset and reinstall:
+```bash
+git checkout -- package.json packages/*/package.json
+rm -rf node_modules packages/*/node_modules
+npm install
+npm run build
+```
+
 ---
 
 ## Validation Checklist
@@ -383,6 +464,8 @@ Before starting ANY release, confirm:
 - [ ] Branch is clean: `git status` shows "nothing to commit, working tree clean"
 - [ ] Tag doesn't exist: `git tag -l "vVERSION"` returns empty
 - [ ] `SKIP_BUILD_BUMP=1` is set: `echo $SKIP_BUILD_BUMP` returns `1`
+- [ ] **Root package.json version matches sub-packages** (v0.9.4): `grep '"version"' package.json packages/*/package.json` — all 3 identical
+- [ ] **CHANGELOG.md has `## [$VERSION]` section** (v0.9.4): `grep "## \[$VERSION\]" CHANGELOG.md` returns a match
 
 Before creating GitHub Release:
 
@@ -393,7 +476,8 @@ Before creating GitHub Release:
 After GitHub Release:
 
 - [ ] Release is published (NOT draft): `gh release view "vVERSION"` output doesn't contain "(draft)"
-- [ ] Workflow is running: `gh run list --workflow=publish.yml --limit 1` shows "in_progress"
+- [ ] Workflow is running: `gh run list --workflow=squad-npm-publish.yml --limit 1` shows "in_progress"
+- [ ] **If workflow didn't trigger** (GITHUB_TOKEN limitation): `gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z`
 
 After workflow completes:
 
@@ -411,13 +495,55 @@ After dev sync:
 
 ## Post-Mortem Reference
 
-This skill was created after the v0.8.22 release disaster. Full retrospective: `.squad/decisions/inbox/keaton-v0822-retrospective.md`
+This skill was created after the v0.8.22 release disaster and updated after v0.9.4. Full retrospective: `.squad/decisions/inbox/keaton-v0822-retrospective.md`
 
-**Key learnings:**
+**Key learnings (v0.8.22):**
 1. No release without a runbook = improvisation = disaster
 2. Semver validation is mandatory — 4-part versions break npm
 3. NPM_TOKEN type matters — User tokens with 2FA fail in CI
 4. Draft releases are a footgun — they don't trigger automation
 5. Retry logic is essential — npm propagation takes time
 
+**Key learnings (v0.9.4 — PRs #1042, #1043, #1044):**
+6. Root package.json MUST match sub-packages — squad-release.yml reads from root
+7. CHANGELOG.md must have `## [$VERSION]` section — `[Unreleased]` is not enough
+8. GITHUB_TOKEN events don't trigger downstream workflows — manual dispatch required
+9. Lockfile integrity checks must filter out workspace packages (not from registry)
+10. Prebuild version bump breaks local workspace linking — reset with git checkout
+
+**The full promotion chain (v0.9.4 documented):**
+```
+dev → preview → main (via squad-promote.yml)
+main push → squad-release.yml validates CHANGELOG, creates tag + GitHub Release
+release published → squad-npm-publish.yml (⚠️ may be BLOCKED by GITHUB_TOKEN limitation)
+manual workaround → gh workflow run squad-npm-publish.yml --ref main -f version=X.Y.Z
+```
+
 **Never again.**
+
+---
+
+## Local Development
+
+### Recovering from Prebuild Version Bump (v0.9.4)
+
+`scripts/bump-build.mjs` runs during `npm run prebuild` and mutates versions (e.g., `0.9.4` → `0.9.4-build.1`). This breaks workspace linking because CLI depends on exact version match with SDK.
+
+**Recovery steps:**
+```bash
+git checkout -- package.json packages/*/package.json
+rm -rf node_modules packages/*/node_modules
+npm install
+npm run build
+```
+
+**Prevention:** Set `SKIP_BUILD_BUMP=1` before running builds locally if you don't need build-number incrementing.
+
+---
+
+## Related
+
+- Team-level skill: `.squad/skills/release-process/SKILL.md`
+- v0.9.4 fixes: PR #1042 (CHANGELOG), PR #1043 (root package.json), PR #1044 (lockfile integrity)
+- v0.8.22 retrospective: `.squad/decisions/inbox/keaton-v0822-retrospective.md`
+- Playbook: `PUBLISH-README.md` (repo root)
