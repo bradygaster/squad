@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-04-25
+
 ### Fixed
 - `squad init` no longer runs `git init` automatically when initialized inside a monorepo subdirectory (#939). It now shows a warning and suggests running from the git root instead.
 - Azure DevOps adapter (`az` CLI calls) now use `shell: true` on Windows so `.cmd` wrapper scripts resolve correctly (#941).
