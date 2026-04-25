@@ -157,6 +157,7 @@ async function main(): Promise<void> {
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
+    console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -312,8 +313,28 @@ async function main(): Promise<void> {
     const noWorkflows = args.includes('--no-workflows');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
+    const presetIdx = args.indexOf('--preset');
+    const presetName = (presetIdx !== -1 && args[presetIdx + 1]) ? args[presetIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).catch(err => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
+      if (presetName) {
+        const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
+        const path = await import('node:path');
+        // Ensure built-in presets are available
+        seedBuiltinPresets();
+        const targetAgentsDir = path.join(dest, '.squad', 'agents');
+        const results = applyPreset(presetName, targetAgentsDir);
+        const installed = results.filter(r => r.status === 'installed');
+        const skipped = results.filter(r => r.status === 'skipped');
+        const errors = results.filter(r => r.status === 'error');
+        if (installed.length > 0) {
+          console.log(`✅ Applied preset '${presetName}': ${installed.length} agents installed`);
+        }
+        if (errors.length > 0 && installed.length === 0) {
+          console.error(`❌ Failed to apply preset '${presetName}'. Run 'squad preset list' to see available presets.`);
+        }
+      }
+    }).catch(err => {
       fatal(err.message);
     });
     return;
