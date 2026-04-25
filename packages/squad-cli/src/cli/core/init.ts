@@ -180,7 +180,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       if (useShared) {
         console.log();
         console.log(`${GREEN}${BOLD}✓${RESET} Using shared .squad/ from ${mainCheckout}`);
-        console.log(`${DIM}  No changes made. Run squad commands from the main checkout.${RESET}`);
+        console.log(`${DIM}  No changes made. Run ${CYAN}${BOLD}copilot --agent squad${RESET}${DIM} commands from the main checkout.${RESET}`);
         console.log();
         return;
       }
@@ -265,7 +265,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Report .init-prompt storage
   if (options.prompt) {
-    success(`.init-prompt stored — team will be cast when you start squad`);
+    success(`.init-prompt stored — team will be cast when you run ${CYAN}${BOLD}copilot --agent squad${RESET}`);
   }
 
   // Report created files
@@ -293,7 +293,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   if (!isInitNoColor()) await sleep(80);
   console.log();
-  console.log(`${GREEN}${BOLD}Your team is ready.${RESET} Run ${CYAN}${BOLD}squad${RESET} to start.`);
+  console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
   console.log();
 
   // ── Personal squad bridge ───────────────────────────────────────────

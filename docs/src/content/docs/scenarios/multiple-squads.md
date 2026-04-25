@@ -82,7 +82,7 @@ squad init
 ✅ Squad imported
    5 agents, 23 skills, 47 decisions, histories loaded
 
-Your team is ready.
+Squad initialized. Run copilot --agent squad and tell it what you're building.
 ```
 
 This squad is now your baseline.
