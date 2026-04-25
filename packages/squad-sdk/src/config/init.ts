@@ -637,6 +637,29 @@ const FRAMEWORK_WORKFLOWS = [
   'sync-squad-labels.yml',
 ];
 
+const CODEX_TEMPLATE_FILES = [
+  {
+    templateName: 'codex-bootstrap.md',
+    destination: 'AGENTS.md',
+  },
+  {
+    templateName: 'codex.md',
+    destination: join('.squad', 'codex.md'),
+  },
+  {
+    templateName: 'shared-knowledge.md',
+    destination: join('.squad', 'shared-knowledge.md'),
+  },
+  {
+    templateName: join('agents', 'codex', 'charter.md'),
+    destination: join('.squad', 'agents', 'codex', 'charter.md'),
+  },
+  {
+    templateName: join('agents', 'codex', 'history.md'),
+    destination: join('.squad', 'agents', 'codex', 'history.md'),
+  },
+] as const;
+
 export async function initSquad(options: InitOptions, storage: StorageProvider = new FSStorageProvider()): Promise<InitResult> {
   const {
     teamRoot,
@@ -946,11 +969,13 @@ No decisions recorded yet.
 | Name | Role | Notes |
 |------|------|-------|
 | Squad | Coordinator | Routes work, enforces handoffs and reviewer gates. |
+| Codex | Local implementation coordinator | Bridges Codex tools and repo-local Squad routing. |
 
 ## Members
 
 | Name | Role | Charter | Status |
 |------|------|---------|--------|
+| Codex | Local Implementation Coordinator | \`.squad/agents/codex/charter.md\` | Active |
 
 ## Project Context
 
@@ -959,6 +984,20 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
 `;
 
   await writeIfNotExists(teamPath, teamContent);
+
+  // -------------------------------------------------------------------------
+  // Create Codex bootstrap and shared knowledge files
+  // -------------------------------------------------------------------------
+
+  if (templatesDir) {
+    for (const file of CODEX_TEMPLATE_FILES) {
+      const srcPath = join(templatesDir, file.templateName);
+      const destPath = join(teamRoot, file.destination);
+      if (storage.existsSync(srcPath)) {
+        await copyIfNotExists(srcPath, destPath);
+      }
+    }
+  }
   
   // -------------------------------------------------------------------------
   // Create routing.md

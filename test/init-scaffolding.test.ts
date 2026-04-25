@@ -72,6 +72,20 @@ describe('casting directory scaffolding — initSquad()', () => {
     expect(existsSync(join(TEST_ROOT, '.squad', 'casting'))).toBe(true);
   });
 
+  it('creates Codex bootstrap and shared knowledge files', async () => {
+    await initSquad(sdkOptions(TEST_ROOT));
+
+    expect(existsSync(join(TEST_ROOT, 'AGENTS.md'))).toBe(true);
+    expect(existsSync(join(TEST_ROOT, '.squad', 'codex.md'))).toBe(true);
+    expect(existsSync(join(TEST_ROOT, '.squad', 'shared-knowledge.md'))).toBe(true);
+    expect(existsSync(join(TEST_ROOT, '.squad', 'agents', 'codex', 'charter.md'))).toBe(true);
+    expect(existsSync(join(TEST_ROOT, '.squad', 'agents', 'codex', 'history.md'))).toBe(true);
+
+    const team = await readFile(join(TEST_ROOT, '.squad', 'team.md'), 'utf-8');
+    expect(team).toContain('Codex');
+    expect(team).toContain('.squad/agents/codex/charter.md');
+  });
+
   it('creates .squad/casting/registry.json as valid JSON', async () => {
     await initSquad(sdkOptions(TEST_ROOT));
 

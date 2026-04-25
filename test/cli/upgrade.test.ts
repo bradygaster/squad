@@ -181,6 +181,26 @@ describe('CLI: upgrade command', () => {
     expect(decisionContent).toBe('# Decision\n');
   });
 
+  it('creates missing Codex setup files on upgrade without overwriting existing files', async () => {
+    const agentsPath = join(TEST_ROOT, 'AGENTS.md');
+    const codexPath = join(TEST_ROOT, '.squad', 'codex.md');
+    const sharedKnowledgePath = join(TEST_ROOT, '.squad', 'shared-knowledge.md');
+    const codexCharterPath = join(TEST_ROOT, '.squad', 'agents', 'codex', 'charter.md');
+    const customAgents = '# Custom Codex Bootstrap\n';
+
+    await writeFile(agentsPath, customAgents);
+    await rm(codexPath, { force: true });
+    await rm(sharedKnowledgePath, { force: true });
+    await rm(codexCharterPath, { force: true });
+
+    await runUpgrade(TEST_ROOT);
+
+    expect(await readFile(agentsPath, 'utf-8')).toBe(customAgents);
+    expect(existsSync(codexPath)).toBe(true);
+    expect(existsSync(sharedKnowledgePath)).toBe(true);
+    expect(existsSync(codexCharterPath)).toBe(true);
+  });
+
   it('should run migrations from old to new version', async () => {
     const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
     
