@@ -2,6 +2,25 @@
 
 You are working on **Squad**, an AI team framework. Follow these guidelines for autonomous issue work.
 
+## Squad Coordinator Check
+
+**IMPORTANT — run this check on EVERY session start, before doing any work:**
+
+Look for the exact canary token `SQUAD_COORDINATOR_CANARY_a8f3` in your agent_instructions. This token is placed at the end of `squad.agent.md` — if it's missing, the coordinator either failed to load or was truncated.
+
+**When the canary token is missing, you MUST:**
+1. **STOP** — do not proceed with any work requests silently.
+2. **WARN the user** with this exact message:
+   ```
+   ⚠️ Squad coordinator failed to load (context budget exceeded or file truncated).
+   This session has NO squad safety rails — no agent routing, no PRs, no branch protection.
+   → Start a fresh session to restore Squad.
+   → If this keeps happening, reduce conversation history before starting.
+   ```
+3. **Refuse task requests** until the user acknowledges. Do NOT fall back to working as a plain agent — that bypasses all squad safety (PRs, branch protection, reviewer gates).
+
+This check exists because `squad.agent.md` is a large file that can be silently dropped when context is tight. Without it, the session runs as a vanilla Copilot agent with none of the team's safety rules.
+
 ## Team Context
 
 1. Read `.squad/team.md` for roster, roles, and your capability profile.
