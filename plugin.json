@@ -1,0 +1,15 @@
+{
+  "name": "squad",
+  "description": "Human-led AI agent teams for any project.",
+  "version": "0.9.1",
+  "author": {
+    "name": "Brady Gaster"
+  },
+  "repository": "https://github.com/bradygaster/squad",
+  "homepage": "https://github.com/bradygaster/squad#readme",
+  "license": "MIT",
+  "keywords": ["copilot", "multi-agent", "squad"],
+  "agents": ".github/agents",
+  "skills": ".copilot/skills"
+}
+
