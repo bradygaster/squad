@@ -25,7 +25,6 @@ jobs:
       - name: "📊 Check GitHub API rate limit"
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { data: rateLimit } = await github.rest.rateLimit.get();
             const { remaining, limit, reset } = rateLimit.rate;
@@ -44,7 +43,6 @@ jobs:
       - name: Triage issue via Lead agent
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const issue = context.payload.issue;
