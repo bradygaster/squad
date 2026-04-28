@@ -8,21 +8,37 @@ permissions:
   issues: write
   contents: read
 
+# Prevent parallel runs from competing on the same issue
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   assign-work:
     # Only trigger on squad:{member} labels (not the base "squad" label)
     if: startsWith(github.event.label.name, 'squad:')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Identify assigned member and trigger work
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const issue = context.payload.issue;
             const label = context.payload.label.name;
+            const issueLabels = (issue.labels || []).map((entry) =>
+              typeof entry === 'string' ? entry : entry.name
+            );
+
+            // Skip estimate warning for coordination/automation issues
+            const NON_IMPLEMENTATION_LABELS = ['docs:sweep'];
+            const isImplementationIssue = !issueLabels.some((name) =>
+              NON_IMPLEMENTATION_LABELS.includes(name)
+            );
+            const hasEstimate = issueLabels.some((name) => name?.startsWith('estimate:'));
 
             // Extract member name from label (e.g., "squad:ripley" → "ripley")
             const memberName = label.replace('squad:', '').toLowerCase();
@@ -104,6 +120,17 @@ jobs:
               ].join('\n');
             }
 
+            // Warn if estimate is missing on implementation issues
+            if (isImplementationIssue && !hasEstimate) {
+              comment += [
+                '',
+                `⚠️ **Estimate missing**`,
+                `Add exactly one of \`estimate:S\`, \`estimate:M\`, \`estimate:L\`, or \`estimate:XL\` before the Design Proposal is reviewed.`,
+                `Calibration: S≈2h (1 point), M≈8h (3 points), L≈24h (8 points), XL≈80h (20 points).`
+              ].join('\n');
+              core.warning(`Issue #${issue.number} is missing an estimate label`);
+            }
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -116,7 +143,7 @@ jobs:
       # Separate step: assign @copilot using PAT (required for coding agent)
       - name: Assign @copilot coding agent
         if: github.event.label.name == 'squad:copilot'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
           script: |

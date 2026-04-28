@@ -19,11 +19,12 @@ jobs:
   sync-labels:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Parse roster and sync labels
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             let teamFile = '.squad/team.md';
@@ -137,6 +138,13 @@ jobs:
             labels.push(...TYPE_LABELS);
             labels.push(...PRIORITY_LABELS);
             labels.push(...SIGNAL_LABELS);
+
+            // Automation / process labels
+            const AUTOMATION_LABELS = [
+              { name: 'release', color: '6B8EB5', description: 'Release-related automation issue' },
+              { name: 'process', color: 'D4E5F7', description: 'Team process / housekeeping issue' }
+            ];
+            labels.push(...AUTOMATION_LABELS);
 
             // Sync labels (create or update)
             for (const label of labels) {
