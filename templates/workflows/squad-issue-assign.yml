@@ -24,7 +24,6 @@ jobs:
       - name: Identify assigned member and trigger work
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const issue = context.payload.issue;

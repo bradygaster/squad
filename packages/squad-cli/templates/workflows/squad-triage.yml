@@ -18,7 +18,6 @@ jobs:
       - name: Triage issue via Lead agent
         uses: actions/github-script@v8
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             const issue = context.payload.issue;

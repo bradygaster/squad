@@ -4,8 +4,16 @@ on:
   pull_request:
     branches: [dev, preview, main, insider]
     types: [opened, synchronize, reopened]
+    paths:
+      - 'test/**'
+      - '.squad/scripts/**'
+      - '.squad/templates/**'
   push:
     branches: [dev, insider]
+    paths:
+      - 'test/**'
+      - '.squad/scripts/**'
+      - '.squad/templates/**'
 
 permissions:
   contents: read
@@ -14,9 +22,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
