@@ -1,7 +1,8 @@
 /**
- * Tests for error message templates and recovery guidance.
+ * Tests for error message templates and recovery guidance — SDK import path.
+ * Mirrors test/error-messages.test.ts but imports from @bradygaster/squad-sdk.
  *
- * @module test/error-messages
+ * @module test/sdk-error-messages
  */
 
 import { describe, it, expect } from 'vitest';
@@ -15,7 +16,7 @@ import {
   formatGuidance,
 } from '@bradygaster/squad-sdk/runtime/error-messages';
 
-describe('error-messages', () => {
+describe('sdk-error-messages', () => {
   // ---------- sdkDisconnectGuidance ----------
   describe('sdkDisconnectGuidance', () => {
     it('returns default message when no detail provided', () => {
@@ -106,7 +107,7 @@ describe('error-messages', () => {
       const output = formatGuidance(g);
       const lines = output.split('\n');
       expect(lines[0]).toContain('Mira session failed: timeout');
-      expect(lines.length).toBeGreaterThanOrEqual(4); // message + Try: + at least 2 bullets
+      expect(lines.length).toBeGreaterThanOrEqual(4);
     });
   });
 

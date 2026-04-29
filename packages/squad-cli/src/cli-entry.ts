@@ -73,7 +73,7 @@ Module._resolveFilename = function (request: string, parent: unknown, isMain: bo
 
 // ---------------------------------------------------------------------------
 // Top-level signal handlers — safety net for clean exit on Ctrl+C / SIGTERM.
-// Individual commands (shell, watch, aspire, rc) register their own handlers
+// Individual commands (watch, aspire, rc) register their own handlers
 // that run first; these ensure the process never hangs if a command doesn't.
 // ---------------------------------------------------------------------------
 let _exitingOnSignal = false;
@@ -101,8 +101,6 @@ import { getPackageVersion } from './cli/core/version.js';
 // Lazy-load squad-sdk to avoid triggering @github/copilot-sdk import on Node 24+
 // (Issue: copilot-sdk has broken ESM imports - vscode-jsonrpc/node without .js extension)
 const lazySquadSdk = () => import('@bradygaster/squad-sdk');
-const lazyRunShell = () => import('./cli/shell/index.js');
-
 // Use local version resolver instead of importing VERSION from squad-sdk
 const VERSION = getPackageVersion();
 
@@ -110,7 +108,7 @@ const VERSION = getPackageVersion();
  * Return the starting directory for squad resolution.
  * Respects --team-root / SQUAD_TEAM_ROOT env var so that subprocesses
  * (e.g. Copilot CLI bang commands) can locate .squad/ even when their
- * working directory differs from the interactive shell. (#734)
+ * working directory differs from the caller. (#734)
  */
 function getSquadStartDir(): string {
   return process.env['SQUAD_TEAM_ROOT'] || process.cwd();
@@ -138,7 +136,7 @@ async function main(): Promise<void> {
 
   // --version / -v / version
   // Investigated: routing is correct — cmd matches 'version' directly.
-  // "Unknown command: version" reports may be shell-specific (e.g. alias/wrapper
+  // "Unknown command: version" reports may be environment-specific (e.g. alias/wrapper
   // prepending flags so args[0] is no longer 'version'). No intercepting router found.
   if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
     console.log(VERSION);
@@ -150,8 +148,7 @@ async function main(): Promise<void> {
     console.log(`\n${BOLD}squad${RESET} v${VERSION} — Add an AI agent team to any project\n`);
     console.log(`Usage: squad [command] [options]\n`);
     console.log(`Commands:`);
-    console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
-    console.log(`             Flags: --global (init in personal squad directory)`);
+    console.log(`  ${BOLD}(default)${RESET}  Show usage info (no args)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
     console.log(`             Flags: --sdk (SDK builder syntax)`);
     console.log(`                    --roles (use base roles)`);
@@ -276,12 +273,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  // No args → launch interactive shell; whitespace-only arg → show help
+  // No args → show usage guidance (interactive shell has been removed)
   if (rawCmd === undefined) {
-    // Fire-and-forget update check — non-blocking, never delays shell startup
     import('./cli/self-update.js').then(m => m.notifyIfUpdateAvailable(VERSION)).catch(() => {});
-    const { runShell } = await lazyRunShell();
-    await runShell();
+    console.log(`\n${BOLD}squad${RESET} v${VERSION} — AI team framework\n`);
+    console.log(`The interactive shell has been removed.`);
+    console.log(`Use ${BOLD}GitHub Copilot CLI${RESET} as your interface to Squad:\n`);
+    console.log(`  ${DIM}$${RESET} copilot`);
+    console.log(`\nFor Squad commands, run ${BOLD}squad help${RESET} for the full list.\n`);
     return;
   }
   if (!cmd) {

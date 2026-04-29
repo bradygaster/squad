@@ -13,9 +13,9 @@ import {
   loadLatestSession,
   listSessions,
   loadSessionById,
-} from '@bradygaster/squad-cli/shell/session-store';
-import type { SessionData } from '@bradygaster/squad-cli/shell/session-store';
-import type { ShellMessage } from '@bradygaster/squad-cli/shell/types';
+} from '@bradygaster/squad-sdk/runtime/session-store';
+import type { SessionData } from '@bradygaster/squad-sdk/runtime/session-store';
+import type { ShellMessage } from '@bradygaster/squad-sdk/runtime/shell-types';
 
 let tmpRoot: string;
 
