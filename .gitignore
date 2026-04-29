@@ -25,5 +25,14 @@ docs/tests/screenshots/
 .squad/.first-run
 .squad/.watch-pids
 
+# Squad: agent runtime memory (personal to each machine/session)
+.squad/**/history.md
+.squad/history.md
+.squad/identity/now.md
+.squad/identity/prd-*.md
+.squad/identity/sdk-init-*.md
+.squad/commit-message.txt
+.squad/commit-msg.txt
+
 # Images folder (root only — don't ignore docs/public/images/)
 /images/

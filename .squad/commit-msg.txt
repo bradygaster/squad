@@ -1,8 +1,0 @@
-docs(squad): log mega triage session
-
-- Crash recovery: merged 10 PRs, closed 3 duplicates
-- Repo hygiene: removed test artifacts, consolidated .gitignore, cleaned garbage files, pruned 21 local + 31 remote branches
-- Issue triage: 12+ issues routed and closed
-- PR management: merged #628 (model config), reviewed #629, routed Tamir PRs to dev branch pending proposals
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
