@@ -160,13 +160,24 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
   }
 
   private az(args: string[]): string {
-    return execFileSync('az', args, AZ_OPTS).trim();
+    // On Windows, shell:true joins args with spaces without quoting — quote any arg containing whitespace.
+    const safeArgs = IS_WINDOWS
+      ? args.map((a) => (/\s/.test(a) ? `"${a}"` : a))
+      : args;
+    return execFileSync('az', safeArgs, AZ_OPTS).trim();
   }
 
   async listWorkItems(options: { tags?: string[]; state?: string; limit?: number }): Promise<WorkItem[]> {
     const conditions: string[] = [];
     if (options.state) {
-      conditions.push(`[System.State] = '${escapeWiql(options.state)}'`);
+      // Map GitHub-style states to ADO WIQL equivalents
+      if (options.state === 'open') {
+        conditions.push(`[System.State] NOT IN ('Closed','Resolved','Removed','Done')`);
+      } else if (options.state === 'closed') {
+        conditions.push(`[System.State] IN ('Closed','Resolved','Done')`);
+      } else {
+        conditions.push(`[System.State] = '${escapeWiql(options.state)}'`);
+      }
     }
     if (options.tags?.length) {
       for (const tag of options.tags) {
@@ -182,7 +193,8 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     const output = this.az([
       'boards', 'query', '--wiql', wiql, ...this.workItemArgs, '--output', 'json',
     ]);
-    const items = parseJson<Array<{ id: number; fields?: Record<string, unknown> }>>(output);
+    // az boards query returns empty stdout (not "[]") when no items match
+    const items = parseJson<Array<{ id: number; fields?: Record<string, unknown> }>>(output || '[]');
 
     // Fetch full details for each work item (limited by top)
     const results: WorkItem[] = [];
