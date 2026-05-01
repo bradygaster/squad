@@ -276,6 +276,39 @@ export interface SkillDefinition {
 }
 
 // ---------------------------------------------------------------------------
+// RuntimeDefinition — runtime-agnostic configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Runtime definition for specifying which AI coding agent runtime to use.
+ */
+export interface RuntimeDefinition {
+  /**
+   * Runtime name (e.g., "copilot", "opencode", "claude-code", "cursor").
+   * @default "copilot"
+   */
+  readonly name: string;
+
+  /**
+   * Driver-specific configuration options.
+   * These are passed to the runtime driver.
+   */
+  readonly config?: Record<string, unknown>;
+
+  /**
+   * CLI path override for this runtime.
+   * If not provided, uses the runtime's default CLI detection.
+   */
+  readonly cliPath?: string;
+
+  /**
+   * CLI URL for external server connection.
+   * Mutually exclusive with cliPath.
+   */
+  readonly cliUrl?: string;
+}
+
+// ---------------------------------------------------------------------------
 // SquadSDKConfig — top-level config that composes all builders
 // ---------------------------------------------------------------------------
 
@@ -309,4 +342,11 @@ export interface SquadSDKConfig {
 
   /** Skill definitions. */
   readonly skills?: readonly SkillDefinition[];
+
+  /**
+   * Runtime configuration.
+   * Specifies which AI coding agent runtime to use (copilot, opencode, etc.).
+   * @default { name: "copilot" }
+   */
+  readonly runtime?: RuntimeDefinition;
 }
