@@ -1,5 +1,7 @@
 # Casting Reference
 
+> **Note:** This content is new specification material that fills a gap in the original `squad.agent.md`. The coordinator referenced this file but the content was never previously written inline. This is additive, not extracted.
+
 On-demand reference for Squad's casting system. Loaded during Init Mode or when adding team members.
 
 ## Universe Table
