@@ -73,11 +73,8 @@ npm workspaces automatically links local packages. `@bradygaster/squad-cli` can 
 ### 2. Build
 
 ```bash
-# Compile TypeScript to dist/
+# Compile TypeScript for both packages (SDK + CLI)
 npm run build
-
-# Build + bundle CLI (includes esbuild)
-npm run build:cli
 
 # Watch mode (auto-recompile on changes)
 npm run dev
@@ -191,16 +188,17 @@ This convention makes `squad version` show the preview tag locally, clearly indi
 To make the `squad` CLI command globally available and pointing to your local development build:
 
 ```bash
-npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli
-npm link -w packages/squad-cli
+npm run dev:link
 ```
 
-After this, `squad version` will show `0.8.6-preview` (or the current preview version). When you make code changes and rebuild, the `squad` command automatically picks up the changes—no need to reinstall. To verify your local build is active, the version output should include the `-preview` tag.
+This builds both packages and runs `npm link` to make `squad` available globally pointing to your local source.
+
+When you make code changes, re-run `npm run build` to recompile. No need to re-link — the linked package automatically picks up changes.
 
 To revert back to the globally installed npm package version, run:
 
 ```bash
-npm unlink -w packages/squad-cli
+npm run dev:unlink
 ```
 
 ## Changesets: Independent Versioning

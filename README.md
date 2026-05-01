@@ -96,6 +96,32 @@ Use `--force` to re-apply updates even when your installed version already match
 
 ---
 
+## Local Development Installation
+
+To install and run Squad from source for development:
+
+```bash
+# Clone the repository
+git clone https://github.com/bradygaster/squad.git
+cd squad
+
+# Install dependencies (npm workspaces)
+npm install
+
+# Build the project (SDK first, then CLI)
+npm run build
+
+# Run the CLI directly
+node ./packages/squad-cli/dist/cli-entry.js init
+
+# Or link it globally for convenience
+npm run dev:link
+```
+
+After `npm run dev:link`, the `squad` command will be available globally and will use your local build. To update after code changes, re-run `npm run build` to recompile.
+
+---
+
 ## All Commands (17 commands)
 
 | Command | What it does |
