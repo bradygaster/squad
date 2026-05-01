@@ -4,6 +4,16 @@
 
 ## Learnings
 
+### Template Brady contamination fix (#977) (2026-05-01)
+
+**Context:** Template files (squad.agent.md, init-mode/SKILL.md) contained hardcoded "Brady" examples in greetings, routing examples, and comments. LLMs treated these as patterns, greeting every user as "Brady" regardless of their actual `git config user.name`.
+
+**Fix:** Replaced all hardcoded "Brady" in template examples with generic `{user}` / `{name}` placeholders. Canonical sources: `.squad-templates/squad.agent.md` and `.copilot/skills/init-mode/SKILL.md`. Template sync (`node scripts/sync-templates.mjs`) propagated squad.agent.md to `.github/agents/` but did NOT sync init-mode SKILL.md to package templates — those required manual edits in both `packages/squad-cli/templates/skills/init-mode/SKILL.md` and `packages/squad-sdk/templates/skills/init-mode/SKILL.md`.
+
+**Key distinction:** Only template files that get copied to user repos were changed. Brady references in project docs (history-hygiene, release-process, humanizer, architectural-proposals, reskill) are legitimate content about the project founder and were left unchanged.
+
+**Pattern:** When fixing template contamination, verify which files are covered by `sync-templates.mjs` and which require manual propagation. The init-mode SKILL.md lives in `.copilot/skills/` (not `.squad-templates/`), so sync doesn't touch its package copies.
+
 ### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
 
 **Context:** PR #942 from tamirdresher's fork was retargeted from `insider` to `dev`, causing 29 files in the diff when only 3 commits (4 files relevant to dev) were the actual fix. Cherry-picked the 3 fix commits onto a clean `squad/942-rebase-type-safety` branch from dev, resolving conflicts where insider-only files (skill.ts, cross-package-exports.test.ts) didn't exist on dev. Dropped the `escapeYamlValue` import and APM YAML generation function from init.ts since skill.ts doesn't exist on dev. Opened #963 as the clean replacement, closed #942.
