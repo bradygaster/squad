@@ -5,7 +5,7 @@
 **Human-led AI agent teams for any project.** One command. A team that helps you move faster with your code.
 
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
-[![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
+[![Platform](https://img.shields.io/badge/platform-Multi--runtime-blue)](#what-is-squad)
 
 > ⚠️ **Alpha Software** — Squad is experimental. APIs and CLI commands may change between releases. We'll document breaking changes in [CHANGELOG.md](CHANGELOG.md).
 
@@ -13,7 +13,7 @@
 
 ## What is Squad?
 
-Squad gives you a human-directed AI development team through GitHub Copilot. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and help you move faster without giving up oversight.
+Squad gives you a human-directed AI development team through pluggable agent runtimes. Currently supports GitHub Copilot; OpenCode, Claude Code, and Cursor are in development. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and help you move faster without giving up oversight.
 
 Squad is a productivity tool for humans, not a replacement for engineers, reviewers, or decision-makers. People stay accountable for priorities, approvals, and final changes; Squad helps with coordination, repetition, and parallel execution.
 
