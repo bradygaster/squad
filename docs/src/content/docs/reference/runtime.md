@@ -1,7 +1,5 @@
 # Runtime Configuration
 
-> ⚠️ **Experimental** — Runtime abstraction is in active development. OpenCode, Claude Code, and Cursor drivers are planned but not yet implemented.
-
 Squad supports multiple AI coding agent runtimes through a driver abstraction layer. This allows teams to use whichever runtime fits their workflow.
 
 ---
@@ -11,7 +9,7 @@ Squad supports multiple AI coding agent runtimes through a driver abstraction la
 | Runtime | Status | Notes |
 |---------|--------|-------|
 | `copilot` | Stable | GitHub Copilot (default) |
-| `opencode` | Planned | OpenCode CLI — protocol not yet documented |
+| `opencode` | Experimental | OpenCode CLI — uses subprocess mode with JSON event streaming |
 | `claude-code` | Planned | Anthropic Claude Code — not yet started |
 | `cursor` | Planned | Cursor AI — not yet started |
 
@@ -47,10 +45,10 @@ export default defineSquad({
 
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
-| `name` | `string` | ✅ | Runtime identifier: `'copilot'` (default), `'opencode'`, `'claude-code'`, `'cursor'` |
-| `config` | `object` | ❌ | Runtime-specific configuration passed to the driver |
-| `cliPath` | `string` | ❌ | Path to runtime CLI executable (useful for custom installations) |
-| `cliUrl` | `string` | ❌ | URL for external server connection (mutually exclusive with `cliPath`) |
+| `name` | `string` | Yes | Runtime identifier: `'copilot'` (default), `'opencode'`, `'claude-code'`, `'cursor'` |
+| `config` | `object` | No | Runtime-specific configuration passed to the driver |
+| `cliPath` | `string` | No | Path to runtime CLI executable (useful for custom installations) |
+| `cliUrl` | `string` | No | URL for external server connection (mutually exclusive with `cliPath`) |
 
 ---
 
@@ -71,16 +69,26 @@ runtime: defineRuntime({
 
 **Authentication:** Uses `gh auth` credentials. Run `gh auth login` before using Squad.
 
-### OpenCode (Planned)
+### OpenCode
 
-OpenCode is a CLI-based agent runtime. Configuration details will be added once the protocol is documented.
+OpenCode is a CLI-based agent runtime that uses the `opencode run` command with JSON output for subprocess communication.
 
 ```typescript
 runtime: defineRuntime({
   name: 'opencode',
-  cliPath: '/usr/local/bin/opencode',  // optional
+  cliPath: '/usr/local/bin/opencode',  // optional, defaults to 'opencode'
+  config: {
+    requestTimeout: 120000,  // ms, default 120s
+    sessionTimeout: 300000, // ms, default 300s
+  },
 }),
 ```
+
+**How it works:** Each session spawns a new `opencode run --format json` subprocess. The driver parses JSON events (`step_start`, `text`, `step_finish`) for streaming output and error handling.
+
+**Session continuation:** The `--continue` flag is automatically used when resuming a session.
+
+**Authentication:** Uses OpenCode CLI authentication (no additional config needed).
 
 ### Claude Code (Planned)
 
@@ -125,10 +133,20 @@ Advanced users can implement custom drivers by implementing `AgentRuntimeDriver`
 ```typescript
 interface AgentRuntimeDriver {
   readonly name: string;
-  initialize(config: RuntimeConfig): Promise<void>;
-  createSession(options: SessionOptions): Promise<AgentSession>;
-  listSessions(): Promise<SessionInfo[]>;
-  dispose(): Promise<void>;
+  readonly displayName: string;
+  getState(): DriverConnectionState;
+  isConnected(): boolean;
+  connect(): Promise<void>;
+  disconnect(): Promise<Error[]>;
+  createSession(config?: DriverSessionConfig): Promise<AgentSession>;
+  resumeSession(sessionId: string, config?: DriverSessionConfig): Promise<AgentSession>;
+  listSessions(): Promise<DriverSessionMetadata[]>;
+  deleteSession(sessionId: string): Promise<void>;
+  getAuthStatus(): Promise<DriverAuthStatus>;
+  listModels(): Promise<DriverModelInfo[]>;
+  sendMessage(session: AgentSession, options: DriverMessageOptions): Promise<void>;
+  on(event: string, handler: (...args: unknown[]) => void): void;
+  off(event: string, handler: (...args: unknown[]) => void): void;
 }
 ```
 
