@@ -563,6 +563,7 @@ import {
   defineHooks,
   defineCasting,
   defineTelemetry,
+  defineRuntime,
 } from '@bradygaster/squad-sdk';
 
 export default defineSquad({
@@ -653,6 +654,11 @@ export default defineSquad({
     fallback: 'coordinator',
   }),
 
+  runtime: defineRuntime({
+    name: 'copilot',
+    config: {},
+  }),
+
   hooks: defineHooks({
     allowedWritePaths: [
       'src/**',
@@ -690,5 +696,6 @@ export default defineSquad({
 ## See Also
 
 - [SDK Reference](./reference/sdk.md) — all SDK exports
+- [Runtime Configuration](./reference/runtime.md) — runtime drivers and configuration
 - [Routing Guide](./features/routing.md) — deep dive on routing tiers
 - [Governance & Hooks](./reference/sdk.md) — hook pipeline and governance
