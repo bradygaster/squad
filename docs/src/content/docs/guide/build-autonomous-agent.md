@@ -355,6 +355,10 @@ The autonomous-pipeline sample demonstrates three coordination patterns that age
 
 These patterns let agents coordinate without a central orchestrator. Each agent makes local decisions that accumulate into a shared knowledge base.
 
+:::note[`squad_route` requires `fanOutDepsGetter`]
+For `squad_route` to actually spawn agent sessions, the `ToolRegistry` must be constructed with a `fanOutDepsGetter` callback that provides fan-out dependencies (`sessionPool`, `modelClient`, `squadRoot`, `configGetter`). Without it, the tool returns an honest `fan-out-deps-unavailable` error instead of silently succeeding. See the [SDK reference](/reference/sdk/#toolregistry) for wiring details.
+:::
+
 ---
 
 ## Add observability

@@ -11,10 +11,46 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ToolRegistry, defineTool, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
-import { SessionPool } from '@bradygaster/squad-sdk/client';
+import { SessionPool, EventBus } from '@bradygaster/squad-sdk/client';
+import type { FanOutDependencies } from '@bradygaster/squad-sdk/coordinator';
+import type { AgentCharter } from '@bradygaster/squad-sdk/agents';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+
+/**
+ * Build a fully-mocked FanOutDependencies suitable for squad_route tests.
+ * Mirrors test/fan-out.test.ts mock style so any future change to the
+ * fan-out contract surfaces in both places.
+ */
+function buildMockFanOutDeps(overrides: Partial<FanOutDependencies> = {}): FanOutDependencies {
+  const eventBus = overrides.eventBus ?? new EventBus();
+  const sessionPool = overrides.sessionPool ?? new SessionPool({
+    maxConcurrent: 10,
+    idleTimeout: 60000,
+    healthCheckInterval: 30000,
+  });
+  return {
+    compileCharter: overrides.compileCharter ?? vi.fn(async (agentName: string) => ({
+      name: agentName,
+      displayName: `${agentName} Agent`,
+      role: 'Developer',
+      expertise: ['TypeScript'],
+      style: 'Professional',
+      prompt: `You are ${agentName}`,
+      modelPreference: 'claude-sonnet-4.5',
+    } as AgentCharter)),
+    resolveModel: overrides.resolveModel ?? vi.fn(async (charter: AgentCharter, override?: string) =>
+      override ?? charter.modelPreference ?? 'claude-sonnet-4.5'
+    ),
+    createSession: overrides.createSession ?? vi.fn(async () => ({
+      sessionId: `session-${Math.random().toString(36).slice(2, 11)}`,
+      sendMessage: vi.fn(async () => undefined),
+    })),
+    sessionPool,
+    eventBus,
+  };
+}
 
 describe('defineTool', () => {
   it('should create a typed SquadTool', () => {
@@ -153,13 +189,8 @@ describe('ToolRegistry', () => {
 });
 
 describe('squad_route handler', () => {
-  let registry: ToolRegistry;
-
-  beforeEach(() => {
-    registry = new ToolRegistry('.test-squad-route');
-  });
-
   it('should validate target agent is required', async () => {
+    const registry = new ToolRegistry('.test-squad-route');
     const tool = registry.getTool('squad_route')!;
     const result = await tool.handler(
       { targetAgent: '', task: 'Do something' } as RouteRequest,
@@ -177,7 +208,35 @@ describe('squad_route handler', () => {
     });
   });
 
-  it('should create route request with valid inputs', async () => {
+  it('should fail with fan-out-deps-unavailable when no fanOutDepsGetter is configured', async () => {
+    // Default ToolRegistry has no fanOutDepsGetter — must not fake success.
+    const registry = new ToolRegistry('.test-squad-route');
+    const tool = registry.getTool('squad_route')!;
+    const result = await tool.handler(
+      { targetAgent: 'fenster', task: 'Implement feature X' } as RouteRequest,
+      {
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_route',
+        arguments: {},
+      }
+    );
+
+    expect(result).toMatchObject({
+      resultType: 'failure',
+      error: 'fan-out-deps-unavailable',
+    });
+    expect((result as any).textResultForLlm).toContain('fenster');
+    expect((result as any).toolTelemetry.routeRequest).toMatchObject({
+      targetAgent: 'fenster',
+      task: 'Implement feature X',
+      priority: 'normal',
+    });
+  });
+
+  it('should spawn target agent via spawnParallel when fanOutDepsGetter is configured', async () => {
+    const deps = buildMockFanOutDeps();
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => deps);
     const tool = registry.getTool('squad_route')!;
     const result = await tool.handler(
       {
@@ -194,20 +253,65 @@ describe('squad_route handler', () => {
       }
     );
 
-    expect(result).toMatchObject({
-      resultType: 'success',
-    });
+    expect(result).toMatchObject({ resultType: 'success' });
     expect((result as any).textResultForLlm).toContain('fenster');
-    expect((result as any).textResultForLlm).toContain('high');
+    expect((result as any).toolTelemetry.sessionId).toBeDefined();
+    expect((result as any).toolTelemetry.routeRequest).toMatchObject({
+      targetAgent: 'fenster',
+      priority: 'high',
+      context: 'Related to PRD-2',
+    });
+    expect(deps.compileCharter).toHaveBeenCalledWith('fenster');
+    expect(deps.createSession).toHaveBeenCalledOnce();
   });
 
-  it('should default priority to normal', async () => {
+  it('should default priority to normal when omitted', async () => {
+    const deps = buildMockFanOutDeps();
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => deps);
     const tool = registry.getTool('squad_route')!;
     const result = await tool.handler(
+      { targetAgent: 'brady', task: 'Review code' } as RouteRequest,
       {
-        targetAgent: 'brady',
-        task: 'Review code',
-      } as RouteRequest,
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_route',
+        arguments: {},
+      }
+    );
+
+    expect(result).toMatchObject({ resultType: 'success' });
+    expect((result as any).toolTelemetry.routeRequest.priority).toBe('normal');
+  });
+
+  it('should surface failure when underlying spawn fails', async () => {
+    const deps = buildMockFanOutDeps({
+      compileCharter: vi.fn(async () => {
+        throw new Error('charter-not-found');
+      }),
+    });
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => deps);
+    const tool = registry.getTool('squad_route')!;
+    const result = await tool.handler(
+      { targetAgent: 'ghost', task: 'Do thing' } as RouteRequest,
+      {
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_route',
+        arguments: {},
+      }
+    );
+
+    expect(result).toMatchObject({ resultType: 'failure' });
+    expect(['spawn-failed', 'spawn-exception']).toContain((result as any).error);
+    // toolTelemetry must not expose raw spawnResult
+    expect((result as any).toolTelemetry.spawnResult).toBeUndefined();
+  });
+
+  it('should fail with fan-out-deps-unavailable when fanOutDepsGetter returns undefined', async () => {
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => undefined);
+    const tool = registry.getTool('squad_route')!;
+    const result = await tool.handler(
+      { targetAgent: 'fenster', task: 'Implement feature X' } as RouteRequest,
       {
         sessionId: 'test-session',
         toolCallId: 'test-call',
@@ -217,9 +321,9 @@ describe('squad_route handler', () => {
     );
 
     expect(result).toMatchObject({
-      resultType: 'success',
+      resultType: 'failure',
+      error: 'fan-out-deps-unavailable',
     });
-    expect((result as any).toolTelemetry.routeRequest.priority).toBe('normal');
   });
 });
 

@@ -17,6 +17,7 @@ import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { SquadState } from '../state/squad-state.js';
+import { spawnParallel, type FanOutDependencies } from '../coordinator/fan-out.js';
 
 const tracer = trace.getTracer('squad-sdk');
 
@@ -165,15 +166,24 @@ export function defineTool<TArgs = unknown>(config: {
   };
 }
 
+// --- Validation ---
+
+/** Agent name format: alphanumeric, hyphens, underscores. Same rule as squad_decide/squad_memory. */
+const AGENT_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
 // --- Error Sanitization ---
 
 /**
  * Sanitize error messages before sending to LLM.
- * Strips absolute filesystem paths by replacing the squadRoot prefix with [team-root].
+ * Strips absolute filesystem paths by replacing the squadRoot prefix with [team-root],
+ * and collapses multi-line errors to prevent stack trace leakage.
  */
 function sanitizeErrorForLlm(error: unknown, squadRoot: string): string {
-  const msg = error instanceof Error ? error.message : String(error);
-  return msg.replace(new RegExp(squadRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[team-root]');
+  const raw = error instanceof Error ? error.message : String(error);
+  const stripped = raw.replace(new RegExp(squadRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[team-root]');
+  // Collapse to first line to avoid leaking stack-like multi-line details
+  const firstLine = stripped.split('\n')[0] ?? stripped;
+  return firstLine.slice(0, 512);
 }
 
 // --- Tool Registry ---
@@ -184,12 +194,20 @@ export class ToolRegistry {
   private sessionPoolGetter?: () => any;
   private storage: StorageProvider;
   private state?: SquadState;
+  private fanOutDepsGetter?: () => FanOutDependencies | undefined;
 
-  constructor(squadRoot = '.squad', sessionPoolGetter?: () => any, storage: StorageProvider = new FSStorageProvider(), state?: SquadState) {
+  constructor(
+    squadRoot = '.squad',
+    sessionPoolGetter?: () => any,
+    storage: StorageProvider = new FSStorageProvider(),
+    state?: SquadState,
+    fanOutDepsGetter?: () => FanOutDependencies | undefined,
+  ) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
     this.storage = storage;
     this.state = state;
+    this.fanOutDepsGetter = fanOutDepsGetter;
     this.registerSquadTools();
   }
 
@@ -223,28 +241,117 @@ export class ToolRegistry {
         required: ['targetAgent', 'task'],
       },
       handler: async (args) => {
-        // Validate target agent exists (stub for now, will check roster later)
-        if (!args.targetAgent || args.targetAgent.trim() === '') {
+        // Normalize + validate target agent name (lowercase to match charter loading convention)
+        const targetAgent = (args.targetAgent ?? '').trim().toLowerCase();
+        if (!targetAgent) {
           return {
             textResultForLlm: 'Error: Target agent name is required',
             resultType: 'failure',
             error: 'Invalid target agent',
           };
         }
+        if (!AGENT_NAME_RE.test(targetAgent)) {
+          return {
+            textResultForLlm: 'Invalid target agent name: must contain only letters, numbers, hyphens, and underscores',
+            resultType: 'failure',
+            error: 'invalid-agent-name',
+          };
+        }
 
-        // Create route request (session creation wired later)
+        // Roster check: verify the agent exists when state is available
+        if (this.state) {
+          try {
+            const handle = this.state.agents.get(targetAgent);
+            await handle.charter();
+          } catch (err: unknown) {
+            // Distinguish "not found" from infrastructure errors (I/O, permissions)
+            const isNotFound =
+              err instanceof Error && (err.constructor.name === 'NotFoundError' || err.message.includes('not found'));
+            if (isNotFound) {
+              return {
+                textResultForLlm: `Agent '${targetAgent}' not found in the team roster. Check .squad/agents/ for available agents.`,
+                resultType: 'failure',
+                error: 'agent-not-in-roster',
+              };
+            }
+            return {
+              textResultForLlm: `Roster check failed for '${targetAgent}': ${sanitizeErrorForLlm(err, this.squadRoot)}`,
+              resultType: 'failure',
+              error: 'roster-check-failed',
+            };
+          }
+        }
+
+        const priority = args.priority || 'normal';
         const routeRequest: RouteRequest = {
-          targetAgent: args.targetAgent,
+          targetAgent,
           task: args.task,
-          priority: args.priority || 'normal',
+          priority,
           context: args.context,
         };
 
-        return {
-          textResultForLlm: `Task routed to ${args.targetAgent}. Priority: ${routeRequest.priority}. Session creation will be implemented when session lifecycle is in place.`,
-          resultType: 'success',
-          toolTelemetry: { routeRequest },
-        };
+        // Resolve fan-out dependencies. Without them, the SDK cannot create
+        // sessions on behalf of the LLM. Returning fake-success here would
+        // cause the coordinator to claim work it never did (#1029).
+        let fanOutDeps: ReturnType<NonNullable<typeof this.fanOutDepsGetter>>;
+        try {
+          fanOutDeps = this.fanOutDepsGetter?.();
+        } catch (error) {
+          return {
+            textResultForLlm: `Cannot route to ${targetAgent}: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: 'fan-out-deps-unavailable',
+            toolTelemetry: { routeRequest },
+          };
+        }
+        if (!fanOutDeps) {
+          return {
+            textResultForLlm:
+              `Cannot route to ${targetAgent}: fan-out dependencies are not configured. ` +
+              `Wire a fanOutDepsGetter into ToolRegistry, or intercept squad_route via SquadSessionHooks.onPreToolUse.`,
+            resultType: 'failure',
+            error: 'fan-out-deps-unavailable',
+            toolTelemetry: { routeRequest },
+          };
+        }
+
+        // Spawn the target agent via the production fan-out path.
+        // spawnParallel with a single config matches CLI Path A behavior
+        // (charter compile → model resolve → createSession → initial message).
+        try {
+          const results = await spawnParallel(
+            [{
+              agentName: targetAgent,
+              task: args.task,
+              priority,
+              context: args.context,
+            }],
+            fanOutDeps,
+          );
+          const result = results[0];
+
+          if (!result || result.status !== 'success') {
+            return {
+              textResultForLlm: `Failed to route to ${targetAgent}: ${sanitizeErrorForLlm(result?.error ?? 'unknown error', this.squadRoot)}`,
+              resultType: 'failure',
+              error: 'spawn-failed',
+              toolTelemetry: { routeRequest, agentName: targetAgent },
+            };
+          }
+
+          return {
+            textResultForLlm: `Spawned session ${result.sessionId} for ${targetAgent} with priority ${priority}.`,
+            resultType: 'success',
+            toolTelemetry: { routeRequest, sessionId: result.sessionId },
+          };
+        } catch (error) {
+          return {
+            textResultForLlm: `Failed to route to ${targetAgent}: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: 'spawn-exception',
+            toolTelemetry: { routeRequest },
+          };
+        }
       },
     });
 

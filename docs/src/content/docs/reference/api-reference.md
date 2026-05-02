@@ -288,16 +288,25 @@ const myTool = defineTool<{ query: string }>({
 Manage the built-in tool set.
 
 ```typescript
+import { ToolRegistry } from '@bradygaster/squad-sdk/tools';
+import type { FanOutDependencies } from '@bradygaster/squad-sdk/coordinator';
+
 const registry = new ToolRegistry('./.squad');
 const tools = registry.getTools();
 const agentTools = registry.getToolsForAgent(['squad_route', 'squad_decide']);
 ```
 
+**Constructor:** `new ToolRegistry(squadRoot?, sessionPoolGetter?, storage?, state?, fanOutDepsGetter?)`
+
+- `fanOutDepsGetter` — Required for `squad_route` to spawn sessions via `spawnParallel`. Returns a `FanOutDependencies` object (from `@bradygaster/squad-sdk/coordinator`). Without it, `squad_route` returns `resultType: 'failure'` with `error: 'fan-out-deps-unavailable'`.
+- `state` — When provided, `squad_route` validates that the target agent exists in the team roster before spawning.
+- Agent names must match `/^[a-zA-Z0-9_-]+$/`. Spawn errors are sanitized before being returned to the LLM.
+
 **Built-in tools:**
 
 | Tool | Purpose |
 |------|---------|
-| `squad_route` | Route a task to another agent |
+| `squad_route` | Route a task to another agent (requires `fanOutDepsGetter`) |
 | `squad_decide` | Write decisions to the inbox |
 | `squad_memory` | Append to agent history |
 | `squad_status` | Query session pool state |
