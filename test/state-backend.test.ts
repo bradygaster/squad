@@ -104,9 +104,9 @@ describe('resolveStateBackend()', () => {
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
   afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
   it('defaults to local', () => { expect(resolveStateBackend(squadDir(), TMP).name).toBe('local'); });
-  it('reads stateBackend from config.json', () => {
+  it('reads stateBackend from config.json (git-notes migrates to two-layer)', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
-    expect(resolveStateBackend(squadDir(), TMP).name).toBe('git-notes');
+    expect(resolveStateBackend(squadDir(), TMP).name).toBe('two-layer');
   });
   it('CLI override wins over config', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
@@ -120,7 +120,10 @@ describe('resolveStateBackend()', () => {
   it('external returns local stub', () => { expect(resolveStateBackend(squadDir(), TMP, 'external').name).toBe('local'); });
   it('legacy worktree alias accepted', () => { expect(resolveStateBackend(squadDir(), TMP, 'worktree' as any).name).toBe('local'); });
   it('all valid types accepted', () => {
-    for (const t of ['local', 'external', 'git-notes', 'orphan'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
+    for (const t of ['local', 'external', 'orphan', 'two-layer'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
+  });
+  it('legacy git-notes migrates to two-layer', () => {
+    expect(resolveStateBackend(squadDir(), TMP, 'git-notes' as any).name).toBe('two-layer');
   });
 });
 
@@ -363,11 +366,11 @@ describe('resolveSquadState()', () => {
     expect(ctx!.paths.projectDir).toBe(squadDir());
   });
 
-  it('respects stateBackend in config.json', () => {
+  it('respects stateBackend in config.json (git-notes migrates to two-layer)', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
     const ctx = resolveSquadState(TMP);
     expect(ctx).not.toBeNull();
-    expect(ctx!.backend.name).toBe('git-notes');
+    expect(ctx!.backend.name).toBe('two-layer');
   });
 
   it('CLI override wins over config', () => {
@@ -396,7 +399,7 @@ describe('resolveSquadState()', () => {
     expect(ctx!.storage.constructor.name).toBe('FSStorageProvider');
   });
 
-  it('returns StateBackendStorageAdapter for git-notes backend', () => {
+  it('returns StateBackendStorageAdapter for two-layer backend (via git-notes migration)', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
     const ctx = resolveSquadState(TMP);
     expect(ctx).not.toBeNull();

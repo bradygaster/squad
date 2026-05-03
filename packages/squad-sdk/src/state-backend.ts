@@ -11,7 +11,7 @@ import type { StorageProvider, StorageStats } from './storage/storage-provider.j
 
 const storage = new FSStorageProvider();
 
-export type StateBackendType = 'local' | 'external' | 'git-notes' | 'orphan' | 'two-layer';
+export type StateBackendType = 'local' | 'external' | 'orphan' | 'two-layer';
 
 export interface StateBackend {
   read(relativePath: string): string | undefined;
@@ -545,17 +545,18 @@ export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverr
 function isValidBackendType(value: string): value is StateBackendType {
   return ['local', 'worktree', 'external', 'git-notes', 'orphan', 'two-layer'].includes(value);
 }
+// Note: 'worktree' and 'git-notes' are accepted for backward compatibility but normalized away
 
 /** Normalize legacy aliases to canonical backend type names. */
 function normalizeBackendType(type: string): StateBackendType {
-  if (type === 'worktree') return 'local'; // legacy alias
+  if (type === 'worktree') return 'local';
+  if (type === 'git-notes') return 'two-layer'; // standalone git-notes removed; migrate to two-layer
   return type as StateBackendType;
 }
 
 function createBackend(type: StateBackendType, squadDir: string, repoRoot: string): StateBackend {
   switch (type) {
     case 'local':     return new WorktreeBackend(squadDir);
-    case 'git-notes': return new GitNotesBackend(repoRoot);
     case 'orphan': return new OrphanBranchBackend(repoRoot);
     case 'two-layer': return new TwoLayerBackend(repoRoot);
     case 'external': return new WorktreeBackend(squadDir); // Stub — PR #797
