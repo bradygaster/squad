@@ -12,6 +12,7 @@ import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
 import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, type InitOptions } from '@bradygaster/squad-sdk';
+import { installGitHooks } from '../commands/install-hooks.js';
 
 const storage = new FSStorageProvider();
 
@@ -313,6 +314,9 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
             console.warn(`${YELLOW}  The ${options.stateBackend} backend will auto-create it on first write.${RESET}`);
           }
         }
+
+        // Install git hooks for automatic state sync on push/pull
+        installGitHooks(dest, { force: false });
       }
     } else {
       console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (local).${RESET}`);
