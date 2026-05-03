@@ -41,7 +41,7 @@ export interface WatchConfig {
   /** Path to a sentinel file — watch shuts down gracefully when removed. */
   sentinelFile?: string;
   /** State persistence backend. */
-  stateBackend?: 'worktree' | 'git-notes' | 'orphan' | 'external';
+  stateBackend?: 'worktree' | 'git-notes' | 'orphan' | 'two-layer' | 'external';
   /** Pre-resolved state context from CLI entry (avoids redundant resolution). */
   stateContext?: SquadStateContext | null;
 }
@@ -138,7 +138,7 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
   if (typeof raw['stateBackend'] === 'string') {
     const backend = raw['stateBackend'];
-    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    const validBackends = ['worktree', 'git-notes', 'orphan', 'two-layer', 'external'] as const; // git-notes/worktree accepted for backward compat
     if ((validBackends as readonly string[]).includes(backend)) {
       result.stateBackend = backend as typeof validBackends[number];
     }

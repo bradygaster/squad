@@ -3,9 +3,9 @@
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
 
-**Try this to use git-notes for state storage:**
+**Try this to use two-layer (recommended for teams):**
 ```bash
-squad watch --state-backend git-notes
+squad watch --state-backend two-layer
 ```
 
 **Try this to use an orphan branch:**
@@ -16,8 +16,10 @@ squad watch --state-backend orphan
 **Try this to set a persistent default (add to existing config):**
 ```bash
 # If .squad/config.json exists, add stateBackend to it:
-node -e "const fs=require('fs'),p='.squad/config.json';const c=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{version:1,teamRoot:'.'};c.stateBackend='git-notes';fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n')"
+node -e "const fs=require('fs'),p='.squad/config.json';const c=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{version:1,teamRoot:'.'};c.stateBackend='two-layer';fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n')"
 ```
+
+> **Migration note:** If your config references `git-notes`, it will be automatically migrated to `two-layer` at runtime. No action needed.
 
 Squad supports multiple **state backends** for storing `.squad/` state. Each backend determines _where_ and _how_ decisions, skills, agent memories, and session logs are persisted — without changing how agents interact with the data.
 
@@ -58,52 +60,13 @@ squad watch --state-backend local
 
 ---
 
-### Git Notes
+### Git Notes (Deprecated → Two-Layer)
 
-State is stored in [Git notes](https://git-scm.com/docs/git-notes) under `refs/notes/squad`. The note is attached to the repository's **root commit** (the first commit with no parents), which is the same on every branch. This means state persists across branch switches.
-
-```bash
-squad watch --state-backend git-notes
-```
-
-**How it works:**
-- All state is serialized as a single JSON blob attached as a note on the repo's root commit
-- The root commit is determined via `git rev-list --max-parents=0 HEAD` — it never changes regardless of which branch is checked out
-- Reading loads the JSON, writing updates and reattaches it
-- Notes travel with `git push` / `git fetch` when configured (see [Sharing](#sharing-git-notes-state))
-
-**Pros:**
-- Working tree stays completely clean — no `.squad/` files
-- State persists across branch switches (anchored to root commit, not HEAD)
-- No merge conflicts from `.squad/` files in PRs
-
-**Cons:**
-- Single JSON blob — not suited for high-concurrency writes
-- Requires `git notes` familiarity for debugging
-- Not human-readable without `git notes show`
-
-**Best for:** Simpler setups where you want zero `.squad/` files in the working tree or PRs. For teams needing full isolation between branches, use the [orphan backend](#orphan-branch) instead.
-
-> **Two-layer architecture:** The `GitNotesBackend` provides full state storage anchored to the repo root. For commit-scoped annotations (e.g., "why did we make this specific change?"), use `git notes` directly via the git CLI — that's the thin annotation layer, distinct from the primary state store.
-
-#### Sharing Git Notes State
-
-By default, Git doesn't push notes. To share git-notes state across clones:
-
-```bash
-# Push notes
-git push origin refs/notes/squad
-
-# Fetch notes
-git fetch origin refs/notes/squad:refs/notes/squad
-```
-
-Or configure automatic fetch in `.git/config`:
-
-```ini
-[remote "origin"]
-    fetch = +refs/notes/squad:refs/notes/squad
-```
+> ⚠️ **Deprecated:** The standalone `git-notes` backend has been removed as a user-facing option. If your config still references `git-notes`, it will be **automatically migrated to `two-layer`** at runtime.
+>
+> **Why:** Standalone git-notes stores all state as a single JSON blob on the root commit. This fundamentally cannot handle concurrent writes from multiple team members — `git notes merge` cannot merge opaque JSON, causing silent data loss.
+>
+> **Replacement:** The `two-layer` backend uses git notes as best-effort commit annotations (the "why" layer) while storing durable state on an orphan branch with per-file granularity (the "state" layer). This gives you the clean working tree of git-notes with the team-safe mergeability of the orphan approach.
 
 ---
 
@@ -143,9 +106,9 @@ squad watch --state-backend orphan
 Pass `--state-backend` to any squad command that supports it:
 
 ```bash
-squad watch --state-backend git-notes
+squad watch --state-backend two-layer
 squad watch --state-backend orphan
-squad watch --state-backend worktree
+squad watch --state-backend local
 ```
 
 > **Note:** As of v0.9.x, the `--state-backend` CLI flag is wired into the `watch` command.
@@ -177,30 +140,31 @@ This persists across invocations. The CLI flag overrides the config file when bo
 |----------|--------|---------|
 | 1 (highest) | CLI flag | `--state-backend orphan` |
 | 2 | `.squad/config.json` | `"stateBackend": "orphan"` |
-| 3 (default) | Built-in default | `worktree` |
+| 3 (default) | Built-in default | `local` |
 
 ### Fallback Behavior
 
-If a non-default backend fails to initialize (e.g., Git is not available, permissions issue), Squad automatically falls back to the **worktree** backend with a warning:
+If a non-default backend fails to initialize (e.g., Git is not available, permissions issue), Squad automatically falls back to the **local** backend with a warning:
 
 ```
-Warning: State backend 'git-notes' failed: <reason>. Falling back to 'worktree'.
+Warning: State backend 'two-layer' failed: <reason>. Falling back to 'local'.
 ```
 
 ---
 
 ## Comparison
 
-| Feature | Worktree | Git Notes | Orphan Branch |
-|---------|----------|-----------|---------------|
+| Feature | Local | Orphan Branch | Two-Layer |
+|---------|-------|---------------|-----------|
 | Working tree clean | ❌ | ✅ | ✅ |
 | Appears in PRs | Yes (if committed) | No | No |
-| Human-readable on disk | ✅ Files | ❌ JSON blob | ⚠️ Via `git show` |
-| Git history | Via normal commits | Per-note | Per-branch commits |
+| Human-readable on disk | ✅ Files | ⚠️ Via `git show` | ⚠️ Via `git show` |
+| Git history | Via normal commits | Per-branch commits | Per-branch + notes |
 | Branch-switch safe | ❌ (if uncommitted) | ✅ | ✅ |
-| Easy to inspect | ✅ `cat .squad/...` | ⚠️ `git notes show` | ⚠️ `git show squad-state:...` |
-| Sharing across clones | Normal push/pull | Requires notes fetch config | Normal branch push/pull |
-| Concurrent-write safe | ✅ (filesystem) | ⚠️ (last writer wins) | ⚠️ (single writer) |
+| Easy to inspect | ✅ `cat .squad/...` | ⚠️ `git show squad-state:...` | ⚠️ `git show squad-state:...` |
+| Sharing across clones | Normal push/pull | Normal branch push/pull | Normal branch push/pull |
+| Concurrent-write safe | ✅ (filesystem) | ⚠️ (single writer) | ✅ (per-file merge) |
+| Team-safe (multi-user) | ❌ (merge conflicts) | ⚠️ (needs coordination) | ✅ (designed for teams) |
 
 ---
 

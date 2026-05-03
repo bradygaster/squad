@@ -108,7 +108,7 @@ export interface RunInitOptions {
   roles?: boolean;
   /** If true, this is a global (personal squad) init — bootstrap personal-squad/ dir */
   isGlobal?: boolean;
-  /** State backend to configure at init time (local, git-notes, orphan, two-layer) */
+  /** State backend to configure at init time (local, orphan, two-layer) */
   stateBackend?: string;
 }
 
@@ -267,7 +267,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Configure state backend if specified at init time
   if (options.stateBackend) {
-    const validBackends = ['local', 'git-notes', 'orphan', 'two-layer'];
+    const validBackends = ['local', 'git-notes', 'orphan', 'two-layer']; // git-notes accepted for backward compat (migrated to two-layer at runtime)
     if (validBackends.includes(options.stateBackend)) {
       const configPath = path.join(squadDir, 'config.json');
       let config: Record<string, unknown> = {};
