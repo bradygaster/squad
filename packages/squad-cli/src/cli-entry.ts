@@ -502,7 +502,7 @@ async function main(): Promise<void> {
     const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
       ? args[stateBackendIdx + 1]
       : undefined;
-    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    const validBackends = ['local', 'git-notes', 'orphan', 'two-layer', 'external'] as const;
     if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
       console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
       process.exit(1);

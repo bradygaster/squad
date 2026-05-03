@@ -40,7 +40,7 @@ export interface SquadDirConfig {
   extractionDisabled?: boolean;
   /** Where state is stored: 'external' when moved out of the working tree */
   stateLocation?: string;
-  /** State storage backend: worktree | external | git-notes | orphan */
+  /** State storage backend: local | external | git-notes | orphan */
   stateBackend?: string;
 }
 
@@ -702,7 +702,7 @@ export function resolvePresetsDir(): string | null {
 export interface SquadStateContext {
   /** Dual-root resolved paths (projectDir, teamDir, etc.) */
   paths: ResolvedSquadPaths;
-  /** The active state backend (worktree, git-notes, or orphan) */
+  /** The active state backend (local, git-notes, or orphan) */
   backend: StateBackend;
   /** The repo root directory (for git-native backends) */
   repoRoot: string;
@@ -714,7 +714,7 @@ export interface SquadStateContext {
  * Resolve the full squad state context: paths + state backend.
  *
  * Call once at command entry and thread the context through to SDK functions.
- * This ensures the configured state backend (worktree, git-notes, orphan)
+ * This ensures the configured state backend (local, git-notes, orphan)
  * applies to all squad operations — not just the watch command.
  *
  * @param startDir - Directory to start searching from. Defaults to cwd.
@@ -740,9 +740,9 @@ export function resolveSquadState(startDir?: string, cliOverride?: StateBackendT
   // Resolve the backend from config + CLI override
   const backend = resolveStateBackend(paths.projectDir, repoRoot, cliOverride);
 
-  // For worktree backend, use FSStorageProvider directly (more capable).
+  // For local backend, use FSStorageProvider directly (more capable).
   // For git-notes/orphan, bridge via StateBackendStorageAdapter.
-  const stateStorage: StorageProvider = backend.name === 'worktree'
+  const stateStorage: StorageProvider = backend.name === 'local'
     ? new FSStorageProvider()
     : new StateBackendStorageAdapter(backend, paths.projectDir);
 

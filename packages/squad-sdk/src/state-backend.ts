@@ -11,7 +11,7 @@ import type { StorageProvider, StorageStats } from './storage/storage-provider.j
 
 const storage = new FSStorageProvider();
 
-export type StateBackendType = 'worktree' | 'external' | 'git-notes' | 'orphan' | 'two-layer';
+export type StateBackendType = 'local' | 'external' | 'git-notes' | 'orphan' | 'two-layer';
 
 export interface StateBackend {
   read(relativePath: string): string | undefined;
@@ -24,7 +24,7 @@ export interface StateBackend {
 }
 
 export class WorktreeBackend implements StateBackend {
-  readonly name = 'worktree';
+  readonly name = 'local';
   private readonly root: string;
   constructor(squadDir: string) {
     if (squadDir.includes('..')) throw new Error('Path traversal not allowed');
@@ -377,7 +377,7 @@ export class OrphanBranchBackend implements StateBackend {
  *
  * Modules that accept `storage: StorageProvider` can use this adapter
  * so that git-notes and orphan backends flow through the same code paths
- * as the filesystem worktree backend.
+ * as the local filesystem backend.
  */
 export class StateBackendStorageAdapter implements StorageProvider {
   constructor(private backend: StateBackend, private squadDir: string) {}
@@ -528,27 +528,33 @@ export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverr
     if (raw) {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       if (typeof parsed['stateBackend'] === 'string' && isValidBackendType(parsed['stateBackend'])) {
-        configBackend = parsed['stateBackend'] as StateBackendType;
+        configBackend = normalizeBackendType(parsed['stateBackend']);
       }
     }
   } catch { /* fall through */ }
-  const chosen = cliOverride ?? configBackend ?? 'worktree';
+  const chosen = normalizeBackendType(cliOverride ?? configBackend ?? 'local');
   try {
     return createBackend(chosen, squadDir, repoRoot);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`Warning: State backend '${chosen}' failed: ${msg}. Falling back to 'worktree'.`);
+    console.warn(`Warning: State backend '${chosen}' failed: ${msg}. Falling back to 'local'.`);
     return new WorktreeBackend(squadDir);
   }
 }
 
 function isValidBackendType(value: string): value is StateBackendType {
-  return ['worktree', 'external', 'git-notes', 'orphan', 'two-layer'].includes(value);
+  return ['local', 'worktree', 'external', 'git-notes', 'orphan', 'two-layer'].includes(value);
+}
+
+/** Normalize legacy aliases to canonical backend type names. */
+function normalizeBackendType(type: string): StateBackendType {
+  if (type === 'worktree') return 'local'; // legacy alias
+  return type as StateBackendType;
 }
 
 function createBackend(type: StateBackendType, squadDir: string, repoRoot: string): StateBackend {
   switch (type) {
-    case 'worktree': return new WorktreeBackend(squadDir);
+    case 'local':     return new WorktreeBackend(squadDir);
     case 'git-notes': return new GitNotesBackend(repoRoot);
     case 'orphan': return new OrphanBranchBackend(repoRoot);
     case 'two-layer': return new TwoLayerBackend(repoRoot);

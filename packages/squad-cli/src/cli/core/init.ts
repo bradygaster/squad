@@ -108,7 +108,7 @@ export interface RunInitOptions {
   roles?: boolean;
   /** If true, this is a global (personal squad) init — bootstrap personal-squad/ dir */
   isGlobal?: boolean;
-  /** State backend to configure at init time (worktree, git-notes, orphan, two-layer) */
+  /** State backend to configure at init time (local, git-notes, orphan, two-layer) */
   stateBackend?: string;
 }
 
@@ -267,7 +267,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Configure state backend if specified at init time
   if (options.stateBackend) {
-    const validBackends = ['worktree', 'git-notes', 'orphan', 'two-layer'];
+    const validBackends = ['local', 'git-notes', 'orphan', 'two-layer'];
     if (validBackends.includes(options.stateBackend)) {
       const configPath = path.join(squadDir, 'config.json');
       let config: Record<string, unknown> = {};
@@ -315,7 +315,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         }
       }
     } else {
-      console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (worktree).${RESET}`);
+      console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (local).${RESET}`);
     }
   }
 

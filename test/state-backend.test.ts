@@ -32,7 +32,7 @@ describe('WorktreeBackend', () => {
     expect(b.list('agents')).toContain('data.md'); expect(b.list('agents')).toContain('picard.md');
   });
   it('list returns empty for non-existent directory', () => { expect(new WorktreeBackend(squadDir()).list('nonexistent')).toEqual([]); });
-  it('name is worktree', () => { expect(new WorktreeBackend(squadDir()).name).toBe('worktree'); });
+  it('name is local', () => { expect(new WorktreeBackend(squadDir()).name).toBe('local'); });
 });
 
 describe('GitNotesBackend', () => {
@@ -103,7 +103,7 @@ describe('resolveStateBackend()', () => {
   const squadDir = () => join(TMP, '.squad');
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
   afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
-  it('defaults to worktree', () => { expect(resolveStateBackend(squadDir(), TMP).name).toBe('worktree'); });
+  it('defaults to local', () => { expect(resolveStateBackend(squadDir(), TMP).name).toBe('local'); });
   it('reads stateBackend from config.json', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
     expect(resolveStateBackend(squadDir(), TMP).name).toBe('git-notes');
@@ -114,12 +114,13 @@ describe('resolveStateBackend()', () => {
   });
   it('falls back on invalid type', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'bad' }));
-    expect(resolveStateBackend(squadDir(), TMP).name).toBe('worktree');
+    expect(resolveStateBackend(squadDir(), TMP).name).toBe('local');
   });
-  it('falls back on malformed JSON', () => { writeFileSync(join(squadDir(), 'config.json'), 'bad'); expect(resolveStateBackend(squadDir(), TMP).name).toBe('worktree'); });
-  it('external returns worktree stub', () => { expect(resolveStateBackend(squadDir(), TMP, 'external').name).toBe('worktree'); });
+  it('falls back on malformed JSON', () => { writeFileSync(join(squadDir(), 'config.json'), 'bad'); expect(resolveStateBackend(squadDir(), TMP).name).toBe('local'); });
+  it('external returns local stub', () => { expect(resolveStateBackend(squadDir(), TMP, 'external').name).toBe('local'); });
+  it('legacy worktree alias accepted', () => { expect(resolveStateBackend(squadDir(), TMP, 'worktree' as any).name).toBe('local'); });
   it('all valid types accepted', () => {
-    for (const t of ['worktree', 'external', 'git-notes', 'orphan'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
+    for (const t of ['local', 'external', 'git-notes', 'orphan'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
   });
 });
 
@@ -353,12 +354,12 @@ describe('resolveSquadState()', () => {
     expect(resolveSquadState(TMP)).toBeNull();
   });
 
-  it('returns context with worktree backend by default', () => {
+  it('returns context with local backend by default', () => {
     writeFileSync(join(squadDir(), 'team.md'), '# Team');
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.' }));
     const ctx = resolveSquadState(TMP);
     expect(ctx).not.toBeNull();
-    expect(ctx!.backend.name).toBe('worktree');
+    expect(ctx!.backend.name).toBe('local');
     expect(ctx!.paths.projectDir).toBe(squadDir());
   });
 
@@ -386,12 +387,12 @@ describe('resolveSquadState()', () => {
     expect(ctx!.repoRoot.replace(/\\/g, '/')).toBe(expected.replace(/\\/g, '/'));
   });
 
-  it('returns FSStorageProvider for worktree backend', () => {
+  it('returns FSStorageProvider for local backend', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.' }));
     const ctx = resolveSquadState(TMP);
     expect(ctx).not.toBeNull();
     expect(ctx!.storage).toBeDefined();
-    // Worktree backend should use FSStorageProvider, not the adapter
+    // Local backend should use FSStorageProvider, not the adapter
     expect(ctx!.storage.constructor.name).toBe('FSStorageProvider');
   });
 

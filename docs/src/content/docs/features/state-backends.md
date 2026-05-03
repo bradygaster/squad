@@ -25,7 +25,7 @@ Squad supports multiple **state backends** for storing `.squad/` state. Each bac
 
 ## The Problem
 
-The default **worktree** backend stores `.squad/` state as regular files in the working tree. This works well for most workflows, but has trade-offs:
+The default **local** backend stores `.squad/` state as regular files in the working tree. This works well for most workflows, but has trade-offs:
 
 - **Branch pollution:** `.squad/` files appear in diffs and PRs
 - **Branch-switch loss:** State can be lost when switching branches (if not committed)
@@ -37,12 +37,12 @@ State backends solve this by moving `.squad/` data into Git-native structures th
 
 ## Available Backends
 
-### Worktree (default)
+### Local (default)
 
 State lives as regular files in `.squad/` inside the working tree. This is the standard behavior — what you get out of the box.
 
 ```bash
-squad watch --state-backend worktree
+squad watch --state-backend local
 ```
 
 **Pros:**
