@@ -159,6 +159,7 @@ async function main(): Promise<void> {
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
+    console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -166,6 +167,7 @@ async function main(): Promise<void> {
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
     console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
+    console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
@@ -261,12 +263,6 @@ async function main(): Promise<void> {
     console.log(`                    upstream sync [name]`);
     console.log(`  ${BOLD}economy${RESET}    Toggle economy mode (cost-conscious model selection)`);
     console.log(`             Usage: economy [on|off]`);
-    console.log(`  ${BOLD}sync${RESET}       Synchronize squad-state branches with remote`);
-    console.log(`             Flags: --push, --pull (default: both)`);
-    console.log(`                    --remote <name> (default: current branch remote)`);
-    console.log(`                    --quiet (suppress output)`);
-    console.log(`  ${BOLD}install-hooks${RESET}  Install git hooks for automatic state sync`);
-    console.log(`             Flags: --force (reinstall existing hooks)`);
 
     console.log(`  ${BOLD}version${RESET}    Print installed version`);
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
@@ -374,6 +370,10 @@ async function main(): Promise<void> {
     const forceUpgrade = args.includes('--force');
     const insider = args.includes('--insider');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : getSquadStartDir();
+
+    // Parse --state-backend for backend migration
+    const sbIdx = args.indexOf('--state-backend');
+    const upgradeStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     
     // Warn when --insider is used without --self (it has no effect on project upgrades)
     if (insider && !selfUpgrade) {
@@ -399,6 +399,12 @@ async function main(): Promise<void> {
       self: selfUpgrade,
       force: forceUpgrade
     });
+
+    // Handle --state-backend: migrate backend after upgrade
+    if (upgradeStateBackend) {
+      const { migrateStateBackend } = await import('./cli/commands/migrate-backend.js');
+      await migrateStateBackend(dest, upgradeStateBackend);
+    }
     
     return;
   }
@@ -977,23 +983,6 @@ async function main(): Promise<void> {
   if (cmd === 'delegate') {
     const { delegateCommand } = await import('./cli/commands/cross-squad.js');
     await delegateCommand(args.slice(1));
-    return;
-  }
-
-  if (cmd === 'sync') {
-    const { runSync } = await import('./cli/commands/sync.js');
-    const direction = args.includes('--push') ? 'push' : args.includes('--pull') ? 'pull' : 'both';
-    const remoteIdx = args.indexOf('--remote');
-    const remote = (remoteIdx !== -1 && args[remoteIdx + 1]) ? args[remoteIdx + 1] : undefined;
-    const quiet = args.includes('--quiet') || args.includes('-q');
-    await runSync({ direction, remote, quiet });
-    return;
-  }
-
-  if (cmd === 'install-hooks') {
-    const { installGitHooks } = await import('./cli/commands/install-hooks.js');
-    const force = args.includes('--force');
-    installGitHooks(process.cwd(), { force });
     return;
   }
 

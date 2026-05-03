@@ -31,44 +31,79 @@ const SQUAD_HOOK_MARKER = '# --- squad-sync-hook ---';
 const HOOK_TEMPLATES: Record<string, string> = {
   'pre-push': `#!/bin/sh
 ${SQUAD_HOOK_MARKER}
-# Auto-sync squad-state branches on push.
-# Installed by: squad install-hooks
-# The remote and URL are passed as arguments to pre-push hooks.
+# Auto-push squad-state branches alongside the user's push.
+# Installed by: squad init / squad upgrade --state-backend
+# The remote name and URL are passed as arguments by git.
 if [ -z "$SQUAD_SYNC_ACTIVE" ]; then
-  REMOTE="$1"
+  REMOTE="\$1"
   export SQUAD_SYNC_ACTIVE=1
-  npx --yes @bradygaster/squad-cli sync --push --remote "$REMOTE" --quiet 2>/dev/null || true
+  # Push all squad-state branches (including subsquad branches)
+  for branch in $(git for-each-ref --format='%(refname:short)' 'refs/heads/squad-state' 'refs/heads/squad-state/*' 2>/dev/null); do
+    git push --no-verify "$REMOTE" "refs/heads/$branch:refs/heads/$branch" 2>/dev/null || true
+  done
+  # Push git notes for two-layer backend
+  git push --no-verify "$REMOTE" 'refs/notes/squad*:refs/notes/squad*' 2>/dev/null || true
   unset SQUAD_SYNC_ACTIVE
 fi
 `,
   'post-merge': `#!/bin/sh
 ${SQUAD_HOOK_MARKER}
 # Auto-fetch squad-state branches after pull/merge.
-# Installed by: squad install-hooks
+# Installed by: squad init / squad upgrade --state-backend
 if [ -z "$SQUAD_SYNC_ACTIVE" ]; then
   export SQUAD_SYNC_ACTIVE=1
-  npx --yes @bradygaster/squad-cli sync --pull --quiet 2>/dev/null || true
+  REMOTE=$(git config "branch.$(git symbolic-ref --short HEAD 2>/dev/null).remote" 2>/dev/null || echo origin)
+  # Fetch squad-state branches
+  git fetch "$REMOTE" '+refs/heads/squad-state:refs/remotes/'"$REMOTE"'/squad-state' '+refs/heads/squad-state/*:refs/remotes/'"$REMOTE"'/squad-state/*' 2>/dev/null || true
+  # Fast-forward local squad-state from remote
+  for remote_ref in $(git for-each-ref --format='%(refname:short)' "refs/remotes/$REMOTE/squad-state" "refs/remotes/$REMOTE/squad-state/*" 2>/dev/null); do
+    local_name=\${remote_ref#"$REMOTE/"}
+    local_sha=$(git rev-parse "refs/heads/$local_name" 2>/dev/null) || { git update-ref "refs/heads/$local_name" "$(git rev-parse "$remote_ref")" 2>/dev/null; continue; }
+    remote_sha=$(git rev-parse "$remote_ref" 2>/dev/null) || continue
+    [ "$local_sha" = "$remote_sha" ] && continue
+    git merge-base --is-ancestor "$local_sha" "$remote_sha" 2>/dev/null && git update-ref "refs/heads/$local_name" "$remote_sha" 2>/dev/null || true
+  done
+  # Fetch git notes for two-layer backend
+  git fetch "$REMOTE" '+refs/notes/squad*:refs/notes/squad*' 2>/dev/null || true
   unset SQUAD_SYNC_ACTIVE
 fi
 `,
   'post-rewrite': `#!/bin/sh
 ${SQUAD_HOOK_MARKER}
 # Auto-fetch squad-state branches after rebase.
-# Installed by: squad install-hooks
+# Installed by: squad init / squad upgrade --state-backend
 if [ -z "$SQUAD_SYNC_ACTIVE" ]; then
   export SQUAD_SYNC_ACTIVE=1
-  npx --yes @bradygaster/squad-cli sync --pull --quiet 2>/dev/null || true
+  REMOTE=$(git config "branch.$(git symbolic-ref --short HEAD 2>/dev/null).remote" 2>/dev/null || echo origin)
+  git fetch "$REMOTE" '+refs/heads/squad-state:refs/remotes/'"$REMOTE"'/squad-state' '+refs/heads/squad-state/*:refs/remotes/'"$REMOTE"'/squad-state/*' 2>/dev/null || true
+  for remote_ref in $(git for-each-ref --format='%(refname:short)' "refs/remotes/$REMOTE/squad-state" "refs/remotes/$REMOTE/squad-state/*" 2>/dev/null); do
+    local_name=\${remote_ref#"$REMOTE/"}
+    local_sha=$(git rev-parse "refs/heads/$local_name" 2>/dev/null) || { git update-ref "refs/heads/$local_name" "$(git rev-parse "$remote_ref")" 2>/dev/null; continue; }
+    remote_sha=$(git rev-parse "$remote_ref" 2>/dev/null) || continue
+    [ "$local_sha" = "$remote_sha" ] && continue
+    git merge-base --is-ancestor "$local_sha" "$remote_sha" 2>/dev/null && git update-ref "refs/heads/$local_name" "$remote_sha" 2>/dev/null || true
+  done
+  git fetch "$REMOTE" '+refs/notes/squad*:refs/notes/squad*' 2>/dev/null || true
   unset SQUAD_SYNC_ACTIVE
 fi
 `,
   'post-checkout': `#!/bin/sh
 ${SQUAD_HOOK_MARKER}
 # Auto-fetch squad-state branches on branch switch.
-# Installed by: squad install-hooks
-# Only run on branch checkout (3rd arg = 1), not file checkout
-if [ "$3" = "1" ] && [ -z "$SQUAD_SYNC_ACTIVE" ]; then
+# Installed by: squad init / squad upgrade --state-backend
+# Only run on branch checkout (3rd arg = 1), not file checkout.
+if [ "\$3" = "1" ] && [ -z "$SQUAD_SYNC_ACTIVE" ]; then
   export SQUAD_SYNC_ACTIVE=1
-  npx --yes @bradygaster/squad-cli sync --pull --quiet 2>/dev/null || true
+  REMOTE=$(git config "branch.$(git symbolic-ref --short HEAD 2>/dev/null).remote" 2>/dev/null || echo origin)
+  git fetch "$REMOTE" '+refs/heads/squad-state:refs/remotes/'"$REMOTE"'/squad-state' '+refs/heads/squad-state/*:refs/remotes/'"$REMOTE"'/squad-state/*' 2>/dev/null || true
+  for remote_ref in $(git for-each-ref --format='%(refname:short)' "refs/remotes/$REMOTE/squad-state" "refs/remotes/$REMOTE/squad-state/*" 2>/dev/null); do
+    local_name=\${remote_ref#"$REMOTE/"}
+    local_sha=$(git rev-parse "refs/heads/$local_name" 2>/dev/null) || { git update-ref "refs/heads/$local_name" "$(git rev-parse "$remote_ref")" 2>/dev/null; continue; }
+    remote_sha=$(git rev-parse "$remote_ref" 2>/dev/null) || continue
+    [ "$local_sha" = "$remote_sha" ] && continue
+    git merge-base --is-ancestor "$local_sha" "$remote_sha" 2>/dev/null && git update-ref "refs/heads/$local_name" "$remote_sha" 2>/dev/null || true
+  done
+  git fetch "$REMOTE" '+refs/notes/squad*:refs/notes/squad*' 2>/dev/null || true
   unset SQUAD_SYNC_ACTIVE
 fi
 `,
