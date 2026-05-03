@@ -280,35 +280,37 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       success(`state backend: ${options.stateBackend}`);
 
       // Auto-create orphan branch for orphan/two-layer backends
+      // Uses git plumbing (mktree + commit-tree + update-ref) so the working tree is never touched.
       if (options.stateBackend === 'orphan' || options.stateBackend === 'two-layer') {
         try {
-          // Check if squad-state branch already exists
-          execFileSync('git', ['rev-parse', '--verify', 'squad-state'], {
+          execFileSync('git', ['rev-parse', '--verify', 'refs/heads/squad-state'], {
             cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
           });
           success(`squad-state branch already exists`);
         } catch {
-          // Commit current state to main first (so checkout --orphan doesn't lose it)
           try {
-            execFileSync('git', ['add', '-A'], { cwd: dest, stdio: 'pipe' });
-            execFileSync('git', ['commit', '-m', 'squad: init with ' + options.stateBackend + ' backend'], { cwd: dest, stdio: 'pipe' });
-          } catch { /* may already be committed or nothing to commit */ }
-
-          // Create orphan branch
-          try {
-            const currentBranch = execFileSync('git', ['branch', '--show-current'], { cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-            execFileSync('git', ['checkout', '--orphan', 'squad-state'], { cwd: dest, stdio: 'pipe' });
-            execFileSync('git', ['rm', '-rf', '.'], { cwd: dest, stdio: 'pipe' });
-            const stateDir = path.join(dest, '.squad');
-            storage.mkdirSync(stateDir);
-            storage.writeSync(path.join(stateDir, 'README.md'), '# Squad State Branch\n\nThis branch stores mutable squad state (decisions, history, logs).\nIt is managed by Scribe and should not be edited manually.\n');
-            execFileSync('git', ['add', '.squad/'], { cwd: dest, stdio: 'pipe' });
-            execFileSync('git', ['commit', '-m', 'init: squad-state orphan branch'], { cwd: dest, stdio: 'pipe' });
-            execFileSync('git', ['checkout', currentBranch || 'main'], { cwd: dest, stdio: 'pipe' });
-            success(`squad-state orphan branch created`);
-          } catch {
-            try { execFileSync('git', ['checkout', '-'], { cwd: dest, stdio: 'pipe' }); } catch { /* best effort */ }
-            console.warn(`${YELLOW}⚠ Could not auto-create squad-state branch. Create it manually.${RESET}`);
+            // Seed a README blob so the branch isn't completely empty
+            const readmeContent = '# Squad State\n\nThis orphan branch stores mutable squad state.\nIt is managed automatically and should not be edited by hand.\n';
+            const blobHash = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+              cwd: dest, encoding: 'utf-8', input: readmeContent, stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Build a tree containing the README
+            const treeInput = `100644 blob ${blobHash}\tREADME.md\n`;
+            const treeHash = execFileSync('git', ['mktree'], {
+              cwd: dest, encoding: 'utf-8', input: treeInput, stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Create the root commit (no parent → orphan)
+            const commitHash = execFileSync('git', ['commit-tree', treeHash, '-m', 'init: squad-state orphan branch'], {
+              cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Point the branch ref at the new commit
+            execFileSync('git', ['update-ref', 'refs/heads/squad-state', commitHash], {
+              cwd: dest, stdio: ['pipe', 'pipe', 'pipe'],
+            });
+            success(`squad-state orphan branch created (working tree untouched)`);
+          } catch (err) {
+            console.warn(`${YELLOW}⚠ Could not create squad-state branch: ${err instanceof Error ? err.message : err}${RESET}`);
+            console.warn(`${YELLOW}  The ${options.stateBackend} backend will auto-create it on first write.${RESET}`);
           }
         }
       }

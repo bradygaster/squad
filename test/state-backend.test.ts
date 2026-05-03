@@ -69,8 +69,8 @@ describe('GitNotesBackend', () => {
     expect(b2.read('agents/data.md')).toBe('Data config');
     expect(b2.list('agents')).toContain('data.md');
 
-    // 5. Switch back to main — state still there
-    git('checkout main');
+    // 5. Switch back to previous branch — state still there
+    git('checkout -');
     const b3 = new GitNotesBackend(TMP);
     expect(b3.read('decisions.md')).toBe('# Team Decisions');
     expect(b3.read('agents/data.md')).toBe('Data config');
