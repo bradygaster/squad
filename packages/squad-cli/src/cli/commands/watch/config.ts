@@ -6,7 +6,7 @@
 
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
-import type { SquadStateContext } from '@bradygaster/squad-sdk';
+import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 
@@ -41,7 +41,7 @@ export interface WatchConfig {
   /** Path to a sentinel file — watch shuts down gracefully when removed. */
   sentinelFile?: string;
   /** State persistence backend. */
-  stateBackend?: 'worktree' | 'git-notes' | 'orphan' | 'two-layer' | 'external';
+  stateBackend?: StateBackendType;
   /** Pre-resolved state context from CLI entry (avoids redundant resolution). */
   stateContext?: SquadStateContext | null;
 }
@@ -138,9 +138,13 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
   if (typeof raw['stateBackend'] === 'string') {
     const backend = raw['stateBackend'];
-    const validBackends = ['worktree', 'git-notes', 'orphan', 'two-layer', 'external'] as const; // git-notes/worktree accepted for backward compat
+    const validBackends = ['local', 'worktree', 'git-notes', 'orphan', 'two-layer', 'external'] as const; // worktree/git-notes accepted for backward compat
     if ((validBackends as readonly string[]).includes(backend)) {
-      result.stateBackend = backend as typeof validBackends[number];
+      // Map legacy names to current SDK types
+      result.stateBackend =
+        backend === 'worktree' ? 'local'
+        : backend === 'git-notes' ? 'two-layer'
+        : backend as StateBackendType;
     }
   }
 

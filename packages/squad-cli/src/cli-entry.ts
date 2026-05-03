@@ -91,7 +91,7 @@ process.on('SIGINT', () => _handleTopLevelSignal('SIGINT'));
 process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
 
 import { FSStorageProvider, resolveSquadState } from '@bradygaster/squad-sdk';
-import type { SquadStateContext } from '@bradygaster/squad-sdk';
+import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
 import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
@@ -502,16 +502,22 @@ async function main(): Promise<void> {
     const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
       ? args[stateBackendIdx + 1]
       : undefined;
-    const validBackends = ['local', 'git-notes', 'orphan', 'two-layer', 'external'] as const; // git-notes accepted for backward compat (migrated to two-layer)
+    const validBackends = ['local', 'worktree', 'git-notes', 'orphan', 'two-layer', 'external'] as const; // worktree/git-notes accepted for backward compat
     if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
       console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
       process.exit(1);
     }
     const stateBackend = rawStateBackend as typeof validBackends[number] | undefined;
 
+    // Map legacy backend names before passing to SDK
+    const mappedBackend: StateBackendType | undefined =
+      stateBackend === 'git-notes' ? 'two-layer'
+      : stateBackend === 'worktree' ? 'local'
+      : stateBackend as StateBackendType | undefined;
+
     // Resolve the full state context (paths + backend) once at entry.
     // Commands can thread this through instead of re-resolving independently.
-    const stateContext: SquadStateContext | null = resolveSquadState(getSquadStartDir(), stateBackend);
+    const stateContext: SquadStateContext | null = resolveSquadState(getSquadStartDir(), mappedBackend);
 
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
@@ -546,7 +552,7 @@ async function main(): Promise<void> {
       overnightStart,
       overnightEnd,
       sentinelFile,
-      stateBackend,
+      stateBackend: mappedBackend,
       stateContext,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
