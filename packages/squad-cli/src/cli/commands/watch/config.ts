@@ -138,13 +138,9 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
   if (typeof raw['stateBackend'] === 'string') {
     const backend = raw['stateBackend'];
-    const validBackends = ['local', 'worktree', 'git-notes', 'orphan', 'two-layer', 'external'] as const; // worktree/git-notes accepted for backward compat
+    const validBackends = ['local', 'orphan', 'two-layer', 'external'] as const;
     if ((validBackends as readonly string[]).includes(backend)) {
-      // Map legacy names to current SDK types
-      result.stateBackend =
-        backend === 'worktree' ? 'local'
-        : backend === 'git-notes' ? 'two-layer'
-        : backend as StateBackendType;
+      result.stateBackend = backend as StateBackendType;
     }
   }
 

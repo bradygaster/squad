@@ -267,10 +267,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Configure state backend if specified at init time
   if (options.stateBackend) {
-    const validBackends = ['local', 'worktree', 'git-notes', 'orphan', 'two-layer']; // worktree/git-notes accepted for backward compat
-    const mappedBackend = options.stateBackend === 'worktree' ? 'local'
-      : options.stateBackend === 'git-notes' ? 'two-layer'
-      : options.stateBackend;
+    const validBackends = ['local', 'orphan', 'two-layer', 'external'];
     if (validBackends.includes(options.stateBackend)) {
       const configPath = path.join(squadDir, 'config.json');
       let config: Record<string, unknown> = {};
@@ -278,13 +275,13 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         const raw = storage.readSync(configPath);
         if (raw) config = JSON.parse(raw);
       } catch { /* start fresh */ }
-      config['stateBackend'] = mappedBackend;
+      config['stateBackend'] = options.stateBackend;
       storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
-      success(`state backend: ${mappedBackend}`);
+      success(`state backend: ${options.stateBackend}`);
 
       // Auto-create orphan branch for orphan/two-layer backends
       // Uses git plumbing (mktree + commit-tree + update-ref) so the working tree is never touched.
-      if (mappedBackend === 'orphan' || mappedBackend === 'two-layer') {
+      if (options.stateBackend === 'orphan' || options.stateBackend === 'two-layer') {
         try {
           execFileSync('git', ['rev-parse', '--verify', 'refs/heads/squad-state'], {
             cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
@@ -313,7 +310,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
             success(`squad-state orphan branch created (working tree untouched)`);
           } catch (err) {
             console.warn(`${YELLOW}⚠ Could not create squad-state branch: ${err instanceof Error ? err.message : err}${RESET}`);
-            console.warn(`${YELLOW}  The ${mappedBackend} backend will auto-create it on first write.${RESET}`);
+            console.warn(`${YELLOW}  The ${options.stateBackend} backend will auto-create it on first write.${RESET}`);
           }
         }
       }

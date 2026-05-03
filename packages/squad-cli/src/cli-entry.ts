@@ -502,18 +502,12 @@ async function main(): Promise<void> {
     const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
       ? args[stateBackendIdx + 1]
       : undefined;
-    const validBackends = ['local', 'worktree', 'git-notes', 'orphan', 'two-layer', 'external'] as const; // worktree/git-notes accepted for backward compat
+    const validBackends = ['local', 'orphan', 'two-layer', 'external'] as const;
     if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
       console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
       process.exit(1);
     }
-    const stateBackend = rawStateBackend as typeof validBackends[number] | undefined;
-
-    // Map legacy backend names before passing to SDK
-    const mappedBackend: StateBackendType | undefined =
-      stateBackend === 'git-notes' ? 'two-layer'
-      : stateBackend === 'worktree' ? 'local'
-      : stateBackend as StateBackendType | undefined;
+    const mappedBackend = rawStateBackend as StateBackendType | undefined;
 
     // Resolve the full state context (paths + backend) once at entry.
     // Commands can thread this through instead of re-resolving independently.
