@@ -92,7 +92,7 @@ squad watch --state-backend orphan
 
 **Cons:**
 - An extra branch in your repository
-- Slightly more complex than worktree for debugging
+- Slightly more complex than `local` for debugging
 - Concurrent writes to the branch can conflict (single-writer recommended)
 
 **Best for:** Teams who want Git-versioned state without polluting the main branch history.
@@ -267,7 +267,7 @@ All backends preserve content exactly as written — including trailing newlines
 and empty lines. This is critical for append-only files like `history.md` and `decisions.md` where
 multiple agents append entries over time.
 
-The orphan and git-notes backends use raw `execFileSync` for content reads (without trimming) to
+The orphan and two-layer backends use raw `execFileSync` for content reads (without trimming) to
 ensure faithful round-trips. Git plumbing helpers that trim output are only used for non-content
 operations like `rev-parse` and `ls-tree`.
 
@@ -277,14 +277,14 @@ operations like `rev-parse` and `ls-tree`.
 
 When running in a git worktree, `resolveSquadState()` uses `git rev-parse --show-toplevel` to
 determine the actual current worktree root — not the parent of `.squad/`. This ensures that
-git-native backends (git-notes, orphan) operate in the correct repository context, even when
+git-native backends (orphan, two-layer) operate in the correct repository context, even when
 `.squad/` is resolved from the main checkout via the worktree fallback strategy.
 
 ---
 
 ## Notes
 
-- State backends are **opt-in** — the default is `worktree` (no behavior change)
+- State backends are **opt-in** — the default is `local` (no behavior change)
 - All backends implement the same interface — agents don't know or care which backend is active
 - Empty directories are automatically pruned after the last file is deleted (orphan backend)
 - The `external` backend type exists as a stub for future external storage (see [External State](./external-state))
@@ -309,7 +309,7 @@ The solution: agents use **git notes CLI commands** directly for mutable, commit
 
 ### Setup
 
-When you enable `stateBackend: "git-notes"` or `stateBackend: "orphan"`, copy the notes protocol and helper scripts into your project:
+When you enable `stateBackend: "two-layer"` or `stateBackend: "orphan"`, copy the notes protocol and helper scripts into your project:
 
 ```bash
 # Copy from Squad's templates (after squad init)
@@ -377,7 +377,7 @@ See `.squad/notes-protocol.md` for the full contract.
 
 ### Template files
 
-When `stateBackend` is set to `git-notes` or `orphan`, the following templates are available:
+When `stateBackend` is set to `two-layer` or `orphan`, the following templates are available:
 
 | Template | Purpose |
 |----------|---------|
@@ -391,9 +391,9 @@ When `stateBackend` is set to `git-notes` or `orphan`, the following templates a
 
 | Backend | Agent reads | Agent writes | Scribe commits to |
 |---------|-------------|--------------|-------------------|
-| `worktree` | `.squad/` files on disk | `.squad/` files on disk | Working branch |
-| `git-notes` | Git notes via helper scripts | Git notes via `write-note.ps1` | Pushes note refs + working branch (decisions.md only) |
+| `local` | `.squad/` files on disk | `.squad/` files on disk | Working branch |
 | `orphan` | `.squad/` files on disk (synced) | `.squad/` files on disk | `squad-state` orphan branch (NOT working branch) |
+| `two-layer` | Git notes + orphan branch | Git notes via `write-note.ps1` + orphan | Pushes note refs + orphan branch |
 
 **Config vs State distinction:**
 - **Static config** (charters, team.md, routing.md, casting/) — always on disk, all backends
@@ -407,39 +407,33 @@ The coordinator passes `STATE_BACKEND` into every agent spawn prompt. Agents rec
 
 **3 steps to get `.squad/` state out of your PRs:**
 
-### Option A: Git-Notes (recommended for most teams)
+### Option A: Two-Layer (recommended for teams)
 
 ```bash
-# 1. Set the backend
-squad config set stateBackend git-notes
-# Or manually: edit .squad/config.json → add "stateBackend": "git-notes"
+# 1. Init with two-layer backend
+squad init --state-backend two-layer
 
-# 2. Commit the config change
-git add .squad/config.json && git commit -m "config: use git-notes for state"
+# 2. Or add to existing project — edit .squad/config.json:
+# { "version": 1, "stateBackend": "two-layer" }
+git add .squad/config.json && git commit -m "config: use two-layer for state"
 
 # 3. Start a session — it just works
 copilot
-# The coordinator detects git-notes and adapts automatically.
-# Decisions are written as git notes, not files. PRs stay clean.
+# The coordinator detects two-layer and adapts automatically.
+# Decisions are written as git notes + orphan branch. PRs stay clean.
 ```
 
-### Option B: Orphan Branch (full isolation)
+### Option B: Orphan Branch (simpler isolation)
 
 ```bash
-# 1. Set the backend
-squad config set stateBackend orphan
+# 1. Init with orphan backend
+squad init --state-backend orphan
 
-# 2. Create the orphan branch (one-time)
-git checkout --orphan squad-state
-git rm -rf .
-mkdir .squad && echo "# Squad State" > .squad/README.md
-git add .squad/ && git commit -m "init: squad-state orphan branch"
-git checkout main
-
-# 3. Commit the config change
+# 2. Or add to existing project — the orphan branch is auto-created
+# Edit .squad/config.json → add "stateBackend": "orphan"
 git add .squad/config.json && git commit -m "config: use orphan backend"
 
-# 4. Start a session — Scribe handles the rest
+# 3. Start a session — Scribe handles the rest
 copilot
 # Agents write to disk during the session.
 # Scribe commits state to squad-state branch, not your working branch.
@@ -449,22 +443,21 @@ copilot
 
 ## Migrating an Existing Squad
 
-### From worktree (default) to git-notes
+### From local (default) to two-layer
 
 This is the simplest migration — just a config change:
 
 ```bash
-# 1. Set the backend
-echo '{"version":1,"stateBackend":"git-notes"}' > .squad/config.json
-# Or add "stateBackend": "git-notes" to your existing config.json
+# 1. Add stateBackend to your existing config.json
+# { "version": 1, "stateBackend": "two-layer" }
 
 # 2. Commit
-git add .squad/config.json && git commit -m "config: migrate to git-notes backend"
+git add .squad/config.json && git commit -m "config: migrate to two-layer backend"
 ```
 
-**What happens:** Existing `.squad/` files remain on disk as a read-only reference. New decisions and state writes go to git notes refs. Scribe merges notes into `decisions.md` as before. Over time, the on-disk state files become stale (they're the snapshot from before migration), while the notes contain the latest state.
+**What happens:** Existing `.squad/` files remain on disk as a read-only reference. New decisions and state writes go to git notes + the orphan branch. Over time, the on-disk state files become stale (they're the snapshot from before migration), while the orphan branch and notes contain the latest state.
 
-### From worktree (default) to orphan
+### From local (default) to orphan
 
 ```bash
 # 1. Create orphan branch with existing state
@@ -482,9 +475,9 @@ git add .squad/config.json && git commit -m "config: migrate to orphan backend"
 
 **What happens:** State files now live on the `squad-state` branch. Scribe commits state changes there, not to your working branch. PRs from feature branches are clean.
 
-### From git-notes to orphan (or vice versa)
+### From orphan to two-layer (or vice versa)
 
-Change `stateBackend` in config.json. The coordinator adapts on the next session. Notes data persists in git refs even if the active backend changes.
+Change `stateBackend` in config.json. The coordinator adapts on the next session. Both use the `squad-state` orphan branch, so existing state is preserved. Two-layer additionally enables git notes for commit-scoped annotations.
 
 ---
 
@@ -492,19 +485,19 @@ Change `stateBackend` in config.json. The coordinator adapts on the next session
 
 ### "My state disappeared after switching branches"
 
-**Cause:** You're using the default `worktree` backend. State files are branch-local.
+**Cause:** You're using the default `local` backend. State files are branch-local.
 
-**Fix:** Switch to `git-notes` or `orphan` backend. Both persist state across branches:
-- Git-notes: state travels as git refs (visible from any branch)
+**Fix:** Switch to `orphan` or `two-layer` backend. Both persist state across branches:
 - Orphan: state lives on a dedicated branch (accessible via `git show squad-state:`)
+- Two-layer: orphan branch + git notes for commit-scoped annotations
 
 ### "State files are showing up in my PR"
 
-**Cause:** Using `worktree` backend, or an agent accidentally committed state files on orphan/git-notes backend.
+**Cause:** Using `local` backend, or an agent accidentally committed state files on orphan/two-layer backend.
 
 **Fix:**
-1. If using worktree backend: switch to `git-notes` or `orphan`
-2. If using orphan/notes: Scribe's State Leak Guard should catch this automatically. If it missed:
+1. If using local backend: switch to `orphan` or `two-layer`
+2. If using orphan/two-layer: Scribe's State Leak Guard should catch this automatically. If it missed:
    ```bash
    git reset HEAD -- .squad/decisions.md .squad/agents/*/history.md .squad/log/ .squad/orchestration-log/
    git checkout HEAD -- .squad/decisions.md .squad/agents/*/history.md
@@ -523,7 +516,7 @@ git add .squad/ && git commit -m "init: squad-state orphan branch"
 git checkout main
 ```
 
-Scribe will auto-create it on the next session if it doesn't exist (via the worktree approach in the Scribe charter).
+Scribe will auto-create it on the next session if it doesn't exist (via git plumbing: `mktree`, `commit-tree`, `update-ref`).
 
 ### "Git notes not found on root commit"
 
@@ -535,4 +528,143 @@ Scribe will auto-create it on the next session if it doesn't exist (via the work
 
 ### "Config.json doesn't have stateBackend"
 
-**This is fine.** The default is `worktree` — the current behavior. No config change needed unless you want a different backend.
+**This is fine.** The default is `local` — the current behavior. No config change needed unless you want a different backend.
+
+---
+
+## Multi-User Synchronization
+
+When multiple team members work on the same repo with Squad, the state backend determines how state stays in sync.
+
+### Local backend
+
+Each user has their own `.squad/` files in the working tree. If committed, they merge like any other files — which means **merge conflicts are common** when two people modify decisions or histories simultaneously. This is the main reason teams choose orphan or two-layer backends.
+
+### Orphan backend
+
+The `squad-state` branch is a normal Git branch. Synchronization works like any other branch:
+
+```bash
+# Before a squad session — pull latest state
+git fetch origin squad-state:squad-state
+
+# After a squad session — push your state changes
+git push origin squad-state
+```
+
+**Conflict handling:** If two users push to `squad-state` simultaneously, the second push will be rejected (non-fast-forward). Resolution:
+
+```bash
+git fetch origin squad-state:squad-state
+git checkout squad-state
+git merge origin/squad-state   # resolve conflicts, then:
+git push origin squad-state
+git checkout main
+```
+
+In practice, Squad's watch loop handles this automatically — Scribe's commit logic retries on push failure.
+
+> **Tip:** For teams, consider protecting the `squad-state` branch with GitHub branch protection rules that allow force-push from the CI bot but require linear history from humans.
+
+### Two-layer backend
+
+Two-layer uses **both** the orphan branch (same as above) **and** git notes. Notes are per-commit annotations that travel as refs:
+
+```bash
+# Fetch notes from the remote
+git fetch origin 'refs/notes/*:refs/notes/*'
+
+# Push notes to the remote
+git push origin 'refs/notes/*:refs/notes/*'
+```
+
+**Why this is team-safe:** Notes are scoped to individual commits — there are no merge conflicts because each commit has its own annotation namespace. The orphan branch stores the aggregated permanent state, and Ralph promotes note data to it after PRs merge.
+
+### Automatic fetch in `squad watch`
+
+When `squad watch` starts, it automatically:
+1. Fetches the `squad-state` branch (if orphan or two-layer)
+2. Fetches `refs/notes/*` (if two-layer)
+3. On each watch cycle, pushes any state changes back
+
+**No manual sync is needed** when using `squad watch`. Manual sync is only needed if you're running one-off squad commands outside of watch mode.
+
+### Git config for automatic notes fetch
+
+To make `git pull` automatically fetch notes, add this to `.git/config` (or use the setup script):
+
+```bash
+# One-time setup per clone
+git config --add remote.origin.fetch '+refs/notes/*:refs/notes/*'
+```
+
+After this, every `git fetch origin` includes notes automatically.
+
+---
+
+## FAQ
+
+### What's the default state backend?
+
+**`local`**. If you don't set `stateBackend` in `.squad/config.json` or pass `--state-backend` on the command line, Squad stores state as regular files in `.squad/` on your working branch. This is the simplest setup — no extra configuration needed.
+
+### When should I switch away from `local`?
+
+Switch when any of these apply:
+- Your PRs are cluttered with `.squad/` file changes
+- You lose state when switching branches
+- Multiple team members are getting merge conflicts on `.squad/` files
+- You want squad state to be invisible in code reviews
+
+### Why would I choose `orphan` over `two-layer`?
+
+**Choose `orphan` when you want simplicity.** It stores all state on a single dedicated branch. Easy to understand, inspect, and debug. One branch, one source of truth.
+
+**Choose `two-layer` when you need commit-scoped context.** Two-layer adds git notes — annotations attached to specific commits. This means:
+- A decision made on commit `abc123` stays linked to that commit
+- Ralph can decide whether to promote or discard decisions based on whether the PR was merged or rejected
+- Research notes on a rejected PR are automatically ignored (not promoted)
+
+**Bottom line:** `orphan` is for teams who just want clean PRs. `two-layer` is for teams who want intelligent state lifecycle management (decisions that survive or die with their PRs).
+
+### Can I use `orphan` and later upgrade to `two-layer`?
+
+Yes. Both use the same `squad-state` orphan branch for permanent state. Switching from `orphan` to `two-layer` simply enables the additional git notes layer. Your existing state is fully preserved.
+
+### What happens if two people run Squad simultaneously?
+
+- **Local backend:** File-level merge conflicts when both push (just like any Git merge conflict).
+- **Orphan backend:** The second push to `squad-state` fails with a non-fast-forward error. Squad's watch loop retries automatically. In the worst case, you manually merge the branch.
+- **Two-layer backend:** Notes are per-commit, so they never conflict. The orphan branch layer has the same retry behavior as the orphan backend.
+
+### Does the `squad-state` branch show up in my PRs?
+
+No. The `squad-state` branch is an **orphan branch** — it has no common ancestor with your main branch. GitHub doesn't include it in PR diffs. It's completely invisible in code reviews.
+
+### How do I inspect state on the orphan branch?
+
+```bash
+# List all state files
+git ls-tree --name-only -r squad-state
+
+# Read a specific file
+git show squad-state:decisions.md
+
+# View state history
+git log --oneline squad-state
+```
+
+### Does this work with GitHub Actions / CI?
+
+Yes. If your CI/CD workflow needs to read squad state:
+- **Orphan backend:** `git fetch origin squad-state && git show squad-state:<path>`
+- **Two-layer:** Same as orphan, plus `git fetch origin 'refs/notes/*:refs/notes/*'` for notes
+- **Local backend:** State is on the working branch — just read `.squad/` files directly
+
+### What if I forget to push the `squad-state` branch?
+
+State stays local to your machine. Other team members won't see your latest decisions or agent histories until you push. This is no different from forgetting to push any other branch — Git is distributed, and state only syncs when you push/fetch.
+
+### Can the `squad-state` branch be deleted safely?
+
+**No.** Deleting it loses all permanent squad state (decisions, agent histories, logs). Treat it like your main branch — push it to the remote and don't delete it. You can recover from a local deletion by re-fetching from the remote: `git fetch origin squad-state:squad-state`.

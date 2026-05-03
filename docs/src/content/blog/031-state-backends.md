@@ -68,8 +68,8 @@ Static config (charters, team.md, routing.md) always stays on disk. Only mutable
 squad init --state-backend two-layer
 
 # Existing project — migrate with one config change
-# Edit .squad/config.json → add "stateBackend": "git-notes"
-git add .squad/config.json && git commit -m "config: use git-notes"
+# Edit .squad/config.json → add "stateBackend": "two-layer"
+git add .squad/config.json && git commit -m "config: use two-layer"
 ```
 
 For the full migration guide and troubleshooting, see the [State Backends feature docs](/docs/features/state-backends/).
