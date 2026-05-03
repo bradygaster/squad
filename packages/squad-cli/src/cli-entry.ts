@@ -404,6 +404,10 @@ async function main(): Promise<void> {
     if (upgradeStateBackend) {
       const { migrateStateBackend } = await import('./cli/commands/migrate-backend.js');
       await migrateStateBackend(dest, upgradeStateBackend);
+    } else {
+      // Ensure hooks are installed for existing orphan/two-layer backends
+      const { ensureHooksForBackend } = await import('./cli/commands/install-hooks.js');
+      ensureHooksForBackend(dest);
     }
     
     return;

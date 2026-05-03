@@ -222,3 +222,38 @@ export function installGitHooks(cwd: string, options: InstallHooksOptions = {}):
 
   console.log(`\n${GREEN}${BOLD}Done.${RESET} Squad state will sync automatically on push/pull.\n`);
 }
+
+/**
+ * Ensure hooks are installed if the backend requires them.
+ * Called by `squad upgrade` to silently ensure hooks exist for orphan/two-layer repos.
+ * Does not print anything if hooks are already installed or backend doesn't need them.
+ */
+export function ensureHooksForBackend(cwd: string): void {
+  // Check backend
+  let backend: string | null = null;
+  try {
+    const configPath = path.join(cwd, '.squad', 'config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      backend = config.stateBackend || null;
+    }
+  } catch { return; }
+
+  // Only orphan/two-layer need hooks
+  if (backend !== 'orphan' && backend !== 'two-layer') return;
+
+  // Check if hooks are already installed
+  let hooksDir: string;
+  try {
+    hooksDir = getHooksDir(cwd);
+  } catch { return; }
+
+  const prePushPath = path.join(hooksDir, 'pre-push');
+  if (fs.existsSync(prePushPath)) {
+    const content = fs.readFileSync(prePushPath, 'utf-8');
+    if (content.includes(SQUAD_HOOK_MARKER)) return; // Already installed
+  }
+
+  // Hooks missing — install them
+  installGitHooks(cwd, { force: false });
+}
