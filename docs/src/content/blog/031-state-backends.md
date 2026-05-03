@@ -4,7 +4,7 @@ date: 2026-04-20
 author: "Tamir"
 tags: [squad, state-backends, git-notes, orphan-branch, two-layer, architecture]
 status: draft
-hero: "Squad now supports 4 state backends that keep .squad/ files out of your PRs. Choose worktree, git-notes, orphan branch, or the two-layer architecture from the blog."
+hero: "Squad now supports 4 state backends that keep .squad/ files out of your PRs. Choose local, orphan branch, or the two-layer architecture from the blog."
 ---
 
 # State Backends — Keep Your PRs Clean
@@ -34,8 +34,7 @@ squad init --state-backend two-layer
 
 | Backend | Where state goes | PRs clean? | Setup |
 |---------|-----------------|------------|-------|
-| `worktree` | Working branch (default) | ❌ | Zero config |
-| `git-notes` | Git notes refs | ✅ | 1 config line |
+| `local` | Working branch (default) | ❌ | Zero config |
 | `orphan` | `squad-state` branch | ✅ | Config + branch |
 | `two-layer` | Notes + orphan combined | ✅ | `--state-backend two-layer` |
 

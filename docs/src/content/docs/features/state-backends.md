@@ -124,7 +124,7 @@ to it rather than overwriting:
 {
   "version": 1,
   "teamRoot": ".",
-  "stateBackend": "git-notes"
+  "stateBackend": "two-layer"
 }
 ```
 
@@ -170,7 +170,7 @@ Warning: State backend 'two-layer' failed: <reason>. Falling back to 'local'.
 
 ## Inspecting State
 
-### Worktree
+### Local
 
 ```bash
 cat .squad/decisions.md
@@ -215,7 +215,7 @@ import {
 
 // Option 1: Full context resolution (recommended)
 // Resolves paths + backend from config + CLI override in one call
-const ctx = resolveSquadState(process.cwd(), 'git-notes');
+const ctx = resolveSquadState(process.cwd(), 'two-layer');
 if (ctx) {
   ctx.backend.write('decisions.md', '# Decisions\n...');
   ctx.backend.append('log.md', 'New entry\n');
@@ -226,7 +226,7 @@ if (ctx) {
 const backend: StateBackend = resolveStateBackend(
   '.squad',           // squadDir
   process.cwd(),      // repoRoot
-  'git-notes'         // optional CLI override
+  'two-layer'         // optional CLI override
 );
 backend.write('decisions.md', '# Decisions\n...');
 ```

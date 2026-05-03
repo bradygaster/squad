@@ -6,11 +6,11 @@
 Add delete() and append() to StateBackend interface; add resolveSquadState() entry point; add StateBackendStorageAdapter; add git-notes agent protocol templates
 
 - Add `delete()` and `append()` methods to the `StateBackend` interface
-- Implement delete/append for all three backends (worktree, git-notes, orphan)
+- Implement delete/append for all three backends (local, orphan, two-layer)
 - Fix orphan backend append to preserve trailing whitespace via readUntrimmed()
 - Add `SquadStateContext` interface and `resolveSquadState()` factory in resolution module
 - Add `StateBackendStorageAdapter` — bridges StateBackend as a StorageProvider so SDK modules that accept `storage: StorageProvider` work with git-notes and orphan backends
-- Add `storage` field to `SquadStateContext` — worktree uses FSStorageProvider directly, git-notes/orphan use the adapter
+- Add `storage` field to `SquadStateContext` — local uses FSStorageProvider directly, orphan/two-layer use the adapter
 - Export `StateBackendStorageAdapter` from SDK public API
 - Wire `resolveSquadState()` into CLI entry so the state backend is resolved once at startup
 - Pass pre-resolved `stateContext` through to watch config to avoid redundant resolution
