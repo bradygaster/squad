@@ -2,38 +2,56 @@
 
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
-
-**Try this to use two-layer (recommended for teams):**
-```bash
-squad watch --state-backend two-layer
-```
-
-**Try this to use an orphan branch:**
-```bash
-squad watch --state-backend orphan
-```
-
-**Try this to set a persistent default (add to existing config):**
-```bash
-# If .squad/config.json exists, add stateBackend to it:
-node -e "const fs=require('fs'),p='.squad/config.json';const c=fs.existsSync(p)?JSON.parse(fs.readFileSync(p,'utf8')):{version:1,teamRoot:'.'};c.stateBackend='two-layer';fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n')"
-```
-
-> **Migration note:** If your config references `git-notes`, it will be automatically migrated to `two-layer` at runtime. No action needed.
-
-Squad supports multiple **state backends** for storing `.squad/` state. Each backend determines _where_ and _how_ decisions, skills, agent memories, and session logs are persisted — without changing how agents interact with the data.
+Squad supports multiple **state backends** for storing `.squad/` state (decisions, agent memories, session logs, skills). Each backend determines _where_ and _how_ this data is persisted — without changing how agents interact with it. Once configured, everything is automatic.
 
 ---
 
 ## The Problem
 
-The default **local** backend stores `.squad/` state as regular files in the working tree. This works well for most workflows, but has trade-offs:
+By default, Squad stores `.squad/` state as regular files in your working tree. This works for solo workflows but has real trade-offs for teams:
 
 - **Branch pollution:** `.squad/` files appear in diffs and PRs
 - **Branch-switch loss:** State can be lost when switching branches (if not committed)
-- **Merge conflicts:** Multiple branches modifying `.squad/` files can conflict
+- **Merge conflicts:** Multiple team members modifying `.squad/` files creates frequent conflicts
 
-State backends solve this by moving `.squad/` data into Git-native structures that live outside the working tree.
+State backends solve this by moving `.squad/` data into Git-native structures that live outside the working tree — keeping your PRs clean and your state safe across branches.
+
+---
+
+## Getting Started
+
+### New project — choose a backend during init
+
+```bash
+# Default (local — files in .squad/, same as always)
+squad init
+
+# Orphan branch (state on a dedicated squad-state branch)
+squad init --state-backend orphan
+
+# Two-layer (recommended for teams — orphan branch + git notes)
+squad init --state-backend two-layer
+```
+
+The backend is stored in `.squad/config.json` — you never need to pass it again. All subsequent commands (`squad watch`, interactive sessions, etc.) read from config automatically.
+
+### Existing project — migrate with upgrade
+
+```bash
+# Migrate from local to orphan or two-layer
+squad upgrade --state-backend two-layer
+
+# Or: squad upgrade --state-backend orphan
+```
+
+This migrates existing state, creates the orphan branch, and installs git hooks for automatic multi-user sync. No manual steps needed.
+
+### What gets installed automatically
+
+When you choose `orphan` or `two-layer`:
+- **Git hooks** (pre-push, post-merge, post-checkout, post-rewrite) are installed in `.git/hooks/`
+- These hooks sync the `squad-state` branch automatically when you push/pull — no manual sync needed
+- Hooks chain with existing hooks (husky, etc.) — nothing is overwritten
 
 ---
 
@@ -42,10 +60,6 @@ State backends solve this by moving `.squad/` data into Git-native structures th
 ### Local (default)
 
 State lives as regular files in `.squad/` inside the working tree. This is the standard behavior — what you get out of the box.
-
-```bash
-squad watch --state-backend local
-```
 
 **Pros:**
 - Simple and familiar — files on disk
@@ -74,10 +88,6 @@ squad watch --state-backend local
 
 State lives on a dedicated orphan branch (`squad-state` by default). The branch has no common history with your main branches — it's a completely separate tree used only for squad data.
 
-```bash
-squad watch --state-backend orphan
-```
-
 **How it works:**
 - An orphan branch `squad-state` is created automatically on first write
 - Each state file is stored as a blob in the branch's tree
@@ -101,24 +111,7 @@ squad watch --state-backend orphan
 
 ## Configuration
 
-### CLI Flag (per-invocation)
-
-Pass `--state-backend` to any squad command that supports it:
-
-```bash
-squad watch --state-backend two-layer
-squad watch --state-backend orphan
-squad watch --state-backend local
-```
-
-> **Note:** As of v0.9.x, the `--state-backend` CLI flag is wired into the `watch` command.
-> The SDK's `resolveSquadState()` function makes the configured backend available to all
-> squad operations. Individual commands are being migrated incrementally — see issue #1003.
-
-### Config File (persistent)
-
-Set a default in `.squad/config.json`. If the file already exists, add the `stateBackend` field
-to it rather than overwriting:
+The state backend is set once (during `squad init` or `squad upgrade`) and stored in `.squad/config.json`:
 
 ```json
 {
@@ -128,19 +121,9 @@ to it rather than overwriting:
 }
 ```
 
-> **Note:** The `stateBackend` field is read by `resolveStateBackend()` alongside any existing
-> config fields (`version`, `teamRoot`, `stateLocation`, etc.). Only add the field you need —
-> don't overwrite the whole file.
+All squad commands read from this file automatically. You don't need to pass `--state-backend` on every invocation.
 
-This persists across invocations. The CLI flag overrides the config file when both are present.
-
-### Priority Order
-
-| Priority | Source | Example |
-|----------|--------|---------|
-| 1 (highest) | CLI flag | `--state-backend orphan` |
-| 2 | `.squad/config.json` | `"stateBackend": "orphan"` |
-| 3 (default) | Built-in default | `local` |
+> **Note:** If no `stateBackend` field exists, the default is `local` (current behavior, no change).
 
 ### Fallback Behavior
 
@@ -403,81 +386,26 @@ The coordinator passes `STATE_BACKEND` into every agent spawn prompt. Agents rec
 
 ---
 
-## Quick Start — "I Want Clean PRs"
-
-**3 steps to get `.squad/` state out of your PRs:**
-
-### Option A: Two-Layer (recommended for teams)
-
-```bash
-# 1. Init with two-layer backend
-squad init --state-backend two-layer
-
-# 2. Or add to existing project — edit .squad/config.json:
-# { "version": 1, "stateBackend": "two-layer" }
-git add .squad/config.json && git commit -m "config: use two-layer for state"
-
-# 3. Start a session — it just works
-copilot
-# The coordinator detects two-layer and adapts automatically.
-# Decisions are written as git notes + orphan branch. PRs stay clean.
-```
-
-### Option B: Orphan Branch (simpler isolation)
-
-```bash
-# 1. Init with orphan backend
-squad init --state-backend orphan
-
-# 2. Or add to existing project — the orphan branch is auto-created
-# Edit .squad/config.json → add "stateBackend": "orphan"
-git add .squad/config.json && git commit -m "config: use orphan backend"
-
-# 3. Start a session — Scribe handles the rest
-copilot
-# Agents write to disk during the session.
-# Scribe commits state to squad-state branch, not your working branch.
-```
-
----
-
 ## Migrating an Existing Squad
 
-### From local (default) to two-layer
-
-This is the simplest migration — just a config change:
+Use `squad upgrade` to migrate — it handles everything:
 
 ```bash
-# 1. Add stateBackend to your existing config.json
-# { "version": 1, "stateBackend": "two-layer" }
-
-# 2. Commit
-git add .squad/config.json && git commit -m "config: migrate to two-layer backend"
+squad upgrade --state-backend two-layer
+# or: squad upgrade --state-backend orphan
 ```
 
-**What happens:** Existing `.squad/` files remain on disk as a read-only reference. New decisions and state writes go to git notes + the orphan branch. Over time, the on-disk state files become stale (they're the snapshot from before migration), while the orphan branch and notes contain the latest state.
+This will:
+1. Update `.squad/config.json` with the new backend
+2. Create the `squad-state` orphan branch (if needed)
+3. Install git hooks for automatic sync
+4. Preserve all existing state
 
-### From local (default) to orphan
+**What happens:** Existing `.squad/` files remain on disk as a read-only reference. New decisions and state writes go to the orphan branch (and git notes for two-layer). Over time, the on-disk state files become stale (they're the snapshot from before migration), while the orphan branch and notes contain the latest state.
 
-```bash
-# 1. Create orphan branch with existing state
-git checkout --orphan squad-state
-git rm -rf .
-# Restore state files from main
-git checkout main -- .squad/decisions.md .squad/agents/*/history.md
-git add .squad/ && git commit -m "init: migrate state to orphan branch"
-git checkout main
+### Switching between orphan and two-layer
 
-# 2. Set the backend
-# Add "stateBackend": "orphan" to .squad/config.json
-git add .squad/config.json && git commit -m "config: migrate to orphan backend"
-```
-
-**What happens:** State files now live on the `squad-state` branch. Scribe commits state changes there, not to your working branch. PRs from feature branches are clean.
-
-### From orphan to two-layer (or vice versa)
-
-Change `stateBackend` in config.json. The coordinator adapts on the next session. Both use the `squad-state` orphan branch, so existing state is preserved. Two-layer additionally enables git notes for commit-scoped annotations.
+Change `stateBackend` in `.squad/config.json`. The coordinator adapts on the next session. Both use the `squad-state` orphan branch, so existing state is preserved. Two-layer additionally enables git notes for commit-scoped annotations.
 
 ---
 
@@ -606,7 +534,7 @@ After this, every `git fetch origin` includes notes automatically.
 
 ### What's the default state backend?
 
-**`local`**. If you don't set `stateBackend` in `.squad/config.json` or pass `--state-backend` on the command line, Squad stores state as regular files in `.squad/` on your working branch. This is the simplest setup — no extra configuration needed.
+**`local`**. If you don't set `stateBackend` in `.squad/config.json`, Squad stores state as regular files in `.squad/` on your working branch. This is the simplest setup — no extra configuration needed.
 
 ### When should I switch away from `local`?
 
