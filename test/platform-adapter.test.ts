@@ -96,6 +96,36 @@ describe('parseGitHubRemote', () => {
     // trailing slash is not standard git remote but shouldn't crash
     expect(parseGitHubRemote('https://github.com/owner/')).toBeNull();
   });
+
+  // Regression: the repo capture used to disallow `.`, so any GitHub repo whose
+  // name contained a dot (which GitHub permits) failed to parse and bubbled up
+  // as `Could not detect platform: Could not parse GitHub remote URL: ...` in
+  // `squad watch`. See issue #1077.
+  it('parses HTTPS URL with dots in repo name', () => {
+    const result = parseGitHubRemote('https://github.com/myorg/JADE.xlighthousepipelines.git');
+    expect(result).toEqual({ owner: 'myorg', repo: 'JADE.xlighthousepipelines' });
+  });
+
+  it('parses HTTPS URL with dots in repo name and no .git suffix', () => {
+    const result = parseGitHubRemote('https://github.com/myorg/JADE.xlighthousepipelines');
+    expect(result).toEqual({ owner: 'myorg', repo: 'JADE.xlighthousepipelines' });
+  });
+
+  it('parses SSH URL with dots in repo name', () => {
+    const result = parseGitHubRemote('git@github.com:myorg/foo.bar.baz.git');
+    expect(result).toEqual({ owner: 'myorg', repo: 'foo.bar.baz' });
+  });
+
+  it('parses SSH URL with dots in repo name and no .git suffix', () => {
+    const result = parseGitHubRemote('git@github.com:myorg/foo.bar.baz');
+    expect(result).toEqual({ owner: 'myorg', repo: 'foo.bar.baz' });
+  });
+
+  it('parses repo named exactly ".github" (with leading dot before .git)', () => {
+    // owner/.github is a real convention for community-health files
+    const result = parseGitHubRemote('https://github.com/myorg/.github.git');
+    expect(result).toEqual({ owner: 'myorg', repo: '.github' });
+  });
 });
 
 // ─── Azure DevOps Remote Parsing ───────────────────────────────────────
@@ -151,6 +181,27 @@ describe('parseAzureDevOpsRemote', () => {
   it('handles URL with special characters in project name', () => {
     const result = parseAzureDevOpsRemote('https://dev.azure.com/org/My-Project/_git/my-repo');
     expect(result).toEqual({ org: 'org', project: 'My-Project', repo: 'my-repo' });
+  });
+
+  // Regression: see issue #1077 — repo capture used to disallow `.`.
+  it('parses HTTPS dev.azure.com URL with dots in repo name', () => {
+    const result = parseAzureDevOpsRemote('https://dev.azure.com/org/proj/_git/repo.with.dots');
+    expect(result).toEqual({ org: 'org', project: 'proj', repo: 'repo.with.dots' });
+  });
+
+  it('parses HTTPS dev.azure.com URL with dots in repo name and .git suffix', () => {
+    const result = parseAzureDevOpsRemote('https://dev.azure.com/org/proj/_git/repo.with.dots.git');
+    expect(result).toEqual({ org: 'org', project: 'proj', repo: 'repo.with.dots' });
+  });
+
+  it('parses SSH dev.azure.com URL with dots in repo name', () => {
+    const result = parseAzureDevOpsRemote('git@ssh.dev.azure.com:v3/org/proj/repo.with.dots.git');
+    expect(result).toEqual({ org: 'org', project: 'proj', repo: 'repo.with.dots' });
+  });
+
+  it('parses legacy visualstudio.com URL with dots in repo name', () => {
+    const result = parseAzureDevOpsRemote('https://contoso.visualstudio.com/proj/_git/repo.with.dots.git');
+    expect(result).toEqual({ org: 'contoso', project: 'proj', repo: 'repo.with.dots' });
   });
 });
 
