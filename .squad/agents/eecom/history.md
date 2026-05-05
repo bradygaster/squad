@@ -327,3 +327,25 @@ Executed 3 tasks across 2 waves: economy mode (#500, PR #504), node:sqlite fix (
 **Pattern:** `resolveGlobalSquadPath()` returns the container; `ensurePersonalSquadDir()` creates the subdirectory the rest of the system looks for.
 📌 **Team update (2026-03-25T18:11Z):** Fixed #590 personal squad path regression — getPersonalSquadRoot() now uses canonical personal-squad/ subdirectory like esolvePersonalSquadDir() and nsurePersonalSquadDir(). Committed on squad/590-fix-personal-squad-root. FIDO found same bug in shell/index.ts → work passed to CONTROL for full sweep revision. Awaiting FIDO re-review.
 
+
+### W3 ADO reliability fixes shipped (2026-05-04)
+
+**PR:** #1082 — https://github.com/bradygaster/squad/pull/1082
+
+**Callsite fixes:**
+- `watch/index.ts:142`: removed ADO assignment crash path from the generic work-item edit helper; GitHub assignment remains guarded by adapter type until W8 adds a real assignment verb.
+- `detect.ts`: `detectPlatform()` now honors `SQUAD_PLATFORM` and fails loudly with remediation when `git remote get-url origin` cannot be read, instead of silently defaulting to GitHub.
+- `execute.ts:193`: execute preflight now uses `context.adapter.ensureAuth?.()` instead of `gh --version`.
+- `health.ts:83`: auth drift probing now creates/uses the platform adapter and only runs the existing GitHub user probe for GitHub.
+- `board.ts`: board capability registration/preflight is gated by adapter platform so ADO does not run GitHub Projects commands.
+- `two-pass.ts:52`: two-pass hydration now uses `context.adapter.getWorkItem()` instead of `gh issue view`.
+
+**TODO(W8) markers left:**
+- `watch/index.ts`: `PlatformAdapter.assignWorkItem(id, assignee)`.
+- `health.ts`: `PlatformAdapter.getCurrentUser()`.
+- `board.ts`: project-board capability registration.
+
+**Validation:**
+- `npm run lint` passed.
+- Affected tests passed: 4 files / 228 tests (`watch-capabilities`, `watch-health`, `platform-adapter`, `sdk-feature-parity-batch3`).
+- Full `npm test` was run and still fails in pre-existing unrelated areas: observed 6,029 passed / 22 failed / 60 pending / 47 todo out of 6,158 tests after W3 changes.

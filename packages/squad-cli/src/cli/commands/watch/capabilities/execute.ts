@@ -185,15 +185,16 @@ export class ExecuteCapability implements WatchCapability {
   readonly name = 'execute';
   readonly description = 'Spawn Copilot sessions to work on eligible issues';
   readonly configShape = 'boolean' as const;
-  readonly requires = ['gh'];
+  readonly requires = ['platform auth'];
   readonly phase = 'post-execute' as const;
 
-  async preflight(_context: WatchContext): Promise<PreflightResult> {
-    return new Promise<PreflightResult>((resolve) => {
-      execFile('gh', ['--version'], (err) => {
-        resolve(err ? { ok: false, reason: 'gh CLI not found' } : { ok: true });
-      });
-    });
+  async preflight(context: WatchContext): Promise<PreflightResult> {
+    try {
+      await context.adapter.ensureAuth?.();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, reason: `platform auth failed: ${(e as Error).message}` };
+    }
   }
 
   async execute(context: WatchContext): Promise<CapabilityResult> {

@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { createPlatformAdapter, type PlatformAdapter } from '@bradygaster/squad-sdk/platform';
 
 /** Shape of the PID file written by runWatch at startup. */
 export interface WatchPidInfo {
@@ -73,12 +74,12 @@ function formatUptime(ms: number): string {
 }
 
 /**
- * Returns the currently active `gh` account, or undefined.
- * Duplicated from index.ts to avoid circular imports — the canonical
- * version lives in `getActiveGhUser()` in the watch index.
+ * Returns the currently active platform user, or undefined.
  */
-/** Probes current gh user — uses `gh api user` which writes to stdout reliably. */
-function probeCurrentGhUser(): string | undefined {
+function probeCurrentUser(adapter: PlatformAdapter): string | undefined {
+  if (adapter.type !== 'github') return undefined;
+
+  // TODO(W8): needs PlatformAdapter.getCurrentUser().
   try {
     const result = spawnSync('gh', ['api', 'user', '-q', '.login'], {
       encoding: 'utf-8',
@@ -143,13 +144,19 @@ export function getWatchHealth(teamRoot: string): string {
     `  Capabilities:  ${(info.capabilities ?? []).join(', ') || '(none)'}`,
   ];
 
-  // Auth drift detection — compare current gh user vs recorded
-  const currentUser = probeCurrentGhUser();
-  if (currentUser && currentUser !== info.user) {
-    lines.push(`  ⚠ AUTH DRIFT:   Expected ${info.user}, current is ${currentUser}`);
-  } else if (currentUser) {
-    lines.push('  Auth status:   ✓ matches expected');
-  } else {
+  try {
+    const adapter = createPlatformAdapter(teamRoot);
+    const currentUser = probeCurrentUser(adapter);
+    if (adapter.type !== 'github') {
+      lines.push(`  Auth status:   not checked for ${adapter.type}`);
+    } else if (currentUser && currentUser !== info.user) {
+      lines.push(`  ⚠ AUTH DRIFT:   Expected ${info.user}, current is ${currentUser}`);
+    } else if (currentUser) {
+      lines.push('  Auth status:   ✓ matches expected');
+    } else {
+      lines.push('  Auth status:   ? could not verify');
+    }
+  } catch {
     lines.push('  Auth status:   ? could not verify');
   }
 

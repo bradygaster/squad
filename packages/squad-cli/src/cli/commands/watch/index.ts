@@ -137,22 +137,11 @@ async function editWorkItem(
   if (options.addLabel) await adapter.addTag(id, options.addLabel);
   if (options.removeLabel) await adapter.removeTag(id, options.removeLabel);
   if (options.addAssignee) {
+    // TODO(W8): needs PlatformAdapter.assignWorkItem(id, assignee).
     if (adapter.type === 'github') {
       try {
         await execFileAsync('gh', ['issue', 'edit', String(id), '--add-assignee', options.addAssignee]);
       } catch { /* best-effort */ }
-    } else if (adapter.type === 'azure-devops') {
-      const assignee = options.addAssignee === '@me' ? '' : options.addAssignee;
-      if (assignee) {
-        try {
-          execFileSync('az', [
-            'boards', 'work-item', 'update',
-            '--id', String(id),
-            '--fields', `System.AssignedTo=${assignee}`,
-            '--output', 'json',
-          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-        } catch { /* best-effort */ }
-      }
     }
   }
 }
@@ -779,7 +768,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   });
 
   // ── Capability system setup ────────────────────────────────────
-  const registry = createDefaultRegistry();
+  const registry = createDefaultRegistry(adapter);
 
   // Load external capabilities from .squad/capabilities/
   const { loadExternalCapabilities } = await import('./external-loader.js');

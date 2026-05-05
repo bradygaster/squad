@@ -71,7 +71,9 @@ function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
   return {
     teamRoot: '/fake/team',
     adapter: {
+      type: 'github',
       listWorkItems: vi.fn().mockResolvedValue([]),
+      getWorkItem: vi.fn(),
     } as unknown as WatchContext['adapter'],
     round: 1,
     roster: [{ name: 'EECOM', label: 'squad:eecom', expertise: [] }],
@@ -82,7 +84,9 @@ function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
 
 function mockAdapter(items: Array<Record<string, unknown>>): WatchContext['adapter'] {
   return {
+    type: 'github',
     listWorkItems: vi.fn().mockResolvedValue(items),
+    getWorkItem: vi.fn(async (id: number) => items.find(i => i['id'] === id)),
   } as unknown as WatchContext['adapter'];
 }
 
@@ -118,7 +122,7 @@ describe('Watch Capabilities', () => {
       const cap = new ExecuteCapability();
       expect(cap.name).toBe('execute');
       expect(cap.phase).toBe('post-execute');
-      expect(cap.requires).toContain('gh');
+      expect(cap.requires).toContain('platform auth');
       expect(cap.configShape).toBe('boolean');
       expect(cap.description).toBeTruthy();
     });
@@ -259,16 +263,16 @@ describe('Watch Capabilities', () => {
         expect(result.ok).toBe(true);
       });
 
-      it('fails when gh CLI is not found', async () => {
-        mockExecFile.mockImplementation((...args: unknown[]) => {
-          const cb = findCallback(args);
-          if (cb) cb(new Error('not found'));
-          return {};
-        });
+      it('fails when platform auth fails', async () => {
         const cap = new ExecuteCapability();
-        const result = await cap.preflight(makeContext());
+        const result = await cap.preflight(makeContext({
+          adapter: {
+            type: 'github',
+            ensureAuth: vi.fn().mockRejectedValue(new Error('not authenticated')),
+          } as unknown as WatchContext['adapter'],
+        }));
         expect(result.ok).toBe(false);
-        expect(result.reason).toContain('gh');
+        expect(result.reason).toContain('platform auth');
       });
     });
 

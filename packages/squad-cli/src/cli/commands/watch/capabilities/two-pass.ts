@@ -2,11 +2,7 @@
  * TwoPass capability — lightweight list then hydrate actionable issues only.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
-
-const execFileAsync = promisify(execFile);
 
 /** Labels that block autonomous execution. */
 const BLOCKED_LABELS: ReadonlySet<string> = new Set([
@@ -19,7 +15,7 @@ export class TwoPassCapability implements WatchCapability {
   readonly name = 'two-pass';
   readonly description = 'Lightweight scan then hydrate only actionable issues';
   readonly configShape = 'boolean' as const;
-  readonly requires = ['gh'];
+  readonly requires = ['platform adapter'];
   readonly phase = 'post-triage' as const;
 
   async preflight(_context: WatchContext): Promise<PreflightResult> {
@@ -45,15 +41,12 @@ export class TwoPassCapability implements WatchCapability {
         return true;
       });
 
-      // Pass 2: hydrate actionable issues (fetch body + comments)
+      // Pass 2: hydrate actionable issues through the platform adapter.
       const hydrated: Array<{ number: number; title: string; body?: string }> = [];
       for (const item of actionable) {
         try {
-          const { stdout: detailJson } = await execFileAsync('gh', [
-            'issue', 'view', String(item.id),
-            '--json', 'number,title,body,labels,assignees',
-          ], { maxBuffer: 5 * 1024 * 1024 });
-          hydrated.push(JSON.parse(detailJson));
+          const detail = await context.adapter.getWorkItem(item.id);
+          hydrated.push({ number: detail.id, title: detail.title });
         } catch {
           hydrated.push({ number: item.id, title: item.title });
         }

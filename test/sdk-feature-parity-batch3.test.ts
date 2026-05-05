@@ -420,10 +420,8 @@ describe('SDK Feature: Client Compatibility — Platform Detection (#47)', () =>
     });
 
     it('falls back to platform detection when config is undefined', () => {
-      // Falls through to detectPlatform which calls git — may fail in test env
-      // but the function signature is correct
-      const result = detectWorkItemSource('/tmp/nonexistent');
-      expect(['github', 'azure-devops', 'planner']).toContain(result);
+      const result = detectWorkItemSource(process.cwd());
+      expect(['github', 'azure-devops']).toContain(result);
     });
   });
 });

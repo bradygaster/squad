@@ -2,6 +2,7 @@
  * Capability barrel — registers all built-in capabilities.
  */
 
+import type { PlatformAdapter } from '@bradygaster/squad-sdk/platform';
 import { CapabilityRegistry } from '../registry.js';
 import { SelfPullCapability } from './self-pull.js';
 import { ExecuteCapability } from './execute.js';
@@ -16,12 +17,14 @@ import { DecisionHygieneCapability } from './decision-hygiene.js';
 import { CleanupCapability } from './cleanup.js';
 
 /** Create a registry pre-loaded with all built-in capabilities. */
-export function createDefaultRegistry(): CapabilityRegistry {
+export function createDefaultRegistry(adapter?: PlatformAdapter): CapabilityRegistry {
   const registry = new CapabilityRegistry();
   registry.register(new SelfPullCapability());
   registry.register(new ExecuteCapability());
   registry.register(new FleetDispatchCapability());
-  registry.register(new BoardCapability());
+  if (adapter?.type !== 'azure-devops') {
+    registry.register(new BoardCapability());
+  }
   registry.register(new MonitorTeamsCapability());
   registry.register(new MonitorEmailCapability());
   registry.register(new TwoPassCapability());

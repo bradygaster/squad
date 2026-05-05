@@ -7,6 +7,15 @@
 import { execSync } from 'node:child_process';
 import type { PlatformType, WorkItemSource } from './types.js';
 
+const PLATFORM_REMEDIATION = 'Could not detect platform — set SQUAD_PLATFORM to "github" or "azure-devops", or check `git remote get-url origin`.';
+
+function getPlatformOverride(): PlatformType | undefined {
+  const value = process.env['SQUAD_PLATFORM']?.trim().toLowerCase();
+  if (!value) return undefined;
+  if (value === 'github' || value === 'azure-devops') return value;
+  throw new Error(`${PLATFORM_REMEDIATION} Invalid SQUAD_PLATFORM value: ${value}`);
+}
+
 /** Parsed GitHub remote info */
 export interface GitHubRemoteInfo {
   owner: string;
@@ -95,9 +104,12 @@ export function detectPlatformFromUrl(url: string): PlatformType {
 /**
  * Detect platform from a repository root by reading the git remote.
  * Reads 'origin' remote URL and determines whether it's GitHub or Azure DevOps.
- * Defaults to 'github' if detection fails.
+ * Throws with remediation if detection fails.
  */
 export function detectPlatform(repoRoot: string): PlatformType {
+  const override = getPlatformOverride();
+  if (override) return override;
+
   try {
     const remoteUrl = execSync('git remote get-url origin', {
       cwd: repoRoot,
@@ -106,8 +118,9 @@ export function detectPlatform(repoRoot: string): PlatformType {
     }).trim();
 
     return detectPlatformFromUrl(remoteUrl);
-  } catch {
-    return 'github';
+  } catch (err) {
+    const detail = (err as Error).message;
+    throw new Error(detail ? `${PLATFORM_REMEDIATION} ${detail}` : PLATFORM_REMEDIATION);
   }
 }
 

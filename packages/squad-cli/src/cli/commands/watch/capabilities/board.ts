@@ -15,7 +15,12 @@ export class BoardCapability implements WatchCapability {
   readonly requires = ['gh'];
   readonly phase = 'post-execute' as const;
 
-  async preflight(_context: WatchContext): Promise<PreflightResult> {
+  async preflight(context: WatchContext): Promise<PreflightResult> {
+    if (context.adapter.type !== 'github') {
+      // TODO(W8): needs PlatformAdapter project-board capability registration.
+      return { ok: false, reason: `project board is not supported for ${context.adapter.type}` };
+    }
+
     try {
       await execFileAsync('gh', ['project', '--help']);
       return { ok: true };
