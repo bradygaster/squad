@@ -364,103 +364,232 @@ For read-only queries, use the explore agent: `agent_type: "explore"` with `"You
 
 ### Per-Agent Model Selection
 
-Before spawning an agent, determine which model to use. Check these layers in order — first match wins:
+Before spawning an agent, resolve a model in **two phases**:
 
-**Layer 0 — Persistent Config (`.squad/config.json`):** On session start, read `.squad/config.json`. If `agentModelOverrides.{agentName}` exists, use that model for this specific agent. Otherwise, if `defaultModel` exists, use it for ALL agents. This layer survives across sessions — the user set it once and it sticks.
+1. **Resolve intent** with the existing 5-layer hierarchy.
+2. **Apply policy veto** (`costPolicy`) and soft modifiers (`economyMode`) before spawning.
 
-- **When user says "always use X" / "use X for everything" / "default to X":** Write `defaultModel` to `.squad/config.json`. Acknowledge: `✅ Model preference saved: {model} — all future sessions will use this until changed.`
-- **When user says "use X for {agent}":** Write to `agentModelOverrides.{agent}` in `.squad/config.json`. Acknowledge: `✅ {Agent} will always use {model} — saved to config.`
-- **When user says "switch back to automatic" / "clear model preference":** Remove `defaultModel` (and optionally `agentModelOverrides`) from `.squad/config.json`. Acknowledge: `✅ Model preference cleared — returning to automatic selection.`
+The 5 layers stay intact:
 
-**Layer 1 — Session Directive:** Did the user specify a model for this session? ("use opus for this session", "save costs"). If yes, use that model. Session-wide directives persist until the session ends or contradicted.
+- **Layer 0a — Persistent Per-Agent Config:** `.squad/config.json` → `agentModelOverrides.{agentName}`
+- **Layer 0b — Persistent Global Config:** `.squad/config.json` → `defaultModel`
+- **Layer 1 — Session Directive:** explicit session phrases like "use opus for this session"
+- **Layer 2 — Charter Preference:** agent charter `## Model` section when not `auto`
+- **Layer 3 — Task-Aware Auto-Selection:** choose by task output
+- **Layer 4 — Default:** final hardcoded fallback
 
-**Layer 2 — Charter Preference:** Does the agent's charter have a `## Model` section with `Preferred` set to a specific model (not `auto`)? If yes, use that model.
+#### Policy Veto Step (apply AFTER Layer 4 resolution)
 
-**Layer 3 — Task-Aware Auto-Selection:** Use the governing principle: **cost first, unless code is being written.** Match the agent's task to determine output type, then select accordingly:
+After a model is resolved, check `costPolicy`.
 
-| Task Output | Model | Tier | Rule |
-|-------------|-------|------|------|
-| Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.6` | Standard | Quality and accuracy matter for code. Use standard tier. |
-| Writing prompts or agent designs (structured text that functions like code) | `claude-sonnet-4.6` | Standard | Prompts are executable — treat like code. |
-| NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `claude-haiku-4.5` | Fast | Cost first. Haiku handles non-code tasks. |
-| Visual/design work requiring image analysis | `claude-opus-4.5` | Premium | Vision capability required. Overrides cost rule. |
+**Important:** `costPolicy` is **not Layer 0/1/2/3/4**. It is a policy check applied **after** layer resolution and **before** fallback execution.
 
-**Role-to-model mapping** (applying cost-first principle):
+Policy algorithm:
 
-| Role | Default Model | Why | Override When |
-|------|--------------|-----|---------------|
-| Core Dev / Backend / Frontend | `claude-sonnet-4.6` | Writes code — quality first | Heavy code gen → `gpt-5.3-codex` |
-| Tester / QA | `claude-sonnet-4.6` | Writes test code — quality first | Simple test scaffolding → `claude-haiku-4.5` |
-| Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → haiku |
-| Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → haiku |
-| Copilot SDK Expert | `claude-sonnet-4.6` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
-| Designer / Visual | `claude-opus-4.5` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
-| DevRel / Writer | `claude-haiku-4.5` | Docs and writing — not code | — |
-| Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
-| Git / Release | `claude-haiku-4.5` | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
+1. Read persistent `costPolicy` from `.squad/config.json`.
+2. Merge any **session-only cost directives** from the conversation on top of it.
+3. Determine the resolved model's category: **Lightweight**, **Versatile**, or **Powerful**.
+4. If the resolved model is **within** the ceiling, continue.
+5. If the resolved model is **above** the ceiling:
+   - **Layer 0 / Layer 1 explicit user override:** **warn and allow**.
+   - **Layer 2 / Layer 3 / Layer 4 choice:** reroute to the best in-ceiling model for that task.
+6. After ceiling enforcement, apply `economyMode` as a **soft cheaper-within-ceiling preference**.
+7. If `preferIncluded: true`, rank **included** models ahead of paid models when they can handle the task.
+8. Run the fallback chain, but **drop any fallback candidates above the active ceiling** unless the original selection came from an explicit Layer 0/1 override.
 
-**Task complexity adjustments** (apply at most ONE — no cascading):
-- **Bump UP to premium:** architecture proposals, reviewer gates, security audits, multi-agent coordination (output feeds 3+ agents)
-- **Bump DOWN to fast/cheap:** typo fixes, renames, boilerplate, scaffolding, changelogs, version bumps
-- **Switch to code specialist (`gpt-5.3-codex`):** large multi-file refactors, complex implementation from spec, heavy code generation (500+ lines)
-- **Switch to analytical diversity (`gemini-3-pro-preview`):** code reviews where a second perspective helps, security reviews, architecture reviews after a rejection
+**Warning copy for explicit override above ceiling:**
 
-**Layer 4 — Default:** If nothing else matched, use `claude-haiku-4.5`. Cost wins when in doubt, unless code is being produced.
-
-**Fallback chains — when a model is unavailable:**
-
-If a spawn fails because the selected model is unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), silently retry with the next model in the chain. Do NOT tell the user about fallback attempts. Maximum 3 retries before jumping to the nuclear fallback.
-
-```
-Premium:  claude-opus-4.6 → claude-opus-4.5 → claude-sonnet-4.6 → claude-sonnet-4.5 → (omit model param)
-Standard: claude-sonnet-4.6 → claude-sonnet-4.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4 → (omit model param)
-Fast:     claude-haiku-4.5 → gpt-5.4-mini → gpt-5.1-codex-mini → gpt-4.1 → (omit model param)
+```text
+⚠️ {model} is above the current cost policy ceiling ({maxCategory}), but it was explicitly requested, so I’m using it.
 ```
 
-`(omit model param)` = call the `task` tool WITHOUT the `model` parameter. The platform uses its built-in default. This is the nuclear fallback — it always works.
+Warn once per explicit request. Do not repeatedly nag on every fallback retry.
 
-**Fallback rules:**
-- If the user specified a provider ("use Claude"), fall back within that provider only before hitting nuclear
-- Never fall back UP in tier — a fast/cheap task should not land on a premium model
-- Log fallbacks to the orchestration log for debugging, but never surface to the user unless asked
+---
 
-**Passing the model to spawns:**
+## Valid Models (GitHub AI Credits catalog used by Squad)
 
-Pass the resolved model as the `model` parameter on every `task` tool call:
+Use GitHub's category names and pricing language. List the **active Squad selection set** first — i.e. the model IDs Squad should actively choose today on Copilot surfaces that expose the current task-model list.
 
-```
-agent_type: "general-purpose"
-model: "{resolved_model}"
-mode: "background"
-name: "{name}"
-description: "{emoji} {Name}: {brief task summary}"
-prompt: |
-  ...
-```
+### Lightweight
 
-Only set `model` when it differs from the platform default (`claude-sonnet-4.6`). If the resolved model IS `claude-sonnet-4.6`, you MAY omit the `model` parameter — the platform uses it as default.
+| Model | Included? | Credit cost (in / out per 1M) | Notes |
+|---|---:|---:|---|
+| `gpt-5-mini` | **Yes** | 0 / 0 | Zero-credit lightweight default when `preferIncluded: true` or economy is aggressive. |
+| `gpt-5.4-mini` | No | 0.75 / 4.50 | Cheap lightweight fallback. |
+| `claude-haiku-4.5` | No | 1.00 / 5.00 | Best default lightweight paid model for non-code and mechanical work. |
 
-If you've exhausted the fallback chain and reached nuclear fallback, omit the `model` parameter entirely.
+### Versatile
 
-**Spawn output format — show the model choice:**
+| Model | Included? | Credit cost (in / out per 1M) | Notes |
+|---|---:|---:|---|
+| `gpt-4.1` | **Yes** | 0 / 0 | Zero-credit structured/tool-use preference when `preferIncluded: true` or economy mode is active. |
+| `claude-sonnet-4.6` | No | 3.00 / 15.00 | Primary default for code, prompt architecture, and high-quality structured output. |
+| `claude-sonnet-4.5` | No | 3.00 / 15.00 | First same-family fallback. |
+| `claude-sonnet-4` | No | 3.00 / 15.00 | Older versatile fallback. |
+| `gpt-5.4` | No | 2.50 / 15.00 | Strong versatile alternative. |
+| `gpt-5.3-codex` | No | 1.75 / 14.00 | Best code-specialist alternate for large implementation bursts. |
+| `gpt-5.2-codex` | No | 1.75 / 14.00 | Secondary code-specialist alternate. |
+| `gpt-5.2` | No | 1.75 / 14.00 | General versatile alternate. |
 
-When spawning, include the model in your acknowledgment:
+### Powerful
 
-```
-🔧 Fenster (claude-sonnet-4.6) — refactoring auth module
-🎨 Redfoot (claude-opus-4.5 · vision) — designing color system
-📋 Scribe (claude-haiku-4.5 · fast) — logging session
-⚡ Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
-📝 McManus (claude-haiku-4.5 · fast) — updating docs
-```
+| Model | Included? | Credit cost (in / out per 1M) | Notes |
+|---|---:|---:|---|
+| `claude-opus-4.7` | No | 5.00 / 25.00 | Best default for architecture, review gates, and vision-heavy work. |
+| `claude-opus-4.6` | No | 5.00 / 25.00 | Same-family fallback. |
+| `claude-opus-4.5` | No | 5.00 / 25.00 | Stable older fallback. |
+| `gpt-5.5` | No | 5.00 / 30.00 | Powerful cross-provider alternate. |
 
-Include tier annotation only when the model was bumped or a specialist was chosen. Default-tier spawns just show the model name.
+**Catalog note:** GitHub's broader catalog also includes additional lightweight/versatile/powerful models such as `gemini-3.1-pro`. Treat those as catalog context only unless the active Copilot surface exposes them for selection. Do **not** make Squad actively select IDs that are not exposed by the current Copilot surface. If a new surface exposes more catalog models later, slot them into the same category semantics rather than inventing new tiers.
 
 **Valid models (current platform catalog):**
 
-Premium: `claude-opus-4.6`, `claude-opus-4.6-1m` (Internal only), `claude-opus-4.5`
-Standard: `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.1`, `gemini-3-pro-preview`
-Fast/Cheap: `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5.1-codex-mini`, `gpt-5-mini`, `gpt-4.1`
+Powerful: `claude-opus-4.7`, `claude-opus-4.6`, `claude-opus-4.5`, `gpt-5.5`
+Versatile: `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-4`, `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.2-codex`, `gpt-5.2`, `gpt-4.1` (included)
+Lightweight: `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5-mini` (included)
+
+---
+
+## Updated Layer 3 defaults
+
+Keep the principle: **cost first, unless code or prompt logic is being produced**.
+
+| Task Output | Default Model | Category | Why |
+|---|---|---|---|
+| Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.6` | Versatile | Best default quality/cost balance for production code. |
+| Writing prompts, agent designs, routing logic, structured system text | `claude-sonnet-4.6` | Versatile | Prompt architecture behaves like code. |
+| Docs, planning, triage, changelogs, logging, mechanical ops | `claude-haiku-4.5` | Lightweight | Cheap default when no stronger policy preference is active. |
+| Visual/design work or image-heavy judgment | `claude-opus-4.7` | Powerful | Highest-stakes reasoning / best vision-capable default. |
+
+**Layer 4 default:** `claude-haiku-4.5`
+
+---
+
+## Updated role-to-model mapping
+
+| Role | Normal Default | Category | Prefer-Included Route | Override When |
+|---|---|---|---|---|
+| Core Dev / Backend / Frontend / TypeScript Engineer | `claude-sonnet-4.6` | Versatile | `gpt-4.1` | Heavy code generation or refactor burst → `gpt-5.3-codex` |
+| Tester / QA / E2E | `claude-sonnet-4.6` | Versatile | `gpt-4.1` | Simple scaffolding / assertions / fixture churn → `claude-haiku-4.5` or `gpt-5-mini` |
+| Lead / Architect / Security reviewer | auto by task | Powerful or Versatile | `gpt-4.1` only for low-stakes advisory analysis | Architecture proposals / reviewer gates / security signoff → `claude-opus-4.7` |
+| Prompt Engineer | auto by task | Versatile or Lightweight | `gpt-4.1` for structured prompt rewrites; `gpt-5-mini` for cheap synthesis | Prompt architecture / coordinator logic → `claude-sonnet-4.6` |
+| Copilot SDK Expert | `claude-sonnet-4.6` | Versatile | `gpt-4.1` | Pure research / inventory / API comparison → `claude-haiku-4.5` |
+| Designer / Visual | `claude-opus-4.7` | Powerful | none by default | If policy ceiling blocks Powerful, downgrade to `claude-sonnet-4.6` and note reduced confidence for visual judgment |
+| DevRel / Writer | `claude-haiku-4.5` | Lightweight | `gpt-5-mini` (or `gpt-4.1` if heavy tool use) | Structured transformation or tool-rich writing workflow → `gpt-4.1` |
+| Scribe / Logger | `claude-haiku-4.5` | Lightweight | `gpt-5-mini` | Never auto-bump above Lightweight unless explicitly requested |
+| Git / Release / Mechanical ops | `claude-haiku-4.5` | Lightweight | `gpt-5-mini` | Never auto-bump above Lightweight unless explicitly requested |
+
+**Design read:** defaults stay Sonnet/Haiku for normal mode. `preferIncluded` and `economyMode` are what pull routing toward `gpt-4.1` / `gpt-5-mini`.
+
+---
+
+## Cost Policy
+
+Add a new subsection directly under model selection.
+
+### Config shape
+
+```json
+{
+  "costPolicy": {
+    "maxCategory": "Versatile",
+    "preferIncluded": true
+  }
+}
+```
+
+- `maxCategory`: `Lightweight` | `Versatile` | `Powerful`
+- `preferIncluded`: when `true`, prefer zero-credit models (`gpt-4.1`, `gpt-5-mini`) where they are acceptable for the task
+- Default if missing: `{ "maxCategory": "Powerful", "preferIncluded": false }`
+
+### What it means
+
+- **`maxCategory` is a hard ceiling** for auto-routing and charter-driven choices.
+- Lower categories are always allowed.
+- **`economyMode` is different:** it is a **soft cheaper-within-ceiling preference**.
+- **`preferIncluded` is also different:** it re-ranks zero-credit models first, but still respects the ceiling and task fit.
+
+### Conversation phrases
+
+Treat conversational cost policy as **session-only** unless the user says `always`, `save`, `remember`, or otherwise asks to persist it.
+
+| User phrase | Session action |
+|---|---|
+| "keep costs low" / "use cheap models" / "Lightweight only" | set `maxCategory: "Lightweight"` |
+| "no powerful models" / "cap at versatile" | set `maxCategory: "Versatile"` |
+| "prefer included models" / "save credits" / "use zero-cost models when you can" | set `preferIncluded: true` |
+| "use normal costing again" / "remove the ceiling" | clear session cost policy override |
+
+Persistent forms:
+
+- "always keep costs low" → write `costPolicy.maxCategory = "Lightweight"`
+- "always cap at versatile" → write `costPolicy.maxCategory = "Versatile"`
+- "always prefer included models" → write `costPolicy.preferIncluded = true`
+
+### Composition with `economyMode`
+
+Apply in this order:
+
+1. Resolve the model from Layers 0-4.
+2. Enforce `costPolicy.maxCategory`.
+3. Apply `preferIncluded` ranking.
+4. Apply `economyMode` as a soft cheaper-within-ceiling substitution.
+5. Execute the ceiling-aware fallback chain.
+
+Examples:
+
+- **No cost policy + economy off:** code task → `claude-sonnet-4.6`
+- **`maxCategory: "Versatile"` + economy off:** code task still → `claude-sonnet-4.6`
+- **`maxCategory: "Versatile"` + economy on:** code task can downshift to `gpt-4.1`
+- **`maxCategory: "Lightweight"` + economy off:** code task is capped to a Lightweight model, defaulting to `claude-haiku-4.5`
+- **`maxCategory: "Lightweight"` + `preferIncluded: true`:** code/docs/mechanical work should prefer `gpt-5-mini`
+
+### Explicit override rule
+
+If the user explicitly chooses a model at Layer 0 or Layer 1 and that model exceeds the ceiling, **warn and allow**. Do **not** silently replace an explicit override.
+
+If the chosen model came from Layer 2, Layer 3, or Layer 4 and exceeds the ceiling, **replace it with the best allowed model**.
+
+---
+
+## Updated fallback chains
+
+Rename the chains to GitHub's categories and make them ceiling-aware.
+
+```text
+Powerful:          claude-opus-4.7 → claude-opus-4.6 → claude-opus-4.5 → gpt-5.5 → claude-sonnet-4.6 → (omit model param)
+Versatile (code):  claude-sonnet-4.6 → claude-sonnet-4.5 → gpt-5.3-codex → gpt-5.2-codex → gpt-5.4 → claude-sonnet-4 → gpt-4.1 → (omit model param)
+Versatile (general): claude-sonnet-4.6 → claude-sonnet-4.5 → gpt-4.1 → gpt-5.4 → gpt-5.2 → claude-sonnet-4 → (omit model param)
+Lightweight:       claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
+Lightweight (preferIncluded): gpt-5-mini → gpt-5.4-mini → claude-haiku-4.5 → (omit model param)
+```
+
+Fallback rules:
+
+- Never fall back **above the active `maxCategory` ceiling**.
+- If the user specified a provider (`Claude`, `GPT`), exhaust same-provider choices first.
+- If `preferIncluded: true`, start with the included-first chain when available.
+- Use `(omit model param)` as the nuclear fallback.
+- Do not narrate fallback attempts unless the user explicitly asks.
+
+---
+
+## Spawn acknowledgment additions
+
+Keep the current model display, but add policy/economy tags only when they matter.
+
+Examples:
+
+```text
+🔧 EECOM (claude-sonnet-4.6) — implementing router changes
+🧠 Procedures (gpt-4.1 · included) — rewriting prompt policy
+📋 Scribe (gpt-5-mini · lightweight · included) — logging session
+⚠️ Flight (claude-opus-4.7 · above cost ceiling by explicit override) — reviewing architecture
+💰 CONTROL (gpt-4.1 · economy) — planning refactor
+```
+
+---
 
 ### Client Compatibility
 

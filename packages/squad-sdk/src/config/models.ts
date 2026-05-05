@@ -22,6 +22,39 @@ export interface ModelPricing {
   outputPerToken: number;
 }
 
+export type GitHubModelCategory = 'lightweight' | 'versatile' | 'powerful';
+
+export interface CostPolicyConfig {
+  /** Hard ceiling for automatic model selection and fallback. */
+  maxCategory?: GitHubModelCategory;
+  /** Prefer zero-credit (included) models when a same-tier compliant candidate exists. */
+  preferIncluded?: boolean;
+}
+
+export interface SessionCostPolicyOverride extends CostPolicyConfig {
+  source: 'conversation' | 'command';
+}
+
+export type CostPolicyAction =
+  | 'none'
+  | 'warn-allow-explicit'
+  | 'downgraded-to-ceiling'
+  | 'preferred-included'
+  | 'fallback-chain-pruned';
+
+export interface CostPolicyOutcome {
+  appliedPolicy?: Required<CostPolicyConfig>;
+  action: CostPolicyAction;
+  originalModel: string;
+  finalModel: string;
+  warning?: string;
+}
+
+const pricePerMillion = (input: number, output: number): ModelPricing => ({
+  inputPerToken: input / 1_000_000,
+  outputPerToken: output / 1_000_000,
+});
+
 /**
  * Model capability information.
  */
@@ -32,11 +65,23 @@ export interface ModelInfo {
   /** Model tier */
   tier: ModelTier;
   
-  /** Provider (anthropic, openai, google) */
-  provider: 'anthropic' | 'openai' | 'google';
+  /** Provider (anthropic, openai, google, github, xai) */
+  provider: 'anthropic' | 'openai' | 'google' | 'github' | 'xai';
   
   /** Model family */
-  family: 'claude' | 'gpt' | 'gemini';
+  family:
+    | 'claude'
+    | 'claude-opus'
+    | 'claude-sonnet'
+    | 'claude-haiku'
+    | 'gpt'
+    | 'gpt-4'
+    | 'gpt-5'
+    | 'gpt-5-codex'
+    | 'gemini'
+    | 'raptor'
+    | 'goldeneye'
+    | 'grok';
   
   /** Supports vision/multimodal input */
   vision?: boolean;
@@ -52,45 +97,116 @@ export interface ModelInfo {
 
   /** Per-token pricing in USD (if known) */
   pricing?: ModelPricing;
+
+  /** GitHub's billing category for this model. */
+  githubCategory?: GitHubModelCategory;
+
+  /** True when GitHub bills this model at zero credits (included in plan). */
+  includedInCopilot?: boolean;
+
+  /** Whether Squad actively auto-selects this model (active) or only allows explicit override (catalog-only) or is no longer valid (deprecated). */
+  availability?: 'active' | 'catalog-only' | 'deprecated';
+
+  /** Canonical replacement model ID when availability is deprecated. */
+  replacementModel?: string;
 }
 
 /**
- * Full model catalog from squad.agent.md.
+ * Full model catalog from the GitHub Copilot model surface.
  */
 export const MODEL_CATALOG: ModelInfo[] = [
   // Premium tier - highest quality, slowest, most expensive
   {
-    id: 'claude-opus-4.6',
+    id: 'claude-opus-4.7',
     tier: 'premium',
     provider: 'anthropic',
-    family: 'claude',
+    family: 'claude-opus',
     vision: true,
     useCases: ['architecture proposals', 'security audits', 'complex design'],
     cost: 10,
     speed: 3,
-    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
+    pricing: pricePerMillion(5.0, 25.0),
+    githubCategory: 'powerful',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
-    id: 'claude-opus-4.6-fast',
+    id: 'claude-opus-4.6',
     tier: 'premium',
     provider: 'anthropic',
-    family: 'claude',
+    family: 'claude-opus',
     vision: true,
-    useCases: ['architecture proposals', 'urgent reviews'],
-    cost: 9,
-    speed: 6,
-    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
+    useCases: ['architecture proposals', 'security audits', 'complex design'],
+    cost: 10,
+    speed: 3,
+    pricing: pricePerMillion(5.0, 25.0),
+    githubCategory: 'powerful',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'claude-opus-4.5',
     tier: 'premium',
     provider: 'anthropic',
-    family: 'claude',
+    family: 'claude-opus',
     vision: true,
     useCases: ['architecture proposals', 'reviewer gates'],
     cost: 9,
     speed: 3,
-    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
+    pricing: pricePerMillion(5.0, 25.0),
+    githubCategory: 'powerful',
+    includedInCopilot: false,
+    availability: 'active',
+  },
+  {
+    id: 'gpt-5.5',
+    tier: 'premium',
+    provider: 'openai',
+    family: 'gpt-5',
+    useCases: ['complex implementation', 'large codebases', 'analysis'],
+    cost: 9,
+    speed: 5,
+    pricing: pricePerMillion(5.0, 30.0),
+    githubCategory: 'powerful',
+    includedInCopilot: false,
+    availability: 'active',
+  },
+  {
+    id: 'gemini-2.5-pro',
+    tier: 'premium',
+    provider: 'google',
+    family: 'gemini',
+    useCases: ['code reviews', 'second opinion', 'analysis'],
+    pricing: pricePerMillion(1.25, 10.0),
+    githubCategory: 'powerful',
+    includedInCopilot: false,
+    availability: 'catalog-only',
+  },
+  {
+    id: 'goldeneye',
+    tier: 'premium',
+    provider: 'github',
+    family: 'goldeneye',
+    useCases: ['deep analysis', 'large context review'],
+    pricing: pricePerMillion(1.25, 10.0),
+    githubCategory: 'powerful',
+    includedInCopilot: false,
+    availability: 'catalog-only',
+  },
+  {
+    id: 'claude-opus-4.6-fast',
+    tier: 'premium',
+    provider: 'anthropic',
+    family: 'claude-opus',
+    vision: true,
+    useCases: ['architecture proposals', 'urgent reviews'],
+    cost: 9,
+    speed: 6,
+    pricing: pricePerMillion(5.0, 25.0),
+    githubCategory: 'powerful',
+    includedInCopilot: false,
+    availability: 'deprecated',
+    replacementModel: 'claude-opus-4.6',
   },
   
   // Standard tier - balanced quality, speed, cost
@@ -98,113 +214,174 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'claude-sonnet-4.6',
     tier: 'standard',
     provider: 'anthropic',
-    family: 'claude',
+    family: 'claude-sonnet',
     vision: true,
     useCases: ['code generation', 'test writing', 'refactoring', 'prompt engineering'],
     cost: 5,
     speed: 7,
-    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
+    pricing: pricePerMillion(3.0, 15.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'claude-sonnet-4.5',
     tier: 'standard',
     provider: 'anthropic',
-    family: 'claude',
+    family: 'claude-sonnet',
     vision: true,
     useCases: ['code generation', 'test writing', 'refactoring'],
     cost: 5,
     speed: 7,
-    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
+    pricing: pricePerMillion(3.0, 15.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'claude-sonnet-4',
     tier: 'standard',
     provider: 'anthropic',
-    family: 'claude',
+    family: 'claude-sonnet',
     useCases: ['code generation', 'documentation'],
     cost: 4,
     speed: 7,
-    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
+    pricing: pricePerMillion(3.0, 15.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'gpt-5.4',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5',
     useCases: ['general purpose', 'code generation', 'analysis'],
     cost: 6,
     speed: 7,
-    pricing: { inputPerToken: 0.000005, outputPerToken: 0.000015 },
+    pricing: pricePerMillion(2.5, 15.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'gpt-5.3-codex',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5-codex',
     useCases: ['heavy code generation', 'multi-file refactors'],
     cost: 5,
     speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(1.75, 14.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'gpt-5.2-codex',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5-codex',
     useCases: ['heavy code generation', 'multi-file refactors'],
     cost: 5,
     speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(1.75, 14.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'gpt-5.2',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5',
     useCases: ['general coding', 'analysis'],
     cost: 5,
     speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(1.75, 14.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'active',
+  },
+  {
+    id: 'gpt-4.1',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt-4',
+    useCases: ['lightweight tasks', 'triage', 'economy fallback'],
+    cost: 2,
+    speed: 9,
+    pricing: pricePerMillion(0, 0),
+    githubCategory: 'versatile',
+    includedInCopilot: true,
+    availability: 'active',
+  },
+  {
+    id: 'gemini-3.1-pro',
+    tier: 'standard',
+    provider: 'google',
+    family: 'gemini',
+    useCases: ['code reviews', 'second opinion', 'diversity'],
+    pricing: pricePerMillion(2.0, 12.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'catalog-only',
   },
   {
     id: 'gpt-5.1-codex-max',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5-codex',
     useCases: ['complex implementation', 'large codebases'],
     cost: 6,
     speed: 5,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(1.75, 14.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'deprecated',
+    replacementModel: 'gpt-5.3-codex',
   },
   {
     id: 'gpt-5.1-codex',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5-codex',
     useCases: ['code generation', 'implementation'],
     cost: 5,
     speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(1.75, 14.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'deprecated',
+    replacementModel: 'gpt-5.2-codex',
   },
   {
     id: 'gpt-5.1',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5',
     useCases: ['general purpose', 'analysis'],
     cost: 5,
     speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(1.75, 14.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'deprecated',
+    replacementModel: 'gpt-5.2',
   },
   {
     id: 'gpt-5',
     tier: 'standard',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5',
     useCases: ['general purpose'],
     cost: 5,
     speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(1.75, 14.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'deprecated',
+    replacementModel: 'gpt-5.2',
   },
   {
     id: 'gemini-3-pro-preview',
@@ -214,7 +391,11 @@ export const MODEL_CATALOG: ModelInfo[] = [
     useCases: ['code reviews', 'second opinion', 'diversity'],
     cost: 5,
     speed: 7,
-    pricing: { inputPerToken: 0.00000125, outputPerToken: 0.00001 },
+    pricing: pricePerMillion(2.0, 12.0),
+    githubCategory: 'versatile',
+    includedInCopilot: false,
+    availability: 'deprecated',
+    replacementModel: 'gemini-3.1-pro',
   },
   
   // Fast tier - lowest cost, fastest, good enough quality
@@ -222,51 +403,108 @@ export const MODEL_CATALOG: ModelInfo[] = [
     id: 'claude-haiku-4.5',
     tier: 'fast',
     provider: 'anthropic',
-    family: 'claude',
+    family: 'claude-haiku',
     useCases: ['boilerplate', 'changelogs', 'simple fixes'],
     cost: 2,
     speed: 9,
-    pricing: { inputPerToken: 0.0000008, outputPerToken: 0.000004 },
+    pricing: pricePerMillion(1.0, 5.0),
+    githubCategory: 'lightweight',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
-    id: 'gpt-5.1-codex-mini',
+    id: 'gpt-5.4-mini',
     tier: 'fast',
     provider: 'openai',
-    family: 'gpt',
-    useCases: ['scaffolding', 'test boilerplate'],
+    family: 'gpt-5',
+    useCases: ['scaffolding', 'test boilerplate', 'fast code tasks'],
     cost: 2,
-    speed: 9,
-    pricing: { inputPerToken: 0.0000003, outputPerToken: 0.0000012 },
+    speed: 8,
+    pricing: pricePerMillion(0.75, 4.5),
+    githubCategory: 'lightweight',
+    includedInCopilot: false,
+    availability: 'active',
   },
   {
     id: 'gpt-5-mini',
     tier: 'fast',
     provider: 'openai',
-    family: 'gpt',
+    family: 'gpt-5',
     useCases: ['typo fixes', 'renames', 'simple tasks'],
     cost: 1,
-    speed: 10,
-    pricing: { inputPerToken: 0.00000015, outputPerToken: 0.0000006 },
+    speed: 5,
+    pricing: pricePerMillion(0, 0),
+    githubCategory: 'lightweight',
+    includedInCopilot: true,
+    availability: 'active',
   },
   {
-    id: 'gpt-4.1',
+    id: 'raptor-mini',
+    tier: 'fast',
+    provider: 'github',
+    family: 'raptor',
+    useCases: ['quick edits', 'lightweight assistance'],
+    pricing: pricePerMillion(0, 0),
+    githubCategory: 'lightweight',
+    includedInCopilot: true,
+    availability: 'catalog-only',
+  },
+  {
+    id: 'gpt-5.4-nano',
     tier: 'fast',
     provider: 'openai',
-    family: 'gpt',
-    useCases: ['lightweight tasks', 'triage'],
+    family: 'gpt-5',
+    useCases: ['ultra-fast edits', 'simple automation'],
+    pricing: pricePerMillion(0.2, 1.25),
+    githubCategory: 'lightweight',
+    includedInCopilot: false,
+    availability: 'catalog-only',
+  },
+  {
+    id: 'gemini-3-flash',
+    tier: 'fast',
+    provider: 'google',
+    family: 'gemini',
+    useCases: ['fast analysis', 'light coding tasks'],
+    pricing: pricePerMillion(0.5, 3.0),
+    githubCategory: 'lightweight',
+    includedInCopilot: false,
+    availability: 'catalog-only',
+  },
+  {
+    id: 'grok-code-fast-1',
+    tier: 'fast',
+    provider: 'xai',
+    family: 'grok',
+    useCases: ['fast code assistance', 'quick iteration'],
+    pricing: pricePerMillion(0.2, 1.5),
+    githubCategory: 'lightweight',
+    includedInCopilot: false,
+    availability: 'catalog-only',
+  },
+  {
+    id: 'gpt-5.1-codex-mini',
+    tier: 'fast',
+    provider: 'openai',
+    family: 'gpt-5-codex',
+    useCases: ['scaffolding', 'test boilerplate'],
     cost: 2,
     speed: 9,
-    pricing: { inputPerToken: 0.0000002, outputPerToken: 0.0000008 },
-  }
+    pricing: pricePerMillion(0.75, 4.5),
+    githubCategory: 'lightweight',
+    includedInCopilot: false,
+    availability: 'deprecated',
+    replacementModel: 'gpt-5.4-mini',
+  },
 ];
 
 /**
  * Default fallback chains per tier from squad.agent.md.
  */
 export const DEFAULT_FALLBACK_CHAINS: Record<ModelTier, ModelId[]> = {
-  premium: ['claude-opus-4.6', 'claude-opus-4.6-fast', 'claude-opus-4.5', 'claude-sonnet-4.6'],
-  standard: ['claude-sonnet-4.6', 'gpt-5.4', 'claude-sonnet-4.5', 'gpt-5.3-codex', 'claude-sonnet-4', 'gpt-5.2'],
-  fast: ['claude-haiku-4.5', 'gpt-5.1-codex-mini', 'gpt-4.1', 'gpt-5-mini']
+  premium: ['claude-opus-4.7', 'claude-opus-4.6', 'claude-opus-4.5', 'gpt-5.5', 'claude-sonnet-4.6'],
+  standard: ['claude-sonnet-4.6', 'claude-sonnet-4.5', 'gpt-5.3-codex', 'gpt-5.2-codex', 'gpt-5.4', 'claude-sonnet-4', 'gpt-4.1'],
+  fast: ['claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini', 'gpt-4.1']
 };
 
 /**
@@ -523,14 +761,16 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
  */
 export const ECONOMY_MODEL_MAP: Record<string, string> = {
   // Premium → standard downgrade (architecture/review tasks)
-  'claude-opus-4.6':      'claude-sonnet-4.5',
-  'claude-opus-4.6-fast': 'claude-sonnet-4.5',
-  'claude-opus-4.5':      'claude-sonnet-4.5',
-  // Standard → fast downgrade (code writing, docs, planning, triage)
-  'claude-sonnet-4.6':    'gpt-4.1',
-  'claude-sonnet-4.5':    'gpt-4.1',
-  // Fast → cheapest fast (scribe/mechanical, docs)
-  'claude-haiku-4.5':     'gpt-4.1',
+  'claude-opus-4.7': 'claude-sonnet-4.6',
+  'claude-opus-4.6': 'claude-sonnet-4.6',
+  'claude-opus-4.5': 'claude-sonnet-4.6',
+  // Standard → cheaper standard/included downgrade (code writing, docs, planning, triage)
+  'claude-sonnet-4.6': 'gpt-4.1',
+  'claude-sonnet-4.5': 'gpt-4.1',
+  'gpt-5.4': 'gpt-5.2',
+  'gpt-5.5': 'gpt-5.4',
+  // Fast → cheapest compliant fast or included fallback
+  'claude-haiku-4.5': 'gpt-4.1',
 };
 
 /**
@@ -548,6 +788,7 @@ export interface ModelPreferenceConfig {
   defaultModel?: string;
   agentModelOverrides?: Record<string, string>;
   economyMode?: boolean;
+  costPolicy?: CostPolicyConfig;
 }
 
 /**

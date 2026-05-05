@@ -440,7 +440,7 @@ describe('Integration: Charter → Model → Session Pipeline', () => {
 
       expect(premiumResult.tier).toBe('premium');
       expect(premiumResult.fallbackChain.length).toBeGreaterThan(1);
-      expect(premiumResult.fallbackChain[0]).toBe('claude-opus-4.6');
+      expect(premiumResult.fallbackChain[0]).toBe('claude-opus-4.7');
     });
   });
 });

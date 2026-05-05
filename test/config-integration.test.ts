@@ -906,7 +906,7 @@ describe('Integration: Full pipeline — discover → compile → resolve → fi
 
     expect(config.team.name).toBe('Integration Squad');
     expect(config.agents.length).toBe(1);
-    expect(config.models.default).toBe('claude-sonnet-4');
+    expect(config.models.default).toBe('claude-sonnet-4.6');
   });
 });
 

@@ -471,7 +471,7 @@ describe('Compat v0.4.1: Model Catalog', () => {
   });
 
   it('premium fallback chain starts with opus', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.6');
+    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.7');
   });
 
   it('standard fallback chain starts with sonnet', () => {

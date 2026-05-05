@@ -173,14 +173,14 @@ describe('estimateCost()', () => {
 
   it('works for fast-tier models', () => {
     const cost = estimateCost('claude-haiku-4.5', 10000, 5000);
-    // pricing: input $0.0000008/token, output $0.000004/token
-    expect(cost).toBeCloseTo(0.008 + 0.02, 6);
+    // pricing: input $0.000001/token, output $0.000005/token
+    expect(cost).toBeCloseTo(0.01 + 0.025, 6);
   });
 
   it('works for premium-tier models', () => {
     const cost = estimateCost('claude-opus-4.6', 1000, 500);
-    // pricing: input $0.000015/token, output $0.000075/token
-    expect(cost).toBeCloseTo(0.015 + 0.0375, 6);
+    // pricing: input $0.000005/token, output $0.000025/token
+    expect(cost).toBeCloseTo(0.005 + 0.0125, 6);
   });
 });
 
@@ -193,8 +193,11 @@ describe('MODEL_CATALOG pricing', () => {
     for (const model of MODEL_CATALOG) {
       expect(model.pricing, `Model ${model.id} missing pricing`).toBeDefined();
       const pricing = model.pricing as ModelPricing;
-      expect(pricing.inputPerToken).toBeGreaterThan(0);
-      expect(pricing.outputPerToken).toBeGreaterThan(0);
+      // Included-in-Copilot models have 0 extra cost by design; all others must have real pricing
+      if (!model.includedInCopilot) {
+        expect(pricing.inputPerToken).toBeGreaterThan(0);
+        expect(pricing.outputPerToken).toBeGreaterThan(0);
+      }
     }
   });
 

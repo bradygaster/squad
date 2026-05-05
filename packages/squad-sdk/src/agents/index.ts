@@ -32,6 +32,8 @@ export {
 // --- M1-9 Model Selection + M3-5 Model Fallback ---
 export { 
   resolveModel,
+  buildEffectiveCostPolicy,
+  finalizeResolvedModel,
   inferTierFromModel,
   isTierFallbackAllowed,
   ModelFallbackExecutor,
