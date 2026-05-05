@@ -38,9 +38,9 @@ afterEach(() => {
 
 describe('ECONOMY_MODEL_MAP', () => {
   it('maps premium models to standard', () => {
-    expect(ECONOMY_MODEL_MAP['claude-opus-4.6']).toBe('claude-sonnet-4.5');
-    expect(ECONOMY_MODEL_MAP['claude-opus-4.6-fast']).toBe('claude-sonnet-4.5');
-    expect(ECONOMY_MODEL_MAP['claude-opus-4.5']).toBe('claude-sonnet-4.5');
+    expect(ECONOMY_MODEL_MAP['claude-opus-4.6']).toBe('claude-sonnet-4.6');
+    expect(ECONOMY_MODEL_MAP['claude-opus-4.7']).toBe('claude-sonnet-4.6');
+    expect(ECONOMY_MODEL_MAP['claude-opus-4.5']).toBe('claude-sonnet-4.6');
   });
 
   it('maps standard sonnet models to fast', () => {
@@ -55,7 +55,7 @@ describe('ECONOMY_MODEL_MAP', () => {
 
 describe('applyEconomyMode', () => {
   it('returns economy model for known models', () => {
-    expect(applyEconomyMode('claude-opus-4.6')).toBe('claude-sonnet-4.5');
+    expect(applyEconomyMode('claude-opus-4.6')).toBe('claude-sonnet-4.6');
     expect(applyEconomyMode('claude-sonnet-4.6')).toBe('gpt-4.1');
     expect(applyEconomyMode('claude-haiku-4.5')).toBe('gpt-4.1');
   });
@@ -162,7 +162,7 @@ describe('resolveModel economy mode (option)', () => {
   });
 
   it('Layer 3 architecture task: uses sonnet instead of opus when economyMode: true', () => {
-    expect(resolveModel({ taskModel: 'claude-opus-4.6', economyMode: true })).toBe('claude-sonnet-4.5');
+    expect(resolveModel({ taskModel: 'claude-opus-4.6', economyMode: true })).toBe('claude-sonnet-4.6');
   });
 
   it('Layer 3 docs task: uses gpt-4.1 instead of haiku when economyMode: true', () => {
@@ -259,9 +259,9 @@ describe('SDK resolveModel (agents) economy mode', () => {
     expect(result.model).toBe('gpt-4.1');
   });
 
-  it('visual task → claude-sonnet-4.5 when economyMode: true', () => {
+  it('visual task → claude-sonnet-4.6 when economyMode: true', () => {
     const result = sdkResolveModel({ taskType: 'visual', economyMode: true });
-    expect(result.model).toBe('claude-sonnet-4.5');
+    expect(result.model).toBe('claude-sonnet-4.6');
   });
 
   it('code task → claude-sonnet-4.6 when economyMode: false', () => {

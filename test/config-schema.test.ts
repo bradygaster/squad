@@ -20,13 +20,13 @@ describe('Configuration Schema', () => {
       expect(DEFAULT_CONFIG.version).toBe('0.6.0');
       expect(DEFAULT_CONFIG.team.name).toBe('Default Squad');
       expect(DEFAULT_CONFIG.routing.fallbackBehavior).toBe('coordinator');
-      expect(DEFAULT_CONFIG.models.default).toBe('claude-sonnet-4');
+      expect(DEFAULT_CONFIG.models.default).toBe('claude-sonnet-4.6');
       expect(DEFAULT_CONFIG.agents).toEqual([]);
     });
 
     it('should have tier definitions', () => {
-      expect(DEFAULT_CONFIG.models.tiers.premium).toContain('claude-opus-4');
-      expect(DEFAULT_CONFIG.models.tiers.standard).toContain('claude-sonnet-4');
+      expect(DEFAULT_CONFIG.models.tiers.premium).toContain('claude-opus-4.7');
+      expect(DEFAULT_CONFIG.models.tiers.standard).toContain('claude-sonnet-4.6');
       expect(DEFAULT_CONFIG.models.tiers.fast).toContain('claude-haiku-4.5');
     });
   });

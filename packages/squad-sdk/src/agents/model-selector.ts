@@ -3,8 +3,29 @@
  */
 
 import { MODELS } from '../runtime/constants.js';
-import { applyEconomyMode } from '../config/models.js';
+import {
+  MODEL_CATALOG,
+  applyEconomyMode,
+  type CostPolicyConfig,
+  type CostPolicyOutcome,
+  type GitHubModelCategory,
+  type ModelInfo,
+  type ModelPreferenceConfig,
+  type SessionCostPolicyOverride,
+} from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
+
+const MODEL_CATALOG_MAP = new Map<string, ModelInfo>(MODEL_CATALOG.map(model => [model.id, model]));
+const CATEGORY_ORDER: Record<GitHubModelCategory, number> = {
+  lightweight: 0,
+  versatile: 1,
+  powerful: 2,
+};
+const CHEAPER_TIERS: Record<ModelTier, ModelTier[]> = {
+  premium: ['standard', 'fast'],
+  standard: ['fast'],
+  fast: [],
+};
 
 /**
  * Task types that influence model selection.
@@ -17,9 +38,25 @@ export type TaskType = 'code' | 'prompt' | 'docs' | 'visual' | 'planning' | 'mec
 export type ModelTier = 'premium' | 'standard' | 'fast';
 
 /**
+ * Narrow shape for persistent local model preferences.
+ */
+export interface SquadLocalConfig {
+  models?: ModelPreferenceConfig;
+}
+
+/**
  * Source of the model resolution.
  */
-export type ModelResolutionSource = 'user-override' | 'charter' | 'task-auto' | 'default';
+export type ModelResolutionSource =
+  | 'persistent-agent-override'
+  | 'persistent-default'
+  | 'session-explicit'
+  | 'user-override'
+  | 'charter'
+  | 'task-auto'
+  | 'default';
+
+interface BaseModelSelection extends ResolvedModel {}
 
 /**
  * Options for model resolution.
@@ -27,11 +64,17 @@ export type ModelResolutionSource = 'user-override' | 'charter' | 'task-auto' | 
 export interface ModelResolutionOptions {
   /** User-specified model override */
   userOverride?: string;
+  /** Structured session explicit model override */
+  sessionExplicitModel?: string;
   /** Model preference from agent's charter (## Model section) */
   charterPreference?: string;
+  /** Persistent local config for model preferences */
+  config?: SquadLocalConfig;
+  /** Session-scoped cost policy override */
+  sessionCostPolicy?: SessionCostPolicyOverride;
   /** Type of task being performed */
   taskType: TaskType;
-  /** Agent role (for context) */
+  /** Agent role (used for per-agent persistent overrides) */
   agentRole?: string;
   /** When true, apply economy mode substitution at Layer 3/4 */
   economyMode?: boolean;
@@ -49,37 +92,48 @@ export interface ResolvedModel {
   source: ModelResolutionSource;
   /** Fallback chain for this tier */
   fallbackChain: string[];
+  /** Cost policy outcome, when policy evaluation ran */
+  policy?: CostPolicyOutcome;
 }
 
 /**
- * Resolve the appropriate model using the 4-layer priority system.
- * 
+ * Resolve the appropriate model using the layered selector, then apply cost policy.
+ *
  * @param options - Model resolution options
- * @returns Resolved model with tier and fallback chain
+ * @returns Resolved model with tier, source, fallback chain, and policy outcome
  */
 export function resolveModel(options: ModelResolutionOptions): ResolvedModel {
-  const { userOverride, charterPreference, taskType, economyMode } = options;
+  const base = resolveBaseModel(options);
+  const policy = buildEffectiveCostPolicy(options.config ?? {}, options.sessionCostPolicy);
+  return finalizeResolvedModel(base, policy, MODEL_CATALOG_MAP);
+}
 
-  // Layer 1: User Override (explicit — economy does not apply)
-  if (userOverride && userOverride.trim().length > 0) {
-    const tier = inferTierFromModel(userOverride);
-    return {
-      model: userOverride,
-      tier,
-      source: 'user-override',
-      fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
-    };
+function resolveBaseModel(options: ModelResolutionOptions): BaseModelSelection {
+  const { userOverride, sessionExplicitModel, charterPreference, taskType, economyMode, config, agentRole } = options;
+
+  const persistentAgentOverride = agentRole ? config?.models?.agentModelOverrides?.[agentRole] : undefined;
+  if (persistentAgentOverride && persistentAgentOverride.trim().length > 0) {
+    return createResolvedModel(persistentAgentOverride, 'persistent-agent-override');
   }
 
-  // Layer 2: Charter Preference (explicit — economy does not apply)
+  const persistentDefault = config?.models?.defaultModel;
+  if (persistentDefault && persistentDefault.trim().length > 0) {
+    return createResolvedModel(persistentDefault, 'persistent-default');
+  }
+
+  // Layer 1: Session explicit override (explicit — economy does not apply)
+  if (sessionExplicitModel && sessionExplicitModel.trim().length > 0) {
+    return createResolvedModel(sessionExplicitModel, 'session-explicit');
+  }
+
+  // Layer 1b: User override (explicit — economy does not apply)
+  if (userOverride && userOverride.trim().length > 0) {
+    return createResolvedModel(userOverride, 'user-override');
+  }
+
+  // Layer 2: Charter Preference (economy does not apply)
   if (charterPreference && charterPreference.trim().length > 0 && charterPreference !== 'auto') {
-    const tier = inferTierFromModel(charterPreference);
-    return {
-      model: charterPreference,
-      tier,
-      source: 'charter',
-      fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
-    };
+    return createResolvedModel(charterPreference, 'charter');
   }
 
   // Layer 3: Task-Aware Auto-Selection (economy mode applies)
@@ -92,23 +146,138 @@ export function resolveModel(options: ModelResolutionOptions): ResolvedModel {
   const defaultModel = economyMode
     ? applyEconomyMode(MODELS.SELECTOR_DEFAULT)
     : MODELS.SELECTOR_DEFAULT;
-  const defaultTier = inferTierFromModel(defaultModel);
-  return {
-    model: defaultModel,
-    tier: defaultTier,
-    source: 'default',
-    fallbackChain: [...MODELS.FALLBACK_CHAINS[defaultTier]],
+  return createResolvedModel(defaultModel, 'default');
+}
+
+export function buildEffectiveCostPolicy(
+  config: SquadLocalConfig,
+  sessionPolicy?: SessionCostPolicyOverride,
+): CostPolicyConfig | undefined {
+  const persistentPolicy = config.models?.costPolicy;
+  const maxCategory = sessionPolicy?.maxCategory ?? persistentPolicy?.maxCategory;
+  const preferIncluded = sessionPolicy?.preferIncluded ?? persistentPolicy?.preferIncluded ?? false;
+
+  if (maxCategory === undefined && sessionPolicy?.preferIncluded === undefined && persistentPolicy?.preferIncluded === undefined) {
+    return undefined;
+  }
+
+  return { maxCategory, preferIncluded };
+}
+
+export function finalizeResolvedModel(
+  base: ResolvedModel,
+  policy: CostPolicyConfig | undefined,
+  catalog: Map<string, ModelInfo>,
+): ResolvedModel {
+  if (!policy) {
+    return base;
+  }
+
+  const selectedModel = catalog.get(base.model);
+  if (!selectedModel) {
+    return base;
+  }
+
+  const appliedPolicy: Required<CostPolicyConfig> = {
+    maxCategory: policy.maxCategory ?? 'powerful',
+    preferIncluded: policy.preferIncluded ?? false,
   };
+
+  if (selectedModel.githubCategory === undefined) {
+    return attachPolicy(base, {
+      appliedPolicy,
+      action: 'none',
+      originalModel: base.model,
+      finalModel: base.model,
+    });
+  }
+
+  const explicitSource = isExplicitSource(base.source);
+  const overCeiling = !isWithinCategory(selectedModel.githubCategory, appliedPolicy.maxCategory);
+
+  if (overCeiling && explicitSource) {
+    return attachPolicy(base, {
+      appliedPolicy,
+      action: 'warn-allow-explicit',
+      originalModel: base.model,
+      finalModel: base.model,
+      warning: `⚠️ ${base.model} is above the current cost policy ceiling (${appliedPolicy.maxCategory}), but it was explicitly requested.`,
+    });
+  }
+
+  if (overCeiling) {
+    const replacement = findReplacementModel(base, appliedPolicy, catalog);
+    if (!replacement) {
+      return attachPolicy(base, {
+        appliedPolicy,
+        action: 'none',
+        originalModel: base.model,
+        finalModel: base.model,
+      });
+    }
+
+    return {
+      ...base,
+      model: replacement.id,
+      tier: replacement.tier,
+      fallbackChain: buildPolicyFallbackChain(MODELS.FALLBACK_CHAINS[replacement.tier], appliedPolicy, catalog),
+      policy: {
+        appliedPolicy,
+        action: 'downgraded-to-ceiling',
+        originalModel: base.model,
+        finalModel: replacement.id,
+      },
+    };
+  }
+
+  if (!explicitSource && appliedPolicy.preferIncluded) {
+    const includedModel = findIncludedModelForTier(base.tier, appliedPolicy, catalog, base.model);
+    if (includedModel && includedModel.id !== base.model) {
+      return {
+        ...base,
+        model: includedModel.id,
+        tier: includedModel.tier,
+        fallbackChain: buildPolicyFallbackChain(MODELS.FALLBACK_CHAINS[includedModel.tier], appliedPolicy, catalog),
+        policy: {
+          appliedPolicy,
+          action: 'preferred-included',
+          originalModel: base.model,
+          finalModel: includedModel.id,
+        },
+      };
+    }
+  }
+
+  const prunedFallbackChain = buildPolicyFallbackChain(base.fallbackChain, appliedPolicy, catalog);
+  if (!arraysEqual(base.fallbackChain, prunedFallbackChain)) {
+    return {
+      ...base,
+      fallbackChain: prunedFallbackChain,
+      policy: {
+        appliedPolicy,
+        action: 'fallback-chain-pruned',
+        originalModel: base.model,
+        finalModel: base.model,
+      },
+    };
+  }
+
+  return attachPolicy(base, {
+    appliedPolicy,
+    action: 'none',
+    originalModel: base.model,
+    finalModel: base.model,
+  });
 }
 
 /**
  * Select model based on task type, with optional economy mode substitution.
- * 
+ *
  * @param taskType - Type of task being performed
  * @param economyMode - When true, downgrade model to cheaper alternative
  * @returns Resolved model or undefined if no match
  */
-function selectModelForTask(taskType: TaskType, economyMode?: boolean): ResolvedModel | undefined {
+function selectModelForTask(taskType: TaskType, economyMode?: boolean): BaseModelSelection | undefined {
   let model: string | undefined;
   let tier: ModelTier | undefined;
 
@@ -140,25 +309,181 @@ function selectModelForTask(taskType: TaskType, economyMode?: boolean): Resolved
     tier = inferTierFromModel(model);
   }
 
+  return createResolvedModel(model, 'task-auto', tier);
+}
+
+function createResolvedModel(
+  model: string,
+  source: ModelResolutionSource,
+  tier: ModelTier = inferTierFromModel(model),
+): BaseModelSelection {
   return {
     model,
     tier,
-    source: 'task-auto',
+    source,
     fallbackChain: [...MODELS.FALLBACK_CHAINS[tier]],
   };
 }
 
+function isExplicitSource(source: ModelResolutionSource): boolean {
+  return source === 'persistent-agent-override'
+    || source === 'persistent-default'
+    || source === 'session-explicit'
+    || source === 'user-override';
+}
+
+function isWithinCategory(category: GitHubModelCategory, maxCategory: GitHubModelCategory): boolean {
+  return CATEGORY_ORDER[category] <= CATEGORY_ORDER[maxCategory];
+}
+
+function isPolicyCompliant(model: ModelInfo, policy: Required<CostPolicyConfig>): boolean {
+  if (model.availability !== 'active') {
+    return false;
+  }
+
+  if (model.githubCategory === undefined) {
+    return true;
+  }
+
+  return isWithinCategory(model.githubCategory, policy.maxCategory);
+}
+
+function findReplacementModel(
+  base: ResolvedModel,
+  policy: Required<CostPolicyConfig>,
+  catalog: Map<string, ModelInfo>,
+): ModelInfo | undefined {
+  const sameTierReplacement = selectCandidateFromTier(base.tier, policy, catalog, base.model, policy.preferIncluded);
+  if (sameTierReplacement) {
+    return sameTierReplacement;
+  }
+
+  for (const tier of CHEAPER_TIERS[base.tier]) {
+    const cheaperTierReplacement = selectCandidateFromTier(tier, policy, catalog);
+    if (cheaperTierReplacement) {
+      return cheaperTierReplacement;
+    }
+  }
+
+  return undefined;
+}
+
+function findIncludedModelForTier(
+  tier: ModelTier,
+  policy: Required<CostPolicyConfig>,
+  catalog: Map<string, ModelInfo>,
+  currentModel: string,
+): ModelInfo | undefined {
+  const candidates = getOrderedTierCandidates(tier, catalog, currentModel)
+    .filter(model => model.includedInCopilot === true && isPolicyCompliant(model, policy));
+  return candidates[0];
+}
+
+function selectCandidateFromTier(
+  tier: ModelTier,
+  policy: Required<CostPolicyConfig>,
+  catalog: Map<string, ModelInfo>,
+  currentModel?: string,
+  preferIncluded: boolean = false,
+): ModelInfo | undefined {
+  const candidates = getOrderedTierCandidates(tier, catalog, currentModel)
+    .filter(model => isPolicyCompliant(model, policy));
+
+  if (!preferIncluded) {
+    return candidates[0];
+  }
+
+  return candidates.find(model => model.includedInCopilot === true) ?? candidates[0];
+}
+
+function getOrderedTierCandidates(
+  tier: ModelTier,
+  catalog: Map<string, ModelInfo>,
+  currentModel?: string,
+): ModelInfo[] {
+  const seen = new Set<string>();
+  const orderedIds: string[] = [];
+
+  const add = (modelId: string | undefined): void => {
+    if (!modelId || seen.has(modelId)) {
+      return;
+    }
+
+    const info = catalog.get(modelId);
+    if (!info || info.tier !== tier) {
+      return;
+    }
+
+    seen.add(modelId);
+    orderedIds.push(modelId);
+  };
+
+  add(currentModel);
+  for (const modelId of MODELS.FALLBACK_CHAINS[tier]) {
+    add(modelId);
+  }
+  for (const model of MODEL_CATALOG) {
+    if (model.tier === tier) {
+      add(model.id);
+    }
+  }
+
+  return orderedIds
+    .map(modelId => catalog.get(modelId))
+    .filter((model): model is ModelInfo => model !== undefined);
+}
+
+function buildPolicyFallbackChain(
+  chain: readonly string[],
+  policy: Required<CostPolicyConfig>,
+  catalog: Map<string, ModelInfo>,
+): string[] {
+  const seen = new Set<string>();
+  const filtered: string[] = [];
+
+  for (const modelId of chain) {
+    if (seen.has(modelId)) {
+      continue;
+    }
+
+    const info = catalog.get(modelId);
+    if (info && !isPolicyCompliant(info, policy)) {
+      continue;
+    }
+
+    seen.add(modelId);
+    filtered.push(modelId);
+  }
+
+  return filtered;
+}
+
+function attachPolicy(base: ResolvedModel, outcome: CostPolicyOutcome): ResolvedModel {
+  return {
+    ...base,
+    policy: outcome,
+  };
+}
+
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
 export function inferTierFromModel(model: string): ModelTier {
   const lowerModel = model.toLowerCase();
-  
+
   if (lowerModel.includes('opus')) {
     return 'premium';
   }
-  
+
   if (lowerModel.includes('haiku') || lowerModel.includes('mini')) {
     return 'fast';
   }
-  
+
   // Default to standard for sonnet, gpt-5.x, etc.
   return 'standard';
 }

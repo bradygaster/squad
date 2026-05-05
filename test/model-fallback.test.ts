@@ -47,7 +47,7 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
 
   it('premium chain starts with opus and walks through all premium options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.premium;
-    expect(chain[0]).toBe('claude-opus-4.6');
+    expect(chain[0]).toBe('claude-opus-4.7');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -101,13 +101,13 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
 describe('Tier ceiling — fast never escalates to premium', () => {
   const registry = new ModelRegistry();
 
-  it('fast fallback chain contains only fast-tier models', () => {
+  it('fast fallback chain prefers fast-tier models and only ends with the included standard escape hatch', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.fast;
-    for (const modelId of chain) {
-      const info = registry.getModelInfo(modelId);
-      expect(info).not.toBeNull();
-      expect(info!.tier).toBe('fast');
-    }
+    const tiers = chain.map((modelId) => registry.getModelInfo(modelId)?.tier);
+
+    expect(tiers.slice(0, -1).every((tier) => tier === 'fast')).toBe(true);
+    expect(chain.at(-1)).toBe('gpt-4.1');
+    expect(registry.getModelInfo('gpt-4.1')?.tier).toBe('standard');
   });
 
   it('fast chain never contains premium models', () => {
@@ -258,10 +258,9 @@ describe('Nuclear fallback — all models exhausted', () => {
 describe('Model fallback — edge cases', () => {
   const registry = new ModelRegistry();
 
-  it('getNextFallback with empty attempted set returns second in chain', () => {
+  it('getNextFallback with empty attempted set returns the first higher-priority remaining model', () => {
     const next = registry.getNextFallback('claude-opus-4.6', 'premium');
-    // With no attempted set, it should return the next in chain after current
-    expect(next).toBe('claude-opus-4.6-fast');
+    expect(next).toBe('claude-opus-4.7');
   });
 
   it('getNextFallback for unknown model returns null', () => {

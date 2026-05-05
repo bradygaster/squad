@@ -79,6 +79,12 @@ export interface ModelSelectionConfig {
     standard: ModelId[];
     fast: ModelId[];
   };
+
+  /** GitHub billing cost policy for automatic selection and fallback. */
+  costPolicy?: {
+    maxCategory?: 'lightweight' | 'versatile' | 'powerful';
+    preferIncluded?: boolean;
+  };
   
   /** Prefer same provider when falling back */
   preferSameProvider?: boolean;
@@ -633,6 +639,19 @@ export function validateConfigDetailed(config: unknown): ValidationResult {
             errors.push(`config.models.taskRules[${idx}].model is required`);
           }
         });
+      }
+    }
+
+    if (models.costPolicy) {
+      const { maxCategory, preferIncluded } = models.costPolicy;
+      if (
+        maxCategory !== undefined &&
+        !['lightweight', 'versatile', 'powerful'].includes(maxCategory)
+      ) {
+        errors.push('config.models.costPolicy.maxCategory must be "lightweight", "versatile", or "powerful"');
+      }
+      if (preferIncluded !== undefined && typeof preferIncluded !== 'boolean') {
+        errors.push('config.models.costPolicy.preferIncluded must be a boolean');
       }
     }
     
