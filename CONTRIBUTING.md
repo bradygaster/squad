@@ -352,6 +352,39 @@ GitHub Actions runs on every push:
 
 All checks must pass before merge.
 
+## Testing Template Changes (End-to-End)
+
+Changes to coordinator and agent templates (`.squad-templates/squad.agent.md`, `scribe-charter.md`, etc.) can't be validated by unit tests alone — they're prompts interpreted by an LLM at runtime. For these changes, run real squad sessions against your locally-built CLI.
+
+### Quick version
+
+```bash
+# 1. Build and link your branch
+npm run build && cd packages/squad-cli && npm link && cd ../..
+
+# 2. Create a disposable test repo
+mkdir /tmp/sq-test && cd /tmp/sq-test
+git init && echo "# Test" > README.md && git add -A && git commit -m "init"
+
+# 3. Init a squad with your modified templates
+squad init
+
+# 4. Run a session and verify behavior
+copilot -p "Picard, decide on a testing framework." 2>&1 | tee session.log
+```
+
+### Full guide
+
+See `.squad-templates/skills/e2e-template-testing/SKILL.md` for the complete workflow: test matrix, evidence collection, verdict format, and anti-patterns.
+
+### When is this needed?
+
+- Any change to `.squad-templates/*.md` files
+- Changes to init scaffolding that writes templates to target repos
+- Changes to conditional template blocks (e.g. state-backend-aware prompts)
+
+Unit tests (`npm test`) still run for logic changes — E2E template testing is an **additional** step, not a replacement.
+
 ## Common Tasks
 
 ### Add a CLI Command
