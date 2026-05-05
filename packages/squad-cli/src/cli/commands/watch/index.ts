@@ -15,6 +15,10 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 const storage = new FSStorageProvider();
 const execFileAsync = promisify(execFile);
 
+// On Windows, az is a .cmd batch script — execFile needs shell:true to run it.
+const azCmd = 'az';
+const azExecOpts = process.platform === 'win32' ? { shell: true } : {};
+
 import { detectSquadDir } from '../../core/detect-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
@@ -145,12 +149,12 @@ async function editWorkItem(
       const assignee = options.addAssignee === '@me' ? '' : options.addAssignee;
       if (assignee) {
         try {
-          execFileSync('az', [
+          execFileSync(azCmd, [
             'boards', 'work-item', 'update',
             '--id', String(id),
             '--fields', `System.AssignedTo=${assignee}`,
             '--output', 'json',
-          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...azExecOpts });
         } catch { /* best-effort */ }
       }
     }
@@ -727,8 +731,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
     if (!(await ghAuthenticated())) fatal('gh CLI not authenticated — run: gh auth login');
   } else if (adapter.type === 'azure-devops') {
-    try { await execFileAsync('az', ['devops', '-h']); } catch { fatal('az CLI not found'); }
-    try { await execFileAsync('az', ['account', 'show']); } catch { fatal('az CLI not authenticated — run: az login'); }
+    try { await execFileAsync(azCmd, ['devops', '-h'], azExecOpts); } catch { fatal('az CLI not found'); }
+    try { await execFileAsync(azCmd, ['account', 'show'], azExecOpts); } catch { fatal('az CLI not authenticated — run: az login'); }
   }
 
   // Parse team.md
