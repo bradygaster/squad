@@ -140,5 +140,5 @@ Prepared comprehensive release playbook and CI improvement plan for Brady's revi
 - Branch push target: `dev -> insider`
 - Version bump committed as `chore: bump version to 0.9.5-insider.2`
 - Pre-publish validation passed: no `file:`/`link:` refs in `packages/*/package.json`; semver valid
-- Build issue encountered locally: `packages/squad-cli/node_modules/@bradygaster/squad-sdk` resolved to published `0.9.4`; removing the nested package restored workspace resolution and allowed `npm run build` to pass
-- Windows test validation needed environment isolation: use a no-space Node path (`C:\src\squad\.nodebin`) plus temp root outside the repo/home tree (`C:\src\squad-release-tmp`) to avoid false failures in scheduler/team-root/init/upgrade tests; remaining suite failures were flaky timeouts that passed on targeted rerun
+- Build issue encountered locally and in CI: `packages/squad-cli` depended on `@bradygaster/squad-sdk` via a loose range, so npm resolved the published `0.9.4` package instead of the workspace SDK; pinning the CLI dependency to `0.9.5-insider.2` removed the nested registry install and restored build correctness
+- Windows test validation needed environment isolation: use a no-space Node path (`C:\src\squad\.nodebin`) plus temp root outside the repo/home tree (`C:\src\squad-release-tmp`) to avoid false failures in scheduler/team-root/init/upgrade tests; full-suite retries still showed occasional flaky timeout/EBUSY failures, but targeted reruns of the affected files passed

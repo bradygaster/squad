@@ -12,12 +12,13 @@ Insider release `0.9.5-insider.2` was validated from Windows PowerShell. Default
 
 ## Decision
 
-For Windows release validation, isolate the test environment before running the standard vitest command:
-1. Put a no-space Node path first on `PATH` (junction `C:\src\squad\.nodebin -> C:\Program Files\nodejs`)
-2. Set `TEMP` and `TMP` to `C:\src\squad-release-tmp` (outside the repo and home `.squad` tree)
-3. Keep `SKIP_BUILD_BUMP=1`
-4. If the full vitest run fails only on timeout-based flakes, rerun the failing file(s) to confirm there is no deterministic regression before blocking the release
+For Windows insider release validation:
+1. Pin `packages/squad-cli` to the exact insider SDK version before building/publishing so npm uses the workspace SDK instead of the latest published registry copy
+2. Put a no-space Node path first on `PATH` (junction `C:\src\squad\.nodebin -> C:\Program Files\nodejs`)
+3. Set `TEMP` and `TMP` to `C:\src\squad-release-tmp` (outside the repo and home `.squad` tree)
+4. Keep `SKIP_BUILD_BUMP=1`
+5. If the full vitest run fails only on timeout/EBUSY flakes, rerun the failing file(s) to confirm there is no deterministic regression before blocking the release
 
 ## Rationale
 
-This preserves the release checklist while removing machine-specific false failures. The decision is validation-only; it does not change published package contents or release semantics.
+The version pin fixes a real publish blocker: CI was compiling the CLI against `@bradygaster/squad-sdk@0.9.4` from npm, which does not export the newer resolution helpers used by the current CLI. The environment isolation preserves the checklist while removing machine-specific false failures during Windows validation.
