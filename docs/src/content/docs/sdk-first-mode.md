@@ -419,8 +419,41 @@ export default defineSquad({
   hooks: defineHooks({ /* ... */ }),
   casting: defineCasting({ /* ... */ }),
   telemetry: defineTelemetry({ /* ... */ }),
+  runtime: defineRuntime({ /* ... */ }),
 });
 ```
+
+---
+
+### `defineRuntime(config)`
+
+Define which AI coding agent runtime to use. Squad supports multiple runtimes via a driver abstraction layer.
+
+```typescript
+const runtime = defineRuntime({
+  name: 'copilot',  // or 'opencode', 'claude-code', 'cursor'
+  config: {
+    // runtime-specific configuration
+  },
+  cliPath: '/path/to/cli',  // optional override
+});
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `name` | string | ✅ | Runtime name: `'copilot'` (default), `'opencode'`, `'claude-code'`, `'cursor'` |
+| `config` | object | ❌ | Runtime-specific configuration passed to the driver |
+| `cliPath` | string | ❌ | Path to runtime CLI executable |
+| `cliUrl` | string | ❌ | URL for external server connection (mutually exclusive with `cliPath`) |
+
+**Supported Runtimes:**
+
+| Runtime | Status | Notes |
+|---------|--------|-------|
+| `copilot` | Stable | GitHub Copilot (default) |
+| `opencode` | Planned | OpenCode CLI support in development |
+| `claude-code` | Planned | Anthropic Claude Code support |
+| `cursor` | Planned | Cursor AI support |
 
 ---
 
@@ -530,6 +563,7 @@ import {
   defineHooks,
   defineCasting,
   defineTelemetry,
+  defineRuntime,
 } from '@bradygaster/squad-sdk';
 
 export default defineSquad({
@@ -620,6 +654,11 @@ export default defineSquad({
     fallback: 'coordinator',
   }),
 
+  runtime: defineRuntime({
+    name: 'copilot',
+    config: {},
+  }),
+
   hooks: defineHooks({
     allowedWritePaths: [
       'src/**',
@@ -657,5 +696,6 @@ export default defineSquad({
 ## See Also
 
 - [SDK Reference](./reference/sdk.md) — all SDK exports
+- [Runtime Configuration](./reference/runtime.md) — runtime drivers and configuration
 - [Routing Guide](./features/routing.md) — deep dive on routing tiers
 - [Governance & Hooks](./reference/sdk.md) — hook pipeline and governance

@@ -22,6 +22,7 @@ import type {
   TelemetryDefinition,
   SkillDefinition,
   SquadSDKConfig,
+  RuntimeDefinition,
 } from './types.js';
 
 // Re-export every type so consumers can `import { defineTeam, TeamDefinition } from './builders'`
@@ -44,6 +45,7 @@ export type {
   SkillDefinition,
   SkillTool,
   SquadSDKConfig,
+  RuntimeDefinition,
 } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -451,6 +453,22 @@ export function defineSkill(config: SkillDefinition): SkillDefinition {
   return config;
 }
 
+/**
+ * Define a runtime configuration.
+ *
+ * ```ts
+ * const runtime = defineRuntime({
+ *   name: 'opencode',
+ *   config: { model: 'claude-sonnet-4' },
+ * });
+ * ```
+ */
+export function defineRuntime(config: RuntimeDefinition): RuntimeDefinition {
+  assertObject(config, 'defineRuntime');
+  assertNonEmptyString(config.name, 'name', 'defineRuntime');
+  return config;
+}
+
 // ---------------------------------------------------------------------------
 // defineDefaults
 // ---------------------------------------------------------------------------
@@ -518,6 +536,7 @@ export function defineSquad(config: SquadSDKConfig): SquadSDKConfig {
       defineSkill(skill);
     }
   }
+  if (config.runtime !== undefined) defineRuntime(config.runtime);
 
   return config;
 }
