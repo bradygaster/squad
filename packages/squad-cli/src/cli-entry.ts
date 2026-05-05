@@ -90,7 +90,8 @@ function _handleTopLevelSignal(signal: 'SIGINT' | 'SIGTERM'): void {
 process.on('SIGINT', () => _handleTopLevelSignal('SIGINT'));
 process.on('SIGTERM', () => _handleTopLevelSignal('SIGTERM'));
 
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, resolveSquadState } from '@bradygaster/squad-sdk';
+import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
 import path from 'node:path';
 import { fatal, SquadError } from './cli/core/errors.js';
 import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
@@ -158,6 +159,7 @@ async function main(): Promise<void> {
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
+    console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);
@@ -165,6 +167,7 @@ async function main(): Promise<void> {
     console.log(`             Never touches: .squad/ or .ai-team/ (your team state)`);
     console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
+    console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
@@ -316,8 +319,11 @@ async function main(): Promise<void> {
     const roles = args.includes('--roles');
     const presetIdx = args.indexOf('--preset');
     const presetName = (presetIdx !== -1 && args[presetIdx + 1]) ? args[presetIdx + 1] : undefined;
+    // Parse --state-backend flag for init
+    const sbIdx = args.indexOf('--state-backend');
+    const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal }).then(async () => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
         const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
@@ -364,6 +370,10 @@ async function main(): Promise<void> {
     const forceUpgrade = args.includes('--force');
     const insider = args.includes('--insider');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : getSquadStartDir();
+
+    // Parse --state-backend for backend migration
+    const sbIdx = args.indexOf('--state-backend');
+    const upgradeStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     
     // Warn when --insider is used without --self (it has no effect on project upgrades)
     if (insider && !selfUpgrade) {
@@ -389,6 +399,16 @@ async function main(): Promise<void> {
       self: selfUpgrade,
       force: forceUpgrade
     });
+
+    // Handle --state-backend: migrate backend after upgrade
+    if (upgradeStateBackend) {
+      const { migrateStateBackend } = await import('./cli/commands/migrate-backend.js');
+      await migrateStateBackend(dest, upgradeStateBackend);
+    } else {
+      // Ensure hooks are installed for existing orphan/two-layer backends
+      const { ensureHooksForBackend } = await import('./cli/commands/install-hooks.js');
+      ensureHooksForBackend(dest);
+    }
     
     return;
   }
@@ -498,12 +518,16 @@ async function main(): Promise<void> {
     const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
       ? args[stateBackendIdx + 1]
       : undefined;
-    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    const validBackends = ['local', 'orphan', 'two-layer', 'external'] as const;
     if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
       console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
       process.exit(1);
     }
-    const stateBackend = rawStateBackend as typeof validBackends[number] | undefined;
+    const mappedBackend = rawStateBackend as StateBackendType | undefined;
+
+    // Resolve the full state context (paths + backend) once at entry.
+    // Commands can thread this through instead of re-resolving independently.
+    const stateContext: SquadStateContext | null = resolveSquadState(getSquadStartDir(), mappedBackend);
 
     // Build capability overrides from CLI flags and --no-{cap} flags
     const capabilities: Record<string, boolean | Record<string, unknown>> = {};
@@ -538,7 +562,8 @@ async function main(): Promise<void> {
       overnightStart,
       overnightEnd,
       sentinelFile,
-      stateBackend,
+      stateBackend: mappedBackend,
+      stateContext,
       capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
     });
 

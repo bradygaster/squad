@@ -6,6 +6,7 @@
 
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 
@@ -40,7 +41,9 @@ export interface WatchConfig {
   /** Path to a sentinel file — watch shuts down gracefully when removed. */
   sentinelFile?: string;
   /** State persistence backend. */
-  stateBackend?: 'worktree' | 'git-notes' | 'orphan' | 'external';
+  stateBackend?: StateBackendType;
+  /** Pre-resolved state context from CLI entry (avoids redundant resolution). */
+  stateContext?: SquadStateContext | null;
 }
 
 const DEFAULTS: WatchConfig = {
@@ -99,6 +102,7 @@ export function loadWatchConfig(
     overnightEnd: cliOverrides.overnightEnd ?? fileConfig.overnightEnd,
     sentinelFile: cliOverrides.sentinelFile ?? fileConfig.sentinelFile,
     stateBackend: cliOverrides.stateBackend ?? fileConfig.stateBackend,
+    stateContext: cliOverrides.stateContext,
   };
 
   return merged;
@@ -134,9 +138,9 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
   if (typeof raw['stateBackend'] === 'string') {
     const backend = raw['stateBackend'];
-    const validBackends = ['worktree', 'git-notes', 'orphan', 'external'] as const;
+    const validBackends = ['local', 'orphan', 'two-layer', 'external'] as const;
     if ((validBackends as readonly string[]).includes(backend)) {
-      result.stateBackend = backend as typeof validBackends[number];
+      result.stateBackend = backend as StateBackendType;
     }
   }
 
