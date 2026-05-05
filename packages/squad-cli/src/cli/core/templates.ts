@@ -142,6 +142,38 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Skill definition template',
   },
+
+  // Codex integration (user-owned, created if missing)
+  {
+    source: 'codex-bootstrap.md',
+    destination: '../AGENTS.md',
+    overwriteOnUpgrade: false,
+    description: 'Codex repository bootstrap',
+  },
+  {
+    source: 'codex.md',
+    destination: 'codex.md',
+    overwriteOnUpgrade: false,
+    description: 'Codex operating profile',
+  },
+  {
+    source: 'shared-knowledge.md',
+    destination: 'shared-knowledge.md',
+    overwriteOnUpgrade: false,
+    description: 'Shared project knowledge',
+  },
+  {
+    source: 'agents/codex/charter.md',
+    destination: 'agents/codex/charter.md',
+    overwriteOnUpgrade: false,
+    description: 'Codex charter',
+  },
+  {
+    source: 'agents/codex/history.md',
+    destination: 'agents/codex/history.md',
+    overwriteOnUpgrade: false,
+    description: 'Codex history',
+  },
   
   // User-owned files (never overwrite)
   {
