@@ -567,6 +567,7 @@ export interface WatchOptions {
   monitorEmail?: boolean;
   board?: boolean;
   boardProject?: number;
+  boardOwner?: string;
   twoPass?: boolean;
   waveDispatch?: boolean;
   retro?: boolean;
@@ -580,7 +581,11 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
   if (options.execute) capabilities['execute'] = true;
   if (options.monitorTeams) capabilities['monitor-teams'] = true;
   if (options.monitorEmail) capabilities['monitor-email'] = true;
-  if (options.board) capabilities['board'] = { projectNumber: options.boardProject ?? 1 };
+  if (options.board) {
+    const boardConfig: Record<string, unknown> = { projectNumber: options.boardProject ?? 1 };
+    if (options.boardOwner) boardConfig['owner'] = options.boardOwner;
+    capabilities['board'] = boardConfig;
+  }
   if (options.twoPass) capabilities['two-pass'] = true;
   if (options.waveDispatch) capabilities['wave-dispatch'] = true;
   if (options.retro) capabilities['retro'] = true;

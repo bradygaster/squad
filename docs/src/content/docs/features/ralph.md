@@ -268,6 +268,7 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 |------|-------------|---------|
 | `--board` | Enable project board lifecycle (In Progress / Done / Blocked + reconciliation) | `squad watch --board` |
 | `--board-project N` | Project board number (default: 1) | `squad watch --board --board-project 2` |
+| `--board-owner X` | Project owner — `@me` for personal, org name for org-owned ProjectV2 boards (default: `@me`) | `squad watch --board --board-project 22 --board-owner my-org` |
 
 #### Housekeeping & Governance
 

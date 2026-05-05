@@ -45,6 +45,8 @@ squad init
 | `squad watch --monitor-teams` | Scan Teams for actionable messages each round | Yes |
 | `squad watch --monitor-email` | Scan email for alerts and action items each round | Yes |
 | `squad watch --board` | Enable project board lifecycle management | Yes |
+| `squad watch --board-project N` | Project board number to manage (default: 1) | Yes |
+| `squad watch --board-owner X` | Project owner — `@me` for personal, org name for org-owned ProjectV2 (default: `@me`) | Yes |
 | `squad watch --two-pass` | Use two-pass scanning (lightweight → hydrate) | Yes |
 | `squad watch --wave-dispatch` | Parallel sub-task execution within issues | Yes |
 | `squad watch --retro` | Enforce retrospective checks | Yes |

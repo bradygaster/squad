@@ -26,13 +26,14 @@ export class BoardCapability implements WatchCapability {
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
     const projectNumber = (context.config['projectNumber'] as number) ?? 1;
+    const owner = (context.config['owner'] as string) ?? '@me';
     let mismatches = 0;
 
     try {
       // Reconcile: move closed issues to Done, open issues out of Done
       const { stdout: itemsJson } = await execFileAsync('gh', [
         'project', 'item-list', String(projectNumber),
-        '--owner', '@me',
+        '--owner', owner,
         '--format', 'json',
         '--limit', '300',
       ], { maxBuffer: 10 * 1024 * 1024 });
