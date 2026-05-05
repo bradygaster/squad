@@ -135,3 +135,10 @@ Prepared comprehensive release playbook and CI improvement plan for Brady's revi
 - Pre-release validation prevents 90% of publish issues
 - Culture: "If the same problem happens twice, the playbook failed"
 - Documentation must be user-first (Brady's perspective, not technical jargon)
+
+### Insider Release v0.9.5-insider.2 (2026-05-04)
+- Branch push target: `dev -> insider`
+- Version bump committed as `chore: bump version to 0.9.5-insider.2`
+- Pre-publish validation passed: no `file:`/`link:` refs in `packages/*/package.json`; semver valid
+- Build issue encountered locally: `packages/squad-cli/node_modules/@bradygaster/squad-sdk` resolved to published `0.9.4`; removing the nested package restored workspace resolution and allowed `npm run build` to pass
+- Windows test validation needed environment isolation: use a no-space Node path (`C:\src\squad\.nodebin`) plus temp root outside the repo/home tree (`C:\src\squad-release-tmp`) to avoid false failures in scheduler/team-root/init/upgrade tests; remaining suite failures were flaky timeouts that passed on targeted rerun
