@@ -183,6 +183,7 @@ async function main(): Promise<void> {
     console.log(`                    --self-pull       git fetch/pull at round start`);
     console.log(`                    --board           project board lifecycle + reconciliation`);
     console.log(`                    --board-project N project number (default 1)`);
+    console.log(`                    --board-owner X   project owner (default @me; use org name for org-owned ProjectV2)`);
     console.log(`                    --monitor-teams   scan Teams for actionable messages`);
     console.log(`                    --monitor-email   scan email for actionable items`);
     console.log(`                    --two-pass        lightweight list then hydrate actionable`);
@@ -483,6 +484,15 @@ async function main(): Promise<void> {
         : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
     }
 
+    // --board-owner sets the project owner (default @me, override for org-owned ProjectV2 boards)
+    const boardOwnerIdx = args.indexOf('--board-owner');
+    if (boardOwnerIdx !== -1 && args[boardOwnerIdx + 1]) {
+      const existing = capabilities['board'];
+      capabilities['board'] = typeof existing === 'object' && existing !== null
+        ? { ...existing, owner: args[boardOwnerIdx + 1]! }
+        : { owner: args[boardOwnerIdx + 1]! };
+    }
+
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(getSquadStartDir(), {
       interval,
@@ -506,7 +516,7 @@ async function main(): Promise<void> {
     // After parsing all flags, check for positional args that look like prompts.
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
-      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--board-owner', '--auth-user',
       '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
