@@ -160,3 +160,50 @@ export { MarketplaceBackend } from './backend.js';
 export type { PublishResult, OperationResult } from './backend.js';
 export { validateRemoteAgent, quarantineAgent, generateSecurityReport, SECURITY_RULES } from './security.js';
 export type { RemoteAgentDefinition, SecurityReport, SecurityRule, SecuritySeverity } from './security.js';
+export {
+  PLUGIN_MANIFEST_FILENAMES,
+  PLUGIN_MANIFEST_SCHEMA_VERSION,
+  createPluginInstallPlan,
+  derivePluginRoles,
+  describePluginFile,
+  parsePluginManifestContent,
+  toPosixRelativePath,
+  validatePluginManifest,
+} from './plugin-manifest.js';
+export type {
+  PluginFileDeployment,
+  PluginComponentKind,
+  PluginFileType,
+  PluginInstallPlan,
+  PluginInstallPlanFile,
+  PluginValidationResult,
+  SquadPluginManifest,
+} from './plugin-manifest.js';
+export {
+  INSTALLED_PLUGINS_FILE,
+  PLUGIN_AUDIT_FILE,
+  PLUGIN_LOCK_FILE,
+  PLUGIN_RUNTIME_FILE,
+  PLUGIN_STATE_DIR,
+  appendAuditEvent,
+  readPluginStates,
+  removeInstalledPlugin,
+  setPluginEnabled,
+  sha256,
+  switchActivePlugin,
+  upsertInstalledPlugin,
+  writePluginStates,
+} from './plugin-state.js';
+export type {
+  InstalledPlugin,
+  InstalledPluginFile,
+  InstalledPluginsState,
+  PluginAuditEvent,
+  PluginAuditEventType,
+  PluginAuditState,
+  PluginLockEntry,
+  PluginLockState,
+  PluginRuntimeEntry,
+  PluginRuntimeState,
+  PluginStates,
+} from './plugin-state.js';

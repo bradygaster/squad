@@ -103,6 +103,17 @@ You DON'T need core if:
 
 Ready to build? See [Building extensions](./building-extensions.md) for a five-minute walkthrough.
 
+The plugin MVP uses a declarative `plugin.manifest.json` and a guarded lifecycle:
+
+```bash
+squad plugin validate ./my-extension
+squad plugin dry-run ./my-extension
+squad plugin install ./my-extension
+squad plugin enable my-extension
+```
+
+Install records lock data and leaves the plugin disabled. Enable activates the roles declared in the manifest. See [Plugin security model](../reference/plugin-security.md) for the no-arbitrary-execution gate.
+
 ---
 
 ## Summary

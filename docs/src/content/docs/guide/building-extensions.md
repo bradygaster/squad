@@ -16,13 +16,12 @@ An extension is a reusable collection of skills, ceremonies, and directives that
 
 ```
 my-extension/
+├── plugin.manifest.json
 ├── skills/
-│   ├── SKILL1.md
-│   └── SKILL2.md
+│   └── example-skill/
+│       └── SKILL.md
 ├── ceremonies/
 │   └── CEREMONY.md
-├── directives/
-│   └── DIRECTIVE.md
 └── README.md
 ```
 
@@ -40,7 +39,7 @@ git init
 
 **Step 2: Add a skill**
 
-Create `skills/example-skill.md`:
+Create `skills/example-skill/SKILL.md`:
 
 ```markdown
 # Example Skill
@@ -62,7 +61,54 @@ Brief problem statement.
 
 Create `ceremonies/code-review.md` following Squad ceremony format (decision gate, verdicts, escalation).
 
-**Step 4: Write the README**
+**Step 4: Add a manifest**
+
+Create `plugin.manifest.json`:
+
+```json
+{
+  "id": "my-extension",
+  "name": "My Extension",
+  "version": "1.0.0",
+  "description": "Reusable workflow patterns for my team.",
+  "authors": ["Your Team"],
+  "license": "MIT",
+  "squad": ">=0.9.1",
+  "components": {
+    "skills": ["example-skill"]
+  },
+  "files": [
+    {
+      "source": "skills/example-skill/SKILL.md",
+      "target": "skills/example-skill/SKILL.md",
+      "type": "skill"
+    }
+  ]
+}
+```
+
+The MVP manifest is declarative. Do not add scripts, commands, lifecycle hooks, or executable files.
+
+**Step 5: Validate and dry-run**
+
+```bash
+squad plugin validate .
+squad plugin dry-run .
+```
+
+Dry-run prints the exact files Squad would write without changing `.squad/`.
+
+**Step 6: Install and enable locally**
+
+```bash
+squad plugin install .
+squad plugin enable my-extension
+squad plugin list --json
+```
+
+Install records the plugin disabled by default. Enable activates the roles declared in `components`.
+
+**Step 7: Write the README**
 
 Explain the problem, installation, and usage:
 
@@ -73,7 +119,8 @@ Codifies client-delivery workflows for consulting teams.
 
 ## Install
 
-squad plugin install github/my-org/my-extension
+squad plugin install .
+squad plugin enable my-extension
 
 ## What's Inside
 
@@ -82,9 +129,9 @@ squad plugin install github/my-org/my-extension
 - **plan-review** ceremony — gate for approval
 ```
 
-**Step 5: Test locally**
+**Step 8: Test locally**
 
-Copy your extension directory into `.squad/skills/`, `.squad/ceremonies/`, and `.squad/directives/`. Load your Squad session and verify the skills appear and work as expected.
+Run `squad plugin verify`, load your Squad session, and verify the installed skills appear and work as expected.
 
 ---
 
@@ -101,7 +148,7 @@ git push
 Register with a marketplace or pin directly by repository URL:
 
 ```
-squad plugin install github/my-org/my-extension
+squad plugin marketplace add github/my-org/my-team-plugins
 ```
 
 ---
