@@ -147,3 +147,6 @@ export type {
   AgentHandle,
   CollectionPathResolver,
 } from './state/index.js';
+
+// W1 registry schema types (squad-data-model v2)
+export type { Registry, RegistryEntry } from './registry.js';

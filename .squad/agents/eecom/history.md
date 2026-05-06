@@ -4,6 +4,19 @@
 
 ## Learnings
 
+### W1 Registry schema validator — squad-data-model v2 (2026-06-XX)
+
+**Context:** FIDO left red-wave test stubs in `test/registry-schema.test.ts` (S1–S20 + SC1/SC2, all throwing `/not implemented/`). EECOM implemented `packages/squad-sdk/src/registry.ts` from the Flight/FIDO spec, added the `./registry` subpath export to `package.json`, and greened all 24 tests.
+
+**Key decisions:**
+1. **`registerEntry()` is separate from `validateRegistry()`** — FIDO's S14b stub called `validateRegistry(parsed, { mode: 'register' })` but the spec-correct API uses a dedicated function. The test was adapted; the decision is recorded in `.squad/decisions/inbox/eecom-w1-registry-api.md`.
+2. **`loadRegistryFromDisk(opts?)` for coexistence testing** — SC1/SC2 pass `{ registryPath, legacyPath, onWarn }` so tests don't touch `~/.squad/`. Default production call uses XDG home.
+3. **`SquadError` constructor requires `context: { timestamp: Date }`** — third positional arg is not optional for typing purposes. Every `makeError()` call supplies `{ timestamp: new Date() }`.
+
+**Pattern:** FIDO writes red stubs with `// When green` comments showing the expected error regex. Always align error messages to those regexes *before* running tests, not after. The S12 "unknown version N" regex required "unknown" before "version" and "N" — `Unknown registry version ${n}` satisfies `/unknown.*version.*99/i`.
+
+**Regression check:** Full suite baseline was 21 failed / 194 passed (pre-existing integration timeouts). After W1 changes: 20 failed / 195 passed. No regressions.
+
 ### Template Brady contamination fix (#977) (2026-05-01)
 
 **Context:** Template files (squad.agent.md, init-mode/SKILL.md) contained hardcoded "Brady" examples in greetings, routing examples, and comments. LLMs treated these as patterns, greeting every user as "Brady" regardless of their actual `git config user.name`.
