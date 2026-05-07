@@ -18,6 +18,8 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, type InitOptions } from '@bradygaster/squad-sdk';
+import { installGitHooks } from '../commands/install-hooks.js';
 
 const storage = new FSStorageProvider();
 
@@ -114,6 +116,8 @@ export interface RunInitOptions {
   roles?: boolean;
   /** If true, this is a global (personal squad) init — bootstrap personal-squad/ dir */
   isGlobal?: boolean;
+  /** State backend to configure at init time (local, orphan, two-layer) */
+  stateBackend?: string;
 }
 
 /**
@@ -186,7 +190,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       if (useShared) {
         console.log();
         console.log(`${GREEN}${BOLD}✓${RESET} Using shared .squad/ from ${mainCheckout}`);
-        console.log(`${DIM}  No changes made. Run squad commands from the main checkout.${RESET}`);
+        console.log(`${DIM}  No changes made. Run ${CYAN}${BOLD}copilot --agent squad${RESET}${DIM} commands from the main checkout.${RESET}`);
         console.log();
         return;
       }
@@ -269,9 +273,66 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     success(`base roles enabled — team will use built-in role catalog`);
   }
 
+  // Configure state backend if specified at init time
+  if (options.stateBackend) {
+    const validBackends = ['local', 'orphan', 'two-layer', 'external'];
+    if (validBackends.includes(options.stateBackend)) {
+      const configPath = path.join(squadDir, 'config.json');
+      let config: Record<string, unknown> = {};
+      try {
+        const raw = storage.readSync(configPath);
+        if (raw) config = JSON.parse(raw);
+      } catch { /* start fresh */ }
+      config['stateBackend'] = options.stateBackend;
+      storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      success(`state backend: ${options.stateBackend}`);
+
+      // Auto-create orphan branch for orphan/two-layer backends
+      // Uses git plumbing (mktree + commit-tree + update-ref) so the working tree is never touched.
+      if (options.stateBackend === 'orphan' || options.stateBackend === 'two-layer') {
+        try {
+          execFileSync('git', ['rev-parse', '--verify', 'refs/heads/squad-state'], {
+            cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          success(`squad-state branch already exists`);
+        } catch {
+          try {
+            // Seed a README blob so the branch isn't completely empty
+            const readmeContent = '# Squad State\n\nThis orphan branch stores mutable squad state.\nIt is managed automatically and should not be edited by hand.\n';
+            const blobHash = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+              cwd: dest, encoding: 'utf-8', input: readmeContent, stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Build a tree containing the README
+            const treeInput = `100644 blob ${blobHash}\tREADME.md\n`;
+            const treeHash = execFileSync('git', ['mktree'], {
+              cwd: dest, encoding: 'utf-8', input: treeInput, stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Create the root commit (no parent → orphan)
+            const commitHash = execFileSync('git', ['commit-tree', treeHash, '-m', 'init: squad-state orphan branch'], {
+              cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Point the branch ref at the new commit
+            execFileSync('git', ['update-ref', 'refs/heads/squad-state', commitHash], {
+              cwd: dest, stdio: ['pipe', 'pipe', 'pipe'],
+            });
+            success(`squad-state orphan branch created (working tree untouched)`);
+          } catch (err) {
+            console.warn(`${YELLOW}⚠ Could not create squad-state branch: ${err instanceof Error ? err.message : err}${RESET}`);
+            console.warn(`${YELLOW}  The ${options.stateBackend} backend will auto-create it on first write.${RESET}`);
+          }
+        }
+
+        // Install git hooks for automatic state sync on push/pull
+        installGitHooks(dest, { force: false });
+      }
+    } else {
+      console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (local).${RESET}`);
+    }
+  }
+
   // Report .init-prompt storage
   if (options.prompt) {
-    success(`.init-prompt stored — team will be cast when you start squad`);
+    success(`.init-prompt stored — team will be cast when you run ${CYAN}${BOLD}copilot --agent squad${RESET}`);
   }
 
   // Report created files
@@ -299,7 +360,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   if (!isInitNoColor()) await sleep(80);
   console.log();
-  console.log(`${GREEN}${BOLD}Your team is ready.${RESET} Run ${CYAN}${BOLD}squad${RESET} to start.`);
+  console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
   console.log();
 
   // ── Personal squad bridge ───────────────────────────────────────────

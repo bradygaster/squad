@@ -5,7 +5,8 @@
   "type": "module",
   "bin": {
     "squad": "dist/cli-entry.js",
-    "squad-cli": "dist/cli-entry.js"
+    "squad-cli": "dist/cli-entry.js",
+    "squad-test": "dist/cli-entry.js"
   },
   "exports": {
     ".": {

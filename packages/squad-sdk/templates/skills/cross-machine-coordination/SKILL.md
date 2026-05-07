@@ -1,3 +1,11 @@
+---
+name: "cross-machine-coordination"
+description: "Enables squad agents on different machines to share work via git-based task queuing"
+domain: "orchestration"
+confidence: "medium"
+source: "manual"
+---
+
 # Skill: Cross-Machine Coordination Pattern
 
 **Skill ID:** `cross-machine-coordination`  

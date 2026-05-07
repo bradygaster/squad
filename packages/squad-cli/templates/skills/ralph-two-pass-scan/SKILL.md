@@ -1,3 +1,11 @@
+---
+name: "ralph-two-pass-scan"
+description: "Cuts GitHub API calls by separating lightweight list scanning from full hydration"
+domain: "work-monitoring"
+confidence: "high"
+source: "extracted"
+---
+
 # Skill: Ralph — Two-Pass Issue Scanning
 **Confidence:** high
 **Domain:** work-monitoring

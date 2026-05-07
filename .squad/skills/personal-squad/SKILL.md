@@ -1,3 +1,11 @@
+---
+name: "personal-squad"
+description: "User-level AI agents that travel with you across projects"
+domain: "configuration"
+confidence: "medium"
+source: "manual"
+---
+
 # Personal Squad — Skill Document
 
 ## What is a Personal Squad?

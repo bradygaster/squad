@@ -7,6 +7,17 @@
 - SDK/CLI compatibility maintenance
 - Worktree path resolution and streaming output patterns
 - Decision archival optimization for large projects
+### Template Brady contamination fix (#977) (2026-05-01)
+
+**Context:** Template files (squad.agent.md, init-mode/SKILL.md) contained hardcoded "Brady" examples in greetings, routing examples, and comments. LLMs treated these as patterns, greeting every user as "Brady" regardless of their actual `git config user.name`.
+
+**Fix:** Replaced all hardcoded "Brady" in template examples with generic `{user}` / `{name}` placeholders. Canonical sources: `.squad-templates/squad.agent.md` and `.copilot/skills/init-mode/SKILL.md`. Template sync (`node scripts/sync-templates.mjs`) propagated squad.agent.md to `.github/agents/` but did NOT sync init-mode SKILL.md to package templates — those required manual edits in both `packages/squad-cli/templates/skills/init-mode/SKILL.md` and `packages/squad-sdk/templates/skills/init-mode/SKILL.md`.
+
+**Key distinction:** Only template files that get copied to user repos were changed. Brady references in project docs (history-hygiene, release-process, humanizer, architectural-proposals, reskill) are legitimate content about the project founder and were left unchanged.
+
+**Pattern:** When fixing template contamination, verify which files are covered by `sync-templates.mjs` and which require manual propagation. The init-mode SKILL.md lives in `.copilot/skills/` (not `.squad-templates/`), so sync doesn't touch its package copies.
+
+### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
 
 📌 **See `history-archive.md` for learnings prior to 2026-04-01**
 

@@ -130,6 +130,10 @@ Analyzed 20 CI runs from March 15. Identified 3 distinct failure categories:
 
 **Pipeline dependency chain:** `preflight → smoke-test → publish-sdk → publish-cli`
 
+### Release Process Skill Update — v0.9.4 Learnings (2026-04-25)
+
+Updated both release-process skill files (`.squad/skills/release-process/SKILL.md` and `.copilot/skills/release-process/SKILL.md`) with critical learnings from the v0.9.4 release session. Added 5 new Known Gotchas, a full `v0.9.4 Incident Learnings` section, GITHUB_TOKEN propagation workaround, CHANGELOG/root-package.json validation rules, lockfile integrity fix documentation, local dev recovery steps, and cross-references between skill files. Source PRs: #1042, #1043, #1044.
+
 ### CI Cleanup — Issue #1000 (2026-04-17)
 
 **Changes shipped in PR #1001:**
