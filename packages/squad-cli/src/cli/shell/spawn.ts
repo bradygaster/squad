@@ -10,6 +10,7 @@ import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import { SquadState, FSStorageProvider } from '../sdk-local.js';
 import { SessionRegistry } from './sessions.js';
 import { dirname } from 'node:path';
+import { buildShellSessionConfig } from './session-config.js';
 
 /** Debug logger — writes to stderr only when SQUAD_DEBUG=1. */
 function debugLog(...args: unknown[]): void {
@@ -126,11 +127,11 @@ export async function spawnAgent(
       };
     }
 
-    const session: SquadSession = await options.client.createSession({
-      streaming: true,
-      systemMessage: { mode: 'append', content: systemPrompt },
-      workingDirectory: teamRoot,
-    });
+    const session: SquadSession = await options.client.createSession(await buildShellSessionConfig({
+      teamRoot,
+      agentName: name,
+      systemPrompt,
+    }));
 
     // Accumulate streamed response
     let accumulated = '';

@@ -5,8 +5,8 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
-import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../../sdk-local.js';
+import type { SquadStateContext, StateBackendType } from '../../sdk-local.js';
 
 const storage = new FSStorageProvider();
 

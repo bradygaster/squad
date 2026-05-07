@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "0.9.1-build.3",
+  "version": "0.9.4-build.1",
   "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
@@ -224,6 +224,9 @@
     "templates",
     "README.md"
   ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "prepublishOnly": "npm run build",
     "build": "tsc -p tsconfig.json && node -e \"const{rmSync,cpSync}=require('fs');rmSync('dist/presets/builtin',{recursive:true,force:true});cpSync('src/presets/builtin','dist/presets/builtin',{recursive:true,filter:(s)=>!s.endsWith('.ts')})\""
