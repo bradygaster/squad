@@ -100,15 +100,57 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Compute insider version
+        id: version
+        run: |
+          # Read base version from root package.json
+          BASE=$(node -p "require('./package.json').version")
+          echo "Base version: $BASE"
+
+          # Query npm for the latest insider build number for this base version
+          LATEST_SDK=$(npm view @bradygaster/squad-sdk versions --json 2>/dev/null | \
+            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0" 2>/dev/null || echo "0")
+          LATEST_CLI=$(npm view @bradygaster/squad-cli versions --json 2>/dev/null | \
+            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0" 2>/dev/null || echo "0")
+
+          # Take the higher of the two and increment
+          NEXT=$(( (LATEST_SDK > LATEST_CLI ? LATEST_SDK : LATEST_CLI) + 1 ))
+          INSIDER_VERSION="${BASE}-insider.${NEXT}"
+          echo "Publishing as: $INSIDER_VERSION"
+          echo "insider_version=$INSIDER_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set insider version in package.json files
+        run: |
+          VERSION="${{ steps.version.outputs.insider_version }}"
+          node -e "
+            const fs = require('fs');
+            const paths = ['package.json', 'packages/squad-sdk/package.json', 'packages/squad-cli/package.json'];
+            for (const p of paths) {
+              const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+              pkg.version = '${VERSION}';
+              fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+              console.log(p + ' → ' + '${VERSION}');
+            }
+          "
+
       - name: Build packages
         run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
 
       - name: Publish squad-sdk with insider tag
+        if: ${{ inputs.dry_run != 'true' }}
         run: npm -w packages/squad-sdk publish --tag insider --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish squad-cli with insider tag
+        if: ${{ inputs.dry_run != 'true' }}
         run: npm -w packages/squad-cli publish --tag insider --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run == 'true' }}
+        run: |
+          echo "🏜️ DRY RUN — would have published:"
+          echo "  @bradygaster/squad-sdk@${{ steps.version.outputs.insider_version }}"
+          echo "  @bradygaster/squad-cli@${{ steps.version.outputs.insider_version }}"

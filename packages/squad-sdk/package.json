@@ -1,7 +1,7 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "0.9.1",
-  "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
+  "version": "0.9.6",
+  "description": "Squad SDK \u00e2\u20ac\u201d Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

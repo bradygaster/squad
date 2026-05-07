@@ -1,7 +1,7 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.9.1",
-  "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
+  "version": "0.9.6",
+  "description": "Squad CLI \u00e2\u20ac\u201d Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
     "squad": "dist/cli-entry.js",
