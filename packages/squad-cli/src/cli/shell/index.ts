@@ -28,6 +28,7 @@ import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLate
 import { parseAgentFromDescription } from './agent-name-parser.js';
 import { buildCoordinatorPrompt, buildInitModePrompt, parseCoordinatorResponse, hasRosterEntries } from './coordinator.js';
 import { loadAgentCharter, buildAgentPrompt } from './spawn.js';
+import { buildShellSessionConfig } from './session-config.js';
 import { createSession, saveSession, loadLatestSession, type SessionData } from './session-store.js';
 import { parseDispatchTargets, type ParsedInput } from './router.js';
 import { agentSessionGuidance, genericGuidance, rateLimitGuidance, extractRetryAfter, formatGuidance } from './error-messages.js';
@@ -259,12 +260,12 @@ export async function runShell(): Promise<void> {
     try {
       debugLog('eager warm-up: creating coordinator session');
       const systemPrompt = await buildCoordinatorPrompt({ teamRoot });
-      coordinatorSession = await client.createSession({
-        streaming: true,
-        systemMessage: { mode: 'append', content: systemPrompt },
-        workingDirectory: teamRoot,
+      coordinatorSession = await client.createSession(await buildShellSessionConfig({
+        teamRoot,
+        agentName: 'coordinator',
+        systemPrompt,
         onPermissionRequest: approveAllPermissions,
-      });
+      }));
       debugLog('eager warm-up: coordinator session ready');
     } catch (err) {
       debugLog('eager warm-up failed (non-fatal, will retry on first dispatch):', err);
@@ -406,12 +407,12 @@ export async function runShell(): Promise<void> {
         registry.register(agentName, roleMatch?.[1] ?? 'Agent');
       }
 
-      session = await client.createSession({
-        streaming: true,
-        systemMessage: { mode: 'append', content: systemPrompt },
-        workingDirectory: teamRoot,
+      session = await client.createSession(await buildShellSessionConfig({
+        teamRoot,
+        agentName,
+        systemPrompt,
         onPermissionRequest: approveAllPermissions,
-      });
+      }));
       agentSessions.set(agentName, session);
     }
 
@@ -586,12 +587,12 @@ export async function runShell(): Promise<void> {
       // Give React a tick to render the connection hint before blocking on SDK
       await new Promise(resolve => setImmediate(resolve));
       const systemPrompt = await buildCoordinatorPrompt({ teamRoot });
-      coordinatorSession = await client.createSession({
-        streaming: true,
-        systemMessage: { mode: 'append', content: systemPrompt },
-        workingDirectory: teamRoot,
+      coordinatorSession = await client.createSession(await buildShellSessionConfig({
+        teamRoot,
+        agentName: 'coordinator',
+        systemPrompt,
         onPermissionRequest: approveAllPermissions,
-      });
+      }));
       debugLog('coordinator session created:', {
         sessionId: coordinatorSession.sessionId,
         hasOn: typeof coordinatorSession.on === 'function',
@@ -872,12 +873,13 @@ export async function runShell(): Promise<void> {
         try { await storage.delete(initRolesMarker); } catch { /* ignore */ }
       }
       const initSysPrompt = buildInitModePrompt({ teamRoot, useBaseRoles });
-      initSession = await client.createSession({
-        streaming: true,
-        systemMessage: { mode: 'append', content: initSysPrompt },
-        workingDirectory: teamRoot,
+      initSession = await client.createSession(await buildShellSessionConfig({
+        teamRoot,
+        agentName: 'coordinator',
+        systemPrompt: initSysPrompt,
         onPermissionRequest: approveAllPermissions,
-      });
+        extraContext: 'This is an init/casting session. Focus on proposing the best team and enabling broad future autonomy for Codex-driven execution.',
+      }));
       activeInitSession = initSession;
       debugLog('handleInitCast: init session created');
 

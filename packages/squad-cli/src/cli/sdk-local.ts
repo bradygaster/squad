@@ -14,9 +14,16 @@ export {
   ensurePersonalSquadDir,
   deriveProjectKey,
   resolveExternalStateDir,
+  resolveSquadHome,
+  ensureSquadHome,
+  resolvePresetsDir,
+  resolveSquadState,
+  resolveSquad,
 } from '../../../squad-sdk/dist/resolution.js';
 export { initSquad, cleanupOrphanInitPrompt } from '../../../squad-sdk/dist/config/index.js';
 export type { InitOptions } from '../../../squad-sdk/dist/config/index.js';
+export type { SquadStateContext } from '../../../squad-sdk/dist/resolution.js';
+export type { StateBackendType } from '../../../squad-sdk/dist/state-backend.js';
 export { parseRoutingRules, parseModuleOwnership, parseRoster, triageIssue } from '../../../squad-sdk/dist/ralph/triage.js';
 export { RalphMonitor, PredictiveCircuitBreaker, getTrafficLight } from '../../../squad-sdk/dist/ralph/index.js';
 export { EventBus } from '../../../squad-sdk/dist/runtime/event-bus.js';

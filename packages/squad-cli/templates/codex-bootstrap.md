@@ -20,7 +20,7 @@ When the user asks for "squad", "team", or named squad members, use `.squad/rout
 
 Codex sub-agent role names may differ from Squad member names. Map Squad members into available Codex agent types by passing the member charter in the delegated prompt.
 
-Keep active sub-agents within the limit defined by local guardrails.
+Use the full host-exposed delegation, skill, prompt, and hook surface when available. Respect only explicit host-enforced or repo-configured guardrails.
 
 ## Shared Knowledge
 

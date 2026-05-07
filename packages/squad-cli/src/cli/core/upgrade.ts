@@ -764,7 +764,7 @@ function detectPackageManager(): 'npm' | 'pnpm' | 'yarn' {
 export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<void> {
   const { execSync } = await import('node:child_process');
   const tag = options.insider ? 'insider' : 'latest';
-  const pkg = `@bradygaster/squad-cli@${tag}`;
+  const pkg = `flsquad-cli@${tag}`;
   const pm = detectPackageManager();
 
   let cmd: string;
