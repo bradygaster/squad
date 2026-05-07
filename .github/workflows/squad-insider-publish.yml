@@ -108,10 +108,20 @@ jobs:
           echo "Base version: $BASE"
 
           # Query npm for the latest insider build number for this base version
-          LATEST_SDK=$(npm view @bradygaster/squad-sdk versions --json 2>/dev/null | \
-            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0" 2>/dev/null || echo "0")
-          LATEST_CLI=$(npm view @bradygaster/squad-cli versions --json 2>/dev/null | \
-            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0" 2>/dev/null || echo "0")
+          # Fail hard if npm is unreachable — defaulting to 0 risks republishing an existing version
+          SDK_VERSIONS=$(npm view @bradygaster/squad-sdk versions --json 2>&1) || {
+            echo "::error::Failed to query npm for squad-sdk versions. Cannot safely compute insider version."
+            exit 1
+          }
+          CLI_VERSIONS=$(npm view @bradygaster/squad-cli versions --json 2>&1) || {
+            echo "::error::Failed to query npm for squad-cli versions. Cannot safely compute insider version."
+            exit 1
+          }
+
+          LATEST_SDK=$(echo "$SDK_VERSIONS" | \
+            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0")
+          LATEST_CLI=$(echo "$CLI_VERSIONS" | \
+            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0")
 
           # Take the higher of the two and increment
           NEXT=$(( (LATEST_SDK > LATEST_CLI ? LATEST_SDK : LATEST_CLI) + 1 ))
