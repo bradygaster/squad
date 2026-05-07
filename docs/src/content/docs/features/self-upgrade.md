@@ -18,7 +18,7 @@ squad upgrade --self --insider
 squad upgrade --self && squad upgrade
 ```
 
-Squad can upgrade itself to the latest stable or insider release, then automatically refresh your repo templates.
+Squad can upgrade itself to the latest stable or insider release, then automatically refresh your repo templates. Insider builds are published from the `dev` branch to the npm `insider` dist-tag.
 
 ---
 

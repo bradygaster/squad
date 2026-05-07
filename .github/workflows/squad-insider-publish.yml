@@ -1,9 +1,14 @@
 name: Publish Insider to npm
 
 on:
-  push:
-    branches:
-      - insider
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — validate build without publishing'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 concurrency:
   group: ${{ github.workflow }}
@@ -21,6 +26,8 @@ jobs:
         node-version: [22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: dev
 
       - uses: ./.github/actions/setup-squad-node
         with:
@@ -75,6 +82,8 @@ jobs:
         node-version: [22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: dev
 
       - uses: ./.github/actions/setup-squad-node
         with:

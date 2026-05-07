@@ -2,10 +2,10 @@ name: Squad CI
 
 on:
   pull_request:
-    branches: [dev, preview, main, insider]
+    branches: [dev, preview, main]
     types: [opened, synchronize, reopened, edited]
   push:
-    branches: [dev, insider]
+    branches: [dev]
 
 permissions:
   contents: read
@@ -296,7 +296,7 @@ jobs:
           always()
           && steps.labels.outputs.skip_version != 'true'
           && vars.SQUAD_VERSION_CHECK != 'false'
-          && github.event.pull_request.base.ref != 'insider'
+          && true
         run: |
           echo "## 🏷️ Prerelease Version Guard" >> $GITHUB_STEP_SUMMARY
           node -e "

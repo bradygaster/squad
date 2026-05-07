@@ -404,7 +404,7 @@ The doctor always exits cleanly (no error code) because it's a diagnostic tool, 
 squad --version                              # Check version
 npm install -g @bradygaster/squad-cli@latest # Update
 npm install -g @bradygaster/squad-cli@1.2.3  # Pin version
-npm install -g @bradygaster/squad-cli@insider # Insider builds
+npm install -g @bradygaster/squad-cli@insider # Dev-channel prerelease builds
 ```
 
 ---

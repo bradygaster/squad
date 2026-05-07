@@ -252,9 +252,11 @@ You don't need to manually version — changesets handle it.
 ## Branch Strategy
 
 - **main** — Stable, published releases. All merges include changesets.
-- **insider** — Pre-release features, edge cases. Tag releases as `@insider`.
+- **preview** — Staging branch for release candidates (promote: dev → preview → main).
 - **bradygaster/dev** — Integration branch. **All PRs from forks must target this branch**, not `main`.
 - **user/issue-slug** — Feature branches from users or agents.
+
+> **Note:** The `insider` npm tag (`@bradygaster/squad-cli@insider`) publishes from `dev` via manual workflow dispatch. There is no separate insider branch.
 
 ## Continuous Integration
 
