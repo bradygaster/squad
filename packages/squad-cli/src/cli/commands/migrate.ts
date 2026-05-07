@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 import { success, warn, dim, bold, BOLD, RESET, DIM } from '../core/output.js';
@@ -523,3 +523,5 @@ export async function runMigrate(cwd: string, options: MigrateOptions): Promise<
   
   console.log();
 }
+
+

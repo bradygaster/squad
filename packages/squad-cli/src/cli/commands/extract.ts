@@ -9,18 +9,8 @@
 
 import { resolve, basename } from 'node:path';
 import { createInterface } from 'node:readline';
-import {
-  isConsultMode,
-  detectLicense,
-  loadStagedLearnings,
-  logConsultation,
-  mergeToPersonalSquad,
-  getPersonalSquadRoot,
-  FSStorageProvider,
-  type SquadDirConfig,
-  type LicenseInfo,
-  type StagedLearning,
-} from '@bradygaster/squad-sdk';
+import { isConsultMode, detectLicense, loadStagedLearnings, logConsultation, mergeToPersonalSquad, getPersonalSquadRoot, type SquadDirConfig, type LicenseInfo, type StagedLearning } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { fatal } from '../core/errors.js';
 
 const storage = new FSStorageProvider();
@@ -330,3 +320,5 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
     console.log('🗑️  Deleted .squad/');
   }
 }
+
+

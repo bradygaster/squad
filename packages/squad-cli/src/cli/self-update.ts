@@ -12,7 +12,7 @@
 
 import path from 'node:path';
 import os from 'node:os';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from './sdk-local.js';
 
 const storage = new FSStorageProvider();
 import { compareVersions } from './upgrade.js';
@@ -123,3 +123,4 @@ export async function notifyIfUpdateAvailable(currentVersion: string): Promise<v
     // Absolute safety net — never crash the CLI for an update check
   }
 }
+

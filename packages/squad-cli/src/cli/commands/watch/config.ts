@@ -5,7 +5,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../../sdk-local.js';
 
 const storage = new FSStorageProvider();
 
@@ -153,3 +153,5 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
 
   return result;
 }
+
+

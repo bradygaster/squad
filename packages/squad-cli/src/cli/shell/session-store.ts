@@ -7,7 +7,8 @@
 
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { FSStorageProvider, safeTimestamp } from '@bradygaster/squad-sdk';
+import { safeTimestamp } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import type { ShellMessage } from './types.js';
 
 const storage = new FSStorageProvider();
@@ -157,3 +158,5 @@ function findSessionFile(dir: string, sessionId: string): string | null {
   const match = files.find(f => f.includes(sessionId) && f.endsWith('.json'));
   return match ? join(dir, match) : null;
 }
+
+

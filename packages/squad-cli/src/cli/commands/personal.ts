@@ -11,10 +11,14 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import {
+  FSStorageProvider,
+  resolveGlobalSquadPath,
+  resolvePersonalSquadDir,
+  ensurePersonalSquadDir,
+} from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
-import { resolveGlobalSquadPath, resolvePersonalSquadDir, ensurePersonalSquadDir } from '@bradygaster/squad-sdk/resolution';
 import { resolvePersonalAgents } from '@bradygaster/squad-sdk/agents/personal';
 import { success, warn, info, BOLD, RESET, DIM } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -246,3 +250,5 @@ Ghost protocol is enforced in project contexts (observe, suggest, never modify).
 preferences, and a style that's distinctly yours.]
 `;
 }
+
+

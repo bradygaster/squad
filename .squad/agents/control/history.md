@@ -51,3 +51,8 @@ There is no `claude-haiku-4.6`. The latest haiku is `claude-haiku-4.5`. Never bu
 - `scripts/sync-templates.mjs` handles the rename: mirror targets get `.template` suffix, `.github/agents/` target keeps `.md`.
 - All code reading templates for init/upgrade/consult (SDK `init.ts`, CLI `upgrade.ts`, CLI `templates.ts`, SDK `consult.ts`) references `squad.agent.md.template` as the source filename.
 - The `TEMPLATE_MANIFEST` in `templates.ts` uses `source: 'squad.agent.md.template'` but `destination: '../.github/agents/squad.agent.md'` — source and target names differ.
+
+### SDK Local Compatibility Barrel (2026-04-19T19:44:18.986+05:30)
+- `packages/squad-cli` can compile against newer SDK symbols before the published `@bradygaster/squad-sdk` root barrel catches up by routing missing exports through `src/cli/sdk-local.ts`.
+- `sdk-local.ts` should target sibling SDK `dist/` entrypoints, not source files, so the CLI works both in the monorepo and when the scoped SDK package is installed alongside it.
+- This pattern is appropriate for CLI-only compatibility gaps such as `FSStorageProvider`, `SquadState`, and watch-path helpers that exist in the SDK package build but not the currently published root export surface.

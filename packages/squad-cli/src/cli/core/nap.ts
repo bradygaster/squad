@@ -6,7 +6,7 @@
 
 // Raw fs imports removed — Wave 3a migrated all stat/append/delete to StorageProvider.
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 
@@ -672,3 +672,5 @@ function estimateAfterMetrics(before: NapMetrics, actions: NapAction[]): NapMetr
     inboxFiles: Math.max(0, before.inboxFiles - inboxMerged),
   };
 }
+
+

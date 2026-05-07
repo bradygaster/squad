@@ -1,5 +1,6 @@
 import { join } from 'node:path';
-import { listRoles, searchRoles, FSStorageProvider } from '@bradygaster/squad-sdk';
+import { listRoles, searchRoles } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 import type { ShellMessage } from './types.js';
 
@@ -366,3 +367,5 @@ export function formatConversationContext(
     })
     .join('\n');
 }
+
+

@@ -5,7 +5,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 
@@ -347,3 +347,5 @@ export function getTemplatesDir(): string {
   }
   throw new Error('Templates directory not found — installation may be corrupted');
 }
+
+

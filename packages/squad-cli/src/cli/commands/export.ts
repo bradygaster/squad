@@ -4,7 +4,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { success, warn } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -111,3 +111,5 @@ export async function runExport(dest: string, outPath?: string): Promise<void> {
   success(`Exported squad to ${displayPath}`);
   warn('Review agent histories before sharing — they may contain project-specific information');
 }
+
+

@@ -4,7 +4,7 @@
  */
 
 import { join } from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import {
   getRoleById,
   generateCharterFromRole,
@@ -672,3 +672,5 @@ export function formatCastSummary(proposal: CastProposal): string {
 
   return lines.join('\n');
 }
+
+

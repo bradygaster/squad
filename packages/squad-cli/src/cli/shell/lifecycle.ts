@@ -8,7 +8,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { SessionRegistry } from './sessions.js';
 import { ShellRenderer } from './render.js';
 import type { ShellState, ShellMessage } from './types.js';
@@ -330,3 +330,5 @@ export function loadWelcomeData(teamRoot: string): WelcomeData | null {
     return null;
   }
 }
+
+

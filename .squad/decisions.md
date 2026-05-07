@@ -178,6 +178,55 @@ tamirdresher opened 6 PRs addressing related concerns (retro enforcement, challe
 
 ---
 
+### 2026-03-26: CI deletion guard and source tree canary
+**By:** Booster (CI/CD)
+**What:** Added two safety checks to squad-ci.yml: (1) source tree canary verifying critical files exist, (2) large deletion guard failing PRs that delete >50 files without 'large-deletion-approved' label. Branch protection on dev requested (may need manual setup).
+**Why:** Incident #631 — @copilot deleted 361 files on dev with no CI gate catching it.
+
+---
+
+### 2026-03-26: Copilot git safety rules
+**By:** RETRO (Security)
+**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits `git add .`, requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
+**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
+
+---
+
+### 2026-03-29: Versioning Policy — No Prerelease Versions on dev/main
+**By:** Flight (Lead)
+**Requested by:** Dina
+**Status:** DECIDED
+**Confidence:** Medium (confirmed by PR #640 incident, PR #116 prerelease leak, CI gate implementation)
+
+**Decision:**
+1. **All packages use strict semver** (`MAJOR.MINOR.PATCH`). No prerelease suffixes on `dev` or `main`.
+2. **Prerelease versions are ephemeral.** `bump-build.mjs` creates `-build.N` for local testing only — never committed.
+3. **SDK and CLI versions must stay in sync.** Divergence silently breaks npm workspace resolution.
+4. **Surgeon owns version bumps.** Other agents must not modify `version` fields in `package.json` unless fixing a prerelease leak.
+5. **CI enforcement via `prerelease-version-guard`** blocks PRs with prerelease versions. `skip-version-check` label is Surgeon-only.
+
+**Why:** The repo had no documented versioning policy. This caused two incidents: PR #640 (prerelease version `0.9.1-build.4` silently broke workspace resolution) and PR #116 (Surgeon set versions to `0.9.1-build.1` instead of `0.9.1` on a release branch).
+
+**Skill Reference:** Full policy documented in `.squad/skills/versioning-policy/SKILL.md`.
+
+**Impact:** All agents must follow the versioning policy when touching `package.json`. Surgeon charter should reference this skill for release procedures. CI pipeline enforces the policy via automated gate.
+
+---
+
+### 2026-04-19: CLI SDK Local Compatibility Barrel
+**By:** CONTROL
+**Status:** IMPLEMENTED (commit 8dad0b9e)
+
+**Context:** `packages/squad-cli` was importing newer SDK symbols that exist in the workspace SDK build, but the installed `@bradygaster/squad-sdk` package available to the CLI build and runtime still exposed an older root export surface. This blocked `tsc` and broke the Ralph/watch startup path before the command could run.
+
+**Decision:** Add `packages/squad-cli/src/cli/sdk-local.ts` as a CLI-scoped compatibility barrel. Route missing SDK symbols through sibling `packages/squad-sdk/dist/` entrypoints, and update CLI imports for the affected symbols to use that local barrel instead of the published root barrel.
+
+**Why:** Keeps the fix surgical and TypeScript-focused. Restores CLI build and runtime without broad runtime refactors. Works in the monorepo and in scoped package installs where `@bradygaster/squad-cli` and `@bradygaster/squad-sdk` sit side-by-side under the same scope.
+
+**Follow-up:** Once the published SDK barrel/export map is refreshed, the compatibility barrel can be reduced or removed in favor of direct package imports again.
+
+---
+
 # Decision: Triage + Work Session Plan
 
 **By:** Flight  

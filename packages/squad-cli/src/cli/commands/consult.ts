@@ -8,12 +8,8 @@
  */
 
 import { resolve, basename } from 'node:path';
-import {
-  setupConsultMode,
-  isConsultMode,
-  PersonalSquadNotFoundError,
-  FSStorageProvider,
-} from '@bradygaster/squad-sdk';
+import { setupConsultMode, isConsultMode, PersonalSquadNotFoundError } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 
 const storage = new FSStorageProvider();
 import { fatal } from '../core/errors.js';
@@ -101,3 +97,5 @@ export async function runConsult(cwd: string, args: string[]): Promise<void> {
     throw error;
   }
 }
+
+

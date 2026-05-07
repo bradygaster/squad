@@ -6,7 +6,7 @@
 
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider } from '../sdk-local.js';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -796,3 +796,5 @@ export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<
     }
   }
 }
+
+
