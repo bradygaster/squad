@@ -55,9 +55,9 @@ describe('CopilotSessionAdapter (via SquadClient)', () => {
     // Force connected state
     (client as any).state = 'connected';
 
-    // Inject mock CopilotSession via the inner CopilotClient
+    // Inject mock CopilotSession via the CopilotProvider's inner CopilotClient
     const mockSession = createMockCopilotSession();
-    (client as any).client.createSession = vi.fn().mockResolvedValue(mockSession);
+    (client as any).provider.client.createSession = vi.fn().mockResolvedValue(mockSession);
 
     const session = await client.createSession();
     return { session, mockSession };
@@ -286,7 +286,7 @@ describe('CopilotSessionAdapter via resumeSession', () => {
     (client as any).state = 'connected';
 
     const mockSession = createMockCopilotSession('resumed-session-99');
-    (client as any).client.resumeSession = vi.fn().mockResolvedValue(mockSession);
+    (client as any).provider.client.resumeSession = vi.fn().mockResolvedValue(mockSession);
 
     const session = await client.resumeSession('resumed-session-99');
 
@@ -301,7 +301,7 @@ describe('CopilotSessionAdapter optional methods', () => {
     const client = new SquadClient({ autoStart: false });
     (client as any).state = 'connected';
     const mockSession = createMockCopilotSession();
-    (client as any).client.createSession = vi.fn().mockResolvedValue(mockSession);
+    (client as any).provider.client.createSession = vi.fn().mockResolvedValue(mockSession);
     const session = await client.createSession();
     return { session, mockSession };
   }

@@ -216,7 +216,18 @@ export const MODEL_CATALOG: ModelInfo[] = [
     speed: 7,
     pricing: { inputPerToken: 0.00000125, outputPerToken: 0.00001 },
   },
-  
+  {
+    id: 'gemini-2.5-pro',
+    tier: 'standard',
+    provider: 'google',
+    family: 'gemini',
+    vision: true,
+    useCases: ['code generation', 'analysis', 'multi-file refactors'],
+    cost: 4,
+    speed: 7,
+    pricing: { inputPerToken: 0.00000125, outputPerToken: 0.00001 },
+  },
+
   // Fast tier - lowest cost, fastest, good enough quality
   {
     id: 'claude-haiku-4.5',
@@ -257,7 +268,18 @@ export const MODEL_CATALOG: ModelInfo[] = [
     cost: 2,
     speed: 9,
     pricing: { inputPerToken: 0.0000002, outputPerToken: 0.0000008 },
-  }
+  },
+  {
+    id: 'gemini-2.5-flash',
+    tier: 'fast',
+    provider: 'google',
+    family: 'gemini',
+    vision: true,
+    useCases: ['boilerplate', 'simple fixes', 'triage'],
+    cost: 1,
+    speed: 10,
+    pricing: { inputPerToken: 0.00000015, outputPerToken: 0.0000006 },
+  },
 ];
 
 /**
@@ -265,8 +287,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
  */
 export const DEFAULT_FALLBACK_CHAINS: Record<ModelTier, ModelId[]> = {
   premium: ['claude-opus-4.6', 'claude-opus-4.6-fast', 'claude-opus-4.5', 'claude-sonnet-4.6'],
-  standard: ['claude-sonnet-4.6', 'gpt-5.4', 'claude-sonnet-4.5', 'gpt-5.3-codex', 'claude-sonnet-4', 'gpt-5.2'],
-  fast: ['claude-haiku-4.5', 'gpt-5.1-codex-mini', 'gpt-4.1', 'gpt-5-mini']
+  standard: ['claude-sonnet-4.6', 'gpt-5.4', 'gemini-2.5-pro', 'claude-sonnet-4.5', 'gpt-5.3-codex', 'claude-sonnet-4', 'gpt-5.2'],
+  fast: ['claude-haiku-4.5', 'gemini-2.5-flash', 'gpt-5.1-codex-mini', 'gpt-4.1', 'gpt-5-mini']
 };
 
 /**
@@ -531,6 +553,8 @@ export const ECONOMY_MODEL_MAP: Record<string, string> = {
   'claude-sonnet-4.5':    'gpt-4.1',
   // Fast → cheapest fast (scribe/mechanical, docs)
   'claude-haiku-4.5':     'gpt-4.1',
+  // Gemini economy downgrades
+  'gemini-2.5-pro':       'gemini-2.5-flash',
 };
 
 /**

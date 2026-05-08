@@ -33,6 +33,7 @@ const DEFAULT_ENTRY_POINTS = [
 
 const DEFAULT_EXTERNAL = [
   '@github/copilot-sdk',
+  'google-auth-library',
 ];
 
 const DEFAULT_CONFIG: BundleConfig = {

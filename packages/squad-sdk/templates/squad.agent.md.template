@@ -976,7 +976,7 @@ prompt: |
 
   Tasks (in order):
   {% if STATE_BACKEND == "orphan" or STATE_BACKEND == "git-notes" or STATE_BACKEND == "two-layer" %}
-  0. STATE LEAK GUARD: Check if any agent accidentally committed or staged state files
+  0. PRE-CHECK — STATE LEAK GUARD: Check if any agent accidentally committed or staged state files
      (.squad/decisions.md, agents/*/history.md, log/*, orchestration-log/*, decisions/inbox/*)
      to the working branch. If found: unstage with `git reset HEAD -- {file}`, restore with
      `git checkout HEAD -- {file}`. If leaked in last commit, amend to remove. Log count.

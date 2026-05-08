@@ -1,20 +1,25 @@
 /**
  * Squad SDK Client Adapter
- * 
- * Wraps CopilotClient to provide connection lifecycle management, error recovery,
- * automatic reconnection, and protocol version validation.
- * 
+ *
+ * Wraps a SquadProvider to provide connection lifecycle management, error
+ * recovery, automatic reconnection, OTel instrumentation, and EventBus
+ * integration.
+ *
+ * The provider is pluggable: by default a CopilotProvider is constructed
+ * (preserving backward compatibility), but callers can inject any
+ * SquadProvider implementation.
+ *
  * @module adapter/client
  */
 
-import { CopilotClient } from "@github/copilot-sdk";
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import { recordSessionCreated, recordSessionClosed, recordSessionError, recordTokenUsage } from '../runtime/otel-metrics.js';
 import { estimateCost } from '../config/models.js';
 import type { EventBus } from '../runtime/event-bus.js';
 import type { UsageEvent } from '../runtime/streaming.js';
-import type { 
-  SquadSessionConfig, 
+import type { SquadProvider } from './provider.js';
+import type {
+  SquadSessionConfig,
   SquadSession,
   SquadSessionEvent,
   SquadSessionEventHandler,
@@ -27,137 +32,33 @@ import type {
   SquadClientEventType,
   SquadClientEvent,
   SquadClientEventHandler,
-} from "./types.js";
+} from './types.js';
 
 const tracer = trace.getTracer('squad-sdk');
 
 /**
- * Adapts @github/copilot-sdk CopilotSession to our SquadSession interface.
- * Maps sendMessage() → send(), off() via unsubscribe tracking, close() → destroy().
- *
- * Bug reported by @spboyer (Shayne Boyer) — Codespace environment exposed
- * the unsafe `as unknown as` cast that skipped runtime method mapping.
- */
-class CopilotSessionAdapter implements SquadSession {
-  /**
-   * Maps Squad short event names → @github/copilot-sdk dotted event names.
-   * SDK uses dotted-namespace prefixes (e.g., `assistant.message_delta`),
-   * while Squad uses short names (e.g., `message_delta`).
-   * Names already in dotted form pass through via the fallback.
-   */
-  private static readonly EVENT_MAP: Record<string, string> = {
-    'message_delta': 'assistant.message_delta',
-    'message': 'assistant.message',
-    'usage': 'assistant.usage',
-    'reasoning_delta': 'assistant.reasoning_delta',
-    'reasoning': 'assistant.reasoning',
-    'turn_start': 'assistant.turn_start',
-    'turn_end': 'assistant.turn_end',
-    'intent': 'assistant.intent',
-    'idle': 'session.idle',
-    'error': 'session.error',
-  };
-
-  /** Reverse map: SDK dotted names → Squad short names. */
-  private static readonly REVERSE_EVENT_MAP: Record<string, string> = Object.fromEntries(
-    Object.entries(CopilotSessionAdapter.EVENT_MAP).map(([k, v]) => [v, k])
-  );
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly inner: any;
-  private readonly unsubscribers = new Map<SquadSessionEventHandler, Map<string, () => void>>();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(copilotSession: any) {
-    this.inner = copilotSession;
-  }
-
-  get sessionId(): string {
-    return this.inner.sessionId ?? 'unknown';
-  }
-
-  async sendMessage(options: SquadMessageOptions): Promise<void> {
-    await this.inner.send(options);
-  }
-
-  async sendAndWait(options: SquadMessageOptions, timeout?: number): Promise<unknown> {
-    return await this.inner.sendAndWait(options, timeout);
-  }
-
-  async abort(): Promise<void> {
-    await this.inner.abort();
-  }
-
-  async getMessages(): Promise<unknown[]> {
-    return await this.inner.getMessages();
-  }
-
-  /**
-   * Normalizes an SDK event into a SquadSessionEvent.
-   * Maps the dotted type back to the Squad short name and
-   * flattens `event.data` onto the top-level object so callers
-   * can access fields directly (e.g., `event.inputTokens`).
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private static normalizeEvent(sdkEvent: any): SquadSessionEvent {
-    const squadType = CopilotSessionAdapter.REVERSE_EVENT_MAP[sdkEvent.type] ?? sdkEvent.type;
-    return {
-      type: squadType,
-      ...(sdkEvent.data ?? {}),
-    };
-  }
-
-  on(eventType: SquadSessionEventType, handler: SquadSessionEventHandler): void {
-    const sdkType = CopilotSessionAdapter.EVENT_MAP[eventType] ?? eventType;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const wrappedHandler = (sdkEvent: any) => {
-      handler(CopilotSessionAdapter.normalizeEvent(sdkEvent));
-    };
-    const unsubscribe = this.inner.on(sdkType, wrappedHandler);
-    if (!this.unsubscribers.has(handler)) {
-      this.unsubscribers.set(handler, new Map());
-    }
-    this.unsubscribers.get(handler)!.set(eventType, unsubscribe);
-  }
-
-  off(eventType: SquadSessionEventType, handler: SquadSessionEventHandler): void {
-    const handlerMap = this.unsubscribers.get(handler);
-    if (handlerMap) {
-      const unsubscribe = handlerMap.get(eventType);
-      if (unsubscribe) {
-        unsubscribe();
-        handlerMap.delete(eventType);
-      }
-      if (handlerMap.size === 0) {
-        this.unsubscribers.delete(handler);
-      }
-    }
-  }
-
-  async close(): Promise<void> {
-    await this.inner.destroy();
-    this.unsubscribers.clear();
-  }
-}
-
-/**
  * Connection state for SquadClient.
  */
-export type SquadConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting" | "error";
+export type SquadConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 /**
  * Options for creating a SquadClient.
  */
 export interface SquadClientOptions {
   /**
+   * Pre-built provider instance. When supplied, the client delegates to
+   * this provider directly and Copilot-specific options are ignored.
+   */
+  provider?: SquadProvider;
+
+  /**
    * Path to the Copilot CLI executable.
    * Defaults to bundled CLI from @github/copilot package.
+   * Only used when no `provider` is supplied (CopilotProvider default).
    */
   cliPath?: string;
 
-  /**
-   * Additional arguments to pass to the CLI process.
-   */
+  /** Additional arguments to pass to the CLI process. */
   cliArgs?: string[];
 
   /**
@@ -188,7 +89,7 @@ export interface SquadClientOptions {
    * Log level for the CLI process.
    * @default "debug"
    */
-  logLevel?: "error" | "warning" | "info" | "debug" | "all" | "none";
+  logLevel?: 'error' | 'warning' | 'info' | 'debug' | 'all' | 'none';
 
   /**
    * Automatically start the connection when creating a session.
@@ -242,133 +143,124 @@ export interface SquadClientOptions {
 }
 
 /**
- * SquadClient wraps CopilotClient with enhanced lifecycle management.
- * 
+ * SquadClient wraps a SquadProvider with enhanced lifecycle management.
+ *
  * Features:
  * - Connection state tracking
  * - Automatic reconnection with exponential backoff
- * - Protocol version validation
+ * - OTel instrumentation
  * - Error recovery
  * - Session lifecycle event handling
- * 
+ *
  * @example
  * ```typescript
  * const client = new SquadClient();
  * await client.connect();
- * 
+ *
  * const session = await client.createSession({
  *   model: "claude-sonnet-4.5"
  * });
- * 
+ *
  * await client.disconnect();
  * ```
  */
 export class SquadClient {
-  private client: CopilotClient;
-  private state: SquadConnectionState = "disconnected";
+  private provider: SquadProvider;
+  private state: SquadConnectionState = 'disconnected';
   private connectPromise: Promise<void> | null = null;
   private reconnectAttempts: number = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
-  private options: Required<Omit<SquadClientOptions, "cliUrl" | "githubToken" | "useLoggedInUser" | "cliPath" | "cliArgs" | "eventBus">> & {
-    cliUrl?: string;
-    githubToken?: string;
-    useLoggedInUser?: boolean;
-    cliPath?: string;
-    cliArgs: string[];
+  private options: {
+    autoStart: boolean;
+    autoReconnect: boolean;
+    maxReconnectAttempts: number;
+    reconnectDelayMs: number;
     eventBus?: EventBus;
+    useStdio?: boolean;
   };
   private manualDisconnect: boolean = false;
 
   /**
    * Creates a new SquadClient instance.
-   * 
-   * @param options - Configuration options
-   * @throws Error if mutually exclusive options are provided
+   *
+   * When `options.provider` is supplied, the client delegates to it directly.
+   * Otherwise, a CopilotProvider is lazily constructed from the remaining
+   * options (backward-compatible default).
    */
   constructor(options: SquadClientOptions = {}) {
     this.options = {
-      cliPath: options.cliPath,
-      cliArgs: options.cliArgs ?? [],
-      cwd: options.cwd ?? process.cwd(),
-      port: options.port ?? 0,
-      useStdio: options.useStdio ?? true,
-      cliUrl: options.cliUrl,
-      logLevel: options.logLevel ?? "debug",
       autoStart: options.autoStart ?? true,
       autoReconnect: options.autoReconnect ?? true,
-      env: options.env ?? (process.env as Record<string, string>),
-      githubToken: options.githubToken,
-      useLoggedInUser: options.useLoggedInUser ?? (options.githubToken ? false : true),
       maxReconnectAttempts: options.maxReconnectAttempts ?? 3,
       reconnectDelayMs: options.reconnectDelayMs ?? 1000,
       eventBus: options.eventBus,
+      useStdio: options.useStdio ?? true,
     };
 
-    this.client = new CopilotClient({
-      cliPath: this.options.cliPath,
-      cliArgs: this.options.cliArgs,
-      cwd: this.options.cwd,
-      port: this.options.port,
-      useStdio: this.options.useStdio,
-      cliUrl: this.options.cliUrl,
-      logLevel: this.options.logLevel,
-      autoStart: false, // We manage connection lifecycle
-      autoRestart: false, // We handle reconnection ourselves
-      env: this.options.env,
-      githubToken: this.options.githubToken,
-      useLoggedInUser: this.options.useLoggedInUser,
-    });
+    if (options.provider) {
+      this.provider = options.provider;
+    } else {
+      // Lazy-import CopilotProvider to avoid pulling in @github/copilot-sdk
+      // when a different provider is supplied.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { CopilotProvider } = require('./providers/copilot-provider.js');
+      this.provider = new CopilotProvider({
+        cliPath: options.cliPath,
+        cliArgs: options.cliArgs,
+        cwd: options.cwd,
+        port: options.port,
+        useStdio: options.useStdio,
+        cliUrl: options.cliUrl,
+        logLevel: options.logLevel,
+        env: options.env,
+        githubToken: options.githubToken,
+        useLoggedInUser: options.useLoggedInUser,
+      });
+    }
   }
 
-  /**
-   * Get the current connection state.
-   */
+  /** Get the current connection state. */
   getState(): SquadConnectionState {
     return this.state;
   }
 
-  /**
-   * Check if the client is connected.
-   */
+  /** Check if the client is connected. */
   isConnected(): boolean {
-    return this.state === "connected";
+    return this.state === 'connected';
+  }
+
+  /** Get the underlying provider. */
+  getProvider(): SquadProvider {
+    return this.provider;
   }
 
   /**
-   * Establish connection to the Copilot CLI server.
-   * 
-   * This method:
-   * 1. Spawns or connects to the CLI server
-   * 2. Validates protocol version compatibility
-   * 3. Sets up automatic reconnection handlers
-   * 
-   * @returns Promise that resolves when connection is established
-   * @throws Error if connection fails or protocol version is incompatible
+   * Establish connection to the LLM provider.
    */
   async connect(): Promise<void> {
-    if (this.state === "connected") {
+    if (this.state === 'connected') {
       return;
     }
 
-    // Dedup: if a connection is already in progress, piggyback on it
-    if (this.state === "connecting" && this.connectPromise) {
+    if (this.state === 'connecting' && this.connectPromise) {
       return this.connectPromise;
     }
 
     const span = tracer.startSpan('squad.client.connect');
+    span.setAttribute('provider', this.provider.name);
     span.setAttribute('connection.transport', this.options.useStdio ? 'stdio' : 'tcp');
 
-    this.state = "connecting";
+    this.state = 'connecting';
     this.manualDisconnect = false;
 
     this.connectPromise = (async () => {
       const startTime = Date.now();
 
       try {
-        await this.client.start();
+        await this.provider.connect();
         const elapsed = Date.now() - startTime;
-        
-        this.state = "connected";
+
+        this.state = 'connected';
         this.reconnectAttempts = 0;
 
         span.setAttribute('connection.duration_ms', elapsed);
@@ -377,9 +269,9 @@ export class SquadClient {
           console.warn(`SquadClient connection took ${elapsed}ms (> 2s threshold)`);
         }
       } catch (error) {
-        this.state = "error";
+        this.state = 'error';
         const wrapped = new Error(
-          `Failed to connect to Copilot CLI: ${error instanceof Error ? error.message : String(error)}`
+          `Failed to connect to ${this.provider.name} provider: ${error instanceof Error ? error.message : String(error)}`,
         );
         span.setStatus({ code: SpanStatusCode.ERROR, message: wrapped.message });
         span.recordException(wrapped);
@@ -394,14 +286,7 @@ export class SquadClient {
   }
 
   /**
-   * Disconnect from the Copilot CLI server.
-   * 
-   * Performs graceful cleanup:
-   * 1. Destroys all active sessions
-   * 2. Closes the connection
-   * 3. Terminates the CLI process (if spawned)
-   * 
-   * @returns Promise that resolves with any errors encountered during cleanup
+   * Disconnect from the LLM provider.
    */
   async disconnect(): Promise<Error[]> {
     const span = tracer.startSpan('squad.client.disconnect');
@@ -413,8 +298,8 @@ export class SquadClient {
         this.reconnectTimer = null;
       }
 
-      const errors = await this.client.stop();
-      this.state = "disconnected";
+      const errors = await this.provider.disconnect();
+      this.state = 'disconnected';
       this.reconnectAttempts = 0;
       this.connectPromise = null;
 
@@ -440,20 +325,18 @@ export class SquadClient {
       this.reconnectTimer = null;
     }
 
-    await this.client.forceStop();
-    this.state = "disconnected";
+    if (this.provider.forceDisconnect) {
+      await this.provider.forceDisconnect();
+    } else {
+      await this.provider.disconnect();
+    }
+    this.state = 'disconnected';
     this.reconnectAttempts = 0;
     this.connectPromise = null;
   }
 
   /**
    * Create a new Squad session.
-   * 
-   * If autoStart is enabled and the client is not connected, this will
-   * automatically establish the connection.
-   * 
-   * @param config - Session configuration
-   * @returns Promise that resolves with the created session
    */
   async createSession(config: SquadSessionConfig = {}): Promise<SquadSession> {
     const span = tracer.startSpan('squad.session.create');
@@ -464,19 +347,16 @@ export class SquadClient {
       }
 
       if (!this.isConnected()) {
-        throw new Error("Client not connected. Call connect() first.");
+        throw new Error('Client not connected. Call connect() first.');
       }
 
       try {
-        // Cast config to handle SDK version differences in SessionConfig type
-        const session = await this.client.createSession(config as Parameters<typeof this.client.createSession>[0]);
-        const result = new CopilotSessionAdapter(session);
+        const result = await this.provider.createSession(config);
         if (result.sessionId) {
           span.setAttribute('session.id', result.sessionId);
         }
         recordSessionCreated();
 
-        // Auto-forward usage events to EventBus when one is configured
         if (this.options.eventBus) {
           const bus = this.options.eventBus;
           const sid = result.sessionId;
@@ -488,12 +368,7 @@ export class SquadClient {
             void bus.emit({
               type: 'session:message',
               sessionId: sid,
-              payload: {
-                inputTokens,
-                outputTokens,
-                model,
-                estimatedCost: cost,
-              },
+              payload: { inputTokens, outputTokens, model, estimatedCost: cost },
               timestamp: new Date(),
             });
           });
@@ -505,8 +380,8 @@ export class SquadClient {
         if (msg.includes('onPermissionRequest')) {
           throw new Error(
             'Session creation failed: an onPermissionRequest handler is required. ' +
-            'Pass { onPermissionRequest: () => ({ kind: "approved" }) } in your session config ' +
-            'to approve all permissions, or provide a custom handler.'
+              'Pass { onPermissionRequest: () => ({ kind: "approved" }) } in your session config ' +
+              'to approve all permissions, or provide a custom handler.',
           );
         }
         recordSessionError();
@@ -527,10 +402,6 @@ export class SquadClient {
 
   /**
    * Resume an existing Squad session by ID.
-   * 
-   * @param sessionId - ID of the session to resume
-   * @param config - Optional configuration overrides
-   * @returns Promise that resolves with the resumed session
    */
   async resumeSession(sessionId: string, config: SquadSessionConfig = {}): Promise<SquadSession> {
     const span = tracer.startSpan('squad.session.resume');
@@ -541,13 +412,14 @@ export class SquadClient {
       }
 
       if (!this.isConnected()) {
-        throw new Error("Client not connected. Call connect() first.");
+        throw new Error('Client not connected. Call connect() first.');
       }
 
       try {
-        // Cast config to handle SDK version differences in ResumeSessionConfig type
-        const session = await this.client.resumeSession(sessionId, config as Parameters<typeof this.client.resumeSession>[1]);
-        return new CopilotSessionAdapter(session);
+        if (!this.provider.resumeSession) {
+          throw new Error(`Provider ${this.provider.name} does not support session resumption`);
+        }
+        return await this.provider.resumeSession(sessionId, config);
       } catch (error) {
         if (this.shouldAttemptReconnect(error)) {
           await this.attemptReconnection();
@@ -571,19 +443,14 @@ export class SquadClient {
     const span = tracer.startSpan('squad.session.list');
     try {
       if (!this.isConnected()) {
-        throw new Error("Client not connected");
+        throw new Error('Client not connected');
       }
 
       try {
-        const sessions = await this.client.listSessions();
-        const result = sessions.map((s): SquadSessionMetadata => ({
-          sessionId: s.sessionId,
-          startTime: s.startTime,
-          modifiedTime: s.modifiedTime,
-          summary: s.summary,
-          isRemote: s.isRemote,
-          context: s.context as Record<string, unknown> | undefined,
-        }));
+        if (!this.provider.listSessions) {
+          return [];
+        }
+        const result = await this.provider.listSessions();
         span.setAttribute('sessions.count', result.length);
         return result;
       } catch (error) {
@@ -610,11 +477,13 @@ export class SquadClient {
     span.setAttribute('session.id', sessionId);
     try {
       if (!this.isConnected()) {
-        throw new Error("Client not connected");
+        throw new Error('Client not connected');
       }
 
       try {
-        await this.client.deleteSession(sessionId);
+        if (this.provider.deleteSession) {
+          await this.provider.deleteSession(sessionId);
+        }
         recordSessionClosed();
       } catch (error) {
         recordSessionError();
@@ -638,11 +507,12 @@ export class SquadClient {
    */
   async getLastSessionId(): Promise<string | undefined> {
     if (!this.isConnected()) {
-      throw new Error("Client not connected");
+      throw new Error('Client not connected');
     }
 
     try {
-      return await this.client.getLastSessionId();
+      if (!this.provider.getLastSessionId) return undefined;
+      return await this.provider.getLastSessionId();
     } catch (error) {
       if (this.shouldAttemptReconnect(error)) {
         await this.attemptReconnection();
@@ -657,11 +527,14 @@ export class SquadClient {
    */
   async ping(message?: string): Promise<{ message: string; timestamp: number; protocolVersion?: number }> {
     if (!this.isConnected()) {
-      throw new Error("Client not connected");
+      throw new Error('Client not connected');
     }
 
     try {
-      return await this.client.ping(message);
+      if (!this.provider.ping) {
+        return { message: message ?? 'pong', timestamp: Date.now() };
+      }
+      return await this.provider.ping(message);
     } catch (error) {
       if (this.shouldAttemptReconnect(error)) {
         await this.attemptReconnection();
@@ -672,19 +545,18 @@ export class SquadClient {
   }
 
   /**
-   * Get CLI status information.
+   * Get provider status information.
    */
   async getStatus(): Promise<SquadGetStatusResponse> {
     if (!this.isConnected()) {
-      throw new Error("Client not connected");
+      throw new Error('Client not connected');
     }
 
     try {
-      const raw = await this.client.getStatus();
-      return {
-        version: raw.version,
-        protocolVersion: raw.protocolVersion,
-      };
+      if (!this.provider.getStatus) {
+        return { version: '0.0.0', protocolVersion: 0 };
+      }
+      return await this.provider.getStatus();
     } catch (error) {
       if (this.shouldAttemptReconnect(error)) {
         await this.attemptReconnection();
@@ -699,18 +571,14 @@ export class SquadClient {
    */
   async getAuthStatus(): Promise<SquadGetAuthStatusResponse> {
     if (!this.isConnected()) {
-      throw new Error("Client not connected");
+      throw new Error('Client not connected');
     }
 
     try {
-      const raw = await this.client.getAuthStatus();
-      return {
-        isAuthenticated: raw.isAuthenticated,
-        authType: raw.authType,
-        host: raw.host,
-        login: raw.login,
-        statusMessage: raw.statusMessage,
-      };
+      if (!this.provider.getAuthStatus) {
+        return { isAuthenticated: true };
+      }
+      return await this.provider.getAuthStatus();
     } catch (error) {
       if (this.shouldAttemptReconnect(error)) {
         await this.attemptReconnection();
@@ -725,20 +593,14 @@ export class SquadClient {
    */
   async listModels(): Promise<SquadModelInfo[]> {
     if (!this.isConnected()) {
-      throw new Error("Client not connected");
+      throw new Error('Client not connected');
     }
 
     try {
-      const models = await this.client.listModels();
-      return models.map((m): SquadModelInfo => ({
-        id: m.id,
-        name: m.name,
-        capabilities: m.capabilities,
-        policy: m.policy,
-        billing: m.billing,
-        supportedReasoningEfforts: m.supportedReasoningEfforts,
-        defaultReasoningEffort: m.defaultReasoningEffort,
-      }));
+      if (!this.provider.listModels) {
+        return [];
+      }
+      return await this.provider.listModels();
     } catch (error) {
       if (this.shouldAttemptReconnect(error)) {
         await this.attemptReconnection();
@@ -750,14 +612,6 @@ export class SquadClient {
 
   /**
    * Send a message to a session, wrapped with OTel tracing.
-   *
-   * Creates a `squad.session.message` span for the full call and a
-   * child `squad.session.stream` span that tracks streaming duration
-   * with `first_token`, `last_token`, and `stream_error` events.
-   *
-   * @param session - The session to send the message to
-   * @param options - Message content and delivery options
-   * @returns Promise that resolves when the message is processed
    */
   async sendMessage(session: SquadSession, options: SquadMessageOptions): Promise<void> {
     const messageSpan = tracer.startSpan('squad.session.message');
@@ -772,12 +626,10 @@ export class SquadClient {
     let firstTokenRecorded = false;
     let outputTokens = 0;
     let inputTokens = 0;
-
     let model = 'unknown';
 
     const origOn = session.on.bind(session);
 
-    // Wire temporary event listener for stream tracking
     const streamListener = (event: SquadSessionEvent) => {
       if (event.type === 'message_delta' && !firstTokenRecorded) {
         firstTokenRecorded = true;
@@ -802,7 +654,6 @@ export class SquadClient {
       streamSpan.setAttribute('tokens.output', outputTokens);
       streamSpan.setAttribute('duration_ms', durationMs);
 
-      // Record token usage in OTel metrics (not just span attributes)
       if (inputTokens > 0 || outputTokens > 0) {
         const usageEvent: UsageEvent = {
           type: 'usage',
@@ -825,7 +676,6 @@ export class SquadClient {
     } finally {
       streamSpan.end();
       messageSpan.end();
-      // Clean up listeners
       try {
         session.off('message_delta', streamListener);
         session.off('usage', streamListener);
@@ -837,8 +687,6 @@ export class SquadClient {
 
   /**
    * Close a session (alias for deleteSession with `squad.session.close` span).
-   *
-   * @param sessionId - ID of the session to close
    */
   async closeSession(sessionId: string): Promise<void> {
     const span = tracer.startSpan('squad.session.close');
@@ -855,13 +703,7 @@ export class SquadClient {
   }
 
   /**
-   * Send a message and wait for the response, wrapped with OTel tracing
-   * and token metric recording.
-   *
-   * @param session - The session to send the message to
-   * @param options - Message content and delivery options
-   * @param timeout - Optional timeout in milliseconds
-   * @returns Promise that resolves with the session response
+   * Send a message and wait for the response, wrapped with OTel tracing.
    */
   async sendAndWait(session: SquadSession, options: SquadMessageOptions, timeout?: number): Promise<unknown> {
     const span = tracer.startSpan('squad.session.sendAndWait');
@@ -891,7 +733,6 @@ export class SquadClient {
       span.setAttribute('tokens.input', inputTokens);
       span.setAttribute('tokens.output', outputTokens);
 
-      // Record token usage in OTel metrics
       if (inputTokens > 0 || outputTokens > 0) {
         const usageEvent: UsageEvent = {
           type: 'usage',
@@ -927,40 +768,34 @@ export class SquadClient {
   on(handler: SquadClientEventHandler): () => void;
   on(
     eventTypeOrHandler: SquadClientEventType | SquadClientEventHandler,
-    handler?: (event: SquadClientEvent) => void
+    handler?: (event: SquadClientEvent) => void,
   ): () => void {
-    if (typeof eventTypeOrHandler === "string" && handler) {
-      return this.client.on(eventTypeOrHandler, handler);
-    } else {
-      return this.client.on(eventTypeOrHandler as SquadClientEventHandler);
+    if (this.provider.on) {
+      if (typeof eventTypeOrHandler === 'string' && handler) {
+        return this.provider.on(eventTypeOrHandler, handler);
+      }
+      return this.provider.on(eventTypeOrHandler as SquadClientEventHandler);
     }
+    // Provider does not support lifecycle events — return no-op unsubscribe
+    return () => {};
   }
 
   /**
    * Determine if an error is recoverable via reconnection.
    */
   private shouldAttemptReconnect(error: unknown): boolean {
-    if (!this.options.autoReconnect) {
-      return false;
-    }
-
-    if (this.manualDisconnect) {
-      return false;
-    }
-
-    if (this.reconnectAttempts >= this.options.maxReconnectAttempts) {
-      return false;
-    }
+    if (!this.options.autoReconnect) return false;
+    if (this.manualDisconnect) return false;
+    if (this.reconnectAttempts >= this.options.maxReconnectAttempts) return false;
 
     const message = error instanceof Error ? error.message : String(error);
-    
-    // Transient connection errors
+
     if (
-      message.includes("ECONNREFUSED") ||
-      message.includes("ECONNRESET") ||
-      message.includes("EPIPE") ||
-      message.includes("Client not connected") ||
-      message.includes("Connection closed")
+      message.includes('ECONNREFUSED') ||
+      message.includes('ECONNRESET') ||
+      message.includes('EPIPE') ||
+      message.includes('Client not connected') ||
+      message.includes('Connection closed')
     ) {
       return true;
     }
@@ -972,11 +807,11 @@ export class SquadClient {
    * Attempt to reconnect with exponential backoff.
    */
   private async attemptReconnection(): Promise<void> {
-    if (this.state === "reconnecting") {
-      throw new Error("Reconnection already in progress");
+    if (this.state === 'reconnecting') {
+      throw new Error('Reconnection already in progress');
     }
 
-    this.state = "reconnecting";
+    this.state = 'reconnecting';
     this.reconnectAttempts++;
 
     const delay = this.options.reconnectDelayMs * Math.pow(2, this.reconnectAttempts - 1);
@@ -986,14 +821,14 @@ export class SquadClient {
     });
 
     try {
-      await this.client.stop();
-      await this.client.start();
-      this.state = "connected";
+      await this.provider.disconnect();
+      await this.provider.connect();
+      this.state = 'connected';
       this.reconnectAttempts = 0;
     } catch (error) {
-      this.state = "error";
+      this.state = 'error';
       throw new Error(
-        `Reconnection attempt ${this.reconnectAttempts} failed: ${error instanceof Error ? error.message : String(error)}`
+        `Reconnection attempt ${this.reconnectAttempts} failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }

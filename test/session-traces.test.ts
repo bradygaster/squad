@@ -9,45 +9,12 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
-import { CopilotClient } from '@github/copilot-sdk';
+import type { SquadProvider } from '@bradygaster/squad-sdk/adapter/provider';
 import {
   StreamingPipeline,
   type StreamDelta,
   type UsageEvent,
 } from '@bradygaster/squad-sdk/runtime/streaming';
-
-// Mock CopilotClient
-vi.mock('@github/copilot-sdk', () => {
-  return {
-    CopilotClient: vi.fn().mockImplementation(() => {
-      return {
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue([]),
-        forceStop: vi.fn().mockResolvedValue(undefined),
-        createSession: vi.fn().mockResolvedValue({
-          sessionId: 'session-1',
-          send: vi.fn().mockResolvedValue('msg-1'),
-          on: vi.fn().mockReturnValue(() => {}),
-          destroy: vi.fn().mockResolvedValue(undefined),
-        }),
-        resumeSession: vi.fn().mockResolvedValue({
-          sessionId: 'session-1',
-          send: vi.fn().mockResolvedValue('msg-1'),
-          on: vi.fn().mockReturnValue(() => {}),
-          destroy: vi.fn().mockResolvedValue(undefined),
-        }),
-        listSessions: vi.fn().mockResolvedValue([]),
-        deleteSession: vi.fn().mockResolvedValue(undefined),
-        getLastSessionId: vi.fn().mockResolvedValue(undefined),
-        ping: vi.fn().mockResolvedValue({ message: 'pong', timestamp: Date.now() }),
-        getStatus: vi.fn().mockResolvedValue({ version: '1.0.0' }),
-        getAuthStatus: vi.fn().mockResolvedValue({ authenticated: true }),
-        listModels: vi.fn().mockResolvedValue([]),
-        on: vi.fn().mockReturnValue(() => {}),
-      };
-    }),
-  };
-});
 
 // Mock otel-metrics to verify they're called
 vi.mock('@bradygaster/squad-sdk/runtime/otel-metrics', async (importOriginal) => {
@@ -67,17 +34,60 @@ import {
   recordTokensPerSecond,
 } from '@bradygaster/squad-sdk/runtime/otel-metrics';
 
+// ---------------------------------------------------------------------------
+// Mock provider helper (replaces vi.mock of @github/copilot-sdk)
+// ---------------------------------------------------------------------------
+
+function createMockProvider(): SquadProvider & { _mocks: Record<string, ReturnType<typeof vi.fn>> } {
+  const mockSession = {
+    sessionId: 'session-1',
+    sendMessage: vi.fn().mockResolvedValue(undefined),
+    sendAndWait: vi.fn().mockResolvedValue('result'),
+    abort: vi.fn().mockResolvedValue(undefined),
+    getMessages: vi.fn().mockResolvedValue([]),
+    on: vi.fn(),
+    off: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+
+  const mocks = {
+    connect: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn().mockResolvedValue([]),
+    forceDisconnect: vi.fn().mockResolvedValue(undefined),
+    isConnected: vi.fn().mockReturnValue(false),
+    createSession: vi.fn().mockResolvedValue(mockSession),
+    resumeSession: vi.fn().mockResolvedValue(mockSession),
+    listSessions: vi.fn().mockResolvedValue([]),
+    deleteSession: vi.fn().mockResolvedValue(undefined),
+    getLastSessionId: vi.fn().mockResolvedValue(undefined),
+    ping: vi.fn().mockResolvedValue({ message: 'pong', timestamp: Date.now() }),
+    getStatus: vi.fn().mockResolvedValue({ version: '1.0.0', protocolVersion: 1 }),
+    getAuthStatus: vi.fn().mockResolvedValue({ isAuthenticated: true }),
+    listModels: vi.fn().mockResolvedValue([]),
+    on: vi.fn().mockReturnValue(() => {}),
+  };
+
+  return {
+    name: 'copilot' as const,
+    ...mocks,
+    _mocks: mocks,
+  };
+}
+
 // ============================================================================
 // #259 — SquadClient.sendMessage()
 // ============================================================================
 
 describe('SquadClient.sendMessage() — squad.session.message span', () => {
+  let mockProvider: ReturnType<typeof createMockProvider>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProvider = createMockProvider();
   });
 
   it('should call session.sendMessage with options', async () => {
-    const client = new SquadClient();
+    const client = new SquadClient({ provider: mockProvider });
     await client.connect();
     const session = await client.createSession();
     const spy = vi.spyOn(session, 'sendMessage');
@@ -88,7 +98,7 @@ describe('SquadClient.sendMessage() — squad.session.message span', () => {
   });
 
   it('should propagate errors from session.sendMessage', async () => {
-    const client = new SquadClient();
+    const client = new SquadClient({ provider: mockProvider });
     await client.connect();
     const session = await client.createSession();
     vi.spyOn(session, 'sendMessage').mockRejectedValueOnce(new Error('stream failed'));
@@ -99,7 +109,7 @@ describe('SquadClient.sendMessage() — squad.session.message span', () => {
   });
 
   it('should register event listeners on session', async () => {
-    const client = new SquadClient();
+    const client = new SquadClient({ provider: mockProvider });
     await client.connect();
     const session = await client.createSession();
     const onSpy = vi.spyOn(session, 'on');
@@ -112,7 +122,7 @@ describe('SquadClient.sendMessage() — squad.session.message span', () => {
   });
 
   it('should clean up event listeners after completion', async () => {
-    const client = new SquadClient();
+    const client = new SquadClient({ provider: mockProvider });
     await client.connect();
     const session = await client.createSession();
     const offSpy = vi.spyOn(session, 'off');
@@ -129,28 +139,27 @@ describe('SquadClient.sendMessage() — squad.session.message span', () => {
 // ============================================================================
 
 describe('SquadClient.closeSession() — squad.session.close span', () => {
+  let mockProvider: ReturnType<typeof createMockProvider>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProvider = createMockProvider();
   });
 
   it('should delete the session', async () => {
-    const client = new SquadClient();
+    const client = new SquadClient({ provider: mockProvider });
     await client.connect();
 
     await client.closeSession('session-42');
 
-    const MockedCopilotClient = CopilotClient as unknown as ReturnType<typeof vi.fn>;
-    const instance = MockedCopilotClient.mock.results[0].value;
-    expect(instance.deleteSession).toHaveBeenCalledWith('session-42');
+    expect(mockProvider._mocks.deleteSession).toHaveBeenCalledWith('session-42');
   });
 
   it('should propagate errors from deleteSession', async () => {
-    const client = new SquadClient();
+    const client = new SquadClient({ provider: mockProvider });
     await client.connect();
 
-    const MockedCopilotClient = CopilotClient as unknown as ReturnType<typeof vi.fn>;
-    const instance = MockedCopilotClient.mock.results[0].value;
-    instance.deleteSession.mockRejectedValueOnce(new Error('not found'));
+    mockProvider._mocks.deleteSession.mockRejectedValueOnce(new Error('not found'));
 
     await expect(client.closeSession('session-99')).rejects.toThrow('not found');
   });

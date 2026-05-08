@@ -110,6 +110,14 @@
       "types": "./dist/adapter/errors.d.ts",
       "import": "./dist/adapter/errors.js"
     },
+    "./adapter/provider": {
+      "types": "./dist/adapter/provider.d.ts",
+      "import": "./dist/adapter/provider.js"
+    },
+    "./adapter/provider-factory": {
+      "types": "./dist/adapter/provider-factory.d.ts",
+      "import": "./dist/adapter/provider-factory.js"
+    },
     "./config/migrations": {
       "types": "./dist/config/migrations/index.d.ts",
       "import": "./dist/config/migrations/index.js"
@@ -245,6 +253,7 @@
     "@opentelemetry/sdk-trace-base": "^1.30.0",
     "@opentelemetry/sdk-trace-node": "^1.30.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
+    "google-auth-library": "^9.0.0",
     "sql.js": "^1.14.1",
     "ws": "^8.18.0"
   },

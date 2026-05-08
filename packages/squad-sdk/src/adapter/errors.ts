@@ -164,7 +164,7 @@ export class SquadError extends Error {
 // ============================================================================
 
 /**
- * SDK connection error — failed to connect to Copilot SDK.
+ * Connection error — failed to connect to LLM provider.
  */
 export class SDKConnectionError extends SquadError {
   constructor(message: string, context: ErrorContext, originalError?: Error) {
@@ -306,7 +306,7 @@ export class ErrorFactory {
     // Pattern matching on error message to categorize
     if (message.includes('connection') || message.includes('ECONNREFUSED') || message.includes('ETIMEDOUT')) {
       return new SDKConnectionError(
-        `Failed to connect to Copilot SDK: ${message}`,
+        `Failed to connect to LLM provider: ${message}`,
         fullContext,
         originalError
       );
@@ -317,6 +317,42 @@ export class ErrorFactory {
         `Session lifecycle error: ${message}`,
         fullContext,
         true,
+        originalError
+      );
+    }
+
+    // Anthropic-specific error patterns
+    if (message.includes('overloaded_error') || message.includes('Anthropic API error (529)')) {
+      return new RateLimitError(
+        `Anthropic API overloaded: ${message}`,
+        fullContext,
+        30,
+        originalError
+      );
+    }
+
+    if (message.includes('invalid_api_key') || message.includes('Anthropic API error (401)')) {
+      return new AuthenticationError(
+        `Anthropic API key invalid: ${message}`,
+        fullContext,
+        originalError
+      );
+    }
+
+    // Google-specific error patterns
+    if (message.includes('PERMISSION_DENIED') || message.includes('Google') && message.includes('403')) {
+      return new AuthenticationError(
+        `Google API permission denied: ${message}`,
+        fullContext,
+        originalError
+      );
+    }
+
+    if (message.includes('RESOURCE_EXHAUSTED') || message.includes('Google') && message.includes('429')) {
+      return new RateLimitError(
+        `Google API quota exceeded: ${message}`,
+        fullContext,
+        60,
         originalError
       );
     }

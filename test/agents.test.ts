@@ -342,6 +342,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       expect(result.fallbackChain).toEqual([
         'claude-sonnet-4.6',
         'gpt-5.4',
+        'gemini-2.5-pro',
         'claude-sonnet-4.5',
         'gpt-5.3-codex',
         'claude-sonnet-4',
@@ -358,6 +359,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       expect(result.fallbackChain).toEqual([
         'claude-haiku-4.5',
+        'gemini-2.5-flash',
         'gpt-5.1-codex-mini',
         'gpt-4.1',
         'gpt-5-mini',
