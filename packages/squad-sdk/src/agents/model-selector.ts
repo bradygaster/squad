@@ -150,16 +150,16 @@ function selectModelForTask(taskType: TaskType, economyMode?: boolean): Resolved
 
 export function inferTierFromModel(model: string): ModelTier {
   const lowerModel = model.toLowerCase();
-  
+
   if (lowerModel.includes('opus')) {
     return 'premium';
   }
-  
-  if (lowerModel.includes('haiku') || lowerModel.includes('mini')) {
+
+  if (lowerModel.includes('haiku') || lowerModel.includes('mini') || lowerModel.includes('flash')) {
     return 'fast';
   }
-  
-  // Default to standard for sonnet, gpt-5.x, etc.
+
+  // Default to standard for sonnet, gpt-5.x, gemini-*-pro, etc.
   return 'standard';
 }
 

@@ -24,34 +24,27 @@ process.emit = function (evt: string, ...args: unknown[]) {
 
 // Runtime ESM Import Patcher for @github/copilot-sdk (#265)
 // ---------------------------------------------------------
-// Patch broken ESM import in @github/copilot-sdk@0.1.32 at runtime before
-// Node's module loader attempts resolution.
+// Only needed when using the Copilot provider. Non-Copilot providers
+// (anthropic, google, etc.) don't import the Copilot SDK.
 //
 // Root cause: copilot-sdk's session.js imports 'vscode-jsonrpc/node' without
 // .js extension, violating Node 24+ strict ESM resolution requirements.
 //
-// Why runtime patch?: NPX caches packages in ~/.npm/_cacache and skips
-// postinstall scripts on cache hits (documented npm behavior). The install-time
-// patch in scripts/patch-esm-imports.mjs never runs on npx cache hits, causing
-// ERR_MODULE_NOT_FOUND crashes on Node 24+.
-//
-// This runtime patch intercepts Module._resolveFilename before any imports
-// trigger copilot-sdk loading, rewriting the broken import to include .js.
-// Works everywhere: npx (cache hit/miss), global install, CI/CD.
-//
 // Upstream issue: https://github.com/github/copilot-sdk/issues/707
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const Module = require('node:module');
 
-const _origResolveFilename = Module._resolveFilename;
-Module._resolveFilename = function (request: string, parent: unknown, isMain: boolean, options?: unknown) {
-  // Intercept the broken import: 'vscode-jsonrpc/node' → 'vscode-jsonrpc/node.js'
-  if (request === 'vscode-jsonrpc/node') {
-    request = 'vscode-jsonrpc/node.js';
-  }
-  return _origResolveFilename.call(this, request, parent, isMain, options);
-};
+const _squadProvider = process.env['SQUAD_PROVIDER']?.toLowerCase().trim();
+if (!_squadProvider || _squadProvider === 'copilot') {
+  const Module = require('node:module');
+  const _origResolveFilename = Module._resolveFilename;
+  Module._resolveFilename = function (request: string, parent: unknown, isMain: boolean, options?: unknown) {
+    if (request === 'vscode-jsonrpc/node') {
+      request = 'vscode-jsonrpc/node.js';
+    }
+    return _origResolveFilename.call(this, request, parent, isMain, options);
+  };
+}
 
 // Pre-flight: require Node.js ≥22.5.0 for node:sqlite (#214, #502).
 // node:sqlite is used by the Copilot SDK for session storage.
@@ -128,6 +121,13 @@ async function main(): Promise<void> {
     args.splice(teamRootIdx, 2);
   }
   
+  // --provider flag: override LLM provider for this session
+  const providerIdx = args.indexOf('--provider');
+  if (providerIdx !== -1 && args[providerIdx + 1]) {
+    process.env['SQUAD_PROVIDER'] = args[providerIdx + 1]!;
+    args.splice(providerIdx, 2);
+  }
+
   const hasGlobal = args.includes('--global');
   // --economy activates economy mode for this session (sets env var for spawner)
   const hasEconomy = args.includes('--economy');
@@ -271,6 +271,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}--help, -h${RESET}     Show help`);
     console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
     console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
+    console.log(`  ${BOLD}--provider${RESET}     LLM provider: copilot, anthropic, anthropic-vertex, google, google-vertex`);
     console.log(`  ${BOLD}--team-root${RESET}    Override team root path for resolution`);
     console.log(`\nInstallation:`);
     console.log(`  npm install --save-dev @bradygaster/squad-cli`);

@@ -657,14 +657,14 @@ export interface SquadProviderConfig {
    * Provider type.
    * @default "openai"
    */
-  type?: "openai" | "azure" | "anthropic";
+  type?: "openai" | "azure" | "anthropic" | "anthropic-vertex" | "google" | "google-vertex" | "copilot";
   /**
    * API format (openai/azure only).
    * @default "completions"
    */
   wireApi?: "completions" | "responses";
   /** API endpoint URL */
-  baseUrl: string;
+  baseUrl?: string;
   /** API key (optional for local providers like Ollama) */
   apiKey?: string;
   /**
@@ -679,6 +679,20 @@ export interface SquadProviderConfig {
      * @default "2024-10-21"
      */
     apiVersion?: string;
+  };
+  /** Google Cloud / Vertex AI options (for anthropic-vertex and google-vertex) */
+  google?: {
+    /** Google Cloud project ID */
+    projectId?: string;
+    /** Google Cloud region (e.g., "us-central1") */
+    location?: string;
+  };
+  /** Anthropic on Vertex AI options */
+  anthropicVertex?: {
+    /** Google Cloud project ID */
+    projectId?: string;
+    /** Google Cloud region (e.g., "us-east5") */
+    region?: string;
   };
 }
 

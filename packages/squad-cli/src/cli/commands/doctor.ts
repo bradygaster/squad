@@ -435,6 +435,24 @@ function checkSquadAgentMd(cwd: string): DoctorCheck {
   };
 }
 
+// ── provider checks ────────────────────────────────────────────────
+
+function checkApiKey(envVar: string, providerLabel: string): DoctorCheck {
+  const value = process.env[envVar];
+  if (value && value.trim().length > 0) {
+    return {
+      name: `${providerLabel} API key (${envVar})`,
+      status: 'pass',
+      message: 'environment variable set',
+    };
+  }
+  return {
+    name: `${providerLabel} API key (${envVar})`,
+    status: 'fail',
+    message: `${envVar} not set — required for ${providerLabel} provider`,
+  };
+}
+
 // ── public API ──────────────────────────────────────────────────────
 
 /**
@@ -473,15 +491,43 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     if (rateLimitCheck) checks.push(rateLimitCheck);
   }
 
-  // 10. Copilot agent discovery file (relative to cwd, not squadDir)
-  checks.push(checkSquadAgentMd(resolvedCwd));
+  // Determine active provider for conditional checks
+  const activeProvider = process.env['SQUAD_PROVIDER']?.toLowerCase().trim() ?? 'copilot';
 
-  // 11. Node.js version (node:sqlite availability)
-  checks.push(checkNodeVersion());
+  // 10. Copilot agent discovery file (only relevant for copilot provider)
+  if (activeProvider === 'copilot') {
+    checks.push(checkSquadAgentMd(resolvedCwd));
+  }
 
-  // 11-12. ESM compatibility (Node 22/24+)
-  checks.push(checkVscodeJsonrpcExports(resolvedCwd));
-  checks.push(checkCopilotSdkSessionPatch(resolvedCwd));
+  // 11. Node.js version (node:sqlite availability — copilot provider only)
+  if (activeProvider === 'copilot') {
+    checks.push(checkNodeVersion());
+  }
+
+  // 12-13. ESM compatibility (Node 22/24+ — copilot provider only)
+  if (activeProvider === 'copilot') {
+    checks.push(checkVscodeJsonrpcExports(resolvedCwd));
+    checks.push(checkCopilotSdkSessionPatch(resolvedCwd));
+  }
+
+  // Provider-specific checks
+  if (activeProvider === 'anthropic') {
+    checks.push(checkApiKey('ANTHROPIC_API_KEY', 'Anthropic'));
+  } else if (activeProvider === 'anthropic-vertex') {
+    checks.push(checkApiKey('GOOGLE_CLOUD_PROJECT', 'Google Cloud Project'));
+  } else if (activeProvider === 'google') {
+    checks.push(checkApiKey('GOOGLE_AI_API_KEY', 'Google AI'));
+  } else if (activeProvider === 'google-vertex') {
+    checks.push(checkApiKey('GOOGLE_CLOUD_PROJECT', 'Google Cloud Project'));
+  }
+
+  // Active provider info
+  checks.push({
+    name: 'LLM provider',
+    status: 'pass',
+    message: `active provider: ${activeProvider}`,
+    severity: 'info',
+  });
 
   return checks;
 }
