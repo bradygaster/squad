@@ -211,11 +211,11 @@ After every substantial work session:
 │       ├── river-jwt-auth.md
 │       └── kai-component-lib.md
 ├── orchestration-log/    # Per-spawn log entries
-│   ├── 2025-07-01T10-00-river.md
-│   └── 2025-07-01T10-00-kai.md
+│   ├── {timestamp}-river.md
+│   └── {timestamp}-kai.md
 ├── log/                  # Session history — searchable record
-│   ├── 2025-07-01-setup.md
-│   └── 2025-07-02-api.md
+│   ├── {date}-setup.md
+│   └── {date}-api.md
 └── agents/
     ├── kai/history.md    # Kai's personal knowledge
     ├── river/history.md  # River's personal knowledge

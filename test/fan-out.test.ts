@@ -120,6 +120,27 @@ describe('spawnParallel', () => {
     expect(sentPrompt).toContain('Related to PRD-5');
   });
 
+  it('should include current date in prompt', async () => {
+    const configs: AgentSpawnConfig[] = [
+      { agentName: 'fenster', task: 'Build feature' },
+    ];
+
+    const results = await spawnParallel(configs, mockDeps);
+
+    expect(results[0].status).toBe('success');
+
+    const createSessionMock = mockDeps.createSession as any;
+    const mockSession = await createSessionMock.mock.results[0].value;
+    const sentPrompt = mockSession.sendMessage.mock.calls[0][0].prompt;
+
+    // Prompt must contain a Current Date with ISO timestamp
+    expect(sentPrompt).toContain('**Current Date:**');
+    const dateMatch = sentPrompt.match(/\*\*Current Date:\*\*\s*(\S+)/);
+    expect(dateMatch).not.toBeNull();
+    const timestamp = dateMatch![1];
+    expect(timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
+
   it('should handle model overrides', async () => {
     const configs: AgentSpawnConfig[] = [
       {

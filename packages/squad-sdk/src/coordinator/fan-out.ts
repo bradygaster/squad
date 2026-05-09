@@ -12,6 +12,7 @@ import type { AgentCharter } from '../agents/index.js';
 import type { EventBus } from '../client/event-bus.js';
 import type { SessionPool } from '../client/session-pool.js';
 
+
 // --- Spawn Configuration ---
 
 export interface AgentSpawnConfig {
@@ -184,6 +185,10 @@ async function spawnSingle(
  */
 function buildInitialPrompt(config: AgentSpawnConfig): string {
   const parts: string[] = [];
+
+  // Inject current date so spawned agents know the real date/time.
+  // Without this, LLMs hallucinate dates (especially the year).
+  parts.push(`**Current Date:** ${new Date().toISOString()}`);
 
   if (config.priority && config.priority !== 'normal') {
     parts.push(`**Priority:** ${config.priority.toUpperCase()}`);
