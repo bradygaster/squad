@@ -18,6 +18,7 @@ const execFileAsync = promisify(execFile);
 import { detectSquadDir } from '../../core/detect-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
+import { buildAgentCommand as buildAgentCommandShared, agentCmdLabel } from '../../core/detect-agent-cli.js';
 import {
   parseRoutingRules,
   parseModuleOwnership,
@@ -559,7 +560,7 @@ async function preflightCapabilities(
 export interface WatchOptions {
   intervalMinutes: number;
   execute?: boolean;
-  copilotFlags?: string;
+  agentFlags?: string;
   agentCmd?: string;
   maxConcurrent?: number;
   issueTimeoutMinutes?: number;
@@ -591,7 +592,7 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
     execute: options.execute ?? false,
     maxConcurrent: options.maxConcurrent ?? 1,
     timeout: options.issueTimeoutMinutes ?? 30,
-    copilotFlags: options.copilotFlags,
+    agentFlags: options.agentFlags,
     agentCmd: options.agentCmd,
     capabilities,
   };
@@ -607,13 +608,7 @@ export function buildAgentCommand(
   options: WatchOptions,
 ): { cmd: string; args: string[] } {
   const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
-  if (options.agentCmd) {
-    const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
-  }
-  const args = ['-p', prompt];
-  if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'copilot', args };
+  return buildAgentCommandShared(prompt, { agentCmd: options.agentCmd, agentFlags: options.agentFlags });
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {
@@ -706,7 +701,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     verbose: config.verbose ?? false,
     interval: `${config.interval}m`,
     execute: config.execute ?? false,
-    agentCmd: config.agentCmd ?? '(default: gh copilot)',
+    agentCmd: agentCmdLabel(config.agentCmd),
     dispatchMode: config.capabilities['wave-dispatch'] ? 'wave' : 'task',
     maxConcurrent: config.maxConcurrent ?? 1,
   });
@@ -805,7 +800,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),
     config: {},
     agentCmd: config.agentCmd,
-    copilotFlags: config.copilotFlags,
+    agentFlags: config.agentFlags,
     verbose: config.verbose,
     pidTracker,
   };
@@ -817,8 +812,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   const platformTag = ` [${adapter.type}]`;
   console.log(`\n${BOLD}🔄 Ralph — Watch Mode${RESET}${modeTag}${platformTag}`);
   console.log(`${DIM}Polling every ${interval} minute(s) for squad work. Ctrl+C to stop.${RESET}`);
-  if (config.execute && config.copilotFlags) {
-    console.log(`${DIM}Copilot flags: ${config.copilotFlags}${RESET}`);
+  if (config.execute && config.agentFlags) {
+    console.log(`${DIM}Agent flags: ${config.agentFlags}${RESET}`);
   }
   if (config.execute) {
     console.log(`${DIM}Max concurrent: ${config.maxConcurrent} | Timeout: ${config.timeout}m${RESET}`);

@@ -1,14 +1,14 @@
 /**
  * FleetDispatch capability — batches read-heavy issues into a single
- * `/fleet`-style parallel Copilot session for efficient triage.
+ * `/fleet`-style parallel agent session for efficient triage.
  *
  * Runs in the `post-execute` phase.  When `dispatchMode` is `'fleet'` or
  * `'hybrid'`, this capability picks up issues classified as read-heavy
  * (research, review, audit, etc.) and dispatches them as parallel
- * analysis tracks inside one Copilot invocation.
+ * analysis tracks inside one agent invocation.
  */
 
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -20,6 +20,7 @@ import {
   findExecutableIssues,
   classifyIssue,
 } from './execute.js';
+import { resolveAgentCmd } from '../../../core/detect-agent-cli.js';
 
 /** Map a roster member label to a display-friendly agent name. */
 function agentForIssue(
@@ -31,7 +32,7 @@ function agentForIssue(
     const name = memberLabels.get(label.name);
     if (name) return name;
   }
-  return 'Copilot';
+  return 'Agent';
 }
 
 /** Build the multi-track fleet prompt for a set of read-heavy issues. */
@@ -58,26 +59,23 @@ function buildFleetPrompt(
   ].join('\n');
 }
 
-/** Invoke a fleet prompt via the Copilot CLI. */
+/** Invoke a fleet prompt via the agent CLI. */
 function invokeFleet(
   prompt: string,
   cwd: string,
   timeoutMs: number,
+  agentCmd?: string,
 ): { success: boolean; output?: string; error?: string } {
   const promptFile = join(tmpdir(), `fleet-prompt-${Date.now()}.txt`);
   writeFileSync(promptFile, prompt, 'utf-8');
 
   try {
-    // Read the prompt from file
     const promptContent = readFileSync(promptFile, 'utf-8');
 
-    // Use execFileSync with args array — no shell, no injection risk
-    const copilotBin = process.platform === 'win32' ? 'copilot.cmd' : 'copilot';
-    const result = execFileSync(copilotBin, [
+    const cmd = resolveAgentCmd(agentCmd);
+    const bin = process.platform === 'win32' && !cmd.includes('.') ? `${cmd}.cmd` : cmd;
+    const result = execFileSync(bin, [
       '-p', promptContent,
-      '--allow-all',
-      '--no-ask-user',
-      '--autopilot',
     ], {
       cwd,
       timeout: timeoutMs,
@@ -98,18 +96,19 @@ function invokeFleet(
 
 export class FleetDispatchCapability implements WatchCapability {
   readonly name = 'fleet-dispatch';
-  readonly description = 'Batch read-heavy issues into a parallel /fleet Copilot session';
+  readonly description = 'Batch read-heavy issues into a parallel /fleet agent session';
   readonly configShape = 'boolean' as const;
-  readonly requires = ['gh', 'copilot'];
+  readonly requires = ['gh'];
   readonly phase = 'post-execute' as const;
 
-  async preflight(_context: WatchContext): Promise<PreflightResult> {
-    // Fleet dispatch requires the copilot CLI — quick sanity check
+  async preflight(context: WatchContext): Promise<PreflightResult> {
     try {
-      execSync('copilot --version', { encoding: 'utf-8', stdio: 'pipe' });
+      const cmd = resolveAgentCmd(context.agentCmd);
+      const bin = process.platform === 'win32' && !cmd.includes('.') ? `${cmd}.cmd` : cmd;
+      execFileSync(bin, ['--version'], { encoding: 'utf-8', stdio: 'pipe', timeout: 5000 });
       return { ok: true };
     } catch {
-      return { ok: false, reason: 'copilot CLI not found — required for fleet dispatch' };
+      return { ok: false, reason: 'No agent CLI found — install copilot, claude, gemini, or opencode' };
     }
   }
 
@@ -151,7 +150,7 @@ export class FleetDispatchCapability implements WatchCapability {
       // Build and invoke fleet prompt
       const prompt = buildFleetPrompt(readIssues, context.roster);
       const fleetTimeout = Math.max(timeoutMs, 300_000); // at least 5 min for fleet
-      const result = invokeFleet(prompt, context.teamRoot, fleetTimeout);
+      const result = invokeFleet(prompt, context.teamRoot, fleetTimeout, context.agentCmd);
 
       if (result.success) {
         return {

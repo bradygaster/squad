@@ -26,7 +26,7 @@ squad init
 
 | Command | Description | Requires `.squad/` |
 |---------|-------------|:------------------:|
-| `squad` | **Deprecated** — Enter interactive shell (no args). Use `copilot --agent squad` instead. | No |
+| `squad` | **Deprecated** — Enter interactive shell (no args). Use your preferred agent CLI instead. | No |
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
 | `squad init --state-backend <type>` | Initialize with a specific state backend (`local`, `orphan`, `two-layer`) | No |
 | `squad init --global` | Create a personal squad in your platform-specific directory | No |
@@ -53,8 +53,8 @@ squad init
 | `squad watch --decision-hygiene` | Auto-merge decision inbox | Yes |
 | `squad watch --max-concurrent N` | Max parallel issues per round (default: 1) | Yes |
 | `squad watch --timeout N` | Per-issue timeout in minutes (default: 30) | Yes |
-| `squad watch --copilot-flags "..."` | Extra flags for Copilot CLI | Yes |
-| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. | No |
+| `squad watch --agent-flags "..."` | Extra flags for the agent CLI (`--copilot-flags` also accepted) | Yes |
+| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use your preferred agent CLI instead. | No |
 | `squad copilot` | Add the @copilot coding agent to the team | Yes |
 | `squad copilot --off` | Remove @copilot from the team | Yes |
 | `squad copilot --auto-assign` | Enable auto-assignment for @copilot | Yes |
@@ -66,7 +66,7 @@ squad init
 | `squad aspire` | Launch Aspire dashboard for observability | No |
 | `squad aspire --docker` | Force Docker mode for Aspire | No |
 | `squad upstream add\|remove\|list\|sync` | Manage upstream Squad sources | Yes |
-| `copilot --agent squad` | Launch interactive shell explicitly | No |
+| `copilot --agent squad` | Launch Squad via GitHub Copilot CLI | No |
 | `squad nap` | Context hygiene (compress, prune, archive .squad/ state) | Yes |
 | `squad nap --deep` | Thorough cleanup with recursive descent | Yes |
 | `squad nap --dry-run` | Preview cleanup actions without changes | Yes |

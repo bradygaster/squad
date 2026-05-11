@@ -36,7 +36,7 @@ export interface WatchContext {
   config: Record<string, unknown>;
   /** Hidden --agent-cmd override. */
   agentCmd?: string;
-  copilotFlags?: string;
+  agentFlags?: string;
   /** Verbose diagnostic output enabled. */
   verbose?: boolean;
   /** PID tracker for child process cleanup (optional — only set when watch is running). */

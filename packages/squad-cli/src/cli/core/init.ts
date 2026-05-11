@@ -183,7 +183,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       if (useShared) {
         console.log();
         console.log(`${GREEN}${BOLD}✓${RESET} Using shared .squad/ from ${mainCheckout}`);
-        console.log(`${DIM}  No changes made. Run ${CYAN}${BOLD}copilot --agent squad${RESET}${DIM} commands from the main checkout.${RESET}`);
+        console.log(`${DIM}  No changes made. Run your agent CLI (copilot, claude, gemini, or opencode) from the main checkout.${RESET}`);
         console.log();
         return;
       }
@@ -325,7 +325,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Report .init-prompt storage
   if (options.prompt) {
-    success(`.init-prompt stored — team will be cast when you run ${CYAN}${BOLD}copilot --agent squad${RESET}`);
+    success(`.init-prompt stored — team will be cast when you open your agent CLI`);
   }
 
   // Report created files
@@ -353,7 +353,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   if (!isInitNoColor()) await sleep(80);
   console.log();
-  console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
+  console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Open your agent CLI (${CYAN}${BOLD}copilot${RESET}, ${CYAN}${BOLD}claude${RESET}, ${CYAN}${BOLD}gemini${RESET}, or ${CYAN}${BOLD}opencode${RESET}) and tell it what you're building.`);
   console.log();
 
   // ── Personal squad bridge ───────────────────────────────────────────

@@ -5,7 +5,7 @@
 **Human-led AI agent teams for any project.** One command. A team that helps you move faster with your code.
 
 [![Status](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
-[![Platform](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
+[![Platform](https://img.shields.io/badge/platform-Multi--Agent%20CLI-blue)](#what-is-squad)
 
 > ⚠️ **Alpha Software** — Squad is experimental. APIs and CLI commands may change between releases. We'll document breaking changes in [CHANGELOG.md](CHANGELOG.md).
 
@@ -13,13 +13,15 @@
 
 ## What is Squad?
 
-Squad gives you a human-directed AI development team through GitHub Copilot. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and help you move faster without giving up oversight.
+Squad gives you a human-directed AI development team through your preferred AI coding agent. Describe what you're building. Get a team of specialists — frontend, backend, tester, lead — that live in your repo as files. They persist across sessions, learn your codebase, share decisions, and help you move faster without giving up oversight.
+
+Squad works with **GitHub Copilot CLI**, **Claude Code**, **Gemini CLI**, and **OpenCode**. Pick whichever agent CLI fits your workflow.
 
 Squad is a productivity tool for humans, not a replacement for engineers, reviewers, or decision-makers. People stay accountable for priorities, approvals, and final changes; Squad helps with coordination, repetition, and parallel execution.
 
 It's not a chatbot wearing hats. Each team member runs in its own context, reads only its own knowledge, and writes back what it learned so the work stays inspectable.
 
-> **Responsible AI stance** — Squad is built to amplify a human operator with GitHub Copilot, not to remove humans from the loop. Use it to delegate faster, review better, and keep governance close to the code.
+> **Responsible AI stance** — Squad is built to amplify a human operator, not to remove humans from the loop. Use it to delegate faster, review better, and keep governance close to the code.
 
 ---
 
@@ -51,15 +53,36 @@ gh auth login
 
 **✓ Validate:** Run `gh auth status` — you should see "Logged in to github.com".
 
-### 4. Open Copilot and go
+### 4. Open your agent CLI and go
 
+Choose your preferred agent CLI:
+
+**GitHub Copilot CLI:**
+```bash
+copilot --agent squad
 ```
-copilot --agent squad --yolo
+
+**Claude Code:**
+```bash
+claude
+# Then: "Read .github/agents/squad.agent.md and follow its instructions"
 ```
 
-> **Why `--yolo`?** Squad makes many tool calls in a typical session. Without it, Copilot will prompt you to approve each one.
+**Gemini CLI:**
+```bash
+gemini
+# Then: "Read .github/agents/squad.agent.md and follow its instructions"
+```
 
-**In VS Code**, open Copilot Chat and select the **Squad** agent.
+**OpenCode:**
+```bash
+opencode
+# Then: "Read .github/agents/squad.agent.md and follow its instructions"
+```
+
+> **Tip:** Squad makes many tool calls. Use your agent's auto-approve mode if available (e.g., `--yolo` for Copilot, `--dangerously-skip-permissions` for Claude Code).
+
+**In VS Code**, open your AI assistant's chat panel and select the **Squad** agent (if available), or point it to `.github/agents/squad.agent.md`.
 
 Then:
 
@@ -110,7 +133,7 @@ Use `--force` to re-apply updates even when your installed version already match
 | `squad link <team-repo-path>` | Connect to a remote team |
 | `squad externalize` | Move `.squad/` state outside the working tree; survives branch switches; use `--key <name>` for custom project key |
 | `squad internalize` | Move externalized state back into `.squad/` |
-| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. |
+| `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use your preferred agent CLI instead. |
 | `squad export` | Export squad to a portable JSON snapshot |
 | `squad import <file>` | Import squad from an export file |
 | `squad plugin marketplace add\|remove\|list\|browse` | Manage plugin marketplaces |
@@ -134,10 +157,13 @@ npx @bradygaster/squad-cli watch
 # Monitor and auto-execute against actionable issues
 npx @bradygaster/squad-cli watch --execute --interval 5
 
-# With custom agent runner and copilot flags
+# Use a specific agent CLI (auto-detects by default)
+npx @bradygaster/squad-cli watch --execute --agent-cmd claude
+
+# With extra agent flags
 npx @bradygaster/squad-cli watch --execute \
-  --agent-cmd "agency copilot" \
-  --copilot-flags "--yolo --autopilot --mcp mail --agent squad" \
+  --agent-cmd copilot \
+  --agent-flags "--yolo --autopilot --mcp mail --agent squad" \
   --auth-user myaccount
 
 # Run watch with diagnostics
@@ -153,8 +179,8 @@ npx @bradygaster/squad-cli watch --health
 |------|-------------|
 | `--execute` | Enable agent execution (spawn Copilot sessions for actionable issues) |
 | `--interval N` | Poll every N minutes (default: 10) |
-| `--agent-cmd` | Custom agent command (default: `gh copilot`) |
-| `--copilot-flags` | Flags passed to the agent runner (e.g., `--yolo --autopilot`) |
+| `--agent-cmd` | Override the agent CLI (default: auto-detect from copilot, claude, gemini, opencode) |
+| `--agent-flags` | Extra flags passed to the agent CLI (e.g., `--yolo --autopilot`). `--copilot-flags` also accepted. |
 | `--auth-user` | GitHub/Azure DevOps account to use for agent auth |
 | `--log-file` | Mirror output to file for later review and diagnostics |
 | `--verbose` | Show extra diagnostic output (auth probes, callbacks, pulls) |
@@ -170,8 +196,8 @@ Ralph uses an **agent-delegated selection pattern**:
 
 1. Ralph scans for triage-eligible issues (unassigned, labeled, etc.)
 2. Ralph builds a context snapshot: issue list, squad state, recent decisions
-3. Ralph writes this context to a **temp file** using the `-p <path>` flag
-4. Ralph invokes the agent with that file: `gh copilot -p context.md`
+3. Ralph writes this context to a prompt and passes it via the `-p` flag
+4. Ralph invokes the agent CLI (auto-detected or set via `--agent-cmd`)
 5. The agent **decides which issue to work on** and **how**
 6. Ralph monitors execution, logs results, updates issue status
 
@@ -275,13 +301,7 @@ Round: 42 / 1200
 
 ## Interactive Shell
 
-> ⚠️ **Deprecated:** The interactive shell (`squad` with no arguments) has been deprecated. For the best Squad experience, use the [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) instead.
->
-> ```bash
-> copilot --agent squad
-> ```
->
-> See [Choose your interface](docs/src/content/docs/get-started/choose-your-interface.md) for current options.
+> ⚠️ **Deprecated:** The interactive shell (`squad` with no arguments) has been deprecated. For the best Squad experience, use your preferred agent CLI instead — see [Choose your interface](docs/src/content/docs/get-started/choose-your-interface.md) for options.
 
 Tired of typing `squad` followed by a command every time? Enter the interactive shell.
 

@@ -1,23 +1,21 @@
-# Copilot Client Compatibility Matrix
+# Agent CLI Compatibility Matrix
 
 > **Quick answer:** Not sure which interface to use? See [Choose your interface](../get-started/choose-your-interface.md) for a concise decision tree and comparison.
 
-Squad runs on multiple Copilot surfaces — each with its own agent spawning mechanism, tool set, and constraints. This document maps Squad's core capabilities across CLI, VS Code, JetBrains, and GitHub.com to help you understand what works where.
+Squad works with multiple agent CLIs and surfaces — each with its own agent spawning mechanism, tool set, and constraints. This document maps Squad's core capabilities across Copilot CLI, Claude Code, Gemini CLI, OpenCode, VS Code, and more to help you understand what works where.
 
 ## Quick Reference
 
-| Feature | CLI | VS Code | JetBrains | GitHub.com |
-|---------|-----|---------|-----------|-----------|
-| **Sub-agent spawning** | ✅ `task` tool | ✅ `runSubagent` / `agent` | ⚠️ Limited | ❌ Not available |
-| **Agent type selection** | ✅ Full (`general-purpose`, `explore`, `task`, `code-review`) | ✅ Custom agents | ⚠️ Limited | ❌ Not available |
-| **Per-spawn model selection** | ✅ Dynamic (4-layer hierarchy) | ⚠️ Static (custom agent frontmatter) | ? | ? |
-| **Background/async execution** | ✅ `mode: "background"` (fire-and-forget) | ⚠️ Sync only (parallel concurrent) | ? | ? |
-| **Parallel fan-out** | ✅ Background tasks + `read_agent` | ✅ Multiple subagents in one turn | ? | ? |
-| **File discovery (.github/agents/)** | ✅ Automatic | ✅ Automatic | ? | ? |
-| **`.ai-team/` file access (read)** | ✅ Full | ✅ Full (workspace-scoped) | ? | ? |
-| **`.ai-team/` file access (write)** | ✅ Full | ✅ Full (with approval prompt) | ? | ? |
-| **SQL tool** | ✅ Available | ❌ Not available | ❌ Not available | ❌ Not available |
-| **MCP server access** | ✅ Full | ✅ Full (inherited) | ⚠️ Limited | ⚠️ Limited |
+| Feature | Copilot CLI | Claude Code | Gemini CLI | OpenCode | VS Code |
+|---------|:-----------:|:-----------:|:----------:|:--------:|:-------:|
+| **Sub-agent spawning** | ✅ `task` tool | ✅ Agent tool | ✅ | ✅ | ✅ `runSubagent` |
+| **Agent type selection** | ✅ Full | ✅ Full | ⚠️ Limited | ⚠️ Limited | ✅ Custom agents |
+| **Per-spawn model selection** | ✅ Dynamic | ⚠️ Session model | ⚠️ Session model | ⚠️ Session model | ⚠️ Static |
+| **Background/async execution** | ✅ Background mode | ✅ Background agents | ✅ | ⚠️ | ⚠️ Sync only |
+| **Parallel fan-out** | ✅ Background + `read_agent` | ✅ Multiple agents | ✅ | ✅ | ✅ Multiple subagents |
+| **File discovery (.github/agents/)** | ✅ Automatic | ⚠️ Manual | ⚠️ Manual | ⚠️ Manual | ✅ Automatic |
+| **`.squad/` file access** | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Workspace-scoped |
+| **MCP server access** | ✅ Full | ✅ Full | ✅ Full | ⚠️ Limited | ✅ Full |
 
 **Legend:**
 - ✅ **Works** — Feature is fully supported with no degradation
@@ -27,9 +25,9 @@ Squad runs on multiple Copilot surfaces — each with its own agent spawning mec
 
 ---
 
-## CLI (Copilot CLI)
+## CLI (Copilot CLI / Claude Code / Gemini CLI / OpenCode)
 
-Squad's **primary platform**. All features are fully supported.
+Squad's **primary platform**. All agent CLIs share the same `.squad/` state and `squad.agent.md` prompt. The sections below detail Copilot CLI specifics, but the core workflow (read agent file, spawn sub-agents, write to `.squad/`) works across all CLIs.
 
 ### Agent Spawning
 
@@ -188,23 +186,28 @@ Squad runs on VS Code with **conditional support**. Key differences from CLI:
 
 ### For Developers Using Squad
 
-**Use CLI if:**
+**Use any agent CLI if:**
 - You need sub-agent spawning with full control (model selection, agent type, background mode)
-- You use SQL in your Squad workflows
-- You need fire-and-forget execution (Scribe)
-- You want cost optimization via Haiku/Sonnet/Opus tiering
+- You want fire-and-forget execution (Scribe)
+- You prefer terminal-based workflows
+
+**Copilot CLI specifically if:**
+- You need SQL tools or per-spawn model selection
+- You want automatic `squad.agent.md` discovery
+
+**Claude Code / Gemini CLI / OpenCode if:**
+- You already use these tools and want a consistent workflow
+- You prefer their specific model ecosystems
 
 **Use VS Code if:**
 - You work in VS Code and want seamless integration
 - You don't need per-spawn model selection (accept session model)
-- You're OK with Scribe running synchronously (batched with other agents)
 - You prefer not to see intermediate launch tables
 
-**Using Both:**
-- CLI is recommended for initial Squad setup and learning
-- VS Code works for day-to-day development once Squad is established
-- They share the same `.ai-team/` state — both can read/write the same team files
-- Team state is portable — init in CLI, use in VS Code, export/import across repos
+**Mixing CLIs:**
+- All CLIs share the same `.squad/` state — any can read/write the same team files
+- Team state is portable — init with `squad init`, use with any agent CLI, export/import across repos
+- `squad watch` auto-detects your installed CLI, or use `--agent-cmd` to specify one
 
 ### For Squad Developers
 

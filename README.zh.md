@@ -5,7 +5,7 @@
 **为任何项目打造的 AI 智能体团队。** 一行命令，拥有一个随代码同步成长的开发团队。
 
 [![状态](https://img.shields.io/badge/status-alpha-blueviolet)](#status)
-[![平台](https://img.shields.io/badge/platform-GitHub%20Copilot-blue)](#what-is-squad)
+[![平台](https://img.shields.io/badge/platform-Multi--Agent%20CLI-blue)](#what-is-squad)
 
 > ⚠️ **Alpha 预览版** — Squad 仍处于实验阶段。API 和命令行工具可能在版本更迭中发生变化。我们会在 [CHANGELOG.md](CHANGELOG.md) 中记录重大变更。
 
@@ -13,7 +13,9 @@
 
 ## 什么是 Squad?
 
-Squad 通过 GitHub Copilot 为你提供一支 AI 开发团队。只需描述你正在构建的内容，即可获得一支由专家组成的小队 —— 前端、后端、测试、组长 —— 它们以文件形式存在于你的仓库中。它们能够跨会话持久存在，学习你的代码库，共享决策，并且用得越多就越聪明。
+Squad 通过你喜欢的 AI 编码智能体为你提供一支 AI 开发团队。只需描述你正在构建的内容，即可获得一支由专家组成的小队 —— 前端、后端、测试、组长 —— 它们以文件形式存在于你的仓库中。它们能够跨会话持久存在，学习你的代码库，共享决策，并且用得越多就越聪明。
+
+Squad 支持 **GitHub Copilot CLI**、**Claude Code**、**Gemini CLI** 和 **OpenCode**。选择适合你工作流程的智能体 CLI。
 
 这不仅仅是一个"戴着不同帽子"的聊天机器人。团队中的每个成员都在独立的上下文中运行，只读取属于自己的知识库，并将学到的内容写回。
 
@@ -47,15 +49,34 @@ gh auth login
 
 **✓ 验证：** 运行 `gh auth status` — 你应该看到 "Logged in to github.com"。
 
-### 4. 打开 Copilot 开始工作
+### 4. 打开智能体 CLI 开始工作
 
+选择你喜欢的智能体 CLI：
+
+**GitHub Copilot CLI:**
+```bash
+copilot --agent squad
 ```
-copilot --agent squad --yolo
+
+**Claude Code:**
+```bash
+claude
+# 然后输入: "Read .github/agents/squad.agent.md and follow its instructions"
 ```
 
-> **为什么使用 `--yolo`？** Squad 在典型会话中会进行大量工具调用。不使用该选项，Copilot 会提示你逐一批准每一个调用。
+**Gemini CLI:**
+```bash
+gemini
+# 然后输入: "Read .github/agents/squad.agent.md and follow its instructions"
+```
 
-**在 VS Code 中**，打开 Copilot Chat 并选择 **Squad** 智能体。
+**OpenCode:**
+```bash
+opencode
+# 然后输入: "Read .github/agents/squad.agent.md and follow its instructions"
+```
+
+> **提示:** Squad 会进行大量工具调用。请使用你的智能体的自动批准模式（例如 Copilot 的 `--yolo`，Claude Code 的 `--dangerously-skip-permissions`）。
 
 然后输入：
 
@@ -103,7 +124,7 @@ squad upgrade
 | `squad copilot` | 添加/移除 Copilot 编码智能体 (@copilot)；使用 `--off` 移除，`--auto-assign` 启用自动分配 |
 | `squad doctor` | 检查环境配置并诊断问题（别名：`heartbeat`） |
 | `squad link <team-repo-path>` | 连接到远程团队仓库 |
-| `squad shell` | **已弃用** — 显式启动交互式 shell。请改用 `copilot --agent squad`。 |
+| `squad shell` | **已弃用** — 显式启动交互式 shell。请改用你喜欢的智能体 CLI。 |
 | `squad export` | 将小队导出为可移植的 JSON 快照 |
 | `squad import <file>` | 从导出文件导入小队 |
 | `squad plugin marketplace add\|remove\|list\|browse` | 管理插件市场 |
@@ -116,13 +137,7 @@ squad upgrade
 
 ## 交互式 Shell
 
-> ⚠️ **已弃用：** 交互式 shell（`squad` 无参数）已弃用。为了获得最佳的 Squad 体验，请改用 [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli)。
->
-> ```bash
-> copilot --agent squad
-> ```
->
-> 详见[选择您的界面](docs/src/content/docs/get-started/choose-your-interface.md)了解当前选项。
+> ⚠️ **已弃用：** 交互式 shell（`squad` 无参数）已弃用。为了获得最佳的 Squad 体验，请改用你喜欢的智能体 CLI —— 详见[选择您的界面](docs/src/content/docs/get-started/choose-your-interface.md)。
 
 厌倦了每次都输入 `squad` 加命令？进入交互式 shell。
 
