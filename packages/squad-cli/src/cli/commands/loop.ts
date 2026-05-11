@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { fatal } from '../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../core/output.js';
+import { buildAgentCommand, resolveAgentCmd } from '../core/detect-agent-cli.js';
 import {
   CapabilityRegistry,
   createDefaultRegistry,
@@ -48,9 +49,9 @@ export interface LoopConfig {
   interval?: number;
   /** Override timeout from frontmatter. */
   timeout?: number;
-  /** Extra flags passed to `gh copilot`. */
-  copilotFlags?: string;
-  /** Fully override the agent command (e.g., `gh copilot --yolo`). */
+  /** Extra flags passed to the agent CLI. */
+  agentFlags?: string;
+  /** Fully override the agent command (e.g., `claude`, `gemini`). */
   agentCmd?: string;
   /** Capability overrides, keyed by capability name. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
@@ -128,22 +129,7 @@ export function generateLoopFile(): string {
   return readFileSync(templatePath, 'utf-8');
 }
 
-// ── Agent Command Builder ────────────────────────────────────────
-
-function buildLoopAgentCommand(
-  prompt: string,
-  options: { agentCmd?: string; copilotFlags?: string },
-): { cmd: string; args: string[] } {
-  if (options.agentCmd) {
-    const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
-  }
-  const args = ['-p', prompt];
-  if (options.copilotFlags) {
-    args.push(...options.copilotFlags.trim().split(/\s+/));
-  }
-  return { cmd: 'copilot', args };
-}
+// ── Agent Command Builder (delegated to detect-agent-cli) ────────
 
 // ── Capability Phase Runner ──────────────────────────────────────
 
@@ -242,12 +228,13 @@ function createNoopAdapter(): ReturnType<typeof createPlatformAdapter> {
   } as ReturnType<typeof createPlatformAdapter>;
 }
 
-// ── gh Copilot Preflight ─────────────────────────────────────────
+// ── Agent CLI Preflight ─────────────────────────────────────────
 
-/** Verify the copilot CLI is available. */
-async function checkCopilotCli(): Promise<void> {
+/** Verify the resolved agent CLI is available. */
+async function checkAgentCli(agentCmd?: string): Promise<void> {
+  const cmd = resolveAgentCmd(agentCmd);
   return new Promise<void>((resolve, reject) => {
-    execFile('copilot', ['--version'], (err) => {
+    execFile(cmd, ['--version'], (err) => {
       if (err) reject(err);
       else resolve();
     });
@@ -313,13 +300,11 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     fatal('timeout must be a positive number of minutes');
   }
 
-  // Preflight: verify copilot CLI is available (skip if user overrides the agent command)
-  if (!options.agentCmd) {
-    try {
-      await checkCopilotCli();
-    } catch {
-      fatal('Copilot CLI required. Install from https://cli.github.com/ and run `gh extension install github/gh-copilot`');
-    }
+  // Preflight: verify an agent CLI is available
+  try {
+    await checkAgentCli(options.agentCmd);
+  } catch {
+    fatal('No agent CLI found. Install one of: copilot, claude, gemini, or opencode.');
   }
 
   // Build WatchConfig for capability system
@@ -328,7 +313,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     execute: false,
     maxConcurrent: 1,
     timeout: timeoutMinutes,
-    copilotFlags: options.copilotFlags,
+    agentFlags: options.agentFlags,
     agentCmd: options.agentCmd,
     capabilities: options.capabilities,
   };
@@ -353,7 +338,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),
     config: {},
     agentCmd: options.agentCmd,
-    copilotFlags: options.copilotFlags,
+    agentFlags: options.agentFlags,
   };
 
   // Preflight capabilities (pre-scan + housekeeping only)
@@ -363,8 +348,8 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   // Startup banner
   console.log(`\n${BOLD}🔄 Squad Loop${RESET} — ${description}`);
   console.log(`${DIM}Running every ${interval} minute(s). Ctrl+C to stop.${RESET}`);
-  if (options.copilotFlags) {
-    console.log(`${DIM}Copilot flags: ${options.copilotFlags}${RESET}`);
+  if (options.agentFlags) {
+    console.log(`${DIM}Agent flags: ${options.agentFlags}${RESET}`);
   }
   console.log();
 
@@ -382,9 +367,9 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
 
     // Core: run the loop prompt
     const timeoutMs = timeoutMinutes * 60_000;
-    const { cmd, args } = buildLoopAgentCommand(prompt, {
+    const { cmd, args } = buildAgentCommand(prompt, {
       agentCmd: options.agentCmd,
-      copilotFlags: options.copilotFlags,
+      agentFlags: options.agentFlags,
     });
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
 

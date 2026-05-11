@@ -40,15 +40,18 @@ Open GitHub Copilot and select Squad from the agent list.
 
 ---
 
-## 2. Open Copilot — Your Team Forms
+## 2. Open Your Agent CLI — Your Team Forms
 
-Start the Copilot CLI:
+Start your preferred agent CLI:
 
 ```bash
-copilot
+copilot --agent squad   # GitHub Copilot CLI
+claude                  # Claude Code
+gemini                  # Gemini CLI
+opencode                # OpenCode
 ```
 
-Select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code). Squad greets you by name:
+For Copilot, select **Squad** from the `/agent` list. For other CLIs, tell the agent to read `.github/agents/squad.agent.md`. Squad greets you by name:
 
 ```
 Hey Brady, what are you building?

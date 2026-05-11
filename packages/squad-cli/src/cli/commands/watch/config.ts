@@ -19,7 +19,7 @@ export interface WatchConfig {
   execute: boolean;
   maxConcurrent: number;
   timeout: number;
-  copilotFlags?: string;
+  agentFlags?: string;
   /** Hidden — fully override the agent command. */
   agentCmd?: string;
   /** Dispatch mode: 'task' (default 1:1), 'fleet' (batch read-only), 'hybrid' (auto-classify). */
@@ -86,7 +86,7 @@ export function loadWatchConfig(
     execute: cliOverrides.execute ?? fileConfig.execute ?? DEFAULTS.execute,
     maxConcurrent: cliOverrides.maxConcurrent ?? fileConfig.maxConcurrent ?? DEFAULTS.maxConcurrent,
     timeout: cliOverrides.timeout ?? fileConfig.timeout ?? DEFAULTS.timeout,
-    copilotFlags: cliOverrides.copilotFlags ?? fileConfig.copilotFlags ?? DEFAULTS.copilotFlags,
+    agentFlags: cliOverrides.agentFlags ?? fileConfig.agentFlags ?? DEFAULTS.agentFlags,
     agentCmd: cliOverrides.agentCmd ?? fileConfig.agentCmd ?? DEFAULTS.agentCmd,
     dispatchMode: cliOverrides.dispatchMode ?? fileConfig.dispatchMode ?? DEFAULTS.dispatchMode,
     logFile: cliOverrides.logFile ?? fileConfig.logFile ?? DEFAULTS.logFile,
@@ -116,7 +116,9 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['execute'] === 'boolean') result.execute = raw['execute'];
   if (typeof raw['maxConcurrent'] === 'number') result.maxConcurrent = raw['maxConcurrent'];
   if (typeof raw['timeout'] === 'number') result.timeout = raw['timeout'];
-  if (typeof raw['copilotFlags'] === 'string') result.copilotFlags = raw['copilotFlags'];
+  if (typeof raw['agentFlags'] === 'string') result.agentFlags = raw['agentFlags'];
+  // Backward compat: accept copilotFlags as alias for agentFlags
+  if (!result.agentFlags && typeof raw['copilotFlags'] === 'string') result.agentFlags = raw['copilotFlags'];
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
   if (typeof raw['verbose'] === 'boolean') result.verbose = raw['verbose'];
   if (typeof raw['dispatchMode'] === 'string') {
@@ -146,7 +148,7 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend']);
+  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'agentFlags', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

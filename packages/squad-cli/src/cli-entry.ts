@@ -180,7 +180,7 @@ async function main(): Promise<void> {
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
     console.log(`             Core flags:`);
     console.log(`                    --execute (spawn agents to work on issues)`);
-    console.log(`                    --copilot-flags "..." (extra copilot CLI flags)`);
+    console.log(`                    --agent-flags "..." (extra flags for the agent CLI)`);
     console.log(`                    --max-concurrent N (parallel issue limit, default 1)`);
     console.log(`                    --timeout N (max minutes per issue, default 30)`);
     console.log(`             Capabilities (opt-in via --<name> or config.json):`);
@@ -445,9 +445,11 @@ async function main(): Promise<void> {
 
     const verbose = args.includes('--verbose') || args.includes('-v');
 
-    const copilotFlagsIdx = args.indexOf('--copilot-flags');
-    const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
-      ? args[copilotFlagsIdx + 1]
+    // --agent-flags (with --copilot-flags as backward-compat alias)
+    let agentFlagsIdx = args.indexOf('--agent-flags');
+    if (agentFlagsIdx === -1) agentFlagsIdx = args.indexOf('--copilot-flags');
+    const agentFlags = (agentFlagsIdx !== -1 && args[agentFlagsIdx + 1])
+      ? args[agentFlagsIdx + 1]
       : undefined;
 
     const agentCmdIdx = args.indexOf('--agent-cmd');
@@ -553,7 +555,7 @@ async function main(): Promise<void> {
       execute,
       maxConcurrent,
       timeout,
-      copilotFlags,
+      agentFlags,
       agentCmd,
       verbose,
       dispatchMode,
@@ -571,7 +573,7 @@ async function main(): Promise<void> {
     // After parsing all flags, check for positional args that look like prompts.
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
-      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+      '--interval', '--agent-flags', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
       '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
@@ -602,8 +604,9 @@ async function main(): Promise<void> {
       console.log(`  ${BOLD}--file <path>${RESET}         Path to loop file (default: loop.md)`);
       console.log(`  ${BOLD}--interval <min>${RESET}      Override loop interval in minutes`);
       console.log(`  ${BOLD}--timeout <min>${RESET}       Override max minutes per cycle`);
-      console.log(`  ${BOLD}--copilot-flags "..."${RESET} Extra flags for Copilot CLI`);
-      console.log(`  ${BOLD}--agent-cmd <cmd>${RESET}     Override the agent command`);
+      console.log(`  ${BOLD}--agent-flags "..."${RESET}   Extra flags for the agent CLI`);
+      console.log(`  ${BOLD}--agent-cmd <cmd>${RESET}     Override the agent CLI (default: auto-detect)`);
+      console.log(`  ${BOLD}--copilot-flags "..."${RESET} Alias for --agent-flags (backward compat)`);
       console.log(`\nCapabilities (composable with the loop):`);
       console.log(`  ${BOLD}--self-pull${RESET}           git fetch/pull at round start`);
       console.log(`  ${BOLD}--monitor-email${RESET}       Scan email for actionable items`);
@@ -656,9 +659,11 @@ async function main(): Promise<void> {
       ? parseInt(args[timeoutIdx + 1]!, 10)
       : undefined;
 
-    const copilotFlagsIdx = args.indexOf('--copilot-flags');
-    const copilotFlags = (copilotFlagsIdx !== -1 && args[copilotFlagsIdx + 1])
-      ? args[copilotFlagsIdx + 1]
+    // --agent-flags (with --copilot-flags as backward-compat alias)
+    let agentFlagsIdx = args.indexOf('--agent-flags');
+    if (agentFlagsIdx === -1) agentFlagsIdx = args.indexOf('--copilot-flags');
+    const agentFlags = (agentFlagsIdx !== -1 && args[agentFlagsIdx + 1])
+      ? args[agentFlagsIdx + 1]
       : undefined;
 
     const agentCmdIdx = args.indexOf('--agent-cmd');
@@ -679,7 +684,7 @@ async function main(): Promise<void> {
       filePath,
       interval,
       timeout,
-      copilotFlags,
+      agentFlags,
       agentCmd,
       capabilities,
     });
@@ -819,7 +824,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'start') {
     console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad start" is deprecated and will be removed in a future release.`);
-    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
+    console.log(`  Use your preferred agent CLI directly: ${BOLD}copilot${RESET}, ${BOLD}claude${RESET}, ${BOLD}gemini${RESET}, or ${BOLD}opencode${RESET}\n`);
     const { runStart } = await import('./cli/commands/start.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');
@@ -902,7 +907,7 @@ async function main(): Promise<void> {
 
   if (cmd === 'rc' || cmd === 'remote-control') {
     console.log(`\n${YELLOW}⚠ DEPRECATED:${RESET} "squad rc" is deprecated and will be removed in a future release.`);
-    console.log(`  Use the GitHub Copilot CLI directly: ${BOLD}gh copilot${RESET}\n`);
+    console.log(`  Use your preferred agent CLI directly: ${BOLD}copilot${RESET}, ${BOLD}claude${RESET}, ${BOLD}gemini${RESET}, or ${BOLD}opencode${RESET}\n`);
     const { runRC } = await import('./cli/commands/rc.js');
     const hasTunnel = args.includes('--tunnel');
     const portIdx = args.indexOf('--port');

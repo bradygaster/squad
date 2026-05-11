@@ -12,6 +12,7 @@
 
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { detectInstalledAgentClis } from '../core/detect-agent-cli.js';
 
 const storage = new FSStorageProvider();
 
@@ -403,6 +404,24 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
   };
 }
 
+function checkAgentCli(): DoctorCheck {
+  const installed = detectInstalledAgentClis();
+  if (installed.length === 0) {
+    return {
+      name: 'Agent CLI',
+      status: 'warn',
+      message: 'no agent CLI found — install copilot, claude, gemini, or opencode for watch/loop execution',
+    };
+  }
+  const names = installed.map(c => `${c.name} (${c.cmd})`).join(', ');
+  return {
+    name: 'Agent CLI',
+    status: 'pass',
+    message: names,
+    severity: 'info',
+  };
+}
+
 function checkSquadAgentMd(cwd: string): DoctorCheck {
   const agentMdPath = path.join(cwd, '.github', 'agents', 'squad.agent.md');
   if (!fileExists(agentMdPath)) {
@@ -528,6 +547,9 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     message: `active provider: ${activeProvider}`,
     severity: 'info',
   });
+
+  // Agent CLI detection
+  checks.push(checkAgentCli());
 
   return checks;
 }

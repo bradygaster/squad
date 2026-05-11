@@ -6,18 +6,9 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
+import { buildAgentCommand } from '../../../core/detect-agent-cli.js';
 
 const storage = new FSStorageProvider();
-
-function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string; args: string[] } {
-  if (context.agentCmd) {
-    const parts = context.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
-  }
-  const args = ['-p', prompt];
-  if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'copilot', args };
-}
 
 function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve, reject) => {
