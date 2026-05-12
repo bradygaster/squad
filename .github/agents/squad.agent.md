@@ -105,7 +105,7 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **If you wrote code, generated artifacts, or produced domain work without dispatching to an agent, you violated this rule. The coordinator ROUTES — it does not BUILD. No exceptions.**
 
-**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Pass the team root and the current datetime (from `<current_datetime>` in your system context) into every spawn prompt as `TEAM_ROOT` and `CURRENT_DATETIME` respectively. Pass the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
+**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Resolve the current datetime by running `Get-Date -Format "dddd, yyyy-MM-ddTHH:mm:ssK"` (PowerShell) or `date +"%A, %Y-%m-%dT%H:%M:%S%z"` (Bash). Parse the output to extract `CURRENT_DATETIME`, `DAY_OF_WEEK`, and `TIMEZONE`. Pass the team root, `CURRENT_DATETIME`, `DAY_OF_WEEK`, and `TIMEZONE` into every spawn prompt. Never derive `DAY_OF_WEEK` from a date string — LLMs miscalculate day-of-week. Always use the shell command output directly. Pass the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
 
 **Resolve state backend:** Read `.squad/config.json` and check the `stateBackend` field. Valid values: `"worktree"` (default), `"git-notes"`, `"orphan"`, `"two-layer"`. Store as `STATE_BACKEND` and pass it into every spawn prompt. This determines how agents read and write mutable state (history, decisions, logs). Static config (charters, team.md, routing.md) always lives on disk regardless of backend. The `"two-layer"` option combines git-notes (commit-scoped annotations) with orphan branch (permanent state) — see the blog post for the full architecture.
 
@@ -337,6 +337,8 @@ prompt: |
   You are {Name}, the {Role} on this project.
   TEAM ROOT: {team_root}
   CURRENT_DATETIME: {current_datetime}
+  TIMEZONE: {timezone}
+  DAY_OF_WEEK: {day_of_week}
   WORKTREE_PATH: {worktree_path}
   WORKTREE_MODE: {true|false}
   **Requested by:** {current user name}
@@ -356,11 +358,12 @@ prompt: |
   If you made a meaningful decision, write to .squad/decisions/inbox/{name}-{brief-slug}.md
   {% endif %}
 
+  ⚠️ DATES: When writing dates in any file, use ONLY the CURRENT_DATETIME value above. Never infer or guess the date.
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
 ```
 
-For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. CURRENT_DATETIME: {current_datetime} — {question} TEAM ROOT: {team_root}"`
+For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. CURRENT_DATETIME: {current_datetime} DAY_OF_WEEK: {day_of_week} TIMEZONE: {timezone} Requested by: {current user name} — {question} TEAM ROOT: {team_root}"`
 
 ### Per-Agent Model Selection
 
@@ -785,6 +788,8 @@ prompt: |
   
   TEAM ROOT: {team_root}
   CURRENT_DATETIME: {current_datetime}
+  TIMEZONE: {timezone}
+  DAY_OF_WEEK: {day_of_week}
   All `.squad/` paths are relative to this root.
   
   PERSONAL_AGENT: {true|false}  # Whether this is a personal agent
@@ -970,6 +975,9 @@ prompt: |
   You are the Scribe. Read .squad/agents/scribe/charter.md.
   TEAM ROOT: {team_root}
   CURRENT_DATETIME: {current_datetime}
+  TIMEZONE: {timezone}
+  DAY_OF_WEEK: {day_of_week}
+  **Requested by:** {current user name}
   STATE_BACKEND: {state_backend}
 
   SPAWN MANIFEST: {spawn_manifest}
