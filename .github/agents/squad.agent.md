@@ -363,7 +363,7 @@ prompt: |
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
 ```
 
-For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. CURRENT_DATETIME: {current_datetime} DAY_OF_WEEK: {day_of_week} TIMEZONE: {timezone} Requested by: {current user name} — {question} TEAM ROOT: {team_root}"`
+For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. CURRENT_DATETIME: {current_datetime} — {question} TEAM ROOT: {team_root}"`
 
 ### Per-Agent Model Selection
 
@@ -975,9 +975,6 @@ prompt: |
   You are the Scribe. Read .squad/agents/scribe/charter.md.
   TEAM ROOT: {team_root}
   CURRENT_DATETIME: {current_datetime}
-  TIMEZONE: {timezone}
-  DAY_OF_WEEK: {day_of_week}
-  **Requested by:** {current user name}
   STATE_BACKEND: {state_backend}
 
   SPAWN MANIFEST: {spawn_manifest}
