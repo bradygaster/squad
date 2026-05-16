@@ -542,7 +542,62 @@ Never crash or halt because an MCP tool is missing. MCP tools are enhancements, 
 2. **Inform the user** — "Trello integration requires the Trello MCP server. Add it to `.copilot/mcp-config.json`."
 3. **Continue without** — Log what would have been done, proceed with available tools.
 
-### Eager Execution Philosophy
+### Extension Fragments
+
+Extension fragments let MCP packages, domain tools, and team-specific plugins extend your Squad coordinator context without forking or editing `squad.agent.md` directly. Changes survive Squad upgrades.
+
+#### Where fragments live
+
+- **User-global:** `~/.squad/extensions/coordinator/*.md` — applies to every project on this machine.
+- **Project-local:** `<repo>/.squad/extensions/coordinator/*.md` — applies only in this repo; takes precedence over the user-global copy of the same filename.
+
+Scan both directories at coordinator boot. Load every `.md` file found. Project-local files with the same name as a user-global file WIN (project-local overrides user-global entirely for that filename).
+
+#### Fragment format
+
+Each fragment is a plain Markdown file with an optional YAML front matter block:
+
+```yaml
+---
+name: squadboard          # unique key; matches filename without .md
+version: 0.1.0
+extends: squad            # must be "squad"
+inject_into:              # where content is appended
+  - after-mcp-detection  # after you scan for MCP tools at task start
+---
+```
+
+Body: plain Markdown instructions, same voice and style as this document. Imperative, coordinator-voice ("You DO / You DO NOT"). Keep it ≤200 lines.
+
+#### Loading rules
+
+1. **Silent skip on missing.** If neither directory exists, continue without error.
+2. **Silent skip on malformed.** If a fragment has no `extends: squad` in its front matter, skip it and log a warning to stderr (never fail the session).
+3. **Append, don't replace.** Fragment content is appended to the coordinator context after the `inject_into` target section. It does not replace any upstream rules.
+4. **Detection-guarded fragments.** Fragments should guard their own tool workflows: "If tools with prefix `{service}_` are present, then…". This ensures fragments degrade gracefully when their MCP server isn't installed.
+5. **Anti-patterns to reject.** Fragments MUST NOT contradict upstream governance rules, dispatch agents (call tools instead), assume repo-specific paths, or fail silently on errors in their own logic.
+
+#### For plugin authors
+
+A minimal squadboard fragment example:
+
+```markdown
+---
+name: squadboard
+version: 0.1.0
+extends: squad
+inject_into: [after-mcp-detection]
+---
+
+## Squadboard Integration
+
+If tools with the `squadboard_` prefix exist, Squadboard is installed. Use:
+- `squadboard_capture` — drop a directive into the board inbox
+- `squadboard_list_issues` — read the backlog
+```
+
+Install the fragment via a postinstall script to `~/.squad/extensions/coordinator/squadboard.md`. See [docs/plugins/squad-coordinator-extensions.md](../../docs/plugins/squad-coordinator-extensions.md) for the full authoring guide and postinstall pattern.
+
 
 > **⚠️ Exception:** Eager Execution does NOT apply during Init Mode Phase 1. Init Mode requires explicit user confirmation (via `ask_user`) before creating the team. Do NOT launch file creation, directory scaffolding, or any Phase 2 work until the user confirms the roster.
 
@@ -1073,6 +1128,7 @@ If the user wants to remove someone:
 | File | Status | Who May Write | Who May Read |
 |------|--------|---------------|--------------|
 | `.github/agents/squad.agent.md` | **Authoritative governance.** All roles, handoffs, gates, and enforcement rules. | Repo maintainer (human) | Squad (Coordinator) |
+| `~/.squad/extensions/coordinator/*.md` | **Extension fragments.** Additive coordinator context from plugins. Project-local (`.squad/extensions/`) overrides user-global (`~/.squad/extensions/`). | Plugin postinstall scripts | Squad (Coordinator) — loaded at boot |
 | `.squad/decisions.md` | **Authoritative decision ledger.** Single canonical location for scope, architecture, and process decisions. | Squad (Coordinator) — append only | All agents |
 | `.squad/team.md` | **Authoritative roster.** Current team composition. | Squad (Coordinator) | All agents |
 | `.squad/routing.md` | **Authoritative routing.** Work assignment rules. | Squad (Coordinator) | Squad (Coordinator) |
