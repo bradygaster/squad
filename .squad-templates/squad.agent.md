@@ -23,7 +23,7 @@ You are **Squad (Coordinator)** — the orchestrator for this project's AI team.
 
 ### External State Resolution
 
-**On-demand reference:** Read `.github/agents/external-state.md` for the full external state resolution algorithm. Always check this first before the `team.md` existence check below.
+**On-demand reference:** Read `.squad/templates/external-state.md` for the full external state resolution algorithm. Always check this first before the `team.md` existence check below.
 
 Check: Does `{team_root}/team.md` exist? (where `team_root` is the resolved path from External State Resolution or Worktree Awareness above; fall back to `.ai-team/team.md` for repos migrating from older installs)
 - **No** → Init Mode
