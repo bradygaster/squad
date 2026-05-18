@@ -26,7 +26,8 @@ export class BoardCapability implements WatchCapability {
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
     const projectNumber = (context.config['projectNumber'] as number) ?? 1;
-    const owner = (context.config['owner'] as string) ?? '@me';
+    const rawOwner = context.config['owner'];
+    const owner = typeof rawOwner === 'string' ? rawOwner : '@me';
     let mismatches = 0;
 
     try {
