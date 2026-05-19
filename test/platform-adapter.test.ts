@@ -96,6 +96,21 @@ describe('parseGitHubRemote', () => {
     // trailing slash is not standard git remote but shouldn't crash
     expect(parseGitHubRemote('https://github.com/owner/')).toBeNull();
   });
+
+  it('parses repo name containing dots (HTTPS)', () => {
+    const result = parseGitHubRemote('https://github.com/owner/my.repo.name');
+    expect(result).toEqual({ owner: 'owner', repo: 'my.repo.name' });
+  });
+
+  it('parses repo name containing dots with .git suffix', () => {
+    const result = parseGitHubRemote('https://github.com/owner/my.repo.name.git');
+    expect(result).toEqual({ owner: 'owner', repo: 'my.repo.name' });
+  });
+
+  it('parses SSH repo name containing dots', () => {
+    const result = parseGitHubRemote('git@github.com:org/api.service.git');
+    expect(result).toEqual({ owner: 'org', repo: 'api.service' });
+  });
 });
 
 // ─── Azure DevOps Remote Parsing ───────────────────────────────────────
@@ -151,6 +166,26 @@ describe('parseAzureDevOpsRemote', () => {
   it('handles URL with special characters in project name', () => {
     const result = parseAzureDevOpsRemote('https://dev.azure.com/org/My-Project/_git/my-repo');
     expect(result).toEqual({ org: 'org', project: 'My-Project', repo: 'my-repo' });
+  });
+
+  it('parses repo name containing dots (HTTPS)', () => {
+    const result = parseAzureDevOpsRemote('https://dev.azure.com/myorg/myproject/_git/my.service.api');
+    expect(result).toEqual({ org: 'myorg', project: 'myproject', repo: 'my.service.api' });
+  });
+
+  it('parses repo name containing dots with .git suffix', () => {
+    const result = parseAzureDevOpsRemote('https://dev.azure.com/myorg/myproject/_git/my.service.api.git');
+    expect(result).toEqual({ org: 'myorg', project: 'myproject', repo: 'my.service.api' });
+  });
+
+  it('parses SSH repo name containing dots', () => {
+    const result = parseAzureDevOpsRemote('git@ssh.dev.azure.com:v3/myorg/myproject/core.lib.git');
+    expect(result).toEqual({ org: 'myorg', project: 'myproject', repo: 'core.lib' });
+  });
+
+  it('parses visualstudio.com repo name containing dots', () => {
+    const result = parseAzureDevOpsRemote('https://contoso.visualstudio.com/WebApp/_git/api.service.git');
+    expect(result).toEqual({ org: 'contoso', project: 'WebApp', repo: 'api.service' });
   });
 });
 
