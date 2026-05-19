@@ -11,6 +11,7 @@
  */
 
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
@@ -435,6 +436,34 @@ function checkSquadAgentMd(cwd: string): DoctorCheck {
   };
 }
 
+// ── copilot CLI check ───────────────────────────────────────────────
+
+/**
+ * Check that the Copilot CLI is reachable (needed by watch capabilities).
+ * Tests `copilot --version` with shell:true for Windows compatibility.
+ */
+function checkCopilotCli(): Promise<DoctorCheck> {
+  return new Promise((resolve) => {
+    execFile('copilot', ['--version'], { shell: true, timeout: 5000 }, (err) => {
+      if (err) {
+        resolve({
+          name: 'Copilot CLI available',
+          status: 'warn',
+          message:
+            "'copilot --version' failed — watch capabilities (monitor-teams, monitor-email) require the Copilot CLI. " +
+            "Install with: gh extension install github/gh-copilot",
+        });
+      } else {
+        resolve({
+          name: 'Copilot CLI available',
+          status: 'pass',
+          message: 'copilot CLI reachable',
+        });
+      }
+    });
+  });
+}
+
 // ── public API ──────────────────────────────────────────────────────
 
 /**
@@ -482,6 +511,9 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
   // 11-12. ESM compatibility (Node 22/24+)
   checks.push(checkVscodeJsonrpcExports(resolvedCwd));
   checks.push(checkCopilotSdkSessionPatch(resolvedCwd));
+
+  // 13. Copilot CLI availability (needed by watch capabilities)
+  checks.push(await checkCopilotCli());
 
   return checks;
 }

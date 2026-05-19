@@ -21,7 +21,7 @@ function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string
 
 function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+    execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024, shell: true }, (err) => {
       if (err) {
         const execErr = err as Error & { killed?: boolean };
         reject(new Error(execErr.killed ? `Timed out after ${Math.round(timeoutMs / 1000)}s` : execErr.message));

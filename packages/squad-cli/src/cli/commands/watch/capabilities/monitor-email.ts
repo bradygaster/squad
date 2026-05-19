@@ -17,7 +17,7 @@ function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string
 
 function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 }, (err) => {
+    execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024, shell: true }, (err) => {
       if (err) {
         const execErr = err as Error & { killed?: boolean };
         reject(new Error(execErr.killed ? `Timed out after ${Math.round(timeoutMs / 1000)}s` : execErr.message));
@@ -35,8 +35,21 @@ export class MonitorEmailCapability implements WatchCapability {
   readonly requires = ['gh', 'WorkIQ MCP'];
   readonly phase = 'housekeeping' as const;
 
-  async preflight(_context: WatchContext): Promise<PreflightResult> {
-    return { ok: true };
+  async preflight(context: WatchContext): Promise<PreflightResult> {
+    // If using custom agentCmd, skip copilot check
+    if (context.agentCmd) return { ok: true };
+    return new Promise((resolve) => {
+      execFile('copilot', ['--version'], { shell: true, timeout: 5000 }, (err) => {
+        if (err) {
+          resolve({
+            ok: false,
+            reason: 'Copilot CLI not found. Install with: gh extension install github/gh-copilot',
+          });
+        } else {
+          resolve({ ok: true });
+        }
+      });
+    });
   }
 
   async execute(context: WatchContext): Promise<CapabilityResult> {

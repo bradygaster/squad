@@ -315,7 +315,7 @@ export class SquadClient {
       autoStart: false, // We manage connection lifecycle
       autoRestart: false, // We handle reconnection ourselves
       env: this.options.env,
-      githubToken: this.options.githubToken,
+      gitHubToken: this.options.githubToken,
       useLoggedInUser: this.options.useLoggedInUser,
     });
   }
@@ -469,7 +469,7 @@ export class SquadClient {
 
       try {
         // Cast config to handle SDK version differences in SessionConfig type
-        const session = await this.client.createSession(config as Parameters<typeof this.client.createSession>[0]);
+        const session = await this.client.createSession(config as unknown as Parameters<typeof this.client.createSession>[0]);
         const result = new CopilotSessionAdapter(session);
         if (result.sessionId) {
           span.setAttribute('session.id', result.sessionId);
@@ -546,7 +546,7 @@ export class SquadClient {
 
       try {
         // Cast config to handle SDK version differences in ResumeSessionConfig type
-        const session = await this.client.resumeSession(sessionId, config as Parameters<typeof this.client.resumeSession>[1]);
+        const session = await this.client.resumeSession(sessionId, config as unknown as Parameters<typeof this.client.resumeSession>[1]);
         return new CopilotSessionAdapter(session);
       } catch (error) {
         if (this.shouldAttemptReconnect(error)) {

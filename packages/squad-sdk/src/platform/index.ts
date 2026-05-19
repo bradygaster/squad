@@ -30,6 +30,26 @@ import type { AdoWorkItemConfig } from './azure-devops.js';
 const storage = new FSStorageProvider();
 
 /**
+ * Read explicit GitHub repo override from .squad/config.json if present.
+ * Expected shape: { "github": { "owner": "...", "repo": "..." } }
+ */
+function readGitHubConfig(repoRoot: string): { owner: string; repo: string } | undefined {
+  const configPath = join(repoRoot, '.squad', 'config.json');
+  if (!storage.existsSync(configPath)) return undefined;
+  try {
+    const raw = storage.readSync(configPath) ?? '';
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (parsed.github && typeof parsed.github === 'object') {
+      const gh = parsed.github as Record<string, unknown>;
+      if (typeof gh.owner === 'string' && typeof gh.repo === 'string') {
+        return { owner: gh.owner, repo: gh.repo };
+      }
+    }
+  } catch { /* ignore parse errors */ }
+  return undefined;
+}
+
+/**
  * Read ADO work item config from .squad/config.json if present.
  */
 function readAdoConfig(repoRoot: string): AdoWorkItemConfig | undefined {
@@ -50,6 +70,12 @@ function readAdoConfig(repoRoot: string): AdoWorkItemConfig | undefined {
  * Throws if required remote info cannot be parsed.
  */
 export function createPlatformAdapter(repoRoot: string): PlatformAdapter {
+  // Prefer explicit GitHub config from .squad/config.json
+  const ghConfig = readGitHubConfig(repoRoot);
+  if (ghConfig) {
+    return new GitHubAdapter(ghConfig.owner, ghConfig.repo);
+  }
+
   const platform = detectPlatform(repoRoot);
   const remoteUrl = getRemoteUrl(repoRoot);
 
