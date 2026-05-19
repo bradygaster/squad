@@ -928,8 +928,9 @@ prompt: |
   ⚠️ DATES: When writing dates in any file (decisions, history, logs), use ONLY the CURRENT_DATETIME value above. Never infer or guess the date.
   
   AFTER work (BEST-EFFORT — do NOT retry on failure):
-  ⚠️ BUDGET: You have a maximum of 80 tool calls for this entire session.
-  After 60 tool calls, wrap up immediately. After 80, STOP regardless of state.
+  ⚠️ POST-WORK BUDGET: Spend at most 20 tool calls on post-work steps below.
+  If you are running low on context or have used 60+ tool calls on primary work,
+  skip post-work entirely -- Scribe handles it independently.
   {% if STATE_BACKEND == "git-notes" %}
   1. Persist your learnings as JSON via the State Protocol:
      `powershell .squad/scripts/notes/write-note.ps1 -Ref "squad/{name}" -Content '{"learnings": ["..."], "timestamp": "<literal CURRENT_DATETIME value from your prompt>"}'`
