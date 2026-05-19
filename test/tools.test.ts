@@ -1,6 +1,6 @@
 /**
  * Integration tests for ToolRegistry (M1-1, M1-2, Issues #88 #92)
- * 
+ *
  * Tests tool registration, lookup, filtering, and handler execution for:
  * - squad_route: Routing tasks to agents
  * - squad_decide: Writing decisions to inbox
@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ToolRegistry, defineTool, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
+import { ToolRegistry, defineTool, sanitizeArgs, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
 import { SessionPool, EventBus } from '@bradygaster/squad-sdk/client';
 import type { FanOutDependencies } from '@bradygaster/squad-sdk/coordinator';
 import type { AgentCharter } from '@bradygaster/squad-sdk/agents';
@@ -98,6 +98,22 @@ describe('defineTool', () => {
   });
 });
 
+describe('sanitizeArgs', () => {
+  it('redacts memory content and query fields before telemetry serialization', () => {
+    const serialized = sanitizeArgs({
+      content: 'password=do-not-record',
+      query: 'private customer data',
+      title: 'safe title',
+    });
+
+    expect(serialized).toContain('"content":"[REDACTED]"');
+    expect(serialized).toContain('"query":"[REDACTED]"');
+    expect(serialized).toContain('"title":"safe title"');
+    expect(serialized).not.toContain('do-not-record');
+    expect(serialized).not.toContain('private customer data');
+  });
+});
+
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;
   let testRoot: string;
@@ -114,14 +130,20 @@ describe('ToolRegistry', () => {
   });
 
   describe('registration', () => {
-    it('should register all five squad tools', () => {
+    it('should register all squad and memory governance tools', () => {
       const tools = registry.getTools();
-      expect(tools.length).toBe(5);
+      expect(tools.length).toBe(11);
 
       const toolNames = tools.map(t => t.name);
       expect(toolNames).toContain('squad_route');
       expect(toolNames).toContain('squad_decide');
       expect(toolNames).toContain('squad_memory');
+      expect(toolNames).toContain('memory.classify');
+      expect(toolNames).toContain('memory.write');
+      expect(toolNames).toContain('memory.search');
+      expect(toolNames).toContain('memory.promote');
+      expect(toolNames).toContain('memory.delete');
+      expect(toolNames).toContain('memory.audit');
       expect(toolNames).toContain('squad_status');
       expect(toolNames).toContain('squad_skill');
     });
@@ -139,7 +161,7 @@ describe('ToolRegistry', () => {
     it('should return all registered tools', () => {
       const tools = registry.getTools();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(5);
+      expect(tools.length).toBe(11);
     });
 
     it('should return tools with handler functions', () => {
@@ -153,7 +175,7 @@ describe('ToolRegistry', () => {
   describe('getToolsForAgent', () => {
     it('should return all tools when no filter provided', () => {
       const tools = registry.getToolsForAgent();
-      expect(tools.length).toBe(5);
+      expect(tools.length).toBe(11);
     });
 
     it('should filter tools by allowed list', () => {
@@ -402,7 +424,7 @@ describe('squad_decide handler', () => {
     const inboxDir = path.join(testRoot, 'decisions', 'inbox');
     const files = fs.readdirSync(inboxDir);
     const content = fs.readFileSync(path.join(inboxDir, files[0]), 'utf-8');
-    
+
     expect(content).toContain('Short decision');
     expect(content).toContain('**By:** brady');
     expect(content).not.toContain('**References:**');
@@ -420,7 +442,7 @@ describe('squad_memory handler', () => {
     // Create test agent history file
     const agentDir = path.join(testRoot, 'agents', 'fenster');
     fs.mkdirSync(agentDir, { recursive: true });
-    
+
     const historyContent = `# Fenster's History
 
 ## Learnings
@@ -469,15 +491,15 @@ Initial session entry.
 
     const historyFile = path.join(testRoot, 'agents', 'fenster', 'history.md');
     const content = fs.readFileSync(historyFile, 'utf-8');
-    
+
     expect(content).toContain('Learned how to implement ToolRegistry');
     expect(content).toContain('## Learnings');
-    
+
     // Check it's in the right section
     const learningsIndex = content.indexOf('## Learnings');
     const updatesIndex = content.indexOf('## Updates');
     const newEntryIndex = content.indexOf('Learned how to implement ToolRegistry');
-    
+
     expect(newEntryIndex).toBeGreaterThan(learningsIndex);
     expect(newEntryIndex).toBeLessThan(updatesIndex);
   });
@@ -509,7 +531,7 @@ Initial session entry.
 
     const historyFile = path.join(testRoot, 'agents', 'brady', 'history.md');
     const content = fs.readFileSync(historyFile, 'utf-8');
-    
+
     expect(content).toContain('## Context');
     expect(content).toContain('Session on M1-1 implementation');
   });
@@ -534,6 +556,113 @@ Initial session entry.
       resultType: 'failure',
       error: 'History file does not exist',
     });
+  });
+});
+
+describe('memory governance tool handlers', () => {
+  let registry: ToolRegistry;
+  let testRoot: string;
+
+  beforeEach(() => {
+    testRoot = path.join('.', '.test-memory-tools-' + randomUUID());
+    fs.mkdirSync(testRoot, { recursive: true });
+    registry = new ToolRegistry(testRoot);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(testRoot)) {
+      fs.rmSync(testRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects forbidden memory through memory.write and exposes audit', async () => {
+    const write = registry.getTool('memory.write')!;
+    const result = await write.handler(
+      { content: 'token=do-not-store-this', title: 'forbidden', author: 'worf' },
+      { sessionId: 's', toolCallId: 'c', toolName: 'memory.write', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('failure');
+    expect((result as any).toolTelemetry.class).toBe('FORBIDDEN');
+
+    const audit = await registry.getTool('memory.audit')!.handler(
+      {},
+      { sessionId: 's', toolCallId: 'a', toolName: 'memory.audit', arguments: {} },
+    );
+    expect(audit.resultType).toBe('success');
+    expect((audit as any).textResultForLlm).toContain('reject');
+    expect((audit as any).textResultForLlm).not.toContain('do-not-store-this');
+  });
+
+  it('does not derive rejected no-title audit records from sensitive memory content', async () => {
+    const write = registry.getTool('memory.write')!;
+    const result = await write.handler(
+      { content: 'token=tool-bridge-secret', author: 'worf' },
+      { sessionId: 's', toolCallId: 'c', toolName: 'memory.write', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('failure');
+    const audit = await registry.getTool('memory.audit')!.handler(
+      {},
+      { sessionId: 's', toolCallId: 'a', toolName: 'memory.audit', arguments: {} },
+    );
+    expect((audit as any).textResultForLlm).toContain('Rejected governed memory');
+    expect((audit as any).textResultForLlm).not.toContain('tool-bridge-secret');
+    expect(JSON.stringify((audit as any).toolTelemetry)).not.toContain('tool-bridge-secret');
+  });
+
+  it('audits memory.classify and memory.search without raw sensitive tool telemetry', async () => {
+    const classify = await registry.getTool('memory.classify')!.handler(
+      { content: 'Private customer data: Fabrikam tenant details.', author: 'seven' },
+      { sessionId: 's', toolCallId: 'c', toolName: 'memory.classify', arguments: {} },
+    );
+    expect(classify.resultType).toBe('failure');
+    expect((classify as any).toolTelemetry.classification.reason).toContain('private customer data');
+    expect(JSON.stringify((classify as any).toolTelemetry)).not.toContain('Fabrikam tenant details');
+
+    const write = await registry.getTool('memory.write')!.handler(
+      { content: 'Searchable governed memory for telemetry metadata.', title: 'Telemetry Memory', class: 'LOCAL', author: 'seven' },
+      { sessionId: 's', toolCallId: 'w', toolName: 'memory.write', arguments: {} },
+    );
+    expect(write.resultType).toBe('success');
+
+    const search = await registry.getTool('memory.search')!.handler(
+      { query: 'telemetry metadata' },
+      { sessionId: 's', toolCallId: 'q', toolName: 'memory.search', arguments: {} },
+    );
+    expect(search.resultType).toBe('success');
+    expect((search as any).toolTelemetry.count).toBe(1);
+    expect(JSON.stringify((search as any).toolTelemetry)).not.toContain('Searchable governed memory');
+
+    const audit = await registry.getTool('memory.audit')!.handler(
+      {},
+      { sessionId: 's', toolCallId: 'a', toolName: 'memory.audit', arguments: {} },
+    );
+    expect((audit as any).textResultForLlm).toContain('classify');
+    expect((audit as any).textResultForLlm).toContain('search');
+    expect(JSON.stringify((audit as any).toolTelemetry)).not.toContain('Fabrikam tenant details');
+    expect(JSON.stringify((audit as any).toolTelemetry)).not.toContain('telemetry metadata');
+  });
+
+  it('writes, searches, and deletes local governed memory through tool bridge', async () => {
+    const write = await registry.getTool('memory.write')!.handler(
+      { content: 'Prefer governed memory for durable facts.', title: 'Governed Facts', class: 'LOCAL', author: 'data' },
+      { sessionId: 's', toolCallId: 'w', toolName: 'memory.write', arguments: {} },
+    );
+    expect(write.resultType).toBe('success');
+    const id = (write as any).toolTelemetry.id as string;
+
+    const search = await registry.getTool('memory.search')!.handler(
+      { query: 'durable facts' },
+      { sessionId: 's', toolCallId: 'q', toolName: 'memory.search', arguments: {} },
+    );
+    expect((search as any).toolTelemetry.count).toBe(1);
+
+    const del = await registry.getTool('memory.delete')!.handler(
+      { id, actor: 'data' },
+      { sessionId: 's', toolCallId: 'd', toolName: 'memory.delete', arguments: {} },
+    );
+    expect(del.resultType).toBe('success');
   });
 });
 

@@ -7,6 +7,13 @@
 
 ---
 
+> **Related follow-up:** [Memory Governance Provider](memory-governance-provider.md)
+> extends this tiered-memory proposal with provider boundaries, memory classification,
+> Copilot Memory positioning, and safety rules. This document still describes the
+> hot/cold/wiki context model for bradygaster/squad#600.
+
+---
+
 ## Problem Statement
 
 Squad agents load their full conversation history on every spawn. In production, top agents carry:

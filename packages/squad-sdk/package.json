@@ -194,6 +194,10 @@
       "types": "./dist/storage/index.d.ts",
       "import": "./dist/storage/index.js"
     },
+    "./memory": {
+      "types": "./dist/memory/index.d.ts",
+      "import": "./dist/memory/index.js"
+    },
     "./platform": {
       "types": "./dist/platform/index.d.ts",
       "import": "./dist/platform/index.js"

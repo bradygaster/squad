@@ -222,6 +222,8 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
+    console.log(`  ${BOLD}memory${RESET}     Governed memory operations (classify, write, search, promote, delete, audit, provider)`);
+    console.log(`             Usage: memory write --content "..." --class LOCAL`);
     console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
     console.log(`  ${BOLD}consult${RESET}    Enter consult mode with your personal squad`);
     console.log(`             Flags: --status, --check`);
@@ -410,6 +412,12 @@ async function main(): Promise<void> {
       ensureHooksForBackend(dest);
     }
     
+    return;
+  }
+
+  if (cmd === 'memory') {
+    const { runMemoryCommand } = await import('./cli/commands/memory.js');
+    await runMemoryCommand(getSquadStartDir(), args.slice(1));
     return;
   }
 

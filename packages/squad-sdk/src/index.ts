@@ -102,6 +102,7 @@ export type {
 export * from './roles/index.js';
 export * from './platform/index.js';
 export * from './storage/index.js';
+export * from './memory/index.js';
 
 // Git-native state backends (Issue #807)
 export type { StateBackend, StateBackendType, StateBackendConfig } from './state-backend.js';

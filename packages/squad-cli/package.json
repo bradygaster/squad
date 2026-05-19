@@ -149,6 +149,10 @@
       "types": "./dist/cli/commands/copilot.d.ts",
       "import": "./dist/cli/commands/copilot.js"
     },
+    "./commands/memory": {
+      "types": "./dist/cli/commands/memory.d.ts",
+      "import": "./dist/cli/commands/memory.js"
+    },
     "./commands/cost": {
       "types": "./dist/cli/commands/cost.d.ts",
       "import": "./dist/cli/commands/cost.js"
