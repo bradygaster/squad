@@ -43,7 +43,9 @@ export class MonitorEmailCapability implements WatchCapability {
         if (err) {
           resolve({
             ok: false,
-            reason: 'Copilot CLI not found. Install with: gh extension install github/gh-copilot',
+            reason:
+              "Copilot CLI ('copilot') not found on PATH. Watch capabilities (monitor-teams, monitor-email, retro, decision-hygiene) require it. " +
+              "If you installed the GitHub CLI extension, ensure 'copilot' is also available on your PATH, or set --agent-cmd to override.",
           });
         } else {
           resolve({ ok: true });

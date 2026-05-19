@@ -1071,3 +1071,142 @@ describe('ADO exports from platform index', () => {
     expect(types.length).toBeGreaterThan(0);
   });
 });
+
+// ─── createPlatformAdapter with .squad/config.json GitHub override ─────
+
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { execSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+
+describe('createPlatformAdapter with .squad/config.json github override', () => {
+  let tempDir: string;
+
+  function setupTempRepo(): string {
+    tempDir = mkdtempSync(join(tmpdir(), 'squad-test-'));
+    // Initialize a git repo with a GitHub remote (fallback detection target)
+    execSync('git init', { cwd: tempDir, stdio: 'ignore' });
+    execSync('git remote add origin https://github.com/fallbackowner/fallbackrepo.git', { cwd: tempDir, stdio: 'ignore' });
+    return tempDir;
+  }
+
+  function cleanup(): void {
+    if (tempDir) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  it('uses owner/repo from .squad/config.json when present', async () => {
+    const repoRoot = setupTempRepo();
+    try {
+      // Write .squad/config.json with github override
+      const squadDir = join(repoRoot, '.squad');
+      mkdirSync(squadDir, { recursive: true });
+      writeFileSync(join(squadDir, 'config.json'), JSON.stringify({
+        github: { owner: 'testowner', repo: 'testrepo' }
+      }));
+
+      const { createPlatformAdapter } = await import('../packages/squad-sdk/src/platform/index.js');
+      const adapter = createPlatformAdapter(repoRoot);
+
+      // Should be a GitHubAdapter with the config values, not the remote values
+      expect(adapter).toBeDefined();
+      // Access internal state via the adapter's known interface
+      expect((adapter as any).owner).toBe('testowner');
+      expect((adapter as any).repo).toBe('testrepo');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('falls back to git remote when github key is absent', async () => {
+    const repoRoot = setupTempRepo();
+    try {
+      // Write .squad/config.json WITHOUT github key
+      const squadDir = join(repoRoot, '.squad');
+      mkdirSync(squadDir, { recursive: true });
+      writeFileSync(join(squadDir, 'config.json'), JSON.stringify({ version: 1 }));
+
+      const { createPlatformAdapter } = await import('../packages/squad-sdk/src/platform/index.js');
+      const adapter = createPlatformAdapter(repoRoot);
+
+      expect(adapter).toBeDefined();
+      expect((adapter as any).owner).toBe('fallbackowner');
+      expect((adapter as any).repo).toBe('fallbackrepo');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('falls back to git remote when github key is malformed (missing repo)', async () => {
+    const repoRoot = setupTempRepo();
+    try {
+      const squadDir = join(repoRoot, '.squad');
+      mkdirSync(squadDir, { recursive: true });
+      writeFileSync(join(squadDir, 'config.json'), JSON.stringify({
+        github: { owner: 'testowner' } // missing repo
+      }));
+
+      const { createPlatformAdapter } = await import('../packages/squad-sdk/src/platform/index.js');
+      const adapter = createPlatformAdapter(repoRoot);
+
+      expect(adapter).toBeDefined();
+      expect((adapter as any).owner).toBe('fallbackowner');
+      expect((adapter as any).repo).toBe('fallbackrepo');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('falls back to git remote when github key is malformed (non-string values)', async () => {
+    const repoRoot = setupTempRepo();
+    try {
+      const squadDir = join(repoRoot, '.squad');
+      mkdirSync(squadDir, { recursive: true });
+      writeFileSync(join(squadDir, 'config.json'), JSON.stringify({
+        github: { owner: 123, repo: true }
+      }));
+
+      const { createPlatformAdapter } = await import('../packages/squad-sdk/src/platform/index.js');
+      const adapter = createPlatformAdapter(repoRoot);
+
+      expect(adapter).toBeDefined();
+      expect((adapter as any).owner).toBe('fallbackowner');
+      expect((adapter as any).repo).toBe('fallbackrepo');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('falls back to git remote when config.json is invalid JSON', async () => {
+    const repoRoot = setupTempRepo();
+    try {
+      const squadDir = join(repoRoot, '.squad');
+      mkdirSync(squadDir, { recursive: true });
+      writeFileSync(join(squadDir, 'config.json'), '{ not valid json !!!');
+
+      const { createPlatformAdapter } = await import('../packages/squad-sdk/src/platform/index.js');
+      const adapter = createPlatformAdapter(repoRoot);
+
+      expect(adapter).toBeDefined();
+      expect((adapter as any).owner).toBe('fallbackowner');
+      expect((adapter as any).repo).toBe('fallbackrepo');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('falls back to git remote when no .squad/config.json exists', async () => {
+    const repoRoot = setupTempRepo();
+    try {
+      const { createPlatformAdapter } = await import('../packages/squad-sdk/src/platform/index.js');
+      const adapter = createPlatformAdapter(repoRoot);
+
+      expect(adapter).toBeDefined();
+      expect((adapter as any).owner).toBe('fallbackowner');
+      expect((adapter as any).repo).toBe('fallbackrepo');
+    } finally {
+      cleanup();
+    }
+  });
+});

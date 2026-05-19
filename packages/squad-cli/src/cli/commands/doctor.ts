@@ -450,8 +450,8 @@ function checkCopilotCli(): Promise<DoctorCheck> {
           name: 'Copilot CLI available',
           status: 'warn',
           message:
-            "'copilot --version' failed — watch capabilities (monitor-teams, monitor-email) require the Copilot CLI. " +
-            "Install with: gh extension install github/gh-copilot",
+            "'copilot --version' failed — watch capabilities (monitor-teams, monitor-email, retro, decision-hygiene) require the Copilot CLI. " +
+            "If you installed the GitHub CLI extension, ensure 'copilot' is also available on your PATH, or set --agent-cmd to override.",
         });
       } else {
         resolve({
