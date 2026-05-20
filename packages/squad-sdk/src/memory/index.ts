@@ -101,11 +101,194 @@ export interface CopilotMemoryProviderClient {
   delete(id: string): Promise<boolean>;
 }
 
+// ── MemoryProvider abstraction ───────────────────────────────────────────────
+//
+// A generic provider seam for external/local memory backends.
+// Governance classification always happens BEFORE provider calls.
+// FORBIDDEN and TRANSIENT content never reaches a provider.
+// provider=copilot is reserved and fails closed separately.
+
+export interface MemoryProviderStatus {
+  id: string;
+  name: string;
+  available: boolean;
+  reason?: string;
+}
+
+/**
+ * Generic external memory provider contract.
+ *
+ * Implementations receive only pre-classified, non-forbidden, non-transient
+ * memory. The {@link LocalMemoryStore} enforces governance before routing
+ * to any registered provider.
+ */
+export interface MemoryProvider {
+  readonly id: string;
+  readonly name: string;
+  /** Memory classes this provider is designed to store and retrieve. */
+  readonly supportedClasses: ReadonlyArray<MemoryClass>;
+  status(): Promise<MemoryProviderStatus>;
+  write(request: CopilotMemoryProviderWriteRequest): Promise<CopilotMemoryProviderWriteResult>;
+  search(query: string): Promise<CopilotMemoryProviderSearchResult[]>;
+  delete(id: string): Promise<boolean>;
+}
+
+/**
+ * MemPalace — in-memory test double for an external spatial memory provider.
+ *
+ * Models a "memory palace" (method of loci) where memories are stored at
+ * named loci. In production this would be replaced by a real spatial/external
+ * memory service. Set `metadata.locus` on a write request to tag the
+ * destination locus; defaults to `'default'`.
+ *
+ * Accepts: LOCAL, DECISION, POLICY.
+ * Never receives FORBIDDEN, TRANSIENT, or COPILOT_MEMORY (filtered upstream).
+ */
+export class MemPalaceMemoryProvider implements MemoryProvider {
+  readonly id = 'mempalace';
+  readonly name = 'MemPalace';
+  readonly supportedClasses: ReadonlyArray<MemoryClass> = ['LOCAL', 'DECISION', 'POLICY'];
+
+  private readonly loci = new Map<string, {
+    id: string;
+    title: string;
+    content: string;
+    class: MemoryClass;
+    locus: string;
+    path: string;
+  }>();
+
+  async status(): Promise<MemoryProviderStatus> {
+    return { id: this.id, name: this.name, available: true };
+  }
+
+  async write(request: CopilotMemoryProviderWriteRequest): Promise<CopilotMemoryProviderWriteResult> {
+    const id = `mempalace-${randomUUID()}`;
+    const locus = request.metadata?.['locus'] ?? 'default';
+    this.loci.set(id, {
+      id,
+      title: request.title,
+      content: request.content,
+      class: request.classification.class,
+      locus,
+      path: `mempalace:${locus}:${id}`,
+    });
+    return { id, path: `mempalace:${locus}:${id}` };
+  }
+
+  async search(query: string): Promise<CopilotMemoryProviderSearchResult[]> {
+    const normalized = query.toLowerCase();
+    const results: CopilotMemoryProviderSearchResult[] = [];
+    for (const entry of this.loci.values()) {
+      if (
+        entry.title.toLowerCase().includes(normalized) ||
+        entry.content.toLowerCase().includes(normalized)
+      ) {
+        results.push({
+          id: entry.id,
+          title: entry.title,
+          snippet: (entry.content.split('\n').find(l => l.toLowerCase().includes(normalized)) ?? entry.title).slice(0, 240),
+          path: entry.path,
+        });
+      }
+    }
+    return results;
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.loci.delete(id);
+  }
+
+  /** Number of stored loci entries — for test introspection only. */
+  get size(): number {
+    return this.loci.size;
+  }
+}
+
+/**
+ * IndexServer — in-memory test double for a governed knowledge/instruction catalog.
+ *
+ * Models a server-side index of stable instructions and reference knowledge.
+ * In production this would be replaced by a real embedding-search or BM25 index.
+ * Set `metadata.topic` on a write request to tag the catalog entry; defaults to
+ * the memory class (lowercased).
+ *
+ * Accepts: LOCAL, DECISION, POLICY.
+ * Never receives FORBIDDEN, TRANSIENT, or COPILOT_MEMORY (filtered upstream).
+ */
+export class IndexServerMemoryProvider implements MemoryProvider {
+  readonly id = 'indexserver';
+  readonly name = 'IndexServer';
+  readonly supportedClasses: ReadonlyArray<MemoryClass> = ['LOCAL', 'DECISION', 'POLICY'];
+
+  private readonly catalog = new Map<string, {
+    id: string;
+    title: string;
+    content: string;
+    class: MemoryClass;
+    topic: string;
+    path: string;
+  }>();
+
+  async status(): Promise<MemoryProviderStatus> {
+    return { id: this.id, name: this.name, available: true };
+  }
+
+  async write(request: CopilotMemoryProviderWriteRequest): Promise<CopilotMemoryProviderWriteResult> {
+    const id = `indexserver-${randomUUID()}`;
+    const topic = request.metadata?.['topic'] ?? request.classification.class.toLowerCase();
+    this.catalog.set(id, {
+      id,
+      title: request.title,
+      content: request.content,
+      class: request.classification.class,
+      topic,
+      path: `indexserver:${topic}:${id}`,
+    });
+    return { id, path: `indexserver:${topic}:${id}` };
+  }
+
+  async search(query: string): Promise<CopilotMemoryProviderSearchResult[]> {
+    const normalized = query.toLowerCase();
+    const results: CopilotMemoryProviderSearchResult[] = [];
+    for (const entry of this.catalog.values()) {
+      if (
+        entry.title.toLowerCase().includes(normalized) ||
+        entry.content.toLowerCase().includes(normalized)
+      ) {
+        results.push({
+          id: entry.id,
+          title: entry.title,
+          snippet: (entry.content.split('\n').find(l => l.toLowerCase().includes(normalized)) ?? entry.title).slice(0, 240),
+          path: entry.path,
+        });
+      }
+    }
+    return results;
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.catalog.delete(id);
+  }
+
+  /** Number of catalog entries — for test introspection only. */
+  get size(): number {
+    return this.catalog.size;
+  }
+}
+
 export interface LocalMemoryStoreOptions {
   rootKind?: 'project' | 'squad';
   hostInjectedCopilotAdapterClient?: CopilotMemoryProviderClient;
   /** @deprecated Use hostInjectedCopilotAdapterClient. */
   copilotMemoryClient?: CopilotMemoryProviderClient;
+  /**
+   * Optional additional external memory providers.
+   * Each provider receives writes/searches for its supported memory classes
+   * AFTER governance classification. FORBIDDEN and TRANSIENT content never
+   * reaches these providers. Results are merged with local search results.
+   */
+  registeredProviders?: MemoryProvider[];
 }
 
 interface MemoryIndexEntry {
@@ -296,6 +479,7 @@ export async function ensureMemoryGovernanceDefaults(
 export class LocalMemoryStore {
   private readonly squadDir: string;
   private readonly copilotProvider: HostInjectedCopilotMemoryAdapter;
+  private readonly registeredProviders: MemoryProvider[];
 
   constructor(
     private readonly storage: StorageProvider,
@@ -306,6 +490,7 @@ export class LocalMemoryStore {
     this.copilotProvider = new HostInjectedCopilotMemoryAdapter(
       options.hostInjectedCopilotAdapterClient ?? options.copilotMemoryClient,
     );
+    this.registeredProviders = options.registeredProviders ?? [];
   }
 
   async classify(
@@ -539,6 +724,35 @@ export class LocalMemoryStore {
       provider: 'local',
     });
 
+    // Route to registered external providers that support this memory class.
+    // Governance classification has already run; FORBIDDEN and TRANSIENT never
+    // reach this point. Providers receive only safe, non-copilot content.
+    const providerWriteRequest: CopilotMemoryProviderWriteRequest = {
+      content: request.content.trim(),
+      title,
+      author: request.author,
+      metadata: request.metadata,
+      classification,
+    };
+    for (const provider of this.registeredProviders) {
+      if (!provider.supportedClasses.includes(classification.class)) continue;
+      try {
+        const providerResult = await provider.write(providerWriteRequest);
+        await this.audit({
+          action: 'write',
+          id: providerResult.id,
+          class: classification.class,
+          title,
+          path: providerResult.path ?? `${provider.id}:${providerResult.id}`,
+          reason: `Replicated to ${provider.name} provider`,
+          actor: request.author,
+        });
+      } catch {
+        // Provider write failures are non-fatal; local write already succeeded.
+        // We intentionally do not log content or provider errors containing content.
+      }
+    }
+
     return { stored: true, id, classification, path: entry.path };
   }
 
@@ -609,6 +823,31 @@ export class LocalMemoryStore {
         });
       }
     }
+
+    // Query registered external providers. Governance filtering already
+    // passed. Deduplicates results by id (local takes precedence).
+    const seenIds = new Set(results.map(r => r.id));
+    for (const provider of this.registeredProviders) {
+      try {
+        const providerResults = await provider.search(query);
+        for (const result of providerResults) {
+          if (seenIds.has(result.id)) continue;
+          seenIds.add(result.id);
+          results.push({
+            id: result.id,
+            class: 'LOCAL',
+            loadGuidance: 'ON-DEMAND',
+            title: result.title,
+            path: result.path ?? `${provider.id}:${result.id}`,
+            snippet: result.snippet.slice(0, 240),
+            provider: 'local',
+          });
+        }
+      } catch {
+        // Provider search failures are non-fatal; partial results returned.
+      }
+    }
+
     await this.audit({
       action: 'search',
       reason: `Search returned ${results.length} result(s)`,
@@ -726,9 +965,13 @@ export class LocalMemoryStore {
     defaultProvider: MemoryGovernanceConfig['defaultProvider'];
     realCopilotMemory: { available: false; configured: boolean; reason: string };
     hostInjectedCopilotAdapter: MemoryGovernanceConfig['externalProviders']['hostInjectedCopilotAdapter'] & { clientAvailable: boolean; configured: boolean };
+    registeredProviders: MemoryProviderStatus[];
   }> {
     await this.ensureInitialized();
     const config = await this.readConfig();
+    const providerStatuses: MemoryProviderStatus[] = await Promise.all(
+      this.registeredProviders.map(p => p.status()),
+    );
     return {
       defaultProvider: config.defaultProvider,
       realCopilotMemory: {
@@ -741,6 +984,7 @@ export class LocalMemoryStore {
         clientAvailable: this.copilotProvider.isAvailable(),
         configured: isHostInjectedCopilotAdapterConfigured(config),
       },
+      registeredProviders: providerStatuses,
     };
   }
 
