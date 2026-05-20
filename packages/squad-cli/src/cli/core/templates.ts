@@ -131,6 +131,18 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Scribe charter template',
   },
   {
+    source: 'aegis-charter.md',
+    destination: 'aegis-charter.md',
+    overwriteOnUpgrade: true,
+    description: 'Aegis RAI reviewer charter template',
+  },
+  {
+    source: 'rai-policy.md',
+    destination: 'rai-policy.md',
+    overwriteOnUpgrade: true,
+    description: 'Default RAI policy template',
+  },
+  {
     source: 'fact-checker-charter.md',
     destination: 'fact-checker-charter.md',
     overwriteOnUpgrade: true,

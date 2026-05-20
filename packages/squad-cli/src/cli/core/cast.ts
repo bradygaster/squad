@@ -456,6 +456,15 @@ function ralphCharter(): string {
   return generateCharter(m);
 }
 
+function aegisMember(): CastMember {
+  return { name: 'Aegis', role: 'RAI Reviewer', scope: 'Content safety, bias detection, credential scanning, ethical review', emoji: '🛡️' };
+}
+
+function aegisCharter(): string {
+  const m = aegisMember();
+  return generateCharter(m);
+}
+
 // ── Team file updaters ─────────────────────────────────────────────
 
 function buildMembersTable(allMembers: CastMember[]): string {
@@ -465,6 +474,7 @@ function buildMembersTable(allMembers: CastMember[]): string {
     let status = '✅ Active';
     if (m.role === 'Session Logger') status = '📋 Silent';
     if (m.role === 'Work Monitor') status = '🔄 Monitor';
+    if (m.role === 'RAI Reviewer') status = '🛡️ RAI';
     table += `| ${m.name} | ${m.role} | \`.squad/agents/${nameLower}/charter.md\` | ${status} |\n`;
   }
   return table;
@@ -473,7 +483,7 @@ function buildMembersTable(allMembers: CastMember[]): string {
 function buildRoutingTable(members: CastMember[]): string {
   let table = `## Work Type → Agent\n\n| Work Type | Primary | Secondary |\n|-----------|---------|----------|\n`;
   for (const m of members) {
-    if (m.role === 'Session Logger' || m.role === 'Work Monitor') continue;
+    if (m.role === 'Session Logger' || m.role === 'Work Monitor' || m.role === 'RAI Reviewer') continue;
     table += `| ${m.scope} | ${m.name} | — |\n`;
   }
   return table;
@@ -503,6 +513,9 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const hasRalph = proposal.members.some(m => /ralph/i.test(m.name));
   if (!hasRalph) allMembers.push(ralphMember());
 
+  const hasAegis = proposal.members.some(m => /aegis/i.test(m.name));
+  if (!hasAegis) allMembers.push(aegisMember());
+
   // Create agent directories and files
   for (const member of allMembers) {
     const nameLower = member.name.toLowerCase();
@@ -514,6 +527,8 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       charter = scribeCharter();
     } else if (member.name === 'Ralph' && !hasRalph) {
       charter = ralphCharter();
+    } else if (member.name === 'Aegis' && !hasAegis) {
+      charter = aegisCharter();
     } else {
       charter = generateCharter(member);
     }
@@ -668,6 +683,11 @@ export function formatCastSummary(proposal: CastProposal): string {
   const hasRalph = proposal.members.some(m => /ralph/i.test(m.name));
   if (!hasRalph) {
     lines.push(`🔄  ${'Ralph'.padEnd(10)} — ${'(monitor)'.padEnd(15)} Work queue, backlog, keep-alive`);
+  }
+
+  const hasAegis = proposal.members.some(m => /aegis/i.test(m.name));
+  if (!hasAegis) {
+    lines.push(`🛡️  ${'Aegis'.padEnd(10)} — ${'(background)'.padEnd(15)} RAI awareness, content safety`);
   }
 
   return lines.join('\n');

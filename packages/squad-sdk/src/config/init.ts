@@ -197,6 +197,10 @@ const AGENT_TEMPLATES: Record<string, { displayName: string; description: string
     displayName: 'Ralph',
     description: 'Persistent memory agent that maintains context across sessions.'
   },
+  'aegis': {
+    displayName: 'Aegis',
+    description: 'Responsible AI reviewer ensuring content safety, bias detection, and ethical standards.'
+  },
   'fact-checker': {
     displayName: 'Fact Checker',
     description: 'Devil\'s advocate and verification agent — validates claims, detects hallucinations, and runs counter-hypotheses.'
