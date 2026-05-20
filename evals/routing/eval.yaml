@@ -1,0 +1,101 @@
+name: squad-routing
+description: |
+  Evaluates Squad's work routing — given real user prompts, does the agent
+  route to the correct squad member based on routing.md rules?
+type: capability
+config:
+  timeout: 3m
+environment:
+  skills:
+    - ../../packages/squad-cli/src/cli/skills
+  files:
+    - src: fixtures/team.md
+      dest: .squad/team.md
+    - src: fixtures/routing.md
+      dest: .squad/routing.md
+    - src: fixtures/agents/lead/charter.md
+      dest: .squad/agents/lead/charter.md
+    - src: fixtures/agents/developer/charter.md
+      dest: .squad/agents/developer/charter.md
+    - src: fixtures/agents/tester/charter.md
+      dest: .squad/agents/tester/charter.md
+    - src: fixtures/agents/scribe/charter.md
+      dest: .squad/agents/scribe/charter.md
+scoring:
+  threshold: 0.7
+stimuli:
+  - name: Routes bug fix to developer
+    prompt: |
+      There's a null reference exception in the login handler when the
+      user's email field is missing. Can you fix it?
+    graders:
+      - type: output-matches
+        config:
+          pattern: (developer|Developer)
+      - type: prompt
+    rubric:
+      - The response identifies this as a bug fix task and routes to the Developer agent
+      - The response does not route to Lead, Tester, or Scribe for a simple bug fix
+
+  - name: Routes architecture review to lead
+    prompt: |
+      We need to redesign the event bus to support fan-out to multiple
+      consumers. Can you review the current architecture and propose changes?
+    graders:
+      - type: output-matches
+        config:
+          pattern: (lead|Lead)
+      - type: prompt
+    rubric:
+      - The response identifies this as an architecture/design task and routes to the Lead agent
+      - Architecture reviews and design decisions go to Lead, not Developer
+
+  - name: Routes test coverage request to tester
+    prompt: |
+      The auth module has zero test coverage. Write integration tests for
+      the token refresh flow and session expiration handling.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (tester|Tester)
+      - type: prompt
+    rubric:
+      - The response identifies this as a testing task and routes to the Tester agent
+      - Test writing, coverage, and quality assurance tasks go to Tester
+
+  - name: Routes documentation update to scribe
+    prompt: |
+      The API reference is out of date — the /users endpoint now accepts
+      a pagination cursor. Update the docs to reflect the new parameter.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (scribe|Scribe)
+      - type: prompt
+    rubric:
+      - The response identifies this as a documentation task and routes to the Scribe agent
+      - Documentation updates, README changes, and reference maintenance go to Scribe
+
+  - name: Routes new feature implementation to developer
+    prompt: |
+      Add webhook retry support with exponential backoff. When a webhook
+      delivery fails, retry up to 3 times with increasing delays.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (developer|Developer)
+      - type: prompt
+    rubric:
+      - The response identifies this as a feature implementation task and routes to Developer
+      - New feature coding tasks go to Developer, not Lead (who handles design only)
+
+  - name: Handles ambiguous request with reasoning
+    prompt: |
+      The CI pipeline is failing on the main branch. The error seems related
+      to a flaky test in the payment module.
+    graders:
+      - type: prompt
+    rubric:
+      - The response acknowledges ambiguity — this could be a test fix (Tester) or a bug fix (Developer)
+      - The response provides reasoning for its routing decision
+      - The response does not silently pick one agent without explaining why

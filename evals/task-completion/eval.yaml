@@ -1,0 +1,104 @@
+name: squad-task-completion
+description: |
+  Evaluates Squad's end-to-end task completion — given real development
+  prompts, does the agent produce working, correct solutions?
+type: capability
+config:
+  timeout: 5m
+environment:
+  skills:
+    - ../../packages/squad-cli/src/cli/skills
+  files:
+    - src: fixtures/team.md
+      dest: .squad/team.md
+    - src: fixtures/routing.md
+      dest: .squad/routing.md
+    - src: fixtures/agents/lead/charter.md
+      dest: .squad/agents/lead/charter.md
+    - src: fixtures/agents/developer/charter.md
+      dest: .squad/agents/developer/charter.md
+scoring:
+  threshold: 0.7
+stimuli:
+  - name: Implements a simple bug fix
+    prompt: |
+      The `parseConfig` function crashes when the input YAML has a trailing
+      newline followed by whitespace. Here's the function:
+
+      ```typescript
+      export function parseConfig(raw: string): Config {
+        const lines = raw.split('\n');
+        const lastLine = lines[lines.length - 1];
+        return JSON.parse(lastLine);
+      }
+      ```
+
+      Fix it so it handles trailing whitespace gracefully.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (trim|filter|pop|slice)
+      - type: prompt
+    rubric:
+      - The fix handles trailing newlines and whitespace (trim, filter empty lines, or skip)
+      - The fix does not change unrelated behavior
+      - The fix handles edge cases (empty string input, all-whitespace input)
+      - The response includes the corrected code, not just a description
+
+  - name: Implements cost-aware model selection
+    prompt: |
+      I need a function that selects the appropriate model tier based on
+      task complexity. Simple tasks (typos, renames) should use the fast
+      tier. Complex tasks (architecture, multi-file refactors) should use
+      the premium tier. Everything else uses standard.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (fast|standard|premium|tier|complexity)
+      - type: prompt
+    rubric:
+      - The response provides a working implementation (not just pseudocode)
+      - The function classifies tasks into at least 3 tiers (fast, standard, premium)
+      - The classification logic is reasonable (keyword-based, heuristic, or configurable)
+      - The response matches Squad's existing tier model (direct/lightweight/standard/full)
+
+  - name: Implements team onboarding
+    prompt: |
+      Write a function that onboards a new agent to a Squad team. It should:
+      1. Create the agent's directory under .squad/agents/{name}/
+      2. Generate a charter.md with the agent's role and responsibilities
+      3. Add the agent to the team roster in team.md
+      Return the paths of all created/modified files.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (mkdir|writeFile|charter\.md|team\.md|agents/)
+      - type: prompt
+    rubric:
+      - The implementation creates the agent directory structure
+      - A charter.md file is generated with role-specific content
+      - The team.md roster is updated (appended, not overwritten)
+      - The function returns the paths of created/modified files
+      - File operations use proper error handling (check existence, handle failures)
+
+  - name: Produces correct routing table format
+    prompt: |
+      Generate a routing.md file for a 3-person team:
+      - Alice (lead): handles architecture, design reviews, planning
+      - Bob (developer): handles bug fixes, features, refactoring
+      - Carol (tester): handles test writing, coverage, QA
+
+      Use the Squad routing table markdown format.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (\|.*Work Type.*\|.*Route To.*\|)
+      - type: output-matches
+        config:
+          pattern: (Alice|Bob|Carol)
+      - type: prompt
+    rubric:
+      - The output uses Squad's markdown table format (| Work Type | Route To | Examples |)
+      - All three team members appear in routing rules
+      - Work types are reasonably mapped (architecture→Alice, bugs→Bob, tests→Carol)
+      - The format is parseable by Squad's parseRoutingMarkdown() function

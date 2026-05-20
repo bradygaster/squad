@@ -1,0 +1,50 @@
+name: Evals
+
+on:
+  pull_request:
+    paths:
+      - 'evals/**'
+      - 'packages/squad-sdk/src/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    name: Validate eval schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx vally lint --eval evals/
+
+  run-evals:
+    name: Run eval suites
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'run-evals')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run evals
+        # Requires Copilot access on the repository. The copilot-sdk executor
+        # authenticates via GITHUB_TOKEN when running in GitHub Actions.
+        run: npx vally eval --eval-spec evals/routing/eval.yaml --eval-spec evals/skill-invocation/eval.yaml --eval-spec evals/task-completion/eval.yaml --output-dir results --junit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: results/
+        if: always()

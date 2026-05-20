@@ -1,0 +1,98 @@
+name: squad-skill-invocation
+description: |
+  Evaluates Squad's skill matching — given real task prompts, does the agent
+  invoke the appropriate skills from the registry?
+type: capability
+config:
+  timeout: 3m
+environment:
+  skills:
+    - ../../packages/squad-cli/src/cli/skills
+  files:
+    - src: fixtures/team.md
+      dest: .squad/team.md
+    - src: fixtures/routing.md
+      dest: .squad/routing.md
+    - src: fixtures/skills/typescript-patterns/SKILL.md
+      dest: .squad/skills/typescript-patterns/SKILL.md
+    - src: fixtures/skills/api-design/SKILL.md
+      dest: .squad/skills/api-design/SKILL.md
+    - src: fixtures/skills/testing-practices/SKILL.md
+      dest: .squad/skills/testing-practices/SKILL.md
+    - src: fixtures/skills/security-review/SKILL.md
+      dest: .squad/skills/security-review/SKILL.md
+scoring:
+  threshold: 0.7
+stimuli:
+  - name: Invokes TypeScript skill for type system task
+    prompt: |
+      Refactor the user model to use discriminated unions for the account
+      status — right now it's using string enums which don't provide
+      exhaustiveness checking.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (discriminated union|satisfies|narrowing|type guard)
+      - type: prompt
+    rubric:
+      - The response applies TypeScript-specific patterns (discriminated unions, type narrowing)
+      - The response demonstrates knowledge from the TypeScript Patterns skill
+      - The response does not suggest a non-TypeScript approach (e.g., runtime checks only)
+
+  - name: Invokes API design skill for endpoint task
+    prompt: |
+      Design the REST endpoints for a team management feature. Users should
+      be able to create teams, add/remove members, and list team activity.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (/teams|/v[0-9]|plural|resource naming|pagination)
+      - type: prompt
+    rubric:
+      - The response uses plural resource naming conventions (/teams, /members)
+      - The response mentions API versioning or pagination best practices
+      - The response follows RESTful design principles from the API Design skill
+
+  - name: Invokes testing skill for coverage task
+    prompt: |
+      Write tests for the checkout flow. We need to cover the happy path,
+      expired cart, and payment failure scenarios.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (describe|it\(|expect|beforeEach|mock|vitest)
+      - type: prompt
+    rubric:
+      - The response includes well-structured test code with describe/it blocks
+      - The response covers all three scenarios mentioned (happy path, expired cart, payment failure)
+      - The response prefers real objects over mocks where feasible (per Testing Practices skill)
+
+  - name: Invokes security skill for auth review
+    prompt: |
+      Review the session handling in our auth module. We're storing JWTs in
+      localStorage and I'm worried about XSS exposure.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (XSS|httpOnly|secure|SameSite|cookie|localStorage)
+      - type: prompt
+    rubric:
+      - The response identifies the XSS risk of localStorage JWT storage
+      - The response recommends httpOnly cookies or other secure alternatives
+      - The response applies security review knowledge (OWASP, common auth vulnerabilities)
+
+  - name: Combines multiple skills for cross-cutting task
+    prompt: |
+      Add a new /users/:id/settings endpoint. It should accept PATCH requests
+      with partial updates, validate the TypeScript types at runtime, and we
+      need tests for the validation logic.
+    graders:
+      - type: output-matches
+        config:
+          pattern: (PATCH|/users|zod|schema|describe|test)
+      - type: prompt
+    rubric:
+      - The response addresses all three concerns (API design, TypeScript types, testing)
+      - The API design follows REST conventions (PATCH for partial updates, resource naming)
+      - TypeScript types are validated at runtime (e.g., zod, io-ts, or manual checks)
+      - Tests are included for the validation logic
