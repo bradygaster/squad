@@ -94,6 +94,11 @@ evals/
 | `skill-invocation` | Check which skills were/weren't called |
 | `tool-call` | Check which tools were/weren't called |
 
+**Design note**: Some stimuli intentionally use only a `prompt` grader (no
+deterministic regex). For example, the routing "ambiguous request" stimulus has
+no correct agent target - the grader evaluates reasoning quality, not a fixed
+answer. Adding `output-matches` to such stimuli would constrain valid responses.
+
 ## CI
 
 Evals run in a dedicated workflow (`.github/workflows/evals.yml`) that:

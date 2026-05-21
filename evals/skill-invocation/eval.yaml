@@ -50,7 +50,7 @@ stimuli:
     graders:
       - type: output-matches
         config:
-          pattern: (/teams|/v[0-9]|plural|resource naming|pagination)
+          pattern: (GET /teams|POST /teams|/v[0-9]+/|resource.*naming|pagina.*cursor|offset)
       - type: prompt
         name: api-design-skill-usage
     rubric:
