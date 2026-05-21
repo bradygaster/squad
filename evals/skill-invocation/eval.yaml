@@ -13,6 +13,10 @@ environment:
       dest: .squad/team.md
     - src: fixtures/routing.md
       dest: .squad/routing.md
+    - src: fixtures/agents/developer/charter.md
+      dest: .squad/agents/developer/charter.md
+    - src: fixtures/agents/lead/charter.md
+      dest: .squad/agents/lead/charter.md
     - src: fixtures/skills/typescript-patterns/SKILL.md
       dest: .squad/skills/typescript-patterns/SKILL.md
     - src: fixtures/skills/api-design/SKILL.md
@@ -34,8 +38,8 @@ stimuli:
         config:
           pattern: (discriminated union|satisfies|narrowing|type guard)
       - type: prompt
+        name: typescript-skill-usage
     rubric:
-      - The response applies TypeScript-specific patterns (discriminated unions, type narrowing)
       - The response demonstrates knowledge from the TypeScript Patterns skill
       - The response does not suggest a non-TypeScript approach (e.g., runtime checks only)
 
@@ -48,8 +52,8 @@ stimuli:
         config:
           pattern: (/teams|/v[0-9]|plural|resource naming|pagination)
       - type: prompt
+        name: api-design-skill-usage
     rubric:
-      - The response uses plural resource naming conventions (/teams, /members)
       - The response mentions API versioning or pagination best practices
       - The response follows RESTful design principles from the API Design skill
 
@@ -62,8 +66,8 @@ stimuli:
         config:
           pattern: (describe|it\(|expect|beforeEach|mock|vitest)
       - type: prompt
+        name: testing-skill-usage
     rubric:
-      - The response includes well-structured test code with describe/it blocks
       - The response covers all three scenarios mentioned (happy path, expired cart, payment failure)
       - The response prefers real objects over mocks where feasible (per Testing Practices skill)
 
@@ -76,8 +80,8 @@ stimuli:
         config:
           pattern: (XSS|httpOnly|secure|SameSite|cookie|localStorage)
       - type: prompt
+        name: security-skill-usage
     rubric:
-      - The response identifies the XSS risk of localStorage JWT storage
       - The response recommends httpOnly cookies or other secure alternatives
       - The response applies security review knowledge (OWASP, common auth vulnerabilities)
 
@@ -91,8 +95,8 @@ stimuli:
         config:
           pattern: (PATCH|/users|zod|schema|describe|test)
       - type: prompt
+        name: cross-cutting-skill-usage
     rubric:
-      - The response addresses all three concerns (API design, TypeScript types, testing)
       - The API design follows REST conventions (PATCH for partial updates, resource naming)
       - TypeScript types are validated at runtime (e.g., zod, io-ts, or manual checks)
       - Tests are included for the validation logic

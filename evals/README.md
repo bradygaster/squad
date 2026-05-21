@@ -97,7 +97,8 @@ evals/
 ## CI
 
 Evals run in a dedicated workflow (`.github/workflows/evals.yml`) that:
-- Triggers on changes to `evals/` or `packages/squad-sdk/src/`
-- Requires Copilot SDK credentials (repository secret)
-- Reports scores as PR comments
+- Validates eval schemas (`vally lint`) on every PR touching `evals/` or SDK source
+- Runs full eval suites when the `run-evals` label is added or via manual dispatch
+- Requires Copilot SDK credentials (GITHUB_TOKEN with Copilot access)
+- Uploads results as JUnit artifacts for download
 - Does NOT block merge — evals are advisory

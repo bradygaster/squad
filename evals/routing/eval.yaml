@@ -31,8 +31,9 @@ stimuli:
     graders:
       - type: output-matches
         config:
-          pattern: (developer|Developer)
+          pattern: (route.*[Dd]eveloper|assign.*[Dd]eveloper|[Dd]eveloper.*(agent|handle|fix))
       - type: prompt
+        name: routing-correctness
     rubric:
       - The response identifies this as a bug fix task and routes to the Developer agent
       - The response does not route to Lead, Tester, or Scribe for a simple bug fix
@@ -44,8 +45,9 @@ stimuli:
     graders:
       - type: output-matches
         config:
-          pattern: (lead|Lead)
+          pattern: (route.*[Ll]ead|assign.*[Ll]ead|[Ll]ead.*(agent|handle|review|design))
       - type: prompt
+        name: routing-correctness
     rubric:
       - The response identifies this as an architecture/design task and routes to the Lead agent
       - Architecture reviews and design decisions go to Lead, not Developer
@@ -57,21 +59,23 @@ stimuli:
     graders:
       - type: output-matches
         config:
-          pattern: (tester|Tester)
+          pattern: (route.*[Tt]ester|assign.*[Tt]ester|[Tt]ester.*(agent|handle|test|cover))
       - type: prompt
+        name: routing-correctness
     rubric:
       - The response identifies this as a testing task and routes to the Tester agent
       - Test writing, coverage, and quality assurance tasks go to Tester
 
   - name: Routes documentation update to scribe
     prompt: |
-      The API reference is out of date — the /users endpoint now accepts
+      The API reference is out of date - the /users endpoint now accepts
       a pagination cursor. Update the docs to reflect the new parameter.
     graders:
       - type: output-matches
         config:
-          pattern: (scribe|Scribe)
+          pattern: (route.*[Ss]cribe|assign.*[Ss]cribe|[Ss]cribe.*(agent|handle|doc|update))
       - type: prompt
+        name: routing-correctness
     rubric:
       - The response identifies this as a documentation task and routes to the Scribe agent
       - Documentation updates, README changes, and reference maintenance go to Scribe
@@ -83,8 +87,9 @@ stimuli:
     graders:
       - type: output-matches
         config:
-          pattern: (developer|Developer)
+          pattern: (route.*[Dd]eveloper|assign.*[Dd]eveloper|[Dd]eveloper.*(agent|handle|implement|build))
       - type: prompt
+        name: routing-correctness
     rubric:
       - The response identifies this as a feature implementation task and routes to Developer
       - New feature coding tasks go to Developer, not Lead (who handles design only)
@@ -95,7 +100,8 @@ stimuli:
       to a flaky test in the payment module.
     graders:
       - type: prompt
+        name: ambiguity-handling
     rubric:
-      - The response acknowledges ambiguity — this could be a test fix (Tester) or a bug fix (Developer)
+      - The response acknowledges ambiguity - this could be a test fix (Tester) or a bug fix (Developer)
       - The response provides reasoning for its routing decision
       - The response does not silently pick one agent without explaining why

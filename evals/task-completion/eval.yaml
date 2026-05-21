@@ -39,8 +39,8 @@ stimuli:
         config:
           pattern: (trim|filter|pop|slice)
       - type: prompt
+        name: bug-fix-quality
     rubric:
-      - The fix handles trailing newlines and whitespace (trim, filter empty lines, or skip)
       - The fix does not change unrelated behavior
       - The fix handles edge cases (empty string input, all-whitespace input)
       - The response includes the corrected code, not just a description
@@ -56,11 +56,11 @@ stimuli:
         config:
           pattern: (fast|standard|premium|tier|complexity)
       - type: prompt
+        name: model-selection-quality
     rubric:
       - The response provides a working implementation (not just pseudocode)
       - The function classifies tasks into at least 3 tiers (fast, standard, premium)
       - The classification logic is reasonable (keyword-based, heuristic, or configurable)
-      - The response matches Squad's existing tier model (direct/lightweight/standard/full)
 
   - name: Implements team onboarding
     prompt: |
@@ -74,6 +74,7 @@ stimuli:
         config:
           pattern: (mkdir|writeFile|charter\.md|team\.md|agents/)
       - type: prompt
+        name: onboarding-quality
     rubric:
       - The implementation creates the agent directory structure
       - A charter.md file is generated with role-specific content
@@ -97,8 +98,9 @@ stimuli:
         config:
           pattern: (Alice|Bob|Carol)
       - type: prompt
+        name: routing-table-quality
     rubric:
       - The output uses Squad's markdown table format (| Work Type | Route To | Examples |)
       - All three team members appear in routing rules
-      - Work types are reasonably mapped (architecture→Alice, bugs→Bob, tests→Carol)
+      - Work types are reasonably mapped (architecture to Alice, bugs to Bob, tests to Carol)
       - The format is parseable by Squad's parseRoutingMarkdown() function
