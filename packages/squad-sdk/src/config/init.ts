@@ -197,8 +197,8 @@ const AGENT_TEMPLATES: Record<string, { displayName: string; description: string
     displayName: 'Ralph',
     description: 'Persistent memory agent that maintains context across sessions.'
   },
-  'aegis': {
-    displayName: 'Aegis',
+  'Rai': {
+    displayName: 'Rai',
     description: 'Responsible AI reviewer ensuring content safety, bias detection, and ethical standards.'
   },
   'fact-checker': {
@@ -722,6 +722,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
     join(squadDir, 'log'),
+    join(squadDir, 'rai'),
     join(squadDir, '.scratch'),
   ];
   
@@ -1017,6 +1018,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/agents/*/history.md merge=union',
     '.squad/log/** merge=union',
     '.squad/orchestration-log/** merge=union',
+    '.squad/rai/audit-trail.md merge=union',
   ];
   
   let existingAttrs = '';

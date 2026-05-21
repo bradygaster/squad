@@ -131,10 +131,10 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Scribe charter template',
   },
   {
-    source: 'aegis-charter.md',
-    destination: 'aegis-charter.md',
+    source: 'Rai-charter.md',
+    destination: 'Rai-charter.md',
     overwriteOnUpgrade: true,
-    description: 'Aegis RAI reviewer charter template',
+    description: 'Rai RAI reviewer charter template',
   },
   {
     source: 'rai-policy.md',

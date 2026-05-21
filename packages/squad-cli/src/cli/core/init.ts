@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Init command implementation — uses SDK
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
@@ -217,9 +217,9 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         displayName: 'Ralph',
       },
       {
-        name: 'aegis',
-        role: 'aegis',
-        displayName: 'Aegis',
+        name: 'Rai',
+        role: 'Rai',
+        displayName: 'Rai',
       }
     ],
     configFormat: options.sdk ? 'sdk' : 'markdown',

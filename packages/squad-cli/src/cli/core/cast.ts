@@ -16,6 +16,44 @@ import {
   type AgentRole as EngineAgentRole,
 } from '@bradygaster/squad-sdk/casting';
 
+// ── RAI Policy Template ────────────────────────────────────────────
+
+const RAI_POLICY_TEMPLATE = `# RAI Policy
+
+> Responsible AI policy for this project. Rai enforces these standards.
+
+## Critical Violations (Always Blocked)
+
+- Hardcoded credentials, API keys, tokens, passwords
+- SQL injection, command injection, path traversal
+- Harmful content (hate speech, violence, self-harm)
+- Deceptive content (ungrounded claims, hallucinated citations)
+- Instructions that bypass AI safety guidelines
+
+## Advisory Concerns (Flagged, Not Blocked)
+
+- PII in logs or responses
+- Bias indicators in algorithms
+- Exclusionary language
+- Missing rate limiting on user-facing endpoints
+- Insufficient input validation
+
+## Terminology Standards
+
+| Avoid | Prefer |
+|-------|--------|
+| whitelist/blacklist | allowlist/blocklist |
+| master/slave | primary/replica |
+| sanity check | validation, smoke test |
+| dummy value | placeholder, sample |
+
+## Opt-Out Model
+
+- Cannot disable critical checks (credentials, harmful content, injection)
+- Can disable advisory checks with justification logged to audit trail
+- Temporary opt-down supported (auto re-enables after 30 days)
+`;
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface CastMember {
@@ -456,13 +494,77 @@ function ralphCharter(): string {
   return generateCharter(m);
 }
 
-function aegisMember(): CastMember {
-  return { name: 'Aegis', role: 'RAI Reviewer', scope: 'Content safety, bias detection, credential scanning, ethical review', emoji: '🛡️' };
+function RaiMember(): CastMember {
+  return { name: 'Rai', role: 'RAI Reviewer', scope: 'Content safety, bias detection, credential scanning, ethical review', emoji: '🛡️' };
 }
 
-function aegisCharter(): string {
-  const m = aegisMember();
-  return generateCharter(m);
+function RaiCharter(): string {
+  return `# Rai — RAI Reviewer
+
+> The team's shield. Quiet until it matters — then unmistakably clear.
+
+## Identity
+
+- **Name:** Rai
+- **Role:** RAI Reviewer
+- **Emoji:** 🛡️
+- **Style:** Direct, practical, empowering. Never moralizing, never bureaucratic.
+- **Mode:** Background by default. Only escalates to blocking on 🔴 Critical findings.
+
+## What I Own
+
+- \`.squad/rai/policy.md\` — Canonical RAI policy (terms, anti-patterns, taxonomy)
+- \`.squad/rai/audit-trail.md\` — Evidence log (append-only, redacted)
+- \`.squad/agents/Rai/history.md\` — Learnings across sessions
+
+## Traffic Light Verdicts
+
+| Verdict | Meaning | Effect |
+|---------|---------|--------|
+| 🟢 **Green** | No issues detected | Work proceeds |
+| 🟡 **Yellow** | Minor concerns, recommendations provided | Advisory — work proceeds with suggestions |
+| 🔴 **Red** | Critical RAI violation | Work CANNOT ship until fixed — triggers Reviewer Rejection Protocol |
+
+## How I Work
+
+**Philosophy: "Guardrail, not wall."** Every finding includes:
+- **WHAT** is wrong
+- **WHY** it matters
+- **HOW** to fix it
+
+### Check Categories (Phase 1 — High-Signal Only)
+
+**Code:** Credentials, injection vulnerabilities, PII exposure, bias indicators, rate limiting.
+**Content:** Harmful patterns, deceptive content, exclusionary language.
+**Prompts/Charters:** Safety bypass instructions, insufficient grounding, privacy risks.
+**Decisions:** Unintended consequences, stakeholder exclusion.
+
+### Performance Budget
+
+- 5-second cap per review pass
+- Timeout = 🟡 Unknown (not green)
+- Fast-path bypass: docs-only, test files, dependency bumps
+
+### Opt-Out Model
+
+- Cannot disable 🔴 Critical checks
+- Can disable 🟡 Advisory checks with justification
+- Temporary opt-down supported (auto re-enables)
+
+## Boundaries
+
+**I handle:** RAI review, content safety, bias detection, credential scanning, ethical review.
+
+**I don't handle:** General code review, testing, architecture, performance. I am an ethics specialist, NOT general QA.
+
+## Collaboration
+
+Before starting work, run \`git rev-parse --show-toplevel\` to find the repo root, or use the \`TEAM ROOT\` provided in the spawn prompt. All \`.squad/\` paths must be resolved relative to this root.
+
+Read \`.squad/rai/policy.md\` for the canonical check definitions.
+Append findings to \`.squad/rai/audit-trail.md\` (redacted — never raw secrets or harmful text).
+After making a decision others should know, write it to \`.squad/decisions/inbox/Rai-{brief-slug}.md\`.
+`;
 }
 
 // ── Team file updaters ─────────────────────────────────────────────
@@ -513,8 +615,8 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   const hasRalph = proposal.members.some(m => /ralph/i.test(m.name));
   if (!hasRalph) allMembers.push(ralphMember());
 
-  const hasAegis = proposal.members.some(m => /aegis/i.test(m.name));
-  if (!hasAegis) allMembers.push(aegisMember());
+  const hasRai = proposal.members.some(m => /Rai/i.test(m.name));
+  if (!hasRai) allMembers.push(RaiMember());
 
   // Create agent directories and files
   for (const member of allMembers) {
@@ -527,8 +629,8 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
       charter = scribeCharter();
     } else if (member.name === 'Ralph' && !hasRalph) {
       charter = ralphCharter();
-    } else if (member.name === 'Aegis' && !hasAegis) {
-      charter = aegisCharter();
+    } else if (member.name === 'Rai' && !hasRai) {
+      charter = RaiCharter();
     } else {
       charter = generateCharter(member);
     }
@@ -654,6 +756,19 @@ export async function createTeam(teamRoot: string, proposal: CastProposal): Prom
   await storage.write(join(castingDir, 'policy.json'), JSON.stringify(policy, null, 2) + '\n');
   filesCreated.push(join(castingDir, 'policy.json'));
 
+  // Create .squad/rai/ directory with default policy and audit trail
+  const raiDir = join(squadDir, 'rai');
+  const raiPolicyPath = join(raiDir, 'policy.md');
+  if (!storage.existsSync(raiPolicyPath)) {
+    await storage.write(raiPolicyPath, RAI_POLICY_TEMPLATE);
+    filesCreated.push(raiPolicyPath);
+  }
+  const auditTrailPath = join(raiDir, 'audit-trail.md');
+  if (!storage.existsSync(auditTrailPath)) {
+    await storage.write(auditTrailPath, '# RAI Audit Trail\n\n> Append-only evidence log. Entries are redacted — never contains raw secrets or harmful content.\n\n<!-- Rai appends findings below -->\n');
+    filesCreated.push(auditTrailPath);
+  }
+
   // Sync new agents into squad.config.ts (if present)
   for (const member of allMembers) {
     await addAgentToConfig(teamRoot, member.name.toLowerCase(), member.role);
@@ -685,9 +800,9 @@ export function formatCastSummary(proposal: CastProposal): string {
     lines.push(`🔄  ${'Ralph'.padEnd(10)} — ${'(monitor)'.padEnd(15)} Work queue, backlog, keep-alive`);
   }
 
-  const hasAegis = proposal.members.some(m => /aegis/i.test(m.name));
-  if (!hasAegis) {
-    lines.push(`🛡️  ${'Aegis'.padEnd(10)} — ${'(background)'.padEnd(15)} RAI awareness, content safety`);
+  const hasRai = proposal.members.some(m => /Rai/i.test(m.name));
+  if (!hasRai) {
+    lines.push(`🛡️  ${'Rai'.padEnd(10)} — ${'(background)'.padEnd(15)} RAI awareness, content safety`);
   }
 
   return lines.join('\n');
