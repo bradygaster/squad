@@ -239,18 +239,24 @@ Keep these six rows in this exact order every time you update the comment:
 
 ### Handle Windows comment bodies safely
 
-On Windows, avoid inline multi-line `--field body="..."` values. Use PowerShell
-heredoc syntax to build the full body, then set `[Console]::OutputEncoding` to
-UTF-8 before piping to `gh api --input -`. This avoids both shell escaping issues
-and the codepage corruption that `Get-Content -Raw` or `Set-Content` introduce on
-PS 5.1. Follow the same caution as the PII Protection section: scrub any local
-absolute paths before posting.
+On Windows PowerShell 5.1, use the **`--field body=@file`** pattern to post comment
+bodies. Write the content to a temp file using UTF-8 **without BOM**, then pass
+`--field "body=@$tmpFile"` to `gh api`. This is more reliable than piping JSON
+through `--input -` on PS 5.1, which can silently corrupt multi-byte characters
+even with `[Console]::OutputEncoding = UTF8`.
+
+Key rules:
+- Use `New-Object System.Text.UTF8Encoding $false` (the `$false` disables the BOM).
+  `[System.Text.Encoding]::UTF8` writes a BOM which GitHub renders as a stray
+  character (`﻿`) at the start of the comment.
+- Use `--field "body=@$tmpFile"`, NOT `--input -` or `--input filename`, for
+  comment body updates. The `@` prefix tells `gh` to read the field value from
+  the file rather than treating the path as a literal string.
+- Clean up the temp file after posting.
+- Scrub any local absolute paths from the body before posting (see PII Protection
+  section).
 
 ```powershell
-# Must be set once per script; PS 5.1 defaults to the system codepage which
-# corrupts multi-byte characters (emoji, arrows, etc.) when piping to gh.
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
 $step1StartTime = Get-Date
 $step1Started = $step1StartTime.ToString('HH:mm')
 $step1Duration = (Get-Date) - $step1StartTime
@@ -262,22 +268,27 @@ $body = @"
 
 | Step | Status | Started | Duration |
 |---|---|---|---|
-| 1. Fast-fail checks (build · link · `squad version`) | ✅ Passed | $step1Started | $step1DurationText |
-| 2. Create test repo(s) | 🔄 Running | $step2Started | -- |
-| 3. `squad init` + file verification | ⏳ Pending | --:-- | -- |
-| 4. Run sessions | ⏳ Pending | --:-- | -- |
-| 5. Verify outcomes | ⏳ Pending | --:-- | -- |
-| 6. Record verdicts + post final comment | ⏳ Pending | --:-- | -- |
+| 1. Fast-fail checks (build · link · `squad version`) | :white_check_mark: Passed | $step1Started | $step1DurationText |
+| 2. Create test repo(s) | :arrows_counterclockwise: Running | $step2Started | -- |
+| 3. `squad init` + file verification | :hourglass_flowing_sand: Pending | --:-- | -- |
+| 4. Run sessions | :hourglass_flowing_sand: Pending | --:-- | -- |
+| 5. Verify outcomes | :hourglass_flowing_sand: Pending | --:-- | -- |
+| 6. Record verdicts + post final comment | :hourglass_flowing_sand: Pending | --:-- | -- |
 
 | Symbol | Meaning |
 |---|---|
-| ⏳ | Not started |
-| 🔄 | Running |
-| ✅ | Passed |
-| ❌ | Failed |
-| ⚠️ | Passed with caveats |
+| :hourglass_flowing_sand: | Not started |
+| :arrows_counterclockwise: | Running |
+| :white_check_mark: | Passed |
+| :x: | Failed |
+| :warning: | Passed with caveats |
 "@
-(@{ body = $body } | ConvertTo-Json -Compress) | gh api --method PATCH "repos/$env:REPO/issues/comments/$env:COMMENT_ID" --input -
+
+$tmpFile = "$env:TEMP\e2e-comment-body.md"
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($tmpFile, $body, $utf8NoBom)
+gh api --method PATCH "repos/$env:REPO/issues/comments/$env:COMMENT_ID" --field "body=@$tmpFile"
+Remove-Item $tmpFile -Force
 ```
 
 ### Replace the tracking comment with the final verdict
