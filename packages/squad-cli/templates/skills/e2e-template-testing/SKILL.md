@@ -140,6 +140,124 @@ Create an `evidence/verdict.md` in each test repo:
 [anything unusual or noteworthy]
 ```
 
+## Progress Reporting
+
+Use this section only when you are running E2E validation for an open PR. If
+`PR_NUMBER` and `REPO` are both set, post and maintain a live tracking comment
+in the PR thread. If either value is missing (for example, a local-only run),
+skip progress reporting silently.
+
+### Start the tracking comment before Step 1
+
+1. Post a PR comment before Step 1 begins:
+
+```bash
+gh pr comment "$PR_NUMBER" --repo "$REPO" --body "## E2E Progress\n\n| Step | Status | Updated |
+|---|---|---|
+| 1. Fast-fail checks (build · link · \\`squad version\\`) | ⏳ Pending | --:-- |
+| 2. Create test repo(s) | ⏳ Pending | --:-- |
+| 3. \\`squad init\\` + file verification | ⏳ Pending | --:-- |
+| 4. Run sessions | ⏳ Pending | --:-- |
+| 5. Verify outcomes | ⏳ Pending | --:-- |
+| 6. Record verdicts + post final comment | ⏳ Pending | --:-- |
+\n| Symbol | Meaning |
+|---|---|
+| ⏳ | Not started |
+| 🔄 | Running |
+| ✅ | Passed |
+| ❌ | Failed |
+| ⚠️ | Passed with caveats |"
+```
+
+2. Capture the comment ID immediately after posting it:
+
+```bash
+COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --jq '.[-1].id')
+```
+
+3. Treat Step 1 as in progress as soon as the comment exists. Update the body so
+   Step 1 shows `🔄 Running` and every later step remains `⏳ Pending`.
+
+### Update the tracking comment after every step boundary
+
+1. After each step completes, compute the current time in `HH:MM` format.
+2. Edit the existing comment in place; do not post a new progress comment:
+
+```bash
+gh api --method PATCH "repos/$REPO/issues/comments/$COMMENT_ID" --field body="..."
+```
+
+3. Update the completed step row to `✅`, `❌`, or `⚠️` and include the `HH:MM`
+   timestamp in that row.
+4. Keep all previously completed rows unchanged.
+5. Mark the next step as `🔄 Running`.
+6. Leave later steps as `⏳ Pending`.
+7. If a step fails and you stop early, still update the comment so the failed step
+   shows `❌` with its timestamp and Step 6 becomes `🔄 Running` while you prepare
+   the final verdict.
+
+### Use this status legend in the comment
+
+| Symbol | Meaning |
+|---|---|
+| ⏳ | Not started |
+| 🔄 | Running |
+| ✅ | Passed |
+| ❌ | Failed |
+| ⚠️ | Passed with caveats |
+
+### Use exact step names and order
+
+Keep these six rows in this exact order every time you update the comment:
+
+1. Fast-fail checks (build · link · `squad version`)
+2. Create test repo(s)
+3. `squad init` + file verification
+4. Run sessions
+5. Verify outcomes
+6. Record verdicts + post final comment
+
+### Handle Windows comment bodies safely
+
+On Windows, avoid inline multi-line `--field body="..."` values. Use PowerShell
+heredoc syntax to build the full body, write the JSON payload to a temporary file
+inside the working repo, then pipe it with `--input -` to avoid shell escaping
+issues. Follow the same caution as the PII Protection section: scrub any local
+absolute paths before posting.
+
+```powershell
+$body = @"
+## E2E Progress
+
+| Step | Status | Updated |
+|---|---|---|
+| 1. Fast-fail checks (build · link · `squad version`) | ✅ Passed | 09:14 |
+| 2. Create test repo(s) | 🔄 Running | 09:14 |
+| 3. `squad init` + file verification | ⏳ Pending | --:-- |
+| 4. Run sessions | ⏳ Pending | --:-- |
+| 5. Verify outcomes | ⏳ Pending | --:-- |
+| 6. Record verdicts + post final comment | ⏳ Pending | --:-- |
+
+| Symbol | Meaning |
+|---|---|
+| ⏳ | Not started |
+| 🔄 | Running |
+| ✅ | Passed |
+| ❌ | Failed |
+| ⚠️ | Passed with caveats |
+"@
+$payloadPath = ".\gh-progress-comment.json"
+@{ body = $body } | ConvertTo-Json -Compress | Set-Content -Path $payloadPath -NoNewline
+Get-Content $payloadPath -Raw | gh api --method PATCH "repos/$env:REPO/issues/comments/$env:COMMENT_ID" --input -
+Remove-Item $payloadPath
+```
+
+### Replace the tracking comment with the final verdict
+
+When you reach Step 6, replace the tracking comment body entirely with the final
+structured verdict table. Do not post a separate final comment. The tracking
+comment is the final verdict comment.
+
 ## Test Matrix Template
 
 Use this matrix when planning validation for a template change. Not every change
