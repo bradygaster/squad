@@ -90,6 +90,8 @@ evals/
 | `output-matches` | Regex match on agent output (fast, deterministic) |
 | `output-contains` | Substring check (simpler than regex) |
 | `prompt` | LLM-as-judge using rubric criteria |
+| `file-exists` | Verifies agent wrote a file to disk |
+| `file-contains` | Verifies file on disk contains expected content |
 | `pairwise` | Comparative grading between outputs |
 | `skill-invocation` | Check which skills were/weren't called |
 | `tool-call` | Check which tools were/weren't called |
@@ -98,6 +100,20 @@ evals/
 deterministic regex). For example, the routing "ambiguous request" stimulus has
 no correct agent target - the grader evaluates reasoning quality, not a fixed
 answer. Adding `output-matches` to such stimuli would constrain valid responses.
+
+**Scoring**: All `prompt` graders use `config.scoring: scale_1_5` for granular
+failure diagnostics rather than binary pass/fail. This surfaces which rubric
+criteria failed when a stimulus regresses.
+
+**Statistical reliability**: Suites use `config.runs: 3` (routing, skill-invocation)
+or `config.runs: 5` (task-completion) to reduce noise from stochastic agent behavior.
+Single-trial scores are inside the LLM noise floor; multiple runs give confidence
+that a pass is stable.
+
+**Construct validity**: The task-completion suite uses `file-exists` and
+`file-contains` graders to verify the agent executed operations on disk, not just
+described them in text. This prevents false passes from agents that narrate
+solutions without implementing them.
 
 ## CI
 

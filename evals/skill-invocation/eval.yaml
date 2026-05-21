@@ -4,6 +4,7 @@ description: |
   invoke the appropriate skills from the registry?
 type: capability
 config:
+  runs: 3
   timeout: 3m
 environment:
   skills:
@@ -36,9 +37,11 @@ stimuli:
     graders:
       - type: output-matches
         config:
-          pattern: (discriminated union|satisfies|narrowing|type guard)
+          pattern: (satisfies|narrowing|type guard|never type|switch.*case|keyof|in operator)
       - type: prompt
         name: typescript-skill-usage
+        config:
+          scoring: scale_1_5
     rubric:
       - The response demonstrates knowledge from the TypeScript Patterns skill
       - The response does not suggest a non-TypeScript approach (e.g., runtime checks only)
@@ -53,6 +56,8 @@ stimuli:
           pattern: (GET /teams|POST /teams|/v[0-9]+/|resource.*naming|pagina.*cursor|offset)
       - type: prompt
         name: api-design-skill-usage
+        config:
+          scoring: scale_1_5
     rubric:
       - The response mentions API versioning or pagination best practices
       - The response follows RESTful design principles from the API Design skill
@@ -67,6 +72,8 @@ stimuli:
           pattern: (describe|it\(|expect|beforeEach|mock|vitest)
       - type: prompt
         name: testing-skill-usage
+        config:
+          scoring: scale_1_5
     rubric:
       - The response covers all three scenarios mentioned (happy path, expired cart, payment failure)
       - The response prefers real objects over mocks where feasible (per Testing Practices skill)
@@ -78,9 +85,11 @@ stimuli:
     graders:
       - type: output-matches
         config:
-          pattern: (XSS|httpOnly|secure|SameSite|cookie|localStorage)
+          pattern: (httpOnly.*cookie|SameSite.*(Strict|Lax)|avoid.*localStorage|move.*to.*cookie|don't.*store.*JWT.*localStorage)
       - type: prompt
         name: security-skill-usage
+        config:
+          scoring: scale_1_5
     rubric:
       - The response recommends httpOnly cookies or other secure alternatives
       - The response applies security review knowledge (OWASP, common auth vulnerabilities)
@@ -92,10 +101,21 @@ stimuli:
       need tests for the validation logic.
     graders:
       - type: output-matches
+        name: api-design-signal
         config:
-          pattern: (PATCH|/users|zod|schema|describe|test)
+          pattern: (PATCH|/users/|partial update|idempotent)
+      - type: output-matches
+        name: runtime-validation-signal
+        config:
+          pattern: (zod|schema|validate|parse|safeParse|io-ts)
+      - type: output-matches
+        name: test-authoring-signal
+        config:
+          pattern: (describe|it\(|expect|test\(|assert)
       - type: prompt
         name: cross-cutting-skill-usage
+        config:
+          scoring: scale_1_5
     rubric:
       - The API design follows REST conventions (PATCH for partial updates, resource naming)
       - TypeScript types are validated at runtime (e.g., zod, io-ts, or manual checks)

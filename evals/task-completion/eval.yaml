@@ -4,6 +4,7 @@ description: |
   prompts, does the agent produce working, correct solutions?
 type: capability
 config:
+  runs: 5
   timeout: 5m
 environment:
   skills:
@@ -17,79 +18,101 @@ environment:
       dest: .squad/agents/lead/charter.md
     - src: fixtures/agents/developer/charter.md
       dest: .squad/agents/developer/charter.md
+    - src: fixtures/src/config.ts
+      dest: src/config.ts
 scoring:
   threshold: 0.7
 stimuli:
   - name: Implements a simple bug fix
     prompt: |
-      The `parseConfig` function crashes when the input YAML has a trailing
-      newline followed by whitespace. Here's the function:
-
-      ```typescript
-      export function parseConfig(raw: string): Config {
-        const lines = raw.split('\n');
-        const lastLine = lines[lines.length - 1];
-        return JSON.parse(lastLine);
-      }
-      ```
-
-      Fix it so it handles trailing whitespace gracefully.
+      The `parseConfig` function in `src/config.ts` crashes when the input YAML
+      has a trailing newline followed by whitespace. Fix it so it handles
+      trailing whitespace gracefully. Edit the file directly.
     graders:
       - type: output-matches
         config:
           pattern: (trim|filter|pop|slice)
+      - type: file-contains
+        name: fix-applied-to-disk
+        config:
+          path: src/config.ts
+          value: trim
       - type: prompt
         name: bug-fix-quality
+        config:
+          scoring: scale_1_5
     rubric:
       - The fix does not change unrelated behavior
       - The fix handles edge cases (empty string input, all-whitespace input)
-      - The response includes the corrected code, not just a description
+      - The agent edited the file on disk, not just described the fix
 
   - name: Implements cost-aware model selection
     prompt: |
-      I need a function that selects the appropriate model tier based on
-      task complexity. Simple tasks (typos, renames) should use the fast
-      tier. Complex tasks (architecture, multi-file refactors) should use
-      the premium tier. Everything else uses standard.
+      Create a file at src/model-selector.ts with a function that selects the
+      appropriate model tier based on task complexity. Simple tasks (typos,
+      renames) should use the fast tier. Complex tasks (architecture, multi-file
+      refactors) should use the premium tier. Everything else uses standard.
+      Write the implementation to disk.
     graders:
       - type: output-matches
         config:
           pattern: (fast|standard|premium|tier|complexity)
+      - type: file-exists
+        name: selector-created
+        config:
+          path: src/model-selector.ts
+      - type: file-contains
+        name: selector-has-tiers
+        config:
+          path: src/model-selector.ts
+          value: fast
       - type: prompt
         name: model-selection-quality
+        config:
+          scoring: scale_1_5
     rubric:
-      - The response provides a working implementation (not just pseudocode)
+      - The response provides a working implementation written to disk
       - The function classifies tasks into at least 3 tiers (fast, standard, premium)
       - The classification logic is reasonable (keyword-based, heuristic, or configurable)
 
   - name: Implements team onboarding
     prompt: |
-      Write a function that onboards a new agent to a Squad team. It should:
-      1. Create the agent's directory under .squad/agents/{name}/
+      Write a function that onboards a new agent named "reviewer" to a Squad team. It should:
+      1. Create the agent's directory under .squad/agents/reviewer/
       2. Generate a charter.md with the agent's role and responsibilities
-      3. Add the agent to the team roster in team.md
-      Return the paths of all created/modified files.
+      3. Add the agent to the team roster in .squad/team.md
+      Execute the function to onboard the "reviewer" agent now.
     graders:
       - type: output-matches
         config:
           pattern: (mkdir|writeFile|charter\.md|team\.md|agents/)
+      - type: file-exists
+        name: charter-created
+        config:
+          path: .squad/agents/reviewer/charter.md
+      - type: file-contains
+        name: roster-updated
+        config:
+          path: .squad/team.md
+          value: reviewer
       - type: prompt
         name: onboarding-quality
+        config:
+          scoring: scale_1_5
     rubric:
       - The implementation creates the agent directory structure
       - A charter.md file is generated with role-specific content
       - The team.md roster is updated (appended, not overwritten)
-      - The function returns the paths of created/modified files
-      - File operations use proper error handling (check existence, handle failures)
+      - The agent executed the operation on disk, not just described it
 
   - name: Produces correct routing table format
     prompt: |
-      Generate a routing.md file for a 3-person team:
+      Generate a routing.md file at .squad/routing-new.md for a 3-person team:
       - Alice (lead): handles architecture, design reviews, planning
       - Bob (developer): handles bug fixes, features, refactoring
       - Carol (tester): handles test writing, coverage, QA
 
-      Use the Squad routing table markdown format.
+      Use the Squad routing table markdown format. Write the file to disk.
     graders:
       - type: output-matches
         config:
@@ -97,10 +120,21 @@ stimuli:
       - type: output-matches
         config:
           pattern: (Alice|Bob|Carol)
+      - type: file-exists
+        name: routing-file-created
+        config:
+          path: .squad/routing-new.md
+      - type: file-contains
+        name: routing-has-table
+        config:
+          path: .squad/routing-new.md
+          value: "|"
       - type: prompt
         name: routing-table-quality
+        config:
+          scoring: scale_1_5
     rubric:
       - The output uses Squad's markdown table format (| Work Type | Route To | Examples |)
       - All three team members appear in routing rules
       - Work types are reasonably mapped (architecture to Alice, bugs to Bob, tests to Carol)
-      - The format is parseable by Squad's parseRoutingMarkdown() function
+      - The file was written to disk, not just output in the response

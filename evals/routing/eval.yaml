@@ -4,6 +4,7 @@ description: |
   route to the correct squad member based on routing.md rules?
 type: capability
 config:
+  runs: 3
   timeout: 3m
 environment:
   skills:
@@ -34,6 +35,8 @@ stimuli:
           pattern: (route.*[Dd]eveloper|assign.*[Dd]eveloper|[Dd]eveloper.*(agent|handle|fix))
       - type: prompt
         name: routing-correctness
+        config:
+          scoring: scale_1_5
     rubric:
       - The response identifies this as a bug fix task and routes to the Developer agent
       - The response does not route to Lead, Tester, or Scribe for a simple bug fix
@@ -48,6 +51,8 @@ stimuli:
           pattern: (route.*[Ll]ead|assign.*[Ll]ead|[Ll]ead.*(agent|handle|review|design))
       - type: prompt
         name: routing-correctness
+        config:
+          scoring: scale_1_5
     rubric:
       - The response identifies this as an architecture/design task and routes to the Lead agent
       - Architecture reviews and design decisions go to Lead, not Developer
@@ -62,6 +67,8 @@ stimuli:
           pattern: (route.*[Tt]ester|assign.*[Tt]ester|[Tt]ester.*(agent|handle|test|cover))
       - type: prompt
         name: routing-correctness
+        config:
+          scoring: scale_1_5
     rubric:
       - The response identifies this as a testing task and routes to the Tester agent
       - Test writing, coverage, and quality assurance tasks go to Tester
@@ -76,6 +83,8 @@ stimuli:
           pattern: (route.*[Ss]cribe|assign.*[Ss]cribe|[Ss]cribe.*(agent|handle|doc|update))
       - type: prompt
         name: routing-correctness
+        config:
+          scoring: scale_1_5
     rubric:
       - The response identifies this as a documentation task and routes to the Scribe agent
       - Documentation updates, README changes, and reference maintenance go to Scribe
@@ -90,6 +99,8 @@ stimuli:
           pattern: (route.*[Dd]eveloper|assign.*[Dd]eveloper|[Dd]eveloper.*(agent|handle|implement|build))
       - type: prompt
         name: routing-correctness
+        config:
+          scoring: scale_1_5
     rubric:
       - The response identifies this as a feature implementation task and routes to Developer
       - New feature coding tasks go to Developer, not Lead (who handles design only)
@@ -101,6 +112,8 @@ stimuli:
     graders:
       - type: prompt
         name: ambiguity-handling
+        config:
+          scoring: scale_1_5
     rubric:
       - The response acknowledges ambiguity - this could be a test fix (Tester) or a bug fix (Developer)
       - The response provides reasoning for its routing decision
