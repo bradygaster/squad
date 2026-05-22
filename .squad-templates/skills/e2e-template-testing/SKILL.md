@@ -87,14 +87,17 @@ See **Progress Reporting** for the full comment lifecycle and update patterns.
 ```bash
 cd /path/to/squad          # your feature branch
 npm install
-npm run build              # compiles SDK + CLI
+npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli
 
-# Link so `squad` command uses your local build
-cd packages/squad-cli
-npm link
+# Link so `squad` command uses your local build (workspace flag — no cd required)
+npm link -w packages/squad-cli
 ```
 
-Verify: `squad version` outputs a version string (e.g., `0.9.7-preview` on a dev branch).
+Verify: `squad version` output includes the `-preview` suffix (e.g., `x.y.z-preview`),
+confirming the local dev build is active. If the output shows a plain semver without
+`-preview`, the globally-installed npm package is still in use — re-check the link step.
+See [CONTRIBUTING.md — Making the `squad` Command Use Your Local Build](../../../CONTRIBUTING.md)
+for the full guidance on local dev versioning.
 
 ### Step 2 — Create a disposable test repo
 
