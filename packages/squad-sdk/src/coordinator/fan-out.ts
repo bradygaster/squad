@@ -11,6 +11,7 @@
 import type { AgentCharter } from '../agents/index.js';
 import type { EventBus } from '../client/event-bus.js';
 import type { SessionPool } from '../client/session-pool.js';
+import { VALID_REASONING_EFFORTS } from '../config/models.js';
 
 // --- Spawn Configuration ---
 
@@ -126,15 +127,20 @@ async function spawnSingle(
       : await deps.resolveModel(charter, config.modelOverride);
 
     // Step 2b: Resolve reasoning effort
-    const reasoningEffort = deps.resolveReasoningEffort
+    const rawEffort = deps.resolveReasoningEffort
       ? await deps.resolveReasoningEffort(charter, config.reasoningEffortOverride)
       : config.reasoningEffortOverride || charter.reasoningEffort || undefined;
+    // Validate: only pass through recognized effort values
+    const validEfforts = VALID_REASONING_EFFORTS as readonly string[];
+    const reasoningEffort = rawEffort && rawEffort !== 'auto' && validEfforts.includes(rawEffort)
+      ? rawEffort
+      : undefined;
 
     // Step 3: Create session
     const session = await deps.createSession({
       model,
       clientName: `squad-agent-${config.agentName}`,
-      ...(reasoningEffort && reasoningEffort !== 'auto' ? { reasoningEffort } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {}),
     });
 
     // Step 4: Register in session pool

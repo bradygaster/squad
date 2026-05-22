@@ -11,6 +11,7 @@ import { SquadClientWithPool } from '../client/index.js';
 import type { SquadSession, SquadSessionConfig, SquadReasoningEffort } from '../adapter/types.js';
 import { compileCharterFull, type CharterCompileOptions } from './charter-compiler.js';
 import { resolveModel, type ModelResolutionOptions, type TaskType } from './model-selector.js';
+import { VALID_REASONING_EFFORTS } from '../config/models.js';
 import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js';
 import * as path from 'path';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
@@ -210,16 +211,19 @@ export class AgentLifecycleManager {
       
       // Step 4: Create session
       // Use compiled charter's resolved reasoning effort (already validated/normalized),
-      // with spawn-time override taking precedence
-      const resolvedReasoningEffort = reasoningEffortOverride
+      // with spawn-time override taking precedence. Validate before passing to session.
+      const rawEffort = reasoningEffortOverride
         || agentConfig.resolvedReasoningEffort
         || undefined;
+      const validEffort = rawEffort && rawEffort !== 'auto' && (VALID_REASONING_EFFORTS as readonly string[]).includes(rawEffort)
+        ? rawEffort as SquadReasoningEffort
+        : undefined;
       const sessionConfig: SquadSessionConfig = {
         model: resolvedModel.model,
         systemMessage: {
           content: agentConfig.prompt,
         },
-        ...(resolvedReasoningEffort ? { reasoningEffort: resolvedReasoningEffort as SquadReasoningEffort } : {}),
+        ...(validEffort ? { reasoningEffort: validEffort } : {}),
       };
       
       const session = await this.client.createSession(sessionConfig);

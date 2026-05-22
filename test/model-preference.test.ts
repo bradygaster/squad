@@ -645,4 +645,11 @@ describe('clampReasoningEffort', () => {
     expect(clampReasoningEffort('xhigh', ['low'])).toBe('low');
     expect(clampReasoningEffort('low', ['low'])).toBe('low');
   });
+
+  it('clamps UP to model minimum when requested is below supported range', () => {
+    // Model only supports [high] — requesting "low" clamps up to "high"
+    expect(clampReasoningEffort('low', ['high'])).toBe('high');
+    // Model only supports [medium, high] — requesting "low" clamps up to "medium"
+    expect(clampReasoningEffort('low', ['medium', 'high'])).toBe('medium');
+  });
 });

@@ -9,9 +9,10 @@
 import { SquadCustomAgentConfig } from '../adapter/types.js';
 import { ConfigurationError } from '../adapter/errors.js';
 import { normalizeEol } from '../utils/normalize-eol.js';
+import { VALID_REASONING_EFFORTS } from '../config/models.js';
 
-/** Valid reasoning effort values (excluding "auto" sentinel). */
-const VALID_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
+/** Set form for fast lookup. */
+const VALID_EFFORTS = new Set<string>(VALID_REASONING_EFFORTS);
 
 /**
  * Options for compiling a charter.

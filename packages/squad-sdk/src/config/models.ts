@@ -736,9 +736,14 @@ export function writeAgentModelOverrides(
 /**
  * Valid reasoning effort levels, ordered from lowest to highest.
  * "auto" is a permitted stored sentinel that resolvers treat as "not set".
+ * Canonical list — import this in other modules instead of duplicating.
  */
-const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
-const VALID_REASONING_EFFORTS_WITH_AUTO = [...VALID_REASONING_EFFORTS, 'auto'];
+export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
+/** Type-safe includes check for string values. */
+export type ValidReasoningEffort = typeof VALID_REASONING_EFFORTS[number];
+const VALID_REASONING_EFFORTS_WITH_AUTO: readonly string[] = [...VALID_REASONING_EFFORTS, 'auto'];
+/** String array form for runtime `.includes()` checks with arbitrary strings. */
+const VALID_EFFORTS_SET: readonly string[] = VALID_REASONING_EFFORTS;
 
 /**
  * Ordered effort levels for clamping. "max" is treated as equivalent to "xhigh".
@@ -789,6 +794,18 @@ export function clampReasoningEffort(
     if (rank !== undefined && rank <= requestedRank && rank > bestRank) {
       bestRank = rank;
       bestEffort = effort;
+    }
+  }
+
+  // If nothing <= requested (requested is below model minimum), clamp UP to model's lowest
+  if (!bestEffort) {
+    let lowestRank = Infinity;
+    for (const effort of supportedEfforts) {
+      const rank = EFFORT_RANK[effort];
+      if (rank !== undefined && rank < lowestRank) {
+        lowestRank = rank;
+        bestEffort = effort;
+      }
     }
   }
 
@@ -849,7 +866,7 @@ export function readAgentReasoningEffortOverrides(squadDir: string, storage: Sto
     ) {
       const result: Record<string, string> = {};
       for (const [key, value] of Object.entries(parsed.agentReasoningEffortOverrides)) {
-        if (typeof value === 'string' && VALID_REASONING_EFFORTS.includes(value)) {
+        if (typeof value === 'string' && VALID_EFFORTS_SET.includes(value)) {
           result[key] = value;
         }
       }
@@ -887,8 +904,11 @@ export function writeReasoningEffort(squadDir: string, effort: string | null, st
 
   if (effort === null) {
     delete config.defaultReasoningEffort;
-  } else {
+  } else if (VALID_REASONING_EFFORTS_WITH_AUTO.includes(effort)) {
     config.defaultReasoningEffort = effort;
+  } else {
+    // Invalid value — treat as clearing the preference
+    delete config.defaultReasoningEffort;
   }
 
   storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
@@ -925,7 +945,18 @@ export function writeAgentReasoningEffortOverrides(
   if (overrides === null || Object.keys(overrides).length === 0) {
     delete config.agentReasoningEffortOverrides;
   } else {
-    config.agentReasoningEffortOverrides = overrides;
+    // Filter out invalid effort values
+    const validated: Record<string, string> = {};
+    for (const [agent, effort] of Object.entries(overrides)) {
+      if (VALID_REASONING_EFFORTS_WITH_AUTO.includes(effort)) {
+        validated[agent] = effort;
+      }
+    }
+    if (Object.keys(validated).length > 0) {
+      config.agentReasoningEffortOverrides = validated;
+    } else {
+      delete config.agentReasoningEffortOverrides;
+    }
   }
 
   storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
@@ -966,7 +997,7 @@ export function resolveReasoningEffort(options: {
 
   // Helper: only accept valid effort values (reject invalid strings)
   const isValid = (v: string | null | undefined): v is string =>
-    typeof v === 'string' && v !== 'auto' && VALID_REASONING_EFFORTS.includes(v);
+    typeof v === 'string' && v !== 'auto' && VALID_EFFORTS_SET.includes(v);
 
   // Layer 0a: Per-agent persistent override
   if (!resolved && squadDir && agentName) {
