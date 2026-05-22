@@ -2,7 +2,8 @@
  * CI tests for the Scribe charter in scribe-charter.md.
  *
  * Verifies that:
- *  - The numbered task list is present in the "How I Work" section
+ *  - The numbered task list is present in the task block starting with
+ *    "After every substantial work session:"
  *  - HARD GATE enforcement is documented (decisions archival ceiling)
  *  - Decision inbox merge is a numbered step
  *  - Deduplication is a numbered step
@@ -33,17 +34,22 @@ function readTemplate(): string {
 /**
  * Extract the Scribe numbered task block from the charter.
  * Returns the substring from "After every substantial work session:"
- * up to and including the "Never speak to the user." step.
+ * up to and including the line containing "Never speak to the user."
+ * (number- and formatting-agnostic — works regardless of step count or bold markers).
  */
 function extractScribeTaskBlock(content: string): string {
   const startMarker = 'After every substantial work session:';
-  const endMarker = '6. **Never speak to the user.**';
   const start = content.indexOf(startMarker);
-  const end = content.indexOf(endMarker, start);
-  if (start === -1 || end === -1) {
-    throw new Error('Could not locate Scribe task block in charter');
-  }
-  return content.slice(start, end + endMarker.length);
+  if (start === -1) throw new Error('Could not locate task block start marker in charter');
+
+  // Find the line containing "Never speak to the user." after the start marker,
+  // without relying on its step number or Markdown formatting.
+  const afterStart = content.slice(start);
+  const lines = afterStart.split('\n');
+  const endLineIdx = lines.findIndex(l => l.includes('Never speak to the user.'));
+  if (endLineIdx === -1) throw new Error('Could not locate "Never speak to the user." in charter');
+
+  return lines.slice(0, endLineIdx + 1).join('\n');
 }
 
 describe('Scribe charter — task structure and HARD GATE enforcement', () => {
@@ -58,15 +64,21 @@ describe('Scribe charter — task structure and HARD GATE enforcement', () => {
   });
 
   it('decision inbox merge is a numbered step', () => {
-    expect(taskBlock, 'Decision inbox merge step not found').toContain('Merge the decision inbox');
+    const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
+    const hasStep = numberedLines.some(l => l.includes('Merge the decision inbox'));
+    expect(hasStep, 'Decision inbox merge must appear on a numbered step line').toBe(true);
   });
 
   it('deduplication step is present', () => {
-    expect(taskBlock, 'Deduplication step not found').toContain('Deduplicate');
+    const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
+    const hasStep = numberedLines.some(l => l.includes('Deduplicate'));
+    expect(hasStep, 'Deduplication must appear on a numbered step line').toBe(true);
   });
 
   it('commit step is present', () => {
-    expect(taskBlock, 'Commit step not found').toContain('Commit');
+    const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
+    const hasStep = numberedLines.some(l => l.includes('Commit'));
+    expect(hasStep, 'Commit must appear on a numbered step line').toBe(true);
   });
 
   it('HARD GATE enforcement is documented in the charter', () => {
