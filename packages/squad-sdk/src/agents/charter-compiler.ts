@@ -10,6 +10,9 @@ import { SquadCustomAgentConfig } from '../adapter/types.js';
 import { ConfigurationError } from '../adapter/errors.js';
 import { normalizeEol } from '../utils/normalize-eol.js';
 
+/** Valid reasoning effort values (excluding "auto" sentinel). */
+const VALID_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
+
 /**
  * Options for compiling a charter.
  */
@@ -167,7 +170,11 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
     const resolvedModel = configOverrides?.model || parsed.modelPreference;
 
     // Resolve reasoning effort: config override > charter preference
-    const resolvedReasoningEffort = configOverrides?.reasoningEffort || parsed.reasoningEffort;
+    // Normalize: "auto" and invalid values resolve to undefined
+    const configEffort = configOverrides?.reasoningEffort?.toLowerCase();
+    const charterEffort = parsed.reasoningEffort; // already validated during parsing
+    const validConfigEffort = configEffort && configEffort !== 'auto' && VALID_EFFORTS.has(configEffort) ? configEffort : undefined;
+    const resolvedReasoningEffort = validConfigEffort || charterEffort;
 
     // Resolve tools: config override > charter-extracted tools
     const resolvedTools = configOverrides?.tools;
@@ -270,7 +277,11 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
     }
     const effortMatch = modelContent.match(/\*\*Reasoning Effort:\*\*\s*(.+)/i);
     if (effortMatch) {
-      result.reasoningEffort = effortMatch[1]!.trim();
+      const raw = effortMatch[1]!.trim().toLowerCase();
+      // Normalize: "auto" → undefined, invalid values → undefined
+      if (raw !== 'auto' && VALID_EFFORTS.has(raw)) {
+        result.reasoningEffort = raw;
+      }
     }
   }
   

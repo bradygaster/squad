@@ -9,7 +9,7 @@
 
 import { SquadClientWithPool } from '../client/index.js';
 import type { SquadSession, SquadSessionConfig, SquadReasoningEffort } from '../adapter/types.js';
-import { compileCharter, type CharterCompileOptions } from './charter-compiler.js';
+import { compileCharterFull, type CharterCompileOptions } from './charter-compiler.js';
 import { resolveModel, type ModelResolutionOptions, type TaskType } from './model-selector.js';
 import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js';
 import * as path from 'path';
@@ -194,14 +194,14 @@ export class AgentLifecycleManager {
         pluginContext: await buildActivePluginContext(this.storage, path.join(this.teamRoot, '.squad')),
       };
       
-      const agentConfig = compileCharter(compileOptions);
+      const agentConfig = compileCharterFull(compileOptions);
       
       // Step 3: Resolve model
       const modelOptions: ModelResolutionOptions = {
         userOverride: modelOverride,
-        charterPreference: agentConfig.prompt.includes('## Model') 
-          ? this.extractModelPreference(charterContent)
-          : undefined,
+        charterPreference: agentConfig.resolvedModel !== undefined
+          ? agentConfig.resolvedModel
+          : this.extractModelPreference(charterContent),
         taskType,
         agentRole: agentName,
       };
@@ -209,8 +209,10 @@ export class AgentLifecycleManager {
       const resolvedModel = resolveModel(modelOptions);
       
       // Step 4: Create session
+      // Use compiled charter's resolved reasoning effort (already validated/normalized),
+      // with spawn-time override taking precedence
       const resolvedReasoningEffort = reasoningEffortOverride
-        || this.extractReasoningEffort(charterContent)
+        || agentConfig.resolvedReasoningEffort
         || undefined;
       const sessionConfig: SquadSessionConfig = {
         model: resolvedModel.model,
@@ -346,17 +348,6 @@ export class AgentLifecycleManager {
   private extractModelPreference(charterContent: string): string | undefined {
     const modelMatch = charterContent.match(/##\s+Model\s*\n[\s\S]*?\*\*Preferred:\*\*\s*(.+)/i);
     return modelMatch ? modelMatch[1]!.trim() : undefined;
-  }
-
-  /**
-   * Extract reasoning effort from charter content.
-   * @private
-   */
-  private extractReasoningEffort(charterContent: string): string | undefined {
-    const effortMatch = charterContent.match(/##\s+Model\s*\n[\s\S]*?\*\*Reasoning Effort:\*\*\s*(.+)/i);
-    const value = effortMatch ? effortMatch[1]!.trim() : undefined;
-    if (value === 'auto') return undefined;
-    return value;
   }
 }
 

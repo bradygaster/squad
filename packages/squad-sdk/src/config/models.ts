@@ -735,8 +735,10 @@ export function writeAgentModelOverrides(
 
 /**
  * Valid reasoning effort levels, ordered from lowest to highest.
+ * "auto" is a permitted stored sentinel that resolvers treat as "not set".
  */
 const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
+const VALID_REASONING_EFFORTS_WITH_AUTO = [...VALID_REASONING_EFFORTS, 'auto'];
 
 /**
  * Ordered effort levels for clamping. "max" is treated as equivalent to "xhigh".
@@ -811,8 +813,10 @@ export function readReasoningEffort(squadDir: string, storage: StorageProvider =
     if (
       parsed !== null &&
       typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
       typeof parsed.defaultReasoningEffort === 'string' &&
-      parsed.defaultReasoningEffort.length > 0
+      parsed.defaultReasoningEffort.length > 0 &&
+      VALID_REASONING_EFFORTS_WITH_AUTO.includes(parsed.defaultReasoningEffort)
     ) {
       return parsed.defaultReasoningEffort;
     }
@@ -870,7 +874,10 @@ export function writeReasoningEffort(squadDir: string, effort: string | null, st
   if (storage.existsSync(configPath)) {
     try {
       const raw = storage.readSync(configPath);
-      config = raw !== undefined ? JSON.parse(raw) : { version: 1 };
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
     } catch {
       config = { version: 1 };
     }
@@ -904,7 +911,10 @@ export function writeAgentReasoningEffortOverrides(
   if (storage.existsSync(configPath)) {
     try {
       const raw = storage.readSync(configPath);
-      config = raw !== undefined ? JSON.parse(raw) : { version: 1 };
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
     } catch {
       config = { version: 1 };
     }
@@ -954,11 +964,15 @@ export function resolveReasoningEffort(options: {
 
   let resolved: string | undefined;
 
+  // Helper: only accept valid effort values (reject invalid strings)
+  const isValid = (v: string | null | undefined): v is string =>
+    typeof v === 'string' && v !== 'auto' && VALID_REASONING_EFFORTS.includes(v);
+
   // Layer 0a: Per-agent persistent override
   if (!resolved && squadDir && agentName) {
     const agentOverrides = readAgentReasoningEffortOverrides(squadDir, storage);
     const agentEffort = agentOverrides[agentName];
-    if (agentEffort && agentEffort !== 'auto') {
+    if (isValid(agentEffort)) {
       resolved = agentEffort;
     }
   }
@@ -966,18 +980,18 @@ export function resolveReasoningEffort(options: {
   // Layer 0b: Global persistent config
   if (!resolved && squadDir) {
     const persistedEffort = readReasoningEffort(squadDir, storage);
-    if (persistedEffort && persistedEffort !== 'auto') {
+    if (isValid(persistedEffort)) {
       resolved = persistedEffort;
     }
   }
 
   // Layer 1: Spawn-time override
-  if (!resolved && spawnOverride && spawnOverride !== 'auto') {
+  if (!resolved && isValid(spawnOverride)) {
     resolved = spawnOverride;
   }
 
   // Layer 2: Charter preference
-  if (!resolved && charterPreference && charterPreference !== 'auto') {
+  if (!resolved && isValid(charterPreference)) {
     resolved = charterPreference;
   }
 

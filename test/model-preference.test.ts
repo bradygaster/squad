@@ -565,6 +565,40 @@ describe('resolveReasoningEffort', () => {
       })
     ).toBeUndefined();
   });
+
+  it('ignores invalid spawnOverride values', () => {
+    expect(
+      resolveReasoningEffort({ spawnOverride: 'invalid', charterPreference: 'high' })
+    ).toBe('high');
+  });
+
+  it('ignores invalid charterPreference values', () => {
+    expect(
+      resolveReasoningEffort({ charterPreference: 'turbo' })
+    ).toBeUndefined();
+  });
+
+  it('ignores invalid persisted defaultReasoningEffort', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultReasoningEffort: 'invalid' })
+    );
+    expect(
+      resolveReasoningEffort({
+        squadDir,
+        charterPreference: 'high',
+      })
+    ).toBe('high');
+  });
+
+  it('ignores all-invalid layers and returns undefined', () => {
+    expect(
+      resolveReasoningEffort({
+        spawnOverride: 'invalid',
+        charterPreference: 'auto',
+      })
+    ).toBeUndefined();
+  });
 });
 
 // ============================================================================

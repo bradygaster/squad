@@ -124,6 +124,18 @@ describe('parseCharterMarkdown', () => {
       expect(parsed.reasoningEffort).toBe('xhigh');
     });
 
+    it('normalizes reasoning effort auto to undefined', () => {
+      const charter = FULL_CHARTER.replace('**Reasoning Effort:** xhigh', '**Reasoning Effort:** auto');
+      const parsed = parseCharterMarkdown(charter);
+      expect(parsed.reasoningEffort).toBeUndefined();
+    });
+
+    it('rejects invalid reasoning effort values', () => {
+      const charter = FULL_CHARTER.replace('**Reasoning Effort:** xhigh', '**Reasoning Effort:** turbo');
+      const parsed = parseCharterMarkdown(charter);
+      expect(parsed.reasoningEffort).toBeUndefined();
+    });
+
     it('extracts collaboration section', () => {
       const parsed = parseCharterMarkdown(FULL_CHARTER);
       expect(parsed.collaboration).toContain('Fenster');
@@ -262,6 +274,18 @@ describe('compileCharterFull', () => {
     });
 
     expect(result.resolvedReasoningEffort).toBe('low');
+  });
+
+  it('invalid config override reasoning effort falls through to charter', () => {
+    const result = compileCharterFull({
+      agentName: 'verbal',
+      charterPath: '/test/charter.md',
+      charterContent: FULL_CHARTER,
+      configOverrides: { reasoningEffort: 'invalid' },
+    });
+
+    // Falls back to charter value since override is invalid
+    expect(result.resolvedReasoningEffort).toBe('xhigh');
   });
 
   it('reasoning effort is undefined when not in charter or config', () => {
