@@ -548,6 +548,8 @@ export interface ModelPreferenceConfig {
   defaultModel?: string;
   agentModelOverrides?: Record<string, string>;
   economyMode?: boolean;
+  defaultReasoningEffort?: string;
+  agentReasoningEffortOverrides?: Record<string, string>;
 }
 
 /**
@@ -729,6 +731,194 @@ export function writeAgentModelOverrides(
   }
 
   storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Valid reasoning effort levels.
+ */
+const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
+
+/**
+ * Reads the persistent reasoning effort preference from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns The defaultReasoningEffort string if set, or null
+ */
+export function readReasoningEffort(squadDir: string, storage: StorageProvider = new FSStorageProvider()): string | null {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return null;
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof parsed.defaultReasoningEffort === 'string' &&
+      parsed.defaultReasoningEffort.length > 0
+    ) {
+      return parsed.defaultReasoningEffort;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads per-agent reasoning effort overrides from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns Record of agent name → reasoning effort, or empty object
+ */
+export function readAgentReasoningEffortOverrides(squadDir: string, storage: StorageProvider = new FSStorageProvider()): Record<string, string> {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return {};
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof parsed.agentReasoningEffortOverrides === 'object' &&
+      parsed.agentReasoningEffortOverrides !== null
+    ) {
+      const result: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed.agentReasoningEffortOverrides)) {
+        if (typeof value === 'string' && VALID_REASONING_EFFORTS.includes(value)) {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Writes a persistent reasoning effort preference to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param effort - Reasoning effort to persist, or null to clear
+ */
+export function writeReasoningEffort(squadDir: string, effort: string | null, storage: StorageProvider = new FSStorageProvider()): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      config = raw !== undefined ? JSON.parse(raw) : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (effort === null) {
+    delete config.defaultReasoningEffort;
+  } else {
+    config.defaultReasoningEffort = effort;
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Writes per-agent reasoning effort overrides to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param overrides - Record of agent name → reasoning effort, or null to clear
+ */
+export function writeAgentReasoningEffortOverrides(
+  squadDir: string,
+  overrides: Record<string, string> | null,
+  storage: StorageProvider = new FSStorageProvider()
+): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      config = raw !== undefined ? JSON.parse(raw) : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (overrides === null || Object.keys(overrides).length === 0) {
+    delete config.agentReasoningEffortOverrides;
+  } else {
+    config.agentReasoningEffortOverrides = overrides;
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Resolves the effective reasoning effort for an agent spawn.
+ * Uses a layered priority system matching the model resolution pattern:
+ *   Layer 0a: Per-agent persistent override (.squad/config.json agentReasoningEffortOverrides)
+ *   Layer 0b: Global persistent config (.squad/config.json defaultReasoningEffort)
+ *   Layer 1: Spawn-time override (caller-provided)
+ *   Layer 2: Charter preference (agent's ## Model → **Reasoning Effort:** field)
+ *   Layer 3: Default (undefined — let SDK/API decide)
+ *
+ * The value "auto" at any layer is treated as "not set" and falls through.
+ *
+ * @param options - Resolution inputs
+ * @returns Resolved reasoning effort string, or undefined if unset
+ */
+export function resolveReasoningEffort(options: {
+  agentName?: string;
+  squadDir?: string;
+  spawnOverride?: string | null;
+  charterPreference?: string | null;
+  storage?: StorageProvider;
+}): string | undefined {
+  const { agentName, squadDir, spawnOverride, charterPreference } = options;
+  const storage = options.storage ?? new FSStorageProvider();
+
+  // Layer 0a: Per-agent persistent override
+  if (squadDir && agentName) {
+    const agentOverrides = readAgentReasoningEffortOverrides(squadDir, storage);
+    const agentEffort = agentOverrides[agentName];
+    if (agentEffort && agentEffort !== 'auto') {
+      return agentEffort;
+    }
+  }
+
+  // Layer 0b: Global persistent config
+  if (squadDir) {
+    const persistedEffort = readReasoningEffort(squadDir, storage);
+    if (persistedEffort && persistedEffort !== 'auto') {
+      return persistedEffort;
+    }
+  }
+
+  // Layer 1: Spawn-time override
+  if (spawnOverride && spawnOverride !== 'auto') {
+    return spawnOverride;
+  }
+
+  // Layer 2: Charter preference
+  if (charterPreference && charterPreference !== 'auto') {
+    return charterPreference;
+  }
+
+  // Layer 3: Default — undefined (let SDK/API decide)
+  return undefined;
 }
 
 /**

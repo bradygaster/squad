@@ -25,6 +25,8 @@ export interface AgentSpawnConfig {
   context?: string;
   /** Model override (skips resolution) */
   modelOverride?: string;
+  /** Reasoning effort override */
+  reasoningEffortOverride?: string;
 }
 
 // --- Spawn Result ---
@@ -51,6 +53,8 @@ export interface FanOutDependencies {
   compileCharter: (agentName: string) => Promise<AgentCharter>;
   /** Model resolution function */
   resolveModel: (charter: AgentCharter, override?: string) => Promise<string>;
+  /** Reasoning effort resolution function (optional for backwards compatibility) */
+  resolveReasoningEffort?: (charter: AgentCharter, override?: string) => Promise<string | undefined>;
   /** Session creation function */
   createSession: (config: any) => Promise<{ sessionId: string; sendMessage: (opts: any) => Promise<void> }>;
   /** Session pool for tracking */
@@ -121,10 +125,16 @@ async function spawnSingle(
       ? config.modelOverride
       : await deps.resolveModel(charter, config.modelOverride);
 
+    // Step 2b: Resolve reasoning effort
+    const reasoningEffort = deps.resolveReasoningEffort
+      ? await deps.resolveReasoningEffort(charter, config.reasoningEffortOverride)
+      : config.reasoningEffortOverride || charter.reasoningEffort || undefined;
+
     // Step 3: Create session
     const session = await deps.createSession({
       model,
       clientName: `squad-agent-${config.agentName}`,
+      ...(reasoningEffort && reasoningEffort !== 'auto' ? { reasoningEffort } : {}),
     });
 
     // Step 4: Register in session pool

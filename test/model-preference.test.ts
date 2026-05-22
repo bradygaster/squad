@@ -18,6 +18,11 @@ import {
   writeModelPreference,
   writeAgentModelOverrides,
   resolveModel,
+  readReasoningEffort,
+  readAgentReasoningEffortOverrides,
+  writeReasoningEffort,
+  writeAgentReasoningEffortOverrides,
+  resolveReasoningEffort,
 } from '@bradygaster/squad-sdk/config';
 
 // Temp directory for each test
@@ -349,5 +354,186 @@ describe('round-trip persistence', () => {
     writeAgentModelOverrides(squadDir, { fenster: 'claude-sonnet-4.6' });
     expect(readModelPreference(squadDir)).toBe('claude-opus-4.6');
     expect(readAgentModelOverrides(squadDir).fenster).toBe('claude-sonnet-4.6');
+  });
+});
+
+// ============================================================================
+// readReasoningEffort
+// ============================================================================
+
+describe('readReasoningEffort', () => {
+  it('returns null when config.json does not exist', () => {
+    expect(readReasoningEffort(squadDir)).toBeNull();
+  });
+
+  it('returns null when config.json has no defaultReasoningEffort', () => {
+    writeFileSync(join(squadDir, 'config.json'), JSON.stringify({ version: 1 }));
+    expect(readReasoningEffort(squadDir)).toBeNull();
+  });
+
+  it('returns the effort when defaultReasoningEffort is set', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultReasoningEffort: 'xhigh' })
+    );
+    expect(readReasoningEffort(squadDir)).toBe('xhigh');
+  });
+
+  it('returns null on malformed JSON', () => {
+    writeFileSync(join(squadDir, 'config.json'), '{ broken json');
+    expect(readReasoningEffort(squadDir)).toBeNull();
+  });
+});
+
+// ============================================================================
+// readAgentReasoningEffortOverrides
+// ============================================================================
+
+describe('readAgentReasoningEffortOverrides', () => {
+  it('returns empty object when config.json does not exist', () => {
+    expect(readAgentReasoningEffortOverrides(squadDir)).toEqual({});
+  });
+
+  it('reads per-agent overrides', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        agentReasoningEffortOverrides: {
+          fenster: 'xhigh',
+          mcmanus: 'low',
+        },
+      })
+    );
+    const overrides = readAgentReasoningEffortOverrides(squadDir);
+    expect(overrides.fenster).toBe('xhigh');
+    expect(overrides.mcmanus).toBe('low');
+  });
+
+  it('ignores invalid effort values in overrides', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        agentReasoningEffortOverrides: { fenster: 'xhigh', bad: 'invalid-effort' },
+      })
+    );
+    const overrides = readAgentReasoningEffortOverrides(squadDir);
+    expect(overrides.fenster).toBe('xhigh');
+    expect(overrides).not.toHaveProperty('bad');
+  });
+});
+
+// ============================================================================
+// writeReasoningEffort
+// ============================================================================
+
+describe('writeReasoningEffort', () => {
+  it('creates config.json if missing', () => {
+    writeReasoningEffort(squadDir, 'xhigh');
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf-8'));
+    expect(raw.version).toBe(1);
+    expect(raw.defaultReasoningEffort).toBe('xhigh');
+  });
+
+  it('merges with existing config without clobbering', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultModel: 'claude-opus-4.6' })
+    );
+    writeReasoningEffort(squadDir, 'high');
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf-8'));
+    expect(raw.defaultModel).toBe('claude-opus-4.6');
+    expect(raw.defaultReasoningEffort).toBe('high');
+  });
+
+  it('removes defaultReasoningEffort when set to null', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultReasoningEffort: 'xhigh' })
+    );
+    writeReasoningEffort(squadDir, null);
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf-8'));
+    expect(raw).not.toHaveProperty('defaultReasoningEffort');
+  });
+});
+
+// ============================================================================
+// resolveReasoningEffort — layered hierarchy
+// ============================================================================
+
+describe('resolveReasoningEffort', () => {
+  it('returns undefined when nothing is set', () => {
+    expect(resolveReasoningEffort({})).toBeUndefined();
+  });
+
+  it('Layer 2: charter preference wins over default', () => {
+    expect(
+      resolveReasoningEffort({ charterPreference: 'high' })
+    ).toBe('high');
+  });
+
+  it('Layer 1: spawn override wins over charter', () => {
+    expect(
+      resolveReasoningEffort({
+        spawnOverride: 'xhigh',
+        charterPreference: 'high',
+      })
+    ).toBe('xhigh');
+  });
+
+  it('Layer 0b: persistent config wins over spawn override', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultReasoningEffort: 'medium' })
+    );
+    expect(
+      resolveReasoningEffort({
+        squadDir,
+        spawnOverride: 'xhigh',
+        charterPreference: 'high',
+      })
+    ).toBe('medium');
+  });
+
+  it('Layer 0a: per-agent override wins over global', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        defaultReasoningEffort: 'medium',
+        agentReasoningEffortOverrides: { fenster: 'xhigh' },
+      })
+    );
+    expect(
+      resolveReasoningEffort({
+        agentName: 'fenster',
+        squadDir,
+        spawnOverride: 'high',
+      })
+    ).toBe('xhigh');
+  });
+
+  it('auto is treated as absent at all layers', () => {
+    expect(
+      resolveReasoningEffort({ charterPreference: 'auto' })
+    ).toBeUndefined();
+
+    expect(
+      resolveReasoningEffort({ spawnOverride: 'auto', charterPreference: 'high' })
+    ).toBe('high');
+  });
+
+  it('falls through to charter when config has no effort', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultModel: 'claude-opus-4.6' })
+    );
+    expect(
+      resolveReasoningEffort({
+        squadDir,
+        charterPreference: 'xhigh',
+      })
+    ).toBe('xhigh');
   });
 });
