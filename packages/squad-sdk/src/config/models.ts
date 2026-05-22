@@ -734,9 +734,64 @@ export function writeAgentModelOverrides(
 }
 
 /**
- * Valid reasoning effort levels.
+ * Valid reasoning effort levels, ordered from lowest to highest.
  */
 const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'];
+
+/**
+ * Ordered effort levels for clamping. "max" is treated as equivalent to "xhigh".
+ */
+const EFFORT_RANK: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3,
+  max: 3,
+};
+
+/**
+ * Clamp a requested reasoning effort to the highest level supported by the model.
+ *
+ * If the model does not support reasoning effort at all (empty or missing
+ * supportedEfforts), returns undefined. If the requested effort is within
+ * the model's supported range, returns it unchanged. Otherwise, returns the
+ * highest effort the model supports.
+ *
+ * @param requested - The reasoning effort the user/charter requested
+ * @param supportedEfforts - The model's supportedReasoningEfforts from listModels()
+ * @returns The clamped effort, or undefined if the model doesn't support reasoning effort
+ */
+export function clampReasoningEffort(
+  requested: string | undefined,
+  supportedEfforts: string[] | undefined,
+): string | undefined {
+  if (!requested) return undefined;
+
+  // Model doesn't support reasoning effort at all
+  if (!supportedEfforts || supportedEfforts.length === 0) return undefined;
+
+  const requestedRank = EFFORT_RANK[requested];
+  if (requestedRank === undefined) return undefined;
+
+  // Check if the requested effort is directly supported
+  if (supportedEfforts.includes(requested)) return requested;
+  // "max" and "xhigh" are equivalent
+  if (requested === 'xhigh' && supportedEfforts.includes('max')) return 'xhigh';
+  if (requested === 'max' && supportedEfforts.includes('xhigh')) return 'xhigh';
+
+  // Find the highest supported effort that doesn't exceed the request
+  let bestEffort: string | undefined;
+  let bestRank = -1;
+  for (const effort of supportedEfforts) {
+    const rank = EFFORT_RANK[effort];
+    if (rank !== undefined && rank <= requestedRank && rank > bestRank) {
+      bestRank = rank;
+      bestEffort = effort;
+    }
+  }
+
+  return bestEffort;
+}
 
 /**
  * Reads the persistent reasoning effort preference from `.squad/config.json`.
@@ -877,6 +932,11 @@ export function writeAgentReasoningEffortOverrides(
  *
  * The value "auto" at any layer is treated as "not set" and falls through.
  *
+ * When `supportedEfforts` is provided (from the model's capabilities via
+ * listModels()), the resolved effort is clamped to the highest level the
+ * model supports. This prevents API errors when a user requests e.g.
+ * "xhigh" on a model that only supports up to "high".
+ *
  * @param options - Resolution inputs
  * @returns Resolved reasoning effort string, or undefined if unset
  */
@@ -885,40 +945,51 @@ export function resolveReasoningEffort(options: {
   squadDir?: string;
   spawnOverride?: string | null;
   charterPreference?: string | null;
+  /** Model's supportedReasoningEfforts from listModels(). When provided, clamps the result. */
+  supportedEfforts?: string[];
   storage?: StorageProvider;
 }): string | undefined {
   const { agentName, squadDir, spawnOverride, charterPreference } = options;
   const storage = options.storage ?? new FSStorageProvider();
 
+  let resolved: string | undefined;
+
   // Layer 0a: Per-agent persistent override
-  if (squadDir && agentName) {
+  if (!resolved && squadDir && agentName) {
     const agentOverrides = readAgentReasoningEffortOverrides(squadDir, storage);
     const agentEffort = agentOverrides[agentName];
     if (agentEffort && agentEffort !== 'auto') {
-      return agentEffort;
+      resolved = agentEffort;
     }
   }
 
   // Layer 0b: Global persistent config
-  if (squadDir) {
+  if (!resolved && squadDir) {
     const persistedEffort = readReasoningEffort(squadDir, storage);
     if (persistedEffort && persistedEffort !== 'auto') {
-      return persistedEffort;
+      resolved = persistedEffort;
     }
   }
 
   // Layer 1: Spawn-time override
-  if (spawnOverride && spawnOverride !== 'auto') {
-    return spawnOverride;
+  if (!resolved && spawnOverride && spawnOverride !== 'auto') {
+    resolved = spawnOverride;
   }
 
   // Layer 2: Charter preference
-  if (charterPreference && charterPreference !== 'auto') {
-    return charterPreference;
+  if (!resolved && charterPreference && charterPreference !== 'auto') {
+    resolved = charterPreference;
   }
 
   // Layer 3: Default — undefined (let SDK/API decide)
-  return undefined;
+  if (!resolved) return undefined;
+
+  // Clamp to model capabilities if available
+  if (options.supportedEfforts) {
+    return clampReasoningEffort(resolved, options.supportedEfforts);
+  }
+
+  return resolved;
 }
 
 /**

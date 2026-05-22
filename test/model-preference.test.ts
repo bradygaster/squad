@@ -23,6 +23,7 @@ import {
   writeReasoningEffort,
   writeAgentReasoningEffortOverrides,
   resolveReasoningEffort,
+  clampReasoningEffort,
 } from '@bradygaster/squad-sdk/config';
 
 // Temp directory for each test
@@ -535,5 +536,79 @@ describe('resolveReasoningEffort', () => {
         charterPreference: 'xhigh',
       })
     ).toBe('xhigh');
+  });
+
+  it('clamps to model max when supportedEfforts provided', () => {
+    // GPT-5.5 only supports up to "high"
+    expect(
+      resolveReasoningEffort({
+        charterPreference: 'xhigh',
+        supportedEfforts: ['low', 'medium', 'high'],
+      })
+    ).toBe('high');
+  });
+
+  it('passes through when within model capabilities', () => {
+    expect(
+      resolveReasoningEffort({
+        charterPreference: 'high',
+        supportedEfforts: ['low', 'medium', 'high', 'xhigh'],
+      })
+    ).toBe('high');
+  });
+
+  it('returns undefined when model has no effort support', () => {
+    expect(
+      resolveReasoningEffort({
+        charterPreference: 'xhigh',
+        supportedEfforts: [],
+      })
+    ).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// clampReasoningEffort
+// ============================================================================
+
+describe('clampReasoningEffort', () => {
+  it('returns undefined when no effort requested', () => {
+    expect(clampReasoningEffort(undefined, ['low', 'medium', 'high'])).toBeUndefined();
+  });
+
+  it('returns undefined when model has no effort support', () => {
+    expect(clampReasoningEffort('xhigh', undefined)).toBeUndefined();
+    expect(clampReasoningEffort('xhigh', [])).toBeUndefined();
+  });
+
+  it('passes through when effort is directly supported', () => {
+    expect(clampReasoningEffort('high', ['low', 'medium', 'high', 'xhigh'])).toBe('high');
+    expect(clampReasoningEffort('xhigh', ['low', 'medium', 'high', 'xhigh'])).toBe('xhigh');
+  });
+
+  it('clamps xhigh to high when model max is high (GPT-5.5)', () => {
+    expect(clampReasoningEffort('xhigh', ['low', 'medium', 'high'])).toBe('high');
+  });
+
+  it('clamps high to medium when model max is medium', () => {
+    expect(clampReasoningEffort('high', ['low', 'medium'])).toBe('medium');
+  });
+
+  it('clamps xhigh to medium for Claude Sonnet (single-effort models)', () => {
+    expect(clampReasoningEffort('xhigh', ['medium'])).toBe('medium');
+  });
+
+  it('treats max and xhigh as equivalent', () => {
+    // xhigh requested, model supports max
+    expect(clampReasoningEffort('xhigh', ['low', 'medium', 'high', 'max'])).toBe('xhigh');
+  });
+
+  it('returns undefined for unrecognized effort value', () => {
+    expect(clampReasoningEffort('turbo', ['low', 'medium', 'high'])).toBeUndefined();
+  });
+
+  it('handles model that only supports low', () => {
+    expect(clampReasoningEffort('xhigh', ['low'])).toBe('low');
+    expect(clampReasoningEffort('low', ['low'])).toBe('low');
   });
 });
