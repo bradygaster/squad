@@ -2,6 +2,20 @@
 
 You are working on a project that uses **Squad**, an AI team framework. When picking up issues autonomously, follow these guidelines.
 
+## Coordinator Canary Check
+
+**IMPORTANT — run this check on EVERY session start, before doing any work:**
+
+Look for the exact token `SQUAD_COORDINATOR_CANARY_a8f3` in your `agent_instructions`. This token is placed at the end of `squad.agent.md`. If it is missing, the coordinator file is missing or truncated.
+
+**When the token is missing, you MUST:**
+1. **STOP** — do not proceed with standard Squad behavior.
+2. **WARN the user** with this exact message:
+   ```
+   ⚠️ Squad coordinator (squad.agent.md) appears to be missing or truncated. The canary token was not found. Do NOT proceed with standard Squad behavior — Squad's safety rails are not loaded. Please restart your session.
+   ```
+3. Do not continue with normal Squad routing, spawning, PR, or branch-protection behavior after emitting the warning.
+
 ## Team Context
 
 Before starting work on any issue:
