@@ -3,9 +3,11 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey, StateBackendStorageAdapter } from '../packages/squad-sdk/src/state-backend.js';
 import type { StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
 import { resolveSquadState, clearResolveSquadCache } from '../packages/squad-sdk/src/resolution.js';
+import { ToolRegistry } from '../packages/squad-sdk/src/tools/index.js';
 
 const TMP = join(process.cwd(), `.test-state-backend-${randomBytes(4).toString('hex')}`);
 function git(args: string, cwd = TMP): string {
@@ -124,6 +126,18 @@ describe('resolveStateBackend()', () => {
   });
   it('legacy git-notes migrates to two-layer', () => {
     expect(resolveStateBackend(squadDir(), TMP, 'git-notes' as any).name).toBe('two-layer');
+  });
+  it('fails closed when an explicit git-native backend is unavailable', () => {
+    const nonGitRoot = join(tmpdir(), `.squad-state-non-git-${randomBytes(4).toString('hex')}`);
+    const nonGitSquad = join(nonGitRoot, '.squad');
+    mkdirSync(nonGitSquad, { recursive: true });
+    writeFileSync(join(nonGitSquad, 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'two-layer' }));
+
+    try {
+      expect(() => resolveStateBackend(nonGitSquad, nonGitRoot)).toThrow(/State backend 'two-layer' failed/);
+    } finally {
+      rmSync(nonGitRoot, { recursive: true, force: true });
+    }
   });
 });
 
@@ -483,5 +497,66 @@ describe('StateBackendStorageAdapter', () => {
     const backend = new GitNotesBackend(TMP);
     const adapter = new StateBackendStorageAdapter(backend, squadDir());
     expect(await adapter.stat('nope.md')).toBeUndefined();
+  });
+});
+
+describe('ToolRegistry state tools with git-native backend', () => {
+  const squadDir = () => join(TMP, '.squad');
+  beforeEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('writes mutable state through the adapter without touching the worktree', { timeout: 20_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+
+    const write = registry.getTool('state.write')!;
+    const read = registry.getTool('state.read')!;
+    const result = await write.handler({ key: 'agents/data/history.md', content: '# Data\n\n## Learnings\n' });
+
+    expect(result.resultType).toBe('success');
+    expect(backend.read('agents/data/history.md')).toBe('# Data\n\n## Learnings\n');
+    expect(existsSync(join(squadDir(), 'agents', 'data', 'history.md'))).toBe(false);
+    expect(git('status --porcelain')).toBe('');
+
+    const readResult = await read.handler({ key: '.squad/agents/data/history.md' });
+    expect(readResult.resultType).toBe('success');
+    expect(readResult.textResultForLlm).toContain('## Learnings');
+  });
+
+  it('only strips the .squad prefix for real .squad-relative keys', { timeout: 20_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+    const write = registry.getTool('state.write')!;
+    const list = registry.getTool('state.list')!;
+
+    const result = await write.handler({ key: '.squadata/runtime-check.md', content: 'not a .squad prefix\n' });
+
+    expect(result.resultType).toBe('success');
+    expect(backend.read('.squadata/runtime-check.md')).toBe('not a .squad prefix\n');
+    expect(backend.read('ata/runtime-check.md')).toBeUndefined();
+
+    const listResult = await list.handler({ dir: '.squadata' });
+    expect(listResult.resultType).toBe('success');
+    expect(listResult.textResultForLlm).toContain('runtime-check.md');
+  });
+
+  it('routes existing squad_decide writes through configured backend storage', { timeout: 20_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+    const decide = registry.getTool('squad_decide')!;
+
+    const result = await decide.handler({
+      author: 'scribe',
+      summary: 'Use runtime state API',
+      body: 'Mutable Squad state must be persisted through runtime-owned state tools.',
+    });
+
+    expect(result.resultType).toBe('success');
+    expect(backend.list('decisions/inbox')).toHaveLength(1);
+    expect(existsSync(join(squadDir(), 'decisions', 'inbox'))).toBe(false);
+    expect(git('status --porcelain')).toBe('');
   });
 });

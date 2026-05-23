@@ -532,11 +532,15 @@ export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverr
       }
     }
   } catch { /* fall through */ }
+  const explicitBackend = cliOverride !== undefined || configBackend !== undefined;
   const chosen = normalizeBackendType(cliOverride ?? configBackend ?? 'local');
   try {
     return createBackend(chosen, squadDir, repoRoot);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (explicitBackend && chosen !== 'local') {
+      throw new Error(`State backend '${chosen}' failed: ${msg}`);
+    }
     console.warn(`Warning: State backend '${chosen}' failed: ${msg}. Falling back to 'local'.`);
     return new WorktreeBackend(squadDir);
   }
@@ -557,9 +561,17 @@ function normalizeBackendType(type: string): StateBackendType {
 function createBackend(type: StateBackendType, squadDir: string, repoRoot: string): StateBackend {
   switch (type) {
     case 'local':     return new WorktreeBackend(squadDir);
-    case 'orphan': return new OrphanBranchBackend(repoRoot);
-    case 'two-layer': return new TwoLayerBackend(repoRoot);
+    case 'orphan':
+      requireGitRepository(repoRoot);
+      return new OrphanBranchBackend(repoRoot);
+    case 'two-layer':
+      requireGitRepository(repoRoot);
+      return new TwoLayerBackend(repoRoot);
     case 'external': return new WorktreeBackend(squadDir); // Stub — PR #797
     default: throw new Error(`Unknown state backend type: ${type}`);
   }
+}
+
+function requireGitRepository(repoRoot: string): void {
+  gitExecOrThrow(['rev-parse', '--git-dir'], repoRoot);
 }

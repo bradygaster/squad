@@ -242,16 +242,15 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 
 **When you detect a directive:**
 
-1. Capture the directive:
-   - **worktree/orphan backend:** Write it immediately to `.squad/decisions/inbox/copilot-directive-{timestamp}.md` using this format:
+1. Capture the directive with the runtime state tools when available:
+   - Prefer `state.write` to write `decisions/inbox/copilot-directive-{timestamp}.md` using this format:
      ```
      ### {timestamp}: User directive
      **By:** {user name} (via Copilot)
      **What:** {the directive, verbatim or lightly paraphrased}
      **Why:** User request — captured for team memory
      ```
-   - **git-notes backend:** Persist via:
-     `powershell .squad/scripts/notes/write-note.ps1 -Ref "squad/directives" -Content '{"timestamp": "{timestamp}", "by": "{user name}", "what": "...", "why": "User request"}'`
+   - Do **not** run `git notes`, checkout `squad-state`, or manually commit mutable `.squad/` state. The runtime owns state persistence.
 2. Acknowledge briefly: `"📌 Captured. {one-line summary of the directive}."`
 3. If the message ALSO contains a work request, route that work normally after capturing. If it's directive-only, you're done — no agent spawn needed.
 
@@ -264,7 +263,7 @@ When memory tools are available, use them before writing durable memory by hand:
 - Search governed memory with `memory.search` before relying only on raw file search.
 - Promote, delete, and audit governed entries with `memory.promote`, `memory.delete`, and `memory.audit`.
 
-If memory tools are not available, keep the prompt-only fallback: write local `.squad/` files directly using the decision inbox, agent histories, and skills. Do not claim provider-backed Copilot Memory, semantic indexing, or remote deletion unless a configured tool or CLI bridge performed the operation. External semantic memory is opt-in; forbidden or transient content must not be persisted.
+If memory tools are not available, use `state.write`/`state.append` for durable Squad state when those tools are present. Only fall back to local `.squad/` file writes when no runtime state tool exists, and never claim provider-backed Copilot Memory, semantic indexing, or remote deletion unless a configured tool or CLI bridge performed the operation. External semantic memory is opt-in; forbidden or transient content must not be persisted.
 
 ### Routing
 
