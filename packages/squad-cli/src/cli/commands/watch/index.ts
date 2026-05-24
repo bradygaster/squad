@@ -564,6 +564,7 @@ export interface WatchOptions {
   execute?: boolean;
   copilotFlags?: string;
   agentCmd?: string;
+  agentRunner?: 'copilot' | 'antigravity';
   maxConcurrent?: number;
   issueTimeoutMinutes?: number;
   monitorTeams?: boolean;
@@ -596,6 +597,7 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
     timeout: options.issueTimeoutMinutes ?? 30,
     copilotFlags: options.copilotFlags,
     agentCmd: options.agentCmd,
+    agentRunner: options.agentRunner,
     capabilities,
   };
 }
@@ -616,6 +618,9 @@ export function buildAgentCommand(
   }
   const args = ['-p', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
+  if (options.agentRunner === 'antigravity') {
+    return { cmd: 'antigravity', args };
+  }
   return { cmd: 'copilot', args };
 }
 
@@ -710,6 +715,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     interval: `${config.interval}m`,
     execute: config.execute ?? false,
     agentCmd: config.agentCmd ?? '(default: gh copilot)',
+    agentRunner: config.agentRunner ?? '(default: copilot)',
     dispatchMode: config.capabilities['wave-dispatch'] ? 'wave' : 'task',
     maxConcurrent: config.maxConcurrent ?? 1,
   });
@@ -808,6 +814,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),
     config: {},
     agentCmd: config.agentCmd,
+    agentRunner: config.agentRunner,
     copilotFlags: config.copilotFlags,
     verbose: config.verbose,
     pidTracker,

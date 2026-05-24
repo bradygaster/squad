@@ -46,22 +46,56 @@ export function classifyIssue(title: string): 'read' | 'write' {
   return 'write'; // default to write (safer — gets full agent session)
 }
 
-/** Build agent command for a prompt. */
+/** Resolve the Antigravity IDE executable and args prefix.
+ *
+ * The .cmd wrapper does:
+ *   ELECTRON_RUN_AS_NODE=1 "Antigravity IDE.exe" "resources/app/out/cli.js" [args...]
+ *
+ * We replicate this directly so execFile can handle the path with spaces via CreateProcess,
+ * without going through cmd.exe which breaks on unquoted spaces.
+ */
+function resolveAntigravityExec(): { cmd: string; envOverrides: Record<string, string>; argPrefix: string[] } {
+  const localAppData = process.env['LOCALAPPDATA'];
+  if (localAppData) {
+    const base = path.join(localAppData, 'Programs', 'Antigravity IDE');
+    const exe = path.join(base, 'Antigravity IDE.exe');
+    const cliJs = path.join(base, 'resources', 'app', 'out', 'cli.js');
+    if (existsSync(exe) && existsSync(cliJs)) {
+      return {
+        cmd: exe,
+        envOverrides: { ELECTRON_RUN_AS_NODE: '1', VSCODE_DEV: '' },
+        argPrefix: [cliJs],
+      };
+    }
+  }
+  // Fallback: hope antigravity-ide is on PATH
+  return { cmd: 'antigravity-ide', envOverrides: {}, argPrefix: [] };
+}
+
+/** Build agent command — for antigravity, uses stdin piping (prompt not passed as arg). */
 function buildAgentCommand(
-  prompt: string,
   context: WatchContext,
-): { cmd: string; args: string[] } {
+): { cmd: string; args: string[]; env?: Record<string, string>; useStdin: boolean } {
   if (context.agentCmd) {
     const parts = context.agentCmd.trim().split(/\s+/);
-    const cmd = parts[0]!;
-    const args = [...parts.slice(1), '-p', prompt];
-    return { cmd, args };
+    return { cmd: parts[0]!, args: parts.slice(1), useStdin: false };
   }
-  const args = ['-p', prompt];
+  if (context.agentRunner === 'antigravity') {
+    // Resolve the exe directly — execFile uses CreateProcess which handles spaces in paths.
+    // Prompt is written to stdin using the '-' argument, avoiding all shell quoting issues.
+    const { cmd, envOverrides, argPrefix } = resolveAntigravityExec();
+    return {
+      cmd,
+      args: [...argPrefix, 'chat', '-m', 'agent', '-'],
+      env: envOverrides,
+      useStdin: true,
+    };
+  }
+  const args: string[] = [];
   if (context.copilotFlags) {
     args.push(...context.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'copilot', args };
+  return { cmd: 'copilot', args, useStdin: false };
 }
 
 /** Labels that indicate an issue should not be auto-executed. */
@@ -161,13 +195,19 @@ async function executeAll(
   }
 
   const fullPrompt = charterPrefix + prompt;
-  const { cmd, args } = buildAgentCommand(fullPrompt, context);
+  const { cmd, args, env: envOverrides, useStdin } = buildAgentCommand(context);
+
+  // Merge any env overrides (e.g. ELECTRON_RUN_AS_NODE for antigravity) with the current env
+  const childEnv = envOverrides ? { ...process.env, ...envOverrides } : undefined;
 
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
+    // For antigravity: prompt goes to stdin; for copilot: pass as -p arg
+    const finalArgs = useStdin ? args : ['-p', fullPrompt, ...args];
+
     const cp: ChildProcess = execFile(
       cmd,
-      args,
-      { cwd: context.teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
+      finalArgs,
+      { cwd: context.teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024, env: childEnv },
       (err) => {
         if (err) {
           const execErr = err as Error & { killed?: boolean };
@@ -179,10 +219,16 @@ async function executeAll(
       },
     );
 
+    // Write prompt to stdin for antigravity, then close
+    if (useStdin && cp.stdin) {
+      cp.stdin.write(fullPrompt, 'utf8');
+      cp.stdin.end();
+    }
+
     // Track child PID for cleanup on exit/crash
     if (context.pidTracker && cp.pid) {
       const issueNums = issues.map(i => `#${i.number}`).join(',');
-      context.pidTracker.track(cp.pid, `copilot-session-${issueNums}`);
+      context.pidTracker.track(cp.pid, `agent-session-${issueNums}`);
     }
 
     cp.on('exit', () => {
@@ -195,12 +241,19 @@ async function executeAll(
 
 export class ExecuteCapability implements WatchCapability {
   readonly name = 'execute';
-  readonly description = 'Spawn Copilot sessions to work on eligible issues';
+  readonly description = 'Spawn agent sessions to work on eligible issues';
   readonly configShape = 'boolean' as const;
-  readonly requires = ['gh'];
+  readonly requires = ['gh or antigravity-ide'];
   readonly phase = 'post-execute' as const;
 
-  async preflight(_context: WatchContext): Promise<PreflightResult> {
+  async preflight(context: WatchContext): Promise<PreflightResult> {
+    if (context.agentRunner === 'antigravity') {
+      const { cmd } = resolveAntigravityExec();
+      const found = existsSync(cmd) || cmd === 'antigravity-ide';
+      return found
+        ? { ok: true }
+        : { ok: false, reason: `Antigravity IDE executable not found at: ${cmd}` };
+    }
     return new Promise<PreflightResult>((resolve) => {
       execFile('gh', ['--version'], (err) => {
         resolve(err ? { ok: false, reason: 'gh CLI not found' } : { ok: true });

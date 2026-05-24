@@ -36,6 +36,8 @@ export interface WatchContext {
   config: Record<string, unknown>;
   /** Hidden --agent-cmd override. */
   agentCmd?: string;
+  /** Explicit subagent runner: copilot or antigravity. */
+  agentRunner?: 'copilot' | 'antigravity';
   copilotFlags?: string;
   /** Verbose diagnostic output enabled. */
   verbose?: boolean;

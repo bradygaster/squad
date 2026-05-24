@@ -52,6 +52,8 @@ export interface LoopConfig {
   copilotFlags?: string;
   /** Fully override the agent command (e.g., `gh copilot --yolo`). */
   agentCmd?: string;
+  /** Explicit subagent runner: copilot or antigravity. */
+  agentRunner?: 'copilot' | 'antigravity';
   /** Capability overrides, keyed by capability name. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
 }
@@ -130,19 +132,52 @@ export function generateLoopFile(): string {
 
 // ── Agent Command Builder ────────────────────────────────────────
 
+/** Resolve the Antigravity IDE executable and args prefix.
+ *
+ * The .cmd wrapper does:
+ *   ELECTRON_RUN_AS_NODE=1 "Antigravity IDE.exe" "resources/app/out/cli.js" [args...]
+ *
+ * We replicate this directly so execFile can handle the path with spaces via CreateProcess,
+ * without going through cmd.exe which breaks on unquoted spaces.
+ */
+function resolveAntigravityExec(): { cmd: string; envOverrides: Record<string, string>; argPrefix: string[] } {
+  const localAppData = process.env['LOCALAPPDATA'];
+  if (localAppData) {
+    const base = path.join(localAppData, 'Programs', 'Antigravity IDE');
+    const exe = path.join(base, 'Antigravity IDE.exe');
+    const cliJs = path.join(base, 'resources', 'app', 'out', 'cli.js');
+    if (existsSync(exe) && existsSync(cliJs)) {
+      return {
+        cmd: exe,
+        envOverrides: { ELECTRON_RUN_AS_NODE: '1', VSCODE_DEV: '' },
+        argPrefix: [cliJs],
+      };
+    }
+  }
+  return { cmd: 'antigravity-ide', envOverrides: {}, argPrefix: [] };
+}
+
 function buildLoopAgentCommand(
-  prompt: string,
-  options: { agentCmd?: string; copilotFlags?: string },
-): { cmd: string; args: string[] } {
+  options: { agentCmd?: string; agentRunner?: 'copilot' | 'antigravity'; copilotFlags?: string },
+): { cmd: string; args: string[]; env?: Record<string, string>; useStdin: boolean } {
   if (options.agentCmd) {
     const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+    return { cmd: parts[0]!, args: parts.slice(1), useStdin: false };
   }
-  const args = ['-p', prompt];
+  if (options.agentRunner === 'antigravity') {
+    const { cmd, envOverrides, argPrefix } = resolveAntigravityExec();
+    return {
+      cmd,
+      args: [...argPrefix, 'chat', '-m', 'agent', '-'],
+      env: envOverrides,
+      useStdin: true,
+    };
+  }
+  const args: string[] = [];
   if (options.copilotFlags) {
     args.push(...options.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'copilot', args };
+  return { cmd: 'copilot', args, useStdin: false };
 }
 
 // ── Capability Phase Runner ──────────────────────────────────────
@@ -330,6 +365,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     timeout: timeoutMinutes,
     copilotFlags: options.copilotFlags,
     agentCmd: options.agentCmd,
+    agentRunner: options.agentRunner,
     capabilities: options.capabilities,
   };
 
@@ -353,6 +389,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),
     config: {},
     agentCmd: options.agentCmd,
+    agentRunner: options.agentRunner,
     copilotFlags: options.copilotFlags,
   };
 
@@ -382,17 +419,24 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
 
     // Core: run the loop prompt
     const timeoutMs = timeoutMinutes * 60_000;
-    const { cmd, args } = buildLoopAgentCommand(prompt, {
+    const { cmd, args, env: envOverrides, useStdin } = buildLoopAgentCommand({
       agentCmd: options.agentCmd,
+      agentRunner: options.agentRunner,
       copilotFlags: options.copilotFlags,
     });
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
 
+    // Merge env overrides (e.g. ELECTRON_RUN_AS_NODE for antigravity)
+    const childEnv = envOverrides ? { ...process.env, ...envOverrides } : undefined;
+
+    // For antigravity: prompt goes to stdin; for copilot: pass as -p arg
+    const finalArgs = useStdin ? args : ['-p', prompt, ...args];
+
     await new Promise<void>((resolve) => {
       currentChild = execFile(
         cmd,
-        args,
-        { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
+        finalArgs,
+        { cwd: teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024, env: childEnv },
         (err) => {
           currentChild = null;
           if (err) {
@@ -407,6 +451,12 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
           resolve();
         },
       );
+
+      // Write prompt to stdin for antigravity, then close
+      if (useStdin && currentChild.stdin) {
+        currentChild.stdin.write(prompt, 'utf8');
+        currentChild.stdin.end();
+      }
 
       currentChild.stdout?.on('data', (chunk: Buffer | string) => {
         process.stdout.write(chunk);

@@ -1,0 +1,9 @@
+{
+  "status": "closed",
+  "openedAt": null,
+  "cooldownMinutes": 2,
+  "consecutiveFailures": 0,
+  "consecutiveSuccesses": 0,
+  "lastRateLimitRemaining": 5000,
+  "lastRateLimitTotal": 5000
+}
