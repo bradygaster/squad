@@ -19,7 +19,7 @@ import type { SubSquadDefinition } from '../streams/types.js';
 import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
 import { getRoleById } from '../roles/index.js';
 import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
-
+import { getAgentRunnerDir } from './agent-runners.js';
 // ============================================================================
 // Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
 // ============================================================================
@@ -113,6 +113,8 @@ export interface InitOptions {
   projectDescription?: string;
   /** Agents to create */
   agents: InitAgentSpec[];
+  /** Expected agent runner platform */
+  agentRunner?: string;
   /** Config format (typescript or json for old format, sdk for new builder syntax, markdown for no config file) */
   configFormat?: 'typescript' | 'json' | 'sdk' | 'markdown';
   /** User name for initial history entries */
@@ -715,7 +717,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'decisions'),
     join(squadDir, 'decisions', 'inbox'),
     join(squadDir, 'memory'),
-    join(teamRoot, '.copilot', 'skills'),
+    join(teamRoot, getAgentRunnerDir(options.agentRunner), 'skills'),
     join(squadDir, 'plugins'),
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
@@ -993,7 +995,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Copy starter skills
   // -------------------------------------------------------------------------
 
-  const skillsDir = join(teamRoot, '.copilot', 'skills');
+  const skillsDir = join(teamRoot, getAgentRunnerDir(options.agentRunner), 'skills');
   if (templatesDir && storage.existsSync(join(templatesDir, 'skills'))) {
     const skillsSrc = join(templatesDir, 'skills');
     const existingSkills = storage.existsSync(skillsDir) ? storage.listSync(skillsDir) : [];
@@ -1005,7 +1007,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
           copyRecursiveSync(srcSkill, join(skillsDir, skillName), storage);
         }
       }
-      createdFiles.push('.copilot/skills');
+      createdFiles.push(getAgentRunnerDir(options.agentRunner) + '/skills');
     }
   }
 
@@ -1151,7 +1153,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
 
   if (includeMcpConfig) {
-    const mcpConfigPath = join(teamRoot, '.copilot', 'mcp-config.json');
+    const mcpConfigPath = join(teamRoot, getAgentRunnerDir(options.agentRunner), 'mcp-config.json');
     if (!storage.existsSync(mcpConfigPath)) {
       const mcpSample = isGitHub
         ? {
@@ -1178,7 +1180,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
             }
           };
       await storage.write(mcpConfigPath, JSON.stringify(mcpSample, null, 2) + '\n');
-      createdFiles.push(toRelativePath(mcpConfigPath));
+      createdFiles.push(getAgentRunnerDir(options.agentRunner) + '/mcp-config.json');
     } else {
       skippedFiles.push(toRelativePath(mcpConfigPath));
     }

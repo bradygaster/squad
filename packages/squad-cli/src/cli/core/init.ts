@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Init command implementation — uses SDK
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
@@ -11,7 +11,16 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
+import { 
+  type InitOptions, 
+  initSquad as sdkInitSquad, 
+  cleanupOrphanInitPrompt, 
+  ensurePersonalSquadDir, 
+  resolvePersonalSquadDir, 
+  clearResolveSquadCache,
+  KNOWN_AGENT_RUNNERS,
+  DEFAULT_AGENT_RUNNER
+} from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
 
 const storage = new FSStorageProvider();
@@ -111,6 +120,8 @@ export interface RunInitOptions {
   isGlobal?: boolean;
   /** State backend to configure at init time (local, orphan, two-layer) */
   stateBackend?: string;
+  /** Expected agent runner platform */
+  agentRunner?: string;
 }
 
 /**
@@ -200,6 +211,40 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     showDeprecationWarning();
   }
 
+  let finalAgentRunner = options.agentRunner;
+  if (!finalAgentRunner && process.stdin.isTTY) {
+    console.log();
+    console.log(`  Which agent runner will you use with this squad?`);
+    for (const runner of KNOWN_AGENT_RUNNERS) {
+      const isDefault = runner.id === DEFAULT_AGENT_RUNNER.id ? ' (default)' : '';
+      console.log(`  ${BOLD}[${runner.shortcut}]${RESET} ${runner.name}${isDefault}`);
+    }
+    console.log(`  ${BOLD}[o]${RESET} Other custom runner`);
+    console.log();
+    
+    const shortcuts = [...KNOWN_AGENT_RUNNERS.map(r => r.shortcut), 'o'].join('/');
+    
+    const { createInterface } = await import('node:readline/promises');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      let answer = (await rl.question(`  Selection [${shortcuts}, default: ${DEFAULT_AGENT_RUNNER.shortcut}]: `)).trim().toLowerCase();
+      
+      const selected = KNOWN_AGENT_RUNNERS.find(r => r.shortcut === answer || r.id === answer);
+      if (selected) {
+        finalAgentRunner = selected.id;
+      } else if (answer === 'o' || answer === 'other') {
+        const customName = (await rl.question(`  Enter custom runner name: `)).trim();
+        finalAgentRunner = customName || 'custom';
+      } else {
+        finalAgentRunner = DEFAULT_AGENT_RUNNER.id;
+      }
+    } finally {
+      rl.close();
+    }
+  } else if (!finalAgentRunner) {
+    finalAgentRunner = DEFAULT_AGENT_RUNNER.id;
+  }
+
   // Build SDK options
   const initOptions: InitOptions = {
     teamRoot: dest,
@@ -227,6 +272,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     prompt: options.prompt,
     extractionDisabled: options.extractionDisabled,
     roles: options.roles,
+    agentRunner: finalAgentRunner,
   };
 
   // Handle SIGINT to cleanup orphan .init-prompt
@@ -360,7 +406,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   if (!isInitNoColor()) await sleep(80);
   console.log();
-  console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
+  console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} (or use Antigravity IDE) and tell it what you're building.`);
   console.log();
 
   // ── Personal squad bridge ───────────────────────────────────────────

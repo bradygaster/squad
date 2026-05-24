@@ -322,11 +322,13 @@ async function main(): Promise<void> {
     const roles = args.includes('--roles');
     const presetIdx = args.indexOf('--preset');
     const presetName = (presetIdx !== -1 && args[presetIdx + 1]) ? args[presetIdx + 1] : undefined;
+    const runnerIdx = args.indexOf('--agent-runner');
+    const initAgentRunner = (runnerIdx !== -1 && args[runnerIdx + 1]) ? args[runnerIdx + 1] : undefined;
     // Parse --state-backend flag for init
     const sbIdx = args.indexOf('--state-backend');
     const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend }).then(async () => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, agentRunner: initAgentRunner }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
         const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
