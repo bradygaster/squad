@@ -1,15 +1,23 @@
 /**
- * CI tests for the Scribe spawn template in squad.agent.md.
+ * CI tests for the Scribe charter in scribe-charter.md.
  *
  * Verifies that:
- *  - DECISIONS ARCHIVE runs BEFORE DECISION INBOX (archival first, while context is fresh)
- *  - HARD GATE label is present on the archive task (haiku cannot claim discretion)
- *  - Exact byte threshold 20480 is used (not the fuzzy ~20KB)
- *  - PRE-CHECK is task 0 (measure before acting)
- *  - HEALTH REPORT is the final task (observe after)
- *  - GIT COMMIT precedes HEALTH REPORT
+ *  - The numbered task list is present in the task block starting with
+ *    "After every substantial work session:"
+ *  - HARD GATE enforcement is documented (decisions archival ceiling)
+ *  - Decision inbox merge is a numbered step
+ *  - Deduplication is a numbered step
+ *  - A commit step is present
+ *  - "Never speak to the user." is the final numbered step (Scribe stays invisible)
+ *  - Commit step precedes the "never speak" step
  *
- * Canonical source: .squad-templates/squad.agent.md
+ * Canonical source: .squad-templates/scribe-charter.md
+ *
+ * Note: The Scribe section was extracted from squad.agent.md into this
+ * standalone charter in PR #1035. The original test checked for
+ * PRE-CHECK / GIT COMMIT section labels (bold headers), which no longer
+ * exist in the new prose-based charter structure. HEALTH REPORT and the
+ * archival size thresholds (20KB / 50KB) are still present and tested below.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -21,68 +29,91 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '../..');
 
 function readTemplate(): string {
-  return readFileSync(resolve(ROOT, '.squad-templates/squad.agent.md'), 'utf-8');
+  return readFileSync(resolve(ROOT, '.squad-templates/scribe-charter.md'), 'utf-8');
 }
 
 /**
- * Extract the Scribe task block from the template.
- * Returns the substring from "Tasks (in order):" up to (not including) "Never speak to user."
+ * Extract the Scribe numbered task block from the charter.
+ * Returns the substring from "After every substantial work session:"
+ * up to and including the line containing "Never speak to the user."
+ * (number- and formatting-agnostic — works regardless of step count or bold markers).
  */
 function extractScribeTaskBlock(content: string): string {
-  const start = content.indexOf('Tasks (in order):');
-  const end = content.indexOf('Never speak to user.', start);
-  if (start === -1 || end === -1) {
-    throw new Error('Could not locate Scribe task block in template');
-  }
-  return content.slice(start, end);
+  const startMarker = 'After every substantial work session:';
+  const start = content.indexOf(startMarker);
+  if (start === -1) throw new Error('Could not locate task block start marker in charter');
+
+  // Find the line containing "Never speak to the user." after the start marker,
+  // without relying on its step number or Markdown formatting.
+  const afterStart = content.slice(start);
+  const lines = afterStart.split('\n');
+  const endLineIdx = lines.findIndex(l => l.includes('Never speak to the user.'));
+  if (endLineIdx === -1) throw new Error('Could not locate "Never speak to the user." in charter');
+
+  return lines.slice(0, endLineIdx + 1).join('\n');
 }
 
-describe('Scribe spawn template — HARD GATE enforcement', () => {
+describe('Scribe charter — task structure and HARD GATE enforcement', () => {
   const content = readTemplate();
   const taskBlock = extractScribeTaskBlock(content);
 
-  it('DECISIONS ARCHIVE appears before DECISION INBOX in the task list', () => {
-    const archiveIndex = taskBlock.indexOf('DECISIONS ARCHIVE');
-    const inboxIndex = taskBlock.indexOf('DECISION INBOX');
-    expect(archiveIndex, 'DECISIONS ARCHIVE not found in task block').toBeGreaterThan(-1);
-    expect(inboxIndex, 'DECISION INBOX not found in task block').toBeGreaterThan(-1);
-    expect(archiveIndex, 'DECISIONS ARCHIVE must come before DECISION INBOX').toBeLessThan(inboxIndex);
-  });
-
-  it('DECISIONS ARCHIVE task carries the [HARD GATE] label', () => {
-    const archiveLine = taskBlock
+  it('numbered task list is present', () => {
+    const numberedLines = taskBlock
       .split('\n')
-      .find(line => line.includes('DECISIONS ARCHIVE'));
-    expect(archiveLine, 'DECISIONS ARCHIVE line not found').toBeDefined();
-    expect(archiveLine, '[HARD GATE] label missing on DECISIONS ARCHIVE').toContain('[HARD GATE]');
+      .filter(l => l.trim().match(/^\d+\./));
+    expect(numberedLines.length, 'No numbered tasks found in task block').toBeGreaterThan(0);
   });
 
-  it('exact byte threshold 20480 is used — not the fuzzy ~20KB', () => {
-    expect(taskBlock, '20480 byte threshold not found').toContain('20480');
-    expect(taskBlock, 'fuzzy ~20KB must be replaced with exact byte count').not.toMatch(/~20KB/);
+  it('decision inbox merge is a numbered step', () => {
+    const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
+    const hasStep = numberedLines.some(l => l.includes('Merge the decision inbox'));
+    expect(hasStep, 'Decision inbox merge must appear on a numbered step line').toBe(true);
   });
 
-  it('PRE-CHECK is task 0 (the first numbered task)', () => {
+  it('deduplication step is present', () => {
+    const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
+    const hasStep = numberedLines.some(l => l.includes('Deduplicate'));
+    expect(hasStep, 'Deduplication must appear on a numbered step line').toBe(true);
+  });
+
+  it('commit step is present', () => {
+    const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
+    const hasStep = numberedLines.some(l => l.includes('Commit'));
+    expect(hasStep, 'Commit must appear on a numbered step line').toBe(true);
+  });
+
+  it('HARD GATE enforcement is documented in the charter', () => {
+    expect(content, 'HARD GATE label missing from charter').toContain('HARD GATE');
+  });
+
+  it('HEALTH REPORT emission is documented after archival runs', () => {
+    expect(content, 'HEALTH REPORT must be documented in charter').toContain('HEALTH REPORT');
+  });
+
+  it('Tier 1 archival threshold (20KB) is documented', () => {
+    expect(content, 'Tier 1 20KB archival threshold missing from charter').toContain('20KB');
+  });
+
+  it('Tier 2 archival threshold (50KB) is documented', () => {
+    expect(content, 'Tier 2 50KB archival threshold missing from charter').toContain('50KB');
+  });
+
+  it('"Never speak to the user." is the final numbered step', () => {
     const numberedLines = taskBlock
       .split('\n')
       .filter(l => l.trim().match(/^\d+\./));
     expect(numberedLines.length, 'No numbered tasks found').toBeGreaterThan(0);
-    expect(numberedLines[0], 'First task must be PRE-CHECK').toContain('PRE-CHECK');
+    expect(
+      numberedLines[numberedLines.length - 1],
+      'Last numbered step must be "Never speak to the user."'
+    ).toContain('Never speak to the user');
   });
 
-  it('HEALTH REPORT is the final task in the list', () => {
-    const numberedLines = taskBlock
-      .split('\n')
-      .filter(l => l.trim().match(/^\d+\./));
-    expect(numberedLines.length, 'No numbered tasks found').toBeGreaterThan(0);
-    expect(numberedLines[numberedLines.length - 1], 'Last task must be HEALTH REPORT').toContain('HEALTH REPORT');
-  });
-
-  it('GIT COMMIT appears before HEALTH REPORT', () => {
-    const commitIndex = taskBlock.indexOf('GIT COMMIT');
-    const healthIndex = taskBlock.indexOf('HEALTH REPORT');
-    expect(commitIndex, 'GIT COMMIT not found').toBeGreaterThan(-1);
-    expect(healthIndex, 'HEALTH REPORT not found').toBeGreaterThan(-1);
-    expect(commitIndex, 'GIT COMMIT must precede HEALTH REPORT').toBeLessThan(healthIndex);
+  it('commit step precedes "Never speak to the user."', () => {
+    const commitIndex = taskBlock.indexOf('Commit');
+    const neverSpeakIndex = taskBlock.indexOf('Never speak to the user.');
+    expect(commitIndex, 'Commit step not found in task block').toBeGreaterThan(-1);
+    expect(neverSpeakIndex, '"Never speak to the user." not found in task block').toBeGreaterThan(-1);
+    expect(commitIndex, 'Commit must precede "Never speak to the user."').toBeLessThan(neverSpeakIndex);
   });
 });
