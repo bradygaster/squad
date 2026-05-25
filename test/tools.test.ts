@@ -117,6 +117,25 @@ describe('sanitizeArgs', () => {
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;
   let testRoot: string;
+  const builtInToolNames = [
+    'squad_route',
+    'squad_decide',
+    'squad_memory',
+    'state.read',
+    'state.write',
+    'state.append',
+    'state.delete',
+    'state.list',
+    'state.health',
+    'memory.classify',
+    'memory.write',
+    'memory.search',
+    'memory.promote',
+    'memory.delete',
+    'memory.audit',
+    'squad_status',
+    'squad_skill',
+  ];
 
   beforeEach(() => {
     testRoot = path.join('.', '.test-squad-' + randomUUID());
@@ -132,20 +151,10 @@ describe('ToolRegistry', () => {
   describe('registration', () => {
     it('should register all squad and memory governance tools', () => {
       const tools = registry.getTools();
-      expect(tools.length).toBe(11);
+      expect(tools.length).toBe(builtInToolNames.length);
 
       const toolNames = tools.map(t => t.name);
-      expect(toolNames).toContain('squad_route');
-      expect(toolNames).toContain('squad_decide');
-      expect(toolNames).toContain('squad_memory');
-      expect(toolNames).toContain('memory.classify');
-      expect(toolNames).toContain('memory.write');
-      expect(toolNames).toContain('memory.search');
-      expect(toolNames).toContain('memory.promote');
-      expect(toolNames).toContain('memory.delete');
-      expect(toolNames).toContain('memory.audit');
-      expect(toolNames).toContain('squad_status');
-      expect(toolNames).toContain('squad_skill');
+      expect(toolNames).toEqual(expect.arrayContaining(builtInToolNames));
     });
 
     it('should register tools with descriptions and parameters', () => {
@@ -161,7 +170,7 @@ describe('ToolRegistry', () => {
     it('should return all registered tools', () => {
       const tools = registry.getTools();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(11);
+      expect(tools.length).toBe(builtInToolNames.length);
     });
 
     it('should return tools with handler functions', () => {
@@ -175,7 +184,7 @@ describe('ToolRegistry', () => {
   describe('getToolsForAgent', () => {
     it('should return all tools when no filter provided', () => {
       const tools = registry.getToolsForAgent();
-      expect(tools.length).toBe(11);
+      expect(tools.length).toBe(builtInToolNames.length);
     });
 
     it('should filter tools by allowed list', () => {

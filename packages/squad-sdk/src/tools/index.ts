@@ -258,15 +258,16 @@ function normalizeStateToolDir(dir?: string): string {
 function validateMutableStateToolKey(key: string): void {
   const isMutable =
     key === 'decisions.md' ||
-    /^decisions\/inbox\/[^/]+\.md$/.test(key) ||
-    /^agents\/[a-zA-Z0-9_-]+\/history(?:-archive)?\.md$/.test(key) ||
-    /^(?:log|orchestration-log)\/[^/]+\.md$/.test(key) ||
-    /^health-report(?:-[^/]+)?\.md$/.test(key) ||
-    /^identity\/(?:now|wisdom)\.md$/.test(key);
+    key.startsWith('decisions/inbox/') ||
+    /^agents\/[a-zA-Z0-9_-]+\/history\.md$/.test(key) ||
+    key.startsWith('log/') ||
+    key.startsWith('orchestration-log/') ||
+    key.startsWith('sessions/') ||
+    key.startsWith('.scratch/');
 
   if (!isMutable) {
     throw new Error(
-      'State mutations are limited to mutable runtime state (decisions, inbox, logs, health reports, identity focus, and agent history). Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
+      'State mutations are limited to mutable runtime state (decisions, inbox, logs, sessions, scratch files, and agent history). Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
     );
   }
 }
