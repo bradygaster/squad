@@ -17,6 +17,7 @@ import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { SquadState } from '../state/squad-state.js';
+import { validateStateKey } from '../state-backend.js';
 import { spawnParallel, type FanOutDependencies } from '../coordinator/fan-out.js';
 import { LocalMemoryStore, type CopilotMemoryProviderClient, type MemoryClass } from '../memory/index.js';
 
@@ -87,6 +88,28 @@ export interface MemoryEntry {
   section: 'learnings' | 'updates' | 'sessions';
   /** Content to append */
   content: string;
+}
+
+export interface StateReadRequest {
+  key: string;
+}
+
+export interface StateWriteRequest {
+  key: string;
+  content: string;
+}
+
+export interface StateAppendRequest {
+  key: string;
+  content: string;
+}
+
+export interface StateDeleteRequest {
+  key: string;
+}
+
+export interface StateListRequest {
+  dir?: string;
 }
 
 export interface StatusQuery {
@@ -208,6 +231,45 @@ function sanitizeErrorForLlm(error: unknown, squadRoot: string): string {
   // Collapse to first line to avoid leaking stack-like multi-line details
   const firstLine = stripped.split('\n')[0] ?? stripped;
   return firstLine.slice(0, 512);
+}
+
+function normalizeStateToolKey(key: string): string {
+  const normalized = key
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/^\.squad(?:\/|$)/, '')
+    .replace(/\/+$/, '');
+  validateStateKey(normalized);
+  return normalized;
+}
+
+function normalizeStateToolDir(dir?: string): string {
+  const normalized = (dir ?? '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/^\.squad(?:\/|$)/, '')
+    .replace(/\/+$/, '');
+  if (normalized.length > 0) {
+    validateStateKey(normalized);
+  }
+  return normalized;
+}
+
+function validateMutableStateToolKey(key: string): void {
+  const isMutable =
+    key === 'decisions.md' ||
+    key.startsWith('decisions/inbox/') ||
+    /^agents\/[a-zA-Z0-9_-]+\/history\.md$/.test(key) ||
+    key.startsWith('log/') ||
+    key.startsWith('orchestration-log/') ||
+    key.startsWith('sessions/') ||
+    key.startsWith('.scratch/');
+
+  if (!isMutable) {
+    throw new Error(
+      'State mutations are limited to mutable runtime state (decisions, inbox, logs, sessions, scratch files, and agent history). Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
+    );
+  }
 }
 
 // --- Tool Registry ---
@@ -563,6 +625,173 @@ export class ToolRegistry {
           };
         }
       },
+    });
+
+    const stateRead = defineTool<StateReadRequest>({
+      name: 'squad_state_read',
+      description: 'Read mutable Squad state by key through the configured state backend. Keys are relative to .squad/; do not use shell git or direct file reads for mutable state.',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'State key relative to .squad/, for example decisions.md or agents/data/history.md' },
+        },
+        required: ['key'],
+      },
+      handler: async (args) => {
+        try {
+          const key = normalizeStateToolKey(args.key);
+          const content = this.storage.readSync(path.join(this.squadRoot, key));
+          if (content === undefined) {
+            return {
+              textResultForLlm: `State key not found: ${key}`,
+              resultType: 'failure',
+              error: 'State key does not exist',
+            };
+          }
+          return {
+            textResultForLlm: content,
+            resultType: 'success',
+            toolTelemetry: { key },
+          };
+        } catch (error) {
+          return {
+            textResultForLlm: `Failed to read state: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
+    const stateWrite = defineTool<StateWriteRequest>({
+      name: 'squad_state_write',
+      description: 'Write mutable Squad state through the configured state backend. Always use this tool for mutable state when available. Keys are relative to .squad/; static config such as config.json, team.md, routing.md, charters, templates, and skills is not mutable state.',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'State key relative to .squad/' },
+          content: { type: 'string', description: 'Complete content to store at the key' },
+        },
+        required: ['key', 'content'],
+      },
+      handler: async (args) => {
+        try {
+          const key = normalizeStateToolKey(args.key);
+          validateMutableStateToolKey(key);
+          this.storage.writeSync(path.join(this.squadRoot, key), args.content);
+          return {
+            textResultForLlm: `State written: ${key}`,
+            resultType: 'success',
+            toolTelemetry: { key },
+          };
+        } catch (error) {
+          return {
+            textResultForLlm: `Failed to write state: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
+    const stateAppend = defineTool<StateAppendRequest>({
+      name: 'squad_state_append',
+      description: 'Append to mutable Squad state through the configured state backend. Always use this tool for mutable state when available. Keys are relative to .squad/; static config cannot be mutated through this tool.',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'State key relative to .squad/' },
+          content: { type: 'string', description: 'Content to append' },
+        },
+        required: ['key', 'content'],
+      },
+      handler: async (args) => {
+        try {
+          const key = normalizeStateToolKey(args.key);
+          validateMutableStateToolKey(key);
+          this.storage.appendSync(path.join(this.squadRoot, key), args.content);
+          return {
+            textResultForLlm: `State appended: ${key}`,
+            resultType: 'success',
+            toolTelemetry: { key },
+          };
+        } catch (error) {
+          return {
+            textResultForLlm: `Failed to append state: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
+    const stateDelete = defineTool<StateDeleteRequest>({
+      name: 'squad_state_delete',
+      description: 'Delete mutable Squad state through the configured state backend. Always use this tool for mutable state when available. Keys are relative to .squad/; static config cannot be deleted through this tool.',
+      parameters: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', description: 'State key relative to .squad/' },
+        },
+        required: ['key'],
+      },
+      handler: async (args) => {
+        try {
+          const key = normalizeStateToolKey(args.key);
+          validateMutableStateToolKey(key);
+          this.storage.deleteSync(path.join(this.squadRoot, key));
+          return {
+            textResultForLlm: `State deleted: ${key}`,
+            resultType: 'success',
+            toolTelemetry: { key },
+          };
+        } catch (error) {
+          return {
+            textResultForLlm: `Failed to delete state: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
+    const stateList = defineTool<StateListRequest>({
+      name: 'squad_state_list',
+      description: 'List mutable Squad state entries through the configured state backend. Directories are relative to .squad/.',
+      parameters: {
+        type: 'object',
+        properties: {
+          dir: { type: 'string', description: 'Directory relative to .squad/; omit for root' },
+        },
+      },
+      handler: async (args) => {
+        try {
+          const dir = normalizeStateToolDir(args.dir);
+          const entries = this.storage.listSync(path.join(this.squadRoot, dir));
+          return {
+            textResultForLlm: entries.length > 0 ? entries.join('\n') : '(empty)',
+            resultType: 'success',
+            toolTelemetry: { dir },
+          };
+        } catch (error) {
+          return {
+            textResultForLlm: `Failed to list state: ${sanitizeErrorForLlm(error, this.squadRoot)}`,
+            resultType: 'failure',
+            error: String(error),
+          };
+        }
+      },
+    });
+
+    const stateHealth = defineTool<Record<string, never>>({
+      name: 'squad_state_health',
+      description: 'Report the active Squad state storage layer so agents can verify they are using runtime-owned state instead of manual git/file choreography.',
+      parameters: { type: 'object', properties: {} },
+      handler: async () => ({
+        textResultForLlm: `State backend storage: ${this.storage.constructor.name}`,
+        resultType: 'success',
+        toolTelemetry: { storage: this.storage.constructor.name },
+      }),
     });
 
     const memoryClassify = defineTool<GovernedMemoryRequest>({
@@ -935,6 +1164,12 @@ export class ToolRegistry {
     this.tools.set('squad_route', squadRoute);
     this.tools.set('squad_decide', squadDecide);
     this.tools.set('squad_memory', squadMemory);
+    this.tools.set('squad_state_read', stateRead);
+    this.tools.set('squad_state_write', stateWrite);
+    this.tools.set('squad_state_append', stateAppend);
+    this.tools.set('squad_state_delete', stateDelete);
+    this.tools.set('squad_state_list', stateList);
+    this.tools.set('squad_state_health', stateHealth);
     this.tools.set('memory.classify', memoryClassify);
     this.tools.set('memory.write', memoryWrite);
     this.tools.set('memory.search', memorySearch);
