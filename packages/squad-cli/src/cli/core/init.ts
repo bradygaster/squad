@@ -111,6 +111,8 @@ export interface RunInitOptions {
   isGlobal?: boolean;
   /** State backend to configure at init time (local, orphan, two-layer) */
   stateBackend?: string;
+  /** If true, write MCP server config into squad.agent.md frontmatter instead of .copilot/mcp-config.json */
+  mcpFrontmatter?: boolean;
 }
 
 /**
@@ -222,6 +224,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     includeWorkflows: options.includeWorkflows !== false,
     includeTemplates: true,
     includeMcpConfig: true,
+    mcpConfigMode: options.mcpFrontmatter ? 'agent-frontmatter' : 'copilot-file',
     projectType: projectType as any,
     version,
     prompt: options.prompt,

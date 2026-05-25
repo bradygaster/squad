@@ -125,6 +125,8 @@ export interface InitOptions {
   includeTemplates?: boolean;
   /** Include sample MCP config (default: true) */
   includeMcpConfig?: boolean;
+  /** Where to write sample MCP config (default: copilot-file when includeMcpConfig is true) */
+  mcpConfigMode?: 'copilot-file' | 'agent-frontmatter' | 'none';
   /** Project type for workflow customization */
   projectType?: 'node' | 'python' | 'go' | 'rust' | 'java' | 'csharp' | 'unknown';
   /** Version to stamp in squad.agent.md */
@@ -607,6 +609,92 @@ function stampVersionInContent(content: string, version: string): string {
   return content;
 }
 
+interface McpServerSpec {
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+function buildMcpServerSpecs(isGitHub: boolean): McpServerSpec[] {
+  const servers: McpServerSpec[] = [
+    {
+      name: 'squad_state',
+      command: 'npx',
+      args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
+    },
+  ];
+
+  servers.push(isGitHub
+    ? {
+        name: 'EXAMPLE-github',
+        command: 'npx',
+        args: ['-y', '@anthropic/github-mcp-server'],
+        env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' },
+      }
+    : {
+        name: 'EXAMPLE-azure-devops',
+        command: 'npx',
+        args: ['-y', '@azure/devops-mcp-server'],
+        env: {
+          AZURE_DEVOPS_ORG: '${AZURE_DEVOPS_ORG}',
+          AZURE_DEVOPS_PAT: '${AZURE_DEVOPS_PAT}',
+        },
+      });
+
+  return servers;
+}
+
+function buildMcpConfigJson(servers: McpServerSpec[]): Record<string, unknown> {
+  return {
+    mcpServers: Object.fromEntries(servers.map(({ name, ...server }) => [name, server])),
+  };
+}
+
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function yamlEnvValue(value: string): string {
+  if (/^\$\{[A-Z0-9_]+\}$/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function buildMcpFrontmatterBlock(servers: McpServerSpec[]): string {
+  const lines = ['mcp-servers:'];
+
+  for (const server of servers) {
+    lines.push(`  ${server.name}:`);
+    lines.push('    type: local');
+    lines.push(`    command: ${server.command}`);
+    lines.push(`    args: [${server.args.map(yamlSingleQuoted).join(', ')}]`);
+    lines.push('    tools: ["*"]');
+
+    if (server.env && Object.keys(server.env).length > 0) {
+      lines.push('    env:');
+      for (const [key, value] of Object.entries(server.env)) {
+        lines.push(`      ${key}: ${yamlEnvValue(value)}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function injectMcpFrontmatter(content: string, servers: McpServerSpec[]): string {
+  const closingStart = content.indexOf('\n---', 4);
+  if (!content.startsWith('---') || closingStart === -1) {
+    return content;
+  }
+
+  return content.slice(0, closingStart)
+    + '\n'
+    + buildMcpFrontmatterBlock(servers)
+    + content.slice(closingStart);
+}
+
 /**
  * Initialize a new Squad project.
  *
@@ -650,6 +738,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     includeWorkflows = true,
     includeTemplates = true,
     includeMcpConfig = true,
+    mcpConfigMode = includeMcpConfig ? 'copilot-file' : 'none',
     projectType = 'unknown',
     version = '0.0.0',
   } = options;
@@ -1065,6 +1154,23 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   }
 
   // -------------------------------------------------------------------------
+  // Detect platform from git remote
+  // -------------------------------------------------------------------------
+
+  let isGitHub = true;
+  try {
+    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const remoteUrlLower = remoteUrl.toLowerCase();
+    if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
+      isGitHub = false;
+    }
+  } catch {
+    // No git remote — assume GitHub (default)
+  }
+
+  const mcpServers = buildMcpServerSpecs(isGitHub);
+
+  // -------------------------------------------------------------------------
   // Create .github/agents/squad.agent.md
   // -------------------------------------------------------------------------
 
@@ -1072,6 +1178,9 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   if (!storage.existsSync(agentFile) || !skipExisting) {
     if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
       let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
+      if (mcpConfigMode === 'agent-frontmatter') {
+        agentContent = injectMcpFrontmatter(agentContent, mcpServers);
+      }
       agentContent = stampVersionInContent(agentContent, version);
       await storage.write(agentFile, agentContent);
       createdFiles.push(toRelativePath(agentFile));
@@ -1094,21 +1203,6 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     } else {
       skippedFiles.push(toRelativePath(templatesDest));
     }
-  }
-
-  // -------------------------------------------------------------------------
-  // Detect platform from git remote
-  // -------------------------------------------------------------------------
-
-  let isGitHub = true;
-  try {
-    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    const remoteUrlLower = remoteUrl.toLowerCase();
-    if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
-      isGitHub = false;
-    }
-  } catch {
-    // No git remote — assume GitHub (default)
   }
 
   // -------------------------------------------------------------------------
@@ -1150,39 +1244,10 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Create sample MCP config (optional)
   // -------------------------------------------------------------------------
 
-  if (includeMcpConfig) {
+  if (mcpConfigMode === 'copilot-file') {
     const mcpConfigPath = join(teamRoot, '.copilot', 'mcp-config.json');
     if (!storage.existsSync(mcpConfigPath)) {
-      const squadStateServer = {
-        command: 'npx',
-        args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
-      };
-      const mcpSample = isGitHub
-        ? {
-            mcpServers: {
-              "squad_state": squadStateServer,
-              "EXAMPLE-github": {
-                command: "npx",
-                args: ["-y", "@anthropic/github-mcp-server"],
-                env: {
-                  GITHUB_TOKEN: "${GITHUB_TOKEN}"
-                }
-              }
-            }
-          }
-        : {
-            mcpServers: {
-              "squad_state": squadStateServer,
-              "EXAMPLE-azure-devops": {
-                command: "npx",
-                args: ["-y", "@azure/devops-mcp-server"],
-                env: {
-                  AZURE_DEVOPS_ORG: "${AZURE_DEVOPS_ORG}",
-                  AZURE_DEVOPS_PAT: "${AZURE_DEVOPS_PAT}"
-                }
-              }
-            }
-          };
+      const mcpSample = buildMcpConfigJson(mcpServers);
       await storage.write(mcpConfigPath, JSON.stringify(mcpSample, null, 2) + '\n');
       createdFiles.push(toRelativePath(mcpConfigPath));
     } else {
