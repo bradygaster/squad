@@ -38,6 +38,7 @@ export interface ExportBundle {
   agents: AgentCharter[];
   skills: string[];
   routingRules: ExportRoutingRule[];
+  routingFile?: string;
   metadata: ExportMetadata;
   history?: Record<string, unknown>[];
 }
@@ -154,11 +155,22 @@ export function exportSquadConfig(projectDir: string, options?: ExportOptions): 
     }));
   }
 
+  // Read raw routing file content
+  const routingFile = join(projectDir, '.ai-team', 'routing.md');
+  let routingFileContent: string | undefined;
+  if (storage.existsSync(routingFile)) {
+    routingFileContent = storage.readSync(routingFile) ?? undefined;
+    if (opts.anonymize && routingFileContent) {
+      routingFileContent = anonymizeContent(routingFileContent);
+    }
+  }
+
   const bundle: ExportBundle = {
     config: opts.anonymize ? {} : config,
     agents,
     skills,
     routingRules,
+    routingFile: routingFileContent,
     metadata: {
       version: '1.0.0',
       timestamp: new Date().toISOString(),

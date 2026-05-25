@@ -23,7 +23,7 @@
     "recompiles", "edie", "Edie", "myorg", "myproject", "myrepo",
     "WDATP", "wiisaacs", "Trejo", "Drucker", "dfberry", "diberry",
     "unstarted", "ZUAER", "glab", "mlops", "Baer",
-    "devtunnel", "Devtunnel", "mysecret", "pyproject",
+    "devtunnel", "Devtunnel", "mysecret", "pyproject", "pypi",
     "Emmitt", "jsturtevant", "Sturtevant", "aadnesd", "Sardo",
     "digitaldrummerj", "danielscholl", "llms", "dkirby", "lbouriez",
     "vanartsdalen", "Artsdalen", "craigb", "tomasherceg", "Tomáš", "Herceg",
@@ -37,7 +37,9 @@
     "slugified", "simplejwt", "pytest", "Luca", "Clemenza",
     "Tessio", "Triaging", "Futurama", "mklink", "mktree", "slnx", "jqlang",
     "benleane", "TELMU", "Automator", "kedacore",
-    "DEVBOX", "myaccount"
+    "DEVBOX", "myaccount", "graphify", "Graphify", "graphifyy", "safishamsi", "jagilber",
+    "benchmarkfn", "filterissuesbystream", "filterissuesbyworkstream", "Recognised", "recognised",
+    "squadified", "TOCTOU", "unflushed", "unparseable", "pluggability"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
   "allowCompoundWords": true

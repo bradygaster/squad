@@ -365,7 +365,7 @@ describe('runLoop', () => {
     });
 
     await expect(runLoop(DEST, defaultOptions)).rejects.toThrow(
-      /Copilot CLI/i,
+      /(Copilot CLI|No agent CLI found)/i,
     );
   });
 

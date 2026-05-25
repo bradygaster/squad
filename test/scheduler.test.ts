@@ -450,6 +450,79 @@ describe('Scheduler: LocalPollingProvider', () => {
     expect(result.success).toBe(false);
     expect(result.error).toBeDefined();
   });
+
+  // ── Rich-error capture (added when scheduler moved from execFileSync to
+  //    promisify(execFile); preserves existing behavior and adds optional
+  //    stderr/code/signal/timedOut fields on the returned TaskResult)
+  describe('rich error capture on script failure', () => {
+    it('captures the exit code on a non-zero exit', async () => {
+      const provider = new LocalPollingProvider();
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e process.exit(7)` },
+      });
+      const result = await provider.execute(entry);
+      expect(result.success).toBe(false);
+      expect(result.code).toBe(7);
+    });
+
+    it('captures stderr written by the child', async () => {
+      const provider = new LocalPollingProvider();
+      // Space-free script — the scheduler tokenizes `task.ref` by whitespace.
+      const script = `process.stderr.write('boom-from-stderr');process.exit(1)`;
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e ${script}` },
+      });
+      const result = await provider.execute(entry);
+      expect(result.success).toBe(false);
+      expect(result.stderr).toBeDefined();
+      expect(result.stderr).toContain('boom-from-stderr');
+    });
+
+    it('does not set timedOut for ordinary non-zero exits', async () => {
+      const provider = new LocalPollingProvider();
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e process.exit(1)` },
+      });
+      const result = await provider.execute(entry);
+      expect(result.success).toBe(false);
+      expect(result.timedOut).toBeUndefined();
+    });
+
+    it('does not block the event loop while a script runs', async () => {
+      // Spawn a script that sleeps ~150 ms, then assert that other timers
+      // continue to fire while the script is running. With the previous
+      // execFileSync implementation, setTimeout callbacks scheduled at
+      // 10/30/50 ms would all be delayed until the script returned.
+      const provider = new LocalPollingProvider();
+      // Space-free script — the scheduler tokenizes `task.ref` by whitespace.
+      const script = `setTimeout(()=>process.exit(0),150)`;
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e ${script}` },
+      });
+
+      const ticks: number[] = [];
+      const start = Date.now();
+      const t1 = setTimeout(() => ticks.push(Date.now() - start), 10);
+      const t2 = setTimeout(() => ticks.push(Date.now() - start), 30);
+      const t3 = setTimeout(() => ticks.push(Date.now() - start), 50);
+
+      const result = await provider.execute(entry);
+
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+
+      expect(result.success).toBe(true);
+      // All three timers should have fired *during* the script's 150 ms
+      // sleep — proving the event loop kept turning.
+      expect(ticks.length).toBe(3);
+      // Each tick should fire close to its scheduled time, not bunched
+      // up at the end. A 75 ms ceiling gives plenty of slack.
+      for (const t of ticks) {
+        expect(t).toBeLessThan(75);
+      }
+    });
+  });
 });
 
 describe('Scheduler: GitHubActionsProvider', () => {

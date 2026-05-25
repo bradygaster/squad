@@ -941,9 +941,10 @@ export async function runShell(): Promise<void> {
 
       // P2: Cast confirmation — require user approval for freeform REPL casts
       if (!skipConfirmation) {
+        const memberNames = proposal.members.map(m => `${m.emoji} ${m.name}`).join(', ');
         shellApi?.addMessage({
           role: 'system',
-          content: 'Look good? Type **y** to confirm or **n** to cancel.',
+          content: `Confirm team: ${memberNames} (universe: ${proposal.universe})\n\nType **y** to confirm or **n** to cancel.`,
           timestamp: new Date(),
         });
         pendingCastConfirmation = { proposal, parsed };

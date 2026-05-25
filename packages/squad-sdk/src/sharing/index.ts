@@ -10,3 +10,4 @@ export * from './agent-repo.js';
 export * from './cache.js';
 export * from './conflicts.js';
 export * from './consult.js';
+export * from './repo-sync.js';

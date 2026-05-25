@@ -11,7 +11,7 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, type InitOptions } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
 
 const storage = new FSStorageProvider();
@@ -252,6 +252,13 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   }
 
   process.off('SIGINT', sigintHandler);
+
+  // Init just created `.squad/` (and possibly `.github/agents/`) on disk.
+  // Any subsequent code in this process that calls resolveSquad()/findSquadDir()
+  // would otherwise be served the cached "not found" result from before init
+  // ran. Drop the resolution cache so the new directory is observed
+  // immediately instead of after the 5-second TTL.
+  clearResolveSquadCache();
 
   // Ensure version is fully stamped in squad.agent.md
   const agentPath = path.join(agentFileRoot, '.github', 'agents', 'squad.agent.md');

@@ -18,13 +18,14 @@ import type { StorageProvider } from '../storage/storage-provider.js';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { SquadState } from '../state/squad-state.js';
 import { spawnParallel, type FanOutDependencies } from '../coordinator/fan-out.js';
+import { LocalMemoryStore, type CopilotMemoryProviderClient, type MemoryClass } from '../memory/index.js';
 
 const tracer = trace.getTracer('squad-sdk');
 
 // --- Argument Sanitization ---
 
 /** Sensitive field patterns — strip before recording as span attributes. */
-const SENSITIVE_PATTERNS = /token|secret|password|key|auth/i;
+const SENSITIVE_PATTERNS = /^(content|query)$|token|secret|password|key|auth/i;
 
 /**
  * Sanitize tool arguments for OTel span attributes.
@@ -106,6 +107,29 @@ export interface SkillRequest {
   content?: string;
   /** Confidence level (required for write) */
   confidence?: 'low' | 'medium' | 'high';
+}
+
+export interface GovernedMemoryRequest {
+  content: string;
+  title?: string;
+  author?: string;
+  class?: MemoryClass;
+  approved?: boolean;
+}
+
+export interface GovernedMemorySearchRequest {
+  query: string;
+}
+
+export interface GovernedMemoryDeleteRequest {
+  id: string;
+  actor?: string;
+}
+
+export interface GovernedMemoryPromoteRequest {
+  id: string;
+  targetClass: Exclude<MemoryClass, 'FORBIDDEN' | 'TRANSIENT'>;
+  actor?: string;
 }
 
 // --- Tool Definition Helper ---
@@ -195,6 +219,7 @@ export class ToolRegistry {
   private storage: StorageProvider;
   private state?: SquadState;
   private fanOutDepsGetter?: () => FanOutDependencies | undefined;
+  private memoryStore: LocalMemoryStore;
 
   constructor(
     squadRoot = '.squad',
@@ -202,12 +227,17 @@ export class ToolRegistry {
     storage: StorageProvider = new FSStorageProvider(),
     state?: SquadState,
     fanOutDepsGetter?: () => FanOutDependencies | undefined,
+    hostInjectedCopilotAdapterClient?: CopilotMemoryProviderClient,
   ) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
     this.storage = storage;
     this.state = state;
     this.fanOutDepsGetter = fanOutDepsGetter;
+    this.memoryStore = new LocalMemoryStore(storage, squadRoot, {
+      rootKind: 'squad',
+      hostInjectedCopilotAdapterClient,
+    });
     this.registerSquadTools();
   }
 
@@ -484,7 +514,7 @@ export class ToolRegistry {
 
           // Fallback: raw StorageProvider
           const historyFile = path.join(this.squadRoot, 'agents', args.agent, 'history.md');
-          
+
           if (!this.storage.existsSync(historyFile)) {
             return {
               textResultForLlm: `Agent history file not found: agents/${args.agent}/history.md`,
@@ -505,7 +535,7 @@ export class ToolRegistry {
               error: 'History file could not be read',
             };
           }
-          
+
           // Find section and append
           const sectionIndex = content.indexOf(sectionHeader);
           if (sectionIndex !== -1) {
@@ -535,6 +565,172 @@ export class ToolRegistry {
       },
     });
 
+    const memoryClassify = defineTool<GovernedMemoryRequest>({
+      name: 'memory.classify',
+      description: 'Classify proposed memory with Squad governance policy without persisting content.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'Memory content to classify' },
+          class: {
+            type: 'string',
+            enum: ['TRANSIENT', 'LOCAL', 'DECISION', 'POLICY', 'COPILOT_MEMORY', 'FORBIDDEN'],
+            description: 'Optional requested memory class',
+          },
+        },
+        required: ['content'],
+      },
+      handler: async (args) => {
+        const classification = await this.memoryStore.classify({
+          content: args.content,
+          requestedClass: args.class,
+        }, {
+          audit: true,
+          actor: args.author,
+          title: args.title,
+        });
+        return {
+          textResultForLlm: `${classification.class}: ${classification.reason}`,
+          resultType: classification.allowed ? 'success' : 'failure',
+          toolTelemetry: { classification },
+        };
+      },
+    });
+
+    const memoryWrite = defineTool<GovernedMemoryRequest>({
+      name: 'memory.write',
+      description: 'Classify and write governed local Squad memory. External semantic memory requires an explicit configured bridge.',
+      parameters: {
+        type: 'object',
+        properties: {
+          content: { type: 'string', description: 'Memory content to persist' },
+          title: { type: 'string', description: 'Short memory title' },
+          author: { type: 'string', description: 'Actor requesting the write' },
+          class: {
+            type: 'string',
+            enum: ['TRANSIENT', 'LOCAL', 'DECISION', 'POLICY', 'COPILOT_MEMORY', 'FORBIDDEN'],
+            description: 'Optional requested memory class',
+          },
+          approved: { type: 'boolean', description: 'Whether the write has explicit approval' },
+        },
+        required: ['content'],
+      },
+      handler: async (args) => {
+        const result = await this.memoryStore.write({
+          content: args.content,
+          title: args.title,
+          author: args.author,
+          requestedClass: args.class,
+          approved: args.approved,
+        });
+        return {
+          textResultForLlm: result.stored
+            ? `Stored ${result.classification.class} memory ${result.id} at ${result.path}`
+            : `Rejected ${result.classification.class} memory: ${result.classification.reason}`,
+          resultType: result.stored ? 'success' : 'failure',
+          toolTelemetry: {
+            id: result.id,
+            class: result.classification.class,
+            path: result.path,
+            stored: result.stored,
+          },
+        };
+      },
+    });
+
+    const memorySearch = defineTool<GovernedMemorySearchRequest>({
+      name: 'memory.search',
+      description: 'Search governed local Squad memory entries.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query' },
+        },
+        required: ['query'],
+      },
+      handler: async (args) => {
+        const results = await this.memoryStore.search(args.query);
+        const telemetryResults = results.map(({ id, class: memoryClass, title, path }) => ({
+          id,
+          class: memoryClass,
+          title,
+          path,
+        }));
+        return {
+          textResultForLlm: results.length === 0
+            ? 'No governed memory entries matched.'
+            : results.map(r => `${r.id} [${r.class}] ${r.title}: ${r.snippet}`).join('\n'),
+          resultType: 'success',
+          toolTelemetry: { count: results.length, results: telemetryResults },
+        };
+      },
+    });
+
+    const memoryPromote = defineTool<GovernedMemoryPromoteRequest>({
+      name: 'memory.promote',
+      description: 'Promote an existing governed memory entry to LOCAL, DECISION, POLICY, or approved semantic memory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Memory ID to promote' },
+          targetClass: {
+            type: 'string',
+            enum: ['LOCAL', 'DECISION', 'POLICY', 'COPILOT_MEMORY'],
+            description: 'Target memory class',
+          },
+          actor: { type: 'string', description: 'Actor requesting promotion' },
+        },
+        required: ['id', 'targetClass'],
+      },
+      handler: async (args) => {
+        const result = await this.memoryStore.promote(args.id, args.targetClass, args.actor);
+        return {
+          textResultForLlm: result.stored
+            ? `Promoted memory ${args.id} to ${args.targetClass} as ${result.id}`
+            : `Promotion rejected: ${result.classification.reason}`,
+          resultType: result.stored ? 'success' : 'failure',
+          toolTelemetry: { sourceId: args.id, targetId: result.id, stored: result.stored },
+        };
+      },
+    });
+
+    const memoryDelete = defineTool<GovernedMemoryDeleteRequest>({
+      name: 'memory.delete',
+      description: 'Delete a governed local memory entry and write an audit tombstone.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Memory ID to delete' },
+          actor: { type: 'string', description: 'Actor requesting deletion' },
+        },
+        required: ['id'],
+      },
+      handler: async (args) => {
+        const deleted = await this.memoryStore.delete(args.id, args.actor);
+        return {
+          textResultForLlm: deleted ? `Deleted memory ${args.id}` : `Memory ${args.id} not found`,
+          resultType: deleted ? 'success' : 'failure',
+          toolTelemetry: { id: args.id, deleted },
+        };
+      },
+    });
+
+    const memoryAudit = defineTool<Record<string, never>>({
+      name: 'memory.audit',
+      description: 'Return the governed memory audit log. Audit records do not include memory content.',
+      parameters: { type: 'object', properties: {} },
+      handler: async () => {
+        const records = await this.memoryStore.auditLog();
+        return {
+          textResultForLlm: records.length === 0
+            ? 'No governed memory audit records.'
+            : records.map(r => `${r.timestamp} ${r.action} ${r.class ?? ''} ${r.id ?? ''} ${r.title ?? ''} ${r.reason ?? ''}`.trim()).join('\n'),
+          resultType: 'success',
+          toolTelemetry: { count: records.length, records },
+        };
+      },
+    });
+
     // squad_status: Query session pool state
     const squadStatus = defineTool<StatusQuery>({
       name: 'squad_status',
@@ -559,7 +755,7 @@ export class ToolRegistry {
       },
       handler: async (args) => {
         const pool = this.sessionPoolGetter?.();
-        
+
         if (!pool) {
           return {
             textResultForLlm: 'Session pool not available. Pool size: 0, Active sessions: 0',
@@ -609,7 +805,7 @@ export class ToolRegistry {
         }
 
         let textResult = `Pool status: ${poolInfo.poolSize}/${poolInfo.capacity} sessions (${poolInfo.activeSessions} active)`;
-        
+
         if (args.agentName || args.status) {
           textResult += `\nFiltered results: ${poolInfo.filteredCount} sessions`;
         }
@@ -739,6 +935,12 @@ export class ToolRegistry {
     this.tools.set('squad_route', squadRoute);
     this.tools.set('squad_decide', squadDecide);
     this.tools.set('squad_memory', squadMemory);
+    this.tools.set('memory.classify', memoryClassify);
+    this.tools.set('memory.write', memoryWrite);
+    this.tools.set('memory.search', memorySearch);
+    this.tools.set('memory.promote', memoryPromote);
+    this.tools.set('memory.delete', memoryDelete);
+    this.tools.set('memory.audit', memoryAudit);
     this.tools.set('squad_status', squadStatus);
     this.tools.set('squad_skill', squadSkill);
   }

@@ -301,10 +301,12 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   }
 
   // Preflight: verify an agent CLI is available
-  try {
-    await checkAgentCli(options.agentCmd);
-  } catch {
-    fatal('No agent CLI found. Install one of: copilot, claude, gemini, or opencode.');
+  if (!options.agentCmd) {
+    try {
+      await checkAgentCli(options.agentCmd);
+    } catch {
+      fatal('No agent CLI found. Install one of: copilot, claude, gemini, or opencode.');
+    }
   }
 
   // Build WatchConfig for capability system

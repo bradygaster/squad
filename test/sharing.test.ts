@@ -112,6 +112,30 @@ describe('Export', () => {
     expect(bundle.routingRules.some(r => r.agent === 'fenster')).toBe(true);
   });
 
+  it('should export raw routing file content', () => {
+    const bundle = exportSquadConfig(TEST_DIR);
+    expect(bundle.routingFile).toBeDefined();
+    expect(bundle.routingFile).toContain('build/*');
+    expect(bundle.routingFile).toContain('fenster');
+  });
+
+  it('should not include routingFile when routing.md is missing', () => {
+    rmSync(join(TEST_DIR, '.ai-team', 'routing.md'));
+    const bundle = exportSquadConfig(TEST_DIR);
+    expect(bundle.routingFile).toBeUndefined();
+  });
+
+  it('should anonymize routingFile content when anonymize option is set', () => {
+    writeFileSync(
+      join(TEST_DIR, '.ai-team', 'routing.md'),
+      '# Routing\n\n- `build/*` → fenster\n\nContact: user@example.com\n',
+    );
+    const bundle = exportSquadConfig(TEST_DIR, { anonymize: true });
+    expect(bundle.routingFile).toBeDefined();
+    expect(bundle.routingFile).not.toContain('user@example.com');
+    expect(bundle.routingFile).toContain('[email]');
+  });
+
   it('should export skills when includeSkills is true', () => {
     const bundle = exportSquadConfig(TEST_DIR, { includeSkills: true });
     expect(bundle.skills).toContain('typescript');
@@ -274,6 +298,40 @@ describe('Import', () => {
     expect(result.success).toBe(true);
     expect(result.changes.some(c => c.type === 'added')).toBe(true);
     expect(existsSync(join(targetDir, '.github', 'agents', 'fenster.agent.md'))).toBe(true);
+  });
+
+  it('should import raw routingFile content when present', () => {
+    const bundle = makeBundle();
+    bundle.routingFile = '# Full Routing\n\n- `build/*` → fenster\n- `review/*` → ralph\n\n## Extra Context\nCustom notes here.\n';
+    const bundlePath = join(IMPORT_DIR, 'bundle-routing.json');
+    writeFileSync(bundlePath, JSON.stringify(bundle));
+
+    const targetDir = join(IMPORT_DIR, 'target-routing');
+    mkdirSync(targetDir, { recursive: true });
+
+    const result = importSquadConfig(bundlePath, targetDir);
+    expect(result.success).toBe(true);
+    expect(result.changes.some(c => c.path === '.ai-team/routing.md')).toBe(true);
+    const routingContent = readFileSync(join(targetDir, '.ai-team', 'routing.md'), 'utf-8');
+    expect(routingContent).toContain('## Extra Context');
+    expect(routingContent).toContain('Custom notes here.');
+  });
+
+  it('should import routing.md even when routingRules is empty but routingFile is present', () => {
+    const bundle = makeBundle();
+    bundle.routingRules = [];
+    bundle.routingFile = '# Routing Rules\n\nNo structured rules, just notes.\n';
+    const bundlePath = join(IMPORT_DIR, 'bundle-routing-only.json');
+    writeFileSync(bundlePath, JSON.stringify(bundle));
+
+    const targetDir = join(IMPORT_DIR, 'target-routing-only');
+    mkdirSync(targetDir, { recursive: true });
+
+    const result = importSquadConfig(bundlePath, targetDir);
+    expect(result.success).toBe(true);
+    expect(result.changes.some(c => c.path === '.ai-team/routing.md')).toBe(true);
+    const routingContent = readFileSync(join(targetDir, '.ai-team', 'routing.md'), 'utf-8');
+    expect(routingContent).toContain('No structured rules, just notes.');
   });
 
   it('should support dry run', () => {

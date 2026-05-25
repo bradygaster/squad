@@ -15,8 +15,20 @@ import { parseCharterMarkdown } from './charter-compiler.js';
 import { EventBus } from '../client/event-bus.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import { recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy } from '../runtime/otel-metrics.js';
+import { mapWithLimitSettled } from '../utils/map-with-limit.js';
 
 const tracer = trace.getTracer('squad-sdk');
+
+/**
+ * Concurrency limit for {@link CharterCompiler.compileAll}.
+ *
+ * Each compile reads a charter.md (FS or SquadState-backed) and parses it.
+ * Filesystem reads are cheap individually but unbounded fan-out can
+ * exhaust file descriptors on large teams (the typical default soft
+ * ulimit is ~256 on macOS / 1024 on Linux). 8 in flight saturates 5-10
+ * agent teams while leaving headroom for other SDK code.
+ */
+const COMPILE_ALL_CONCURRENCY = 8;
 
 // --- M1-8 Charter Compilation + M2-9 Config-driven ---
 export { 
@@ -200,18 +212,22 @@ export class CharterCompiler {
     // Use SquadState agents collection when available
     if (this.state) {
       const names = await this.state.agents.list();
-      const charters: AgentCharter[] = [];
+      const candidates = names.filter(
+        (name) => name !== 'scribe' && !name.startsWith('_'),
+      );
 
-      for (const name of names) {
-        if (name === 'scribe' || name.startsWith('_')) continue;
-        try {
-          charters.push(await this.compileByName(name));
-        } catch {
-          // Skip agents without a valid charter.md
-        }
-      }
+      // Parallelise the per-charter compile. Order is preserved so
+      // downstream consumers that index by position (or rely on stable
+      // ordering for display) continue to see the same sequence.
+      const results = await mapWithLimitSettled(
+        candidates,
+        COMPILE_ALL_CONCURRENCY,
+        (name) => this.compileByName(name),
+      );
 
-      return charters;
+      return results
+        .filter((r): r is PromiseFulfilledResult<AgentCharter> => r.status === 'fulfilled')
+        .map((r) => r.value);
     }
 
     // Fallback: raw StorageProvider scan
@@ -220,20 +236,19 @@ export class CharterCompiler {
       throw new Error(`Agents directory not found: ${agentsDir}`);
     }
     const entries = await this.storage.list(agentsDir);
-    const charters: AgentCharter[] = [];
+    const candidates = entries.filter(
+      (name) => name !== 'scribe' && !name.startsWith('_'),
+    );
 
-    for (const name of entries) {
-      if (name === 'scribe' || name.startsWith('_')) continue;
+    const results = await mapWithLimitSettled(
+      candidates,
+      COMPILE_ALL_CONCURRENCY,
+      (name) => this.compile(join(agentsDir, name, 'charter.md')),
+    );
 
-      const charterPath = join(agentsDir, name, 'charter.md');
-      try {
-        charters.push(await this.compile(charterPath));
-      } catch {
-        // Skip agents without a valid charter.md
-      }
-    }
-
-    return charters;
+    return results
+      .filter((r): r is PromiseFulfilledResult<AgentCharter> => r.status === 'fulfilled')
+      .map((r) => r.value);
   }
 }
 

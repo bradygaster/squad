@@ -1,0 +1,69 @@
+{
+  "id": "graphify-knowledge",
+  "name": "Graphify Knowledge Graph",
+  "version": "1.0.0",
+  "description": "Example Squad knowledge plugin that documents integration with the safishamsi/graphify code knowledge graph tool.",
+  "authors": [
+    "Squad"
+  ],
+  "license": "MIT",
+  "squad": ">=0.9.1",
+  "components": {
+    "knowledge": [
+      "graphify"
+    ]
+  },
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/safishamsi/graphify"
+  },
+  "upstream": {
+    "package": "graphifyy",
+    "registry": "pypi",
+    "installCommand": "uv tool install graphifyy",
+    "docs": "https://github.com/safishamsi/graphify"
+  },
+  "mcp": {
+    "available": false,
+    "reason": "Graphify is represented here as a CLI and Copilot skill integration, not a Squad-managed MCP memory provider."
+  },
+  "providers": [
+    {
+      "id": "graphify",
+      "type": "knowledge",
+      "mode": "read",
+      "protocol": "static-artifact",
+      "description": "Knowledge graph provider contract for code relationship guidance already materialized as static artifacts.",
+      "artifact": "knowledge/graphify/graphify-integration.md",
+      "capabilities": [
+        "knowledge-graph",
+        "code-relationship-analysis",
+        "static-report-guidance"
+      ]
+    }
+  ],
+  "runtime": {
+    "capabilities": [
+      {
+        "type": "artifact-generation",
+        "provider": "graphify",
+        "lifecycle": [
+          "onEnable",
+          "onMemoryRefresh"
+        ],
+        "outputPaths": [
+          "knowledge/graphify/graph.json",
+          "knowledge/graphify/GRAPH_REPORT.md"
+        ],
+        "description": "Generate deterministic static knowledge graph artifacts without installing or executing the external graphifyy CLI."
+      }
+    ]
+  },
+  "files": [
+    {
+      "source": "knowledge/graphify-integration.md",
+      "target": "knowledge/graphify/graphify-integration.md",
+      "type": "doc"
+    }
+  ]
+}

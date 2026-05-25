@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquad, resolveGlobalSquadPath, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-cli-global-${randomBytes(4).toString('hex')}`);
 
@@ -27,11 +27,13 @@ function scaffold(...dirs: string[]): void {
 
 describe('squad status routing logic', () => {
   beforeEach(() => {
+    clearResolveSquadCache();
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
     mkdirSync(TMP, { recursive: true });
   });
 
   afterEach(() => {
+    clearResolveSquadCache();
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
   });
 

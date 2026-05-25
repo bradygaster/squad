@@ -156,7 +156,7 @@ export class CopilotProvider implements SquadProvider {
       autoStart: false,
       autoRestart: false,
       env: this.options.env ?? (process.env as Record<string, string>),
-      githubToken: this.options.githubToken,
+      gitHubToken: this.options.githubToken,
       useLoggedInUser: this.options.useLoggedInUser ?? (this.options.githubToken ? false : true),
     });
   }
@@ -183,7 +183,7 @@ export class CopilotProvider implements SquadProvider {
 
   async createSession(config: SquadSessionConfig): Promise<SquadSession> {
     const session = await this.client.createSession(
-      config as Parameters<typeof this.client.createSession>[0],
+      config as unknown as any,
     );
     return new CopilotSessionAdapter(session);
   }
@@ -191,7 +191,7 @@ export class CopilotProvider implements SquadProvider {
   async resumeSession(sessionId: string, config: SquadSessionConfig): Promise<SquadSession> {
     const session = await this.client.resumeSession(
       sessionId,
-      config as Parameters<typeof this.client.resumeSession>[1],
+      config as unknown as any,
     );
     return new CopilotSessionAdapter(session);
   }

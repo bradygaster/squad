@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey, StateBackendStorageAdapter } from '../packages/squad-sdk/src/state-backend.js';
 import type { StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
-import { resolveSquadState } from '../packages/squad-sdk/src/resolution.js';
+import { resolveSquadState, clearResolveSquadCache } from '../packages/squad-sdk/src/resolution.js';
 
 const TMP = join(process.cwd(), `.test-state-backend-${randomBytes(4).toString('hex')}`);
 function git(args: string, cwd = TMP): string {
@@ -20,7 +20,7 @@ function initRepo(): void {
 describe('WorktreeBackend', () => {
   const squadDir = () => join(TMP, '.squad');
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); mkdirSync(squadDir(), { recursive: true }); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
   it('read/write/exists round-trip', () => {
     const b = new WorktreeBackend(squadDir());
     expect(b.exists('team.md')).toBe(false); expect(b.read('team.md')).toBeUndefined();
@@ -37,7 +37,7 @@ describe('WorktreeBackend', () => {
 
 describe('GitNotesBackend', () => {
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
   it('read returns undefined when no note exists', () => { expect(new GitNotesBackend(TMP).read('team.md')).toBeUndefined(); });
   it('write then read round-trip', () => { const b = new GitNotesBackend(TMP); b.write('team.md', '# Team Config'); expect(b.read('team.md')).toBe('# Team Config'); });
   it('exists reflects write state', () => { const b = new GitNotesBackend(TMP); expect(b.exists('d/i/t.md')).toBe(false); b.write('d/i/t.md', 'x'); expect(b.exists('d/i/t.md')).toBe(true); });
@@ -79,7 +79,7 @@ describe('GitNotesBackend', () => {
 
 describe('OrphanBranchBackend', () => {
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
   it('read returns undefined when branch does not exist', () => { expect(new OrphanBranchBackend(TMP).read('team.md')).toBeUndefined(); });
   it('write creates orphan branch', { timeout: 15_000 }, () => {
     const b = new OrphanBranchBackend(TMP); b.write('team.md', '# Team'); expect(b.read('team.md')).toBe('# Team');
@@ -101,8 +101,8 @@ describe('OrphanBranchBackend', () => {
 
 describe('resolveStateBackend()', () => {
   const squadDir = () => join(TMP, '.squad');
-  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  beforeEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
   it('defaults to local', () => { expect(resolveStateBackend(squadDir(), TMP).name).toBe('local'); });
   it('reads stateBackend from config.json (git-notes migrates to two-layer)', () => {
     writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'git-notes' }));
@@ -173,7 +173,7 @@ describe('State Backend: validateStateKey', () => {
 
 describe('State Backend: Key injection blocked at backend level', () => {
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
 
   it('GitNotesBackend rejects path traversal in write', () => {
     const b = new GitNotesBackend(TMP);
@@ -221,7 +221,7 @@ describe('State Backend: Key injection blocked at backend level', () => {
 describe('WorktreeBackend delete/append', () => {
   const squadDir = () => join(TMP, '.squad');
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); mkdirSync(squadDir(), { recursive: true }); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
 
   it('delete removes an existing file and returns true', () => {
     const b = new WorktreeBackend(squadDir());
@@ -251,7 +251,7 @@ describe('WorktreeBackend delete/append', () => {
 
 describe('GitNotesBackend delete/append', () => {
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
 
   it('delete removes a key from the blob', { timeout: 15_000 }, () => {
     const b = new GitNotesBackend(TMP);
@@ -283,7 +283,7 @@ describe('GitNotesBackend delete/append', () => {
 
 describe('OrphanBranchBackend delete/append', () => {
   beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
 
   it('delete removes a file from the orphan branch', { timeout: 15_000 }, () => {
     const b = new OrphanBranchBackend(TMP);
@@ -349,8 +349,8 @@ describe('OrphanBranchBackend delete/append', () => {
 
 describe('resolveSquadState()', () => {
   const squadDir = () => join(TMP, '.squad');
-  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  beforeEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
 
   it('returns null when no squad dir exists', () => {
     rmSync(squadDir(), { recursive: true, force: true });
@@ -413,8 +413,8 @@ describe('resolveSquadState()', () => {
 
 describe('StateBackendStorageAdapter', () => {
   const squadDir = () => join(TMP, '.squad');
-  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
-  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+  beforeEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
 
   it('readSync/writeSync/existsSync round-trip via git-notes', () => {
     const backend = new GitNotesBackend(TMP);

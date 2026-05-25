@@ -10,7 +10,7 @@
  */
 
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, clearResolveSquadCache } from '@bradygaster/squad-sdk';
 import { fatal } from '../core/errors.js';
 
 const storage = new FSStorageProvider();
@@ -72,6 +72,13 @@ export function runLink(projectDir: string, teamRepoPath: string): void {
       + ignoreEntry + '\n';
     storage.appendSync(gitignorePath, block);
   }
+
+  // Link just (re)created `.squad/` and wrote config.json. Any subsequent
+  // code in this process that calls resolveSquad()/resolveSquadPaths()
+  // would otherwise be served the cached "not found" result from before
+  // link ran. Drop the cache so the new directory is observed immediately
+  // instead of after the 5-second TTL.
+  clearResolveSquadCache();
 
   console.log(`✅ Linked to team root: ${relativePath}`);
 }

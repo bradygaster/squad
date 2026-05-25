@@ -12,9 +12,31 @@
  */
 
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
 const storage = new FSStorageProvider();
+const execFileAsync = promisify(execFile);
+
+/**
+ * Default ceiling on a single script task.
+ *
+ * The previous implementation used `execFileSync` which is fully blocking —
+ * a 60-second cap meant the entire Node event loop could be frozen for up
+ * to one minute per scheduled task. We now use the non-blocking
+ * promisified `execFile` with the same per-task timeout, so other timers,
+ * I/O, and telemetry exporters keep making progress while a script runs.
+ */
+const SCRIPT_DEFAULT_TIMEOUT_MS = 60_000;
+
+/**
+ * Max captured stdout for a script task. Anything larger and execFile
+ * rejects with an ERR_CHILD_PROCESS_STDIO_MAXBUFFER. The Node default is
+ * ~1 MB which is small for `git log` / `npm ls` style commands the
+ * scheduler can be configured to run.
+ */
+const SCRIPT_DEFAULT_MAX_BUFFER = 8 * 1024 * 1024;
 
 // ============================================================================
 // Schedule Schema Types
@@ -91,6 +113,14 @@ export interface TaskResult {
   success: boolean;
   output?: string;
   error?: string;
+  /** Captured stderr (rejection-only). Optional; populated on script failures. */
+  stderr?: string;
+  /** Process exit code if known (rejection-only). */
+  code?: number;
+  /** Signal that terminated the process if known (rejection-only). */
+  signal?: string;
+  /** True iff the process was killed because it exceeded the timeout. */
+  timedOut?: boolean;
 }
 
 // ============================================================================
@@ -449,19 +479,48 @@ export class LocalPollingProvider implements ScheduleProvider {
   async execute(entry: ScheduleEntry): Promise<TaskResult> {
     switch (entry.task.type) {
       case 'script': {
+        // Non-blocking script execution. execFile with `shell: false`
+        // preserves the injection-safety property of the prior execFileSync
+        // implementation (see validateTaskRef above). The async variant
+        // means timer/I/O work elsewhere in the process keeps making
+        // progress while the script runs — critical for the Ralph watch
+        // loop and OpenTelemetry exporters.
         try {
-          const { execFileSync } = await import('node:child_process');
           validateTaskRef(entry.task.ref);
           const argv = entry.task.ref.trim().split(/\s+/);
           const command = argv[0]!;
           const args = argv.slice(1);
-          const output = execFileSync(command, args, {
+          const { stdout } = await execFileAsync(command, args, {
             encoding: 'utf8',
-            timeout: 60_000,
+            timeout: SCRIPT_DEFAULT_TIMEOUT_MS,
+            maxBuffer: SCRIPT_DEFAULT_MAX_BUFFER,
           });
-          return { success: true, output: output.trim() };
+          return { success: true, output: stdout.trim() };
         } catch (err) {
-          return { success: false, error: (err as Error).message };
+          // promisify(execFile) rejects with an Error decorated with extra
+          // fields when the child fails. We surface them on TaskResult so
+          // schedulers can distinguish 'timed out' from 'nonzero exit'.
+          const e = err as NodeJS.ErrnoException & {
+            stdout?: string | Buffer;
+            stderr?: string | Buffer;
+            code?: number | string;
+            signal?: NodeJS.Signals | null;
+            killed?: boolean;
+          };
+          const result: TaskResult = {
+            success: false,
+            error: e.message,
+          };
+          if (e.stdout !== undefined) result.output = e.stdout.toString().trim();
+          if (e.stderr !== undefined) result.stderr = e.stderr.toString().trim();
+          if (typeof e.code === 'number') result.code = e.code;
+          if (e.signal) result.signal = e.signal;
+          // execFile sets `killed=true` AND `signal='SIGTERM'` when the
+          // configured `timeout` fires. Either flag is sufficient evidence.
+          if (e.killed && (e.signal === 'SIGTERM' || e.signal === 'SIGKILL')) {
+            result.timedOut = true;
+          }
+          return result;
         }
       }
       case 'workflow':

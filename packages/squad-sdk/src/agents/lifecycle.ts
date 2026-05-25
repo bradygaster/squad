@@ -15,6 +15,7 @@ import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js'
 import * as path from 'path';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+import { buildActivePluginContext } from '../marketplace/plugin-state.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import { recordAgentSpawn, recordAgentDestroy, recordAgentError } from '../runtime/otel-metrics.js';
 
@@ -157,8 +158,14 @@ export class AgentLifecycleManager {
     
     try {
       // Step 1: Read charter.md
-      const charterPath = path.join(this.teamRoot, '.ai-team', 'agents', agentName, 'charter.md');
-      const charterContent = await this.storage.read(charterPath);
+      const squadCharterPath = path.join(this.teamRoot, '.squad', 'agents', agentName, 'charter.md');
+      const legacyCharterPath = path.join(this.teamRoot, '.ai-team', 'agents', agentName, 'charter.md');
+      let charterPath = squadCharterPath;
+      let charterContent = await this.storage.read(charterPath);
+      if (charterContent === undefined) {
+        charterPath = legacyCharterPath;
+        charterContent = await this.storage.read(charterPath);
+      }
 
       if (charterContent === undefined) {
         throw new ConfigurationError(
@@ -176,9 +183,11 @@ export class AgentLifecycleManager {
       const compileOptions: CharterCompileOptions = {
         agentName,
         charterPath,
+        charterContent,
         teamContext,
         routingRules,
         decisions,
+        pluginContext: await buildActivePluginContext(this.storage, path.join(this.teamRoot, '.squad')),
       };
       
       const agentConfig = compileCharter(compileOptions);

@@ -253,16 +253,22 @@ describe('Compat v0.4.1: Config Path Equivalence', () => {
 // ============================================================================
 
 describe('Compat v0.4.1: Tool Registration', () => {
-  it('ToolRegistry registers all 5 built-in tools', () => {
+  it('ToolRegistry registers all built-in tools', () => {
     const registry = new ToolRegistry();
     const tools = registry.getTools();
-    expect(tools.length).toBe(5);
+    expect(tools.length).toBe(11);
     const names = tools.map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
         'squad_route',
         'squad_decide',
         'squad_memory',
+        'memory.classify',
+        'memory.write',
+        'memory.search',
+        'memory.promote',
+        'memory.delete',
+        'memory.audit',
         'squad_status',
         'squad_skill',
       ]),
@@ -292,7 +298,7 @@ describe('Compat v0.4.1: Tool Registration', () => {
   it('getToolsForAgent returns all when no filter', () => {
     const registry = new ToolRegistry();
     const all = registry.getToolsForAgent(undefined);
-    expect(all.length).toBe(5);
+    expect(all.length).toBe(11);
   });
 });
 

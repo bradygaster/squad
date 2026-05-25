@@ -222,6 +222,9 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
     console.log(`             Flags: --deep (thorough cleanup), --dry-run (preview only)`);
+    console.log(`  ${BOLD}memory${RESET}     Governed memory operations`);
+    console.log(`             Usage: memory write --content "..." --class LOCAL`);
+    console.log(`             Diagnostics: --log-level info|debug or --verbose`);
     console.log(`  ${BOLD}doctor${RESET}     Validate squad setup (check files, config, health)`);
     console.log(`  ${BOLD}consult${RESET}    Enter consult mode with your personal squad`);
     console.log(`             Flags: --status, --check`);
@@ -414,6 +417,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'memory') {
+    const { runMemoryCommand } = await import('./cli/commands/memory.js');
+    await runMemoryCommand(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
   if (cmd === 'migrate') {
     const { runMigrate } = await import('./cli/commands/migrate.js');
     const toIdx = args.indexOf('--to');
@@ -549,6 +558,15 @@ async function main(): Promise<void> {
         : { projectNumber: parseInt(args[boardProjectIdx + 1]!, 10) };
     }
 
+    // --board-owner sets the project owner (org or user login)
+    const boardOwnerIdx = args.indexOf('--board-owner');
+    if (boardOwnerIdx !== -1 && args[boardOwnerIdx + 1]) {
+      const existing = capabilities['board'];
+      capabilities['board'] = typeof existing === 'object' && existing !== null
+        ? { ...existing, owner: args[boardOwnerIdx + 1]! }
+        : { owner: args[boardOwnerIdx + 1]! };
+    }
+
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(getSquadStartDir(), {
       interval,
@@ -573,7 +591,7 @@ async function main(): Promise<void> {
     // After parsing all flags, check for positional args that look like prompts.
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
-      '--interval', '--agent-flags', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--auth-user',
+      '--interval', '--agent-flags', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--board-owner', '--auth-user',
       '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
@@ -710,18 +728,32 @@ async function main(): Promise<void> {
     const { runExport } = await import('./cli/commands/export.js');
     const outIdx = args.indexOf('--out');
     const outPath = (outIdx !== -1 && args[outIdx + 1]) ? args[outIdx + 1] : undefined;
-    await runExport(getSquadStartDir(), outPath);
+    const repoIdx = args.indexOf('--repo');
+    const repoArg = (repoIdx !== -1 && args[repoIdx + 1]) ? args[repoIdx + 1] : undefined;
+    const branchIdx = args.indexOf('--branch');
+    const branchArg = (branchIdx !== -1 && args[branchIdx + 1]) ? args[branchIdx + 1] : undefined;
+    const repoOptions = repoArg ? { repo: repoArg, branch: branchArg } : undefined;
+    await runExport(getSquadStartDir(), outPath, repoOptions);
     return;
   }
 
   if (cmd === 'import') {
     const { runImport } = await import('./cli/commands/import.js');
-    const importFile = args[1];
-    if (!importFile) {
-      fatal('Usage: squad import <file> [--force]');
-    }
+    const repoIdx = args.indexOf('--repo');
+    const repoArg = (repoIdx !== -1 && args[repoIdx + 1]) ? args[repoIdx + 1] : undefined;
+    const branchIdx = args.indexOf('--branch');
+    const branchArg = (branchIdx !== -1 && args[branchIdx + 1]) ? args[branchIdx + 1] : undefined;
     const hasForce = args.includes('--force');
-    await runImport(getSquadStartDir(), importFile, hasForce);
+    if (repoArg) {
+      const repoOptions = { repo: repoArg, branch: branchArg };
+      await runImport(getSquadStartDir(), '', hasForce, repoOptions);
+    } else {
+      const importFile = args[1];
+      if (!importFile) {
+        fatal('Usage: squad import <file> [--force] or squad import --repo owner/repo [--branch branch] [--force]');
+      }
+      await runImport(getSquadStartDir(), importFile, hasForce);
+    }
     return;
   }
 

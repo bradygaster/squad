@@ -52,12 +52,12 @@ function compareSemver(a: string, b: string): number {
   const stripPre = (v: string) => v.split('-')[0]!;
   const pa = stripPre(a).split('.').map(Number);
   const pb = stripPre(b).split('.').map(Number);
-  
+
   for (let i = 0; i < 3; i++) {
     if ((pa[i] || 0) < (pb[i] || 0)) return -1;
     if ((pa[i] || 0) > (pb[i] || 0)) return 1;
   }
-  
+
   // Base versions equal — pre-release is less than release
   const aPre = a.includes('-');
   const bPre = b.includes('-');
@@ -78,14 +78,14 @@ function detectProjectType(dir: string): string {
   if (storage.existsSync(path.join(dir, 'pom.xml')) ||
       storage.existsSync(path.join(dir, 'build.gradle')) ||
       storage.existsSync(path.join(dir, 'build.gradle.kts'))) return 'java';
-  
+
   try {
     const entries = storage.listSync(dir);
-    if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln') || 
-                         e.endsWith('.slnx') || e.endsWith('.fsproj') || 
+    if (entries.some(e => e.endsWith('.csproj') || e.endsWith('.sln') ||
+                         e.endsWith('.slnx') || e.endsWith('.fsproj') ||
                          e.endsWith('.vbproj'))) return 'dotnet';
   } catch {}
-  
+
   return 'unknown';
 }
 
@@ -518,6 +518,12 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
     filesUpdated.push(...castingFiles);
   }
 
+  const memoryFiles = ensureMemoryGovernanceUpgradeDefaults(dest);
+  if (memoryFiles.length > 0) {
+    success(`scaffolded memory governance defaults (${memoryFiles.length} files/directories)`);
+    filesUpdated.push(...memoryFiles);
+  }
+
   const skillCount = syncAllSkills(dest, templatesDir);
   if (skillCount > 0) {
     success(`synced ${skillCount} skills to .copilot/skills/`);
@@ -529,57 +535,97 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
   filesUpdated.push('.squad/templates/');
 }
 
+export function ensureMemoryGovernanceUpgradeDefaults(dest: string): string[] {
+  const memoryDir = path.join(dest, '.squad', 'memory');
+  const created: string[] = [];
+  for (const dir of ['local', 'policy-inbox', 'semantic-inbox', 'tombstones']) {
+    const fullPath = path.join(memoryDir, dir);
+    if (!storage.existsSync(fullPath)) {
+      storage.mkdirSync(fullPath, { recursive: true });
+      created.push(path.join('.squad', 'memory', dir));
+    }
+  }
+  const defaults = {
+    'config.json': JSON.stringify({
+      version: 1,
+      defaultProvider: 'local',
+      promptOnlyFallback: true,
+      externalProviders: {
+        hostInjectedCopilotAdapter: {
+          enabled: false,
+          requireApproval: true,
+        },
+      },
+      policy: {
+        rejectForbidden: true,
+        rejectTransientDurableWrites: true,
+        auditContent: false,
+      },
+    }, null, 2) + '\n',
+    'index.json': '[]\n',
+    'audit.jsonl': '',
+  };
+  for (const [file, content] of Object.entries(defaults)) {
+    const fullPath = path.join(memoryDir, file);
+    if (!storage.existsSync(fullPath)) {
+      storage.writeSync(fullPath, content);
+      created.push(path.join('.squad', 'memory', file));
+    }
+  }
+  return created;
+}
+
 /**
  * Run the upgrade command
  */
 export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Promise<UpdateInfo> {
   const cliVersion = getPackageVersion();
   const filesUpdated: string[] = [];
-  
+
   // Detect squad directory
   const squadDirInfo = detectSquadDir(dest);
-  
+
   if (squadDirInfo.isLegacy) {
     warn('DEPRECATION: .ai-team/ is deprecated and will be removed in v1.0.0');
     warn("Run 'squad upgrade --migrate-directory' to migrate to .squad/");
     console.log();
   }
-  
+
   // Verify squad exists
   if (!storage.existsSync(squadDirInfo.path)) {
     fatal('No squad found — run init first.');
   }
-  
+
   const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
   const oldVersion = readInstalledVersion(agentDest) ?? '0.0.0';
-  
+
   // Check if already current
   const isAlreadyCurrent = !options.force && oldVersion && oldVersion !== '0.0.0' && compareSemver(oldVersion, cliVersion) === 0;
-  
+
   const projectType = detectProjectType(dest);
-  
+
   if (isAlreadyCurrent) {
     info(`Already up to date (v${cliVersion})`);
-    
+
     // Still run missing migrations
     const migrationsApplied = await runMigrations(squadDirInfo.path, oldVersion, cliVersion);
-    
+
     // Refresh squad-owned files even when version matches
     const templatesDir = getTemplatesDir();
     const workflowsSrc = path.join(templatesDir, 'workflows');
     const workflowsDest = path.join(dest, '.github', 'workflows');
-    
+
     if (storage.existsSync(workflowsSrc)) {
       const wfFiles = storage.listSync(workflowsSrc).filter(f => f.endsWith('.yml'));
       storage.mkdirSync(workflowsDest, { recursive: true });
-      
+
       for (const file of wfFiles) {
         writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
       }
       success(`upgraded squad workflows (${wfFiles.length} files)`);
       filesUpdated.push(`workflows (${wfFiles.length} files)`);
     }
-    
+
     // Refresh squad.agent.md
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
     if (storage.existsSync(agentSrc)) {
@@ -591,10 +637,10 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     } else {
       warn('squad.agent.md.template not found — squad.agent.md was not refreshed. Reinstall or repair the CLI to restore the missing template.');
     }
-    
+
     // Run infrastructure ensure checks even when already current
     runEnsureChecks(dest, templatesDir, filesUpdated);
-    
+
     return {
       fromVersion: oldVersion,
       toVersion: cliVersion,
@@ -602,74 +648,74 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       migrationsRun: migrationsApplied,
     };
   }
-  
+
   // Upgrade squad.agent.md
   const templatesDir = getTemplatesDir();
   const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
-  
+
   if (!storage.existsSync(agentSrc)) {
     fatal('squad.agent.md.template not found in templates — installation may be corrupted');
   }
-  
+
   storage.mkdirSync(path.dirname(agentDest), { recursive: true });
   storage.copySync(agentSrc, agentDest);
   stampVersion(agentDest, cliVersion);
-  
+
   const fromLabel = oldVersion === '0.0.0' || !oldVersion ? 'unknown' : oldVersion;
   success(`upgraded coordinator from ${fromLabel} to ${cliVersion}`);
   filesUpdated.push('squad.agent.md');
-  
+
   // Upgrade squad-owned files from template manifest
   // Exclude squad.agent.md — already copied and version-stamped above
   const filesToUpgrade = TEMPLATE_MANIFEST.filter(f => f.overwriteOnUpgrade && f.source !== 'squad.agent.md.template');
-  
+
   for (const file of filesToUpgrade) {
     const srcPath = path.join(templatesDir, file.source);
     const destPath = path.join(squadDirInfo.path, file.destination);
-    
+
     if (!storage.existsSync(srcPath)) continue;
-    
+
     if (file.source.startsWith('skills/')) {
       warnIfSkillCustomized(srcPath, destPath, file.source);
     }
     storage.mkdirSync(path.dirname(destPath), { recursive: true });
     storage.copySync(srcPath, destPath);
-    
+
     filesUpdated.push(file.destination);
   }
-  
+
   if (filesToUpgrade.length > 0) {
     success(`upgraded ${filesToUpgrade.length} squad-owned files`);
   }
-  
+
   // Upgrade workflows
   const workflowsSrc = path.join(templatesDir, 'workflows');
   const workflowsDest = path.join(dest, '.github', 'workflows');
-  
+
   if (storage.existsSync(workflowsSrc)) {
     const wfFiles = storage.listSync(workflowsSrc).filter(f => f.endsWith('.yml'));
     storage.mkdirSync(workflowsDest, { recursive: true });
-    
+
     for (const file of wfFiles) {
       writeWorkflowFile(file, path.join(workflowsSrc, file), path.join(workflowsDest, file), projectType);
     }
-    
+
     success(`upgraded squad workflows (${wfFiles.length} files)`);
     filesUpdated.push(`workflows (${wfFiles.length} files)`);
   }
-  
+
   // Run migrations
   const migrationsApplied = await runMigrations(squadDirInfo.path, oldVersion, cliVersion);
-  
+
   // Update copilot-instructions.md if @copilot is enabled
   const copilotInstructionsSrc = path.join(templatesDir, 'copilot-instructions.md');
   const copilotInstructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
   const teamMdPath = path.join(squadDirInfo.path, 'team.md');
-  
+
   if (storage.existsSync(teamMdPath)) {
     const teamContent = storage.readSync(teamMdPath) ?? '';
     const copilotEnabled = teamContent.includes('🤖 Coding Agent');
-    
+
     if (copilotEnabled && storage.existsSync(copilotInstructionsSrc)) {
       storage.mkdirSync(path.dirname(copilotInstructionsDest), { recursive: true });
       storage.copySync(copilotInstructionsSrc, copilotInstructionsDest);
@@ -677,10 +723,10 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       filesUpdated.push('copilot-instructions.md');
     }
   }
-  
+
   // Run infrastructure ensure checks
   runEnsureChecks(dest, templatesDir, filesUpdated);
-  
+
   console.log();
   info(`Upgrade complete: v${fromLabel} → v${cliVersion}`);
   if (migrationsApplied.some(m => m.toLowerCase().includes('scrub email'))) {
@@ -689,7 +735,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     dim('Preserves user state: team.md, decisions/, agents/*/history.md');
   }
   console.log();
-  
+
   return {
     fromVersion: fromLabel,
     toVersion: cliVersion,

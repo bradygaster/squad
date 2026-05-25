@@ -425,7 +425,7 @@ export const App: React.FC<AppProps> = ({ registry, renderer, teamRoot, version,
           const { msg, idx: i } = item;
           const isNewTurn = msg.role === 'user' && i > 0;
           const agentRole = msg.agentName ? roleMap.get(msg.agentName) : undefined;
-          const emoji = agentRole ? getRoleEmoji(agentRole) : '';
+          const emoji = msg.agentName ? getRoleEmoji(agentRole ?? msg.agentName) : '';
           let duration: string | null = null;
           if (msg.role === 'agent') {
             for (let j = i - 1; j >= 0; j--) {

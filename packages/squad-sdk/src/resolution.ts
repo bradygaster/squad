@@ -23,6 +23,83 @@ import type { StorageProvider } from './storage/storage-provider.js';
 const storage = new FSStorageProvider();
 
 // ============================================================================
+// Resolution cache (perf: memoize repeated FS walks)
+// ============================================================================
+//
+// Why caching is needed:
+//   resolveSquad() and findSquadDir() walk from `startDir` toward `/`,
+//   doing 2–3 syscalls per directory level. They are called from many CLI
+//   entry points and from the Ralph daemon's watch loop, often several
+//   times per command — repeating the same walk each time.
+//
+// Why TTL + explicit invalidation:
+//   Results CAN change during a single process: `squad init` creates
+//   `.squad/`, tests scaffold and tear down temp directories, and a
+//   long-running daemon may observe directory changes between ticks.
+//   A short TTL (5 s) makes the cache self-correcting in the worst case;
+//   `clearResolveSquadCache()` provides immediate invalidation for any
+//   command or test that mutates the `.squad/` layout.
+//
+// Escape hatch:
+//   Set `SQUAD_NO_RESOLVE_CACHE=1` to disable both caches. Tests that
+//   exhaustively exercise the walk algorithm should set this so cached
+//   results from a previous test do not contaminate the next.
+//
+// Cache key: absolute path of `startDir` (after `path.resolve()`).
+
+interface CacheEntry<T> {
+  value: T;
+  ts: number;
+}
+
+const RESOLVE_CACHE_TTL_MS = 5_000;
+const resolveSquadCache = new Map<string, CacheEntry<string | null>>();
+type FindSquadDirResult = { dir: string; name: '.squad' | '.ai-team' } | null;
+const findSquadDirCache = new Map<string, CacheEntry<FindSquadDirResult>>();
+
+function isResolveCacheDisabled(): boolean {
+  return process.env['SQUAD_NO_RESOLVE_CACHE'] === '1';
+}
+
+function readCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | undefined {
+  if (isResolveCacheDisabled()) return undefined;
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.ts > RESOLVE_CACHE_TTL_MS) {
+    cache.delete(key);
+    return undefined;
+  }
+  return hit.value;
+}
+
+function writeCache<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T): void {
+  if (isResolveCacheDisabled()) return;
+  cache.set(key, { value, ts: Date.now() });
+}
+
+/**
+ * Clear all in-process caches used by `resolveSquad()` and `findSquadDir()`.
+ *
+ * Call this from any command or test that creates, moves, or deletes a
+ * `.squad/` (or `.ai-team/`) directory so subsequent resolution calls in
+ * the same process observe the fresh filesystem state immediately,
+ * instead of waiting up to {@link RESOLVE_CACHE_TTL_MS} ms for the TTL
+ * to expire.
+ *
+ * Examples of callers that should invoke this:
+ *   - `squad init` — creates `.squad/` in the project root
+ *   - `squad link` — points an existing checkout at a remote team root
+ *   - `squad upgrade` — may regenerate `.squad/` layout
+ *   - Test fixtures that scaffold or tear down temporary `.squad/` dirs
+ *
+ * Safe to call when the cache is disabled (no-op).
+ */
+export function clearResolveSquadCache(): void {
+  resolveSquadCache.clear();
+  findSquadDirCache.clear();
+}
+
+// ============================================================================
 // Dual-root path resolution types (Issue #311)
 // ============================================================================
 
@@ -112,7 +189,17 @@ function getMainWorktreePath(worktreeDir: string, gitFilePath: string): string |
  * @returns Absolute path to `.squad/` or `null`.
  */
 export function resolveSquad(startDir?: string): string | null {
-  let current = path.resolve(startDir ?? process.cwd());
+  const cacheKey = path.resolve(startDir ?? process.cwd());
+  const cached = readCache(resolveSquadCache, cacheKey);
+  if (cached !== undefined) return cached;
+
+  const result = resolveSquadUncached(cacheKey);
+  writeCache(resolveSquadCache, cacheKey, result);
+  return result;
+}
+
+function resolveSquadUncached(startDir: string): string | null {
+  let current = startDir;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -168,7 +255,17 @@ const SQUAD_DIR_NAMES = ['.squad', '.ai-team'] as const;
  * Returns the absolute path and the directory name used.
  */
 function findSquadDir(startDir: string): { dir: string; name: '.squad' | '.ai-team' } | null {
-  let current = path.resolve(startDir);
+  const cacheKey = path.resolve(startDir);
+  const cached = readCache(findSquadDirCache, cacheKey);
+  if (cached !== undefined) return cached;
+
+  const result = findSquadDirUncached(cacheKey);
+  writeCache(findSquadDirCache, cacheKey, result);
+  return result;
+}
+
+function findSquadDirUncached(startDir: string): { dir: string; name: '.squad' | '.ai-team' } | null {
+  let current = startDir;
 
   // eslint-disable-next-line no-constant-condition
   while (true) {

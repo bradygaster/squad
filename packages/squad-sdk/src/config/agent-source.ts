@@ -7,6 +7,7 @@ import * as path from 'path';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
 import type { SquadState } from '../state/squad-state.js';
+import { mapWithLimit, mapWithLimitSettled } from '../utils/map-with-limit.js';
 
 export interface AgentSource {
   readonly name: string;
@@ -33,6 +34,19 @@ export interface AgentDefinition extends AgentManifest {
 
 /** Directories to scan for agents, in priority order. */
 const AGENT_DIRS = ['.squad/agents', '.ai-team/agents'] as const;
+
+/**
+ * Bounded concurrency for parallel charter discovery.
+ *
+ * - LOCAL_LIST_CONCURRENCY: filesystem reads are cheap individually but the
+ *   default ulimit on file descriptors is finite. 8 leaves headroom for the
+ *   rest of the SDK while still saturating typical 5-10 agent teams.
+ * - GITHUB_LIST_CONCURRENCY: GitHub REST API has secondary rate limits on
+ *   burst concurrency; 5 stays well clear of those thresholds for typical
+ *   team sizes while removing the serial-await bottleneck.
+ */
+const LOCAL_LIST_CONCURRENCY = 8;
+const GITHUB_LIST_CONCURRENCY = 5;
 
 /**
  * Parse charter.md content to extract agent metadata.
@@ -107,23 +121,23 @@ export class LocalAgentSource implements AgentSource {
     if (this.state) {
       try {
         const names = await this.state.agents.list();
-        const manifests: AgentManifest[] = [];
 
-        for (const entryName of names) {
-          try {
-            const content = await this.state.agents.get(entryName).charter();
-            const meta = parseCharterMetadata(content);
-            manifests.push({
-              name: meta.name || entryName,
-              role: meta.role || 'agent',
-              source: 'local',
-            });
-          } catch {
-            continue;
-          }
-        }
+        // Parallelise the per-agent charter reads. Each call hits the
+        // storage backend (FS or otherwise). Order is preserved so the
+        // resulting manifest list matches the prior sequential behavior.
+        const results = await mapWithLimitSettled(names, LOCAL_LIST_CONCURRENCY, async (entryName) => {
+          const content = await this.state!.agents.get(entryName).charter();
+          const meta = parseCharterMetadata(content);
+          return {
+            name: meta.name || entryName,
+            role: meta.role || 'agent',
+            source: 'local',
+          } satisfies AgentManifest;
+        });
 
-        return manifests;
+        return results
+          .filter((r): r is PromiseFulfilledResult<AgentManifest> => r.status === 'fulfilled')
+          .map((r) => r.value);
       } catch {
         // Fall through to raw StorageProvider path
       }
@@ -133,7 +147,6 @@ export class LocalAgentSource implements AgentSource {
     const agentsDir = await this.resolveAgentsDir();
     if (!agentsDir) return [];
 
-    const manifests: AgentManifest[] = [];
     let entries: string[];
     try {
       entries = await this.storage.list(agentsDir);
@@ -141,21 +154,30 @@ export class LocalAgentSource implements AgentSource {
       return [];
     }
 
-    for (const entryName of entries) {
+    // For the raw storage fallback, the prior implementation did NOT
+    // catch per-item errors from isDirectory()/read() — they propagated
+    // to the caller. Use mapWithLimit (fast-fail) here so a permission
+    // error or backend outage surfaces as a thrown error instead of
+    // silently producing a partial list.
+    const dirFlags = await mapWithLimit(entries, LOCAL_LIST_CONCURRENCY, async (entryName) => {
       const entryPath = path.join(agentsDir, entryName);
-      if (!(await this.storage.isDirectory(entryPath))) continue;
-      const charterPath = path.join(entryPath, 'charter.md');
+      return (await this.storage.isDirectory(entryPath)) ? entryName : null;
+    });
+    const candidates = dirFlags.filter((name): name is string => name !== null);
+
+    const manifests = await mapWithLimit(candidates, LOCAL_LIST_CONCURRENCY, async (entryName) => {
+      const charterPath = path.join(agentsDir, entryName, 'charter.md');
       const content = await this.storage.read(charterPath);
-      if (!content) continue;
+      if (!content) return null;
       const meta = parseCharterMetadata(content);
-      manifests.push({
+      return {
         name: meta.name || entryName,
         role: meta.role || 'agent',
         source: 'local',
-      });
-    }
+      } satisfies AgentManifest;
+    });
 
-    return manifests;
+    return manifests.filter((m): m is AgentManifest => m !== null);
   }
 
   async getAgent(name: string): Promise<AgentDefinition | null> {
@@ -273,23 +295,32 @@ export class GitHubAgentSource implements AgentSource {
       this.owner, this.repoName, this.pathPrefix, this.branch,
     );
     const dirs = entries.filter(e => e.type === 'dir');
-    const manifests: AgentManifest[] = [];
 
-    for (const dir of dirs) {
+    // Bounded concurrency to avoid GitHub secondary rate limits on burst
+    // requests. Five in flight is a conservative ceiling that comfortably
+    // covers typical 5-10 agent teams without serial latency, while still
+    // far below GitHub's secondary-limit thresholds.
+    //
+    // Use mapWithLimit (fast-fail) — not mapWithLimitSettled — so 403
+    // / rate-limit / auth / network errors surface to the caller instead
+    // of being silently dropped. The original `for...await` loop also
+    // propagated these errors. Only "charter content is empty" is
+    // expected/skipped via the `return null` path.
+    const manifests = await mapWithLimit(dirs, GITHUB_LIST_CONCURRENCY, async (dir) => {
       const charterPath = `${this.pathPrefix}/${dir.name}/charter.md`;
       const content = await this.fetcher.getFileContent(
         this.owner, this.repoName, charterPath, this.branch,
       );
-      if (!content) continue;
+      if (!content) return null;
       const meta = parseCharterMetadata(content);
-      manifests.push({
+      return {
         name: meta.name || dir.name,
         role: meta.role || 'agent',
         source: 'github',
-      });
-    }
+      } satisfies AgentManifest;
+    });
 
-    return manifests;
+    return manifests.filter((m): m is AgentManifest => m !== null);
   }
 
   async getAgent(name: string): Promise<AgentDefinition | null> {

@@ -151,10 +151,11 @@ export function importSquadConfig(
   }
 
   // Import routing rules
-  if (bundle.routingRules.length > 0) {
+  if (bundle.routingRules.length > 0 || bundle.routingFile !== undefined) {
     const routingPath = join(targetDir, '.ai-team', 'routing.md');
     const relativePath = '.ai-team/routing.md';
-    const routingContent = formatRoutingRules(bundle.routingRules);
+    // Prefer the raw routing file content if available; fall back to formatted rules
+    const routingContent = bundle.routingFile !== undefined ? bundle.routingFile : formatRoutingRules(bundle.routingRules);
 
     if (storage.existsSync(routingPath) && !opts.merge) {
       changes.push({ type: 'skipped', path: relativePath, reason: 'File exists and merge is disabled' });

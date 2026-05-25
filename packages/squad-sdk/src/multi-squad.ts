@@ -134,13 +134,16 @@ export function resolveSquadPath(name?: string): string {
   // Auto-migrate legacy layout if needed
   migrateIfNeeded();
 
+  // Read squads.json once (previously this was loaded 2–3 times per call:
+  // once via the .active fallback in the resolution chain, again to look
+  // up the entry by name, and a third time via internals).
+  const config = loadSquadsConfig();
+
   const resolved =
     name ??
     process.env['SQUAD_NAME'] ??
-    loadSquadsConfig()?.active ??
+    config?.active ??
     DEFAULT_SQUAD;
-
-  const config = loadSquadsConfig();
 
   // Look up registered path
   if (config) {

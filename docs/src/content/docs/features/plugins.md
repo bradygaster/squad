@@ -2,429 +2,230 @@
 
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
+Plugins package reusable Squad capabilities: agents, knowledge packs, workflows, ceremonies, memory providers, routing guidance, decisions, hook metadata, adapter metadata, typed provider contracts, and generated knowledge artifacts.
 
-**Try this to add instant expertise:**
-```
-Install the AWS deployment plugin
-```
-
-**Try this to discover community bundles:**
-```
-Show me available plugins for React development
-```
-
-Plugins are community-curated bundles of agent templates, skills, and best practices. Install plugins to give your squad instant expertise in React, Azure, security, testing, and more.
-
----
-
-## What Are Plugins?
-
-Your Squad can discover and install **plugins** — curated collections of agent templates, skills, and instructions from community repositories. Plugins solve recurring problems: Azure cloud development, React patterns, security hardening, testing strategies, and more.
-
----
-
-## What Are Plugins?
-
-Plugins are **community-curated bundles** of reusable knowledge. Each plugin contains:
-
-- **Agent templates** — specialized role charters for common needs (e.g., "AWS DevOps", "Python Data Science")
-- **Skills** — reusable `.squad/skills/SKILL.md` files encoding patterns and best practices
-- **Instructions** — `decisions.md` snippets for conventions and routing rules
-- **Sample prompts** — ready-to-use prompts that activate plugin capabilities
-
-A plugin marketplace is a **repository** that hosts these bundles. Squad ships with community marketplaces pre-configured. You can add your own.
-
----
-
-## Available Marketplaces
-
-| Marketplace | URL | What's Inside |
-|-------------|-----|-----------|
-| **awesome-copilot** | `github/awesome-copilot` | Frontend frameworks (React, Vue, Svelte), backend stacks (Node, Python, Go), deployment patterns |
-| **anthropic-skills** | `anthropics/skills` | Claude-optimized patterns, prompt engineering, token efficiency, RAG patterns |
-| **azure-cloud-dev** | `github/azure-cloud-development` | Azure VMs, App Service, Cosmos DB, DevOps with GitHub Actions, infrastructure-as-code |
-| **security-hardening** | `github/security-hardening` | OWASP, input validation, secrets management, cryptography, compliance patterns |
-
----
-
-## Commands
-
-### List registered marketplaces
-
-```
-> Show me available marketplaces
-```
-
-Squad displays all configured marketplaces with descriptions.
-
-```
-/plugin marketplace list
-```
-
-Same thing, command-line style.
-
-### Add a marketplace
-
-```
-> Add the awesome-copilot marketplace
-```
-
-Or use the command:
-
-```
-/plugin marketplace add github/awesome-copilot
-```
-
-Squad connects to the repository, indexes its plugins, and makes them available for browsing.
-
-### Remove a marketplace
-
-```
-> Remove the awesome-copilot marketplace
-```
-
-Or:
-
-```
-/plugin marketplace remove awesome-copilot
-```
-
-Removes the marketplace from your config. Installed plugins remain; new plugins can't be added from it.
-
-### Browse plugins in a marketplace
-
-```
-> Browse the awesome-copilot marketplace
-```
-
-Squad displays all available plugins with one-line descriptions.
-
-```
-/plugin marketplace browse awesome-copilot
-```
-
-Same command-line version.
-
-### Search for a plugin
-
-```
-> Find a plugin for React testing
-```
-
-Squad searches all configured marketplaces for matching plugins and displays results with usage details.
-
----
-
-## Step-by-Step: Add the Awesome-Copilot Marketplace
-
-### Step 1: Add the marketplace
-
-In your Squad session, say:
-
-```
-> Add the awesome-copilot marketplace
-```
-
-Squad connects to the repo and indexes all available plugins. You'll see a confirmation:
-
-```
-✅ awesome-copilot marketplace added
-📦 38 plugins indexed
-```
-
-### Step 2: Browse available plugins
-
-```
-> Browse awesome-copilot
-```
-
-Squad shows a table of plugins:
-
-```
-Plugin Name              | Use Case | Install Command
--------------------------|----------|----------------
-react-component-library | Frontend | /plugin install awesome-copilot/react-component-library
-nextjs-fullstack        | Frontend | /plugin install awesome-copilot/nextjs-fullstack
-fastapi-rest-api        | Backend  | /plugin install awesome-copilot/fastapi-rest-api
-postgresql-migrations   | Database | /plugin install awesome-copilot/postgresql-migrations
-[38 total plugins]
-```
-
-### Step 3: Install a plugin
-
-Pick one that matches your needs. For a React project:
-
-```
-> Install the react-component-library plugin
-```
-
-Or use the exact command:
-
-```
-/plugin install awesome-copilot/react-component-library
-```
-
-Squad:
-1. Downloads the plugin bundle
-2. Merges agent templates into your `.squad/agents/` folder
-3. Adds skills to `.squad/skills/`
-4. Updates `decisions.md` with plugin conventions
-5. Seeds all relevant agents with plugin knowledge
-
-You'll see:
-
-```
-✅ react-component-library plugin installed
-   ✓ Added React Component Design skill
-   ✓ Added React Patterns decision (linting, naming, testing)
-   ✓ Seeded 2 agents with React component expertise
-```
-
-**Your agents immediately know the plugin conventions** and use them in their next work session.
-
----
-
-## Step-by-Step: Onboard a New Team Member with Plugins
-
-You're adding a DevOps person to your Azure-heavy team. Instead of manually explaining your Azure setup, you use plugins.
-
-### Step 1: Create the new agent
-
-In your Squad session:
-
-```
-> I need a DevOps person
-```
-
-Squad spawns a new agent and seeds them with your project context.
-
-### Step 2: Find Azure plugins
-
-```
-> Browse marketplaces for Azure plugins
-```
-
-Squad searches all configured marketplaces and shows:
-
-```
-Plugin Name               | Marketplace | Use Case
---------------------------|-------------|----------
-azure-infrastructure      | azure-cloud-dev | VMs, Load Balancers, networking
-azure-devops-pipelines    | azure-cloud-dev | GitHub Actions + ARM templates
-azure-cosmos-setup        | azure-cloud-dev | Cosmos DB design and optimization
-aks-deployment            | azure-cloud-dev | Kubernetes on Azure
-```
-
-### Step 3: Install the relevant plugin for the DevOps agent
-
-```
-> Install the azure-infrastructure plugin for the DevOps agent
-```
-
-Or:
-
-```
-/plugin install azure-cloud-dev/azure-infrastructure --agent DevOps
-```
-
-Squad:
-1. Downloads the Azure infrastructure plugin
-2. Adds its skills and conventions to the DevOps agent's history
-3. Adds infrastructure decisions to the shared `decisions.md`
-4. Seals the DevOps agent with Azure expertise on day 1
-
-Your new DevOps person immediately understands:
-- Your Azure resource naming convention
-- How you structure ARM templates
-- Your monitoring and alerting patterns
-- Related decision history (why you chose certain regions, SKUs, etc.)
-
-### Step 4: Verify
-
-```
-> DevOps agent, what's your understanding of our infrastructure?
-```
-
-The DevOps agent summarizes Azure setup from the plugin without asking questions.
-
----
-
-## How Squad Uses Plugins During Team Member Creation
-
-When you add a new agent, Squad can **auto-recommend plugins**:
-
-```
-> I'm adding someone for machine learning — they'll work with PyTorch and TensorFlow
-```
-
-Squad checks configured marketplaces for plugins matching "machine learning", "PyTorch", and "TensorFlow":
-
-```
-🔍 Searching marketplaces...
-
-Found 4 plugins:
-  ✓ pytorch-training-pipeline (awesome-copilot)
-  ✓ tensorflow-mlops (awesome-copilot)
-  ✓ ml-data-validation (anthropic-skills)
-  ✓ gpu-monitoring (azure-cloud-dev)
-
-Install these plugins for the ML engineer?
-```
-
-You say yes, and the agent arrives with full expertise.
-
----
-
-## Advanced: Creating Your Own Plugin Marketplace
-
-A plugin marketplace is just **a GitHub repository** with a specific structure:
-
-```
-my-team-plugins/
-├── awesome-patterns/
-│   ├── charter.md          # Agent template
-│   ├── skills/
-│   │   └── awesome-skill.md
-│   └── decisions.md        # Conventions
-├── microservices-template/
-│   ├── charter.md
-│   └── skills/
-│       ├── service-discovery.md
-│       └── fault-tolerance.md
-└── README.md               # Plugin descriptions
-```
-
-### Step 1: Create the repository
+The everyday flow is simple:
 
 ```bash
-mkdir my-team-plugins
-cd my-team-plugins
-git init
+squad plugin install ./my-plugin
+squad plugin enable my-plugin
+squad plugin refresh my-plugin
 ```
 
-### Step 2: Add plugins
+After that, spawned agents can receive the plugin's enabled context. For a knowledge plugin such as Graphify, refresh can generate approved artifacts under `.squad/knowledge/graphify/` so agents have a relationship map across code, docs, and decisions.
 
-Create subdirectories for each plugin. Each should contain:
-- `charter.md` — a sample agent role
-- `skills/` folder with `.SKILL.md` files
-- `decisions.md` — conventions the plugin enforces
+The MVP is declarative-first with a narrow governed runtime for Squad-owned built-in providers. Squad records hook, adapter, and provider metadata, and approved providers can generate static artifacts. It does not execute plugin-supplied code.
 
-### Step 3: Add to Squad
-
-```
-> Add my-team-plugins marketplace
-```
-
-Or in config:
-
-```
-/plugin marketplace add github/my-org/my-team-plugins
-```
-
-Squad indexes all plugins and makes them available for install.
+Squad plugins do not replace Copilot plugins or Copilot skills. If a Squad plugin depends on Copilot-owned extensibility, declare that under `copilot.requires`; Squad records and surfaces the dependency, but it does not install it or run Copilot plugin commands.
 
 ---
 
-## Sample Prompts
+## Plugin lifecycle
 
-### Browse and install in one go
+Install, activation, and artifact refresh are separate steps.
 
-```
-Find a React plugin in awesome-copilot and install it for our Frontend agent.
-```
+1. `squad plugin validate <local-plugin-dir>` checks the manifest and prints structured validation errors.
+2. `squad plugin dry-run <local-plugin-dir>` prints the files that would be written without changing `.squad/`.
+3. `squad plugin install <local-plugin-dir>` copies declared static files, records hashes in `.squad/plugins/lock.json`, and leaves the plugin disabled.
+4. `squad plugin enable <plugin-id>` activates the plugin roles declared in its manifest.
+5. `squad plugin switch <role> <plugin-id>` makes an enabled plugin active for a role such as `memory` or `knowledge`.
+6. `squad plugin refresh <plugin-id>` refreshes approved generated artifacts for built-in providers such as Graphify.
+7. `squad plugin disable <plugin-id>` deactivates a plugin without deleting installed files.
+8. `squad plugin uninstall <plugin-id>` removes files recorded in the lock and clears the registration.
 
-### Create a plugin template
-
-```
-Package our current React conventions into a plugin called react-best-practices.
-```
-
-Squad exports your relevant skills, decisions, and agent history into a reusable plugin bundle that you can share.
-
-### Search across marketplaces
-
-```
-Show me all database migration plugins across all marketplaces.
-```
-
-### Recommend plugins based on my team
-
-```
-What plugins from awesome-copilot would help my Frontend + Backend + Tester team?
-```
-
-### Update plugins
-
-```
-Check if any installed plugins have newer versions.
-```
-
-Squad compares your installed plugins against marketplace versions and suggests updates.
+Use `squad plugin list --json` when another tool needs stable machine-readable state.
 
 ---
 
-## Troubleshooting
+## Local MVP commands
 
-### "Marketplace not found"
+```bash
+squad plugin validate ./my-plugin
+squad plugin dry-run ./my-plugin
+squad plugin install ./my-plugin
+squad plugin list
+squad plugin list --json
+squad plugin enable my-plugin
+squad plugin switch memory my-plugin
+squad plugin refresh my-plugin
+squad plugin run-lifecycle my-plugin onMemoryRefresh
+squad plugin disable my-plugin
+squad plugin verify
+squad plugin uninstall my-plugin
+```
 
-**Symptom:** `Error: Could not connect to marketplace github/awesome-copilot`
+The current MVP supports local plugin directories. Marketplace registration still uses the existing commands:
 
-**Fix:**
-
-1. Verify the marketplace is public on GitHub
-2. Check your GitHub token has read access:
-   ```bash
-   gh auth status
-   ```
-3. Verify the repository name is spelled correctly
-
-### "Plugin conflicts with existing agent"
-
-**Symptom:** Installing a plugin tries to overwrite an existing agent.
-
-**Fix:**
-
-Squad won't overwrite by default. Instead, it will:
-1. Ask which agent to merge the plugin into
-2. Or suggest creating a new agent (e.g., "ReactFrontend" if "Frontend" already exists)
-
-You control the merge.
-
-### "Installed plugin isn't being used"
-
-**Symptom:** Agents don't know the plugin conventions.
-
-**Fix:**
-
-1. Verify the plugin was installed:
-   ```
-   > Show installed plugins
-   ```
-
-2. Restart your Squad session so agents reload their history
-
-3. Check that `decisions.md` was updated:
-   ```bash
-   cat .squad/decisions.md | grep -i plugin-name
-   ```
-
-### "Marketplace is too slow"
-
-**Symptom:** Browsing or installing plugins takes 30+ seconds.
-
-**Fix:**
-
-1. The marketplace repository is large. This is normal for the first browse.
-2. Squad caches marketplace index locally — subsequent browses are instant.
-3. To refresh the cache:
-   ```
-   > Refresh marketplace cache
-   ```
+```bash
+squad plugin marketplace add github/awesome-copilot
+squad plugin marketplace list
+squad plugin marketplace browse awesome-copilot
+squad plugin marketplace remove awesome-copilot
+```
 
 ---
 
-## See Also
+## Manifest format
 
-- [Skills System](./skills.md) — how plugins encode reusable knowledge
-- [Your Team](../concepts/your-team.md) — team member management and onboarding
-- [Memory & Knowledge](../concepts/memory-and-knowledge.md) — decisions and shared conventions
+The MVP manifest file is `plugin.manifest.json`. The validator also accepts legacy local names such as `squad-plugin.json` and `plugin.json` while the schema settles.
+
+```json
+{
+  "id": "demo-plugin",
+  "name": "Demo Plugin",
+  "version": "1.0.0",
+  "description": "A declarative test plugin.",
+  "authors": ["Squad"],
+  "license": "MIT",
+  "squad": ">=0.9.1",
+  "components": {
+    "knowledge": ["demo-plugin"],
+    "memory": { "provider": "demo-memory" }
+  },
+  "copilot": {
+    "requires": [
+      {
+        "id": "github/copilot-plugin-example",
+        "version": ">=1.0.0",
+        "optional": true,
+        "reason": "Enables Copilot-owned commands when the user has installed it."
+      }
+    ]
+  },
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/example/demo-plugin"
+  },
+  "upstream": {
+    "package": "demo-tool",
+    "registry": "pypi",
+    "installCommand": "pip install demo-tool",
+    "docs": "https://github.com/example/demo-plugin"
+  },
+  "mcp": {
+    "available": true,
+    "server": "demo-tool",
+    "entryPoint": "demo-tool-mcp",
+    "installCommand": "demo-tool-mcp",
+    "reason": "Optional external MCP server users may configure separately."
+  },
+  "providers": [
+    {
+      "id": "demo-memory",
+      "type": "memory",
+      "mode": "read-write",
+      "protocol": "mcp",
+      "description": "Declarative memory provider contract.",
+      "artifact": "memory/providers/demo-memory.md",
+      "mcp": {
+        "server": "demo-tool",
+        "tool": "query-memory",
+        "capability": "durable-memory"
+      },
+      "capabilities": ["durable-memory", "context-recall"]
+    }
+  ],
+  "files": [
+    {
+      "source": "guidance.md",
+      "target": "knowledge/demo-plugin/guidance.md",
+      "type": "knowledge"
+    }
+  ]
+}
+```
+
+Supported Squad component keys are `agents`, `ceremonies`, `decisions`, `instructions`, `knowledge`, `memory`, `routing`, `templates`, `workflows`, `hooks`, and `adapters`. Capability roles are derived only from these declared components; arbitrary capability strings are not accepted.
+
+Declared files must be relative paths under approved `.squad/` roots such as `agents/`, `knowledge/`, `memory/`, `routing/`, `decisions/`, `ceremonies/`, `prompts/`, `instructions/`, `templates/`, `workflows/`, or `plugins/`.
+
+Copilot plugin dependencies are metadata only:
+
+```json
+{
+  "copilot": {
+    "requires": [
+      {
+        "id": "github/copilot-plugin-example",
+        "version": ">=1.0.0",
+        "optional": false,
+        "reason": "Provides the Copilot-side command this Squad workflow references."
+      }
+    ]
+  }
+}
+```
+
+Squad validates and records these dependencies so users know what Copilot plugins to install separately. Squad does not fetch, install, execute, or manage Copilot plugins.
+
+External integration metadata is also record-only. Fields such as `repository`, `upstream.installCommand`, and `mcp.installCommand` explain how a human can install external tools separately; Squad never runs those commands.
+
+Provider contracts are the typed extension seam for memory and knowledge systems. A contract declares the provider `type` (`memory`, `knowledge`, `persistence`, `event`, or `policy`), access `mode` (`read`, `write`, or `read-write`), `protocol` (`static-artifact` or `mcp`), optional static artifact binding, optional MCP binding metadata, and capability labels. These fields let spawned agents understand that a plugin represents a memory or knowledge provider without letting the plugin run code. During the MVP, provider contracts are prompt metadata only: Squad does not start MCP servers, call provider tools, query live memory backends, or install provider packages.
+
+---
+
+## Runtime behavior
+
+Enabled plugins affect spawned Squad agents through their installed static artifacts and provider contracts. When an agent session is spawned, Squad reads `.squad/plugins/runtime.json`, finds enabled active plugin roles, and injects the installed guidance/metadata files plus provider contract summaries into the agent system context under a `Plugin Context` section.
+
+This is still declarative-first behavior: Squad consumes copied Markdown/metadata from `.squad/`, but it does not install upstream packages, start MCP servers, execute plugin-supplied commands, call provider tools, or query external tools during plugin install or agent spawn.
+
+The MVP also includes a narrow governed runtime for Squad-owned built-in providers. `squad plugin refresh <plugin-id>` and `squad plugin run-lifecycle <plugin-id> <event>` can generate artifacts only when the provider name, lifecycle event, and output paths are allowlisted by Squad. The current approved provider is Graphify, which can refresh deterministic knowledge artifacts under `.squad/knowledge/graphify/`.
+
+Disabled plugins do not contribute prompt context, even if their files remain installed on disk.
+
+---
+
+## External integration examples
+
+The repository includes local sample plugins that exercise external integration metadata without adding executable provider code:
+
+| Example | Purpose |
+| --- | --- |
+| `samples/plugin-knowledge-graphify` | Knowledge graph profile for the real `safishamsi/graphify` project and PyPI package `graphifyy`. It declares a `knowledge` provider contract bound to a static artifact under `.squad/knowledge/graphify/`, and can refresh governed Graphify artifacts with `squad plugin refresh graphify-knowledge`. |
+| `samples/plugin-knowledge-index-server` | Instruction and knowledge MCP profile for the real `jagilber-org/index-server` project and npm package `@jagilber-org/index-server`. It declares a metadata-only `knowledge` provider contract for the Index Server MCP catalog. |
+| `samples/plugin-memory-mempalace` | Memory-palace-style provider profile for the real `MemPalace/mempalace` CLI and optional `mempalace-mcp` server. It declares a metadata-only `memory` provider contract for spatial memory. |
+
+Graphify's Copilot support is a separately installed skill/integration, not a Squad memory provider or a Squad-managed Copilot plugin. Index Server is an MCP-governed instruction/knowledge catalog, not a memory provider, although it is adjacent because agents can persist validated knowledge across sessions and repositories. MemPalace is a real memory system, but Squad still does not install its package, start MCP, or configure assistant hooks.
+
+---
+
+## Runtime state
+
+Squad stores plugin state under `.squad/plugins/`:
+
+| File | Purpose |
+| --- | --- |
+| `installed.json` | Installed plugins, versions, enabled state, roles, source path, and deployed files. |
+| `lock.json` | Manifest hash and per-file SHA-256 hashes for reproducibility and verification. |
+| `runtime.json` | Active plugin bindings by role plus enabled runtime state. |
+| `audit.jsonl` | JSON Lines lifecycle audit events for install, verify, enable, switch, disable, and uninstall. |
+
+---
+
+## Guardrails
+
+The product goal is simple pluggability: install, enable, refresh, and give agents better context. The guardrails keep that model predictable:
+
+- No plugin scripts, commands, shell snippets, or executable files are allowed.
+- Lifecycle hooks are limited to Squad-owned, capability-gated providers that generate static artifacts.
+- No plugin content is evaluated or run by Squad.
+- No Copilot plugin commands are run by Squad; `copilot.requires` is dependency metadata only.
+- No external package install hints or MCP setup hints are run by Squad; `repository`, `upstream`, and `mcp` fields are metadata only.
+- Hook and adapter declarations are metadata only.
+- Provider contracts are metadata only; they do not authorize live provider calls.
+- Plugin file writes are limited to declared relative targets under `.squad/`.
+- Path traversal, absolute paths, symlinks, and script/executable extensions are rejected.
+- Governed runtime artifacts are generated only by built-in approved providers and only under approved `.squad/` paths.
+
+See [Plugin security model](../reference/plugin-security.md) for the threat model and the negative checks that gate this feature.
+
+The follow-up roadmap tracks remote marketplace distribution, broader built-in providers, and the trusted executable-provider RFC in [#1102](https://github.com/bradygaster/squad/issues/1102), [#1103](https://github.com/bradygaster/squad/issues/1103), [#1104](https://github.com/bradygaster/squad/issues/1104), and [#1105](https://github.com/bradygaster/squad/issues/1105).
+
+---
+
+## See also
+
+- [Building extensions](../guide/building-extensions.md) — how to author a local plugin.
+- [Extensibility guide](../guide/extensibility.md) — how to decide whether an idea belongs in core, a plugin, or team config.
+- [Skills System](./skills.md) — the existing Squad knowledge layer; plugin manifests should prefer `knowledge` for reusable guidance and use `copilot.requires` for Copilot-owned plugins.

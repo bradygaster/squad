@@ -96,7 +96,7 @@ After every substantial work session:
    - **Exact duplicates:** If two blocks share the same heading, keep the first and remove the rest.
    - **Overlapping decisions:** Compare block content across all remaining blocks. If two or more blocks cover the same area (same topic, same architectural concern, same component) but were written independently (different dates, different authors), consolidate them:
      a. Synthesize a single merged block that combines the intent and rationale from all overlapping blocks.
-     b. Use the CURRENT_DATETIME value from your spawn prompt and a new heading: `### {CURRENT_DATETIME}: {consolidated topic} (consolidated)`
+     b. Use the literal CURRENT_DATETIME value from your spawn prompt and a new heading: `### <CURRENT_DATETIME value>: {consolidated topic} (consolidated)`. Substitute the actual timestamp; do not write placeholder text.
      c. Credit all original authors: `**By:** {Name1}, {Name2}`
      d. Under **What:**, combine the decisions. Note any differences or evolution.
      e. Under **Why:**, merge the rationale, preserving unique reasoning from each.
@@ -104,9 +104,9 @@ After every substantial work session:
    - Write the updated file back. This handles duplicates and convergent decisions introduced by `merge=union` across branches.
 
 4. **Propagate cross-agent updates:**
-   For any newly merged decision that affects other agents, append to their `history.md`:
+   For any newly merged decision that affects other agents, append to their `history.md`. Replace the parenthetical timestamp with the literal CURRENT_DATETIME value from your spawn prompt; do not write placeholder text.
    ```
-   📌 Team update ({timestamp}): {summary} — decided by {Name}
+   📌 Team update (<CURRENT_DATETIME value>): {summary} — decided by {Name}
    ```
 
 5. **Commit `.squad/` changes:**

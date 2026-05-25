@@ -9,6 +9,7 @@ import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult }
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import { createVerboseLogger } from '../verbose.js';
 import { buildAgentCommand } from '../../../core/detect-agent-cli.js';
+import { loadAgentCharter } from '../../../shell/spawn.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -132,7 +133,18 @@ async function executeAll(
   timeoutMs: number,
 ): Promise<{ success: boolean; error?: string }> {
   const prompt = buildAgentPrompt(issues, context.teamRoot);
-  const { cmd, args } = buildAgentCommand(prompt, context);
+
+  // Load Ralph's charter to give the spawned session full specialist context.
+  let charterPrefix = '';
+  try {
+    const charter = await loadAgentCharter('ralph', context.teamRoot);
+    charterPrefix = `You are an AI agent on a software development team.\n\nYOUR CHARTER:\n${charter}\n\nADDITIONAL CONTEXT:\n`;
+  } catch {
+    // Fall back gracefully if no charter exists (e.g., fresh setup)
+  }
+
+  const fullPrompt = charterPrefix + prompt;
+  const { cmd, args } = buildAgentCommand(fullPrompt, context);
 
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
     const cp: ChildProcess = execFile(

@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { resolveSquadPaths } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-dual-root-${randomBytes(4).toString('hex')}`);
 
@@ -23,11 +23,13 @@ function writeJson(relPath: string, data: unknown): void {
 
 describe('resolveSquadPaths()', () => {
   beforeEach(() => {
+    clearResolveSquadCache();
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
     mkdirSync(TMP, { recursive: true });
   });
 
   afterEach(() => {
+    clearResolveSquadCache();
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
   });
 

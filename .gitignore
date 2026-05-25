@@ -5,6 +5,9 @@ dist/
 coverage/
 .vscode/
 *.log
+
+# npm pack output / pre-built tarballs (publish via release artifacts, not git)
+packages/**/*.tgz
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/orchestration-log/
 .squad/log/

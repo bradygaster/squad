@@ -262,3 +262,88 @@ name: report-test
     assert.ok(importResult.stdout.includes('skill'), 'import output should mention skills');
   });
 });
+
+describe('decisions.md and team.md survive export/import round-trip (#1122)', () => {
+  let tmpDir1;
+  let tmpDir2;
+
+  beforeEach(() => {
+    tmpDir1 = makeTempDir();
+    tmpDir2 = makeTempDir();
+  });
+
+  afterEach(() => {
+    cleanDir(tmpDir1);
+    cleanDir(tmpDir2);
+  });
+
+  it('exports decisions.md and team.md content in manifest', () => {
+    initSquad(tmpDir1);
+
+    // Write content to decisions.md and team.md
+    const aiTeamDir = path.join(tmpDir1, '.ai-team');
+    fs.writeFileSync(path.join(aiTeamDir, 'decisions.md'), '# Decisions\n\n## Use TypeScript\nWe chose TypeScript for type safety.\n');
+    fs.writeFileSync(path.join(aiTeamDir, 'team.md'), '# Team Roster\n\n## Lead Architect\nDesigns systems.\n');
+
+    // Export
+    const exportPath = path.join(tmpDir1, 'squad-export.json');
+    const exportResult = runSquad(['export'], tmpDir1);
+    assert.equal(exportResult.exitCode, 0, `export should succeed: ${exportResult.stdout}`);
+
+    // Verify manifest contains decisions and team fields
+    const manifest = JSON.parse(fs.readFileSync(exportPath, 'utf8'));
+    assert.equal(manifest.decisions, '# Decisions\n\n## Use TypeScript\nWe chose TypeScript for type safety.\n', 'manifest should contain decisions.md content');
+    assert.equal(manifest.team, '# Team Roster\n\n## Lead Architect\nDesigns systems.\n', 'manifest should contain team.md content');
+  });
+
+  it('imports decisions.md and team.md content from manifest', () => {
+    initSquad(tmpDir1);
+
+    // Write content to decisions.md and team.md
+    const aiTeamDir = path.join(tmpDir1, '.ai-team');
+    fs.writeFileSync(path.join(aiTeamDir, 'decisions.md'), '# Decisions\n\nImportant decision here.\n');
+    fs.writeFileSync(path.join(aiTeamDir, 'team.md'), '# Team\n\nTeam member info here.\n');
+
+    // Export from dir1
+    const exportPath = path.join(tmpDir1, 'squad-export.json');
+    runSquad(['export'], tmpDir1);
+
+    // Init and import into dir2
+    initSquad(tmpDir2);
+    const importResult = runSquad(['import', exportPath, '--force'], tmpDir2);
+    assert.equal(importResult.exitCode, 0, `import should succeed: ${importResult.stdout}`);
+
+    // Verify imported files have the correct content
+    const importedDecisions = fs.readFileSync(path.join(tmpDir2, '.ai-team', 'decisions.md'), 'utf8');
+    const importedTeam = fs.readFileSync(path.join(tmpDir2, '.ai-team', 'team.md'), 'utf8');
+    assert.equal(importedDecisions, '# Decisions\n\nImportant decision here.\n', 'decisions.md should be preserved');
+    assert.equal(importedTeam, '# Team\n\nTeam member info here.\n', 'team.md should be preserved');
+  });
+
+  it('imports older manifests without decisions/team fields successfully', () => {
+    initSquad(tmpDir1);
+
+    // Create a manifest without decisions and team fields (older format)
+    const oldManifest = {
+      version: '1.0',
+      exported_at: new Date().toISOString(),
+      squad_version: '0.6.0',
+      casting: { registry: { agents: [] } },
+      agents: {},
+      skills: []
+    };
+    const exportPath = path.join(tmpDir1, 'old-manifest.json');
+    fs.writeFileSync(exportPath, JSON.stringify(oldManifest, null, 2));
+
+    // Init and import into dir2
+    initSquad(tmpDir2);
+    const importResult = runSquad(['import', exportPath, '--force'], tmpDir2);
+    assert.equal(importResult.exitCode, 0, `import of old manifest should succeed: ${importResult.stdout}`);
+
+    // Verify files exist (empty is fine for old manifests)
+    const importedDecisions = fs.readFileSync(path.join(tmpDir2, '.ai-team', 'decisions.md'), 'utf8');
+    const importedTeam = fs.readFileSync(path.join(tmpDir2, '.ai-team', 'team.md'), 'utf8');
+    assert.equal(importedDecisions, '', 'decisions.md should be empty for old manifest');
+    assert.equal(importedTeam, '', 'team.md should be empty for old manifest');
+  });
+});

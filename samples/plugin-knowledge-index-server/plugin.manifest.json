@@ -1,0 +1,63 @@
+{
+  "id": "index-server-knowledge",
+  "name": "Index Server Knowledge",
+  "version": "1.0.0",
+  "description": "Example Squad knowledge plugin that documents integration with the jagilber-org/index-server MCP instruction index.",
+  "authors": [
+    "Squad"
+  ],
+  "license": "MIT",
+  "squad": ">=0.9.1",
+  "components": {
+    "knowledge": [
+      "index-server"
+    ],
+    "instructions": [
+      "index-server"
+    ]
+  },
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/jagilber-org/index-server"
+  },
+  "upstream": {
+    "package": "@jagilber-org/index-server",
+    "registry": "npm",
+    "installCommand": "npm install -g @jagilber-org/index-server",
+    "docs": "https://github.com/jagilber-org/index-server"
+  },
+  "mcp": {
+    "available": true,
+    "server": "index-server",
+    "entryPoint": "index-server",
+    "installCommand": "npx -y @jagilber-org/index-server@latest --dashboard",
+    "reason": "Index Server provides an MCP-governed instruction and knowledge catalog. Squad records the metadata but does not start it."
+  },
+  "providers": [
+    {
+      "id": "index-server",
+      "type": "knowledge",
+      "mode": "read",
+      "protocol": "mcp",
+      "description": "Governed instruction and knowledge catalog provider contract.",
+      "artifact": "knowledge/index-server/index-server-integration.md",
+      "mcp": {
+        "server": "index-server",
+        "tool": "query-index",
+        "capability": "governed-knowledge-catalog"
+      },
+      "capabilities": [
+        "governed-instructions",
+        "knowledge-catalog",
+        "team-standards"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "source": "knowledge/index-server-integration.md",
+      "target": "knowledge/index-server/index-server-integration.md",
+      "type": "doc"
+    }
+  ]
+}

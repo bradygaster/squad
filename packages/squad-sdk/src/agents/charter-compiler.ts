@@ -26,6 +26,8 @@ export interface CharterCompileOptions {
   routingRules?: string;
   /** Relevant decision records */
   decisions?: string;
+  /** Enabled plugin guidance and metadata to inject into spawned-agent context */
+  pluginContext?: string;
   /** Config-driven overrides (config wins on conflict) */
   configOverrides?: CharterConfigOverrides;
 }
@@ -107,7 +109,7 @@ export function compileCharter(options: CharterCompileOptions): SquadCustomAgent
  * @throws {ConfigurationError} If charter is missing or malformed
  */
 export function compileCharterFull(options: CharterCompileOptions): CompiledCharter {
-  const { agentName, charterPath, charterContent, teamContext, routingRules, decisions, configOverrides } = options;
+  const { agentName, charterPath, charterContent, teamContext, routingRules, decisions, pluginContext, configOverrides } = options;
 
   try {
     const parsed = parseCharterMarkdown(charterContent ?? '');
@@ -131,6 +133,12 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
     // Add relevant decisions if available
     if (decisions) {
       promptParts.push('\n\n## Relevant Decisions\n\n' + decisions);
+    }
+
+    // Add enabled plugin guidance after built-in squad context. Plugins are
+    // declarative/static only; this section is the runtime consumption point.
+    if (pluginContext) {
+      promptParts.push('\n\n## Plugin Context\n\n' + pluginContext);
     }
 
     // Append extra prompt from config overrides

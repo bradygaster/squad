@@ -263,7 +263,7 @@ export const MessageStream: React.FC<MessageStreamProps> = ({
       {visible.map((msg, i) => {
         const isNewTurn = msg.role === 'user' && i > 0;
         const agentRole = msg.agentName ? roleMap.get(msg.agentName) : undefined;
-        const emoji = agentRole ? getRoleEmoji(agentRole) : '';
+        const emoji = msg.agentName ? getRoleEmoji(agentRole ?? msg.agentName) : '';
         const duration = getResponseDuration(i);
         const isFading = fadingCount > 0 && i >= visible.length - fadingCount;
 
@@ -303,7 +303,7 @@ export const MessageStream: React.FC<MessageStreamProps> = ({
                 <Text color={noColor ? undefined : 'green'} bold>
                   {roleMap.has(agentName)
                     ? `${getRoleEmoji(roleMap.get(agentName)!)} `
-                    : ''}
+                    : `${getRoleEmoji(agentName)} `}
                   {agentName === 'coordinator' ? 'Squad' : agentName}:
                 </Text>
                 <Text wrap="wrap">{renderMarkdownInline(wrapTableContent(content, contentWidth, tier))}</Text>

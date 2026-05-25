@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad",
-  "version": "0.9.6-build.2",
+  "version": "0.9.6-build.7",
   "private": true,
   "description": "Squad — Programmable multi-agent runtime for GitHub Copilot, built on @github/copilot-sdk",
   "type": "module",
@@ -13,6 +13,10 @@
     "sync-templates": "node scripts/sync-templates.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "node scripts/run-benchmarks.mjs",
+    "experiment:memory-value": "node scripts/measure-memory-value.mjs",
+    "experiment:real-cli-ab": "node scripts/real-cli-ab.js",
+    "bench:cold-start": "node scripts/measure-cold-start.mjs",
     "lint": "tsc --noEmit -p packages/squad-sdk/tsconfig.json && tsc --noEmit -p packages/squad-cli/tsconfig.json",
     "lint:eslint": "eslint packages/ test/",
     "lint:docs": "markdownlint-cli2 && cspell --no-progress --dot \"docs/src/content/**/*.md\" \"README.md\"",
@@ -40,7 +44,6 @@
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.1.1",
     "markdownlint-cli2": "^0.21.0",
-    "playwright": "^1.58.2",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },

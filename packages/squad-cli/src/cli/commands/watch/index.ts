@@ -11,10 +11,6 @@ import fs from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
-
-const storage = new FSStorageProvider();
-const execFileAsync = promisify(execFile);
-
 import { detectSquadDir } from '../../core/detect-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
@@ -42,6 +38,13 @@ import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
 import { createVerboseLogger, type VerboseLogger } from './verbose.js';
+
+const storage = new FSStorageProvider();
+const execFileAsync = promisify(execFile);
+
+// On Windows, az is a .cmd batch script — execFile needs shell:true to run it.
+const azCmd = 'az';
+const azExecOpts = process.platform === 'win32' ? { shell: true } : {};
 
 // ── Re-exports for backward compatibility ────────────────────────
 
@@ -146,12 +149,12 @@ async function editWorkItem(
       const assignee = options.addAssignee === '@me' ? '' : options.addAssignee;
       if (assignee) {
         try {
-          execFileSync('az', [
+          execFileSync(azCmd, [
             'boards', 'work-item', 'update',
             '--id', String(id),
             '--fields', `System.AssignedTo=${assignee}`,
             '--output', 'json',
-          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...azExecOpts });
         } catch { /* best-effort */ }
       }
     }
@@ -608,7 +611,7 @@ export function buildAgentCommand(
   options: WatchOptions,
 ): { cmd: string; args: string[] } {
   const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
-  return buildAgentCommandShared(prompt, { agentCmd: options.agentCmd, agentFlags: options.agentFlags });
+  return buildAgentCommandShared(prompt, { agentCmd: options.agentCmd, agentFlags: options.agentFlags ?? (options as any).copilotFlags });
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {
@@ -722,8 +725,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     if (!(await ghAvailable())) fatal('gh CLI not found — install from https://cli.github.com');
     if (!(await ghAuthenticated())) fatal('gh CLI not authenticated — run: gh auth login');
   } else if (adapter.type === 'azure-devops') {
-    try { await execFileAsync('az', ['devops', '-h']); } catch { fatal('az CLI not found'); }
-    try { await execFileAsync('az', ['account', 'show']); } catch { fatal('az CLI not authenticated — run: az login'); }
+    try { await execFileAsync(azCmd, ['devops', '-h'], azExecOpts); } catch { fatal('az CLI not found'); }
+    try { await execFileAsync(azCmd, ['account', 'show'], azExecOpts); } catch { fatal('az CLI not authenticated — run: az login'); }
   }
 
   // Parse team.md

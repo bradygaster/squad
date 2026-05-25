@@ -143,6 +143,45 @@ describe('GitHubAgentSource', () => {
       await source.listAgents();
       expect(fetcher.listDirectory).toHaveBeenCalledWith('acme', 'repo', '.squad/agents', 'develop');
     });
+
+    // Regression test: when parallel charter fetching was introduced, the
+    // initial pass swallowed all per-item rejections (mapWithLimitSettled).
+    // That hid 403/auth/rate-limit/network failures behind silently smaller
+    // result sets. listAgents must continue to PROPAGATE thrown fetcher
+    // errors, matching the prior sequential `for...await` behavior.
+    it('propagates a thrown fetcher error instead of silently dropping the agent', async () => {
+      const fetcher: GitHubFetcher = {
+        listDirectory: vi.fn(async () => [
+          { name: 'agent1', type: 'dir' },
+          { name: 'agent2', type: 'dir' },
+        ]),
+        getFileContent: vi.fn(async (_o, _r, path) => {
+          if (path.includes('agent2')) {
+            // Simulate a transient GitHub failure (e.g. secondary rate limit)
+            const err = new Error('GitHub API: 403 secondary rate limit');
+            (err as Error & { status?: number }).status = 403;
+            throw err;
+          }
+          return CHARTER_AGENT1;
+        }),
+      };
+      const source = new GitHubAgentSource('acme/repo', { fetcher });
+      await expect(source.listAgents()).rejects.toThrow(/secondary rate limit/);
+    });
+
+    it('still skips agents whose charter.md returns null (missing file)', async () => {
+      const fetcher = makeFetcher(
+        [
+          { name: 'agent1', type: 'dir' },
+          { name: 'agent-no-charter', type: 'dir' },
+        ],
+        { '.squad/agents/agent1/charter.md': CHARTER_AGENT1 },
+      );
+      const source = new GitHubAgentSource('acme/repo', { fetcher });
+      const agents = await source.listAgents();
+      expect(agents).toHaveLength(1);
+      expect(agents[0]!.name).toBe('Agent1');
+    });
   });
 
   describe('getAgent', () => {

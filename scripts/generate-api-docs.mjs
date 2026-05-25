@@ -10,7 +10,7 @@
  */
 
 import { execSync } from 'node:child_process';
-import { writeFileSync, readdirSync, readFileSync, renameSync, unlinkSync, mkdirSync } from 'node:fs';
+import { writeFileSync, readdirSync, readFileSync, renameSync, unlinkSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,8 +28,17 @@ function toSafeFilename(original) {
 // Ensure output directory exists (fresh clones may not have it)
 mkdirSync(API_OUT, { recursive: true });
 
-// Resolve local TypeDoc binary to avoid npx resolution overhead
-const typedocBin = join(SDK_DIR, 'node_modules', '.bin', 'typedoc');
+// Resolve TypeDoc from either the workspace package or the hoisted root install.
+const typedocExecutable = process.platform === 'win32' ? 'typedoc.cmd' : 'typedoc';
+const typedocBin = [
+  join(SDK_DIR, 'node_modules', '.bin', typedocExecutable),
+  join(ROOT, 'node_modules', '.bin', typedocExecutable),
+].find(existsSync);
+
+if (!typedocBin) {
+  console.error('❌ TypeDoc not found. Run npm install before generating API docs.');
+  process.exit(1);
+}
 
 // Step 1 — Run TypeDoc
 console.log('⚙️  Running TypeDoc…');
