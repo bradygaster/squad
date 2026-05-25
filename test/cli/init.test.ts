@@ -93,6 +93,10 @@ describe('CLI: init command', () => {
     const content = await readFile(mcpPath, 'utf-8');
     const config = JSON.parse(content);
     expect(config).toHaveProperty('mcpServers');
+    expect(config.mcpServers).toHaveProperty('squad_state');
+    expect(config.mcpServers.squad_state).not.toHaveProperty('env');
+    expect(content).not.toContain('SQUAD_TEAM_ROOT');
+    expect(content).not.toContain(TEST_ROOT);
   });
 
   it('should create ceremonies.md', async () => {

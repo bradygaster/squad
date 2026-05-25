@@ -1156,7 +1156,6 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
       const squadStateServer = {
         command: 'npx',
         args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
-        env: { SQUAD_TEAM_ROOT: teamRoot },
       };
       const mcpSample = isGitHub
         ? {
