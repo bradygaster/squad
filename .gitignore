@@ -32,3 +32,4 @@ docs/tests/screenshots/
 /images/
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/.scratch/
+.claude/
