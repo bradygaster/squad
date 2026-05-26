@@ -7,9 +7,10 @@
  *  - HARD GATE enforcement is documented (decisions archival ceiling)
  *  - Decision inbox merge is a numbered step
  *  - Deduplication is a numbered step
- *  - A commit step is present
+ *  - A persistence-verification step is present (runtime state backend writes
+ *    are verified via state tools; Scribe never commits mutable squad state)
  *  - "Never speak to the user." is the final numbered step (Scribe stays invisible)
- *  - Commit step precedes the "never speak" step
+ *  - Persistence-verification step precedes the "never speak" step
  *
  * Canonical source: .squad-templates/scribe-charter.md
  *
@@ -18,6 +19,12 @@
  * PRE-CHECK / GIT COMMIT section labels (bold headers), which no longer
  * exist in the new prose-based charter structure. HEALTH REPORT and the
  * archival size thresholds (20KB / 50KB) are still present and tested below.
+ *
+ * The runtime-state-backend migration removed the explicit "git commit" step:
+ * mutable squad state is now persisted through `squad_state_*` tools, and the
+ * charter explicitly forbids Scribe from committing, switching branches, or
+ * pushing note refs. The persistence-verification step (squad_state_health +
+ * state re-reads) replaces the old commit step and is what we now assert.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -76,10 +83,20 @@ describe('Scribe charter — task structure and HARD GATE enforcement', () => {
     expect(hasStep, 'Deduplication must appear on a numbered step line').toBe(true);
   });
 
-  it('commit step is present', () => {
+  it('persistence-verification step is present', () => {
     const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
-    const hasStep = numberedLines.some(l => l.includes('Commit'));
-    expect(hasStep, 'Commit must appear on a numbered step line').toBe(true);
+    const hasStep = numberedLines.some(l => l.includes('Verify persistence'));
+    expect(
+      hasStep,
+      'Persistence-verification step (runtime state backend) must appear on a numbered step line',
+    ).toBe(true);
+  });
+
+  it('charter forbids Scribe from committing mutable squad state', () => {
+    expect(
+      content,
+      'Charter must explicitly forbid committing/pushing/branch-switching for mutable state',
+    ).toMatch(/Never commit[^.]*mutable squad state/);
   });
 
   it('HARD GATE enforcement is documented in the charter', () => {
@@ -109,11 +126,14 @@ describe('Scribe charter — task structure and HARD GATE enforcement', () => {
     ).toContain('Never speak to the user');
   });
 
-  it('commit step precedes "Never speak to the user."', () => {
-    const commitIndex = taskBlock.indexOf('Commit');
+  it('persistence-verification step precedes "Never speak to the user."', () => {
+    const verifyIndex = taskBlock.indexOf('Verify persistence');
     const neverSpeakIndex = taskBlock.indexOf('Never speak to the user.');
-    expect(commitIndex, 'Commit step not found in task block').toBeGreaterThan(-1);
+    expect(verifyIndex, 'Persistence-verification step not found in task block').toBeGreaterThan(-1);
     expect(neverSpeakIndex, '"Never speak to the user." not found in task block').toBeGreaterThan(-1);
-    expect(commitIndex, 'Commit must precede "Never speak to the user."').toBeLessThan(neverSpeakIndex);
+    expect(
+      verifyIndex,
+      'Persistence-verification step must precede "Never speak to the user."',
+    ).toBeLessThan(neverSpeakIndex);
   });
 });
