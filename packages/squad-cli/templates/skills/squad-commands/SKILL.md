@@ -7,14 +7,7 @@ description: >
 domain: squad-operations
 confidence: high
 source: first-party
-triggers:
-  - "squad commands"
-  - "what can squad do"
-  - "show me squad options"
-  - "help"
-  - "slash commands"
-  - "what commands are available"
-  - "how do I"
+triggers: ["squad commands", "what can squad do", "show me squad options", "slash commands"]
 ---
 
 ## Menu Presentation Rules

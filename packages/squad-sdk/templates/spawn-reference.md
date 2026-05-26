@@ -112,6 +112,8 @@ prompt: |
   skip post-work entirely -- Scribe handles it independently.
   1. APPEND learnings with `squad_state_append` to `agents/{name}/history.md`.
      Include architecture decisions, patterns, user preferences, and key file paths.
+     Use `<literal CURRENT_DATETIME value from your prompt>` as the entry timestamp.
+     Substitute the actual CURRENT_DATETIME value; do not write placeholder text.
   2. If you made a team-relevant decision, call `squad_decide`. If that tool is
      unavailable, use `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`.
   3. If state tools are unavailable, skip post-work state persistence and report the
