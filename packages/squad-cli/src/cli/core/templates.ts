@@ -228,6 +228,20 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Multi-agent collaboration and handoff patterns',
   },
+  {
+    source: 'skills/squad-version-check/SKILL.md',
+    destination: '../.copilot/skills/squad-version-check/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Squad CLI internals — version stamping & upgrade mechanics',
+  },
+
+  // Session init reference (squad-owned, coordinator reads at session start)
+  {
+    source: 'session-init-reference.md',
+    destination: 'templates/session-init-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Session init reference — coordinator procedures run at session start',
+  },
   
   // Workflows (squad-owned, overwrite on upgrade)
   {
