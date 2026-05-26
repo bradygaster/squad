@@ -158,7 +158,6 @@ async function main(): Promise<void> {
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
-    console.log(`                    --mcp-frontmatter (write MCP config into agent frontmatter)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);

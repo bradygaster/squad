@@ -126,7 +126,7 @@ export interface InitOptions {
   /** Include sample MCP config (default: true) */
   includeMcpConfig?: boolean;
   /** Where to write sample MCP config (default: copilot-file when includeMcpConfig is true) */
-  mcpConfigMode?: 'copilot-file' | 'agent-frontmatter' | 'none';
+  mcpConfigMode?: McpConfigMode;
   /** Project type for workflow customization */
   projectType?: 'node' | 'python' | 'go' | 'rust' | 'java' | 'csharp' | 'unknown';
   /** Version to stamp in squad.agent.md */
@@ -609,6 +609,8 @@ function stampVersionInContent(content: string, version: string): string {
   return content;
 }
 
+type McpConfigMode = 'copilot-file' | 'agent-frontmatter' | 'none';
+
 interface McpServerSpec {
   name: string;
   command: string;
@@ -917,6 +919,9 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     // Only include extractionDisabled if explicitly set
     if (options.extractionDisabled) {
       squadConfig.extractionDisabled = true;
+    }
+    if (mcpConfigMode === 'agent-frontmatter') {
+      squadConfig.mcpConfigMode = mcpConfigMode;
     }
     await storage.write(squadConfigPath, JSON.stringify(squadConfig, null, 2));
     createdFiles.push(toRelativePath(squadConfigPath));

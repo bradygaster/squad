@@ -117,6 +117,10 @@ describe('CLI: init command', () => {
     const frontmatter = content.slice(0, frontmatterEnd);
     expect(frontmatter).not.toContain('SQUAD_TEAM_ROOT');
     expect(frontmatter).not.toContain(TEST_ROOT);
+
+    const squadConfigPath = join(TEST_ROOT, '.squad', 'config.json');
+    const squadConfig = JSON.parse(await readFile(squadConfigPath, 'utf-8'));
+    expect(squadConfig.mcpConfigMode).toBe('agent-frontmatter');
   });
 
   it('should not patch existing agent frontmatter on re-init', async () => {
