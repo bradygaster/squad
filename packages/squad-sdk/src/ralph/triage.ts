@@ -109,7 +109,7 @@ export function parseRoster(teamMd: string): TeamMember[] {
   const roleIndex = findColumnIndex(table.headers, ['role']);
   if (nameIndex < 0 || roleIndex < 0) return [];
 
-  const excluded = new Set(['scribe', 'ralph']);
+  const excluded = new Set(['scribe', 'ralph', 'Rai']);
   const members: TeamMember[] = [];
 
   for (const row of table.rows) {

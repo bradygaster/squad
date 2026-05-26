@@ -199,6 +199,10 @@ const AGENT_TEMPLATES: Record<string, { displayName: string; description: string
     displayName: 'Ralph',
     description: 'Persistent memory agent that maintains context across sessions.'
   },
+  'Rai': {
+    displayName: 'Rai',
+    description: 'Responsible AI reviewer ensuring content safety, bias detection, and ethical standards.'
+  },
   'fact-checker': {
     displayName: 'Fact Checker',
     description: 'Devil\'s advocate and verification agent — validates claims, detects hallucinations, and runs counter-hypotheses.'
@@ -721,6 +725,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
     join(squadDir, 'log'),
+    join(squadDir, 'rai'),
     join(squadDir, '.scratch'),
   ];
 
@@ -759,6 +764,70 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     } else {
       skippedFiles.push(toRelativePath(dest));
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Seed .squad/rai/ files (policy and audit trail)
+  // -------------------------------------------------------------------------
+
+  const raiDir = join(squadDir, 'rai');
+  const raiPolicyPath = join(raiDir, 'policy.md');
+  if (!storage.existsSync(raiPolicyPath)) {
+    const templateSrc = templatesDir ? join(templatesDir, 'rai-policy.md') : null;
+    if (templateSrc && storage.existsSync(templateSrc)) {
+      storage.copySync(templateSrc, raiPolicyPath);
+    } else {
+      const raiPolicyFallback = `# RAI Policy
+
+> Responsible AI policy for this project. Rai enforces these standards.
+
+## Critical Violations (Always Blocked)
+
+- Hardcoded credentials, API keys, tokens, passwords
+- SQL injection, command injection, path traversal
+- Harmful content (hate speech, violence, self-harm)
+- Deceptive content (ungrounded claims, hallucinated citations)
+- Instructions that bypass AI safety guidelines
+
+## Advisory Concerns (Flagged, Not Blocked)
+
+- PII in logs or responses
+- Bias indicators in algorithms
+- Exclusionary language
+- Missing rate limiting on user-facing endpoints
+- Insufficient input validation
+
+## Terminology Standards
+
+| Avoid | Prefer |
+|-------|--------|
+| whitelist/blacklist | allowlist/blocklist |
+| master/slave | primary/replica |
+| sanity check | validation, smoke test |
+| dummy value | placeholder, sample |
+
+## Opt-Out Model
+
+- Cannot disable critical checks (credentials, harmful content, injection)
+- Can disable advisory checks with justification logged to audit trail
+- Temporary opt-down supported (auto re-enables after 30 days)
+`;
+      await storage.write(raiPolicyPath, raiPolicyFallback);
+    }
+    createdFiles.push(toRelativePath(raiPolicyPath));
+  } else {
+    skippedFiles.push(toRelativePath(raiPolicyPath));
+  }
+
+  const raiAuditTrailPath = join(raiDir, 'audit-trail.md');
+  if (!storage.existsSync(raiAuditTrailPath)) {
+    await storage.write(
+      raiAuditTrailPath,
+      '# RAI Audit Trail\n\n> Append-only evidence log. Entries are redacted — never contains raw secrets or harmful content.\n\n<!-- Rai appends findings below -->\n',
+    );
+    createdFiles.push(toRelativePath(raiAuditTrailPath));
+  } else {
+    skippedFiles.push(toRelativePath(raiAuditTrailPath));
   }
 
   // -------------------------------------------------------------------------
@@ -1020,6 +1089,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/agents/*/history.md merge=union',
     '.squad/log/** merge=union',
     '.squad/orchestration-log/** merge=union',
+    '.squad/rai/audit-trail.md merge=union',
   ];
 
   let existingAttrs = '';
