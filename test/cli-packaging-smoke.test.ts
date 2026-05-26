@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, renameSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -92,7 +92,18 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
         env: NO_COLOR_ENV,
       });
 
-      execSync(`npm install "${sdkTarball}" "${cliTarball}"`, {
+      // Add local file dependencies directly to package.json, with squad-sdk as an override
+      const packageJsonPath = join(tempDir, 'package.json');
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      pkg.dependencies = {
+        "@bradygaster/squad-cli": `file:${cliTarball}`
+      };
+      pkg.overrides = {
+        "@bradygaster/squad-sdk": `file:${sdkTarball}`
+      };
+      writeFileSync(packageJsonPath, JSON.stringify(pkg, null, 2), 'utf8');
+
+      execSync('npm install', {
         cwd: tempDir,
         stdio: 'inherit',
         env: NO_COLOR_ENV,

@@ -32,7 +32,7 @@ prompt: |
   {paste contents of .squad/agents/{name}/charter.md here}
 
   TEAM ROOT: {team_root}
-  CURRENT_DATETIME: <resolved CURRENT_DATETIME literal>
+  CURRENT_DATETIME: <resolved CURRENT_DATETIME literal>  # <literal CURRENT_DATETIME value from your prompt> - Substitute the actual CURRENT_DATETIME value
   All `.squad/` paths are relative to this root.
 
   PERSONAL_AGENT: {true|false}  # Whether this is a personal agent

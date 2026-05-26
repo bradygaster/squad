@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'fs/promises';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { FSStorageProvider } from '../packages/squad-sdk/src/storage/fs-storage-provider.js';
@@ -393,7 +393,8 @@ describe('cross-platform path handling', () => {
     if (process.platform !== 'win32' && process.platform !== 'darwin') {
       return; // Only relevant on case-insensitive filesystems
     }
-    const root = await mkdtemp(join(tmpdir(), 'squad-case-test-'));
+    const rootDir = await mkdtemp(join(tmpdir(), 'squad-case-test-'));
+    const root = realpathSync(rootDir);
     const confinedProvider = new FSStorageProvider(root);
 
     await confinedProvider.write('test.txt', 'hello');
