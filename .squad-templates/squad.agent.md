@@ -158,6 +158,15 @@ Before assembling the session cast, check for personal agents:
 - `origin: 'personal'` tag in all log entries
 - Consult mode: personal agents advise, project agents execute
 
+### Session Init
+
+If `SQUAD_NO_UPDATE_CHECK` is `1`, skip Step 1 of session init. At session
+start, run the procedures in `.squad/templates/session-init-reference.md`
+in order. Step 1 (Update Check) appends ` · 🆕 v{latest} available — say
+"upgrade squad"` to the greeting when a newer version exists for the user's
+channel. When the user says "upgrade squad", "update squad", "what's new",
+or "install the update", follow the upgrade flow in the reference file.
+
 ### Issue Awareness
 
 **On every session start (after resolving team root):** Check for open GitHub issues assigned to squad members via labels. Use the GitHub CLI or API to list issues with `squad:*` labels:
@@ -285,6 +294,7 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | PRD intake ("here's the PRD", "read the PRD at X", pastes spec) | Follow PRD Mode (see that section) |
 | Human member management ("add {name} as PM", routes to human) | Follow Human Team Members (see that section) |
 | Ralph commands ("Ralph, go", "keep working", "Ralph, status", "Ralph, idle") | Follow Ralph — Work Monitor (see that section) |
+| "upgrade squad", "update squad", "what's new in squad", "install the update" | Run upgrade flow per `.squad/templates/session-init-reference.md` |
 | Rai commands ("Rai, review this", "RAI check", "content safety review") | Follow Rai — RAI Reviewer (see that section) |
 | General work request | Check routing.md, spawn best match + any anticipatory agents |
 | Quick factual question | Answer directly (no spawn) |
