@@ -112,6 +112,11 @@ describe('CLI: init command', () => {
     expect(content).toContain('    type: local');
     expect(content).toContain("    args: ['-y', '@bradygaster/squad-cli', 'state-mcp']");
     expect(content).toContain('    tools: ["*"]');
+    const frontmatterEnd = content.indexOf('\n---', 4);
+    expect(frontmatterEnd).toBeGreaterThan(0);
+    const frontmatter = content.slice(0, frontmatterEnd);
+    expect(frontmatter).not.toContain('SQUAD_TEAM_ROOT');
+    expect(frontmatter).not.toContain(TEST_ROOT);
   });
 
   it('should not patch existing agent frontmatter on re-init', async () => {
