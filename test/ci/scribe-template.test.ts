@@ -20,11 +20,16 @@
  * exist in the new prose-based charter structure. HEALTH REPORT and the
  * archival size thresholds (20KB / 50KB) are still present and tested below.
  *
- * The runtime-state-backend migration removed the explicit "git commit" step:
- * mutable squad state is now persisted through `squad_state_*` tools, and the
- * charter explicitly forbids Scribe from committing, switching branches, or
- * pushing note refs. The persistence-verification step (squad_state_health +
- * state re-reads) replaces the old commit step and is what we now assert.
+ * The runtime-state-backend migration (#1158) removed the original "git commit"
+ * numbered step; mutable squad state is now persisted through `squad_state_*`
+ * tools. The persistence-verification step (squad_state_health + state re-reads)
+ * replaces the old commit step and is what we now assert.
+ *
+ * #1175 then renamed the step ("Verify persistence" → "Commit and verify
+ * persistence") and refined the prohibition sentence: Scribe is now ALLOWED
+ * to commit STATIC files (charters, team.md, skills) when state tools are
+ * unavailable, but amend/reset/checkout/push-notes/switch-branches remain
+ * forbidden for *mutable* squad state. Assertions below match that contract.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -85,25 +90,30 @@ describe('Scribe charter — task structure and HARD GATE enforcement', () => {
 
   it('persistence-verification step is present', () => {
     const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
-    const hasStep = numberedLines.some(l => l.includes('Verify persistence'));
+    // Match case-insensitively so renames like "Verify persistence" →
+    // "Commit and verify persistence" (lowercase v) don't silently break.
+    const hasStep = numberedLines.some(l => /verify persistence/i.test(l));
     expect(
       hasStep,
       'Persistence-verification step (runtime state backend) must appear on a numbered step line',
     ).toBe(true);
   });
 
-  it('charter forbids Scribe from committing/pushing/branch-switching for mutable state', () => {
+  it('charter forbids Scribe from amending/pushing/branch-switching for mutable state', () => {
     // The charter's prohibition sentence in scribe-charter.md reads:
-    //   "Never commit, amend, reset, checkout, push notes, or switch branches
+    //   "Never amend, reset, checkout, push notes, or switch branches
     //    to persist mutable squad state."
+    // (Note: "commit" was intentionally removed by PR #1175 — Scribe is now
+    // allowed to commit STATIC files (charters, team.md, skills) when state
+    // tools are unavailable. The mutable-state prohibition retains the other
+    // history-rewriting / branch-shifting clauses.)
     // Split into targeted assertions so a regression in any individual clause
-    // (e.g., dropping "push notes" or "switch branches") is caught — and so
-    // the assertion message matches what's actually verified. Use [\s\S]* so
-    // matches survive line wrapping or punctuation changes within the sentence.
+    // is caught with a precise message. Use [\s\S]* so matches survive line
+    // wrapping or punctuation changes within the sentence.
     expect(
       content,
-      'Charter must forbid committing mutable squad state',
-    ).toMatch(/Never commit[\s\S]*mutable squad state/);
+      'Charter must forbid amending history to persist mutable squad state',
+    ).toMatch(/Never amend[\s\S]*mutable squad state/);
     expect(
       content,
       'Charter must forbid pushing note refs for mutable squad state',
@@ -146,7 +156,7 @@ describe('Scribe charter — task structure and HARD GATE enforcement', () => {
     // enforces *numbered-step* order, not raw substring position in the block
     // (which would pass if either phrase appeared earlier in non-step prose).
     const numberedLines = taskBlock.split('\n').filter(l => l.trim().match(/^\d+\./));
-    const verifyStepIdx = numberedLines.findIndex(l => l.includes('Verify persistence'));
+    const verifyStepIdx = numberedLines.findIndex(l => /verify persistence/i.test(l));
     const neverSpeakStepIdx = numberedLines.findIndex(l => l.includes('Never speak to the user'));
     expect(
       verifyStepIdx,
