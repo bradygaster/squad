@@ -278,6 +278,7 @@ const GITIGNORE_ENTRIES = [
   '.squad/log/',
   '.squad/decisions/inbox/',
   '.squad/sessions/',
+  '.squad/.cache/',
   '.squad-workstream',
 ];
 
