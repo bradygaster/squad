@@ -310,14 +310,15 @@ jobs:
               const pkgPath = path.join('packages', dir, 'package.json');
               if (!fs.existsSync(pkgPath)) continue;
               const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-              if (pkg.version && /-/.test(pkg.version)) {
+              // Allow x.y.z-preview (CONTRIBUTING.md canonical dev suffix); block all other prerelease tags
+              if (pkg.version && /-/.test(pkg.version) && !/^\d+\.\d+\.\d+-preview$/.test(pkg.version)) {
                 violations.push({ name: pkg.name, version: pkg.version, path: pkgPath });
               }
             }
             if (violations.length > 0) {
-              console.error('::error::PRERELEASE VERSION DETECTED — cannot merge to dev/main.');
+              console.error('::error::UNSANCTIONED PRERELEASE VERSION DETECTED — cannot merge to dev/main.');
               violations.forEach(v => console.error('  ' + v.name + '@' + v.version + ' (' + v.path + ')'));
-              console.error('Fix: remove prerelease suffixes. Skip: add \"skip-version-check\" label.');
+              console.error('Fix: use x.y.z-preview (CONTRIBUTING.md) or a clean semver. Skip: add \"skip-version-check\" label.');
               process.exit(1);
             }
             console.log('✅ All package versions are release versions');

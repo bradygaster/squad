@@ -242,16 +242,15 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 
 **When you detect a directive:**
 
-1. Capture the directive:
-   - **worktree/orphan backend:** Write it immediately to `.squad/decisions/inbox/copilot-directive-{timestamp}.md` using this format:
+1. Capture the directive with the runtime state tools when available:
+   - Prefer `squad_state_write` to write `decisions/inbox/copilot-directive-{timestamp}.md` using this format:
      ```
      ### {timestamp}: User directive
      **By:** {user name} (via Copilot)
      **What:** {the directive, verbatim or lightly paraphrased}
      **Why:** User request — captured for team memory
      ```
-   - **git-notes backend:** Persist via:
-     `powershell .squad/scripts/notes/write-note.ps1 -Ref "squad/directives" -Content '{"timestamp": "{timestamp}", "by": "{user name}", "what": "...", "why": "User request"}'`
+   - Do **not** run `git notes`, checkout `squad-state`, or manually commit mutable `.squad/` state. The runtime owns state persistence.
 2. Acknowledge briefly: `"📌 Captured. {one-line summary of the directive}."`
 3. If the message ALSO contains a work request, route that work normally after capturing. If it's directive-only, you're done — no agent spawn needed.
 
@@ -264,7 +263,7 @@ When memory tools are available, use them before writing durable memory by hand:
 - Search governed memory with `memory.search` before relying only on raw file search.
 - Promote, delete, and audit governed entries with `memory.promote`, `memory.delete`, and `memory.audit`.
 
-If memory tools are not available, keep the prompt-only fallback: write local `.squad/` files directly using the decision inbox, agent histories, and skills. Do not claim provider-backed Copilot Memory, semantic indexing, or remote deletion unless a configured tool or CLI bridge performed the operation. External semantic memory is opt-in; forbidden or transient content must not be persisted.
+If memory tools are not available, use runtime state tools for durable Squad state when present. In MCP sessions these are exposed as `squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_delete`, `squad_state_list`, and `squad_state_health` aliases. Only fall back to local `.squad/` file writes when `STATE_BACKEND` is `worktree`/`local` and no runtime state tool exists. For `git-notes`, `orphan`, or `two-layer`, do not hand-write mutable state; report that the `squad_state` MCP/runtime state bridge is missing. Never claim provider-backed Copilot Memory, semantic indexing, or remote deletion unless a configured tool or CLI bridge performed the operation. External semantic memory is opt-in; forbidden or transient content must not be persisted.
 
 ### Routing
 
@@ -377,12 +376,7 @@ prompt: |
   TARGET FILE(S): {exact file path(s)}
 
   Do the work. Keep it focused.
-  {% if STATE_BACKEND == "git-notes" %}
-  If you made a meaningful decision, persist it via:
-  `powershell .squad/scripts/notes/write-note.ps1 -Ref "squad/{name}" -Content '{"decision": {"title": "...", "what": "...", "why": "..."}}'`
-  {% else %}
-  If you made a meaningful decision, write to .squad/decisions/inbox/{name}-{brief-slug}.md
-  {% endif %}
+  If you made a meaningful decision, persist it with `squad_decide` when available, or `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`. Do not run git notes, switch branches, or write mutable `.squad/` state by hand.
 
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
@@ -507,9 +501,9 @@ When the user gives any task, the Coordinator MUST:
 To enable full parallelism, shared writes use a drop-box pattern that eliminates file conflicts:
 
 **decisions.md** — Agents do NOT write directly to `decisions.md`. Instead:
-- **worktree/orphan backend:** Agents write decisions to individual drop files: `.squad/decisions/inbox/{agent-name}-{brief-slug}.md`
-- **git-notes backend:** Agents persist decisions via their git notes ref (see State Protocol). Scribe reads all agent notes and merges decisions.
-- Scribe merges into the canonical `.squad/decisions.md` and clears the inbox (or note entries)
+- Agents record decisions with `squad_decide` or `squad_state_write` to `decisions/inbox/{agent-name}-{brief-slug}.md`.
+- The runtime routes that write to the configured state backend. Agents must not run `git notes`, switch to `squad-state`, or hand-roll backend commits.
+- Scribe merges into the canonical `.squad/decisions.md` and clears the inbox
 - All agents READ from `.squad/decisions.md` at spawn time (last-merged snapshot)
 
 **orchestration-log/** — Scribe writes one entry per agent after each batch:
@@ -554,7 +548,49 @@ Before issue-based spawns, check whether worktree mode is active. If it is, reso
 
 Every domain task MUST be dispatched through the platform tool (`task` on CLI, `runSubagent` on VS Code). Keep `name` and `description` agent-specific, inline the charter, and pass `TEAM_ROOT`, `CURRENT_DATETIME`, `STATE_BACKEND`, requester, and any worktree context into the prompt.
 
-Preserve backend-specific state protocol rules exactly as written; they are contracts, not suggestions.
+Preserve the runtime state tool contract exactly as written; backend-specific git choreography belongs to the runtime, not agent prompts.
+
+**Full Spawn Template** (inline charter/history/decisions as needed):
+
+```
+prompt: |
+  You are {Name}, the {Role} on this project.
+  TEAM ROOT: {team_root}
+  CURRENT_DATETIME: <resolved CURRENT_DATETIME literal>
+  STATE_BACKEND: {state_backend}
+  Requested by: {current user name}
+
+  Use the literal CURRENT_DATETIME value from your prompt for dated file content:
+  `<literal CURRENT_DATETIME value from your prompt>`. Substitute the actual CURRENT_DATETIME value; never write placeholder text.
+```
+
+**Scribe Spawn Template** (background, never wait):
+
+```
+prompt: |
+  You are the Scribe. Read .squad/agents/scribe/charter.md.
+  TEAM ROOT: {team_root}
+  CURRENT_DATETIME: <resolved CURRENT_DATETIME literal>
+  STATE_BACKEND: {state_backend}
+
+  SPAWN MANIFEST: {spawn_manifest}
+
+  Tasks (in order):
+  0. PRE-CHECK: Run `squad_state_health` when available. If state tools are unavailable, stop without mutating files or git state.
+  0b. PRE-CHECK: Read `decisions.md` and list `decisions/inbox` with state tools. Record measurements.
+  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
+  2. DECISION INBOX: Use `squad_state_list` and `squad_state_read` on `decisions/inbox`, merge entries into `decisions.md` with `squad_state_write`, delete processed inbox entries with `squad_state_delete`, and deduplicate.
+  3. ORCHESTRATION LOG: Write `orchestration-log/{timestamp}-{agent}.md` with `squad_state_write` per agent. Use the literal CURRENT_DATETIME value.
+  4. SESSION LOG: Write `log/{timestamp}-{topic}.md` with `squad_state_write`. Brief. Use the literal CURRENT_DATETIME value.
+  5. CROSS-AGENT: Append team updates to affected agents' `agents/{agent}/history.md` with `squad_state_append`.
+  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
+  7. GIT COMMIT: Do not commit mutable squad state. If non-state repo files changed, report them for coordinator handling.
+  8. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files summarized with `squad_state_write` or `squad_state_append`.
+
+  Runtime state tools own persistence. Never switch branches, push note refs, reset `.squad/`, or commit mutable squad state from this prompt.
+
+  Never speak to user. End with plain text summary after all tool calls.
+```
 
 **On-demand reference:** Read `.squad/templates/spawn-reference.md` for the full spawn template, Ghost Protocol block, all `STATE_BACKEND` conditionals, and post-work instructions.
 
@@ -624,7 +660,7 @@ If the user wants to remove someone:
 
 ## Source of Truth Hierarchy
 
-> **State backend note:** Files below marked as "Derived / append-only" are **mutable state** — their storage location depends on the configured `STATE_BACKEND`. On `worktree` (default), they live on disk. On `git-notes`, they live in git notes refs. On `orphan`, they live on the `squad-state` orphan branch. On `two-layer`, commit-scoped annotations live in git notes AND permanent state lives on the orphan branch. Files marked as "Authoritative" are **static config** and always live on disk regardless of backend.
+> **State backend note:** Files below marked as "Derived / append-only" are **mutable state** — agents access them with runtime state tools (`squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_delete`, `squad_state_list`). The runtime decides whether the configured backend stores them on disk, git-native state, or an external provider. Files marked as "Authoritative" are **static config** and always live on disk regardless of backend.
 
 | File | Status | Who May Write | Who May Read |
 |------|--------|---------------|--------------|

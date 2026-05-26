@@ -18,7 +18,13 @@ function readTemplate(relPath: string): string {
 
 describe('current datetime template contract', () => {
   const squadTemplate = readTemplate('.squad-templates/squad.agent.md');
+  const spawnReference = readTemplate('.squad-templates/spawn-reference.md');
+  const afterAgentReference = readTemplate('.squad-templates/after-agent-reference.md');
   const scribeCharter = readTemplate('.squad-templates/scribe-charter.md');
+
+  // Coordinator + reference files that carry spawn templates and after-agent instructions.
+  // PR #1035 moved spawn-template details out of squad.agent.md into on-demand reference files.
+  const allCoordinatorTemplates = [squadTemplate, spawnReference, afterAgentReference].join('\n');
 
   it('requires resolving and validating the runtime current datetime once per session', () => {
     const sessionStart = squadTemplate.slice(
@@ -41,7 +47,9 @@ describe('current datetime template contract', () => {
   });
 
   it('keeps every coordinator spawn template wired with CURRENT_DATETIME', () => {
-    const currentDatetimeLines = squadTemplate
+    // PR #1035 moved spawn-template details to spawn-reference.md and after-agent-reference.md.
+    // Count across all coordinator-owned template files.
+    const currentDatetimeLines = allCoordinatorTemplates
       .split('\n')
       .filter(line => line.includes('CURRENT_DATETIME:'));
 
@@ -52,8 +60,9 @@ describe('current datetime template contract', () => {
   });
 
   it('tells agents to substitute the literal datetime in command examples', () => {
-    expect(squadTemplate).toContain('<literal CURRENT_DATETIME value from your prompt>');
-    expect(squadTemplate).toContain('Substitute the actual CURRENT_DATETIME value');
+    // These strings live in spawn-reference.md after PR #1035 moved spawn templates there.
+    expect(spawnReference).toContain('<literal CURRENT_DATETIME value from your prompt>');
+    expect(spawnReference).toContain('Substitute the actual CURRENT_DATETIME value');
   });
 
   it('keeps Scribe from writing placeholder datetime headings', () => {

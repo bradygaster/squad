@@ -116,7 +116,7 @@ function checkHooks(config: SquadConfig): FeatureStatus {
 
 function checkTools(_config: SquadConfig): FeatureStatus {
   // Tools are registered at runtime via ToolRegistry
-  return { name: 'tools', status: 'complete', notes: 'ToolRegistry with 5 built-in squad tools', riskLevel: 'low' };
+  return { name: 'tools', status: 'complete', notes: 'ToolRegistry with 17 built-in tools including runtime state tools', riskLevel: 'low' };
 }
 
 function checkStreaming(_config: SquadConfig): FeatureStatus {
