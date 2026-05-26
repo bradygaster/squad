@@ -37,6 +37,7 @@ const MANIFEST_SKILL_NAMES = [
   'reviewer-protocol',
   'test-discipline',
   'agent-collaboration',
+  'squad-version-check',
 ] as const;
 
 // ============================================================================
@@ -1048,6 +1049,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/decisions/inbox/',
     '.squad/sessions/',
     '.squad/.scratch/',
+    '.squad/.cache/',
   ];
 
   let existingIgnore = '';
