@@ -228,6 +228,12 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Multi-agent collaboration and handoff patterns',
   },
+  {
+    source: 'skills/squad-commands/SKILL.md',
+    destination: 'skills/squad-commands/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'In-chat command discovery — categorized menu of Squad operations',
+  },
   
   // Workflows (squad-owned, overwrite on upgrade)
   {

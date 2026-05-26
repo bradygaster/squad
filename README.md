@@ -122,6 +122,12 @@ After `npm run dev:link`, the `squad` command will be available globally and wil
 
 ---
 
+## Quick Commands
+
+Say **"squad commands"** in chat to see a categorized menu of common operations — install & upgrade, team management, issues & PRs, plugins, model settings, and session state. You can also ask naturally: *"how do I switch state backends?"* or *"how do I add a team member?"* — Squad matches your intent and walks you through it. The `squad-commands` skill ships out of the box with every `squad init` and `squad upgrade`.
+
+---
+
 ## All Commands (17 commands)
 
 | Command | What it does |
