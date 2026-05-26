@@ -18,7 +18,7 @@ Reusable knowledge about how `@bradygaster/squad-cli` stamps its version into `s
 - **Package name:** `@bradygaster/squad-cli`
 - **Registry:** npm (public)
 - **CLI binary:** `squad` (registered via `package.json#bin.squad`)
-- **Node version requirement:** Node ≥20 (ESM-only codebase)
+- **Node version requirement:** Node ≥22.5.0 (ESM-only codebase)
 
 ---
 
