@@ -22,6 +22,7 @@ import { execSync } from 'node:child_process';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { AgentHistory, HistoryEntry } from './history-split.js';
 import { resolveGlobalSquadPath } from '../resolution.js';
+import { wouldCollideWithExport } from '../config/agent-collision.js';
 
 const storage = new FSStorageProvider();
 
@@ -438,11 +439,14 @@ export async function setupConsultMode(
     patchScribeCharterForConsultMode(squadDir);
 
     // Create .github/agents/squad.agent.md for `gh copilot --agent squad`
-    const agentDir = path.dirname(agentFile);
-    if (!storage.existsSync(agentDir)) {
-      storage.mkdirSync(agentDir, { recursive: true });
+    // Skip if an exported coordinator (squad.md) already exists — it supersedes.
+    if (!wouldCollideWithExport(projectRoot)) {
+      const agentDir = path.dirname(agentFile);
+      if (!storage.existsSync(agentDir)) {
+        storage.mkdirSync(agentDir, { recursive: true });
+      }
+      storage.writeSync(agentFile, getConsultAgentContent(projectName));
     }
-    storage.writeSync(agentFile, getConsultAgentContent(projectName));
 
     // Add .squad/ and .github/agents/squad.agent.md to .git/info/exclude
     const excludeDir = path.dirname(gitExclude);

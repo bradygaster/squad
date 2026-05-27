@@ -19,6 +19,7 @@ import type { SubSquadDefinition } from '../streams/types.js';
 import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
 import { getRoleById } from '../roles/index.js';
 import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
+import { wouldCollideWithExport } from './agent-collision.js';
 
 // ============================================================================
 // Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
@@ -1253,7 +1254,12 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // -------------------------------------------------------------------------
 
   const agentFile = join(options.agentFileRoot ?? teamRoot, '.github', 'agents', 'squad.agent.md');
-  if (!storage.existsSync(agentFile) || !skipExisting) {
+  const agentFileRoot = options.agentFileRoot ?? teamRoot;
+  if (wouldCollideWithExport(agentFileRoot)) {
+    // An exported coordinator (squad.md) already exists — writing squad.agent.md
+    // would cause a collision. Skip silently; the exported file supersedes.
+    skippedFiles.push(toRelativePath(agentFile));
+  } else if (!storage.existsSync(agentFile) || !skipExisting) {
     if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
       let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
       if (mcpConfigMode === 'agent-frontmatter') {
