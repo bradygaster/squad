@@ -221,6 +221,10 @@
     "./upstream": {
       "types": "./dist/upstream/index.d.ts",
       "import": "./dist/upstream/index.js"
+    },
+    "./repo-native": {
+      "types": "./dist/repo-native/index.d.ts",
+      "import": "./dist/repo-native/index.js"
     }
   },
   "files": [
