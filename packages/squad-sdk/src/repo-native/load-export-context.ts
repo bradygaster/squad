@@ -249,7 +249,16 @@ export async function loadExportContext(
   for (const row of teamParsed.memberRows) {
     const slug = row.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const charterPath = row.charterPath || `.squad/agents/${slug}/charter.md`;
-    const charterFullPath = path.join(root, charterPath);
+
+    // Validate charter path stays within repo root (prevent path traversal)
+    const charterFullPath = path.resolve(root, charterPath);
+    const normalizedRoot = path.resolve(root);
+    if (!charterFullPath.startsWith(normalizedRoot + path.sep) && charterFullPath !== normalizedRoot) {
+      throw new Error(
+        `Charter path "${charterPath}" resolves outside the repository root. ` +
+        `Paths must be relative and stay within the repo.`
+      );
+    }
     const charterContent = readIfExists(charterFullPath);
 
     if (charterContent !== undefined) {

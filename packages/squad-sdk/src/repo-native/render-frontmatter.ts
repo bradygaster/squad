@@ -5,32 +5,47 @@
 import type { CoordinatorMeta } from './types.js';
 
 /**
+ * Quote a YAML scalar value safely. Always double-quotes to handle
+ * special characters like :, #, leading/trailing whitespace, and newlines.
+ */
+function quoteYamlScalar(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/\t/g, '\\t');
+  return `"${escaped}"`;
+}
+
+/**
  * Render YAML frontmatter for the coordinator agent.
  * Produces minimal, valid, deterministic, surface-safe YAML.
+ * All scalar values are quoted to prevent YAML injection.
  */
 export function renderFrontmatter(coordinator: CoordinatorMeta): string {
   const lines: string[] = ['---'];
 
-  lines.push(`name: ${coordinator.displayName}`);
-  lines.push(`description: "${escapeYamlString(coordinator.description)}"`);
+  lines.push(`name: ${quoteYamlScalar(coordinator.displayName)}`);
+  lines.push(`description: ${quoteYamlScalar(coordinator.description)}`);
 
   if (coordinator.tools === '*') {
     lines.push(`tools: "*"`);
   } else {
     lines.push(`tools:`);
     for (const tool of coordinator.tools) {
-      lines.push(`  - ${tool}`);
+      lines.push(`  - ${quoteYamlScalar(tool)}`);
     }
   }
 
   if (coordinator.model) {
-    lines.push(`model: ${coordinator.model}`);
+    lines.push(`model: ${quoteYamlScalar(coordinator.model)}`);
   }
 
   if (coordinator.skills.length > 0) {
     lines.push(`skills:`);
     for (const skill of coordinator.skills) {
-      lines.push(`  - ${skill}`);
+      lines.push(`  - ${quoteYamlScalar(skill)}`);
     }
   }
 
@@ -39,8 +54,4 @@ export function renderFrontmatter(coordinator: CoordinatorMeta): string {
   lines.push('---');
 
   return lines.join('\n');
-}
-
-function escapeYamlString(value: string): string {
-  return value.replace(/"/g, '\\"');
 }

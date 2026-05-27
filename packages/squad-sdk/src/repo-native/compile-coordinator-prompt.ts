@@ -59,11 +59,26 @@ function renderRosterLazyLoad(members: SquadMemberSummary[]): string {
   return roster + '\n\n> **Note:** Before dispatching any specialist, read their charter file for detailed scope and boundaries.';
 }
 
+/**
+ * Resolve a routeTo value against team members. Matches by slug or displayName,
+ * returning the member's slug. Falls back to slugifying the raw value.
+ */
+function resolveRouteTarget(routeTo: string, members: SquadMemberSummary[]): string {
+  const normalized = routeTo.trim().toLowerCase();
+  const bySlug = members.find(m => m.slug === normalized);
+  if (bySlug) return bySlug.slug;
+  const byName = members.find(m => m.displayName.toLowerCase() === normalized);
+  if (byName) return byName.slug;
+  // Fallback: slugify the routeTo value using the same logic as member slug generation
+  return normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 function renderDispatchRules(context: SquadExportContext): string {
   const lines: string[] = [];
 
   for (const rule of context.routing.rules) {
-    lines.push(`- If the request is mainly about ${rule.workType.toLowerCase()}, route to \`${rule.routeTo.toLowerCase()}\`.`);
+    const target = resolveRouteTarget(rule.routeTo, context.team.members);
+    lines.push(`- If the request is mainly about ${rule.workType.toLowerCase()}, route to \`${target}\`.`);
   }
 
   if (context.routing.fallback) {

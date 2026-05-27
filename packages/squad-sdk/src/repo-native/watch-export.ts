@@ -1,6 +1,8 @@
 /**
  * Watch mode for coordinator export.
  * Re-exports when .squad/ source files change.
+ * Watches the .squad/ directory (not individual files) so that file
+ * creations, renames, and deletions are also detected.
  */
 
 import fs from 'node:fs';
@@ -15,15 +17,69 @@ export interface WatchExportOptions {
 
 const DEFAULT_DEBOUNCE_MS = 400;
 
-const WATCH_PATTERNS = [
-  'team.md',
-  'routing.md',
-  'ceremonies.md',
-  'config.json',
-];
+/**
+ * Relevant file patterns within .squad/ that should trigger a rebuild.
+ */
+const RELEVANT_EXTENSIONS = new Set(['.md', '.json']);
+
+function isRelevantFile(filename: string): boolean {
+  const ext = path.extname(filename).toLowerCase();
+  return RELEVANT_EXTENSIONS.has(ext);
+}
+
+/**
+ * Watch a directory non-recursively (cross-platform safe).
+ * Returns a watcher or null if the directory doesn't exist.
+ */
+function watchDir(
+  dirPath: string,
+  onChange: (filename: string | null) => void,
+): fs.FSWatcher | null {
+  try {
+    if (!fs.existsSync(dirPath)) return null;
+    return fs.watch(dirPath, { persistent: true }, (_event, filename) => {
+      onChange(filename as string | null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Watch a directory and its immediate subdirectories (one level deep).
+ * Handles platforms where `{ recursive: true }` is unsupported.
+ */
+function watchDirRecursive(
+  dirPath: string,
+  onChange: (filename: string | null) => void,
+): fs.FSWatcher[] {
+  const watchers: fs.FSWatcher[] = [];
+
+  // Watch the directory itself
+  const rootWatcher = watchDir(dirPath, onChange);
+  if (rootWatcher) watchers.push(rootWatcher);
+
+  // Watch immediate subdirectories
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const subWatcher = watchDir(path.join(dirPath, entry.name), onChange);
+        if (subWatcher) watchers.push(subWatcher);
+      }
+    }
+  } catch {
+    // Directory may not be readable
+  }
+
+  return watchers;
+}
 
 /**
  * Start watching .squad/ source files for changes.
+ * Watches directories instead of individual files, so new file creations
+ * and renames are detected. Uses non-recursive watching with manual
+ * subdirectory enumeration for cross-platform compatibility.
  * Returns a cleanup function to stop watching.
  */
 export function startWatchExport(options: WatchExportOptions): () => void {
@@ -32,7 +88,10 @@ export function startWatchExport(options: WatchExportOptions): () => void {
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   const watchers: fs.FSWatcher[] = [];
 
-  const scheduleRebuild = () => {
+  const scheduleRebuild = (filename: string | null) => {
+    // Filter out irrelevant file changes
+    if (filename && !isRelevantFile(filename)) return;
+
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(async () => {
       try {
@@ -43,44 +102,31 @@ export function startWatchExport(options: WatchExportOptions): () => void {
     }, debounceMs);
   };
 
-  // Watch top-level squad files
-  for (const file of WATCH_PATTERNS) {
-    const filePath = path.join(squadRoot, file);
-    try {
-      const watcher = fs.watch(filePath, { persistent: true }, () => {
-        scheduleRebuild();
-      });
-      watchers.push(watcher);
-    } catch {
-      // File may not exist; that's fine
-    }
-  }
+  // Watch the .squad/ directory and subdirectories (agents/*)
+  const squadWatchers = watchDirRecursive(squadRoot, scheduleRebuild);
+  watchers.push(...squadWatchers);
 
-  // Watch agents directory
+  // Watch the agents subdirectories (one more level deep for charter files)
   const agentsDir = path.join(squadRoot, 'agents');
   try {
     if (fs.existsSync(agentsDir)) {
-      const watcher = fs.watch(agentsDir, { recursive: true, persistent: true }, () => {
-        scheduleRebuild();
-      });
-      watchers.push(watcher);
+      const agentDirs = fs.readdirSync(agentsDir, { withFileTypes: true });
+      for (const entry of agentDirs) {
+        if (entry.isDirectory()) {
+          const subAgentDir = path.join(agentsDir, entry.name);
+          const watcher = watchDir(subAgentDir, scheduleRebuild);
+          if (watcher) watchers.push(watcher);
+        }
+      }
     }
   } catch {
-    // Agents dir may not exist
+    // Agents dir structure may not exist
   }
 
   // Watch skills directory
   const skillsDir = path.join(root, '.copilot', 'skills');
-  try {
-    if (fs.existsSync(skillsDir)) {
-      const watcher = fs.watch(skillsDir, { recursive: true, persistent: true }, () => {
-        scheduleRebuild();
-      });
-      watchers.push(watcher);
-    }
-  } catch {
-    // Skills dir may not exist
-  }
+  const skillWatchers = watchDirRecursive(skillsDir, scheduleRebuild);
+  watchers.push(...skillWatchers);
 
   // Return cleanup function
   return () => {
