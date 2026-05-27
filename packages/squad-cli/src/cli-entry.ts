@@ -207,11 +207,8 @@ async function main(): Promise<void> {
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
     console.log(`             Usage: plugin marketplace add|remove|list|browse`);
-    console.log(`  ${BOLD}export${RESET}     Export squad (snapshot or coordinator agent)`);
-    console.log(`             squad export              JSON snapshot (default)`);
-    console.log(`             squad export agent        Coordinator → .github/agents/squad.md`);
-    console.log(`             squad export agent --watch  Re-export on changes`);
-    console.log(`             squad export agent --check  Detect drift without writing`);
+    console.log(`  ${BOLD}export${RESET}     Export squad snapshot or agent (.github/agents/squad.md)`);
+    console.log(`             Usage: export [snapshot|agent] [--watch|--check|--out|--repo]`);
     console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
     console.log(`             Usage: import <file> [--force]`);
     console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
