@@ -27,6 +27,7 @@ docs/tests/screenshots/
 .squad-workstream
 .squad/.first-run
 .squad/.watch-pids
+.squad/.cache/
 
 # Images folder (root only — don't ignore docs/public/images/)
 /images/

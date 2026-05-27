@@ -213,7 +213,7 @@ export class CharterCompiler {
     if (this.state) {
       const names = await this.state.agents.list();
       const candidates = names.filter(
-        (name) => name !== 'scribe' && !name.startsWith('_'),
+        (name) => name !== 'scribe' && name !== 'Rai' && !name.startsWith('_'),
       );
 
       // Parallelise the per-charter compile. Order is preserved so
@@ -237,7 +237,7 @@ export class CharterCompiler {
     }
     const entries = await this.storage.list(agentsDir);
     const candidates = entries.filter(
-      (name) => name !== 'scribe' && !name.startsWith('_'),
+      (name) => name !== 'scribe' && name !== 'Rai' && !name.startsWith('_'),
     );
 
     const results = await mapWithLimitSettled(

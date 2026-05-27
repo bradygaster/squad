@@ -137,6 +137,88 @@ describe('CLI: upgrade command', () => {
     expect(after).toContain(`<!-- version: ${currentVersion} -->`);
   });
 
+  it('preserves agent-frontmatter MCP config on upgrade', async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true });
+    await mkdir(TEST_ROOT, { recursive: true });
+    await runInit(TEST_ROOT, { mcpFrontmatter: true });
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    let content = await readFile(agentPath, 'utf-8');
+    expect(content).toContain('mcp-servers:');
+
+    content = content
+      .replace(/<!-- version: [^>]+ -->/m, '<!-- version: 0.1.0 -->')
+      .replace(/mcp-servers:[\s\S]*?\n---/, '---');
+    await writeFile(agentPath, content);
+
+    await runUpgrade(TEST_ROOT);
+
+    const upgraded = await readFile(agentPath, 'utf-8');
+    expect(upgraded).toContain('mcp-servers:');
+    expect(upgraded).toContain('  squad_state:');
+    expect(upgraded).toContain("    args: ['-y', '@bradygaster/squad-cli', 'state-mcp']");
+    expect(upgraded).toContain('  EXAMPLE-github:');
+    expect(upgraded).toContain("    args: ['-y', '@anthropic/github-mcp-server']");
+    expect(upgraded).toContain('      GITHUB_TOKEN: ${GITHUB_TOKEN}');
+    expect(upgraded).not.toContain('EXAMPLE-azure-devops');
+    const frontmatterEnd = upgraded.indexOf('\n---', 4);
+    expect(frontmatterEnd).toBeGreaterThan(0);
+    const frontmatter = upgraded.slice(0, frontmatterEnd);
+    expect(frontmatter).not.toContain('SQUAD_TEAM_ROOT');
+    expect(frontmatter).not.toContain(TEST_ROOT);
+  });
+
+  it('infers frontmatter MCP mode during upgrade when config is missing the mode', async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true });
+    await mkdir(TEST_ROOT, { recursive: true });
+    await runInit(TEST_ROOT, { mcpFrontmatter: true });
+
+    const configPath = join(TEST_ROOT, '.squad', 'config.json');
+    await writeFile(configPath, JSON.stringify({ version: 1 }, null, 2) + '\n');
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    let content = await readFile(agentPath, 'utf-8');
+    content = content.replace(/<!-- version: [^>]+ -->/m, '<!-- version: 0.1.0 -->');
+    await writeFile(agentPath, content);
+
+    await runUpgrade(TEST_ROOT);
+
+    const upgraded = await readFile(agentPath, 'utf-8');
+    expect(upgraded).toContain('mcp-servers:');
+    expect(upgraded).toContain('  squad_state:');
+    expect(upgraded).toContain('  EXAMPLE-github:');
+  });
+
+  it('preserves Azure DevOps MCP frontmatter on upgrade', async () => {
+    await rm(TEST_ROOT, { recursive: true, force: true });
+    await mkdir(TEST_ROOT, { recursive: true });
+    await runInit(TEST_ROOT, { mcpFrontmatter: true });
+
+    const configPath = join(TEST_ROOT, '.squad', 'config.json');
+    await writeFile(configPath, JSON.stringify({
+      version: 1,
+      platform: 'azure-devops',
+      mcpConfigMode: 'agent-frontmatter',
+    }, null, 2) + '\n');
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    let content = await readFile(agentPath, 'utf-8');
+    content = content
+      .replace(/<!-- version: [^>]+ -->/m, '<!-- version: 0.1.0 -->')
+      .replace(/mcp-servers:[\s\S]*?\n---/, '---');
+    await writeFile(agentPath, content);
+
+    await runUpgrade(TEST_ROOT);
+
+    const upgraded = await readFile(agentPath, 'utf-8');
+    expect(upgraded).toContain('mcp-servers:');
+    expect(upgraded).toContain('  EXAMPLE-azure-devops:');
+    expect(upgraded).toContain("    args: ['-y', '@azure/devops-mcp-server']");
+    expect(upgraded).toContain('      AZURE_DEVOPS_ORG: ${AZURE_DEVOPS_ORG}');
+    expect(upgraded).toContain('      AZURE_DEVOPS_PAT: ${AZURE_DEVOPS_PAT}');
+    expect(upgraded).not.toContain('EXAMPLE-github');
+  });
+
   it('should preserve version stamp after manifest loop (issue #195)', async () => {
     const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
     const currentVersion = getPackageVersion();

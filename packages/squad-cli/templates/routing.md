@@ -13,6 +13,7 @@ How to decide who handles what.
 | Testing | {Name} | Write tests, find edge cases, verify fixes |
 | Scope & priorities | {Name} | What to build next, trade-offs, decisions |
 | Session logging | Scribe | Automatic — never needs routing |
+| RAI review | Rai | Content safety, bias checks, credential detection, ethical review |
 
 ## Issue Routing
 

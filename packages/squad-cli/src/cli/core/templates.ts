@@ -131,6 +131,18 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Scribe charter template',
   },
   {
+    source: 'Rai-charter.md',
+    destination: 'Rai-charter.md',
+    overwriteOnUpgrade: true,
+    description: 'Rai RAI reviewer charter template',
+  },
+  {
+    source: 'rai-policy.md',
+    destination: 'rai-policy.md',
+    overwriteOnUpgrade: true,
+    description: 'Default RAI policy template',
+  },
+  {
     source: 'fact-checker-charter.md',
     destination: 'fact-checker-charter.md',
     overwriteOnUpgrade: true,
@@ -227,6 +239,26 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     destination: '../.copilot/skills/agent-collaboration/SKILL.md',
     overwriteOnUpgrade: true,
     description: 'Multi-agent collaboration and handoff patterns',
+  },
+  {
+    source: 'skills/squad-commands/SKILL.md',
+    destination: '../.copilot/skills/squad-commands/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'In-chat command discovery — categorized menu of Squad operations',
+  },
+  {
+    source: 'skills/squad-version-check/SKILL.md',
+    destination: '../.copilot/skills/squad-version-check/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Squad CLI internals — version stamping & upgrade mechanics',
+  },
+
+  // Session init reference (squad-owned, coordinator reads at session start)
+  {
+    source: 'session-init-reference.md',
+    destination: 'templates/session-init-reference.md',
+    overwriteOnUpgrade: true,
+    description: 'Session init reference — coordinator procedures run at session start',
   },
   
   // Workflows (squad-owned, overwrite on upgrade)

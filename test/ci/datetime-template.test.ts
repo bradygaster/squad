@@ -60,9 +60,13 @@ describe('current datetime template contract', () => {
   });
 
   it('tells agents to substitute the literal datetime in command examples', () => {
-    // These strings live in spawn-reference.md after PR #1035 moved spawn templates there.
-    expect(spawnReference).toContain('<literal CURRENT_DATETIME value from your prompt>');
-    expect(spawnReference).toContain('Substitute the actual CURRENT_DATETIME value');
+    // These substitution strings live in coordinator-owned spawn templates. PR #1035
+    // moved spawn-template details to on-demand reference files, but the Full Spawn
+    // Template block still lives in squad.agent.md alongside spawn-reference.md and
+    // after-agent-reference.md. Check across all coordinator-owned templates so the
+    // assertion is robust to future relocations within that set.
+    expect(allCoordinatorTemplates).toContain('<literal CURRENT_DATETIME value from your prompt>');
+    expect(allCoordinatorTemplates).toContain('Substitute the actual CURRENT_DATETIME value');
   });
 
   it('keeps Scribe from writing placeholder datetime headings', () => {

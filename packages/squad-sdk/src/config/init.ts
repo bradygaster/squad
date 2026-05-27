@@ -37,6 +37,8 @@ const MANIFEST_SKILL_NAMES = [
   'reviewer-protocol',
   'test-discipline',
   'agent-collaboration',
+  'squad-commands',
+  'squad-version-check',
 ] as const;
 
 // ============================================================================
@@ -125,6 +127,8 @@ export interface InitOptions {
   includeTemplates?: boolean;
   /** Include sample MCP config (default: true) */
   includeMcpConfig?: boolean;
+  /** Where to write sample MCP config (default: copilot-file when includeMcpConfig is true) */
+  mcpConfigMode?: McpConfigMode;
   /** Project type for workflow customization */
   projectType?: 'node' | 'python' | 'go' | 'rust' | 'java' | 'csharp' | 'unknown';
   /** Version to stamp in squad.agent.md */
@@ -197,6 +201,10 @@ const AGENT_TEMPLATES: Record<string, { displayName: string; description: string
   'ralph': {
     displayName: 'Ralph',
     description: 'Persistent memory agent that maintains context across sessions.'
+  },
+  'Rai': {
+    displayName: 'Rai',
+    description: 'Responsible AI reviewer ensuring content safety, bias detection, and ethical standards.'
   },
   'fact-checker': {
     displayName: 'Fact Checker',
@@ -607,6 +615,94 @@ function stampVersionInContent(content: string, version: string): string {
   return content;
 }
 
+type McpConfigMode = 'copilot-file' | 'agent-frontmatter' | 'none';
+
+interface McpServerSpec {
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+function buildMcpServerSpecs(isGitHub: boolean): McpServerSpec[] {
+  const servers: McpServerSpec[] = [
+    {
+      name: 'squad_state',
+      command: 'npx',
+      args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
+    },
+  ];
+
+  servers.push(isGitHub
+    ? {
+        name: 'EXAMPLE-github',
+        command: 'npx',
+        args: ['-y', '@anthropic/github-mcp-server'],
+        env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' },
+      }
+    : {
+        name: 'EXAMPLE-azure-devops',
+        command: 'npx',
+        args: ['-y', '@azure/devops-mcp-server'],
+        env: {
+          AZURE_DEVOPS_ORG: '${AZURE_DEVOPS_ORG}',
+          AZURE_DEVOPS_PAT: '${AZURE_DEVOPS_PAT}',
+        },
+      });
+
+  return servers;
+}
+
+function buildMcpConfigJson(servers: McpServerSpec[]): Record<string, unknown> {
+  return {
+    mcpServers: Object.fromEntries(servers.map(({ name, ...server }) => [name, server])),
+  };
+}
+
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function yamlEnvValue(value: string): string {
+  if (/^\$\{[A-Z0-9_]+\}$/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function buildMcpFrontmatterBlock(servers: McpServerSpec[]): string {
+  const lines = ['mcp-servers:'];
+
+  for (const server of servers) {
+    lines.push(`  ${server.name}:`);
+    lines.push('    type: local');
+    lines.push(`    command: ${server.command}`);
+    lines.push(`    args: [${server.args.map(yamlSingleQuoted).join(', ')}]`);
+    lines.push('    tools: ["*"]');
+
+    if (server.env && Object.keys(server.env).length > 0) {
+      lines.push('    env:');
+      for (const [key, value] of Object.entries(server.env)) {
+        lines.push(`      ${key}: ${yamlEnvValue(value)}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function injectMcpFrontmatter(content: string, servers: McpServerSpec[]): string {
+  const closingStart = content.indexOf('\n---', 4);
+  if (!content.startsWith('---') || closingStart === -1) {
+    return content;
+  }
+
+  return content.slice(0, closingStart)
+    + '\n'
+    + buildMcpFrontmatterBlock(servers)
+    + content.slice(closingStart);
+}
+
 /**
  * Initialize a new Squad project.
  *
@@ -650,6 +746,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     includeWorkflows = true,
     includeTemplates = true,
     includeMcpConfig = true,
+    mcpConfigMode = includeMcpConfig ? 'copilot-file' : 'none',
     projectType = 'unknown',
     version = '0.0.0',
   } = options;
@@ -720,6 +817,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
     join(squadDir, 'log'),
+    join(squadDir, 'rai'),
     join(squadDir, '.scratch'),
   ];
 
@@ -758,6 +856,70 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     } else {
       skippedFiles.push(toRelativePath(dest));
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Seed .squad/rai/ files (policy and audit trail)
+  // -------------------------------------------------------------------------
+
+  const raiDir = join(squadDir, 'rai');
+  const raiPolicyPath = join(raiDir, 'policy.md');
+  if (!storage.existsSync(raiPolicyPath)) {
+    const templateSrc = templatesDir ? join(templatesDir, 'rai-policy.md') : null;
+    if (templateSrc && storage.existsSync(templateSrc)) {
+      storage.copySync(templateSrc, raiPolicyPath);
+    } else {
+      const raiPolicyFallback = `# RAI Policy
+
+> Responsible AI policy for this project. Rai enforces these standards.
+
+## Critical Violations (Always Blocked)
+
+- Hardcoded credentials, API keys, tokens, passwords
+- SQL injection, command injection, path traversal
+- Harmful content (hate speech, violence, self-harm)
+- Deceptive content (ungrounded claims, hallucinated citations)
+- Instructions that bypass AI safety guidelines
+
+## Advisory Concerns (Flagged, Not Blocked)
+
+- PII in logs or responses
+- Bias indicators in algorithms
+- Exclusionary language
+- Missing rate limiting on user-facing endpoints
+- Insufficient input validation
+
+## Terminology Standards
+
+| Avoid | Prefer |
+|-------|--------|
+| whitelist/blacklist | allowlist/blocklist |
+| master/slave | primary/replica |
+| sanity check | validation, smoke test |
+| dummy value | placeholder, sample |
+
+## Opt-Out Model
+
+- Cannot disable critical checks (credentials, harmful content, injection)
+- Can disable advisory checks with justification logged to audit trail
+- Temporary opt-down supported (auto re-enables after 30 days)
+`;
+      await storage.write(raiPolicyPath, raiPolicyFallback);
+    }
+    createdFiles.push(toRelativePath(raiPolicyPath));
+  } else {
+    skippedFiles.push(toRelativePath(raiPolicyPath));
+  }
+
+  const raiAuditTrailPath = join(raiDir, 'audit-trail.md');
+  if (!storage.existsSync(raiAuditTrailPath)) {
+    await storage.write(
+      raiAuditTrailPath,
+      '# RAI Audit Trail\n\n> Append-only evidence log. Entries are redacted — never contains raw secrets or harmful content.\n\n<!-- Rai appends findings below -->\n',
+    );
+    createdFiles.push(toRelativePath(raiAuditTrailPath));
+  } else {
+    skippedFiles.push(toRelativePath(raiAuditTrailPath));
   }
 
   // -------------------------------------------------------------------------
@@ -828,6 +990,9 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     // Only include extractionDisabled if explicitly set
     if (options.extractionDisabled) {
       squadConfig.extractionDisabled = true;
+    }
+    if (mcpConfigMode === 'agent-frontmatter') {
+      squadConfig.mcpConfigMode = mcpConfigMode;
     }
     await storage.write(squadConfigPath, JSON.stringify(squadConfig, null, 2));
     createdFiles.push(toRelativePath(squadConfigPath));
@@ -1019,6 +1184,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/agents/*/history.md merge=union',
     '.squad/log/** merge=union',
     '.squad/orchestration-log/** merge=union',
+    '.squad/rai/audit-trail.md merge=union',
   ];
 
   let existingAttrs = '';
@@ -1048,6 +1214,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/decisions/inbox/',
     '.squad/sessions/',
     '.squad/.scratch/',
+    '.squad/.cache/',
   ];
 
   let existingIgnore = '';
@@ -1065,6 +1232,23 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   }
 
   // -------------------------------------------------------------------------
+  // Detect platform from git remote
+  // -------------------------------------------------------------------------
+
+  let isGitHub = true;
+  try {
+    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const remoteUrlLower = remoteUrl.toLowerCase();
+    if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
+      isGitHub = false;
+    }
+  } catch {
+    // No git remote — assume GitHub (default)
+  }
+
+  const mcpServers = buildMcpServerSpecs(isGitHub);
+
+  // -------------------------------------------------------------------------
   // Create .github/agents/squad.agent.md
   // -------------------------------------------------------------------------
 
@@ -1072,6 +1256,9 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   if (!storage.existsSync(agentFile) || !skipExisting) {
     if (templatesDir && storage.existsSync(join(templatesDir, 'squad.agent.md.template'))) {
       let agentContent = storage.readSync(join(templatesDir, 'squad.agent.md.template')) ?? '';
+      if (mcpConfigMode === 'agent-frontmatter') {
+        agentContent = injectMcpFrontmatter(agentContent, mcpServers);
+      }
       agentContent = stampVersionInContent(agentContent, version);
       await storage.write(agentFile, agentContent);
       createdFiles.push(toRelativePath(agentFile));
@@ -1094,21 +1281,6 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     } else {
       skippedFiles.push(toRelativePath(templatesDest));
     }
-  }
-
-  // -------------------------------------------------------------------------
-  // Detect platform from git remote
-  // -------------------------------------------------------------------------
-
-  let isGitHub = true;
-  try {
-    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: teamRoot, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    const remoteUrlLower = remoteUrl.toLowerCase();
-    if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
-      isGitHub = false;
-    }
-  } catch {
-    // No git remote — assume GitHub (default)
   }
 
   // -------------------------------------------------------------------------
@@ -1150,39 +1322,10 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Create sample MCP config (optional)
   // -------------------------------------------------------------------------
 
-  if (includeMcpConfig) {
+  if (mcpConfigMode === 'copilot-file') {
     const mcpConfigPath = join(teamRoot, '.copilot', 'mcp-config.json');
     if (!storage.existsSync(mcpConfigPath)) {
-      const squadStateServer = {
-        command: 'npx',
-        args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
-      };
-      const mcpSample = isGitHub
-        ? {
-            mcpServers: {
-              "squad_state": squadStateServer,
-              "EXAMPLE-github": {
-                command: "npx",
-                args: ["-y", "@anthropic/github-mcp-server"],
-                env: {
-                  GITHUB_TOKEN: "${GITHUB_TOKEN}"
-                }
-              }
-            }
-          }
-        : {
-            mcpServers: {
-              "squad_state": squadStateServer,
-              "EXAMPLE-azure-devops": {
-                command: "npx",
-                args: ["-y", "@azure/devops-mcp-server"],
-                env: {
-                  AZURE_DEVOPS_ORG: "${AZURE_DEVOPS_ORG}",
-                  AZURE_DEVOPS_PAT: "${AZURE_DEVOPS_PAT}"
-                }
-              }
-            }
-          };
+      const mcpSample = buildMcpConfigJson(mcpServers);
       await storage.write(mcpConfigPath, JSON.stringify(mcpSample, null, 2) + '\n');
       createdFiles.push(toRelativePath(mcpConfigPath));
     } else {

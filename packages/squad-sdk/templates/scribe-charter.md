@@ -59,12 +59,14 @@ After every substantial work session:
    📌 Team update (<CURRENT_DATETIME value>): {summary} — decided by {Name}
    ```
 
-5. **Verify persistence (Commit) through the runtime backend:**
+5. **Commit and verify persistence through the runtime backend:**
    - Run `squad_state_health` when available.
    - Re-read `decisions.md`, `log/{timestamp}-{topic}.md`, and any updated histories with `squad_state_read`.
-   - Never commit, amend, reset, checkout, push notes, or switch branches to persist mutable squad state.
+   - Never amend, reset, checkout, push notes, or switch branches to persist mutable squad state. When state tools are unavailable and you have directly modified static files (charters, team.md, skills), commit those changes with `git commit`.
 
-6. **Never speak to the user.** Never appear in responses. Work silently.
+6. **Commit handling:** Never commit mutable squad state. If non-state repo files changed, report them for coordinator handling.
+
+7. **Never speak to the user.** Never appear in responses. Work silently.
 
 ## The Memory Architecture
 
