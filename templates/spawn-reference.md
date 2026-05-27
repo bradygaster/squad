@@ -35,6 +35,9 @@ prompt: |
   CURRENT_DATETIME: <resolved CURRENT_DATETIME literal>
   All `.squad/` paths are relative to this root.
 
+  Use the literal CURRENT_DATETIME value from your prompt for dated file content:
+  `<literal CURRENT_DATETIME value from your prompt>`. Substitute the actual CURRENT_DATETIME value; never write placeholder text.
+
   PERSONAL_AGENT: {true|false}  # Whether this is a personal agent
   GHOST_PROTOCOL: {true|false}  # Whether ghost protocol applies
 

@@ -17,6 +17,87 @@ import { getPackageVersion, stampVersion, readInstalledVersion } from './version
 
 const storage = new FSStorageProvider();
 
+type McpConfigMode = 'copilot-file' | 'agent-frontmatter';
+
+interface McpServerSpec {
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+function buildMcpServerSpecs(isGitHub: boolean): McpServerSpec[] {
+  const servers: McpServerSpec[] = [
+    {
+      name: 'squad_state',
+      command: 'npx',
+      args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
+    },
+  ];
+
+  servers.push(isGitHub
+    ? {
+        name: 'EXAMPLE-github',
+        command: 'npx',
+        args: ['-y', '@anthropic/github-mcp-server'],
+        env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' },
+      }
+    : {
+        name: 'EXAMPLE-azure-devops',
+        command: 'npx',
+        args: ['-y', '@azure/devops-mcp-server'],
+        env: {
+          AZURE_DEVOPS_ORG: '${AZURE_DEVOPS_ORG}',
+          AZURE_DEVOPS_PAT: '${AZURE_DEVOPS_PAT}',
+        },
+      });
+
+  return servers;
+}
+
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function yamlEnvValue(value: string): string {
+  if (/^\$\{[A-Z0-9_]+\}$/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function buildMcpFrontmatterBlock(isGitHub: boolean): string {
+  const lines = ['mcp-servers:'];
+  for (const server of buildMcpServerSpecs(isGitHub)) {
+    lines.push(`  ${server.name}:`);
+    lines.push('    type: local');
+    lines.push(`    command: ${server.command}`);
+    lines.push(`    args: [${server.args.map(yamlSingleQuoted).join(', ')}]`);
+    lines.push('    tools: ["*"]');
+
+    if (server.env && Object.keys(server.env).length > 0) {
+      lines.push('    env:');
+      for (const [key, value] of Object.entries(server.env)) {
+        lines.push(`      ${key}: ${yamlEnvValue(value)}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function injectMcpFrontmatter(content: string, isGitHub: boolean): string {
+  const closingStart = content.indexOf('\n---', 4);
+  if (!content.startsWith('---') || closingStart === -1) {
+    return content;
+  }
+
+  return content.slice(0, closingStart)
+    + '\n'
+    + buildMcpFrontmatterBlock(isGitHub)
+    + content.slice(closingStart);
+}
+
 function copyDirRecursive(src: string, dest: string, force = true): void {
   storage.mkdirSync(dest, { recursive: true });
   for (const entry of storage.listSync(src)) {
@@ -65,6 +146,69 @@ function compareSemver(a: string, b: string): number {
   if (!aPre && bPre) return 1;
   if (aPre && bPre) return a < b ? -1 : a > b ? 1 : 0;
   return 0;
+}
+
+function readSquadConfig(squadDir: string): Record<string, unknown> {
+  const configPath = path.join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) return {};
+
+  try {
+    const raw = storage.readSync(configPath);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Ignore malformed config for upgrade compatibility.
+  }
+
+  return {};
+}
+
+function readMcpConfigMode(config: Record<string, unknown>): McpConfigMode {
+  return config['mcpConfigMode'] === 'agent-frontmatter' ? 'agent-frontmatter' : 'copilot-file';
+}
+
+function detectMcpConfigMode(config: Record<string, unknown>, agentDest: string): McpConfigMode {
+  const configuredMode = readMcpConfigMode(config);
+  if (configuredMode === 'agent-frontmatter') return configuredMode;
+
+  if (storage.existsSync(agentDest)) {
+    const existingAgent = storage.readSync(agentDest) ?? '';
+    const frontmatterEnd = existingAgent.indexOf('\n---', 4);
+    const frontmatter = frontmatterEnd === -1 ? '' : existingAgent.slice(0, frontmatterEnd);
+    if (frontmatter.includes('mcp-servers:')) {
+      return 'agent-frontmatter';
+    }
+  }
+
+  return configuredMode;
+}
+
+function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): boolean {
+  if (config['platform'] === 'azure-devops') return false;
+
+  try {
+    const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const remoteUrlLower = remoteUrl.toLowerCase();
+    if (remoteUrlLower.includes('dev.azure.com') || remoteUrlLower.includes('visualstudio.com') || remoteUrlLower.includes('ssh.dev.azure.com')) {
+      return false;
+    }
+  } catch {
+    // No git remote — assume GitHub, matching init behavior.
+  }
+
+  return true;
+}
+
+function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean): void {
+  let agentContent = storage.readSync(agentSrc) ?? '';
+  if (mcpConfigMode === 'agent-frontmatter') {
+    agentContent = injectMcpFrontmatter(agentContent, isGitHub);
+  }
+  storage.writeSync(agentDest, agentContent);
+  stampVersion(agentDest, cliVersion);
 }
 
 /**
@@ -278,6 +422,7 @@ const GITIGNORE_ENTRIES = [
   '.squad/log/',
   '.squad/decisions/inbox/',
   '.squad/sessions/',
+  '.squad/.cache/',
   '.squad-workstream',
 ];
 
@@ -598,6 +743,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
   const oldVersion = readInstalledVersion(agentDest) ?? '0.0.0';
+  const squadConfig = readSquadConfig(squadDirInfo.path);
+  const mcpConfigMode = detectMcpConfigMode(squadConfig, agentDest);
+  const isGitHubForMcp = detectIsGitHubForMcp(dest, squadConfig);
 
   // Check if already current
   const isAlreadyCurrent = !options.force && oldVersion && oldVersion !== '0.0.0' && compareSemver(oldVersion, cliVersion) === 0;
@@ -630,8 +778,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
     if (storage.existsSync(agentSrc)) {
       storage.mkdirSync(path.dirname(agentDest), { recursive: true });
-      storage.copySync(agentSrc, agentDest);
-      stampVersion(agentDest, cliVersion);
+      writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
       success('upgraded squad.agent.md');
       filesUpdated.push('squad.agent.md');
     } else {
@@ -658,8 +805,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   }
 
   storage.mkdirSync(path.dirname(agentDest), { recursive: true });
-  storage.copySync(agentSrc, agentDest);
-  stampVersion(agentDest, cliVersion);
+  writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
 
   const fromLabel = oldVersion === '0.0.0' || !oldVersion ? 'unknown' : oldVersion;
   success(`upgraded coordinator from ${fromLabel} to ${cliVersion}`);

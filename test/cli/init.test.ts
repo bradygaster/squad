@@ -99,6 +99,43 @@ describe('CLI: init command', () => {
     expect(content).not.toContain(TEST_ROOT);
   });
 
+  it('should write MCP config into agent frontmatter when requested', async () => {
+    await runInit(TEST_ROOT, { mcpFrontmatter: true });
+
+    const mcpPath = join(TEST_ROOT, '.copilot', 'mcp-config.json');
+    expect(existsSync(mcpPath)).toBe(false);
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const content = await readFile(agentPath, 'utf-8');
+    expect(content).toContain('mcp-servers:');
+    expect(content).toContain('  squad_state:');
+    expect(content).toContain('    type: local');
+    expect(content).toContain("    args: ['-y', '@bradygaster/squad-cli', 'state-mcp']");
+    expect(content).toContain('    tools: ["*"]');
+    const frontmatterEnd = content.indexOf('\n---', 4);
+    expect(frontmatterEnd).toBeGreaterThan(0);
+    const frontmatter = content.slice(0, frontmatterEnd);
+    expect(frontmatter).not.toContain('SQUAD_TEAM_ROOT');
+    expect(frontmatter).not.toContain(TEST_ROOT);
+
+    const squadConfigPath = join(TEST_ROOT, '.squad', 'config.json');
+    const squadConfig = JSON.parse(await readFile(squadConfigPath, 'utf-8'));
+    expect(squadConfig.mcpConfigMode).toBe('agent-frontmatter');
+  });
+
+  it('should not patch existing agent frontmatter on re-init', async () => {
+    await runInit(TEST_ROOT);
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const firstContent = await readFile(agentPath, 'utf-8');
+
+    await runInit(TEST_ROOT, { mcpFrontmatter: true });
+
+    const secondContent = await readFile(agentPath, 'utf-8');
+    expect(secondContent).toBe(firstContent);
+    expect(secondContent).not.toContain('mcp-servers:');
+  });
+
   it('should create ceremonies.md', async () => {
     await runInit(TEST_ROOT);
     
