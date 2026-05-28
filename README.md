@@ -43,6 +43,8 @@ npm install -g @bradygaster/squad-cli
 squad init
 ```
 
+> **⚡ Want to be up and running in under a second?** Use `squad init --preset default` to start with a fully-configured squad — complete with members, charters, and routing rules — ready to go immediately. The default `squad init` (without the flag) walks you through setup step by step, ideal if you prefer to build and customize your squad deliberately.
+
 **✓ Validate:** Check that `.squad/team.md` was created in your project.
 
 ### 3. Authenticate with GitHub (for Issues, PRs, and Ralph)
