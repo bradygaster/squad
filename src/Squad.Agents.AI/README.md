@@ -1,6 +1,6 @@
 # Squad.Agents.AI
 
-Community NuGet that exposes the Squad multi-agent CLI as a `Microsoft.Extensions.AI.AIAgent`, composable into any Microsoft Agent Framework (MAF) app or workflow.
+Community NuGet that exposes the Squad multi-agent CLI as a `Microsoft.Agents.AI.AIAgent`, composable into any Microsoft Agent Framework (MAF) app or workflow.
 
 ## Quick start — with Aspire (recommended)
 
@@ -52,7 +52,7 @@ Track B (`CommunityToolkit.Aspire.Hosting.Squad`) emits Hybrid connection string
 ## Usage example
 
 ```csharp
-using Microsoft.Extensions.AI;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Squad.Agents.AI;
 
@@ -67,11 +67,8 @@ services.AddSquadAgent(opts =>
 var provider = services.BuildServiceProvider();
 var squad = provider.GetRequiredService<SquadAgent>();
 
-var response = await squad.CompleteAsync(
-    new[] { new ChatMessage(ChatRole.User, "Hello Squad, what can you do?") }
-);
-
-Console.WriteLine(response.Message.Text);
+var response = await squad.RunAsync("Hello Squad, what can you do?");
+Console.WriteLine(response); // prints the agent's response
 ```
 
 ## Status

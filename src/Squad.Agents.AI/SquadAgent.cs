@@ -1,28 +1,29 @@
 using GitHub.Copilot.SDK;
-using Microsoft.Extensions.AI;
+using Microsoft.Agents.AI;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Squad.Agents.AI;
 
 /// <summary>
-/// A Squad-flavored <see cref="IChatClient"/> that composes a GitHub Copilot
-/// client configured for Squad multi-agent CLI.
+/// A Squad-flavored <see cref="AIAgent"/> that composes a GitHub Copilot
+/// agent configured for Squad multi-agent CLI.
 ///
-/// Value-add over bare Copilot SDK:
+/// Value-add over bare MAF GitHubCopilotAgent:
 /// <list type="bullet">
 ///   <item>Squad boundary instructions injected at construction time.</item>
 ///   <item>Squad-specific configuration (team root, CLI path, env vars).</item>
 ///   <item>DI-friendly: registered via <see cref="SquadServiceCollectionExtensions.AddSquadAgent"/>.</item>
 /// </list>
 /// </summary>
-public sealed class SquadAgent : IChatClient, IAsyncDisposable
+public sealed class SquadAgent : AIAgent, IAsyncDisposable
 {
     private readonly CopilotClient _copilotClient;
-    private readonly IChatClient _inner;
+    private readonly AIAgent _inner;
     private readonly ILogger? _logger;
     private readonly bool _ownsClient;
-    private readonly ChatClientMetadata _metadata;
+    private readonly SquadAgentOptions _options;
 
     /// <summary>
     /// Initializes a <see cref="SquadAgent"/> from fully-resolved options.
@@ -46,16 +47,12 @@ public sealed class SquadAgent : IChatClient, IAsyncDisposable
         _copilotClient = copilotClient ?? throw new ArgumentNullException(nameof(copilotClient));
         _logger = loggerFactory?.CreateLogger<SquadAgent>();
         _ownsClient = ownsClient;
+        _options = options;
 
-        // Create the inner AIAgent via AsAIAgent extension, then get IChatClient
-        var agent = _copilotClient.AsAIAgent(
+        // Create the inner AIAgent via AsAIAgent extension — NO CAST
+        _inner = _copilotClient.AsAIAgent(
             instructions: options.Instructions,
             name: options.AgentName ?? "Squad");
-
-        // Cast to IChatClient (AIAgent should implement it, but types are in different assemblies)
-        _inner = (IChatClient)(object)agent;
-
-        _metadata = new ChatClientMetadata("Squad");
 
         _logger?.LogInformation("SquadAgent initialized with name '{AgentName}', team root '{TeamRoot}'",
             options.AgentName, options.SquadFolderPath);
@@ -97,41 +94,49 @@ public sealed class SquadAgent : IChatClient, IAsyncDisposable
         return new CopilotClient(clientOptions);
     }
 
-    // IChatClient implementation
+    // AIAgent abstract method overrides — delegate to _inner
 
-    public ChatClientMetadata Metadata => _metadata;
+    public override string? Name => _options.AgentName ?? _inner.Name;
+    
+    public override string? Description => _inner.Description ?? "Squad multi-agent CLI participant";
 
-    public Task<ChatResponse> GetResponseAsync(
-        IEnumerable<ChatMessage> chatMessages,
-        ChatOptions? options = null,
+    protected override ValueTask<AgentSession> CreateSessionCoreAsync(CancellationToken cancellationToken = default)
+    {
+        return _inner.CreateSessionAsync(cancellationToken);
+    }
+
+    protected override Task<AgentResponse> RunCoreAsync(
+        IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
+        AgentSession? session = null,
+        AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        return _inner.GetResponseAsync(chatMessages, options, cancellationToken);
+        return _inner.RunAsync(messages, session, options, cancellationToken);
     }
 
-    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
-        IEnumerable<ChatMessage> chatMessages,
-        ChatOptions? options = null,
+    protected override IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
+        IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
+        AgentSession? session = null,
+        AgentRunOptions? options = null,
         CancellationToken cancellationToken = default)
     {
-        return _inner.GetStreamingResponseAsync(chatMessages, options, cancellationToken);
+        return _inner.RunStreamingAsync(messages, session, options, cancellationToken);
     }
 
-    public object? GetService(Type serviceType, object? serviceKey = null)
+    protected override ValueTask<JsonElement> SerializeSessionCoreAsync(
+        AgentSession session,
+        JsonSerializerOptions? jsonSerializerOptions = null,
+        CancellationToken cancellationToken = default)
     {
-        if (serviceType == typeof(IChatClient))
-            return this;
-
-        return _inner.GetService(serviceType, serviceKey);
+        return _inner.SerializeSessionAsync(session, jsonSerializerOptions, cancellationToken);
     }
 
-    public TService? GetService<TService>(object? key = null) where TService : class
+    protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(
+        JsonElement sessionState,
+        JsonSerializerOptions? jsonSerializerOptions = null,
+        CancellationToken cancellationToken = default)
     {
-        if (typeof(TService) == typeof(IChatClient))
-            return this as TService;
-
-        // Delegate to inner client's GetService via extension method
-        return ChatClientExtensions.GetService<TService>(_inner, key);
+        return _inner.DeserializeSessionAsync(sessionState, jsonSerializerOptions, cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -145,17 +150,7 @@ public sealed class SquadAgent : IChatClient, IAsyncDisposable
         {
             await innerDisposable.DisposeAsync().ConfigureAwait(false);
         }
-        else if (_inner is IDisposable innerSync)
-        {
-            innerSync.Dispose();
-        }
 
         _logger?.LogDebug("SquadAgent disposed");
-    }
-
-    void IDisposable.Dispose()
-    {
-        // Sync dispose not supported; call DisposeAsync
-        throw new NotSupportedException("Use DisposeAsync() instead of Dispose().");
     }
 }

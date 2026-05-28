@@ -1,7 +1,6 @@
-using Microsoft.Extensions.AI;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -12,7 +11,7 @@ namespace Squad.Agents.AI;
 /// </summary>
 public static class SquadServiceCollectionExtensions
 {
-    /// <summary>Register SquadAgent as a scoped IChatClient.</summary>
+    /// <summary>Register SquadAgent as a scoped AIAgent.</summary>
     public static IServiceCollection AddSquadAgent(
         this IServiceCollection services,
         Action<SquadAgentOptions>? configure = null)
@@ -35,9 +34,9 @@ public static class SquadServiceCollectionExtensions
             typeof(SquadAgent),
             lifetime));
 
-        // IChatClient base registration — so consumers can resolve via IEnumerable<IChatClient>
+        // AIAgent base registration — so consumers can resolve via IEnumerable<AIAgent>
         services.Add(new ServiceDescriptor(
-            typeof(IChatClient),
+            typeof(AIAgent),
             sp => sp.GetRequiredService<SquadAgent>(),
             lifetime));
 
