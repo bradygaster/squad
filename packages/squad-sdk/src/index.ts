@@ -63,6 +63,9 @@ export * from './upstream/index.js';
 export * from './remote/index.js';
 export * from './streams/index.js';
 
+// Repo-native coordinator export types (implementation in ./repo-native subpath)
+export type { CoordinatorExportOptions, CompileCoordinatorPromptOptions } from './repo-native/types.js';
+
 // Builder functions (SDK-First Squad Mode)
 export {
   defineTeam,

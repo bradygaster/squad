@@ -731,6 +731,12 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'export') {
+    // Subcommand: squad export agent [options]
+    if (args[1] === 'agent') {
+      const { runCoordinatorExport } = await import('./cli/commands/export-coordinator.js');
+      await runCoordinatorExport(getSquadStartDir(), args.slice(2));
+      return;
+    }
     const { runExport } = await import('./cli/commands/export.js');
     const outIdx = args.indexOf('--out');
     const outPath = (outIdx !== -1 && args[outIdx + 1]) ? args[outIdx + 1] : undefined;

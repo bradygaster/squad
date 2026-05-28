@@ -1,7 +1,7 @@
 {
   "name": "@bradygaster/squad-sdk",
   "version": "0.9.6",
-  "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
+  "description": "Squad SDK \u2014 Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -221,6 +221,10 @@
     "./upstream": {
       "types": "./dist/upstream/index.d.ts",
       "import": "./dist/upstream/index.js"
+    },
+    "./repo-native": {
+      "types": "./dist/repo-native/index.d.ts",
+      "import": "./dist/repo-native/index.js"
     }
   },
   "files": [
