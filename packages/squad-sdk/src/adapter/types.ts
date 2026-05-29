@@ -588,17 +588,17 @@ export interface SquadPermissionRequest {
 
 /**
  * Result of a permission request.
+ *
+ * Mirrors Copilot SDK PermissionDecision semantics (v1.0.54+).
  */
-export interface SquadPermissionRequestResult {
-  /** Outcome of the permission request */
-  kind:
-    | "approved"
-    | "denied-by-rules"
-    | "denied-no-approval-rule-and-could-not-request-from-user"
-    | "denied-interactively-by-user";
-  /** Rules that influenced the decision */
-  rules?: unknown[];
-}
+export type SquadPermissionRequestResult =
+  | { kind: "approve-once" }
+  | { kind: "approve-for-session"; approval?: unknown; domain?: string }
+  | { kind: "approve-for-location"; approval: unknown; locationKey: string }
+  | { kind: "approve-permanently"; domain: string }
+  | { kind: "reject"; feedback?: string }
+  | { kind: "user-not-available" }
+  | { kind: "no-result" };
 
 /**
  * Handler for permission requests from the agent.

@@ -505,7 +505,7 @@ export class SquadClient {
         if (msg.includes('onPermissionRequest')) {
           throw new Error(
             'Session creation failed: an onPermissionRequest handler is required. ' +
-            'Pass { onPermissionRequest: () => ({ kind: "approved" }) } in your session config ' +
+            'Pass { onPermissionRequest: () => ({ kind: "approve-once" }) } in your session config ' +
             'to approve all permissions, or provide a custom handler.'
           );
         }

@@ -87,7 +87,7 @@ const storage = new FSStorageProvider();
  * Approve all permission requests. CLI runs locally with user trust,
  * so no interactive confirmation is needed.
  */
-const approveAllPermissions: SquadPermissionHandler = () => ({ kind: 'approved' });
+const approveAllPermissions: SquadPermissionHandler = () => ({ kind: 'approve-once' });
 
 /** Debug logger — writes to stderr only when SQUAD_DEBUG=1. */
 function debugLog(...args: unknown[]): void {
