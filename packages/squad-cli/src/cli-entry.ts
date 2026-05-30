@@ -155,8 +155,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}(default)${RESET}  Launch interactive shell (no args)`);
     console.log(`             Flags: --global (init in personal squad directory)`);
     console.log(`  ${BOLD}init${RESET}       Initialize Squad (markdown-only, default)`);
-    console.log(`             Flags: --sdk (SDK builder syntax)`);
-    console.log(`                    --roles (use base roles)`);
+    console.log(`             Flags: --sdk (SDK builder syntax), --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
