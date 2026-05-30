@@ -7,6 +7,8 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { detectSquadDir, resolveWorktreeMainCheckout } from './detect-squad-dir.js';
+import { readTeamMd, hasCopilot } from './team-md.js';
+import { addCopilotToTeam } from '../commands/copilot.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
@@ -117,6 +119,72 @@ export interface RunInitOptions {
   stateBackend?: string;
   /** If true, write MCP server config into squad.agent.md frontmatter instead of .copilot/mcp-config.json */
   mcpFrontmatter?: boolean;
+  /**
+   * Controls the @copilot opt-in during init.
+   * - true: add @copilot inline without prompting (e.g. `--copilot`)
+   * - false: skip silently (e.g. `--no-copilot`)
+   * - undefined: prompt interactively when attached to a TTY, otherwise skip silently
+   */
+  copilot?: boolean;
+}
+
+/**
+ * Interactive @copilot opt-in shown after init scaffolding completes.
+ *
+ * @copilot is a repo-level team member and `.github/copilot-instructions.md`
+ * affects every Copilot interaction in the repo, so it is never added silently:
+ *   - options.copilot === true  → add inline (e.g. `--copilot`)
+ *   - options.copilot === false → skip silently (e.g. `--no-copilot`)
+ *   - undefined + TTY           → prompt the user
+ *   - undefined + non-interactive → skip silently
+ */
+async function promptCopilot(dest: string, options: RunInitOptions): Promise<void> {
+  // @copilot is a repo concept — not relevant for the personal/global squad.
+  if (options.isGlobal) return;
+
+  // Already on the team (e.g. re-init) — nothing to do.
+  try {
+    const squadDir = detectSquadDir(dest).path;
+    if (storage.existsSync(squadDir) && hasCopilot(readTeamMd(squadDir))) {
+      return;
+    }
+  } catch {
+    // No squad / unreadable team.md — fall through; nothing to add.
+    return;
+  }
+
+  // Explicit opt-out, or non-interactive without an explicit opt-in: skip silently.
+  if (options.copilot === false) return;
+  if (options.copilot !== true && !process.stdin.isTTY) return;
+
+  let enable = options.copilot === true;
+  let answeredInteractively = false;
+  if (!enable) {
+    const { createInterface } = await import('node:readline/promises');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = (await rl.question(
+        `${BOLD}Add @copilot as an autonomous team member?${RESET} ${DIM}[y/N]${RESET} `,
+      )).trim().toLowerCase();
+      enable = answer === 'y' || answer === 'yes';
+      answeredInteractively = true;
+    } finally {
+      rl.close();
+    }
+  }
+
+  if (enable) {
+    const { added, instructionsWritten } = addCopilotToTeam(dest);
+    if (added) {
+      success('Added @copilot (Coding Agent) to team roster');
+      if (instructionsWritten) success('.github/copilot-instructions.md');
+      console.log(`${DIM}  Enable auto-assignment later with ${RESET}${BOLD}squad copilot --auto-assign${RESET}`);
+    }
+    console.log();
+  } else if (answeredInteractively) {
+    console.log(`${DIM}Skipped @copilot — add it later with ${RESET}${BOLD}squad copilot${RESET}${DIM}.${RESET}`);
+    console.log();
+  }
 }
 
 /**
@@ -426,6 +494,12 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   if (!isInitNoColor()) await sleep(80);
   console.log();
+
+  // ── @copilot opt-in ─────────────────────────────────────────────────
+  // .github/copilot-instructions.md affects every Copilot interaction in the
+  // repo, so adding @copilot is an explicit opt-in rather than a silent default.
+  await promptCopilot(dest, options);
+
   console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
   console.log();
   console.log(`${DIM}Tip: for non-interactive scripts that need squad_state tools, add to package.json:${RESET}`);

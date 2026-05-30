@@ -24,6 +24,56 @@ export interface CopilotFlags {
 }
 
 /**
+ * Copy the bundled copilot-instructions.md template into <dest>/.github/.
+ * Returns true if the template existed and was copied.
+ */
+export function copyCopilotInstructions(dest: string): boolean {
+  // Templates are at the root of the package (../../../templates from dist/cli/commands/)
+  const currentFileUrl = new URL(import.meta.url);
+  const currentFilePath = currentFileUrl.pathname.startsWith('/') && process.platform === 'win32'
+    ? currentFileUrl.pathname.substring(1) // Remove leading / on Windows
+    : currentFileUrl.pathname;
+  const templatesSrc = path.resolve(path.dirname(currentFilePath), '..', '..', '..', 'templates');
+  const instructionsSrc = path.join(templatesSrc, 'copilot-instructions.md');
+  const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
+
+  if (storage.existsSync(instructionsSrc)) {
+    storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
+    storage.copySync(instructionsSrc, instructionsDest);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Add @copilot to the team roster and copy copilot-instructions.md.
+ * Shared by the `squad copilot` command and the `squad init` opt-in prompt.
+ *
+ * Idempotent: when @copilot is already on the team the roster is left untouched
+ * (returns added: false). Throws when no squad directory exists.
+ */
+export function addCopilotToTeam(
+  dest: string,
+  autoAssign: boolean = false
+): { added: boolean; instructionsWritten: boolean } {
+  const squadDir = detectSquadDir(dest).path;
+
+  if (!storage.existsSync(squadDir)) {
+    throw new Error('No squad found — run init first, then add the copilot agent.');
+  }
+
+  let content = readTeamMd(squadDir);
+  if (hasCopilot(content)) {
+    return { added: false, instructionsWritten: false };
+  }
+
+  content = insertCopilotSection(content, autoAssign);
+  writeTeamMd(squadDir, content);
+  const instructionsWritten = copyCopilotInstructions(dest);
+  return { added: true, instructionsWritten };
+}
+
+/**
  * Run copilot command
  */
 export async function runCopilot(dest: string, flags: CopilotFlags): Promise<void> {
@@ -72,27 +122,16 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
   }
 
   // Add copilot
-  content = insertCopilotSection(content, flags.autoAssign);
-  writeTeamMd(squadDir, content);
+  addCopilotToTeam(dest, flags.autoAssign);
   success('Added @copilot (Coding Agent) to team roster');
   
   if (flags.autoAssign) {
     success('Auto-assign enabled — squad-labeled issues will be assigned to @copilot');
   }
 
-  // Copy copilot-instructions.md from templates
-  // Templates are at the root of the package (../../../templates from dist/cli/commands/)
-  const currentFileUrl = new URL(import.meta.url);
-  const currentFilePath = currentFileUrl.pathname.startsWith('/') && process.platform === 'win32'
-    ? currentFileUrl.pathname.substring(1) // Remove leading / on Windows
-    : currentFileUrl.pathname;
-  const templatesSrc = path.resolve(path.dirname(currentFilePath), '..', '..', '..', 'templates');
-  const instructionsSrc = path.join(templatesSrc, 'copilot-instructions.md');
+  // copilot-instructions.md was copied by addCopilotToTeam (when the template exists)
   const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
-  
-  if (storage.existsSync(instructionsSrc)) {
-    storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
-    storage.copySync(instructionsSrc, instructionsDest);
+  if (storage.existsSync(instructionsDest)) {
     success('.github/copilot-instructions.md');
   }
 

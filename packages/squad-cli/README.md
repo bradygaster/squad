@@ -67,6 +67,7 @@ For detailed documentation on each command, see the [CLI Reference](https://docs
 |---------|---------|
 | `squad` | Enter interactive shell (no arguments) |
 | `squad init` | Initialize Squad in current repo (idempotent) |
+| `squad init --copilot` | Initialize and add @copilot without prompting (`--no-copilot` to skip) |
 | `squad init --global` | Create a personal squad in your home directory |
 | `squad status` | Show which squad is active and why |
 | `squad doctor` | Validate setup integrity and diagnose issues |

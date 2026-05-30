@@ -260,4 +260,49 @@ describe('CLI: init command', () => {
     const secondContent = await readFile(agentPath, 'utf-8');
     expect(secondContent).toContain('<!-- MODIFIED -->');
   });
+
+  describe('@copilot opt-in (#1147)', () => {
+    it('does not add @copilot by default in non-interactive mode', async () => {
+      await runInit(TEST_ROOT);
+
+      const instructionsPath = join(TEST_ROOT, '.github', 'copilot-instructions.md');
+      expect(existsSync(instructionsPath)).toBe(false);
+
+      const teamPath = join(TEST_ROOT, '.squad', 'team.md');
+      const team = await readFile(teamPath, 'utf-8');
+      expect(team.toLowerCase()).not.toContain('@copilot');
+    });
+
+    it('skips @copilot silently when copilot: false', async () => {
+      await runInit(TEST_ROOT, { copilot: false });
+
+      const instructionsPath = join(TEST_ROOT, '.github', 'copilot-instructions.md');
+      expect(existsSync(instructionsPath)).toBe(false);
+    });
+
+    it('adds @copilot inline when copilot: true', async () => {
+      await runInit(TEST_ROOT, { copilot: true });
+
+      const instructionsPath = join(TEST_ROOT, '.github', 'copilot-instructions.md');
+      expect(existsSync(instructionsPath)).toBe(true);
+
+      const teamPath = join(TEST_ROOT, '.squad', 'team.md');
+      const team = await readFile(teamPath, 'utf-8');
+      expect(team).toContain('@copilot');
+    });
+
+    it('is idempotent across re-init with copilot: true', async () => {
+      await runInit(TEST_ROOT, { copilot: true });
+      const teamPath = join(TEST_ROOT, '.squad', 'team.md');
+      const firstTeam = await readFile(teamPath, 'utf-8');
+
+      // Re-init should not duplicate the @copilot roster section.
+      await runInit(TEST_ROOT, { copilot: true });
+      const secondTeam = await readFile(teamPath, 'utf-8');
+
+      const count = (secondTeam.match(/@copilot/g) || []).length;
+      const firstCount = (firstTeam.match(/@copilot/g) || []).length;
+      expect(count).toBe(firstCount);
+    });
+  });
 });
