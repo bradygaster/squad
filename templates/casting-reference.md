@@ -41,6 +41,24 @@ score = size_fit + shape_fit + resonance_fit + LRU
 
 Same inputs → same choice (unless LRU changes between assignments).
 
+## Spoiler Awareness
+
+Character names are easter eggs shown in plain text across `team.md`, prompts, logs, and generated files. The user configuring the squad may be mid-way through the source material. A name that bakes in a future title, role, transformation, or fate can spoil later plot events even when the casting rationale stays hidden.
+
+How to avoid it:
+
+- Prefer the name a character has when first introduced.
+- Avoid titles or epithets earned later.
+- Avoid names that describe a transformation, fate, hidden identity, or reveal.
+- When unsure, pick a safer character from the same universe.
+- Never reorganize the casting around the spoiler.
+
+> **Motivating example.** A user setting up a squad requested the *Malazan Book of the Fallen* universe (Steven Erikson) and was only four books into the series. The casting allocated two spoiler-bearing names:
+> - One name bundled a **title/epithet the character only earns after a major mid-series development** — encoding a role they do not yet hold at the reader's current point in the story.
+> - The other referenced a **state/transformation that has not yet occurred** at the reader's position — revealing what later becomes of that character.
+>
+> Both leaked future plot. (Character names are deliberately omitted here so this document does not reproduce the spoiler.)
+
 ## Casting State File Schemas
 
 ### policy.json
