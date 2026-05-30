@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     console.log(`                    --no-workflows (skip CI setup)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
-    console.log(`                    --copilot / --no-copilot (add @copilot without prompting)`);
+    console.log(`                    --copilot (add @copilot) / --no-copilot (skip), no prompt`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
     console.log(`             Creates .squad/config.json pointing to an external team root`);
     console.log(`  ${BOLD}upgrade${RESET}    Update Squad-owned files to latest version`);

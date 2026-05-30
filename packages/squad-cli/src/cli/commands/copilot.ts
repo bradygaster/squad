@@ -4,6 +4,7 @@
  */
 
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
@@ -24,18 +25,17 @@ export interface CopilotFlags {
 }
 
 /**
- * Copy the bundled copilot-instructions.md template into <dest>/.github/.
+ * Copy the bundled copilot-instructions.md template into <root>/.github/.
+ * `root` is the directory whose `.github/` should hold the file — usually the
+ * git root (in a monorepo this differs from the team's `.squad/` location).
  * Returns true if the template existed and was copied.
  */
-export function copyCopilotInstructions(dest: string): boolean {
+export function copyCopilotInstructions(root: string): boolean {
   // Templates are at the root of the package (../../../templates from dist/cli/commands/)
-  const currentFileUrl = new URL(import.meta.url);
-  const currentFilePath = currentFileUrl.pathname.startsWith('/') && process.platform === 'win32'
-    ? currentFileUrl.pathname.substring(1) // Remove leading / on Windows
-    : currentFileUrl.pathname;
+  const currentFilePath = fileURLToPath(import.meta.url);
   const templatesSrc = path.resolve(path.dirname(currentFilePath), '..', '..', '..', 'templates');
   const instructionsSrc = path.join(templatesSrc, 'copilot-instructions.md');
-  const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
+  const instructionsDest = path.join(root, '.github', 'copilot-instructions.md');
 
   if (storage.existsSync(instructionsSrc)) {
     storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
@@ -49,12 +49,17 @@ export function copyCopilotInstructions(dest: string): boolean {
  * Add @copilot to the team roster and copy copilot-instructions.md.
  * Shared by the `squad copilot` command and the `squad init` opt-in prompt.
  *
+ * `dest` locates the team's `.squad/`; `instructionsRoot` (defaulting to `dest`)
+ * is the directory whose `.github/copilot-instructions.md` is written — pass the
+ * git root in monorepo/subfolder layouts so Copilot picks it up at the repo root.
+ *
  * Idempotent: when @copilot is already on the team the roster is left untouched
  * (returns added: false). Throws when no squad directory exists.
  */
 export function addCopilotToTeam(
   dest: string,
-  autoAssign: boolean = false
+  autoAssign: boolean = false,
+  instructionsRoot: string = dest
 ): { added: boolean; instructionsWritten: boolean } {
   const squadDir = detectSquadDir(dest).path;
 
@@ -69,7 +74,7 @@ export function addCopilotToTeam(
 
   content = insertCopilotSection(content, autoAssign);
   writeTeamMd(squadDir, content);
-  const instructionsWritten = copyCopilotInstructions(dest);
+  const instructionsWritten = copyCopilotInstructions(instructionsRoot);
   return { added: true, instructionsWritten };
 }
 

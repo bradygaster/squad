@@ -138,18 +138,18 @@ export interface RunInitOptions {
  *   - undefined + TTY           → prompt the user
  *   - undefined + non-interactive → skip silently
  */
-async function promptCopilot(dest: string, options: RunInitOptions): Promise<void> {
+async function promptCopilot(dest: string, agentFileRoot: string, options: RunInitOptions): Promise<void> {
   // @copilot is a repo concept — not relevant for the personal/global squad.
   if (options.isGlobal) return;
 
-  // Already on the team (e.g. re-init) — nothing to do.
+  // Already on the team (e.g. re-init), or no squad to add to — skip.
   try {
     const squadDir = detectSquadDir(dest).path;
     if (storage.existsSync(squadDir) && hasCopilot(readTeamMd(squadDir))) {
       return;
     }
   } catch {
-    // No squad / unreadable team.md — fall through; nothing to add.
+    // No squad / unreadable team.md — nothing to add.
     return;
   }
 
@@ -174,7 +174,9 @@ async function promptCopilot(dest: string, options: RunInitOptions): Promise<voi
   }
 
   if (enable) {
-    const { added, instructionsWritten } = addCopilotToTeam(dest);
+    // In a monorepo, .github/ lives at the git root (agentFileRoot), so copilot-instructions.md
+    // must land there — alongside .github/agents/ — even though .squad/ is in the subfolder.
+    const { added, instructionsWritten } = addCopilotToTeam(dest, false, agentFileRoot);
     if (added) {
       success('Added @copilot (Coding Agent) to team roster');
       if (instructionsWritten) success('.github/copilot-instructions.md');
@@ -498,7 +500,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // ── @copilot opt-in ─────────────────────────────────────────────────
   // .github/copilot-instructions.md affects every Copilot interaction in the
   // repo, so adding @copilot is an explicit opt-in rather than a silent default.
-  await promptCopilot(dest, options);
+  await promptCopilot(dest, agentFileRoot, options);
 
   console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
   console.log();
