@@ -43,7 +43,7 @@ Same inputs → same choice (unless LRU changes between assignments).
 
 ## Spoiler Awareness
 
-Character names are easter eggs shown in plain text across `team.md`, prompts, logs, and generated files. The user configuring the squad may be mid-way through the source material. A name that bakes in a future title, role, transformation, or fate can spoil later plot events even when the casting rationale stays hidden.
+Character names are easter eggs shown in plain text across `team.md`, prompts, logs, and generated files. The user configuring the squad may be midway through the source material. A name that bakes in a future title, role, transformation, or fate can spoil later plot events even when the casting rationale stays hidden.
 
 How to avoid it:
 
@@ -51,7 +51,7 @@ How to avoid it:
 - Avoid titles or epithets earned later.
 - Avoid names that describe a transformation, fate, hidden identity, or reveal.
 - When unsure, pick a safer character from the same universe.
-- Never reorganize the casting around the spoiler.
+- Keep existing name mappings stable — do not rename already-allocated agents or switch universes to dodge a spoiler. Only the next/new allocation should pick a different spoiler-safe character.
 
 > **Motivating example.** A user setting up a squad requested the *Malazan Book of the Fallen* universe (Steven Erikson) and was only four books into the series. The casting allocated two spoiler-bearing names:
 > - One name bundled a **title/epithet the character only earns after a major mid-series development** — encoding a role they do not yet hold at the reader's current point in the story.
