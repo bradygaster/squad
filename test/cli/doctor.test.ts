@@ -11,7 +11,7 @@ import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { randomBytes } from 'crypto';
-import { runDoctor, getDoctorMode, checkNodeVersion } from '@bradygaster/squad-cli/commands/doctor';
+import { runDoctor, getDoctorMode, checkNodeVersion, checkGitSyncHooks } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
@@ -290,5 +290,81 @@ describe('squad doctor', () => {
     expect(agentMdCheck).toBeDefined();
     expect(agentMdCheck?.status).toBe('fail');
     expect(agentMdCheck?.message).toContain('squad upgrade');
+  });
+
+  // ── #1185 — git sync hooks check for two-layer / orphan backends ──
+
+  it('does not include hook check when stateBackend is absent', async () => {
+    await scaffold(TEST_ROOT);
+    const checks = await runDoctor(TEST_ROOT);
+    const hookCheck = checks.find((c: DoctorCheck) => c.name === 'git sync hooks installed');
+    expect(hookCheck).toBeUndefined();
+  });
+
+  it('does not include hook check when stateBackend=local', async () => {
+    await scaffold(TEST_ROOT);
+    await writeFile(join(TEST_ROOT, '.squad', 'config.json'), JSON.stringify({ stateBackend: 'local' }));
+    const checks = await runDoctor(TEST_ROOT);
+    const hookCheck = checks.find((c: DoctorCheck) => c.name === 'git sync hooks installed');
+    expect(hookCheck).toBeUndefined();
+  });
+
+  it('reports FAIL when stateBackend=two-layer and squad hooks are missing', async () => {
+    await scaffold(TEST_ROOT);
+    await writeFile(join(TEST_ROOT, '.squad', 'config.json'), JSON.stringify({ stateBackend: 'two-layer' }));
+    await mkdir(join(TEST_ROOT, '.git', 'hooks'), { recursive: true });
+
+    const checks = await runDoctor(TEST_ROOT);
+    const hookCheck = checks.find((c: DoctorCheck) => c.name === 'git sync hooks installed');
+    expect(hookCheck).toBeDefined();
+    expect(hookCheck?.status).toBe('fail');
+    expect(hookCheck?.message).toContain('squad install-hooks');
+  });
+
+  it('reports FAIL when stateBackend=orphan and squad hooks are missing', async () => {
+    await scaffold(TEST_ROOT);
+    await writeFile(join(TEST_ROOT, '.squad', 'config.json'), JSON.stringify({ stateBackend: 'orphan' }));
+    await mkdir(join(TEST_ROOT, '.git', 'hooks'), { recursive: true });
+
+    const checks = await runDoctor(TEST_ROOT);
+    const hookCheck = checks.find((c: DoctorCheck) => c.name === 'git sync hooks installed');
+    expect(hookCheck).toBeDefined();
+    expect(hookCheck?.status).toBe('fail');
+  });
+
+  it('reports PASS when stateBackend=two-layer and all squad sync hooks are present', async () => {
+    await scaffold(TEST_ROOT);
+    await writeFile(join(TEST_ROOT, '.squad', 'config.json'), JSON.stringify({ stateBackend: 'two-layer' }));
+    const hooksDir = join(TEST_ROOT, '.git', 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    for (const hookName of ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout']) {
+      await writeFile(
+        join(hooksDir, hookName),
+        `#!/bin/sh\n# --- squad-sync-hook ---\n# squad sync hook\n`,
+      );
+    }
+
+    const checks = await runDoctor(TEST_ROOT);
+    const hookCheck = checks.find((c: DoctorCheck) => c.name === 'git sync hooks installed');
+    expect(hookCheck).toBeDefined();
+    expect(hookCheck?.status).toBe('pass');
+    expect(hookCheck?.message).toContain('two-layer');
+  });
+
+  it('checkGitSyncHooks returns FAIL when hook file lacks squad marker', async () => {
+    const squadDir = join(TEST_ROOT, '.squad');
+    const hooksDir = join(TEST_ROOT, '.git', 'hooks');
+    await mkdir(squadDir, { recursive: true });
+    await mkdir(hooksDir, { recursive: true });
+    await writeFile(join(squadDir, 'config.json'), JSON.stringify({ stateBackend: 'two-layer' }));
+    // Write hook without the squad marker
+    for (const hookName of ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout']) {
+      await writeFile(join(hooksDir, hookName), '#!/bin/sh\necho "no squad marker here"\n');
+    }
+
+    const result = checkGitSyncHooks(TEST_ROOT, squadDir);
+    expect(result).toBeDefined();
+    expect(result?.status).toBe('fail');
+    expect(result?.message).toContain('pre-push');
   });
 });

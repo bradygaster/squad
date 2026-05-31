@@ -128,14 +128,18 @@ describe('resolveStateBackend()', () => {
   it('legacy git-notes migrates to two-layer', () => {
     expect(resolveStateBackend(squadDir(), TMP, 'git-notes' as any).name).toBe('two-layer');
   });
-  it('fails closed when an explicit git-native backend is unavailable', () => {
+  it('soft-falls-back to local when an explicit git-native backend is unavailable', () => {
     const nonGitRoot = join(tmpdir(), `.squad-state-non-git-${randomBytes(4).toString('hex')}`);
     const nonGitSquad = join(nonGitRoot, '.squad');
     mkdirSync(nonGitSquad, { recursive: true });
     writeFileSync(join(nonGitSquad, 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'two-layer' }));
 
     try {
-      expect(() => resolveStateBackend(nonGitSquad, nonGitRoot)).toThrow(/State backend 'two-layer' failed/);
+      // Bug B fix: resolveStateBackend no longer throws when a git-native backend
+      // fails; it emits a console.warn and falls back to WorktreeBackend ('local').
+      expect(() => resolveStateBackend(nonGitSquad, nonGitRoot)).not.toThrow();
+      const backend = resolveStateBackend(nonGitSquad, nonGitRoot);
+      expect(backend.name).toBe('local');
     } finally {
       rmSync(nonGitRoot, { recursive: true, force: true });
     }
