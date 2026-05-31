@@ -186,7 +186,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@bradygaster/squad-sdk": "file:../squad-sdk",
+    "@bradygaster/squad-sdk": ">=0.9.0-0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^6.8.0",
     "react": "^19.2.4",
