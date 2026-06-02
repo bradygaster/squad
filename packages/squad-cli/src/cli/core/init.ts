@@ -13,6 +13,7 @@ import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
 import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
+import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 
 const storage = new FSStorageProvider();
 
@@ -332,6 +333,20 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
         // Install git hooks for automatic state sync on push/pull
         installGitHooks(dest, { force: false });
+
+        // INSIDER3-INIT-LEAK fix: the SDK already wrote decisions.md and
+        // agents/<n>/history.md into the working tree (it had no knowledge of
+        // the backend choice at the time). Lift those mutable files onto the
+        // squad-state orphan branch and remove the working-tree copies so the
+        // backend is the single source of truth post-init.
+        try {
+          const lifted = liftInitMutableStateOntoOrphan(dest);
+          if (lifted.length > 0) {
+            success(`migrated ${lifted.length} mutable state file(s) onto squad-state branch (removed from working tree)`);
+          }
+        } catch (err) {
+          console.warn(`${YELLOW}⚠ Could not lift mutable state onto squad-state branch: ${err instanceof Error ? err.message : err}${RESET}`);
+        }
       }
     } else {
       console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (local).${RESET}`);

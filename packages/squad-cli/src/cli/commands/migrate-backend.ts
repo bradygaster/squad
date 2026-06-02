@@ -36,7 +36,7 @@ const MIGRATABLE_PATHS = [
 ];
 
 /** Best-effort: ensure the squad-state orphan branch exists. Returns true on success. */
-function ensureOrphanBranch(dest: string): boolean {
+export function ensureOrphanBranch(dest: string): boolean {
   try {
     execFileSync('git', ['rev-parse', '--verify', 'refs/heads/squad-state'], {
       cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
@@ -236,4 +236,38 @@ export async function migrateStateBackend(dest: string, target: string): Promise
   }
 
   console.log(`\n${GREEN}${BOLD}✓ Migration complete.${RESET} Backend is now '${target}'.\n`);
+}
+
+/**
+ * INSIDER3-INIT-LEAK fix: when `squad init --state-backend orphan|two-layer`
+ * runs, the SDK still hand-writes mutable state files (decisions.md and each
+ * agent's history.md) into the working tree because it has no knowledge of the
+ * future backend choice. This helper, invoked by the CLI immediately after the
+ * orphan branch is created, lifts those mutable files onto the squad-state
+ * orphan branch and removes them from the working tree so post-init agents
+ * read state exclusively through the runtime bridge.
+ *
+ * Source-of-truth hierarchy preserved: static files (team.md, charters,
+ * ceremonies.md, casting/*, templates/*) are NEVER touched — only mutable
+ * state (decisions.md, agents/<n>/history.md) migrates.
+ *
+ * Returns the relative paths of files that were migrated + removed.
+ */
+export function liftInitMutableStateOntoOrphan(dest: string): string[] {
+  const files = collectWorktreeState(dest);
+  if (files.length === 0) return [];
+  const wrote = writeFilesToOrphanBranch(dest, files);
+  if (wrote <= 0) return [];
+  const removed: string[] = [];
+  const squadDir = path.join(dest, '.squad');
+  for (const f of files) {
+    const full = path.join(squadDir, f.relPath);
+    try {
+      if (fs.existsSync(full)) fs.unlinkSync(full);
+      removed.push(f.relPath);
+    } catch {
+      // Leave file behind rather than aborting; the runtime bridge already has authoritative copy.
+    }
+  }
+  return removed;
 }
