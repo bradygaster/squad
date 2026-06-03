@@ -428,6 +428,9 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   console.log();
   console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
   console.log();
+  console.log(`${DIM}Tip: for non-interactive scripts that need squad_state tools, add to package.json:${RESET}`);
+  console.log(`${DIM}  "squad:copilot": "copilot --additional-mcp-config @.mcp.json"${RESET}`);
+  console.log();
 
   // ── Personal squad bridge ───────────────────────────────────────────
   if (options.isGlobal) {

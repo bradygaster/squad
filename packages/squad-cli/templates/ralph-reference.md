@@ -93,7 +93,7 @@ This runs as a standalone local process (not inside Copilot) that:
 - Assigns @copilot to `squad:copilot` issues (if auto-assign is enabled)
 - Runs until Ctrl+C
 
-**Three layers of Ralph:**
+> **MCP tools in watch mode:** `squad watch` automatically injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot sub-invocation so `squad_state_*` tools are available. This is required because Copilot CLI's non-interactive (`-p`) mode does not auto-load workspace `.mcp.json` due to a folder-trust security gate. If `.mcp.json` is missing, run `squad init` or `squad upgrade` to regenerate it.
 
 | Layer | When | How |
 |-------|------|-----|

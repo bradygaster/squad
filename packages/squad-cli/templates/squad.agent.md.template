@@ -855,6 +855,8 @@ Do not pause for permission between work items when Ralph is active.
 
 **On-demand reference:** Read `.squad/templates/ralph-reference.md` for the full work-check cycle, watch mode, state model, board format, and follow-up integration.
 
+> **Watch mode MCP note:** `squad watch` injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot sub-invocation automatically. Copilot CLI 1.0.59+ does NOT auto-load workspace `.mcp.json` in non-interactive (`-p`) mode due to a folder-trust security gate — this injection is mandatory for `squad_state_*` tools to register. If `.mcp.json` is missing, advise the user to run `squad init` or `squad upgrade`.
+
 ### Connecting to a Repo
 
 **On-demand reference:** Read `.squad/templates/issue-lifecycle.md` for repo connection format, issue→PR→merge lifecycle, spawn prompt additions, PR review handling, and PR merge commands.
