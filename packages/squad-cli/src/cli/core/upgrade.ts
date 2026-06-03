@@ -6,7 +6,7 @@
 
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, migrateMcpConfig } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -739,6 +739,36 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   // Verify squad exists
   if (!storage.existsSync(squadDirInfo.path)) {
     fatal('No squad found — run init first.');
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 2: fold legacy `.copilot/mcp-config.json` into `.mcp.json` so
+  // Copilot CLI 1.0.58+ actually discovers the user's MCP servers (the
+  // legacy path was never auto-loaded — see github/copilot-cli#3642).
+  // Runs BEFORE template/migration work so downstream steps see the merged
+  // server set. Idempotent — re-runs after success are no-ops.
+  // -------------------------------------------------------------------------
+  try {
+    const migrateResult = migrateMcpConfig(dest);
+    if (migrateResult.status === 'migrated') {
+      success(
+        `📋 Migrated ${migrateResult.migrated} MCP server(s) from ` +
+        `.copilot/mcp-config.json → .mcp.json. ` +
+        `Legacy file preserved; you may delete it once verified.`,
+      );
+      filesUpdated.push('.mcp.json (merged from .copilot/mcp-config.json)');
+    }
+    for (const warningLine of migrateResult.warnings) {
+      warn(warningLine);
+    }
+    if (migrateResult.status === 'malformed-target') {
+      warn(migrateResult.error ?? 'Could not merge .copilot/mcp-config.json — .mcp.json is malformed.');
+    } else if (migrateResult.status === 'malformed-legacy') {
+      warn(migrateResult.error ?? 'Could not parse .copilot/mcp-config.json — skipping MCP merge.');
+    }
+  } catch (err) {
+    // Never block an upgrade on a merge failure — surface and continue.
+    warn(`MCP config merge failed: ${(err as Error).message}`);
   }
 
   const agentDest = path.join(dest, '.github', 'agents', 'squad.agent.md');
