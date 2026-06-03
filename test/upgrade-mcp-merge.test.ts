@@ -19,7 +19,7 @@
  * @module test/upgrade-mcp-merge
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -241,5 +241,21 @@ describe('atomicWriteJson', () => {
     expect(existsSync(target)).toBe(true);
     const leftovers = readdirSync(repo).filter(name => name.endsWith('.tmp') || name.includes('.tmp.'));
     expect(leftovers).toEqual([]);
+  });
+
+  it('throws before touching disk when the serialized payload fails JSON.parse (Worf Condition B)', () => {
+    // Simulate any future regression where stringify produces non-JSON output
+    // (e.g. a custom toJSON returning a partial-object fragment). The round-
+    // trip parse must reject BEFORE any tempfile is created.
+    const target = join(repo, '.mcp.json');
+    const spy = vi.spyOn(JSON, 'stringify').mockReturnValueOnce('not valid json {{');
+    try {
+      expect(() => atomicWriteJson(target, { mcpServers: {} })).toThrow(SyntaxError);
+      expect(existsSync(target)).toBe(false);
+      const leftovers = readdirSync(repo).filter(name => name.endsWith('.tmp') || name.includes('.tmp.'));
+      expect(leftovers).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

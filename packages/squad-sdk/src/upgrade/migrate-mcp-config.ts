@@ -353,6 +353,14 @@ export function atomicWriteJson(filePath: string, value: unknown): void {
     `.${pathBasename(filePath)}.${process.pid}.${Date.now()}.tmp`,
   );
   const serialized = JSON.stringify(value, null, 2) + '\n';
+  // Worf Condition B (defense-in-depth): round-trip the payload through
+  // JSON.parse before touching disk. Closes the silent-fallback hazard
+  // documented in Seven's precedence research — Copilot CLI 1.0.58 silently
+  // drops malformed `.mcp.json` with no warning, so we must guarantee we
+  // never write invalid JSON in the first place. Cheap (<1ms) insurance
+  // against future refactors that introduce custom `toJSON` methods or
+  // non-stringify-safe values.
+  JSON.parse(serialized);
   try {
     writeFileSync(tempPath, serialized, 'utf-8');
     renameSync(tempPath, filePath);

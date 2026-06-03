@@ -1345,21 +1345,33 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     if (squadStateSpec) {
       const legacyMcpPath = join(teamRoot, '.copilot', 'mcp-config.json');
       const { name: _name, ...squadStateEntry } = squadStateSpec;
-      const pinResult = ensureMcpServerPinned(
-        legacyMcpPath,
-        'squad_state',
-        squadStateEntry,
-        { createIfMissing: false, overwriteOnConflict: true },
-      );
-      if (pinResult.status === 'updated' || pinResult.status === 'added') {
-        warnings.push(
-          `Updated legacy .copilot/mcp-config.json with the latest squad_state pin. ` +
-          `Run \`squad upgrade\` to fold this file into .mcp.json and delete the legacy copy.`,
+      // Worf Condition A: the legacy dual-write is a best-effort mirror; a
+      // permission error or EISDIR on the legacy path must NOT crash `squad
+      // init`. Downgrade any thrown error to a warning so the canonical
+      // `.mcp.json` write (above) stays the source of truth.
+      try {
+        const pinResult = ensureMcpServerPinned(
+          legacyMcpPath,
+          'squad_state',
+          squadStateEntry,
+          { createIfMissing: false, overwriteOnConflict: true },
         );
-      } else if (pinResult.status === 'conflict' || pinResult.status === 'malformed') {
+        if (pinResult.status === 'updated' || pinResult.status === 'added') {
+          warnings.push(
+            `Updated legacy .copilot/mcp-config.json with the latest squad_state pin. ` +
+            `Run \`squad upgrade\` to fold this file into .mcp.json and delete the legacy copy.`,
+          );
+        } else if (pinResult.status === 'conflict' || pinResult.status === 'malformed') {
+          warnings.push(
+            pinResult.warning ??
+            'Legacy .copilot/mcp-config.json present but could not be reconciled — run `squad upgrade`.',
+          );
+        }
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? 'UNKNOWN';
         warnings.push(
-          pinResult.warning ??
-          'Legacy .copilot/mcp-config.json present but could not be reconciled — run `squad upgrade`.',
+          `Legacy .copilot/mcp-config.json could not be reconciled (${code}): ` +
+          `${(err as Error).message}. Run \`squad upgrade\` after fixing permissions.`,
         );
       }
     }

@@ -4,9 +4,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, readdir, readFile } from 'fs/promises';
+import { mkdir, rm, readdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, chmodSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
@@ -249,4 +249,31 @@ describe('CLI: init command', () => {
     const secondContent = await readFile(agentPath, 'utf-8');
     expect(secondContent).toContain('<!-- MODIFIED -->');
   });
+
+  // Worf Condition A: if the legacy .copilot/mcp-config.json can't be written
+  // (read-only dir, EACCES, EISDIR, etc.), the legacy dual-write mirror must
+  // degrade to a warning — `squad init` must not crash. Skipped on Windows
+  // where chmod-based read-only directory simulation is unreliable on NTFS.
+  it.skipIf(process.platform === 'win32')(
+    'does not crash when legacy .copilot/mcp-config.json cannot be reconciled (EACCES)',
+    async () => {
+      const copilotDir = join(TEST_ROOT, '.copilot');
+      await mkdir(copilotDir, { recursive: true });
+      const legacyPath = join(copilotDir, 'mcp-config.json');
+      // Empty mcpServers object → ensureMcpServerPinned will take the 'added'
+      // branch and call atomicWriteJson, which fails on the read-only dir.
+      await writeFile(legacyPath, '{"mcpServers":{}}\n', 'utf-8');
+      chmodSync(copilotDir, 0o555);
+
+      try {
+        await expect(runInit(TEST_ROOT)).resolves.not.toThrow();
+        // Canonical .mcp.json still gets created — primary write happens
+        // BEFORE the legacy mirror, so the failure doesn't poison it.
+        expect(existsSync(join(TEST_ROOT, '.mcp.json'))).toBe(true);
+      } finally {
+        // Restore perms so afterEach can clean up the tempdir.
+        chmodSync(copilotDir, 0o755);
+      }
+    },
+  );
 });
