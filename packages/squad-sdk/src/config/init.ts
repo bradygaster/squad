@@ -19,6 +19,7 @@ import type { SubSquadDefinition } from '../streams/types.js';
 import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
 import { getRoleById } from '../roles/index.js';
 import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
+import { ensureMcpServerPinned } from '../upgrade/index.js';
 
 // ============================================================================
 // Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
@@ -1334,6 +1335,33 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
       createdFiles.push(toRelativePath(mcpConfigPath));
     } else {
       skippedFiles.push(toRelativePath(mcpConfigPath));
+    }
+
+    // Dual-write: if a legacy `.copilot/mcp-config.json` already exists from
+    // a prior init, keep its `squad_state` pin in sync with the new spec so
+    // users mid-migration don't lose the pin if they re-init. Never create
+    // the legacy file on a fresh init — that would defeat the migration.
+    const squadStateSpec = mcpServers.find(s => s.name === 'squad_state');
+    if (squadStateSpec) {
+      const legacyMcpPath = join(teamRoot, '.copilot', 'mcp-config.json');
+      const { name: _name, ...squadStateEntry } = squadStateSpec;
+      const pinResult = ensureMcpServerPinned(
+        legacyMcpPath,
+        'squad_state',
+        squadStateEntry,
+        { createIfMissing: false },
+      );
+      if (pinResult.status === 'updated' || pinResult.status === 'added') {
+        warnings.push(
+          `Updated legacy .copilot/mcp-config.json with the latest squad_state pin. ` +
+          `Run \`squad upgrade\` to fold this file into .mcp.json and delete the legacy copy.`,
+        );
+      } else if (pinResult.status === 'conflict' || pinResult.status === 'malformed') {
+        warnings.push(
+          pinResult.warning ??
+          'Legacy .copilot/mcp-config.json present but could not be reconciled — run `squad upgrade`.',
+        );
+      }
     }
   }
 
