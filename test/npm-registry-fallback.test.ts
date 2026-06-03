@@ -40,11 +40,19 @@ describe('resolveSquadStateMcpSpec: chooses pinned or @insider fallback', () => 
 
   it('falls back to @insider when version is empty / 0.0.0', async () => {
     const spec = await resolveSquadStateMcpSpec('0.0.0');
-    expect(spec).toBe('@bradygaster/squad-cli@insider');
+    expect(spec).toEqual({
+      command: 'npx',
+      args: ['-y', '@bradygaster/squad-cli@insider', 'state-mcp'],
+      source: 'insider',
+    });
   });
 
   it('falls back to @insider when version is not published on the registry', async () => {
     const spec = await resolveSquadStateMcpSpec('999.999.999-not-a-real-version');
-    expect(spec).toBe('@bradygaster/squad-cli@insider');
+    expect(spec).toEqual({
+      command: 'npx',
+      args: ['-y', '@bradygaster/squad-cli@insider', 'state-mcp'],
+      source: 'insider',
+    });
   });
 });

@@ -44,21 +44,20 @@ describe('copilot-invocation: --additional-mcp-config wrapping', () => {
   });
 
   it('returns `--additional-mcp-config @<absolute path>` when config exists', () => {
-    mkdirSync(path.join(workdir, '.copilot'), { recursive: true });
-    const cfg = path.join(workdir, '.copilot', 'mcp-config.json');
+    const cfg = path.join(workdir, '.mcp.json');
     writeFileSync(cfg, '{"mcpServers":{}}');
     const args = buildAdditionalMcpConfigArgs('copilot', workdir);
-    expect(args).toEqual(['--additional-mcp-config', `@${cfg}`]);
+    expect(args).toEqual(['--yolo', '--additional-mcp-config', `@${cfg}`]);
   });
 
   it('withAdditionalMcpConfig prepends the flag to user args when applicable', () => {
-    mkdirSync(path.join(workdir, '.copilot'), { recursive: true });
-    const cfg = path.join(workdir, '.copilot', 'mcp-config.json');
+    const cfg = path.join(workdir, '.mcp.json');
     writeFileSync(cfg, '{}');
     const result = withAdditionalMcpConfig('copilot', ['-p', 'hi'], workdir);
-    expect(result[0]).toBe('--additional-mcp-config');
-    expect(result[1]).toBe(`@${cfg}`);
-    expect(result.slice(2)).toEqual(['-p', 'hi']);
+    expect(result[0]).toBe('--yolo');
+    expect(result[1]).toBe('--additional-mcp-config');
+    expect(result[2]).toBe(`@${cfg}`);
+    expect(result.slice(3)).toEqual(['-p', 'hi']);
   });
 
   it('withAdditionalMcpConfig is a no-op when injection is not applicable', () => {
