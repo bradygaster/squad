@@ -20,6 +20,15 @@ const RETRY_MAX = 3;
 const RETRY_BASE_MS = 100;
 const RETRY_MAX_DELAY_MS = 2000;
 
+/**
+ * Buffer ceiling for git stdout/stderr. The Node default is 1 MiB, which is
+ * easily blown by `git ls-tree` against large trees or `git notes show` on
+ * sizeable JSON blobs — spawnSync then dies with ENOBUFS and the wrapper
+ * surfaces it as a generic "git command failed". 256 MiB keeps us safely
+ * above any realistic `.squad/` state payload while still capping memory.
+ */
+const GIT_MAX_BUFFER = 256 * 1024 * 1024;
+
 // ── Circuit breaker configuration ───────────────────────────────────
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 const CIRCUIT_BREAKER_COOLDOWN_MS = 30_000;
@@ -42,7 +51,7 @@ function gitExecWithRetry(args: string[], cwd: string, trimOutput = true): strin
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
     try {
-      const raw = execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+      const raw = execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: GIT_MAX_BUFFER });
       return trimOutput ? raw.trim() : raw;
     } catch (err: unknown) {
       lastError = err;
@@ -66,7 +75,7 @@ function gitExecWithInputAndRetry(args: string[], cwd: string, input: string): s
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
     try {
-      return execFileSync('git', args, { cwd, input, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      return execFileSync('git', args, { cwd, input, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: GIT_MAX_BUFFER }).trim();
     } catch (err: unknown) {
       lastError = err;
       const stderr = (err as { stderr?: string }).stderr ?? '';
