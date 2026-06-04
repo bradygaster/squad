@@ -1098,6 +1098,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'notes') {
+    const { runNotes } = await import('./cli/commands/notes.js');
+    await runNotes(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
   if (cmd === 'config') {
     const { runConfig } = await import('./cli/commands/config.js');
     await runConfig(getSquadStartDir(), args.slice(1));
