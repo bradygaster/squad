@@ -289,10 +289,20 @@ export class GitNotesBackend implements StateBackend {
   private readonly cwd: string;
   private readonly ref = 'squad';
   private readonly breaker = new CircuitBreaker();
+  private _rootCommit: string | undefined;
   constructor(repoRoot: string) { this.cwd = repoRoot; }
 
+  /** Returns the root commit SHA — a stable anchor that never moves. Cached after first call. */
+  private rootCommit(): string {
+    if (!this._rootCommit) {
+      this._rootCommit = gitExecOrThrow('rev-list --max-parents=0 HEAD', this.cwd);
+    }
+    return this._rootCommit;
+  }
+
   private loadBlob(): Record<string, string> {
-    const raw = gitExecMaybeMissing(`notes --ref=${this.ref} show HEAD`, this.cwd);
+    const anchor = this.rootCommit();
+    const raw = gitExecMaybeMissing(`notes --ref=${this.ref} show ${anchor}`, this.cwd);
     if (!raw) return {};
     try {
       const parsed: unknown = JSON.parse(raw);
@@ -304,16 +314,17 @@ export class GitNotesBackend implements StateBackend {
   }
 
   private saveBlob(blob: Record<string, string>): void {
+    const anchor = this.rootCommit();
     const json = JSON.stringify(blob, null, 2);
     try {
       gitExecWithInputAndRetry(
-        ['notes', `--ref=${this.ref}`, 'add', '-f', '--file', '-', 'HEAD'],
+        ['notes', `--ref=${this.ref}`, 'add', '-f', '--file', '-', anchor],
         this.cwd,
         json,
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`git-notes backend: failed to write note on HEAD — ${msg}`);
+      throw new Error(`git-notes backend: failed to write note on root commit — ${msg}`);
     }
   }
 
