@@ -154,4 +154,28 @@ export function registerCLISteps(registry: StepDefinitions): void {
     },
     registry
   );
+
+  registerStep(
+    'Then',
+    /the temp directory has no "(.+)" entry/,
+    async (stepText, context) => {
+      // Guards against regressions where a `--help` intercept misfires and
+      // the underlying command still scaffolds files (e.g. `squad init --help`
+      // writing `.squad/`, `.github/`, `.gitignore`).
+      const match = stepText.match(/the temp directory has no "(.+)" entry/);
+      if (!match) throw new Error('Pattern match failed');
+
+      const entry = match[1];
+      const tempDir = context.tempDir as string | undefined;
+      if (!tempDir) {
+        throw new Error('No temp directory in context — use the Given step that creates one');
+      }
+      const target = join(tempDir, entry);
+      expect(
+        existsSync(target),
+        `expected no '${entry}' under temp dir but found ${target}`
+      ).toBe(false);
+    },
+    registry
+  );
 }

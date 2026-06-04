@@ -91,6 +91,7 @@ import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
 import { runInit } from './cli/core/init.js';
 import { runCost } from './cli/commands/cost.js';
 import { getPackageVersion } from './cli/core/version.js';
+import { printCommandHelp, printGenericCommandHelp } from './cli/core/command-help.js';
 
 // Lazy-load squad-sdk to avoid triggering @github/copilot-sdk import on Node 24+
 // (Issue: copilot-sdk has broken ESM imports - vscode-jsonrpc/node without .js extension)
@@ -283,6 +284,27 @@ async function main(): Promise<void> {
     return;
   }
 
+  // --help / -h on a subcommand → print command-specific help and exit.
+  // Without this intercept the flag was silently dropped and the command
+  // would execute for real (sometimes with destructive side effects, e.g.
+  // `squad init --help` scaffolding files, or `squad triage --help` starting
+  // the polling loop). See #1201.
+  if (
+    cmd &&
+    cmd !== 'help' &&
+    cmd !== '--help' &&
+    cmd !== '-h' &&
+    cmd !== 'version' &&
+    cmd !== '--version' &&
+    cmd !== '-v' &&
+    (args.includes('--help') || args.includes('-h'))
+  ) {
+    if (!printCommandHelp(cmd, VERSION)) {
+      printGenericCommandHelp(cmd);
+    }
+    return;
+  }
+
   // No args → launch interactive shell; whitespace-only arg → show help
   if (rawCmd === undefined) {
     // Fire-and-forget update check — non-blocking, never delays shell startup
@@ -425,11 +447,6 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'state-mcp') {
-    if (args.includes('--help') || args.includes('-h')) {
-      const { printStateMcpHelp } = await import('./cli/commands/state-mcp.js');
-      printStateMcpHelp();
-      return;
-    }
     const { runStateMcp } = await import('./cli/commands/state-mcp.js');
     await runStateMcp(getSquadStartDir());
     return;
@@ -624,38 +641,6 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'loop') {
-    // --help
-    if (args.includes('--help') || args.includes('-h')) {
-      console.log(`\n${BOLD}squad loop${RESET} — Prompt-driven continuous work loop\n`);
-      console.log(`Usage: squad loop [options]\n`);
-      console.log(`Reads loop.md and runs it as a continuous work loop.\n`);
-      console.log(`Options:`);
-      console.log(`  ${BOLD}--init${RESET}                Generate a boilerplate loop.md`);
-      console.log(`  ${BOLD}--file <path>${RESET}         Path to loop file (default: loop.md)`);
-      console.log(`  ${BOLD}--interval <min>${RESET}      Override loop interval in minutes`);
-      console.log(`  ${BOLD}--timeout <min>${RESET}       Override max minutes per cycle`);
-      console.log(`  ${BOLD}--agent-flags "..."${RESET}   Extra flags for the agent CLI`);
-      console.log(`  ${BOLD}--agent-cmd <cmd>${RESET}     Override the agent CLI (default: auto-detect)`);
-      console.log(`  ${BOLD}--copilot-flags "..."${RESET} Alias for --agent-flags (backward compat)`);
-      console.log(`\nCapabilities (composable with the loop):`);
-      console.log(`  ${BOLD}--self-pull${RESET}           git fetch/pull at round start`);
-      console.log(`  ${BOLD}--monitor-email${RESET}       Scan email for actionable items`);
-      console.log(`  ${BOLD}--monitor-teams${RESET}       Scan Teams for actionable messages`);
-      console.log(`  ${BOLD}--decision-hygiene${RESET}    Auto-merge decision inbox`);
-      console.log(`  ${BOLD}--retro${RESET}               Enforce retrospective checks`);
-      console.log(`\nFrontmatter (in loop.md):`);
-      console.log(`  configured: true     ${DIM}(required — confirms intentional setup)${RESET}`);
-      console.log(`  interval: 10         ${DIM}(minutes between cycles)${RESET}`);
-      console.log(`  timeout: 30          ${DIM}(max minutes per cycle)${RESET}`);
-      console.log(`  description: "..."   ${DIM}(shown in status output)${RESET}`);
-      console.log(`\nExamples:`);
-      console.log(`  squad loop                          ${DIM}# run loop.md${RESET}`);
-      console.log(`  squad loop --init                   ${DIM}# generate boilerplate${RESET}`);
-      console.log(`  squad loop --file ops/loop.md       ${DIM}# custom loop file${RESET}`);
-      console.log(`  squad loop --monitor-email          ${DIM}# with email monitoring${RESET}`);
-      return;
-    }
-
     const { runLoop, generateLoopFile } = await import('./cli/commands/loop.js');
 
     // --init: scaffold a boilerplate loop.md
