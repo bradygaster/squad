@@ -1416,3 +1416,39 @@ describe('OrphanBranchBackend CAS retry semantics', () => {
     expect(caught).toBeInstanceOf(StateBackendConcurrencyError);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────
+// Regression: arg-tokenization in gitExecMaybeMissing.
+// The previous implementation accepted a space-separated string and did
+// args.split(' '), which silently mangled any argument containing a space.
+// After the P1.2 fix, helpers take a string[] so spaces in path segments,
+// commit messages, and refs survive untouched.
+// validateStateKey forbids \n/\r/\t but NOT space, so spaces in state keys
+// are legal and must be supported end-to-end.
+// ───────────────────────────────────────────────────────────────────
+
+describe('gitExec arg tokenization (P1.2 regression)', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('OrphanBranchBackend handles state keys with spaces (write/read/exists/delete round-trip)', { timeout: 20_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    const key = 'agents/data picard.md';
+    b.write(key, 'team config with space in name');
+    expect(b.exists(key)).toBe(true);
+    expect(b.read(key)).toBe('team config with space in name');
+    const listing = b.list('agents');
+    expect(listing).toContain('data picard.md');
+    expect(b.delete(key)).toBe(true);
+    expect(b.exists(key)).toBe(false);
+  });
+
+  it('GitNotesBackend handles state keys with spaces (write/read/list round-trip)', { timeout: 15_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    const key = 'decisions/my decision.md';
+    b.write(key, 'decision body');
+    expect(b.read(key)).toBe('decision body');
+    expect(b.exists(key)).toBe(true);
+    expect(b.list('decisions')).toContain('my decision.md');
+  });
+});

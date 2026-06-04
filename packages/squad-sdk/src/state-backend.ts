@@ -188,29 +188,35 @@ export class CircuitBreaker {
  * Execute a git command, returning null for expected absence (e.g., missing ref/path/note).
  * Throws GitExecError for real failures (permission denied, corruption, broken repo).
  * Retries transient errors before classifying.
+ *
+ * NOTE: `args` is an array, NOT a space-separated string. This was previously a
+ * string split on whitespace, which silently mangled any argument containing a
+ * space (commit messages, paths with spaces, etc.).
  */
-function gitExecMaybeMissing(args: string, cwd: string, trimOutput = true): string | null {
+function gitExecMaybeMissing(args: string[], cwd: string, trimOutput = true): string | null {
   try {
-    return gitExecWithRetry(args.split(' '), cwd, trimOutput);
+    return gitExecWithRetry(args, cwd, trimOutput);
   } catch (err: unknown) {
     if (isExpectedMissing(err)) return null;
     const stderr = (err as { stderr?: string }).stderr ?? '';
     const msg = err instanceof Error ? err.message : String(err);
-    throw new GitExecError(`git ${args}`, msg, stderr);
+    throw new GitExecError(`git ${args.join(' ')}`, msg, stderr);
   }
 }
 
 /**
  * Execute a git command that MUST succeed. Throws GitExecError on any failure.
  * Retries transient errors before throwing.
+ *
+ * NOTE: `args` is an array, NOT a space-separated string (see gitExecMaybeMissing).
  */
-function gitExecOrThrow(args: string, cwd: string): string {
+function gitExecOrThrow(args: string[], cwd: string): string {
   try {
-    return gitExecWithRetry(args.split(' '), cwd);
+    return gitExecWithRetry(args, cwd);
   } catch (err: unknown) {
     const stderr = (err as { stderr?: string }).stderr ?? '';
     const msg = err instanceof Error ? err.message : String(err);
-    throw new GitExecError(`git ${args}`, msg, stderr);
+    throw new GitExecError(`git ${args.join(' ')}`, msg, stderr);
   }
 }
 
@@ -391,14 +397,14 @@ export class GitNotesBackend implements StateBackend {
   /** Returns the root commit SHA — a stable anchor that never moves. Cached after first call. */
   private rootCommit(): string {
     if (!this._rootCommit) {
-      this._rootCommit = gitExecOrThrow('rev-list --max-parents=0 HEAD', this.cwd);
+      this._rootCommit = gitExecOrThrow(['rev-list', '--max-parents=0', 'HEAD'], this.cwd);
     }
     return this._rootCommit;
   }
 
   /** Resolve the current SHA of refs/notes/<ref>, or null if it doesn't exist. */
   private readNotesRef(): string | null {
-    return gitExecMaybeMissing(`rev-parse --verify refs/notes/${this.ref}`, this.cwd);
+    return gitExecMaybeMissing(['rev-parse', '--verify', `refs/notes/${this.ref}`], this.cwd);
   }
 
   /**
@@ -415,7 +421,7 @@ export class GitNotesBackend implements StateBackend {
   private loadBlobAt(refSha: string | null): Record<string, string> {
     if (!refSha) return {};
     const anchor = this.rootCommit();
-    const raw = gitExecMaybeMissing(`show ${refSha}:${anchor}`, this.cwd, false);
+    const raw = gitExecMaybeMissing(['show', `${refSha}:${anchor}`], this.cwd, false);
     if (!raw) return {};
     try {
       const parsed: unknown = JSON.parse(raw);
@@ -541,7 +547,7 @@ export class OrphanBranchBackend implements StateBackend {
   }
 
   private ensureBranch(): void {
-    if (gitExecMaybeMissing(`rev-parse --verify refs/heads/${this.branch}`, this.cwd)) return;
+    if (gitExecMaybeMissing(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd)) return;
     let tree: string;
     try {
       tree = gitExecWithInputAndRetry(['mktree'], this.cwd, '');
@@ -565,14 +571,14 @@ export class OrphanBranchBackend implements StateBackend {
     const writeResult = tryUpdateRef(`refs/heads/${this.branch}`, commit, null, this.cwd);
     if (!writeResult.ok) {
       // Re-verify someone else created it; if so, we're done.
-      if (gitExecMaybeMissing(`rev-parse --verify refs/heads/${this.branch}`, this.cwd)) return;
+      if (gitExecMaybeMissing(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd)) return;
       throw new Error(`orphan backend: failed to initialize branch — ${writeResult.stderr}`);
     }
   }
 
   read(relativePath: string): string | undefined {
     return this.breaker.execute(() => {
-      const result = gitExecMaybeMissing(`show ${this.branch}:${normalizeKey(relativePath)}`, this.cwd, false);
+      const result = gitExecMaybeMissing(['show', `${this.branch}:${normalizeKey(relativePath)}`], this.cwd, false);
       return result ?? undefined;
     }, `orphan:read(${relativePath})`);
   }
@@ -594,10 +600,10 @@ export class OrphanBranchBackend implements StateBackend {
       let lastStderr = '';
       for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
         // Re-read the ref every iteration so we rebuild on top of the latest tree.
-        const parentCommit = gitExecMaybeMissing(`rev-parse --verify refs/heads/${this.branch}`, this.cwd);
+        const parentCommit = gitExecMaybeMissing(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd);
         let currentTree: string;
         if (parentCommit) {
-          const treeResult = gitExecMaybeMissing(`rev-parse ${parentCommit}^{tree}`, this.cwd);
+          const treeResult = gitExecMaybeMissing(['rev-parse', `${parentCommit}^{tree}`], this.cwd);
           currentTree = treeResult ?? gitExecWithInputAndRetry(['mktree'], this.cwd, '');
         } else {
           try { currentTree = gitExecWithInputAndRetry(['mktree'], this.cwd, ''); }
@@ -633,7 +639,7 @@ export class OrphanBranchBackend implements StateBackend {
 
   exists(relativePath: string): boolean {
     return this.breaker.execute(
-      () => gitExecMaybeMissing(`cat-file -t ${this.branch}:${normalizeKey(relativePath)}`, this.cwd) !== null,
+      () => gitExecMaybeMissing(['cat-file', '-t', `${this.branch}:${normalizeKey(relativePath)}`], this.cwd) !== null,
       `orphan:exists(${relativePath})`,
     );
   }
@@ -642,7 +648,7 @@ export class OrphanBranchBackend implements StateBackend {
     return this.breaker.execute(() => {
       const key = normalizeKey(relativeDir);
       const target = key ? `${this.branch}:${key}` : `${this.branch}:`;
-      const result = gitExecMaybeMissing(`ls-tree --name-only ${target}`, this.cwd);
+      const result = gitExecMaybeMissing(['ls-tree', '--name-only', target], this.cwd);
       if (!result) return [];
       return result.split('\n').filter(Boolean);
     }, `orphan:list(${relativeDir})`);
@@ -651,19 +657,19 @@ export class OrphanBranchBackend implements StateBackend {
   delete(relativePath: string): boolean {
     return this.breaker.execute(() => {
       const key = normalizeKey(relativePath);
-      if (gitExecMaybeMissing(`cat-file -t ${this.branch}:${key}`, this.cwd) === null) return false;
+      if (gitExecMaybeMissing(['cat-file', '-t', `${this.branch}:${key}`], this.cwd) === null) return false;
       this.ensureBranch();
 
       let lastStderr = '';
       for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
-        const parentCommit = gitExecMaybeMissing(`rev-parse --verify refs/heads/${this.branch}`, this.cwd);
+        const parentCommit = gitExecMaybeMissing(['rev-parse', '--verify', `refs/heads/${this.branch}`], this.cwd);
         if (!parentCommit) return false;
-        const treeResult = gitExecMaybeMissing(`rev-parse ${parentCommit}^{tree}`, this.cwd);
+        const treeResult = gitExecMaybeMissing(['rev-parse', `${parentCommit}^{tree}`], this.cwd);
         if (!treeResult) return false;
 
         // Re-check existence at the freshly-read tree — a concurrent delete may
         // have already removed our key, in which case there's nothing to do.
-        if (gitExecMaybeMissing(`cat-file -t ${parentCommit}:${key}`, this.cwd) === null) return false;
+        if (gitExecMaybeMissing(['cat-file', '-t', `${parentCommit}:${key}`], this.cwd) === null) return false;
 
         const newTree = this.removeFromTree(treeResult, key.split('/'));
         let newCommit: string;
@@ -696,7 +702,7 @@ export class OrphanBranchBackend implements StateBackend {
   private removeFromTree(baseTree: string, pathSegments: string[]): string {
     if (pathSegments.length === 0) throw new Error('orphan backend: empty path segments');
     if (pathSegments.length === 1) {
-      const listing = gitExecMaybeMissing(`ls-tree ${baseTree}`, this.cwd) ?? '';
+      const listing = gitExecMaybeMissing(['ls-tree', baseTree], this.cwd) ?? '';
       const lines = listing.split('\n').filter(Boolean);
       const filtered = lines.filter((line) => {
         const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
@@ -713,9 +719,9 @@ export class OrphanBranchBackend implements StateBackend {
     const subTreeHash = this.getSubtreeHash(baseTree, dir!);
     if (!subTreeHash) return baseTree;
     const childTree = this.removeFromTree(subTreeHash, rest);
-    const childListing = gitExecMaybeMissing(`ls-tree ${childTree}`, this.cwd);
+    const childListing = gitExecMaybeMissing(['ls-tree', childTree], this.cwd);
     if (!childListing || childListing.length === 0) {
-      const listing = gitExecMaybeMissing(`ls-tree ${baseTree}`, this.cwd) ?? '';
+      const listing = gitExecMaybeMissing(['ls-tree', baseTree], this.cwd) ?? '';
       const lines = listing.split('\n').filter(Boolean);
       const filtered = lines.filter((line) => {
         const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
@@ -749,7 +755,7 @@ export class OrphanBranchBackend implements StateBackend {
   }
 
   private getSubtreeHash(treeHash: string, name: string): string | null {
-    const listing = gitExecMaybeMissing(`ls-tree ${treeHash}`, this.cwd);
+    const listing = gitExecMaybeMissing(['ls-tree', treeHash], this.cwd);
     if (!listing) return null;
     for (const line of listing.split('\n')) {
       const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
@@ -759,7 +765,7 @@ export class OrphanBranchBackend implements StateBackend {
   }
 
   private replaceEntry(treeHash: string, name: string, mode: string, type: string, hash: string): string {
-    const listing = gitExecMaybeMissing(`ls-tree ${treeHash}`, this.cwd) ?? '';
+    const listing = gitExecMaybeMissing(['ls-tree', treeHash], this.cwd) ?? '';
     const lines = listing.split('\n').filter(Boolean);
     const filtered = lines.filter((line) => {
       const match = line.match(/^(\d+)\s+(blob|tree)\s+([a-f0-9]+)\t(.+)$/);
@@ -978,7 +984,7 @@ export class TwoLayerBackend implements StateBackend {
    */
   readNote(ref: string, commitSha: string): unknown | null {
     if (!this.isSafeRef(ref) || !this.isSafeCommitSha(commitSha)) return null;
-    const raw = gitExecMaybeMissing(`notes --ref=${ref} show ${commitSha}`, this.repoRoot, false);
+    const raw = gitExecMaybeMissing(['notes', `--ref=${ref}`, 'show', commitSha], this.repoRoot, false);
     if (raw === null) return null;
     try { return JSON.parse(raw); } catch { return null; }
   }
@@ -1002,7 +1008,7 @@ export class TwoLayerBackend implements StateBackend {
       throw new Error(`[two-layer] promoteNotes: unsafe ref '${ref}'`);
     }
 
-    const listing = gitExecMaybeMissing(`notes --ref=${ref} list`, this.repoRoot);
+    const listing = gitExecMaybeMissing(['notes', `--ref=${ref}`, 'list'], this.repoRoot);
     if (!listing) return result;
 
     // git notes list output: "<noteSha> <commitSha>" per line.
@@ -1016,7 +1022,7 @@ export class TwoLayerBackend implements StateBackend {
     if (noteCommitPairs.length === 0) return result;
 
     // Reachability filter: only commits reachable from HEAD.
-    const reachableRaw = gitExecMaybeMissing('rev-list HEAD', this.repoRoot);
+    const reachableRaw = gitExecMaybeMissing(['rev-list', 'HEAD'], this.repoRoot);
     if (!reachableRaw) return result;
     const reachable = new Set(reachableRaw.split('\n').map((s) => s.trim()).filter(Boolean));
 
@@ -1025,7 +1031,7 @@ export class TwoLayerBackend implements StateBackend {
     for (const { commitSha } of noteCommitPairs) {
       if (!reachable.has(commitSha)) continue;
 
-      const raw = gitExecMaybeMissing(`notes --ref=${ref} show ${commitSha}`, this.repoRoot, false);
+      const raw = gitExecMaybeMissing(['notes', `--ref=${ref}`, 'show', commitSha], this.repoRoot, false);
       if (raw === null) continue;
 
       let payload: unknown;
@@ -1044,7 +1050,7 @@ export class TwoLayerBackend implements StateBackend {
         const key = `promoted/${refKeySegment}/${commitSha}.json`;
         this.orphan.write(key, body);
         try {
-          gitExecOrThrow(`notes --ref=${ref} remove ${commitSha}`, this.repoRoot);
+          gitExecOrThrow(['notes', `--ref=${ref}`, 'remove', commitSha], this.repoRoot);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           console.warn(`[two-layer] promoteNotes: removed-source failed for ${commitSha} on ${ref}: ${msg}`);
@@ -1183,7 +1189,7 @@ function createBackend(type: StateBackendType, squadDir: string, repoRoot: strin
 }
 
 function requireGitRepository(repoRoot: string): void {
-  gitExecOrThrow('rev-parse --git-dir', repoRoot);
+  gitExecOrThrow(['rev-parse', '--git-dir'], repoRoot);
 }
 
 /** @internal Reset the one-shot git-notes migration warn flag. Only for use in tests. */
