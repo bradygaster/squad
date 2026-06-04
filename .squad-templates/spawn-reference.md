@@ -81,8 +81,7 @@ prompt: |
   Read `decisions.md` with `squad_state_read` when state tools are available; otherwise fall back to `.squad/decisions.md`.
   If .squad/identity/wisdom.md exists, read it before starting work.
   If .squad/identity/now.md exists, read it at spawn time.
-  Check .copilot/skills/ for copilot-level skills (process, workflow, protocol).
-  Check .squad/skills/ for team-level skills (patterns discovered during work).
+  Check project skill directories (.squad/skills/, .copilot/skills/, .github/skills/, .claude/skills/, .agents/skills/) for any SKILL.md the coordinator attached to your prompt.
   Read any relevant SKILL.md files before working.
 
   ⚠️ WORK FRESHNESS: When determining what to work on:
