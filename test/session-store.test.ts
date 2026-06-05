@@ -195,8 +195,49 @@ describe('loadLatestSession', () => {
 });
 
 // ============================================================================
-// loadSessionById
+// stateDir override (externalized state backend)
 // ============================================================================
+
+describe('external stateDir support', () => {
+  it('saveSession writes to stateDir/sessions, not teamRoot/.squad/sessions', () => {
+    const externalDir = join(tmpRoot, 'external-state');
+    mkdirSync(externalDir, { recursive: true });
+
+    const session = createSession();
+    session.messages.push({ role: 'user', content: 'external', timestamp: new Date() });
+    const filePath = saveSession(tmpRoot, session, externalDir);
+
+    expect(filePath.startsWith(join(externalDir, 'sessions'))).toBe(true);
+    expect(existsSync(filePath)).toBe(true);
+    // Nothing written under teamRoot
+    expect(existsSync(join(tmpRoot, '.squad', 'sessions'))).toBe(false);
+  });
+
+  it('loadLatestSession finds a session saved to an external stateDir', () => {
+    const externalDir = join(tmpRoot, 'external-state');
+    mkdirSync(externalDir, { recursive: true });
+
+    const session = createSession();
+    session.messages.push({ role: 'user', content: 'hello-external', timestamp: new Date() });
+    saveSession(tmpRoot, session, externalDir);
+
+    const loaded = loadLatestSession(tmpRoot, externalDir);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.id).toBe(session.id);
+    expect(loaded!.messages[0]!.content).toBe('hello-external');
+  });
+
+  it('loadLatestSession returns null when no sessions in external stateDir', () => {
+    const externalDir = join(tmpRoot, 'external-state');
+    mkdirSync(externalDir, { recursive: true });
+    // Sessions exist in teamRoot, but not in external dir
+    const session = createSession();
+    saveSession(tmpRoot, session);
+
+    expect(loadLatestSession(tmpRoot, externalDir)).toBeNull();
+  });
+});
+
 
 describe('loadSessionById', () => {
   it('returns null for non-existent session', () => {

@@ -35,6 +35,7 @@ function parseSubTasks(body: string | undefined): SubTask[] {
   return tasks;
 }
 
+
 function executeSubTask(
   prompt: string,
   context: WatchContext,

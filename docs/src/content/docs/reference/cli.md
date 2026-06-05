@@ -200,6 +200,8 @@ Each cycle, you will:
 Keep cycles to 20 minutes max.
 ```
 
+**MCP auto-injection:** When using the default Copilot agent, `squad loop` automatically injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot invocation. See [Copilot CLI MCP Trust Gate](../features/copilot-mcp-trust.md).
+
 For complete documentation and examples, see [Loop — Prompt-driven work loop](../features/loop.md).
 
 ---

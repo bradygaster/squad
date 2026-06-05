@@ -218,7 +218,7 @@ squad watch --execute --interval 15             # check every 15 minutes
 squad watch --execute --max-concurrent 2        # work on 2 issues in parallel
 ```
 
-When `--execute` is enabled, Ralph spawns Copilot CLI sessions for actionable issues (assigned to a squad member, not blocked, not already assigned to a human).
+When `--execute` is enabled, Ralph spawns Copilot CLI sessions for actionable issues (assigned to a squad member, not blocked, not already assigned to a human). Squad automatically injects `--yolo --additional-mcp-config @.mcp.json` into every spawned Copilot invocation so that MCP tools are available in non-interactive (`-p`) mode — see [Copilot CLI MCP Trust Gate](./copilot-mcp-trust.md) for details.
 
 **Example execution output:**
 

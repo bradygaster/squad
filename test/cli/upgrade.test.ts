@@ -14,6 +14,7 @@ import { runUpgrade, ensureGitattributes, ensureGitignore, ensureDirectories, en
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(tmpdir(), `.test-cli-upgrade-${randomBytes(4).toString('hex')}`);
+const TEST_HOME = join(tmpdir(), `.test-cli-upgrade-home-${randomBytes(4).toString('hex')}`);
 
 describe('CLI: upgrade command', () => {
   beforeEach(async () => {
@@ -21,14 +22,25 @@ describe('CLI: upgrade command', () => {
       await rm(TEST_ROOT, { recursive: true, force: true });
     }
     await mkdir(TEST_ROOT, { recursive: true });
-    
+    if (existsSync(TEST_HOME)) {
+      await rm(TEST_HOME, { recursive: true, force: true });
+    }
+    await mkdir(TEST_HOME, { recursive: true });
+    // iter-7: redirect ~/.copilot/mcp-config.json writes to a temp dir so
+    // tests don't pollute the developer's real HOME.
+    process.env.SQUAD_HOME_DIR_OVERRIDE = TEST_HOME;
+
     // Initialize a squad
     await runInit(TEST_ROOT);
   });
 
   afterEach(async () => {
+    delete process.env.SQUAD_HOME_DIR_OVERRIDE;
     if (existsSync(TEST_ROOT)) {
       await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+    if (existsSync(TEST_HOME)) {
+      await rm(TEST_HOME, { recursive: true, force: true });
     }
   });
 
@@ -156,7 +168,10 @@ describe('CLI: upgrade command', () => {
     const upgraded = await readFile(agentPath, 'utf-8');
     expect(upgraded).toContain('mcp-servers:');
     expect(upgraded).toContain('  squad_state:');
-    expect(upgraded).toContain("    args: ['-y', '@bradygaster/squad-cli', 'state-mcp']");
+    // After MCP-BRIDGE-BROKEN fix the args MUST pin the CLI version so npx
+    // does not silently resolve to the npm `latest` dist-tag (which lacks the
+    // state-mcp command). Match a regex rather than literal version.
+    expect(upgraded).toMatch(/args: \['-y', '@bradygaster\/squad-cli@[^']+', 'state-mcp'\]/);
     expect(upgraded).toContain('  EXAMPLE-github:');
     expect(upgraded).toContain("    args: ['-y', '@anthropic/github-mcp-server']");
     expect(upgraded).toContain('      GITHUB_TOKEN: ${GITHUB_TOKEN}');

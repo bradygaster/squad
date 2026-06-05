@@ -10,6 +10,7 @@ import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilit
 import { createVerboseLogger } from '../verbose.js';
 import { buildAgentCommand } from '../../../core/detect-agent-cli.js';
 import { loadAgentCharter } from '../../../shell/spawn.js';
+import { withAdditionalMcpConfig } from '../../../core/copilot-invocation.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -46,6 +47,7 @@ export function classifyIssue(title: string): 'read' | 'write' {
   if (isRead && !isWrite) return 'read';
   return 'write'; // default to write (safer — gets full agent session)
 }
+
 
 /** Labels that indicate an issue should not be auto-executed. */
 const BLOCKING_LABELS = ['status:blocked', 'status:wontfix', 'status:on-hold', 'blocked'];

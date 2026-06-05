@@ -261,6 +261,18 @@ describe('SquadClient — Auto-Reconnection', () => {
     await expect(client.createSession()).rejects.toThrow('ECONNREFUSED');
   });
 
+  it('should provide approve-once guidance for permission handler errors', async () => {
+    const client = new SquadClient({ autoReconnect: false });
+    await client.connect();
+
+    const MockedCopilotClient = CopilotClient as unknown as ReturnType<typeof vi.fn>;
+    const instance = MockedCopilotClient.mock.results[0].value;
+
+    instance.createSession.mockRejectedValue(new Error('onPermissionRequest is required'));
+
+    await expect(client.createSession()).rejects.toThrow('kind: "approve-once"');
+  });
+
   it('should not auto-reconnect after manual disconnect', async () => {
     const client = new SquadClient({ provider: mockProvider, autoReconnect: true, autoStart: false });
     await client.connect();

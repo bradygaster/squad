@@ -9,7 +9,6 @@ import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult }
 import { buildAgentCommand } from '../../../core/detect-agent-cli.js';
 
 const storage = new FSStorageProvider();
-
 function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     execFile(cmd, args, { cwd, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024, shell: true }, (err) => {

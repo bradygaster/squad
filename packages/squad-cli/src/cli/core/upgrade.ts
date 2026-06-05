@@ -14,6 +14,9 @@ import { TEMPLATE_MANIFEST, getTemplatesDir } from './templates.js';
 import { runMigrations } from './migrations.js';
 import { scrubEmails } from './email-scrub.js';
 import { getPackageVersion, stampVersion, readInstalledVersion } from './version.js';
+import { resolveSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
+export { resolveSquadStateMcpSpec } from './mcp-spec.js';
+import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 
 const storage = new FSStorageProvider();
 
@@ -26,12 +29,19 @@ interface McpServerSpec {
   env?: Record<string, string>;
 }
 
-function buildMcpServerSpecs(isGitHub: boolean): McpServerSpec[] {
+function buildMcpServerSpecs(isGitHub: boolean, cliVersion?: string): McpServerSpec[] {
+  // Pin the squad-cli package to the currently-installed CLI version so that
+  // `npx -y @bradygaster/squad-cli state-mcp` does NOT silently resolve to the
+  // npm `latest` dist-tag (which may predate the `state-mcp` command and thus
+  // expose zero tools to Copilot — see MCP-BRIDGE-BROKEN root cause).
+  const pkgSpec = cliVersion && cliVersion !== '0.0.0'
+    ? `@bradygaster/squad-cli@${cliVersion}`
+    : '@bradygaster/squad-cli';
   const servers: McpServerSpec[] = [
     {
       name: 'squad_state',
       command: 'npx',
-      args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
+      args: ['-y', pkgSpec, 'state-mcp'],
     },
   ];
 
@@ -66,9 +76,9 @@ function yamlEnvValue(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
-function buildMcpFrontmatterBlock(isGitHub: boolean): string {
+function buildMcpFrontmatterBlock(isGitHub: boolean, cliVersion?: string): string {
   const lines = ['mcp-servers:'];
-  for (const server of buildMcpServerSpecs(isGitHub)) {
+  for (const server of buildMcpServerSpecs(isGitHub, cliVersion)) {
     lines.push(`  ${server.name}:`);
     lines.push('    type: local');
     lines.push(`    command: ${server.command}`);
@@ -86,7 +96,7 @@ function buildMcpFrontmatterBlock(isGitHub: boolean): string {
   return lines.join('\n');
 }
 
-function injectMcpFrontmatter(content: string, isGitHub: boolean): string {
+function injectMcpFrontmatter(content: string, isGitHub: boolean, cliVersion?: string): string {
   const closingStart = content.indexOf('\n---', 4);
   if (!content.startsWith('---') || closingStart === -1) {
     return content;
@@ -94,7 +104,7 @@ function injectMcpFrontmatter(content: string, isGitHub: boolean): string {
 
   return content.slice(0, closingStart)
     + '\n'
-    + buildMcpFrontmatterBlock(isGitHub)
+    + buildMcpFrontmatterBlock(isGitHub, cliVersion)
     + content.slice(closingStart);
 }
 
@@ -205,7 +215,7 @@ function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): bo
 function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean): void {
   let agentContent = storage.readSync(agentSrc) ?? '';
   if (mcpConfigMode === 'agent-frontmatter') {
-    agentContent = injectMcpFrontmatter(agentContent, isGitHub);
+    agentContent = injectMcpFrontmatter(agentContent, isGitHub, cliVersion);
   }
   storage.writeSync(agentDest, agentContent);
   stampVersion(agentDest, cliVersion);
@@ -638,7 +648,7 @@ function refreshSquadTemplatesDir(dest: string, templatesDir: string): void {
 /**
  * Run all ensure* checks and skill/template sync — shared by both code paths
  */
-function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): void {
+async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): Promise<void> {
   const attrAdded = ensureGitattributes(dest);
   if (attrAdded.length > 0) {
     success(`ensured .gitattributes (${attrAdded.length} rules added)`);
@@ -678,6 +688,33 @@ function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: strin
   refreshSquadTemplatesDir(dest, templatesDir);
   success('refreshed .squad/templates/');
   filesUpdated.push('.squad/templates/');
+
+  // iter-8: write squad_state MCP entry to repo-root `.mcp.json`
+  // (auto-loaded by Copilot CLI 5.3+ walking up from cwd to git root)
+  // and tombstone any stale project-level entry left by older Squad
+  // versions in `.copilot/mcp-config.json`. No HOME modifications.
+  const pinnedSpec = await resolveSquadStateMcpSpec(getPackageVersion());
+  try {
+    const rootResult = ensureSquadStateMcpInRoot(dest, getPackageVersion(), pinnedSpec);
+    if (rootResult.written) {
+      success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(pinnedSpec)}) — Copilot CLI will auto-load on next invocation`);
+      filesUpdated.push('.mcp.json');
+    }
+  } catch (err) {
+    warn(`Could not write .mcp.json: ${err instanceof Error ? err.message : err}`);
+  }
+  const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
+  if (tomb.removed) {
+    success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
+    filesUpdated.push('.copilot/mcp-config.json (tombstoned)');
+  }
+}
+
+/** Human-readable single-line description of an McpSpec for success() messages. */
+export function describeMcpSpec(spec: SquadStateMcpSpec): string {
+  // After iter-7 all specs are `npx -y <pkg@version-or-tag> state-mcp`.
+  const pkg = spec.args[1] ?? '<unknown>';
+  return spec.source === 'insider' ? `${pkg} (@insider fallback)` : pkg;
 }
 
 export function ensureMemoryGovernanceUpgradeDefaults(dest: string): string[] {
@@ -786,7 +823,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     }
 
     // Run infrastructure ensure checks even when already current
-    runEnsureChecks(dest, templatesDir, filesUpdated);
+    await runEnsureChecks(dest, templatesDir, filesUpdated);
 
     return {
       fromVersion: oldVersion,
@@ -871,7 +908,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   }
 
   // Run infrastructure ensure checks
-  runEnsureChecks(dest, templatesDir, filesUpdated);
+  await runEnsureChecks(dest, templatesDir, filesUpdated);
 
   console.log();
   info(`Upgrade complete: v${fromLabel} → v${cliVersion}`);
@@ -945,14 +982,30 @@ export async function selfUpgradeCli(options: SelfUpgradeOptions = {}): Promise<
   try {
     execSync(cmd, { stdio: 'inherit' });
   } catch (err: unknown) {
-    const isPermission =
-      err instanceof Error &&
-      'code' in err &&
-      (err as NodeJS.ErrnoException).code === 'EACCES';
+    // UPGRADE-EPERM-FALSE-SUCCESS fix: do NOT swallow self-upgrade failures.
+    // Previously this only printed a warning and returned, causing the caller
+    // (cli-entry.ts) to then unconditionally print "✅ Upgraded" and exit 0.
+    // Now we surface the failure as a thrown error so the caller can exit non-zero
+    // and avoid the contradictory success message.
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const code = err instanceof Error && 'code' in err
+      ? ((err as NodeJS.ErrnoException).code ?? '')
+      : '';
+    const isPermission = code === 'EACCES' || code === 'EPERM' || /EACCES|EPERM|permission denied/i.test(errMsg);
+    const isBusy = code === 'EBUSY' || /EBUSY|in use|cannot access|being used by another process/i.test(errMsg);
+
+    let hint: string;
     if (isPermission) {
-      warn(`Permission denied. Try: sudo ${cmd}`);
+      hint = `Permission denied. Try: sudo ${cmd}`;
+    } else if (isBusy) {
+      hint = `A file is in use (likely another squad shell is running). Close other squad CLI processes and retry: ${cmd}`;
     } else {
-      warn(`Upgrade failed. Try running manually: ${cmd}`);
+      hint = `Upgrade failed. Try running manually: ${cmd}`;
     }
+
+    warn(hint);
+    const failure = new Error(`Self-upgrade failed: ${hint}`);
+    (failure as NodeJS.ErrnoException).code = code || undefined;
+    throw failure;
   }
 }

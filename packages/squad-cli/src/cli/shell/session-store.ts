@@ -32,8 +32,8 @@ export interface SessionSummary {
 /** 24 hours in milliseconds — sessions older than this are not offered for resume. */
 const RECENT_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-function sessionsDir(teamRoot: string): string {
-  return join(teamRoot, '.squad', 'sessions');
+function sessionsDir(teamRoot: string, stateDir?: string): string {
+  return stateDir ? join(stateDir, 'sessions') : join(teamRoot, '.squad', 'sessions');
 }
 
 function ensureDir(dir: string): void {
@@ -61,8 +61,8 @@ export function createSession(): SessionData {
  * The file is named `{safeTimestamp}_{id}.json` so that lexicographic sorting
  * equals chronological ordering while remaining Windows-safe.
  */
-export function saveSession(teamRoot: string, session: SessionData): string {
-  const dir = sessionsDir(teamRoot);
+export function saveSession(teamRoot: string, session: SessionData, stateDir?: string): string {
+  const dir = sessionsDir(teamRoot, stateDir);
   ensureDir(dir);
 
   session.lastActiveAt = new Date().toISOString();
@@ -78,8 +78,8 @@ export function saveSession(teamRoot: string, session: SessionData): string {
 /**
  * List all persisted sessions, most recent first.
  */
-export function listSessions(teamRoot: string): SessionSummary[] {
-  const dir = sessionsDir(teamRoot);
+export function listSessions(teamRoot: string, stateDir?: string): SessionSummary[] {
+  const dir = sessionsDir(teamRoot, stateDir);
   if (!storage.existsSync(dir)) return [];
 
   const files = storage.listSync(dir).filter(f => f.endsWith('.json'));
@@ -112,22 +112,22 @@ export function listSessions(teamRoot: string): SessionSummary[] {
  * Load the most recent session if it was active within the last 24 hours.
  * Returns `null` when no recent session exists.
  */
-export function loadLatestSession(teamRoot: string): SessionData | null {
-  const sessions = listSessions(teamRoot);
+export function loadLatestSession(teamRoot: string, stateDir?: string): SessionData | null {
+  const sessions = listSessions(teamRoot, stateDir);
   if (sessions.length === 0) return null;
 
   const latest = sessions[0]!;
   const age = Date.now() - new Date(latest.lastActiveAt).getTime();
   if (age > RECENT_THRESHOLD_MS) return null;
 
-  return loadSessionById(teamRoot, latest.id);
+  return loadSessionById(teamRoot, latest.id, stateDir);
 }
 
 /**
  * Load a specific session by ID.
  */
-export function loadSessionById(teamRoot: string, sessionId: string): SessionData | null {
-  const dir = sessionsDir(teamRoot);
+export function loadSessionById(teamRoot: string, sessionId: string, stateDir?: string): SessionData | null {
+  const dir = sessionsDir(teamRoot, stateDir);
   if (!storage.existsSync(dir)) return null;
 
   const filePath = findSessionFile(dir, sessionId);

@@ -6,6 +6,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { withAdditionalMcpConfig } from './copilot-invocation.js';
 
 export interface AgentCli {
   cmd: string;
@@ -65,7 +66,7 @@ export function resolveAgentCmd(agentCmd?: string): string {
  */
 export function buildAgentCommand(
   prompt: string,
-  options: { agentCmd?: string; agentFlags?: string },
+  options: { agentCmd?: string; agentFlags?: string; teamRoot?: string },
 ): { cmd: string; args: string[] } {
   if (options.agentCmd) {
     const parts = options.agentCmd.trim().split(/\s+/);
@@ -76,7 +77,10 @@ export function buildAgentCommand(
   if (options.agentFlags) {
     args.push(...options.agentFlags.trim().split(/\s+/));
   }
-  return { cmd, args };
+  return {
+    cmd,
+    args: cmd === 'copilot' ? withAdditionalMcpConfig('copilot', args, options.teamRoot) : args,
+  };
 }
 
 /** Human-readable label for the resolved agent CLI (used in status output). */

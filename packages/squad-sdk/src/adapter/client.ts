@@ -351,7 +351,23 @@ export class SquadClient {
       }
 
       try {
-        const result = await this.provider.createSession(config);
+        // Normalize legacy 'approved' permission kind → 'approve-once' before forwarding to SDK
+        const normalizedConfig: SquadSessionConfig = config.onPermissionRequest
+          ? {
+              ...config,
+              onPermissionRequest: async (
+                req: Parameters<NonNullable<SquadSessionConfig['onPermissionRequest']>>[0],
+                inv: Parameters<NonNullable<SquadSessionConfig['onPermissionRequest']>>[1],
+              ) => {
+                const result = await config.onPermissionRequest!(req, inv);
+                if (result.kind === 'approved') {
+                  return { ...result, kind: 'approve-once' as const };
+                }
+                return result;
+              },
+            }
+          : config;
+        const result = await this.provider.createSession(normalizedConfig);
         if (result.sessionId) {
           span.setAttribute('session.id', result.sessionId);
         }
@@ -380,8 +396,8 @@ export class SquadClient {
         if (msg.includes('onPermissionRequest')) {
           throw new Error(
             'Session creation failed: an onPermissionRequest handler is required. ' +
-              'Pass { onPermissionRequest: () => ({ kind: "approved" }) } in your session config ' +
-              'to approve all permissions, or provide a custom handler.',
+            'Pass { onPermissionRequest: () => ({ kind: "approve-once" }) } in your session config ' +
+            'to approve all permissions, or provide a custom handler.'
           );
         }
         recordSessionError();

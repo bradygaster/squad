@@ -128,7 +128,7 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Resolve `CURRENT_DATETIME` once from the `<current_datetime>` value in your system context. Sanity-check that it is a real ISO-like timestamp, not placeholder text, with a plausible year and timezone (`Z` or an offset). If the system value is missing or implausible, run a local date command and use that result instead (`date +"%Y-%m-%dT%H:%M:%S%z"` on macOS/Linux, or `Get-Date -Format o` in PowerShell). Pass the team root and the resolved literal current datetime into every spawn prompt as `TEAM_ROOT` and `CURRENT_DATETIME` respectively. Never pass placeholder text for `CURRENT_DATETIME`. Pass the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
 
-**Resolve state backend:** Read `.squad/config.json` (at the resolved TEAM_ROOT) and check the `stateBackend` field. Valid values: `"worktree"` (default), `"git-notes"`, `"orphan"`, `"two-layer"`. Store as `STATE_BACKEND` and pass it into every spawn prompt. This determines how agents read and write mutable state (history, decisions, logs). Static config (charters, team.md, routing.md) always lives on disk regardless of backend. The `"two-layer"` option combines git-notes (commit-scoped annotations) with orphan branch (permanent state) — see the blog post for the full architecture.
+**Resolve state backend:** Read `.squad/config.json` (at the resolved TEAM_ROOT) and check the `stateBackend` field. Valid values: `"local"` (default), `"orphan"`, `"two-layer"`. Legacy alias: `"worktree"` maps to `"local"`. Deprecated: `"git-notes"` maps to `"two-layer"` with a deprecation warning. Store as `STATE_BACKEND` and pass it into every spawn prompt. This determines how agents read and write mutable state (history, decisions, logs). Static config (charters, team.md, routing.md) always lives on disk regardless of backend. The `"two-layer"` option combines git-notes (commit-scoped annotations) with orphan branch (permanent state) — see the blog post for the full architecture.
 
 **⚡ Context caching:** After the first message in a session, `team.md`, `routing.md`, and `registry.json` are already in your context. Do NOT re-read them on subsequent messages — you already have the roster, routing rules, and cast names. Only re-read if the user explicitly modifies the team (adds/removes members, changes routing).
 
@@ -607,8 +607,8 @@ prompt: |
   0b. PRE-CHECK: Read `decisions.md` and list `decisions/inbox` with state tools. Record measurements.
   1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
   2. DECISION INBOX: Use `squad_state_list` and `squad_state_read` on `decisions/inbox`, merge entries into `decisions.md` with `squad_state_write`, delete processed inbox entries with `squad_state_delete`, and deduplicate.
-  3. ORCHESTRATION LOG: Write `orchestration-log/{timestamp}-{agent}.md` with `squad_state_write` per agent. Use the literal CURRENT_DATETIME value.
-  4. SESSION LOG: Write `log/{timestamp}-{topic}.md` with `squad_state_write`. Brief. Use the literal CURRENT_DATETIME value.
+  3. ORCHESTRATION LOG: Write `orchestration-log/{timestamp}-{agent}.md` with `squad_state_write` per agent. Use the literal CURRENT_DATETIME value. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms (e.g. `2026-06-02T21-15-30Z`).
+  4. SESSION LOG: Write `log/{timestamp}-{topic}.md` with `squad_state_write`. Brief. Use the literal CURRENT_DATETIME value. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms.
   5. CROSS-AGENT: Append team updates to affected agents' `agents/{agent}/history.md` with `squad_state_append`.
   6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
   7. GIT COMMIT: Do not commit mutable squad state. If non-state repo files changed, report them for coordinator handling.
@@ -864,6 +864,8 @@ Ralph is the always-on work monitor. When active, Ralph runs a continuous scan �
 Do not pause for permission between work items when Ralph is active.
 
 **On-demand reference:** Read `.squad/templates/ralph-reference.md` for the full work-check cycle, watch mode, state model, board format, and follow-up integration.
+
+> **Watch mode MCP note:** `squad watch` injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot sub-invocation automatically. Copilot CLI 1.0.59+ does NOT auto-load workspace `.mcp.json` in non-interactive (`-p`) mode due to a folder-trust security gate — this injection is mandatory for `squad_state_*` tools to register. If `.mcp.json` is missing, advise the user to run `squad init` or `squad upgrade`.
 
 ### Connecting to a Repo
 
