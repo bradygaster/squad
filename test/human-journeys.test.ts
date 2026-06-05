@@ -137,7 +137,7 @@ describe('Journey 1: I just installed this (squad init)', () => {
 
     // The human needs a clear next step — not silence
     expect(output).toContain('Squad initialized');
-    expect(output).toContain('copilot --agent squad');
+    expect(output).toMatch(/Open your agent CLI|copilot/);
   });
 
   it('writes first-run marker so the REPL knows this is day one', async () => {

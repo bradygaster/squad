@@ -1,0 +1,4 @@
+# hermes-coder per-repo GitHub config
+autonomy: full
+default_base: dev
+skill_discovery: local-only

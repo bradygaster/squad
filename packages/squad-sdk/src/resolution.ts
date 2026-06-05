@@ -409,16 +409,18 @@ export function resolveGlobalSquadPath(): string {
   const platform = process.platform;
   let base: string;
 
-  if (platform === 'win32') {
-    // %APPDATA% is always set on Windows; fall back to %LOCALAPPDATA%, then homedir
+  const xdg = process.env['XDG_CONFIG_HOME'];
+
+  if (xdg) {
+    base = xdg;
+  } else if (platform === 'win32') {
     base = process.env['APPDATA']
       ?? process.env['LOCALAPPDATA']
       ?? path.join(os.homedir(), 'AppData', 'Roaming');
   } else if (platform === 'darwin') {
     base = path.join(os.homedir(), 'Library', 'Application Support');
   } else {
-    // Linux / other POSIX — respect XDG_CONFIG_HOME
-    base = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config');
+    base = path.join(os.homedir(), '.config');
   }
 
   const globalDir = path.join(base, 'squad');

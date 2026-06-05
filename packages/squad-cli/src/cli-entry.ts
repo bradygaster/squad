@@ -276,7 +276,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}--help, -h${RESET}     Show help`);
     console.log(`  ${BOLD}--global${RESET}       Use personal (global) squad path (for init, upgrade)`);
     console.log(`  ${BOLD}--economy${RESET}      Activate economy mode for this session (cheaper models)`);
-    console.log(`  ${BOLD}--provider${RESET}     LLM provider: copilot, anthropic, anthropic-vertex, google, google-vertex`);
+    console.log(`  ${BOLD}--provider${RESET}     LLM provider (copilot, anthropic, google, etc.)`);
     console.log(`  ${BOLD}--team-root${RESET}    Override team root path for resolution`);
     console.log(`\nInstallation:`);
     console.log(`  npm install --save-dev @bradygaster/squad-cli`);

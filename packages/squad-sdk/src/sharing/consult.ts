@@ -371,6 +371,13 @@ export async function setupConsultMode(
     return path.isAbsolute(excludePath) ? excludePath : path.resolve(projectRoot, excludePath);
   })();
 
+  // Check if project already has .squad/
+  if (storage.existsSync(squadDir)) {
+    throw new Error(
+      'This project already has a .squad/ directory. Cannot use consult mode on squadified projects.',
+    );
+  }
+
   // Check if personal squad exists
   if (!storage.existsSync(personalSquadRoot)) {
     throw new PersonalSquadNotFoundError();
@@ -390,13 +397,6 @@ export async function setupConsultMode(
     } catch {
       // Ignore malformed config
     }
-  }
-
-  // Check if project already has .squad/
-  if (storage.existsSync(squadDir)) {
-    throw new Error(
-      'This project already has a .squad/ directory. Cannot use consult mode on squadified projects.',
-    );
   }
 
   // List files in personal squad (for dry run preview or later count)
