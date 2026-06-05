@@ -55,6 +55,10 @@ PRs modifying `packages/squad-cli/src/` or `packages/squad-sdk/src/` MUST includ
 
 Before submitting or reviewing PRs, consult: `.copilot/skills/reviewer-protocol/SKILL.md`, `.copilot/skills/architectural-review/SKILL.md`, `.copilot/skills/security-review/SKILL.md`.
 
+## Automated PR Nudge
+
+The **PR Nudge** workflow (`.github/workflows/squad-pr-nudge.yml`) runs on weekdays at 2pm UTC and posts actionable comments on open PRs that have been stale for 7+ days. It diagnoses specific blockers — failing CI checks, unresolved review threads, missing approvals, outdated branches, and draft status — so PR authors know exactly what to do next. Draft PRs get a 14-day grace period. The workflow won't nudge the same PR more than once per week.
+
 ## Decisions
 
 Team decisions go to `.squad/decisions/inbox/copilot-{brief-slug}.md` — Scribe merges them.

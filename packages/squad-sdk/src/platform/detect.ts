@@ -27,6 +27,9 @@ export interface AzureDevOpsRemoteInfo {
  *   git@github.com:owner/repo.git
  */
 export function parseGitHubRemote(url: string): GitHubRemoteInfo | null {
+  // Repo capture allows dots (GitHub permits them, e.g. `foo/bar.baz`); the
+  // optional `\.git$` plus the non-greedy quantifier still strips a trailing
+  // `.git` correctly.
   // HTTPS: https://github.com/owner/repo.git
   const httpsMatch = url.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i);
   if (httpsMatch) {
@@ -51,6 +54,8 @@ export function parseGitHubRemote(url: string): GitHubRemoteInfo | null {
  *   https://org.visualstudio.com/project/_git/repo
  */
 export function parseAzureDevOpsRemote(url: string): AzureDevOpsRemoteInfo | null {
+  // Repo capture allows dots in repo names; the literal `/_git/` segment keeps
+  // the match anchored unambiguously.
   // HTTPS dev.azure.com: https://dev.azure.com/org/project/_git/repo
   // Also handles: https://org@dev.azure.com/org/project/_git/repo
   const devAzureHttps = url.match(
@@ -69,6 +74,8 @@ export function parseAzureDevOpsRemote(url: string): AzureDevOpsRemoteInfo | nul
   }
 
   // Legacy visualstudio.com: https://org.visualstudio.com/project/_git/repo
+  // (Org subdomain keeps the no-dot constraint — the `.visualstudio.com` anchor
+  // requires it. Only the repo capture is widened.)
   const vsMatch = url.match(
     /([^/.]+)\.visualstudio\.com\/([^/]+)\/_git\/([^/]+?)(?:\.git)?$/i,
   );

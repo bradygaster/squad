@@ -1,0 +1,184 @@
+name: PR Nudge
+on:
+  schedule:
+    - cron: '0 14 * * 1-5' # 2pm UTC weekdays (morning US Pacific)
+  workflow_dispatch: {} # manual trigger for testing
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: read
+  issues: read
+
+jobs:
+  nudge-stale-prs:
+    name: "Nudge Stale PRs"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const STALE_DAYS = 7;
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - STALE_DAYS);
+
+            // Get all open PRs, oldest-updated first
+            const prs = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              sort: 'updated',
+              direction: 'asc',
+              per_page: 50
+            });
+
+            for (const pr of prs.data) {
+              // Skip PRs updated recently
+              const lastPush = new Date(pr.updated_at);
+              if (lastPush > cutoff) continue;
+
+              // Give draft PRs 14 days grace period instead of 7
+              if (pr.draft) {
+                const created = new Date(pr.created_at);
+                const draftCutoff = new Date();
+                draftCutoff.setDate(draftCutoff.getDate() - 14);
+                if (created > draftCutoff) continue;
+              }
+
+              // Don't nudge the same PR more than once per week
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                per_page: 5,
+                sort: 'created',
+                direction: 'desc'
+              });
+              const recentNudge = comments.data.find(c =>
+                c.user.login === 'github-actions[bot]' &&
+                c.body.includes('<!-- pr-nudge -->') &&
+                new Date(c.created_at) > cutoff
+              );
+              if (recentNudge) continue;
+
+              // Build the diagnosis — collect actionable items
+              const actions = [];
+              const daysSinceUpdate = Math.floor((Date.now() - lastPush) / (1000 * 60 * 60 * 24));
+
+              // 1. Check if still in draft
+              if (pr.draft) {
+                actions.push('📝 **Still in draft** — mark as "Ready for review" when you\'re done, or close if abandoned.');
+              }
+
+              // 2. Check CI status for failures
+              const checks = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha,
+                per_page: 50
+              });
+              const failedChecks = checks.data.check_runs.filter(c =>
+                c.conclusion === 'failure'
+              ).map(c => c.name);
+              if (failedChecks.length > 0) {
+                actions.push(`🔴 **${failedChecks.length} CI check(s) failing:** ${failedChecks.join(', ')}. Fix these first.`);
+              }
+
+              // 3. Check for unresolved review threads (Copilot vs human)
+              const threads = await github.graphql(`
+                query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewThreads(first: 50) {
+                        nodes {
+                          isResolved
+                          isOutdated
+                          comments(first: 1) {
+                            nodes { author { login } }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                number: pr.number
+              });
+              const unresolvedThreads = threads.repository.pullRequest.reviewThreads.nodes
+                .filter(t => !t.isResolved && !t.isOutdated);
+              if (unresolvedThreads.length > 0) {
+                const copilotThreads = unresolvedThreads.filter(t =>
+                  t.comments.nodes[0]?.author?.login?.includes('copilot')
+                );
+                const humanThreads = unresolvedThreads.length - copilotThreads.length;
+                const parts = [];
+                if (copilotThreads.length > 0) parts.push(`${copilotThreads.length} from Copilot`);
+                if (humanThreads > 0) parts.push(`${humanThreads} from reviewers`);
+                actions.push(`💬 **${unresolvedThreads.length} unresolved review thread(s)** (${parts.join(', ')}). Address and resolve them.`);
+              }
+
+              // 4. Check review state (changes requested vs approved vs none)
+              const reviews = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number
+              });
+              const latestByUser = {};
+              for (const r of reviews.data) {
+                if (r.state === 'COMMENTED') continue;
+                latestByUser[r.user.login] = r;
+              }
+              const changesRequested = Object.values(latestByUser).filter(r => r.state === 'CHANGES_REQUESTED');
+              const approvals = Object.values(latestByUser).filter(r => r.state === 'APPROVED');
+              if (changesRequested.length > 0) {
+                const reviewers = changesRequested.map(r => `@${r.user.login}`).join(', ');
+                actions.push(`🔄 **Changes requested** by ${reviewers}. Address their feedback and request re-review.`);
+              } else if (approvals.length === 0 && !pr.draft) {
+                actions.push('👀 **No approving reviews yet.** Request a review from a teammate.');
+              }
+
+              // 5. Check if branch is behind base
+              const comparison = await github.rest.repos.compareCommits({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                base: pr.base.ref,
+                head: pr.head.sha
+              });
+              if (comparison.data.ahead_by > 10) {
+                actions.push(`⬇️ **${comparison.data.ahead_by} commits behind ${pr.base.ref}.** Rebase to pick up latest changes.`);
+              }
+
+              // 6. If everything looks good and approved — it's ready to merge
+              if (actions.length === 0 && approvals.length > 0) {
+                actions.push('✅ **Looks ready to merge!** All checks pass, approved — just needs someone to click merge.');
+              }
+
+              // Fallback if no specific blockers found
+              if (actions.length === 0) {
+                actions.push('🤔 **No obvious blockers found** — but this PR has been quiet. Is it still active?');
+              }
+
+              // Post the nudge comment
+              const body = [
+                '<!-- pr-nudge -->',
+                `👋 **Friendly nudge** — this PR has had no activity for **${daysSinceUpdate} days**.`,
+                '',
+                '**What needs attention:**',
+                ...actions.map(a => `- ${a}`),
+                '',
+                '---',
+                '*If this PR is abandoned, please close it. If it\'s blocked on something external, leave a comment so the team knows.*',
+                '*This is an automated check that runs on weekdays. It won\'t nudge the same PR more than once per week.*'
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: body
+              });
+
+              core.info(`Nudged PR #${pr.number}: ${pr.title} (${daysSinceUpdate} days stale, ${actions.length} action items)`);
+            }
