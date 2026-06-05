@@ -156,11 +156,6 @@ describe('multi-squad.resolveSquadPath() — config read dedupe', () => {
   const HOME = join(tmpdir(), `squad-multi-${randomBytes(4).toString('hex')}`);
 
   function getSquadsJsonPath(): string {
-    if (process.platform === 'win32') {
-      return join(HOME, 'squad', 'squads.json');
-    } else if (process.platform === 'darwin') {
-      return join(HOME, 'Library', 'Application Support', 'squad', 'squads.json');
-    }
     return join(HOME, 'squad', 'squads.json');
   }
 
