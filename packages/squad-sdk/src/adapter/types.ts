@@ -592,6 +592,11 @@ export interface SquadPermissionRequest {
 export interface SquadPermissionRequestResult {
   /** Outcome of the permission request */
   kind:
+    | "approve-once"
+    /**
+     * @deprecated Use `"approve-once"` instead. This value is kept for
+     * backwards compatibility and is normalised to `"approve-once"` by the SDK.
+     */
     | "approved"
     | "denied-by-rules"
     | "denied-no-approval-rule-and-could-not-request-from-user"

@@ -11,8 +11,9 @@
  */
 
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { resolveStateDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
 
@@ -464,6 +465,88 @@ function checkCopilotCli(): Promise<DoctorCheck> {
   });
 }
 
+// ── git sync hooks check ─────────────────────────────────────────────
+
+const SQUAD_SYNC_HOOK_MARKER = '# --- squad-sync-hook ---';
+const REQUIRED_SYNC_HOOKS = ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout'] as const;
+
+/**
+ * Check that squad git sync hooks are installed when the state backend requires them.
+ * Only runs for 'two-layer' and 'orphan' backends (which need hooks to push state branches).
+ * Returns undefined when the check is not applicable.
+ */
+export function checkGitSyncHooks(cwd: string, squadDir: string): DoctorCheck | undefined {
+  const configPath = path.join(squadDir, 'config.json');
+  if (!fileExists(configPath)) return undefined;
+
+  const config = tryReadJson(configPath) as Record<string, unknown> | undefined;
+  if (!config) return undefined;
+
+  const stateBackend = config['stateBackend'];
+  if (stateBackend !== 'two-layer' && stateBackend !== 'orphan') return undefined;
+
+  // Resolve the git hooks directory (respects core.hooksPath when configured)
+  let hooksDir: string;
+  try {
+    const customPath = execFileSync('git', ['config', '--get', 'core.hooksPath'], {
+      cwd,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    if (customPath) {
+      hooksDir = path.isAbsolute(customPath) ? customPath : path.resolve(cwd, customPath);
+    } else {
+      throw new Error('empty hooksPath');
+    }
+  } catch {
+    // core.hooksPath not configured — resolve via git rev-parse --git-dir
+    // This handles git worktrees correctly (unlike hardcoding .git/hooks)
+    try {
+      const gitDir = execFileSync('git', ['rev-parse', '--git-dir'], {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+      hooksDir = path.resolve(cwd, gitDir, 'hooks');
+    } catch {
+      hooksDir = path.join(cwd, '.git', 'hooks');
+    }
+  }
+
+  const missingHooks: string[] = [];
+  for (const hookName of REQUIRED_SYNC_HOOKS) {
+    const hookPath = path.join(hooksDir, hookName);
+    if (!fileExists(hookPath)) {
+      missingHooks.push(hookName);
+      continue;
+    }
+    try {
+      const content = storage.readSync(hookPath) ?? '';
+      if (!content.includes(SQUAD_SYNC_HOOK_MARKER)) {
+        missingHooks.push(hookName);
+      }
+    } catch {
+      missingHooks.push(hookName);
+    }
+  }
+
+  if (missingHooks.length > 0) {
+    return {
+      name: 'git sync hooks installed',
+      status: 'fail',
+      message:
+        `Missing squad sync hooks for '${stateBackend}' backend: ${missingHooks.join(', ')}. ` +
+        `Run 'squad install-hooks' to install them.`,
+    };
+  }
+
+  return {
+    name: 'git sync hooks installed',
+    status: 'pass',
+    message: `squad sync hooks present for '${stateBackend}' backend`,
+  };
+}
+
 // ── public API ──────────────────────────────────────────────────────
 
 /**
@@ -493,13 +576,19 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
 
   // 5–9 standard files (only if .squad/ exists)
   if (isDirectory(squadDir)) {
-    checks.push(checkTeamMd(squadDir));
-    checks.push(checkRoutingMd(squadDir));
-    checks.push(checkAgentsDir(squadDir));
-    checks.push(checkCastingRegistry(squadDir));
-    checks.push(checkDecisionsMd(squadDir));
+    // Resolve effective state dir for externalized files
+    const stateDir = resolveStateDir(squadDir);
+    checks.push(checkTeamMd(stateDir));
+    checks.push(checkRoutingMd(stateDir));
+    checks.push(checkAgentsDir(stateDir));
+    checks.push(checkCastingRegistry(stateDir));
+    checks.push(checkDecisionsMd(stateDir));
     const rateLimitCheck = checkRateLimitStatus(squadDir);
     if (rateLimitCheck) checks.push(rateLimitCheck);
+
+    // Hook presence check (only for two-layer / orphan backends)
+    const hookCheck = checkGitSyncHooks(resolvedCwd, squadDir);
+    if (hookCheck) checks.push(hookCheck);
   }
 
   // 10. Copilot agent discovery file (relative to cwd, not squadDir)

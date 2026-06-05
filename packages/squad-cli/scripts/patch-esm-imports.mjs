@@ -23,11 +23,13 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Locations where npm workspaces / global install may place dependencies
+const _cwdNodeModules = join(process.cwd(), 'node_modules');
 const SEARCH_ROOTS = [
   join(__dirname, '..', 'node_modules'),              // squad-cli local
   join(__dirname, '..', '..', '..', 'node_modules'),  // workspace root
   join(__dirname, '..', '..'),                         // global install (sibling)
-];
+  _cwdNodeModules,                                     // consumer project (cwd)
+].filter((p, i, arr) => arr.indexOf(p) === i);         // deduplicate
 
 /**
  * Layer 1 — Inject `exports` field into vscode-jsonrpc/package.json.

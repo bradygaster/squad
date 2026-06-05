@@ -33,6 +33,11 @@ squad init --state-backend orphan
 squad init --state-backend two-layer
 ```
 
+> **Default backend:** if you don't pass `--state-backend`, Squad uses the
+> `local` backend (regular `.squad/` files in your working tree). The
+> `orphan` and `two-layer` backends are opt-in — you must pass the explicit
+> flag during `squad init` or `squad upgrade` to activate them.
+
 The backend is stored in `.squad/config.json` — you never need to pass it again. All subsequent commands (`squad watch`, interactive sessions, etc.) read from config automatically.
 
 ### Existing project — migrate with upgrade

@@ -252,7 +252,7 @@ All docs in v1 are **internal only**. No public docs site until v2.
 
 ## Local Development Versioning
 
-When developing Squad locally, set the package version to `{next-version}-preview`. For example, if the last published version is `0.8.5.1`, the local dev version should be `0.8.6-preview`.
+When developing Squad locally, set the package version to `{next-version}-preview` (e.g. `0.8.6-preview`) or a numbered iteration like `0.8.6-preview.N`. The `insider` dist-tag uses `X.Y.Z-insider.N` versions. All three patterns are accepted by the CI Prerelease Version Guard.
 
 This convention makes `squad version` show the preview tag locally, clearly indicating you're running unreleased source code, not the published npm package. The release agent will bump this to the final version at publish time, then immediately back to the next preview version for continued development.
 

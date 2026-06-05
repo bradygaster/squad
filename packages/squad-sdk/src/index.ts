@@ -104,9 +104,10 @@ export * from './platform/index.js';
 export * from './storage/index.js';
 export * from './memory/index.js';
 
-// Git-native state backends (Issue #807)
+// Git-native state backends (Issue #807, hardened in #864)
 export type { StateBackend, StateBackendType, StateBackendConfig } from './state-backend.js';
-export { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, resolveStateBackend, validateStateKey, StateBackendStorageAdapter } from './state-backend.js';
+export { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend, CircuitBreaker, GitExecError, resolveStateBackend, validateStateKey, StateBackendStorageAdapter, verifyStateBackend } from './state-backend.js';
+export type { PromoteNotesResult } from './state-backend.js';
 
 // State facade (Phase 2) — namespaced to avoid conflicts with existing config/sharing exports
 export {

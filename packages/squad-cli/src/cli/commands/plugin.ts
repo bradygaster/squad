@@ -31,7 +31,7 @@ import {
 } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, DIM, BOLD, RESET } from '../core/output.js';
 import { fatal } from '../core/errors.js';
-import { detectSquadDir } from '../core/detect-squad-dir.js';
+import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { ghAvailable, ghAuthenticated } from '../core/gh-cli.js';
 
 const execFileAsync = promisify(execFile);
@@ -58,9 +58,9 @@ export async function runPlugin(dest: string, args: string[]): Promise<void> {
     fatal(pluginUsage());
   }
 
-  const squadDirInfo = detectSquadDir(dest);
+  const { local: squadDirInfo, stateDir } = effectiveSquadDir(dest);
   const storage = new FSStorageProvider();
-  const pluginsDir = join(squadDirInfo.path, 'plugins');
+  const pluginsDir = join(stateDir, 'plugins');
   const marketplacesFile = join(pluginsDir, 'marketplaces.json');
 
   async function readMarketplaces(): Promise<MarketplacesRegistry> {

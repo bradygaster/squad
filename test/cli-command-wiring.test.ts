@@ -15,8 +15,9 @@ import { join, basename } from 'node:path';
 const COMMANDS_DIR = join(process.cwd(), 'packages', 'squad-cli', 'src', 'cli', 'commands');
 const CLI_ENTRY = join(process.cwd(), 'packages', 'squad-cli', 'src', 'cli-entry.ts');
 
-// sync.ts is internal — not exposed as a user-facing command (absorbed into upgrade flow).
-const KNOWN_UNWIRED = new Set<string>(['sync']);
+// All commands in commands/ are wired into cli-entry.ts at present.
+// Add commands here if they are intentionally internal-only.
+const KNOWN_UNWIRED = new Set<string>([]);
 
 describe('CLI command wiring regression (issues #224, #236, #237)', () => {
   const commandFiles = readdirSync(COMMANDS_DIR)

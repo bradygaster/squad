@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend, resolveStateBackend, validateStateKey, StateBackendStorageAdapter } from '../packages/squad-sdk/src/state-backend.js';
+import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend, CircuitBreaker, GitExecError, resolveStateBackend, validateStateKey, StateBackendStorageAdapter, verifyStateBackend, _resetGitNotesMigrationWarnForTesting } from '../packages/squad-sdk/src/state-backend.js';
 import type { StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
 import { resolveSquadState, clearResolveSquadCache } from '../packages/squad-sdk/src/resolution.js';
 import { ToolRegistry } from '../packages/squad-sdk/src/tools/index.js';
@@ -104,7 +104,7 @@ describe('OrphanBranchBackend', () => {
 
 describe('resolveStateBackend()', () => {
   const squadDir = () => join(TMP, '.squad');
-  beforeEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  beforeEach(() => { clearResolveSquadCache(); _resetGitNotesMigrationWarnForTesting(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
   afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
   it('defaults to local', () => { expect(resolveStateBackend(squadDir(), TMP).name).toBe('local'); });
   it('reads stateBackend from config.json (git-notes migrates to two-layer)', () => {
@@ -128,14 +128,31 @@ describe('resolveStateBackend()', () => {
   it('legacy git-notes migrates to two-layer', () => {
     expect(resolveStateBackend(squadDir(), TMP, 'git-notes' as any).name).toBe('two-layer');
   });
-  it('fails closed when an explicit git-native backend is unavailable', () => {
+  it('git-notes deprecation warning fires exactly once per process across repeated calls (Bug C)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      resolveStateBackend(squadDir(), TMP, 'git-notes' as any);
+      resolveStateBackend(squadDir(), TMP, 'git-notes' as any);
+      resolveStateBackend(squadDir(), TMP, 'git-notes' as any);
+      // Warn should fire on the FIRST call only, never again.
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain("'git-notes' is deprecated");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+  it('soft-falls-back to local when an explicit git-native backend is unavailable', () => {
     const nonGitRoot = join(tmpdir(), `.squad-state-non-git-${randomBytes(4).toString('hex')}`);
     const nonGitSquad = join(nonGitRoot, '.squad');
     mkdirSync(nonGitSquad, { recursive: true });
     writeFileSync(join(nonGitSquad, 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', stateBackend: 'two-layer' }));
 
     try {
-      expect(() => resolveStateBackend(nonGitSquad, nonGitRoot)).toThrow(/State backend 'two-layer' failed/);
+      // Bug B fix: resolveStateBackend no longer throws when a git-native backend
+      // fails; it emits a console.warn and falls back to WorktreeBackend ('local').
+      expect(() => resolveStateBackend(nonGitSquad, nonGitRoot)).not.toThrow();
+      const backend = resolveStateBackend(nonGitSquad, nonGitRoot);
+      expect(backend.name).toBe('local');
     } finally {
       rmSync(nonGitRoot, { recursive: true, force: true });
     }
@@ -467,6 +484,52 @@ describe('StateBackendStorageAdapter', () => {
     expect(adapter.readSync('decisions.md')).toBe('# Decisions');
   });
 
+  it('toRelative handles Windows-style mixed drive-letter casing (Bug F)', () => {
+    // Simulate Windows drive-letter case mismatch: process.cwd() might return
+    // 'C:\...' while the stored path arrives as 'c:\...'.  Because path.resolve()
+    // canonicalises the separator (but NOT the case on Windows), we fold to
+    // lower-case for the prefix comparison only.
+    //
+    // We cannot easily mock process.platform here, but we CAN exercise the
+    // lower-case comparison branch by constructing a squadDir path that differs
+    // only in drive-letter case from the filePath argument (simulating the real
+    // Windows scenario by treating the test paths as opaque strings the way
+    // path.resolve does on the host OS).
+    //
+    // On non-Windows hosts path.isAbsolute returns false for Windows-style paths,
+    // so we test the relative-path normalisation path instead.
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+
+    // Relative paths must always come back normalised (no backslashes) regardless
+    // of platform — this is the safe cross-platform subset of the fix.
+    const relWithBackslash = 'sub\\dir\\file.md';
+    adapter.writeSync(relWithBackslash, 'backslash test');
+    expect(adapter.readSync('sub/dir/file.md')).toBe('backslash test');
+  });
+
+  it('toRelative throws for absolute paths outside squadDir (Bug F)', () => {
+    if (process.platform !== 'win32') {
+      // Only absolute paths starting with / are unambiguous on POSIX
+      const backend = new GitNotesBackend(TMP);
+      const adapter = new StateBackendStorageAdapter(backend, squadDir());
+      // A path outside squadDir should throw, not silently return an absolute
+      // path as a git-notes key (which would corrupt the notes namespace).
+      expect(() => adapter.writeSync('/tmp/outside-squad.md', 'data')).toThrow(
+        /toRelative: path is outside squadDir/
+      );
+    } else {
+      // On Windows use a different drive to guarantee "outside"
+      const backend = new GitNotesBackend(TMP);
+      const adapter = new StateBackendStorageAdapter(backend, squadDir());
+      // Use a drive letter that is guaranteed to differ from squadDir
+      const outsidePath = 'Z:\\outside\\file.md';
+      expect(() => adapter.writeSync(outsidePath, 'data')).toThrow(
+        /toRelative: path is outside squadDir/
+      );
+    }
+  });
+
   it('deleteSync removes entries', () => {
     const backend = new GitNotesBackend(TMP);
     const adapter = new StateBackendStorageAdapter(backend, squadDir());
@@ -595,6 +658,57 @@ describe('ToolRegistry state tools with git-native backend', () => {
     expect(backend.list('decisions/inbox')).toHaveLength(1);
     expect(existsSync(join(squadDir(), 'decisions', 'inbox'))).toBe(false);
     expect(git('status --porcelain')).toBe('');
+  });
+
+  // Regression test for NEW-4: MCP tool layer writing empty blob (e69de29bb) when
+  // content is missing from the JSON-RPC payload (args.content === undefined at runtime).
+  it('squad_state_write with undefined content returns failure, does not write empty blob (NEW-4)', { timeout: 20_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+    const write = registry.getTool('squad_state_write')!;
+
+    // Simulate MCP payload where content is missing (parseObject returns {} missing 'content').
+    // Cast to any to bypass TypeScript's type checking, as the MCP layer does at runtime.
+    const result = await write.handler({ key: 'agents/scribe/history.md', content: undefined as unknown as string });
+
+    expect(result.resultType).toBe('failure');
+    expect(result.textResultForLlm).toContain('content is required');
+    // Backend must NOT have written an empty blob
+    expect(backend.exists('agents/scribe/history.md')).toBe(false);
+    expect(git('status --porcelain')).toBe('');
+  });
+
+  it('squad_state_write with valid content writes correct non-empty content (NEW-4)', { timeout: 20_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+    const write = registry.getTool('squad_state_write')!;
+
+    const content = '# Scribe History\n\n## Session 1\nCompleted replay without branch choreography.\n';
+    const result = await write.handler({ key: 'agents/scribe/history.md', content });
+
+    expect(result.resultType).toBe('success');
+    expect(backend.read('agents/scribe/history.md')).toBe(content);
+    // Ensure the blob is not the empty-content sentinel
+    expect(backend.read('agents/scribe/history.md')).not.toBe('');
+  });
+
+  it('squad_state_append with undefined content returns failure, does not corrupt existing content (NEW-4)', { timeout: 20_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const registry = new ToolRegistry(squadDir(), undefined, adapter);
+    const write = registry.getTool('squad_state_write')!;
+    const append = registry.getTool('squad_state_append')!;
+
+    await write.handler({ key: 'agents/data/history.md', content: '# Data\n' });
+
+    const result = await append.handler({ key: 'agents/data/history.md', content: undefined as unknown as string });
+
+    expect(result.resultType).toBe('failure');
+    expect(result.textResultForLlm).toContain('content is required');
+    // Existing content must be unchanged
+    expect(backend.read('agents/data/history.md')).toBe('# Data\n');
   });
 });
 
@@ -788,5 +902,553 @@ describe('downloaded session replay regressions', () => {
 
     expect(existsSync(squadDir())).toBe(true);
     expectWorktreeUnmoved(initialBranch, initialHead);
+  });
+});
+describe('CircuitBreaker', () => {
+  it('starts in closed state', () => {
+    const cb = new CircuitBreaker(3, 1000);
+    expect(cb.currentState).toBe('closed');
+    expect(cb.consecutiveFailures).toBe(0);
+  });
+
+  it('passes through successful operations', () => {
+    const cb = new CircuitBreaker(3, 1000);
+    const result = cb.execute(() => 42, 'test');
+    expect(result).toBe(42);
+    expect(cb.consecutiveFailures).toBe(0);
+  });
+
+  it('tracks consecutive failures', () => {
+    const cb = new CircuitBreaker(3, 1000);
+    for (let i = 0; i < 2; i++) {
+      try { cb.execute(() => { throw new Error('fail'); }, 'test'); } catch { /* expected */ }
+    }
+    expect(cb.consecutiveFailures).toBe(2);
+    expect(cb.currentState).toBe('closed');
+  });
+
+  it('trips open after threshold failures', () => {
+    const cb = new CircuitBreaker(3, 1000);
+    for (let i = 0; i < 3; i++) {
+      try { cb.execute(() => { throw new Error('fail'); }, 'test'); } catch { /* expected */ }
+    }
+    expect(cb.currentState).toBe('open');
+    expect(cb.consecutiveFailures).toBe(3);
+  });
+
+  it('fast-fails when open', () => {
+    const cb = new CircuitBreaker(3, 1000);
+    for (let i = 0; i < 3; i++) {
+      try { cb.execute(() => { throw new Error('fail'); }, 'test'); } catch { /* expected */ }
+    }
+    expect(() => cb.execute(() => 42, 'test')).toThrow(/Circuit breaker OPEN/);
+  });
+
+  it('resets on success', () => {
+    const cb = new CircuitBreaker(3, 1000);
+    try { cb.execute(() => { throw new Error('fail'); }, 'test'); } catch { /* expected */ }
+    expect(cb.consecutiveFailures).toBe(1);
+    cb.execute(() => 'ok', 'test');
+    expect(cb.consecutiveFailures).toBe(0);
+    expect(cb.currentState).toBe('closed');
+  });
+
+  it('transitions to half-open after cooldown', () => {
+    const cb = new CircuitBreaker(2, 50); // 50ms cooldown for test speed
+    for (let i = 0; i < 2; i++) {
+      try { cb.execute(() => { throw new Error('fail'); }, 'test'); } catch { /* expected */ }
+    }
+    expect(cb.currentState).toBe('open');
+
+    // Wait for cooldown
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60);
+
+    // Next call should go through (half-open probe)
+    const result = cb.execute(() => 'recovered', 'test');
+    expect(result).toBe('recovered');
+    expect(cb.currentState).toBe('closed');
+  });
+});
+
+describe('verifyStateBackend()', () => {
+  const squadDir = () => join(TMP, '.squad');
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('worktree backend passes verification', () => {
+    const backend = new WorktreeBackend(squadDir());
+    const result = verifyStateBackend(backend);
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('git-notes backend passes verification', () => {
+    const backend = new GitNotesBackend(TMP);
+    const result = verifyStateBackend(backend);
+    expect(result.ok).toBe(true);
+  });
+
+  it('orphan backend passes verification', () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const result = verifyStateBackend(backend);
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns error for broken backend', () => {
+    const brokenBackend = {
+      name: 'broken',
+      read: () => undefined,
+      write: () => {},
+      exists: () => false,
+      list: () => { throw new Error('backend is broken'); },
+    };
+    const result = verifyStateBackend(brokenBackend);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('backend is broken');
+  });
+});
+
+describe('GitExecError (missing vs real failure)', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('GitExecError has command, reason, and stderr fields', () => {
+    const err = new GitExecError('git show HEAD:x', 'file not found', 'fatal: path does not exist');
+    expect(err.name).toBe('GitExecError');
+    expect(err.command).toBe('git show HEAD:x');
+    expect(err.reason).toBe('file not found');
+    expect(err.stderr).toBe('fatal: path does not exist');
+    expect(err.message).toContain('git show HEAD:x');
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('git-notes read returns undefined for missing note (not throw)', () => {
+    // In a valid git repo with no notes, read should return undefined (expected missing)
+    const b = new GitNotesBackend(TMP);
+    expect(b.read('nonexistent.md')).toBeUndefined();
+  });
+
+  it('orphan read returns undefined for missing path (not throw)', () => {
+    const b = new OrphanBranchBackend(TMP);
+    expect(b.read('nonexistent.md')).toBeUndefined();
+  });
+
+  it('git-notes throws GitExecError for real failures (not a git repo)', () => {
+    // Must be OUTSIDE any git repo — using os.tmpdir() to avoid inheriting parent .git
+    const nonGitDir = join(tmpdir(), `.test-nongit-${randomBytes(4).toString('hex')}`);
+    mkdirSync(nonGitDir, { recursive: true });
+    try {
+      const b = new GitNotesBackend(nonGitDir);
+      expect(() => b.read('team.md')).toThrow(GitExecError);
+    } finally {
+      rmSync(nonGitDir, { recursive: true, force: true });
+    }
+  });
+
+  it('orphan exists throws GitExecError for real failures (not a git repo)', () => {
+    const nonGitDir = join(tmpdir(), `.test-nongit-${randomBytes(4).toString('hex')}`);
+    mkdirSync(nonGitDir, { recursive: true });
+    try {
+      const b = new OrphanBranchBackend(nonGitDir);
+      expect(() => b.exists('team.md')).toThrow(GitExecError);
+    } finally {
+      rmSync(nonGitDir, { recursive: true, force: true });
+    }
+  });
+
+  it('orphan list throws GitExecError for real failures (not a git repo)', () => {
+    const nonGitDir = join(tmpdir(), `.test-nongit-${randomBytes(4).toString('hex')}`);
+    mkdirSync(nonGitDir, { recursive: true });
+    try {
+      const b = new OrphanBranchBackend(nonGitDir);
+      expect(() => b.list('')).toThrow(GitExecError);
+    } finally {
+      rmSync(nonGitDir, { recursive: true, force: true });
+    }
+  });
+});
+describe('TwoLayerBackend.promoteNotes / readNote / observability', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); vi.restoreAllMocks(); });
+
+  function addCommit(filename: string): string {
+    writeFileSync(join(TMP, filename), `content of ${filename}\n`);
+    git(`add ${filename}`);
+    git(`commit -m "add ${filename}"`);
+    return git('rev-parse HEAD');
+  }
+
+  function addNote(ref: string, commitSha: string, payload: object): void {
+    const body = JSON.stringify(payload);
+    // Write to a temp file so quoting/newlines don't get mangled by execSync.
+    const noteFile = join(TMP, `.note-${randomBytes(4).toString('hex')}.json`);
+    writeFileSync(noteFile, body);
+    git(`notes --ref=${ref} add -F "${noteFile}" ${commitSha}`);
+    rmSync(noteFile);
+  }
+
+  it('promoteNotes moves promote_to_permanent notes to orphan and removes source', () => {
+    const b = new TwoLayerBackend(TMP);
+    const sha = addCommit('feature.ts');
+    addNote('squad/picard', sha, { promote_to_permanent: true, decision: 'ship it' });
+
+    const result = b.promoteNotes('squad/picard');
+
+    expect(result.promoted).toHaveLength(1);
+    expect(result.promoted[0]).toBe(`promoted/squad/picard/${sha}.json`);
+    expect(result.archived).toHaveLength(0);
+    expect(result.skipped).toBe(0);
+
+    // Orphan layer received the payload.
+    const stored = b.orphan.read(`promoted/squad/picard/${sha}.json`);
+    expect(stored).toBeDefined();
+    expect(JSON.parse(stored!).decision).toBe('ship it');
+
+    // Source note was removed.
+    expect(() => git(`notes --ref=squad/picard show ${sha}`)).toThrow();
+  }, 30000);
+
+  it('promoteNotes copies archive_on_close notes to orphan archive/ without removing source', () => {
+    const b = new TwoLayerBackend(TMP);
+    const sha = addCommit('research.ts');
+    addNote('squad/research', sha, { archive_on_close: true, notes: 'investigation log' });
+
+    const result = b.promoteNotes('squad/research');
+
+    expect(result.archived).toHaveLength(1);
+    expect(result.archived[0]).toBe(`archive/squad/research/${sha}.json`);
+    expect(result.promoted).toHaveLength(0);
+    expect(result.skipped).toBe(0);
+
+    // Orphan layer received the archive.
+    const stored = b.orphan.read(`archive/squad/research/${sha}.json`);
+    expect(stored).toBeDefined();
+    expect(JSON.parse(stored!).notes).toBe('investigation log');
+
+    // Source note is KEPT (archive = copy).
+    expect(git(`notes --ref=squad/research show ${sha}`)).toContain('investigation log');
+  }, 30000);
+
+  it('promoteNotes skips notes without either flag', () => {
+    const b = new TwoLayerBackend(TMP);
+    const sha = addCommit('chat.ts');
+    addNote('squad/data', sha, { ephemeral: true, message: 'just a thought' });
+
+    const result = b.promoteNotes('squad/data');
+
+    expect(result.promoted).toHaveLength(0);
+    expect(result.archived).toHaveLength(0);
+    expect(result.skipped).toBe(1);
+
+    // Source note is left in place.
+    expect(git(`notes --ref=squad/data show ${sha}`)).toContain('just a thought');
+  }, 30000);
+
+  it('readNote returns null when no note exists', () => {
+    const b = new TwoLayerBackend(TMP);
+    const sha = git('rev-parse HEAD');
+    expect(b.readNote('squad/picard', sha)).toBeNull();
+  });
+
+  it('readNote returns parsed JSON when note exists', () => {
+    const b = new TwoLayerBackend(TMP);
+    const sha = git('rev-parse HEAD');
+    addNote('squad/picard', sha, { type: 'decision', body: 'approved' });
+
+    const parsed = b.readNote('squad/picard', sha) as { type: string; body: string };
+    expect(parsed).toEqual({ type: 'decision', body: 'approved' });
+  });
+
+  it('verifyStateBackend fails when TwoLayerBackend notes layer is broken', () => {
+    const b = new TwoLayerBackend(TMP);
+    // Make the orphan layer report healthy by stubbing list.
+    vi.spyOn(b.orphan, 'list').mockReturnValue([]);
+    // Break the notes layer.
+    vi.spyOn(b.notes, 'list').mockImplementation(() => { throw new Error('notes ref corrupt'); });
+
+    const result = verifyStateBackend(b);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/notes layer unhealthy/);
+    expect(result.error).toMatch(/notes ref corrupt/);
+  });
+
+  it('write/delete/append failures on notes layer log console.warn', () => {
+    const b = new TwoLayerBackend(TMP);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => { /* swallow */ });
+
+    vi.spyOn(b.notes, 'write').mockImplementation(() => { throw new Error('boom-write'); });
+    vi.spyOn(b.notes, 'append').mockImplementation(() => { throw new Error('boom-append'); });
+    vi.spyOn(b.notes, 'delete').mockImplementation(() => { throw new Error('boom-delete'); });
+
+    b.write('decisions/foo.md', 'hi');
+    b.append('history/foo.md', 'more');
+    b.delete('decisions/foo.md');
+
+    const warnings = warnSpy.mock.calls.map((c) => String(c[0]));
+    expect(warnings.some((w) => w.includes('notes write failed for decisions/foo.md') && w.includes('boom-write'))).toBe(true);
+    expect(warnings.some((w) => w.includes('notes append failed for history/foo.md') && w.includes('boom-append'))).toBe(true);
+    expect(warnings.some((w) => w.includes('notes delete failed for decisions/foo.md') && w.includes('boom-delete'))).toBe(true);
+  }, 30000);
+});
+
+// ───────────────────────────────────────────────────────────────────
+// Compare-and-swap (CAS) tests for GitNotesBackend + OrphanBranchBackend.
+// These cover the optimistic-concurrency refactor that replaced the
+// silently-clobbering `git notes add -f` and unconditional update-ref
+// with a read → mutate → update-ref-with-expected-old loop.
+// ───────────────────────────────────────────────────────────────────
+
+describe('tryUpdateRef (CAS primitive)', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('succeeds when ref is at the expected SHA', async () => {
+    const { _tryUpdateRefForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    const headSha = git('rev-parse HEAD');
+    // Create a target ref pointing at HEAD, then CAS-update it to itself.
+    git(`update-ref refs/test/cas ${headSha}`);
+    const result = _tryUpdateRefForTesting('refs/test/cas', headSha, headSha, TMP);
+    expect(result.ok).toBe(true);
+  });
+
+  it('returns ok:false with stderr on CAS conflict (expected-old mismatch)', async () => {
+    const { _tryUpdateRefForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    const headSha = git('rev-parse HEAD');
+    git(`update-ref refs/test/cas2 ${headSha}`);
+    // Lie about the expected old SHA -> CAS must reject.
+    const bogus = '0123456789abcdef0123456789abcdef01234567';
+    const result = _tryUpdateRefForTesting('refs/test/cas2', headSha, bogus, TMP);
+    expect(result.ok).toBe(false);
+    expect(result.stderr.length).toBeGreaterThan(0);
+  });
+
+  it('returns ok:false when creating a ref that already exists (expected-old = null)', async () => {
+    const { _tryUpdateRefForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    const headSha = git('rev-parse HEAD');
+    git(`update-ref refs/test/cas3 ${headSha}`);
+    // null expectedOld -> tryUpdateRef sends 40 zeros == "must not exist".
+    const result = _tryUpdateRefForTesting('refs/test/cas3', headSha, null, TMP);
+    expect(result.ok).toBe(false);
+  });
+
+  it('throws (not returns) on non-CAS failures (e.g., bogus SHA)', async () => {
+    const { _tryUpdateRefForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    // Reference a non-existent object — this is a real git error, not a CAS conflict.
+    expect(() => _tryUpdateRefForTesting('refs/test/cas4', 'deadbeef'.repeat(5), null, TMP)).toThrow();
+  });
+});
+
+describe('GitNotesBackend CAS retry semantics', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(async () => {
+    const { _setCasInjectorForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    _setCasInjectorForTesting(null);
+    if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+  });
+
+  it('write succeeds on first try when ref is uncontended', { timeout: 15_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    b.write('a.md', 'A');
+    expect(b.read('a.md')).toBe('A');
+  });
+
+  it('two sequential writes preserve both keys (no clobber)', { timeout: 15_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    b.write('a.md', 'A');
+    b.write('b.md', 'B');
+    expect(b.read('a.md')).toBe('A');
+    expect(b.read('b.md')).toBe('B');
+  });
+
+  it('rebuilds on top of out-of-band ref advancement (CAS retry converges)', { timeout: 20_000 }, () => {
+    // Seed the notes ref with one key.
+    const b = new GitNotesBackend(TMP);
+    b.write('seed.md', 'S');
+    const refBefore = git('rev-parse refs/notes/squad');
+
+    // Out-of-band advance: another writer added a key while we weren't looking.
+    // Build the new note via plumbing (use execFileSync to bypass cmd.exe `^` escaping).
+    const anchor = git('rev-list --max-parents=0 HEAD');
+    const existingRaw = execSync(`git show ${refBefore}:${anchor}`, { cwd: TMP, encoding: 'utf-8' });
+    const existingJson = JSON.parse(existingRaw);
+    existingJson['outOfBand.md'] = 'OOB';
+    const newJson = JSON.stringify(existingJson, null, 2);
+    const blobSha = execSync('git hash-object -w --stdin', { cwd: TMP, encoding: 'utf-8', input: newJson }).trim();
+    const treeSha = execSync('git mktree', { cwd: TMP, encoding: 'utf-8', input: `100644 blob ${blobSha}\t${anchor}\n` }).trim();
+    const newCommit = execSync(`git commit-tree ${treeSha} -p ${refBefore} -m "oob"`, { cwd: TMP, encoding: 'utf-8' }).trim();
+    git(`update-ref refs/notes/squad ${newCommit} ${refBefore}`);
+
+    // SDK writes again. Under old `notes add -f` this would clobber outOfBand.md.
+    // Under CAS the rebuild reads the latest tip and preserves OOB.
+    b.write('postBand.md', 'P');
+    expect(b.read('seed.md')).toBe('S');
+    expect(b.read('outOfBand.md')).toBe('OOB');
+    expect(b.read('postBand.md')).toBe('P');
+  });
+
+  it('converges after exactly one CAS conflict via injector', { timeout: 20_000 }, async () => {
+    const { _setCasInjectorForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    const b = new GitNotesBackend(TMP);
+    b.write('seed.md', 'S');
+
+    let injectCount = 0;
+    _setCasInjectorForTesting((ref) => {
+      if (ref !== 'refs/notes/squad') return null;
+      if (injectCount++ < 1) return { ok: false, stderr: 'simulated CAS mismatch' };
+      return null; // subsequent attempts go through to real git
+    });
+
+    b.write('retry.md', 'R');
+    expect(injectCount).toBe(2); // attempt 1 forced fail, attempt 2 real success
+    expect(b.read('seed.md')).toBe('S');
+    expect(b.read('retry.md')).toBe('R');
+  });
+
+  it('converges after 4 CAS conflicts (right at the retry budget edge)', { timeout: 20_000 }, async () => {
+    const { _setCasInjectorForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    const b = new GitNotesBackend(TMP);
+    b.write('seed.md', 'S');
+
+    let injectCount = 0;
+    _setCasInjectorForTesting((ref) => {
+      if (ref !== 'refs/notes/squad') return null;
+      if (injectCount++ < 4) return { ok: false, stderr: 'simulated CAS mismatch' };
+      return null; // 5th attempt goes through
+    });
+
+    b.write('edge.md', 'E');
+    expect(b.read('seed.md')).toBe('S');
+    expect(b.read('edge.md')).toBe('E');
+  });
+
+  it('throws StateBackendConcurrencyError after exhausting all 5 attempts', { timeout: 20_000 }, async () => {
+    const { _setCasInjectorForTesting, StateBackendConcurrencyError } = await import('../packages/squad-sdk/src/state-backend.js');
+    const b = new GitNotesBackend(TMP);
+    b.write('seed.md', 'S');
+
+    _setCasInjectorForTesting((ref) => {
+      if (ref !== 'refs/notes/squad') return null;
+      return { ok: false, stderr: 'simulated nonstop CAS mismatch' };
+    });
+
+    let caught: unknown;
+    try { b.write('boom.md', 'X'); } catch (e) { caught = e; }
+    expect(caught).toBeInstanceOf(StateBackendConcurrencyError);
+    expect((caught as Error).message).toContain('git-notes:write(boom.md)');
+    expect((caught as Error).message).toContain('5 attempts');
+  });
+});
+
+describe('OrphanBranchBackend CAS retry semantics', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(async () => {
+    const { _setCasInjectorForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    _setCasInjectorForTesting(null);
+    if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+  });
+
+  it('write rebuilds on top of out-of-band branch advancement', { timeout: 20_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    b.write('seed.md', 'S');
+    const refBefore = git('rev-parse refs/heads/squad-state');
+
+    // Out-of-band: append a new file to the orphan branch via plumbing.
+    // Use array-form execFileSync to bypass cmd.exe interpreting `^` in `^{tree}`.
+    const treeBefore = execFileSync('git', ['rev-parse', `${refBefore}^{tree}`], { cwd: TMP, encoding: 'utf-8' }).trim();
+    const blobSha = execSync('git hash-object -w --stdin', { cwd: TMP, encoding: 'utf-8', input: 'OOB' }).trim();
+    const existingTree = execSync(`git ls-tree ${treeBefore}`, { cwd: TMP, encoding: 'utf-8' }).split('\n').filter(Boolean);
+    existingTree.push(`100644 blob ${blobSha}\toutOfBand.md`);
+    const newTree = execSync('git mktree', { cwd: TMP, encoding: 'utf-8', input: existingTree.join('\n') + '\n' }).trim();
+    const newCommit = execSync(`git commit-tree ${newTree} -p ${refBefore} -m "oob"`, { cwd: TMP, encoding: 'utf-8' }).trim();
+    git(`update-ref refs/heads/squad-state ${newCommit} ${refBefore}`);
+
+    b.write('postBand.md', 'P');
+    expect(b.read('seed.md')).toBe('S');
+    expect(b.read('outOfBand.md')).toBe('OOB');
+    expect(b.read('postBand.md')).toBe('P');
+  });
+
+  it('converges after one CAS conflict via injector', { timeout: 20_000 }, async () => {
+    const { _setCasInjectorForTesting } = await import('../packages/squad-sdk/src/state-backend.js');
+    const b = new OrphanBranchBackend(TMP);
+    b.write('seed.md', 'S');
+
+    let injectCount = 0;
+    _setCasInjectorForTesting((ref) => {
+      if (ref !== 'refs/heads/squad-state') return null;
+      if (injectCount++ < 1) return { ok: false, stderr: 'simulated CAS mismatch' };
+      return null;
+    });
+
+    b.write('retry.md', 'R');
+    expect(b.read('seed.md')).toBe('S');
+    expect(b.read('retry.md')).toBe('R');
+  });
+
+  it('throws StateBackendConcurrencyError after exhausting all 5 attempts on write', { timeout: 20_000 }, async () => {
+    const { _setCasInjectorForTesting, StateBackendConcurrencyError } = await import('../packages/squad-sdk/src/state-backend.js');
+    const b = new OrphanBranchBackend(TMP);
+    b.write('seed.md', 'S');
+
+    _setCasInjectorForTesting((ref) => {
+      if (ref !== 'refs/heads/squad-state') return null;
+      return { ok: false, stderr: 'simulated nonstop CAS mismatch' };
+    });
+
+    let caught: unknown;
+    try { b.write('boom.md', 'X'); } catch (e) { caught = e; }
+    expect(caught).toBeInstanceOf(StateBackendConcurrencyError);
+    expect((caught as Error).message).toContain('orphan:write(boom.md)');
+  });
+
+  it('delete throws StateBackendConcurrencyError after exhausting retries', { timeout: 20_000 }, async () => {
+    const { _setCasInjectorForTesting, StateBackendConcurrencyError } = await import('../packages/squad-sdk/src/state-backend.js');
+    const b = new OrphanBranchBackend(TMP);
+    b.write('seed.md', 'S');
+
+    _setCasInjectorForTesting((ref) => {
+      if (ref !== 'refs/heads/squad-state') return null;
+      return { ok: false, stderr: 'simulated nonstop CAS mismatch' };
+    });
+
+    let caught: unknown;
+    try { b.delete('seed.md'); } catch (e) { caught = e; }
+    expect(caught).toBeInstanceOf(StateBackendConcurrencyError);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────
+// Regression: arg-tokenization in gitExecMaybeMissing.
+// The previous implementation accepted a space-separated string and did
+// args.split(' '), which silently mangled any argument containing a space.
+// After the P1.2 fix, helpers take a string[] so spaces in path segments,
+// commit messages, and refs survive untouched.
+// validateStateKey forbids \n/\r/\t but NOT space, so spaces in state keys
+// are legal and must be supported end-to-end.
+// ───────────────────────────────────────────────────────────────────
+
+describe('gitExec arg tokenization (P1.2 regression)', () => {
+  beforeEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); });
+  afterEach(() => { if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
+
+  it('OrphanBranchBackend handles state keys with spaces (write/read/exists/delete round-trip)', { timeout: 20_000 }, () => {
+    const b = new OrphanBranchBackend(TMP);
+    const key = 'agents/data picard.md';
+    b.write(key, 'team config with space in name');
+    expect(b.exists(key)).toBe(true);
+    expect(b.read(key)).toBe('team config with space in name');
+    const listing = b.list('agents');
+    expect(listing).toContain('data picard.md');
+    expect(b.delete(key)).toBe(true);
+    expect(b.exists(key)).toBe(false);
+  });
+
+  it('GitNotesBackend handles state keys with spaces (write/read/list round-trip)', { timeout: 15_000 }, () => {
+    const b = new GitNotesBackend(TMP);
+    const key = 'decisions/my decision.md';
+    b.write(key, 'decision body');
+    expect(b.read(key)).toBe('decision body');
+    expect(b.exists(key)).toBe(true);
+    expect(b.list('decisions')).toContain('my decision.md');
   });
 });

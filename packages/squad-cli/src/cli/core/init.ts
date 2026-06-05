@@ -13,6 +13,10 @@ import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
 import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
+import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
+import { resolveSquadStateMcpSpec } from './mcp-spec.js';
+import { describeMcpSpec } from './upgrade.js';
+import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 
 const storage = new FSStorageProvider();
 
@@ -332,10 +336,64 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
         // Install git hooks for automatic state sync on push/pull
         installGitHooks(dest, { force: false });
+
+        // INSIDER3-INIT-LEAK fix: the SDK already wrote decisions.md and
+        // agents/<n>/history.md into the working tree (it had no knowledge of
+        // the backend choice at the time). Lift those mutable files onto the
+        // squad-state orphan branch and remove the working-tree copies so the
+        // backend is the single source of truth post-init.
+        try {
+          const lifted = liftInitMutableStateOntoOrphan(dest);
+          if (lifted.length > 0) {
+            success(`migrated ${lifted.length} mutable state file(s) onto squad-state branch (removed from working tree)`);
+          }
+        } catch (err) {
+          console.warn(`${YELLOW}⚠ Could not lift mutable state onto squad-state branch: ${err instanceof Error ? err.message : err}${RESET}`);
+        }
+
+        // GAP-2 fix: SDK init skips .copilot/mcp-config.json when it already
+        // exists (e.g. partially-squadified repo or pre-existing Copilot setup),
+        // leaving the bridge unwired. Force-insert/pin the squad_state entry so
+        // the MCP server is reachable regardless of pre-existing config.
+        // iter-8: write squad_state to repo-root `.mcp.json` (auto-loaded by
+        // Copilot CLI 5.3+ walking up from cwd to git root) and tombstone any
+        // stale project-level entry left by the SDK init writer in
+        // `.copilot/mcp-config.json`. No HOME modifications.
+        try {
+          const mcpSpec = await resolveSquadStateMcpSpec(getPackageVersion());
+          const rootResult = ensureSquadStateMcpInRoot(dest, getPackageVersion(), mcpSpec);
+          if (rootResult.written) {
+            success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
+            console.log(`${DIM}  to remove later: edit ${rootResult.path} and delete squad_state${RESET}`);
+          }
+          const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
+          if (tomb.removed) {
+            success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
+          }
+        } catch (err) {
+          console.warn(`${YELLOW}⚠ Could not install squad_state MCP entry in .mcp.json: ${err instanceof Error ? err.message : err}${RESET}`);
+        }
       }
     } else {
       console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (local).${RESET}`);
     }
+  }
+
+  // iter-8: unconditionally mirror repo-root `.mcp.json` write + tombstone
+  // for vanilla `squad init` (no --state-backend flag) so the squad_state
+  // MCP entry is reachable regardless of init path. No HOME modifications.
+  try {
+    const mcpSpec = await resolveSquadStateMcpSpec(version);
+    const rootResult = ensureSquadStateMcpInRoot(dest, version, mcpSpec);
+    if (rootResult.written) {
+      success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
+    }
+    const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
+    if (tomb.removed) {
+      success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
+    }
+  } catch {
+    // best-effort: .mcp.json write failure does not block init
   }
 
   // Report .init-prompt storage
@@ -369,6 +427,9 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   if (!isInitNoColor()) await sleep(80);
   console.log();
   console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
+  console.log();
+  console.log(`${DIM}Tip: for non-interactive scripts that need squad_state tools, add to package.json:${RESET}`);
+  console.log(`${DIM}  "squad:copilot": "copilot --additional-mcp-config @.mcp.json"${RESET}`);
   console.log();
 
   // ── Personal squad bridge ───────────────────────────────────────────

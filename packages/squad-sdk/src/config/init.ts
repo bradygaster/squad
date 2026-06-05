@@ -624,12 +624,19 @@ interface McpServerSpec {
   env?: Record<string, string>;
 }
 
-function buildMcpServerSpecs(isGitHub: boolean): McpServerSpec[] {
+function buildMcpServerSpecs(isGitHub: boolean, cliVersion?: string): McpServerSpec[] {
+  // Pin the squad-cli package to the currently-installed CLI version so that
+  // `npx -y @bradygaster/squad-cli state-mcp` does NOT silently resolve to the
+  // npm `latest` dist-tag (which may predate the `state-mcp` command and thus
+  // expose zero tools to Copilot — see MCP-BRIDGE-BROKEN root cause).
+  const pkgSpec = cliVersion && cliVersion !== '0.0.0'
+    ? `@bradygaster/squad-cli@${cliVersion}`
+    : '@bradygaster/squad-cli';
   const servers: McpServerSpec[] = [
     {
       name: 'squad_state',
       command: 'npx',
-      args: ['-y', '@bradygaster/squad-cli', 'state-mcp'],
+      args: ['-y', pkgSpec, 'state-mcp'],
     },
   ];
 
@@ -1246,7 +1253,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     // No git remote — assume GitHub (default)
   }
 
-  const mcpServers = buildMcpServerSpecs(isGitHub);
+  const mcpServers = buildMcpServerSpecs(isGitHub, version);
 
   // -------------------------------------------------------------------------
   // Create .github/agents/squad.agent.md

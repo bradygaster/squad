@@ -56,6 +56,8 @@ By default, Loop requires:
 
 If you don't want to use `gh copilot`, pass `--agent-cmd` to provide an alternative agent command. In that case, `gh` and the Copilot extension are not required for the agent step.
 
+> **MCP auto-injection:** When using the default Copilot agent, `squad loop` automatically injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot invocation. This ensures MCP tools are available in non-interactive (`-p`) mode. See [Copilot CLI MCP Trust Gate](./copilot-mcp-trust.md).
+
 ## Getting started
 
 ### Step 1: Initialize your loop

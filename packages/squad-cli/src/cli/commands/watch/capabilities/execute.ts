@@ -9,6 +9,7 @@ import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult }
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import { createVerboseLogger } from '../verbose.js';
 import { loadAgentCharter } from '../../../shell/spawn.js';
+import { withAdditionalMcpConfig } from '../../../core/copilot-invocation.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -61,7 +62,7 @@ function buildAgentCommand(
   if (context.copilotFlags) {
     args.push(...context.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'copilot', args };
+  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, context.teamRoot) };
 }
 
 /** Labels that indicate an issue should not be auto-executed. */

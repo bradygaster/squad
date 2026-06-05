@@ -33,3 +33,7 @@ docs/tests/screenshots/
 /images/
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/.scratch/
+
+# Squad: PR-1200 picard local artifacts (do not commit)
+.pr-body-new.md
+.followup-issue-body.md

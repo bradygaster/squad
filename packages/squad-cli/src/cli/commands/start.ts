@@ -14,6 +14,7 @@ import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider, RemoteBridge } from '@bradygaster/squad-sdk';
+import { withAdditionalMcpConfig } from '../core/copilot-invocation.js';
 
 const storage = new FSStorageProvider();
 import type { RemoteBridgeConfig } from '@bradygaster/squad-sdk';
@@ -166,6 +167,14 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     console.log(`  ${DIM}Copilot flags:${RESET} ${copilotExtraArgs.join(' ')}\n`);
   }
 
+  // Inject --additional-mcp-config so the project-level mcp-config.json
+  // actually loads in Copilot CLI 1.0.58 (which silently ignores the
+  // project file otherwise). Only injects when invoking the bare `copilot`
+  // binary; user-overridden commands are left untouched.
+  const finalCopilotArgs = (copilotCmd === 'copilot' || copilotCmd === copilotExePath)
+    ? withAdditionalMcpConfig('copilot', copilotExtraArgs, cwd)
+    : copilotExtraArgs;
+
   // F-07: Security — blocklist dangerous environment variables for PTY
   const DANGEROUS_VARS = new Set(['NODE_OPTIONS', 'NODE_REPL_HISTORY', 'NODE_EXTRA_CA_CERTS',
     'NODE_PATH', 'NODE_REDIRECT_WARNINGS', 'NODE_PENDING_DEPRECATION',
@@ -182,7 +191,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     }
   }
 
-  const pty = nodePty.spawn(copilotCmd, copilotExtraArgs, {
+  const pty = nodePty.spawn(copilotCmd, finalCopilotArgs, {
     name: 'xterm-256color',
     cols,
     rows,

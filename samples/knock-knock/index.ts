@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     const session = await client.createSession({
       streaming: true,
       systemMessage: { mode: 'append', content: agent.systemPrompt },
-      onPermissionRequest: () => ({ kind: 'approved' }),
+      onPermissionRequest: () => ({ kind: 'approve-once' }),
     });
     agent.sessionId = session.sessionId;
     pipeline.attachToSession(session.sessionId);
@@ -153,7 +153,7 @@ async function sendAndCapture(
   pipeline.markMessageStart(sessionId);
 
   const session = await client.resumeSession(sessionId, {
-    onPermissionRequest: () => ({ kind: 'approved' }),
+    onPermissionRequest: () => ({ kind: 'approve-once' }),
   });
 
   const handler = (event: { type: string; [key: string]: unknown }) => {

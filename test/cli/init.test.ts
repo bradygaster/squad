@@ -13,6 +13,7 @@ import { runInit } from '@bradygaster/squad-cli/core/init';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
 const TEST_ROOT = join(tmpdir(), `.test-cli-init-${randomBytes(4).toString('hex')}`);
+const TEST_HOME = join(tmpdir(), `.test-cli-init-home-${randomBytes(4).toString('hex')}`);
 
 describe('CLI: init command', () => {
   beforeEach(async () => {
@@ -20,11 +21,22 @@ describe('CLI: init command', () => {
       await rm(TEST_ROOT, { recursive: true, force: true });
     }
     await mkdir(TEST_ROOT, { recursive: true });
+    if (existsSync(TEST_HOME)) {
+      await rm(TEST_HOME, { recursive: true, force: true });
+    }
+    await mkdir(TEST_HOME, { recursive: true });
+    // iter-7: redirect ~/.copilot/mcp-config.json writes to a temp dir so
+    // tests don't pollute the developer's real HOME.
+    process.env.SQUAD_HOME_DIR_OVERRIDE = TEST_HOME;
   });
 
   afterEach(async () => {
+    delete process.env.SQUAD_HOME_DIR_OVERRIDE;
     if (existsSync(TEST_ROOT)) {
       await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+    if (existsSync(TEST_HOME)) {
+      await rm(TEST_HOME, { recursive: true, force: true });
     }
   });
 
@@ -84,17 +96,18 @@ describe('CLI: init command', () => {
     expect(wisdomContent).toContain('Team Wisdom');
   });
 
-  it('should create .copilot/mcp-config.json', async () => {
+  it('should create .copilot/mcp-config.json without squad_state (iter-7: lives in ~/.copilot)', async () => {
     await runInit(TEST_ROOT);
-    
+
     const mcpPath = join(TEST_ROOT, '.copilot', 'mcp-config.json');
     expect(existsSync(mcpPath)).toBe(true);
-    
+
     const content = await readFile(mcpPath, 'utf-8');
     const config = JSON.parse(content);
     expect(config).toHaveProperty('mcpServers');
-    expect(config.mcpServers).toHaveProperty('squad_state');
-    expect(config.mcpServers.squad_state).not.toHaveProperty('env');
+    // iter-7: squad_state is now written to ~/.copilot/mcp-config.json and
+    // tombstoned out of the project file so github/copilot auto-loads it.
+    expect(config.mcpServers).not.toHaveProperty('squad_state');
     expect(content).not.toContain('SQUAD_TEAM_ROOT');
     expect(content).not.toContain(TEST_ROOT);
   });
@@ -110,7 +123,10 @@ describe('CLI: init command', () => {
     expect(content).toContain('mcp-servers:');
     expect(content).toContain('  squad_state:');
     expect(content).toContain('    type: local');
-    expect(content).toContain("    args: ['-y', '@bradygaster/squad-cli', 'state-mcp']");
+    // args may be pinned (`@bradygaster/squad-cli@<version>`) or unpinned
+    // depending on whether getPackageVersion() resolved a real version at
+    // test time. Either shape is acceptable here.
+    expect(content).toMatch(/args:\s*\['-y',\s*'@bradygaster\/squad-cli(@[^']+)?',\s*'state-mcp'\]/);
     expect(content).toContain('    tools: ["*"]');
     const frontmatterEnd = content.indexOf('\n---', 4);
     expect(frontmatterEnd).toBeGreaterThan(0);

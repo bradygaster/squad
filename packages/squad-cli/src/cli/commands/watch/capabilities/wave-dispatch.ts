@@ -4,6 +4,7 @@
 
 import { execFile, type ChildProcess } from 'node:child_process';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
+import { withAdditionalMcpConfig } from '../../../core/copilot-invocation.js';
 
 interface SubTask {
   description: string;
@@ -41,7 +42,7 @@ function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string
   }
   const args = ['-p', prompt];
   if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'copilot', args };
+  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, context.teamRoot) };
 }
 
 function executeSubTask(

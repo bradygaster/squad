@@ -11,9 +11,10 @@ import { execFile, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { detectSquadDir } from '../core/detect-squad-dir.js';
+import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { fatal } from '../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../core/output.js';
+import { withAdditionalMcpConfig } from '../core/copilot-invocation.js';
 import {
   CapabilityRegistry,
   createDefaultRegistry,
@@ -132,7 +133,7 @@ export function generateLoopFile(): string {
 
 function buildLoopAgentCommand(
   prompt: string,
-  options: { agentCmd?: string; copilotFlags?: string },
+  options: { agentCmd?: string; copilotFlags?: string; teamRoot?: string },
 ): { cmd: string; args: string[] } {
   if (options.agentCmd) {
     const parts = options.agentCmd.trim().split(/\s+/);
@@ -142,7 +143,7 @@ function buildLoopAgentCommand(
   if (options.copilotFlags) {
     args.push(...options.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'copilot', args };
+  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, options.teamRoot) };
 }
 
 // ── Capability Phase Runner ──────────────────────────────────────
@@ -265,9 +266,9 @@ async function checkCopilotCli(): Promise<void> {
 export async function runLoop(dest: string, options: LoopConfig): Promise<void> {
   const workTreeRoot = path.resolve(dest);
 
-  // Detect squad directory (must exist)
-  const squadDirInfo = detectSquadDir(workTreeRoot);
-  const teamMd = path.join(squadDirInfo.path, 'team.md');
+  // Detect squad directory (must exist) — follows external state if configured
+  const { local: squadDirInfo, stateDir } = effectiveSquadDir(workTreeRoot);
+  const teamMd = path.join(stateDir, 'team.md');
   const teamRoot = path.dirname(squadDirInfo.path);
 
   if (!existsSync(teamMd)) {
@@ -385,6 +386,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     const { cmd, args } = buildLoopAgentCommand(prompt, {
       agentCmd: options.agentCmd,
       copilotFlags: options.copilotFlags,
+      teamRoot,
     });
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
 

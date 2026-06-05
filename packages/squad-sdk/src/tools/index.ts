@@ -675,6 +675,14 @@ export class ToolRegistry {
         required: ['key', 'content'],
       },
       handler: async (args) => {
+        if ((args as unknown as Record<string, unknown>)['content'] == null ||
+            typeof (args as unknown as Record<string, unknown>)['content'] !== 'string') {
+          return {
+            textResultForLlm: 'Failed to write state: content is required and must be a string',
+            resultType: 'failure' as const,
+            error: 'content is required',
+          };
+        }
         try {
           const key = normalizeStateToolKey(args.key);
           validateMutableStateToolKey(key);
@@ -706,6 +714,14 @@ export class ToolRegistry {
         required: ['key', 'content'],
       },
       handler: async (args) => {
+        if ((args as unknown as Record<string, unknown>)['content'] == null ||
+            typeof (args as unknown as Record<string, unknown>)['content'] !== 'string') {
+          return {
+            textResultForLlm: 'Failed to append state: content is required and must be a string',
+            resultType: 'failure' as const,
+            error: 'content is required',
+          };
+        }
         try {
           const key = normalizeStateToolKey(args.key);
           validateMutableStateToolKey(key);

@@ -98,6 +98,7 @@ import { BOLD, RESET, DIM, RED, GREEN, YELLOW } from './cli/core/output.js';
 import { runInit } from './cli/core/init.js';
 import { runCost } from './cli/commands/cost.js';
 import { getPackageVersion } from './cli/core/version.js';
+import { printCommandHelp, printGenericCommandHelp } from './cli/core/command-help.js';
 
 // Lazy-load squad-sdk to avoid triggering @github/copilot-sdk import on Node 24+
 // (Issue: copilot-sdk has broken ESM imports - vscode-jsonrpc/node without .js extension)
@@ -170,6 +171,9 @@ async function main(): Promise<void> {
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
+    console.log(`  ${BOLD}sync${RESET}       Sync squad-state branch(es) with remote (push/pull/both)`);
+    console.log(`             Flags: --push, --pull, --remote <name>, --quiet`);
+    console.log(`             No-op for local/worktree backends. Invoked by git hooks.`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
     console.log(`  ${BOLD}roles${RESET}      List built-in Squad roles`);
     console.log(`             Usage: roles [--category <name>] [--search <query>]`);
@@ -282,6 +286,27 @@ async function main(): Promise<void> {
     return;
   }
 
+  // --help / -h on a subcommand → print command-specific help and exit.
+  // Without this intercept the flag was silently dropped and the command
+  // would execute for real (sometimes with destructive side effects, e.g.
+  // `squad init --help` scaffolding files, or `squad triage --help` starting
+  // the polling loop). See #1201.
+  if (
+    cmd &&
+    cmd !== 'help' &&
+    cmd !== '--help' &&
+    cmd !== '-h' &&
+    cmd !== 'version' &&
+    cmd !== '--version' &&
+    cmd !== '-v' &&
+    (args.includes('--help') || args.includes('-h'))
+  ) {
+    if (!printCommandHelp(cmd, VERSION)) {
+      printGenericCommandHelp(cmd);
+    }
+    return;
+  }
+
   // No args → launch interactive shell; whitespace-only arg → show help
   if (rawCmd === undefined) {
     // Fire-and-forget update check — non-blocking, never delays shell startup
@@ -390,30 +415,79 @@ async function main(): Promise<void> {
       // Continue with regular upgrade after migration
     }
     
-    // Handle --self: upgrade the CLI package itself
+    // Handle --self: upgrade the CLI package itself.
+    //
+    // UPGRADE-EPERM-FALSE-SUCCESS fix (iter-2): surface a failed self-upgrade
+    // instead of printing "✅ Upgraded" after a warning.
+    //
+    // Iter-4 hardening: when BOTH --self and --state-backend are passed and
+    // the self-upgrade fails (e.g. EPERM on a globally-installed CLI that
+    // can't be replaced by the current user), still run the state-backend
+    // migration. The two operations are independent — failing the npm
+    // install must not block the user from upgrading their existing project's
+    // on-disk state layout. Failures are tracked and we exit non-zero at the
+    // end if either step failed.
+    let selfUpgradeFailed: string | null = null;
     if (selfUpgrade) {
-      await selfUpgradeCli({ insider, force: forceUpgrade });
-      console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
-      return;
+      try {
+        await selfUpgradeCli({ insider, force: forceUpgrade });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        selfUpgradeFailed = msg;
+        if (upgradeStateBackend) {
+          // Defer the failure: still attempt the state-backend migration so
+          // the user gets at least one of the two operations they asked for.
+          console.error(`⚠️ Self-upgrade failed: ${msg}`);
+          console.error('   Continuing with --state-backend migration. Self-upgrade can be retried separately.');
+        } else {
+          console.error(`❌ Self-upgrade failed: ${msg}`);
+          process.exit(1);
+        }
+      }
+      if (!selfUpgradeFailed && !upgradeStateBackend) {
+        console.log('✅ Upgraded. Please restart your terminal for changes to take effect.');
+        return;
+      }
+      if (!selfUpgradeFailed) {
+        console.log('✅ Self-upgrade complete. Running --state-backend migration next…');
+      }
     }
 
-    // Run upgrade
-    await runUpgrade(dest, { 
-      migrateDirectory: migrateDir,
-      self: selfUpgrade,
-      force: forceUpgrade
-    });
+    // Run upgrade (skip when --self was successful AND no state-backend asked —
+    // that case returned above). Otherwise we always run a project upgrade so
+    // hooks/templates are refreshed alongside the backend migration.
+    if (!selfUpgrade || upgradeStateBackend) {
+      await runUpgrade(dest, {
+        migrateDirectory: migrateDir,
+        self: selfUpgrade,
+        force: forceUpgrade,
+      });
+    }
 
     // Handle --state-backend: migrate backend after upgrade
     if (upgradeStateBackend) {
       const { migrateStateBackend } = await import('./cli/commands/migrate-backend.js');
-      await migrateStateBackend(dest, upgradeStateBackend);
+      try {
+        await migrateStateBackend(dest, upgradeStateBackend);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`❌ State-backend migration failed: ${msg}`);
+        process.exit(1);
+      }
     } else {
       // Ensure hooks are installed for existing orphan/two-layer backends
       const { ensureHooksForBackend } = await import('./cli/commands/install-hooks.js');
       ensureHooksForBackend(dest);
     }
-    
+
+    if (selfUpgradeFailed) {
+      // Partial success — state-backend migration completed but self-upgrade
+      // did not. Exit non-zero so callers (CI, wrapper scripts) can detect it.
+      console.error(`❌ Self-upgrade failed earlier: ${selfUpgradeFailed}`);
+      console.error('   The project upgrade and state-backend migration succeeded; retry the self-upgrade manually.');
+      process.exit(1);
+    }
+
     return;
   }
 
@@ -424,13 +498,28 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'state-mcp') {
-    if (args.includes('--help') || args.includes('-h')) {
-      const { printStateMcpHelp } = await import('./cli/commands/state-mcp.js');
-      printStateMcpHelp();
-      return;
-    }
     const { runStateMcp } = await import('./cli/commands/state-mcp.js');
     await runStateMcp(getSquadStartDir());
+    return;
+  }
+
+  if (cmd === 'sync') {
+    const { runSync } = await import('./cli/commands/sync.js');
+    const quiet = args.includes('--quiet');
+    const remoteIdx = args.indexOf('--remote');
+    const remote = (remoteIdx !== -1 && args[remoteIdx + 1]) ? args[remoteIdx + 1] : undefined;
+    let direction: 'push' | 'pull' | 'both' = 'both';
+    if (args.includes('--push') && !args.includes('--pull')) direction = 'push';
+    else if (args.includes('--pull') && !args.includes('--push')) direction = 'pull';
+    try {
+      await runSync({ direction, remote, cwd: getSquadStartDir(), quiet });
+    } catch (err: unknown) {
+      if (!quiet) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`squad sync failed: ${msg}`);
+      }
+      process.exit(1);
+    }
     return;
   }
 
@@ -621,37 +710,6 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'loop') {
-    // --help
-    if (args.includes('--help') || args.includes('-h')) {
-      console.log(`\n${BOLD}squad loop${RESET} — Prompt-driven continuous work loop\n`);
-      console.log(`Usage: squad loop [options]\n`);
-      console.log(`Reads loop.md and runs it as a continuous work loop.\n`);
-      console.log(`Options:`);
-      console.log(`  ${BOLD}--init${RESET}                Generate a boilerplate loop.md`);
-      console.log(`  ${BOLD}--file <path>${RESET}         Path to loop file (default: loop.md)`);
-      console.log(`  ${BOLD}--interval <min>${RESET}      Override loop interval in minutes`);
-      console.log(`  ${BOLD}--timeout <min>${RESET}       Override max minutes per cycle`);
-      console.log(`  ${BOLD}--copilot-flags "..."${RESET} Extra flags for Copilot CLI`);
-      console.log(`  ${BOLD}--agent-cmd <cmd>${RESET}     Override the agent command`);
-      console.log(`\nCapabilities (composable with the loop):`);
-      console.log(`  ${BOLD}--self-pull${RESET}           git fetch/pull at round start`);
-      console.log(`  ${BOLD}--monitor-email${RESET}       Scan email for actionable items`);
-      console.log(`  ${BOLD}--monitor-teams${RESET}       Scan Teams for actionable messages`);
-      console.log(`  ${BOLD}--decision-hygiene${RESET}    Auto-merge decision inbox`);
-      console.log(`  ${BOLD}--retro${RESET}               Enforce retrospective checks`);
-      console.log(`\nFrontmatter (in loop.md):`);
-      console.log(`  configured: true     ${DIM}(required — confirms intentional setup)${RESET}`);
-      console.log(`  interval: 10         ${DIM}(minutes between cycles)${RESET}`);
-      console.log(`  timeout: 30          ${DIM}(max minutes per cycle)${RESET}`);
-      console.log(`  description: "..."   ${DIM}(shown in status output)${RESET}`);
-      console.log(`\nExamples:`);
-      console.log(`  squad loop                          ${DIM}# run loop.md${RESET}`);
-      console.log(`  squad loop --init                   ${DIM}# generate boilerplate${RESET}`);
-      console.log(`  squad loop --file ops/loop.md       ${DIM}# custom loop file${RESET}`);
-      console.log(`  squad loop --monitor-email          ${DIM}# with email monitoring${RESET}`);
-      return;
-    }
-
     const { runLoop, generateLoopFile } = await import('./cli/commands/loop.js');
 
     // --init: scaffold a boilerplate loop.md
@@ -1037,6 +1095,12 @@ async function main(): Promise<void> {
   if (cmd === 'economy') {
     const { runEconomy } = await import('./cli/commands/economy.js');
     await runEconomy(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
+  if (cmd === 'notes') {
+    const { runNotes } = await import('./cli/commands/notes.js');
+    await runNotes(getSquadStartDir(), args.slice(1));
     return;
   }
 

@@ -38,6 +38,9 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
   },
   
   // Casting system (squad-owned, overwrite on upgrade)
+  // NOTE: These JSON files are read at runtime by the SDK and many agent
+  // skills via their flat `.squad/casting-*.json` paths — do NOT route into
+  // a subdirectory without coordinated updates across the SDK + skill docs.
   {
     source: 'casting-history.json',
     destination: 'casting-history.json',
@@ -57,100 +60,102 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Universe-based character registry',
   },
   
-  // Template files (squad-owned, overwrite on upgrade)
+  // Template files (squad-owned, overwrite on upgrade) — routed to
+  // .squad/templates/ so upgrade doesn't dump ~20 generic *.md docs
+  // into the .squad/ root.
   {
     source: 'charter.md',
-    destination: 'charter.md',
+    destination: 'templates/charter.md',
     overwriteOnUpgrade: true,
     description: 'Agent charter template',
   },
   {
     source: 'constraint-tracking.md',
-    destination: 'constraint-tracking.md',
+    destination: 'templates/constraint-tracking.md',
     overwriteOnUpgrade: true,
     description: 'Constraint tracking template',
   },
   {
     source: 'copilot-instructions.md',
-    destination: 'copilot-instructions.md',
+    destination: 'templates/copilot-instructions.md',
     overwriteOnUpgrade: true,
     description: 'Copilot instructions template',
   },
   {
     source: 'history.md',
-    destination: 'history.md',
+    destination: 'templates/history.md',
     overwriteOnUpgrade: true,
     description: 'Agent history template',
   },
   {
     source: 'mcp-config.md',
-    destination: 'mcp-config.md',
+    destination: 'templates/mcp-config.md',
     overwriteOnUpgrade: true,
     description: 'MCP configuration template',
   },
   {
     source: 'multi-agent-format.md',
-    destination: 'multi-agent-format.md',
+    destination: 'templates/multi-agent-format.md',
     overwriteOnUpgrade: true,
     description: 'Multi-agent format specification',
   },
   {
     source: 'orchestration-log.md',
-    destination: 'orchestration-log.md',
+    destination: 'templates/orchestration-log.md',
     overwriteOnUpgrade: true,
     description: 'Orchestration log template',
   },
   {
     source: 'plugin-marketplace.md',
-    destination: 'plugin-marketplace.md',
+    destination: 'templates/plugin-marketplace.md',
     overwriteOnUpgrade: true,
     description: 'Plugin marketplace template',
   },
   {
     source: 'raw-agent-output.md',
-    destination: 'raw-agent-output.md',
+    destination: 'templates/raw-agent-output.md',
     overwriteOnUpgrade: true,
     description: 'Raw agent output template',
   },
   {
     source: 'roster.md',
-    destination: 'roster.md',
+    destination: 'templates/roster.md',
     overwriteOnUpgrade: true,
     description: 'Team roster template',
   },
   {
     source: 'run-output.md',
-    destination: 'run-output.md',
+    destination: 'templates/run-output.md',
     overwriteOnUpgrade: true,
     description: 'Run output template',
   },
   {
     source: 'scribe-charter.md',
-    destination: 'scribe-charter.md',
+    destination: 'templates/scribe-charter.md',
     overwriteOnUpgrade: true,
     description: 'Scribe charter template',
   },
   {
     source: 'Rai-charter.md',
-    destination: 'Rai-charter.md',
+    destination: 'templates/Rai-charter.md',
     overwriteOnUpgrade: true,
     description: 'Rai RAI reviewer charter template',
   },
   {
     source: 'rai-policy.md',
-    destination: 'rai-policy.md',
+    destination: 'templates/rai-policy.md',
     overwriteOnUpgrade: true,
     description: 'Default RAI policy template',
   },
   {
     source: 'fact-checker-charter.md',
-    destination: 'fact-checker-charter.md',
+    destination: 'templates/fact-checker-charter.md',
     overwriteOnUpgrade: true,
     description: 'Fact checker charter template',
   },
   {
     source: 'skill.md',
-    destination: 'skill.md',
+    destination: 'templates/skill.md',
     overwriteOnUpgrade: true,
     description: 'Skill definition template',
   },
@@ -186,7 +191,7 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
   // Issue lifecycle (squad-owned)
   {
     source: 'issue-lifecycle.md',
-    destination: 'issue-lifecycle.md',
+    destination: 'templates/issue-lifecycle.md',
     overwriteOnUpgrade: true,
     description: 'Issue lifecycle process template',
   },

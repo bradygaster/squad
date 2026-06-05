@@ -11,9 +11,10 @@ import fs from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
-import { detectSquadDir } from '../../core/detect-squad-dir.js';
+import { effectiveSquadDir } from '../../core/effective-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
+import { withAdditionalMcpConfig } from '../../core/copilot-invocation.js';
 import {
   parseRoutingRules,
   parseModuleOwnership,
@@ -616,7 +617,7 @@ export function buildAgentCommand(
   }
   const args = ['-p', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'copilot', args };
+  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, teamRoot) };
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {
@@ -679,10 +680,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     fatal('--interval must be a positive number of minutes');
   }
 
-  // Detect squad directory
-  const squadDirInfo = detectSquadDir(dest);
-  const teamMd = path.join(squadDirInfo.path, 'team.md');
-  const routingMdPath = path.join(squadDirInfo.path, 'routing.md');
+  // Detect squad directory — follows external state if configured
+  const { local: squadDirInfo, stateDir } = effectiveSquadDir(dest);
+  const teamMd = path.join(stateDir, 'team.md');
+  const routingMdPath = path.join(stateDir, 'routing.md');
   const teamRoot = path.dirname(squadDirInfo.path);
 
   if (!storage.existsSync(teamMd)) {

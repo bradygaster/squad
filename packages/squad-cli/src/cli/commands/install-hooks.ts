@@ -107,6 +107,39 @@ if [ "\$3" = "1" ] && [ -z "$SQUAD_SYNC_ACTIVE" ]; then
   unset SQUAD_SYNC_ACTIVE
 fi
 `,
+  'pre-commit': `#!/bin/sh
+${SQUAD_HOOK_MARKER}
+# WI-1: Guard against accidentally committing two-layer mutable state into the
+# working tree. If the user has staged any .squad/ paths that are owned by the
+# two-layer/orphan backend (decisions.md, agents/*/history.md, casting/, routing/),
+# warn and abort so the state stays on the squad-state orphan branch.
+# Installed by: squad init / squad upgrade --state-backend (two-layer/orphan)
+if [ -z "$SQUAD_SYNC_ACTIVE" ]; then
+  STAGED=$(git diff --cached --name-only 2>/dev/null | grep -E '^\\.squad/(decisions\\.md|agents/.+/history\\.md|casting/|routing/)' || true)
+  if [ -n "$STAGED" ]; then
+    echo "⚠ squad pre-commit: refusing to commit two-layer state into the working tree." >&2
+    echo "  These paths belong on the 'squad-state' orphan branch, not in your normal commits:" >&2
+    echo "$STAGED" | sed 's/^/    /' >&2
+    echo "  Use 'git restore --staged <path>' to unstage, or set SQUAD_SYNC_ACTIVE=1 to bypass." >&2
+    exit 1
+  fi
+fi
+`,
+  'post-commit': `#!/bin/sh
+${SQUAD_HOOK_MARKER}
+# WI-1: After a working-tree commit, sync any pending two-layer state (decisions,
+# histories, casting) onto the squad-state orphan branch so team-state stays
+# durable and shareable. Best-effort — never blocks the commit.
+# Installed by: squad init / squad upgrade --state-backend (two-layer/orphan)
+if [ -z "$SQUAD_SYNC_ACTIVE" ]; then
+  export SQUAD_SYNC_ACTIVE=1
+  # If the squad CLI is on PATH, ask it to flush any pending state.
+  if command -v squad >/dev/null 2>&1; then
+    squad sync --quiet 2>/dev/null || true
+  fi
+  unset SQUAD_SYNC_ACTIVE
+fi
+`,
 };
 
 export interface InstallHooksOptions {
@@ -248,11 +281,17 @@ export function ensureHooksForBackend(cwd: string): void {
     hooksDir = getHooksDir(cwd);
   } catch { return; }
 
-  const prePushPath = path.join(hooksDir, 'pre-push');
-  if (fs.existsSync(prePushPath)) {
-    const content = fs.readFileSync(prePushPath, 'utf-8');
-    if (content.includes(SQUAD_HOOK_MARKER)) return; // Already installed
+  // WI-1: verify ALL squad hooks are present (sync hooks + commit hooks).
+  // If any of the required hooks is missing or lacks our marker, reinstall.
+  const requiredHooks = ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout', 'pre-commit', 'post-commit'];
+  let allInstalled = true;
+  for (const hookName of requiredHooks) {
+    const hookPath = path.join(hooksDir, hookName);
+    if (!fs.existsSync(hookPath)) { allInstalled = false; break; }
+    const content = fs.readFileSync(hookPath, 'utf-8');
+    if (!content.includes(SQUAD_HOOK_MARKER)) { allInstalled = false; break; }
   }
+  if (allInstalled) return;
 
   // Hooks missing — install them
   installGitHooks(cwd, { force: false });

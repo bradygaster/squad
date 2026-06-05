@@ -28,7 +28,7 @@
 
 After every substantial work session:
 
-1. **Log the session** to `log/{timestamp}-{topic}.md` with `squad_state_write`:
+1. **Log the session** to `log/{timestamp}-{topic}.md` with `squad_state_write` (replace `:` with `-` in `{timestamp}` so the filename is valid on all platforms, e.g. `2026-06-02T21-15-30Z`):
    - Who worked
    - What was done
    - Decisions made

@@ -21,7 +21,7 @@ import type { SquadSession } from '@bradygaster/squad-sdk/client';
 import type { SquadPermissionHandler } from '@bradygaster/squad-sdk/client';
 import { RateLimitError } from '@bradygaster/squad-sdk/adapter/errors';
 import type { ShellMessage } from './types.js';
-import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, initSquadTelemetry, TIMEOUTS, StreamingPipeline, recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy, RuntimeEventBus, resolveSquad, resolveGlobalSquadPath, loadDirConfig, resolveExternalStateDir } from '@bradygaster/squad-sdk';
 import type { UsageEvent } from '@bradygaster/squad-sdk';
 import { enableShellMetrics, recordShellSessionDuration, recordAgentResponseLatency, recordShellError } from './shell-metrics.js';
 import { parseAgentFromDescription } from './agent-name-parser.js';
@@ -87,7 +87,7 @@ const storage = new FSStorageProvider();
  * Approve all permission requests. CLI runs locally with user trust,
  * so no interactive confirmation is needed.
  */
-const approveAllPermissions: SquadPermissionHandler = () => ({ kind: 'approved' });
+const approveAllPermissions: SquadPermissionHandler = () => ({ kind: 'approve-once' });
 
 /** Debug logger — writes to stderr only when SQUAD_DEBUG=1. */
 function debugLog(...args: unknown[]): void {
@@ -208,10 +208,16 @@ export async function runShell(): Promise<void> {
 
   // Session persistence — create or resume a previous session
   // Skip resume on first run (no team.md or .first-run marker present)
-  const hasTeam = storage.existsSync(join(teamRoot, '.squad', 'team.md'));
-  const isFirstRun = storage.existsSync(join(teamRoot, '.squad', '.first-run'));
+  // Resolve effective state dir for externalized state
+  const localSquadDir = join(teamRoot, '.squad');
+  const dirConfig = loadDirConfig(localSquadDir);
+  const stateDir = (dirConfig?.stateLocation === 'external' && dirConfig.projectKey)
+    ? resolveExternalStateDir(dirConfig.projectKey, false)
+    : localSquadDir;
+  const hasTeam = storage.existsSync(join(stateDir, 'team.md'));
+  const isFirstRun = storage.existsSync(join(stateDir, '.first-run'));
   let persistedSession: SessionData = createSession();
-  const recentSession = (hasTeam && !isFirstRun) ? loadLatestSession(teamRoot) : null;
+  const recentSession = (hasTeam && !isFirstRun) ? loadLatestSession(teamRoot, stateDir) : null;
   if (recentSession) {
     persistedSession = recentSession;
     debugLog('resuming recent session', persistedSession.id);
@@ -1191,7 +1197,7 @@ export async function runShell(): Promise<void> {
   let shellMessages: ShellMessage[] = [];
   function autoSave(): void {
     persistedSession.messages = shellMessages;
-    try { saveSession(teamRoot, persistedSession); } catch (err) { debugLog('autoSave failed:', err); }
+    try { saveSession(teamRoot, persistedSession, stateDir); } catch (err) { debugLog('autoSave failed:', err); }
   }
 
   /** Callback for /resume command — replaces current messages with restored session. */
