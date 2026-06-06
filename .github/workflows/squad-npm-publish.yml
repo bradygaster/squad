@@ -79,7 +79,7 @@ jobs:
             }
             const missingIntegrity = Object.keys(pkgs).filter(k =>
               k.includes('node_modules/@bradygaster/squad-') &&
-              pkgs[k].resolved && !pkgs[k].resolved.startsWith('file:') &&
+              pkgs[k].resolved && pkgs[k].resolved.startsWith('https://') &&
               (!pkgs[k].integrity || !pkgs[k].integrity.startsWith('sha512-'))
             );
             if (missingIntegrity.length) {

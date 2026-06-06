@@ -231,6 +231,16 @@ Squad follows strict TypeScript conventions:
 - **Error handling:** Structured errors with `fatal()`, `error()`, `warn()`, `info()`
 - **No hype in docs** — factual, substantiated claims only (tone ceiling)
 
+## Scoped Changes & Diff Hygiene
+
+Keep every change as small and focused as the task requires. Incidental formatting changes make a small edit look like a whole-file rewrite — every line shows as a delta, which makes review hard and can hide the real change.
+
+- **Keep changes scoped:** only touch the lines relevant to your change.
+- **Don't reformat unrelated content:** do not re-indent, reorder, or refactor code or markdown that is unrelated to your change.
+- **Preserve existing line endings:** if a file is committed with CRLF, keep CRLF. On Windows, be aware that `core.autocrlf=true` can silently rewrite a file's line endings on commit — stage such files with `core.autocrlf=false`, or add a `.gitattributes` rule pinning the file's `eol`.
+- **Separate genuine reformats:** if a file genuinely needs reformatting, do it in a dedicated PR so it can be reviewed independently of functional changes.
+- **Sanity-check the diff before pushing:** run `git diff --stat` / `git diff --numstat`. If a small change shows a whole-file delta, investigate (usually whitespace or line endings) before committing.
+
 ## Documentation
 
 - **README.md** — User-facing guide, quick start, architecture overview
