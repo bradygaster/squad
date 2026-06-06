@@ -20,6 +20,7 @@ export interface WatchConfig {
   maxConcurrent: number;
   timeout: number;
   agentFlags?: string;
+  copilotFlags?: string;
   /** Hidden — fully override the agent command. */
   agentCmd?: string;
   /** Dispatch mode: 'task' (default 1:1), 'fleet' (batch read-only), 'hybrid' (auto-classify). */
@@ -87,6 +88,7 @@ export function loadWatchConfig(
     maxConcurrent: cliOverrides.maxConcurrent ?? fileConfig.maxConcurrent ?? DEFAULTS.maxConcurrent,
     timeout: cliOverrides.timeout ?? fileConfig.timeout ?? DEFAULTS.timeout,
     agentFlags: cliOverrides.agentFlags ?? fileConfig.agentFlags ?? DEFAULTS.agentFlags,
+    copilotFlags: cliOverrides.copilotFlags ?? fileConfig.copilotFlags ?? DEFAULTS.copilotFlags ?? cliOverrides.agentFlags ?? fileConfig.agentFlags,
     agentCmd: cliOverrides.agentCmd ?? fileConfig.agentCmd ?? DEFAULTS.agentCmd,
     dispatchMode: cliOverrides.dispatchMode ?? fileConfig.dispatchMode ?? DEFAULTS.dispatchMode,
     logFile: cliOverrides.logFile ?? fileConfig.logFile ?? DEFAULTS.logFile,
@@ -116,9 +118,17 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['execute'] === 'boolean') result.execute = raw['execute'];
   if (typeof raw['maxConcurrent'] === 'number') result.maxConcurrent = raw['maxConcurrent'];
   if (typeof raw['timeout'] === 'number') result.timeout = raw['timeout'];
-  if (typeof raw['agentFlags'] === 'string') result.agentFlags = raw['agentFlags'];
+  if (typeof raw['agentFlags'] === 'string') {
+    result.agentFlags = raw['agentFlags'];
+    result.copilotFlags = raw['agentFlags'];
+  }
   // Backward compat: accept copilotFlags as alias for agentFlags
-  if (!result.agentFlags && typeof raw['copilotFlags'] === 'string') result.agentFlags = raw['copilotFlags'];
+  if (typeof raw['copilotFlags'] === 'string') {
+    result.copilotFlags = raw['copilotFlags'];
+    if (!result.agentFlags) {
+      result.agentFlags = raw['copilotFlags'];
+    }
+  }
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
   if (typeof raw['verbose'] === 'boolean') result.verbose = raw['verbose'];
   if (typeof raw['dispatchMode'] === 'string') {

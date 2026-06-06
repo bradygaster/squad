@@ -808,6 +808,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     config: {},
     agentCmd: config.agentCmd,
     agentFlags: config.agentFlags,
+    copilotFlags: config.copilotFlags ?? config.agentFlags,
     verbose: config.verbose,
     pidTracker,
   };
