@@ -15,12 +15,16 @@ import { randomBytes } from 'crypto';
 import { runDoctor, getDoctorMode, checkNodeVersion, checkGitSyncHooks } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 
-vi.mock('node:child_process', () => ({
-  execFile: vi.fn((cmd, args, opts, callback) => {
-    const cb = typeof opts === 'function' ? opts : callback;
-    if (cb) cb(null, 'copilot v0.0.1', '');
-  }),
-}));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    execFile: vi.fn((cmd, args, opts, callback) => {
+      const cb = typeof opts === 'function' ? opts : callback;
+      if (cb) cb(null, 'copilot v0.0.1', '');
+    }),
+  };
+});
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
 
