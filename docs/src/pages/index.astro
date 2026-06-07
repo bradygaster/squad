@@ -354,22 +354,36 @@ const base = import.meta.env.BASE_URL;
 </BaseLayout>
 
 <script>
-  const copyBtn = document.getElementById('copy-install');
-  copyBtn?.addEventListener('click', async () => {
-    await navigator.clipboard.writeText('npm i -g @bradygaster/squad-cli');
-    const svg = copyBtn.innerHTML;
-    copyBtn.innerHTML = '<svg class="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>';
-    setTimeout(() => { copyBtn.innerHTML = svg; }, 2000);
-  });
+  let revealObserver;
 
-  // Scroll reveal
-  const revealObserver = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        revealObserver.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-  document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+  function initHomePage() {
+    // Copy the install command to the clipboard. Assigning onclick (rather than
+    // addEventListener) keeps this idempotent if initHomePage runs more than once.
+    const copyBtn = document.getElementById('copy-install');
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        await navigator.clipboard.writeText('npm i -g @bradygaster/squad-cli');
+        const svg = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<svg class="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>';
+        setTimeout(() => { copyBtn.innerHTML = svg; }, 2000);
+      };
+    }
+
+    // Scroll reveal. Recreate the observer on every navigation so the freshly
+    // swapped-in .reveal elements are observed again after View Transitions —
+    // otherwise they stay at opacity:0 when navigating back to this page.
+    revealObserver?.disconnect();
+    revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+  }
+
+  // astro:page-load fires on initial load AND after each View Transition.
+  document.addEventListener('astro:page-load', initHomePage);
 </script>

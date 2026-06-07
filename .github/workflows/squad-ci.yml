@@ -219,12 +219,18 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
           CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
-          SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E '^packages/squad-(sdk|cli)/src/' || true)
+          # Paths whose changes ship behavioral or scaffolding updates and therefore
+          # require a changeset (or CHANGELOG update). The top-level templates/ tree is
+          # the primary sync target of .squad-templates/ (see scripts/sync-templates.mjs) —
+          # an append-only superset whose entire tree is governed squad scaffolding, not
+          # unrelated content. Agent charters under .squad/agents/ are likewise governed.
+          SDK_CLI_PATH_REGEX='^packages/squad-(sdk|cli)/src/|^packages/squad-(sdk|cli)/templates/|^\.squad-templates/|^templates/|^\.squad/agents/.+/charter\.md$'
+          SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E "$SDK_CLI_PATH_REGEX" || true)
           if [ -z "$SDK_CLI_CHANGED" ]; then
-            echo "✅ Not applicable (no SDK/CLI source changes)" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Not applicable (no SDK/CLI source or template changes)" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-          echo "SDK/CLI source files changed:"
+          echo "SDK/CLI source or template files changed:"
           echo "$SDK_CLI_CHANGED"
           CHANGESET_ADDED=$(git diff --diff-filter=AM --name-only "$BASE"..."$HEAD" | grep -E '^\.changeset/[^/]+\.md$' | grep -vxF '.changeset/README.md' || true)
           CHANGELOG_CHANGED=$(echo "$CHANGED" | grep -E '^CHANGELOG\.md$' || true)
@@ -236,7 +242,7 @@ jobs:
             echo "✅ CHANGELOG.md updated" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
-          echo "::error::No changeset or CHANGELOG.md update found, but SDK/CLI source files were changed."
+          echo "::error::No changeset or CHANGELOG.md update found, but SDK/CLI source or template files were changed."
           echo "::error::Run 'npx changeset add' or edit CHANGELOG.md. Escape hatch: add 'skip-changelog' label."
           echo "❌ No changeset or CHANGELOG.md update" >> $GITHUB_STEP_SUMMARY
           exit 1
@@ -245,7 +251,7 @@ jobs:
       - name: "Gate: CHANGELOG Write Protection"
         if: always()
         env:
-          APPROVED_AUTHORS: 'bradygaster github-actions[bot] copilot-swe-agent[bot]'
+          APPROVED_AUTHORS: 'bradygaster tamirdresher github-actions[bot] copilot-swe-agent[bot]'
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           echo "## 🔒 CHANGELOG Write Protection" >> $GITHUB_STEP_SUMMARY

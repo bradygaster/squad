@@ -187,7 +187,7 @@ External contributors don't have write access, so the review-to-merge flow has a
 
 **Your side (contributor):**
 
-1. ✅ All required CI checks are green (build, test, lint; changeset/CHANGELOG gate only applies when `packages/squad-cli/src/` or `packages/squad-sdk/src/` files change)
+1. ✅ All required CI checks are green (build, test, lint; the changeset/CHANGELOG gate applies when `packages/squad-(sdk|cli)/src/` **or** governed template/scaffolding paths change — `packages/squad-(sdk|cli)/templates/`, `.squad-templates/`, top-level `templates/`, and `.squad/agents/*/charter.md`)
 2. ✅ PR is no longer a draft — mark as **"Ready for review"**
 3. ✅ Copilot reviewer bot posts its review automatically
 4. ✅ Review Copilot's suggestions and manually apply any you agree with in your fork
@@ -214,7 +214,7 @@ An automated readiness check runs on every PR and posts a checklist comment. Add
 | **Not in draft** | Mark your PR as "Ready for review" when it's done |
 | **Branch up to date** | Rebase on latest `dev` (`git fetch upstream && git rebase upstream/dev`) |
 | **Copilot review** | Wait for the Copilot reviewer bot to post its review |
-| **Changeset present** | Run `npx changeset add` if you changed files in `packages/squad-sdk/src/` or `packages/squad-cli/src/` |
+| **Changeset present** | Run `npx changeset add` if you changed `packages/squad-(sdk|cli)/src/` or governed template/scaffolding paths (`packages/squad-(sdk|cli)/templates/`, `.squad-templates/`, top-level `templates/`, `.squad/agents/*/charter.md`) |
 | **No merge conflicts** | Resolve any conflicts with the target branch |
 | **CI passing** | All CI checks (build, test, lint) must be green |
 
@@ -277,7 +277,7 @@ npm unlink -w packages/squad-cli
 
 Squad uses [@changesets/cli](https://github.com/changesets/changesets) for independent package versioning.
 
-**When your PR changes SDK or CLI source files** (`packages/squad-sdk/src/` or `packages/squad-cli/src/`), add a changeset file instead of editing `CHANGELOG.md` directly. Changesets prevent merge conflicts when multiple PRs are open simultaneously and are the preferred workflow.
+**When your PR changes SDK or CLI source files** (`packages/squad-sdk/src/` or `packages/squad-cli/src/`) **or governed template/scaffolding paths** (`packages/squad-(sdk|cli)/templates/`, `.squad-templates/`, top-level `templates/`, or `.squad/agents/*/charter.md`), add a changeset file instead of editing `CHANGELOG.md` directly. Changesets prevent merge conflicts when multiple PRs are open simultaneously and are the preferred workflow.
 
 ### Adding a Changeset
 
@@ -321,7 +321,7 @@ Add streaming support to agent orchestration. Update CLI to display stream progr
 
 ### CI Changelog Gate
 
-The `changelog-gate` CI check enforces that PRs touching SDK/CLI source files include either:
+The `changelog-gate` CI check enforces that PRs touching SDK/CLI source files — or governed template/scaffolding paths (`packages/squad-(sdk|cli)/templates/`, `.squad-templates/`, top-level `templates/`, `.squad/agents/*/charter.md`) — include either:
 - A `.changeset/*.md` file (preferred), **or**
 - A direct `CHANGELOG.md` edit (backward-compatible)
 
