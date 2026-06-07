@@ -251,7 +251,7 @@ jobs:
       - name: "Gate: CHANGELOG Write Protection"
         if: always()
         env:
-          APPROVED_AUTHORS: 'bradygaster github-actions[bot] copilot-swe-agent[bot]'
+          APPROVED_AUTHORS: 'bradygaster tamirdresher github-actions[bot] copilot-swe-agent[bot]'
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           echo "## 🔒 CHANGELOG Write Protection" >> $GITHUB_STEP_SUMMARY
