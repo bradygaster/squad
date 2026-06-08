@@ -1,0 +1,124 @@
+# 500-level demo runbook
+
+Use this file as the fallback runbook when live commands, provider UI, or network calls are unavailable.
+
+## Validate deck package
+
+From the worktree root:
+
+```powershell
+node -e "const fs=require('fs');const h=fs.readFileSync('docs\\\\advanced-squad-session\\\\deck.html','utf8');const m=h.match(/<script>([\\s\\S]*)<\\/script>/);new Function(m[1]);console.log((h.match(/\\{eye:/g)||[]).length)"
+```
+
+Expected: `23`
+
+## Memory proof
+
+Build first if the local CLI is stale:
+
+```powershell
+$env:SKIP_BUILD_BUMP='1'
+npm run build -w packages/squad-sdk
+npm run build -w packages/squad-cli
+```
+
+Run from `docs/advanced-squad-session/demo-root`:
+
+```powershell
+node ..\..\..\packages\squad-cli\dist\cli-entry.js memory provider --log-level info
+node ..\..\..\packages\squad-cli\dist\cli-entry.js memory classify "Always include exact prompts, expected tool calls, expected output, and fallback paths in advanced demo snippets." --log-level info
+node ..\..\..\packages\squad-cli\dist\cli-entry.js memory write --content "Advanced Squad demo snippets include the exact prompt, expected tool calls, expected output, and a fallback path." --class DECISION --title "Advanced demo snippet structure" --author pao --load-guidance ALWAYS --approved --log-level info
+node ..\..\..\packages\squad-cli\dist\cli-entry.js memory search --query "advanced demo snippet" --log-level info
+node ..\..\..\packages\squad-cli\dist\cli-entry.js memory audit --log-level info
+```
+
+Expected fallback files:
+
+- outputs/01-memory-provider-status.txt
+- outputs/02-memory-classify.txt
+- outputs/03-memory-write.txt
+- outputs/04-memory-search.txt
+- outputs/05-memory-audit.txt
+- outputs/effects/memory-index.json
+- outputs/effects/decision-inbox-entry.md
+- outputs/effects/memory-audit.jsonl
+
+## Delegate and discover
+
+Safe commands:
+
+```powershell
+squad discover
+```
+
+Only run live delegation when `squad discover` shows a target manifest that accepts `issues` and `gh auth status` succeeds:
+
+```powershell
+squad delegate platform-squad "Add Prometheus metrics endpoint for auth"
+```
+
+Expected failure modes:
+
+- No squads discovered: configure `.squad/upstream.json` or `.squad/squad-registry.json`.
+- Target not found: CLI lists known target names.
+- Target does not accept issues: CLI exits before calling `gh`.
+- `gh` unauthenticated/missing: CLI fails after building args; use outputs/06-delegate-presets-evidence.txt.
+
+## Presets
+
+```powershell
+squad preset init
+squad preset list
+squad preset show default
+squad preset apply default
+squad preset save demo-review-team --description "Review-focused demo squad"
+```
+
+Caveat: presets copy agents and charters only. They do not copy routing, skills, casting state, decisions, or governed memory.
+
+## State backend inspection
+
+Local:
+
+```powershell
+Get-Content .squad\decisions.md
+Get-ChildItem .squad\skills
+```
+
+Orphan/two-layer:
+
+```powershell
+git ls-tree --name-only -r squad-state
+git show squad-state:decisions.md
+git log --oneline squad-state
+git notes --ref=squad show $(git rev-list --max-parents=0 HEAD)
+```
+
+Caveat: `stateBackend: "external"` currently warns and uses local in `createBackend()`. Use `squad externalize` / `squad internalize` for the externalization command path.
+
+## SubSquads
+
+```powershell
+squad subsquads list
+squad subsquads status
+squad subsquads activate docs
+```
+
+Expected state: `activate` writes `.squad-workstream`, a local machine/Codespace marker.
+
+## Mesh and cross-machine
+
+Mesh is a skill pattern:
+
+1. Sync: `git pull` or `curl` published `SUMMARY.md`.
+2. Read materialized local files.
+3. Work normally.
+4. Write only the squad-owned partition.
+5. Publish with git.
+
+Cross-machine coordination is specification-ready:
+
+- Tasks: `.squad/cross-machine/tasks/*.yaml`
+- Results: `.squad/cross-machine/results/*.yaml`
+- Urgent issues: `squad:machine-{name}`
+- Validation: schema, whitelist, resource limits, isolation, audit.

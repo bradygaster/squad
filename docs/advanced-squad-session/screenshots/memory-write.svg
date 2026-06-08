@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-labelledby="title desc">
+  <title id="title">Memory write proof</title>
+  <desc id="desc">Terminal-style capture showing governed memory write output.</desc>
+  <rect width="1100" height="620" rx="28" fill="#07111f"/>
+  <rect x="28" y="28" width="1044" height="564" rx="18" fill="#0d1526" stroke="#2a3855"/>
+  <circle cx="62" cy="60" r="8" fill="#ff5f57"/>
+  <circle cx="90" cy="60" r="8" fill="#ffbd2e"/>
+  <circle cx="118" cy="60" r="8" fill="#28c840"/>
+  <text x="52" y="112" fill="#9fb3d9" font-family="Consolas, monospace" font-size="24">PS&gt; squad memory write --class DECISION --load-guidance ALWAYS --approved</text>
+  <text x="52" y="162" fill="#a7f3d0" font-family="Consolas, monospace" font-size="22">[memory:info] write.complete stored=true class=DECISION provider=local loadGuidance=ALWAYS</text>
+  <text x="52" y="214" fill="#e5eefc" font-family="Consolas, monospace" font-size="22">{</text>
+  <text x="82" y="252" fill="#e5eefc" font-family="Consolas, monospace" font-size="22">"stored": true,</text>
+  <text x="82" y="290" fill="#e5eefc" font-family="Consolas, monospace" font-size="22">"classification": {</text>
+  <text x="112" y="328" fill="#7dd3fc" font-family="Consolas, monospace" font-size="22">"class": "DECISION",</text>
+  <text x="112" y="366" fill="#7dd3fc" font-family="Consolas, monospace" font-size="22">"allowed": true,</text>
+  <text x="112" y="404" fill="#7dd3fc" font-family="Consolas, monospace" font-size="22">"destination": "decision-inbox",</text>
+  <text x="112" y="442" fill="#7dd3fc" font-family="Consolas, monospace" font-size="22">"loadGuidance": "ALWAYS"</text>
+  <text x="82" y="480" fill="#e5eefc" font-family="Consolas, monospace" font-size="22">},</text>
+  <text x="82" y="518" fill="#fbbf24" font-family="Consolas, monospace" font-size="22">"path": ".squad\\decisions\\inbox\\pao-advanced-demo-snippet-structure-e96f9d99.md"</text>
+  <text x="52" y="556" fill="#e5eefc" font-family="Consolas, monospace" font-size="22">}</text>
+</svg>
+

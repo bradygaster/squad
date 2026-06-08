@@ -1,0 +1,78 @@
+# Spawning and mesh evidence
+
+Purpose: fallback evidence for spawning more agents/squads and cross-squad communication.
+
+## Bounded sub-agent spawning
+
+Source: packages/squad-cli/templates/skills/iterative-retrieval/SKILL.md
+
+Key facts:
+- The skill is named `iterative-retrieval`.
+- It is a max-3-cycle protocol for agent sub-tasks.
+- Every spawn prompt must include Task, WHY this matters, Success criteria, and Escalation path.
+- The coordinator validates output after each cycle.
+- Cycle 3 exhaustion escalates to `.squad/decisions/inbox/`, issue label `status:needs-decision`, and user notification.
+
+Stage line:
+"Spawning is safe when every handoff includes WHY, acceptance criteria, and a hard stop."
+
+## SubSquads
+
+Source: packages/squad-cli/src/cli/commands/streams.ts and command help.
+
+Supported command:
+- `squad subsquads <list|status|activate <name>>`
+- Deprecated aliases: `workstreams`, `streams`.
+
+Behavior shown by source:
+- `list` shows configured SubSquads from `.squad/streams.json`.
+- `status` checks PRs and branches per SubSquad.
+- `activate` writes `.squad-workstream` locally and gitignored.
+
+Stage line:
+"Use SubSquads for configured multi-Codespace lanes, not for ad-hoc hidden work."
+
+## Personal squads
+
+Source: .squad/skills/personal-squad/SKILL.md
+
+Key facts:
+- Personal squads are user-level agents that travel across projects.
+- They are discovered from the global config directory.
+- Ghost Protocol: personal agents advise; project agents execute.
+- `SQUAD_NO_PERSONAL=1` disables ambient discovery.
+
+## Cross-squad skill
+
+Source: .squad/skills/cross-squad/SKILL.md
+
+Key facts:
+- Squads discover each other through manifests, upstream config, or registry.
+- Handoff context should include only relevant decisions and acceptance criteria.
+- Do not share internal team state, full decision archives, credentials, or secrets.
+- Work handoff creates a GitHub issue in the target repo and records the URL in the origin log.
+- Anti-patterns: direct file writes across repos, tight coupling, unbounded delegation, skipping discovery, sharing secrets, circular delegation.
+
+## Distributed mesh skill
+
+Source: .copilot/skills/distributed-mesh/SKILL.md
+
+Key facts:
+- "The filesystem is the mesh, and git is how the mesh crosses machine boundaries."
+- Zone 1 local: same filesystem.
+- Zone 2 remote-trusted: git pull/push materializes remote state locally.
+- Zone 3 remote-opaque: curl published contracts such as SUMMARY.md.
+- Write partitioning: each squad writes only to its own directory.
+- Phase 0 is convention only; do not auto-advance to more complex infrastructure.
+
+## Cross-machine coordination skill
+
+Source: .squad/skills/cross-machine-coordination/SKILL.md
+
+Key facts:
+- Status is specification ready for implementation.
+- Pattern uses git-based task queuing plus GitHub Issues supplement.
+- Task files live under `.squad/cross-machine/tasks/*.yaml`.
+- Results live under `.squad/cross-machine/results/*.yaml`.
+- Urgent path uses GitHub issues labeled `squad:machine-{name}`.
+- Validation pipeline includes schema validation, command whitelist, resource limits, execution isolation, and audit trail.

@@ -1,0 +1,98 @@
+# Engineering source map for the 500-level advanced session
+
+Purpose: fallback evidence for the rewritten engineering deck. This file maps the new technical slides to repository sources and checked-in output captures.
+
+## Runtime architecture and spawning
+
+- packages/squad-cli/src/cli/shell/spawn.ts
+  - loadAgentCharter() resolves .squad and reads .squad/agents/{name}/charter.md through SquadState.
+  - buildAgentPrompt() composes the charter and optional systemContext.
+  - spawnAgent() registers working/idle/error status, creates a SquadClient session when available, streams message_delta events, and closes the session.
+  - Without a SquadClient, it returns a compatibility stub.
+- packages/squad-cli/src/cli/commands/watch/agent-spawn.ts
+  - buildAgentCommand() prefers context.agentCmd, then standalone copilot, then gh copilot.
+  - Windows uses shell: true so .cmd/.bat wrappers resolve.
+  - spawnWithTimeout() and spawnAgent() enforce timeouts and use a 50 MiB maxBuffer.
+- packages/squad-sdk/src/coordinator/response-tiers.ts
+  - direct/lightweight/standard/full tiers.
+  - full maxAgents=5 timeout=300.
+  - load downgrades full at >=4 active sessions and standard at >=6.
+- .squad/agents/scribe/charter.md
+  - Scribe owns .squad/log, .squad/decisions.md, .squad/decisions/inbox, and affected agent history updates.
+
+## Governed memory
+
+- packages/squad-cli/src/cli/commands/memory.ts
+  - CLI operations: classify, write, search, promote, delete, audit, provider.
+  - Diagnostics use --log-level none|error|info|debug and avoid raw memory/search text.
+- packages/squad-sdk/src/memory/index.ts
+  - Memory classes: TRANSIENT, LOCAL, DECISION, POLICY, COPILOT_MEMORY, FORBIDDEN.
+  - ensureInitialized() creates memory/local, policy-inbox, semantic-inbox, tombstones, config.json, index.json, audit.jsonl.
+  - classify() rejects forbidden and transient content before provider calls.
+  - destinationPath() routes DECISION to decisions/inbox, POLICY to memory/policy-inbox, LOCAL to memory/local.
+  - writeIndex() writes index.json.tmp then renames into place.
+  - audit() appends JSONL records and rotates when configured size is exceeded.
+- outputs/01-memory-provider-status.txt through outputs/05-memory-audit.txt
+  - Deterministic local proof of provider, classify, write, search, and audit.
+- outputs/effects/
+  - Portable copies of index JSON, audit JSONL, and decision inbox markdown.
+
+## State backends
+
+- packages/squad-sdk/src/state-backend.ts
+  - StateBackend interface: read, write, exists, list, delete, append, name.
+  - WorktreeBackend is local filesystem state.
+  - OrphanBranchBackend stores state on squad-state with Git plumbing and CAS update-ref.
+  - TwoLayerBackend writes durable state to orphan and best-effort commit-scoped notes.
+  - resolveStateBackend() reads .squad/config.json and falls back to local on backend creation failure.
+  - validateStateKey() rejects traversal, null bytes, newlines, tabs, and empty path segments.
+  - Legacy git-notes config is normalized to two-layer with a one-shot warning.
+- packages/squad-cli/src/cli/commands/externalize.ts
+  - squad externalize moves state to global project storage and leaves .squad/config.json.
+  - manifest/upstream/registry style files stay local because discovery needs them locally.
+- outputs/08-state-backends-evidence.txt
+  - Backend comparison, inspect commands, hardening notes, and external caveat.
+
+## Presets and SQUAD_HOME
+
+- packages/squad-cli/src/cli/commands/preset.ts
+  - squad preset init/list/show/apply/save.
+  - init --remote requires gh and authentication; creates or clones private squad-home.
+  - apply installs preset agents into current .squad/agents.
+  - save captures current project agents.
+  - Source comments explicitly say presets capture agents only; use squad export for full snapshots.
+- packages/squad-sdk/src/presets/builtin/default/preset.json
+  - Built-in default preset manifest with lead, reviewer, devrel, security, docs agents.
+- outputs/06-delegate-presets-evidence.txt
+  - Command list and behavior summary.
+
+## Cross-squad discovery and delegation
+
+- packages/squad-cli/src/cli/commands/cross-squad.ts
+  - squad discover detects squad dir and prints formatDiscoveryTable(discoverSquads()).
+  - squad delegate validates args, discovers target, requires accepts includes issues, builds gh issue args, and executes gh.
+  - buildDelegationBody() creates the Cross-Squad Work Request body and acceptance criteria.
+- packages/squad-sdk/src/runtime/cross-squad.ts
+  - Manifest schema and validateManifest().
+  - discoverFromUpstreams() reads .squad/upstream.json and local/git cached upstreams.
+  - discoverFromRegistry() reads .squad/squad-registry.json.
+  - discoverSquads() deduplicates by manifest name, upstreams first.
+  - buildDelegationArgs() adds squad:cross-squad label.
+- .squad/skills/cross-squad/SKILL.md
+  - Context-sharing rules and anti-patterns.
+
+## Scale, SubSquads, personal squads, mesh, cross-machine
+
+- packages/squad-cli/templates/skills/iterative-retrieval/SKILL.md
+  - Max-3-cycle protocol with Task, WHY, success criteria, escalation path.
+- packages/squad-cli/src/cli/commands/streams.ts
+  - squad subsquads list|status|activate.
+  - status calls gh pr list and git branch.
+  - activate writes .squad-workstream locally.
+- .squad/skills/personal-squad/SKILL.md
+  - Personal squads are global advisors; SQUAD_NO_PERSONAL disables discovery.
+- .copilot/skills/distributed-mesh/SKILL.md
+  - Mesh zones and materialization model.
+  - Phase 0 is convention only; no federation/message queue.
+- .squad/skills/cross-machine-coordination/SKILL.md
+  - Specification-ready YAML task/result contracts and validation pipeline.

@@ -1,0 +1,2 @@
+<repos>/squad-squad                         3c34d45e [main]
+<repos>/squad-advanced-squad-session-slides ede35fcd [squad/advanced-squad-session-slides]

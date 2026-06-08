@@ -1,0 +1,99 @@
+# Architecture evidence map
+
+Purpose: source trail for the architecture-first Squad presentation. Use this when the audience asks, "Where did that idea come from?"
+
+## Origin: self-repair and proof-of-work
+
+Source: docs/src/content/blog/001-wave-0-the-team-that-built-itself.md
+
+Key idea:
+- The "silent success" bug showed that agents could complete work, write files, and update state while returning no visible response to the coordinator.
+- Architecture implication: agent text is not enough. The system needs file/state/audit/branch evidence and explicit completion handling.
+
+## Replatform: SDK/CLI split
+
+Source: docs/src/content/blog/013-the-replatform-begins.md
+
+Key idea:
+- Squad beta's string parsing and unsafe adapter boundaries could not sustain features such as skills, upstream inheritance, multi-client support, state backends, or cross-squad orchestration.
+- Architecture implication: separate `@bradygaster/squad-sdk` runtime primitives from `@bradygaster/squad-cli` command/UI concerns.
+
+## Cross-squad orchestration
+
+Sources:
+- Issue #316: Design: Cross-Squad Orchestration
+- PR #446: Cross-Squad orchestration
+- packages/squad-sdk/src/runtime/cross-squad.ts
+- packages/squad-cli/src/cli/commands/cross-squad.ts
+
+Key idea:
+- The design question started as peer-squad discovery/context sharing. The implementation chose public manifests plus GitHub issue delegation.
+- Manifest fields: name, capabilities, contact repo/labels, accepts, skills.
+- Delegate path: discover target, require `accepts.includes('issues')`, build `gh issue create` args, create a cross-squad issue with acceptance criteria.
+
+## False-success routing
+
+Source:
+- PR #1066 / packages/squad-sdk/CHANGELOG.md around squad_route false success
+
+Key idea:
+- Control-plane operations must not return success if no session/work was actually created.
+- Architecture implication: routing/delegation/memory writes need concrete artifacts: spawned session, issue URL, stored path, index/audit update.
+
+## State backends and Tamir Part 7b
+
+Sources:
+- Issue #792: Move .squad/ state out of working tree
+- docs/src/content/blog/031-state-backends.md
+- https://www.tamirdresher.com/blog/2026/03/23/scaling-ai-part7b-git-notes
+- packages/squad-sdk/src/state-backend.ts
+
+Key idea:
+- Code review and autonomous squad state are different workflows.
+- Git notes provide commit-scoped "why" annotations that stay invisible in PR diffs.
+- Orphan/two-layer state provides durable team memory outside normal code diffs.
+- The architecture must handle rejected features, universal truths, and valuable failures differently.
+
+## Governed memory
+
+Sources:
+- PR #1145: governed memory model/provider boundaries/diagnostics
+- packages/squad-cli/src/cli/commands/memory.ts
+- packages/squad-sdk/src/memory/index.ts
+- outputs/01-memory-provider-status.txt through outputs/05-memory-audit.txt
+
+Key idea:
+- Memory is policy before storage. Classification rejects forbidden/transient content before provider calls.
+- Local governed memory has concrete proof: provider status, classification, write path, search result, audit JSONL, and effect files.
+
+## Skills as behavioral memory
+
+Source: docs/src/content/blog/011-skills-system-learning-from-work.md
+
+Key idea:
+- Skills are portable behavioral memory extracted from work, not just a context cache.
+- Flat `.squad/skills/{skill}/SKILL.md` makes skill knowledge team-wide and exportable.
+
+## SubSquads and horizontal scaling
+
+Sources:
+- docs/src/content/blog/023-subsquads-horizontal-scaling.md
+- packages/squad-sdk/src/streams/resolver.ts
+- packages/squad-cli/src/cli/commands/streams.ts
+
+Key idea:
+- SubSquads came from real multi-Codespace pressure.
+- Scale is achieved by partitioning issue labels and local activation (`SQUAD_TEAM`, `.squad-workstream`), not by allowing unbounded agents in one workspace.
+
+## Distributed mesh and cross-machine coordination
+
+Sources:
+- docs/src/content/docs/features/distributed-mesh.md
+- .copilot/skills/distributed-mesh/SKILL.md
+- .squad/skills/cross-machine-coordination/SKILL.md
+
+Key idea:
+- "The filesystem is the mesh, and git is how the mesh crosses machine boundaries."
+- Remote state is materialized locally before agents read it.
+- Cross-machine coordination is currently a specification-ready pattern using task/result YAML and GitHub issue supplements, not a live federation daemon.
+

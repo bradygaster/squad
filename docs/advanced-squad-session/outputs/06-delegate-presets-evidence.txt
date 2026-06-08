@@ -1,0 +1,69 @@
+# Delegate and presets evidence
+
+Purpose: fallback evidence for the advanced session deck. This file summarizes repository-grounded facts; it is not a simulated live command run.
+
+## Release note grounding
+
+CHANGELOG.md 0.10.0:
+- Cross-squad orchestration adds manifest schema, `squad discover`, and `squad delegate` commands for coordinating work across multiple Squad instances.
+- The same release adds `SQUAD_HOME` and the preset system.
+
+## Delegate grounding
+
+Source: packages/squad-cli/src/cli/commands/cross-squad.ts
+
+Supported commands:
+- `squad discover` — list known squads and capabilities.
+- `squad delegate <squad-name> <description>` — create work in another squad.
+
+Behavior shown by source:
+- Detects the current `.squad/` directory.
+- Calls `discoverSquads()` and `findSquadByName()` from the SDK.
+- Requires the target manifest to include `issues` in `accepts`.
+- Builds `gh issue create` arguments from target repo, labels, title, and body.
+- Creates a GitHub issue with a `[cross-squad]` title and acceptance criteria.
+
+Delegation body shape:
+- `## Cross-Squad Work Request`
+- `**From:** this repository`
+- `**To:** {target manifest name} ({target repo})`
+- `### Description`
+- `### Acceptance Criteria`
+- `- [ ] Work completed and verified`
+- `- [ ] Originating squad notified of completion`
+
+Failure modes shown by source:
+- Missing squad name or description exits with usage.
+- Unknown target exits with known squad names, or says no squads were discovered.
+- Target manifest without `issues` in `accepts` exits before calling `gh`.
+- `gh` failure exits as `Failed to create issue: ...`.
+- The body builder does not sanitize arbitrary user-provided content; operators must avoid secrets and use the cross-squad skill's relevant-context-only rule.
+
+Fallback stage line:
+"This proves the command path. I will only run the live delegate command when a target manifest exists and GitHub CLI is authenticated."
+
+## Preset grounding
+
+Source: packages/squad-cli/src/cli/commands/preset.ts
+
+Supported commands:
+- `squad preset init [--remote]`
+- `squad preset list`
+- `squad preset show <name>`
+- `squad preset apply <name> [--force]`
+- `squad preset save <name> [--force] [--description "..."]`
+
+Behavior shown by source:
+- Presets live under `SQUAD_HOME/presets/` by default.
+- `--remote` initializes or clones a private GitHub-backed `squad-home` repo so presets roam across machines.
+- `apply` installs preset agents into the current squad's `agents/` directory.
+- `save` captures current project agents as a preset.
+- Presets save agents only. For a full squad snapshot including casting state, skills, and routing rules, use `squad export`.
+
+Failure modes shown by source:
+- `preset init --remote` requires `gh --version` and `gh auth status`.
+- `preset apply` and `preset save` require a current `.squad/` directory.
+- `preset show` fails if the named preset is not found.
+
+Built-in preset grounding:
+- packages/squad-sdk/src/presets/builtin/default/preset.json includes `lead`, `reviewer`, `devrel`, `security`, and `docs` agents.

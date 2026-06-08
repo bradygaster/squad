@@ -1,0 +1,20 @@
+# Two-layer demo branch/ref proof
+
+Demo root: <two-layer-demo-repo>
+Root commit: 52ca56bcf65a9303e13c28c55a72a15c6ec70000
+Feature commit: 385a57d0c516df5a7ed8e7577feea61be1390279
+
+## Open locally
+
+```powershell
+cd <two-layer-demo-repo>
+git log --oneline --decorate --graph main squad-state
+git notes --ref=squad show <root-commit>
+git notes --ref=squad-flight list
+git show squad-state:promoted/squad-flight/385a57d0c516df5a7ed8e7577feea61be1390279.json
+git show squad-state:archive/squad-flight/52ca56bcf65a9303e13c28c55a72a15c6ec70000.json
+```
+
+## Note about URLs
+
+This proof repo is intentionally local and throwaway, so it has no GitHub branch URL. The deck links to implementation PRs/issues and shows these local commands for live proof. The transcript also records the current ref namespace collision: backend bulk notes use refs/notes/squad, which blocks nested refs/notes/squad/flight; the live promotion proof uses refs/notes/squad-flight as a non-conflicting per-agent ref.

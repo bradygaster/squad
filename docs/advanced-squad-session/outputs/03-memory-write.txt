@@ -1,0 +1,14 @@
+[memory:info] command.start command=write projectRoot=<demo-root>
+[memory:info] write.complete stored=true class=DECISION provider=local loadGuidance=ALWAYS path=.squad\decisions\inbox\pao-advanced-demo-snippet-structure-e96f9d99.md elapsedMs=43
+{
+  "stored": true,
+  "id": "e96f9d99-dbfc-492d-9e39-4ee9b276b07e",
+  "classification": {
+    "class": "DECISION",
+    "allowed": true,
+    "reason": "Content is allowed for governed local memory",
+    "destination": "decision-inbox",
+    "loadGuidance": "ALWAYS"
+  },
+  "path": ".squad\\decisions\\inbox\\pao-advanced-demo-snippet-structure-e96f9d99.md"
+}

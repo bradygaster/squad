@@ -1,0 +1,20 @@
+[memory:info] command.start command=audit projectRoot=<demo-root>
+[memory:info] audit.complete count=2 elapsedMs=32
+[
+  {
+    "timestamp": "2026-06-07T15:32:15.506Z",
+    "action": "write",
+    "id": "e96f9d99-dbfc-492d-9e39-4ee9b276b07e",
+    "class": "DECISION",
+    "title": "Advanced demo snippet structure",
+    "path": ".squad\\decisions\\inbox\\pao-advanced-demo-snippet-structure-e96f9d99.md",
+    "reason": "Content is allowed for governed local memory",
+    "actor": "pao",
+    "provider": "local"
+  },
+  {
+    "timestamp": "2026-06-07T15:32:18.776Z",
+    "action": "search",
+    "reason": "Search returned 1 result(s)"
+  }
+]

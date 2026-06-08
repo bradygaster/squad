@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-labelledby="title desc">
+  <title id="title">Squad orchestration fan-out</title>
+  <desc id="desc">Diagram showing coordinator routing work to specialist agents and fan-in summary.</desc>
+  <rect width="1100" height="620" rx="28" fill="#07111f"/>
+  <text x="56" y="72" fill="#f8fafc" font-family="Arial, sans-serif" font-size="36" font-weight="700">Advanced Squad orchestration</text>
+  <rect x="420" y="120" width="260" height="92" rx="20" fill="#172554" stroke="#60a5fa"/>
+  <text x="480" y="158" fill="#dbeafe" font-family="Arial, sans-serif" font-size="25" font-weight="700">Squad</text>
+  <text x="463" y="190" fill="#bfdbfe" font-family="Arial, sans-serif" font-size="18">Coordinator routes only</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="72" y="308" width="205" height="106" rx="18" fill="#10213c" stroke="#38bdf8"/>
+    <text x="102" y="350" fill="#e0f2fe" font-size="24" font-weight="700">PAO</text>
+    <text x="102" y="382" fill="#cbd5e1" font-size="18">Docs impact</text>
+    <rect x="321" y="308" width="205" height="106" rx="18" fill="#10213c" stroke="#34d399"/>
+    <text x="351" y="350" fill="#dcfce7" font-size="24" font-weight="700">FIDO</text>
+    <text x="351" y="382" fill="#cbd5e1" font-size="18">Quality gates</text>
+    <rect x="570" y="308" width="205" height="106" rx="18" fill="#10213c" stroke="#fbbf24"/>
+    <text x="600" y="350" fill="#fef3c7" font-size="24" font-weight="700">Booster</text>
+    <text x="600" y="382" fill="#cbd5e1" font-size="18">CI risk</text>
+    <rect x="819" y="308" width="205" height="106" rx="18" fill="#10213c" stroke="#fb7185"/>
+    <text x="849" y="350" fill="#ffe4e6" font-size="24" font-weight="700">Surgeon</text>
+    <text x="849" y="382" fill="#cbd5e1" font-size="18">Release gate</text>
+  </g>
+  <path d="M550 212 L174 308" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M550 212 L423 308" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M550 212 L672 308" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M550 212 L921 308" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="210" y="484" width="680" height="78" rx="18" fill="#111d33" stroke="#33456b"/>
+  <text x="266" y="533" fill="#f8fafc" font-family="Arial, sans-serif" font-size="25" font-weight="700">Fan-in: one merge-readiness summary with owners</text>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+</svg>
+

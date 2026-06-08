@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-labelledby="title desc">
+  <title id="title">Sanitized git worktree output</title>
+  <desc id="desc">Terminal-style capture showing main and advanced slides worktrees.</desc>
+  <rect width="1100" height="560" rx="28" fill="#07111f"/>
+  <rect x="28" y="28" width="1044" height="504" rx="18" fill="#0d1526" stroke="#2a3855"/>
+  <circle cx="62" cy="60" r="8" fill="#ff5f57"/>
+  <circle cx="90" cy="60" r="8" fill="#ffbd2e"/>
+  <circle cx="118" cy="60" r="8" fill="#28c840"/>
+  <text x="52" y="112" fill="#9fb3d9" font-family="Consolas, monospace" font-size="28">PS&gt; git worktree list</text>
+  <text x="52" y="176" fill="#e5eefc" font-family="Consolas, monospace" font-size="24">&lt;repos&gt;/squad-squad                         3c34d45e [main]</text>
+  <text x="52" y="226" fill="#7dd3fc" font-family="Consolas, monospace" font-size="24">&lt;repos&gt;/squad-advanced-squad-session-slides ede35fcd [squad/advanced-squad-session-slides]</text>
+  <rect x="52" y="286" width="996" height="166" rx="16" fill="#111d33" stroke="#33456b"/>
+  <text x="82" y="336" fill="#f8fafc" font-family="Arial, sans-serif" font-size="26" font-weight="700">What this proves</text>
+  <text x="82" y="382" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="23">The slide work is isolated from the dirty main checkout.</text>
+  <text x="82" y="424" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="23">The branch is explicit: squad/advanced-squad-session-slides.</text>
+</svg>
+

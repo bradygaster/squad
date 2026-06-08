@@ -1,0 +1,63 @@
+# State backends evidence
+
+Purpose: fallback evidence for the memory/state-backends section.
+
+## User-facing docs
+
+Source: docs/src/content/docs/features/state-backends.md
+
+Key facts:
+- Squad supports multiple state backends for `.squad/` state such as decisions, agent memories, session logs, and skills.
+- Default backend is `local` when no `--state-backend` flag or config field is present.
+- New project commands:
+  - `squad init`
+  - `squad init --state-backend orphan`
+  - `squad init --state-backend two-layer`
+- Existing project migration:
+  - `squad upgrade --state-backend two-layer`
+  - `squad upgrade --state-backend orphan`
+- `orphan` and `two-layer` install git hooks for automatic sync.
+
+## Backend comparison
+
+Local:
+- State lives as regular files in `.squad/` inside the working tree.
+- Best for simple, inspectable setups.
+- Inspection: read `.squad/decisions.md`, `.squad/skills/`, agent histories, and other files directly.
+
+Orphan:
+- State lives on a dedicated `squad-state` orphan branch.
+- Reads use commands such as `git show squad-state:<path>`.
+- Inspection examples: `git ls-tree --name-only -r squad-state`, `git log --oneline squad-state`.
+
+Two-layer:
+- Git notes carry commit-scoped why annotations.
+- Orphan branch carries durable state.
+- `squad notes promote` promotes/archive flagged notes when `stateBackend` is `two-layer`.
+
+External:
+- Source: packages/squad-cli/src/cli/commands/externalize.ts.
+- `squad externalize` moves `.squad/` state to global project storage and leaves a thin `.squad/config.json` marker.
+- Keeps local config entries such as `manifest.json`, `upstream.json`, and `squad-registry.json` in the repo because discovery needs them locally.
+- `squad internalize` moves state back.
+
+External backend caveat:
+- Source: packages/squad-sdk/src/state-backend.ts.
+- `StateBackendType` includes `external`, but `createBackend('external')` currently warns that the external backend is a stub and returns the local worktree backend.
+- For the deck, describe `squad externalize`/`squad internalize` as the implemented externalization command path, not as a fully active `stateBackend: "external"` storage backend.
+
+## SDK source grounding
+
+Source: packages/squad-sdk/src/state-backend.ts
+
+Supported `StateBackendType` values:
+- `local`
+- `external`
+- `orphan`
+- `two-layer`
+
+Hardening called out in source:
+- Retry with exponential backoff for transient git errors.
+- Circuit breaker to prevent cascading failures.
+- Startup verification and observable error surfacing.
+- Path validation against traversal and injection classes.

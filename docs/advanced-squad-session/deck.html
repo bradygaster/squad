@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Advanced Squad Patterns — Context, Memory, State, Delegation</title>
+<style>
+:root{color-scheme:dark;--bg:#06111f;--panel:#0f2338;--panel2:#101827;--text:#f8fafc;--muted:#cbd5e1;--dim:#94a3b8;--accent:#38bdf8;--green:#34d399;--yellow:#fbbf24;--red:#fb7185;--violet:#a78bfa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
+main{width:100vw;height:100vh;display:grid;place-items:center}.slide{display:none;width:min(1280px,96vw);height:min(720px,94vh);padding:36px 46px 56px;border-radius:28px;background:radial-gradient(circle at 12% 8%,rgba(56,189,248,.16),transparent 30%),radial-gradient(circle at 88% 15%,rgba(52,211,153,.10),transparent 28%),linear-gradient(135deg,#0b1220 0%,#08111f 62%,#111827 100%);border:1px solid #243653;box-shadow:0 30px 80px rgba(0,0,0,.45);position:relative}.slide.active{display:flex;flex-direction:column;gap:16px}
+h1,h2,h3,p{margin:0}h1{font-size:58px;line-height:.96;letter-spacing:-.05em}h2{font-size:37px;line-height:1.04;letter-spacing:-.035em}h3{font-size:20px;color:var(--accent);margin-bottom:8px}
+p,li{font-size:18px;line-height:1.32;color:var(--muted)}strong{color:var(--text)}code,pre{font-family:Consolas,"Cascadia Code",monospace}code{font-size:.88em;color:#e0f2fe}pre{margin:0;white-space:pre-wrap;background:rgba(2,6,23,.78);border:1px solid #334155;border-radius:16px;padding:13px;color:#e5eefc;overflow:hidden;font-size:13px;line-height:1.23}
+.eyebrow{color:var(--accent);text-transform:uppercase;letter-spacing:.18em;font-size:13px;font-weight:800}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.sixty{grid-template-columns:1.18fr .82fr}.grid.wide{grid-template-columns:1.45fr .55fr}
+.card{background:rgba(15,35,56,.82);border:1px solid #334155;border-radius:18px;padding:15px}.card p,.card li{font-size:15px}.takeaway{font-size:29px;line-height:1.18;color:var(--text)}.quote{font-size:23px;line-height:1.24;color:var(--text);border-left:5px solid var(--accent);padding-left:16px}.source{color:var(--dim);font-size:13px}.path{color:#bfdbfe}.small p,.small li,.small td,.small th{font-size:13px}.small pre{font-size:11px}
+table{border-collapse:collapse;width:100%;border-radius:14px;overflow:hidden;font-size:14px}th,td{border:1px solid #334155;padding:8px 10px;text-align:left;color:var(--muted);vertical-align:top}th{color:var(--text);background:#172554}
+.badges{display:flex;flex-wrap:wrap;gap:8px}.badge{border:1px solid #334155;background:#10213c;color:#dbeafe;border-radius:999px;padding:7px 11px;font-size:14px;font-weight:700}.badge.green{border-color:rgba(52,211,153,.65);color:#bbf7d0}.badge.red{border-color:rgba(251,113,133,.65);color:#fecdd3}.badge.yellow{border-color:rgba(251,191,36,.65);color:#fef3c7}
+.flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.node{background:#0f2338;border:1px solid #334155;border-radius:14px;padding:9px 11px;font-size:14px;color:#e2e8f0}.node.good{border-color:rgba(52,211,153,.7)}.node.warn{border-color:rgba(251,191,36,.7)}.node.bad{border-color:rgba(251,113,133,.7)}.arrow{color:var(--accent);font-weight:900}.footer{position:absolute;left:46px;right:46px;bottom:22px;display:flex;justify-content:space-between;color:var(--dim);font-size:13px}.progress{position:fixed;left:0;bottom:0;height:5px;width:0;background:linear-gradient(90deg,var(--accent),var(--green));transition:width 120ms ease-out}
+.terminal{background:#07111f;border:1px solid #334155;border-radius:18px;padding:16px}.terminal pre{border:0;background:transparent;padding:0}.callout{border:1px solid #475569;background:rgba(2,6,23,.45);border-radius:18px;padding:16px}
+svg.diagram{width:100%;height:420px}.diagram text{font-family:Inter,Arial,sans-serif}.diagram .mono{font-family:Consolas,"Cascadia Code",monospace}
+@media print{body{overflow:visible;background:white}main{display:block;height:auto}.slide{display:flex!important;break-after:page;width:100vw;height:100vh;border-radius:0}.progress{display:none}}
+</style>
+</head>
+<body><main></main><div class="progress" id="progress"></div>
+<script>
+const html = String.raw;
+const slideData = [
+{eye:'Advanced Squad Patterns',title:'Start with the real problem: context is finite',body:html`<div class="grid wide"><div><p class="takeaway">The architecture question is not "can agents remember?" It is "what should enter context, when, and with what authority?"</p><br><p>Squad is useful only if memory improves future work without consuming the entire prompt, polluting PRs, or silently turning stale notes into policy.</p><br><div class="badges"><span class="badge green">problem-first</span><span class="badge">source-backed</span><span class="badge">real command output</span><span class="badge red">no fake provider claims</span></div></div><div class="card"><h3>Audience promise</h3><ul><li>Context pressure math.</li><li>Memory layers and lifecycle.</li><li>Two-layer backend internals.</li><li>Real git notes/orphan proof.</li><li>Presets, delegation, squads spawning squads.</li></ul></div></div>`,foot:'Thesis: memory is runtime architecture, not a feature checkbox'},
+
+{eye:'Evidence anchor',title:'Issue #1037: state bloat becomes mandatory context tax',body:html`<div class="grid sixty"><div><table><tr><th>File class</th><th>Typical size</th><th>Tokens</th></tr><tr><td>decisions-archive.md</td><td>500KB - 1.6MB</td><td>150K-478K</td></tr><tr><td>decisions.md active</td><td>200KB - 500KB</td><td>60K-143K</td></tr><tr><td>3-5 agent histories</td><td>400KB - 800KB</td><td>115K-230K</td></tr><tr><td>routing + board state</td><td>100KB - 200KB</td><td>30K-53K</td></tr><tr><td><strong>Total mandatory context</strong></td><td><strong>1.2 - 3.1MB</strong></td><td><strong>355K-561K</strong></td></tr></table></div><div><p class="quote">"Your agents aren't getting dumber. They're getting fuller."</p><br><p>Most model windows are finite. Every token spent loading old memory is a token not available for source, tool output, reasoning, or the user's current problem.</p></div></div>`,foot:'Open: outputs/15-context-budget-issue-1037.md or https://github.com/bradygaster/squad/issues/1037'},
+
+{eye:'Mental model',title:'Memory loading is a query plan',body:html`<div class="flow"><span class="node">Task</span><span class="arrow">→</span><span class="node">route</span><span class="arrow">→</span><span class="node">choose surfaces</span><span class="arrow">→</span><span class="node">load only relevant state</span><span class="arrow">→</span><span class="node good">do work</span><span class="arrow">→</span><span class="node">write classified memory</span></div><br><div class="grid three"><div class="card"><h3>Bad query plan</h3><p>Load every decision, every history, every log, every note, every prompt reference, every time.</p></div><div class="card"><h3>Good query plan</h3><p>Always load small invariants; load domain state on demand; keep archives searchable but out of mandatory context.</p></div><div class="card"><h3>Architectural goal</h3><p>Memory becomes an indexed, governed surface; not a junk drawer appended to the system prompt.</p></div></div>`,foot:'Source: issue #1037 and Tamir Part 13 agent-memory blog'},
+
+{eye:'Layer map',title:'Squad has multiple memory surfaces, not one memory bucket',body:html`<table><tr><th>Surface</th><th>Scope</th><th>Load rule</th><th>Proof path</th></tr><tr><td>Static team config</td><td>team/routing/charters</td><td>small core + targeted reads</td><td><code>.squad/team.md</code>, <code>routing.md</code></td></tr><tr><td>Decisions</td><td>shared team truth</td><td>lean active set, archive old</td><td><code>decisions.md</code>, inbox</td></tr><tr><td>Agent histories</td><td>role-local memory</td><td>owning agent only</td><td><code>agents/{name}/history.md</code></td></tr><tr><td>Skills</td><td>portable procedure</td><td>triggered by domain</td><td><code>skills/*/SKILL.md</code></td></tr><tr><td>Governed memory</td><td>typed memory entries</td><td>class + load guidance</td><td><code>memory index</code>, audit JSONL</td></tr><tr><td>Git notes</td><td>commit-scoped why</td><td>inspect/promote after merge</td><td><code>refs/notes/*</code></td></tr><tr><td>Orphan branch</td><td>durable mutable state</td><td>backend read/write</td><td><code>squad-state</code></td></tr></table>`,foot:'The deck will walk from context pressure to these surfaces and their lifecycles'},
+
+{eye:'New memory model',title:'Governed memory adds class and load guidance',body:html`<div class="grid"><div><h3>MemoryClass</h3><pre>TRANSIENT
+LOCAL
+DECISION
+POLICY
+COPILOT_MEMORY
+FORBIDDEN</pre></div><div><h3>MemoryLoadGuidance</h3><pre>ALWAYS
+ON-DEMAND
+ARCHIVE
+NEVER</pre></div></div><br><p class="quote">The decision is made before storage: what kind of memory is this, where can it go, and when should future agents load it?</p><br><p class="source">Source: <code>packages/squad-sdk/src/memory/index.ts</code>, PR #1145.</p>`,foot:'Open: outputs/18-governed-memory-pr-1145.md'},
+
+{eye:'Write path',title:'The classifier is the first trust boundary',body:html`<div class="flow"><span class="node">ensureInitialized</span><span class="arrow">→</span><span class="node warn">classify</span><span class="arrow">→</span><span class="node bad">reject forbidden/transient</span><span class="arrow">→</span><span class="node">destination</span><span class="arrow">→</span><span class="node">atomic index</span><span class="arrow">→</span><span class="node good">audit</span><span class="arrow">→</span><span class="node">optional provider</span></div><br><table><tr><th>Class</th><th>Destination</th><th>Architectural meaning</th></tr><tr><td>DECISION</td><td>decision inbox</td><td>candidate team truth; Scribe/review promotes.</td></tr><tr><td>POLICY</td><td>policy inbox</td><td>future behavior constraint; needs governance.</td></tr><tr><td>LOCAL</td><td>local memory</td><td>safe local fact.</td></tr><tr><td>FORBIDDEN / TRANSIENT</td><td>none</td><td>does not reach provider/durable store.</td></tr></table>`,foot:'Source: memory/index.ts classification + write path; PR #1145'},
+
+{eye:'Real memory proof',title:'Show memory as a transaction, not a vibe',body:html`<div class="grid sixty"><div class="terminal"><pre>[memory:info] provider.status.complete
+defaultProvider=local
+realCopilotConfigured=false
+
+[memory:info] write.complete
+stored=true class=DECISION provider=local
+loadGuidance=ALWAYS
+path=.squad\\decisions\\inbox\\...</pre></div><div><p class="quote">The demo chain is provider → classify → write → search → audit → effect file.</p><br><p>It proves governed local memory. It does <strong>not</strong> claim remote Copilot Memory unless provider status proves a real host-injected provider.</p><br><p class="source">Open: outputs/01-memory-provider-status.txt through outputs/05-memory-audit.txt and outputs/effects/.</p></div></div>`,foot:'This is the section to show memory tools being called and their effects'},
+
+{eye:'Session extract',title:'What to open live for the memory-tools story',body:html`<table><tr><th>Stage</th><th>Open/show</th><th>What the audience learns</th></tr><tr><td>Real session extract</td><td><code>outputs/21-real-memory-session-extract.md</code></td><td>PR #1145 captured baseline vs memory-governance diagnostic events.</td></tr><tr><td>Problem</td><td><code>outputs/15-context-budget-issue-1037.md</code></td><td>Memory bloat has measured token pressure.</td></tr><tr><td>Tool call</td><td><code>outputs/02-memory-classify.txt</code>, <code>03-memory-write.txt</code></td><td>Classification and write are explicit operations.</td></tr><tr><td>Read-back</td><td><code>outputs/04-memory-search.txt</code></td><td>Stored memory is retrievable by query.</td></tr><tr><td>Audit/effect</td><td><code>outputs/05-memory-audit.txt</code>, <code>outputs/effects/</code></td><td>Memory operations leave metadata and files.</td></tr></table>`,foot:'If live UI exposes store_memory/vote_memory cards, show those too; otherwise use deterministic CLI proof'},
+
+{eye:'State pressure',title:'State and code are different workflows',body:html`<div class="grid"><div class="card"><h3>Code</h3><p>Slow, human-reviewed, branch-protected, PR-visible. Reviewers care about product behavior, tests, docs, release notes.</p></div><div class="card"><h3>Squad state</h3><p>Fast, append-heavy, agent-readable, often not for human PR review. Decisions, histories, logs, retrospectives.</p></div></div><br><p class="quote">Part 7 problem: 97 files changed, 40 squad files. The reviewer saw the essay plus the team's private notes.</p>`,foot:'Sources: Tamir Part 7 enterprise-state blog and Part 7b git-notes blog'},
+
+{eye:'Two-layer thesis',title:'Two-layer splits "why on this commit" from durable state',body:html`<svg class="diagram" viewBox="0 0 1060 420"><rect x="50" y="50" width="300" height="110" rx="18" fill="#10213c" stroke="#38bdf8"/><text x="80" y="92" fill="#f8fafc" font-size="23" font-weight="700">Main code branch</text><text x="80" y="125" fill="#cbd5e1" font-size="16">code, tests, static config</text><text x="80" y="148" fill="#cbd5e1" font-size="16">clean PR diff</text><rect x="400" y="45" width="270" height="125" rx="18" fill="#111827" stroke="#fbbf24"/><text x="430" y="88" fill="#f8fafc" font-size="23" font-weight="700">Git notes layer</text><text x="430" y="122" fill="#cbd5e1" font-size="16">commit-scoped why</text><text x="430" y="146" fill="#cbd5e1" font-size="16">invisible in PR diff</text><rect x="720" y="50" width="290" height="110" rx="18" fill="#10213c" stroke="#34d399"/><text x="750" y="92" fill="#f8fafc" font-size="23" font-weight="700">squad-state branch</text><text x="750" y="125" fill="#cbd5e1" font-size="16">durable mutable state</text><text x="750" y="148" fill="#cbd5e1" font-size="16">decisions, history, logs</text><path d="M350 105 H400" stroke="#94a3b8" stroke-width="4"/><path d="M670 105 H720" stroke="#94a3b8" stroke-width="4"/><rect x="200" y="245" width="660" height="92" rx="18" fill="#0f2338" stroke="#a78bfa"/><text x="235" y="286" fill="#f8fafc" font-size="23" font-weight="700">Promotion rule</text><text x="235" y="318" fill="#cbd5e1" font-size="17">merged + promote_to_permanent → durable state; rejected/unflagged → stays commit-scoped or dies with branch</text></svg>`,foot:'Source: PR #1004, state-backend.ts, Tamir Part 7b'},
+
+{eye:'When selected',title:'Step-by-step: how two-layer activates',body:html`<div class="flow"><span class="node">.squad/config.json</span><span class="arrow">→</span><span class="node">resolveStateBackend()</span><span class="arrow">→</span><span class="node">require Git repo</span><span class="arrow">→</span><span class="node">TwoLayerBackend</span><span class="arrow">→</span><span class="node good">orphan + notes</span></div><br><pre>{
+  "version": 1,
+  "stateBackend": "two-layer"
+}</pre><br><table><tr><th>Operation</th><th>Implementation behavior</th></tr><tr><td>read/list</td><td>reads permanent state from orphan branch</td></tr><tr><td>write/append/delete</td><td>writes orphan first, then best-effort git note mirror</td></tr><tr><td>promotion</td><td>scans flagged notes and writes promoted/archive files to orphan</td></tr><tr><td>failure</td><td>backend failures warn and fall back local rather than blocking startup</td></tr></table>`,foot:'Source: state-backend.ts: resolveStateBackend + TwoLayerBackend'},
+
+{eye:'Real demo proof',title:'Two-layer write: clean worktree, dirty state branch',body:html`<div class="grid sixty"><div class="terminal"><pre>backend=two-layer
+health=ok
+rootKeys=agents,decisions.md,decisions
+decisionBytes=331
+
+git status --short
+# no output
+
+git ls-tree -r squad-state
+agents/flight/history.md
+decisions.md
+decisions/inbox/memory-model-demo.md</pre></div><div><p class="quote">The mutable state write did not edit working-tree <code>.squad/decisions.md</code>. It landed in <code>squad-state</code>.</p><br><p>Open <code>outputs/12-two-layer-real-demo-transcript.txt</code> lines 29-51 for the full command output.</p></div></div>`,foot:'Generated from a real throwaway Git repo in this session'},
+
+{eye:'Git notes proof',title:'Two-layer also writes commit-scoped state metadata',body:html`<div class="terminal"><pre>git notes --ref=squad show &lt;root-commit&gt;
+{
+  "decisions.md": "### 2026-06-08: Context budget is an architecture constraint...",
+  "agents/flight/history.md": "## 2026-06-08...",
+  "decisions/inbox/memory-model-demo.md": "### Governed memory demo candidate..."
+}</pre></div><br><p>The SDK's current bulk note mirror anchors state at the repo root commit under <code>refs/notes/squad</code>. That is real inspectable Git state, not a side-channel database.</p>`,foot:'Open: outputs/12-two-layer-real-demo-transcript.txt lines 54-60'},
+
+{eye:'Real caveat',title:'The demo found a ref namespace collision worth teaching',body:html`<div class="terminal"><pre>git notes --ref=squad/flight add ...
+fatal: update_ref failed for ref 'refs/notes/squad/flight':
+'refs/notes/squad' exists; cannot create 'refs/notes/squad/flight'</pre></div><br><p class="quote">This is exactly why real demos matter: the code's bulk notes ref blocks the documented nested per-agent namespace.</p><br><p>For the live promotion proof, the demo uses a non-conflicting per-agent ref: <code>refs/notes/squad-flight</code>. The deck should call this a current caveat, not hide it.</p>`,foot:'Open: outputs/12-two-layer-real-demo-transcript.txt lines 63-72'},
+
+{eye:'Promotion proof',title:'Flagged notes promote/archive into orphan state',body:html`<div class="grid sixty"><div class="terminal"><pre>node ... notes promote --ref squad-flight --dry-run
+Ref           Promoted  Archived  Skipped
+squad-flight         1         1        0
+
+node ... notes promote --ref squad-flight
+TOTAL                1         1        0
+✓ Promotion complete.</pre></div><div class="terminal"><pre>git ls-tree -r squad-state
+archive/squad-flight/&lt;root&gt;.json
+promoted/squad-flight/&lt;feature&gt;.json
+
+git show squad-state:promoted/...
+{
+  "type": "decision",
+  "promote_to_permanent": true
+}</pre></div></div>`,foot:'Open: outputs/12-two-layer-real-demo-transcript.txt lines 75-125'},
+
+{eye:'Git log proof',title:'The branches and refs tell the story',body:html`<div class="terminal"><pre>git for-each-ref refs/heads refs/notes
+main 385a57d
+squad-state 6924176
+notes/squad 49a0ec6
+notes/squad-flight e2f914a
+
+git log --oneline --graph main squad-state
+* 6924176 (squad-state) Update archive/...
+* 5e85652 Update promoted/...
+* 6310ed8 Update decisions/inbox/...
+* b735d08 Update agents/flight/history.md
+* 87b22a2 Update decisions.md
+* 385a57d (main) feat: add demo feature work</pre></div>`,foot:'Open: outputs/13-two-layer-real-demo-branch-proof.txt and outputs/14-two-layer-real-demo-commands.md'},
+
+{eye:'Context reduction beyond memory',title:'Split the coordinator prompt: core inline, references lazy-loaded',body:html`<div class="grid sixty"><div><p class="quote">Issue #1036 framed the problem: <code>squad.agent.md</code> was ~95k characters and loaded into every session's system prompt.</p><br><p>PR #1035 turns that into architecture: keep critical dispatcher rules inline, move ceremonies, PRD intake, issue lifecycle, Ralph, MCP, marketplace, and artifact formats to on-demand reference files.</p></div><div class="card"><h3>Measured direction</h3><p>Flight found the implementation reduced the coordinator file from roughly 95.8KB to roughly 55KB, with references loaded only when triggered.</p><br><p class="source">Open: outputs/16-split-agent-issue-1036.md and outputs/19-context-slimming-pr-1035.md</p></div></div>`,foot:'This is prompt architecture as runtime architecture'},
+
+{eye:'Presets',title:'Presets share useful squad shapes without copying state',body:html`<div class="grid sixty"><pre>SQUAD_HOME/
+└── presets/
+    └── default/
+        ├── preset.json
+        └── agents/
+            ├── lead/charter.md
+            ├── reviewer/charter.md
+            ├── devrel/charter.md
+            ├── security/charter.md
+            └── docs/charter.md</pre><div><p class="quote">A preset is a reusable team definition pattern, not a backup of a living squad.</p><br><ul><li><code>preset init/list/show/apply/save</code></li><li><code>init --remote</code> can roam through private <code>squad-home</code></li><li>Captures agents/charters only</li><li>Use export for full squad snapshots</li></ul></div></div>`,foot:'Sources: preset.ts, presets/index.ts, outputs/06-delegate-presets-evidence.txt'},
+
+{eye:'Cross-squad contracts',title:'Squads communicate through manifests and issues, not shared internals',body:html`<div class="grid"><div class="card"><h3>Public contract</h3><pre>.squad/manifest.json
+name
+capabilities
+contact.repo
+contact.labels
+accepts: ["issues"]
+skills</pre></div><div class="card"><h3>Handoff payload</h3><p>Relevant context, acceptance criteria, source link, target labels, no internal state dump.</p></div><div class="card"><h3>Discovery</h3><p>Read upstreams first, then registry, dedupe by manifest name.</p></div><div class="card"><h3>Boundary</h3><p>Do not share secrets, full decision archives, raw logs, or direct file writes across repos.</p></div></div>`,foot:'Sources: runtime/cross-squad.ts and .squad/skills/cross-squad/SKILL.md'},
+
+{eye:'Delegate command',title:'Delegate is GitHub issue creation with gates',body:html`<div class="terminal"><pre>squad delegate platform-squad "Add Prometheus metrics endpoint"
+  discover target
+  require target.manifest.accepts includes "issues"
+  labels = target labels + squad:cross-squad
+  body = Cross-Squad Work Request + acceptance criteria
+  execFile("gh", ["issue", "create", "--repo", targetRepo, ...])
+</pre></div><br><p>Success artifact is an issue URL. If discovery, manifest acceptance, or <code>gh</code> auth fails, the command should fail visibly. Use <code>outputs/06-delegate-presets-evidence.txt</code> as fallback.</p>`,foot:'Sources: packages/squad-cli/src/cli/commands/cross-squad.ts and runtime/cross-squad.ts'},
+
+{eye:'Squads spawning squads',title:'Scale by partitioning work into more teams, not one giant context',body:html`<div class="grid"><div class="card"><h3>HQ pattern</h3><p>An HQ squad receives a mission, creates an isolated child squad, runs it, collects evidence, and synthesizes a verdict.</p></div><div class="card"><h3>Real shipped adjacent proof</h3><p>PR #1022 adds an E2E template-testing skill: disposable repo, <code>squad init</code>, real Copilot session, git-state verification.</p></div><div class="card"><h3>Many feedback personas</h3><p>Platform, frontend, docs, security, and customer-success squads can act as independent user cohorts.</p></div><div class="card"><h3>Guardrail</h3><p>Each spawned squad gets its own context, mission contract, evidence directory, verdict, and depth limit.</p></div></div>`,foot:'Sources: Tamir Part 12 fanout-squads, PR #1022, e2e-template-testing skill'},
+
+{eye:'E2E feedback pattern',title:'Use squads as synthetic user teams with evidence contracts',body:html`<div class="flow"><span class="node">Product squad ships demo</span><span class="arrow">→</span><span class="node">spawn feedback squads</span><span class="arrow">→</span><span class="node">each squad acts as user/team</span><span class="arrow">→</span><span class="node">feedback via issues</span><span class="arrow">→</span><span class="node good">origin squad triages</span></div><br><table><tr><th>Feedback squad</th><th>Role in test</th><th>Evidence to require</th></tr><tr><td>Platform squad</td><td>API/ops review</td><td>endpoint findings, logs, perf deltas</td></tr><tr><td>Frontend squad</td><td>UX journey</td><td>screenshots, reproduction steps</td></tr><tr><td>Security squad</td><td>abuse-path review</td><td>threat notes, blocked exploit claims</td></tr><tr><td>Docs squad</td><td>onboarding user</td><td>missing concepts, ambiguous steps</td></tr></table>`,foot:'Source: Tamir Part 11 Holodeck testing + e2e-template-testing skill'},
+
+{eye:'What architects should take away',title:'The pattern is memory governance under bounded context',body:html`<div class="grid"><div class="card"><h3>1. Treat context as a scarce resource</h3><p>Every loaded file competes with the actual task.</p></div><div class="card"><h3>2. Classify before storing</h3><p>Memory needs type, lifecycle, load guidance, and audit.</p></div><div class="card"><h3>3. Split state by workflow</h3><p>Code PRs and agent memory have different rates and reviewers.</p></div><div class="card"><h3>4. Delegate by contract</h3><p>Use manifests/issues, not shared internals or remote shell fantasies.</p></div></div><br><p class="takeaway">The reusable architecture is: bounded context, typed memory, two-layer state, lazy prompt references, presets for reusable team shapes, and cross-squad contracts for scale.</p>`,foot:'Close with the real artifacts: issue #1037, PR #1145, PR #1004, two-layer transcript'}
+];
+const main=document.querySelector('main');
+main.innerHTML=slideData.map((s,i)=>`<section class="slide ${i===0?'active':''} ${s.klass||''}"><div class="eyebrow">${s.eye}</div><h2>${s.title}</h2>${s.body}<div class="footer"><span>${s.foot}</span><span>${i+1} / ${slideData.length}</span></div></section>`).join('');
+const slides=Array.from(document.querySelectorAll('.slide'));let index=0;const progress=document.getElementById('progress');
+function show(next){index=Math.max(0,Math.min(slides.length-1,next));slides.forEach((slide,i)=>slide.classList.toggle('active',i===index));progress.style.width=`${((index+1)/slides.length)*100}%`;window.location.hash=`slide-${index+1}`}
+function fromHash(){const match=window.location.hash.match(/slide-(\d+)/);if(match)show(Number(match[1])-1)}
+document.addEventListener('keydown',event=>{if(event.key==='ArrowRight'||event.key===' ')show(index+1);if(event.key==='ArrowLeft')show(index-1);if(event.key.toLowerCase()==='p')window.print()});window.addEventListener('hashchange',fromHash);fromHash();show(index);
+</script></body></html>

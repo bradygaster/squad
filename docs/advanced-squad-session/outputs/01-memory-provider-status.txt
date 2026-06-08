@@ -1,0 +1,17 @@
+[memory:info] command.start command=provider projectRoot=<demo-root>
+[memory:info] provider.status.complete defaultProvider=local realCopilotConfigured=false hostInjectedCopilotAdapterConfigured=false hostInjectedCopilotAdapterClientAvailable=false elapsedMs=16
+{
+  "defaultProvider": "local",
+  "realCopilotMemory": {
+    "available": false,
+    "configured": false,
+    "reason": "Real Copilot Memory API unavailable: no concrete callable API was found in installed @github/copilot SDK/tooling. Squad will not fake provider=copilot; use hostInjectedCopilotAdapter only when a host supplies a client."
+  },
+  "hostInjectedCopilotAdapter": {
+    "enabled": false,
+    "requireApproval": true,
+    "clientAvailable": false,
+    "configured": false
+  },
+  "registeredProviders": []
+}

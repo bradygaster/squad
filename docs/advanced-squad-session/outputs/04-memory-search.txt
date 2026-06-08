@@ -1,0 +1,13 @@
+[memory:info] command.start command=search projectRoot=<demo-root>
+[memory:info] search.complete count=1 providers=local elapsedMs=315
+[
+  {
+    "id": "e96f9d99-dbfc-492d-9e39-4ee9b276b07e",
+    "class": "DECISION",
+    "loadGuidance": "ALWAYS",
+    "title": "Advanced demo snippet structure",
+    "path": ".squad\\decisions\\inbox\\pao-advanced-demo-snippet-structure-e96f9d99.md",
+    "snippet": "title: \"Advanced demo snippet structure\"",
+    "provider": "local"
+  }
+]

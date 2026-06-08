@@ -1,0 +1,17 @@
+Squad v0.0.0-source
+
+Launching the release-readiness pass:
+
+📣 PAO — doc impact review
+🧪 FIDO — missing tests and quality gates
+⚙️ Booster — CI risk review
+🚢 Surgeon — changelog and release notes
+
+PAO: Docs impact found. README and CLI reference need updates if command behavior changed.
+FIDO: Test gap found. Add regression coverage for command wiring and CLI output shape.
+Booster: CI risk found. Changelog gate will fail if package source changes without a changeset.
+Surgeon: Release note required. User-facing CLI behavior needs a patch changeset.
+
+Merge-readiness summary:
+Not ready until tests and changeset are added. PAO owns docs, FIDO owns regression coverage, Booster validates CI gates, Surgeon owns release note.
+

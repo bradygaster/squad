@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-labelledby="title desc">
+  <title id="title">Memory effect files</title>
+  <desc id="desc">Diagram showing write output, memory index, decision inbox, search, and audit evidence.</desc>
+  <rect width="1100" height="620" rx="28" fill="#07111f"/>
+  <text x="56" y="70" fill="#f8fafc" font-family="Arial, sans-serif" font-size="34" font-weight="700">Memory proof chain</text>
+  <g font-family="Arial, sans-serif" font-size="22">
+    <rect x="56" y="120" width="440" height="110" rx="18" fill="#10213c" stroke="#38bdf8"/>
+    <text x="86" y="165" fill="#e0f2fe" font-weight="700">1. classify</text>
+    <text x="86" y="202" fill="#cbd5e1">allowed=true, destination=policy-inbox</text>
+    <rect x="604" y="120" width="440" height="110" rx="18" fill="#10213c" stroke="#34d399"/>
+    <text x="634" y="165" fill="#dcfce7" font-weight="700">2. write</text>
+    <text x="634" y="202" fill="#cbd5e1">stored=true, class=DECISION</text>
+    <rect x="56" y="286" width="440" height="110" rx="18" fill="#10213c" stroke="#fbbf24"/>
+    <text x="86" y="331" fill="#fef3c7" font-weight="700">3. effect file</text>
+    <text x="86" y="368" fill="#cbd5e1">demo-root/.squad/decisions/inbox/...</text>
+    <rect x="604" y="286" width="440" height="110" rx="18" fill="#10213c" stroke="#c084fc"/>
+    <text x="634" y="331" fill="#f3e8ff" font-weight="700">4. search</text>
+    <text x="634" y="368" fill="#cbd5e1">returns one local result by id/title/path</text>
+    <rect x="330" y="452" width="440" height="110" rx="18" fill="#10213c" stroke="#fb7185"/>
+    <text x="360" y="497" fill="#ffe4e6" font-weight="700">5. audit</text>
+    <text x="360" y="534" fill="#cbd5e1">records write and search actions</text>
+  </g>
+  <path d="M496 175 L604 175" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M824 230 L824 286" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M604 341 L496 341" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <path d="M276 396 L440 452" stroke="#94a3b8" stroke-width="4" marker-end="url(#arrow)"/>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+</svg>
+

@@ -1,0 +1,151 @@
+# Real two-layer backend demo transcript
+Generated: 2026-06-08T10:12:17.208+03:00
+Demo root: <two-layer-demo-repo>
+
+
+## Initialize demo Git repo
+
+Initialized empty Git repository in <two-layer-demo-repo>/.git/
+warning: in the working copy of '.squad/config.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.squad/routing.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.squad/team.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+[main (root-commit) 52ca56b] init demo squad with two-layer backend
+ 4 files changed, 20 insertions(+)
+ create mode 100644 .squad/config.json
+ create mode 100644 .squad/routing.md
+ create mode 100644 .squad/team.md
+ create mode 100644 README.md
+
+
+## Create a real feature commit
+
+warning: in the working copy of 'feature.md', LF will be replaced by CRLF the next time Git touches it
+[main 385a57d] feat: add demo feature work
+ 1 file changed, 4 insertions(+)
+ create mode 100644 feature.md
+
+
+## Write mutable state through TwoLayerBackend
+
+backend=two-layer
+health=ok
+rootKeys=agents,decisions.md,decisions
+decisionBytes=331
+
+
+## Prove working tree stayed clean
+
+
+
+## Inspect squad-state branch contents
+
+* main
+  squad-state
+agents/flight/history.md
+decisions.md
+decisions/inbox/memory-model-demo.md
+### 2026-06-08: Context budget is an architecture constraint
+**What:** Demo squad treats context loading as a bounded resource, not as a free prompt append.
+**Why:** Issue #1037 shows heavy Squad usage can burn hundreds of thousands of tokens before work begins.
+**Evidence:** Open issue #1037 and governed memory output captures.
+
+
+## Inspect backend bulk git note on the root commit
+
+{
+  "decisions.md": "### 2026-06-08: Context budget is an architecture constraint\n**What:** Demo squad treats context loading as a bounded resource, not as a free prompt append.\n**Why:** Issue #1037 shows heavy Squad usage can burn hundreds of thousands of tokens before work begins.\n**Evidence:** Open issue #1037 and governed memory output captures.\n",
+  "agents/flight/history.md": "## 2026-06-08\n- Observed context-budget pressure and selected two-layer backend for clean PR state.\n- Durable decision written through StateBackend, not by editing .squad/decisions.md in the worktree.\n",
+  "decisions/inbox/memory-model-demo.md": "### 2026-06-08: Governed memory demo candidate\n**What:** Memory entries should be classified before storage.\n**Why:** FORBIDDEN and TRANSIENT entries should never reach durable provider calls.\n"
+}
+
+
+## Show documented nested note namespace collision
+
+fatal: update_ref failed for ref 'refs/notes/squad/flight': cannot lock ref 'refs/notes/squad/flight': 'refs/notes/squad' exists; cannot create 'refs/notes/squad/flight'
+
+
+## Add per-agent commit-scoped notes using non-conflicting ref
+
+fde5ff45ef399e90d80d642245a7c05ea3c4780e 385a57d0c516df5a7ed8e7577feea61be1390279
+5697f783755fb51243076b4b42b1d2f940d1e859 52ca56bcf65a9303e13c28c55a72a15c6ec70000
+{"agent":"Flight","timestamp":"2026-06-08T10:12:17.208+03:00","type":"decision","content":"Promote the context-budget rule after the feature lands.","promote_to_permanent":true}
+
+
+## Dry-run note promotion with CLI
+
+
+notes promote (dry-run)
+
+  Ref           Promoted  Archived  Skipped
+  ────────────  ────────  ────────  ───────
+  squad-flight         1         1        0
+  ────────────  ────────  ────────  ───────
+  TOTAL                1         1        0
+
+✓ Dry-run complete.
+
+
+
+## Run real note promotion with CLI
+
+
+notes promote
+
+  Ref           Promoted  Archived  Skipped
+  ────────────  ────────  ────────  ───────
+  squad-flight         1         1        0
+  ────────────  ────────  ────────  ───────
+  TOTAL                1         1        0
+
+✓ Promotion complete.
+
+
+
+## Inspect promoted/archive state and remaining notes
+
+agents/flight/history.md
+archive/squad-flight/52ca56bcf65a9303e13c28c55a72a15c6ec70000.json
+decisions.md
+decisions/inbox/memory-model-demo.md
+promoted/squad-flight/385a57d0c516df5a7ed8e7577feea61be1390279.json
+{
+  "agent": "Flight",
+  "timestamp": "2026-06-08T10:12:17.208+03:00",
+  "type": "decision",
+  "content": "Promote the context-budget rule after the feature lands.",
+  "promote_to_permanent": true
+}
+{
+  "agent": "Flight",
+  "timestamp": "2026-06-08T10:12:17.208+03:00",
+  "type": "research",
+  "content": "Keep the failed/rejected approach analysis searchable without making it a permanent decision.",
+  "archive_on_close": true
+}
+5697f783755fb51243076b4b42b1d2f940d1e859 52ca56bcf65a9303e13c28c55a72a15c6ec70000
+
+
+## Branch and notes refs log proof
+
+main 385a57d
+squad-state 6924176
+notes/squad 49a0ec6
+notes/squad-flight e2f914a
+* 6924176 (squad-state) Update archive/squad-flight/52ca56bcf65a9303e13c28c55a72a15c6ec70000.json
+* 5e85652 Update promoted/squad-flight/385a57d0c516df5a7ed8e7577feea61be1390279.json
+* 6310ed8 Update decisions/inbox/memory-model-demo.md
+* b735d08 Update agents/flight/history.md
+* 87b22a2 Update decisions.md
+* 26094fe Initialize squad-state branch
+* 385a57d (HEAD -> main) feat: add demo feature work
+* 52ca56b init demo squad with two-layer backend
+49a0ec6 Update squad state
+de1dce4 Update squad state
+7e471fc Update squad state
+e2f914a Notes removed by 'git notes remove'
+0d12e72 Notes added by 'git notes add'
+7793a7a Notes added by 'git notes add'
+
+
+

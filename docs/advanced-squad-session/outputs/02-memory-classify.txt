@@ -1,0 +1,9 @@
+[memory:info] command.start command=classify projectRoot=<demo-root>
+[memory:info] classify.complete class=POLICY allowed=true destination=policy-inbox loadGuidance=ALWAYS elapsedMs=5
+{
+  "class": "POLICY",
+  "allowed": true,
+  "reason": "Content is allowed for governed local memory",
+  "destination": "policy-inbox",
+  "loadGuidance": "ALWAYS"
+}
