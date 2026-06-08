@@ -416,6 +416,41 @@ Change `stateBackend` in `.squad/config.json`. The coordinator adapts on the nex
 
 ---
 
+## Steady-state safety net
+
+Once you've migrated to `orphan` or `two-layer`, two additional git hooks enforce the invariant that mutable state never lands in your working branch.
+
+### `pre-commit` — blocks state from entering the working tree
+
+Before every commit, this hook scans the staged index for files that belong on the orphan branch:
+
+- `.squad/decisions.md`
+- `.squad/agents/*/history.md`
+- `.squad/casting/`
+- `.squad/routing/`
+
+If any of those paths are staged, the commit is refused with:
+
+```
+⚠ squad pre-commit: refusing to commit two-layer state into the working tree.
+  Unstage the state files and let the post-commit hook sync them:
+    git restore --staged .squad/decisions.md .squad/agents/*/history.md
+```
+
+**Why files might reappear:** A tool, editor save, or agent code path that writes directly via `fs.writeFile` (bypassing `StateBackend`) will recreate the file on disk. Staging it and attempting a commit triggers this hook.
+
+For the full recovery flow see [troubleshooting](#squad-pre-commit-refusing-to-commit-two-layer-state-into-the-working-tree).
+
+### `post-commit` — keeps the orphan branch current
+
+After every successful commit, `squad sync --quiet` is called automatically. This pushes any pending state from the in-memory queue onto the `squad-state` branch, so the orphan branch stays up to date without manual intervention.
+
+### `SQUAD_SYNC_ACTIVE=1` bypass
+
+Setting `SQUAD_SYNC_ACTIVE=1` in the environment causes both hooks to exit immediately without running. This is used **internally** by `squad sync` itself to avoid hook recursion.
+
+> ⚠️ **Do not use `SQUAD_SYNC_ACTIVE=1` routinely.** Bypassing the pre-commit hook lets state files land in your working branch commits — exactly the situation `two-layer` is designed to prevent. Any PR created from that branch will carry squad state in the diff, defeating the clean-PR promise of the two-layer backend. Use the recovery flow instead.
+
 ## Troubleshooting
 
 ### "Pre-commit hook refused my commit"
