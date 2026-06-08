@@ -19,6 +19,8 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import { installGitHooks } from './install-hooks.js';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { addSquadStateGitignoreBlock, removeSquadStateGitignoreBlock } from '@bradygaster/squad-sdk';
 
 const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
@@ -278,6 +280,27 @@ export async function migrateStateBackend(dest: string, target: string): Promise
   // Step 4 (WI-1): re-install hooks (force so new pre-commit/post-commit land)
   if (ORPHAN_BACKENDS.has(target)) {
     installGitHooks(dest, { force: true });
+  }
+
+  // Step 5: Manage .gitignore marker block for squad-state files.
+  // When migrating TO an orphan/two-layer backend: add the marker block so
+  // git add . / IDE "stage all" cannot accidentally stage state files.
+  // When migrating TO a local/worktree backend: remove the block so those
+  // files are committable again.
+  const gitignorePath = path.join(dest, '.gitignore');
+  const storage = new FSStorageProvider();
+  if (ORPHAN_BACKENDS.has(target) && !ORPHAN_BACKENDS.has(current)) {
+    // Transitioning FROM a worktree backend TO orphan/two-layer — add block
+    const added = addSquadStateGitignoreBlock(gitignorePath, storage);
+    if (added) {
+      console.log(`  ${GREEN}✓${RESET} added 2 entries to .gitignore (.squad/decisions.md, .squad/agents/*/history.md) — these now live on squad-state branch`);
+    }
+  } else if (WORKTREE_BACKENDS.has(target) && ORPHAN_BACKENDS.has(current)) {
+    // Transitioning FROM orphan/two-layer BACK TO a local backend — remove block
+    const removed = removeSquadStateGitignoreBlock(gitignorePath, storage);
+    if (removed) {
+      console.log(`  ${GREEN}✓${RESET} removed 2 entries from .gitignore — .squad/decisions.md and agent histories are now committable again`);
+    }
   }
 
   console.log(`\n${GREEN}${BOLD}✓ Migration complete.${RESET} Backend is now '${target}'.\n`);

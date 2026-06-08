@@ -19,6 +19,7 @@ import type { SubSquadDefinition } from '../streams/types.js';
 import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
 import { getRoleById } from '../roles/index.js';
 import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
+import { addSquadStateGitignoreBlock, removeSquadStateGitignoreBlock } from './gitignore-state.js';
 
 // ============================================================================
 // Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
@@ -163,6 +164,14 @@ export interface InitOptions {
     areaPath?: string;
     iterationPath?: string;
   };
+  /**
+   * State backend to use for this project.
+   * When 'orphan' or 'two-layer', adds a marker-delimited block to .gitignore
+   * so .squad/decisions.md and .squad/agents/*\/history.md are not accidentally
+   * staged into the working-tree commit graph.
+   * When 'local' (or undefined), removes the marker block if present.
+   */
+  stateBackend?: 'local' | 'orphan' | 'two-layer' | 'external' | string;
 }
 
 /**
@@ -1393,8 +1402,18 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   }
 
   // -------------------------------------------------------------------------
-  // Detect platform from git remote
+  // Conditionally add/remove squad-state .gitignore block
+  // When stateBackend is 'orphan' or 'two-layer', .squad/decisions.md and
+  // .squad/agents/*/history.md are owned by the squad-state branch — add a
+  // marker-delimited block so `git add .` cannot accidentally stage them.
+  // When stateBackend is 'local' (or undefined), remove the block if present.
   // -------------------------------------------------------------------------
+
+  if (options.stateBackend === 'orphan' || options.stateBackend === 'two-layer') {
+    addSquadStateGitignoreBlock(gitignorePath, storage);
+  } else {
+    removeSquadStateGitignoreBlock(gitignorePath, storage);
+  }
 
   let isGitHub = true;
   try {

@@ -428,3 +428,73 @@ describe('squad.agent.md template handling (#730)', () => {
     expect(result.createdFiles.length).toBeGreaterThan(0);
   });
 });
+
+// ─── .gitignore marker block for two-layer/orphan backends (#1228) ─────────
+
+describe('.gitignore state-backend marker block — initSquad()', () => {
+  beforeEach(async () => {
+    if (existsSync(TEST_ROOT)) {
+      await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+    await mkdir(TEST_ROOT, { recursive: true });
+    gitInit(TEST_ROOT);
+  });
+
+  afterEach(async () => {
+    if (existsSync(TEST_ROOT)) {
+      await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+  });
+
+  it('initSquad({stateBackend: "two-layer"}) adds the marker block to .gitignore', async () => {
+    await initSquad({ ...sdkOptions(TEST_ROOT), stateBackend: 'two-layer' });
+
+    const gitignorePath = join(TEST_ROOT, '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(true);
+    const content = await readFile(gitignorePath, 'utf-8');
+    expect(content).toContain('# Squad: state owned by squad-state branch (two-layer/orphan backend)');
+    expect(content).toContain('.squad/decisions.md');
+    expect(content).toContain('.squad/agents/*/history.md');
+    expect(content).toContain('# /Squad: state owned by squad-state branch');
+  });
+
+  it('initSquad({stateBackend: "orphan"}) adds the marker block to .gitignore', async () => {
+    await initSquad({ ...sdkOptions(TEST_ROOT), stateBackend: 'orphan' });
+
+    const gitignorePath = join(TEST_ROOT, '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(true);
+    const content = await readFile(gitignorePath, 'utf-8');
+    expect(content).toContain('# Squad: state owned by squad-state branch (two-layer/orphan backend)');
+    expect(content).toContain('.squad/decisions.md');
+    expect(content).toContain('.squad/agents/*/history.md');
+  });
+
+  it('initSquad({stateBackend: "local"}) does NOT add the marker block to .gitignore', async () => {
+    await initSquad({ ...sdkOptions(TEST_ROOT), stateBackend: 'local' });
+
+    const gitignorePath = join(TEST_ROOT, '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(true);
+    const content = await readFile(gitignorePath, 'utf-8');
+    expect(content).not.toContain('# Squad: state owned by squad-state branch');
+    expect(content).not.toContain('.squad/decisions.md');
+    expect(content).not.toContain('.squad/agents/*/history.md');
+  });
+
+  it('initSquad() with no stateBackend does NOT add the marker block', async () => {
+    await initSquad(sdkOptions(TEST_ROOT));
+
+    const gitignorePath = join(TEST_ROOT, '.gitignore');
+    expect(existsSync(gitignorePath)).toBe(true);
+    const content = await readFile(gitignorePath, 'utf-8');
+    expect(content).not.toContain('# Squad: state owned by squad-state branch');
+  });
+
+  it('initSquad with two-layer is idempotent — second call does not duplicate marker block', async () => {
+    await initSquad({ ...sdkOptions(TEST_ROOT), stateBackend: 'two-layer' });
+    await initSquad({ ...sdkOptions(TEST_ROOT), stateBackend: 'two-layer' });
+
+    const content = await readFile(join(TEST_ROOT, '.gitignore'), 'utf-8');
+    const occurrences = (content.match(/# Squad: state owned by squad-state branch/g) ?? []).length;
+    expect(occurrences).toBe(1);
+  });
+});
