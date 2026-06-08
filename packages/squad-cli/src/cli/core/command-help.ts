@@ -76,6 +76,13 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`global), and the state of the personal squad path.\n`);
   },
 
+  projects: (version) => {
+    header('projects', version, 'List all Squad projects on this machine');
+    console.log(`Usage: squad projects\n`);
+    console.log(`Lists every project where 'squad init' has run, newest first,`);
+    console.log(`showing its name, path, and when it was first registered.\n`);
+  },
+
   roles: (version) => {
     header('roles', version, 'List built-in Squad roles');
     console.log(`Usage: squad roles [--category <name>] [--search <query>]\n`);

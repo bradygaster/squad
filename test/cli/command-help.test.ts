@@ -123,6 +123,7 @@ describe('printCommandHelp', () => {
       'personal',
       'plugin',
       'preset',
+      'projects',
       'rc',
       'rc-tunnel',
       'remote-control',

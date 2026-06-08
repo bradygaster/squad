@@ -11,7 +11,7 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, registerProject, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { resolveSquadStateMcpSpec } from './mcp-spec.js';
@@ -445,6 +445,15 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     console.log(`${DIM}  Add agents with: squad personal add <name> --role <role>${RESET}`);
     console.log();
   } else {
+    // Log this project in the global registry so `squad projects` can list
+    // every Squad project on this machine. Best-effort: a failure here must
+    // never block init.
+    try {
+      registerProject(path.basename(path.resolve(dest)), dest);
+    } catch {
+      // Registry write failed; ignore so init still succeeds.
+    }
+
     // Repo init: inform user if personal squad is available
     const personalDir = resolvePersonalSquadDir();
     if (personalDir) {
