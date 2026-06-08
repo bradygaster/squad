@@ -679,6 +679,13 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
     filesUpdated.push(...memoryFiles);
   }
 
+  const builtinAgents = ensureBuiltinAgents(dest, templatesDir);
+  if (builtinAgents.length > 0) {
+    const uniqueAgentNames = Array.from(new Set(builtinAgents.map(p => path.basename(path.dirname(p)))));
+    success(`scaffolded ${uniqueAgentNames.length} built-in agent(s): ${uniqueAgentNames.join(', ')}`);
+    filesUpdated.push(...builtinAgents);
+  }
+
   const skillCount = syncAllSkills(dest, templatesDir);
   if (skillCount > 0) {
     success(`synced ${skillCount} skills to .copilot/skills/`);
@@ -754,6 +761,77 @@ export function ensureMemoryGovernanceUpgradeDefaults(dest: string): string[] {
       created.push(path.join('.squad', 'memory', file));
     }
   }
+  return created;
+}
+
+/**
+ * Scaffold always-on built-in agent charters (Rai, Fact Checker) that ship
+ * as templates but may be missing from older squads. Idempotent — only writes
+ * when the agent directory is absent. Never overwrites existing charters or
+ * history. Sources charter content from the shipped `templates/{name}-charter.md`
+ * files when available, falling back to a minimal placeholder otherwise.
+ *
+ * Scribe and Ralph are intentionally NOT scaffolded here — they should already
+ * exist in any squad that ran a prior init, and their charters are inlined in
+ * cast.ts (no shipped template file). Adding them here would risk overwriting
+ * customized versions on legacy squads.
+ *
+ * @param dest Root directory containing .squad/
+ * @param templatesDir Directory containing shipped charter templates
+ * @returns Paths (relative to dest) of created agent files
+ */
+export function ensureBuiltinAgents(dest: string, templatesDir: string): string[] {
+  const agentsDir = path.join(dest, '.squad', 'agents');
+  if (!storage.existsSync(agentsDir)) {
+    storage.mkdirSync(agentsDir, { recursive: true });
+  }
+
+  // Built-in agents that ship as charter templates. Each entry maps to:
+  //   - dirName: case-preserving directory name under .squad/agents/
+  //   - templateFile: filename under templatesDir (charter template)
+  //   - displayName: shown in history.md header
+  const builtins: Array<{ dirName: string; templateFile: string; displayName: string }> = [
+    { dirName: 'Rai', templateFile: 'Rai-charter.md', displayName: 'Rai' },
+    { dirName: 'fact-checker', templateFile: 'fact-checker-charter.md', displayName: 'Fact Checker' },
+  ];
+
+  const created: string[] = [];
+  for (const agent of builtins) {
+    const agentDir = path.join(agentsDir, agent.dirName);
+    const charterPath = path.join(agentDir, 'charter.md');
+    const historyPath = path.join(agentDir, 'history.md');
+
+    // Idempotent: skip if agent directory already exists. Never overwrite
+    // existing charters or history files (preserves user customization).
+    if (storage.existsSync(agentDir)) continue;
+
+    // Source charter content from the shipped template; fall back to a
+    // minimal placeholder if the template file is missing (defensive — should
+    // not happen in a well-formed install, but better than crashing upgrade).
+    const tplPath = path.join(templatesDir, agent.templateFile);
+    let charterContent: string;
+    if (storage.existsSync(tplPath)) {
+      charterContent = storage.readSync(tplPath) ?? '';
+    } else {
+      charterContent = `# ${agent.displayName}\n\n> Charter template not found in shipped templates. Run \`squad upgrade\` after reinstalling the CLI to repair.\n`;
+    }
+
+    try {
+      storage.mkdirSync(agentDir, { recursive: true });
+      storage.writeSync(charterPath, charterContent);
+      created.push(path.join('.squad', 'agents', agent.dirName, 'charter.md'));
+
+      storage.writeSync(historyPath, `# ${agent.displayName} — History\n\n## Learnings\n\nInitial scaffold via \`squad upgrade\`. Ready for work.\n`);
+      created.push(path.join('.squad', 'agents', agent.dirName, 'history.md'));
+    } catch (err: unknown) {
+      if (err instanceof Error && 'code' in err && ['EPERM', 'EACCES'].includes((err as NodeJS.ErrnoException).code ?? '')) {
+        warn(`Could not scaffold built-in agent ${agent.displayName} (read-only). Create .squad/agents/${agent.dirName}/ manually.`);
+        continue;
+      }
+      throw err;
+    }
+  }
+
   return created;
 }
 

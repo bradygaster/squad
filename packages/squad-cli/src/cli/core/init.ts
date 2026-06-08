@@ -226,6 +226,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         name: 'Rai',
         role: 'Rai',
         displayName: 'Rai',
+      },
+      {
+        name: 'fact-checker',
+        role: 'fact-checker',
+        displayName: 'Fact Checker',
       }
     ],
     configFormat: options.sdk ? 'sdk' : 'markdown',
