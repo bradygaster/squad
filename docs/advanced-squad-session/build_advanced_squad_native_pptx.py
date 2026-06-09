@@ -343,7 +343,7 @@ def s01_title():
     # Speaker block
     add_rect(slide, 8.8, 5.0, 3.8, 1.3, fill=PANEL, line=BORDER, corner=True)
     add_text_box(slide, 8.95, 5.05, 3.5, 0.5, "Tamir Dresher", size=18, color=TEXT, bold=True)
-    add_text_box(slide, 8.95, 5.45, 3.5, 0.35, "\u2022 Co-creator of Squad",
+    add_text_box(slide, 8.95, 5.45, 3.5, 0.35, "\u2022 Contributor & maintainer",
                  size=11, color=MUTED)
     add_text_box(slide, 8.95, 5.70, 3.5, 0.35, "\u2022 Principal Software Engineer",
                  size=11, color=MUTED)
@@ -458,7 +458,7 @@ def s04_release():
     add_content_slide(
         eyebrow="Release snapshot",
         title="Squad 0.10.0: what changed for this talk",
-        subtitle="0.10.0 shipped June 7, 2026 \u2014 dozens of changesets across CLI and SDK.",
+        subtitle="0.10.0 shipped June 7, 2026 \u2014 97 changesets across CLI and SDK (50 SDK + 71 CLI, deduplicated).",
         source="CHANGELOG.md:7-66",
         body=body,
     )
@@ -736,62 +736,68 @@ def s09b_memory_tools():
 
 def s09c_classify_spotlight():
     def body(slide):
-        # Left column: input \u2192 output for the same content, showing how the classifier picks
-        # the class from heuristics. Real classifier rules from memory/index.ts:594-621.
-        # Order MUST match the actual code: FORBIDDEN scan first, then TRANSIENT,
-        # POLICY, DECISION, COPILOT_MEMORY, LOCAL fallthrough.
+        # Honest reality of the classifier (verified by running it against the real SDK).
+        # Key finding: the (CI|PR|build) regex is in BOTH FORBIDDEN_PATTERNS (line 368)
+        # AND the TRANSIENT heuristic (line 610). FORBIDDEN scan wins, so the TRANSIENT
+        # heuristic path is dead code for these inputs. TRANSIENT only fires via explicit
+        # --class override. Verified 2026-06-09 by harnessing LocalMemoryStore.classify().
         add_terminal(slide, MARGIN_X, CONTENT_TOP, 7.0, 4.4,
                      ["# 1. FORBIDDEN scan runs FIRST \u2014 beats every override",
-                      "$ squad memory classify --content \"sk-1234567890abcdef...\"",
-                      "  class: FORBIDDEN    allowed: FALSE      \u2192 looks like an API key",
+                      "$ squad memory classify \"sk-1234567890abcdef...\"",
+                      "  class: FORBIDDEN    allowed: FALSE      reason: access token",
                       "",
-                      "# 2. TRANSIENT heuristic next \u2014 garbage filter before POLICY",
-                      "$ squad memory classify --content \"CI build failed at 14:32\"",
-                      "  class: TRANSIENT    allowed: FALSE      \u2192 refused to persist",
+                      "# 2. FORBIDDEN ALSO catches CI/PR/build status (same regex appears",
+                      "#    in both lists \u2014 FORBIDDEN scan wins, so TRANSIENT heuristic is",
+                      "#    unreachable from heuristics today; only fires via explicit --class)",
+                      "$ squad memory classify \"CI build failed at 14:32\"",
+                      "  class: FORBIDDEN    allowed: FALSE      reason: transient CI/PR status",
                       "",
                       "# 3. POLICY: /^(always|never|must|do not)/i",
-                      "$ squad memory classify --content \"Always deploy on Tuesdays\"",
+                      "$ squad memory classify \"Always deploy on Tuesdays\"",
                       "  class: POLICY       allowed: true       loadGuidance: ALWAYS",
                       "",
                       "# 4. DECISION: /decision|decided|adopt|standardize/",
-                      "$ squad memory classify --content \"We decided to use PostgreSQL\"",
+                      "$ squad memory classify \"We decided to use PostgreSQL\"",
                       "  class: DECISION     allowed: true       loadGuidance: ALWAYS",
                       "",
                       "# 5. LOCAL fallthrough \u2014 no signal, no danger",
-                      "$ squad memory classify --content \"hello\"",
+                      "$ squad memory classify \"hello\"",
                       "  class: LOCAL        allowed: true       loadGuidance: ON-DEMAND",
                       "",
                       "# 6. explicit override \u2014 caller can force a class",
-                      "$ squad memory classify --content \"hello\" --class POLICY",
+                      "$ squad memory classify \"hello\" --class POLICY",
                       "  class: POLICY       allowed: true       loadGuidance: ALWAYS"],
-                     accent=ACCENT, label="six paths, in real evaluation order (run these yourself)")
+                     accent=ACCENT, label="six paths \u2014 verified against the real SDK (run them yourself)")
         # Right column: the mental model card
         add_card(slide, MARGIN_X + 7.2, CONTENT_TOP, 4.9, 4.4, "\u29BF",
                  "What classify actually does",
                  ["Vets content. NO storage.",
                   "Returns the verdict the WRITE would get.",
                   "",
-                  "Real order at memory/index.ts:594-620:",
-                  "  1. FORBIDDEN scan (security)",
-                  "  2. TRANSIENT (garbage filter)",
-                  "  3. POLICY  (always/never/must)",
-                  "  4. DECISION (decided/adopt/...)",
-                  "  5. LOCAL fallthrough",
+                  "Real evaluation order (memory/index.ts:594-621):",
+                  "  1. FORBIDDEN scan \u2014 wins over everything",
+                  "  2. \u26A0 Heuristics block (TRANSIENT first,",
+                  "     then POLICY/DECISION/COPILOT_MEMORY,",
+                  "     LOCAL fallthrough)",
                   "",
-                  "TRANSIENT before POLICY matters:",
-                  "\u201CCI build always passes\u201D \u2192 TRANSIENT,",
-                  "not POLICY. Garbage doesn\u2019t become a rule."],
+                  "Honest finding worth knowing:",
+                  "the (CI|PR|build) regex sits in BOTH lists \u2014",
+                  "FORBIDDEN catches it first, so the TRANSIENT",
+                  "heuristic is unreachable for those inputs.",
+                  "Belt-and-suspenders by design."],
                  accent=ACCENT, head_size=15, body_size=12)
     add_content_slide(
         eyebrow="Spotlight: classify",
-        title="`squad memory classify` \u2014 the governance gate",
-        subtitle="Vets content. No storage. The same gate `write` runs internally \u2014 expose it so you can dry-run.",
-        source="packages/squad-sdk/src/memory/index.ts:594-620 (FORBIDDEN scan + 5 heuristics) \u2022 memory.ts:177-196",
+        title="`squad memory classify` \u2014 the governance gate, with one honest surprise",
+        subtitle="Vets content. No storage. The CI/PR/build pattern overlap means FORBIDDEN catches it before TRANSIENT ever runs.",
+        source="packages/squad-sdk/src/memory/index.ts:360-372 (FORBIDDEN_PATTERNS) + :594-621 (classify)  \u2022  verified live 2026-06-09",
         body=body,
-        notes=("Demo prompt order matches the CODE order: FORBIDDEN \u2192 TRANSIENT \u2192 POLICY \u2192 DECISION \u2192 LOCAL fallthrough \u2192 override. "
-               "Each one walks one rule. Audience can try them live; outputs are deterministic. "
-               "Key insight: TRANSIENT fires BEFORE POLICY. \u2018CI build always passes\u2019 contains \u2018always\u2019 but TRANSIENT pattern wins \u2014 "
-               "ephemera doesn\u2019t get promoted to a rule. This precedence IS the architectural decision."),
+        notes=("Demo order matches the code: FORBIDDEN scan first (catches secrets AND CI/PR/build status), then heuristics in actual order. "
+               "Anchor the audience on the honest finding: the same regex is in BOTH FORBIDDEN_PATTERNS and the TRANSIENT heuristic. "
+               "FORBIDDEN wins because it runs first, so CI status content classifies as FORBIDDEN, not TRANSIENT. "
+               "The TRANSIENT heuristic is effectively dead code for those inputs today \u2014 it only fires when callers pass --class TRANSIENT explicitly. "
+               "This is the kind of architectural rough edge you call out honestly, not hide. (Verified by harnessing classify() against \"CI build failed at 14:32\" "
+               "and seeing the FORBIDDEN result with reason='transient CI/PR status'.)"),
     )
 
 
@@ -1025,7 +1031,7 @@ def s12_session_evidence():
         add_terminal(slide, MARGIN_X, CONTENT_TOP, CONTENT_W, 2.6,
                      ["PR #1145 \u2014 paired real Copilot CLI A/B harness, isolated COPILOT_HOME:",
                       "",
-                      "ADC Squad runner demo:",
+                      "External Squad-using project demo:",
                       "  baseline                   :  0 memory diagnostic events",
                       "  memory-governance variant  : 10 memory diagnostic events",
                       "",
@@ -2660,23 +2666,24 @@ def s41_workflow_step4_classify():
     def body(slide):
         _workflow_header(slide, active=3, accent=GREEN)
         add_terminal(slide, MARGIN_X, CONTENT_TOP + 1.05, 7.0, 3.4,
-                     ["// memory/index.ts:594-605 \u2014 FORBIDDEN scan first",
+                     ["// memory/index.ts:594-605 \u2014 FORBIDDEN scan first (incl. CI/PR/build)",
                       "for ({ pattern, reason } of FORBIDDEN_PATTERNS) {",
                       "  if (pattern.test(content)) return FORBIDDEN;",
                       "}",
                       "",
-                      "// memory/index.ts:610-619 \u2014 heuristics, in real order",
+                      "// memory/index.ts:610-619 \u2014 heuristics (TRANSIENT branch is",
+                      "// unreachable today \u2014 same regex sits in FORBIDDEN_PATTERNS)",
                       "if (/\\b(CI|PR|build) (status|failed|...)\\b/i.test(content))",
-                      "  memoryClass = 'TRANSIENT';                       // garbage filter",
+                      "  memoryClass = 'TRANSIENT';   // dead code via FORBIDDEN overlap",
                       "else if (/^\\s*(always|never|must|do not)\\b/i.test(content))",
-                      "  memoryClass = 'POLICY';   //  \u2190 our case",
+                      "  memoryClass = 'POLICY';      //  \u2190 our case fires here",
                       "else if (/\\b(decision|decided|...)\\b/i.test(content))",
                       "  memoryClass = 'DECISION';",
-                      "else memoryClass = 'LOCAL';                         // fallthrough",
+                      "else memoryClass = 'LOCAL';     // fallthrough",
                       "",
                       "// memory/index.ts:640 \u2014 load guidance from class",
                       "loadGuidance = loadGuidanceFor('POLICY');  //  \u2192 ALWAYS"],
-                     accent=GREEN, label="real classifier (verbatim from SDK)")
+                     accent=GREEN, label="real classifier code \u2014 with the honest overlap noted")
         add_terminal(slide, MARGIN_X + 7.2, CONTENT_TOP + 1.05, 4.9, 3.4,
                      ["$ squad memory classify \\",
                       "    \"Always run the SDK tests \\",
@@ -2846,6 +2853,63 @@ def s37_maturity():
         title="Advanced operating model",
         subtitle="Don't turn everything on at once. Add patterns when the pain appears.",
         body=body,
+    )
+
+
+def s37b_human_payoff():
+    """Closing synthesis slide — answers slide 02's three questions in human terms,
+    not in git-log terms. Per tamresearch1 squad review (Picard/Troi/Guinan): the deck
+    showed the mechanism honestly; this slide shows the RELIEF."""
+    def body(slide):
+        # Three answers, each in plain human language
+        items = [
+            ("\u2698", "How does it remember?",
+             ["Agents stop asking what they",
+              "already answered.",
+              "",
+              "\u201CWe decided to use Postgres\u201D \u2014",
+              "the team\u2019s shared brain reloads it",
+              "into every future spawn,",
+              "no matter who wrote it."],
+             ACCENT),
+            ("\u29C9", "How do we change team shape?",
+             ["A mission becomes a workspace,",
+              "not a chat thread.",
+              "",
+              "Spawn a child squad with a brief,",
+              "let it work in its own worktree,",
+              "collect a clean PR back \u2014",
+              "without disrupting HQ."],
+             GREEN),
+            ("\u21C4", "How do squads talk?",
+             ["A manifest, an issue, a verdict.",
+              "",
+              "No agent of yours ever pokes",
+              "another team\u2019s .squad/ directly.",
+              "Public contract in, structured",
+              "result out. Just like a service."],
+             YELLOW),
+        ]
+        cards_row(slide, CONTENT_TOP, 3.7, items)
+        # Bottom: the relief sentence
+        cap_y = CONTENT_TOP + 3.95
+        add_rect(slide, MARGIN_X, cap_y, CONTENT_W, 0.85, fill=PANEL2, line=VIOLET, corner=True)
+        add_text_box(slide, MARGIN_X + 0.30, cap_y + 0.10, CONTENT_W - 0.60, 0.30,
+                     "What changes six months in",
+                     size=12, color=VIOLET, bold=True, font="Segoe UI Semibold")
+        add_text_box(slide, MARGIN_X + 0.30, cap_y + 0.42, CONTENT_W - 0.60, 0.40,
+                     "git log stays clean. PRs are reviewable. Decisions you made on day 12 are still alive on day 180. "
+                     "Your team doesn\u2019t lose context to keep the repo clean \u2014 it gets both.",
+                     size=14, color=TEXT, align=PP_ALIGN.CENTER)
+    add_content_slide(
+        eyebrow="The payoff",
+        title="The three questions, answered in human terms",
+        subtitle="The talk opened with three questions. Here\u2019s what changes for your team when all five patterns are running.",
+        body=body,
+        notes=("This is the landing the talk was missing. Slide 02 asked three questions; this slide answers them in plain "
+               "human language, not git-log terms. Lead in by reminding the audience of the opening questions, then walk "
+               "the three cards. Land on the bottom callout: 'your team doesn\u2019t lose context to keep the repo clean \u2014 "
+               "it gets both.' This is the line that makes the architecture feel like relief, not just mechanism."),
     )
 
 
@@ -3050,6 +3114,7 @@ s43_workflow_step6_verify()
 s44_workflow_recap()
 
 s37_maturity()
+s37b_human_payoff()
 s38_cheatsheet()
 s40_appendix()
 s39_close()
