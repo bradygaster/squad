@@ -1,0 +1,160 @@
+# Requires repo secret NUGET_API_KEY. Generate at nuget.org → API Keys → Create.
+#
+# ## Failure recovery
+# Publishing is branch-driven: dev creates prerelease NuGet packages, main creates stable NuGet
+# packages, and workflow_dispatch remains an escape hatch. PACKAGE_VERSION is resolved once
+# before build/test/pack/push and the nupkgs/* artifacts are uploaded before the registry write.
+# If a run is interrupted after NuGet accepted the package but before the workflow completes,
+# rerun the same workflow/run: NuGet package versions are immutable and `--skip-duplicate`
+# turns already-published packages into no-ops while retrying anything not yet published.
+# `cancel-in-progress: false` prevents a recovery rerun from canceling an in-flight publish.
+# Dev prereleases use github.run_number in the prerelease field because it is monotonically
+# increasing per workflow and participates in NuGet/SemVer ordering; reruns keep the same
+# version intentionally, and `--skip-duplicate` makes that safe.
+
+name: Squad.Agents.AI NuGet Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Optional NuGet package version override, for example 0.1.0-preview.123'
+        required: false
+        type: string
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'src/Squad.Agents.AI/**'
+      - 'test/Squad.Agents.AI.Tests/**'
+      - 'Directory.*.props'
+      - 'global.json'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Pack and publish NuGet package
+    runs-on: ubuntu-latest
+    concurrency:
+      group: squad-agents-ai-release-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          project_file="src/Squad.Agents.AI/Squad.Agents.AI.csproj"
+          csproj_version="$(sed -nE 's/^[[:space:]]*<Version>([^<]+)<\/Version>[[:space:]]*$/\1/p' "${project_file}" | head -n 1)"
+          manual_version="${{ inputs.version }}"
+          version_source=""
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && -n "${manual_version}" ]]; then
+            package_version="${manual_version}"
+            version_source="workflow_dispatch input"
+          else
+            if [[ -z "${csproj_version}" ]]; then
+              echo "::error::Could not find <Version> in ${project_file}."
+              exit 1
+            fi
+
+            case "${GITHUB_REF_NAME}" in
+              main)
+                # Stable releases mirror the Squad CLI's release workflow: the maintainer bumps
+                # the source version before merge, and the workflow publishes that exact version.
+                package_version="${csproj_version}"
+                version_source="${project_file}"
+                if [[ "${package_version}" == *-* ]]; then
+                  echo "::error::main publishes stable packages; ${project_file} has prerelease version '${package_version}'. Bump it before merging."
+                  exit 1
+                fi
+                ;;
+              dev)
+                # The Squad CLI derives prereleases from the source version plus commit identity.
+                # For NuGet, build metadata does not give consumers monotonic prerelease ordering,
+                # so use github.run_number in the prerelease field instead.
+                stable_base="${csproj_version%%+*}"
+                stable_base="${stable_base%%-*}"
+                package_version="${stable_base}-preview.${GITHUB_RUN_NUMBER}"
+                version_source="${project_file} + github.run_number"
+                ;;
+              *)
+                echo "::error::workflow_dispatch without a version input must run on dev or main; current ref is '${GITHUB_REF_NAME}'."
+                exit 1
+                ;;
+            esac
+          fi
+
+          if [[ -z "${package_version}" ]]; then
+            echo "::error::PACKAGE_VERSION resolved to empty."
+            exit 1
+          fi
+
+          if [[ ! "${package_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::PACKAGE_VERSION '${package_version}' from ${version_source} is not a SemVer 2.0 version."
+            exit 1
+          fi
+
+          echo "PACKAGE_VERSION=${package_version}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved PACKAGE_VERSION=${package_version} (${version_source})"
+
+      - name: Verify NuGet API key
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NUGET_API_KEY}" ]]; then
+            echo "::error::Missing repo secret NUGET_API_KEY. Generate at nuget.org → API Keys → Create, then add it as a repository secret."
+            exit 1
+          fi
+
+      - name: Restore package
+        run: dotnet restore src/Squad.Agents.AI/Squad.Agents.AI.csproj
+
+      - name: Restore tests
+        run: dotnet restore test/Squad.Agents.AI.Tests/Squad.Agents.AI.Tests.csproj
+
+      - name: Build package
+        run: dotnet build src/Squad.Agents.AI/Squad.Agents.AI.csproj -c Release --no-restore -p:Version=${{ steps.version.outputs.PACKAGE_VERSION }}
+
+      - name: Build tests
+        run: dotnet build test/Squad.Agents.AI.Tests/Squad.Agents.AI.Tests.csproj -c Release --no-restore -p:Version=${{ steps.version.outputs.PACKAGE_VERSION }}
+
+      - name: Test
+        run: dotnet test test/Squad.Agents.AI.Tests/Squad.Agents.AI.Tests.csproj -c Release --no-build
+
+      - name: Pack
+        run: dotnet pack src/Squad.Agents.AI/Squad.Agents.AI.csproj -c Release --no-build -o nupkgs -p:Version=${{ steps.version.outputs.PACKAGE_VERSION }}
+
+      - name: Upload NuGet package artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: squad-agents-ai-nupkgs-${{ steps.version.outputs.PACKAGE_VERSION }}
+          path: nupkgs/*
+          if-no-files-found: ignore
+
+      - name: Push to NuGet.org
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key "${NUGET_API_KEY}" --skip-duplicate
