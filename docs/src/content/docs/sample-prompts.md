@@ -215,7 +215,7 @@ Read SDK docs carefully. One agent owns SDK integration/streaming, another owns 
 ### 9. Aspire Cloud-Native App
 
 ```
-Build a cloud-native app with Aspire (read https://learn.microsoft.com/en-us/dotnet/aspire/):
+Build a cloud-native app with Aspire (read https://aspire.dev/):
 - AppHost orchestrating all services
 - Blazor Server dashboard: current conditions + 5-day forecast for saved cities
 - Weather API service: wraps OpenWeatherMap with Redis caching
