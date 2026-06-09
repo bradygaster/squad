@@ -316,6 +316,31 @@ jobs:
             exit 1
           fi
           echo "SDK dependency is safe: $SDK_DEP"
+      - name: "Verify SDK version is resolvable on npm (#1203)"
+        run: |
+          # Extract the minimum version floor from the SDK dependency range
+          SDK_DEP=$(node -p "require('./packages/squad-cli/package.json').dependencies['@bradygaster/squad-sdk']")
+          echo "SDK dependency declared: $SDK_DEP"
+          # Verify that at least one version satisfying the range exists on the registry
+          if ! npm view "@bradygaster/squad-sdk" versions --json 2>/dev/null | node -e "
+            const semver = require('semver');
+            const range = process.argv[1];
+            let data = '';
+            process.stdin.on('data', c => data += c);
+            process.stdin.on('end', () => {
+              const versions = JSON.parse(data);
+              const arr = Array.isArray(versions) ? versions : [versions];
+              const match = arr.find(v => semver.satisfies(v, range));
+              if (!match) {
+                console.error('::error::No published SDK version satisfies ' + range);
+                process.exit(1);
+              }
+              console.log('✅ SDK dependency resolves to: ' + match);
+            });
+          " "$SDK_DEP"; then
+            echo "::error::Cannot verify SDK dependency is resolvable — aborting CLI publish to prevent #1203"
+            exit 1
+          fi
       - name: Build squad-sdk (required for CLI project references)
         run: npm -w packages/squad-sdk run build
       - name: Build squad-cli
