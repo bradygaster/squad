@@ -93,3 +93,51 @@ export function registerProject(name: string, projectPath: string): void {
 
   fs.writeFileSync(file, `${JSON.stringify(entries, null, 2)}\n`, 'utf8');
 }
+
+/**
+ * Resolves a user-supplied query to a registry entry.
+ *
+ * Resolution order (all comparisons are case-insensitive on platforms where
+ * CASE_INSENSITIVE is true):
+ *
+ *   a. Exact name match. Returns { match } for a unique hit; { ambiguous }
+ *      when multiple entries share the same name.
+ *   b. Exact path match via samePath on the resolved absolute paths.
+ *      Returns { match } when exactly one entry matches.
+ *   c. Unique case-insensitive substring match on name. Returns { match }
+ *      for one hit, { ambiguous } for several.
+ *   d. Falls back to { notFound: true }.
+ *
+ * An empty query (after trimming) always returns { notFound: true }.
+ *
+ * @param query - A project name, partial name, or path to search for.
+ */
+export function resolveProject(
+  query: string,
+): { match: ProjectRegistryEntry } | { ambiguous: ProjectRegistryEntry[] } | { notFound: true } {
+  const trimmed = query.trim();
+  if (!trimmed) return { notFound: true };
+
+  const entries = readProjectsRegistry();
+
+  const nameEq = (a: string, b: string): boolean =>
+    CASE_INSENSITIVE ? a.toLowerCase() === b.toLowerCase() : a === b;
+
+  // a. Exact name match
+  const exactName = entries.filter(e => nameEq(e.name, trimmed));
+  if (exactName.length === 1) return { match: exactName[0]! };
+  if (exactName.length > 1) return { ambiguous: exactName };
+
+  // b. Exact path match
+  const resolvedQuery = path.resolve(trimmed);
+  const exactPath = entries.filter(e => samePath(path.resolve(e.path), resolvedQuery));
+  if (exactPath.length === 1) return { match: exactPath[0]! };
+
+  // c. Substring match on name
+  const lowerQuery = trimmed.toLowerCase();
+  const substringMatches = entries.filter(e => e.name.toLowerCase().includes(lowerQuery));
+  if (substringMatches.length === 1) return { match: substringMatches[0]! };
+  if (substringMatches.length > 1) return { ambiguous: substringMatches };
+
+  return { notFound: true };
+}

@@ -120,6 +120,7 @@ describe('printCommandHelp', () => {
       'memory',
       'migrate',
       'nap',
+      'open',
       'personal',
       'plugin',
       'preset',

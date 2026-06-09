@@ -176,6 +176,7 @@ async function main(): Promise<void> {
     console.log(`             No-op for local/worktree backends. Invoked by git hooks.`);
     console.log(`  ${BOLD}status${RESET}     Show which squad is active and why`);
     console.log(`  ${BOLD}projects${RESET}   List all Squad projects on this machine`);
+    console.log(`  ${BOLD}open [name]${RESET} Open a registered project in Copilot`);
     console.log(`  ${BOLD}roles${RESET}      List built-in Squad roles`);
     console.log(`             Usage: roles [--category <name>] [--search <query>]`);
     console.log(`  ${BOLD}cost${RESET}       Report token usage from orchestration logs`);
@@ -883,6 +884,12 @@ async function main(): Promise<void> {
   if (cmd === 'projects') {
     const { runProjects } = await import('./cli/commands/projects.js');
     await runProjects(args.slice(1));
+    return;
+  }
+
+  if (cmd === 'open') {
+    const { runOpen } = await import('./cli/commands/open.js');
+    await runOpen(args.slice(1));
     return;
   }
 

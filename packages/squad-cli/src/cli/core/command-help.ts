@@ -83,6 +83,21 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`showing its name, path, and when it was first registered.\n`);
   },
 
+  open: (version) => {
+    header('open', version, 'Open a registered project in Copilot');
+    console.log(`Usage: squad open [name] [--print-path]\n`);
+    console.log(`Looks up a registered project by name (or partial name) and launches`);
+    console.log(`Copilot in that directory. When no name is given and stdout is a TTY,`);
+    console.log(`a numbered picker is shown. Pass --print-path to print the resolved`);
+    console.log(`path instead of launching Copilot (useful for shell cd integrations).\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--print-path${RESET}, ${BOLD}-p${RESET}            Print the project path and exit`);
+    console.log(`\nExamples:`);
+    console.log(`  squad open my-repo`);
+    console.log(`  squad open my-repo --print-path`);
+    console.log(`  squad open\n`);
+  },
+
   roles: (version) => {
     header('roles', version, 'List built-in Squad roles');
     console.log(`Usage: squad roles [--category <name>] [--search <query>]\n`);
