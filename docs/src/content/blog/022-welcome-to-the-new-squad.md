@@ -671,7 +671,7 @@ Squad exports traces and metrics via OpenTelemetry. Three-layer API:
 - Cost accumulation in real time
 
 **Export to:**
-- .NET Aspire Dashboard (`squad aspire`)
+- Aspire Dashboard (`squad aspire`)
 - Jaeger
 - Zipkin
 - Any OTLP-compatible backend

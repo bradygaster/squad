@@ -65,10 +65,10 @@ Set up the team and start with the backend data layer.
 
 ---
 
-### .NET Aspire Cloud-Native App
+### Aspire Cloud-Native App
 
 ```
-Build a cloud-native distributed app with .NET Aspire. I want:
+Build a cloud-native distributed app with Aspire. I want:
 - An AppHost that orchestrates all services
 - A Blazor frontend with interactive server components
 - A minimal API backend with OpenAPI endpoints

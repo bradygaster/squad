@@ -93,7 +93,7 @@ The sample demonstrates three key SDK tools for agent coordination:
 
 ## OpenTelemetry integration
 
-To view traces and metrics in the .NET Aspire dashboard:
+To view traces and metrics in the Aspire dashboard:
 
 ```bash
 # Start Aspire dashboard
