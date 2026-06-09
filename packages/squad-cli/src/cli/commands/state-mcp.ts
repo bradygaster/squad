@@ -32,6 +32,15 @@ const MCP_TOOL_ALIASES: Record<string, string> = {
   squad_state_delete: 'squad_state_delete',
   squad_state_list: 'squad_state_list',
   squad_state_health: 'squad_state_health',
+  // Governed memory tools — bridge SDK ToolRegistry entries through the MCP server
+  // so autonomous agents (Copilot CLI) can invoke classify/write/search/promote/delete/audit.
+  // Underscore in the alias key per MCP cross-client safety; value keeps the dotted SDK name.
+  memory_classify: 'memory.classify',
+  memory_write: 'memory.write',
+  memory_search: 'memory.search',
+  memory_promote: 'memory.promote',
+  memory_delete: 'memory.delete',
+  memory_audit: 'memory.audit',
 };
 
 function parseObject(value: unknown): Record<string, unknown> {

@@ -62,6 +62,58 @@ describe('state-mcp bridge', () => {
     expect(tools.find(tool => tool.name === 'squad_state_write')?.inputSchema.required).toEqual(['key', 'content']);
   });
 
+  it('lists all 13 tools including the 6 governed memory bridges', async () => {
+    const messages: JsonRpcMessage[] = [];
+    const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+
+    await session.handleRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+
+    const tools = resultAsRecord(messages[0]!)['tools'] as Array<{ name: string }>;
+    const names = tools.map(tool => tool.name);
+
+    // Existing 7 state tools
+    expect(names).toContain('squad_decide');
+    expect(names).toContain('squad_state_read');
+    expect(names).toContain('squad_state_write');
+    expect(names).toContain('squad_state_append');
+    expect(names).toContain('squad_state_delete');
+    expect(names).toContain('squad_state_list');
+    expect(names).toContain('squad_state_health');
+
+    // New 6 governed memory bridges
+    expect(names).toContain('memory_classify');
+    expect(names).toContain('memory_write');
+    expect(names).toContain('memory_search');
+    expect(names).toContain('memory_promote');
+    expect(names).toContain('memory_delete');
+    expect(names).toContain('memory_audit');
+
+    expect(tools).toHaveLength(13);
+  });
+
+  it('routes memory_classify via MCP to the SDK ToolRegistry memory.classify handler', { timeout: 30000 }, async () => {
+    const messages: JsonRpcMessage[] = [];
+    const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
+
+    await session.handleRequest({
+      jsonrpc: '2.0',
+      id: 'classify',
+      method: 'tools/call',
+      params: {
+        name: 'memory_classify',
+        arguments: { content: 'Always deploy on Tuesdays' },
+      },
+    });
+
+    const result = resultAsRecord(messages[0]!);
+    expect(result['isError']).not.toBe(true);
+    const content = result['content'] as Array<{ type: string; text: string }>;
+    expect(content).toBeDefined();
+    expect(content[0]?.type).toBe('text');
+    // The classification result should be a non-empty text response
+    expect(content[0]?.text.length).toBeGreaterThan(0);
+  });
+
   it('writes and reads two-layer state without mutating the worktree .squad files', async () => {
     const messages: JsonRpcMessage[] = [];
     const session = createStateMcpSession(TMP, message => messages.push(message as JsonRpcMessage));
