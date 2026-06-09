@@ -25,13 +25,32 @@ Agents learn from real work and write skill files — reusable patterns, convent
 ## Where Skills Live
 
 ```
-.squad/skills/{skill-name}/SKILL.md
+.copilot/skills/{skill-name}/SKILL.md
 ```
 
 Each skill is a directory containing a `SKILL.md` file. Skills are **team-wide knowledge** — not tied to individual agents. All agents can read and use any skill.
 
+> **Note:** `.squad/skills/` is a supported legacy path. Skills there are still discovered at read time and take **highest** scan precedence. The CLI, SDK tool, and `squad init` all write to `.copilot/skills/` by default. See [Skill directory precedence](#skill-directory-precedence) below.
+
 > **Portable across projects**: Skills export and import with your team. When you move a trained team to a new repo, all their earned knowledge comes with them.
 
+---
+
+## Skill directory precedence
+
+Squad scans five directories for skills at read time. When the same skill name appears in more than one location, the highest-precedence copy wins:
+
+| Priority | Directory | Notes |
+|----------|-----------|-------|
+| 1 | `.squad/skills/` | Legacy path — **highest** scan priority for backward compatibility |
+| 2 | `.copilot/skills/` | **Current write target** — CLI commands, SDK tool, and `squad init` write here |
+| 3 | `.github/skills/` | GitHub-native path |
+| 4 | `.claude/skills/` | Claude-specific path |
+| 5 | `.agents/skills/` | Generic agents path |
+
+**Writes default to `.copilot/skills/`** — that is what the CLI `skill` commands, the SDK skill tool, sharing/consult, and `squad init` create. `.squad/skills/` is retained for backward compatibility; any skill already there continues to work and takes highest precedence if a same-named skill also exists in `.copilot/skills/`.
+
+> **Tip:** If you have skills in `.squad/skills/` from an older install, they continue to work as-is. To consolidate, move them to `.copilot/skills/` — but remove the `.squad/skills/` copy first, otherwise the old location will shadow the new one.
 ---
 
 ## Types of Skills
@@ -92,7 +111,7 @@ Confidence only goes up, never down. A skill that reaches `high` stays there.
 After successfully setting up a CI pipeline, an agent might create:
 
 ```
-.squad/skills/ci-github-actions/SKILL.md
+.copilot/skills/ci-github-actions/SKILL.md
 ```
 
 ```markdown
@@ -117,7 +136,7 @@ After successfully setting up a CI pipeline, an agent might create:
 
 - Skills compound over time. A mature project has skills covering testing patterns, deployment procedures, API conventions, and more.
 - Built-in skills are overwritten on upgrade. Earned skills are never touched.
-- **Skills are shared across the whole team** — any agent can read any skill. They're stored in a flat `.squad/skills/` directory, not per-agent files.
+- **Skills are shared across the whole team** — any agent can read any skill. They're stored in a flat `.copilot/skills/` directory by default, not per-agent files. (`.squad/skills/` is still scanned as a legacy fallback — see [Skill directory precedence](#skill-directory-precedence).)
 - You can manually edit skill files if you want to seed knowledge (e.g., paste your team's existing conventions into a `SKILL.md`).
 - **Skills survive export/import** — your team's accumulated knowledge is fully portable across projects.
 
@@ -127,7 +146,7 @@ After successfully setting up a CI pipeline, an agent might create:
 list all skills
 ```
 
-Shows all skill files in `.squad/skills/` with confidence levels for earned skills.
+Shows all skill files in `.copilot/skills/` (and `.squad/skills/` if present) with confidence levels for earned skills.
 
 ```
 what's the confidence level for the CI skill?

@@ -64,7 +64,7 @@ squad export --out ./backups/team.json  # custom path
 | Agent charters | ✅ |
 | Agent histories | ✅ (split into portable vs project-specific) |
 | Casting state | ✅ |
-| Skills | ✅ All earned skills from `.squad/skills/` |
+| Skills | ✅ All earned skills from `.copilot/skills/` (and `.squad/skills/` legacy fallback) |
 | Decisions | ✅ |
 
 Skills are fully portable — they export and import with perfect fidelity.
@@ -101,7 +101,7 @@ Plugins are community-curated bundles of agent templates, skills, and best pract
 ### What's in a Plugin
 
 - **Agent templates** — specialized role charters (e.g., "AWS DevOps", "Python Data Science")
-- **Skills** — reusable `.squad/skills/SKILL.md` files
+- **Skills** — reusable `.copilot/skills/{name}/SKILL.md` files
 - **Instructions** — `decisions.md` snippets for conventions and routing
 - **Sample prompts** — ready-to-use prompts that activate plugin capabilities
 
@@ -126,7 +126,7 @@ Or use the command:
 /plugin install awesome-copilot/react-component-library
 ```
 
-Squad downloads the bundle, merges agent templates into `.squad/agents/`, adds skills to `.squad/skills/`, updates `decisions.md`, and seeds agents with the new knowledge.
+Squad downloads the bundle, merges agent templates into `.squad/agents/`, adds skills to `.copilot/skills/`, updates `decisions.md`, and seeds agents with the new knowledge.
 
 ### Managing Marketplaces
 
@@ -175,7 +175,7 @@ Declare external Squad sources and automatically inherit their context at sessio
 
 ### What Gets Inherited
 
-- **Skills** — all `.squad/skills/*/SKILL.md` files
+- **Skills** — all `.copilot/skills/*/SKILL.md` (and `.squad/skills/*/SKILL.md`) files
 - **Decisions** — `.squad/decisions.md`
 - **Wisdom** — `.squad/identity/wisdom.md`
 - **Casting Policy** — `.squad/casting/policy.json`
