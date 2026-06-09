@@ -1,0 +1,91 @@
+name: Squad.Agents.AI CI
+
+on:
+  pull_request:
+    paths:
+      - 'src/Squad.Agents.AI/**'
+      - 'test/Squad.Agents.AI.Tests/**'
+      - 'src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/**'
+      - '.github/workflows/squad-agents-ai-ci.yml'
+      - 'Directory.*.props'
+      - 'Directory.*.json'
+      - 'global.json'
+      - 'nuget.config'
+  push:
+    branches: [main]
+    paths:
+      - 'src/Squad.Agents.AI/**'
+      - 'test/Squad.Agents.AI.Tests/**'
+      - 'src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/**'
+      - '.github/workflows/squad-agents-ai-ci.yml'
+      - 'Directory.*.props'
+      - 'Directory.*.json'
+      - 'global.json'
+      - 'nuget.config'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    name: .NET ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore package
+        run: dotnet restore src/Squad.Agents.AI/Squad.Agents.AI.csproj -p:NuGetAudit=true
+
+      - name: Restore tests
+        run: dotnet restore test/Squad.Agents.AI.Tests/Squad.Agents.AI.Tests.csproj -p:NuGetAudit=true
+
+      - name: Restore sample
+        run: dotnet restore src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/Squad.Agents.AI.Sample.csproj -p:NuGetAudit=true
+
+      - name: Build package
+        run: dotnet build src/Squad.Agents.AI/Squad.Agents.AI.csproj --no-restore -c Release
+
+      - name: Build tests
+        run: dotnet build test/Squad.Agents.AI.Tests/Squad.Agents.AI.Tests.csproj --no-restore -c Release
+
+      - name: Build sample
+        run: dotnet build src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/Squad.Agents.AI.Sample.csproj --no-restore -c Release
+
+      - name: Test
+        run: dotnet test test/Squad.Agents.AI.Tests/Squad.Agents.AI.Tests.csproj --no-build -c Release --logger trx --results-directory TestResults
+
+      - name: Pack
+        run: dotnet pack src/Squad.Agents.AI/Squad.Agents.AI.csproj --no-build -c Release -o nupkgs
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: squad-agents-ai-testresults-${{ matrix.os }}
+          path: TestResults
+          if-no-files-found: ignore
+
+      - name: Upload NuGet packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: squad-agents-ai-nupkgs-${{ matrix.os }}
+          path: nupkgs
+          if-no-files-found: error
