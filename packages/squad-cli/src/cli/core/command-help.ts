@@ -78,9 +78,14 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
 
   projects: (version) => {
     header('projects', version, 'List all Squad projects on this machine');
-    console.log(`Usage: squad projects\n`);
+    console.log(`Usage: squad projects [--open [name]] [--print-path]\n`);
     console.log(`Lists every project where 'squad init' has run, newest first,`);
     console.log(`showing its name, path, and when it was first registered.\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--open${RESET}, ${BOLD}-o${RESET} [name]   Open a project from the list in Copilot. With no name`);
+    console.log(`                      and a TTY, shows a numbered picker; with a name, opens`);
+    console.log(`                      the matching project directly.`);
+    console.log(`  ${BOLD}--print-path${RESET}        With --open, print the resolved path instead of launching.\n`);
   },
 
   open: (version) => {

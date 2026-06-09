@@ -4,9 +4,15 @@
  * Lists every Squad project registered on this machine (populated by
  * `squad init`), newest first. Read-only: it only reports what the registry
  * already contains.
+ *
+ * Pass `--open [name]` (alias `-o`) to open a project in Copilot instead of
+ * listing. Delegates fully to `squad open`, so the interactive picker, name
+ * resolver, `--print-path` flag, and missing-path guard all work exactly as
+ * they do on that command.
  */
 
 import { readProjectsRegistry } from '@bradygaster/squad-sdk';
+import { runOpen } from './open.js';
 
 function relativeAge(iso: string): string {
   const then = new Date(iso).getTime();
@@ -20,7 +26,12 @@ function relativeAge(iso: string): string {
   return `${months} months ago`;
 }
 
-export async function runProjects(_args: string[]): Promise<void> {
+export async function runProjects(args: string[]): Promise<void> {
+  if (args.includes('--open') || args.includes('-o')) {
+    const rest = args.filter(a => a !== '--open' && a !== '-o');
+    return runOpen(rest);
+  }
+
   const entries = readProjectsRegistry();
 
   if (entries.length === 0) {
