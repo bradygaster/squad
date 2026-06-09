@@ -443,7 +443,14 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
   let prLabels = [];
   try {
     prLabels = JSON.parse(prLabelsRaw);
+    // Handle double-serialized values (e.g. a JSON string of a JSON array).
+    if (typeof prLabels === 'string') {
+      prLabels = JSON.parse(prLabels);
+    }
   } catch {
+    prLabels = [];
+  }
+  if (!Array.isArray(prLabels)) {
     prLabels = [];
   }
 
@@ -514,7 +521,7 @@ export async function run({ env = process.env, fetchFn = globalThis.fetch } = {}
     `${apiBase}/pulls/${prNumber}/files?per_page=100`,
     apiHeaders,
   );
-  checks.push({ name: 'Changeset present', ...checkChangeset(files, prLabels) });
+  checks.push({ name: 'Changeset present', ...checkChangeset(files, prData?.labels ?? prLabels) });
 
   // 6. Scope cleanliness
   checks.push({ name: 'Scope clean', ...checkScopeClean(files) });

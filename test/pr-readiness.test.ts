@@ -977,6 +977,19 @@ describe('run()', () => {
     expect(changesetCheck).toBeDefined();
   });
 
+  it('handles double-string-serialized PR_LABELS gracefully', async () => {
+    const mockFetch = createMockFetch({
+      files: [{ filename: 'packages/squad-sdk/src/foo.ts' }],
+    });
+    // PR_LABELS double-serialized: JSON.stringify('[]') => '"[]"'
+    const env = { ...baseEnv, PR_LABELS: JSON.stringify('[]') };
+    const result = await run({ env, fetchFn: mockFetch });
+
+    const changesetCheck = result.checks.find((c) => c.name === 'Changeset present');
+    expect(changesetCheck).toBeDefined();
+    expect(changesetCheck.pass).toBe(false);
+  });
+
   it('handles merge conflict detection', async () => {
     const mockFetch = createMockFetch({ pr: { mergeable: false } });
     const result = await run({ env: baseEnv, fetchFn: mockFetch });
