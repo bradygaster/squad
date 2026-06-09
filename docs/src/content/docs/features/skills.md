@@ -59,7 +59,7 @@ Legacy term for built-in skills. Previously called "starter skills" and prefixed
 
 ### Session Recovery
 
-The `session-recovery` skill teaches agents to find and resume interrupted Copilot CLI sessions. When a session is interrupted (terminal crash, network drop, machine restart), in-progress work may be left incomplete. This skill uses `session_store` SQL queries to detect abandoned sessions, inspect checkpoint progress, and resume work. See [`.copilot/skills/session-recovery/SKILL.md`](https://github.com/bradygaster/squad/blob/dev/.squad/skills/session-recovery/SKILL.md) for query patterns and examples.
+The `session-recovery` skill teaches agents to find and resume interrupted Copilot CLI sessions. When a session is interrupted (terminal crash, network drop, machine restart), in-progress work may be left incomplete. This skill uses `session_store` SQL queries to detect abandoned sessions, inspect checkpoint progress, and resume work. See [`.copilot/skills/session-recovery/SKILL.md`](https://github.com/bradygaster/squad/blob/dev/.copilot/skills/session-recovery/SKILL.md) for query patterns and examples.
 
 ### Earned skills
 
