@@ -24,14 +24,14 @@ jobs:
     timeout-minutes: 3
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           sparse-checkout: |
             scripts/check-bootstrap-deps.mjs
           sparse-checkout-cone-mode: false
       - name: Fetch PR head (data only — not executed)
         run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Check bootstrap dependencies
@@ -54,7 +54,7 @@ jobs:
     timeout-minutes: 2
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Fetch PR head (data only — not executed)
@@ -81,12 +81,12 @@ jobs:
     timeout-minutes: 3
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Fetch PR head (data only — not executed)
         run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Detect .squad/ leakage
@@ -100,7 +100,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
       - name: Comment on leakage
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
@@ -118,12 +118,12 @@ jobs:
     timeout-minutes: 5
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Fetch PR head (data only — not executed)
         run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Run architectural review
@@ -137,7 +137,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
       - name: Comment on findings
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
@@ -155,12 +155,12 @@ jobs:
     timeout-minutes: 5
     if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Fetch PR head (data only — not executed)
         run: git fetch origin ${{ github.event.pull_request.head.sha }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Run security review
@@ -174,7 +174,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
       - name: Comment on findings
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
