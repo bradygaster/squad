@@ -77,7 +77,7 @@ public class SquadAgentRoutingTests
             options.Environment["SQUAD_ROUTE"] = "enabled";
         });
 
-        var inner = GetRequiredField<object>(agent, "_inner");
+        var inner = GetInnerAgent(agent);
         var sessionConfig = GetInnerSessionConfig(agent);
         var clientOptions = GetCopilotClientOptions(agent);
         var cliArgs = GetRequiredProperty<string[]>(clientOptions, "CliArgs");
@@ -153,9 +153,21 @@ public class SquadAgentRoutingTests
         return GetRequiredField<object>(client, "_options");
     }
 
+    private static object GetInnerAgent(SquadAgent agent)
+    {
+        // InnerAgent is protected on DelegatingAIAgent; search the declaring base type.
+        var prop = typeof(DelegatingAIAgent).GetProperty(
+            "InnerAgent",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        Assert.NotNull(prop);
+        var value = prop.GetValue(agent);
+        Assert.NotNull(value);
+        return value!;
+    }
+
     private static object GetInnerSessionConfig(SquadAgent agent)
     {
-        var inner = GetRequiredField<object>(agent, "_inner");
+        var inner = GetInnerAgent(agent);
         return GetRequiredField<object>(inner, "_sessionConfig");
     }
 

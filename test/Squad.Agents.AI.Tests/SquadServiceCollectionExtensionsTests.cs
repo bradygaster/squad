@@ -9,7 +9,7 @@ namespace Squad.Agents.AI.Tests;
 public class SquadServiceCollectionExtensionsTests
 {
     [Fact]
-    public void AddSquadAgent_WithoutConfig_RegistersAIAgent()
+    public void AddSquadAgent_WithoutConfig_ThrowsOnResolution()
     {
         var services = new ServiceCollection();
         var configuration = new ConfigurationBuilder().Build();
@@ -18,9 +18,9 @@ public class SquadServiceCollectionExtensionsTests
         services.AddSquadAgent();
 
         var provider = services.BuildServiceProvider();
-        var agent = provider.GetService<SquadAgent>();
 
-        Assert.NotNull(agent);
+        // SquadFolderPath not set → InvalidOperationException on resolution (MAF ctor pattern).
+        Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<SquadAgent>());
     }
 
     [Fact]

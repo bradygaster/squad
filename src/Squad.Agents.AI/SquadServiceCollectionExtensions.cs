@@ -176,7 +176,12 @@ public static class SquadServiceCollectionExtensions
             sp =>
             {
                 var options = sp.GetRequiredService<IOptionsMonitor<SquadAgentOptions>>().Get(optionsName);
-                return ActivatorUtilities.CreateInstance<SquadAgent>(sp, options);
+                var loggerFactory = sp.GetService<ILoggerFactory>();
+                var folderPath = options.SquadFolderPath;
+                if (string.IsNullOrWhiteSpace(folderPath))
+                    throw new InvalidOperationException(
+                        "SquadAgentOptions.SquadFolderPath must be configured (via configure callback or connection string) before resolving SquadAgent.");
+                return new SquadAgent(folderPath, options, loggerFactory);
             },
             lifetime));
 
@@ -214,7 +219,12 @@ public static class SquadServiceCollectionExtensions
             (sp, _) =>
             {
                 var options = sp.GetRequiredService<IOptionsMonitor<SquadAgentOptions>>().Get(optionsName);
-                return ActivatorUtilities.CreateInstance<SquadAgent>(sp, options);
+                var loggerFactory = sp.GetService<ILoggerFactory>();
+                var folderPath = options.SquadFolderPath;
+                if (string.IsNullOrWhiteSpace(folderPath))
+                    throw new InvalidOperationException(
+                        "SquadAgentOptions.SquadFolderPath must be configured (via configure callback or connection string) before resolving SquadAgent.");
+                return new SquadAgent(folderPath, options, loggerFactory);
             },
             lifetime));
 

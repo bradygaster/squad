@@ -1,6 +1,5 @@
 using GitHub.Copilot.SDK;
 using Microsoft.Agents.AI;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -8,6 +7,7 @@ namespace Squad.Agents.AI;
 
 /// <summary>
 /// Microsoft Agent Framework agent that delegates to a GitHub Copilot SDK client configured for a Squad team root.
+/// Extends <see cref="DelegatingAIAgent"/> — Core* pass-through overrides are provided by the base class.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -16,53 +16,94 @@ namespace Squad.Agents.AI;
 /// </para>
 /// <example>
 /// <code>
-/// var agent = new SquadAgent(new SquadAgentOptions { SquadFolderPath = @"C:\repo" });
+/// var agent = new SquadAgent(@"C:\repo");
 /// var response = await agent.RunAsync("Summarize the team.");
 /// </code>
 /// </example>
 /// </remarks>
-public sealed class SquadAgent : AIAgent, IAsyncDisposable
+public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
 {
     private readonly CopilotClient _copilotClient;
-    private readonly AIAgent _inner;
     private readonly ILogger? _logger;
     private readonly bool _ownsClient;
     private readonly SquadAgentOptions _options;
 
+    // State-bag to thread pre-base-ctor state through chain constructors.
+    // DelegatingAIAgent requires the inner AIAgent at base() call time, so we
+    // build everything via static factory methods before invoking base().
+    private readonly record struct SquadAgentState(
+        AIAgent Inner,
+        CopilotClient CopilotClient,
+        ILogger? Logger,
+        bool OwnsClient,
+        SquadAgentOptions Options);
+
     /// <summary>
-    /// Initializes a new <see cref="SquadAgent"/> from fully-resolved options and owns the created Copilot client.
+    /// Initializes a new <see cref="SquadAgent"/> with the Squad team root as the primary required parameter.
     /// </summary>
-    /// <param name="options">Options that describe the Squad team root, CLI process, authentication, logging, and instructions.</param>
-    /// <param name="loggerFactory">Optional logger factory used for wrapper logs and SDK trace logging when enabled.</param>
-    public SquadAgent(SquadAgentOptions options, ILoggerFactory? loggerFactory = null)
-        : this(CreateCopilotClient(options, loggerFactory), options, loggerFactory, ownsClient: true)
+    /// <param name="squadFolderPath">Path to the initialized Squad team root. Required.</param>
+    /// <param name="options">
+    /// Optional options. When <see langword="null"/> a default <see cref="SquadAgentOptions"/> is used.
+    /// <see cref="SquadAgentOptions.SquadFolderPath"/> is overwritten by <paramref name="squadFolderPath"/>
+    /// so there is exactly one source of truth for the team root.
+    /// </param>
+    /// <param name="loggerFactory">Optional logger factory; inject via DI or supply directly.</param>
+    public SquadAgent(string squadFolderPath, SquadAgentOptions? options = null, ILoggerFactory? loggerFactory = null)
+        : this(BuildState(squadFolderPath, options, loggerFactory))
     {
     }
 
     /// <summary>
-    /// Initializes a new <see cref="SquadAgent"/> from the options pattern.
+    /// Initializes a new <see cref="SquadAgent"/> from the options pattern (DI-friendly).
     /// </summary>
-    /// <param name="options">Options wrapper containing the resolved <see cref="SquadAgentOptions"/>.</param>
-    /// <param name="loggerFactory">Optional logger factory used for wrapper logs and SDK trace logging when enabled.</param>
+    /// <param name="options">
+    /// Options wrapper. <see cref="SquadAgentOptions.SquadFolderPath"/> must be set via a configure callback
+    /// or connection string before the agent is resolved from DI.
+    /// </param>
+    /// <param name="loggerFactory">Optional logger factory.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="SquadAgentOptions.SquadFolderPath"/> is <see langword="null"/> or whitespace.
+    /// </exception>
     public SquadAgent(IOptions<SquadAgentOptions> options, ILoggerFactory? loggerFactory = null)
-        : this(options.Value, loggerFactory)
+        : this(BuildStateFromOptions(options, loggerFactory))
     {
     }
 
-    private SquadAgent(CopilotClient copilotClient, SquadAgentOptions options, ILoggerFactory? loggerFactory, bool ownsClient)
+    private SquadAgent(SquadAgentState state)
+        : base(state.Inner)
     {
-        _copilotClient = copilotClient ?? throw new ArgumentNullException(nameof(copilotClient));
-        _logger = loggerFactory?.CreateLogger<SquadAgent>();
-        _ownsClient = ownsClient;
-        _options = options;
-
-        // Create the inner AIAgent via AsAIAgent extension — NO CAST
-        _inner = _copilotClient.AsAIAgent(
-            instructions: options.Instructions,
-            name: options.AgentName ?? "Squad");
-
+        _copilotClient = state.CopilotClient;
+        _logger = state.Logger;
+        _ownsClient = state.OwnsClient;
+        _options = state.Options;
         _logger?.LogInformation("SquadAgent initialized with name '{AgentName}', team root '{TeamRoot}'",
-            options.AgentName, options.SquadFolderPath);
+            state.Options.AgentName, state.Options.SquadFolderPath);
+    }
+
+    private static SquadAgentState BuildState(string squadFolderPath, SquadAgentOptions? options, ILoggerFactory? lf)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(squadFolderPath);
+        var resolved = options ?? new SquadAgentOptions();
+        resolved.SquadFolderPath = squadFolderPath; // ctor param wins
+        return BuildStateInternal(resolved, lf);
+    }
+
+    private static SquadAgentState BuildStateFromOptions(IOptions<SquadAgentOptions> options, ILoggerFactory? lf)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var opts = options.Value ?? throw new ArgumentException("Options.Value cannot be null.", nameof(options));
+        if (string.IsNullOrWhiteSpace(opts.SquadFolderPath))
+            throw new ArgumentException(
+                "SquadAgentOptions.SquadFolderPath must be set (via configure callback or connection string).",
+                nameof(options));
+        return BuildStateInternal(opts, lf);
+    }
+
+    private static SquadAgentState BuildStateInternal(SquadAgentOptions options, ILoggerFactory? lf)
+    {
+        var client = CreateCopilotClient(options, lf);
+        var inner = client.AsAIAgent(instructions: options.Instructions, name: options.AgentName ?? "Squad");
+        return new SquadAgentState(inner, client, lf?.CreateLogger<SquadAgent>(), true, options);
     }
 
     // ── Extensibility seam ──────────────────────────────────────────────
@@ -183,87 +224,14 @@ public sealed class SquadAgent : AIAgent, IAsyncDisposable
 
     /// <summary>
     /// Gets the display name exposed by this agent.
+    /// Prefers <see cref="SquadAgentOptions.AgentName"/> over the inner agent's name.
     /// </summary>
-    public override string? Name => _options.AgentName ?? _inner.Name;
+    public override string? Name => _options.AgentName ?? base.Name;
 
     /// <summary>
-    /// Gets the agent description exposed by the inner Copilot-backed agent, or a Squad fallback description.
+    /// Gets the agent description, falling back to a Squad-specific default when the inner agent provides none.
     /// </summary>
-    public override string? Description => _inner.Description ?? "Squad multi-agent CLI participant";
-
-    /// <summary>
-    /// Creates a new MAF session by delegating to the inner agent.
-    /// </summary>
-    /// <param name="cancellationToken">Token that cancels session creation.</param>
-    /// <returns>A newly-created agent session.</returns>
-    protected override ValueTask<AgentSession> CreateSessionCoreAsync(CancellationToken cancellationToken = default)
-    {
-        return _inner.CreateSessionAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Runs a non-streaming agent turn by delegating to the inner agent.
-    /// </summary>
-    /// <param name="messages">Messages to send to the agent.</param>
-    /// <param name="session">Optional session for multi-turn continuity.</param>
-    /// <param name="options">Optional run options.</param>
-    /// <param name="cancellationToken">Token that cancels the run.</param>
-    /// <returns>The complete agent response.</returns>
-    protected override Task<AgentResponse> RunCoreAsync(
-        IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
-        AgentSession? session = null,
-        AgentRunOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        return _inner.RunAsync(messages, session, options, cancellationToken);
-    }
-
-    /// <summary>
-    /// Runs a streaming agent turn by delegating to the inner agent.
-    /// </summary>
-    /// <param name="messages">Messages to send to the agent.</param>
-    /// <param name="session">Optional session for multi-turn continuity.</param>
-    /// <param name="options">Optional run options.</param>
-    /// <param name="cancellationToken">Token that cancels the run.</param>
-    /// <returns>An async stream of response updates.</returns>
-    protected override IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
-        IEnumerable<Microsoft.Extensions.AI.ChatMessage> messages,
-        AgentSession? session = null,
-        AgentRunOptions? options = null,
-        CancellationToken cancellationToken = default)
-    {
-        return _inner.RunStreamingAsync(messages, session, options, cancellationToken);
-    }
-
-    /// <summary>
-    /// Serializes a session by delegating to the inner agent.
-    /// </summary>
-    /// <param name="session">Session to serialize.</param>
-    /// <param name="jsonSerializerOptions">Optional JSON serializer settings.</param>
-    /// <param name="cancellationToken">Token that cancels serialization.</param>
-    /// <returns>The serialized session state.</returns>
-    protected override ValueTask<JsonElement> SerializeSessionCoreAsync(
-        AgentSession session,
-        JsonSerializerOptions? jsonSerializerOptions = null,
-        CancellationToken cancellationToken = default)
-    {
-        return _inner.SerializeSessionAsync(session, jsonSerializerOptions, cancellationToken);
-    }
-
-    /// <summary>
-    /// Deserializes a session by delegating to the inner agent.
-    /// </summary>
-    /// <param name="sessionState">Serialized session state.</param>
-    /// <param name="jsonSerializerOptions">Optional JSON serializer settings.</param>
-    /// <param name="cancellationToken">Token that cancels deserialization.</param>
-    /// <returns>The deserialized session.</returns>
-    protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(
-        JsonElement sessionState,
-        JsonSerializerOptions? jsonSerializerOptions = null,
-        CancellationToken cancellationToken = default)
-    {
-        return _inner.DeserializeSessionAsync(sessionState, jsonSerializerOptions, cancellationToken);
-    }
+    public override string? Description => base.Description ?? "Squad multi-agent CLI participant";
 
     /// <summary>
     /// Disposes the owned Copilot client and disposable inner agent resources.
@@ -272,14 +240,10 @@ public sealed class SquadAgent : AIAgent, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_ownsClient)
-        {
             await _copilotClient.DisposeAsync().ConfigureAwait(false);
-        }
 
-        if (_inner is IAsyncDisposable innerDisposable)
-        {
+        if (InnerAgent is IAsyncDisposable innerDisposable)
             await innerDisposable.DisposeAsync().ConfigureAwait(false);
-        }
 
         _logger?.LogDebug("SquadAgent disposed");
     }
