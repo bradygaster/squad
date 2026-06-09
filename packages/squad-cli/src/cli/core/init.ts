@@ -16,7 +16,7 @@ import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { describeMcpSpec } from './upgrade.js';
-import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import { ensureSquadStateMcpInRoot, ensureSquadStateMcpInUserConfig, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 
 const storage = new FSStorageProvider();
 
@@ -392,6 +392,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     const rootResult = ensureSquadStateMcpInRoot(dest, version, mcpSpec);
     if (rootResult.written) {
       success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
+    }
+    // Also pin to user-level config for external `copilot -p` compatibility
+    const userResult = ensureSquadStateMcpInUserConfig(dest, mcpSpec);
+    if (userResult.written) {
+      success(`pinned squad_state to ~/.copilot/mcp-config.json for \`copilot -p\` mode compatibility`);
     }
     const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
     if (tomb.removed) {
