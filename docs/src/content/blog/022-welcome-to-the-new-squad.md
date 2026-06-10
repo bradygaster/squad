@@ -719,13 +719,13 @@ The [Migration Guide](../get-started/migration.md) covers 9 scenarios:
 4. Was using `@bradygaster/create-squad`
 5. Was using `npx github:` distribution
 6. `.squad/` directory broke after upgrading
-7. Have `.ai-team/` from an older version
+7. Have `.squad/` from an older version
 8. Using Squad in CI/CD
 9. Using Squad SDK programmatically
 
 **Key changes to watch for:**
 - Package name: `@bradygaster/create-squad` → `@bradygaster/squad-cli`
-- Directory: `.ai-team/` → `.squad/` (auto-migrated with `--migrate-directory`)
+- Directory: `.squad/` → `.squad/` (auto-migrated with `--migrate-directory`)
 - Config: JSON → Markdown (`.squad/team.md`, `.squad/decisions.md`)
 - Commands: Some were renamed or merged (check `squad help`)
 

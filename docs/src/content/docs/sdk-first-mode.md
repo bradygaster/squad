@@ -152,7 +152,7 @@ This runs `squad build` to ensure `.squad/` is current, then removes `squad.conf
 ### Legacy Migration
 
 ```bash
-squad migrate --from ai-team   # rename .ai-team/ → .squad/
+squad migrate --from ai-team   # rename .squad/ → .squad/
 ```
 
 This replaces the old `squad upgrade --migrate-directory` command.

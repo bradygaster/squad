@@ -40,12 +40,12 @@ And select **Squad** from the `/agent` list (CLI) or `/agents` (VS Code), Squad 
 
 ---
 
-## 2. What's Stored in `.ai-team/`
+## 2. What's Stored in `.squad/`
 
-Squad writes everything to `.ai-team/` in your repository:
+Squad writes everything to `.squad/` in your repository:
 
 ```
-.ai-team/
+.squad/
 ├── team.md              # Roster (agent names, roles)
 ├── routing.md           # Work routing rules
 ├── decisions.md         # Architectural decisions
@@ -64,7 +64,7 @@ Squad writes everything to `.ai-team/` in your repository:
 **You control what's committed.** If you don't want agent histories in your repo, add them to `.gitignore`:
 
 ```gitignore
-.ai-team/agents/*/history.md
+.squad/agents/*/history.md
 ```
 
 Now histories stay local. Charters, skills, and decisions are still committed.
@@ -90,9 +90,9 @@ This is **project-specific knowledge**. If your repo is private and you want to 
 
 ## 4. Skills Are Generic — Safe to Share
 
-Skill files in `.ai-team/skills/` are **intentionally generic**:
+Skill files in `.squad/skills/` are **intentionally generic**:
 
-`.ai-team/skills/auth-rate-limiting.md`:
+`.squad/skills/auth-rate-limiting.md`:
 
 ```markdown
 # Authentication Endpoints Must Be Rate-Limited
@@ -164,12 +164,12 @@ Squad is **entirely local**. It's a GitHub Copilot agent, not a standalone servi
 
 If your repository is private and you're security-conscious:
 
-- [ ] **Review `.ai-team/agents/*/history.md`** — make sure no secrets or sensitive details are logged
+- [ ] **Review `.squad/agents/*/history.md`** — make sure no secrets or sensitive details are logged
 - [ ] **Add `history.md` to `.gitignore`** if you don't want histories committed
 - [ ] **Review exports before sharing** — check `squad-export-*.zip` for project-specific details
-- [ ] **Audit `.ai-team/decisions.md`** — remove any decisions that reference internal systems or secrets
+- [ ] **Audit `.squad/decisions.md`** — remove any decisions that reference internal systems or secrets
 - [ ] **Use GitHub token permissions wisely** — don't give Actions more permissions than needed
-- [ ] **Skills are public-safe** — feel free to share `.ai-team/skills/` publicly
+- [ ] **Skills are public-safe** — feel free to share `.squad/skills/` publicly
 
 ---
 
@@ -192,7 +192,7 @@ If your repository is private and you're security-conscious:
 **Exclude histories from Git:**
 
 ```
-> Add .ai-team/agents/*/history.md to .gitignore. I don't want
+> Add .squad/agents/*/history.md to .gitignore. I don't want
 > agent histories committed.
 ```
 

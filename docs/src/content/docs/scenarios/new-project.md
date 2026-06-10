@@ -34,9 +34,9 @@ squad init
 ```
 ✅ .github/agents/squad.agent.md (v0.2.0)
 ✅ .github/workflows/ (10 workflows)
-✅ .ai-team-templates/
-✅ .ai-team/skills/ (starter skills)
-✅ .ai-team/ceremonies.md
+✅ .squad-templates/
+✅ .squad/skills/ (starter skills)
+✅ .squad/ceremonies.md
 ✅ .gitattributes (merge=union rules)
 
 Squad is ready.
@@ -93,7 +93,7 @@ You can adjust the team or skip straight to work (which is implicit confirmation
 > Yes. Rusty, set up the Go module and project structure.
 ```
 
-Squad creates `.ai-team/` (roster, charters, histories, routing rules, casting state) and spawns Rusty:
+Squad creates `.squad/` (roster, charters, histories, routing rules, casting state) and spawns Rusty:
 
 ```
 🔧 Rusty — setting up Go module and project structure
@@ -154,11 +154,11 @@ Every agent reads these decisions before their next task. As the list grows, the
 ## 7. Commit Your Team
 
 ```bash
-git add .ai-team/ .ai-team-templates/ .github/ .gitattributes
+git add .squad/ .squad-templates/ .github/ .gitattributes
 git commit -m "Add Squad team"
 ```
 
-Commit `.ai-team/` — it's your team's brain. Anyone who clones the repo gets the full team with all their accumulated knowledge.
+Commit `.squad/` — it's your team's brain. Anyone who clones the repo gets the full team with all their accumulated knowledge.
 
 ---
 

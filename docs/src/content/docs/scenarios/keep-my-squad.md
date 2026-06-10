@@ -25,12 +25,12 @@ Squad persistence and portability. Your squad remembers skills, casting, and kno
 
 After working on a project for a few weeks, your squad has learned:
 
-- **Skills** — patterns, conventions, best practices (23 skill files in `.ai-team/skills/`)
-- **Decisions** — architectural choices, why you picked X over Y (`.ai-team/decisions.md`)
-- **Histories** — project-specific context each agent accumulated (`.ai-team/agents/{name}/history.md`)
-- **Casting state** — the chosen agent names, roles, universe (`.ai-team/casting-state.json`)
+- **Skills** — patterns, conventions, best practices (23 skill files in `.squad/skills/`)
+- **Decisions** — architectural choices, why you picked X over Y (`.squad/decisions.md`)
+- **Histories** — project-specific context each agent accumulated (`.squad/agents/{name}/history.md`)
+- **Casting state** — the chosen agent names, roles, universe (`.squad/casting-state.json`)
 
-All of this lives in `.ai-team/`. Commit it, and anyone who clones your repo gets the full team.
+All of this lives in `.squad/`. Commit it, and anyone who clones your repo gets the full team.
 
 ---
 
@@ -147,17 +147,17 @@ squad upgrade
 🔄 Upgrading Squad from v0.1.5 to v0.2.0
 
 ✅ .github/agents/squad.agent.md (updated to v0.2.0)
-✅ .ai-team-templates/ (new workflow templates)
+✅ .squad-templates/ (new workflow templates)
 ✅ .gitattributes (merge=union rules verified)
 
-⚠️  Your .ai-team/ directory was NOT modified.
+⚠️  Your .squad/ directory was NOT modified.
    Your team's memory, skills, and decisions are untouched.
 ```
 
 Upgrades only change:
 
 - The Squad agent definition (`.github/agents/squad.agent.md`)
-- Workflow templates (`.ai-team-templates/`)
+- Workflow templates (`.squad-templates/`)
 - The installer itself
 
 Your **team's knowledge is safe**.
@@ -166,10 +166,10 @@ Your **team's knowledge is safe**.
 
 ## 6. Git Commit Means Everyone Gets the Team
 
-You commit `.ai-team/`:
+You commit `.squad/`:
 
 ```bash
-git add .ai-team/
+git add .squad/
 git commit -m "Add Squad team with 3 weeks of accumulated knowledge"
 git push
 ```

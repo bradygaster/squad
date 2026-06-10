@@ -49,7 +49,7 @@ All agents now use claude-haiku-4.5 (fast/cheap tier)
 Agents will be faster but may need more guidance on complex tasks.
 ```
 
-This is written to `.ai-team/model-config.json`:
+This is written to `.squad/model-config.json`:
 
 ```json
 {
@@ -80,7 +80,7 @@ All other agents → claude-sonnet-4.5 (standard tier)
 Neo will give higher-quality code reviews and architectural guidance.
 ```
 
-This is written to `.ai-team/model-config.json`:
+This is written to `.squad/model-config.json`:
 
 ```json
 {
@@ -230,4 +230,4 @@ You don't have to configure this — it's automatic.
 - **Use Opus for the Lead.** Code reviews benefit most from premium reasoning. Opus catches edge cases Sonnet misses.
 - **Haiku is underrated for tests.** Test writing doesn't require deep reasoning — Haiku is fast and accurate enough.
 - **Per-agent overrides are cheap.** Put Opus on the Lead, Haiku on the Tester, Sonnet on everyone else. Balanced budget.
-- **Model config is in `.ai-team/model-config.json`.** Commit it so your team uses the same models.
+- **Model config is in `.squad/model-config.json`.** Commit it so your team uses the same models.

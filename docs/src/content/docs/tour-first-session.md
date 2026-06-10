@@ -74,7 +74,7 @@ You can say "yes" or skip straight to a task (which is implicit confirmation):
 > Yes. Dallas, set up the Express server with basic routing.
 ```
 
-Squad creates the `.ai-team/` directory structure (team roster, routing rules, casting state, ceremony config, agent charters and histories — all seeded with your project context). Then it spawns Dallas.
+Squad creates the `.squad/` directory structure (team roster, routing rules, casting state, ceremony config, agent charters and histories — all seeded with your project context). Then it spawns Dallas.
 
 ```
 🔧 Dallas — setting up Express server with routing
@@ -267,7 +267,7 @@ squad import ../my-app/squad-export.json
 ## Tips
 
 - **First session is the slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions and stop asking questions they've answered before.
-- **Commit `.ai-team/`.** It's your team's brain. Anyone who clones gets the team with all their knowledge.
+- **Commit `.squad/`.** It's your team's brain. Anyone who clones gets the team with all their knowledge.
 - **Say "team" for big tasks.** The word "team" triggers parallel fan-out across multiple agents.
 - **Name an agent for focused work.** `"Dallas, fix the login bug"` sends work to one specific agent.
 - **Directives are sticky.** Once captured, they persist across all future sessions.

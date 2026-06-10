@@ -34,9 +34,9 @@ squad init
 
 ```
 ✅ .github/agents/squad.agent.md (v0.2.0)
-✅ .ai-team-templates/
-✅ .ai-team/skills/ (starter skills)
-✅ .ai-team/ceremonies.md
+✅ .squad-templates/
+✅ .squad/skills/ (starter skills)
+✅ .squad/ceremonies.md
 ✅ .gitattributes (merge=union rules)
 
 Squad is ready.

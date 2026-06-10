@@ -11,7 +11,7 @@
 - [Scenario 4: Was Using @bradygaster/create-squad](#scenario-4-was-using-bradygastercreate-squad)
 - [Scenario 5: Was Using npx github: Distribution](#scenario-5-was-using-npx-github-distribution)
 - [Scenario 6: My .squad/ Directory Broke After Upgrading](#scenario-6-my-squad-directory-broke-after-upgrading)
-- [Scenario 7: I Have .ai-team/ from an Older Version](#scenario-7-i-have-ai-team-from-an-older-version)
+- [Scenario 7: I Have .squad/ from an Older Version](#scenario-7-i-have-ai-team-from-an-older-version)
 - [Scenario 8: Using Squad in CI/CD](#scenario-8-using-squad-in-cicd)
 - [Scenario 9: Using Squad SDK Programmatically](#scenario-9-using-squad-sdk-programmatically)
 - [Troubleshooting](#troubleshooting)
@@ -26,7 +26,7 @@
 |--------|-------|
 | `npx github:bradygaster/squad` | `npm install -g @bradygaster/squad-cli` |
 | `@bradygaster/create-squad` | `@bradygaster/squad-cli` |
-| `.ai-team/` directory | `.squad/` directory |
+| `.squad/` directory | `.squad/` directory |
 | v0.5.4 (beta) | v0.8.x (latest) |
 
 ---
@@ -251,16 +251,16 @@ If `squad doctor` still fails, see [Troubleshooting](#troubleshooting) below.
 
 ---
 
-## Scenario 7: I Have .ai-team/ from an Older Version
+## Scenario 7: I Have .squad/ from an Older Version
 
-Very early versions of Squad used `.ai-team/` instead of `.squad/`. This directory name is no longer recognized.
+Very early versions of Squad used `.squad/` instead of `.squad/`. This directory name is no longer recognized.
 
 ### Migrate
 
 1. **Back up:**
 
    ```bash
-   mv .ai-team .ai-team-backup
+   mv .squad .squad-backup
    ```
 
 2. **Initialize the new directory:**
@@ -269,12 +269,12 @@ Very early versions of Squad used `.ai-team/` instead of `.squad/`. This directo
    squad init
    ```
 
-3. **Manually migrate** any custom configuration from `.ai-team-backup/` into `.squad/`.
+3. **Manually migrate** any custom configuration from `.squad-backup/` into `.squad/`.
 
-4. **Update `.gitignore`** if it references `.ai-team/`:
+4. **Update `.gitignore`** if it references `.squad/`:
 
    ```bash
-   # Remove .ai-team references, add .squad if needed
+   # Remove .squad references, add .squad if needed
    ```
 
 5. **Verify:**
