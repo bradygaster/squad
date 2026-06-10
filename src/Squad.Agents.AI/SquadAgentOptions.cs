@@ -111,6 +111,31 @@ public sealed class SquadAgentOptions
     [JsonIgnore]
     public Action<CopilotClientOptions>? ConfigureCopilotClient { get; set; }
 
+    /// <summary>
+    /// Gets or sets a delegate that customizes the <see cref="SessionConfig"/> used to
+    /// construct the inner <see cref="Microsoft.Agents.AI.AIAgent"/>. The delegate runs
+    /// after Squad has applied its defaults (including an <c>ApproveAll</c>
+    /// <see cref="SessionConfig.OnPermissionRequest"/> handler and the
+    /// <see cref="Instructions"/> as the appended system message), so it can override or
+    /// extend any session-scoped setting such as the permission handler, tool list,
+    /// model name, or hooks.
+    /// </summary>
+    /// <remarks>
+    /// <para>Use this to inject a stricter permission handler, restrict the available tools,
+    /// or pin the model used by the inner Copilot session.</para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// options.ConfigureSession = sessionConfig =>
+    /// {
+    ///     sessionConfig.OnPermissionRequest = MyCustomPermissionHandler;
+    ///     sessionConfig.Model = "claude-sonnet-4.6";
+    /// };
+    /// </code>
+    /// </example>
+    [JsonIgnore]
+    public Action<SessionConfig>? ConfigureSession { get; set; }
+
     private static readonly string[] TokenPatterns = { "TOKEN", "KEY", "SECRET", "HMAC", "PASSWORD", "CREDENTIAL" };
 
     private static bool IsTokenKey(string key)

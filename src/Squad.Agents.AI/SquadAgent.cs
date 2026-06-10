@@ -102,7 +102,29 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
     private static SquadAgentState BuildStateInternal(SquadAgentOptions options, ILoggerFactory? lf)
     {
         var client = CreateCopilotClient(options, lf);
-        var inner = client.AsAIAgent(instructions: options.Instructions, name: options.AgentName ?? "Squad");
+
+        // Build a SessionConfig with a sensible default permission handler so the
+        // resulting AIAgent can call CreateSession without throwing. Callers can override
+        // via SquadAgentOptions.ConfigureSession (e.g., to inject a stricter handler or
+        // tweak instructions / available tools / model on the inner session).
+        var sessionConfig = new SessionConfig
+        {
+            OnPermissionRequest = PermissionHandler.ApproveAll,
+            WorkingDirectory = options.Cwd ?? options.SquadFolderPath,
+        };
+        if (!string.IsNullOrEmpty(options.Instructions))
+        {
+            sessionConfig.SystemMessage = new SystemMessageConfig { Content = options.Instructions };
+        }
+        options.ConfigureSession?.Invoke(sessionConfig);
+
+        var inner = client.AsAIAgent(
+            sessionConfig: sessionConfig,
+            ownsClient: true,
+            id: null,
+            name: options.AgentName ?? "Squad",
+            description: null);
+
         return new SquadAgentState(inner, client, lf?.CreateLogger<SquadAgent>(), true, options);
     }
 
