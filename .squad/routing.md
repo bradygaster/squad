@@ -23,6 +23,7 @@
 | TUI implementation | DSKY 🖥️ | Terminal components, layout, input handling, focus management, rendering perf |
 | Terminal E2E tests | Sims 🧪 | node-pty harness, Gherkin features, frame snapshots, UX gate test suite |
 | SDK usability | Handbook 📖 | JSDoc, LLM discoverability, API surface clarity, legacy cleanup, migration guides |
+| Claim verification & devil's advocate | Fact Checker 🔍 | Validating claims, counter-hypotheses, empirical verification, hallucination detection, evidence-based decisions |
 
 ## Module Ownership
 

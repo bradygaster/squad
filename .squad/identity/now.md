@@ -1,129 +1,83 @@
 ---
-updated_at: 2026-03-23T22:00:00Z
-focus_area: Release Stabilized, Process Hardened, Community Engaged
-version: v0.9.1
-branch: main
-tests_passing: 4655+
-tests_todo: ~20
-tests_skipped: ~5
-test_files: 149
-team_size: 19 active agents + Scribe + Ralph + @copilot
+updated_at: 2026-06-10T13:50:00+03:00
+focus_area: Framework R&D — empirical validation, governance integrity, MCP architecture
+version: v0.10.0 (shipped); developing toward v0.10.1+
+branch: main / squad/1244-memory-mcp-bridge
+team_size: 19 active engineers + Fact Checker + Scribe + Ralph + @copilot
 team_identity: Apollo 13 / NASA Mission Control
-process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Releases driven by Surgeon. Pre-flight gates mandatory. Never commit to main directly.
+cto: Tamir Dresher (Microsoft EMU — tamirdresher_microsoft)
+maintainer: Brady Gaster (bradygaster) — upstream owner
+operating_mode: Tamir's principal engineers — investigative + framework R&D
 ---
 
 # What We're Focused On
 
-**Status:** Release v0.9.1 stable on npm. Docs deployed with dark mode fix. 10 community PRs merged. Discussion board fully triaged. Release process hardened with 6 action items (A1–A6). 9 GitHub issues filed for improvements. Ready for next development cycle.
+**Status:** v0.10.0 shipped (March 2026). Active work: framework R&D under Tamir Dresher (Squad CTO). Recent focus has been empirical validation of the governed memory subsystem — exposing real architectural drift and silent-failure modes that the docs and tests did not catch.
 
-## Session Recap: Release Crisis Recovery & Governance Hardening (2026-03-23)
+## Operating Context (June 2026)
 
-**Agents Deployed:** Flight (Lead), EECOM (SDK/CLI), Booster (DevOps), Surgeon (Release), PAO (DevRel), Coordinator
+The team is now operating in two parallel modes simultaneously:
 
-### Release Incident Resolved
-**v0.9.0 → v0.9.1:** Critical defect in CLI package (dependency reference). Published with `"file:../squad-sdk"` (local path) instead of registry version. Broken on global install. Detected immediately; hotfix prepared in minutes. **Publish workflow infrastructure failed:** GitHub Actions cache race condition + npm workspace automation issues + npm 2FA hang. Extended resolution from 10 minutes to 8 hours.
+1. **Brady's upstream maintenance** — releases, community PRs, customer-facing stability work. Driven by Surgeon 🚢 + Booster ⚙️ + PAO 📣.
+2. **Tamir's framework R&D** — empirical hardening of the architecture: governance integrity, MCP correctness, memory governance, claim-verification discipline. Driven by Procedures 🧠 + EECOM 🔧 + Fact Checker 🔍 + Flight 🏗️.
 
-**Root causes identified (5 total):**
-1. Dependency validation gap (prefixable — no pre-publish checks)
-2. GitHub workflow cache race condition (GitHub infrastructure bug)
-3. npm workspace publish broken with 2FA enabled (tool gap)
-4. Coordinator repeated failed approaches (process gap)
-5. No pre-publish verification step (preventable)
+Both modes share the same roster and the same `.squad/decisions.md`. Coordination happens through this team's standard drop-box pattern — no parallel state.
 
-**Outcomes:**
-- ✅ v0.9.1 released and stable
-- ✅ Preflight job added to publish pipeline (dependency scanning)
-- ✅ Release governance hardened (Surgeon owns all publishing)
-- ✅ 6 action items (A1–A6) documented for next release
-- ✅ Release process skill created at `.squad/skills/release-process/SKILL.md`
+## Recent Sessions — Memory MCP Gap Investigation (2026-06-09 → 2026-06-10)
 
-### PRs Merged (10 total)
-| PR | Title | Status |
-|---|---|---|
-| #569 | Docs deployment | ✅ Merged |
-| #570 | Dark mode fix (ViewTransitions + 3-layer theme) | ✅ Merged |
-| #571 | Docs features | ✅ Merged |
-| #555 | Community contribution | ✅ Merged |
-| #552 | Community contribution | ✅ Merged |
-| #568 | Infrastructure improvement | ✅ Merged |
-| #572 | Chinese README (PAO/community collab) | ✅ Merged |
-| #513 | Earlier feature work | ✅ Merged |
-| #573 | Community contribution | ✅ Merged |
-| #574 | Community contribution | ✅ Merged |
+**Coordinator + manual A/B testing.** Discovered architectural defects in the governed memory pipeline that, in combination, allow agents to silently fabricate audit-log entries:
 
-**PR #507:** Closed (superseded by #572)
+| # | Finding | Issue/PR |
+|---|---------|----------|
+| 1 | `.copilot/skills/` vs `.squad/skills/` docs drift | [#1241](https://github.com/bradygaster/squad/issues/1241) / [PR #1242 ✅](https://github.com/bradygaster/squad/pull/1242) |
+| 2 | `history.md` vs governed-memory direction unclear | [#1243](https://github.com/bradygaster/squad/issues/1243) |
+| 3 | `memory_*` tools not exposed via squad_state MCP | [#1244](https://github.com/bradygaster/squad/issues/1244) / [PR #1245](https://github.com/bradygaster/squad/pull/1245) |
+| 4 | `squad.agent.md` spawn template bypasses classifier | [#1246](https://github.com/bradygaster/squad/issues/1246) |
+| 5 | Workspace-only `.mcp.json` doesn't load in `copilot -p` → agents forge audit entries | [#1247](https://github.com/bradygaster/squad/issues/1247) |
+| 6 | Two-layer upgrade docs miss pre-commit hook | [#1226](https://github.com/bradygaster/squad/issues/1226) / [PR #1227](https://github.com/bradygaster/squad/pull/1227) |
+| 7 | Conditional `.gitignore` for two-layer/orphan | [#1228](https://github.com/bradygaster/squad/issues/1228) / [PR #1229](https://github.com/bradygaster/squad/pull/1229) |
 
-### Issues Filed (9 total)
-**#556–#564:** Release process improvements documented by Flight:
-- Dependency validation patterns
-- npm workspace publish policy
-- GitHub Actions cache handling
-- Publish escalation protocol
-- Pre-flight checklist
-- Smoke test gating
-- Runbook documentation
+**Pending — to be filed 2026-06-10:**
+- `.squad/identity/*` not in mutable-state allowlist of `squad_state_write` (this very session hit it)
+- `squad_decide` author-name regex (`[A-Za-z0-9_-]+` only) prevents naming actors with role context
 
-### Community Engagement
-**Discussion Triage:** 15 discussions analyzed by PAO
-- 4 close-as-resolved (features shipped)
-- 1 consolidate (duplicate answer)
-- 2 convert-to-issue (bugs/roadmap)
-- 8 keep-open (ongoing feedback)
+**Empirical methodology established:** every architectural claim is now verified via reproducible A/B test before being filed. Pattern is captured in the new Fact Checker charter (`.squad/agents/fact-checker/charter.md`).
 
-**Critical Finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024, needs Power Automate Workflows path.
+## Team Structure Update (2026-06-10)
 
-### Governance Decisions Merged (12 total)
-**Infrastructure & CI:** CI audit (15 workflows, lean + healthy), preflight job (dependency scanning), ghost workflow cleanup
+**Fact Checker promoted to roster.** Previously existed as a stub charter (256 bytes), never on team.md. Now:
 
-**Release & Process:** Surgeon owns all publishing; strict playbooks; pre-publish validation; escalation protocol; smoke tests mandatory; npm-only distribution; runbooks in PUBLISH-README.md
+- Full charter with FAO-inspired role definition, verification methodology, hard rules
+- On routing.md as the verification specialist
+- Owns the new **Pre-Ship Fact Check** ceremony in `ceremonies.md`
+- Tier policy: Lightweight (manual) / Standard (Pre-Ship) / Full (multi-claim batch)
 
-**Community:** README slim-down (512 → 331 lines); discussion triage patterns; v0.9.0 blog structure; Teams MCP urgency
-
-### Skills Created
-**`.squad/skills/release-process/SKILL.md`:** Comprehensive skill documenting pre-publish validation, publish automation flow, GitHub Actions failure runbook, npm workspace policy, escalation protocol, post-publish verification.
-
-### Team Learnings Documented
-- **Flight:** Issue filing patterns, PR triage workflow
-- **EECOM:** CLI version subcommand pattern (inline handlers)
-- **Booster:** CI preflight patterns, workflow audit methodology
-- **Surgeon:** Release governance rules, retrospective analysis patterns
-- **PAO:** Discussion triage patterns, Teams MCP urgency, Chinese README workflow
+**Known gap (not fixed here):** Rai 🛡️ (RAI Reviewer) is required by `squad.agent.md` governance but missing from this team's roster. The `.squad/agents/Rai/` directory exists. This is migration drift from the team predating Rai's introduction. Should be addressed in a separate PR with Brady's review.
 
 ## Current State
 
-**Version:** v0.9.1 (released, on npm, stable)
-- **Packages:** @bradygaster/squad-sdk@0.9.1, @bradygaster/squad-cli@0.9.1
-- **Branch:** main (default)
-- **Build:** ✅ clean (0 errors)
-- **Tests:** 4,655+ passed, ~20 todo, ~5 skipped, 149 test files
-- **Docs:** Deployed to production with dark mode fix
-
-**Open Issues:** 9 filed for release improvements (#556–#564). PR #567 (StorageProvider) parked as draft. Ready for next development phase.
+- **Version:** v0.10.0 shipped (npm). Local working branch: `squad/1244-memory-mcp-bridge` with PR #1245's `memory_*` MCP bridge.
+- **Tests:** 4,655+ passing (last verified March 2026 release).
+- **Open upstream work:** 7 issues filed, 3 merged or in flight as PRs.
+- **Workaround skill published:** [`tamirdresher/squad-skills`](https://github.com/tamirdresher/squad-skills) → `plugins/governed-memory-cli-bridge/SKILL.md` (commit `a9a13c9`) — now carries an honest-limitations section explaining when the skill alone won't help.
 
 ## Next Steps
 
-### Immediate (This Sprint)
-- [ ] Implement A1–A6 action items from release retrospective
-- [ ] Delete ghost workflow (publish-npm.yml) via GitHub API
-- [ ] Update Teams MCP docs (Office 365 → Power Automate)
-- [ ] Enable Ralph's heartbeat cron if periodic triage desired
+### Immediate
+- Drive PR #1245 to merge (memory_* MCP bridge)
+- Push #1247 with empirical evidence; coordinate the bootstrap fix with Brady
+- File the two new state-tool gaps discovered today
+- Expand Fact Checker's history with the verification patterns we used in the 2026-06-09 session
+- Build subsystem-expertise documents (per engineer) covering: state-mcp wiring, classifier internals, spawn-template invariants, casting algorithm, Ralph dynamics
 
-### Short-Term (Next Release)
-- [ ] Mandatory pre-flight checklist before tagging any release
-- [ ] Update PUBLISH-README.md with full runbook
-- [ ] Add semver validation to bump-build.mjs
-- [ ] Policy: 2FA must be auth-only; always `cd` into package for publish
+### Short-term
+- Audit `.squad/` mutable-state writes across coordinator + sub-agent paths to find more silent-fallback modes
+- Verify orphan and two-layer state backends behave correctly under the new memory pipeline
+- Help Brady's release work where requested
 
-### Backlog
-- **#556–#564** — Release improvements (9 issues)
-- **#567** — StorageProvider PRD (draft, parked for v1.0)
+## Operating Principles
 
-## Process
-
-All work through PRs. Branch naming: `squad/{issue-number}-{slug}`. Releases driven by **Surgeon** (not Coordinator or user). **Pre-publish gates mandatory.** Never commit to main directly. All decisions in `.squad/decisions.md`; inbox files auto-merged by Scribe.
-
-## Team Identity
-
-**Apollo 13 / NASA Mission Control:** Flight (Lead), EECOM, FIDO, PAO, CAPCOM, CONTROL, SURGEON, Booster, GNC, Network, RETRO, INCO, GUIDO, Telemetry, VOX, DSKY, Sims, Handbook. Scribe (Session Logger), Ralph (Autonomy Agent). @copilot (Coordinator).
-
-**Status:** Team stable, process hardened, community engaged, next cycle ready.
+- Every factual claim → cite a source or mark unverifiable
+- Every architectural assertion → reproducible empirical test before filing
+- Never forge audit entries. Never paper over missing evidence with confident prose.
+- Coordinator never writes domain artifacts; specialists own their code; Fact Checker owns claim validation.
