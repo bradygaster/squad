@@ -109,7 +109,7 @@ The coordinator routes work automatically using three strategies. First match wi
 |----------|-------------|---------|
 | **Named** | You say who does it | `"Fenster, fix the login bug"` |
 | **Domain** | Pattern matching in `.squad/routing.md` | `src/api/**` → Backend |
-| **Skill-aware** | Capability check in `.squad/skills/` | Auth expertise → Backend or Lead |
+| **Skill-aware** | Capability check in `.copilot/skills/` | Auth expertise → Backend or Lead |
 
 **Routing priority:** Named > Domain > Skill-aware. If nothing matches, the Lead triages.
 

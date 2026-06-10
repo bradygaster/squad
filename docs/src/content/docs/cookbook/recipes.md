@@ -35,7 +35,7 @@ Each agent gets its own 200K context window. Routing ensures only the right agen
 
 > "Export skills from my React project and import them into this new project"
 
-Import one full squad, then cherry-pick skills from others. Skills are standalone markdown files — just copy them into `.squad/skills/`. Best practice: merge knowledge, don't run parallel squads.
+Import one full squad, then cherry-pick skills from others. Skills are standalone markdown files — just copy them into `.copilot/skills/`. Best practice: merge knowledge, don't run parallel squads.
 
 ### Moving a Team Between Repos
 

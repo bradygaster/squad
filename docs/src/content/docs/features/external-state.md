@@ -54,7 +54,7 @@ If you commit `.squad/` to preserve it, every branch includes squad state in PRs
 
 ```diff
 + .squad/decisions/log.md
-+ .squad/skills/ci-setup/SKILL.md
++ .copilot/skills/ci-setup/SKILL.md
 + .squad/team.md
 ```
 

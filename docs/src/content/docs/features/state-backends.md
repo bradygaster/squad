@@ -162,7 +162,7 @@ Warning: State backend 'two-layer' failed: <reason>. Falling back to 'local'.
 
 ```bash
 cat .squad/decisions.md
-ls .squad/skills/
+ls .copilot/skills/
 ```
 
 ### Git Notes

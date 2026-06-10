@@ -41,7 +41,7 @@ squad export --out ./backups/my-team.json
 | **Skills** | ✅ **All earned skills export with the team** |
 | Decisions | ✅ |
 
-> **Skills are portable**: When you export a team, all earned skills from `.squad/skills/` are included in the JSON manifest. After importing, skills are immediately available to all agents — no loss of knowledge.
+> **Skills are portable**: When you export a team, all earned skills from `.copilot/skills/` are included in the JSON manifest. After importing, skills are immediately available to all agents — no loss of knowledge.
 
 ---
 

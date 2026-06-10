@@ -111,7 +111,7 @@ Every platform adapter went through a community-driven 5-model security review (
 
 - Runtime `Module._resolveFilename` intercept for Node 24+ ESM compatibility
 - 5-layer secret defense architecture
-- `.squad/skills/secret-handling/SKILL.md` team reference
+- `.copilot/skills/secret-handling/SKILL.md` team reference
 - 59 TDD security hook tests
 - Charter hardening for Trejo (Git & Release) and Drucker (CI/CD)
 
