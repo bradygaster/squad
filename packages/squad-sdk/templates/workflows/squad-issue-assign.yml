@@ -27,13 +27,9 @@ jobs:
             // Extract member name from label (e.g., "squad:ripley" → "ripley")
             const memberName = label.replace('squad:', '').toLowerCase();
 
-            // Read team roster — check .squad/ first, fall back to .ai-team/
-            let teamFile = '.squad/team.md';
+            const teamFile = '.squad/team.md';
             if (!fs.existsSync(teamFile)) {
-              teamFile = '.ai-team/team.md';
-            }
-            if (!fs.existsSync(teamFile)) {
-              core.warning('No .squad/team.md or .ai-team/team.md found — cannot assign work');
+              core.warning('No .squad/team.md found — cannot assign work');
               return;
             }
 
@@ -72,7 +68,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body: `⚠️ No squad member found matching label \`${label}\`. Check \`.squad/team.md\` (or \`.ai-team/team.md\`) for valid member names.`
+                body: `⚠️ No squad member found matching label \`${label}\`. Check \`.squad/team.md\` for valid member names.`
               });
               return;
             }
