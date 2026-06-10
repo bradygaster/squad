@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 
 namespace Squad.Agents.AI;
 
