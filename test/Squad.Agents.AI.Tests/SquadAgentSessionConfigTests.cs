@@ -1,5 +1,4 @@
 using GitHub.Copilot;
-using GitHub.Copilot;
 using Xunit;
 
 namespace Squad.Agents.AI.Tests;

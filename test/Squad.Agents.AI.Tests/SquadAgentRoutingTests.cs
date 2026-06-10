@@ -114,7 +114,7 @@ public class SquadAgentRoutingTests
         var clientOptions = GetCopilotClientOptions(agent);
         var cliArgs = GetConnectionArgs(clientOptions);
 
-        Assert.Equal(new[] { "--allow-all", "--yolo", "--model", "gpt-5" }, cliArgs);
+        Assert.Equal(new[] { "--yolo", "--model", "gpt-5" }, cliArgs);
     }
 
     private static SquadAgent CreateAgent(Action<SquadAgentOptions>? configure = null)

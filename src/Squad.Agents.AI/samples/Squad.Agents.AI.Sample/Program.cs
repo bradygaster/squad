@@ -35,7 +35,6 @@ bool RunFlow(int flow) => selectedFlow is null || selectedFlow == flow;
 // Real-world usage: set SQUAD_TEAM_ROOT to the path of an initialized Squad team.
 var teamRoot = System.Environment.GetEnvironmentVariable("SQUAD_TEAM_ROOT")
                ?? System.IO.Directory.GetCurrentDirectory();
-teamRoot = "C:\\Users\\tamirdresher\\source\\repos\\squad-pr3-round1\\";
 PrintBanner($"Squad.Agents.AI v0.1 — sample run (team root: {teamRoot})");
 Console.WriteLine();
 

@@ -116,7 +116,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         //   2. OnPermissionRequest = PermissionHandler.ApproveAll
         //      Required by the SDK (CreateSessionAsync throws without it). This is the
         //      SDK-protocol layer; the CLI also has its own per-tool gate which we
-        //      open with --allow-all-tools in CreateCopilotClient.
+        //      open with --allow-all in CreateCopilotClient.
         //
         // Callers can override any of this via SquadAgentOptions.ConfigureSession.
         var teamRoot = options.Cwd ?? options.SquadFolderPath;
@@ -209,8 +209,18 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         // the entire Squad workspace. Hosts that want stricter behavior can replace
         // this via SquadAgentOptions.CliArgs / the ConfigureCopilotClient delegate.
         // ───────────────────────────────────────────────────────────────────
+        // Skip our `--allow-all` default if the host already opted in via any of the
+        // CLI's permission-opening flags (or the omnibus `--yolo` alias). Comparison is
+        // case-insensitive because `copilot --help` documents the flags in lowercase but
+        // CLI argument parsers on Windows are commonly forgiving of case differences.
         var combinedCliArgs = new List<string>();
-        if (!options.CliArgs.Any(a => a == "--allow-all" || a == "--allow-all-tools"))
+        bool hostAlreadyOpenedPermissions = options.CliArgs.Any(a =>
+            string.Equals(a, "--allow-all", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--allow-all-tools", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--allow-all-paths", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--allow-all-urls", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--yolo", StringComparison.OrdinalIgnoreCase));
+        if (!hostAlreadyOpenedPermissions)
         {
             combinedCliArgs.Add("--allow-all");
         }
