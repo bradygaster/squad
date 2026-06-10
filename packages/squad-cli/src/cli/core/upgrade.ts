@@ -7,6 +7,7 @@
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { buildMcpServerSpecs, hasMcpFrontmatter, injectMcpFrontmatter, type McpConfigMode } from '@bradygaster/squad-sdk/config';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -19,94 +20,6 @@ export { resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 
 const storage = new FSStorageProvider();
-
-type McpConfigMode = 'copilot-file' | 'agent-frontmatter';
-
-interface McpServerSpec {
-  name: string;
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
-}
-
-function buildMcpServerSpecs(isGitHub: boolean, cliVersion?: string): McpServerSpec[] {
-  // Pin the squad-cli package to the currently-installed CLI version so that
-  // `npx -y @bradygaster/squad-cli state-mcp` does NOT silently resolve to the
-  // npm `latest` dist-tag (which may predate the `state-mcp` command and thus
-  // expose zero tools to Copilot — see MCP-BRIDGE-BROKEN root cause).
-  const pkgSpec = cliVersion && cliVersion !== '0.0.0'
-    ? `@bradygaster/squad-cli@${cliVersion}`
-    : '@bradygaster/squad-cli';
-  const servers: McpServerSpec[] = [
-    {
-      name: 'squad_state',
-      command: 'npx',
-      args: ['-y', pkgSpec, 'state-mcp'],
-    },
-  ];
-
-  servers.push(isGitHub
-    ? {
-        name: 'EXAMPLE-github',
-        command: 'npx',
-        args: ['-y', '@anthropic/github-mcp-server'],
-        env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' },
-      }
-    : {
-        name: 'EXAMPLE-azure-devops',
-        command: 'npx',
-        args: ['-y', '@azure/devops-mcp-server'],
-        env: {
-          AZURE_DEVOPS_ORG: '${AZURE_DEVOPS_ORG}',
-          AZURE_DEVOPS_PAT: '${AZURE_DEVOPS_PAT}',
-        },
-      });
-
-  return servers;
-}
-
-function yamlSingleQuoted(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
-function yamlEnvValue(value: string): string {
-  if (/^\$\{[A-Z0-9_]+\}$/.test(value)) {
-    return value;
-  }
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-}
-
-function buildMcpFrontmatterBlock(isGitHub: boolean, cliVersion?: string): string {
-  const lines = ['mcp-servers:'];
-  for (const server of buildMcpServerSpecs(isGitHub, cliVersion)) {
-    lines.push(`  ${server.name}:`);
-    lines.push('    type: local');
-    lines.push(`    command: ${server.command}`);
-    lines.push(`    args: [${server.args.map(yamlSingleQuoted).join(', ')}]`);
-    lines.push('    tools: ["*"]');
-
-    if (server.env && Object.keys(server.env).length > 0) {
-      lines.push('    env:');
-      for (const [key, value] of Object.entries(server.env)) {
-        lines.push(`      ${key}: ${yamlEnvValue(value)}`);
-      }
-    }
-  }
-
-  return lines.join('\n');
-}
-
-function injectMcpFrontmatter(content: string, isGitHub: boolean, cliVersion?: string): string {
-  const closingStart = content.indexOf('\n---', 4);
-  if (!content.startsWith('---') || closingStart === -1) {
-    return content;
-  }
-
-  return content.slice(0, closingStart)
-    + '\n'
-    + buildMcpFrontmatterBlock(isGitHub, cliVersion)
-    + content.slice(closingStart);
-}
 
 function copyDirRecursive(src: string, dest: string, force = true): void {
   storage.mkdirSync(dest, { recursive: true });
@@ -186,9 +99,7 @@ function detectMcpConfigMode(config: Record<string, unknown>, agentDest: string)
 
   if (storage.existsSync(agentDest)) {
     const existingAgent = storage.readSync(agentDest) ?? '';
-    const frontmatterEnd = existingAgent.indexOf('\n---', 4);
-    const frontmatter = frontmatterEnd === -1 ? '' : existingAgent.slice(0, frontmatterEnd);
-    if (frontmatter.includes('mcp-servers:')) {
+    if (hasMcpFrontmatter(existingAgent)) {
       return 'agent-frontmatter';
     }
   }
@@ -215,7 +126,7 @@ function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): bo
 function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean): void {
   let agentContent = storage.readSync(agentSrc) ?? '';
   if (mcpConfigMode === 'agent-frontmatter') {
-    agentContent = injectMcpFrontmatter(agentContent, isGitHub, cliVersion);
+    agentContent = injectMcpFrontmatter(agentContent, buildMcpServerSpecs(isGitHub, cliVersion));
   }
   storage.writeSync(agentDest, agentContent);
   stampVersion(agentDest, cliVersion);
