@@ -144,15 +144,16 @@ async function publish(dest: string, skillName?: string): Promise<void> {
 
     // Build the skill's own apm.yml inside its directory
     const apmSkillPath = join(skillsDir, skillName, 'apm.yml');
+    const safeDesc = fm['description'] ? JSON.stringify(fm['description']) : null;
     const skillApm = [
       `name: ${fm['name'] ?? skillName}`,
       `version: ${fm['version'] ?? '1.0.0'}`,
-      fm['description'] ? `description: "${fm['description']}"` : null,
+      safeDesc ? `description: ${safeDesc}` : null,
       ``,
       `skills:`,
       `  - name: ${fm['name'] ?? skillName}`,
       `    path: skill.md`,
-      fm['description'] ? `    description: "${fm['description']}"` : null,
+      safeDesc ? `    description: ${safeDesc}` : null,
     ]
       .filter(l => l !== null)
       .join('\n');
@@ -195,7 +196,7 @@ async function publish(dest: string, skillName?: string): Promise<void> {
     ...skills.map(s =>
       [
         `  - name: ${s.name}`,
-        s.description ? `    description: "${s.description}"` : null,
+        s.description ? `    description: ${JSON.stringify(s.description)}` : null,
         `    path: ${s.path}`,
         s.version ? `    version: ${s.version}` : null,
       ]
