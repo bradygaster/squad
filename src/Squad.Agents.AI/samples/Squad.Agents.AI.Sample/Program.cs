@@ -35,7 +35,6 @@ bool RunFlow(int flow) => selectedFlow is null || selectedFlow == flow;
 // Real-world usage: set SQUAD_TEAM_ROOT to the path of an initialized Squad team.
 var teamRoot = System.Environment.GetEnvironmentVariable("SQUAD_TEAM_ROOT")
                ?? System.IO.Directory.GetCurrentDirectory();
-
 PrintBanner($"Squad.Agents.AI v0.1 — sample run (team root: {teamRoot})");
 Console.WriteLine();
 
@@ -278,7 +277,10 @@ static async Task<AgentResponse?> RunWithErrorHandlingAsync(Func<Task<AgentRespo
     catch (Exception ex)
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"[ERROR] {ex.GetType().Name}: {ex.Message}");
+        Console.WriteLine($"[ERROR] {ex.GetType().FullName}: {ex.Message}");
+        if (ex.InnerException is not null)
+            Console.WriteLine($"  inner: {ex.InnerException.GetType().FullName}: {ex.InnerException.Message}");
+        Console.WriteLine(ex.StackTrace);
         Console.ResetColor();
         return null;
     }
@@ -307,12 +309,12 @@ static async Task<bool> RunStreamingWithErrorHandlingAsync(Func<Task> action)
 
 static bool IsCliMissingException(Exception ex)
 {
-    var msg = ex.Message;
-    return msg.Contains("copilot", StringComparison.OrdinalIgnoreCase) ||
-           msg.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
-           msg.Contains("cannot find", StringComparison.OrdinalIgnoreCase) ||
-           msg.Contains("No such file", StringComparison.OrdinalIgnoreCase) ||
-           ex is System.ComponentModel.Win32Exception;
+    // Only treat *startup* failures (CLI binary missing) as the friendly CLI-not-found case.
+    // Everything else — auth, RPC, agent runtime errors — should bubble up as a real error
+    // so the user can actually see what went wrong instead of a misleading "install copilot" banner.
+    return ex is System.ComponentModel.Win32Exception w32 &&
+           (w32.NativeErrorCode == 2 /* ERROR_FILE_NOT_FOUND */ ||
+            w32.NativeErrorCode == 3 /* ERROR_PATH_NOT_FOUND */);
 }
 
 static void PrintCliError()
@@ -335,3 +337,7 @@ static async ValueTask DisposeIfNeeded(SquadAgent agent)
     if (agent is IAsyncDisposable d)
         await d.DisposeAsync();
 }
+
+
+
+

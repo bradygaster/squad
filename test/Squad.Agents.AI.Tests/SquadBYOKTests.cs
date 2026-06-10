@@ -1,4 +1,5 @@
 using System.Reflection;
+using GitHub.Copilot;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -47,7 +48,7 @@ public class SquadBYOKTests
     }
 
     [Fact]
-    public void ConfigureCopilotClient_RestoresCwdAfterDelegate()
+    public void ConfigureCopilotClient_RestoresWorkingDirectoryAfterDelegate()
     {
         var agent = CreateAgent(opts =>
         {
@@ -55,53 +56,42 @@ public class SquadBYOKTests
             opts.ConfigureCopilotClient = clientOpts =>
             {
                 // Attempt to change routing property — should be restored
-                clientOpts.Cwd = @"C:\hijacked-cwd";
+                clientOpts.WorkingDirectory = @"C:\hijacked-cwd";
             };
         });
 
         var clientOptions = GetCopilotClientOptions(agent);
-        var cwd = GetRequiredProperty<string>(clientOptions, "Cwd");
+        var workingDirectory = GetRequiredProperty<string>(clientOptions, "WorkingDirectory");
 
-        Assert.Equal(@"C:\original-cwd", cwd);
+        Assert.Equal(@"C:\original-cwd", workingDirectory);
     }
 
     [Fact]
-    public void ConfigureCopilotClient_RestoresCliPathAfterDelegate()
+    public void ConfigureCopilotClient_RestoresConnectionAfterDelegate()
     {
+        // SDK 1.0.0 collapsed CliPath/CliArgs into Connection (RuntimeConnection).
+        // The routing gate now snapshots and restores the Connection reference.
         var agent = CreateAgent(opts =>
         {
             opts.CliPath = @"C:\original\copilot.exe";
-            opts.ConfigureCopilotClient = clientOpts =>
-            {
-                clientOpts.CliPath = @"C:\hijacked\evil.exe";
-            };
-        });
-
-        var clientOptions = GetCopilotClientOptions(agent);
-        var cliPath = GetProperty<string>(clientOptions, "CliPath");
-
-        Assert.Equal(@"C:\original\copilot.exe", cliPath);
-    }
-
-    [Fact]
-    public void ConfigureCopilotClient_RestoresCliArgsAfterDelegate()
-    {
-        var agent = CreateAgent(opts =>
-        {
             opts.CliArgs.Add("--extension");
             opts.CliArgs.Add("squad");
             opts.ConfigureCopilotClient = clientOpts =>
             {
-                clientOpts.CliArgs = new[] { "--hijacked" };
+                clientOpts.Connection = RuntimeConnection.ForStdio(@"C:\hijacked\evil.exe", new List<string> { "--hijacked" });
             };
         });
 
         var clientOptions = GetCopilotClientOptions(agent);
-        var cliArgs = GetRequiredProperty<string[]>(clientOptions, "CliArgs");
+        var connection = GetRequiredProperty<object>(clientOptions, "Connection");
+        var path = GetProperty<string>(connection, "Path");
+        var args = GetProperty<IList<string>>(connection, "Args");
 
-        Assert.Contains("--extension", cliArgs);
-        Assert.Contains("squad", cliArgs);
-        Assert.DoesNotContain("--hijacked", cliArgs);
+        Assert.Equal(@"C:\original\copilot.exe", path);
+        Assert.NotNull(args);
+        Assert.Contains("--extension", args);
+        Assert.Contains("squad", args);
+        Assert.DoesNotContain("--hijacked", args);
     }
 
     [Fact]
