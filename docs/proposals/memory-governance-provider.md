@@ -93,7 +93,7 @@ For `squad init` and Copilot custom agents, local worktree memory remains the de
 - `.squad/decisions.md`
 - `.squad/decisions/inbox/`
 - `.squad/agents/{name}/history.md`
-- `.squad/skills/{name}/SKILL.md`
+- `.copilot/skills/{name}/SKILL.md`
 
 This keeps Squad usable offline, reviewable in Git, and compatible with existing teams.
 It also preserves the current prompt-only behavior for Copilot custom agents: when no

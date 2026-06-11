@@ -25,7 +25,7 @@ squad
 ✅ .github/agents/squad.agent.md (v0.2.0)
 ✅ .github/workflows/ (10 workflows)
 ✅ .squad/templates/
-✅ .squad/skills/ (starter skills)
+✅ .copilot/skills/ (starter skills)
 ✅ .squad/ceremonies.md
 ✅ .gitattributes (merge=union rules)
 

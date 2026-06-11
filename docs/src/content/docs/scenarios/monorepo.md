@@ -142,7 +142,7 @@ All four work in parallel, each in their own service directory.
 
 Some patterns apply **across all services**:
 
-`.squad/skills/service-logging-pattern.md`:
+`.copilot/skills/service-logging-pattern.md`:
 
 ```markdown
 # Service Logging Pattern
@@ -166,7 +166,7 @@ Every service must log:
 
 This skill is read by **all agents**, regardless of which service they're working on. Consistent logging across the monorepo.
 
-`.squad/skills/inter-service-communication.md`:
+`.copilot/skills/inter-service-communication.md`:
 
 ```markdown
 # Inter-Service Communication

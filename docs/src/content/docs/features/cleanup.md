@@ -107,7 +107,7 @@ Run cleanup every round (aggressive), keep 14 days:
 
 ## What Cleanup Does NOT Touch
 
-- Earned skills in `.squad/skills/` — never deleted
+- Earned skills in `.copilot/skills/` — never deleted
 - Decision log in `.squad/decisions/log.md` — never deleted
 - Active session data
 - Router state, team config, and other core Squad files
