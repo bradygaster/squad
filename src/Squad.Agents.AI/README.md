@@ -152,15 +152,17 @@ Parsed URI query keys: `teamRoot`, `cliPath`, `cwd`, `cliArgs` (semicolon-separa
 
 ## Coordinator agent selection
 
-`SquadAgent` exists to wrap a Squad coordinator team, so the SDK sets `SessionConfig.Agent` to `"squad"` by default. That's the SDK-native equivalent of running `copilot --agent squad` from a terminal — it tells the wrapped Copilot session to load `.github/agents/squad.agent.md` as the agent definition, which is what teaches the coordinator to eager-execute, fan out, and dispatch through the `task` tool. Without it, the wrapped session uses its built-in generic agent and the coordinator role-plays responses inline instead of spawning real subagents — producing SDK behavior that does NOT match running `copilot --agent squad` interactively against the same team root.
+`SquadAgent` exists to wrap a Squad coordinator team, so it passes `--agent squad` to the underlying `copilot.exe` child process by default. That tells the CLI to load `.github/agents/squad.agent.md` as the agent definition — which is what teaches the coordinator to eager-execute, fan out, and dispatch through the `task` tool. Without it, the CLI uses its built-in generic agent and the coordinator role-plays responses inline instead of spawning real subagents — producing SDK behavior that does NOT match running `copilot --agent squad` interactively against the same team root.
 
 | Scenario | What the SDK does |
 |---|---|
-| Default — `squad.agent.md` exists | Sets `sessionConfig.Agent = "squad"` |
-| `squad.agent.md` not found at `.github/agents/` | Leaves `sessionConfig.Agent` unset (graceful degradation for not-yet-initialized teams) |
-| Consumer sets `AgentFileName = "data"` (and file exists) | Sets `sessionConfig.Agent = "data"` |
-| Consumer sets `AgentFileName = null` | Leaves `sessionConfig.Agent` unset |
-| Consumer overrides `sessionConfig.Agent` inside `ConfigureSession` | The `ConfigureSession` callback runs after the default is applied, so it always wins |
+| Default — `squad.agent.md` exists | Auto-adds `--agent squad` |
+| `squad.agent.md` not found at `.github/agents/` | Silently skips `--agent` (graceful degradation for not-yet-initialized teams; logs a Debug message) |
+| Consumer sets `AgentFileName = "data"` (and file exists) | Auto-adds `--agent data` |
+| Consumer sets `AgentFileName = null` | Skips `--agent` entirely |
+| Consumer already supplied `--agent X` in `CliArgs` | Respects the explicit value; does not add a second `--agent` |
+
+> SDK note: `SessionConfigBase.Agent` exists but looks up the name in the SDK's `CustomAgents` registry, NOT in `.github/agents/*.agent.md` files on disk. The CLI `--agent` flag is currently the only path that reads the on-disk agent definition.
 
 ## Subagent observability — first-class OpenTelemetry
 
@@ -208,7 +210,7 @@ builder.Services.AddSquadAgent(o =>
 | `ConfigureCopilotClient` | Advanced delegate for customizing `CopilotClientOptions`. Routing properties are guarded; see BYOK section. |
 | `TraceEvents` | Enables verbose SDK logging and emits a startup warning when enabled. |
 | `AgentName` | Display name for the resulting `AIAgent`; defaults to `Squad`. |
-| `AgentFileName` | Name of the agent definition under `.github/agents/{name}.agent.md` to load via `SessionConfig.Agent` (the SDK equivalent of the Copilot CLI's `--agent` flag). Defaults to `"squad"`. Set to `null` to skip auto-selection; the file-existence check makes this safe to leave on for not-yet-initialized teams. Override `sessionConfig.Agent` from inside `ConfigureSession` for full control. |
+| `AgentFileName` | Name of the agent definition under `.github/agents/{name}.agent.md` to load via the CLI's `--agent` flag. Defaults to `"squad"`. Set to `null` to skip auto-injection; the file-existence check makes this safe to leave on for not-yet-initialized teams. |
 | `Instructions` | Optional system instructions passed to the inner Copilot agent. |
 | `EmitSubagentActivities` | Whether the SDK opens an OpenTelemetry `Activity` per subagent dispatch and annotates lifecycle events. Defaults to `true`. Set to `false` to handle telemetry from your own `OnSubagentTrace` callback. |
 | `OnSubagentTrace` | Optional callback invoked for every typed `SquadAgentTraceEvent`. Independent of `EmitSubagentActivities` — both can be on simultaneously. |

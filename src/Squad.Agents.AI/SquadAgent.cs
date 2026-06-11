@@ -134,36 +134,6 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             ConfigDirectory = squadConfigDir,
             EnableConfigDiscovery = true,
         };
-
-        // ── Default coordinator agent selection ────────────────────────────
-        // SquadAgent wraps a Squad coordinator team. The SDK's SessionConfig.Agent
-        // property is the first-class equivalent of the Copilot CLI's --agent flag —
-        // it selects which discovered agent definition (e.g. .github/agents/squad.agent.md)
-        // to load as the session's system prompt. Without it the CLI uses its built-in
-        // generic agent and the coordinator role-plays responses inline instead of
-        // dispatching real subagents — exactly the inconsistency between
-        // `copilot --agent squad` (CLI) and SquadAgent.RunAsync (SDK) that this
-        // default eliminates.
-        //
-        // We set Agent = AgentFileName (default "squad") unless:
-        //   1. The host explicitly configured a different Agent via ConfigureSession
-        //      (handled implicitly — ConfigureSession runs after us and wins)
-        //   2. AgentFileName is null or whitespace (explicit opt-out)
-        //   3. The agent file does not exist at the conventional path on disk
-        //      (graceful degradation for folders that are not yet Squad-initialized,
-        //      where the CLI would error on `--agent squad`)
-        // ───────────────────────────────────────────────────────────────────
-        if (!string.IsNullOrWhiteSpace(options.AgentFileName) && !string.IsNullOrWhiteSpace(teamRoot))
-        {
-            var agentFilePath = Path.Combine(teamRoot, ".github", "agents", $"{options.AgentFileName}.agent.md");
-            if (File.Exists(agentFilePath))
-            {
-                sessionConfig.Agent = options.AgentFileName;
-            }
-            // If the file is missing we leave SessionConfig.Agent unset; the SDK will
-            // start with its default agent, which is what 0.4.x did anyway.
-        }
-
         if (!string.IsNullOrEmpty(options.Instructions))
         {
             sessionConfig.SystemMessage = new SystemMessageConfig { Content = options.Instructions };
@@ -271,6 +241,51 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         if (!hostAlreadyOpenedPermissions)
         {
             combinedCliArgs.Add("--allow-all");
+        }
+
+        // ── Default coordinator agent selection ────────────────────────────
+        // SquadAgent wraps a Squad coordinator team. The CLI's `--agent squad`
+        // flag is what teaches the coordinator to eager-execute, fan out, and
+        // dispatch via the task tool by loading `.github/agents/squad.agent.md`
+        // as the agent definition. Without it the CLI uses its built-in generic
+        // agent and the coordinator role-plays responses inline instead of
+        // spawning real subagents — producing SDK behaviour that does NOT match
+        // running `copilot --agent squad` interactively against the same team
+        // root.
+        //
+        // Note on SessionConfig.Agent: that SDK property exists but selects
+        // from the SDK's CustomAgents registry, NOT from `.github/agents/*.agent.md`
+        // files (verified at v1.0.0 — setting it without populating CustomAgents
+        // produces `Custom agent 'squad' not found`). The CLI `--agent` flag is
+        // currently the only path that reads the on-disk agent definition.
+        //
+        // We auto-add `--agent {AgentFileName}` (default "squad") unless:
+        //   1. The host already supplied --agent explicitly in CliArgs
+        //   2. AgentFileName is null or whitespace (explicit opt-out)
+        //   3. The agent file does not exist at the conventional path on disk
+        //      (graceful degradation for folders that are not yet Squad-initialized,
+        //      where the CLI would error on `--agent squad`)
+        // ───────────────────────────────────────────────────────────────────
+        bool hostSuppliedAgent = options.CliArgs.Any(a =>
+            string.Equals(a, "--agent", StringComparison.OrdinalIgnoreCase));
+        if (!hostSuppliedAgent && !string.IsNullOrWhiteSpace(options.AgentFileName))
+        {
+            var defaultAgentTeamRoot = options.Cwd ?? options.SquadFolderPath;
+            if (!string.IsNullOrWhiteSpace(defaultAgentTeamRoot))
+            {
+                var agentFilePath = Path.Combine(defaultAgentTeamRoot, ".github", "agents", $"{options.AgentFileName}.agent.md");
+                if (File.Exists(agentFilePath))
+                {
+                    combinedCliArgs.Add("--agent");
+                    combinedCliArgs.Add(options.AgentFileName);
+                }
+                else
+                {
+                    logger?.LogDebug(
+                        "SquadAgentOptions.AgentFileName is '{AgentFileName}' but the file was not found at '{AgentFilePath}'. Skipping --agent argument; the CLI will fall back to its default agent.",
+                        options.AgentFileName, agentFilePath);
+                }
+            }
         }
 
         combinedCliArgs.AddRange(options.CliArgs);
