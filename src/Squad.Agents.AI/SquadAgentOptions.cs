@@ -144,22 +144,23 @@ public sealed class SquadAgentOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Setting this callback has three side effects:
+    /// Setting this callback has two side effects:
     /// </para>
     /// <list type="number">
     /// <item><see cref="GitHub.Copilot.SessionConfigBase.IncludeSubAgentStreamingEvents"/> is forced to
     /// <see langword="true"/> so subagent assistant messages flow up to the parent session (otherwise
     /// the subagent's reply stays inside its own session and never reaches the callback).</item>
-    /// <item>An <see cref="System.Diagnostics.ActivitySource"/> named
-    /// <see cref="SquadAgentDiagnostics.ActivitySourceName"/> emits one <see cref="System.Diagnostics.Activity"/>
-    /// per subagent dispatch, tagged with <c>squad.subagent.name</c> and a preview of the subagent's
-    /// reply. Hosts that <c>.AddSource(SquadAgentDiagnostics.ActivitySourceName)</c> on their
-    /// OpenTelemetry tracer get these spans in their backend (e.g. the Aspire dashboard).</item>
     /// <item><see cref="ConfigureSession"/> may still override <see cref="GitHub.Copilot.SessionConfigBase.OnEvent"/>
     /// or <see cref="GitHub.Copilot.SessionConfigBase.IncludeSubAgentStreamingEvents"/>; consumers
     /// that need a stacked event handler should call <c>OnSubagentTrace</c> from inside their
     /// <see cref="ConfigureSession"/> callback to compose the two.</item>
     /// </list>
+    /// <para>
+    /// OpenTelemetry telemetry is independent — it is controlled by
+    /// <see cref="EmitSubagentActivities"/> (default <see langword="true"/>) and emits whether or
+    /// not this callback is set. Use <c>OnSubagentTrace</c> when you want to layer extra behaviour
+    /// (custom logging, dashboards, audit trails) on top of the built-in spans.
+    /// </para>
     /// <para>
     /// Consumer callback exceptions are caught and swallowed so a misbehaving subscriber cannot tear
     /// down the SDK event loop. Add your own try/catch + logging inside the callback if you need to
@@ -179,6 +180,53 @@ public sealed class SquadAgentOptions
     /// </example>
     [JsonIgnore]
     public Action<SquadAgentTraceEvent>? OnSubagentTrace { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether to emit OpenTelemetry <see cref="System.Diagnostics.Activity"/> spans
+    /// and lifecycle events for each subagent dispatch. Defaults to <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When <see langword="true"/>, an <see cref="System.Diagnostics.ActivitySource"/> named
+    /// <see cref="SquadAgentDiagnostics.ActivitySourceName"/> opens one
+    /// <see cref="System.Diagnostics.Activity"/> per subagent dispatch (tagged with
+    /// <c>squad.subagent.name</c>, <c>squad.subagent.display_name</c>, <c>squad.subagent.sdk_agent_id</c>,
+    /// and <c>squad.subagent.reply_preview</c>). Each subagent lifecycle phase
+    /// (<c>squad.subagent.start</c>, <c>squad.subagent.message</c>, <c>squad.subagent.completed</c>,
+    /// <c>squad.subagent.failed</c>) is also added as a <see cref="System.Diagnostics.ActivityEvent"/>
+    /// on the live subagent span so the timeline view in dashboards (e.g. Aspire) shows annotated
+    /// timestamps for every state transition.
+    /// </para>
+    /// <para>
+    /// Hosts that <c>.AddSource(SquadAgentDiagnostics.ActivitySourceName)</c> on their OpenTelemetry
+    /// tracer get these spans in their backend automatically — no need to set
+    /// <see cref="OnSubagentTrace"/>.
+    /// </para>
+    /// <para>
+    /// Set this to <see langword="false"/> to disable Squad's built-in telemetry (e.g. when you
+    /// want to handle observability entirely from your own <see cref="OnSubagentTrace"/> callback,
+    /// or to avoid double-counting if another layer in your stack is already emitting equivalent
+    /// spans).
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // Default (recommended): just AddSource and the dashboard lights up.
+    /// builder.Services.AddOpenTelemetry()
+    ///     .WithTracing(t => t.AddSource(SquadAgentDiagnostics.ActivitySourceName));
+    ///
+    /// builder.Services.AddSquadAgent(opts => opts.SquadFolderPath = "/team");
+    ///
+    /// // Opt out (custom telemetry):
+    /// builder.Services.AddSquadAgent(opts =>
+    /// {
+    ///     opts.SquadFolderPath = "/team";
+    ///     opts.EmitSubagentActivities = false;
+    ///     opts.OnSubagentTrace = trace => MyMetrics.Increment(trace.Kind.ToString());
+    /// });
+    /// </code>
+    /// </example>
+    public bool EmitSubagentActivities { get; set; } = true;
 
     private static readonly string[] TokenPatterns = { "TOKEN", "KEY", "SECRET", "HMAC", "PASSWORD", "CREDENTIAL" };
 

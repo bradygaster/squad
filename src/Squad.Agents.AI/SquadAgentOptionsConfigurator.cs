@@ -7,14 +7,22 @@ namespace Squad.Agents.AI;
 /// Binds SquadAgentOptions from a configured connection string.
 /// Runs before user-supplied configure lambda; user settings always win.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Resolves the connection string by trying each candidate name in order and using the first
+/// one that returns a non-empty value. This lets a single registration accept both the
+/// Aspire-style direct name (e.g. <c>ConnectionStrings:research-squad</c>) and the legacy
+/// prefixed name (<c>ConnectionStrings:squad-research</c>) without breaking either convention.
+/// </para>
+/// </remarks>
 internal sealed class SquadAgentOptionsConfigurator : IConfigureNamedOptions<SquadAgentOptions>
 {
     private readonly IConfiguration _configuration;
     private readonly string _optionsName;
-    private readonly string _connectionStringName;
+    private readonly string[] _connectionStringNames;
 
     public SquadAgentOptionsConfigurator(IConfiguration configuration)
-        : this(configuration, Options.DefaultName, SquadServiceCollectionExtensions.DefaultConnectionStringName)
+        : this(configuration, Options.DefaultName, new[] { SquadServiceCollectionExtensions.DefaultConnectionStringName })
     {
     }
 
@@ -22,10 +30,23 @@ internal sealed class SquadAgentOptionsConfigurator : IConfigureNamedOptions<Squ
         IConfiguration configuration,
         string optionsName,
         string connectionStringName)
+        : this(
+            configuration,
+            optionsName,
+            new[] { connectionStringName ?? throw new ArgumentNullException(nameof(connectionStringName)) })
+    {
+    }
+
+    internal SquadAgentOptionsConfigurator(
+        IConfiguration configuration,
+        string optionsName,
+        string[] connectionStringNames)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _optionsName = optionsName ?? Options.DefaultName;
-        _connectionStringName = connectionStringName ?? throw new ArgumentNullException(nameof(connectionStringName));
+        _connectionStringNames = connectionStringNames ?? throw new ArgumentNullException(nameof(connectionStringNames));
+        if (_connectionStringNames.Length == 0)
+            throw new ArgumentException("At least one connection string name must be supplied.", nameof(connectionStringNames));
     }
 
     public void Configure(SquadAgentOptions options) => Configure(Options.DefaultName, options);
@@ -35,7 +56,19 @@ internal sealed class SquadAgentOptionsConfigurator : IConfigureNamedOptions<Squ
         if (!string.Equals(name ?? Options.DefaultName, _optionsName, StringComparison.Ordinal))
             return;
 
-        var connectionString = _configuration.GetConnectionString(_connectionStringName);
+        // Try each candidate name in order; first non-empty wins. This lets a single
+        // AddSquadAgent("research") call resolve either ConnectionStrings:research
+        // (Aspire-style) or ConnectionStrings:squad-research (legacy SDK convention).
+        string? connectionString = null;
+        foreach (var candidate in _connectionStringNames)
+        {
+            var value = _configuration.GetConnectionString(candidate);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                connectionString = value;
+                break;
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(connectionString))
             return;

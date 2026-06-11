@@ -132,7 +132,14 @@ Use `GitHubTokenProvider` only when the host owns token retrieval, such as Key V
 
 `AddSquadAgent()` reads `ConnectionStrings:squad` through `IConfiguration.GetConnectionString("squad")`. In environment variables, use `ConnectionStrings__squad`.
 
-Named registrations select a named connection string. For example, `AddSquadAgent("research")` reads `ConnectionStrings:squad-research`; in environment variables, use `ConnectionStrings__squad-research`.
+Named registrations support both connection-string conventions:
+
+| Style | Example | Looks up |
+|---|---|---|
+| **Aspire-style direct** (tried first) | `AddSquadAgent("research-squad")` | `ConnectionStrings:research-squad` |
+| **Legacy prefixed fallback** | `AddSquadAgent("research")` | `ConnectionStrings:squad-research` |
+
+So when an Aspire AppHost registers a Squad resource via `builder.AddSquad("research-squad", ...)` and a downstream project does `.WithReference(researchSquad)`, the consumer can resolve the agent with a single `builder.Services.AddKeyedSquadAgent("research-squad")` call — the SDK finds the Aspire-injected connection string automatically. Existing consumers using the prefixed form continue to work; the SDK tries the literal name first and falls back to `squad-{name}` if the direct lookup is empty.
 
 Supported connection string forms:
 
@@ -142,6 +149,39 @@ squad://localhost?teamRoot=C%3A%5Cteam&cliPath=C%3A%5Ctools%5Ccopilot.exe&cliArg
 ```
 
 Parsed URI query keys: `teamRoot`, `cliPath`, `cwd`, `cliArgs` (semicolon-separated), and `env` (`key=value;key2=value2`). Unknown URI host/protocol values are reserved for future use.
+
+## Subagent observability — first-class OpenTelemetry
+
+`Squad.Agents.AI` emits one OpenTelemetry `Activity` per subagent dispatch out of the box. Hosts that subscribe to the activity source see one `squad.subagent {Name}` span per spawn, with the subagent name as a tag and timeline annotations (`squad.subagent.start`, `squad.subagent.message`, `squad.subagent.completed`, `squad.subagent.failed`) marking every state transition.
+
+Two-line wiring is all that is required — no manual callback plumbing:
+
+```csharp
+using OpenTelemetry.Trace;
+using Squad.Agents.AI;
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(t => t.AddSource(SquadAgentDiagnostics.ActivitySourceName));
+
+builder.Services.AddSquadAgent(o => o.SquadFolderPath = @"C:\team");
+```
+
+When the coordinator's `task` tool spawns specialists, the host's tracer (Jaeger, Zipkin, Application Insights, or the Aspire dashboard's **Traces** view) shows one `squad.subagent` span per spawn, each tagged with `squad.subagent.name`, `squad.subagent.display_name`, `squad.subagent.sdk_agent_id`, and `squad.subagent.reply_preview` — plus timeline events for every lifecycle transition.
+
+**Turning telemetry off.** Set `EmitSubagentActivities = false` to suppress Squad's built-in spans (for example, when you want to drive observability entirely from your own callback or avoid double-counting). The `OnSubagentTrace` callback continues to fire either way — it is the customization seam, independent of telemetry.
+
+```csharp
+builder.Services.AddSquadAgent(o =>
+{
+    o.SquadFolderPath = @"C:\team";
+    o.EmitSubagentActivities = false;          // disable built-in OTel emission
+    o.OnSubagentTrace = trace =>               // handle telemetry yourself
+    {
+        if (trace.Kind == SquadAgentTraceEventKind.SubagentStarted)
+            MyMetrics.IncrementSpawn(trace.SubagentName!);
+    };
+});
+```
 
 ## Key options
 
@@ -157,6 +197,8 @@ Parsed URI query keys: `teamRoot`, `cliPath`, `cwd`, `cliArgs` (semicolon-separa
 | `TraceEvents` | Enables verbose SDK logging and emits a startup warning when enabled. |
 | `AgentName` | Display name for the resulting `AIAgent`; defaults to `Squad`. |
 | `Instructions` | Optional system instructions passed to the inner Copilot agent. |
+| `EmitSubagentActivities` | Whether the SDK opens an OpenTelemetry `Activity` per subagent dispatch and annotates lifecycle events. Defaults to `true`. Set to `false` to handle telemetry from your own `OnSubagentTrace` callback. |
+| `OnSubagentTrace` | Optional callback invoked for every typed `SquadAgentTraceEvent`. Independent of `EmitSubagentActivities` — both can be on simultaneously. |
 
 ## Security
 

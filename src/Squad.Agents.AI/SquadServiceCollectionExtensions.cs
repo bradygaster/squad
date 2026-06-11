@@ -166,9 +166,9 @@ public static class SquadServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         var optionsName = GetOptionsName(name);
-        var connectionStringName = GetConnectionStringName(name);
+        var connectionStringNames = GetConnectionStringNames(name);
 
-        RegisterOptionsInfrastructure(services, optionsName, connectionStringName, configure);
+        RegisterOptionsInfrastructure(services, optionsName, connectionStringNames, configure);
 
         // Register SquadAgent with specified lifetime
         services.Add(new ServiceDescriptor(
@@ -208,9 +208,9 @@ public static class SquadServiceCollectionExtensions
 
         // Use the serviceKey as the options name when no explicit name is given
         var optionsName = GetOptionsName(name ?? serviceKey);
-        var connectionStringName = GetConnectionStringName(name ?? serviceKey);
+        var connectionStringNames = GetConnectionStringNames(name ?? serviceKey);
 
-        RegisterOptionsInfrastructure(services, optionsName, connectionStringName, configure);
+        RegisterOptionsInfrastructure(services, optionsName, connectionStringNames, configure);
 
         // Register keyed SquadAgent
         services.Add(new ServiceDescriptor(
@@ -243,7 +243,7 @@ public static class SquadServiceCollectionExtensions
     private static void RegisterOptionsInfrastructure(
         IServiceCollection services,
         string optionsName,
-        string connectionStringName,
+        string[] connectionStringNames,
         Action<SquadAgentOptions>? configure)
     {
         // Register connection string configurator FIRST (runs before user callback)
@@ -251,7 +251,7 @@ public static class SquadServiceCollectionExtensions
             new SquadAgentOptionsConfigurator(
                 sp.GetRequiredService<IConfiguration>(),
                 optionsName,
-                connectionStringName));
+                connectionStringNames));
 
         if (configure is not null)
         {
@@ -277,8 +277,31 @@ public static class SquadServiceCollectionExtensions
         return string.IsNullOrWhiteSpace(name) ? Options.DefaultName : name;
     }
 
-    private static string GetConnectionStringName(string? name)
+    /// <summary>
+    /// Returns the candidate IConfiguration ConnectionStrings: keys to try for a logical name.
+    /// Tried in order; first non-empty value wins.
+    /// </summary>
+    /// <remarks>
+    /// For a bare registration (<paramref name="name"/> null or whitespace) we look up the
+    /// historical default key <c>squad</c>.
+    /// <para>
+    /// For a named registration we try the literal name first
+    /// (e.g. <c>ConnectionStrings:research-squad</c> — the Aspire convention where the
+    /// resource name IS the connection string key), then fall back to the legacy prefixed
+    /// form (<c>ConnectionStrings:squad-research</c>) so existing consumers continue to work
+    /// without changes.
+    /// </para>
+    /// </remarks>
+    private static string[] GetConnectionStringNames(string? name)
     {
-        return string.IsNullOrWhiteSpace(name) ? DefaultConnectionStringName : $"{DefaultConnectionStringName}-{name}";
+        if (string.IsNullOrWhiteSpace(name))
+            return new[] { DefaultConnectionStringName };
+
+        var prefixed = $"{DefaultConnectionStringName}-{name}";
+        // Avoid duplicate lookups when the caller passes a name that's already prefixed
+        // (e.g. AddSquadAgent("squad-research") → just look up "squad-research" once).
+        return string.Equals(name, prefixed, StringComparison.Ordinal)
+            ? new[] { name }
+            : new[] { name, prefixed };
     }
 }
