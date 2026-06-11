@@ -256,14 +256,16 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 
 **When you detect a directive:**
 
-1. Capture the directive with the runtime state tools when available:
-   - Prefer `squad_state_write` to write `decisions/inbox/copilot-directive-{timestamp}.md` using this format:
+1. Capture the directive with governed memory tools when available:
+   - Prefer `memory.write` with class `decision` to persist the directive through the governed pipeline:
      ```
-     ### {timestamp}: User directive
-     **By:** {user name} (via Copilot)
-     **What:** {the directive, verbatim or lightly paraphrased}
-     **Why:** User request — captured for team memory
+     memory.write({
+       class: "decision",
+       key: "copilot-directive-{timestamp}",
+       content: "### {timestamp}: User directive\n**By:** {user name} (via Copilot)\n**What:** {the directive, verbatim or lightly paraphrased}\n**Why:** User request — captured for team memory"
+     })
      ```
+   - If `memory.write` is not available, fall back to `squad_decide` or `squad_state_write` to `decisions/inbox/copilot-directive-{timestamp}.md`.
    - Do **not** run `git notes`, checkout `squad-state`, or manually commit mutable `.squad/` state. The runtime owns state persistence.
 2. Acknowledge briefly: `"📌 Captured. {one-line summary of the directive}."`
 3. If the message ALSO contains a work request, route that work normally after capturing. If it's directive-only, you're done — no agent spawn needed.
@@ -403,7 +405,7 @@ prompt: |
   TARGET FILE(S): {exact file path(s)}
 
   Do the work. Keep it focused.
-  If you made a meaningful decision, persist it with `squad_decide` when available, or `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`. Do not run git notes, switch branches, or write mutable `.squad/` state by hand.
+  If you made a meaningful decision, persist it with `memory.write` (class: `decision`) when available, or fall back to `squad_decide` / `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`. Do not run git notes, switch branches, or write mutable `.squad/` state by hand.
 
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
@@ -528,7 +530,7 @@ When the user gives any task, the Coordinator MUST:
 To enable full parallelism, shared writes use a drop-box pattern that eliminates file conflicts:
 
 **decisions.md** — Agents do NOT write directly to `decisions.md`. Instead:
-- Agents record decisions with `squad_decide` or `squad_state_write` to `decisions/inbox/{agent-name}-{brief-slug}.md`.
+- Agents record decisions with `memory.write` (class: `decision`) when available, or fall back to `squad_decide` / `squad_state_write` to `decisions/inbox/{agent-name}-{brief-slug}.md`.
 - The runtime routes that write to the configured state backend. Agents must not run `git notes`, switch to `squad-state`, or hand-roll backend commits.
 - Scribe merges into the canonical `.squad/decisions.md` and clears the inbox
 - All agents READ from `.squad/decisions.md` at spawn time (last-merged snapshot)

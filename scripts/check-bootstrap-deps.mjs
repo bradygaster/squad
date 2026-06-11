@@ -44,7 +44,10 @@ const NODE_BUILTINS = new Set([
  * Accepts both `node:fs` and `fs` forms, as well as subpaths like `node:fs/promises`.
  */
 function isNodeBuiltin(specifier) {
-  if (specifier.startsWith('node:')) return true;
+  if (specifier.startsWith('node:')) {
+    const base = specifier.slice(5).split('/')[0];
+    return NODE_BUILTINS.has(base);
+  }
   const base = specifier.split('/')[0];
   return NODE_BUILTINS.has(base);
 }

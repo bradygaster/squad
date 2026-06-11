@@ -1,5 +1,4 @@
 using GitHub.Copilot;
-using GitHub.Copilot.SDK;
 using Xunit;
 
 namespace Squad.Agents.AI.Tests;
@@ -53,7 +52,7 @@ public class SquadAgentSessionConfigTests
         var options = new SquadAgentOptions();
         // Build a no-op handler so we just verify the property can be reassigned.
         // The exact PermissionRequestResult shape isn't relevant to this test.
-        PermissionRequestHandler customHandler = PermissionHandler.ApproveAll;
+        var customHandler = PermissionHandler.ApproveAll;
 
         options.ConfigureSession = config => config.OnPermissionRequest = customHandler;
 

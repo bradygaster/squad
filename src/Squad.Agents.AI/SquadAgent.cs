@@ -1,4 +1,4 @@
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -27,6 +27,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
     private readonly ILogger? _logger;
     private readonly bool _ownsClient;
     private readonly SquadAgentOptions _options;
+    private readonly SquadSubagentTraceMapper? _traceMapper;
 
     // State-bag to thread pre-base-ctor state through chain constructors.
     // DelegatingAIAgent requires the inner AIAgent at base() call time, so we
@@ -36,7 +37,8 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         CopilotClient CopilotClient,
         ILogger? Logger,
         bool OwnsClient,
-        SquadAgentOptions Options);
+        SquadAgentOptions Options,
+        SquadSubagentTraceMapper? TraceMapper);
 
     /// <summary>
     /// Initializes a new <see cref="SquadAgent"/> with the Squad team root as the primary required parameter.
@@ -76,6 +78,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         _logger = state.Logger;
         _ownsClient = state.OwnsClient;
         _options = state.Options;
+        _traceMapper = state.TraceMapper;
         _logger?.LogInformation("SquadAgent initialized with name '{AgentName}', team root '{TeamRoot}'",
             state.Options.AgentName, state.Options.SquadFolderPath);
     }
@@ -103,19 +106,50 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
     {
         var client = CreateCopilotClient(options, lf);
 
-        // Build a SessionConfig with a sensible default permission handler so the
-        // resulting AIAgent can call CreateSession without throwing. Callers can override
-        // via SquadAgentOptions.ConfigureSession (e.g., to inject a stricter handler or
-        // tweak instructions / available tools / model on the inner session).
+        // Build the SessionConfig. Two non-obvious settings are critical here for the
+        // SquadAgent to actually work end-to-end against a `.squad/`-initialised team:
+        //
+        //   1. ConfigDir + EnableConfigDiscovery = true
+        //      Points the Copilot CLI at the .squad/ folder so it auto-discovers the
+        //      team's agents, skills, instructions, and MCP servers at session start.
+        //      Without these, the agent has to read .squad/team.md (and per-agent
+        //      charters) via runtime file tools — every read becomes a permission
+        //      request, the agent eventually gives up and reports "permission errors".
+        //
+        //   2. OnPermissionRequest = PermissionHandler.ApproveAll
+        //      Required by the SDK (CreateSessionAsync throws without it). This is the
+        //      SDK-protocol layer; the CLI also has its own per-tool gate which we
+        //      open with --allow-all in CreateCopilotClient.
+        //
+        // Callers can override any of this via SquadAgentOptions.ConfigureSession.
+        var teamRoot = options.Cwd ?? options.SquadFolderPath;
+        var squadConfigDir = !string.IsNullOrEmpty(teamRoot)
+            ? Path.Combine(teamRoot, ".squad")
+            : null;
+
         var sessionConfig = new SessionConfig
         {
             OnPermissionRequest = PermissionHandler.ApproveAll,
-            WorkingDirectory = options.Cwd ?? options.SquadFolderPath,
+            WorkingDirectory = teamRoot,
+            ConfigDirectory = squadConfigDir,
+            EnableConfigDiscovery = true,
         };
         if (!string.IsNullOrEmpty(options.Instructions))
         {
             sessionConfig.SystemMessage = new SystemMessageConfig { Content = options.Instructions };
         }
+
+        // Wire OnSubagentTrace before ConfigureSession so consumer-supplied ConfigureSession
+        // callbacks can still override or chain behind our defaults (e.g. compose multiple OnEvent
+        // handlers, replace IncludeSubAgentStreamingEvents, etc.).
+        SquadSubagentTraceMapper? traceMapper = null;
+        if (options.OnSubagentTrace is not null)
+        {
+            traceMapper = new SquadSubagentTraceMapper(options.OnSubagentTrace);
+            sessionConfig.IncludeSubAgentStreamingEvents = true;
+            sessionConfig.OnEvent = traceMapper.OnSessionEvent;
+        }
+
         options.ConfigureSession?.Invoke(sessionConfig);
 
         var inner = client.AsAIAgent(
@@ -125,7 +159,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             name: options.AgentName ?? "Squad",
             description: null);
 
-        return new SquadAgentState(inner, client, lf?.CreateLogger<SquadAgent>(), true, options);
+        return new SquadAgentState(inner, client, lf?.CreateLogger<SquadAgent>(), true, options, traceMapper);
     }
 
     // ── Extensibility seam ──────────────────────────────────────────────
@@ -155,17 +189,64 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             resolvedToken = options.GitHubToken;
         }
 
+        // ── CLI path resolution ────────────────────────────────────────────
+        // When this package is consumed via NuGet, GitHub.Copilot.SDK's build
+        // targets download the copilot CLI binary and copy it to bin/.../runtimes/
+        // {rid}/native/copilot.exe. The SDK runtime looks there by default, so
+        // most consumers don't need to set anything.
+        //
+        // (Squad.Agents.AI keeps a *direct* PackageReference to GitHub.Copilot.SDK
+        // exactly to force those build targets to fire — without it the SDK is only
+        // a transitive dependency of Microsoft.Agents.AI.GitHub.Copilot and its
+        // build/ targets don't propagate. Once microsoft/agent-framework#6457
+        // merges, this dance will no longer be required.)
+        //
+        // SquadAgentOptions.CliPath / CliArgs remain explicit overrides for advanced
+        // scenarios: custom CLI builds, sandboxed runners, air-gapped environments.
+        // SDK 1.0.0 expresses both via RuntimeConnection.ForStdio(path, args), so we
+        // build a single Connection when either is supplied.
+        // ───────────────────────────────────────────────────────────────────
         var clientOptions = new CopilotClientOptions
         {
-            CliPath = options.CliPath,
-            Cwd = options.Cwd ?? options.SquadFolderPath,
-            GitHubToken = resolvedToken
+            WorkingDirectory = options.Cwd ?? options.SquadFolderPath,
+            GitHubToken = resolvedToken,
         };
 
-        // Preserve CLI args parsed from connection strings or supplied by user code for the SDK's CLI invocation.
-        if (options.CliArgs.Count > 0)
+        // ── CLI permission flags ───────────────────────────────────────────
+        // The Copilot CLI enforces THREE independent permission gates:
+        //   1. Tools   (--allow-all-tools)  — which tool kinds may run
+        //   2. Paths   (--allow-all-paths)  — which filesystem paths may be read/written
+        //   3. URLs    (--allow-all-urls)   — which URLs may be fetched
+        //
+        // The SDK-level `OnPermissionRequest` handler only covers the SDK protocol;
+        // each CLI gate is a separate verification step. We pass `--allow-all` by
+        // default so the SquadAgent can actually drive tool calls end-to-end against
+        // the entire Squad workspace. Hosts that want stricter behavior can replace
+        // this via SquadAgentOptions.CliArgs / the ConfigureCopilotClient delegate.
+        // ───────────────────────────────────────────────────────────────────
+        // Skip our `--allow-all` default if the host already opted in via any of the
+        // CLI's permission-opening flags (or the omnibus `--yolo` alias). Comparison is
+        // case-insensitive because `copilot --help` documents the flags in lowercase but
+        // CLI argument parsers on Windows are commonly forgiving of case differences.
+        var combinedCliArgs = new List<string>();
+        bool hostAlreadyOpenedPermissions = options.CliArgs.Any(a =>
+            string.Equals(a, "--allow-all", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--allow-all-tools", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--allow-all-paths", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--allow-all-urls", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(a, "--yolo", StringComparison.OrdinalIgnoreCase));
+        if (!hostAlreadyOpenedPermissions)
         {
-            clientOptions.CliArgs = options.CliArgs.ToArray();
+            combinedCliArgs.Add("--allow-all");
+        }
+        combinedCliArgs.AddRange(options.CliArgs);
+
+        // Only override the SDK's default child-process connection when the consumer
+        // supplied a custom CLI path or any extra CLI args. Otherwise let the SDK
+        // resolve its own bundled binary (downloaded via the build/ targets).
+        if (!string.IsNullOrEmpty(options.CliPath) || combinedCliArgs.Count > 0)
+        {
+            clientOptions.Connection = RuntimeConnection.ForStdio(options.CliPath, combinedCliArgs);
         }
 
         // Copy environment variables
@@ -192,44 +273,34 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         // restore routing-critical properties to prevent accidental or
         // malicious changes that would route the agent to a different CLI
         // process. (Picard Condition 1: hard routing gate.)
+        //
+        // SDK 1.0.0 collapsed CliPath/CliArgs into Connection (RuntimeConnection),
+        // so the routing gate now snapshots WorkingDirectory and Connection.
         if (options.ConfigureCopilotClient is not null)
         {
-            // Snapshot routing properties before the delegate runs
-            var snapshotCwd = clientOptions.Cwd;
-            var snapshotCliPath = clientOptions.CliPath;
-            // snapshot is a clone — in-place CliArgs mutation by SDK consumers is also caught
-            var cliArgsSnapshot = clientOptions.CliArgs?.ToArray();
+            var snapshotWorkingDirectory = clientOptions.WorkingDirectory;
+            var snapshotConnection = clientOptions.Connection;
 
             options.ConfigureCopilotClient(clientOptions);
 
-            // Restore routing properties if changed (SC-3: post-delegate warning)
             bool restored = false;
-            if (!string.Equals(clientOptions.Cwd, snapshotCwd, StringComparison.Ordinal))
+            if (!string.Equals(clientOptions.WorkingDirectory, snapshotWorkingDirectory, StringComparison.Ordinal))
             {
                 logger?.LogWarning(
-                    "ConfigureCopilotClient delegate changed Cwd from '{Original}' to '{Changed}'; " +
+                    "ConfigureCopilotClient delegate changed WorkingDirectory from '{Original}' to '{Changed}'; " +
                     "restoring original value to preserve Squad routing.",
-                    snapshotCwd, clientOptions.Cwd);
-                clientOptions.Cwd = snapshotCwd;
+                    snapshotWorkingDirectory, clientOptions.WorkingDirectory);
+                clientOptions.WorkingDirectory = snapshotWorkingDirectory;
                 restored = true;
             }
 
-            if (!string.Equals(clientOptions.CliPath, snapshotCliPath, StringComparison.Ordinal))
+            if (!ReferenceEquals(clientOptions.Connection, snapshotConnection))
             {
                 logger?.LogWarning(
-                    "ConfigureCopilotClient delegate changed CliPath from '{Original}' to '{Changed}'; " +
-                    "restoring original value to preserve Squad routing.",
-                    snapshotCliPath, clientOptions.CliPath);
-                clientOptions.CliPath = snapshotCliPath;
-                restored = true;
-            }
-
-            if (!(clientOptions.CliArgs ?? Array.Empty<string>()).SequenceEqual(cliArgsSnapshot ?? Array.Empty<string>()))
-            {
-                logger?.LogWarning(
-                    "ConfigureCopilotClient delegate changed CliArgs; " +
-                    "restoring original value to preserve Squad routing.");
-                clientOptions.CliArgs = cliArgsSnapshot;
+                    "ConfigureCopilotClient delegate replaced Connection; " +
+                    "restoring original value to preserve Squad routing. " +
+                    "Configure CLI path / args via SquadAgentOptions.CliPath / CliArgs instead.");
+                clientOptions.Connection = snapshotConnection;
                 restored = true;
             }
 
@@ -237,7 +308,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             {
                 logger?.LogWarning(
                     "One or more routing properties were restored after ConfigureCopilotClient delegate ran. " +
-                    "To set Cwd, CliPath, or CliArgs, configure them on SquadAgentOptions instead.");
+                    "To set the team root, CLI path, or CLI args, configure them on SquadAgentOptions instead.");
             }
         }
 
@@ -266,6 +337,10 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
 
         if (InnerAgent is IAsyncDisposable innerDisposable)
             await innerDisposable.DisposeAsync().ConfigureAwait(false);
+
+        // Drain any subagent activities that never received a matching SubagentCompletedEvent
+        // (e.g. session ended mid-dispatch). Failing to do so leaks Activity instances.
+        _traceMapper?.Dispose();
 
         _logger?.LogDebug("SquadAgent disposed");
     }

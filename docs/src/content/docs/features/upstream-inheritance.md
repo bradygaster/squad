@@ -8,7 +8,7 @@ Upstream inheritance lets you declare external Squad sources (from repositories,
 
 At session start, the coordinator reads all declared upstreams from `upstream.json` and makes their context available to every agent:
 
-- **Skills** — `.squad/skills/*/SKILL.md`
+- **Skills** — `.copilot/skills/*/SKILL.md`
 - **Decisions** — `.squad/decisions.md`
 - **Wisdom** — `.squad/identity/wisdom.md`
 - **Casting policy** — `.squad/casting/policy.json`

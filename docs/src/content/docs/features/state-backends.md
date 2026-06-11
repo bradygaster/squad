@@ -49,13 +49,15 @@ squad upgrade --state-backend two-layer
 # Or: squad upgrade --state-backend orphan
 ```
 
-This migrates existing state, creates the orphan branch, and installs git hooks for automatic multi-user sync. No manual steps needed.
+This migrates existing state, creates the orphan branch, and installs git hooks for automatic multi-user sync.
 
 ### What gets installed automatically
 
 When you choose `orphan` or `two-layer`:
-- **Git hooks** (pre-push, post-merge, post-checkout, post-rewrite) are installed in `.git/hooks/`
-- These hooks sync the `squad-state` branch automatically when you push/pull — no manual sync needed
+- **Git hooks** (pre-push, post-merge, post-checkout, post-rewrite, pre-commit, post-commit) are installed in `.git/hooks/`
+- The sync hooks (pre-push, post-merge, post-checkout, post-rewrite) keep the `squad-state` branch in sync automatically when you push/pull
+- The **pre-commit** hook guards against accidentally staging two-layer mutable state (decisions, histories, casting, routing) into a working-tree commit — it refuses with an explanation if detected
+- The **post-commit** hook flushes any pending two-layer state onto the orphan branch after each commit (best-effort, never blocks)
 - Hooks chain with existing hooks (husky, etc.) — nothing is overwritten
 
 ---
@@ -162,7 +164,7 @@ Warning: State backend 'two-layer' failed: <reason>. Falling back to 'local'.
 
 ```bash
 cat .squad/decisions.md
-ls .squad/skills/
+ls .copilot/skills/
 ```
 
 ### Git Notes
@@ -406,7 +408,7 @@ This will:
 3. Install git hooks for automatic sync
 4. Preserve all existing state
 
-**What happens:** Existing `.squad/` files remain on disk as a read-only reference. New decisions and state writes go to the orphan branch (and git notes for two-layer). Over time, the on-disk state files become stale (they're the snapshot from before migration), while the orphan branch and notes contain the latest state.
+**What happens:** Existing `.squad/` files are migrated to the orphan branch and may be removed from the working tree on subsequent commits. New decisions and state writes go to the orphan branch (and git notes for two-layer). The pre-commit hook prevents you from accidentally re-committing mutable state files into the working tree.
 
 ### Switching between orphan and two-layer
 
@@ -415,6 +417,28 @@ Change `stateBackend` in `.squad/config.json`. The coordinator adapts on the nex
 ---
 
 ## Troubleshooting
+
+### "Pre-commit hook refused my commit"
+
+**Cause:** You staged `.squad/` files that belong on the `squad-state` orphan branch (decisions.md, agent histories, casting/, routing/). The pre-commit hook blocks these to keep mutable state off your working-tree branches.
+
+**Fix:**
+
+```bash
+# Unstage the offending paths
+git restore --staged .squad/decisions.md .squad/agents/*/history.md .squad/casting/ .squad/routing/
+
+# Then commit normally — only your code changes go through
+git commit
+```
+
+**If you need to bypass** (e.g., during initial migration or manual repair):
+
+```bash
+SQUAD_SYNC_ACTIVE=1 git commit -m "manual state repair"
+```
+
+> ⚠️ Only bypass when you understand why — the hook exists to prevent state from leaking into PRs.
 
 ### "My state disappeared after switching branches"
 

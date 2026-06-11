@@ -62,7 +62,7 @@ In the interactive shell, use `/compact` for the same effect.
 
 When you tell the team to "reskill," agents:
 
-1. Review existing skill files in `.squad/skills/`
+1. Review existing skill files in `.copilot/skills/`
 2. Validate that documented patterns still apply
 3. Look for new reusable patterns from recent work
 4. Update skill confidence levels based on current evidence

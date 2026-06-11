@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 
 namespace Squad.Agents.AI;
 
@@ -135,6 +135,50 @@ public sealed class SquadAgentOptions
     /// </example>
     [JsonIgnore]
     public Action<SessionConfig>? ConfigureSession { get; set; }
+
+    /// <summary>
+    /// Gets or sets a callback that receives <see cref="SquadAgentTraceEvent"/> instances for every
+    /// notable session event from the underlying Copilot SDK — including subagent dispatch lifecycle
+    /// (<c>task</c>-tool spawn / completion), tool calls, and assistant messages from both the root
+    /// coordinator AND each spawned subagent.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Setting this callback has three side effects:
+    /// </para>
+    /// <list type="number">
+    /// <item><see cref="GitHub.Copilot.SessionConfigBase.IncludeSubAgentStreamingEvents"/> is forced to
+    /// <see langword="true"/> so subagent assistant messages flow up to the parent session (otherwise
+    /// the subagent's reply stays inside its own session and never reaches the callback).</item>
+    /// <item>An <see cref="System.Diagnostics.ActivitySource"/> named
+    /// <see cref="SquadAgentDiagnostics.ActivitySourceName"/> emits one <see cref="System.Diagnostics.Activity"/>
+    /// per subagent dispatch, tagged with <c>squad.subagent.name</c> and a preview of the subagent's
+    /// reply. Hosts that <c>.AddSource(SquadAgentDiagnostics.ActivitySourceName)</c> on their
+    /// OpenTelemetry tracer get these spans in their backend (e.g. the Aspire dashboard).</item>
+    /// <item><see cref="ConfigureSession"/> may still override <see cref="GitHub.Copilot.SessionConfigBase.OnEvent"/>
+    /// or <see cref="GitHub.Copilot.SessionConfigBase.IncludeSubAgentStreamingEvents"/>; consumers
+    /// that need a stacked event handler should call <c>OnSubagentTrace</c> from inside their
+    /// <see cref="ConfigureSession"/> callback to compose the two.</item>
+    /// </list>
+    /// <para>
+    /// Consumer callback exceptions are caught and swallowed so a misbehaving subscriber cannot tear
+    /// down the SDK event loop. Add your own try/catch + logging inside the callback if you need to
+    /// surface those errors.
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// options.OnSubagentTrace = trace =>
+    /// {
+    ///     if (trace.Kind == SquadAgentTraceEventKind.SubagentStarted)
+    ///         Console.WriteLine($"[spawn] {trace.SubagentName} (id={trace.SdkAgentId})");
+    ///     else if (trace.Kind == SquadAgentTraceEventKind.AssistantMessage && trace.SdkAgentId is not null)
+    ///         Console.WriteLine($"[{trace.SdkAgentId}] {trace.Content}");
+    /// };
+    /// </code>
+    /// </example>
+    [JsonIgnore]
+    public Action<SquadAgentTraceEvent>? OnSubagentTrace { get; set; }
 
     private static readonly string[] TokenPatterns = { "TOKEN", "KEY", "SECRET", "HMAC", "PASSWORD", "CREDENTIAL" };
 

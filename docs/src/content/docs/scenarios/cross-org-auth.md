@@ -138,7 +138,7 @@ Squad agents will read this instruction and switch accounts when they detect a c
 
 Capture the cross-org auth pattern as a Squad skill. When authentication fails, the skill detects the error and suggests or attempts account switching.
 
-Create `.squad/skills/cross-org-auth-recovery.md`:
+Create `.copilot/skills/cross-org-auth-recovery.md`:
 
 ```markdown
 # Cross-Organization Authentication Recovery

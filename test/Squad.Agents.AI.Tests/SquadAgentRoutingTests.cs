@@ -48,7 +48,7 @@ public class SquadAgentRoutingTests
 
         var clientOptions = GetCopilotClientOptions(agent);
 
-        Assert.Equal(@"C:\isolated-working-directory", GetRequiredProperty<string>(clientOptions, "Cwd"));
+        Assert.Equal(@"C:\isolated-working-directory", GetRequiredProperty<string>(clientOptions, "WorkingDirectory"));
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class SquadAgentRoutingTests
 
         var clientOptions = GetCopilotClientOptions(agent);
 
-        Assert.Equal(@"C:\squad-team-root", GetRequiredProperty<string>(clientOptions, "Cwd"));
+        Assert.Equal(@"C:\squad-team-root", GetRequiredProperty<string>(clientOptions, "WorkingDirectory"));
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public class SquadAgentRoutingTests
         var inner = GetInnerAgent(agent);
         var sessionConfig = GetInnerSessionConfig(agent);
         var clientOptions = GetCopilotClientOptions(agent);
-        var cliArgs = GetRequiredProperty<string[]>(clientOptions, "CliArgs");
+        var cliArgs = GetConnectionArgs(clientOptions);
         var environment = GetRequiredProperty<IReadOnlyDictionary<string, string>>(clientOptions, "Environment");
 
         Assert.Equal("Custom Persona", GetRequiredProperty<string>(inner, "Name"));
@@ -112,7 +112,7 @@ public class SquadAgentRoutingTests
         var provider = services.BuildServiceProvider();
         var agent = provider.GetRequiredService<SquadAgent>();
         var clientOptions = GetCopilotClientOptions(agent);
-        var cliArgs = GetRequiredProperty<string[]>(clientOptions, "CliArgs");
+        var cliArgs = GetConnectionArgs(clientOptions);
 
         Assert.Equal(new[] { "--yolo", "--model", "gpt-5" }, cliArgs);
     }
@@ -151,6 +151,20 @@ public class SquadAgentRoutingTests
     {
         var client = GetRequiredField<object>(agent, "_copilotClient");
         return GetRequiredField<object>(client, "_options");
+    }
+
+    /// <summary>
+    /// In SDK 1.0.0 the CLI args live inside CopilotClientOptions.Connection (a
+    /// RuntimeConnection — concrete type ChildProcessRuntimeConnection — exposing
+    /// .Path and .Args). Older tests asserted against a flat clientOptions.CliArgs
+    /// property; this helper hides the unwrap so each test stays readable.
+    /// </summary>
+    private static IList<string> GetConnectionArgs(object clientOptions)
+    {
+        var connection = GetRequiredProperty<object>(clientOptions, "Connection");
+        var args = GetProperty<IList<string>>(connection, "Args");
+        Assert.NotNull(args);
+        return args!;
     }
 
     private static object GetInnerAgent(SquadAgent agent)
