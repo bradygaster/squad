@@ -76,4 +76,42 @@ for (const pkgPath of PACKAGE_PATHS) {
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
 }
 
+// Update package-lock.json workspace entries to match the new version.
+// Without this, every build that runs bump-build.mjs produces a lockfile
+// drift where package.json says X.Y.Z-build.N but lockfile workspace entries
+// still say the previous version → npm ci fails in CI with EUSAGE.
+//
+// We only touch the two workspace entries (packages/squad-cli and
+// packages/squad-sdk) and their cross-dependency reference. No npm
+// install is run, so the dependency tree is not touched.
+const LOCKFILE_PATH = join(root, 'package-lock.json');
+try {
+  const lockRaw = readFileSync(LOCKFILE_PATH, 'utf8');
+  const lock = JSON.parse(lockRaw);
+  if (lock.packages) {
+    let lockChanged = false;
+    for (const key of ['packages/squad-sdk', 'packages/squad-cli']) {
+      const entry = lock.packages[key];
+      if (entry && entry.version !== newVersion) {
+        entry.version = newVersion;
+        lockChanged = true;
+      }
+      // Also bump the CLI's @bradygaster/squad-sdk dependency floor so it
+      // resolves the freshly-built SDK rather than the previous version.
+      if (key === 'packages/squad-cli' && entry?.dependencies?.['@bradygaster/squad-sdk']) {
+        const desired = `>=${newVersion}`;
+        if (entry.dependencies['@bradygaster/squad-sdk'] !== desired) {
+          entry.dependencies['@bradygaster/squad-sdk'] = desired;
+          lockChanged = true;
+        }
+      }
+    }
+    if (lockChanged) {
+      writeFileSync(LOCKFILE_PATH, JSON.stringify(lock, null, 2) + '\n', 'utf8');
+    }
+  }
+} catch (err) {
+  console.warn(`⚠ Could not update package-lock.json: ${err.message}`);
+}
+
 console.log(`Build ${parsed.build}: ${rootPkg.version} → ${newVersion}`);
