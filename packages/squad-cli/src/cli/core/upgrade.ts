@@ -29,14 +29,37 @@ interface McpServerSpec {
   env?: Record<string, string>;
 }
 
+/**
+ * Returns true if the version looks like a local dev build or unpublished
+ * pre-release that cannot be resolved from the public npm registry.
+ * Guards against writing unresolvable version strings into MCP config
+ * (see #1204).
+ */
+export function isLocalOrUnpublishedVersion(version: string): boolean {
+  if (!version || version === '0.0.0') return true;
+  // Local linked builds often have 0.0.0-development or similar sentinel
+  if (/^0\.0\.0/.test(version)) return true;
+  // Versions with `+` build metadata (e.g. 0.10.0+local.1234) are not
+  // publishable to npm — they indicate a local build.
+  if (version.includes('+')) return true;
+  return false;
+}
+
 function buildMcpServerSpecs(isGitHub: boolean, cliVersion?: string): McpServerSpec[] {
   // Pin the squad-cli package to the currently-installed CLI version so that
   // `npx -y @bradygaster/squad-cli state-mcp` does NOT silently resolve to the
   // npm `latest` dist-tag (which may predate the `state-mcp` command and thus
   // expose zero tools to Copilot — see MCP-BRIDGE-BROKEN root cause).
-  const pkgSpec = cliVersion && cliVersion !== '0.0.0'
-    ? `@bradygaster/squad-cli@${cliVersion}`
-    : '@bradygaster/squad-cli';
+  //
+  // #1204: When the CLI is a local dev build or unpublished pre-release, fall
+  // back to the @insider dist-tag to avoid writing an unresolvable version
+  // string that breaks npx resolution at session start.
+  let pkgSpec: string;
+  if (!cliVersion || isLocalOrUnpublishedVersion(cliVersion)) {
+    pkgSpec = '@bradygaster/squad-cli@insider';
+  } else {
+    pkgSpec = `@bradygaster/squad-cli@${cliVersion}`;
+  }
   const servers: McpServerSpec[] = [
     {
       name: 'squad_state',
