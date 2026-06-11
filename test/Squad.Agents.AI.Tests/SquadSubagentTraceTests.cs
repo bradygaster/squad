@@ -9,6 +9,7 @@ namespace Squad.Agents.AI.Tests;
 /// Mapper is exercised directly via InternalsVisibleTo so tests stay hermetic
 /// (no live CLI session); a real end-to-end smoke test runs through the sample.
 /// </summary>
+[Collection("SquadActivityListeners")]
 public class SquadSubagentTraceTests
 {
     private static SubagentStartedData MakeStartedData(string name, string? displayName = null) => new()

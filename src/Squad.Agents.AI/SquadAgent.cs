@@ -139,13 +139,16 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             sessionConfig.SystemMessage = new SystemMessageConfig { Content = options.Instructions };
         }
 
-        // Wire OnSubagentTrace before ConfigureSession so consumer-supplied ConfigureSession
-        // callbacks can still override or chain behind our defaults (e.g. compose multiple OnEvent
-        // handlers, replace IncludeSubAgentStreamingEvents, etc.).
+        // Install the subagent trace mapper when EITHER:
+        //   - EmitSubagentActivities is on (default true) — to emit OTel spans + events
+        //   - OnSubagentTrace is set — to forward typed events to the consumer
+        // The two concerns are independent; the mapper handles whichever combination is active.
         SquadSubagentTraceMapper? traceMapper = null;
-        if (options.OnSubagentTrace is not null)
+        if (options.EmitSubagentActivities || options.OnSubagentTrace is not null)
         {
-            traceMapper = new SquadSubagentTraceMapper(options.OnSubagentTrace);
+            traceMapper = new SquadSubagentTraceMapper(
+                options.OnSubagentTrace,
+                emitActivities: options.EmitSubagentActivities);
             sessionConfig.IncludeSubAgentStreamingEvents = true;
             sessionConfig.OnEvent = traceMapper.OnSessionEvent;
         }
