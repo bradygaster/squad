@@ -77,7 +77,7 @@ This is the safety net you don't have as a solo dev. Michael catches issues befo
 
 After Michael rejects Fredo's code for missing rate limiting, **it gets encoded as a skill**:
 
-`.squad/skills/auth-rate-limiting.md`:
+`.copilot/skills/auth-rate-limiting.md`:
 
 ```markdown
 # Authentication Endpoints Must Be Rate-Limited
@@ -98,7 +98,7 @@ Next time any agent builds an auth feature, they read this skill first. The mist
 As a solo dev, you juggle dozens of context switches. Squad doesn't forget:
 
 - **Decisions** are logged. "Why did I use PostgreSQL instead of MongoDB?" — check `.squad/decisions.md`.
-- **Skills** capture patterns. "How do I structure FastAPI routes?" — check `.squad/skills/`.
+- **Skills** capture patterns. "How do I structure FastAPI routes?" — check `.copilot/skills/`.
 - **Histories** track what each agent learned. Fredo knows your database schema after one session.
 
 You get back to a project after 3 weeks, and the team is still up to speed.
@@ -161,6 +161,6 @@ Michael's not always right, but having a second opinion is invaluable.
 
 - **Start with 3–4 agents.** You don't need a frontend and backend specialist if you're only building one layer.
 - **The Lead is your reviewer.** Use them to review your own code before committing.
-- **Skills are YOUR documentation.** After 10 sessions, `.squad/skills/` is a custom knowledge base.
+- **Skills are YOUR documentation.** After 10 sessions, `.copilot/skills/` is a custom knowledge base.
 - **Agents work while you're thinking.** Give a vague task and agents research in parallel.
 - **You get testing discipline.** The Tester writes tests you'd skip. Coverage goes up without extra effort.

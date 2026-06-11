@@ -42,3 +42,9 @@ docs/tests/screenshots/
 bin/
 obj/
 artifacts/
+
+# Visual Studio IDE artifacts
+.vs/
+*.user
+*.userprefs
+

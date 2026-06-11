@@ -16,7 +16,13 @@ import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { resolveSquadStateMcpSpec } from './mcp-spec.js';
 import { describeMcpSpec } from './upgrade.js';
-import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import { ensureSquadStateMcpInRoot, ensureSquadStateMcpInUserConfig, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import {
+  readTeamMd,
+  writeTeamMd,
+  hasCopilot,
+  insertCopilotSection,
+} from './team-md.js';
 
 const storage = new FSStorageProvider();
 
@@ -393,6 +399,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     if (rootResult.written) {
       success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
     }
+    // Also pin to user-level config for external `copilot -p` compatibility
+    const userResult = ensureSquadStateMcpInUserConfig(dest, mcpSpec);
+    if (userResult.written) {
+      success(`pinned squad_state to ~/.copilot/mcp-config.json for \`copilot -p\` mode compatibility`);
+    }
     const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
     if (tomb.removed) {
       success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
@@ -416,6 +427,48 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   for (const file of result.skippedFiles) {
     // Files are already relative to teamRoot, just display as-is
     console.log(`${DIM}${file} already exists — skipping${RESET}`);
+  }
+
+  // ── Copilot agent prompt ───────────────────────────────────────────
+  // Ask if the user wants to add @copilot as an autonomous team member.
+  // This enables .github/copilot-instructions.md and adds Coding Agent
+  // to the team roster, allowing squad-labeled issues to be auto-assigned.
+  const teamContent = readTeamMd(squadDir);
+  if (!hasCopilot(teamContent)) {
+    if (process.stdin.isTTY) {
+      const { createInterface } = await import('node:readline/promises');
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        console.log();
+        const answer = (await rl.question(`  Add ${BOLD}@copilot${RESET} as an autonomous team member? [Y/n]: `)).trim().toLowerCase();
+        if (answer === '' || answer === 'y' || answer === 'yes') {
+          const updated = insertCopilotSection(teamContent, false);
+          writeTeamMd(squadDir, updated);
+          success('Added @copilot (Coding Agent) to team roster');
+
+          // Copy copilot-instructions.md from templates
+          const currentFileUrl = new URL(import.meta.url);
+          const currentFilePath = currentFileUrl.pathname.startsWith('/') && process.platform === 'win32'
+            ? currentFileUrl.pathname.substring(1)
+            : currentFileUrl.pathname;
+          const templatesSrc = path.resolve(path.dirname(currentFilePath), '..', '..', '..', 'templates');
+          const instructionsSrc = path.join(templatesSrc, 'copilot-instructions.md');
+          const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
+
+          if (storage.existsSync(instructionsSrc) && !storage.existsSync(instructionsDest)) {
+            storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
+            storage.copySync(instructionsSrc, instructionsDest);
+            success('.github/copilot-instructions.md');
+          }
+        } else {
+          console.log(`${DIM}  Skipped — add later with: squad copilot enable${RESET}`);
+        }
+      } finally {
+        rl.close();
+      }
+    } else {
+      console.log(`${DIM}  Non-interactive mode — skipping @copilot setup. Add later with: squad copilot enable${RESET}`);
+    }
   }
 
   // ── Celebration ceremony ──────────────────────────────────────────

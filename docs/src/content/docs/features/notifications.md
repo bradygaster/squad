@@ -359,7 +359,7 @@ Use the `NOTIFY_*` environment variables (see Configuration above) to disable no
 
 ## Architecture Notes
 
-The `human-notification` skill lives in `.squad/skills/squad-human-notification/SKILL.md`. Agents read it before working and decide whether to ping you. You can edit the skill directly if you want to:
+The `human-notification` skill lives in `.copilot/skills/squad-human-notification/SKILL.md`. Agents read it before working and decide whether to ping you. You can edit the skill directly if you want to:
 
 - Add custom notification logic for your team
 - Change when agents decide to ping (e.g., always notify on errors)

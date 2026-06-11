@@ -56,7 +56,7 @@ When work involves `src/api/auth.ts`, it routes to Backend automatically.
 
 ### 3. Skill-Aware Routing
 
-If no domain match, the coordinator checks `.squad/skills/` for capability fit:
+If no domain match, the coordinator checks `.copilot/skills/` for capability fit:
 
 ```markdown
 # authentication.md

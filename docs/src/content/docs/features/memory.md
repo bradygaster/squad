@@ -169,7 +169,7 @@ Active decisions (ongoing policies, user preferences, current architecture) stay
 
 ## Skills
 
-Reusable knowledge files at `.squad/skills/{skill-name}/SKILL.md`. See [Skills System](skills.md) for details.
+Reusable knowledge files at `.copilot/skills/{skill-name}/SKILL.md`. See [Skills System](skills.md) for details.
 
 Skills differ from decisions — decisions are project policies ("use PostgreSQL"), while skills are transferable techniques ("how to set up CI with GitHub Actions").
 

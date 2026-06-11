@@ -73,7 +73,7 @@ Coordinator:
 3. Extracts new milestones, relays to user in real-time
 4. Falls back to "still working" if no milestones (graceful degradation)
 
-**For v0.4.0:** Coordinator polling loop + `.squad/skills/progress-signals/SKILL.md` documentation.
+**For v0.4.0:** Coordinator polling loop + `.copilot/skills/progress-signals/SKILL.md` documentation.
 
 **For v0.5.0+:** Customizable polling cadence, emoji matching to agent persona, milestone filtering for quiet mode.
 
