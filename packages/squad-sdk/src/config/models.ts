@@ -11,6 +11,7 @@ import { join } from 'path';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
 import type { ModelId, ModelTier } from '../runtime/config.js';
+import type { SquadReasoningEffort } from '../adapter/types.js';
 
 /**
  * Per-token pricing in USD.
@@ -736,11 +737,12 @@ export function writeAgentModelOverrides(
 /**
  * Valid reasoning effort levels, ordered from lowest to highest.
  * "auto" is a permitted stored sentinel that resolvers treat as "not set".
- * Canonical list — import this in other modules instead of duplicating.
+ * Canonical runtime list — import this instead of duplicating. The `satisfies`
+ * clause keeps it in lock-step with the canonical {@link SquadReasoningEffort} type.
  */
-export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
-/** Type-safe includes check for string values. */
-export type ValidReasoningEffort = typeof VALID_REASONING_EFFORTS[number];
+export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly SquadReasoningEffort[];
+/** Canonical reasoning-effort union (alias of {@link SquadReasoningEffort}). */
+export type ValidReasoningEffort = SquadReasoningEffort;
 const VALID_REASONING_EFFORTS_WITH_AUTO: readonly string[] = [...VALID_REASONING_EFFORTS, 'auto'];
 /** String array form for runtime `.includes()` checks with arbitrary strings. */
 const VALID_EFFORTS_SET: readonly string[] = VALID_REASONING_EFFORTS;
@@ -763,6 +765,12 @@ const EFFORT_RANK: Record<string, number> = {
  * supportedEfforts), returns undefined. If the requested effort is within
  * the model's supported range, returns it unchanged. Otherwise, returns the
  * highest effort the model supports.
+ *
+ * Deliberate: when the requested effort is *below* the model's minimum
+ * supported level (e.g. "low" against a model that only supports ["high"]),
+ * it is clamped UP to that minimum so a reasoning-capable model always
+ * receives a valid level rather than undefined. This upward clamp is
+ * intentional — see the clampReasoningEffort tests in model-preference.test.ts.
  *
  * @param requested - The reasoning effort the user/charter requested
  * @param supportedEfforts - The model's supportedReasoningEfforts from listModels()
@@ -797,7 +805,9 @@ export function clampReasoningEffort(
     }
   }
 
-  // If nothing <= requested (requested is below model minimum), clamp UP to model's lowest
+  // Deliberate: if nothing is <= requested, the request is below the model's
+  // minimum supported level — clamp UP to the model's lowest so a
+  // reasoning-capable model never receives undefined here.
   if (!bestEffort) {
     let lowestRank = Infinity;
     for (const effort of supportedEfforts) {
@@ -907,8 +917,15 @@ export function writeReasoningEffort(squadDir: string, effort: string | null, st
   } else if (VALID_REASONING_EFFORTS_WITH_AUTO.includes(effort)) {
     config.defaultReasoningEffort = effort;
   } else {
-    // Invalid value — treat as clearing the preference
-    delete config.defaultReasoningEffort;
+    // Invalid value: warn and leave any existing preference untouched rather
+    // than silently clearing it (a typo shouldn't wipe a valid setting).
+    // Pass null explicitly to clear.
+    console.warn(
+      `[squad] writeReasoningEffort: ignoring invalid reasoning effort "${effort}" `
+      + `(expected ${VALID_REASONING_EFFORTS.join(', ')}, auto, or null to clear); `
+      + `existing preference left unchanged.`,
+    );
+    return;
   }
 
   storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
@@ -945,12 +962,22 @@ export function writeAgentReasoningEffortOverrides(
   if (overrides === null || Object.keys(overrides).length === 0) {
     delete config.agentReasoningEffortOverrides;
   } else {
-    // Filter out invalid effort values
+    // Filter out invalid effort values, warning about any dropped so a typo
+    // isn't silently discarded.
     const validated: Record<string, string> = {};
+    const dropped: string[] = [];
     for (const [agent, effort] of Object.entries(overrides)) {
       if (VALID_REASONING_EFFORTS_WITH_AUTO.includes(effort)) {
         validated[agent] = effort;
+      } else {
+        dropped.push(`${agent}="${effort}"`);
       }
+    }
+    if (dropped.length > 0) {
+      console.warn(
+        `[squad] writeAgentReasoningEffortOverrides: ignoring invalid reasoning effort `
+        + `value(s) ${dropped.join(', ')} (expected ${VALID_REASONING_EFFORTS.join(', ')}, or auto).`,
+      );
     }
     if (Object.keys(validated).length > 0) {
       config.agentReasoningEffortOverrides = validated;

@@ -282,6 +282,12 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
       // Normalize: "auto" → undefined, invalid values → undefined
       if (raw !== 'auto' && VALID_EFFORTS.has(raw)) {
         result.reasoningEffort = raw;
+      } else if (raw !== 'auto') {
+        // Surface invalid charter input to the author instead of dropping it silently.
+        console.warn(
+          `[squad] charter parse: ignoring invalid reasoning effort "${raw}" `
+          + `(expected ${VALID_REASONING_EFFORTS.join(', ')}, or auto)`,
+        );
       }
     }
   }

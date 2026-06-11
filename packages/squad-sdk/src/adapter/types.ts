@@ -747,6 +747,10 @@ export interface SquadInfiniteSessionConfig {
 
 /**
  * Valid reasoning effort levels for models that support it.
+ *
+ * Canonical reasoning-effort union for the SDK — import this type instead of
+ * re-declaring the union inline. The runtime list lives in config/models.ts as
+ * `VALID_REASONING_EFFORTS` (kept in sync via `satisfies`).
  */
 export type SquadReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
