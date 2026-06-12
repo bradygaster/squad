@@ -25,10 +25,12 @@ Cross-squad orchestration applies when:
 ## Patterns
 
 ### Discovery via Manifest
-Each squad publishes a `.squad/manifest.json` declaring its name, capabilities, and contact information. Squads discover each other through:
-1. **Well-known paths**: Check `.squad/manifest.json` in known org repos
-2. **Upstream config**: Squads already listed in `.squad/upstream.json` are checked for manifests
-3. **Explicit registry**: A central `squad-registry.json` can list all squads in an org
+Each squad publishes a `.squad/manifest.json` declaring its name, capabilities, and contact information. Squads discover each other through two mechanisms:
+
+1. **`.squad/squad-registry.json`** — **discovery-only.** Peer squads are findable via `squad discover` and addressable via `squad delegate`, but their skills/decisions/wisdom are NOT loaded into your coordinator. Manage with `squad registry add/list/remove`.
+2. **`.squad/upstream.json`** — **discovery + inheritance.** Squads listed here are also discoverable, AND your coordinator inherits their skills/decisions/wisdom/routing at session start. Manage with `squad upstream add/list/remove/sync`.
+
+Both forms read the peer's manifest via the same code path. The `path` field is the **repository root** (e.g. `../friend-repo`), and Squad appends `.squad/manifest.json` internally. Pointing at the `.squad/` directory works too — Squad accepts both forms (`readManifest` strips a trailing `.squad` if present).
 
 ```json
 {
@@ -73,9 +75,19 @@ Track delegated work completion:
 
 ## Examples
 
+### Registering a peer squad (no inheritance)
+```bash
+# Friend's repo is checked out at ../friend-platform/
+squad registry add platform-squad ../friend-platform
+
+# Verify
+squad registry list
+squad discover
+```
+
 ### Discovering squads
 ```bash
-# List all squads discoverable from upstreams and known repos
+# List all squads discoverable from registry + upstreams
 squad discover
 
 # Output:
