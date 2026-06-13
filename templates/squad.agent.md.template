@@ -710,6 +710,8 @@ If the user wants to remove someone:
 | `.squad/templates/` | **Reference.** Format guides for runtime files. Not authoritative for enforcement. | Squad (Coordinator) at init | Squad (Coordinator) |
 | `.squad/rai/policy.md` | **Authoritative RAI policy.** Check categories, terminology standards, and opt-out rules. | Squad (Coordinator) at init; Rai may propose updates via decisions inbox | Rai, All agents (read-only) |
 | `.squad/rai/audit-trail.md` | **Derived / append-only.** RAI review evidence log. Redacted — never contains raw secrets or harmful content. | Rai (append only) | Rai, Squad (Coordinator) |
+| `.squad/fact-checker/policy.md` | **Authoritative verification + Devil's Advocate policy.** Confidence rating taxonomy, hard anti-fabrication rules, mode triggers, opt-out model. | Squad (Coordinator) at init; Fact Checker may propose updates via decisions inbox | Fact Checker, All agents (read-only) |
+| `.squad/fact-checker/audit-trail.md` | **Derived / append-only.** Verification verdicts + DA brief evidence log. Succinct — verdict + citation, never raw source material. | Fact Checker (append only) | Fact Checker, Squad (Coordinator) |
 | `.squad/plugins/marketplaces.json` | **Authoritative plugin config.** Registered marketplace sources. | Squad CLI (`squad plugin marketplace`) | Squad (Coordinator) |
 
 **Rules:**

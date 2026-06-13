@@ -154,6 +154,12 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Fact checker charter template',
   },
   {
+    source: 'fact-checker-policy.md',
+    destination: 'templates/fact-checker-policy.md',
+    overwriteOnUpgrade: true,
+    description: 'Fact checker policy template (verification + DA methodology)',
+  },
+  {
     source: 'skill.md',
     destination: 'templates/skill.md',
     overwriteOnUpgrade: true,

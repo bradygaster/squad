@@ -139,6 +139,98 @@ describe('Squad Initialization', () => {
       expect(existsSync(join(TEST_ROOT, '.copilot', 'skills'))).toBe(true);
     });
 
+    it('should seed .squad/fact-checker/{policy,audit-trail}.md (regression: bradygaster/squad#1299)', async () => {
+      // Fact Checker is an always-on built-in (#789 + #1254, single agent dual
+      // operating mode: Verification + Devil's Advocate). It must get the
+      // same first-class state-dir treatment as Rai: policy.md + audit-trail.md
+      // under .squad/fact-checker/. Without these, fact-checker is "a name on
+      // disk with a 21-line placeholder" (verbatim user feedback, 2026-06-13).
+      const agents: InitAgentSpec[] = [
+        { name: 'lead', role: 'lead' },
+        { name: 'fact-checker', role: 'fact-checker', displayName: 'Fact Checker' },
+      ];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const policyPath = join(TEST_ROOT, '.squad', 'fact-checker', 'policy.md');
+      const auditPath = join(TEST_ROOT, '.squad', 'fact-checker', 'audit-trail.md');
+      expect(existsSync(policyPath), 'expected .squad/fact-checker/policy.md to be seeded').toBe(true);
+      expect(existsSync(auditPath), 'expected .squad/fact-checker/audit-trail.md to be seeded').toBe(true);
+
+      const policy = await readFile(policyPath, 'utf-8');
+      // Policy must declare both operating modes and the hard anti-fabrication rules.
+      expect(policy).toMatch(/Verification/i);
+      expect(policy).toMatch(/Devil['']s Advocate/i);
+      expect(policy).toMatch(/Confidence|✅|⚠️|❌|🔍/);
+      expect(policy).toMatch(/anti.?fabrication|never invent|never cite/i);
+
+      const audit = await readFile(auditPath, 'utf-8');
+      // Audit trail must be append-only and start empty (no entries yet).
+      expect(audit).toMatch(/Audit Trail/i);
+      expect(audit).toMatch(/append.?only/i);
+    });
+
+    it('should use the rich fact-checker-charter.md template for built-in agents at init (#1299)', async () => {
+      // Before #1299, both Rai and fact-checker got a 478-byte generic stub
+      // charter from generateCharter(). The rich charter templates
+      // (Rai-charter.md, fact-checker-charter.md) only got used by
+      // `squad upgrade`'s ensureBuiltinAgents path. This made both built-ins
+      // effectively "names on disk" until upgrade was run. Init now reads
+      // the rich template if it exists.
+      const agents: InitAgentSpec[] = [
+        { name: 'fact-checker', role: 'fact-checker', displayName: 'Fact Checker' },
+      ];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const charterPath = join(TEST_ROOT, '.squad', 'agents', 'fact-checker', 'charter.md');
+      expect(existsSync(charterPath)).toBe(true);
+      const charter = await readFile(charterPath, 'utf-8');
+      // Must contain rich-charter markers, not the generic stub.
+      // Generic stub has "Responsibilities", "Work Style", "Project Context"
+      // sections and ~500 bytes. Rich charter has Verification Methodology,
+      // Confidence Ratings, Devil's Advocate, etc., and is several KB.
+      expect(charter.length).toBeGreaterThan(1000);
+      expect(charter).toMatch(/Verification Methodology|## Verification/i);
+      expect(charter).toMatch(/Confidence Ratings|✅ Verified/i);
+      // Must NOT contain the generic stub boilerplate.
+      expect(charter).not.toMatch(/^## Work Style$/m);
+    });
+
+    it('should use the rich Rai-charter.md template at init (companion to fact-checker fix, #1299)', async () => {
+      // Same template-lookup logic must benefit Rai too. Before #1299, Rai's
+      // charter.md was a 478-byte generic stub even though Rai-charter.md
+      // (4525 bytes) shipped in templates/.
+      const agents: InitAgentSpec[] = [
+        { name: 'Rai', role: 'Rai', displayName: 'Rai' },
+      ];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const charterPath = join(TEST_ROOT, '.squad', 'agents', 'Rai', 'charter.md');
+      expect(existsSync(charterPath)).toBe(true);
+      const charter = await readFile(charterPath, 'utf-8');
+      expect(charter.length).toBeGreaterThan(1000);
+      // Rich Rai charter mentions RAI policy + audit-trail paths.
+      expect(charter).toMatch(/\.squad\/rai\/policy\.md/);
+      expect(charter).toMatch(/\.squad\/rai\/audit-trail\.md/);
+    });
+
     it('should create .gitattributes for merge drivers', async () => {
       const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
       const options: InitOptions = {
