@@ -60,6 +60,7 @@ describe('TEMPLATE_MANIFEST routing (iter-5: no doc dumping into .squad/ root)',
       'scribe-charter.md': 'templates/scribe-charter.md',
       'Rai-charter.md': 'templates/Rai-charter.md',
       'fact-checker-charter.md': 'templates/fact-checker-charter.md',
+      'devils-advocate-charter.md': 'templates/devils-advocate-charter.md',
       'rai-policy.md': 'templates/rai-policy.md',
     };
 

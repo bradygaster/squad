@@ -17,7 +17,12 @@ describe('fact-checker role', () => {
     expect(role!.routingPatterns).toContain('fact-check');
     expect(role!.routingPatterns).toContain('verify');
     expect(role!.routingPatterns).toContain('hallucination');
-    expect(role!.routingPatterns).toContain("devil's advocate");
+    // Note: "devil's advocate" was historically routed here when Fact Checker
+    // had dual operating mode. With the separate Devil's Advocate role
+    // (see test/devils-advocate-role.test.ts), DA-style routing is now its
+    // own role's responsibility. Fact Checker focuses on empirical claim
+    // verification only.
+    expect(role!.routingPatterns).not.toContain("devil's advocate");
   });
 
   it('has verification-focused expertise', () => {

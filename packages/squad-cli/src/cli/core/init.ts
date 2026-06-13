@@ -237,6 +237,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         name: 'fact-checker',
         role: 'fact-checker',
         displayName: 'Fact Checker',
+      },
+      {
+        name: 'devils-advocate',
+        role: 'devils-advocate',
+        displayName: "Devil's Advocate",
       }
     ],
     configFormat: options.sdk ? 'sdk' : 'markdown',

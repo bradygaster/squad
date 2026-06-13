@@ -825,6 +825,7 @@ export function ensureBuiltinAgents(dest: string, templatesDir: string): string[
   const builtins: Array<{ dirName: string; templateFile: string; displayName: string }> = [
     { dirName: 'Rai', templateFile: 'Rai-charter.md', displayName: 'Rai' },
     { dirName: 'fact-checker', templateFile: 'fact-checker-charter.md', displayName: 'Fact Checker' },
+    { dirName: 'devils-advocate', templateFile: 'devils-advocate-charter.md', displayName: "Devil's Advocate" },
   ];
 
   const created: string[] = [];

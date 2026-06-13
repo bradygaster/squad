@@ -154,6 +154,12 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Fact checker charter template',
   },
   {
+    source: 'devils-advocate-charter.md',
+    destination: 'templates/devils-advocate-charter.md',
+    overwriteOnUpgrade: true,
+    description: 'Devil\'s Advocate charter template',
+  },
+  {
     source: 'skill.md',
     destination: 'templates/skill.md',
     overwriteOnUpgrade: true,

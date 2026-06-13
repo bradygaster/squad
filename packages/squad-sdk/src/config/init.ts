@@ -208,7 +208,11 @@ const AGENT_TEMPLATES: Record<string, { displayName: string; description: string
   },
   'fact-checker': {
     displayName: 'Fact Checker',
-    description: 'Devil\'s advocate and verification agent — validates claims, detects hallucinations, and runs counter-hypotheses.'
+    description: 'Verification agent — validates claims, detects hallucinations, checks that URLs / package versions / API endpoints actually exist.'
+  },
+  'devils-advocate': {
+    displayName: "Devil's Advocate",
+    description: 'Design challenger and pre-mortem analyst — surfaces hidden assumptions, constructs the strongest counter-argument, and sketches alternative approaches before the team converges.'
   }
 };
 
