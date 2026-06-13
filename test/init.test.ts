@@ -136,7 +136,37 @@ describe('Squad Initialization', () => {
       expect(existsSync(join(TEST_ROOT, '.squad', 'agents'))).toBe(true);
       expect(existsSync(join(TEST_ROOT, '.squad', 'casting'))).toBe(true);
       expect(existsSync(join(TEST_ROOT, '.squad', 'decisions'))).toBe(true);
-      expect(existsSync(join(TEST_ROOT, '.copilot', 'skills'))).toBe(true);
+      expect(existsSync(join(TEST_ROOT, '.github', 'skills'))).toBe(true);
+      // bradygaster/squad#1126 regression — skills must NOT live at the legacy
+      // .copilot/skills path (invisible to all Copilot surfaces). Fresh init
+      // creates only the canonical .github/skills location.
+      expect(existsSync(join(TEST_ROOT, '.copilot', 'skills')), '.copilot/skills must NOT be created by fresh init (#1126)').toBe(false);
+    });
+
+    it('should install Squad-bundled skills at .github/skills/{name}/SKILL.md (#1126)', async () => {
+      // #1126: skills at .copilot/skills/ are invisible to all GitHub Copilot
+      // surfaces (cloud agent, CLI outside Squad, VS Code extension, @copilot
+      // coding agent). The canonical project-skills location per the official
+      // Agent Skills spec is .github/skills/.
+      //
+      // This test asserts:
+      //   1. squad-conventions (a manifest-curated bundled skill) lands at
+      //      .github/skills/squad-conventions/SKILL.md
+      //   2. The legacy .copilot/skills/squad-conventions location is NOT
+      //      created in a fresh init
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const canonical = join(TEST_ROOT, '.github', 'skills', 'squad-conventions', 'SKILL.md');
+      const legacy = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+      expect(existsSync(canonical), 'expected squad-conventions at .github/skills/').toBe(true);
+      expect(existsSync(legacy), 'must NOT install to legacy .copilot/skills/ (#1126)').toBe(false);
     });
 
     it('should seed .squad/fact-checker/{policy,audit-trail}.md (regression: bradygaster/squad#1299)', async () => {
@@ -265,7 +295,7 @@ describe('Squad Initialization', () => {
 
       await initSquad(options);
 
-      const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad-help', 'SKILL.md');
+      const skillPath = join(TEST_ROOT, '.github', 'skills', 'squad-help', 'SKILL.md');
       expect(existsSync(skillPath)).toBe(true);
       const content = await readFile(skillPath, 'utf-8');
       expect(content).toContain('name: "squad-help"');
@@ -292,7 +322,7 @@ describe('Squad Initialization', () => {
 
       await initSquad(options);
 
-      const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad', 'SKILL.md');
+      const skillPath = join(TEST_ROOT, '.github', 'skills', 'squad', 'SKILL.md');
       expect(existsSync(skillPath)).toBe(true);
       const content = await readFile(skillPath, 'utf-8');
       expect(content).toMatch(/^user-invocable:\s*true\s*$/m);

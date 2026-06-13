@@ -820,7 +820,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'decisions'),
     join(squadDir, 'decisions', 'inbox'),
     join(squadDir, 'memory'),
-    join(teamRoot, '.copilot', 'skills'),
+    join(teamRoot, '.github', 'skills'),
     join(squadDir, 'plugins'),
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
@@ -1271,9 +1271,19 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
 
   // -------------------------------------------------------------------------
   // Copy starter skills
+  //
+  // Skills live at `.github/skills/{name}/SKILL.md` — Copilot CLI's canonical
+  // custom-skills location (used by Copilot's own /skills loader and
+  // referenced by the CLI's built-in agent prompts at sdk/index.js:2246,
+  // 2252, 2595). Earlier versions of Squad installed to `.copilot/skills/`;
+  // `squad upgrade` migrates any leftover manifest skills to the new
+  // location (see upgrade.ts).
+  //
+  // bradygaster/squad#1126 (canonical issue; PR #1304) — adopt the canonical
+  // .github/skills/ path.
   // -------------------------------------------------------------------------
 
-  const skillsDir = join(teamRoot, '.copilot', 'skills');
+  const skillsDir = join(teamRoot, '.github', 'skills');
   if (templatesDir && storage.existsSync(join(templatesDir, 'skills'))) {
     const skillsSrc = join(templatesDir, 'skills');
     const existingSkills = storage.existsSync(skillsDir) ? storage.listSync(skillsDir) : [];
@@ -1285,7 +1295,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
           copyRecursiveSync(srcSkill, join(skillsDir, skillName), storage);
         }
       }
-      createdFiles.push('.copilot/skills');
+      createdFiles.push('.github/skills');
     }
   }
 

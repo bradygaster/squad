@@ -38,7 +38,7 @@ const INIT_INFRASTRUCTURE_DIRS = [
   '.squad/decisions/inbox',
   '.squad/casting',
   '.squad/agents',
-  '.copilot/skills',
+  '.github/skills',
 ];
 
 /**

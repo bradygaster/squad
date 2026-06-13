@@ -467,7 +467,7 @@ const ENSURE_DIRECTORIES = [
   '.squad/decisions/inbox',
   '.squad/casting',
   '.squad/agents',
-  '.copilot/skills',
+  '.github/skills',
 ];
 
 /**
@@ -624,7 +624,78 @@ function warnIfSkillCustomized(srcPath: string, destPath: string, sourceName: st
 }
 
 /**
- * Sync manifest-declared skills to .copilot/skills/, respecting overwriteOnUpgrade.
+ * Migrate skills from the legacy `.copilot/skills/<name>/` location to the
+ * canonical `.github/skills/<name>/`. Only migrates skills that appear in
+ * `TEMPLATE_MANIFEST` (manifest-curated Squad skills) — does NOT touch
+ * user-added skills in `.copilot/skills/`. After successful migration,
+ * removes the now-empty `.copilot/skills/<name>/` directories.
+ *
+ * Idempotent: when a skill already exists at the new location the legacy
+ * copy is tombstoned without comparing content — this protects any
+ * in-place customization the user made at `.github/skills/<name>/` from
+ * being clobbered, and means re-running upgrade is a no-op on the new
+ * location. If only the legacy copy exists, it is moved over.
+ *
+ * See bradygaster/squad#1126 (canonical issue) — this is the migration
+ * piece of that fix; #1304 is the PR that implements it.
+ */
+function migrateLegacyCopilotSkills(dest: string): { migrated: string[]; tombstoned: string[] } {
+  const legacyDir = path.join(dest, '.copilot', 'skills');
+  if (!storage.existsSync(legacyDir)) return { migrated: [], tombstoned: [] };
+
+  const manifestSkills = new Set(
+    TEMPLATE_MANIFEST
+      .filter(f => f.source.startsWith('skills/'))
+      .map(f => f.source.split('/')[1]) // 'skills/foo/SKILL.md' -> 'foo'
+      .filter((s): s is string => Boolean(s)),
+  );
+
+  const newDir = path.join(dest, '.github', 'skills');
+  const migrated: string[] = [];
+  const tombstoned: string[] = [];
+
+  for (const entry of storage.listSync(legacyDir)) {
+    if (!manifestSkills.has(entry)) continue; // leave user-added skills alone
+    const legacySkillDir = path.join(legacyDir, entry);
+    if (!storage.isDirectorySync(legacySkillDir)) continue;
+
+    const newSkillDir = path.join(newDir, entry);
+    if (storage.existsSync(newSkillDir)) {
+      // New location already has it — drop the legacy copy without overwriting.
+      try {
+        storage.deleteDirSync(legacySkillDir);
+        tombstoned.push(path.posix.join('.copilot/skills', entry));
+      } catch {
+        // best-effort; leave the legacy dir if we can't remove it
+      }
+      continue;
+    }
+
+    try {
+      storage.mkdirSync(newDir, { recursive: true });
+      copyDirRecursive(legacySkillDir, newSkillDir);
+      storage.deleteDirSync(legacySkillDir);
+      migrated.push(path.posix.join('.github/skills', entry));
+    } catch {
+      // best-effort; leave the legacy dir if anything fails
+    }
+  }
+
+  // If the legacy `.copilot/skills/` directory is now empty, remove it too.
+  try {
+    if (storage.existsSync(legacyDir) && storage.listSync(legacyDir).length === 0) {
+      storage.deleteDirSync(legacyDir);
+      tombstoned.push('.copilot/skills');
+    }
+  } catch {
+    // best-effort
+  }
+
+  return { migrated, tombstoned };
+}
+
+/**
+ * Sync manifest-declared skills to .github/skills/, respecting overwriteOnUpgrade.
  * Only skills listed in TEMPLATE_MANIFEST are installed — not the entire templates/skills/ dir.
  */
 function syncAllSkills(dest: string, templatesDir: string): number {
@@ -709,9 +780,18 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
     filesUpdated.push(...builtinAgents);
   }
 
+  const skillMigration = migrateLegacyCopilotSkills(dest);
+  if (skillMigration.migrated.length > 0) {
+    success(`migrated ${skillMigration.migrated.length} skill(s) from .copilot/skills/ → .github/skills/`);
+    filesUpdated.push(...skillMigration.migrated);
+  }
+  if (skillMigration.tombstoned.length > 0) {
+    success(`removed ${skillMigration.tombstoned.length} stale .copilot/skills entries (now live at .github/skills/)`);
+  }
+
   const skillCount = syncAllSkills(dest, templatesDir);
   if (skillCount > 0) {
-    success(`synced ${skillCount} skills to .copilot/skills/`);
+    success(`synced ${skillCount} skills to .github/skills/`);
     filesUpdated.push(`skills (${skillCount})`);
   }
 

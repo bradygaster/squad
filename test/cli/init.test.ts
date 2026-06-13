@@ -74,7 +74,7 @@ describe('CLI: init command', () => {
     expect(existsSync(join(TEST_ROOT, '.squad', 'decisions', 'inbox'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'orchestration-log'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'casting'))).toBe(true);
-    expect(existsSync(join(TEST_ROOT, '.copilot', 'skills'))).toBe(true);
+    expect(existsSync(join(TEST_ROOT, '.github', 'skills'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'plugins'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'identity'))).toBe(true);
   });
@@ -237,7 +237,7 @@ describe('CLI: init command', () => {
   it('should copy starter skills if none exist', async () => {
     await runInit(TEST_ROOT);
     
-    const skillsPath = join(TEST_ROOT, '.copilot', 'skills');
+    const skillsPath = join(TEST_ROOT, '.github', 'skills');
     const skills = await readdir(skillsPath);
     
     // Should have at least one skill

@@ -329,7 +329,7 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | PRD intake ("here's the PRD", "read the PRD at X", pastes spec) | Follow PRD Mode (see that section) |
 | Human member management ("add {name} as PM", routes to human) | Follow Human Team Members (see that section) |
 | Ralph commands ("Ralph, go", "keep working", "Ralph, status", "Ralph, idle") | Follow Ralph — Work Monitor (see that section) |
-| "squad commands", "what can squad do", "show me squad options", "slash commands", "what commands are available" | Read `.copilot/skills/squad/SKILL.md`, present categorized menu (see squad skill). Users can also invoke this directly via `/squad`. |
+| "squad commands", "what can squad do", "show me squad options", "slash commands", "what commands are available" | Read `.github/skills/squad/SKILL.md`, present categorized menu (see squad skill). Users can also invoke this directly via `/squad`. |
 | "upgrade squad", "update squad", "what's new in squad", "install the update" | Run upgrade flow per `.squad/templates/session-init-reference.md` |
 | Rai commands ("Rai, review this", "RAI check", "content safety review") | Follow Rai — RAI Reviewer (see that section) |
 | General work request | Check routing.md, spawn best match + any anticipatory agents |
@@ -337,11 +337,11 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | Ambiguous | Pick the most likely agent; say who you chose |
 | Multi-agent task (auto) | Check `ceremonies.md` for `when: "before"` ceremonies whose condition matches; run before spawning work |
 
-<!-- Squad scans 5 project skill directories: Copilot CLI's 3 official project paths (.github/skills/, .claude/skills/, .agents/skills/) per https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills — plus Squad's 2 conventions .squad/skills/ and .copilot/skills/. Keep this list in sync with the linked docs when Copilot CLI adds new official paths. -->
+<!-- Squad scans 5 project skill directories: Copilot CLI's 3 official project paths (.github/skills/, .claude/skills/, .agents/skills/) per https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills — plus Squad's 2 conventions .squad/skills/ (team-earned) and .copilot/skills/ (legacy install path; new installs use .github/skills/ which is Copilot CLI's canonical custom-skills location). Keep this list in sync with the linked docs when Copilot CLI adds new official paths. -->
 **Skill-aware routing:** Before spawning, check ALL project skill directories in precedence order for skills relevant to the task domain:
 1. `.squad/skills/` — **Team-earned skills** (highest precedence). Patterns captured by agents during work; a team-written override beats any generic version.
-2. `.copilot/skills/` — **Project playbook.** Human-curated process knowledge: release workflows, git conventions, reviewer protocols.
-3. `.github/skills/` — **Generic project skills.** Sits alongside `.github/workflows/` and `.github/copilot-instructions.md`; common location for shared-repo skills.
+2. `.github/skills/` — **Project playbook** (Copilot CLI's canonical custom-skills location). Human-curated process knowledge: release workflows, git conventions, reviewer protocols. Sits alongside `.github/workflows/` and `.github/copilot-instructions.md`. `squad init` and `squad upgrade` install Squad's bundled skills here.
+3. `.copilot/skills/` — **Legacy install path** (pre-1304). Older squads may have skills here; `squad upgrade` migrates them to `.github/skills/`. Still scanned for any user-added or unmigrated skills.
 4. `.claude/skills/` — **Claude-ecosystem skills.** Vendor-specific path; less common in multi-tool projects.
 5. `.agents/skills/` — **Generic agents path** (lowest project precedence). Least-specific convention.
 

@@ -142,8 +142,8 @@ describe('squad init --sdk flag', () => {
     // Assert: .squad/decisions/inbox/ exists
     expect(existsSync(join(tempDir, '.squad', 'decisions', 'inbox'))).toBe(true);
 
-    // Assert: .copilot/skills/ exists
-    expect(existsSync(join(tempDir, '.copilot', 'skills'))).toBe(true);
+    // Assert: .github/skills/ exists
+    expect(existsSync(join(tempDir, '.github', 'skills'))).toBe(true);
 
     // Assert: .squad/identity/ exists
     expect(existsSync(join(tempDir, '.squad', 'identity'))).toBe(true);
