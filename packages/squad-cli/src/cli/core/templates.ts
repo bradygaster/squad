@@ -252,10 +252,10 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     description: 'Multi-agent collaboration and handoff patterns',
   },
   {
-    source: 'skills/squad-commands/SKILL.md',
-    destination: '../.copilot/skills/squad-commands/SKILL.md',
+    source: 'skills/squad/SKILL.md',
+    destination: '../.copilot/skills/squad/SKILL.md',
     overwriteOnUpgrade: true,
-    description: 'In-chat command discovery — categorized menu of Squad operations',
+    description: 'Squad command catalog — invokable via /squad slash command',
   },
   {
     source: 'skills/squad-version-check/SKILL.md',

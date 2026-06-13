@@ -1,18 +1,14 @@
 ---
-name: squad-commands
-description: >
-  Categorized catalog of common Squad operations. Coordinator reads this
-  file and presents it as an interactive menu when the user asks for
-  available commands or help.
-domain: squad-operations
-confidence: high
-source: first-party
-triggers: ["squad commands", "what can squad do", "show me squad options", "slash commands"]
+name: squad
+description: >-
+  Squad's command catalog and interactive menu. Invoke via /squad (slash command) or natural language ("squad commands", "what can squad do", "show me squad options"). Presents categorized operations (Install & Upgrade, Team Management, Issues & PRs, Plugins & Skills, Model & Cost, Sessions & State) as an interactive picker. Routes to the right squad CLI command or the Squad coordinator agent.
+user-invocable: true
+allowedTools: []
 ---
 
 ## Menu Presentation Rules
 
-When the user triggers this skill ("squad commands", "help", "what can squad do", etc.):
+When the user triggers this skill (via `/squad` slash command, "squad commands", "help", "what can squad do", etc.):
 
 1. **Category-level menu first.** Present category names as an `ask_user` choice list:
    ```

@@ -37,7 +37,7 @@ const MANIFEST_SKILL_NAMES = [
   'reviewer-protocol',
   'test-discipline',
   'agent-collaboration',
-  'squad-commands',
+  'squad',
   'squad-version-check',
   'squad-help',
 ] as const;

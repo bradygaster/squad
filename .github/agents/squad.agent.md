@@ -298,7 +298,7 @@ The routing table determines **WHO** handles work. After routing, use Response M
 | PRD intake ("here's the PRD", "read the PRD at X", pastes spec) | Follow PRD Mode (see that section) |
 | Human member management ("add {name} as PM", routes to human) | Follow Human Team Members (see that section) |
 | Ralph commands ("Ralph, go", "keep working", "Ralph, status", "Ralph, idle") | Follow Ralph — Work Monitor (see that section) |
-| "squad commands", "what can squad do", "show me squad options", "slash commands", "what commands are available" | Read `.copilot/skills/squad-commands/SKILL.md`, present categorized menu (see squad-commands skill) |
+| "squad commands", "what can squad do", "show me squad options", "slash commands", "what commands are available" | Read `.copilot/skills/squad/SKILL.md`, present categorized menu (see squad skill). Users can also invoke this directly via `/squad`. |
 | "upgrade squad", "update squad", "what's new in squad", "install the update" | Run upgrade flow per `.squad/templates/session-init-reference.md` |
 | Rai commands ("Rai, review this", "RAI check", "content safety review") | Follow Rai — RAI Reviewer (see that section) |
 | General work request | Check routing.md, spawn best match + any anticipatory agents |
