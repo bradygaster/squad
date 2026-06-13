@@ -630,14 +630,14 @@ function warnIfSkillCustomized(srcPath: string, destPath: string, sourceName: st
  * user-added skills in `.copilot/skills/`. After successful migration,
  * removes the now-empty `.copilot/skills/<name>/` directories.
  *
- * Idempotent: skips skills already present at the new location with the
- * same content (so re-running upgrade does nothing). If both locations
- * exist with diverging content, the existing `.github/skills/` copy wins
- * and the legacy copy is tombstoned (logged + removed) — this protects
- * any in-place customization the user made at the new location.
+ * Idempotent: when a skill already exists at the new location the legacy
+ * copy is tombstoned without comparing content — this protects any
+ * in-place customization the user made at `.github/skills/<name>/` from
+ * being clobbered, and means re-running upgrade is a no-op on the new
+ * location. If only the legacy copy exists, it is moved over.
  *
- * See bradygaster/squad#1304 for the rationale (Copilot CLI's canonical
- * custom-skills location).
+ * See bradygaster/squad#1126 (canonical issue) — this is the migration
+ * piece of that fix; #1304 is the PR that implements it.
  */
 function migrateLegacyCopilotSkills(dest: string): { migrated: string[]; tombstoned: string[] } {
   const legacyDir = path.join(dest, '.copilot', 'skills');

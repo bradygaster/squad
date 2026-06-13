@@ -292,12 +292,12 @@ describe('CLI: upgrade command', () => {
     expect(Array.isArray(result.migrationsRun)).toBe(true);
   });
 
-  it('should migrate manifest skills from .copilot/skills/ to .github/skills/ (regression: #1304)', async () => {
-    // Pre-1304 squads have skills at .copilot/skills/. Upgrade must move
+  it('should migrate manifest skills from .copilot/skills/ to .github/skills/ (regression: #1126)', async () => {
+    // Pre-#1126 squads have skills at .copilot/skills/. Upgrade must move
     // manifest-curated skills to .github/skills/ (Copilot CLI's canonical
     // custom-skills location) without touching user-added skills.
     //
-    // Setup: simulate a pre-1304 squad with two skills in the legacy path —
+    // Setup: simulate a pre-#1126 squad with two skills in the legacy path —
     // one that's in the manifest (should migrate) and one that's user-added
     // (should be left alone).
     const legacyDir = join(TEST_ROOT, '.copilot', 'skills');
@@ -322,7 +322,7 @@ describe('CLI: upgrade command', () => {
     expect(existsSync(join(legacyUserSkill, 'SKILL.md'))).toBe(true);
   });
 
-  it('should NOT clobber a customized .github/skills/{name} if the legacy copy exists (regression: #1304)', async () => {
+  it('should NOT clobber a customized .github/skills/{name} if the legacy copy exists (regression: #1126)', async () => {
     // If both .copilot/skills/foo/ AND .github/skills/foo/ exist (e.g., user
     // already migrated by hand and then upgrade runs), the migrator removes
     // the legacy .copilot/skills copy and does NOT overwrite the new

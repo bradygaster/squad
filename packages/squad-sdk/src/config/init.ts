@@ -1279,7 +1279,8 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // `squad upgrade` migrates any leftover manifest skills to the new
   // location (see upgrade.ts).
   //
-  // bradygaster/squad#1304 — adopt the canonical .github/skills/ path.
+  // bradygaster/squad#1126 (canonical issue; PR #1304) — adopt the canonical
+  // .github/skills/ path.
   // -------------------------------------------------------------------------
 
   const skillsDir = join(teamRoot, '.github', 'skills');

@@ -1115,13 +1115,23 @@ export class ToolRegistry {
         }
         try {
           const projectRoot = path.dirname(this.squadRoot);
-          const legacySkillDir = path.join(this.squadRoot, 'skills', args.skillName);
+          // .github/skills/ is the canonical write location (matches squad init/upgrade
+          // since #1126/#1304). The legacy locations are read-only fallbacks so users
+          // who haven't migrated yet can still read existing skills via this tool.
+          const githubSkillDir = path.join(projectRoot, '.github', 'skills', args.skillName);
           const copilotSkillDir = path.join(projectRoot, '.copilot', 'skills', args.skillName);
-          const skillDir = args.operation === 'write'
-            ? copilotSkillDir
-            : this.storage.existsSync(path.join(copilotSkillDir, 'SKILL.md'))
-              ? copilotSkillDir
-              : legacySkillDir;
+          const legacySkillDir = path.join(this.squadRoot, 'skills', args.skillName);
+
+          let skillDir: string;
+          if (args.operation === 'write') {
+            skillDir = githubSkillDir;
+          } else if (this.storage.existsSync(path.join(githubSkillDir, 'SKILL.md'))) {
+            skillDir = githubSkillDir;
+          } else if (this.storage.existsSync(path.join(copilotSkillDir, 'SKILL.md'))) {
+            skillDir = copilotSkillDir;
+          } else {
+            skillDir = legacySkillDir;
+          }
           const skillFile = path.join(skillDir, 'SKILL.md');
 
           if (args.operation === 'read') {
