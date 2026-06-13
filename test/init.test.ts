@@ -157,6 +157,33 @@ describe('Squad Initialization', () => {
       expect(content).toContain('.squad/decisions.md merge=union');
     });
 
+    it('should install the squad disambiguation skill (regression: #1297 — skill(Squad) lookup must succeed)', async () => {
+      // The Squad framework registers a custom Copilot CLI agent named
+      // "Squad". Coding models sometimes confuse that with a skill and call
+      // skill(Squad), which fails because all real skills are hyphenated
+      // lowercase (squad-commands, squad-conventions, etc.). The squad
+      // disambiguation skill exists at .copilot/skills/squad/SKILL.md so
+      // the lookup succeeds and tells the model the right next step
+      // (task tool with agent_type='Squad').
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad', 'SKILL.md');
+      expect(existsSync(skillPath)).toBe(true);
+      const content = await readFile(skillPath, 'utf-8');
+      // Hard requirements: the skill must NOT pretend to do work; it must
+      // route the model to the right tool.
+      expect(content).toContain('CUSTOM AGENT');
+      expect(content).toContain("agent_type=\"Squad\"");
+      expect(content).toContain('squad-commands');
+    });
+
     it('should create initial decisions.md', async () => {
       const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
       const options: InitOptions = {
