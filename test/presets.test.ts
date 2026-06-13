@@ -331,6 +331,206 @@ describe('applyPreset()', () => {
     const results = applyPreset('nope', '/tmp/anywhere');
     expect(results[0]!.status).toBe('error');
   });
+
+  // Regression tests for bradygaster/squad#1288 — applyPreset must wire the
+  // preset agents into team.md, routing.md, and the casting state files so
+  // the coordinator's mode-switch check sees a populated ## Members table
+  // and skips Init Mode.
+
+  it('wires preset agents into team.md ## Members (#1288)', () => {
+    const homeDir = join(TMP, 'apply-team');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-team/presets/starter/agents/dev', 'apply-team/presets/starter/agents/qa');
+    writeFile('apply-team/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [
+        { name: 'dev', role: 'developer' },
+        { name: 'qa', role: 'reviewer' },
+      ],
+    }));
+    writeFile('apply-team/presets/starter/agents/dev/charter.md', '# Dev');
+    writeFile('apply-team/presets/starter/agents/qa/charter.md', '# QA');
+
+    const squadDir = join(TMP, 'target-team');
+    const agentsDir = join(squadDir, 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    applyPreset('starter', agentsDir);
+
+    const teamMd = readFileSync(join(squadDir, 'team.md'), 'utf-8');
+    expect(teamMd).toContain('## Members');
+    expect(teamMd).toContain('| dev | developer |');
+    expect(teamMd).toContain('| qa | reviewer |');
+    expect(teamMd).toContain('`.squad/agents/dev/charter.md`');
+    expect(teamMd).toContain('`.squad/agents/qa/charter.md`');
+  });
+
+  it('merges preset agents into an existing team.md without duplicating rows (#1288)', () => {
+    const homeDir = join(TMP, 'apply-team-merge');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-team-merge/presets/starter/agents/qa');
+    writeFile('apply-team-merge/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'qa', role: 'reviewer' }],
+    }));
+    writeFile('apply-team-merge/presets/starter/agents/qa/charter.md', '# QA');
+
+    const squadDir = join(TMP, 'target-team-merge');
+    const agentsDir = join(squadDir, 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    // Pre-existing team.md from a prior squad init/cast with one member
+    writeFileSync(join(squadDir, 'team.md'), [
+      '# Squad Team',
+      '',
+      '## Coordinator',
+      '',
+      '| Name | Role | Notes |',
+      '|------|------|-------|',
+      '| Squad | Coordinator | Routes work. |',
+      '',
+      '## Members',
+      '',
+      '| Name | Role | Charter | Status |',
+      '|------|------|---------|--------|',
+      '| Picard | Lead | `.squad/agents/picard/charter.md` | ✅ Active |',
+      '',
+      '## Project Context',
+      '',
+      '- **Project:** Existing',
+      '',
+    ].join('\n'));
+
+    applyPreset('starter', agentsDir);
+
+    const teamMd = readFileSync(join(squadDir, 'team.md'), 'utf-8');
+    expect(teamMd).toContain('| Picard | Lead |');
+    expect(teamMd).toContain('| qa | reviewer |');
+    expect(teamMd).toContain('## Project Context'); // section after Members preserved
+
+    // Idempotency: a second apply must not duplicate the qa row
+    applyPreset('starter', agentsDir);
+    const teamMdAfter = readFileSync(join(squadDir, 'team.md'), 'utf-8');
+    const qaCount = (teamMdAfter.match(/\| qa \| reviewer \|/g) ?? []).length;
+    expect(qaCount).toBe(1);
+  });
+
+  it('writes casting registry.json, history.json, and policy.json (#1288)', () => {
+    const homeDir = join(TMP, 'apply-casting');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-casting/presets/starter/agents/dev');
+    writeFile('apply-casting/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('apply-casting/presets/starter/agents/dev/charter.md', '# Dev');
+
+    const squadDir = join(TMP, 'target-casting');
+    const agentsDir = join(squadDir, 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    applyPreset('starter', agentsDir);
+
+    const registry = JSON.parse(readFileSync(join(squadDir, 'casting', 'registry.json'), 'utf-8'));
+    expect(registry.agents).toHaveProperty('dev');
+    expect(registry.agents.dev.persistent_name).toBe('dev');
+    expect(registry.agents.dev.universe).toBe('preset:starter');
+    expect(registry.agents.dev.status).toBe('active');
+
+    const history = JSON.parse(readFileSync(join(squadDir, 'casting', 'history.json'), 'utf-8'));
+    expect(Object.keys(history.assignment_cast_snapshots).length).toBeGreaterThan(0);
+    const firstSnapshot = Object.values<{ agents: string[]; universe: string }>(
+      history.assignment_cast_snapshots,
+    )[0]!;
+    expect(firstSnapshot.agents).toContain('dev');
+    expect(firstSnapshot.universe).toBe('preset:starter');
+    expect(history.universe_usage_history.length).toBeGreaterThan(0);
+
+    const policy = JSON.parse(readFileSync(join(squadDir, 'casting', 'policy.json'), 'utf-8'));
+    expect(policy.universe_allowlist).toContain('*');
+    expect(policy.max_capacity).toBeGreaterThan(0);
+  });
+
+  it('preserves built-in role status labels in team.md (Scribe/Ralph/Rai/Fact Checker) — review on #1293', () => {
+    // A preset that happens to ship one of the always-on built-ins (Scribe,
+    // Ralph, Rai, Fact Checker) must produce the same Status cell that a
+    // fresh `squad init` cast would — '📋 Silent', '🔄 Monitor', '🛡️ RAI',
+    // '🔍 Verifier' respectively — NOT '✅ Active'. Pre-fix, memberRow()
+    // hardcoded '✅ Active' for every preset agent, which made
+    // preset-scaffolded teams visually disagree with cast-scaffolded teams
+    // for the same roster.
+    const homeDir = join(TMP, 'apply-status-roles');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold(
+      'apply-status-roles/presets/builtins/agents/scribe',
+      'apply-status-roles/presets/builtins/agents/ralph',
+      'apply-status-roles/presets/builtins/agents/rai',
+      'apply-status-roles/presets/builtins/agents/fact-checker',
+      'apply-status-roles/presets/builtins/agents/dev',
+    );
+    writeFile('apply-status-roles/presets/builtins/preset.json', JSON.stringify({
+      name: 'builtins',
+      version: '1.0.0',
+      description: 'Preset that ships built-in roles',
+      agents: [
+        { name: 'scribe', role: 'Session Logger' },
+        { name: 'ralph', role: 'Work Monitor' },
+        { name: 'rai', role: 'RAI Reviewer' },
+        { name: 'fact-checker', role: 'Fact Checker' },
+        { name: 'dev', role: 'developer' },
+      ],
+    }));
+    for (const a of ['scribe', 'ralph', 'rai', 'fact-checker', 'dev']) {
+      writeFile(`apply-status-roles/presets/builtins/agents/${a}/charter.md`, `# ${a}`);
+    }
+
+    const squadDir = join(TMP, 'target-status-roles');
+    const agentsDir = join(squadDir, 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    applyPreset('builtins', agentsDir);
+
+    const teamMd = readFileSync(join(squadDir, 'team.md'), 'utf-8');
+    expect(teamMd).toContain('| scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Silent |');
+    expect(teamMd).toContain('| ralph | Work Monitor | `.squad/agents/ralph/charter.md` | 🔄 Monitor |');
+    expect(teamMd).toContain('| rai | RAI Reviewer | `.squad/agents/rai/charter.md` | 🛡️ RAI |');
+    expect(teamMd).toContain('| fact-checker | Fact Checker | `.squad/agents/fact-checker/charter.md` | 🔍 Verifier |');
+    // Regular agent still gets ✅ Active.
+    expect(teamMd).toContain('| dev | developer | `.squad/agents/dev/charter.md` | ✅ Active |');
+  });
+
+  it('appends routing rows for preset agents to routing.md (#1288)', () => {
+    const homeDir = join(TMP, 'apply-routing');
+    process.env['SQUAD_HOME'] = homeDir;
+
+    scaffold('apply-routing/presets/starter/agents/dev');
+    writeFile('apply-routing/presets/starter/preset.json', JSON.stringify({
+      name: 'starter',
+      version: '1.0.0',
+      description: 'Starter preset',
+      agents: [{ name: 'dev', role: 'developer' }],
+    }));
+    writeFile('apply-routing/presets/starter/agents/dev/charter.md', '# Dev');
+
+    const squadDir = join(TMP, 'target-routing');
+    const agentsDir = join(squadDir, 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+
+    applyPreset('starter', agentsDir);
+
+    const routing = readFileSync(join(squadDir, 'routing.md'), 'utf-8');
+    expect(routing).toContain('## Work Type → Agent');
+    expect(routing).toContain('| developer | dev |');
+  });
 });
 
 // ============================================================================
