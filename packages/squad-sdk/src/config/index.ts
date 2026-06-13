@@ -13,3 +13,4 @@ export * from './migration.js';
 export * from './markdown-migration.js';
 export * from './legacy-fallback.js';
 export * from './feature-audit.js';
+export * from './agent-collision.js';

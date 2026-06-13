@@ -6,7 +6,7 @@
 
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, wouldCollideWithExport } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
 import { detectSquadDir } from './detect-squad-dir.js';
@@ -918,9 +918,11 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       filesUpdated.push(`workflows (${wfFiles.length} files)`);
     }
 
-    // Refresh squad.agent.md
+    // Refresh squad.agent.md (skip if exported coordinator squad.md exists)
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
-    if (storage.existsSync(agentSrc)) {
+    if (wouldCollideWithExport(dest)) {
+      info('Exported coordinator (squad.md) detected — skipping squad.agent.md refresh');
+    } else if (storage.existsSync(agentSrc)) {
       storage.mkdirSync(path.dirname(agentDest), { recursive: true });
       writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
       success('upgraded squad.agent.md');
@@ -940,20 +942,24 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     };
   }
 
-  // Upgrade squad.agent.md
+  // Upgrade squad.agent.md (skip if exported coordinator squad.md exists)
   const templatesDir = getTemplatesDir();
   const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
-
-  if (!storage.existsSync(agentSrc)) {
-    fatal('squad.agent.md.template not found in templates — installation may be corrupted');
-  }
-
-  storage.mkdirSync(path.dirname(agentDest), { recursive: true });
-  writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
-
   const fromLabel = oldVersion === '0.0.0' || !oldVersion ? 'unknown' : oldVersion;
-  success(`upgraded coordinator from ${fromLabel} to ${cliVersion}`);
-  filesUpdated.push('squad.agent.md');
+
+  if (wouldCollideWithExport(dest)) {
+    info('Exported coordinator (squad.md) detected — skipping squad.agent.md write');
+  } else {
+    if (!storage.existsSync(agentSrc)) {
+      fatal('squad.agent.md.template not found in templates — installation may be corrupted');
+    }
+
+    storage.mkdirSync(path.dirname(agentDest), { recursive: true });
+    writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp);
+
+    success(`upgraded coordinator from ${fromLabel} to ${cliVersion}`);
+    filesUpdated.push('squad.agent.md');
+  }
 
   // Upgrade squad-owned files from template manifest
   // Exclude squad.agent.md — already copied and version-stamped above

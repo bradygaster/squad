@@ -211,8 +211,8 @@ async function main(): Promise<void> {
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
     console.log(`             Usage: plugin marketplace add|remove|list|browse`);
-    console.log(`  ${BOLD}export${RESET}     Export squad to a portable JSON snapshot`);
-    console.log(`             Default: squad-export.json (use --out <path> to override)`);
+    console.log(`  ${BOLD}export${RESET}     Export squad snapshot or agent (.github/agents/squad.md)`);
+    console.log(`             Usage: export [snapshot|agent] [--watch|--check|--out|--repo]`);
     console.log(`  ${BOLD}import${RESET}     Import squad from an export file`);
     console.log(`             Usage: import <file> [--force]`);
     console.log(`  ${BOLD}scrub-emails${RESET}  Remove email addresses from Squad state files`);
@@ -793,15 +793,9 @@ async function main(): Promise<void> {
   }
 
   if (cmd === 'export') {
+    // Routes to './cli/commands/export-coordinator.js' for agent mode
     const { runExport } = await import('./cli/commands/export.js');
-    const outIdx = args.indexOf('--out');
-    const outPath = (outIdx !== -1 && args[outIdx + 1]) ? args[outIdx + 1] : undefined;
-    const repoIdx = args.indexOf('--repo');
-    const repoArg = (repoIdx !== -1 && args[repoIdx + 1]) ? args[repoIdx + 1] : undefined;
-    const branchIdx = args.indexOf('--branch');
-    const branchArg = (branchIdx !== -1 && args[branchIdx + 1]) ? args[branchIdx + 1] : undefined;
-    const repoOptions = repoArg ? { repo: repoArg, branch: branchArg } : undefined;
-    await runExport(getSquadStartDir(), outPath, repoOptions);
+    await runExport(getSquadStartDir(), args.slice(1));
     return;
   }
 

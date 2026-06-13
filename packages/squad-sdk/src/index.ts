@@ -69,6 +69,9 @@ export * from './upstream/index.js';
 export * from './remote/index.js';
 export * from './streams/index.js';
 
+// Repo-native coordinator export (Tier 2: Coordinator-as-Agent)
+export * from './repo-native/index.js';
+
 // Builder functions (SDK-First Squad Mode)
 export {
   defineTeam,

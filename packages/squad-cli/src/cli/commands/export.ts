@@ -1,6 +1,11 @@
 /**
- * Export command — port from beta CLI
- * Exports squad to squad-export.json (local or GitHub repo)
+ * Export command — routes between snapshot (JSON) and coordinator (agent) exports.
+ *
+ * Usage:
+ *   squad export              → JSON snapshot (default, backward-compatible)
+ *   squad export snapshot     → JSON snapshot (explicit)
+ *   squad export agent [...]  → Coordinator agent (.github/agents/squad.md)
+ *   squad export --format agent [...]  → Same as above
  */
 
 import path from 'node:path';
@@ -29,6 +34,67 @@ interface ExportManifest {
 export interface ExportRepoOptions {
   repo: string;
   branch?: string;
+}
+
+type ExportMode = 'snapshot' | 'agent';
+
+/**
+ * Resolve which export mode to use based on argv.
+ */
+function resolveExportMode(args: string[]): { mode: ExportMode; remainingArgs: string[] } {
+  if (args.length === 0) {
+    return { mode: 'snapshot', remainingArgs: [] };
+  }
+
+  const firstArg = args[0];
+
+  // Explicit subcommand
+  if (firstArg === 'agent') {
+    return { mode: 'agent', remainingArgs: args.slice(1) };
+  }
+  if (firstArg === 'snapshot') {
+    return { mode: 'snapshot', remainingArgs: args.slice(1) };
+  }
+
+  // --format flag
+  const formatIdx = args.indexOf('--format');
+  if (formatIdx !== -1) {
+    const format = args[formatIdx + 1];
+    const remaining = [...args.slice(0, formatIdx), ...args.slice(formatIdx + 2)];
+    if (format === 'agent') return { mode: 'agent', remainingArgs: remaining };
+    if (format === 'snapshot') return { mode: 'snapshot', remainingArgs: remaining };
+  }
+
+  // Default: snapshot (backward-compatible)
+  return { mode: 'snapshot', remainingArgs: args };
+}
+
+/**
+ * Export command router — dispatches to snapshot or coordinator export.
+ */
+export async function runExport(dest: string, args?: string[] | string): Promise<void> {
+  // Backward-compat: if called with a string (old outPath signature), wrap it
+  const normalizedArgs: string[] = args === undefined ? []
+    : typeof args === 'string' ? ['--out', args]
+    : args;
+
+  const { mode, remainingArgs } = resolveExportMode(normalizedArgs);
+
+  if (mode === 'agent') {
+    const { runCoordinatorExport } = await import('./export-coordinator.js');
+    return runCoordinatorExport(dest, remainingArgs);
+  }
+
+  // Parse snapshot-mode args
+  const outIdx = remainingArgs.indexOf('--out');
+  const outPath = (outIdx !== -1 && remainingArgs[outIdx + 1]) ? remainingArgs[outIdx + 1] : undefined;
+  const repoIdx = remainingArgs.indexOf('--repo');
+  const repoArg = (repoIdx !== -1 && remainingArgs[repoIdx + 1]) ? remainingArgs[repoIdx + 1] : undefined;
+  const branchIdx = remainingArgs.indexOf('--branch');
+  const branchArg = (branchIdx !== -1 && remainingArgs[branchIdx + 1]) ? remainingArgs[branchIdx + 1] : undefined;
+  const repoOptions = repoArg ? { repo: repoArg, branch: branchArg } : undefined;
+
+  return runSnapshotExport(dest, outPath, repoOptions);
 }
 
 /**
@@ -125,9 +191,9 @@ function buildManifest(dest: string, storage: FSStorageProvider, squadInfo: { pa
 }
 
 /**
- * Export squad to JSON (local file or GitHub repo)
+ * JSON snapshot export (local file or GitHub repo).
  */
-export async function runExport(dest: string, outPath?: string, repoOptions?: ExportRepoOptions): Promise<void> {
+async function runSnapshotExport(dest: string, outPath?: string, repoOptions?: ExportRepoOptions): Promise<void> {
   const storage = new FSStorageProvider();
   const squadInfo = detectSquadDir(dest);
   const teamMd = path.join(squadInfo.path, 'team.md');
