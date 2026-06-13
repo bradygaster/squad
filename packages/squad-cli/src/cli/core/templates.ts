@@ -269,6 +269,12 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'How to actually use Squad — agent vs skill vs slash command (#1297 redirect)',
   },
+  {
+    source: 'skills/cross-squad-communication/SKILL.md',
+    destination: '../.github/skills/cross-squad-communication/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Cross-squad delegation — calling another squad as a sub-agent',
+  },
 
   // Session init reference (squad-owned, coordinator reads at session start)
   {

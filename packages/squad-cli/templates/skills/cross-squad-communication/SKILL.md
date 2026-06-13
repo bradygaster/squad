@@ -3,14 +3,14 @@ name: "cross-squad-communication"
 description: "Protocol for sending queries, delegating tasks, and sharing context between independent Squad instances across different repositories"
 domain: "multi-repo coordination"
 confidence: "medium"
-source: "Ported from tamirdresher/squad-skills (plugins/cross-squad-communication, validated against two production squad instances). Companion to the registry-aware cross-squad skill — this one teaches the actual communication protocols once a peer is discovered."
+source: "Ported from tamirdresher/squad-skills (plugins/cross-squad-communication). Companion to the registry-aware cross-squad skill — this one teaches the actual communication protocols once a peer is discovered. Pattern 0 (synchronous CLI) is the only end-to-end-validated pattern; Patterns 1, 2, 3 are documented from design but require live validation against your own setup before relying on them in production. See the Validation Status section at the bottom of this skill."
 ---
 
 ## Context
 
 When multiple repositories each have their own Squad (AI team), they need to exchange information: knowledge queries, PR reviews, task delegation, and dependency analysis. Each squad has its own agents, MCP tools, and issue tracker — there is no shared runtime.
 
-> **Companion skill — read first:** `cross-squad/SKILL.md` covers **discovery** of peer squads via `squad registry add/list/remove`. This skill picks up after a peer is known and covers the **communication protocols** themselves (sync CLI, async git, issue-based). The two are designed to be used together.
+> **Companion skill — read first:** `cross-squad/SKILL.md` covers **discovery** of peer squads via `squad registry add/list/remove`. This skill picks up after a peer is known and covers the **communication protocols** themselves — the four numbered patterns below: Pattern 0 (synchronous CLI), Pattern 1 (read-only knowledge query), Pattern 2 (git-based async), and Pattern 3 (GitHub-issue-based delegation). A separate non-numbered appendix (Cross-Repo Dependency Scan) is provided as a related analysis tool, not a communication pattern. The two skills are designed to be used together.
 
 **When this skill applies:**
 - A squad agent needs information from another squad-enabled repo
@@ -254,7 +254,9 @@ gh issue create \
 
 ---
 
-### Pattern 4: Cross-Repo Dependency Scan
+### Appendix: Cross-Repo Dependency Scan (Related Analysis Tool — Not a Communication Pattern)
+
+> This section is intentionally listed as an appendix rather than "Pattern 4" — it is a one-off analysis utility for discovering how two repos relate, not a protocol the coordinator picks from the decision tree above. The four numbered communication patterns are 0–3.
 
 For discovering how two repos relate to each other.
 
@@ -365,7 +367,7 @@ Different repos may use GitHub Issues vs Azure DevOps Work Items vs Jira. Check 
 
 ## Validation Status
 
-Originally designed and validated against two production squad instances (a GitHub-hosted platform squad with ~10 agents and an Azure DevOps-hosted automation squad with ~4 agents). The protocols are platform-agnostic; the examples in this document use generic names so you can substitute your own repos.
+This skill was originally drafted against two prototype squad setups (a GitHub-hosted platform squad with ~10 agents and an Azure DevOps-hosted automation squad with ~4 agents). The protocols are platform-agnostic; the examples in this document use generic names so you can substitute your own repos. Patterns 0 and 1 have been exercised end-to-end in those prototypes; Patterns 2 and 3 are documented from design but have not been end-to-end-validated against a live target repo.
 
 | Scenario | Result |
 |----------|--------|
