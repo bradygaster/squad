@@ -98,10 +98,13 @@ describe('CLI: init command', () => {
 
   it('should NOT write any squad_state entries to ~/.copilot/mcp-config.json (regression: #1296)', async () => {
     // iter-8 design: init writes squad_state to repo-root .mcp.json ONLY.
-    // The unconditional ensureSquadStateMcpInUserConfig call at init.ts:408
-    // (and upgrade.ts:738) used to write squad_state_<hash> to HOME on every
-    // init, accumulating one entry per project with no GC and contradicting
-    // the iter-8 docstring's stated "No HOME modifications" intent.
+    // Pre-fix, the unconditional `ensureSquadStateMcpInUserConfig` call
+    // inside both `initSquad` (SDK) and the `upgrade` command used to
+    // write squad_state_<hash> to HOME on every init, accumulating one
+    // entry per project with no GC and contradicting the iter-8
+    // docstring's stated "No HOME modifications" intent. (Referencing the
+    // function name rather than line numbers keeps this comment durable
+    // against unrelated edits in init.ts / upgrade.ts.)
     //
     // This test isolates the developer's real HOME by setting USERPROFILE
     // (Windows) and HOME (POSIX) to a temp dir before init, then asserting

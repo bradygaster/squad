@@ -720,9 +720,10 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
   filesUpdated.push('.squad/templates/');
 
   // iter-8: write squad_state MCP entry to repo-root `.mcp.json`
-  // (auto-loaded by Copilot CLI 5.3+ walking up from cwd to git root)
-  // and tombstone any stale project-level entry left by older Squad
-  // versions in `.copilot/mcp-config.json`. No HOME modifications.
+  // (auto-loaded by Copilot CLI ≥1.0.59, which walks up from cwd to the
+  // git root looking for .mcp.json) and tombstone any stale project-level
+  // entry left by older Squad versions in `.copilot/mcp-config.json`.
+  // No HOME modifications.
   const pinnedSpec = await resolveSquadStateMcpSpec(getPackageVersion());
   try {
     const rootResult = ensureSquadStateMcpInRoot(dest, getPackageVersion(), pinnedSpec);
@@ -734,9 +735,9 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
     warn(`Could not write .mcp.json: ${err instanceof Error ? err.message : err}`);
   }
   // iter-8: do NOT write to ~/.copilot/mcp-config.json on upgrade. The
-  // repo-root .mcp.json write above is sufficient for Copilot CLI 5.3+
-  // (auto-loads .mcp.json from cwd up) AND for `copilot -p` from the
-  // project root. Out-of-tree `copilot -p` should use
+  // repo-root .mcp.json write above is sufficient for Copilot CLI ≥1.0.59
+  // (walks from cwd up looking for .mcp.json) AND for `copilot -p` from
+  // the project root. Out-of-tree `copilot -p` should use
   // `--additional-mcp-config @.mcp.json`. See bradygaster/squad#1296.
   const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
   if (tomb.removed) {

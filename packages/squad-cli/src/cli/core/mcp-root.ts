@@ -9,7 +9,7 @@
  *
  * iter-8 flips it back inside the project: we write `squad_state` to a
  * repo-root `.mcp.json` under the plain (un-namespaced) `squad_state`
- * key. Copilot CLI 5.3+ auto-loads `.mcp.json` walking up from cwd to
+ * key. Copilot CLI ≥1.0.59 auto-loads `.mcp.json` walking up from cwd to
  * the git root, so the entry is picked up by bare
  * `copilot --yolo --autopilot --agent squad ...` invocations with no
  * wrapper script and no HOME modifications.

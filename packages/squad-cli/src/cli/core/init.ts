@@ -367,7 +367,8 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         // leaving the bridge unwired. Force-insert/pin the squad_state entry so
         // the MCP server is reachable regardless of pre-existing config.
         // iter-8: write squad_state to repo-root `.mcp.json` (auto-loaded by
-        // Copilot CLI 5.3+ walking up from cwd to git root) and tombstone any
+        // Copilot CLI ≥1.0.59, which walks up from cwd to git root finding
+        // .mcp.json files — see sdk/index.js loader) and tombstone any
         // stale project-level entry left by the SDK init writer in
         // `.copilot/mcp-config.json`. No HOME modifications.
         try {
@@ -400,8 +401,8 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
     }
     // iter-8: do NOT write to ~/.copilot/mcp-config.json. The repo-root
-    // .mcp.json write above is sufficient for Copilot CLI 5.3+ (which
-    // auto-loads .mcp.json walking up from cwd to git root) AND for
+    // .mcp.json write above is sufficient for Copilot CLI ≥1.0.59 (which
+    // walks up from cwd to git root looking for .mcp.json) AND for
     // `copilot -p` invocations launched from the project root. Users who
     // launch `copilot -p` from outside the project root should use
     // `--additional-mcp-config @.mcp.json` (already documented at the end
