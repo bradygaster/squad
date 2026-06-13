@@ -16,6 +16,8 @@ tools:
 ## Context
 When an organization runs multiple Squad instances (e.g., platform-squad, frontend-squad, data-squad), those squads need to discover each other, share context, and hand off work across repository boundaries. This skill teaches agents how to coordinate across squads without creating tight coupling.
 
+> **Companion skill — for protocol details:** `cross-squad-communication/SKILL.md` covers the four communication patterns (sync CLI, async git-based, issue-based) once a peer squad is discovered via the registry below. This skill answers "who?" — the companion answers "how?".
+
 Cross-squad orchestration applies when:
 - A task requires capabilities owned by another squad
 - An architectural decision affects multiple squads

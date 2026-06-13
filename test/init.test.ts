@@ -280,12 +280,6 @@ describe('Squad Initialization', () => {
     });
 
     it('should install the squad-help disambiguation skill (regression: #1297 / supersedes squad name collision)', async () => {
-      // The Squad framework registers a Copilot CLI agent named "Squad" at
-      // .github/agents/squad.agent.md. Coding models sometimes confuse that
-      // with a skill and call skill(Squad), which fails. Fix: name the
-      // disambiguation skill "squad-help" instead — avoids the agent-name
-      // collision (so /skills lists it) and is discoverable via natural-
-      // language match on its description.
       const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
       const options: InitOptions = {
         teamRoot: TEST_ROOT,
@@ -305,14 +299,6 @@ describe('Squad Initialization', () => {
     });
 
     it('should install the squad slash-command skill with user-invocable: true (regression: /squad must appear)', async () => {
-      // Users want to type /squad in Copilot CLI to see Squad's command
-      // catalog. Copilot CLI auto-registers any skill with frontmatter
-      // user-invocable: true as a slash command using the skill's name.
-      // Verified against Copilot CLI 1.0.62-2 sdk/index.js, function Y_n:
-      //   getLoadedSkills().filter(e => e.userInvocable).map(...
-      //     ({name: `/${eF(e)}`, isSkill: true, skill: e}))
-      // Renamed from 'squad-commands' to 'squad' + set user-invocable: true
-      // so /squad shows the command catalog. Composes with squad-help.
       const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
       const options: InitOptions = {
         teamRoot: TEST_ROOT,
@@ -328,6 +314,24 @@ describe('Squad Initialization', () => {
       expect(content).toMatch(/^user-invocable:\s*true\s*$/m);
       expect(content).toMatch(/^name:\s*"?squad"?\s*$/m);
       expect(content).toContain('Menu Presentation Rules');
+    });
+
+    it('should install cross-squad-communication skill (companion to cross-squad — #5)', async () => {
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const skillPath = join(TEST_ROOT, '.github', 'skills', 'cross-squad-communication', 'SKILL.md');
+      expect(existsSync(skillPath)).toBe(true);
+      const content = await readFile(skillPath, 'utf-8');
+      expect(content).toContain('cross-squad-communication');
+      expect(content).toContain('Pattern 0');
+      expect(content).toContain('Pattern 2');
     });
 
     it('should create initial decisions.md', async () => {

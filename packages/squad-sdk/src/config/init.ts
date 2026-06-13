@@ -40,6 +40,7 @@ const MANIFEST_SKILL_NAMES = [
   'squad',
   'squad-version-check',
   'squad-help',
+  'cross-squad-communication',
 ] as const;
 
 // ============================================================================
