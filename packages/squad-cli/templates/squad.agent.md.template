@@ -131,6 +131,18 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **Resolve state backend:** Read `.squad/config.json` (at the resolved TEAM_ROOT) and check the `stateBackend` field. Valid values: `"local"` (default), `"orphan"`, `"two-layer"`. Legacy alias: `"worktree"` maps to `"local"`. Deprecated: `"git-notes"` maps to `"two-layer"` with a deprecation warning. Store as `STATE_BACKEND` and pass it into every spawn prompt. This determines how agents read and write mutable state (history, decisions, logs). Static config (charters, team.md, routing.md) always lives on disk regardless of backend. The `"two-layer"` option combines git-notes (commit-scoped annotations) with orphan branch (permanent state) — see the blog post for the full architecture.
 
+**State-backend handshake — MANDATORY on every session before any state mutation (bradygaster/squad#1305):**
+
+For all backends EXCEPT `"local"` / `"worktree"`, the runtime owns persistence and you MUST NOT touch `.squad/decisions.md`, `.squad/decisions/inbox/`, `.squad/agents/*/history.md`, `.squad/casting/*.json`, `.squad/identity/*.md`, or `.squad/memory/*` paths via `create` / `edit` / `write_file` tools. Those writes either fail at the pre-commit hook or create phantom state the runtime overwrites at next read — a contract violation that produces silent data loss.
+
+The `squad_state_*` and `memory.*` tools that own persistence are exposed via the `squad_state` MCP server (declared in `.mcp.json`). Copilot CLI may load MCP tools **lazily** — they are not always advertised in your initial function list at session start. You MUST proactively confirm they are reachable:
+
+1. If `STATE_BACKEND ∈ {"local", "worktree"}`: file ops on `.squad/` are valid; skip the probe.
+2. Otherwise (backend is `orphan`, `two-layer`, or `git-notes`): probe for `squad_state_health` (or any `squad_state_*` / `memory.*` tool) using whatever tool-discovery mechanism your runtime exposes (e.g. `tool_search_tool_regex` in Copilot CLI). If you can locate the tool, call `squad_state_health` once to confirm it answers; on success, treat the bridge as available for the rest of the session.
+3. **If the probe fails** (tool not found, or `squad_state_health` errors): **HALT** before any state write. Tell the user verbatim: *"Squad's runtime state bridge is missing for backend `{STATE_BACKEND}`. The `squad_state` MCP server in `.mcp.json` is not reachable in this Copilot session. Restart Copilot CLI so `.mcp.json` is loaded, or change `stateBackend` to `local` in `.squad/config.json`."* — and stop until the user acknowledges. Do not silently fall back to raw file ops.
+
+This handshake runs **once per session**, not per spawn. Cache the result.
+
 **⚡ Context caching:** After the first message in a session, `team.md`, `routing.md`, and `registry.json` are already in your context. Do NOT re-read them on subsequent messages — you already have the roster, routing rules, and cast names. Only re-read if the user explicitly modifies the team (adds/removes members, changes routing).
 
 **Session catch-up (lazy — not on every start):** Do NOT scan logs on every session start. Only provide a catch-up summary when:
@@ -273,14 +285,33 @@ The `name` parameter generates the human-readable agent ID shown in the tasks pa
 
 ### Memory Governance Tools
 
-When memory tools are available, use them before writing durable memory by hand:
+The `memory.*` tools share the same `squad_state` MCP server as `squad_state_*` (they're aliases in the same registry — see `packages/squad-cli/src/cli/commands/state-mcp.ts`). After the state-backend handshake above confirms the bridge is reachable, prefer governed memory tools for durable writes:
 
 - Classify candidate memories with `memory.classify`.
 - Persist approved durable facts, decisions, and policies with `memory.write`.
 - Search governed memory with `memory.search` before relying only on raw file search.
 - Promote, delete, and audit governed entries with `memory.promote`, `memory.delete`, and `memory.audit`.
 
-If memory tools are not available, use runtime state tools for durable Squad state when present. In MCP sessions these are exposed as `squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_delete`, `squad_state_list`, and `squad_state_health` aliases. Only fall back to local `.squad/` file writes when `STATE_BACKEND` is `worktree`/`local` and no runtime state tool exists. For `git-notes`, `orphan`, or `two-layer`, do not hand-write mutable state; report that the `squad_state` MCP/runtime state bridge is missing. Never claim provider-backed Copilot Memory, semantic indexing, or remote deletion unless a configured tool or CLI bridge performed the operation. External semantic memory is opt-in; forbidden or transient content must not be persisted.
+If `memory.*` is not present in the bridge (older Squad versions before the bridge landed) but `squad_state_*` is, use `squad_state_*` directly. Both are governed paths.
+
+**HARD RULE — Backend contract enforcement:** If `STATE_BACKEND ∈ {"orphan", "two-layer", "git-notes"}` AND the state-backend handshake (above) did NOT confirm reachable tools, you MUST NOT write to ANY of these paths via `create` / `edit` / `write_file`:
+
+- `.squad/decisions.md`
+- `.squad/decisions/inbox/**`
+- `.squad/agents/*/history.md`
+- `.squad/casting/*.json`
+- `.squad/identity/*.md`
+- `.squad/memory/**`
+- `.squad/orchestration-log/**`
+- `.squad/log/**`
+- `.squad/rai/audit-trail.md`
+- `.squad/fact-checker/audit-trail.md`
+
+These are runtime-managed paths under non-local backends. Hand-writing creates phantom state. The pre-commit hook will catch it and fail the user; even if it didn't, the runtime overwrites the file at next read. Report the missing bridge and halt instead.
+
+For `STATE_BACKEND ∈ {"local", "worktree"}`, file writes to `.squad/` are valid because the local backend IS the filesystem.
+
+**External memory:** Never claim provider-backed Copilot Memory, semantic indexing, or remote deletion unless a configured tool or CLI bridge performed the operation. External semantic memory is opt-in; forbidden or transient content must not be persisted.
 
 ### Routing
 
