@@ -52,9 +52,9 @@ squad init
 
 ```
 ✅ .github/agents/squad.agent.md (v0.2.0)
-✅ .ai-team-templates/
-✅ .ai-team/skills/ (starter skills)
-✅ .ai-team/ceremonies.md
+✅ .squad-templates/
+✅ .squad/skills/ (starter skills)
+✅ .squad/ceremonies.md
 ✅ .gitattributes (merge=union rules)
 
 Squad is ready.
@@ -85,7 +85,7 @@ Next steps:
 
 ## 4. Handle Collisions
 
-If `.ai-team/` already exists (e.g., this repo already had a team), import will fail:
+If `.squad/` already exists (e.g., this repo already had a team), import will fail:
 
 ```bash
 squad import squad-export.json
@@ -101,7 +101,7 @@ Use `--force` to archive the existing team and replace it:
 squad import squad-export.json --force
 ```
 
-The existing `.ai-team/` is moved to `.ai-team-archive-2025-07-15-14-30-00/`. Nothing is deleted.
+The existing `.squad/` is moved to `.squad-archive-2025-07-15-14-30-00/`. Nothing is deleted.
 
 ---
 
@@ -142,5 +142,5 @@ During import, agent histories are automatically split:
 - **Review histories before sharing.** Agent histories may contain project-specific information — file paths, API keys mentioned in context, internal architecture details. Review `squad-export.json` before sending it to someone outside your organization.
 - **Import starts fresh decisions.** The imported team gets an empty `decisions.md`. Old decisions lived in the source project's context. Tell agents your conventions for the new project — they'll capture them.
 - **Casting universe is preserved.** Agents keep their names and the fictional universe they were drawn from. Danny is still Danny.
-- **Archives are cheap insurance.** When using `--force`, the old team is archived, not deleted. If the import doesn't work out, rename the archive back to `.ai-team/`.
+- **Archives are cheap insurance.** When using `--force`, the old team is archived, not deleted. If the import doesn't work out, rename the archive back to `.squad/`.
 - **Skills carry over.** Earned skills (with confidence levels) transfer with the team. Agents don't lose expertise when they move.

@@ -32,14 +32,14 @@ That's it.
 | File | Updated? | Notes |
 |------|----------|-------|
 | `.github/agents/squad.agent.md` | ✅ Yes | Overwritten with latest coordinator logic |
-| `.ai-team-templates/` | ✅ Yes | Overwritten with latest templates |
+| `.squad-templates/` | ✅ Yes | Overwritten with latest templates |
 | `.github/workflows/squad-*.yml` | ✅ Yes | Overwritten with latest squad workflows |
 | `.github/copilot-instructions.md` | ⚡ Conditional | Updated only if @copilot is enabled on the team |
-| `.ai-team/` | ❌ Never | Your team's knowledge, decisions, casting state, skills |
+| `.squad/` | ❌ Never | Your team's knowledge, decisions, casting state, skills |
 
-Squad-owned files (`squad.agent.md` and `.ai-team-templates/`) are replaced entirely. Don't put custom changes in them — they'll be lost on upgrade.
+Squad-owned files (`squad.agent.md` and `.squad-templates/`) are replaced entirely. Don't put custom changes in them — they'll be lost on upgrade.
 
-Your team state in `.ai-team/` is never touched. Agent charters, histories, decisions, casting state, skills, and session logs are all safe.
+Your team state in `.squad/` is never touched. Agent charters, histories, decisions, casting state, skills, and session logs are all safe.
 
 ---
 
@@ -51,13 +51,13 @@ Migrations are:
 - **Additive** — they only create new files or directories, never modify existing ones
 - **Idempotent** — safe to re-run; if the change already exists, it's skipped
 
-Example: upgrading to v0.2.0 creates `.ai-team/skills/` if it doesn't already exist.
+Example: upgrading to v0.2.0 creates `.squad/skills/` if it doesn't already exist.
 
 ---
 
-## Migrating .ai-team/ → .squad/ (v0.5.0+)
+## Migrating .squad/ → .squad/ (v0.5.0+)
 
-In Squad v0.5.0, the team state directory was renamed from `.ai-team/` to `.squad/`. Existing repos continue to work — Squad detects both. If you're still on `.ai-team/`, you'll see a deprecation warning.
+In Squad v0.5.0, the team state directory was renamed from `.squad/` to `.squad/`. Existing repos continue to work — Squad detects both. If you're still on `.squad/`, you'll see a deprecation warning.
 
 **To migrate your repo:**
 
@@ -73,15 +73,15 @@ Then commit:
 
 ```bash
 git add -A
-git commit -m "chore: migrate .ai-team/ → .squad/"
+git commit -m "chore: migrate .squad/ → .squad/"
 ```
 
 **What the migration does:**
-- Renames `.ai-team/` → `.squad/`
+- Renames `.squad/` → `.squad/`
 - Updates `.gitignore` and `.gitattributes` references
 - Scrubs email addresses from migrated files (PII cleanup)
 
-**Timeline:** `.ai-team/` support continues through v0.6.0. Migration becomes required in v1.0.0.
+**Timeline:** `.squad/` support continues through v0.6.0. Migration becomes required in v1.0.0.
 
 **Full details:** See the [Migration Guide](../get-started/migration.md).
 
@@ -140,11 +140,11 @@ Squad still runs any missing migrations in case a prior upgrade was interrupted.
 ## 2. Commit the Upgrade
 
 ```bash
-git add .github/agents/squad.agent.md .ai-team-templates/
+git add .github/agents/squad.agent.md .squad-templates/
 git commit -m "Upgrade Squad to v0.2.0"
 ```
 
-No changes to `.ai-team/` — the diff is limited to Squad-owned files.
+No changes to `.squad/` — the diff is limited to Squad-owned files.
 
 ---
 

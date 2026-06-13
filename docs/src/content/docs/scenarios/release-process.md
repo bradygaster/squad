@@ -31,9 +31,9 @@ Complete step-by-step guide for Squad maintainers: three-branch model (dev/previ
 
 | Branch | Purpose | Who Commits | Guard Active? | Files Allowed |
 |--------|---------|------------|---------------|---------------|
-| **dev** | Development — all work happens here | All team members | ❌ No | Everything (`.ai-team/`, team-docs, etc.) |
-| **preview** | Staging/testing — validated product only | Release coordinator | ✅ Yes | Distribution files only (`.ai-team/` blocked) |
-| **main** | Production — npm release source | Release coordinator | ✅ Yes | Distribution files only (`.ai-team/` blocked) |
+| **dev** | Development — all work happens here | All team members | ❌ No | Everything (`.squad/`, team-docs, etc.) |
+| **preview** | Staging/testing — validated product only | Release coordinator | ✅ Yes | Distribution files only (`.squad/` blocked) |
+| **main** | Production — npm release source | Release coordinator | ✅ Yes | Distribution files only (`.squad/` blocked) |
 
 ---
 
@@ -53,7 +53,7 @@ git reset --hard dev
 Remove forbidden paths:
 
 ```bash
-git rm --cached -r .ai-team/
+git rm --cached -r .squad/
 git rm --cached -r team-docs/
 ```
 
@@ -244,7 +244,7 @@ Use `.gitignore` rules and verify `git status` before pushing:
 
 ```bash
 git status
-git rm --cached -r .ai-team/
+git rm --cached -r .squad/
 git commit -m "chore: remove runtime state files"
 git push
 ```
@@ -266,15 +266,15 @@ ssh -T git@github.com
 
 ---
 
-### Issue: .ai-team/ Files Keep Getting Committed
+### Issue: .squad/ Files Keep Getting Committed
 
 **Fix:**
 
 ```bash
-git rm --cached -r .ai-team/
-grep ".ai-team" .gitignore || echo ".ai-team/" >> .gitignore
+git rm --cached -r .squad/
+grep ".squad" .gitignore || echo ".squad/" >> .gitignore
 git add .gitignore
-git commit -m "chore: ensure .ai-team/ is untracked"
+git commit -m "chore: ensure .squad/ is untracked"
 git push origin dev
 ```
 
@@ -336,13 +336,13 @@ Kobayashi, create a chore/sync-from-main branch, merge main into it, create and 
 ### To Test the Guard
 
 ```
-Kobayashi, test the guard workflow by creating a test branch with .ai-team/ content, creating a PR to main (should fail), removing the file (should pass), and cleaning up
+Kobayashi, test the guard workflow by creating a test branch with .squad/ content, creating a PR to main (should fail), removing the file (should pass), and cleaning up
 ```
 
 ### To Fix a Blocked PR
 
 ```
-Kobayashi, fetch the current PR state, remove all .ai-team/ and team-docs/ files, commit, push to update the PR, and wait for guard to pass
+Kobayashi, fetch the current PR state, remove all .squad/ and team-docs/ files, commit, push to update the PR, and wait for guard to pass
 ```
 
 ---

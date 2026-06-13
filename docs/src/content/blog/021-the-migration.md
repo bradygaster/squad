@@ -83,7 +83,7 @@ npm install -g @bradygaster/squad-cli
 
 ### Step 3: In your existing project, upgrade Squad files
 
-If you have a `.squad/` directory (or the old `.ai-team/`), run:
+If you have a `.squad/` directory (or the old `.squad/`), run:
 
 ```bash
 squad upgrade
@@ -91,7 +91,7 @@ squad upgrade
 
 This updates Squad-owned files (templates, core configs) **without touching your team state** (agents, history, decisions). Your custom changes are preserved.
 
-**Optional:** If you're migrating from `.ai-team/` to `.squad/`, use:
+**Optional:** If you're migrating from `.squad/` to `.squad/`, use:
 
 ```bash
 squad upgrade --migrate-directory

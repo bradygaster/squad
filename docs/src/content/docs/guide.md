@@ -459,13 +459,13 @@ squad doctor
 
 Doctor runs 9 checks — Node.js version, `gh` CLI auth, `.squad/` directory structure, team state, and more. It reports issues with clear fix instructions.
 
-**Migrating from `.ai-team/` to `.squad/`:**
+**Migrating from `.squad/` to `.squad/`:**
 
 ```bash
 squad migrate --from ai-team
 ```
 
-This renames `.ai-team/` to `.squad/` and updates all internal references.
+This renames `.squad/` to `.squad/` and updates all internal references.
 
 ---
 
@@ -557,7 +557,7 @@ Squad maintains a clear ownership model:
 | `squad plugin install <name>` | Install a plugin from the marketplace |
 | `squad plugin list` | List installed plugins |
 | `squad migrate --to sdk` | Convert existing squad to SDK-first config |
-| `squad migrate --from ai-team` | Migrate from `.ai-team/` to `.squad/` |
+| `squad migrate --from ai-team` | Migrate from `.squad/` to `.squad/` |
 | `squad subsquads` | Manage SubSquads |
 | `squad status` | Show team status and global config |
 | `squad --version` | Show installed version |

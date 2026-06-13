@@ -54,7 +54,7 @@ Your **codebase size doesn't matter** — agents aren't loading all 500K lines.
 
 ## 3. Routing Directs Work to the Right Agent
 
-Routing rules in `.ai-team/routing.md` keep agents focused:
+Routing rules in `.squad/routing.md` keep agents focused:
 
 ```markdown
 # Routing Rules
@@ -94,12 +94,12 @@ After 10 sessions, agent histories can grow large. The Scribe **archives old lea
 ```
 📋 Scribe — archiving agent histories
 
-Old learnings moved to .ai-team/history-archive/:
+Old learnings moved to .squad/history-archive/:
   - Neo's session logs from June
   - Trinity's session logs from July
 
 Current histories now cover the last 3 sessions only.
-Skills extracted from old sessions remain in .ai-team/skills/.
+Skills extracted from old sessions remain in .squad/skills/.
 ```
 
 Agents don't forget — they just move old details to the archive. **Generic knowledge becomes skills**, and **specific session logs are archived**.
@@ -110,7 +110,7 @@ Agents don't forget — they just move old details to the archive. **Generic kno
 
 After an agent solves a problem, it writes a skill file:
 
-`.ai-team/skills/stripe-webhook-verification.md`:
+`.squad/skills/stripe-webhook-verification.md`:
 
 ```markdown
 # Stripe Webhook Verification
@@ -124,7 +124,7 @@ const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
 
 Next time **any agent** handles Stripe webhooks, they read this skill first. No rediscovery. No re-exploration.
 
-Over time, your `.ai-team/skills/` directory becomes a **compressed knowledge base** — 50 skill files instead of 10,000 lines of history.
+Over time, your `.squad/skills/` directory becomes a **compressed knowledge base** — 50 skill files instead of 10,000 lines of history.
 
 ---
 
@@ -146,7 +146,7 @@ Agents will focus on:
   payment-service/package.json
 ```
 
-Or route by service in `.ai-team/routing.md`:
+Or route by service in `.squad/routing.md`:
 
 ```markdown
 **Payment service work** → Morpheus
