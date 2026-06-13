@@ -278,9 +278,19 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
 
   preset: (version) => {
     header('preset', version, 'Manage squad presets (curated agent collections)');
-    console.log(`Usage: squad preset <list|show <name>|apply <name>|save <name>|init> [options]\n`);
+    console.log(`Usage: squad preset <list|show <name>|apply <name>|save <name>|install <source>|init> [options]\n`);
+    console.log(`Subcommands:`);
+    console.log(`  ${BOLD}install <source>${RESET}            Install a preset from a GitHub URL, SSH URL, or local path`);
+    console.log(`                              <source> shapes (see review on #1225 for the fragment semantics):`);
+    console.log(`                                https://github.com/owner/repo`);
+    console.log(`                                https://github.com/owner/repo#my-preset      (bare = preset-name hint)`);
+    console.log(`                                https://github.com/owner/repo#path/to/preset (slash = literal subPath)`);
+    console.log(`                                https://github.com/owner/repo/tree/branch/path/to/preset`);
+    console.log(`                                git@github.com:owner/repo.git`);
+    console.log(`                                ./local/path/to/preset OR ./local/presets-collection\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--force${RESET}                     Overwrite existing agents on apply`);
+    console.log(`  ${BOLD}--force${RESET}                     Overwrite existing agents on apply, or existing preset on install`);
+    console.log(`  ${BOLD}--name <override>${RESET}           install: rename the preset on install (also picks one from a collection)`);
     console.log(`  ${BOLD}--remote${RESET}                    init: back presets with a GitHub repo\n`);
   },
 
