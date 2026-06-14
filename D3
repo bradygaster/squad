@@ -1,0 +1,6 @@
+npm install -g @bradygaster/squad-cli@latest
+squad upgrade
+squad upgrade updates squad.agent.md, templates, and GitHub workflows to the latest versions. It never touches your .squad/ team state — your agents, decisions, and history are always preserved.
+
+Use --force to re-apply updates even when your installed version already matches the latest.
+bunx vitest run src/services/llms/provider-settings.test.ts --config vitest.config.ts
