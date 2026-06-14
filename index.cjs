@@ -1451,7 +1451,8 @@ function readInstalledVersion(filePath) {
     if (!fs.existsSync(filePath)) return null;
     const content = fs.readFileSync(filePath, 'utf8');
     // Try to read from HTML comment first (new format)
-    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+)?) -->/);
+    // Accept pre-release suffixes with optional numeric tail (e.g. `0.10.0-insider.1`)
+    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?) -->/);
     if (commentMatch) return commentMatch[1];
     // Fallback: try old frontmatter format for backward compatibility during upgrade
     const frontmatterMatch = content.match(/^version:\s*"([^"]+)"/m);

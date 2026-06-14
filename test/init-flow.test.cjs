@@ -47,8 +47,38 @@ function readGeneratedAgent(dir) {
   return fs.readFileSync(agentPath, 'utf8');
 }
 
+// Read a satellite skill file. First checks the installed location
+// (.github/skills/<name>/SKILL.md inside the test temp dir), then falls back
+// to the source repo template at packages/squad-sdk/templates/skills/<name>/
+// SKILL.md so the test passes regardless of which init entry the test runner
+// uses (legacy index.cjs scaffold or modern packages/squad-cli/dist/cli-entry.js).
+// Returns the file content or null if the skill is not found in either place.
+function readSatelliteSkill(dir, skillName) {
+  const installedPath = path.join(dir, '.github', 'skills', skillName, 'SKILL.md');
+  if (fs.existsSync(installedPath)) {
+    return fs.readFileSync(installedPath, 'utf8');
+  }
+  const sourcePath = path.join(
+    __dirname, '..',
+    'packages', 'squad-sdk', 'templates', 'skills',
+    skillName, 'SKILL.md'
+  );
+  if (fs.existsSync(sourcePath)) {
+    return fs.readFileSync(sourcePath, 'utf8');
+  }
+  return null;
+}
+
 // Extract ALL Init Mode sections from squad.agent.md (handles two-phase split)
-function extractInitMode(content) {
+//
+// After #1308/#1311 the Init Mode prose was moved to the satellite skill
+// `coordinator-init-mode/SKILL.md` and squad.agent.md only retains a short
+// pointer ("Invoke the `skill` tool on `coordinator-init-mode`..."). When the
+// parent section is a pointer like that, we follow it and append the satellite
+// skill content so the structural assertions below (STOP gate, step 5 = ask,
+// step 6 = create, etc.) keep covering the prompt that the coordinator
+// actually executes at runtime.
+function extractInitMode(content, dir) {
   // Match either "## Init Mode" or "## Init Mode — Phase 1" as the start
   const phase1Match = content.match(/## Init Mode[^\n]*/);
   assert.ok(phase1Match, 'squad.agent.md should contain an Init Mode heading');
@@ -56,19 +86,33 @@ function extractInitMode(content) {
 
   // Find Phase 2 if it exists, and include it
   const phase2Match = content.indexOf('## Init Mode — Phase 2');
+  let initSection;
   if (phase2Match !== -1) {
     // Find the next non-Init-Mode ## heading after Phase 2
     const afterPhase2 = content.indexOf('\n## ', phase2Match + 22);
-    return afterPhase2 !== -1
+    initSection = afterPhase2 !== -1
       ? content.slice(initStart, afterPhase2)
+      : content.slice(initStart);
+  } else {
+    // Single-section fallback
+    const afterStart = content.indexOf('\n## ', initStart + 12);
+    initSection = afterStart !== -1
+      ? content.slice(initStart, afterStart)
       : content.slice(initStart);
   }
 
-  // Single-section fallback
-  const afterStart = content.indexOf('\n## ', initStart + 12);
-  return afterStart !== -1
-    ? content.slice(initStart, afterStart)
-    : content.slice(initStart);
+  // If the parent file delegates to the coordinator-init-mode satellite skill,
+  // append the satellite content so structural assertions (STOP gate, step
+  // numbering, "Look right?", file creation, etc.) cover the full runtime
+  // prompt — not just the pointer in squad.agent.md.
+  if (dir && /coordinator-init-mode/.test(initSection)) {
+    const satellite = readSatelliteSkill(dir, 'coordinator-init-mode');
+    if (satellite) {
+      initSection = initSection + '\n\n' + satellite;
+    }
+  }
+
+  return initSection;
 }
 
 describe('Init Mode prompt structure (#66)', () => {
@@ -103,7 +147,7 @@ describe('Init Mode prompt structure (#66)', () => {
     it('Init Mode contains a STOP or WAIT gate between proposing and creating', () => {
       initSquad(tmpDir);
       const content = readGeneratedAgent(tmpDir);
-      const initMode = extractInitMode(content);
+      const initMode = extractInitMode(content, tmpDir);
 
       // The prompt should contain an explicit instruction to stop and wait
       // for user confirmation before creating files.
@@ -126,7 +170,7 @@ describe('Init Mode prompt structure (#66)', () => {
     it('step 5 asks for user confirmation', () => {
       initSquad(tmpDir);
       const content = readGeneratedAgent(tmpDir);
-      const initMode = extractInitMode(content);
+      const initMode = extractInitMode(content, tmpDir);
 
       // Check that step 5 exists with a confirmation question
       const hasConfirmationQuestion =
@@ -143,7 +187,7 @@ describe('Init Mode prompt structure (#66)', () => {
     it('confirmation step is numbered before file creation step', () => {
       initSquad(tmpDir);
       const content = readGeneratedAgent(tmpDir);
-      const initMode = extractInitMode(content);
+      const initMode = extractInitMode(content, tmpDir);
 
       // Find the step number that contains confirmation (ask_user or "Look right?")
       // Step 5 may reference ask_user with "Look right?" on a following line
@@ -171,7 +215,7 @@ describe('Init Mode prompt structure (#66)', () => {
     it('prompt does not instruct creating files in the same step as proposing', () => {
       initSquad(tmpDir);
       const content = readGeneratedAgent(tmpDir);
-      const initMode = extractInitMode(content);
+      const initMode = extractInitMode(content, tmpDir);
 
       // Find step 4 (propose) through step 5 (confirm) — there should be
       // no file creation instructions in between.
@@ -201,7 +245,7 @@ describe('Init Mode prompt structure (#66)', () => {
     it('step 6 (Phase 2) is gated on user confirmation', () => {
       initSquad(tmpDir);
       const content = readGeneratedAgent(tmpDir);
-      const initMode = extractInitMode(content);
+      const initMode = extractInitMode(content, tmpDir);
 
       // Phase 2 should have a trigger condition requiring user confirmation
       const hasPhase2Gate =
@@ -229,7 +273,7 @@ describe('Init Mode prompt structure (#66)', () => {
     it('Init Mode instructs coordinator to use ask_user for confirmation', () => {
       initSquad(tmpDir);
       const content = readGeneratedAgent(tmpDir);
-      const initMode = extractInitMode(content);
+      const initMode = extractInitMode(content, tmpDir);
 
       // The prompt should tell the coordinator to use ask_user (or equivalent
       // explicit tool call) to get confirmation before proceeding.
