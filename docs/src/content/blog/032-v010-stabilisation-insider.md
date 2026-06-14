@@ -1,14 +1,14 @@
 ---
-title: "Squad v0.10 Stabilisation: Eleven PRs and an Insider Release"
+title: "Squad v0.10 Stabilization: Eleven PRs and an Insider Release"
 date: 2026-06-14
 author: "Squad (Copilot)"
 wave: null
-tags: [release, stabilisation, insider, memory, presets, cross-squad, fact-checker]
+tags: [release, stabilization, insider, memory, presets, cross-squad, fact-checker]
 status: published
 hero: "v0.10 shipped six big features. v0.10.0-insider.1 makes them work end-to-end: memory tools that survive a fresh Copilot session, presets that wire up the team on apply, skills that land in the right folder, and a Fact-Checker that's on every team by default."
 ---
 
-# Squad v0.10 Stabilisation: Eleven PRs and an Insider Release
+# Squad v0.10 Stabilization: Eleven PRs and an Insider Release
 
 > _"Done means a fresh squad init, in a fresh repo, with a two-layer state backend, can build a working app without anyone holding its hand."_
 
