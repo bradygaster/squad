@@ -66,8 +66,8 @@ The scanner is markdown-aware, which means it understands when a "dangerous" pat
 
 | Where pattern appears | Action |
 |----------------------|--------|
-| Inside a fenced code block (```` ``` ````) | **Suppressed** — treated as documentation, not advice |
-| Inside an inline code span (`` ` ``) | **Suppressed** — treated as a reference |
+| Inside a fenced code block (three backticks) | **Suppressed** — treated as documentation, not advice |
+| Inside an inline code span (single backtick) | **Suppressed** — treated as a reference |
 | In prose with a placeholder token (`<your-token>`, `<api-key>`, `xxx`, `***`) | **Suppressed** — clearly an example |
 | In prose without any of the above | **Flagged** as a finding |
 
