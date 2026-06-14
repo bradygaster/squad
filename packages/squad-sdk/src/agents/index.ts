@@ -122,6 +122,9 @@ export interface AgentCharter {
 
   /** Model preference from charter */
   modelPreference?: string;
+
+  /** Reasoning effort preference from charter */
+  reasoningEffort?: string;
 }
 
 export type AgentLifecycleState = 'pending' | 'spawning' | 'active' | 'idle' | 'error' | 'destroyed';
@@ -172,6 +175,7 @@ export class CharterCompiler {
       style,
       prompt: content,
       modelPreference: parsed.modelPreference,
+      reasoningEffort: parsed.reasoningEffort,
     };
   }
 
@@ -200,6 +204,7 @@ export class CharterCompiler {
       style,
       prompt: content,
       modelPreference: parsed.modelPreference,
+      reasoningEffort: parsed.reasoningEffort,
     };
   }
 

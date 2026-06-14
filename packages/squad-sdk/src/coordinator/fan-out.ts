@@ -11,6 +11,7 @@
 import type { AgentCharter } from '../agents/index.js';
 import type { EventBus } from '../client/event-bus.js';
 import type { SessionPool } from '../client/session-pool.js';
+import { VALID_REASONING_EFFORTS } from '../config/models.js';
 
 // --- Spawn Configuration ---
 
@@ -25,6 +26,8 @@ export interface AgentSpawnConfig {
   context?: string;
   /** Model override (skips resolution) */
   modelOverride?: string;
+  /** Reasoning effort override */
+  reasoningEffortOverride?: string;
 }
 
 // --- Spawn Result ---
@@ -51,6 +54,8 @@ export interface FanOutDependencies {
   compileCharter: (agentName: string) => Promise<AgentCharter>;
   /** Model resolution function */
   resolveModel: (charter: AgentCharter, override?: string) => Promise<string>;
+  /** Reasoning effort resolution function (optional for backwards compatibility) */
+  resolveReasoningEffort?: (charter: AgentCharter, override?: string) => Promise<string | undefined>;
   /** Session creation function */
   createSession: (config: any) => Promise<{ sessionId: string; sendMessage: (opts: any) => Promise<void> }>;
   /** Session pool for tracking */
@@ -121,10 +126,21 @@ async function spawnSingle(
       ? config.modelOverride
       : await deps.resolveModel(charter, config.modelOverride);
 
+    // Step 2b: Resolve reasoning effort
+    const rawEffort = deps.resolveReasoningEffort
+      ? await deps.resolveReasoningEffort(charter, config.reasoningEffortOverride)
+      : config.reasoningEffortOverride || charter.reasoningEffort || undefined;
+    // Validate: only pass through recognized effort values
+    const validEfforts = VALID_REASONING_EFFORTS as readonly string[];
+    const reasoningEffort = rawEffort && rawEffort !== 'auto' && validEfforts.includes(rawEffort)
+      ? rawEffort
+      : undefined;
+
     // Step 3: Create session
     const session = await deps.createSession({
       model,
       clientName: `squad-agent-${config.agentName}`,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
     });
 
     // Step 4: Register in session pool

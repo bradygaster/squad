@@ -30,6 +30,7 @@ export interface AgentConfig {
   displayName?: string;
   charter?: string;
   model?: string;
+  reasoningEffort?: string;
   tools?: string[];
   status?: 'active' | 'inactive' | 'retired';
 }
@@ -50,8 +51,10 @@ export interface RoutingRule {
 export interface ModelConfig {
   default: string;
   defaultTier: 'premium' | 'standard' | 'fast';
+  defaultReasoningEffort?: string;
   tiers: Record<string, string[]>;
   agentOverrides?: Record<string, string>;
+  agentReasoningEffortOverrides?: Record<string, string>;
   taskTypeMapping?: Record<string, string>;
 }
 

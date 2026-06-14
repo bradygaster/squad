@@ -457,6 +457,33 @@ Use silent fallback chains when a chosen model is unavailable, and omit the `mod
 
 **On-demand reference:** Read `.squad/templates/model-selection-reference.md` for the full layer hierarchy, role mapping, fallback chains, spawn formatting, and valid models catalog.
 
+### Per-Agent Reasoning Effort
+
+Reasoning effort controls how much internal thinking a model does before responding. Higher effort = deeper analysis but more tokens/cost. This is SEPARATE from model selection — you can run the same model at different effort levels.
+
+Valid levels: `low`, `medium`, `high`, `xhigh`. The value `auto` means "let the model decide" (platform default).
+
+**Resolution — check these layers in order (first match wins):**
+
+1. **Persistent Config:** `.squad/config.json` → `agentReasoningEffortOverrides.{agentName}`, then `defaultReasoningEffort`
+2. **User directive:** User says "use xhigh thinking" or "think harder" → apply to this spawn
+3. **Charter preference:** Agent's `## Model` section → `**Reasoning Effort:** xhigh`
+4. **Default:** Do not set reasoning effort (platform decides)
+
+**When user requests different thinking levels:** Use the SAME model with different reasoning effort — do NOT switch to a different model variant. Reasoning effort is a session parameter, not a model choice.
+
+- **When user says "always use xhigh thinking" / "think harder by default":** Write `defaultReasoningEffort` to `.squad/config.json`. Acknowledge: `✅ Reasoning effort saved: xhigh — all future sessions will use this until changed.`
+- **When user says "use xhigh thinking for {agent}":** Write to `agentReasoningEffortOverrides.{agent}` in `.squad/config.json`. Acknowledge: `✅ {Agent} will always use xhigh reasoning — saved to config.`
+- **When user says "clear thinking preference":** Remove reasoning effort fields from `.squad/config.json`. Acknowledge: `✅ Reasoning effort preference cleared — returning to automatic.`
+
+**Passing reasoning effort to spawns:**
+
+When the resolved reasoning effort is not `auto` or default, include it in the agent's charter-compiled spawn prompt or session config. The SDK threads it through to `SquadSessionConfig.reasoningEffort` automatically via the charter's `## Model` section.
+
+**Spawn output format — show the model choice and effort:**
+
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default reasoning effort, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-4.7-1m-internal · xhigh) — deep architecture analysis`).
+
 ### Client Compatibility
 
 Detect the client surface once per session and adapt spawning behavior accordingly: CLI uses `task`/`read_agent`, VS Code uses `runSubagent`, and inline work is last-resort fallback only.
