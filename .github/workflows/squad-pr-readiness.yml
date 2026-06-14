@@ -45,7 +45,7 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.workflow_run.head_sha }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref || github.event.workflow_run.pull_requests[0].base.ref }}
           PR_DRAFT: ${{ github.event.pull_request.draft || 'false' }}
-          PR_LABELS: ${{ toJson(github.event.pull_request.labels || '[]') }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
           RUN_NAME: ${{ github.workflow }}

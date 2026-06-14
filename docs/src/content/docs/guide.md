@@ -276,7 +276,7 @@ When a universe runs out of names, the overflow strategy determines what happens
 
 ## Skills system
 
-Skills are reusable knowledge patterns that agents load on demand. They live in `.squad/skills/{name}/SKILL.md` and teach agents how to handle specific tasks — branching workflows, deployment strategies, testing patterns, or domain expertise.
+Skills are reusable knowledge patterns that agents load on demand. They live in `.copilot/skills/{name}/SKILL.md` and teach agents how to handle specific tasks — branching workflows, deployment strategies, testing patterns, or domain expertise.
 
 Skills have a confidence lifecycle: `low` → `medium` → `high`, and track their source: `manual` (you wrote it), `observed` (agent saw a pattern), `earned` (validated through use), or `extracted` (imported from another project).
 

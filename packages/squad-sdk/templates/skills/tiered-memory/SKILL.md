@@ -1,33 +1,35 @@
 ---
 name: tiered-memory
-description: Three-tier agent memory model (hot/cold/wiki) for 20-55% context reduction per spawn
+description: Three-tier agent memory model (hot/cold/wiki) for context reduction per spawn
 domain: memory-management, performance
-confidence: high
-source: earned (production measurements in tamirdresher/tamresearch1, 34-74KB baseline payloads)
+confidence: design (runtime not yet implemented)
+source: design proposal
 ---
 
 # Skill: Tiered Agent Memory
 
+> **Status (v0.10.0):** This skill describes a **design proposal**, not a shipped runtime. Skill files install via `squad init`/`upgrade`, but the underlying tier scaffolding (`.squad/memory/hot/`, `cold/`, `wiki/`), Scribe promotion logic, and spawn-template tier-aware reads are tracked in [bradygaster/squad#1264](https://github.com/bradygaster/squad/issues/1264). Until those land, agents continue to load full `history.md` + `decisions.md` on every spawn.
+
 ## Overview
 
-Squad agents currently load their full context history on every spawn, resulting in 34–74KB payloads per agent (8,800–18,500 tokens). Measurement shows 82–96% of that context is "old noise" — information that is no longer relevant to the current task. The Tiered Agent Memory skill introduces a three-tier memory model that eliminates this bloat, achieving 20–55% context reduction per spawn in production.
+Squad agents today load their full context history on every spawn, which grows unboundedly across sessions. The Tiered Agent Memory model proposes a three-tier separation so agents only load the bytes that are actually relevant to the current task, with older context kept available on demand.
 
 ---
 
 ## Memory Tiers
 
 ### 🔥 Hot Tier — Current Session Context
-- **Size target:** ~2–4KB
+- **Size target:** keep small (~2–4KB typical)
 - **Load policy:** Always loaded. Every spawn includes hot memory by default.
 - **Contents:** Current task description, active decisions made this session, immediate blockers, last 3–5 actions taken, who you are talking to right now.
 - **Lifetime:** Current session only. Discarded after session ends (Scribe promotes relevant parts to Cold).
 - **Purpose:** Provide immediate task context without any latency or load decision.
 
 ### ❄️ Cold Tier — Summarized Cross-Session History
-- **Size target:** ~8–12KB
+- **Size target:** larger summary, not full transcript (~8–12KB typical)
 - **Load policy:** Load on demand. Include only when the task explicitly needs history.
 - **Contents:** Summarized past sessions (compressed by Scribe), cross-session decisions, recurring patterns, unresolved issues from prior work.
-- **Lifetime:** 30 days rolling window. After 30 days, Scribe promotes to Wiki tier.
+- **Lifetime:** Rolling window (default proposal: 30 days). Eligible entries are then promoted to Wiki.
 - **Purpose:** Answer "what have we tried before?" and "what was decided?" without replaying full transcripts.
 - **How to include:** Pass `--include-cold` in spawn template or add `## Cold Memory` section.
 
@@ -89,49 +91,34 @@ See: .squad/memory/wiki/{topic}.md
 
 ---
 
-## Measurement Data
+## Integration with Scribe Agent (design — not yet implemented)
 
-Baseline measurements from tamirdresher/tamresearch1 production runs (June 2025):
+Scribe is the proposed memory coordinator for this system. Once the runtime lands, Scribe will:
 
-| Agent | Total Context | Old Noise % | Hot-Only Size | Savings |
-|-------|--------------|-------------|---------------|---------|
-| Picard (Lead) | 74KB / 18.5K tokens | 96% | ~3KB | 55% |
-| Scribe | 52KB / 13K tokens | 91% | ~4KB | 48% |
-| Data | 43KB / 10.7K tokens | 88% | ~3.5KB | 42% |
-| Ralph | 38KB / 9.5K tokens | 85% | ~3KB | 38% |
-| Worf | 34KB / 8.5K tokens | 82% | ~3KB | 20% |
+1. **End of session:** Compress Hot → Cold summary (target: ~10% of session verbosity)
+2. **Aged cold entries:** Promote Cold → Wiki for decisions/facts that aged into stable knowledge
+3. **On-demand wiki writes:** Any agent can request Scribe to write a wiki entry mid-session
 
-**Average savings: 20–55% per spawn** with Hot-only loading. Cold + Wiki on-demand adds ~2–8KB when needed, still well below current baselines.
+Until then, see the Scribe charter for current behavior: `.squad/agents/scribe/charter.md`
 
 ---
 
-## Integration with Scribe Agent
-
-Scribe is the memory coordinator for this system. It automates tier promotion:
-
-1. **End of session:** Scribe compresses Hot → Cold summary (keeps ~10% of session verbosity)
-2. **After 30 days:** Scribe promotes Cold → Wiki for decisions/facts that aged into stable knowledge
-3. **On-demand wiki writes:** Any agent can request Scribe to write a wiki entry mid-session using `scribe:wiki-write`
-
-See Scribe charter: `.squad/agents/scribe/charter.md`
-
----
-
-## Implementation Checklist
+## Implementation Checklist (tracked in #1264)
 
 - [ ] Scribe writes Hot context file at session start (`.squad/memory/hot/{agent}.md`)
 - [ ] Scribe compresses and writes Cold summary at session end
 - [ ] Spawn templates default to Hot-only
 - [ ] Coordinators add `--include-cold` / `--include-wiki` flags as needed
 - [ ] Wiki entries stored in `.squad/memory/wiki/`
-- [ ] Cold entries stored in `.squad/memory/cold/` with 30-day TTL
+- [ ] Cold entries stored in `.squad/memory/cold/` with rolling TTL
 
 ---
 
 ## References
 
-- Upstream issue: bradygaster/squad#600
-- Production data: tamirdresher/tamresearch1 (June 2025)
+- Tracking issue: [bradygaster/squad#1264](https://github.com/bradygaster/squad/issues/1264) — installation gap + runtime status
+- Original design spike: [bradygaster/squad#686](https://github.com/bradygaster/squad/issues/686) — tiered memory implementation plan
+- Related: [bradygaster/squad#600](https://github.com/bradygaster/squad/issues/600) — context payload growth
 
 ---
 
@@ -162,7 +149,7 @@ Use this template when spawning any Squad agent. By default it loads **Hot tier 
 
 ### 🔥 Hot (always included)
 
-> Paste current session context here (2–4KB max):
+> Paste current session context here (~2–4KB target):
 
 ```
 Current task: {task_description}
@@ -178,12 +165,12 @@ Talking to: {current_interlocutor}
 
 > Load on demand. Do not inline unless specifically needed.
 
-Summarized cross-session history is at:  
+Summarized cross-session history is at:
 `.squad/memory/cold/{agent-name}.md`
 
 Include when:
 - Resuming interrupted work
-- Debugging a recurring issue  
+- Debugging a recurring issue
 - "What have we tried before?"
 
 **To load cold memory, add this section and fetch the file before spawning:**
@@ -218,17 +205,17 @@ Include when:
 ## Escalation
 
 If blocked or uncertain:
-- Architecture questions → @picard  
-- Security concerns → @worf  
-- Infrastructure/deployment → @belanna  
-- Memory/history questions → @scribe  
+- Architecture questions → @picard
+- Security concerns → @worf
+- Infrastructure/deployment → @belanna
+- Memory/history questions → @scribe
 
 ---
 
 ## Notes
 
-- Hot tier is always included and should stay under 4KB
-- Cold adds ~8–12KB; only include when history is relevant
+- Hot tier is always included; keep it focused
+- Cold adds a summary; only include when history is relevant
 - Wiki adds variable size; only include specific relevant docs
-- See `skills/tiered-memory/SKILL.md` for full tier reference
-- See `docs/tiered-memory-guide.md` for wiring instructions
+- Runtime backing is tracked in [bradygaster/squad#1264](https://github.com/bradygaster/squad/issues/1264) — until those changes land, this skill is design-only and agents continue to load full history.md + decisions.md on every spawn
+

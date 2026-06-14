@@ -37,3 +37,16 @@ docs/tests/screenshots/
 # Squad: PR-1200 picard local artifacts (do not commit)
 .pr-body-new.md
 .followup-issue-body.md
+
+# .NET build output
+bin/
+obj/
+artifacts/
+
+# Visual Studio IDE artifacts
+.vs/
+*.user
+*.userprefs
+
+# NOTE: .squad/casting/* is AUTHORITATIVE IDENTITY and MUST be committed to main.
+# Do not add .squad/casting/ to this ignore list.

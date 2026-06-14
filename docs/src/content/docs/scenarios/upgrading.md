@@ -153,3 +153,40 @@ No changes to `.ai-team/` — the diff is limited to Squad-owned files.
 - **Upgrade is safe.** It only overwrites files that Squad owns. Your team state is never modified.
 - **Don't customize `squad.agent.md`.** Any changes you make will be overwritten on the next upgrade. If you need custom behavior, use directives in `decisions.md` instead.
 - **Re-running upgrade is harmless.** If you're not sure whether an upgrade completed, run it again. It's idempotent.
+
+---
+
+## After upgrading to `two-layer` or `orphan`
+
+After running `squad upgrade --state-backend two-layer` (or `--state-backend orphan`), verify the migration completed cleanly:
+
+### 1. Working tree is clean
+
+```bash
+git status
+```
+
+You should see no changes. The migration removes the working-tree state files after copying them to the orphan branch — if `.squad/decisions.md` or any `history.md` files still appear as untracked or modified, rerun the migration.
+
+### 2. Orphan branch contains your state
+
+```bash
+git ls-tree --name-only -r squad-state
+```
+
+You should see your state files listed (e.g. `decisions.md`, `agents/scribe/history.md`). If the branch is missing or empty, the migration may not have completed.
+
+### 3. Push the orphan branch and notes once
+
+The orphan branch and any git notes need to be pushed to the remote so collaborators can access them:
+
+```bash
+git push origin squad-state
+git push origin 'refs/notes/squad*:refs/notes/squad*'
+```
+
+After this, the `post-commit` hook keeps both in sync automatically on every commit.
+
+### If state files reappear later
+
+If `.squad/decisions.md` or `history.md` files reappear in the working tree and a `git commit` is blocked with `⚠ squad pre-commit: refusing to commit two-layer state into the working tree`, see the [pre-commit troubleshooting entry](./troubleshooting#squad-pre-commit-refusing-to-commit-two-layer-state-into-the-working-tree) for the recovery flow.

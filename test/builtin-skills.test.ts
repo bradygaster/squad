@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { TEMPLATE_MANIFEST } from '../packages/squad-cli/src/cli/core/templates.js';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -21,7 +21,7 @@ const EXPECTED_BUILTIN_SKILLS = [
 // Unit tests for the skill manifest declarations. End-to-end scaffolding
 // (files actually written to disk) is tested via `squad init` integration tests.
 describe('built-in skills in TEMPLATE_MANIFEST', () => {
-  const skillEntries = TEMPLATE_MANIFEST.filter(f => f.destination.includes('.copilot/skills/'));
+  const skillEntries = TEMPLATE_MANIFEST.filter(f => f.destination.includes('.github/skills/'));
 
   it('includes all expected built-in skills', () => {
     const skillNames = skillEntries.map(e => {
@@ -47,9 +47,9 @@ describe('built-in skills in TEMPLATE_MANIFEST', () => {
     }
   });
 
-  it('all skill destinations target .copilot/skills/', () => {
+  it('all skill destinations target .github/skills/', () => {
     for (const entry of skillEntries) {
-      expect(entry.destination).toMatch(/\.copilot\/skills\/.+\/SKILL\.md$/);
+      expect(entry.destination).toMatch(/\.github\/skills\/.+\/SKILL\.md$/);
     }
   });
 

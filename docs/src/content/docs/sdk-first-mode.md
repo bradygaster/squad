@@ -398,7 +398,7 @@ const gitWorkflow = defineSkill({
 | `content` | string | ✅ | The skill body (patterns, examples) |
 | `tools` | `SkillTool[]` | ❌ | MCP tools relevant to this skill |
 
-Skills defined in `squad.config.ts` are generated to `.squad/skills/{name}/SKILL.md` when you run `squad build`.
+Skills defined in `squad.config.ts` are generated to `.copilot/skills/{name}/SKILL.md` when you run `squad build`.
 
 ---
 

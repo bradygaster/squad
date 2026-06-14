@@ -32,6 +32,12 @@ const MCP_TOOL_ALIASES: Record<string, string> = {
   squad_state_delete: 'squad_state_delete',
   squad_state_list: 'squad_state_list',
   squad_state_health: 'squad_state_health',
+  'memory.classify': 'memory.classify',
+  'memory.write': 'memory.write',
+  'memory.search': 'memory.search',
+  'memory.promote': 'memory.promote',
+  'memory.delete': 'memory.delete',
+  'memory.audit': 'memory.audit',
 };
 
 function parseObject(value: unknown): Record<string, unknown> {

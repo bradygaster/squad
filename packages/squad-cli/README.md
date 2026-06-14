@@ -223,7 +223,7 @@ When you run `squad init`, Squad creates a `.squad/` directory with this structu
 
 ## Built-in Skills
 
-When you run `squad init`, Squad installs **8 curated skills** into `.copilot/skills/`. These skills teach your agents best practices and conventions:
+When you run `squad init`, Squad installs **8 curated skills** into `.github/skills/`. These skills teach your agents best practices and conventions:
 
 | Skill | Purpose |
 |-------|---------|
@@ -236,19 +236,19 @@ When you run `squad init`, Squad installs **8 curated skills** into `.copilot/sk
 | `test-discipline` | Test-first discipline and coverage expectations |
 | `agent-collaboration` | Multi-agent collaboration and handoff patterns |
 
-Each skill is a `SKILL.md` file inside `.copilot/skills/<skill-name>/`.
+Each skill is a `SKILL.md` file inside `.github/skills/<skill-name>/`.
 
 ### Skill lifecycle
 
-- **`squad init`** — Installs the 8 manifest skills on first run. If `.copilot/skills/` already has content, init skips skill installation (idempotent).
+- **`squad init`** — Installs the 8 manifest skills on first run. If `.github/skills/` already has content, init skips skill installation (idempotent).
 - **`squad upgrade`** — Refreshes manifest skills to their latest versions. Skills marked `overwriteOnUpgrade: true` (all built-in skills) are always updated to pick up fixes and improvements.
 
 ### Adding custom skills
 
-You can add your own skills by creating a new directory under `.copilot/skills/`:
+You can add your own skills by creating a new directory under `.github/skills/`:
 
 ```
-.copilot/skills/my-custom-skill/
+.github/skills/my-custom-skill/
 └── SKILL.md
 ```
 

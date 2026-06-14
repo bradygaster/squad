@@ -25,7 +25,7 @@ That changed in v0.2.0 with the skills system.
 
 ## How It Works
 
-Skills are **earned domain knowledge** that changes how agents approach work. After completing a task, agents extract reusable patterns and write them to `.squad/skills/{skill-name}/SKILL.md` using the Anthropic SKILL.md open standard.
+Skills are **earned domain knowledge** that changes how agents approach work. After completing a task, agents extract reusable patterns and write them to `.copilot/skills/{skill-name}/SKILL.md` using the Anthropic SKILL.md open standard.
 
 Three categories exist:
 
@@ -71,15 +71,15 @@ Verbal designed the skill lifecycle (acquisition → reinforcement → correctio
 Kujan validated that:
 - Skills stored separately from history enable clean export (history is project-specific, skills are portable)
 - The `store_memory` tool (Anthropic's skill persistence API) was the wrong model for Squad — filesystem persistence is Squad's architecture
-- File paths in agent charters are frozen API contracts (changing `.squad/agents/{name}/skills.md` to `.squad/skills/` requires migration)
+- File paths in agent charters are frozen API contracts (changing `.squad/agents/{name}/skills.md` to `.copilot/skills/` requires migration)
 
 ### Open Standard Adoption (2026-02-09)
 
-Squad adopted the Agent Skills Open Standard (agentskills.io) and the SKILL.md YAML frontmatter format. Directory structure changed from per-agent files to a flat `.squad/skills/` directory. Skills are **team knowledge**, not agent-specific.
+Squad adopted the Agent Skills Open Standard (agentskills.io) and the SKILL.md YAML frontmatter format. Directory structure changed from per-agent files to a flat `.copilot/skills/` directory. Skills are **team knowledge**, not agent-specific.
 
 The final decision (Verbal, 2026-02-09):
 
-> _"Skills in `.squad/skills/{skill-name}/SKILL.md`. Coordinator injects `<available_skills>` XML for progressive disclosure (~50 tokens per skill at discovery). Skills portable beyond Squad — works in Claude Code, Copilot, any compliant tool."_
+> _"Skills in `.copilot/skills/{skill-name}/SKILL.md`. Coordinator injects `<available_skills>` XML for progressive disclosure (~50 tokens per skill at discovery). Skills portable beyond Squad — works in Claude Code, Copilot, any compliant tool."_
 
 ## Technical Details
 
@@ -113,9 +113,9 @@ What to avoid
 
 ### Discovery and Application
 
-1. **Coordinator reads** `.squad/skills/` directory at session start
+1. **Coordinator reads** `.copilot/skills/` directory at session start
 2. **Progressive disclosure**: Only skill names and descriptions are loaded initially (~50 tokens per skill)
-3. **Agent spawns with context**: Spawn template says "check `.squad/skills/{skill-name}/SKILL.md` if relevant"
+3. **Agent spawns with context**: Spawn template says "check `.copilot/skills/{skill-name}/SKILL.md` if relevant"
 4. **Agent reads full skill** when applicable to the task
 5. **Agent applies pattern** from the skill
 6. **Agent updates or extracts**: Bump confidence if validated, extract new skill if pattern discovered
@@ -136,7 +136,7 @@ Skills travel via the `squad-export.json` manifest:
 ```
 
 When imported into a new squad:
-- Skill files are written to `.squad/skills/{skill-name}/SKILL.md`
+- Skill files are written to `.copilot/skills/{skill-name}/SKILL.md`
 - Agents read them before first spawn
 - Team arrives at the new project already competent
 
@@ -161,7 +161,7 @@ squad plugin marketplace add github:squad-plugins/official
 squad plugin install aws-deployment-patterns
 ```
 
-The skill appears at `.squad/skills/aws-deployment-patterns/SKILL.md` and agents apply it on their next spawn.
+The skill appears at `.copilot/skills/aws-deployment-patterns/SKILL.md` and agents apply it on their next spawn.
 
 ### Cross-Tool Compatibility
 
@@ -179,7 +179,7 @@ Users aren't locked into Squad. The knowledge is portable.
 As of v0.2.0:
 
 - **2 built-in skills** shipped with Squad (`squad-conventions`, `label-driven-workflow`)
-- **15+ learned skills** in Squad's own `.squad/skills/` directory earned during dogfooding (GitHub Actions automation, Jekyll site deployment, Jest testing patterns, MCP tool discovery)
+- **15+ learned skills** in Squad's own `.copilot/skills/` directory earned during dogfooding (GitHub Actions automation, Jekyll site deployment, Jest testing patterns, MCP tool discovery)
 - **0 npm dependencies** — pure markdown with YAML frontmatter
 - **~50 tokens per skill** at discovery (name + description only)
 - **Full content (~500-2000 tokens)** loaded only when agent needs it

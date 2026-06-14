@@ -14,7 +14,8 @@ import { readdirSync, statSync, lstatSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { resolvePresetsDir, ensureSquadHome } from '../resolution.js';
-import type { PresetManifest, PresetApplyResult } from './types.js';
+import type { PresetManifest, PresetApplyResult, PresetAgent } from './types.js';
+import { scaffoldPresetIntoSquad } from './scaffold.js';
 
 export type { PresetManifest, PresetAgent, PresetApplyResult } from './types.js';
 
@@ -135,6 +136,39 @@ export function applyPreset(
       results.push({ agent: agent.name, status: 'installed' });
     } catch (err) {
       results.push({ agent: agent.name, status: 'error', reason: String(err) });
+    }
+  }
+
+  // After copying charters, wire the preset agents into team.md, routing.md,
+  // and the casting state files (registry/history/policy). Without this, the
+  // coordinator's mode-switch check sees an empty ## Members table and
+  // treats every session as Init Mode — see bradygaster/squad#1288. We only
+  // include agents that did not error out (installed + skipped-because-
+  // already-present) so the scaffolded team reflects the user's intent.
+  const wireableAgents: PresetAgent[] = manifest.agents.filter(a =>
+    results.some(r => r.agent === a.name && r.status !== 'error'),
+  );
+  if (wireableAgents.length > 0) {
+    const squadDir = path.dirname(targetDir);
+    try {
+      scaffoldPresetIntoSquad(squadDir, wireableAgents, presetName);
+    } catch (err) {
+      // Scaffolding failed but charters were copied — surface as a single
+      // synthetic error result so the CLI can warn but does not mask the
+      // per-agent install results.
+      //
+      // Use a clearly non-agent sentinel for the `agent` field (`<scaffold>`,
+      // wrapped in angle brackets which validateName rejects) instead of the
+      // preset name. The preset name is a legal agent name, and if a preset
+      // happens to ship an agent that shares the preset's name (`squad
+      // preset apply geektime` where the preset includes an agent literally
+      // called `geektime`), the consumer of the results could not tell the
+      // synthetic scaffold-failure row apart from a real per-agent error.
+      results.push({
+        agent: '<scaffold>',
+        status: 'error',
+        reason: `Charters copied (see per-agent rows above), but failed to wire team.md/routing.md/casting state for preset '${presetName}': ${String(err)}`,
+      });
     }
   }
 

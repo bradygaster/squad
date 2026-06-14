@@ -292,6 +292,65 @@ describe('CLI: upgrade command', () => {
     expect(Array.isArray(result.migrationsRun)).toBe(true);
   });
 
+  it('should migrate manifest skills from .copilot/skills/ to .github/skills/ (regression: #1126)', async () => {
+    // Pre-#1126 squads have skills at .copilot/skills/. Upgrade must move
+    // manifest-curated skills to .github/skills/ (Copilot CLI's canonical
+    // custom-skills location) without touching user-added skills.
+    //
+    // Setup: simulate a pre-#1126 squad with two skills in the legacy path —
+    // one that's in the manifest (should migrate) and one that's user-added
+    // (should be left alone).
+    const legacyDir = join(TEST_ROOT, '.copilot', 'skills');
+    const legacyManifestSkill = join(legacyDir, 'squad-conventions');
+    const legacyUserSkill = join(legacyDir, 'my-custom-skill');
+    await mkdir(legacyManifestSkill, { recursive: true });
+    await mkdir(legacyUserSkill, { recursive: true });
+    await writeFile(join(legacyManifestSkill, 'SKILL.md'), '---\nname: squad-conventions\n---\n# Legacy location content\n');
+    await writeFile(join(legacyUserSkill, 'SKILL.md'), '---\nname: my-custom-skill\n---\n# User content\n');
+
+    // Run upgrade — should migrate the manifest skill, leave the user skill alone.
+    await runUpgrade(TEST_ROOT);
+
+    const newManifestSkill = join(TEST_ROOT, '.github', 'skills', 'squad-conventions', 'SKILL.md');
+    expect(existsSync(newManifestSkill), 'expected squad-conventions to be migrated to .github/skills/').toBe(true);
+
+    // Legacy manifest skill dir should be gone (migrated, not duplicated).
+    expect(existsSync(legacyManifestSkill), 'expected legacy .copilot/skills/squad-conventions to be removed after migration').toBe(false);
+
+    // User-added skill at the legacy path should be PRESERVED.
+    expect(existsSync(legacyUserSkill), 'user-added .copilot/skills/my-custom-skill must NOT be moved or removed').toBe(true);
+    expect(existsSync(join(legacyUserSkill, 'SKILL.md'))).toBe(true);
+  });
+
+  it('should NOT clobber a customized .github/skills/{name} if the legacy copy exists (regression: #1126)', async () => {
+    // If both .copilot/skills/foo/ AND .github/skills/foo/ exist (e.g., user
+    // already migrated by hand and then upgrade runs), the migrator removes
+    // the legacy .copilot/skills copy and does NOT overwrite the new
+    // location.
+    //
+    // NOTE: A separate concern is that syncAllSkills will then overwrite
+    // .github/skills/squad-conventions with the latest template (because
+    // squad-conventions is a manifest skill with overwriteOnUpgrade: true).
+    // That's expected — manifest skills are squad-owned. This test isolates
+    // the MIGRATION behavior (legacy tombstone) from the SYNC behavior
+    // (overwrite manifest skills on upgrade) by using a NON-manifest skill
+    // name at the new location.
+    const legacyDir = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions');
+    const newDir = join(TEST_ROOT, '.github', 'skills', 'squad-conventions');
+    await mkdir(legacyDir, { recursive: true });
+    await mkdir(newDir, { recursive: true });
+    await writeFile(join(legacyDir, 'SKILL.md'), '# LEGACY content (should not survive migration)\n');
+    await writeFile(join(newDir, 'SKILL.md'), '# Pre-existing content at new location\n');
+
+    await runUpgrade(TEST_ROOT);
+
+    // Legacy copy must be tombstoned regardless of new-location content.
+    expect(existsSync(legacyDir), 'legacy .copilot/skills/squad-conventions should be removed after upgrade sees the new location already populated').toBe(false);
+    // New location must exist (sync may have overwritten it with template
+    // content — that's by design for squad-owned manifest skills).
+    expect(existsSync(join(newDir, 'SKILL.md'))).toBe(true);
+  });
+
   it('should handle .ai-team/ legacy directory', async () => {
     // Create a legacy .ai-team/ directory
     const legacyDir = join(TEST_ROOT, '.ai-team');
@@ -398,7 +457,7 @@ describe('CLI: upgrade command', () => {
     expect(created.length).toBeGreaterThanOrEqual(5);
     expect(existsSync(join(dir, '.squad', 'identity'))).toBe(true);
     expect(existsSync(join(dir, '.squad', 'sessions'))).toBe(true);
-    expect(existsSync(join(dir, '.copilot', 'skills'))).toBe(true);
+    expect(existsSync(join(dir, '.github', 'skills'))).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -520,7 +579,7 @@ describe('CLI: upgrade command', () => {
 
   it('warnIfSkillCustomized warns when a skill has been modified', async () => {
     const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
-    const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+    const skillPath = join(TEST_ROOT, '.github', 'skills', 'squad-conventions', 'SKILL.md');
     expect(existsSync(skillPath)).toBe(true);
 
     // Simulate old version so upgrade goes through the full manifest path
@@ -544,7 +603,7 @@ describe('CLI: upgrade command', () => {
 
   it('warnIfSkillCustomized does NOT warn for CRLF-only differences', async () => {
     const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
-    const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+    const skillPath = join(TEST_ROOT, '.github', 'skills', 'squad-conventions', 'SKILL.md');
     if (!existsSync(skillPath)) {
       await runUpgrade(TEST_ROOT);
     }
@@ -590,7 +649,7 @@ describe('CLI: upgrade command', () => {
 
   it('warnIfSkillCustomized warns during full version upgrade path', async () => {
     const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
-    const skillPath = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+    const skillPath = join(TEST_ROOT, '.github', 'skills', 'squad-conventions', 'SKILL.md');
     if (!existsSync(skillPath)) {
       await runUpgrade(TEST_ROOT);
     }

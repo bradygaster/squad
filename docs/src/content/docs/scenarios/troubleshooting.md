@@ -156,3 +156,50 @@ If below v20, upgrade to the latest LTS:
 - Use PowerShell or Git Bash (not cmd.exe)
 - Ensure git is in your PATH
 - Ensure `gh` CLI is in your PATH
+
+---
+
+## "⚠ squad pre-commit: refusing to commit two-layer state into the working tree"
+
+**Problem:** A `git commit` is blocked with the message above.
+
+**Cause:** You're on the `orphan` or `two-layer` backend, and one or more state files (`.squad/decisions.md`, `.squad/agents/*/history.md`, `.squad/casting/`, `.squad/routing/`) were staged for commit. These files belong on the `squad-state` orphan branch, not in your working branch. Something wrote them back to disk after the migration — a direct `fs.writeFile` call, an editor auto-save, or an external tool — and you staged them unintentionally.
+
+**Recovery flow:**
+
+1. **Unstage the state files:**
+   ```bash
+   git restore --staged .squad/decisions.md
+   git restore --staged ".squad/agents/*/history.md"
+   ```
+
+2. **Check whether the orphan branch already has the content** (it should, if `squad sync` has run):
+   ```bash
+   git show squad-state:decisions.md
+   git show squad-state:agents/<agent-name>/history.md
+   ```
+
+3. **If the working-tree copy contains new content not yet on the orphan branch**, lift it through Squad before deleting:
+   ```bash
+   squad memory write --file .squad/decisions.md
+   ```
+
+4. **Remove the working-tree copies:**
+   ```bash
+   # PowerShell
+   Remove-Item .squad\decisions.md -ErrorAction SilentlyContinue
+   Get-ChildItem .squad\agents -Recurse -Filter history.md | Remove-Item
+   ```
+   ```bash
+   # bash
+   rm -f .squad/decisions.md .squad/agents/*/history.md
+   ```
+
+5. **Commit normally** — the `post-commit` hook will call `squad sync --quiet` automatically:
+   ```bash
+   git commit -m "your commit message"
+   ```
+
+**When to use `SQUAD_SYNC_ACTIVE=1`:** Rarely. This env var bypasses both the pre-commit and post-commit hooks. It's intended for internal use by `squad sync` itself to prevent recursion. If you set it to unblock a commit, the state files will land in your working-branch history and appear in PRs — exactly what two-layer is designed to prevent. Use the recovery flow above instead.
+
+---

@@ -58,8 +58,9 @@ export async function resolveSquadStateMcpSpec(
   options: ResolveSquadStateMcpSpecOptions = {},
 ): Promise<SquadStateMcpSpec> {
   // 1. Try the pinned version on the public registry. Skip for placeholder
-  //    versions ('', '0.0.0') — the registry will obviously not have them.
-  if (cliVersion && cliVersion !== '0.0.0') {
+  //    versions ('', '0.0.0') and local/dev builds with build metadata ('+')
+  //    — the registry will obviously not have them (#1204).
+  if (cliVersion && cliVersion !== '0.0.0' && !cliVersion.includes('+')) {
     const probe = options.publishedCheck ?? defaultPublishedCheck;
     const published = await probe(cliVersion);
     if (published) {

@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
-import { initSquad } from '@bradygaster/squad-sdk/config';
+import { initSquad, MANIFEST_SKILL_NAMES } from '@bradygaster/squad-sdk/config';
 import { onboardAgent, addAgentToConfig } from '@bradygaster/squad-sdk/agents';
 import type { InitOptions, InitAgentSpec } from '@bradygaster/squad-sdk/config';
 import type { OnboardOptions } from '@bradygaster/squad-sdk/agents';
@@ -136,7 +136,159 @@ describe('Squad Initialization', () => {
       expect(existsSync(join(TEST_ROOT, '.squad', 'agents'))).toBe(true);
       expect(existsSync(join(TEST_ROOT, '.squad', 'casting'))).toBe(true);
       expect(existsSync(join(TEST_ROOT, '.squad', 'decisions'))).toBe(true);
-      expect(existsSync(join(TEST_ROOT, '.copilot', 'skills'))).toBe(true);
+      expect(existsSync(join(TEST_ROOT, '.github', 'skills'))).toBe(true);
+      // bradygaster/squad#1126 regression — skills must NOT live at the legacy
+      // .copilot/skills path (invisible to all Copilot surfaces). Fresh init
+      // creates only the canonical .github/skills location.
+      expect(existsSync(join(TEST_ROOT, '.copilot', 'skills')), '.copilot/skills must NOT be created by fresh init (#1126)').toBe(false);
+    });
+
+    it('should install Squad-bundled skills at .github/skills/{name}/SKILL.md (#1126)', async () => {
+      // #1126: skills at .copilot/skills/ are invisible to all GitHub Copilot
+      // surfaces (cloud agent, CLI outside Squad, VS Code extension, @copilot
+      // coding agent). The canonical project-skills location per the official
+      // Agent Skills spec is .github/skills/.
+      //
+      // This test asserts:
+      //   1. squad-conventions (a manifest-curated bundled skill) lands at
+      //      .github/skills/squad-conventions/SKILL.md
+      //   2. The legacy .copilot/skills/squad-conventions location is NOT
+      //      created in a fresh init
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const canonical = join(TEST_ROOT, '.github', 'skills', 'squad-conventions', 'SKILL.md');
+      const legacy = join(TEST_ROOT, '.copilot', 'skills', 'squad-conventions', 'SKILL.md');
+      expect(existsSync(canonical), 'expected squad-conventions at .github/skills/').toBe(true);
+      expect(existsSync(legacy), 'must NOT install to legacy .copilot/skills/ (#1126)').toBe(false);
+    });
+
+    it('should seed .squad/fact-checker/{policy,audit-trail}.md (regression: bradygaster/squad#1299)', async () => {
+      // Fact Checker is an always-on built-in (#789 + #1254, single agent dual
+      // operating mode: Verification + Devil's Advocate). It must get the
+      // same first-class state-dir treatment as Rai: policy.md + audit-trail.md
+      // under .squad/fact-checker/. Without these, fact-checker is "a name on
+      // disk with a 21-line placeholder" (verbatim user feedback, 2026-06-13).
+      const agents: InitAgentSpec[] = [
+        { name: 'lead', role: 'lead' },
+        { name: 'fact-checker', role: 'fact-checker', displayName: 'Fact Checker' },
+      ];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const policyPath = join(TEST_ROOT, '.squad', 'fact-checker', 'policy.md');
+      const auditPath = join(TEST_ROOT, '.squad', 'fact-checker', 'audit-trail.md');
+      expect(existsSync(policyPath), 'expected .squad/fact-checker/policy.md to be seeded').toBe(true);
+      expect(existsSync(auditPath), 'expected .squad/fact-checker/audit-trail.md to be seeded').toBe(true);
+
+      const policy = await readFile(policyPath, 'utf-8');
+      // Policy must declare both operating modes and the hard anti-fabrication rules.
+      expect(policy).toMatch(/Verification/i);
+      expect(policy).toMatch(/Devil['']s Advocate/i);
+      expect(policy).toMatch(/Confidence|✅|⚠️|❌|🔍/);
+      expect(policy).toMatch(/anti.?fabrication|never invent|never cite/i);
+
+      const audit = await readFile(auditPath, 'utf-8');
+      // Audit trail must be append-only and start empty (no entries yet).
+      expect(audit).toMatch(/Audit Trail/i);
+      expect(audit).toMatch(/append.?only/i);
+    });
+
+    it('should use the rich fact-checker-charter.md template for built-in agents at init (#1299)', async () => {
+      // Before #1299, both Rai and fact-checker got a 478-byte generic stub
+      // charter from generateCharter(). The rich charter templates
+      // (Rai-charter.md, fact-checker-charter.md) only got used by
+      // `squad upgrade`'s ensureBuiltinAgents path. This made both built-ins
+      // effectively "names on disk" until upgrade was run. Init now reads
+      // the rich template if it exists.
+      const agents: InitAgentSpec[] = [
+        { name: 'fact-checker', role: 'fact-checker', displayName: 'Fact Checker' },
+      ];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const charterPath = join(TEST_ROOT, '.squad', 'agents', 'fact-checker', 'charter.md');
+      expect(existsSync(charterPath)).toBe(true);
+      const charter = await readFile(charterPath, 'utf-8');
+      // Must contain rich-charter markers, not the generic stub.
+      // Generic stub has "Responsibilities", "Work Style", "Project Context"
+      // sections and ~500 bytes. Rich charter has Verification Methodology,
+      // Confidence Ratings, Devil's Advocate, etc., and is several KB.
+      expect(charter.length).toBeGreaterThan(1000);
+      expect(charter).toMatch(/Verification Methodology|## Verification/i);
+      expect(charter).toMatch(/Confidence Ratings|✅ Verified/i);
+      // Must NOT contain the generic stub boilerplate.
+      expect(charter).not.toMatch(/^## Work Style$/m);
+    });
+
+    it('should use the rich Rai-charter.md template at init (companion to fact-checker fix, #1299)', async () => {
+      // Same template-lookup logic must benefit Rai too. Before #1299, Rai's
+      // charter.md was a 478-byte generic stub even though Rai-charter.md
+      // (4525 bytes) shipped in templates/.
+      const agents: InitAgentSpec[] = [
+        { name: 'Rai', role: 'Rai', displayName: 'Rai' },
+      ];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const charterPath = join(TEST_ROOT, '.squad', 'agents', 'Rai', 'charter.md');
+      expect(existsSync(charterPath)).toBe(true);
+      const charter = await readFile(charterPath, 'utf-8');
+      expect(charter.length).toBeGreaterThan(1000);
+      // Rich Rai charter mentions RAI policy + audit-trail paths.
+      expect(charter).toMatch(/\.squad\/rai\/policy\.md/);
+      expect(charter).toMatch(/\.squad\/rai\/audit-trail\.md/);
+    });
+
+    it('should install every manifest-curated skill (regression: bradygaster/squad#1289, #1264)', async () => {
+      // Sanity check: every skill listed in MANIFEST_SKILL_NAMES must end up
+      // installed under .copilot/skills/. The prior v0.10.0 install path
+      // silently skipped skills whose source dir was missing from the SDK
+      // templates dir; this test exists to ensure that regression cannot
+      // happen again (the loop now throws on drift, but a missing
+      // SKILL.md after install would still indicate a deeper issue).
+      //
+      // The expected list comes from the same MANIFEST_SKILL_NAMES export
+      // the production install loop reads — so the test cannot fall out
+      // of sync when a new skill is added. Sanity-asserted to be non-empty
+      // so a future accidental empty export doesn't make this test pass
+      // trivially.
+      expect(MANIFEST_SKILL_NAMES.length).toBeGreaterThan(0);
+
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      for (const skill of MANIFEST_SKILL_NAMES) {
+        const skillPath = join(TEST_ROOT, '.github', 'skills', skill, 'SKILL.md');
+        expect(existsSync(skillPath), `expected ${skill}/SKILL.md to be installed`).toBe(true);
+      }
     });
 
     it('should create .gitattributes for merge drivers', async () => {
@@ -155,6 +307,61 @@ describe('Squad Initialization', () => {
       const content = await readFile(gitattributesPath, 'utf-8');
       expect(content).toContain('history.md merge=union');
       expect(content).toContain('.squad/decisions.md merge=union');
+    });
+
+    it('should install the squad-help disambiguation skill (regression: #1297 / supersedes squad name collision)', async () => {
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const skillPath = join(TEST_ROOT, '.github', 'skills', 'squad-help', 'SKILL.md');
+      expect(existsSync(skillPath)).toBe(true);
+      const content = await readFile(skillPath, 'utf-8');
+      expect(content).toContain('name: "squad-help"');
+      expect(content).not.toMatch(/^name:\s*"?squad"?\s*$/m);
+      expect(content).toContain('agent_type="Squad"');
+      expect(content).toContain('custom agent');
+    });
+
+    it('should install the squad slash-command skill with user-invocable: true (regression: /squad must appear)', async () => {
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const skillPath = join(TEST_ROOT, '.github', 'skills', 'squad', 'SKILL.md');
+      expect(existsSync(skillPath)).toBe(true);
+      const content = await readFile(skillPath, 'utf-8');
+      expect(content).toMatch(/^user-invocable:\s*true\s*$/m);
+      expect(content).toMatch(/^name:\s*"?squad"?\s*$/m);
+      expect(content).toContain('Menu Presentation Rules');
+    });
+
+    it('should install cross-squad-communication skill (companion to cross-squad — #5)', async () => {
+      const agents: InitAgentSpec[] = [{ name: 'lead', role: 'lead' }];
+      const options: InitOptions = {
+        teamRoot: TEST_ROOT,
+        projectName: 'Test Project',
+        agents
+      };
+
+      await initSquad(options);
+
+      const skillPath = join(TEST_ROOT, '.github', 'skills', 'cross-squad-communication', 'SKILL.md');
+      expect(existsSync(skillPath)).toBe(true);
+      const content = await readFile(skillPath, 'utf-8');
+      expect(content).toContain('cross-squad-communication');
+      expect(content).toContain('Pattern 0');
+      expect(content).toContain('Pattern 2');
     });
 
     it('should create initial decisions.md', async () => {

@@ -3,6 +3,12 @@
 .squad/agents/*/history.md merge=union
 .squad/log/** merge=union
 .squad/orchestration-log/** merge=union
+
+# NOTE: .squad/casting/* files are AUTHORITATIVE IDENTITY (team-defined agent
+# universe/roles, persistent name registry, universe assignment history).
+# They are committed to 'main' like team.md and routing.md, not to squad-state.
+# They do NOT need union merge and are intentionally NOT listed above.
+
 # Squad: union merge for append-only team state files
 .squad/decisions/decisions.md merge=union
 # Squad: union merge for append-only team state files

@@ -39,7 +39,9 @@
     "benleane", "TELMU", "Automator", "kedacore",
     "DEVBOX", "myaccount", "graphify", "Graphify", "graphifyy", "safishamsi", "jagilber",
     "benchmarkfn", "filterissuesbystream", "filterissuesbyworkstream", "Recognised", "recognised",
-    "squadified", "TOCTOU", "unflushed", "unparseable", "pluggability"
+    "squadified", "TOCTOU", "unflushed", "unparseable", "pluggability",
+    "PKCE", "MSAL", "AKIA", "runas",
+    "typoo"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
   "allowCompoundWords": true

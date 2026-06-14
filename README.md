@@ -76,6 +76,10 @@ Squad proposes a team — each member named from a persistent thematic cast. You
 
 ---
 
+## .NET package preview
+
+Building a .NET app that should call a Squad team as a Microsoft Agent Framework agent? `Squad.Agents.AI` is a preview NuGet package under [`src/Squad.Agents.AI`](src/Squad.Agents.AI/README.md). It registers a Squad-backed `AIAgent` in DI and targets early `0.1.0-preview` consumers.
+
 ## Upgrading
 
 Upgrading Squad is a two-step process.

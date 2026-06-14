@@ -226,7 +226,8 @@
   "files": [
     "dist",
     "templates",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "prepublishOnly": "npm run build",

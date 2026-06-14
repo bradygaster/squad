@@ -19,6 +19,7 @@ import type { SubSquadDefinition } from '../streams/types.js';
 import { ENGINEERING_ROLE_IDS } from '../roles/catalog.js';
 import { getRoleById } from '../roles/index.js';
 import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
+import { addSquadStateGitignoreBlock, removeSquadStateGitignoreBlock } from './gitignore-state.js';
 
 // ============================================================================
 // Manifest-Curated Skills (must stay in sync with TEMPLATE_MANIFEST in CLI)
@@ -27,8 +28,13 @@ import { ensureMemoryGovernanceDefaults } from '../memory/index.js';
 /**
  * The curated built-in skills shipped on init.
  * Only these skills are installed — not the full templates/skills/ directory.
+ *
+ * Drift policy: every entry MUST have a corresponding directory under
+ * packages/squad-sdk/templates/skills/. The install loop (below) throws on
+ * missing source dirs instead of silently skipping — see bradygaster/squad#1289
+ * for the prior silent-skip bug that shipped two missing skills in v0.10.0.
  */
-const MANIFEST_SKILL_NAMES = [
+export const MANIFEST_SKILL_NAMES = [
   'squad-conventions',
   'error-recovery',
   'secret-handling',
@@ -37,8 +43,14 @@ const MANIFEST_SKILL_NAMES = [
   'reviewer-protocol',
   'test-discipline',
   'agent-collaboration',
-  'squad-commands',
+  'squad',
   'squad-version-check',
+  'squad-help',
+  'cross-squad-communication',
+  'tiered-memory',
+  'iterative-retrieval',
+  'reflect',
+  'cross-squad',
 ] as const;
 
 // ============================================================================
@@ -152,6 +164,14 @@ export interface InitOptions {
     areaPath?: string;
     iterationPath?: string;
   };
+  /**
+   * State backend to use for this project.
+   * When 'orphan' or 'two-layer', adds a marker-delimited block to .gitignore
+   * so .squad/decisions.md and .squad/agents/*\/history.md are not accidentally
+   * staged into the working-tree commit graph.
+   * When 'local' (or undefined), removes the marker block if present.
+   */
+  stateBackend?: 'local' | 'orphan' | 'two-layer' | 'external' | string;
 }
 
 /**
@@ -819,7 +839,7 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     join(squadDir, 'decisions'),
     join(squadDir, 'decisions', 'inbox'),
     join(squadDir, 'memory'),
-    join(teamRoot, '.copilot', 'skills'),
+    join(teamRoot, '.github', 'skills'),
     join(squadDir, 'plugins'),
     join(squadDir, 'identity'),
     join(squadDir, 'orchestration-log'),
@@ -930,6 +950,74 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
   }
 
   // -------------------------------------------------------------------------
+  // Seed .squad/fact-checker/ files (policy and audit trail)
+  //
+  // Mirrors the Rai pattern above. Fact Checker is an always-on built-in
+  // (per bradygaster/squad#789 + #1254 — single agent, dual operating mode:
+  // Verification + Devil's Advocate) and gets its own state dir so its
+  // policy + audit trail are first-class artifacts the coordinator can
+  // reference, not embedded inside the agent's charter file.
+  //
+  // See bradygaster/squad#1299 for the design rationale.
+  // -------------------------------------------------------------------------
+
+  const factCheckerDir = join(squadDir, 'fact-checker');
+  const factCheckerPolicyPath = join(factCheckerDir, 'policy.md');
+  if (!storage.existsSync(factCheckerPolicyPath)) {
+    const templateSrc = templatesDir ? join(templatesDir, 'fact-checker-policy.md') : null;
+    if (templateSrc && storage.existsSync(templateSrc)) {
+      storage.copySync(templateSrc, factCheckerPolicyPath);
+    } else {
+      // Minimal fallback if the template was stripped from the install (e.g.,
+      // pre-1299 squad-sdk). The full template at
+      // .squad-templates/fact-checker-policy.md is the canonical source.
+      const factCheckerPolicyFallback = `# Fact Checker Policy
+
+> Verification & devil's-advocate methodology for this project.
+
+## Verification Mode
+
+Check claims about URLs, package names, API endpoints, file paths, function signatures, quoted text, and cross-references to team decisions. Issue one of:
+
+- ✅ Verified — confirmed via source
+- ⚠️ Unverified — plausible but could not confirm (flag, do not block)
+- ❌ Contradicted — evidence contradicts the claim (**blocking** at Pre-Ship)
+- 🔍 Needs Investigation — beyond current scope
+
+## Devil's Advocate Mode
+
+Produce briefs that include: steelman of the opposition, load-bearing assumptions, pre-mortem in 30 days, alternative approach, risk acceptance.
+
+## Hard Rules
+
+- Never cite a URL/package/API without verifying it exists
+- Never invent measurement data or "production results"
+- Never fabricate a counter-hypothesis
+- Never block on opinion — only on ❌ Contradicted findings
+
+## Audit Trail
+
+All findings logged to \`.squad/fact-checker/audit-trail.md\` (append-only, succinct — verdict + citation, never raw source).
+`;
+      await storage.write(factCheckerPolicyPath, factCheckerPolicyFallback);
+    }
+    createdFiles.push(toRelativePath(factCheckerPolicyPath));
+  } else {
+    skippedFiles.push(toRelativePath(factCheckerPolicyPath));
+  }
+
+  const factCheckerAuditTrailPath = join(factCheckerDir, 'audit-trail.md');
+  if (!storage.existsSync(factCheckerAuditTrailPath)) {
+    await storage.write(
+      factCheckerAuditTrailPath,
+      '# Fact Checker Audit Trail\n\n> Append-only evidence log. Entries are succinct — verdict + citation, never raw source material.\n\n<!-- Fact Checker appends findings below -->\n',
+    );
+    createdFiles.push(toRelativePath(factCheckerAuditTrailPath));
+  } else {
+    skippedFiles.push(toRelativePath(factCheckerAuditTrailPath));
+  }
+
+  // -------------------------------------------------------------------------
   // Create .squad/config.json for squad settings
   // -------------------------------------------------------------------------
 
@@ -1036,8 +1124,47 @@ export async function initSquad(options: InitOptions, storage: StorageProvider =
     agentDirs.push(agentDir);
 
     // Create charter.md
+    //
+    // Built-in always-on agents (Rai, fact-checker) ship with rich
+    // charter templates at `templates/{role}-charter.md`. If a template
+    // exists for this agent's role, use that instead of the generic
+    // role-based stub — this gives the agent its full operating manual
+    // (verdict protocol, audit-trail rules, dual-mode declarations) from
+    // day one of `squad init`, matching the behavior of `squad upgrade`'s
+    // `ensureBuiltinAgents` path. See bradygaster/squad#1299.
     const charterPath = join(agentDir, 'charter.md');
-    const charterContent = generateCharter(agent, projectName, projectDescription);
+    let charterContent: string | null = null;
+    if (templatesDir) {
+      // Lookup priority: exact role / name first, then their lowercase
+      // variants. This is needed because rich-charter files in `templates/`
+      // are stored lowercase-hyphenated (`rai-charter.md`,
+      // `fact-checker-charter.md`) while agent specs may use mixed case
+      // (e.g. role/name = "Rai"). On case-sensitive filesystems (Linux CI)
+      // the mixed-case lookup misses without the toLowerCase() fallback,
+      // and the agent silently falls back to the 478-byte generic stub —
+      // exactly the regression #1299 was fixing. Each candidate is only
+      // added if non-empty to avoid `-charter.md` lookups from blank names.
+      const seen = new Set<string>();
+      const candidates: string[] = [];
+      for (const key of [agent.role, agent.name, agent.role?.toLowerCase(), agent.name?.toLowerCase()]) {
+        if (!key) continue;
+        const filename = `${key}-charter.md`;
+        if (seen.has(filename)) continue;
+        seen.add(filename);
+        candidates.push(join(templatesDir, filename));
+      }
+      for (const candidate of candidates) {
+        if (storage.existsSync(candidate)) {
+          charterContent = storage.readSync(candidate) ?? null;
+          if (charterContent) break;
+        }
+      }
+    }
+    if (charterContent === null) {
+      // Fall back to the generic role-based charter for user-defined agents
+      // that don't have a rich template (everyone except Rai + fact-checker).
+      charterContent = generateCharter(agent, projectName, projectDescription);
+    }
     await writeIfNotExists(charterPath, charterContent);
 
     // Create history.md
@@ -1163,26 +1290,64 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
 
   // -------------------------------------------------------------------------
   // Copy starter skills
+  //
+  // Skills live at `.github/skills/{name}/SKILL.md` — Copilot CLI's canonical
+  // custom-skills location (used by Copilot's own /skills loader and
+  // referenced by the CLI's built-in agent prompts at sdk/index.js:2246,
+  // 2252, 2595). Earlier versions of Squad installed to `.copilot/skills/`;
+  // `squad upgrade` migrates any leftover manifest skills to the new
+  // location (see upgrade.ts).
+  //
+  // bradygaster/squad#1126 (canonical issue; PR #1304) — adopt the canonical
+  // .github/skills/ path.
   // -------------------------------------------------------------------------
 
-  const skillsDir = join(teamRoot, '.copilot', 'skills');
+  const skillsDir = join(teamRoot, '.github', 'skills');
   if (templatesDir && storage.existsSync(join(templatesDir, 'skills'))) {
     const skillsSrc = join(templatesDir, 'skills');
     const existingSkills = storage.existsSync(skillsDir) ? storage.listSync(skillsDir) : [];
     if (existingSkills.length === 0) {
+      // Pre-check drift BEFORE writing any skill file so a manifest/template
+      // mismatch fails atomically with no partial install left on disk. The
+      // earlier shape ran the copy loop first and threw at the end — users
+      // saw 8 of 10 skills appear, then an error, with no clean rollback.
+      const missing: string[] = [];
+      for (const skillName of MANIFEST_SKILL_NAMES) {
+        if (!storage.existsSync(join(skillsSrc, skillName))) {
+          missing.push(skillName);
+        }
+      }
+      if (missing.length > 0) {
+        // Manifest/templates drift — fail loudly so v0.10.0-style silent-skip
+        // regressions (#1289) cannot reach users. End-users see this when an
+        // installed @bradygaster/squad-sdk ships with its templates dir
+        // missing skills the SDK code knows about — almost always a packaging
+        // bug. The fix is to upgrade to a non-broken SDK version
+        // (`squad upgrade`); the dev-facing sync-skill-templates.mjs script
+        // is referenced only as the contributor-side root cause.
+        throw new Error(
+          `Skill template drift in installed @bradygaster/squad-sdk: ` +
+          `MANIFEST_SKILL_NAMES references ${missing.length} skill(s) ` +
+          `missing from the SDK templates dir (${skillsSrc}): ${missing.join(', ')}. ` +
+          `This is a packaging bug — try \`squad upgrade\` or reinstall the SDK; ` +
+          `if it persists, please report it at https://github.com/bradygaster/squad/issues. ` +
+          `(Contributors: re-run \`node scripts/sync-skill-templates.mjs\` from the repo root before packaging.)`
+        );
+      }
       storage.mkdirSync(skillsDir, { recursive: true });
       for (const skillName of MANIFEST_SKILL_NAMES) {
         const srcSkill = join(skillsSrc, skillName);
-        if (storage.existsSync(srcSkill)) {
-          copyRecursiveSync(srcSkill, join(skillsDir, skillName), storage);
-        }
+        copyRecursiveSync(srcSkill, join(skillsDir, skillName), storage);
       }
-      createdFiles.push('.copilot/skills');
+      createdFiles.push('.github/skills');
     }
   }
 
   // -------------------------------------------------------------------------
   // Create .gitattributes for merge drivers
+  // Append-only mutable state files use union merge to handle concurrent appends.
+  // Note: .squad/casting/* files are identity (not mutable) so they don't need
+  // union merge and are NOT listed here.
   // -------------------------------------------------------------------------
 
   const gitattributesPath = join(teamRoot, '.gitattributes');
@@ -1192,6 +1357,7 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     '.squad/log/** merge=union',
     '.squad/orchestration-log/** merge=union',
     '.squad/rai/audit-trail.md merge=union',
+    '.squad/fact-checker/audit-trail.md merge=union',
   ];
 
   let existingAttrs = '';
@@ -1212,6 +1378,10 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   // Create .gitignore entries for runtime state (logs, inbox, sessions)
   // These paths are written during normal squad operation but should not be
   // committed to version control (they are runtime state).
+  //
+  // Note: .squad/casting/* is AUTHORITATIVE IDENTITY (team-defined agent
+  // universe, persistent name registry, history). It belongs on 'main', not
+  // on the squad-state orphan branch. Do NOT add casting/* to ignoreEntries.
   // -------------------------------------------------------------------------
 
   const gitignorePath = join(teamRoot, '.gitignore');
@@ -1233,14 +1403,25 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   if (missingIgnore.length > 0) {
     const block = (existingIgnore && !existingIgnore.endsWith('\n') ? '\n' : '')
       + '# Squad: ignore runtime state (logs, inbox, sessions)\n'
+      + '# Note: .squad/casting/* is identity and MUST be committed to main, not ignored\n'
       + missingIgnore.join('\n') + '\n';
     await storage.append(gitignorePath, block);
     createdFiles.push(toRelativePath(gitignorePath));
   }
 
   // -------------------------------------------------------------------------
-  // Detect platform from git remote
+  // Conditionally add/remove squad-state .gitignore block
+  // When stateBackend is 'orphan' or 'two-layer', .squad/decisions.md and
+  // .squad/agents/*/history.md are owned by the squad-state branch — add a
+  // marker-delimited block so `git add .` cannot accidentally stage them.
+  // When stateBackend is 'local' (or undefined), remove the block if present.
   // -------------------------------------------------------------------------
+
+  if (options.stateBackend === 'orphan' || options.stateBackend === 'two-layer') {
+    addSquadStateGitignoreBlock(gitignorePath, storage);
+  } else {
+    removeSquadStateGitignoreBlock(gitignorePath, storage);
+  }
 
   let isGitHub = true;
   try {

@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>true</IsPackable>
+    <PackageId>Squad.Agents.AI</PackageId>
+    <Title>Squad Agents AI</Title>
+    <Description>Community SquadAgent for Microsoft Agent Framework. Exposes the Squad multi-agent CLI as an AIAgent that can be composed into any MAF app or workflow.</Description>
+    <Authors>Tamir Dresher</Authors>
+    <PackageTags>squad;agents;ai;copilot;maf;multi-agent</PackageTags>
+    <PackageProjectUrl>https://github.com/bradygaster/squad</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/bradygaster/squad.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryBranch>main</RepositoryBranch>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Version>0.5.1</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="samples/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Squad.Agents.AI.Tests" />
+    <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" Version="1.10.0-rc1" />
+    <!--
+      Direct reference to GitHub.Copilot.SDK so its build/ targets fire during our build.
+      Without this, the SDK's MSBuild download/copy targets only flow to projects with a
+      DIRECT PackageReference — transitive consumers (us → MAF → SDK) get only the DLL,
+      not the binary download. With the direct ref, the SDK downloads copilot.exe into
+      bin/.../runtimes/{rid}/native/ and ContentWithTargetPath propagates it to consumers.
+      Once microsoft/agent-framework#6457 merges, this will no longer be required.
+    -->
+    <PackageReference Include="GitHub.Copilot.SDK" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

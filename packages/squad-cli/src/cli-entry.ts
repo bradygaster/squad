@@ -264,6 +264,10 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}discover${RESET}   List known squads and their capabilities`);
     console.log(`  ${BOLD}delegate${RESET}   Create work in another squad`);
     console.log(`             Usage: delegate <squad-name> <description>`);
+    console.log(`  ${BOLD}registry${RESET}   Manage peer squads for cross-squad discovery (no inheritance)`);
+    console.log(`             Usage: registry add <name> <path>`);
+    console.log(`                    registry list`);
+    console.log(`                    registry remove <name>`);
     console.log(`  ${BOLD}upstream${RESET}    Manage upstream Squad sources`);
     console.log(`             Usage: upstream add <source> [--name <n>] [--ref <branch>]`);
     console.log(`                    upstream remove <name>`);
@@ -1095,6 +1099,12 @@ async function main(): Promise<void> {
   if (cmd === 'delegate') {
     const { delegateCommand } = await import('./cli/commands/cross-squad.js');
     await delegateCommand(args.slice(1));
+    return;
+  }
+
+  if (cmd === 'registry') {
+    const { registryCommand } = await import('./cli/commands/cross-squad.js');
+    await registryCommand(args.slice(1));
     return;
   }
 

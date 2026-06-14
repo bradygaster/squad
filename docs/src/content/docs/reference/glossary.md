@@ -28,7 +28,7 @@ Key terms defined in one sentence each. Alphabetical order.
 
 **Scribe** — The silent agent that tracks decisions and logs sessions, merging proposals from all agents into `.squad/decisions.md`.
 
-**Skill** — A reusable capability stored in `.squad/skills/` that agents can learn and execute.
+**Skill** — A reusable capability stored in `.copilot/skills/` that agents can learn and execute.
 
 **Spawn** — The act of starting an agent as an independent subprocess with its own context window, tools, and memory.
 

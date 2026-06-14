@@ -122,7 +122,7 @@ export interface StatusQuery {
 }
 
 export interface SkillRequest {
-  /** Skill name (maps to .copilot/skills/{name}/SKILL.md) */
+  /** Skill name (maps to .github/skills/{name}/SKILL.md) */
   skillName: string;
   /** Operation: read the skill or write/update it */
   operation: 'read' | 'write';
@@ -1084,7 +1084,7 @@ export class ToolRegistry {
     // squad_skill: Read/write agent skills
     const squadSkill = defineTool<SkillRequest>({
       name: 'squad_skill',
-      description: 'Read or write agent skill definitions. Skills are stored in .copilot/skills/{name}/SKILL.md.',
+      description: 'Read or write agent skill definitions. Skills are stored in .github/skills/{name}/SKILL.md.',
       parameters: {
         type: 'object',
         properties: {
@@ -1115,13 +1115,23 @@ export class ToolRegistry {
         }
         try {
           const projectRoot = path.dirname(this.squadRoot);
-          const legacySkillDir = path.join(this.squadRoot, 'skills', args.skillName);
+          // .github/skills/ is the canonical write location (matches squad init/upgrade
+          // since #1126/#1304). The legacy locations are read-only fallbacks so users
+          // who haven't migrated yet can still read existing skills via this tool.
+          const githubSkillDir = path.join(projectRoot, '.github', 'skills', args.skillName);
           const copilotSkillDir = path.join(projectRoot, '.copilot', 'skills', args.skillName);
-          const skillDir = args.operation === 'write'
-            ? copilotSkillDir
-            : this.storage.existsSync(path.join(copilotSkillDir, 'SKILL.md'))
-              ? copilotSkillDir
-              : legacySkillDir;
+          const legacySkillDir = path.join(this.squadRoot, 'skills', args.skillName);
+
+          let skillDir: string;
+          if (args.operation === 'write') {
+            skillDir = githubSkillDir;
+          } else if (this.storage.existsSync(path.join(githubSkillDir, 'SKILL.md'))) {
+            skillDir = githubSkillDir;
+          } else if (this.storage.existsSync(path.join(copilotSkillDir, 'SKILL.md'))) {
+            skillDir = copilotSkillDir;
+          } else {
+            skillDir = legacySkillDir;
+          }
           const skillFile = path.join(skillDir, 'SKILL.md');
 
           if (args.operation === 'read') {
@@ -1161,7 +1171,7 @@ export class ToolRegistry {
             this.storage.writeSync(skillFile, skillContent);
 
             return {
-              textResultForLlm: `Skill written: ${args.skillName} (.copilot/skills/${args.skillName}/SKILL.md)`,
+              textResultForLlm: `Skill written: ${args.skillName} (.github/skills/${args.skillName}/SKILL.md)`,
               resultType: 'success',
               toolTelemetry: { skillName: args.skillName, operation: 'write', confidence: args.confidence },
             };
