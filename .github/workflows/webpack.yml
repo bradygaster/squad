@@ -1,0 +1,37 @@
+name: NodeJS with Webpack
+
+on:
+  push:
+    branches: [ "dev" ]
+  pull_request:
+    branches: [ "dev" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+
+    - name: Build
+      run: git status
+        npm install
+        npx webpack
+mkdir my-project && cd my-project
+git init
+npm install -g @bradygaster/squad-cli
+squad init
+npmsquad/team.md
+gh auth login/gh auth status
+copilot --agent squad --yolo
+I'm starting a new project. Set up the team.
+Here's what I'm building: a recipe sharing app with React and Node.
