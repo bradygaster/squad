@@ -240,6 +240,8 @@ async function main(): Promise<void> {
     console.log(`             Aliases: workstreams, streams (deprecated)`);
     console.log(`  ${BOLD}link${RESET}       Link project to a remote team root`);
     console.log(`             Usage: link <team-repo-path>`);
+    console.log(`  ${BOLD}externalize${RESET}  Move local squad state to an external team root`);
+    console.log(`  ${BOLD}internalize${RESET}  Pull an external team root back into the project`);
     console.log(`  ${BOLD}build${RESET}      Compile squad.config.ts into .squad/ markdown`);
     console.log(`             Flags: --check (validate only), --dry-run (preview)`);
     console.log(`                    --watch (rebuild on change)`);
