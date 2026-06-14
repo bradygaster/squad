@@ -243,7 +243,7 @@ async function main(): Promise<void> {
     console.log(`  ${BOLD}build${RESET}      Compile squad.config.ts into .squad/ markdown`);
     console.log(`             Flags: --check (validate only), --dry-run (preview)`);
     console.log(`                    --watch (rebuild on change)`);
-    console.log(`  ${BOLD}aspire${RESET}     Launch .NET Aspire dashboard for observability`);
+    console.log(`  ${BOLD}aspire${RESET}     Launch Aspire dashboard for observability`);
     console.log(`             Flags: --docker (force Docker), --port <n> (dashboard port)`);
     console.log(`  ${BOLD}schedule${RESET}   Manage scheduled tasks`);
     console.log(`             Usage: schedule list | run <id> | init | status`);

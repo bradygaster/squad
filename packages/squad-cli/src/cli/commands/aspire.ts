@@ -1,5 +1,5 @@
 /**
- * Aspire command — Launch .NET Aspire dashboard for Squad observability
+ * Aspire command — Launch Aspire dashboard for Squad observability
  * (Issue #265)
  *
  * Starts the Aspire dashboard and configures OTLP export so Squad
@@ -128,7 +128,7 @@ export async function runAspire(options: AspireOptions = {}): Promise<void> {
   } else if (isDockerAvailable()) {
     child = launchWithDocker();
   } else {
-    console.log(`${RED}✗${RESET} Neither Docker nor .NET Aspire workload found.`);
+    console.log(`${RED}✗${RESET} Neither Docker nor Aspire workload found.`);
     console.log(`\n  Install options:`);
     console.log(`    ${BOLD}Docker:${RESET}  https://docker.com/get-started`);
     console.log(`    ${BOLD}Aspire:${RESET}  dotnet workload install aspire\n`);
