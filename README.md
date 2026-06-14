@@ -522,3 +522,35 @@ The SDK provides programmatic control over agent orchestration — custom tools,
 - [Samples](samples/README.md) — eight working examples from beginner to advanced
 
 For SDK installation: `npm install @bradygaster/squad-sdk`
+
+---
+
+## Requirements
+
+- **Node.js** ≥22.5.0
+- **npm** ≥10.0.0
+- **Git** with SSH agent
+- **GitHub CLI** (`gh`) for GitHub integration
+
+## License
+
+This project is licensed under the terms of the MIT open source license. Please refer to the [LICENSE](./LICENSE) file for the full terms.
+
+## Maintainers
+
+- [@bradygaster](https://github.com/bradygaster)
+- [@tamirdresher](https://github.com/tamirdresher)
+
+See [CODEOWNERS](.github/CODEOWNERS) for the full list.
+
+## Support
+
+For help or questions about using Squad, please use [GitHub Discussions](https://github.com/github/squad/discussions). See [SUPPORT.md](./SUPPORT.md) for details.
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for build setup, monorepo structure, and guidelines.
+
+## Code of Conduct
+
+This project has adopted the [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md). See the full text for details on expected behavior and reporting.
