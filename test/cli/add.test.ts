@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 const execFileAsync = promisify(execFile);
 
@@ -47,6 +48,39 @@ describe.skipIf(!cliBuilt)('squad add end-to-end', () => {
     const out = stdout + stderr;
 
     expect(out).toContain(`Path does not exist: ${missingPath}`);
+    expect(out).not.toMatch(/Error:|runAdd \(/);
+  });
+
+  it('reconstructs a spaced path from split argv tokens and registers the full path', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'squad-add-spaced-'));
+    const spacedDir = join(tempRoot, 'my project dir');
+    mkdirSync(spacedDir, { recursive: true });
+
+    const splitPathTokens = spacedDir.split(' ');
+    const { stdout: addStdout, stderr: addStderr } = await runSquad(
+      ['add', ...splitPathTokens],
+      process.cwd(),
+    );
+    const addOut = addStdout + addStderr;
+    expect(addOut).toMatch(/(Added|Updated) "/);
+    expect(addOut).toContain(spacedDir);
+
+    const { stdout: listStdout, stderr: listStderr } = await runSquad(['list'], process.cwd());
+    const listOut = listStdout + listStderr;
+    expect(listOut).toContain(spacedDir);
+    expect(listOut).toContain('my project dir');
+  });
+
+  it('prints quoting hint for nonexistent multi-token path without crashing', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'squad-add-missing-'));
+    const firstToken = join(tempRoot, 'nope');
+    const expectedMissingPath = resolve(`${firstToken} x y`);
+
+    const { stdout, stderr } = await runSquad(['add', firstToken, 'x', 'y'], process.cwd());
+    const out = stdout + stderr;
+
+    expect(out).toContain(`Path does not exist: ${expectedMissingPath}`);
+    expect(out).toContain('If the path contains spaces, wrap it in quotes: squad add "<path>"');
     expect(out).not.toMatch(/Error:|runAdd \(/);
   });
 });
