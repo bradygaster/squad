@@ -179,6 +179,7 @@ async function main(): Promise<void> {
     console.log(`             Alias: list`);
     console.log(`  ${BOLD}open [name]${RESET} Open a registered project in Copilot`);
     console.log(`  ${BOLD}pick${RESET}       Show an interactive picker and open the chosen project`);
+    console.log(`  ${BOLD}add [path]${RESET}  Register an existing directory as a Squad project`);
     console.log(`  ${BOLD}roles${RESET}      List built-in Squad roles`);
     console.log(`             Usage: roles [--category <name>] [--search <query>]`);
     console.log(`  ${BOLD}cost${RESET}       Report token usage from orchestration logs`);
@@ -898,6 +899,12 @@ async function main(): Promise<void> {
   if (cmd === 'pick') {
     const { runPick } = await import('./cli/commands/pick.js');
     await runPick(args.slice(1));
+    return;
+  }
+
+  if (cmd === 'add') {
+    const { runAdd } = await import('./cli/commands/add.js');
+    await runAdd(args.slice(1));
     return;
   }
 

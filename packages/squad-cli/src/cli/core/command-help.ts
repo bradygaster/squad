@@ -30,6 +30,20 @@ function header(cmd: string, version: string, tagline: string): void {
  * one place that needs updating when a new subcommand is added to the CLI.
  */
 const COMMAND_HELP: Record<string, HelpPrinter> = {
+  add: (version) => {
+    header('add', version, 'Register an existing directory as a Squad project');
+    console.log(`Usage: squad add [path] [--name <name>]\n`);
+    console.log(`Registers an existing directory into the projects registry so it appears in`);
+    console.log(`\`squad projects\`/\`squad list\` and can be opened with \`squad open\`/\`squad pick\`.`);
+    console.log(`Does not scaffold .squad/ (use \`squad init\` for that).\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--name <name>${RESET}               Display name (defaults to the folder name).\n`);
+    console.log(`Examples:`);
+    console.log(`  squad add`);
+    console.log(`  squad add /path/to/my-project`);
+    console.log(`  squad add /path/to/my-project --name my-project\n`);
+  },
+
   init: (version) => {
     header('init', version, 'Initialize Squad in the current project');
     console.log(`Usage: squad init [options]`);
