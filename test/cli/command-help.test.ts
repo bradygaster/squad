@@ -83,6 +83,7 @@ describe('printCommandHelp', () => {
   });
 
   it('normalizeCommandAlias maps known aliases and leaves others untouched', () => {
+    expect(normalizeCommandAlias('list')).toBe('projects');
     expect(normalizeCommandAlias('streams')).toBe('subsquads');
     expect(normalizeCommandAlias('workstreams')).toBe('subsquads');
     expect(normalizeCommandAlias('subsquads')).toBe('subsquads');
