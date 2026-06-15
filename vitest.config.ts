@@ -9,6 +9,7 @@ export default defineConfig({
     dedupe: ['@bradygaster/squad-sdk'],
   },
   test: {
+    setupFiles: ['./test/setup/isolate-global-squad.ts'],
     include: ['test/**/*.test.ts'],
     coverage: {
       provider: 'v8',
