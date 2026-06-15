@@ -122,6 +122,7 @@ describe('printCommandHelp', () => {
       'nap',
       'open',
       'personal',
+      'pick',
       'plugin',
       'preset',
       'projects',
