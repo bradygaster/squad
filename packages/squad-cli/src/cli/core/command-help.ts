@@ -86,6 +86,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`                      and a TTY, shows a numbered picker; with a name, opens`);
     console.log(`                      the matching project directly.`);
     console.log(`  ${BOLD}--print-path${RESET}        With --open, print the resolved path instead of launching.\n`);
+    console.log(`Aliases: ${BOLD}list${RESET}\n`);
   },
 
   open: (version) => {
@@ -440,6 +441,7 @@ function printRcHelp(name: 'rc' | 'remote-control', version: string): void {
  * have explicit help blocks) do NOT need an entry here.
  */
 const COMMAND_ALIASES: Readonly<Record<string, string>> = {
+  list: 'projects',
   streams: 'subsquads',
   workstreams: 'subsquads',
 };
