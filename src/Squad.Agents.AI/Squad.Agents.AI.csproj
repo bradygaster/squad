@@ -34,7 +34,7 @@
       Once microsoft/agent-framework#6457 merges, this will no longer be required.
     -->
     <PackageReference Include="GitHub.Copilot.SDK" Version="1.0.1" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.6.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.7.0" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
