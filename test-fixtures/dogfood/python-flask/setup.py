@@ -9,6 +9,6 @@ setup(
         "Flask-SQLAlchemy==3.0.0",
     ],
     extras_require={
-        "dev": ["pytest==7.3.0", "black==23.3.0"],
+        "dev": ["pytest==7.3.0", "black==26.3.1"],
     },
 )
