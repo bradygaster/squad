@@ -28,7 +28,7 @@ export async function runAdd(args: string[]): Promise<void> {
     remaining = args.filter((_, i) => i !== nameIdx && i !== nameIdx + 1);
   }
 
-  const rawPath = remaining[0] ?? '.';
+  const rawPath = remaining.length > 0 ? remaining.join(' ') : '.';
   const absPath = path.resolve(rawPath);
 
   // Validate the path exists and is a directory.
@@ -37,6 +37,9 @@ export async function runAdd(args: string[]): Promise<void> {
     stat = fs.statSync(absPath);
   } catch {
     console.log(`Path does not exist: ${absPath}`);
+    if (remaining.length > 1) {
+      console.log(`If the path contains spaces, wrap it in quotes: squad add "<path>"`);
+    }
     return;
   }
 
