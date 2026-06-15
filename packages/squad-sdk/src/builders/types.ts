@@ -9,6 +9,8 @@
  * @module builders/types
  */
 
+import type { SquadReasoningEffort } from '../adapter/types.js';
+
 // ---------------------------------------------------------------------------
 // Shared primitives
 // ---------------------------------------------------------------------------
@@ -66,6 +68,9 @@ export interface DefaultsDefinition {
   /** Default model preference for agents that don't specify one. */
   readonly model?: BuilderModelId | ModelPreference;
 
+  /** Default reasoning effort for agents that don't specify one. */
+  readonly reasoningEffort?: SquadReasoningEffort;
+
   /** Default budget limits applied to agents that don't specify one. */
   readonly budget?: BudgetDefinition;
 }
@@ -116,6 +121,9 @@ export interface AgentDefinition {
 
   /** Preferred model identifier or structured model preference. */
   readonly model?: BuilderModelId | ModelPreference;
+
+  /** Reasoning effort level for models that support it. */
+  readonly reasoningEffort?: SquadReasoningEffort;
 
   /** Optional token budget for this agent. */
   readonly budget?: BudgetDefinition;

@@ -144,6 +144,78 @@ describe('spawnParallel', () => {
     );
   });
 
+  it('should pass reasoning effort override to session', async () => {
+    const configs: AgentSpawnConfig[] = [
+      {
+        agentName: 'fenster',
+        task: 'Deep analysis',
+        reasoningEffortOverride: 'xhigh',
+      },
+    ];
+
+    const results = await spawnParallel(configs, mockDeps);
+
+    expect(results[0].status).toBe('success');
+    expect(mockDeps.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasoningEffort: 'xhigh',
+      })
+    );
+  });
+
+  it('should use charter reasoning effort when no override', async () => {
+    (mockDeps.compileCharter as any).mockImplementation(async (agentName: string) => ({
+      name: agentName,
+      displayName: `${agentName} Agent`,
+      role: 'Developer',
+      expertise: ['TypeScript'],
+      style: 'Professional',
+      prompt: `You are ${agentName}`,
+      modelPreference: 'claude-sonnet-4.5',
+      reasoningEffort: 'high',
+    } as AgentCharter));
+
+    const configs: AgentSpawnConfig[] = [
+      { agentName: 'fenster', task: 'Careful code review' },
+    ];
+
+    const results = await spawnParallel(configs, mockDeps);
+
+    expect(results[0].status).toBe('success');
+    expect(mockDeps.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasoningEffort: 'high',
+      })
+    );
+  });
+
+  it('should not set reasoning effort when auto', async () => {
+    (mockDeps.compileCharter as any).mockImplementation(async (agentName: string) => ({
+      name: agentName,
+      displayName: `${agentName} Agent`,
+      role: 'Developer',
+      expertise: ['TypeScript'],
+      style: 'Professional',
+      prompt: `You are ${agentName}`,
+      modelPreference: 'claude-sonnet-4.5',
+      reasoningEffort: 'auto',
+    } as AgentCharter));
+
+    const configs: AgentSpawnConfig[] = [
+      { agentName: 'fenster', task: 'Quick fix' },
+    ];
+
+    const results = await spawnParallel(configs, mockDeps);
+
+    expect(results[0].status).toBe('success');
+    // auto should not be passed through
+    expect(mockDeps.createSession).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        reasoningEffort: expect.anything(),
+      })
+    );
+  });
+
   it('should isolate errors - one failure does not affect others', async () => {
     // Make one charter compilation fail
     (mockDeps.compileCharter as any).mockImplementation(async (agentName: string) => {

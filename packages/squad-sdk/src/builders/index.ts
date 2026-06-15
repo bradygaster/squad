@@ -24,6 +24,8 @@ import type {
   SquadSDKConfig,
 } from './types.js';
 
+import { VALID_REASONING_EFFORTS } from '../config/models.js';
+
 // Re-export every type so consumers can `import { defineTeam, TeamDefinition } from './builders'`
 export type {
   AgentRef,
@@ -205,6 +207,9 @@ export function defineAgent(config: AgentDefinition): AgentDefinition {
   assertOptionalString(config.description, 'description', 'defineAgent');
   assertOptionalString(config.charter, 'charter', 'defineAgent');
   assertModelPreference(config.model, 'model', 'defineAgent');
+  if (config.reasoningEffort !== undefined) {
+    assertStringUnion(config.reasoningEffort, VALID_REASONING_EFFORTS, 'reasoningEffort', 'defineAgent');
+  }
   if (config.budget !== undefined) {
     defineBudget(config.budget);
   }
@@ -467,6 +472,9 @@ export function defineSkill(config: SkillDefinition): SkillDefinition {
 export function defineDefaults(config: DefaultsDefinition): DefaultsDefinition {
   assertObject(config, 'defineDefaults');
   assertModelPreference(config.model, 'model', 'defineDefaults');
+  if (config.reasoningEffort !== undefined) {
+    assertStringUnion(config.reasoningEffort, VALID_REASONING_EFFORTS, 'reasoningEffort', 'defineDefaults');
+  }
   if (config.budget !== undefined) {
     defineBudget(config.budget);
   }
