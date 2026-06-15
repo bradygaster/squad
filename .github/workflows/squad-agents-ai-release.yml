@@ -40,7 +40,6 @@ on:
       - main
     paths:
       - 'src/Squad.Agents.AI/**'
-      - 'test/Squad.Agents.AI.Tests/**'
       - 'Directory.*.props'
       - 'global.json'
 
