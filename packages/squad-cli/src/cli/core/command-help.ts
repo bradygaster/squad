@@ -303,6 +303,20 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--role <role>${RESET}               Built-in role to attach (see 'squad roles')\n`);
   },
 
+  pick: (version) => {
+    header('pick', version, 'Show an interactive picker and open the chosen project');
+    console.log(`Usage: squad pick [--print-path]\n`);
+    console.log(`Shows a numbered list of registered projects and prompts for a selection,`);
+    console.log(`then opens the chosen project in Copilot. Unlike 'squad open', which accepts`);
+    console.log(`an optional name argument, 'squad pick' always enters the interactive picker`);
+    console.log(`(completing the projects/pick/open trio).\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--print-path${RESET}, ${BOLD}-p${RESET}            Print the project path instead of launching Copilot.\n`);
+    console.log(`Examples:`);
+    console.log(`  squad pick`);
+    console.log(`  squad pick --print-path\n`);
+  },
+
   preset: (version) => {
     header('preset', version, 'Manage squad presets (curated agent collections)');
     console.log(`Usage: squad preset <list|show <name>|apply <name>|save <name>|init> [options]\n`);
