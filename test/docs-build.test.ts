@@ -152,7 +152,9 @@ describe('Docs Structure Validation', () => {
     it('all code blocks are properly fenced (even count of ```)', () => {
       for (const file of getAllMarkdownFiles()) {
         const content = readFile(file);
-        const fenceCount = (content.match(/```/g) || []).length;
+        // Anchor to line-start so inline/table backticks (e.g. documenting fence syntax)
+        // are not counted as real fence delimiters.
+        const fenceCount = (content.match(/^```/gm) || []).length;
         expect(fenceCount % 2, `${basename(file)} has mismatched fences`).toBe(0);
       }
     });
@@ -167,7 +169,9 @@ describe('Docs Structure Validation', () => {
   describe('Code Example Validation', () => {
     it('code blocks contain language specification or valid content', () => {
       for (const file of getAllMarkdownFiles()) {
-        const codeBlocks = readFile(file).match(/```[\s\S]*?```/g) || [];
+        // Anchor both opening and closing fences to line-start so inline
+        // backtick usage inside table cells or prose does not form phantom blocks.
+        const codeBlocks = readFile(file).match(/^```[\s\S]*?^```/gm) || [];
         for (const block of codeBlocks) {
           expect(block.split('\n').length).toBeGreaterThan(1);
         }
