@@ -96,6 +96,7 @@ describe('printCommandHelp', () => {
     // router, this list must grow too — otherwise `<new-cmd> --help` will
     // fall through to the generic fallback instead of helpful text.
     const expected = [
+      'add',
       'aspire',
       'build',
       'cast',
