@@ -44,7 +44,7 @@
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.2.0",
     "markdownlint-cli2": "^0.22.1",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "vitest": "^3.0.0"
   },
   "keywords": [
