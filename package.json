@@ -42,7 +42,7 @@
     "eslint": "^10.1.0",
     "eslint-plugin-n": "^18.1.0",
     "highlight.js": "^11.11.1",
-    "markdown-it": "^14.1.1",
+    "markdown-it": "^14.2.0",
     "markdownlint-cli2": "^0.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
