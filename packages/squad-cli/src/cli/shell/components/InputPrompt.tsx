@@ -43,6 +43,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   const wasDisabledRef = useRef(disabled);
   const pendingInputRef = useRef<string[]>([]);
   const pasteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pasteBufferRef = useRef('');
   const valueRef = useRef('');
 
   // When transitioning from disabled → enabled, restore buffered input
@@ -110,7 +111,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         setBufferDisplay(bufferRef.current);
         return;
       }
-      if (key.upArrow || key.downArrow || key.ctrl || key.meta) return;
+      if (key.upArrow || key.downArrow || key.ctrl || key.meta || key.escape) return;
       if (key.backspace || key.delete) {
         bufferRef.current = bufferRef.current.slice(0, -1);
         setBufferDisplay(bufferRef.current);
@@ -132,20 +133,25 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     }
     
     if (key.return) {
-      // Debounce to detect multi-line paste: if more input arrives
-      // within 10ms this is a paste and the newline should be preserved.
+      // Debounce to detect multi-line paste: if more \r keypresses arrive
+      // within 10ms this is a paste and all lines should be submitted together.
+      // The paste buffer accumulates text across consecutive \r events.
       if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current);
-      valueRef.current += '\n';
+      pasteBufferRef.current += valueRef.current + '\n';
+      // Clear input display immediately so it updates within this discreteUpdates
+      // flush — ink 7 wraps useInput handlers in discreteUpdates which ensures
+      // synchronous rendering for state updates made directly here.
+      valueRef.current = '';
+      setValue('');
       pasteTimerRef.current = setTimeout(() => {
         pasteTimerRef.current = null;
-        const submitVal = valueRef.current.trim();
+        const submitVal = pasteBufferRef.current.trim();
+        pasteBufferRef.current = '';
         if (submitVal) {
           onSubmit(submitVal);
           setHistory(prev => [...prev, submitVal]);
           setHistoryIndex(-1);
         }
-        valueRef.current = '';
-        setValue('');
       }, 10);
       return;
     }
