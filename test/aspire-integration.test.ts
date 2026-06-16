@@ -17,7 +17,7 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-grpc';
 import { dockerSkipReason } from './helpers/skip-guards.js';
 
-const { Resource } = resources;
+const { resourceFromAttributes } = resources;
 const { PeriodicExportingMetricReader } = sdkMetrics;
 
 // ============================================================================
@@ -79,7 +79,7 @@ let sdk: NodeSDK | undefined;
 
 function initOTelForAspire(): void {
   sdk = new NodeSDK({
-    resource: new Resource({
+    resource: resourceFromAttributes({
       'service.name': 'squad-integration-test',
       'squad.version': 'test',
     }),
