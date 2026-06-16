@@ -238,7 +238,7 @@
   },
   "dependencies": {
     "@github/copilot-sdk": "^0.3.0",
-    "vscode-jsonrpc": "^8.2.1"
+    "vscode-jsonrpc": "^9.0.0"
   },
   "optionalDependencies": {
     "@opentelemetry/api": "^1.9.0",
