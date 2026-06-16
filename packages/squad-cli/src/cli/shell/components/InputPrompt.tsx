@@ -133,24 +133,26 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     }
     
     if (key.return) {
-      // Debounce to detect multi-line paste: if more \r keypresses arrive
-      // within 10ms this is a paste and all lines should be submitted together.
-      // The paste buffer accumulates text across consecutive \r events.
+      // Accumulate value and clear input synchronously so the render flushes
+      // within ink 7's discreteUpdates wrapper. History update is also done
+      // synchronously so UP-arrow navigation immediately sees the new entry.
       if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current);
-      pasteBufferRef.current += valueRef.current + '\n';
-      // Clear input display immediately so it updates within this discreteUpdates
-      // flush — ink 7 wraps useInput handlers in discreteUpdates which ensures
-      // synchronous rendering for state updates made directly here.
+      const line = valueRef.current;
+      pasteBufferRef.current += line + '\n';
       valueRef.current = '';
       setValue('');
+      if (line.trim()) {
+        setHistory(prev => [...prev, line.trim()]);
+        setHistoryIndex(-1);
+      }
+      // Defer only onSubmit so rapid consecutive \r keypresses (multi-line paste)
+      // can accumulate into a single submit payload.
       pasteTimerRef.current = setTimeout(() => {
         pasteTimerRef.current = null;
         const submitVal = pasteBufferRef.current.trim();
         pasteBufferRef.current = '';
         if (submitVal) {
           onSubmit(submitVal);
-          setHistory(prev => [...prev, submitVal]);
-          setHistoryIndex(-1);
         }
       }, 10);
       return;
