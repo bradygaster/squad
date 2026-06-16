@@ -191,7 +191,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^7.0.6",
     "react": "^19.2.7",
-    "vscode-jsonrpc": "^8.2.1"
+    "vscode-jsonrpc": "^9.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.9.3",
