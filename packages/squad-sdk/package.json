@@ -254,7 +254,7 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^25.9.3",
     "@types/sql.js": "^1.4.10",
     "@types/ws": "^8.5.13",
     "typedoc": "~0.28.19",

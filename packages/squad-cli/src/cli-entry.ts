@@ -14,7 +14,6 @@ process.env.NODE_NO_WARNINGS = '1';
 // process.env.NODE_NO_WARNINGS only works when set BEFORE process starts;
 // this runtime hook catches warnings emitted during dynamic imports below.
 const _origEmit = process.emit;
-// @ts-expect-error — narrowing emit signature for warning suppression
 process.emit = function (evt: string, ...args: unknown[]) {
   if (evt === 'warning' && (args[0] as { name?: string })?.name === 'ExperimentalWarning') {
     return false;
