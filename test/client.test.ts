@@ -5,21 +5,23 @@ import { EventBus } from '@bradygaster/squad-sdk/client';
 
 // Mock the SDK CopilotClient to avoid import.meta.resolve issues in tests
 vi.mock('@github/copilot-sdk', () => ({
-  CopilotClient: vi.fn().mockImplementation(() => ({
-    start: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue([]),
-    forceStop: vi.fn().mockResolvedValue(undefined),
-    createSession: vi.fn().mockResolvedValue({ sessionId: 'test-session' }),
-    resumeSession: vi.fn().mockResolvedValue({ sessionId: 'test-session' }),
-    listSessions: vi.fn().mockResolvedValue([]),
-    deleteSession: vi.fn().mockResolvedValue(undefined),
-    getLastSessionId: vi.fn().mockResolvedValue('test-session'),
-    ping: vi.fn().mockResolvedValue({ message: 'pong', timestamp: Date.now() }),
-    getStatus: vi.fn().mockResolvedValue({ version: '0.1.0', protocolVersion: 1 }),
-    getAuthStatus: vi.fn().mockResolvedValue({ isAuthenticated: true }),
-    listModels: vi.fn().mockResolvedValue([]),
-    on: vi.fn().mockReturnValue(() => {}),
-  })),
+  CopilotClient: vi.fn(function (this: object) {
+    Object.assign(this, {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue([]),
+      forceStop: vi.fn().mockResolvedValue(undefined),
+      createSession: vi.fn().mockResolvedValue({ sessionId: 'test-session' }),
+      resumeSession: vi.fn().mockResolvedValue({ sessionId: 'test-session' }),
+      listSessions: vi.fn().mockResolvedValue([]),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      getLastSessionId: vi.fn().mockResolvedValue('test-session'),
+      ping: vi.fn().mockResolvedValue({ message: 'pong', timestamp: Date.now() }),
+      getStatus: vi.fn().mockResolvedValue({ version: '0.1.0', protocolVersion: 1 }),
+      getAuthStatus: vi.fn().mockResolvedValue({ isAuthenticated: true }),
+      listModels: vi.fn().mockResolvedValue([]),
+      on: vi.fn().mockReturnValue(() => {}),
+    });
+  }),
 }));
 
 describe('SquadClientWithPool', () => {
