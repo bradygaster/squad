@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 
 vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(() => {
@@ -13,6 +14,30 @@ import {
 } from '../../packages/squad-cli/src/cli/core/execution-config.js';
 
 describe('execution-config', () => {
+  const execFileSyncMock = vi.mocked(execFileSync);
+
+  it('accepts sandcastle when help output matches expected CLI surface', () => {
+    execFileSyncMock.mockReturnValueOnce('Usage: sandcastle --prompt <text> [--prompt-file <path>]');
+
+    const result = resolveExecutionConfig({ cliSandbox: 'sandcastle' });
+
+    expect(result.sandbox).toBe('sandcastle');
+    expect(result.sandboxSource).toBe('cli');
+  });
+
+  it('rejects incompatible sandcastle binaries', () => {
+    execFileSyncMock.mockReturnValueOnce('Usage: some-other-sandcastle --version');
+
+    expect(() => resolveExecutionConfig({ cliSandbox: 'sandcastle' })).toThrowError(ExecutionConfigError);
+    try {
+      resolveExecutionConfig({ cliSandbox: 'sandcastle' });
+    } catch (err) {
+      const execErr = err as ExecutionConfigError;
+      expect(execErr.code).toBe('SQUAD_SANDBOX_UNAVAILABLE');
+      expect(execErr.message).toContain('@ai-hero/sandcastle');
+    }
+  });
+
   it('resolves defaults when no inputs are provided', () => {
     const result = resolveExecutionConfig({});
     expect(result.sandbox).toBe('copilot');

@@ -85,12 +85,15 @@ function normalizePermissionProfile(value: string | undefined): PermissionProfil
 
 function isSandcastleAvailable(): boolean {
   try {
-    execFileSync('sandcastle', ['--help'], {
-      stdio: 'ignore',
+    const help = execFileSync('sandcastle', ['--help'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 3000,
       shell: process.platform === 'win32',
     });
-    return true;
+
+    // Guard against unrelated binaries named "sandcastle".
+    return typeof help === 'string' && (help.includes('--prompt') || help.includes('--prompt-file'));
   } catch {
     return false;
   }
@@ -124,7 +127,7 @@ export function resolveExecutionConfig(input: ResolveExecutionConfigInput): Reso
   if (sandbox === 'sandcastle' && !isSandcastleAvailable()) {
     throw new ExecutionConfigError(
       'SQUAD_SANDBOX_UNAVAILABLE',
-      'Sandcastle sandbox is selected but unavailable. Install/configure sandcastle or use --sandbox copilot.',
+      'Sandcastle sandbox is selected but unavailable or incompatible. Install/configure @ai-hero/sandcastle or use --sandbox copilot.',
     );
   }
 

@@ -31,6 +31,15 @@ Sandcastle is not bundled with Squad. Install it separately and make sure the
 
 Project: https://github.com/mattpocock/sandcastle
 
+Install command:
+
+```bash
+npm install -g @ai-hero/sandcastle
+```
+
+Important: install the scoped package `@ai-hero/sandcastle`. There are unrelated
+packages named `sandcastle` on npm that do not provide the expected CLI surface.
+
 Verify install:
 
 ```bash
