@@ -68,6 +68,51 @@ describe('CLI: watch execute mode', () => {
       expect(args).toContain('value');
       expect(args).toContain('-p');
     });
+
+    it('uses sandcastle command when sandbox is sandcastle', async () => {
+      const issue: WatchWorkItem = {
+        number: 52,
+        title: 'Run in sandcastle',
+        body: '',
+        labels: [{ name: 'squad:eecom' }],
+        assignees: [],
+      };
+      const teamRoot = '/path/to/squad';
+      const options = {
+        intervalMinutes: 10,
+        sandbox: 'sandcastle' as const,
+        sandboxFlags: '--isolation strict',
+      };
+
+      const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
+      expect(cmd).toBe('sandcastle');
+      expect(args).toContain('--isolation');
+      expect(args).toContain('strict');
+      expect(args).toContain('-p');
+      expect(args.some((a) => a.includes('issue #52'))).toBe(true);
+    });
+
+    it('enforces interactive permission profile over copilot flags', async () => {
+      const issue: WatchWorkItem = {
+        number: 51,
+        title: 'Respect explicit permission profile',
+        body: '',
+        labels: [{ name: 'squad:eecom' }],
+        assignees: [],
+      };
+      const teamRoot = '/path/to/squad';
+      const options = {
+        intervalMinutes: 10,
+        copilotFlags: '--autopilot --yolo --model gpt-5',
+        permissionProfile: 'interactive' as const,
+      };
+
+      const { args } = buildAgentCommand(issue, teamRoot, options);
+      expect(args).toContain('--model');
+      expect(args).toContain('gpt-5');
+      expect(args).not.toContain('--yolo');
+      expect(args).not.toContain('--autopilot');
+    });
   });
 
   describe('findExecutableIssues', () => {

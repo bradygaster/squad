@@ -183,6 +183,9 @@ async function main(): Promise<void> {
     console.log(`             Default: checks every 10 minutes (Ctrl+C to stop)`);
     console.log(`             Core flags:`);
     console.log(`                    --execute (spawn agents to work on issues)`);
+    console.log(`                    --sandbox <copilot|sandcastle> (execution provider)`);
+    console.log(`                    --sandbox-flags "..." (extra sandcastle flags)`);
+    console.log(`                    --permission-profile <interactive|yolo|autopilot>`);
     console.log(`                    --copilot-flags "..." (extra copilot CLI flags)`);
     console.log(`                    --max-concurrent N (parallel issue limit, default 1)`);
     console.log(`                    --timeout N (max minutes per issue, default 30)`);
@@ -203,6 +206,9 @@ async function main(): Promise<void> {
     console.log(`             Reads loop.md and runs it each cycle (no issues needed)`);
     console.log(`             Flags: --init (generate boilerplate loop.md)`);
     console.log(`                    --file <path> (custom loop file)`);
+    console.log(`                    --sandbox <copilot|sandcastle> (execution provider)`);
+    console.log(`                    --sandbox-flags "..." (extra sandcastle flags)`);
+    console.log(`                    --permission-profile <interactive|yolo|autopilot>`);
     console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
     console.log(`  ${BOLD}hire${RESET}       Team creation wizard`);
     console.log(`             Usage: hire [--name <name>] [--role <role>]`);
@@ -567,6 +573,21 @@ async function main(): Promise<void> {
       ? args[agentCmdIdx + 1]
       : undefined;
 
+    const sandboxIdx = args.indexOf('--sandbox');
+    const sandbox = (sandboxIdx !== -1 && args[sandboxIdx + 1])
+      ? args[sandboxIdx + 1]
+      : undefined;
+
+    const sandboxFlagsIdx = args.indexOf('--sandbox-flags');
+    const sandboxFlags = (sandboxFlagsIdx !== -1 && args[sandboxFlagsIdx + 1])
+      ? args[sandboxFlagsIdx + 1]
+      : undefined;
+
+    const permissionProfileIdx = args.indexOf('--permission-profile');
+    const permissionProfile = (permissionProfileIdx !== -1 && args[permissionProfileIdx + 1])
+      ? args[permissionProfileIdx + 1]
+      : undefined;
+
     const maxConcurrentIdx = args.indexOf('--max-concurrent');
     const maxConcurrent = (maxConcurrentIdx !== -1 && args[maxConcurrentIdx + 1])
       ? parseInt(args[maxConcurrentIdx + 1]!, 10)
@@ -669,31 +690,44 @@ async function main(): Promise<void> {
     }
 
     // Load config: .squad/config.json merged with CLI overrides
-    const config = loadWatchConfig(getSquadStartDir(), {
-      interval,
-      execute,
-      maxConcurrent,
-      timeout,
-      copilotFlags,
-      agentCmd,
-      verbose,
-      dispatchMode,
-      logFile,
-      authUser,
-      notifyLevel,
-      overnightStart,
-      overnightEnd,
-      sentinelFile,
-      stateBackend: mappedBackend,
-      stateContext,
-      capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
-    });
+    let config;
+    try {
+      config = loadWatchConfig(getSquadStartDir(), {
+        interval,
+        execute,
+        maxConcurrent,
+        timeout,
+        copilotFlags,
+        agentCmd,
+        sandbox: sandbox as 'copilot' | 'sandcastle' | undefined,
+        sandboxFlags,
+        permissionProfile: permissionProfile as 'interactive' | 'yolo' | 'autopilot' | undefined,
+        verbose,
+        dispatchMode,
+        logFile,
+        authUser,
+        notifyLevel,
+        overnightStart,
+        overnightEnd,
+        sentinelFile,
+        stateBackend: mappedBackend,
+        stateContext,
+        capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
+      });
+    } catch (err) {
+      const maybeCode = (err as { code?: string }).code;
+      if (typeof maybeCode === 'string' && maybeCode.startsWith('SQUAD_')) {
+        fatal(`${maybeCode}: ${(err as Error).message}`);
+      }
+      throw err;
+    }
 
     // After parsing all flags, check for positional args that look like prompts.
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
       '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--board-owner', '--auth-user',
       '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
+      '--sandbox', '--sandbox-flags', '--permission-profile',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
     const watchArgs = args.slice(watchArgStart);
@@ -756,6 +790,21 @@ async function main(): Promise<void> {
       ? args[agentCmdIdx + 1]
       : undefined;
 
+    const sandboxIdx = args.indexOf('--sandbox');
+    const sandbox = (sandboxIdx !== -1 && args[sandboxIdx + 1])
+      ? args[sandboxIdx + 1]
+      : undefined;
+
+    const sandboxFlagsIdx = args.indexOf('--sandbox-flags');
+    const sandboxFlags = (sandboxFlagsIdx !== -1 && args[sandboxFlagsIdx + 1])
+      ? args[sandboxFlagsIdx + 1]
+      : undefined;
+
+    const permissionProfileIdx = args.indexOf('--permission-profile');
+    const permissionProfile = (permissionProfileIdx !== -1 && args[permissionProfileIdx + 1])
+      ? args[permissionProfileIdx + 1]
+      : undefined;
+
     // Capability flags
     const { createDefaultRegistry: createReg } = await import('./cli/commands/watch/index.js');
     const reg = createReg();
@@ -771,6 +820,9 @@ async function main(): Promise<void> {
       timeout,
       copilotFlags,
       agentCmd,
+      sandbox: sandbox as 'copilot' | 'sandcastle' | undefined,
+      sandboxFlags,
+      permissionProfile: permissionProfile as 'interactive' | 'yolo' | 'autopilot' | undefined,
       capabilities,
     });
     return;

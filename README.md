@@ -142,7 +142,7 @@ Say **"squad commands"** in chat to see a categorized menu of common operations 
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
 | `squad upgrade --self` | Update the Squad CLI package itself; add `--insider` for dev-channel prerelease builds |
 | `squad status` | Show which squad is active and why |
-| `squad triage` | **Watch mode** — poll for issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10); with `--execute` dispatch Copilot agents; use `--agent-cmd`, `--copilot-flags`, `--auth-user` to customize agent execution; `--health` shows watch status; `--log-file` for diagnostics |
+| `squad triage` | **Watch mode** — poll for issues and auto-triage to team (alias: `watch`); use `--interval <minutes>` to set polling frequency (default: 10); with `--execute` dispatch Copilot agents; use `--sandbox`, `--permission-profile`, `--agent-cmd`, `--copilot-flags`, `--auth-user` to customize execution; `--health` shows watch status; `--log-file` for diagnostics |
 | `squad copilot` | Add/remove the Copilot coding agent (@copilot); use `--off` to remove, `--auto-assign` to enable auto-assignment |
 | `squad doctor` | Check your setup and diagnose issues (alias: `heartbeat`) |
 | `squad link <team-repo-path>` | Connect to a remote team |
@@ -163,6 +163,8 @@ Say **"squad commands"** in chat to see a categorized menu of common operations 
 
 Ralph continuously polls for work and dispatches agents to handle it. Watch mode helps a human team stay responsive — Ralph automates triage, execution handoffs, and monitoring, then escalates back to people when judgment or approval is needed.
 
+For full sandbox and permission-profile behavior (resolution precedence, validation rules, and error codes), see [SANDBOX.md](SANDBOX.md).
+
 ### Quick Start
 
 ```bash
@@ -178,6 +180,12 @@ npx @bradygaster/squad-cli watch --execute \
   --copilot-flags "--yolo --autopilot --mcp mail --agent squad" \
   --auth-user myaccount
 
+# Run with Sandcastle sandbox and autopilot profile
+npx @bradygaster/squad-cli watch --execute \
+  --sandbox sandcastle \
+  --sandbox-flags "--your-sandcastle-flag value" \
+  --permission-profile autopilot
+
 # Run watch with diagnostics
 npx @bradygaster/squad-cli watch --execute --log-file ./watch.log --verbose
 
@@ -191,6 +199,9 @@ npx @bradygaster/squad-cli watch --health
 |------|-------------|
 | `--execute` | Enable agent execution (spawn Copilot sessions for actionable issues) |
 | `--interval N` | Poll every N minutes (default: 10) |
+| `--sandbox <provider>` | Execution sandbox (`copilot` or `sandcastle`; default: `copilot`) |
+| `--sandbox-flags "..."` | Extra flags passed to `sandcastle` when sandbox is `sandcastle` |
+| `--permission-profile <mode>` | Permission profile (`interactive`, `yolo`, `autopilot`; default: `yolo`) |
 | `--agent-cmd` | Custom agent command (default: `gh copilot`) |
 | `--copilot-flags` | Flags passed to the agent runner (e.g., `--yolo --autopilot`) |
 | `--auth-user` | GitHub/Azure DevOps account to use for agent auth |
@@ -201,6 +212,30 @@ npx @bradygaster/squad-cli watch --health
 | `--overnight-end HH:MM` | Resume watch at this time (e.g., `--overnight-end 08:00`) |
 | `--notify-level` | Control output verbosity (`all` / `important` / `none`, default: `important`) |
 | `--state-backend` | Persistence strategy (`git-notes` or `orphan-branch`, default: in-memory) |
+
+### Sandbox Resolution and Validation
+
+Watch (`squad watch` / `squad triage`) and loop (`squad loop`) resolve execution settings with this precedence:
+
+1. CLI flags (`--sandbox`, `--permission-profile`)
+2. `.squad/config.json` values
+3. Environment variables (`SQUAD_SANDBOX`, `SQUAD_PERMISSION_PROFILE`)
+4. Built-in defaults (`sandbox=copilot`, `permission-profile=yolo`)
+
+Validation rules:
+
+- `--sandbox` supports `copilot` and `sandcastle`.
+- `--sandbox-flags` is passed to sandcastle when `--sandbox sandcastle` is active.
+- `--permission-profile` supports `interactive`, `yolo`, and `autopilot`.
+- `sandcastle` requires the `sandcastle` binary to be available on PATH.
+- Explicit sandbox selection conflicts with `--agent-cmd` overrides.
+
+Stable error codes surfaced by the CLI:
+
+- `SQUAD_SANDBOX_UNAVAILABLE`
+- `SQUAD_SANDBOX_OVERRIDE_CONFLICT`
+- `SQUAD_SANDBOX_INVALID_VALUE`
+- `SQUAD_PERMISSION_PROFILE_INVALID_VALUE`
 
 ### How Watch Decides What to Execute
 

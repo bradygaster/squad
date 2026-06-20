@@ -7,7 +7,8 @@
 
 import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { withAdditionalMcpConfig } from '../core/copilot-invocation.js';
+import { resolveExecutionConfig, ExecutionConfigError } from '../core/execution-config.js';
+import { buildSandboxCommand } from './sandbox-command.js';
 
 export interface CopilotBridgeConfig {
   cwd: string;
@@ -77,11 +78,28 @@ export class CopilotBridge {
       args.push('--agent', this.config.agent);
     }
 
-    // Inject project mcp-config so squad_state MCP tools register (Copilot
-    // CLI 1.0.58 ignores the project-level .copilot/mcp-config.json).
-    const finalArgs = withAdditionalMcpConfig('copilot', args, this.config.cwd);
+    let execution;
+    try {
+      execution = resolveExecutionConfig({
+        envSandbox: process.env['SQUAD_SANDBOX'],
+        envPermissionProfile: process.env['SQUAD_PERMISSION_PROFILE'],
+      });
+    } catch (err) {
+      if (err instanceof ExecutionConfigError) {
+        throw new Error(`${err.code}: ${err.message}`);
+      }
+      throw err;
+    }
 
-    this.child = spawn('copilot', finalArgs, {
+    const sandboxCommand = buildSandboxCommand({
+      sandbox: execution.sandbox,
+      sandboxFlags: process.env['SQUAD_SANDBOX_FLAGS'],
+      permissionProfile: execution.permissionProfile,
+      teamRoot: this.config.cwd,
+      baseArgs: args,
+    });
+
+    this.child = spawn(sandboxCommand.cmd, sandboxCommand.args, {
       cwd: this.config.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
     });

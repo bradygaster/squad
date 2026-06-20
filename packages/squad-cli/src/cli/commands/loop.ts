@@ -14,7 +14,12 @@ import { fileURLToPath } from 'node:url';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { fatal } from '../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../core/output.js';
-import { withAdditionalMcpConfig } from '../core/copilot-invocation.js';
+import {
+  resolveExecutionConfig,
+  ExecutionConfigError,
+  type ResolvedExecutionConfig,
+} from '../core/execution-config.js';
+import { buildSandboxCommand } from './sandbox-command.js';
 import {
   CapabilityRegistry,
   createDefaultRegistry,
@@ -53,6 +58,12 @@ export interface LoopConfig {
   copilotFlags?: string;
   /** Fully override the agent command (e.g., `gh copilot --yolo`). */
   agentCmd?: string;
+  /** First-class sandbox selector. */
+  sandbox?: 'copilot' | 'sandcastle';
+  /** Extra flags passed to sandcastle when sandbox=sandcastle. */
+  sandboxFlags?: string;
+  /** First-class permission profile. */
+  permissionProfile?: 'interactive' | 'yolo' | 'autopilot';
   /** Capability overrides, keyed by capability name. */
   capabilities: Record<string, boolean | Record<string, unknown>>;
 }
@@ -133,7 +144,14 @@ export function generateLoopFile(): string {
 
 function buildLoopAgentCommand(
   prompt: string,
-  options: { agentCmd?: string; copilotFlags?: string; teamRoot?: string },
+  options: {
+    agentCmd?: string;
+    copilotFlags?: string;
+    teamRoot?: string;
+    sandbox?: 'copilot' | 'sandcastle';
+    sandboxFlags?: string;
+    permissionProfile?: 'interactive' | 'yolo' | 'autopilot';
+  },
 ): { cmd: string; args: string[] } {
   if (options.agentCmd) {
     const parts = options.agentCmd.trim().split(/\s+/);
@@ -143,7 +161,13 @@ function buildLoopAgentCommand(
   if (options.copilotFlags) {
     args.push(...options.copilotFlags.trim().split(/\s+/));
   }
-  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, options.teamRoot) };
+  return buildSandboxCommand({
+    sandbox: options.sandbox,
+    sandboxFlags: options.sandboxFlags,
+    permissionProfile: options.permissionProfile,
+    teamRoot: options.teamRoot,
+    baseArgs: args,
+  });
 }
 
 // ── Capability Phase Runner ──────────────────────────────────────
@@ -314,6 +338,22 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     fatal('timeout must be a positive number of minutes');
   }
 
+  let execution: ResolvedExecutionConfig;
+  try {
+    execution = resolveExecutionConfig({
+      cliSandbox: options.sandbox,
+      cliPermissionProfile: options.permissionProfile,
+      envSandbox: process.env['SQUAD_SANDBOX'],
+      envPermissionProfile: process.env['SQUAD_PERMISSION_PROFILE'],
+      agentCmd: options.agentCmd,
+    });
+  } catch (err) {
+    if (err instanceof ExecutionConfigError) {
+      fatal(`${err.code}: ${err.message}`);
+    }
+    throw err;
+  }
+
   // Preflight: verify copilot CLI is available (skip if user overrides the agent command)
   if (!options.agentCmd) {
     try {
@@ -331,6 +371,10 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     timeout: timeoutMinutes,
     copilotFlags: options.copilotFlags,
     agentCmd: options.agentCmd,
+    sandbox: execution.sandbox,
+    sandboxFlags: options.sandboxFlags ?? process.env['SQUAD_SANDBOX_FLAGS'],
+    permissionProfile: execution.permissionProfile,
+    executionSource: execution.sourceOfTruth,
     capabilities: options.capabilities,
   };
 
@@ -355,6 +399,10 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
     config: {},
     agentCmd: options.agentCmd,
     copilotFlags: options.copilotFlags,
+    sandbox: execution.sandbox,
+    sandboxFlags: watchConfig.sandboxFlags,
+    permissionProfile: execution.permissionProfile,
+    executionSource: execution.sourceOfTruth,
   };
 
   // Preflight capabilities (pre-scan + housekeeping only)
@@ -367,6 +415,9 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
   if (options.copilotFlags) {
     console.log(`${DIM}Copilot flags: ${options.copilotFlags}${RESET}`);
   }
+  console.log(
+    `${DIM}Execution: sandbox=${execution.sandbox}, profile=${execution.permissionProfile}, source=${execution.sourceOfTruth}${RESET}`,
+  );
   console.log();
 
   let round = 0;
@@ -387,6 +438,9 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
       agentCmd: options.agentCmd,
       copilotFlags: options.copilotFlags,
       teamRoot,
+      sandbox: execution.sandbox,
+      sandboxFlags: watchConfig.sandboxFlags,
+      permissionProfile: execution.permissionProfile,
     });
     console.log(`${GREEN}▶${RESET} [${ts}] Round ${round} — running loop prompt`);
 

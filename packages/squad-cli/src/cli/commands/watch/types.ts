@@ -6,6 +6,7 @@
  */
 
 import type { PlatformAdapter } from '@bradygaster/squad-sdk/platform';
+import type { SandboxProvider, PermissionProfile, ExecutionSource } from '../../core/execution-config.js';
 
 /** Phase within a single watch round. */
 export type WatchPhase = 'pre-scan' | 'post-triage' | 'post-execute' | 'housekeeping';
@@ -37,6 +38,12 @@ export interface WatchContext {
   /** Hidden --agent-cmd override. */
   agentCmd?: string;
   copilotFlags?: string;
+  /** Resolved first-class execution config. */
+  sandbox?: SandboxProvider;
+  /** Extra provider flags passed when sandbox is sandcastle. */
+  sandboxFlags?: string;
+  permissionProfile?: PermissionProfile;
+  executionSource?: ExecutionSource;
   /** Verbose diagnostic output enabled. */
   verbose?: boolean;
   /** PID tracker for child process cleanup (optional — only set when watch is running). */
