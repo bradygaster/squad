@@ -183,6 +183,12 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     throw err;
   }
 
+  if (execution.sandbox === 'sandcastle') {
+    console.error(`${YELLOW}✗${RESET} SQUAD_SANDBOX_UNSUPPORTED_MODE: squad start requires sandbox=copilot.`);
+    console.error(`${DIM}Use squad watch/loop for sandcastle prompt runs, or set SQUAD_SANDBOX=copilot.${RESET}`);
+    process.exit(1);
+  }
+
   // Inject --additional-mcp-config so the project-level mcp-config.json
   // actually loads in Copilot CLI 1.0.58 (which silently ignores the
   // project file otherwise). Only injects when invoking the bare `copilot`
@@ -198,7 +204,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     : copilotExtraArgs;
 
   const resolvedAgentCmd = (copilotCmd === 'copilot' || copilotCmd === copilotExePath)
-    ? (execution.sandbox === 'sandcastle' ? 'sandcastle' : 'copilot')
+    ? 'copilot'
     : copilotCmd;
 
   // F-07: Security — blocklist dangerous environment variables for PTY

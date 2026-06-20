@@ -200,8 +200,8 @@ npx @bradygaster/squad-cli watch --health
 | `--execute` | Enable agent execution (spawn Copilot sessions for actionable issues) |
 | `--interval N` | Poll every N minutes (default: 10) |
 | `--sandbox <provider>` | Execution sandbox (`copilot` or `sandcastle`; default: `copilot`) |
-| `--sandbox-flags "..."` | Extra flags passed to `sandcastle` when sandbox is `sandcastle` |
-| `--permission-profile <mode>` | Permission profile (`interactive`, `yolo`, `autopilot`; default: `yolo`) |
+| `--sandbox-flags "..."` | Extra provider flags passed to `sandcastle` when sandbox is `sandcastle` |
+| `--permission-profile <mode>` | Copilot permission profile (`interactive`, `yolo`, `autopilot`; default: `yolo`) |
 | `--agent-cmd` | Custom agent command (default: `gh copilot`) |
 | `--copilot-flags` | Flags passed to the agent runner (e.g., `--yolo --autopilot`) |
 | `--auth-user` | GitHub/Azure DevOps account to use for agent auth |
@@ -225,9 +225,11 @@ Watch (`squad watch` / `squad triage`) and loop (`squad loop`) resolve execution
 Validation rules:
 
 - `--sandbox` supports `copilot` and `sandcastle`.
+- With `--sandbox sandcastle`, Squad maps prompt args to Sandcastle (`-p/--prompt` -> `--prompt`) and does not forward Copilot-only permission flags.
 - `--sandbox-flags` is passed to sandcastle when `--sandbox sandcastle` is active.
 - `--permission-profile` supports `interactive`, `yolo`, and `autopilot`.
 - `sandcastle` requires the `sandcastle` binary to be available on PATH.
+- `squad start` and `squad copilot-bridge` require `sandbox=copilot` because they depend on Copilot ACP/PTY behavior.
 - Explicit sandbox selection conflicts with `--agent-cmd` overrides.
 
 Stable error codes surfaced by the CLI:

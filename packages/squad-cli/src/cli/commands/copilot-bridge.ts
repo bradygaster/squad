@@ -91,6 +91,12 @@ export class CopilotBridge {
       throw err;
     }
 
+    if (execution.sandbox === 'sandcastle') {
+      throw new Error(
+        'SQUAD_SANDBOX_UNSUPPORTED_MODE: squad copilot-bridge requires sandbox=copilot because it depends on --acp --stdio.',
+      );
+    }
+
     const sandboxCommand = buildSandboxCommand({
       sandbox: execution.sandbox,
       sandboxFlags: process.env['SQUAD_SANDBOX_FLAGS'],

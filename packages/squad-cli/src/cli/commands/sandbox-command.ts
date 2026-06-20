@@ -18,13 +18,57 @@ export interface SandboxCommandOptions {
   sandboxFlags?: string;
 }
 
+function extractSandcastleArgs(baseArgs: string[]): string[] {
+  const args: string[] = [];
+
+  for (let i = 0; i < baseArgs.length; i += 1) {
+    const token = baseArgs[i];
+    if (!token) continue;
+
+    if (token === '-p' || token === '--prompt') {
+      const value = baseArgs[i + 1];
+      if (value) {
+        args.push('--prompt', value);
+        i += 1;
+      }
+      continue;
+    }
+
+    if (token === '--prompt-file') {
+      const value = baseArgs[i + 1];
+      if (value) {
+        args.push('--prompt-file', value);
+        i += 1;
+      }
+      continue;
+    }
+
+    if (token.startsWith('--prompt=')) {
+      const value = token.slice('--prompt='.length);
+      if (value) args.push('--prompt', value);
+      continue;
+    }
+
+    if (token.startsWith('--prompt-file=')) {
+      const value = token.slice('--prompt-file='.length);
+      if (value) args.push('--prompt-file', value);
+      continue;
+    }
+  }
+
+  return args;
+}
+
 export function buildSandboxCommand(options: SandboxCommandOptions): { cmd: string; args: string[] } {
   const sandbox = options.sandbox ?? 'copilot';
   const permissionProfile = options.permissionProfile ?? 'yolo';
 
   if (sandbox === 'sandcastle') {
-    const args = [...splitFlags(options.sandboxFlags), ...options.baseArgs];
-    return { cmd: 'sandcastle', args: applyPermissionProfileArgs(args, permissionProfile) };
+    const args = [
+      ...splitFlags(options.sandboxFlags),
+      ...extractSandcastleArgs(options.baseArgs),
+    ];
+    return { cmd: 'sandcastle', args };
   }
 
   const withMcp = withAdditionalMcpConfig('copilot', options.baseArgs, options.teamRoot);

@@ -82,6 +82,9 @@ Permission profiles normalize flags passed to Copilot CLI:
 
 This makes behavior deterministic even if user-provided extra flags include permission switches.
 
+Note: permission profile flags are a Copilot concern. They are not forwarded to
+Sandcastle.
+
 ## Using Sandcastle Options from Squad
 
 Current status:
@@ -89,6 +92,11 @@ Current status:
 - First-class sandbox selection (`--sandbox sandcastle`) validates and selects
    the sandcastle executable for supported execution paths.
 - Provider-specific sandcastle flags are supported via `--sandbox-flags "..."`.
+- Prompt arguments are mapped for sandcastle compatibility:
+   - `-p <text>` / `--prompt <text>` -> `--prompt <text>`
+   - `--prompt-file <path>` is passed through
+- Copilot-specific flags (for example `--yolo`, `--autopilot`, MCP-injection flags)
+   are not forwarded to sandcastle.
 
 What you can do today:
 
@@ -118,8 +126,8 @@ Primary command paths:
 
 Additional spawn paths also use the same execution resolver for consistency:
 
-- `squad start`
-- `squad copilot-bridge`
+- `squad start` (requires `sandbox=copilot`)
+- `squad copilot-bridge` (requires `sandbox=copilot`)
 
 ## Examples
 

@@ -88,8 +88,10 @@ describe('CLI: watch execute mode', () => {
       expect(cmd).toBe('sandcastle');
       expect(args).toContain('--isolation');
       expect(args).toContain('strict');
-      expect(args).toContain('-p');
+      expect(args).toContain('--prompt');
       expect(args.some((a) => a.includes('issue #52'))).toBe(true);
+      expect(args).not.toContain('--yolo');
+      expect(args).not.toContain('--autopilot');
     });
 
     it('enforces interactive permission profile over copilot flags', async () => {
