@@ -36,6 +36,20 @@ describe('parseRoutingMarkdown', () => {
     expect(config.rules[1].agents).toEqual(['Developer']);
   });
 
+  it('strips surrounding quotes from examples', () => {
+    const markdown = `
+## Routing Table
+
+| Work Type | Route To | Examples |
+|-----------|----------|----------|
+| testing | Tester | "unit tests", "jest coverage" |
+`;
+
+    const config = parseRoutingMarkdown(markdown);
+
+    expect(config.rules[0].examples).toEqual(['unit tests', 'jest coverage']);
+  });
+
   it('handles multiple agents per rule', () => {
     const markdown = `
 ## Routing Table
@@ -198,6 +212,20 @@ describe('matchRoute', () => {
     
     expect(match.agents).toContain('Developer');
     expect(match.rule?.workType).toBe('bug-fix');
+  });
+
+  it('matches quoted examples after quote-stripping (regression)', () => {
+    const md = `
+## Routing Table
+
+| Work Type | Route To | Examples |
+|-----------|----------|----------|
+| testing | Tester | "unit tests", "jest coverage" |
+`;
+    const quotedRouter = compileRoutingRules(parseRoutingMarkdown(md));
+    const match = matchRoute('please write unit tests now', quotedRouter);
+
+    expect(match.agents).toEqual(['Tester']);
   });
 
   it('returns fallback for no match', () => {
