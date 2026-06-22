@@ -24,7 +24,7 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     steps:
       - name: Checkout scripts (base branch only)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           sparse-checkout: |
             scripts/analyze-impact.mjs

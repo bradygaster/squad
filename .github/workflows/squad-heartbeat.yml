@@ -39,7 +39,7 @@ jobs:
   heartbeat:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # CI Hardening: GitHub API rate limit monitoring (item 9)
       # Ralph makes multiple API calls (list issues, add labels, create comments).

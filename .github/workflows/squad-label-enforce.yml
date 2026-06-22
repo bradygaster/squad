@@ -17,7 +17,7 @@ jobs:
   enforce:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Enforce mutual exclusivity
         uses: actions/github-script@v9
