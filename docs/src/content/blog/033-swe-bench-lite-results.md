@@ -130,7 +130,7 @@ total_runtime: ~21 hours
 - **Model: gpt-4o** — Used for all agents (coordinator, lead, and code expert). No model mixing.
 - **Autopilot mode** — Agents work without human intervention. The `--yolo` flag prevents confirmation prompts.
 - **50 continuation limit** — Prevents infinite loops. Most tasks complete in 10-20 continuations.
-- **30-minute timeout** — Generous but bounded. Of the 20 tasks that produced no patch, most were timeout-related.
+- **30-minute timeout** — Generous but bounded. 31 tasks hit the timeout; 20 produced no patch at all, 11 produced partial patches that failed to apply cleanly.
 - **4 parallel workers** — Processes 4 issues concurrently. Each worker gets its own git worktree.
 
 ## Methodology
@@ -194,9 +194,13 @@ We performed a 12-point integrity check on the results:
 
 ## Error Analysis
 
-### Timeout Cases (20/300, 6.7%)
+### Timeout Cases (31/300, 10.3%)
 
-The 20 "no generation" instances are primarily tasks that exceeded the 30-minute timeout. These typically involved:
+31 tasks exceeded the 30-minute timeout. Of these:
+- 20 produced no patch at all (the "no generation" category)
+- 11 produced partial patches that failed to apply cleanly (included in the 38 "patch apply errors")
+
+Tasks that timed out typically involved:
 - Very large codebases requiring extensive navigation
 - Complex multi-file changes where the agent explored many approaches
 - Issues requiring deep domain knowledge the model lacked
@@ -217,13 +221,30 @@ Patches that applied cleanly but didn't fix the issue. These represent cases whe
 
 ### No Generation (20/300, 6.7%)
 
-Tasks where the agent couldn't produce a patch. Typically due to:
-- Timeout before reaching implementation
-- Agent getting stuck in analysis loops
-- Issues in domains where the model had insufficient training
+Tasks where the agent couldn't produce a patch within the time limit. All 20 overlap with the timeout cases above — no task failed to generate a patch for non-timeout reasons.
+
+## Limitations & Attribution
+
+### Model vs. Orchestration
+
+Squad's 66% result uses GPT-4o as the base model. An important question: how much of this performance comes from the model vs. the multi-agent orchestration?
+
+What we know:
+- **GPT-4o single-agent** scores in the low-to-mid 40s% on SWE-bench Lite (based on public leaderboard entries for single-agent GPT-4o systems)
+- **Squad + GPT-4o** achieved 66% — a ~20+ point improvement over the same base model used alone
+- **Claude Opus 4.6 single-agent** (a stronger model) achieves 62.7% — still below Squad + GPT-4o
+
+This suggests the multi-agent architecture contributes meaningfully, but we cannot claim the full 66% is due to orchestration alone. A rigorous ablation study — running the same tasks with GPT-4o in a single-agent configuration using the same tools and timeout — is planned as a follow-up.
+
+### Other Limitations
+
+- **Single model tested** — We haven't yet run Squad with other base models (Claude, o3). It's possible the improvement varies by model.
+- **Python-only benchmark** — SWE-bench Lite contains only Python repositories. Squad's performance on other languages is untested.
+- **Cost not reported** — We haven't published per-task API costs, which matter for practical comparison.
 
 ## What's Next
 
+- **Single-agent baseline** — Run GPT-4o without Squad orchestration as an ablation
 - **Formal leaderboard submission** via sb-cli
 - **SWE-bench Verified** run (500 instances, harder tasks)
 - **Full SWE-bench** run (2,294 instances)
@@ -232,7 +253,11 @@ Tasks where the agent couldn't produce a patch. Typically due to:
 
 ## Reproducing the Results
 
-The full runner, configuration, and predictions are available in the [tamresearch1 repository](https://github.com/tamirdresher_microsoft/tamresearch1/tree/tamirdresher-microsoft-potential-tribble/benchmarks/swe-bench):
+All artifacts — predictions, evaluation report, worker logs, runner code, and agent configuration — are publicly available:
+
+**📦 [github.com/tamirdresher/squad-swe-bench](https://github.com/tamirdresher/squad-swe-bench)**
+
+The repository contains:
 
 ```
 benchmarks/swe-bench/
