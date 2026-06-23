@@ -1,30 +1,29 @@
 # Consult Mode
 
-
-Consult mode lets you bring your personal squad to projects you don't own — OSS contributions, client work, temporary collaborations — without leaving any trace. Your team consults, does the work, learns things, and returns home with only the generic learnings you approve.
+Consult mode lets you use Squad in projects you don't own without leaving committed team state behind. Squad creates a temporary local workspace, keeps it out of git, and gives you a review step before you keep any reusable learnings.
 
 ---
 
 ## The Problem
 
-You have a personal squad at your global path (e.g., `~/.config/squad/.squad` on Linux) with agents, skills, and decisions refined over time. When you contribute to someone else's project, you face a dilemma:
+When you contribute to someone else's project, you face a dilemma:
 
 - **Pollute the project?** Running `squad init` creates a `.squad/` folder they didn't ask for
-- **Pollute your squad?** Project-specific knowledge bleeds into your global squad
-- **Work without your team?** Lose the productivity benefits you've built up
+- **Keep too much local state?** Project-specific decisions can linger after the work is done
+- **Work without your team?** You lose the structure and memory that make Squad useful
 
 ---
 
 ## The Solution
 
-Your team **consults** on a project. They bring their expertise, do the work, and learn things. When done, they extract what's reusable and return home. The project never knows Squad was there.
+Your team **consults** on a project. They bring their expertise, do the work in a hidden local workspace, and stage reusable learnings for review before anything is kept. The project never needs to commit Squad state.
 
 | Aspect | Normal Mode | Consult Mode |
 |--------|-------------|--------------|
-| Squad location | `.squad/` in project | **Copy** of personal squad into project `.squad/` |
+| Squad location | `.squad/` in project | Temporary local `.squad/` hidden from git |
 | Git visibility | Committed or `.gitignore` | Invisible via `.git/info/exclude` |
-| Writes go to | Project `.squad/` | Project `.squad/` (isolated copy) |
-| After session | Stays in project | Extract generic learnings → personal squad, discard rest |
+| Writes go to | Project `.squad/` | Project `.squad/` (isolated consult workspace) |
+| After session | Stays in project | Review reusable learnings, then clean up |
 
 ---
 
@@ -35,8 +34,8 @@ Your team **consults** on a project. They bring their expertise, do the work, an
 ```bash
 cd ~/projects/kubernetes-dashboard
 squad consult                 # Enter consult mode
-# ... do your work with your squad ...
-squad extract                 # Review and extract generic learnings
+# ... do your work with Squad ...
+squad extract                 # Review and extract reusable learnings
 squad extract --clean --yes   # Clean up after extraction
 ```
 
@@ -63,7 +62,7 @@ squad consult --check         # Dry-run: show what would happen
 
 ### `squad consult`
 
-Enter consult mode with your personal squad.
+Enter consult mode for the current project.
 
 ```bash
 squad consult              # Enter consult mode
@@ -73,22 +72,22 @@ squad consult --check      # Dry-run: show what would happen without creating fi
 
 **What happens:**
 
-1. Copies your personal squad into the project's `.squad/` directory
+1. Creates a project-local `.squad/` workspace for the consult session
 2. Adds `.squad/` and `.github/agents/squad.agent.md` to `.git/info/exclude`
 3. Patches the Scribe charter with extraction instructions
-4. Creates a staging area at `.squad/extract/` for generic learnings
+4. Creates a staging area at `.squad/extract/` for reusable learnings
 
 **Created structure:**
 
 ```
-.squad/                     # Full copy of personal squad
-├── config.json             # { "consult": true, "sourceSquad": "...", ... }
-├── agents/                 # Copied from personal squad
-├── skills/                 # Copied from personal squad
-├── decisions.md            # Copied from personal squad
+.squad/
+├── config.json             # { "consult": true, ... }
+├── agents/                 # Session-local agent state
+├── skills/                 # Session-local reusable notes
+├── decisions.md            # Decisions made during the consult
 ├── scribe-charter.md       # Patched with consult mode extraction instructions
 ├── sessions/               # Local session history
-└── extract/                # Staging area for generic learnings
+└── extract/                # Staging area for reusable learnings
 
 .github/agents/
 └── squad.agent.md          # Points to local .squad/ (also excluded from git)
@@ -96,17 +95,16 @@ squad consult --check      # Dry-run: show what would happen without creating fi
 
 **Requirements:**
 
-- You must have a personal squad configured
 - The project must not already have a committed `.squad/` folder
 
 ---
 
 ### `squad extract`
 
-Extract generic learnings from a consult session back to your personal squad.
+Extract reusable learnings from a consult session.
 
 ```bash
-squad extract                    # Review and extract generic learnings
+squad extract                    # Review and extract reusable learnings
 squad extract --dry-run          # Preview what would be extracted (no changes)
 squad extract --clean            # Also delete project .squad/ after (prompts for confirmation)
 squad extract --clean --yes      # Delete without confirmation
@@ -118,8 +116,8 @@ squad extract --accept-risks     # Allow extraction despite license risks
 1. Reads the project's LICENSE file
 2. Loads staged learnings from `.squad/extract/`
 3. Presents an interactive selection UI
-4. Merges selected items to your personal squad
-5. Logs the consultation to `<personal-squad>/consultations/{project}.md`
+4. Merges selected items into your reusable Squad materials
+5. Logs the consultation at `.squad/consultations/{project}.md`
 6. Optionally cleans up the project `.squad/` directory
 
 **Example output:**
@@ -212,18 +210,18 @@ Consult mode uses `.git/info/exclude` to hide Squad files:
 - Project owners never see it
 - `git status` shows nothing Squad-related
 
-### Why Copy Instead of Reference?
+### Why Use a Temporary Local Workspace?
 
-Your personal squad is **copied** into the project rather than referenced:
+Consult mode keeps its workspace in the project, but out of version control:
 
-- Changes during the session don't pollute your personal squad
-- Session-specific decisions stay isolated until explicitly extracted
-- Works offline (no dependency on external path)
-- Clean separation between "consulting" and "bringing home"
+- Changes during the session stay isolated from your normal team state
+- Session-specific decisions remain local until explicitly extracted
+- Works offline with no dependency on another checkout
+- Clean separation between consulting and long-lived team assets
 
 ### Consultation Log
 
-All consultations are tracked in your personal squad at `consultations/{project}.md`:
+All consultations are tracked at `.squad/consultations/{project}.md`:
 
 ```markdown
 # kubernetes-dashboard
@@ -250,12 +248,11 @@ All consultations are tracked in your personal squad at `consultations/{project}
 - Use `squad extract --dry-run` to review staged learnings without committing
 - The `--clean` flag is convenient for OSS drive-by contributions where you won't return
 - Consult mode errors out if the project already has a committed `.squad/` — use normal mode instead
-- Your personal squad is never modified during the session — only via explicit `squad extract`
+- Reusable materials are only updated through explicit `squad extract`
 
 ---
 
 ## Next Steps
 
-- **Set up a personal squad:** See [Your Personal Squad](../guide/personal-squad.md) for initial setup with `squad init --global`
 - **Learn about sharing:** See [Export & Import](./export-import.md) for portable team snapshots
 - **Upstream inheritance:** See [Upstream Inheritance](./upstream-inheritance.md) for knowledge sharing across teams

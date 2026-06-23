@@ -62,15 +62,15 @@ Reviewers see squad metadata mixed with your actual code changes.
 
 ## The Solution: External State
 
-`squad externalize` moves `.squad/` to a platform-specific global directory **outside the working tree**:
+`squad externalize` moves `.squad/` to a platform-specific external storage location **outside the working tree**:
 
 **Platform paths:**
 
 | OS | Path |
 |----|------|
-| **Windows** | `%APPDATA%\squad\projects\{repo-name}\` |
-| **macOS** | `~/Library/Application Support/squad/projects/{repo-name}/` |
-| **Linux** | `~/.config/squad/projects/{repo-name}/` |
+| **Windows** | Managed Squad storage under your user profile |
+| **macOS** | Managed Squad storage under your user Library |
+| **Linux** | Managed Squad storage under your user config directory |
 
 **Result:**
 - Squad state persists across branch switches
@@ -90,8 +90,8 @@ squad externalize
 ```
 
 **What happens:**
-1. Resolves platform-specific global path (e.g., `~/Library/Application Support/squad/projects/my-repo/`)
-2. Moves `.squad/` contents to global path
+1. Resolves the platform-specific external storage location for this repo
+2. Moves `.squad/` contents to that external location
 3. Creates thin marker file `.squad/config.json` in working tree:
    ```json
    {
@@ -102,7 +102,7 @@ squad externalize
 
 **After externalization:**
 - Working tree has only `.squad/config.json` (gitignored marker)
-- All squad state lives in global directory
+- All squad state lives in external storage
 - Branch switches don't affect squad data
 
 ---
@@ -117,7 +117,7 @@ squad internalize
 
 **What happens:**
 1. Reads marker file to find external state location
-2. Moves state from global directory back to `.squad/`
+2. Moves state from external storage back to `.squad/`
 3. Removes marker file
 4. Removes `.squad/` from `.gitignore`
 
@@ -141,7 +141,7 @@ The thin marker file `.squad/config.json` tracks state location:
 | Value | Meaning |
 |-------|---------|
 | `"internal"` | State lives in working tree (`.squad/` in repo) |
-| `"external"` | State lives in global directory (platform-specific path) |
+| `"external"` | State lives in external storage outside the working tree |
 
 **Notes:**
 - Marker file is created by `squad externalize`
@@ -150,21 +150,22 @@ The thin marker file `.squad/config.json` tracks state location:
 
 ---
 
-## Global Directory Structure
+## External Directory Structure
 
 ```
-~/Library/Application Support/squad/projects/
-  my-repo/
-    decisions/
-      log.md
-      inbox/
-    skills/
-      ci-setup/SKILL.md
-    team.md
-    routing.md
-  other-repo/
-    decisions/
-    skills/
+<external-squad-root>/
+  projects/
+    my-repo/
+      decisions/
+        log.md
+        inbox/
+      skills/
+        ci-setup/SKILL.md
+      team.md
+      routing.md
+    other-repo/
+      decisions/
+      skills/
 ```
 
 Each repo gets its own isolated directory based on repository name. State is never shared across repos.
@@ -188,18 +189,19 @@ Each repo gets its own isolated directory based on repository name. State is nev
 
 ## Multi-Repo Workflows
 
-External state is **isolated per repository** — each repo gets its own global directory. If you work on multiple repos, each maintains separate squad state:
+External state is **isolated per repository** — each repo gets its own external storage location. If you work on multiple repos, each maintains separate squad state:
 
 ```
-~/Library/Application Support/squad/projects/
-  frontend/
-    decisions/
-    skills/
-    team.md
-  backend/
-    decisions/
-    skills/
-    team.md
+<external-squad-root>/
+  projects/
+    frontend/
+      decisions/
+      skills/
+      team.md
+    backend/
+      decisions/
+      skills/
+      team.md
 ```
 
 No cross-repo state pollution.

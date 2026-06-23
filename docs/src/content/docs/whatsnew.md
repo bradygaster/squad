@@ -9,17 +9,11 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 - **Shell agent name extraction** — Robust multi-pattern fallback for extracting agent names from shell transcripts (#577)
 - **Init scaffolding** — `squad init --sdk` now scaffolds typed casting files; silences remote-lookup warnings (#579)
-- **Personal squad global mode** — `squad personal init --global` auto-discovers `~/.config/squad/` (#576)
 - **Release hardening** — CI playbook rewrite, publish policy linting, docs consistency checks (#564, #557)
 - **Doctor improvements** — Actionable warnings and `squad.agent.md` existence checks (#565, #533)
 
 ## v0.9.0 — Major Feature Release
 
-**Governance & Personal Squads**
-- **Personal Squad concept** — Isolated developer workspace with own team.md, routing.md, and roster (#508)
-- **Ambient discovery** — Auto-detect personal squad at `~/.squad/` via environment variables
-- **Personal squad CLI** — Commands: `squad personal init`, `list`, `use`, `remove` (#508)
-- **Governance isolation** — Hooks, ceremonies, telemetry scoped per personal squad (#508)
 
 **Worktree Spawning & Distributed Work**
 - **Worktree creation** — Coordinator spawns managed worktrees for parallel agent work (#529)

@@ -49,7 +49,7 @@ const squadPath = resolveSquad('/home/user/project/src');
 
 ### `resolveGlobalSquadPath(): string`
 
-Get path to global personal squad. Returns platform-specific path: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows.
+Get the runtime-managed Squad data root for the current platform.
 
 ### `ensureSquadPath(startPath?: string): string`
 

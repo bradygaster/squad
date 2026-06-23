@@ -1,49 +1,22 @@
 ---
-title: "What's New in v0.9.0: Personal Squad, Worktrees, Cooperative Rate Limiting, and More"
+title: "What's New in v0.9.0: Worktrees, Cooperative Rate Limiting, and More"
 date: 2026-03-23
 author: bradygaster
 wave: 8
-tags: [squad, release, v0.9.0, features, personal-squad, worktree, rate-limiting, economy-mode]
+tags: [squad, release, v0.9.0, features, worktree, rate-limiting, economy-mode]
 status: published
-hero: "Squad's biggest release yet — personal agents that follow you across repos, isolated worktrees for conflict-free parallel work, cooperative rate limiting, economy mode for cost control, and a refreshed docs site."
+hero: "Squad's biggest release yet — isolated worktrees for conflict-free parallel work, cooperative rate limiting, economy mode for cost control, and a refreshed docs site."
 ---
 
 # What's New in v0.9.0
 
-> _This is Squad's biggest release. Personal Squad brings ambient agent discovery and project portability. Worktree spawning isolates each issue into its own branch. Cooperative rate limiting maps traffic across multi-agent teams. Economy Mode lets you budget costs. A complete docs refresh, security hardening, and community contributions make this one to upgrade for._
+> _This is Squad's biggest release. Worktree spawning isolates each issue into its own branch. Cooperative rate limiting maps traffic across multi-agent teams. Economy Mode lets you budget costs. A complete docs refresh, security hardening, and community contributions make this one to upgrade for._
 
 ---
 
 ## What Shipped
 
-### 1. Personal Squad — Ambient Agent Discovery (#508)
-
-Your Squad follows you across repositories.
-
-**Personal agents** are ambient: you configure them once, and they're automatically available in every project you work on — no per-repo setup needed. They discover the projects they work in through the Ghost Protocol: safe interaction that respects your project's boundaries without disrupting other work.
-
-**CLI commands:**
-
-```bash
-squad personal init          # Declare your personal agents
-squad personal list          # See what's available
-```
-
-**Governance layer** — Personal agents declare what they need (memory, tools, platforms) and operate within guardrails. A personal coding agent won't blindly touch your enterprise repo; it reads your project's agent charters and `.squad/config.json` first.
-
-**What this enables:**
-- One global Squad definition across all your repos
-- Agents that know your coding style, tools, and preferences
-- Safe cross-repo work without conflicts
-- Team squads + personal squads = complete context
-
-:::tip
-Personal Squad is foundational. It's how your favorite coding agent follows you into a new project without needing re-hiring.
-:::
-
----
-
-### 2. Worktree Spawning — No More Branch Conflicts (#529)
+### 1. Worktree Spawning — No More Branch Conflicts (#529)
 
 Each issue gets its own git worktree.
 
@@ -65,7 +38,7 @@ This is the foundation for true parallel work at scale.
 
 ---
 
-### 3. Machine Capability Discovery — Routing to Capable Hardware (#514)
+### 2. Machine Capability Discovery — Routing to Capable Hardware (#514)
 
 Agents declare what they need. Ralph routes work to machines that can handle it.
 
@@ -91,7 +64,7 @@ Capability Discovery works with Ralph's mesh routing. If you're not running Ralp
 
 ---
 
-### 4. Cooperative Rate Limiting — Predictive Circuit Breaker (#515)
+### 3. Cooperative Rate Limiting — Predictive Circuit Breaker (#515)
 
 Multi-agent teams share rate limits responsibly.
 
@@ -115,7 +88,7 @@ Suggestion: 1 agent idle, 2 backing off. Try serial mode with --cooperative-dela
 
 ---
 
-### 5. Economy Mode — Cost-Conscious Model Selection (#500)
+### 4. Economy Mode — Cost-Conscious Model Selection (#500)
 
 Budget-aware routing falls back to cheaper models when spend is high.
 
@@ -142,7 +115,7 @@ const role = await squad.resolveRole('coding-agent', {
 
 ---
 
-### 6. Auto-Wired Telemetry (#281)
+### 5. Auto-Wired Telemetry (#281)
 
 One call to wire up full observability.
 
@@ -169,7 +142,7 @@ No more hunting for telemetry wiring. One call, full observability.
 
 ---
 
-### 7. Upgrade Path Overhaul — P0 Fixes (#544, #549)
+### 6. Upgrade Path Overhaul — P0 Fixes (#544, #549)
 
 **Windows EPERM handling** — File permission errors on Windows no longer break upgrades. Automatic retry with temporary directory fallback.
 
@@ -185,7 +158,7 @@ No more hunting for telemetry wiring. One call, full observability.
 
 ---
 
-### 8. Documentation Refresh
+### 7. Documentation Refresh
 
 **README slimmed**: 512 → 218 lines. Removed noise, kept substance.
 
@@ -201,7 +174,7 @@ No more hunting for telemetry wiring. One call, full observability.
 
 ---
 
-### 9. Quality & Stability
+### 8. Quality & Stability
 
 - ✅ Node <22.5.0 hard-fail with clear message (prevents silent failures)
 - ✅ Memory safety caps (prevents runaway allocations on large codebases)
@@ -213,7 +186,7 @@ No more hunting for telemetry wiring. One call, full observability.
 
 ---
 
-### 10. Community Contributions
+### 9. Community Contributions
 
 **Worktree regression tests** — @diberry added tests that guard against regressions in worktree `.git` handling (file vs. directory).
 
@@ -225,7 +198,7 @@ No more hunting for telemetry wiring. One call, full observability.
 
 ## Quick Stats
 
-- ✅ **5 major features** (Personal Squad, Worktrees, Capability Discovery, Cooperative Rate Limiting, Economy Mode)
+- ✅ **4 major features** (Worktrees, Capability Discovery, Cooperative Rate Limiting, Economy Mode)
 - ✅ **Auto-wired telemetry** in one call
 - ✅ **P0 upgrade fixes** across Windows, Node compatibility, and error surfacing
 - ✅ **Docs refresh** — README -46%, new upgrade guide, consistent install path

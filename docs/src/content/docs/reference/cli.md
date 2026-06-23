@@ -20,14 +20,13 @@ squad init
 
 ---
 
-## CLI Commands (17 commands)
+## CLI Commands
 
 | Command | Description | Requires `.squad/` |
 |---------|-------------|:------------------:|
 | `squad` | **Deprecated** — Enter interactive shell (no args). Use `copilot --agent squad` instead. | No |
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
 | `squad init --state-backend <type>` | Initialize with a specific state backend (`local`, `orphan`, `two-layer`) | No |
-| `squad init --global` | Create a personal squad in your platform-specific directory | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
 | `squad link <team-repo-path>` | Link project to a remote team root | Yes |
 | `squad loop` | Run a prompt-driven work loop from `loop.md` | Yes |
@@ -337,8 +336,8 @@ When Squad starts, it looks for `.squad/` in this order:
 
 1. Current directory (`./.squad/`)
 2. Parent directories (walk up to project root)
-3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
-4. Global CLI default (fallback only)
+3. Linked or externally managed Squad location, if configured
+4. Global CLI fallback metadata, if available
 
 First match wins.
 

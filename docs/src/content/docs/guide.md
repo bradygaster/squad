@@ -346,7 +346,7 @@ The `squad-heartbeat` workflow runs Ralph on a schedule — your squad triages i
 
 ## Memory system
 
-Squad's memory is layered — personal agent histories, shared team decisions, and reusable skills. Knowledge compounds over sessions. After a few sessions, agents stop asking questions they've already answered. Mature projects carry full architecture knowledge and decision history.
+Squad's memory is layered — per-agent histories, shared team decisions, and reusable skills. Knowledge compounds over sessions. After a few sessions, agents stop asking questions they've already answered. Mature projects carry full architecture knowledge and decision history.
 
 → [Full guide: Memory System](features/memory.md)
 
@@ -543,7 +543,6 @@ Squad maintains a clear ownership model:
 |---------|-------------|
 | `squad init` | Initialize Squad in the current repo |
 | `squad init --sdk` | Initialize with SDK-first TypeScript config |
-| `squad init --global` | Initialize a personal squad (cross-project) |
 | `squad build` | Generate `.squad/` from `squad.config.ts` |
 | `squad build --check` | Validate generated files match disk (for CI) |
 | `squad doctor` | Run 9 setup validation checks |

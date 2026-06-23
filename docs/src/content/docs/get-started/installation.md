@@ -98,26 +98,6 @@ The SDK gives you typed configuration, routing, model selection, and the full ag
 
 ---
 
-### Personal squad (cross-project)
-
-Want the same agents across all your projects?
-
-```bash
-squad init --global
-```
-
-This creates your personal squad directory — a personal team root that any project can inherit from. See [Upstream Inheritance](../features/upstream-inheritance.md) for details.
-
-**Personal squad location by platform:**
-
-| Platform | Path |
-|----------|------|
-| Linux | `~/.config/squad/` |
-| macOS | `~/Library/Application Support/squad/` |
-| Windows | `%APPDATA%\squad\` |
-
----
-
 ## First-Time Setup
 
 After installing, initialize Squad in your project:
@@ -171,7 +151,7 @@ echo %PATH% | findstr npm      # Windows
 
 ### `Cannot find .squad/ directory`
 
-Run `squad init` in your project root, or `squad init --global` for a personal squad.
+Run `squad init` in your project root.
 
 ### Version mismatch between CLI and SDK
 
