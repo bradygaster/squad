@@ -1,6 +1,6 @@
 /**
  * Integration tests for ToolRegistry (M1-1, M1-2, Issues #88 #92)
- * 
+ *
  * Tests tool registration, lookup, filtering, and handler execution for:
  * - squad_route: Routing tasks to agents
  * - squad_decide: Writing decisions to inbox
@@ -10,11 +10,47 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ToolRegistry, defineTool, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
-import { SessionPool } from '@bradygaster/squad-sdk/client';
+import { ToolRegistry, defineTool, sanitizeArgs, type RouteRequest, type DecisionRecord, type MemoryEntry } from '@bradygaster/squad-sdk/tools';
+import { SessionPool, EventBus } from '@bradygaster/squad-sdk/client';
+import type { FanOutDependencies } from '@bradygaster/squad-sdk/coordinator';
+import type { AgentCharter } from '@bradygaster/squad-sdk/agents';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+
+/**
+ * Build a fully-mocked FanOutDependencies suitable for squad_route tests.
+ * Mirrors test/fan-out.test.ts mock style so any future change to the
+ * fan-out contract surfaces in both places.
+ */
+function buildMockFanOutDeps(overrides: Partial<FanOutDependencies> = {}): FanOutDependencies {
+  const eventBus = overrides.eventBus ?? new EventBus();
+  const sessionPool = overrides.sessionPool ?? new SessionPool({
+    maxConcurrent: 10,
+    idleTimeout: 60000,
+    healthCheckInterval: 30000,
+  });
+  return {
+    compileCharter: overrides.compileCharter ?? vi.fn(async (agentName: string) => ({
+      name: agentName,
+      displayName: `${agentName} Agent`,
+      role: 'Developer',
+      expertise: ['TypeScript'],
+      style: 'Professional',
+      prompt: `You are ${agentName}`,
+      modelPreference: 'claude-sonnet-4.5',
+    } as AgentCharter)),
+    resolveModel: overrides.resolveModel ?? vi.fn(async (charter: AgentCharter, override?: string) =>
+      override ?? charter.modelPreference ?? 'claude-sonnet-4.5'
+    ),
+    createSession: overrides.createSession ?? vi.fn(async () => ({
+      sessionId: `session-${Math.random().toString(36).slice(2, 11)}`,
+      sendMessage: vi.fn(async () => undefined),
+    })),
+    sessionPool,
+    eventBus,
+  };
+}
 
 describe('defineTool', () => {
   it('should create a typed SquadTool', () => {
@@ -62,9 +98,44 @@ describe('defineTool', () => {
   });
 });
 
+describe('sanitizeArgs', () => {
+  it('redacts memory content and query fields before telemetry serialization', () => {
+    const serialized = sanitizeArgs({
+      content: 'password=do-not-record',
+      query: 'private customer data',
+      title: 'safe title',
+    });
+
+    expect(serialized).toContain('"content":"[REDACTED]"');
+    expect(serialized).toContain('"query":"[REDACTED]"');
+    expect(serialized).toContain('"title":"safe title"');
+    expect(serialized).not.toContain('do-not-record');
+    expect(serialized).not.toContain('private customer data');
+  });
+});
+
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;
   let testRoot: string;
+  const builtInToolNames = [
+    'squad_route',
+    'squad_decide',
+    'squad_memory',
+    'squad_state_read',
+    'squad_state_write',
+    'squad_state_append',
+    'squad_state_delete',
+    'squad_state_list',
+    'squad_state_health',
+    'memory.classify',
+    'memory.write',
+    'memory.search',
+    'memory.promote',
+    'memory.delete',
+    'memory.audit',
+    'squad_status',
+    'squad_skill',
+  ];
 
   beforeEach(() => {
     testRoot = path.join('.', '.test-squad-' + randomUUID());
@@ -78,16 +149,12 @@ describe('ToolRegistry', () => {
   });
 
   describe('registration', () => {
-    it('should register all five squad tools', () => {
+    it('should register all squad and memory governance tools', () => {
       const tools = registry.getTools();
-      expect(tools.length).toBe(5);
+      expect(tools.length).toBe(builtInToolNames.length);
 
       const toolNames = tools.map(t => t.name);
-      expect(toolNames).toContain('squad_route');
-      expect(toolNames).toContain('squad_decide');
-      expect(toolNames).toContain('squad_memory');
-      expect(toolNames).toContain('squad_status');
-      expect(toolNames).toContain('squad_skill');
+      expect(toolNames).toEqual(expect.arrayContaining(builtInToolNames));
     });
 
     it('should register tools with descriptions and parameters', () => {
@@ -103,7 +170,7 @@ describe('ToolRegistry', () => {
     it('should return all registered tools', () => {
       const tools = registry.getTools();
       expect(Array.isArray(tools)).toBe(true);
-      expect(tools.length).toBe(5);
+      expect(tools.length).toBe(builtInToolNames.length);
     });
 
     it('should return tools with handler functions', () => {
@@ -117,7 +184,7 @@ describe('ToolRegistry', () => {
   describe('getToolsForAgent', () => {
     it('should return all tools when no filter provided', () => {
       const tools = registry.getToolsForAgent();
-      expect(tools.length).toBe(5);
+      expect(tools.length).toBe(builtInToolNames.length);
     });
 
     it('should filter tools by allowed list', () => {
@@ -153,13 +220,8 @@ describe('ToolRegistry', () => {
 });
 
 describe('squad_route handler', () => {
-  let registry: ToolRegistry;
-
-  beforeEach(() => {
-    registry = new ToolRegistry('.test-squad-route');
-  });
-
   it('should validate target agent is required', async () => {
+    const registry = new ToolRegistry('.test-squad-route');
     const tool = registry.getTool('squad_route')!;
     const result = await tool.handler(
       { targetAgent: '', task: 'Do something' } as RouteRequest,
@@ -177,7 +239,35 @@ describe('squad_route handler', () => {
     });
   });
 
-  it('should create route request with valid inputs', async () => {
+  it('should fail with fan-out-deps-unavailable when no fanOutDepsGetter is configured', async () => {
+    // Default ToolRegistry has no fanOutDepsGetter — must not fake success.
+    const registry = new ToolRegistry('.test-squad-route');
+    const tool = registry.getTool('squad_route')!;
+    const result = await tool.handler(
+      { targetAgent: 'fenster', task: 'Implement feature X' } as RouteRequest,
+      {
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_route',
+        arguments: {},
+      }
+    );
+
+    expect(result).toMatchObject({
+      resultType: 'failure',
+      error: 'fan-out-deps-unavailable',
+    });
+    expect((result as any).textResultForLlm).toContain('fenster');
+    expect((result as any).toolTelemetry.routeRequest).toMatchObject({
+      targetAgent: 'fenster',
+      task: 'Implement feature X',
+      priority: 'normal',
+    });
+  });
+
+  it('should spawn target agent via spawnParallel when fanOutDepsGetter is configured', async () => {
+    const deps = buildMockFanOutDeps();
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => deps);
     const tool = registry.getTool('squad_route')!;
     const result = await tool.handler(
       {
@@ -194,20 +284,65 @@ describe('squad_route handler', () => {
       }
     );
 
-    expect(result).toMatchObject({
-      resultType: 'success',
-    });
+    expect(result).toMatchObject({ resultType: 'success' });
     expect((result as any).textResultForLlm).toContain('fenster');
-    expect((result as any).textResultForLlm).toContain('high');
+    expect((result as any).toolTelemetry.sessionId).toBeDefined();
+    expect((result as any).toolTelemetry.routeRequest).toMatchObject({
+      targetAgent: 'fenster',
+      priority: 'high',
+      context: 'Related to PRD-2',
+    });
+    expect(deps.compileCharter).toHaveBeenCalledWith('fenster');
+    expect(deps.createSession).toHaveBeenCalledOnce();
   });
 
-  it('should default priority to normal', async () => {
+  it('should default priority to normal when omitted', async () => {
+    const deps = buildMockFanOutDeps();
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => deps);
     const tool = registry.getTool('squad_route')!;
     const result = await tool.handler(
+      { targetAgent: 'brady', task: 'Review code' } as RouteRequest,
       {
-        targetAgent: 'brady',
-        task: 'Review code',
-      } as RouteRequest,
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_route',
+        arguments: {},
+      }
+    );
+
+    expect(result).toMatchObject({ resultType: 'success' });
+    expect((result as any).toolTelemetry.routeRequest.priority).toBe('normal');
+  });
+
+  it('should surface failure when underlying spawn fails', async () => {
+    const deps = buildMockFanOutDeps({
+      compileCharter: vi.fn(async () => {
+        throw new Error('charter-not-found');
+      }),
+    });
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => deps);
+    const tool = registry.getTool('squad_route')!;
+    const result = await tool.handler(
+      { targetAgent: 'ghost', task: 'Do thing' } as RouteRequest,
+      {
+        sessionId: 'test-session',
+        toolCallId: 'test-call',
+        toolName: 'squad_route',
+        arguments: {},
+      }
+    );
+
+    expect(result).toMatchObject({ resultType: 'failure' });
+    expect(['spawn-failed', 'spawn-exception']).toContain((result as any).error);
+    // toolTelemetry must not expose raw spawnResult
+    expect((result as any).toolTelemetry.spawnResult).toBeUndefined();
+  });
+
+  it('should fail with fan-out-deps-unavailable when fanOutDepsGetter returns undefined', async () => {
+    const registry = new ToolRegistry('.test-squad-route', undefined, undefined, undefined, () => undefined);
+    const tool = registry.getTool('squad_route')!;
+    const result = await tool.handler(
+      { targetAgent: 'fenster', task: 'Implement feature X' } as RouteRequest,
       {
         sessionId: 'test-session',
         toolCallId: 'test-call',
@@ -217,9 +352,9 @@ describe('squad_route handler', () => {
     );
 
     expect(result).toMatchObject({
-      resultType: 'success',
+      resultType: 'failure',
+      error: 'fan-out-deps-unavailable',
     });
-    expect((result as any).toolTelemetry.routeRequest.priority).toBe('normal');
   });
 });
 
@@ -298,7 +433,7 @@ describe('squad_decide handler', () => {
     const inboxDir = path.join(testRoot, 'decisions', 'inbox');
     const files = fs.readdirSync(inboxDir);
     const content = fs.readFileSync(path.join(inboxDir, files[0]), 'utf-8');
-    
+
     expect(content).toContain('Short decision');
     expect(content).toContain('**By:** brady');
     expect(content).not.toContain('**References:**');
@@ -316,7 +451,7 @@ describe('squad_memory handler', () => {
     // Create test agent history file
     const agentDir = path.join(testRoot, 'agents', 'fenster');
     fs.mkdirSync(agentDir, { recursive: true });
-    
+
     const historyContent = `# Fenster's History
 
 ## Learnings
@@ -365,21 +500,21 @@ Initial session entry.
 
     const historyFile = path.join(testRoot, 'agents', 'fenster', 'history.md');
     const content = fs.readFileSync(historyFile, 'utf-8');
-    
+
     expect(content).toContain('Learned how to implement ToolRegistry');
     expect(content).toContain('## Learnings');
-    
+
     // Check it's in the right section
     const learningsIndex = content.indexOf('## Learnings');
     const updatesIndex = content.indexOf('## Updates');
     const newEntryIndex = content.indexOf('Learned how to implement ToolRegistry');
-    
+
     expect(newEntryIndex).toBeGreaterThan(learningsIndex);
     expect(newEntryIndex).toBeLessThan(updatesIndex);
   });
 
   it('should create section if it does not exist', async () => {
-    // Create a history file without Sessions section
+    // Create a history file without Context section (sessions maps to Context via SECTION_MAP)
     const agentDir = path.join(testRoot, 'agents', 'brady');
     fs.mkdirSync(agentDir, { recursive: true });
     fs.writeFileSync(path.join(agentDir, 'history.md'), '# Brady History\n\n## Learnings\n', 'utf-8');
@@ -405,8 +540,8 @@ Initial session entry.
 
     const historyFile = path.join(testRoot, 'agents', 'brady', 'history.md');
     const content = fs.readFileSync(historyFile, 'utf-8');
-    
-    expect(content).toContain('## Sessions');
+
+    expect(content).toContain('## Context');
     expect(content).toContain('Session on M1-1 implementation');
   });
 
@@ -430,6 +565,113 @@ Initial session entry.
       resultType: 'failure',
       error: 'History file does not exist',
     });
+  });
+});
+
+describe('memory governance tool handlers', () => {
+  let registry: ToolRegistry;
+  let testRoot: string;
+
+  beforeEach(() => {
+    testRoot = path.join('.', '.test-memory-tools-' + randomUUID());
+    fs.mkdirSync(testRoot, { recursive: true });
+    registry = new ToolRegistry(testRoot);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(testRoot)) {
+      fs.rmSync(testRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects forbidden memory through memory.write and exposes audit', async () => {
+    const write = registry.getTool('memory.write')!;
+    const result = await write.handler(
+      { content: 'token=do-not-store-this', title: 'forbidden', author: 'worf' },
+      { sessionId: 's', toolCallId: 'c', toolName: 'memory.write', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('failure');
+    expect((result as any).toolTelemetry.class).toBe('FORBIDDEN');
+
+    const audit = await registry.getTool('memory.audit')!.handler(
+      {},
+      { sessionId: 's', toolCallId: 'a', toolName: 'memory.audit', arguments: {} },
+    );
+    expect(audit.resultType).toBe('success');
+    expect((audit as any).textResultForLlm).toContain('reject');
+    expect((audit as any).textResultForLlm).not.toContain('do-not-store-this');
+  });
+
+  it('does not derive rejected no-title audit records from sensitive memory content', async () => {
+    const write = registry.getTool('memory.write')!;
+    const result = await write.handler(
+      { content: 'token=tool-bridge-secret', author: 'worf' },
+      { sessionId: 's', toolCallId: 'c', toolName: 'memory.write', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('failure');
+    const audit = await registry.getTool('memory.audit')!.handler(
+      {},
+      { sessionId: 's', toolCallId: 'a', toolName: 'memory.audit', arguments: {} },
+    );
+    expect((audit as any).textResultForLlm).toContain('Rejected governed memory');
+    expect((audit as any).textResultForLlm).not.toContain('tool-bridge-secret');
+    expect(JSON.stringify((audit as any).toolTelemetry)).not.toContain('tool-bridge-secret');
+  });
+
+  it('audits memory.classify and memory.search without raw sensitive tool telemetry', async () => {
+    const classify = await registry.getTool('memory.classify')!.handler(
+      { content: 'Private customer data: Fabrikam tenant details.', author: 'seven' },
+      { sessionId: 's', toolCallId: 'c', toolName: 'memory.classify', arguments: {} },
+    );
+    expect(classify.resultType).toBe('failure');
+    expect((classify as any).toolTelemetry.classification.reason).toContain('private customer data');
+    expect(JSON.stringify((classify as any).toolTelemetry)).not.toContain('Fabrikam tenant details');
+
+    const write = await registry.getTool('memory.write')!.handler(
+      { content: 'Searchable governed memory for telemetry metadata.', title: 'Telemetry Memory', class: 'LOCAL', author: 'seven' },
+      { sessionId: 's', toolCallId: 'w', toolName: 'memory.write', arguments: {} },
+    );
+    expect(write.resultType).toBe('success');
+
+    const search = await registry.getTool('memory.search')!.handler(
+      { query: 'telemetry metadata' },
+      { sessionId: 's', toolCallId: 'q', toolName: 'memory.search', arguments: {} },
+    );
+    expect(search.resultType).toBe('success');
+    expect((search as any).toolTelemetry.count).toBe(1);
+    expect(JSON.stringify((search as any).toolTelemetry)).not.toContain('Searchable governed memory');
+
+    const audit = await registry.getTool('memory.audit')!.handler(
+      {},
+      { sessionId: 's', toolCallId: 'a', toolName: 'memory.audit', arguments: {} },
+    );
+    expect((audit as any).textResultForLlm).toContain('classify');
+    expect((audit as any).textResultForLlm).toContain('search');
+    expect(JSON.stringify((audit as any).toolTelemetry)).not.toContain('Fabrikam tenant details');
+    expect(JSON.stringify((audit as any).toolTelemetry)).not.toContain('telemetry metadata');
+  });
+
+  it('writes, searches, and deletes local governed memory through tool bridge', async () => {
+    const write = await registry.getTool('memory.write')!.handler(
+      { content: 'Prefer governed memory for durable facts.', title: 'Governed Facts', class: 'LOCAL', author: 'data' },
+      { sessionId: 's', toolCallId: 'w', toolName: 'memory.write', arguments: {} },
+    );
+    expect(write.resultType).toBe('success');
+    const id = (write as any).toolTelemetry.id as string;
+
+    const search = await registry.getTool('memory.search')!.handler(
+      { query: 'durable facts' },
+      { sessionId: 's', toolCallId: 'q', toolName: 'memory.search', arguments: {} },
+    );
+    expect((search as any).toolTelemetry.count).toBe(1);
+
+    const del = await registry.getTool('memory.delete')!.handler(
+      { id, actor: 'data' },
+      { sessionId: 's', toolCallId: 'd', toolName: 'memory.delete', arguments: {} },
+    );
+    expect(del.resultType).toBe('success');
   });
 });
 
@@ -614,7 +856,7 @@ describe('squad_skill handler', () => {
       resultType: 'success',
     });
 
-    const skillFile = path.join(projectRoot, '.copilot', 'skills', 'typescript-refactoring', 'SKILL.md');
+    const skillFile = path.join(projectRoot, '.github', 'skills', 'typescript-refactoring', 'SKILL.md');
     expect(fs.existsSync(skillFile)).toBe(true);
 
     const content = fs.readFileSync(skillFile, 'utf-8');
@@ -709,7 +951,7 @@ describe('squad_skill handler', () => {
       }
     );
 
-    const skillFile = path.join(projectRoot, '.copilot', 'skills', 'test-skill', 'SKILL.md');
+    const skillFile = path.join(projectRoot, '.github', 'skills', 'test-skill', 'SKILL.md');
     const content = fs.readFileSync(skillFile, 'utf-8');
     expect(content).toContain('**Confidence:** medium');
   });

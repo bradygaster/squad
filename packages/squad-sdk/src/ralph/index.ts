@@ -11,8 +11,10 @@
  *   3. Cloud heartbeat: External health signal (future)
  */
 
-import { writeFile, readFile } from 'node:fs/promises';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { EventBus, SquadEvent } from '../runtime/event-bus.js';
+
+const storage = new FSStorageProvider();
 
 // --- Monitor Types ---
 
@@ -177,12 +179,12 @@ export class RalphMonitor {
         agents: Array.from(this.state.agents.entries()),
         observations: this.state.observations,
       };
-      await writeFile(this.config.statePath, JSON.stringify(serializable, null, 2), 'utf-8');
+      await storage.write(this.config.statePath, JSON.stringify(serializable, null, 2));
     }
 
     this.eventBus = null;
   }
 }
 
-export { loadCapabilities, canHandleIssue, filterByCapabilities, extractNeeds, type MachineCapabilities, KNOWN_CAPABILITIES } from './capabilities.js';
+export { loadCapabilities, canHandleIssue, filterByCapabilities, extractNeeds, getDeploymentMode, getPodId, generatePodCapabilitiesPath, type MachineCapabilities, type DeploymentMode, KNOWN_CAPABILITIES } from './capabilities.js';
 export { getTrafficLight, shouldProceed, getRetryDelay, PredictiveCircuitBreaker, canUseQuota, loadRatePool, type RatePool, type RatePoolAllocation, type RateSample, type TrafficLight, type AgentPriority } from './rate-limiting.js';

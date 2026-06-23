@@ -110,7 +110,7 @@ describe('Journey 1: I just installed this (squad init)', () => {
 
     // The human sees: a .squad/ directory was created
     expect(existsSync(join(tempDir, '.squad'))).toBe(true);
-    expect(existsSync(join(tempDir, '.copilot', 'skills'))).toBe(true);
+    expect(existsSync(join(tempDir, '.github', 'skills'))).toBe(true);
     expect(existsSync(join(tempDir, '.squad', 'identity'))).toBe(true);
     expect(existsSync(join(tempDir, '.squad', 'ceremonies.md'))).toBe(true);
   });
@@ -136,8 +136,8 @@ describe('Journey 1: I just installed this (squad init)', () => {
     await harness.close();
 
     // The human needs a clear next step — not silence
-    expect(output).toContain('Your team is ready');
-    expect(output.toLowerCase()).toContain('squad');
+    expect(output).toContain('Squad initialized');
+    expect(output).toContain('copilot --agent squad');
   });
 
   it('writes first-run marker so the REPL knows this is day one', async () => {

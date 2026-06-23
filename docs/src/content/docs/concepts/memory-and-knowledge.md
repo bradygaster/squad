@@ -29,7 +29,7 @@ Memory lives in three layers, each serving a different purpose:
 
 ```mermaid
 graph TD
-    A["Skills Layer<br/>.squad/skills/{name}/SKILL.md<br/>Reusable patterns • Portable<br/>How to set up CI with GitHub Actions"]
+    A["Skills Layer<br/>.copilot/skills/{name}/SKILL.md<br/>Reusable patterns • Portable<br/>How to set up CI with GitHub Actions"]
     B["Shared Decisions Layer<br/>.squad/decisions.md<br/>Team-wide rules • Every agent reads<br/>Use PostgreSQL • No Friday deploys"]
     C["Personal History Layer<br/>.squad/agents/{name}/history.md<br/>Per-agent memory • Only reads own<br/>Auth uses JWT • Config in src/config/"]
     
@@ -173,7 +173,7 @@ Directives are context-aware guidelines, not hard constraints. If an agent viola
 
 ## Skills
 
-Skills are reusable knowledge files that live at `.squad/skills/{skill-name}/SKILL.md`. Unlike decisions (project policies like "use PostgreSQL"), skills are transferable techniques ("how to set up CI with GitHub Actions").
+Skills are reusable knowledge files that live at `.copilot/skills/{skill-name}/SKILL.md`. Unlike decisions (project policies like "use PostgreSQL"), skills are transferable techniques ("how to set up CI with GitHub Actions").
 
 **All agents can read any skill.** Skills are team-wide knowledge, not per-agent.
 
@@ -227,7 +227,7 @@ Not all knowledge in `.squad/` lasts forever. When files grow large, Squad compa
 
 Knowledge that needs to survive compaction belongs in **skills**. Reusable patterns, code conventions, and technical techniques live here because they grow without limits. Team rules and preferences go in directives (stored in `decisions.md`) — they persist through compaction cycles because directives are preserved when decisions get summarized.
 
-> 💡 **Where to store permanent knowledge:** Put reusable patterns and techniques in `.squad/skills/`. Put team rules and preferences in directives (they persist in `decisions.md`). For org-wide knowledge that multiple teams need, use [upstream inheritance](/features/upstream-inheritance) to share a skills library.
+> 💡 **Where to store permanent knowledge:** Put reusable patterns and techniques in `.copilot/skills/`. Put team rules and preferences in directives (they persist in `decisions.md`). For org-wide knowledge that multiple teams need, use [upstream inheritance](/features/upstream-inheritance) to share a skills library.
 
 ---
 
@@ -290,3 +290,11 @@ Search past decisions for database choices
 ```
 
 Finds historical decisions related to a specific topic or keyword.
+
+---
+
+## See Also
+
+- [Your Team](./your-team.md) — How agents use shared memory to coordinate
+- [Architecture](./architecture.md) — How the coordinator and agents share state
+- [Parallel Work](./parallel-work.md) — How agents maintain consistency while working in parallel

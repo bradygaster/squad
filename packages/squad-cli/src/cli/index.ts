@@ -15,7 +15,7 @@ export * from './core/output.js';
 export * from './core/errors.js';
 export * from './core/detect-squad-dir.js';
 export * from './core/gh-cli.js';
-export { runWatch } from './commands/watch.js';
+export { runWatch } from './commands/watch/index.js';
 export * from './core/templates.js';
 export {
   type UpgradeOptions,
@@ -34,6 +34,7 @@ export {
 export * from './core/workflows.js';
 export * from './core/team-md.js';
 export { runCopilot, type CopilotFlags } from './commands/copilot.js';
+export { runStateMcp, printStateMcpHelp } from './commands/state-mcp.js';
 export { runCost } from './commands/cost.js';
 export { runDoctor, doctorCommand, type DoctorCheck, type DoctorMode } from './commands/doctor.js';
 export { runExport } from './commands/export.js';

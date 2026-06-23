@@ -10,9 +10,11 @@
  * @module cli/self-update
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { compareVersions } from './upgrade.js';
 import { BOLD, RESET, DIM, YELLOW } from './core/output.js';
 
@@ -42,7 +44,8 @@ function getCachePath(): string {
 /** Read cached version check result, if still valid. */
 function readCache(): CacheData | null {
   try {
-    const raw = fs.readFileSync(getCachePath(), 'utf8');
+    const raw = storage.readSync(getCachePath());
+    if (!raw) return null;
     const data: CacheData = JSON.parse(raw);
     if (Date.now() - data.checkedAt < CACHE_TTL_MS) {
       return data;
@@ -57,8 +60,8 @@ function readCache(): CacheData | null {
 function writeCache(data: CacheData): void {
   try {
     const dir = getCacheDir();
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(getCachePath(), JSON.stringify(data), 'utf8');
+    storage.mkdirSync(dir, { recursive: true });
+    storage.writeSync(getCachePath(), JSON.stringify(data));
   } catch {
     // Non-critical — silently ignore write failures
   }

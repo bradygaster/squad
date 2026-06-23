@@ -1,0 +1,62 @@
+{
+  "id": "mempalace-memory",
+  "name": "MemPalace Memory",
+  "version": "1.0.0",
+  "description": "Example Squad memory provider plugin that describes a memory-palace-style knowledge layout.",
+  "authors": [
+    "Squad"
+  ],
+  "license": "MIT",
+  "squad": ">=0.9.1",
+  "components": {
+    "memory": {
+      "provider": "mempalace",
+      "mode": "spatial",
+      "external": true
+    }
+  },
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/MemPalace/mempalace"
+  },
+  "upstream": {
+    "package": "mempalace",
+    "registry": "pypi",
+    "installCommand": "pip install mempalace",
+    "docs": "https://github.com/MemPalace/mempalace"
+  },
+  "mcp": {
+    "available": true,
+    "server": "mempalace",
+    "entryPoint": "mempalace-mcp",
+    "installCommand": "mempalace-mcp --palace /path/to/palace",
+    "reason": "MemPalace provides an optional MCP server for external memory access. Squad records the metadata but does not start it."
+  },
+  "providers": [
+    {
+      "id": "mempalace",
+      "type": "memory",
+      "mode": "read-write",
+      "protocol": "mcp",
+      "description": "Spatial memory provider contract for durable rooms, shelves, trails, and landmarks.",
+      "artifact": "memory/providers/mempalace-provider.md",
+      "mcp": {
+        "server": "mempalace",
+        "tool": "memory-palace",
+        "capability": "spatial-memory"
+      },
+      "capabilities": [
+        "spatial-memory",
+        "durable-context",
+        "agent-learning-trails"
+      ]
+    }
+  ],
+  "files": [
+    {
+      "source": "memory/mempalace-provider.md",
+      "target": "memory/providers/mempalace-provider.md",
+      "type": "doc"
+    }
+  ]
+}

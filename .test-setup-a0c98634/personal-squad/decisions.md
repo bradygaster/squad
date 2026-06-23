@@ -1,2 +1,0 @@
-# Decisions
-- Use TypeScript

@@ -7,8 +7,9 @@
  * @module config/models
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import type { StorageProvider } from '../storage/index.js';
+import { FSStorageProvider } from '../storage/index.js';
 import type { ModelId, ModelTier } from '../runtime/config.js';
 
 /**
@@ -555,13 +556,14 @@ export interface ModelPreferenceConfig {
  * @param squadDir - Path to the `.squad/` directory
  * @returns True if economyMode is enabled, false otherwise
  */
-export function readEconomyMode(squadDir: string): boolean {
+export function readEconomyMode(squadDir: string, storage: StorageProvider = new FSStorageProvider()): boolean {
   const configPath = join(squadDir, 'config.json');
-  if (!existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return false;
   }
   try {
-    const raw = readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return false;
     const parsed = JSON.parse(raw);
     return parsed !== null &&
       typeof parsed === 'object' &&
@@ -578,12 +580,13 @@ export function readEconomyMode(squadDir: string): boolean {
  * @param squadDir - Path to the `.squad/` directory
  * @param enabled - Whether economy mode should be enabled
  */
-export function writeEconomyMode(squadDir: string, enabled: boolean): void {
+export function writeEconomyMode(squadDir: string, enabled: boolean, storage: StorageProvider = new FSStorageProvider()): void {
   const configPath = join(squadDir, 'config.json');
   let config: Record<string, unknown> = {};
-  if (existsSync(configPath)) {
+  if (storage.existsSync(configPath)) {
     try {
-      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const raw = storage.readSync(configPath);
+      config = raw !== undefined ? JSON.parse(raw) : { version: 1 };
     } catch {
       config = { version: 1 };
     }
@@ -597,7 +600,7 @@ export function writeEconomyMode(squadDir: string, enabled: boolean): void {
     delete config.economyMode;
   }
 
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 /**
@@ -606,13 +609,14 @@ export function writeEconomyMode(squadDir: string, enabled: boolean): void {
  * @param squadDir - Path to the `.squad/` directory
  * @returns The defaultModel string if set, or null
  */
-export function readModelPreference(squadDir: string): string | null {
+export function readModelPreference(squadDir: string, storage: StorageProvider = new FSStorageProvider()): string | null {
   const configPath = join(squadDir, 'config.json');
-  if (!existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return null;
   }
   try {
-    const raw = readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return null;
     const parsed = JSON.parse(raw);
     if (
       parsed !== null &&
@@ -634,13 +638,14 @@ export function readModelPreference(squadDir: string): string | null {
  * @param squadDir - Path to the `.squad/` directory
  * @returns Record of agent name → model ID, or empty object
  */
-export function readAgentModelOverrides(squadDir: string): Record<string, string> {
+export function readAgentModelOverrides(squadDir: string, storage: StorageProvider = new FSStorageProvider()): Record<string, string> {
   const configPath = join(squadDir, 'config.json');
-  if (!existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return {};
   }
   try {
-    const raw = readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return {};
     const parsed = JSON.parse(raw);
     if (
       parsed !== null &&
@@ -669,12 +674,13 @@ export function readAgentModelOverrides(squadDir: string): Record<string, string
  * @param squadDir - Path to the `.squad/` directory
  * @param model - Model ID to persist, or null to clear
  */
-export function writeModelPreference(squadDir: string, model: string | null): void {
+export function writeModelPreference(squadDir: string, model: string | null, storage: StorageProvider = new FSStorageProvider()): void {
   const configPath = join(squadDir, 'config.json');
   let config: Record<string, unknown> = {};
-  if (existsSync(configPath)) {
+  if (storage.existsSync(configPath)) {
     try {
-      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const raw = storage.readSync(configPath);
+      config = raw !== undefined ? JSON.parse(raw) : { version: 1 };
     } catch {
       config = { version: 1 };
     }
@@ -688,7 +694,7 @@ export function writeModelPreference(squadDir: string, model: string | null): vo
     config.defaultModel = model;
   }
 
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 /**
@@ -700,13 +706,15 @@ export function writeModelPreference(squadDir: string, model: string | null): vo
  */
 export function writeAgentModelOverrides(
   squadDir: string,
-  overrides: Record<string, string> | null
+  overrides: Record<string, string> | null,
+  storage: StorageProvider = new FSStorageProvider()
 ): void {
   const configPath = join(squadDir, 'config.json');
   let config: Record<string, unknown> = {};
-  if (existsSync(configPath)) {
+  if (storage.existsSync(configPath)) {
     try {
-      config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      const raw = storage.readSync(configPath);
+      config = raw !== undefined ? JSON.parse(raw) : { version: 1 };
     } catch {
       config = { version: 1 };
     }
@@ -720,7 +728,7 @@ export function writeAgentModelOverrides(
     config.agentModelOverrides = overrides;
   }
 
-  writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 /**
@@ -748,12 +756,15 @@ export function resolveModel(options: {
   taskModel?: string | null;
   /** When true, apply economy mode substitution at Layer 3/4. Overrides config. */
   economyMode?: boolean;
+  /** Storage provider for config file access. */
+  storage?: StorageProvider;
 }): string {
   const { agentName, squadDir, sessionDirective, charterPreference, taskModel } = options;
+  const storage = options.storage ?? new FSStorageProvider();
 
   // Layer 0a: Per-agent persistent override (explicit — economy does not apply)
   if (squadDir && agentName) {
-    const agentOverrides = readAgentModelOverrides(squadDir);
+    const agentOverrides = readAgentModelOverrides(squadDir, storage);
     if (agentOverrides[agentName]) {
       return agentOverrides[agentName]!;
     }
@@ -761,7 +772,7 @@ export function resolveModel(options: {
 
   // Layer 0b: Global persistent config (explicit — economy does not apply)
   if (squadDir) {
-    const persistedModel = readModelPreference(squadDir);
+    const persistedModel = readModelPreference(squadDir, storage);
     if (persistedModel) {
       return persistedModel;
     }
@@ -781,7 +792,7 @@ export function resolveModel(options: {
   const isEconomy =
     options.economyMode !== undefined
       ? options.economyMode
-      : (squadDir ? readEconomyMode(squadDir) : false);
+      : (squadDir ? readEconomyMode(squadDir, storage) : false);
 
   // Layer 3: Task-aware auto-selection (economy mode applies)
   if (taskModel) {

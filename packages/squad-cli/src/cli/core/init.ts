@@ -3,15 +3,28 @@
  * Scaffolds a new Squad project with templates, workflows, and directory structure
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { detectSquadDir, resolveWorktreeMainCheckout } from './detect-squad-dir.js';
 import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, type InitOptions } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
+import { installGitHooks } from '../commands/install-hooks.js';
+import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
+import { resolveSquadStateMcpSpec } from './mcp-spec.js';
+import { describeMcpSpec } from './upgrade.js';
+import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import {
+  readTeamMd,
+  writeTeamMd,
+  hasCopilot,
+  insertCopilotSection,
+} from './team-md.js';
+
+const storage = new FSStorageProvider();
 
 const CYAN = '\x1b[36m';
 
@@ -104,6 +117,12 @@ export interface RunInitOptions {
   sdk?: boolean;
   /** If true, use built-in base roles instead of fictional universe casting (default: false) */
   roles?: boolean;
+  /** If true, this is a global (personal squad) init — bootstrap personal-squad/ dir */
+  isGlobal?: boolean;
+  /** State backend to configure at init time (local, orphan, two-layer) */
+  stateBackend?: string;
+  /** If true, write MCP server config into squad.agent.md frontmatter instead of .copilot/mcp-config.json */
+  mcpFrontmatter?: boolean;
 }
 
 /**
@@ -119,34 +138,25 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // Detect project type
   const projectType = detectProjectType(dest);
 
-  // ── Parent git repo detection ─────────────────────────────────────
+  // ── Monorepo / subfolder detection ───────────────────────────────
   // Copilot resolves .github/agents/ relative to the git root.
-  // If CWD is inside a parent git repo, the agent file will be
-  // invisible to copilot because the git root points elsewhere.
-  try {
-    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim().replace(/\//g, path.sep);
-    const normalDest = path.resolve(dest);
-    const normalGitRoot = path.resolve(gitRoot);
-    if (normalDest.toLowerCase() !== normalGitRoot.toLowerCase()) {
-      console.log();
-      console.log(`${YELLOW}${BOLD}⚠  Parent git repo detected${RESET}`);
-      console.log(`${YELLOW}   Git root:  ${normalGitRoot}${RESET}`);
-      console.log(`${YELLOW}   You're in: ${normalDest}${RESET}`);
-      console.log();
-      console.log(`${DIM}Copilot resolves .github/agents/ from the git root, not from here.${RESET}`);
-      console.log(`${DIM}The Squad agent won't be visible to copilot in this folder.${RESET}`);
-      console.log();
-      // Auto-fix: run git init to create a repo boundary here
-      console.log(`${CYAN}${BOLD}→${RESET} Running ${CYAN}git init${RESET} to create a repo boundary...`);
-      execFileSync('git', ['init'], { cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
-      console.log(`${GREEN}${BOLD}✓${RESET} Initialized git repo at ${normalDest}`);
-      console.log();
-    }
-  } catch {
-    // No git available or not in a git repo — that's fine, continue normally.
-    // Copilot will fall back to CWD for .github/agents/ discovery.
+  // If CWD is a subfolder of a larger repo (monorepo), we place
+  // squad.agent.md at the git root and .squad/ in the subfolder.
+  // Never run `git init` — it creates broken nested repos (#939).
+  let agentFileRoot = dest; // default: place agent file relative to dest
+  const parentGitRoot = detectParentGitRepo(dest);
+  if (parentGitRoot) {
+    console.log();
+    console.log(`${CYAN}${BOLD}📦 Monorepo detected${RESET}`);
+    console.log(`${DIM}   Git root:  ${parentGitRoot}${RESET}`);
+    console.log(`${DIM}   You're in: ${path.resolve(dest)}${RESET}`);
+    console.log();
+    console.log(`${DIM}squad.agent.md → git root (.github/agents/)${RESET}`);
+    console.log(`${DIM}.squad/        → here (${path.basename(path.resolve(dest))}/)${RESET}`);
+    console.log();
+    // Place the agent file at the git root so Copilot can find it.
+    // Team state (.squad/) stays in cwd — resolved via cwd at runtime.
+    agentFileRoot = parentGitRoot;
   }
 
   // Detect squad directory
@@ -158,7 +168,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   const mainCheckout = resolveWorktreeMainCheckout(dest);
   if (mainCheckout) {
     const mainSquadDir = path.join(mainCheckout, '.squad');
-    if (fs.existsSync(mainSquadDir)) {
+    if (storage.existsSync(mainSquadDir)) {
       console.log();
       console.log(`${YELLOW}${BOLD}⚠  Git worktree detected${RESET}`);
       console.log(`${YELLOW}   Main checkout: ${mainCheckout}${RESET}`);
@@ -185,7 +195,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
       if (useShared) {
         console.log();
         console.log(`${GREEN}${BOLD}✓${RESET} Using shared .squad/ from ${mainCheckout}`);
-        console.log(`${DIM}  No changes made. Run squad commands from the main checkout.${RESET}`);
+        console.log(`${DIM}  No changes made. Run ${CYAN}${BOLD}copilot --agent squad${RESET}${DIM} commands from the main checkout.${RESET}`);
         console.log();
         return;
       }
@@ -205,6 +215,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // Build SDK options
   const initOptions: InitOptions = {
     teamRoot: dest,
+    agentFileRoot,
     projectName: path.basename(dest) || 'my-project',
     agents: [
       {
@@ -216,6 +227,16 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         name: 'ralph',
         role: 'ralph',
         displayName: 'Ralph',
+      },
+      {
+        name: 'Rai',
+        role: 'Rai',
+        displayName: 'Rai',
+      },
+      {
+        name: 'fact-checker',
+        role: 'fact-checker',
+        displayName: 'Fact Checker',
       }
     ],
     configFormat: options.sdk ? 'sdk' : 'markdown',
@@ -223,11 +244,13 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     includeWorkflows: options.includeWorkflows !== false,
     includeTemplates: true,
     includeMcpConfig: true,
+    mcpConfigMode: options.mcpFrontmatter ? 'agent-frontmatter' : 'copilot-file',
     projectType: projectType as any,
     version,
     prompt: options.prompt,
     extractionDisabled: options.extractionDisabled,
     roles: options.roles,
+    stateBackend: options.stateBackend,
   };
 
   // Handle SIGINT to cleanup orphan .init-prompt
@@ -238,34 +261,164 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   };
   process.on('SIGINT', sigintHandler);
 
-  // Run SDK init
+  // Run SDK init — the CLI init is a thin ceremony wrapper around sdkInitSquad(),
+  // which handles all file scaffolding, template expansion, and directory creation.
+  // This separation allows the SDK to be used headlessly (e.g. in tests or CI)
+  // while the CLI adds interactive UX (typewriter, celebrations, worktree guard).
   let result;
   try {
     result = await sdkInitSquad(initOptions);
-  } catch (err: any) {
+  } catch (err: unknown) {
     process.off('SIGINT', sigintHandler);
-    fatal(`Failed to initialize squad: ${err.message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    fatal(`Failed to initialize squad: ${message}`);
     return; // Unreachable but makes TS happy
   }
 
   process.off('SIGINT', sigintHandler);
 
+  // Init just created `.squad/` (and possibly `.github/agents/`) on disk.
+  // Any subsequent code in this process that calls resolveSquad()/findSquadDir()
+  // would otherwise be served the cached "not found" result from before init
+  // ran. Drop the resolution cache so the new directory is observed
+  // immediately instead of after the 5-second TTL.
+  clearResolveSquadCache();
+
   // Ensure version is fully stamped in squad.agent.md
-  const agentPath = path.join(dest, '.github', 'agents', 'squad.agent.md');
-  if (fs.existsSync(agentPath)) {
+  const agentPath = path.join(agentFileRoot, '.github', 'agents', 'squad.agent.md');
+  if (storage.existsSync(agentPath)) {
     stampVersion(agentPath, version);
   }
 
   // Persist --roles flag for the REPL to pick up during casting
   if (options.roles) {
     const rolesMarker = path.join(squadDir, '.init-roles');
-    fs.writeFileSync(rolesMarker, '1', 'utf-8');
+    storage.writeSync(rolesMarker, '1');
     success(`base roles enabled — team will use built-in role catalog`);
+  }
+
+  // Configure state backend if specified at init time
+  if (options.stateBackend) {
+    const validBackends = ['local', 'orphan', 'two-layer', 'external'];
+    if (validBackends.includes(options.stateBackend)) {
+      const configPath = path.join(squadDir, 'config.json');
+      let config: Record<string, unknown> = {};
+      try {
+        const raw = storage.readSync(configPath);
+        if (raw) config = JSON.parse(raw);
+      } catch { /* start fresh */ }
+      config['stateBackend'] = options.stateBackend;
+      storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      success(`state backend: ${options.stateBackend}`);
+
+      // Auto-create orphan branch for orphan/two-layer backends
+      // Uses git plumbing (mktree + commit-tree + update-ref) so the working tree is never touched.
+      if (options.stateBackend === 'orphan' || options.stateBackend === 'two-layer') {
+        try {
+          execFileSync('git', ['rev-parse', '--verify', 'refs/heads/squad-state'], {
+            cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          success(`squad-state branch already exists`);
+        } catch {
+          try {
+            // Seed a README blob so the branch isn't completely empty
+            const readmeContent = '# Squad State\n\nThis orphan branch stores mutable squad state.\nIt is managed automatically and should not be edited by hand.\n';
+            const blobHash = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+              cwd: dest, encoding: 'utf-8', input: readmeContent, stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Build a tree containing the README
+            const treeInput = `100644 blob ${blobHash}\tREADME.md\n`;
+            const treeHash = execFileSync('git', ['mktree'], {
+              cwd: dest, encoding: 'utf-8', input: treeInput, stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Create the root commit (no parent → orphan)
+            const commitHash = execFileSync('git', ['commit-tree', treeHash, '-m', 'init: squad-state orphan branch'], {
+              cwd: dest, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+            }).trim();
+            // Point the branch ref at the new commit
+            execFileSync('git', ['update-ref', 'refs/heads/squad-state', commitHash], {
+              cwd: dest, stdio: ['pipe', 'pipe', 'pipe'],
+            });
+            success(`squad-state orphan branch created (working tree untouched)`);
+          } catch (err) {
+            console.warn(`${YELLOW}⚠ Could not create squad-state branch: ${err instanceof Error ? err.message : err}${RESET}`);
+            console.warn(`${YELLOW}  The ${options.stateBackend} backend will auto-create it on first write.${RESET}`);
+          }
+        }
+
+        // Install git hooks for automatic state sync on push/pull
+        installGitHooks(dest, { force: false });
+
+        // INSIDER3-INIT-LEAK fix: the SDK already wrote decisions.md and
+        // agents/<n>/history.md into the working tree (it had no knowledge of
+        // the backend choice at the time). Lift those mutable files onto the
+        // squad-state orphan branch and remove the working-tree copies so the
+        // backend is the single source of truth post-init.
+        try {
+          const lifted = liftInitMutableStateOntoOrphan(dest);
+          if (lifted.length > 0) {
+            success(`migrated ${lifted.length} mutable state file(s) onto squad-state branch (removed from working tree)`);
+          }
+        } catch (err) {
+          console.warn(`${YELLOW}⚠ Could not lift mutable state onto squad-state branch: ${err instanceof Error ? err.message : err}${RESET}`);
+        }
+
+        // GAP-2 fix: SDK init skips .copilot/mcp-config.json when it already
+        // exists (e.g. partially-squadified repo or pre-existing Copilot setup),
+        // leaving the bridge unwired. Force-insert/pin the squad_state entry so
+        // the MCP server is reachable regardless of pre-existing config.
+        // iter-8: write squad_state to repo-root `.mcp.json` (auto-loaded by
+        // Copilot CLI ≥1.0.59, which walks up from cwd to git root finding
+        // .mcp.json files — see sdk/index.js loader) and tombstone any
+        // stale project-level entry left by the SDK init writer in
+        // `.copilot/mcp-config.json`. No HOME modifications.
+        try {
+          const mcpSpec = await resolveSquadStateMcpSpec(getPackageVersion());
+          const rootResult = ensureSquadStateMcpInRoot(dest, getPackageVersion(), mcpSpec);
+          if (rootResult.written) {
+            success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
+            console.log(`${DIM}  to remove later: edit ${rootResult.path} and delete squad_state${RESET}`);
+          }
+          const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
+          if (tomb.removed) {
+            success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
+          }
+        } catch (err) {
+          console.warn(`${YELLOW}⚠ Could not install squad_state MCP entry in .mcp.json: ${err instanceof Error ? err.message : err}${RESET}`);
+        }
+      }
+    } else {
+      console.warn(`${YELLOW}⚠ Unknown state backend "${options.stateBackend}". Using default (local).${RESET}`);
+    }
+  }
+
+  // iter-8: unconditionally mirror repo-root `.mcp.json` write + tombstone
+  // for vanilla `squad init` (no --state-backend flag) so the squad_state
+  // MCP entry is reachable regardless of init path. No HOME modifications.
+  try {
+    const mcpSpec = await resolveSquadStateMcpSpec(version);
+    const rootResult = ensureSquadStateMcpInRoot(dest, version, mcpSpec);
+    if (rootResult.written) {
+      success(`installed squad_state MCP server to .mcp.json (${describeMcpSpec(mcpSpec)}) — Copilot CLI will auto-load on next invocation`);
+    }
+    // iter-8: do NOT write to ~/.copilot/mcp-config.json. The repo-root
+    // .mcp.json write above is sufficient for Copilot CLI ≥1.0.59 (which
+    // walks up from cwd to git root looking for .mcp.json) AND for
+    // `copilot -p` invocations launched from the project root. Users who
+    // launch `copilot -p` from outside the project root should use
+    // `--additional-mcp-config @.mcp.json` (already documented at the end
+    // of this command). See bradygaster/squad#1296.
+    const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
+    if (tomb.removed) {
+      success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
+    }
+  } catch {
+    // best-effort: .mcp.json write failure does not block init
   }
 
   // Report .init-prompt storage
   if (options.prompt) {
-    success(`.init-prompt stored — team will be cast when you start squad`);
+    success(`.init-prompt stored — team will be cast when you run ${CYAN}${BOLD}copilot --agent squad${RESET}`);
   }
 
   // Report created files
@@ -278,6 +431,48 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   for (const file of result.skippedFiles) {
     // Files are already relative to teamRoot, just display as-is
     console.log(`${DIM}${file} already exists — skipping${RESET}`);
+  }
+
+  // ── Copilot agent prompt ───────────────────────────────────────────
+  // Ask if the user wants to add @copilot as an autonomous team member.
+  // This enables .github/copilot-instructions.md and adds Coding Agent
+  // to the team roster, allowing squad-labeled issues to be auto-assigned.
+  const teamContent = readTeamMd(squadDir);
+  if (!hasCopilot(teamContent)) {
+    if (process.stdin.isTTY) {
+      const { createInterface } = await import('node:readline/promises');
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        console.log();
+        const answer = (await rl.question(`  Add ${BOLD}@copilot${RESET} as an autonomous team member? [Y/n]: `)).trim().toLowerCase();
+        if (answer === '' || answer === 'y' || answer === 'yes') {
+          const updated = insertCopilotSection(teamContent, false);
+          writeTeamMd(squadDir, updated);
+          success('Added @copilot (Coding Agent) to team roster');
+
+          // Copy copilot-instructions.md from templates
+          const currentFileUrl = new URL(import.meta.url);
+          const currentFilePath = currentFileUrl.pathname.startsWith('/') && process.platform === 'win32'
+            ? currentFileUrl.pathname.substring(1)
+            : currentFileUrl.pathname;
+          const templatesSrc = path.resolve(path.dirname(currentFilePath), '..', '..', '..', 'templates');
+          const instructionsSrc = path.join(templatesSrc, 'copilot-instructions.md');
+          const instructionsDest = path.join(dest, '.github', 'copilot-instructions.md');
+
+          if (storage.existsSync(instructionsSrc) && !storage.existsSync(instructionsDest)) {
+            storage.mkdirSync(path.dirname(instructionsDest), { recursive: true });
+            storage.copySync(instructionsSrc, instructionsDest);
+            success('.github/copilot-instructions.md');
+          }
+        } else {
+          console.log(`${DIM}  Skipped — add later with: squad copilot enable${RESET}`);
+        }
+      } finally {
+        rl.close();
+      }
+    } else {
+      console.log(`${DIM}  Non-interactive mode — skipping @copilot setup. Add later with: squad copilot enable${RESET}`);
+    }
   }
 
   // ── Celebration ceremony ──────────────────────────────────────────
@@ -293,8 +488,27 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   if (!isInitNoColor()) await sleep(80);
   console.log();
-  console.log(`${GREEN}${BOLD}Your team is ready.${RESET} Run ${CYAN}${BOLD}squad${RESET} to start.`);
+  console.log(`${GREEN}${BOLD}Squad initialized.${RESET} Run ${CYAN}${BOLD}copilot --agent squad${RESET} and tell it what you're building.`);
   console.log();
+  console.log(`${DIM}Tip: for non-interactive scripts that need squad_state tools, add to package.json:${RESET}`);
+  console.log(`${DIM}  "squad:copilot": "copilot --agent squad --additional-mcp-config @.mcp.json"${RESET}`);
+  console.log();
+
+  // ── Personal squad bridge ───────────────────────────────────────────
+  if (options.isGlobal) {
+    // Global init: ensure personal-squad/ directory exists alongside .squad/
+    const personalDir = ensurePersonalSquadDir();
+    console.log(`${GREEN}${BOLD}✓${RESET} Personal squad initialized at ${DIM}${personalDir}${RESET}`);
+    console.log(`${DIM}  Add agents with: squad personal add <name> --role <role>${RESET}`);
+    console.log();
+  } else {
+    // Repo init: inform user if personal squad is available
+    const personalDir = resolvePersonalSquadDir();
+    if (personalDir) {
+      console.log(`${GREEN}${BOLD}✓${RESET} Personal squad detected — your personal agents will be available here.`);
+      console.log();
+    }
+  }
 
   if (squadInfo.isLegacy) {
     showDeprecationWarning();

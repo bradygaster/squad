@@ -8,6 +8,11 @@ permissions:
   issues: write
   contents: read
 
+# CI Hardening Phase 3 item A1: Prevent parallel runs from competing for resources
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   enforce:
     runs-on: ubuntu-latest

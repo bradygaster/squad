@@ -12,10 +12,11 @@
  * - Partial implementations (missing handlers are silently skipped)
  */
 
-import { existsSync, readdirSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs'; // realpathSync retained — not in StorageProvider scope
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type {
   LoadResult,
   SkillHandler,
@@ -24,6 +25,7 @@ import type {
 import type { SquadTool, SquadToolHandler, SquadToolResult } from '../adapter/types.js';
 
 const tracer = trace.getTracer('squad-sdk');
+const storage = new FSStorageProvider();
 
 // --- OTel Handler Wrapping ---
 
@@ -183,12 +185,12 @@ export class SkillScriptLoader {
   ): Promise<LoadResult | null> {
     // 1. Check for scripts/ directory
     const scriptsDir = path.join(skillPath, 'scripts');
-    if (!existsSync(scriptsDir)) {
+    if (!storage.existsSync(scriptsDir)) {
       return null; // Triggers markdown fallback
     }
 
     // 2. Scan scripts/ for handler files — everything except lifecycle.js
-    const scriptFiles = readdirSync(scriptsDir).filter(
+    const scriptFiles = storage.listSync(scriptsDir).filter(
       (f) => f.endsWith('.js') && f !== 'lifecycle.js',
     );
 
@@ -236,7 +238,7 @@ export class SkillScriptLoader {
     // 4. Load lifecycle.js if present
     let lifecycle: HandlerLifecycle | undefined;
     const lifecyclePath = path.join(scriptsDir, 'lifecycle.js');
-    if (existsSync(lifecyclePath)) {
+    if (storage.existsSync(lifecyclePath)) {
       try {
         const lifecycleUrl = toFileUrl(lifecyclePath);
         const lifecycleModule = await import(lifecycleUrl);

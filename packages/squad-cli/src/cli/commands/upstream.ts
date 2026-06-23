@@ -10,9 +10,11 @@
  * @module cli/commands/upstream
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { success, warn, info } from '../core/output.js';
 import { fatal } from '../core/errors.js';
 import { detectSquadDir } from '../core/detect-squad-dir.js';
@@ -29,23 +31,25 @@ function isValidUpstreamName(name: string): boolean {
 import type { UpstreamConfig, UpstreamSource } from '@bradygaster/squad-sdk';
 
 function readUpstreams(upstreamFile: string): UpstreamConfig {
-  if (!fs.existsSync(upstreamFile)) return { upstreams: [] };
+  if (!storage.existsSync(upstreamFile)) return { upstreams: [] };
   try {
-    return JSON.parse(fs.readFileSync(upstreamFile, 'utf8')) as UpstreamConfig;
+    const raw = storage.readSync(upstreamFile);
+    if (!raw) return { upstreams: [] };
+    return JSON.parse(raw) as UpstreamConfig;
   } catch {
     return { upstreams: [] };
   }
 }
 
 function writeUpstreams(upstreamFile: string, data: UpstreamConfig): void {
-  fs.mkdirSync(path.dirname(upstreamFile), { recursive: true });
-  fs.writeFileSync(upstreamFile, JSON.stringify(data, null, 2) + '\n');
+  storage.mkdirSync(path.dirname(upstreamFile), { recursive: true });
+  storage.writeSync(upstreamFile, JSON.stringify(data, null, 2) + '\n');
 }
 
 function detectSourceType(source: string): 'local' | 'git' | 'export' {
-  if (source.endsWith('.json') && fs.existsSync(path.resolve(source))) return 'export';
+  if (source.endsWith('.json') && storage.existsSync(path.resolve(source))) return 'export';
   if (source.startsWith('http://') || source.startsWith('https://') || source.startsWith('file://') || source.endsWith('.git')) return 'git';
-  if (fs.existsSync(path.resolve(source))) return 'local';
+  if (storage.existsSync(path.resolve(source))) return 'local';
   if (source.includes('/') && !source.includes('\\')) return 'git';
   throw new Error(`Cannot determine source type for "${source}". Provide a git URL, local path, or export JSON file.`);
 }
@@ -63,10 +67,10 @@ function deriveName(source: string, type: string): string {
 function ensureGitignoreEntry(repoDir: string, entry: string): void {
   const gitignorePath = path.join(repoDir, '.gitignore');
   let content = '';
-  if (fs.existsSync(gitignorePath)) content = fs.readFileSync(gitignorePath, 'utf8');
+  if (storage.existsSync(gitignorePath)) content = storage.readSync(gitignorePath) ?? '';
   if (!content.includes(entry)) {
     const nl = content && !content.endsWith('\n') ? '\n' : '';
-    fs.writeFileSync(gitignorePath, content + nl + entry + '\n');
+    storage.writeSync(gitignorePath, content + nl + entry + '\n');
   }
 }
 
@@ -78,7 +82,7 @@ export async function upstreamCommand(args: string[]): Promise<void> {
   }
 
   const squadDirInfo = detectSquadDir(process.cwd());
-  if (!fs.existsSync(squadDirInfo.path)) {
+  if (!storage.existsSync(squadDirInfo.path)) {
     fatal('No squad found — run init first.');
     return;
   }
@@ -130,7 +134,7 @@ export async function upstreamCommand(args: string[]): Promise<void> {
     if (type === 'git') {
       const reposDir = path.join(squadDir, '_upstream_repos');
       const cloneDir = path.join(reposDir, name);
-      fs.mkdirSync(reposDir, { recursive: true });
+      storage.mkdirSync(reposDir, { recursive: true });
       ensureGitignoreEntry(repoDir, '.squad/_upstream_repos/');
 
       try {
@@ -165,8 +169,8 @@ export async function upstreamCommand(args: string[]): Promise<void> {
 
     // Clean up cached clone
     const repoDir2 = path.join(squadDir, '_upstream_repos', name);
-    if (fs.existsSync(repoDir2)) {
-      fs.rmSync(repoDir2, { recursive: true, force: true });
+    if (storage.existsSync(repoDir2)) {
+      storage.deleteDirSync(repoDir2);
       success(`Removed cached clone for ${name}`);
     }
 
@@ -210,7 +214,7 @@ export async function upstreamCommand(args: string[]): Promise<void> {
       if (upstream.type === 'local' || upstream.type === 'export') {
         // Validate source exists
         const resolvedPath = path.resolve(upstream.source);
-        if (!fs.existsSync(resolvedPath)) {
+        if (!storage.existsSync(resolvedPath)) {
           warn(`${upstream.name}: source not found: ${upstream.source}`);
           continue;
         }
@@ -220,14 +224,14 @@ export async function upstreamCommand(args: string[]): Promise<void> {
       } else if (upstream.type === 'git') {
         const reposDir = path.join(squadDir, '_upstream_repos');
         const cloneDir = path.join(reposDir, upstream.name);
-        fs.mkdirSync(reposDir, { recursive: true });
+        storage.mkdirSync(reposDir, { recursive: true });
         ensureGitignoreEntry(repoDir, '.squad/_upstream_repos/');
 
         try {
-          if (fs.existsSync(path.join(cloneDir, '.git'))) {
+          if (storage.existsSync(path.join(cloneDir, '.git'))) {
             execFileSync('git', ['-C', cloneDir, 'pull', '--ff-only'], { stdio: 'pipe', timeout: 60000 });
           } else {
-            if (fs.existsSync(cloneDir)) fs.rmSync(cloneDir, { recursive: true, force: true });
+            if (storage.existsSync(cloneDir)) storage.deleteDirSync(cloneDir);
             const ref = upstream.ref || 'main';
             execFileSync('git', ['clone', '--depth', '1', '--branch', ref, '--single-branch', upstream.source, cloneDir], { stdio: 'pipe', timeout: 60000 });
           }

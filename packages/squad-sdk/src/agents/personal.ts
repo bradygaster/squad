@@ -8,10 +8,11 @@
  * @module agents/personal
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { resolvePersonalSquadDir } from '../resolution.js';
 import { AgentManifest } from '../config/agent-source.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
 
 /** Metadata tag for personal agents in a session cast */
 export interface PersonalAgentMeta {
@@ -32,32 +33,32 @@ export type PersonalAgentManifest = AgentManifest & {
  * Discover personal agents from the user's personal squad directory.
  * Returns empty array if personal squad is disabled or doesn't exist.
  */
-export async function resolvePersonalAgents(): Promise<PersonalAgentManifest[]> {
+export async function resolvePersonalAgents(
+  storage: StorageProvider = new FSStorageProvider(),
+): Promise<PersonalAgentManifest[]> {
   const personalDir = resolvePersonalSquadDir();
   if (!personalDir) return [];
   
   const agentsDir = path.join(personalDir, 'agents');
-  if (!fs.existsSync(agentsDir)) return [];
-  
-  const entries = await fs.promises.readdir(agentsDir, { withFileTypes: true });
+  const entries = await storage.list(agentsDir);
   const agents: PersonalAgentManifest[] = [];
   
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+  for (const name of entries) {
+    const entryPath = path.join(agentsDir, name);
+    if (!(await storage.isDirectory(entryPath))) continue;
+    const charterPath = path.join(entryPath, 'charter.md');
+    const charterContent = await storage.read(charterPath);
+    if (!charterContent) continue;
     
-    const charterPath = path.join(agentsDir, entry.name, 'charter.md');
-    if (!fs.existsSync(charterPath)) continue;
-    
-    const charterContent = await fs.promises.readFile(charterPath, 'utf-8');
     const meta = parseCharterMetadataBasic(charterContent);
     
     agents.push({
-      name: entry.name,
+      name,
       role: meta.role || 'personal',
       source: 'personal',
       personal: {
         origin: 'personal',
-        sourceDir: path.join(agentsDir, entry.name),
+        sourceDir: path.join(agentsDir, name),
         ghostProtocol: true,
       },
     });

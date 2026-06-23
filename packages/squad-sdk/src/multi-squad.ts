@@ -15,9 +15,11 @@
  * @module multi-squad
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from './storage/fs-storage-provider.js';
 import { resolveGlobalSquadPath } from './resolution.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Types
@@ -69,11 +71,11 @@ function squadsJsonPath(): string {
 /** Read and parse squads.json, returning null if missing or malformed. */
 function loadSquadsConfig(): MultiSquadConfig | null {
   const configPath = squadsJsonPath();
-  if (!fs.existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     return null;
   }
   try {
-    const raw = fs.readFileSync(configPath, 'utf-8');
+    const raw = storage.readSync(configPath) ?? '';
     const parsed: unknown = JSON.parse(raw);
     if (
       parsed !== null &&
@@ -94,7 +96,7 @@ function loadSquadsConfig(): MultiSquadConfig | null {
 /** Write squads.json atomically. */
 function saveSquadsConfig(config: MultiSquadConfig): void {
   const configPath = squadsJsonPath();
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 /** Validate a squad name: non-empty, no slashes, no dots-only. */
@@ -132,13 +134,16 @@ export function resolveSquadPath(name?: string): string {
   // Auto-migrate legacy layout if needed
   migrateIfNeeded();
 
+  // Read squads.json once (previously this was loaded 2–3 times per call:
+  // once via the .active fallback in the resolution chain, again to look
+  // up the entry by name, and a third time via internals).
+  const config = loadSquadsConfig();
+
   const resolved =
     name ??
     process.env['SQUAD_NAME'] ??
-    loadSquadsConfig()?.active ??
+    config?.active ??
     DEFAULT_SQUAD;
-
-  const config = loadSquadsConfig();
 
   // Look up registered path
   if (config) {
@@ -189,7 +194,7 @@ export function createSquad(name: string): string {
   }
 
   const squadDir = path.join(getSquadRoot(), SQUADS_DIR, name);
-  fs.mkdirSync(squadDir, { recursive: true });
+  storage.mkdirSync(squadDir, { recursive: true });
 
   config.squads.push({
     name,
@@ -224,8 +229,8 @@ export function deleteSquad(name: string): void {
   }
 
   const entry = config.squads[idx];
-  if (entry && fs.existsSync(entry.path)) {
-    fs.rmSync(entry.path, { recursive: true, force: true });
+  if (entry && storage.existsSync(entry.path)) {
+    storage.deleteDirSync(entry.path);
   }
 
   config.squads.splice(idx, 1);
@@ -266,7 +271,7 @@ export function migrateIfNeeded(): boolean {
   const configPath = path.join(root, SQUADS_JSON);
 
   // If squads.json already exists, no migration needed
-  if (fs.existsSync(configPath)) {
+  if (storage.existsSync(configPath)) {
     return false;
   }
 
@@ -274,7 +279,7 @@ export function migrateIfNeeded(): boolean {
   const home = process.env['HOME'] ?? process.env['USERPROFILE'] ?? '';
   const legacyDir = path.join(home, LEGACY_DIR);
 
-  if (!home || !fs.existsSync(legacyDir) || !fs.statSync(legacyDir).isDirectory()) {
+  if (!home || !storage.existsSync(legacyDir) || !storage.isDirectorySync(legacyDir)) {
     // No legacy layout — bootstrap empty config
     const config: MultiSquadConfig = {
       squads: [],

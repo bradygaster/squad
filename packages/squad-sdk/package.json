@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
@@ -102,6 +102,10 @@
       "types": "./dist/resolution.d.ts",
       "import": "./dist/resolution.js"
     },
+    "./presets": {
+      "types": "./dist/presets/index.d.ts",
+      "import": "./dist/presets/index.js"
+    },
     "./adapter/errors": {
       "types": "./dist/adapter/errors.d.ts",
       "import": "./dist/adapter/errors.js"
@@ -185,22 +189,55 @@
     "./config/models": {
       "types": "./dist/config/models.d.ts",
       "import": "./dist/config/models.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "import": "./dist/storage/index.js"
+    },
+    "./memory": {
+      "types": "./dist/memory/index.d.ts",
+      "import": "./dist/memory/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform/index.d.ts",
+      "import": "./dist/platform/index.js"
+    },
+    "./remote": {
+      "types": "./dist/remote/index.d.ts",
+      "import": "./dist/remote/index.js"
+    },
+    "./roles": {
+      "types": "./dist/roles/index.d.ts",
+      "import": "./dist/roles/index.js"
+    },
+    "./state": {
+      "types": "./dist/state/index.d.ts",
+      "import": "./dist/state/index.js"
+    },
+    "./streams": {
+      "types": "./dist/streams/index.d.ts",
+      "import": "./dist/streams/index.js"
+    },
+    "./upstream": {
+      "types": "./dist/upstream/index.d.ts",
+      "import": "./dist/upstream/index.js"
     }
   },
   "files": [
     "dist",
     "templates",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "prepublishOnly": "npm run build",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node -e \"const{rmSync,cpSync}=require('fs');rmSync('dist/presets/builtin',{recursive:true,force:true});cpSync('src/presets/builtin','dist/presets/builtin',{recursive:true,filter:(s)=>!s.endsWith('.ts')})\""
   },
   "engines": {
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^0.1.32",
+    "@github/copilot-sdk": "^0.3.0",
     "vscode-jsonrpc": "^8.2.1"
   },
   "optionalDependencies": {
@@ -213,11 +250,15 @@
     "@opentelemetry/sdk-trace-base": "^1.30.0",
     "@opentelemetry/sdk-trace-node": "^1.30.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
+    "sql.js": "^1.14.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/sql.js": "^1.4.10",
     "@types/ws": "^8.5.13",
+    "typedoc": "~0.28.18",
+    "typedoc-plugin-markdown": "~4.11.0",
     "typescript": "^5.7.0"
   },
   "keywords": [

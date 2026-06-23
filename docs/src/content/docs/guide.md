@@ -16,7 +16,7 @@ It is not a chatbot wearing hats. Each team member is spawned as a real sub-agen
 - Initial setup: `squad init`
 - Build from config: `squad build`
 - Diagnostics: `squad doctor`
-- Interactive shell: `squad shell`
+- Interactive shell: `squad shell` — **Deprecated** (use `copilot --agent squad`)
 - Continuous triage: `squad triage --interval 10`
 - Watch mode: `squad watch`
 - Aspire dashboard: `squad aspire`
@@ -276,7 +276,7 @@ When a universe runs out of names, the overflow strategy determines what happens
 
 ## Skills system
 
-Skills are reusable knowledge patterns that agents load on demand. They live in `.squad/skills/{name}/SKILL.md` and teach agents how to handle specific tasks — branching workflows, deployment strategies, testing patterns, or domain expertise.
+Skills are reusable knowledge patterns that agents load on demand. They live in `.copilot/skills/{name}/SKILL.md` and teach agents how to handle specific tasks — branching workflows, deployment strategies, testing patterns, or domain expertise.
 
 Skills have a confidence lifecycle: `low` → `medium` → `high`, and track their source: `manual` (you wrote it), `observed` (agent saw a pattern), `earned` (validated through use), or `extracted` (imported from another project).
 
@@ -547,7 +547,7 @@ Squad maintains a clear ownership model:
 | `squad build` | Generate `.squad/` from `squad.config.ts` |
 | `squad build --check` | Validate generated files match disk (for CI) |
 | `squad doctor` | Run 9 setup validation checks |
-| `squad shell` | Enter the interactive shell |
+| `squad shell` | **Deprecated** — Enter the interactive shell (use `copilot --agent squad`) |
 | `squad triage` | Run a single triage pass |
 | `squad triage --interval 10` | Continuous triage every 10 minutes |
 | `squad watch` | Ralph watchdog mode |

@@ -7,8 +7,10 @@
  * @module runtime/cross-squad
  */
 
-import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Types
@@ -114,13 +116,25 @@ export function validateManifest(data: unknown): data is SquadManifest {
 
 /**
  * Read and parse a squad manifest from a directory path.
+ *
  * Looks for `.squad/manifest.json` relative to the given root.
+ *
+ * **Dual-path acceptance:** If `repoPath` already ends in `.squad` (or
+ * `.squad/` / `.squad\`), the trailing segment is stripped before the
+ * lookup so both the repo root AND the `.squad` directory work as input.
+ * This matches how users naturally describe a squad in registry/upstream
+ * configuration ("point me at their `.squad/` dir" vs "point me at their
+ * repo root") without forcing one form.
  */
 export function readManifest(repoPath: string): SquadManifest | null {
-  const manifestPath = join(repoPath, '.squad', 'manifest.json');
-  if (!existsSync(manifestPath)) return null;
+  const normalized = repoPath.replace(/[/\\]$/, '');
+  const root = normalized.endsWith('.squad') || normalized.endsWith('/.squad') || normalized.endsWith('\\.squad')
+    ? normalized.slice(0, normalized.length - '.squad'.length).replace(/[/\\]$/, '')
+    : normalized;
+  const manifestPath = join(root, '.squad', 'manifest.json');
+  if (!storage.existsSync(manifestPath)) return null;
   try {
-    const raw = readFileSync(manifestPath, 'utf8');
+    const raw = storage.readSync(manifestPath) ?? '';
     const parsed: unknown = JSON.parse(raw);
     if (!validateManifest(parsed)) return null;
     return parsed;
@@ -153,11 +167,11 @@ interface UpstreamJsonFile {
  */
 export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
   const upstreamPath = join(squadDir, 'upstream.json');
-  if (!existsSync(upstreamPath)) return [];
+  if (!storage.existsSync(upstreamPath)) return [];
 
   let config: UpstreamJsonFile;
   try {
-    config = JSON.parse(readFileSync(upstreamPath, 'utf8')) as UpstreamJsonFile;
+    config = JSON.parse(storage.readSync(upstreamPath) ?? '') as UpstreamJsonFile;
   } catch {
     return [];
   }
@@ -197,11 +211,11 @@ export function discoverFromUpstreams(squadDir: string): DiscoveredSquad[] {
  * A registry is a JSON file listing repo paths to check for manifests.
  */
 export function discoverFromRegistry(registryPath: string): DiscoveredSquad[] {
-  if (!existsSync(registryPath)) return [];
+  if (!storage.existsSync(registryPath)) return [];
 
   let entries: Array<{ name: string; path: string }>;
   try {
-    const raw = readFileSync(registryPath, 'utf8');
+    const raw = storage.readSync(registryPath) ?? '';
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     entries = parsed as Array<{ name: string; path: string }>;
@@ -246,6 +260,99 @@ export function discoverSquads(squadDir: string): DiscoveredSquad[] {
   }
 
   return merged;
+}
+
+// ============================================================================
+// Registry CRUD — manage .squad/squad-registry.json
+// ============================================================================
+
+/** A single entry in `.squad/squad-registry.json`. */
+export interface RegistryEntry {
+  /** Identifier within this repo's registry. Unique. */
+  name: string;
+  /** Filesystem path to the peer squad (repo root OR its .squad dir). */
+  path: string;
+}
+
+/**
+ * Read `.squad/squad-registry.json` and return its entries.
+ * Returns an empty array if the file does not exist or is malformed.
+ */
+export function readSquadRegistry(squadDir: string): RegistryEntry[] {
+  const registryPath = join(squadDir, 'squad-registry.json');
+  if (!storage.existsSync(registryPath)) return [];
+  try {
+    const raw = storage.readSync(registryPath) ?? '';
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((e): e is RegistryEntry =>
+        typeof e === 'object' && e !== null &&
+        typeof (e as RegistryEntry).name === 'string' &&
+        typeof (e as RegistryEntry).path === 'string',
+      );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Overwrite `.squad/squad-registry.json` with the given entries.
+ * Creates the file (and `.squad/` directory) if missing.
+ */
+export function writeSquadRegistry(squadDir: string, entries: RegistryEntry[]): void {
+  if (!storage.existsSync(squadDir)) {
+    storage.mkdirSync(squadDir, { recursive: true });
+  }
+  const registryPath = join(squadDir, 'squad-registry.json');
+  storage.writeSync(registryPath, JSON.stringify(entries, null, 2) + '\n');
+}
+
+/** Result of `addRegistryEntry`. */
+export interface AddRegistryEntryResult {
+  /** True if a new entry was written. */
+  added: boolean;
+  /** Reason if not added: 'duplicate-name' | 'invalid-manifest'. */
+  reason?: 'duplicate-name' | 'invalid-manifest';
+  /** The manifest validated against the path (when added). */
+  manifest?: SquadManifest;
+}
+
+/**
+ * Add a peer squad to `.squad/squad-registry.json`.
+ *
+ * Validates that the path resolves to a readable manifest before writing.
+ * Refuses on duplicate name. Accepts both repo-root and `.squad`-suffixed
+ * paths (see `readManifest`).
+ */
+export function addRegistryEntry(
+  squadDir: string,
+  name: string,
+  path: string,
+): AddRegistryEntryResult {
+  const existing = readSquadRegistry(squadDir);
+  if (existing.some(e => e.name === name)) {
+    return { added: false, reason: 'duplicate-name' };
+  }
+  const manifest = readManifest(path);
+  if (!manifest) {
+    return { added: false, reason: 'invalid-manifest' };
+  }
+  const next = [...existing, { name, path }];
+  writeSquadRegistry(squadDir, next);
+  return { added: true, manifest };
+}
+
+/**
+ * Remove an entry from `.squad/squad-registry.json` by name.
+ * Returns true if an entry was removed, false if no matching name was found.
+ */
+export function removeRegistryEntry(squadDir: string, name: string): boolean {
+  const existing = readSquadRegistry(squadDir);
+  const next = existing.filter(e => e.name !== name);
+  if (next.length === existing.length) return false;
+  writeSquadRegistry(squadDir, next);
+  return true;
 }
 
 // ============================================================================
@@ -315,7 +422,7 @@ export function parseIssueStatus(jsonOutput: string, issueUrl: string): CrossSqu
 /** Format discovered squads for terminal display. */
 export function formatDiscoveryTable(squads: DiscoveredSquad[]): string {
   if (squads.length === 0) {
-    return 'No squads discovered. Add upstreams with "squad upstream add" or create a squad-registry.json.';
+    return 'No squads discovered. Add a peer with "squad registry add <name> <path>", or an upstream with "squad upstream add".';
   }
 
   const lines: string[] = ['\nDiscovered squads:\n'];

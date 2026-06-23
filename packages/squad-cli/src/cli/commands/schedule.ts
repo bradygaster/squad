@@ -8,8 +8,10 @@
  *   squad schedule status   — show last run times and next due
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { detectSquadDir } from '../core/detect-squad-dir.js';
 import { success, warn, info, secondary, BOLD, RESET, GREEN, YELLOW, RED, GRAY, DIM } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -155,18 +157,18 @@ async function scheduleInit(cwd: string): Promise<void> {
   const schedulePath = resolveSchedulePath(cwd);
   const mod = await loadSchedulerModule();
 
-  if (fs.existsSync(schedulePath)) {
+  if (storage.existsSync(schedulePath)) {
     warn(`schedule.json already exists at ${schedulePath}`);
     return;
   }
 
   const squadInfo = detectSquadDir(cwd);
-  if (!fs.existsSync(squadInfo.path)) {
-    fs.mkdirSync(squadInfo.path, { recursive: true });
+  if (!storage.existsSync(squadInfo.path)) {
+    storage.mkdirSync(squadInfo.path, { recursive: true });
   }
 
   const template = mod.defaultScheduleTemplate();
-  fs.writeFileSync(schedulePath, JSON.stringify(template, null, 2) + '\n', 'utf8');
+  storage.writeSync(schedulePath, JSON.stringify(template, null, 2) + '\n');
   success(`Created ${path.relative(cwd, schedulePath)}`);
   info(`Edit it to configure your scheduled tasks, then run 'squad schedule list' to verify.`);
 }

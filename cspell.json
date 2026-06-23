@@ -23,7 +23,7 @@
     "recompiles", "edie", "Edie", "myorg", "myproject", "myrepo",
     "WDATP", "wiisaacs", "Trejo", "Drucker", "dfberry", "diberry",
     "unstarted", "ZUAER", "glab", "mlops", "Baer",
-    "devtunnel", "Devtunnel", "mysecret", "pyproject",
+    "devtunnel", "Devtunnel", "mysecret", "pyproject", "pypi",
     "Emmitt", "jsturtevant", "Sturtevant", "aadnesd", "Sardo",
     "digitaldrummerj", "danielscholl", "llms", "dkirby", "lbouriez",
     "vanartsdalen", "Artsdalen", "craigb", "tomasherceg", "Tomáš", "Herceg",
@@ -35,8 +35,13 @@
     "MSMQ", "permadeath", "Permadeath", "CRDT", "httpx",
     "Pydantic", "sdkgen", "ttft", "Strausz", "mycompany",
     "slugified", "simplejwt", "pytest", "Luca", "Clemenza",
-    "Tessio", "Triaging", "Futurama", "mklink", "slnx", "jqlang",
-    "benleane", "TELMU", "Automator"
+    "Tessio", "Triaging", "Futurama", "mklink", "mktree", "slnx", "jqlang",
+    "benleane", "TELMU", "Automator", "kedacore",
+    "DEVBOX", "myaccount", "graphify", "Graphify", "graphifyy", "safishamsi", "jagilber",
+    "benchmarkfn", "filterissuesbystream", "filterissuesbyworkstream", "Recognised", "recognised",
+    "squadified", "TOCTOU", "unflushed", "unparseable", "pluggability",
+    "PKCE", "MSAL", "AKIA", "runas",
+    "typoo"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
   "allowCompoundWords": true

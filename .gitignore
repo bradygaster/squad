@@ -5,18 +5,48 @@ dist/
 coverage/
 .vscode/
 *.log
+
+# npm pack output / pre-built tarballs (publish via release artifacts, not git)
+packages/**/*.tgz
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/orchestration-log/
 .squad/log/
 .squad/decisions/inbox/
 .squad/sessions/
 .squad/config.json
-.test-cli-*
+
+# Test temp dirs (created in cwd by vitest tests, cleaned in afterEach)
+.test-*
 # Docs site generated files
 docs/dist/
+docs/src/content/docs/reference/api/
+
+# Docs test screenshots (local verification only)
+docs/tests/screenshots/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 .squad/.first-run
+.squad/.watch-pids
+.squad/.cache/
 
 # Images folder (root only — don't ignore docs/public/images/)
 /images/
+# Squad: ignore runtime state (logs, inbox, sessions)
+.squad/.scratch/
+
+# Squad: PR-1200 picard local artifacts (do not commit)
+.pr-body-new.md
+.followup-issue-body.md
+
+# .NET build output
+bin/
+obj/
+artifacts/
+
+# Visual Studio IDE artifacts
+.vs/
+*.user
+*.userprefs
+
+# NOTE: .squad/casting/* is AUTHORITATIVE IDENTITY and MUST be committed to main.
+# Do not add .squad/casting/ to this ignore list.

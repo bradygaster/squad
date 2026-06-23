@@ -7,7 +7,6 @@
  * @module cli/commands/extract
  */
 
-import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
@@ -17,11 +16,14 @@ import {
   logConsultation,
   mergeToPersonalSquad,
   getPersonalSquadRoot,
+  FSStorageProvider,
   type SquadDirConfig,
   type LicenseInfo,
   type StagedLearning,
 } from '@bradygaster/squad-sdk';
 import { fatal } from '../core/errors.js';
+
+const storage = new FSStorageProvider();
 
 /**
  * Prompt user for yes/no confirmation via stdin.
@@ -120,7 +122,7 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
   const configPath = resolve(squadDir, 'config.json');
 
   // Check we're in consult mode
-  if (!existsSync(configPath)) {
+  if (!storage.existsSync(configPath)) {
     fatal(
       'No .squad/config.json found.\n' +
         '   Run `squad consult` first to enter consult mode.',
@@ -129,7 +131,11 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
 
   let config: SquadDirConfig & { sourceSquad?: string };
   try {
-    config = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const raw = storage.readSync(configPath);
+    if (!raw) {
+      fatal('Invalid .squad/config.json — cannot parse.');
+    }
+    config = JSON.parse(raw);
   } catch {
     fatal('Invalid .squad/config.json — cannot parse.');
   }
@@ -172,8 +178,8 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
   const licensePath = resolve(cwd, 'LICENSE');
   let license: LicenseInfo = { type: 'unknown' };
 
-  if (existsSync(licensePath)) {
-    const licenseContent = readFileSync(licensePath, 'utf-8');
+  if (storage.existsSync(licensePath)) {
+    const licenseContent = storage.readSync(licensePath) ?? '';
     license = detectLicense(licenseContent);
   }
 
@@ -220,7 +226,7 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
           return;
         }
       }
-      rmSync(squadDir, { recursive: true, force: true });
+      storage.deleteDirSync(squadDir);
       console.log('🗑️  Deleted .squad/');
     }
     return;
@@ -279,7 +285,7 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
           return;
         }
       }
-      rmSync(squadDir, { recursive: true, force: true });
+      storage.deleteDirSync(squadDir);
       console.log('🗑️  Deleted .squad/');
     }
     return;
@@ -301,7 +307,7 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
 
   // Remove extracted files from .squad/extract/
   for (const learning of toExtract) {
-    rmSync(learning.filepath, { force: true });
+    storage.deleteSync(learning.filepath);
   }
 
   console.log('✅ Extraction complete!');
@@ -319,7 +325,7 @@ export async function runExtract(cwd: string, args: string[]): Promise<void> {
       }
     }
 
-    rmSync(squadDir, { recursive: true, force: true });
+    storage.deleteDirSync(squadDir);
     console.log('');
     console.log('🗑️  Deleted .squad/');
   }

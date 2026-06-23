@@ -20,6 +20,21 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
+// ---------------------------------------------------------------------------
+// Guard: require explicit invocation to prevent accidental auto-triggering
+// during agent work (e.g., file watchers, git hooks).
+// Pass --sync flag or set SQUAD_SYNC_TEMPLATES=1 env var.
+// ---------------------------------------------------------------------------
+const explicitFlag = process.argv.includes('--sync');
+const envFlag = process.env.SQUAD_SYNC_TEMPLATES === '1';
+const directInvocation = process.argv.length <= 2;
+if (!directInvocation && !explicitFlag && !envFlag) {
+  console.log('⛔ sync-templates requires explicit invocation.');
+  console.log('   Use: node scripts/sync-templates.mjs --sync');
+  console.log('   Or:  SQUAD_SYNC_TEMPLATES=1 node scripts/sync-templates.mjs');
+  process.exit(0);
+}
+
 const SOURCE = join(ROOT, '.squad-templates');
 
 const MIRROR_TARGETS = [
@@ -79,12 +94,15 @@ for (const relFile of sourceFiles) {
   const targets = [];
 
   // Mirror to each target directory
+  // Rename squad.agent.md → squad.agent.md.template in mirror targets
+  // so Copilot CLI 1.0.11 doesn't discover template copies as *.agent.md
   for (const targetDir of MIRROR_TARGETS) {
     if (!existsSync(targetDir)) {
       // Skip targets whose root doesn't exist (e.g., package not checked out)
       continue;
     }
-    targets.push(join(targetDir, relFile));
+    const destName = relFile === AGENT_MD_FILE ? AGENT_MD_FILE + '.template' : relFile;
+    targets.push(join(targetDir, destName));
   }
 
   // Special case: squad.agent.md also goes to .github/agents/

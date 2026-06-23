@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { listRoles, searchRoles } from '@bradygaster/squad-sdk';
+import { listRoles, searchRoles, FSStorageProvider, loadDirConfig, resolveExternalStateDir } from '@bradygaster/squad-sdk';
 
 import type { ShellMessage } from './types.js';
 
@@ -38,6 +37,18 @@ export interface CoordinatorConfig {
   useBaseRoles?: boolean;
 }
 
+/** Fallback text when team.md is missing or has no roster entries. */
+const noTeamFallback = `⚠️ NO TEAM CONFIGURED
+
+This project doesn't have a Squad team yet.
+
+**You MUST NOT do any project work.** Instead, tell the user:
+1. "This project doesn't have a Squad team yet."
+2. Suggest running \`squad init\` or the \`/init\` command to set one up.
+3. Politely refuse any work requests until init is done.
+
+Do not answer coding questions, route to agents, or perform any project tasks.`;
+
 /**
  * Build an Init Mode system prompt for team casting.
  * Used when team.md exists but has no roster entries.
@@ -73,7 +84,7 @@ Your job: Propose a team of 4-5 AI agents based on what the user wants to do.
    
    You may also choose other film universes (Alien, The Matrix, Heat, Star Wars, Blade Runner, etc.) but the two above are preferred.
 3. Propose 4-5 agents with roles that match the project needs
-4. Scribe and Ralph are always included automatically — do NOT include them in your proposal
+4. Scribe, Ralph, and Rai are always included automatically — do NOT include them in your proposal
 
 ## Response Format — you MUST use this EXACT format:
 
@@ -160,7 +171,7 @@ Your job: Propose a team of 4-5 AI agents based on what the user wants to do.
 1. Analyze the user's message to understand the project (language, stack, scope)
 2. Pick a fictional universe for character names (e.g., Alien, The Usual Suspects, Blade Runner, The Matrix, Heat, Star Wars). Pick ONE universe and use it consistently.
 3. Propose 4-5 agents with roles that match the project needs
-4. Scribe and Ralph are always included automatically — do NOT include them in your proposal
+4. Scribe, Ralph, and Rai are always included automatically — do NOT include them in your proposal
 
 ## Built-in Base Roles (use these as starting points)
 
@@ -214,46 +225,45 @@ PROJECT: A React and Node.js web application
 /**
  * Build the coordinator system prompt from team.md + routing.md.
  * This prompt tells the LLM how to route user requests to agents.
+ *
+ * Reads via FSStorageProvider so all file access is routed through the
+ * StorageProvider abstraction (Phase 3 migration).
  */
-export function buildCoordinatorPrompt(config: CoordinatorConfig): string {
+export async function buildCoordinatorPrompt(config: CoordinatorConfig): Promise<string> {
   const squadRoot = config.teamRoot;
+  const storage = new FSStorageProvider();
+
+  // Resolve effective state dir (external when externalized)
+  const localSquadDir = join(squadRoot, '.squad');
+  const dirConfig = loadDirConfig(localSquadDir);
+  const stateDir = (dirConfig?.stateLocation === 'external' && dirConfig.projectKey)
+    ? resolveExternalStateDir(dirConfig.projectKey, false)
+    : localSquadDir;
 
   // Load team.md for roster
-  const teamPath = config.teamPath ?? join(squadRoot, '.squad', 'team.md');
+  const teamPath = config.teamPath ?? join(stateDir, 'team.md');
   let teamContent = '';
   try {
-    teamContent = readFileSync(teamPath, 'utf-8');
-    if (!hasRosterEntries(teamContent)) {
-      teamContent = `⚠️ NO TEAM CONFIGURED
-
-This project doesn't have a Squad team yet.
-
-**You MUST NOT do any project work.** Instead, tell the user:
-1. "This project doesn't have a Squad team yet."
-2. Suggest running \`squad init\` or the \`/init\` command to set one up.
-3. Politely refuse any work requests until init is done.
-
-Do not answer coding questions, route to agents, or perform any project tasks.`;
+    const raw = await storage.read(teamPath);
+    if (raw === undefined) {
+      teamContent = noTeamFallback;
+    } else {
+      teamContent = raw;
+      if (!hasRosterEntries(teamContent)) {
+        teamContent = noTeamFallback;
+      }
     }
   } catch (err) {
     debugLog('buildCoordinatorPrompt: failed to read team.md at', teamPath, err);
-    teamContent = `⚠️ NO TEAM CONFIGURED
-
-This project doesn't have a Squad team yet.
-
-**You MUST NOT do any project work.** Instead, tell the user:
-1. "This project doesn't have a Squad team yet."
-2. Suggest running \`squad init\` or the \`/init\` command to set one up.
-3. Politely refuse any work requests until init is done.
-
-Do not answer coding questions, route to agents, or perform any project tasks.`;
+    teamContent = noTeamFallback;
   }
 
   // Load routing.md for routing rules
-  const routingPath = config.routingPath ?? join(squadRoot, '.squad', 'routing.md');
+  const routingPath = config.routingPath ?? join(stateDir, 'routing.md');
   let routingContent = '';
   try {
-    routingContent = readFileSync(routingPath, 'utf-8');
+    const raw = await storage.read(routingPath);
+    routingContent = raw ?? '(No routing.md found — run `squad init` to create one)';
   } catch (err) {
     debugLog('buildCoordinatorPrompt: failed to read routing.md at', routingPath, err);
     routingContent = '(No routing.md found — run `squad init` to create one)';

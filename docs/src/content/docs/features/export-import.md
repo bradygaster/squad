@@ -31,6 +31,28 @@ Creates `squad-export.json` in the current directory — a portable snapshot of 
 squad export --out ./backups/my-team.json
 ```
 
+### Push directly to a GitHub repository
+
+Instead of writing to a local file, you can push the export straight to a GitHub repo via the GitHub Contents API. This is the easiest way to back up your team to a private repo or share it with collaborators without sending a file.
+
+```bash
+# Export to a GitHub repo (uses default branch)
+squad export --repo myorg/squad-backups
+
+# Export to a specific branch
+squad export --repo myorg/squad-backups --branch nightly
+```
+
+Requirements:
+- GitHub CLI (`gh`) installed and authenticated with permission to push to the target repo
+- The repo must exist (the export does NOT create it)
+
+The export lands at the repo root as `squad-export.json` by default. Combine with `--out` to control the filename inside the repo:
+
+```bash
+squad export --repo myorg/squad-backups --out my-team-2026-06-11.json
+```
+
 ### What's included
 
 | Data | Included |
@@ -41,7 +63,7 @@ squad export --out ./backups/my-team.json
 | **Skills** | ✅ **All earned skills export with the team** |
 | Decisions | ✅ |
 
-> **Skills are portable**: When you export a team, all earned skills from `.squad/skills/` are included in the JSON manifest. After importing, skills are immediately available to all agents — no loss of knowledge.
+> **Skills are portable**: When you export a team, all earned skills from `.copilot/skills/` are included in the JSON manifest. After importing, skills are immediately available to all agents — no loss of knowledge.
 
 ---
 
@@ -52,6 +74,25 @@ squad import squad-export.json
 ```
 
 Imports the snapshot into the current repo's `.squad/` directory.
+
+### Pull directly from a GitHub repository
+
+You can import a snapshot directly from a GitHub repo without downloading the file first:
+
+```bash
+# Import from default branch of a repo
+squad import --repo myorg/squad-backups
+
+# Import a specific filename or branch
+squad import --repo myorg/squad-backups --branch nightly
+squad import --repo myorg/squad-backups --out my-team-2026-06-11.json
+```
+
+Requirements:
+- GitHub CLI (`gh`) installed and authenticated with read access to the source repo
+- The export file must exist at the named path in the repo (default: `squad-export.json` at repo root)
+
+Use `--force` together with `--repo` for the same archive-then-replace behavior as the file-based import.
 
 ### Collision detection
 

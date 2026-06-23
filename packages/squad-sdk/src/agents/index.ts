@@ -6,15 +6,29 @@
  * Injects dynamic context via session hooks instead of string templates.
  */
 
-import { readFile, readdir } from 'node:fs/promises';
 import { join, dirname, basename } from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import type { SquadState } from '../state/squad-state.js';
 import { randomUUID } from 'node:crypto';
 import { parseCharterMarkdown } from './charter-compiler.js';
 import { EventBus } from '../client/event-bus.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import { recordAgentSpawn, recordAgentDuration, recordAgentError, recordAgentDestroy } from '../runtime/otel-metrics.js';
+import { mapWithLimitSettled } from '../utils/map-with-limit.js';
 
 const tracer = trace.getTracer('squad-sdk');
+
+/**
+ * Concurrency limit for {@link CharterCompiler.compileAll}.
+ *
+ * Each compile reads a charter.md (FS or SquadState-backed) and parses it.
+ * Filesystem reads are cheap individually but unbounded fan-out can
+ * exhaust file descriptors on large teams (the typical default soft
+ * ulimit is ~256 on macOS / 1024 on Linux). 8 in flight saturates 5-10
+ * agent teams while leaving headroom for other SDK code.
+ */
+const COMPILE_ALL_CONCURRENCY = 8;
 
 // --- M1-8 Charter Compilation + M2-9 Config-driven ---
 export { 
@@ -125,12 +139,23 @@ export interface AgentSessionInfo {
 // --- Charter Compiler ---
 
 export class CharterCompiler {
+  private storage: StorageProvider;
+  private state?: SquadState;
+
+  constructor(storage: StorageProvider = new FSStorageProvider(), state?: SquadState) {
+    this.storage = storage;
+    this.state = state;
+  }
+
   /**
    * Load and compile a charter.md file into an AgentCharter.
    * Parses identity/model sections from markdown.
    */
   async compile(charterPath: string): Promise<AgentCharter> {
-    const content = await readFile(charterPath, 'utf-8');
+    const content = await this.storage.read(charterPath);
+    if (content === undefined) {
+      throw new Error(`Charter file not found: ${charterPath}`);
+    }
     const parsed = parseCharterMarkdown(content);
 
     const name = parsed.identity.name ?? basename(dirname(charterPath));
@@ -151,27 +176,79 @@ export class CharterCompiler {
   }
 
   /**
+   * Compile a charter from an agent name using SquadState.
+   * Reads the charter via the typed agents collection.
+   */
+  async compileByName(agentName: string): Promise<AgentCharter> {
+    if (!this.state) {
+      throw new Error('compileByName requires SquadState — pass state to CharterCompiler constructor');
+    }
+    const content = await this.state.agents.get(agentName).charter();
+    const parsed = parseCharterMarkdown(content);
+
+    const name = parsed.identity.name ?? agentName;
+    const role = parsed.identity.role ?? '';
+    const expertise = parsed.identity.expertise ?? [];
+    const style = parsed.identity.style ?? '';
+    const displayName = `${name} — ${role}`;
+
+    return {
+      name: name.toLowerCase(),
+      displayName,
+      role,
+      expertise,
+      style,
+      prompt: content,
+      modelPreference: parsed.modelPreference,
+    };
+  }
+
+  /**
    * Load all charters from the team directory.
-   * Scans .squad/agents/{name}/charter.md, skipping scribe and _alumni.
+   * When SquadState is available, uses the typed agents collection.
+   * Otherwise scans .squad/agents/{name}/charter.md, skipping scribe and _alumni.
    */
   async compileAll(teamRoot: string): Promise<AgentCharter[]> {
-    const agentsDir = join(teamRoot, '.squad', 'agents');
-    const entries = await readdir(agentsDir, { withFileTypes: true });
-    const charters: AgentCharter[] = [];
+    // Use SquadState agents collection when available
+    if (this.state) {
+      const names = await this.state.agents.list();
+      const candidates = names.filter(
+        (name) => name !== 'scribe' && name !== 'Rai' && !name.startsWith('_'),
+      );
 
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (entry.name === 'scribe' || entry.name.startsWith('_')) continue;
+      // Parallelise the per-charter compile. Order is preserved so
+      // downstream consumers that index by position (or rely on stable
+      // ordering for display) continue to see the same sequence.
+      const results = await mapWithLimitSettled(
+        candidates,
+        COMPILE_ALL_CONCURRENCY,
+        (name) => this.compileByName(name),
+      );
 
-      const charterPath = join(agentsDir, entry.name, 'charter.md');
-      try {
-        charters.push(await this.compile(charterPath));
-      } catch {
-        // Skip agents without a valid charter.md
-      }
+      return results
+        .filter((r): r is PromiseFulfilledResult<AgentCharter> => r.status === 'fulfilled')
+        .map((r) => r.value);
     }
 
-    return charters;
+    // Fallback: raw StorageProvider scan
+    const agentsDir = join(teamRoot, '.squad', 'agents');
+    if (!await this.storage.exists(agentsDir)) {
+      throw new Error(`Agents directory not found: ${agentsDir}`);
+    }
+    const entries = await this.storage.list(agentsDir);
+    const candidates = entries.filter(
+      (name) => name !== 'scribe' && name !== 'Rai' && !name.startsWith('_'),
+    );
+
+    const results = await mapWithLimitSettled(
+      candidates,
+      COMPILE_ALL_CONCURRENCY,
+      (name) => this.compile(join(agentsDir, name, 'charter.md')),
+    );
+
+    return results
+      .filter((r): r is PromiseFulfilledResult<AgentCharter> => r.status === 'fulfilled')
+      .map((r) => r.value);
   }
 }
 

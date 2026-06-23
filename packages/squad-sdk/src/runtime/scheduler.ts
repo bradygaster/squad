@@ -11,9 +11,32 @@
  *   - Custom providers via ScheduleProvider interface
  */
 
-import { readFile, writeFile } from 'node:fs/promises';
-import fs from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
+const execFileAsync = promisify(execFile);
+
+/**
+ * Default ceiling on a single script task.
+ *
+ * The previous implementation used `execFileSync` which is fully blocking —
+ * a 60-second cap meant the entire Node event loop could be frozen for up
+ * to one minute per scheduled task. We now use the non-blocking
+ * promisified `execFile` with the same per-task timeout, so other timers,
+ * I/O, and telemetry exporters keep making progress while a script runs.
+ */
+const SCRIPT_DEFAULT_TIMEOUT_MS = 60_000;
+
+/**
+ * Max captured stdout for a script task. Anything larger and execFile
+ * rejects with an ERR_CHILD_PROCESS_STDIO_MAXBUFFER. The Node default is
+ * ~1 MB which is small for `git log` / `npm ls` style commands the
+ * scheduler can be configured to run.
+ */
+const SCRIPT_DEFAULT_MAX_BUFFER = 8 * 1024 * 1024;
 
 // ============================================================================
 // Schedule Schema Types
@@ -90,6 +113,14 @@ export interface TaskResult {
   success: boolean;
   output?: string;
   error?: string;
+  /** Captured stderr (rejection-only). Optional; populated on script failures. */
+  stderr?: string;
+  /** Process exit code if known (rejection-only). */
+  code?: number;
+  /** Signal that terminated the process if known (rejection-only). */
+  signal?: string;
+  /** True iff the process was killed because it exceeded the timeout. */
+  timedOut?: boolean;
 }
 
 // ============================================================================
@@ -203,6 +234,9 @@ function validateEntry(entry: unknown, index: number, seenIds: Set<string>): voi
   if (typeof task.ref !== 'string' || task.ref.length === 0) {
     throw new ScheduleValidationError(`${prefix}.task.ref must be a non-empty string`);
   }
+  if (task.type === 'script') {
+    validateTaskRef(task.ref as string);
+  }
 
   // Providers validation
   if (!Array.isArray(e.providers) || e.providers.length === 0) {
@@ -239,7 +273,7 @@ function validateEntry(entry: unknown, index: number, seenIds: Set<string>): voi
 export async function parseSchedule(filePath: string): Promise<ScheduleManifest> {
   let raw: string;
   try {
-    raw = await readFile(filePath, 'utf8');
+    raw = await storage.read(filePath) ?? '';
   } catch (err) {
     throw new ScheduleValidationError(
       `Cannot read schedule file: ${filePath} — ${(err as Error).message}`,
@@ -358,6 +392,23 @@ function cronFieldMatches(field: string, value: number): boolean {
   return values.includes(value);
 }
 
+/**
+ * Validate a task ref for safety. Rejects null bytes and newlines which
+ * can cause issues even without shell interpretation.
+ * The structural protection comes from execFileSync (shell: false).
+ */
+export function validateTaskRef(ref: string): void {
+  if (!ref || ref.trim().length === 0) {
+    throw new ScheduleValidationError('Task ref must be a non-empty string');
+  }
+  if (ref.includes('\0')) {
+    throw new ScheduleValidationError('Task ref must not contain null bytes');
+  }
+  if (/[\r\n]/.test(ref)) {
+    throw new ScheduleValidationError('Task ref must not contain newline characters');
+  }
+}
+
 // ============================================================================
 // Task Execution
 // ============================================================================
@@ -400,7 +451,7 @@ export async function executeTask(
  */
 export async function loadState(statePath: string): Promise<ScheduleState> {
   try {
-    const raw = await readFile(statePath, 'utf8');
+    const raw = await storage.read(statePath) ?? '';
     return JSON.parse(raw) as ScheduleState;
   } catch {
     return { runs: {} };
@@ -411,7 +462,7 @@ export async function loadState(statePath: string): Promise<ScheduleState> {
  * Save schedule state to disk.
  */
 export async function saveState(statePath: string, state: ScheduleState): Promise<void> {
-  await writeFile(statePath, JSON.stringify(state, null, 2) + '\n', 'utf8');
+  await storage.write(statePath, JSON.stringify(state, null, 2) + '\n');
 }
 
 // ============================================================================
@@ -428,15 +479,48 @@ export class LocalPollingProvider implements ScheduleProvider {
   async execute(entry: ScheduleEntry): Promise<TaskResult> {
     switch (entry.task.type) {
       case 'script': {
+        // Non-blocking script execution. execFile with `shell: false`
+        // preserves the injection-safety property of the prior execFileSync
+        // implementation (see validateTaskRef above). The async variant
+        // means timer/I/O work elsewhere in the process keeps making
+        // progress while the script runs — critical for the Ralph watch
+        // loop and OpenTelemetry exporters.
         try {
-          const { execSync } = await import('node:child_process');
-          const output = execSync(entry.task.ref, {
+          validateTaskRef(entry.task.ref);
+          const argv = entry.task.ref.trim().split(/\s+/);
+          const command = argv[0]!;
+          const args = argv.slice(1);
+          const { stdout } = await execFileAsync(command, args, {
             encoding: 'utf8',
-            timeout: 60_000,
+            timeout: SCRIPT_DEFAULT_TIMEOUT_MS,
+            maxBuffer: SCRIPT_DEFAULT_MAX_BUFFER,
           });
-          return { success: true, output: output.trim() };
+          return { success: true, output: stdout.trim() };
         } catch (err) {
-          return { success: false, error: (err as Error).message };
+          // promisify(execFile) rejects with an Error decorated with extra
+          // fields when the child fails. We surface them on TaskResult so
+          // schedulers can distinguish 'timed out' from 'nonzero exit'.
+          const e = err as NodeJS.ErrnoException & {
+            stdout?: string | Buffer;
+            stderr?: string | Buffer;
+            code?: number | string;
+            signal?: NodeJS.Signals | null;
+            killed?: boolean;
+          };
+          const result: TaskResult = {
+            success: false,
+            error: e.message,
+          };
+          if (e.stdout !== undefined) result.output = e.stdout.toString().trim();
+          if (e.stderr !== undefined) result.stderr = e.stderr.toString().trim();
+          if (typeof e.code === 'number') result.code = e.code;
+          if (e.signal) result.signal = e.signal;
+          // execFile sets `killed=true` AND `signal='SIGTERM'` when the
+          // configured `timeout` fires. Either flag is sufficient evidence.
+          if (e.killed && (e.signal === 'SIGTERM' || e.signal === 'SIGKILL')) {
+            result.timedOut = true;
+          }
+          return result;
         }
       }
       case 'workflow':
@@ -521,10 +605,10 @@ export class GitHubActionsProvider implements ScheduleProvider {
       ].join('\n') + '\n';
 
       const dir = path.dirname(workflowPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+      if (!storage.existsSync(dir)) {
+        storage.mkdirSync(dir, { recursive: true });
       }
-      fs.writeFileSync(workflowPath, yaml, 'utf8');
+      storage.writeSync(workflowPath, yaml);
       generated.push(workflowPath);
     }
 

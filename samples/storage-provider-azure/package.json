@@ -1,0 +1,26 @@
+{
+  "name": "storage-provider-azure-sample",
+  "version": "1.0.0",
+  "description": "Azure Blob Storage implementation of StorageProvider",
+  "type": "module",
+  "scripts": {
+    "azurite": "npx azurite --silent --skipApiVersionCheck --location ./azurite",
+    "demo": "npx tsx index.ts",
+    "demo:keep": "npx tsx index.ts --keep",
+    "demo:emulator": "npx cross-env AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true npx tsx index.ts",
+    "demo:emulator:keep": "npx cross-env AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true npx tsx index.ts --keep",
+    "clean": "npx cross-env AZURE_STORAGE_CONNECTION_STRING=UseDevelopmentStorage=true npx tsx -e \"import{BlobServiceClient}from'@azure/storage-blob';const c=BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING).getContainerClient('squad-storage-demo');await c.deleteIfExists();console.log('Deleted container: squad-storage-demo')\"",
+    "azure:create": "bash scripts/create-storage.sh",
+    "azure:delete": "bash scripts/delete-storage.sh"
+  },
+  "private": true,
+  "dependencies": {
+    "@bradygaster/squad-sdk": "file:../../packages/squad-sdk",
+    "@azure/storage-blob": "^12.26.0",
+    "@azure/identity": "^4.5.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "tsx": "^4.0.0"
+  }
+}

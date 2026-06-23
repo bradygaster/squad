@@ -16,7 +16,7 @@ The programmable multi-agent CLI for GitHub Copilot. Build an AI team, assign ro
 
 ```bash
 # Global (recommended)
-npm install -g @bradygaster/squad-cli
+npm install -g @bradygaster/squad-cli@latest
 
 # Project-local
 npm install --save-dev @bradygaster/squad-cli
@@ -220,6 +220,39 @@ When you run `squad init`, Squad creates a `.squad/` directory with this structu
 - No any/unknown casts
 - All database queries through Prisma, no raw SQL
 ```
+
+## Built-in Skills
+
+When you run `squad init`, Squad installs **8 curated skills** into `.github/skills/`. These skills teach your agents best practices and conventions:
+
+| Skill | Purpose |
+|-------|---------|
+| `squad-conventions` | Squad behavioral conventions |
+| `error-recovery` | Graceful error recovery patterns |
+| `secret-handling` | Secrets management and credential safety |
+| `git-workflow` | Git workflow conventions and branch management |
+| `session-recovery` | Session checkpoint and recovery patterns |
+| `reviewer-protocol` | Code review protocol and reviewer gate patterns |
+| `test-discipline` | Test-first discipline and coverage expectations |
+| `agent-collaboration` | Multi-agent collaboration and handoff patterns |
+
+Each skill is a `SKILL.md` file inside `.github/skills/<skill-name>/`.
+
+### Skill lifecycle
+
+- **`squad init`** — Installs the 8 manifest skills on first run. If `.github/skills/` already has content, init skips skill installation (idempotent).
+- **`squad upgrade`** — Refreshes manifest skills to their latest versions. Skills marked `overwriteOnUpgrade: true` (all built-in skills) are always updated to pick up fixes and improvements.
+
+### Adding custom skills
+
+You can add your own skills by creating a new directory under `.github/skills/`:
+
+```
+.github/skills/my-custom-skill/
+└── SKILL.md
+```
+
+Custom skills are not overwritten during upgrade because they are not part of the built-in manifest.
 
 ## Configuration
 

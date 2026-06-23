@@ -171,7 +171,7 @@ describe('CLI: rc command', () => {
       );
       
       // Verify EISDIR guard (issue #2 fix)
-      expect(rcSource).toContain('stat.isDirectory()');
+      expect(rcSource).toContain('stat?.isDirectory');
     });
 
     it('validates malformed URI handling', () => {
@@ -206,7 +206,7 @@ describe('CLI: rc command', () => {
       
       // Verify fallback to 'copilot' command (updated implementation uses conditional)
       expect(rcSource).toContain('copilotCmd = \'copilot\'');
-      expect(rcSource).toContain('if (fs.existsSync(winPath))');
+      expect(rcSource).toContain('if (storage.existsSync(winPath))');
     });
   });
 
@@ -440,7 +440,7 @@ describe('CLI: rc command', () => {
         'utf-8'
       );
       
-      expect(rcSource).toContain('import { RemoteBridge }');
+      expect(rcSource).toContain('import { FSStorageProvider, RemoteBridge }');
       expect(rcSource).toContain('@bradygaster/squad-sdk');
     });
 

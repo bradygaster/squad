@@ -55,6 +55,8 @@ function normalizeEol(content) {
   return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
+function slugify(text) { return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+
 function parseRoutingRules(routingMd) {
   const table = parseTableSection(routingMd, /^##\s*work\s*type\s*(?:→|->)\s*agent\b/i);
   if (!table) return [];
@@ -124,7 +126,7 @@ function parseRoster(teamMd) {
     members.push({
       name,
       role,
-      label: `squad:${name.toLowerCase()}`,
+      label: `squad:${slugify(name)}`,
     });
   }
 

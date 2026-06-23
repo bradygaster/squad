@@ -18,13 +18,95 @@ Always use single quotes in TypeScript
 What does Kane remember about the authentication system?
 ```
 
-Squad remembers everything — decisions, conventions, architecture patterns, and individual agent learnings. Memory grows with every session, making agents smarter over time.
+Squad remembers the durable things that help future work — decisions, conventions,
+architecture patterns, and individual agent learnings. It should not retain secrets, raw
+logs, transient CI/PR status, or other data that is unsafe or too short-lived to become
+memory.
 
 ---
 
 ## Memory Layers
 
 Squad's memory is layered. Each layer serves a different purpose, and knowledge grows with every session.
+
+By default, Squad memory is local worktree memory stored in `.squad/` files. Future
+provider work keeps that local model as the default while adding a governance layer for
+classification, safety, and optional semantic durable memory such as Copilot Memory.
+External semantic memory is opt-in; it is not required for `squad init` or Copilot custom
+agents using the prompt-only `.squad/` fallback.
+
+`squad init` and `squad upgrade` scaffold a local-only governance policy at
+`.squad/memory/config.json`. The default provider is `local`, Copilot Memory is disabled,
+and audit records are written to `.squad/memory/audit.jsonl` without storing memory content.
+
+Tool-backed runtimes can use governed operations:
+
+```text
+memory.classify
+memory.write
+memory.search
+memory.promote
+memory.delete
+memory.audit
+```
+
+Governed memory records include load-guidance metadata so prompts and providers can choose
+what to load without weakening safety gates:
+
+| Tag | Meaning |
+| --- | --- |
+| `[ALWAYS]` | Durable policies and decisions that should be loaded eagerly. |
+| `[ON-DEMAND]` | Stable local or semantic facts retrieved when relevant to a query. |
+| `[ARCHIVE]` | Superseded/deleted entries and tombstones kept for audit/history, not active prompt loading. |
+| `[NEVER]` | Forbidden or transient content that must not be persisted or loaded. |
+
+When an entry is promoted or superseded, the previous index entry is marked `[ARCHIVE]`
+and records `supersededBy` so tooling can follow the forward link to the active successor.
+
+The CLI exposes the same local bridge:
+
+```bash
+squad memory classify "Always run tests before merge"
+squad memory write --content "Use Vitest for SDK regression tests" --class DECISION --author scribe
+squad memory search --query "Vitest"
+squad memory audit
+squad memory provider
+```
+
+Use `--log-level none|error|info|debug` (or `--verbose`) when troubleshooting memory
+command activity. For persistent project-level diagnostics, set the same level in
+`.squad/config.json`:
+
+```json
+{
+  "memory": {
+    "logLevel": "info"
+  }
+}
+```
+
+Precedence is: explicit CLI switch, then `SQUAD_MEMORY_LOG_LEVEL`, then
+`.squad/config.json` `memory.logLevel`, then the default `none`. Diagnostics are written
+to stderr and include safe metadata such as the command, provider, load-guidance, path,
+result counts, and timing. They do not print raw memory content or search text.
+
+Prompt-only Copilot custom agents still fall back to direct `.squad/` file edits. That
+fallback is intentionally local: it does not claim provider-backed semantic memory,
+external indexing, policy enforcement, or remote deletion unless a CLI/MCP/tool bridge is
+installed and used.
+
+Real `provider=copilot` support is unavailable unless a concrete callable Copilot Memory API
+exists in the installed SDK/tooling. Squad does not invent endpoints or fake a remote memory
+service. The only current bridge is explicitly named `hostInjectedCopilotAdapter`; it is
+opt-in and only works when a host supplies a client. Otherwise provider-backed writes fail
+closed after auditing the rejected attempt. Forbidden content is classified and rejected
+before any provider call.
+
+The installed Copilot SDK/CLI currently exposes memory as an agent capability/permission
+concept, not as a documented SDK storage client for write/search/delete. Config files may
+contain `defaultProvider: "copilot"` for forward compatibility, but status reports it as
+configured and unavailable, and governed reads/writes fail closed until a real callable API
+exists.
 
 ---
 
@@ -87,7 +169,7 @@ Active decisions (ongoing policies, user preferences, current architecture) stay
 
 ## Skills
 
-Reusable knowledge files at `.squad/skills/{skill-name}/SKILL.md`. See [Skills System](skills.md) for details.
+Reusable knowledge files at `.copilot/skills/{skill-name}/SKILL.md`. See [Skills System](skills.md) for details.
 
 Skills differ from decisions — decisions are project policies ("use PostgreSQL"), while skills are transferable techniques ("how to set up CI with GitHub Actions").
 
@@ -127,7 +209,9 @@ Skills differ from decisions — decisions are project policies ("use PostgreSQL
 
 ## Tips
 
-- **Commit `.squad/`** — anyone who clones the repo gets the team with all their accumulated knowledge.
+- **Commit intentional `.squad/` state** — anyone who clones the repo gets the team with
+  its accumulated decisions and skills. Never store secrets, credentials, raw logs, or
+  private customer data in Squad memory.
 - Directives ("always...", "never...") are the fastest way to shape team behavior. Use them liberally.
 - If an agent keeps making the same mistake, check `decisions.md` — the relevant convention might be missing.
 - You can edit `decisions.md` and `history.md` files directly. They're plain Markdown.

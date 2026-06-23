@@ -8,6 +8,29 @@ Docs live in docs/ with blog/, concepts/, cookbook/, getting-started/, guide/, f
 
 ## Learnings
 
+### Discussion Triage Patterns (2026-03-23 Release Incident)
+**Context:** v0.9.1 release completed; 15 open discussions analyzing whether community response patterns matched feature releases.
+
+**Pattern identified:** Feature releases without follow-up discussion closes = missed trust opportunity. When you ship features (personal squad, worktrees, economy mode, rate limiting), search discussions for matching feature-requests → respond + close proactively. This signals to community that you listen.
+
+**Triage workflow:**
+1. Map new features to open discussions (which discussions are solved by this release?)
+2. Respond: "This feature is now available in v0.9.1. See docs link."
+3. Close as resolved
+4. Consolidate: if discussion #463 is duplicate of #402, merge responses into #402, close #463
+5. Convert: if discussion reveals a bug or roadmap item, convert to issue with label (e.g., squad:eecom)
+6. Keep: if discussion is feedback or edge case, keep open; respond substantively
+
+**For v0.9.1 release:** 4 closed, 1 consolidated, 2 converted to issue, 8 kept. Result: community sees responsiveness; discussions become productivity tool, not backlog.
+
+**Critical finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024. Docs must purge old connector references and document Power Automate Workflows path (new successor).
+
+### Chinese README Workflow (2026-03-23 Release Incident)
+Community contributor (PR #572) provided Chinese README translation. Approved and merged as part of v0.9.1 release. Pattern: accept community translations; list contributors in CONTRIBUTORS.md; acknowledge in release notes.
+
+### Teams MCP Urgency Pattern (2026-03-23)
+External tool integrations deprecate. Office 365 Connectors retired Dec 2024. Docs mentioning deprecated tools create support burden and user confusion. Action: audit all external tool integration docs for deprecation; update with successor guidance (Power Automate Workflows for Teams).
+
 ### Blog Post Format
 YAML frontmatter: title, date, author, wave, tags, status, hero. Body: experimental warning, What Shipped, Why This Matters, Quick Stats, What's Next. 200-400 words for infrastructure releases. No hype — explain value.
 
@@ -55,6 +78,26 @@ Reviewed and merged PR #487 (CLI documentation expansion + broken docs link fix)
 
 Reviewed and merged PR #482. Search functionality integrated into docs site for improved discoverability.
 
+### PR #11 Docs Quality Review — TypeDoc API Reference (2026-03-24)
+
+**Status:** REQUEST CHANGES (3 fixes required, 2 recommended)
+
+**Key findings:**
+- **Research + PRD:** Excellent quality. Clear problem statement, realistic effort estimate, pragmatic tool choice (TypeDoc over Starlight/api-extractor). Scannability framework applied correctly (tables for audit data, bullets for findings, paragraphs for narrative).
+- **Navigation strategy:** Collapsible `<details>` approach for 395-page API reference is sound UX. Sidebar nav plan well-structured with clear open questions about CI/CD safety.
+- **Microsoft Style compliance:** Mostly strong; discovered 3 minor issues.
+
+**Issues found:**
+1. **🔴 Blocking:** sdk.md crosslink banner missing. Users navigating from curated "SDK" guide have no callout to the auto-generated "API Reference". Add "See Also" link in sdk.md before "## Resolution" section.
+2. **🔴 Blocking:** Navigation URL inconsistency. `navigation.ts` hardcodes `reference/api/index` when it should be `reference/api` — Astro resolves `/api/` to `/api/index` automatically. Simplify slug.
+3. **🟡 Blocking:** Nav plan's "Open Questions" section asks about CI/CD fallback (generated JSON missing). Plan should either specify build order (`docs:api` before `docs build`) or provide fallback empty nav for fresh clones.
+4. **🟡 Recommended:** 2–3 test descriptions need more specificity (e.g., "class page renders heading and content" → "class page renders method signatures and definition source").
+5. **🟡 Recommended:** Screenshot filenames don't align with skill convention. Use semantic names: `api-reference-landing`, `api-class-detail`, `api-function-detail`.
+
+**Pattern identified:** Generated documentation requires crosslinks from curated guides. When adding a new docs section (API reference, CLI reference, etc.), ensure the *old* curated page (SDK Guide) has a visible pointer to the new section. This prevents users from stopping at the curated version and missing the comprehensive auto-generated reference.
+
+**Effort to fix:** < 2 hours. All issues are surgical edits to existing content; no architectural changes needed.
+
 ### PR #484 Review & Merge — Sample READMEs (2026-03-22)
 
 Reviewed and merged PR #484. Sample README templates added to improve consistency across documentation examples.
@@ -77,6 +120,45 @@ Created docs/src/content/docs/scenarios/cross-org-auth.md covering GitHub person
 ### Scannability Framework (v0.8.25)
 Format selection is a scannability decision, not style preference. Paragraphs for narrative/concepts (3-4 sentences max). Bullets for scannable items (features, options, non-sequential steps). Tables for comparisons or structured reference data (config, API params). Quotes/indents for callouts/warnings. Decision test: if reader hunts for one item in a paragraph, convert to bullets/table. This framework is now a hard rule in charter under SCANNABILITY REVIEW.
 
+### Docs Catalog Audit (2026)
+Full audit of the Astro-based docs site. Key patterns and findings:
+
+**Orphaned pages (exist but not in navigation.ts):** 15 total — `get-started/choose-your-interface.md`, `guide/faq.md`, `guide/build-autonomous-agent.md`, `guide/github-auth-setup.md`, `features/built-in-roles.md`, `features/context-hygiene.md`, `features/cost-tracking.md`, `features/issue-templates.md`, `reference/vscode-troubleshooting.md`, and 6 root-level legacy files (`guide.md`, `sample-prompts.md`, `tips-and-tricks.md`, `tour-first-session.md`, `tour-github-issues.md`, `tour-gitlab-issues.md`).
+
+**Stale content:** `whatsnew.md` reports v0.8.2 as current; actual is v0.8.26+. `insider-program.md` uses deprecated `npx github:` install format and references old `.ai-team/` directory name throughout.
+
+**Duplicate/overlap pairs:** `choosing-your-path.md` (in nav) vs `choose-your-interface.md` (orphan, more complete); root-level `sample-prompts.md` vs `guide/sample-prompts.md`; root-level `tips-and-tricks.md` vs `guide/tips-and-tricks.md`; root-level `tour-first-session.md` vs `get-started/first-session.md`.
+
+**Content quality:** All actively-navved pages are well-written, follow Microsoft Style Guide, and use correct install commands. Format standards (H1, experimental callout, "Try this" block, HR, H2 sections) are inconsistently applied — some orphaned pages like `built-in-roles.md` and `cost-tracking.md` lack the standard header/callout pattern.
+
+**Structural issues:** `features/team-setup.md` has a duplicate `## How Init Works` heading (merge artifact). `features/streams.md` nav title is "Streams" but H1 is "Squad SubSquads" (mismatch). `guide/faq.md` is a high-value page completely invisible from the sidebar. `features/built-in-roles.md` is a comprehensive roles reference also invisible from nav.
+
+**Gap:** No dedicated FAQ entry point, no changelog page, cookbook section is thin (one page), no user-facing explanation of the NASA Mission Control naming scheme for agents.
+
+**Navigation:** Zero dead nav links (every nav slug has a matching file). All orphan pages are linked internally from other pages so they are reachable — but not browseable via sidebar.
+
+📌 **Team update (2026-03-22T12:46:00Z):** Booster implemented automated version sync for `whatsnew.md` (finding #1). Script reads `package.json` version, updates "Current Release" heading on every prebuild, with Vitest test gate. Heading now correct (v0.8.25+), will stay in sync automatically on all future builds. Finding #1 resolved.
+
+### JSDoc API Reference Research (2026-03-23)
+
+Completed research on generating JSDoc-based API reference documentation for Squad SDK. Key findings:
+
+**Current State:** Squad SDK has 60–80% JSDoc coverage across major modules (state: 81%, config: 8%). 136 TypeScript source files, no existing TypeDoc config.
+
+**Tool Recommendation:** **TypeDoc + typedoc-plugin-markdown** — no Starlight migration needed. Seamless integration with existing Astro 5 + Tailwind 4 + Pagefind. Markdown output drops directly into content collections. Auto-generates via Astro integration hook on `npm run build`.
+
+**Alternatives Evaluated:** 
+- ❌ Starlight migration: would break existing docs structure and custom branding
+- ❌ api-extractor: overkill for open-source SDK; designed for strict monorepo contracts
+
+**Effort Estimate:** 5–6 hours (setup only) → 13–18 hours (setup + JSDoc improvements) → 15–22 hours (with CI/CD automation).
+
+**StorageProvider & State Module:** Phase 2 state layer is API-docs ready (81% coverage, well-structured types, clear interface contract). Gaps: add @param/@return tags to state/io functions.
+
+**URL Structure:** `/api/classes/squad-coordinator/`, `/api/interfaces/storage-provider/`, etc. Pagefind indexes automatically.
+
+**Deliverable:** Full research at `docs/research/jsdoc-api-reference-research.md` with configuration templates, implementation roadmap (4 phases), and tool comparison matrix. Decision summary at `.squad/decisions/inbox/pao-jsdoc-research.md`.
+
 ### Issue Triage (2026-03-22T06:44:01Z)
 
 **Flight triaged 6 unlabeled issues and filed 1 new issue.**
@@ -97,3 +179,109 @@ Brady directive: README was too long at 512 lines. Cut the SDK deep-dive block (
 
 ### v0.9.0 Release Blog Post (2026-03-23)
 Created `docs/src/content/blog/028-v090-whats-new.md` documenting Squad's biggest release: Personal Squad (ambient agent discovery + Ghost Protocol), Worktree Spawning (isolated branches per issue), Machine Capability Discovery (needs:* label routing), Cooperative Rate Limiting (predictive circuit breaker), Economy Mode (budget-aware model selection), Auto-Wired Telemetry, P0 upgrade fixes, and docs refresh. Blog format: frontmatter (title/date/author/wave/tags/status/hero) → experimental warning → "What Shipped" (10 features with H2 sections + callout boxes) → "Quick Stats" → "Breaking Changes" (none) → "Upgrading" → "What's Next". Messaging: clear, engaging, factual (no marketing fluff). Demonstrated: Personal Squad governance layer, worktree isolation, capability declaration, RAAS traffic-light pattern, economy fallback logic. Docs refresh section emphasized: README from 512→218 lines, dedicated upgrade guide, npx purged, Astro features, Teams MCP refresh, autonomous agents guide. Contributors: diberry (worktree tests + docs), wiisaacs (security review), community. No breaking changes — all additive opt-in features. Test discovery is dynamic (EXPECTED_BLOG uses filesystem scan), so new post auto-discovered; no test file changes needed. Pattern reinforced: each feature needs a story — if you can't explain it, it's not ready. Demos over descriptions (concrete code examples, YAML config blocks, Bash CLI examples).
+
+### Discussion Triage (2026-03-23)
+
+Analyzed 15 open discussions for response strategy:
+- **4 close-as-resolved** (#143, #169 — features now shipped; #402, #299 — answered with docs links)
+- **1 close-as-duplicate** (#463 → #402)
+- **2 convert-to-issue** (#161 root-copilot-hijack → bug/UX track; #534 enterprise-features → ongoing roadmap signal)
+- **8 keep-open** (ongoing feedback, feature signals, edge cases, follow-up potential)
+
+Key pattern: 15 discussions = 7 feature-request/feedback signals, 4 answered-by-feature-release, 4 documentation-clarity gaps. Community is engaged; v0.9.1 (per-agent models, skills system, human team members, watch mode) directly addressed 5+ discussions that were open for 2-4 weeks. Timing of releases + follow-up responses critical for community trust.
+
+**Documentation gaps identified:**
+- #440 (branch naming convention change) — needs migration guide in upgrade docs
+- #306 (multi-root workspaces) → future feature; docs should clarify current limitation
+- #140 (Teams MCP + Office 365 Connectors retirement) → docs refresh needed; Power Automate Workflows is the new path
+- #401 (mobile/remote control) → feature exploration, keep on radar
+- #161 (Coordinator hijacking) → document workarounds, prioritize UX fix for v1.0
+
+Teams MCP critical update: Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor. Docs mention of old Connectors should be purged; Teams webhook examples should link to Power Automate Workflow guide.
+
+### Community Engagement Wave (2026-03-24)
+
+**6 discussions closed as resolved:**
+- #463, #402 (per-agent model selection — shipped v0.9.1)
+- #324 (local-only operation without GitHub integration)
+- #299 (CLI vs Copilot agent — both viable)
+- #143 (Human team members now first-class feature)
+- #169 (Skills system shipped as core infrastructure)
+
+**8 discussions kept open with substantive replies:**
+- #534 (enterprise features) — asked clarifying questions on scope
+- #499 (Brady's v1.0 announcement) — explained `.squad/` regenerability plan
+- #440 (branch naming change) — acknowledged disruption, offered migration guidance
+- #401 (mobile/async control) — acknowledged use case, roadmap signal
+- #376 (best practices) — provided triage and routing patterns
+- #306 (multi-root support) — acknowledged limitation, kept open for feedback
+- #95 (casting system) — explained mature re-casting flow
+- #140 (Teams MCP) — critical guidance on Office 365 Connectors retirement → Power Automate Workflows
+
+**Pattern observed:** Feature-release timing + follow-up responses critical for community trust. v0.9.1 directly addressed 5+ discussions (models, skills, human members) that were open 2-4 weeks. Community triage now operational: 14 discussions reviewed, 6 closed, 8 kept active = 43% closure rate on resolved items.
+
+**Key insight:** Retirement of Microsoft Office 365 Connectors (Dec 2024) caught users mid-setup. Proactive notification of Teams Workflows alternative + Power Automate guidance essential for Teams MCP users.
+
+### Release Playbook Rewrite (#564, 2026-07-22)
+
+**Task:** Rewrite PUBLISH-README.md from a v0.8.22 version-specific stub (58 lines) into a living, version-agnostic release playbook.
+
+**Outcome:** 232-line playbook replacing entirely with 11 sections per Flight's spec:
+1. Overview — two publish channels, package order (SDK → CLI)
+2. Pre-Flight Checklist — runnable checklist with `grep`/`npm` commands
+3. Publish via CI (Recommended Path) — GitHub Release workflow
+4. Publish via workflow_dispatch — manual trigger fallback
+5. Insider Channel — insider branch + `@insider` tag for testing
+6. Workspace Publish Policy — reference to CI lint rule #557 (enforces `-w` flag)
+7. Manual Local Publish — emergency fallback with step-by-step commands
+8. 422 Race Condition & npm Errors — v0.9.1 incident + troubleshooting
+9. Post-Publish Verification — `npm view` + npx cold-install test
+10. Version Bump After Publish — preview version increment pattern
+11. Legacy Publish Scripts — deprecation notice for PowerShell scripts
+
+**Key decisions:**
+- Microsoft Style Guide enforced: sentence-case headings, active voice, "you" not "we", present tense
+- Version-agnostic: `<VERSION>` placeholder, no hardcoded version numbers
+- Scannability: checklist format, code blocks (bash not PowerShell for portability), tables for error reference
+- Accuracy: pulled from actual workflows (`squad-npm-publish.yml`, `squad-insider-publish.yml`) — preflight job, smoke test, publish stages, registry propagation retry logic (5× 15-second intervals)
+- Runnable: all commands copy-pasteable (e.g., `npm -w packages/squad-sdk pack --dry-run`)
+
+**Pattern:** Living playbook absorbs three related issues (#558 race conditions, #559 manual publish, #560 pre-flight checklist) into unified reference. No separate documents; all under one decision tree: try CI first, use manual only if CI broken. Workspace publish policy section references CI lint rule #557 (being added in parallel by FIDO); both docs + lint create enforcement + education.
+
+**Commit:** `docs: rewrite PUBLISH-README.md as release playbook (#564)` on squad/release-hardening branch.
+
+📌 **Team update (2026-03-24T06-release-hardening):** Release playbook rewrite (#564) completed. PUBLISH-README.md transformed from v0.8.22 stub to living 232-line playbook with 11 sections: Overview, Pre-Flight Checklist, Publish via CI (recommended), Publish via workflow_dispatch, Insider Channel, Workspace Publish Policy, Manual Local Publish (emergency fallback), 422 Race Condition & npm Errors, Post-Publish Verification, Version Bump After Publish, Legacy Publish Scripts. Absorbed issues #558, #559, #560 into unified decision tree. Microsoft Style Guide enforced; version-agnostic; all commands runnable. Scannability: checklist format, bash code blocks, error reference table. Committed to squad/release-hardening.
+### JSDoc API Reference PRD (2026-03-24)
+
+Completed full PRD based on research findings. **Document:** `docs/research/jsdoc-api-reference-prd.md`.
+
+**Structure (8 major sections):**
+1. Problem Statement — 5 concrete gaps (no dedicated API ref, uneven JSDoc coverage, discoverability, StorageProvider docs lag, Pagefind misses API symbols)
+2. Goals & Success Metrics — 4 primary goals, 8 measurable targets (100% JSDoc coverage, 50+ auto-documented symbols, searchable API)
+3. Key User Scenarios — 4 personas (SDK consumer, contributor, agent author, evaluator) with today vs future workflows
+4. Scope — clear in/out boundaries (TypeDoc + JSDoc improvements in; CLI ref gen, Starlight migration, multi-version docs out)
+5. Approach — architecture (TypeDoc in Astro hook), config template (typedoc.json), output/URL structure, build integration code, JSDoc improvement plan with effort table
+6. Implementation Phases — 4 phases: Phase 0 (setup/PoC, 1–2 days), Phase 1 (JSDoc audit, 5–6 hrs), Phase 2 (integration/nav, 3–4 hrs), Phase 3 (CI/CD optional, 2–4 hrs)
+7. Risks & Mitigations — 7 risks (TypeDoc breaks on changes, stale markdown, link validation strictness, Pagefind misses, config maintenance, build perf, breaking changes) with specific mitigations
+8. Architecture Review section — 4 items for CONTROL to review (TypeScript export strategy, TypeDoc config, JSDoc standards, stability commitments)
+
+**Key decisions baked into PRD:**
+- TypeDoc + typedoc-plugin-markdown (not Starlight, not api-extractor) — zero migration, Markdown-first, Pagefind-compatible
+- Astro integration hook auto-runs TypeDoc on build (single step: `npm run build`)
+- Generated output goes to docs/src/content/docs/reference/api/ (one file per symbol)
+- JSDoc improvement priority: config/schema.ts (8% → 100%), state/io/ functions (@param/@return tags), StorageProvider interface audit
+- Total effort: 13–18 hours (8–12 JSDoc + 5–6 setup)
+
+**Style & Tone:**
+- Written for Flight-level review/approval (actionable, opinionated, specific)
+- Includes code examples (typedoc.json, Astro hook, JSDoc template)
+- References research doc for detailed findings
+- PRD as decision/commitment document — not advisory, but directive
+
+**Learnings:**
+- PRD structure differs from research (research = exploratory findings/options; PRD = chosen path + tactical roadmap)
+- Recommendation section in PRD serves as binding decision (TypeDoc chosen, rationale locked in)
+- Architecture Review section ensures TypeScript team reviews export strategy and JSDoc standards early — prevents rework later
+- Four-phase approach breaks large effort into digestible increments (Phase 0 validation before JSDoc audit helps mitigate risk of TypeDoc setup failing)
+
+**Decision:** PRD approved for handoff to implementation team. Ready for execution on next sprint.

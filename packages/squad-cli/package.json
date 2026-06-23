@@ -1,11 +1,12 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
     "squad": "dist/cli-entry.js",
-    "squad-cli": "dist/cli-entry.js"
+    "squad-cli": "dist/cli-entry.js",
+    "squad-test": "dist/cli-entry.js"
   },
   "exports": {
     ".": {
@@ -72,6 +73,10 @@
       "types": "./dist/cli/shell/shell-metrics.d.ts",
       "import": "./dist/cli/shell/shell-metrics.js"
     },
+    "./shell/agent-name-parser": {
+      "types": "./dist/cli/shell/agent-name-parser.d.ts",
+      "import": "./dist/cli/shell/agent-name-parser.js"
+    },
     "./core/detect-squad-dir": {
       "types": "./dist/cli/core/detect-squad-dir.d.ts",
       "import": "./dist/cli/core/detect-squad-dir.js"
@@ -117,8 +122,12 @@
       "import": "./dist/cli/commands/init-remote.js"
     },
     "./commands/watch": {
-      "types": "./dist/cli/commands/watch.d.ts",
-      "import": "./dist/cli/commands/watch.js"
+      "types": "./dist/cli/commands/watch/index.d.ts",
+      "import": "./dist/cli/commands/watch/index.js"
+    },
+    "./commands/watch/health": {
+      "types": "./dist/cli/commands/watch/health.d.ts",
+      "import": "./dist/cli/commands/watch/health.js"
     },
     "./commands/start": {
       "types": "./dist/cli/commands/start.d.ts",
@@ -139,6 +148,10 @@
     "./commands/copilot": {
       "types": "./dist/cli/commands/copilot.d.ts",
       "import": "./dist/cli/commands/copilot.js"
+    },
+    "./commands/memory": {
+      "types": "./dist/cli/commands/memory.d.ts",
+      "import": "./dist/cli/commands/memory.js"
     },
     "./commands/cost": {
       "types": "./dist/cli/commands/cost.d.ts",
@@ -161,7 +174,8 @@
     "dist",
     "templates",
     "scripts",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "postinstall": "node scripts/patch-esm-imports.mjs && node scripts/patch-ink-rendering.mjs",
@@ -174,6 +188,7 @@
   },
   "dependencies": {
     "@bradygaster/squad-sdk": ">=0.9.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^6.8.0",
     "react": "^19.2.4",
     "vscode-jsonrpc": "^8.2.1"
@@ -181,7 +196,6 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
-    "esbuild": "^0.25.0",
     "typescript": "^5.7.0",
     "ink-testing-library": "^4.0.0"
   },
@@ -200,5 +214,9 @@
     "type": "git",
     "url": "git+https://github.com/bradygaster/squad.git",
     "directory": "packages/squad-cli"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0",
+    "qrcode-terminal": "^0.12.0"
   }
 }

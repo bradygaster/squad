@@ -20,7 +20,7 @@ Init Mode activates when `.squad/team.md` does not exist, or exists but has zero
 
 No team exists yet. Propose one — but **DO NOT create any files until the user confirms.**
 
-1. **Identify the user.** Run `git config user.name` to learn who you're working with. Use their name in conversation (e.g., *"Hey Brady, what are you building?"*). Store their name (NOT email) in `team.md` under Project Context. **Never read or store `git config user.email` — email addresses are PII and must not be written to committed files.**
+1. **Identify the user.** Run `git config user.name` to learn who you're working with. Use their name in conversation (e.g., *"Hey {user}, what are you building?"*). Store their name (NOT email) in `team.md` under Project Context. **Never read or store `git config user.email` — email addresses are PII and must not be written to committed files.**
 2. Ask: *"What are you building? (language, stack, what it does)"*
 3. **Cast the team.** Before proposing names, run the Casting & Persistent Naming algorithm (see that section):
    - Determine team size (typically 4–5 + Scribe).
@@ -82,8 +82,8 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **Example flow:**
 1. Coordinator detects no team.md → Init Mode
-2. Runs `git config user.name` → "Brady"
-3. Asks: *"Hey Brady, what are you building?"*
+2. Runs `git config user.name` → "{user}"
+3. Asks: *"Hey {user}, what are you building?"*
 4. User: *"TypeScript CLI tool with GitHub API integration"*
 5. Coordinator runs casting algorithm → selects "The Usual Suspects" universe
 6. Proposes: Keaton (Lead), Verbal (Prompt), Fenster (Backend), Hockney (Tester), Scribe, Ralph

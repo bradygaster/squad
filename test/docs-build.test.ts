@@ -17,7 +17,7 @@ const DIST_DIR = join(DOCS_DIR, 'dist');
 // Expected content directories in src/content/docs/
 const EXPECTED_GET_STARTED = ['installation', 'first-session', 'five-minute-start', 'choosing-your-path', 'migration'];
 
-const EXPECTED_GUIDES = ['build-autonomous-agent', 'building-extensions', 'contributing', 'contributors', 'extensibility', 'faq', 'github-auth-setup', 'personal-squad', 'sample-prompts', 'shell', 'tips-and-tricks'];
+const EXPECTED_GUIDES = ['build-autonomous-agent', 'building-extensions', 'building-resilient-agents', 'contributing', 'contributors', 'extensibility', 'faq', 'github-auth-setup', 'personal-squad', 'sample-prompts', 'shell', 'tips-and-tricks'];
 
 const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
 
@@ -51,6 +51,7 @@ const EXPECTED_SCENARIOS = [
 
 const EXPECTED_FEATURES = [
   'ceremonies',
+  'capability-routing',
   'consult-mode',
   'copilot-coding-agent',
   'directives',
@@ -60,6 +61,7 @@ const EXPECTED_FEATURES = [
   'gitlab-issues',
   'human-team-members',
   'issue-templates',
+  'keda-scaling',
   'labels',
   'marketplace',
   'mcp',
@@ -71,11 +73,13 @@ const EXPECTED_FEATURES = [
   'prd-mode',
   'project-boards',
   'ralph',
+  'rate-limiting',
   'remote-control',
   'response-modes',
   'reviewer-protocol',
   'routing',
   'skills',
+  'storage-provider',
   'squad-rc',
   'streams',
   'team-setup',
@@ -298,6 +302,7 @@ describe('Docs Build Script (Astro)', () => {
     const html = readFile(indexPath);
     expect(html).toMatch(/<!doctype html>/i);
     expect(html).toContain('Development Team');
+    expect(html).toContain('Humans stay in charge');
   });
 
   // --- 5. Blog index ---

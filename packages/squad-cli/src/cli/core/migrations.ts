@@ -4,10 +4,25 @@
  * @module cli/core/migrations
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success } from './output.js';
 import { scrubEmails } from './email-scrub.js';
+
+const storage = new FSStorageProvider();
+
+function copyDirRecursive(src: string, dest: string, force = true): void {
+  storage.mkdirSync(dest, { recursive: true });
+  for (const entry of storage.listSync(src)) {
+    const srcEntry = path.join(src, entry);
+    const destEntry = path.join(dest, entry);
+    if (storage.isDirectorySync(srcEntry)) {
+      copyDirRecursive(srcEntry, destEntry, force);
+    } else if (force || !storage.existsSync(destEntry)) {
+      storage.copySync(srcEntry, destEntry);
+    }
+  }
+}
 
 interface Migration {
   version: string;
@@ -24,7 +39,7 @@ const migrations: Migration[] = [
     description: 'Create skills/ directory',
     run(squadDir: string) {
       const skillsDir = path.join(squadDir, 'skills');
-      fs.mkdirSync(skillsDir, { recursive: true });
+      storage.mkdirSync(skillsDir, { recursive: true });
     }
   },
   {
@@ -32,14 +47,14 @@ const migrations: Migration[] = [
     description: 'Create plugins/ directory',
     run(squadDir: string) {
       const pluginsDir = path.join(squadDir, 'plugins');
-      fs.mkdirSync(pluginsDir, { recursive: true });
+      storage.mkdirSync(pluginsDir, { recursive: true });
     }
   },
   {
     version: '0.5.0',
     description: 'Scrub email addresses from Squad state files (privacy fix)',
     async run(squadDir: string) {
-      if (fs.existsSync(squadDir)) {
+      if (storage.existsSync(squadDir)) {
         const scrubbedCount = await scrubEmails(squadDir);
         if (scrubbedCount > 0) {
           success(`Privacy migration: scrubbed email addresses from ${scrubbedCount} file(s)`);
@@ -53,25 +68,25 @@ const migrations: Migration[] = [
     run(squadDir: string) {
       const projectRoot = path.dirname(squadDir);
       const legacySkillsDir = path.join(squadDir, 'skills');
-      if (!fs.existsSync(legacySkillsDir)) {
+      if (!storage.existsSync(legacySkillsDir)) {
         return;
       }
 
-      const skillNames = fs.readdirSync(legacySkillsDir).filter(entry =>
-        fs.existsSync(path.join(legacySkillsDir, entry, 'SKILL.md')),
+      const skillNames = storage.listSync(legacySkillsDir).filter(entry =>
+        storage.existsSync(path.join(legacySkillsDir, entry, 'SKILL.md')),
       );
       if (skillNames.length === 0) {
         return;
       }
 
       const copilotSkillsDir = path.join(projectRoot, '.copilot', 'skills');
-      fs.mkdirSync(copilotSkillsDir, { recursive: true });
+      storage.mkdirSync(copilotSkillsDir, { recursive: true });
 
       for (const skillName of skillNames) {
-        fs.cpSync(
+        copyDirRecursive(
           path.join(legacySkillsDir, skillName),
           path.join(copilotSkillsDir, skillName),
-          { recursive: true, force: false, errorOnExist: false },
+          false,
         );
       }
 

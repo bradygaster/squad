@@ -7,6 +7,7 @@
 
 import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { withAdditionalMcpConfig } from '../core/copilot-invocation.js';
 
 export interface CopilotBridgeConfig {
   cwd: string;
@@ -76,7 +77,11 @@ export class CopilotBridge {
       args.push('--agent', this.config.agent);
     }
 
-    this.child = spawn('copilot', args, {
+    // Inject project mcp-config so squad_state MCP tools register (Copilot
+    // CLI 1.0.58 ignores the project-level .copilot/mcp-config.json).
+    const finalArgs = withAdditionalMcpConfig('copilot', args, this.config.cwd);
+
+    this.child = spawn('copilot', finalArgs, {
       cwd: this.config.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
     });

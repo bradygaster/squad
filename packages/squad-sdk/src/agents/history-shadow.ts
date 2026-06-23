@@ -7,7 +7,9 @@
  * Shadows live at: .squad/agents/{name}/history.md
  */
 
-import * as fs from 'fs/promises';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { SquadState } from '../state/squad-state.js';
 import * as path from 'path';
 import { ConfigurationError } from '../adapter/errors.js';
 
@@ -17,7 +19,7 @@ import { ConfigurationError } from '../adapter/errors.js';
 //
 // Two layers of protection:
 //   1. In-process async mutex (handles concurrent agents in one Node.js process)
-//   2. Atomic writes via temp-file + rename (prevents partial reads)
+//   2. Write via StorageProvider (implementation determines durability guarantees)
 // ---------------------------------------------------------------------------
 
 /**
@@ -67,23 +69,17 @@ async function withFileLock<T>(
 }
 
 /**
- * Write a file atomically by writing to a temp file then renaming.
- * Prevents concurrent readers from seeing partial content.
+ * Write file content via the StorageProvider abstraction.
+ * Previously used temp-file + rename for atomicity; now delegates to
+ * StorageProvider.write(). Race condition tracked in #479.
  * @private
  */
 async function atomicWriteFile(
+  storage: StorageProvider,
   filePath: string,
   content: string,
 ): Promise<void> {
-  const tmpPath = `${filePath}.${process.pid}.tmp`;
-  try {
-    await fs.writeFile(tmpPath, content, 'utf-8');
-    await fs.rename(tmpPath, filePath);
-  } catch (err) {
-    // Clean up temp file on failure
-    await fs.unlink(tmpPath).catch(() => {});
-    throw err;
-  }
+  await storage.write(filePath, content);
 }
 
 /**
@@ -132,22 +128,18 @@ export interface ParsedHistory {
 export async function createHistoryShadow(
   teamRoot: string,
   agentName: string,
-  initialContext?: string
+  initialContext?: string,
+  storage: StorageProvider = new FSStorageProvider(),
 ): Promise<string> {
   try {
     const shadowDir = path.join(teamRoot, '.squad', 'agents', agentName);
     const shadowPath = path.join(shadowDir, 'history.md');
     
-    // Ensure directory exists
-    await fs.mkdir(shadowDir, { recursive: true });
-    
     // Check if shadow already exists
-    try {
-      await fs.access(shadowPath);
+    // StorageProvider.write() creates parent dirs, so no explicit mkdir needed
+    if (await storage.exists(shadowPath)) {
       // Shadow exists, return path without overwriting
       return shadowPath;
-    } catch {
-      // Shadow doesn't exist, create it
     }
     
     // Create initial shadow content
@@ -184,7 +176,7 @@ ${initialContext || 'No initial context provided.'}
 <!-- Important files, documentation, or external resources -->
 `;
     
-    await fs.writeFile(shadowPath, initialContent, 'utf-8');
+    await storage.write(shadowPath, initialContent);
     
     return shadowPath;
     
@@ -217,7 +209,8 @@ export async function appendToHistory(
   teamRoot: string,
   agentName: string,
   section: HistorySection,
-  content: string
+  content: string,
+  storage: StorageProvider = new FSStorageProvider(),
 ): Promise<void> {
   try {
     const shadowPath = path.join(teamRoot, '.squad', 'agents', agentName, 'history.md');
@@ -225,10 +218,8 @@ export async function appendToHistory(
     // Acquire file lock before the read-modify-write cycle (#479)
     await withFileLock(shadowPath, async () => {
       // Read existing history (inside lock to prevent races)
-      let historyContent: string;
-      try {
-        historyContent = await fs.readFile(shadowPath, 'utf-8');
-      } catch (error) {
+      const historyContent = await storage.read(shadowPath);
+      if (historyContent === undefined) {
         throw new ConfigurationError(
           `History shadow not found for agent '${agentName}'. Create it first with createHistoryShadow().`,
           {
@@ -237,7 +228,6 @@ export async function appendToHistory(
             timestamp: new Date(),
             metadata: { shadowPath },
           },
-          error instanceof Error ? error : undefined
         );
       }
       
@@ -262,8 +252,8 @@ export async function appendToHistory(
         updatedContent = historyContent.trimEnd() + `\n\n${sectionHeader}${entry}`;
       }
       
-      // Atomic write: temp file + rename prevents partial reads
-      await atomicWriteFile(shadowPath, updatedContent);
+      // Write via StorageProvider (serialized by in-process file lock)
+      await atomicWriteFile(storage, shadowPath, updatedContent);
     });
     
   } catch (error) {
@@ -293,15 +283,30 @@ export async function appendToHistory(
  */
 export async function readHistory(
   teamRoot: string,
-  agentName: string
+  agentName: string,
+  storage: StorageProvider = new FSStorageProvider(),
+  state?: SquadState,
 ): Promise<ParsedHistory> {
   try {
     const shadowPath = path.join(teamRoot, '.squad', 'agents', agentName, 'history.md');
     
-    let historyContent: string;
-    try {
-      historyContent = await fs.readFile(shadowPath, 'utf-8');
-    } catch (error) {
+    // Use SquadState agents collection when available
+    let historyContent: string | undefined;
+    if (state) {
+      try {
+        const entries = await state.agents.get(agentName).history();
+        // If entries were returned, the file exists; read raw content via SP
+        // (ParsedHistory needs the full content, not just entries)
+        historyContent = await storage.read(shadowPath);
+      } catch {
+        // Agent not found via state — fall through to raw SP
+        historyContent = await storage.read(shadowPath);
+      }
+    } else {
+      historyContent = await storage.read(shadowPath);
+    }
+
+    if (historyContent === undefined) {
       // Shadow doesn't exist yet, return empty
       return {
         fullContent: '',
@@ -356,15 +361,11 @@ export async function readHistory(
  */
 export async function shadowExists(
   teamRoot: string,
-  agentName: string
+  agentName: string,
+  storage: StorageProvider = new FSStorageProvider(),
 ): Promise<boolean> {
-  try {
-    const shadowPath = path.join(teamRoot, '.squad', 'agents', agentName, 'history.md');
-    await fs.access(shadowPath);
-    return true;
-  } catch {
-    return false;
-  }
+  const shadowPath = path.join(teamRoot, '.squad', 'agents', agentName, 'history.md');
+  return storage.exists(shadowPath);
 }
 
 /**
@@ -375,11 +376,12 @@ export async function shadowExists(
  */
 export async function deleteHistoryShadow(
   teamRoot: string,
-  agentName: string
+  agentName: string,
+  storage: StorageProvider = new FSStorageProvider(),
 ): Promise<void> {
   try {
     const shadowPath = path.join(teamRoot, '.squad', 'agents', agentName, 'history.md');
-    await fs.unlink(shadowPath);
+    await storage.delete(shadowPath);
   } catch (error) {
     throw new ConfigurationError(
       `Failed to delete history shadow for agent '${agentName}': ${error instanceof Error ? error.message : String(error)}`,

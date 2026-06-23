@@ -7,7 +7,58 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ---
 
-## v0.8.2 — Current Release
+## v0.9.1 — Current Release
+
+- **Shell agent name extraction** — Robust multi-pattern fallback for extracting agent names from shell transcripts (#577)
+- **Init scaffolding** — `squad init --sdk` now scaffolds typed casting files; silences remote-lookup warnings (#579)
+- **Personal squad global mode** — `squad personal init --global` auto-discovers `~/.config/squad/` (#576)
+- **Release hardening** — CI playbook rewrite, publish policy linting, docs consistency checks (#564, #557)
+- **Doctor improvements** — Actionable warnings and `squad.agent.md` existence checks (#565, #533)
+
+## v0.9.0 — Major Feature Release
+
+**Governance & Personal Squads**
+- **Personal Squad concept** — Isolated developer workspace with own team.md, routing.md, and roster (#508)
+- **Ambient discovery** — Auto-detect personal squad at `~/.squad/` via environment variables
+- **Personal squad CLI** — Commands: `squad personal init`, `list`, `use`, `remove` (#508)
+- **Governance isolation** — Hooks, ceremonies, telemetry scoped per personal squad (#508)
+
+**Worktree Spawning & Distributed Work**
+- **Worktree creation** — Coordinator spawns managed worktrees for parallel agent work (#529)
+- **Cross-squad orchestration** — Agents coordinate across multiple squads and worktrees (#446)
+- **Persistent Ralph** — Long-running daemon with watch + heartbeat health monitoring (#443)
+- **Worktree .git guard** — Regression detection for file vs directory confusion (#521)
+
+**Capability Discovery & Routing**
+- **Machine capability inference** — Auto-detect available tools, models, hardware specs at session start (#514)
+- **`needs:*` label routing** — Agents self-route based on discovered capabilities (#514)
+
+**Rate Limiting & Cost Control**
+- **Cooperative rate limiting** — Predictive circuit breaker with token budget forecasting (#515)
+- **Economy Mode** — Automatic cheaper-model selection when quality thresholds permit (#500)
+- **Token usage tracking** — Per-agent cost visibility in session UI (#453)
+- **Rate limit recovery** — Actionable error messages for quota pressure (#464)
+- **Ralph circuit breaker** — Graceful degradation under model quota limits (#451)
+
+**Telemetry & Infrastructure**
+- **Auto-wire telemetry** — `initSquadTelemetry()` now self-configures, no manual wiring (#281)
+- **OpenTelemetry propagation** — Automatic context flow across squad sessions
+- **Issue lifecycle template** — Standardized workflow (creation → triage → assignment → completion) (#527)
+- **KEDA autoscaling template** — Kubernetes-based horizontal scaling for agent work (#516, #519)
+- **GAP analysis verification** — After-work checklist ensures all requirements met before completion (#473)
+- **Session recovery skill** — Find and resume lost sessions without restart (#442)
+- **GitHub auth isolation skill** — Multi-account GitHub workflows (#470)
+
+**Docs, Stability & Distribution**
+- **Astro site enhancements** — Search tuning, section badges, coverage indicators (#524)
+- **Autonomous agents guide** — Comprehensive SDK guide for building agents (#492)
+- **CLI terminal rendering** — Fixed scroll flicker, reduced re-render churn, stabilized component keys
+- **Upgrade hardening** — Context-aware footers, EPERM handling, gitignore coverage (#544, #549)
+- **ESM compatibility** — Node 22/24 dual-layer fix, Node 24+ hard-fail with guidance (#449, #502)
+- **Signal handling** — SIGINT/SIGTERM graceful shutdown with 22+ regression tests (#486)
+- **npm-only distribution** — Removed GitHub-native channel; standard npm registry install
+
+## v0.8.2
 
 - **Version alignment** — CLI (0.8.1) and SDK (0.8.0) snapped to 0.8.2 across all packages
 - **Published to npm** — `@bradygaster/squad-sdk@0.8.2` and `@bradygaster/squad-cli@0.8.2`

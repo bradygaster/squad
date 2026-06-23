@@ -8,8 +8,9 @@
  * @module config/legacy-fallback
  */
 
-import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import type { StorageProvider } from '../storage/index.js';
+import { FSStorageProvider } from '../storage/index.js';
 import type {
   SquadConfig,
   RoutingConfig,
@@ -90,13 +91,13 @@ const LEGACY_TEAM_PATHS = [
  * @param dir - Project root directory
  * @returns true if legacy format is detected
  */
-export function detectLegacySetup(dir: string): boolean {
+export function detectLegacySetup(dir: string, storage: StorageProvider = new FSStorageProvider()): boolean {
   for (const relPath of LEGACY_AGENT_PATHS) {
-    if (existsSync(join(dir, relPath))) return true;
+    if (storage.existsSync(join(dir, relPath))) return true;
   }
   // Also detect bare .ai-team/ directories with team or routing files
   for (const relPath of [...LEGACY_ROUTING_PATHS, ...LEGACY_TEAM_PATHS]) {
-    if (existsSync(join(dir, relPath))) return true;
+    if (storage.existsSync(join(dir, relPath))) return true;
   }
   return false;
 }
@@ -117,16 +118,16 @@ export function detectLegacySetup(dir: string): boolean {
  * @param dir - Project root directory
  * @returns Parsed LegacyConfig, or undefined if no legacy file found
  */
-export function loadLegacyAgentMd(dir: string): LegacyConfig | undefined {
+export function loadLegacyAgentMd(dir: string, storage: StorageProvider = new FSStorageProvider()): LegacyConfig | undefined {
   // Find the agent doc
   let agentMdPath: string | undefined;
   let agentMdContent: string | undefined;
 
   for (const relPath of LEGACY_AGENT_PATHS) {
     const fullPath = join(dir, relPath);
-    if (existsSync(fullPath)) {
+    if (storage.existsSync(fullPath)) {
       agentMdPath = fullPath;
-      agentMdContent = readFileSync(fullPath, 'utf-8');
+      agentMdContent = storage.readSync(fullPath);
       break;
     }
   }
@@ -145,19 +146,21 @@ export function loadLegacyAgentMd(dir: string): LegacyConfig | undefined {
   let routingRules: RoutingRule[] = [];
   for (const relPath of LEGACY_ROUTING_PATHS) {
     const fullPath = join(dir, relPath);
-    if (existsSync(fullPath)) {
-      const routingContent = readFileSync(fullPath, 'utf-8');
-      const routingConfig = parseRoutingMarkdown(routingContent);
-      routingRules = routingConfig.rules;
+    if (storage.existsSync(fullPath)) {
+      const routingContent = storage.readSync(fullPath);
+      if (routingContent !== undefined) {
+        const routingConfig = parseRoutingMarkdown(routingContent);
+        routingRules = routingConfig.rules;
+      }
       break;
     }
   }
 
   // Check for .ai-team directory
   const hasAiTeamDir =
-    existsSync(join(dir, '.ai-team')) &&
-    (existsSync(join(dir, '.ai-team', 'team.md')) ||
-      existsSync(join(dir, '.ai-team', 'routing.md')));
+    storage.existsSync(join(dir, '.ai-team')) &&
+    (storage.existsSync(join(dir, '.ai-team', 'team.md')) ||
+      storage.existsSync(join(dir, '.ai-team', 'routing.md')));
 
   return {
     systemPrompt: agentMdContent,

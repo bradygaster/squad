@@ -4,6 +4,80 @@
 
 ## Learnings
 
+### Template Brady contamination fix (#977) (2026-05-01)
+
+**Context:** Template files (squad.agent.md, init-mode/SKILL.md) contained hardcoded "Brady" examples in greetings, routing examples, and comments. LLMs treated these as patterns, greeting every user as "Brady" regardless of their actual `git config user.name`.
+
+**Fix:** Replaced all hardcoded "Brady" in template examples with generic `{user}` / `{name}` placeholders. Canonical sources: `.squad-templates/squad.agent.md` and `.copilot/skills/init-mode/SKILL.md`. Template sync (`node scripts/sync-templates.mjs`) propagated squad.agent.md to `.github/agents/` but did NOT sync init-mode SKILL.md to package templates — those required manual edits in both `packages/squad-cli/templates/skills/init-mode/SKILL.md` and `packages/squad-sdk/templates/skills/init-mode/SKILL.md`.
+
+**Key distinction:** Only template files that get copied to user repos were changed. Brady references in project docs (history-hygiene, release-process, humanizer, architectural-proposals, reskill) are legitimate content about the project founder and were left unchanged.
+
+**Pattern:** When fixing template contamination, verify which files are covered by `sync-templates.mjs` and which require manual propagation. The init-mode SKILL.md lives in `.copilot/skills/` (not `.squad-templates/`), so sync doesn't touch its package copies.
+
+### PR #942 rebase — cherry-pick from insider-based fork branch (2026-04-12)
+
+**Context:** PR #942 from tamirdresher's fork was retargeted from `insider` to `dev`, causing 29 files in the diff when only 3 commits (4 files relevant to dev) were the actual fix. Cherry-picked the 3 fix commits onto a clean `squad/942-rebase-type-safety` branch from dev, resolving conflicts where insider-only files (skill.ts, cross-package-exports.test.ts) didn't exist on dev. Dropped the `escapeYamlValue` import and APM YAML generation function from init.ts since skill.ts doesn't exist on dev. Opened #963 as the clean replacement, closed #942.
+
+**Key lesson:** When cherry-picking from an insider-based branch to dev, expect modify/delete conflicts for files that only exist on insider. Always verify the base assumptions of each change — imports referencing insider-only modules must be dropped or adapted.
+
+### Loop command: second-round review fixes (#767) (2025-07-26)
+
+**Context:** Three Copilot review comments on PR #767: (1) `teamRoot` was set to `workTreeRoot` but `.squad/` may live in the main checkout when running inside a git worktree — should derive from `detectSquadDir().path`, (2) `generateLoopFile()` hardcoded the full loop.md scaffold inline, duplicating `templates/loop.md`, (3) docs said `gh` was optional but code hard-requires `gh copilot` unless `--agent-cmd` is passed.
+
+**Fixes:**
+1. **teamRoot:** Changed `const teamRoot = workTreeRoot` to `path.dirname(squadDirInfo.path)` — `.squad/`-relative operations now always use the directory where `.squad/` was actually found.
+2. **Template dedup:** Replaced 48-line hardcoded template with `readFileSync` reading from `templates/loop.md`. Used `import.meta.url` + `fileURLToPath` to resolve the path from the compiled file (3 levels up to package root). Created `packages/squad-cli/templates/loop.md` since it was missing from the CLI package's templates dir.
+3. **Docs:** Updated prerequisites to state `gh` + `gh copilot` are required by default, with `--agent-cmd` as the escape hatch.
+
+**Test impact:** Tests mock `node:fs` globally, so `readFileSync` in `generateLoopFile()` needed mock setup. Added `beforeAll` using `vi.importActual('node:fs')` to read the REAL template file, then `beforeEach` to set the mock return value. This keeps tests validating the actual template content.
+
+**Pattern:** When reading template files in code that has mocked `node:fs` tests, use `vi.importActual<typeof import('node:fs')>('node:fs')` in `beforeAll` to get real filesystem access for loading test fixtures.
+
+### Loop command: streaming output, worktree CWD, docs alignment (#767) (2025-07-25)
+
+**Context:** Copilot code review on PR #767 flagged three issues in the loop command: (1) `execFile` buffered stdout/stderr but never printed it — users saw no Copilot output during loop rounds, (2) `loop.md` was resolved relative to `dest` but execution used `teamRoot` (derived from `.squad/` parent), creating a CWD mismatch in worktree scenarios, (3) docs said `description` defaults to `""` but code uses `'Squad Loop'`.
+
+**Fixes:**
+1. **Streaming:** Added `.on('data')` listeners to `currentChild.stdout` and `currentChild.stderr` after `execFile` spawn. Since output streams in real-time, the callback no longer re-writes buffered stdout/stderr on error (would duplicate).
+2. **Worktree CWD:** Introduced `workTreeRoot = path.resolve(dest)` and set `teamRoot = workTreeRoot`. Both file resolution and execution CWD now use the same root.
+3. **Docs:** Updated `docs/src/content/docs/features/loop.md` description default from `""` to `"Squad Loop"`.
+
+**Key file:** `packages/squad-cli/src/cli/commands/loop.ts` — `runLoop()` entry point (~line 302), `executeRound()` inner function (~line 427).
+
+**Pattern:** When using Node's `execFile` for interactive/long-running child processes, always attach stream listeners for real-time output. The callback's `stdout`/`stderr` args are the same buffered content — writing both duplicates output.
+
+### archiveDecisions() count-based fallback (#626) (2025-07-24)
+
+**Context:** `archiveDecisions()` in `packages/squad-cli/src/cli/core/nap.ts` silently returned `null` when all `###` entries were <30 days old (`old.length === 0`), even if the file was well over 20KB. Active projects generating many decisions per session could hit 145KB+ — 35K tokens burned per agent spawn.
+
+**Fix:** Added a count-based fallback after the age-based split. When `old.length === 0` and total file size exceeds `DECISION_THRESHOLD` (20KB), the fallback separates recent entries into dated vs undated, sorts dated by age (most recent first), keeps entries that fit under the threshold budget, and archives the rest. Undated entries are always preserved — they are foundational directives per Procedures' guidance.
+
+**Key design choices:**
+1. Undated entries (`daysAgo === null`) are never archived by the count-based fallback. They stay in `recent`.
+2. Budget calculation accounts for header + undated entries + kept dated entries to guarantee the result fits under 20KB.
+3. Entries are re-sorted into original document order after the split, so the output file preserves heading sequence.
+
+**Tests:** Added 4 adversarial tests — 50 all-today entries >20KB, mixed dated/undated preservation, under-threshold no-op, exact-threshold boundary case.
+
+**Pattern:** When a function has an early-return optimization (`if (old.length === 0) return null`), always consider whether the condition that triggered the function call (file size > threshold) can still be true when the early-return fires. If so, the early-return is a silent failure.
+
+### Init scaffolding: casting dir + no-remote stderr (#579) (2025-07-18)
+
+**Context:** `squad init` in a fresh `git init` repo (no remote) printed `error: No such remote 'origin'` to stderr and `squad doctor` reported `casting/registry.json` missing. Two independent bugs in `packages/squad-sdk/src/config/init.ts`.
+
+**Fix 1 — Stderr leak:** Three `execFileSync('git', ['remote', 'get-url', 'origin'])` calls in `initSquad()` were missing `stdio: ['pipe','pipe','pipe']`. The try/catch caught the error but git's stderr still leaked to the console. Added stdio piping to all three call sites (lines ~713, ~732, ~1039).
+
+**Fix 2 — Missing casting files:** The init flow created the `.squad/casting/` directory but never populated it. Added a scaffolding block after directory creation that copies `casting-policy.json`, `casting-registry.json`, and `casting-history.json` from SDK templates (with inline fallbacks). Respects `skipExisting` — never overwrites user files.
+
+**Pattern:** When calling `execFileSync` for a git command inside a try/catch, always add `stdio: ['pipe','pipe','pipe']` to suppress stderr. The catch prevents a crash, but without piped stdio the error message still prints to the user's terminal.
+
+### CLI Version Subcommand Pattern (2026-03-23 Release Incident)
+**Context:** `squad version` returned "Unknown command: version" even though `squad --version` and `squad -v` worked fine. Classic "unwired command" bug but for a flag-to-subcommand gap rather than a missing import.
+
+**Pattern:** When a CLI flag works (`--foo`) but the equivalent subcommand doesn't (`foo`), the fix is almost always a single condition addition in `cli-entry.ts`. No separate command file needed for trivial handlers — inline alongside the flag handler. Added `cmd === 'version'` to the existing `--version`/`-v` condition. Also added `version` to help text command list.
+
+**Why inline works:** Trivial handlers that just print a value don't warrant their own module. Same output, same code path — no reason to split. Avoids adding a file the wiring test would require an import for. Precedent: `help` is also handled inline.
+
 ### `squad version` subcommand (2026-07-15)
 
 **Context:** Running `squad version` returned "Unknown command: version" because the subcommand was never routed in `cli-entry.ts`, even though `--version` and `-v` flags worked fine. Classic "unwired command" bug class, but for a flag-to-subcommand gap rather than a missing import.
@@ -235,3 +309,21 @@ Reviewed and merged PR #486 (two-layer signal handling + 22 tests). Improves gra
 ### Session 2 Summary (2026-03-22)
 
 Executed 3 tasks across 2 waves: economy mode (#500, PR #504), node:sqlite fix (#502, PR #506), rate limit UX (#464, PR #505). All PRs merged to dev.
+
+
+### Personal Squad Init via npx (#576) (2026-03-23)
+
+**Context:** `init --global` (used via npx to set up personal squad) created a full `.squad/` structure at `~/.config/squad/` but never created the `personal-squad/` subdirectory. `resolvePersonalSquadDir()` looks for `personal-squad/`, so subsequent repo-level `init` couldn't discover the user's personal agents.
+
+**Root cause:** Two separate concepts - `init --global` scaffolds a full squad, `personal init` creates `personal-squad/`. The `--global` flag never bridged between them.
+
+**Fix:**
+1. `resolution.ts` - Added `ensurePersonalSquadDir()` idempotent helper to SDK.
+2. `cli-entry.ts` - `init --global` now suppresses workflows and passes `isGlobal` flag.
+3. `init.ts` - After global init, calls `ensurePersonalSquadDir()`. After repo init, detects personal squad.
+4. `personal.ts` - Refactored to reuse `ensurePersonalSquadDir()`.
+5. `resolution.test.ts` - Added 3 tests.
+
+**Pattern:** `resolveGlobalSquadPath()` returns the container; `ensurePersonalSquadDir()` creates the subdirectory the rest of the system looks for.
+📌 **Team update (2026-03-25T18:11Z):** Fixed #590 personal squad path regression — getPersonalSquadRoot() now uses canonical personal-squad/ subdirectory like esolvePersonalSquadDir() and nsurePersonalSquadDir(). Committed on squad/590-fix-personal-squad-root. FIDO found same bug in shell/index.ts → work passed to CONTROL for full sweep revision. Awaiting FIDO re-review.
+

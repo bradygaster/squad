@@ -13,7 +13,7 @@ Where does your change idea belong? Squad core, marketplace plugin, or team conf
 | Layer | What lives here | Who changes it | Distribution |
 |-------|----------------|----------------|--------------|
 | **Squad Core** | Coordinator behavior, routing logic, reviewer protocol | Squad maintainers only | npm releases |
-| **Squad Extension** | Reusable patterns (skills, ceremonies, workflows) | Plugin authors | Marketplace plugins |
+| **Squad Extension** | Reusable capabilities (skills, ceremonies, workflows, memory guidance, provider contracts, generated artifacts) | Plugin authors | Marketplace plugins |
 | **Team Configuration** | Decisions unique to THIS team | The team itself | `.squad/` files |
 
 ---
@@ -31,8 +31,8 @@ Where does your change idea belong? Squad core, marketplace plugin, or team conf
    │
    ┌─ Could OTHER teams benefit?
    │
-   ├─ YES → Squad Extension (plugin)
-   │  └─ Examples: Client-delivery workflow, Azure skills, TDD ceremonies
+    ├─ YES → Squad Extension (plugin)
+    │  └─ Examples: Client-delivery workflow, Azure skills, TDD ceremonies, Graphify knowledge lens
    │     Action: Build a plugin
    │
    └─ NO → Team Configuration
@@ -102,6 +102,18 @@ You DON'T need core if:
 ## Build an extension
 
 Ready to build? See [Building extensions](./building-extensions.md) for a five-minute walkthrough.
+
+The plugin MVP uses a declarative `plugin.manifest.json` and a simple lifecycle:
+
+```bash
+squad plugin validate ./my-extension
+squad plugin dry-run ./my-extension
+squad plugin install ./my-extension
+squad plugin enable my-extension
+squad plugin refresh my-extension
+```
+
+Install records lock data and leaves the plugin disabled. Enable activates the roles declared in the manifest. Refresh updates approved generated artifacts for built-in providers such as Graphify. See [Plugin security model](../reference/plugin-security.md) for the guardrails under the pluggability model.
 
 ---
 

@@ -3,8 +3,11 @@
  * Pluggable agent discovery and loading
  */
 
-import * as fs from 'fs/promises';
 import * as path from 'path';
+import type { StorageProvider } from '../storage/index.js';
+import { FSStorageProvider } from '../storage/index.js';
+import type { SquadState } from '../state/squad-state.js';
+import { mapWithLimit, mapWithLimitSettled } from '../utils/map-with-limit.js';
 
 export interface AgentSource {
   readonly name: string;
@@ -31,6 +34,19 @@ export interface AgentDefinition extends AgentManifest {
 
 /** Directories to scan for agents, in priority order. */
 const AGENT_DIRS = ['.squad/agents', '.ai-team/agents'] as const;
+
+/**
+ * Bounded concurrency for parallel charter discovery.
+ *
+ * - LOCAL_LIST_CONCURRENCY: filesystem reads are cheap individually but the
+ *   default ulimit on file descriptors is finite. 8 leaves headroom for the
+ *   rest of the SDK while still saturating typical 5-10 agent teams.
+ * - GITHUB_LIST_CONCURRENCY: GitHub REST API has secondary rate limits on
+ *   burst concurrency; 5 stays well clear of those thresholds for typical
+ *   team sizes while removing the serial-await bottleneck.
+ */
+const LOCAL_LIST_CONCURRENCY = 8;
+const GITHUB_LIST_CONCURRENCY = 5;
 
 /**
  * Parse charter.md content to extract agent metadata.
@@ -83,7 +99,11 @@ export class LocalAgentSource implements AgentSource {
   readonly name = 'local';
   readonly type = 'local' as const;
 
-  constructor(private basePath: string) {}
+  constructor(
+    private basePath: string,
+    private storage: StorageProvider = new FSStorageProvider(),
+    private state?: SquadState,
+  ) {}
 
   /**
    * Resolve the agents directory, preferring .squad/agents over .ai-team/agents.
@@ -91,68 +111,116 @@ export class LocalAgentSource implements AgentSource {
   private async resolveAgentsDir(): Promise<string | null> {
     for (const dir of AGENT_DIRS) {
       const fullPath = path.join(this.basePath, dir);
-      try {
-        const stat = await fs.stat(fullPath);
-        if (stat.isDirectory()) return fullPath;
-      } catch {
-        // directory doesn't exist, try next
-      }
+      if (await this.storage.isDirectory(fullPath)) return fullPath;
     }
     return null;
   }
 
   async listAgents(): Promise<AgentManifest[]> {
+    // Use SquadState agents collection when available
+    if (this.state) {
+      try {
+        const names = await this.state.agents.list();
+
+        // Parallelise the per-agent charter reads. Each call hits the
+        // storage backend (FS or otherwise). Order is preserved so the
+        // resulting manifest list matches the prior sequential behavior.
+        const results = await mapWithLimitSettled(names, LOCAL_LIST_CONCURRENCY, async (entryName) => {
+          const content = await this.state!.agents.get(entryName).charter();
+          const meta = parseCharterMetadata(content);
+          return {
+            name: meta.name || entryName,
+            role: meta.role || 'agent',
+            source: 'local',
+          } satisfies AgentManifest;
+        });
+
+        return results
+          .filter((r): r is PromiseFulfilledResult<AgentManifest> => r.status === 'fulfilled')
+          .map((r) => r.value);
+      } catch {
+        // Fall through to raw StorageProvider path
+      }
+    }
+
+    // Fallback: raw StorageProvider scan
     const agentsDir = await this.resolveAgentsDir();
     if (!agentsDir) return [];
 
-    const manifests: AgentManifest[] = [];
-    let entries: import('fs').Dirent[];
+    let entries: string[];
     try {
-      entries = await fs.readdir(agentsDir, { withFileTypes: true });
+      entries = await this.storage.list(agentsDir);
     } catch {
       return [];
     }
 
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const charterPath = path.join(agentsDir, entry.name, 'charter.md');
-      try {
-        const content = await fs.readFile(charterPath, 'utf-8');
-        const meta = parseCharterMetadata(content);
-        manifests.push({
-          name: meta.name || entry.name,
-          role: meta.role || 'agent',
-          source: 'local',
-        });
-      } catch {
-        // Skip agents with missing/unreadable charter
-      }
-    }
+    // For the raw storage fallback, the prior implementation did NOT
+    // catch per-item errors from isDirectory()/read() — they propagated
+    // to the caller. Use mapWithLimit (fast-fail) here so a permission
+    // error or backend outage surfaces as a thrown error instead of
+    // silently producing a partial list.
+    const dirFlags = await mapWithLimit(entries, LOCAL_LIST_CONCURRENCY, async (entryName) => {
+      const entryPath = path.join(agentsDir, entryName);
+      return (await this.storage.isDirectory(entryPath)) ? entryName : null;
+    });
+    const candidates = dirFlags.filter((name): name is string => name !== null);
 
-    return manifests;
+    const manifests = await mapWithLimit(candidates, LOCAL_LIST_CONCURRENCY, async (entryName) => {
+      const charterPath = path.join(agentsDir, entryName, 'charter.md');
+      const content = await this.storage.read(charterPath);
+      if (!content) return null;
+      const meta = parseCharterMetadata(content);
+      return {
+        name: meta.name || entryName,
+        role: meta.role || 'agent',
+        source: 'local',
+      } satisfies AgentManifest;
+    });
+
+    return manifests.filter((m): m is AgentManifest => m !== null);
   }
 
   async getAgent(name: string): Promise<AgentDefinition | null> {
+    // Use SquadState agents collection when available
+    if (this.state) {
+      try {
+        const handle = this.state.agents.get(name);
+        const charter = await handle.charter();
+        const meta = parseCharterMetadata(charter);
+
+        // Read history via raw storage (history parsing is more granular in shadow module)
+        const agentsDir = await this.resolveAgentsDir();
+        const history = agentsDir
+          ? await this.storage.read(path.join(agentsDir, name, 'history.md'))
+          : undefined;
+
+        return {
+          name: meta.name || name,
+          role: meta.role || 'agent',
+          source: 'local',
+          charter,
+          model: meta.model,
+          tools: meta.tools,
+          skills: meta.skills,
+          history,
+        };
+      } catch {
+        // Agent not found via state, fall through
+      }
+    }
+
+    // Fallback: raw StorageProvider
     const agentsDir = await this.resolveAgentsDir();
     if (!agentsDir) return null;
 
     const charterPath = path.join(agentsDir, name, 'charter.md');
-    let charter: string;
-    try {
-      charter = await fs.readFile(charterPath, 'utf-8');
-    } catch {
-      return null;
-    }
+    const charter = await this.storage.read(charterPath);
+    if (!charter) return null;
 
     const meta = parseCharterMetadata(charter);
 
     // Optionally read history.md
-    let history: string | undefined;
-    try {
-      history = await fs.readFile(path.join(agentsDir, name, 'history.md'), 'utf-8');
-    } catch {
-      // history is optional
-    }
+    const history = await this.storage.read(path.join(agentsDir, name, 'history.md'));
 
     return {
       name: meta.name || name,
@@ -167,14 +235,20 @@ export class LocalAgentSource implements AgentSource {
   }
 
   async getCharter(name: string): Promise<string | null> {
+    // Use SquadState agents collection when available
+    if (this.state) {
+      try {
+        return await this.state.agents.get(name).charter();
+      } catch {
+        return null;
+      }
+    }
+
+    // Fallback: raw StorageProvider
     const agentsDir = await this.resolveAgentsDir();
     if (!agentsDir) return null;
 
-    try {
-      return await fs.readFile(path.join(agentsDir, name, 'charter.md'), 'utf-8');
-    } catch {
-      return null;
-    }
+    return await this.storage.read(path.join(agentsDir, name, 'charter.md')) ?? null;
   }
 }
 
@@ -221,23 +295,32 @@ export class GitHubAgentSource implements AgentSource {
       this.owner, this.repoName, this.pathPrefix, this.branch,
     );
     const dirs = entries.filter(e => e.type === 'dir');
-    const manifests: AgentManifest[] = [];
 
-    for (const dir of dirs) {
+    // Bounded concurrency to avoid GitHub secondary rate limits on burst
+    // requests. Five in flight is a conservative ceiling that comfortably
+    // covers typical 5-10 agent teams without serial latency, while still
+    // far below GitHub's secondary-limit thresholds.
+    //
+    // Use mapWithLimit (fast-fail) — not mapWithLimitSettled — so 403
+    // / rate-limit / auth / network errors surface to the caller instead
+    // of being silently dropped. The original `for...await` loop also
+    // propagated these errors. Only "charter content is empty" is
+    // expected/skipped via the `return null` path.
+    const manifests = await mapWithLimit(dirs, GITHUB_LIST_CONCURRENCY, async (dir) => {
       const charterPath = `${this.pathPrefix}/${dir.name}/charter.md`;
       const content = await this.fetcher.getFileContent(
         this.owner, this.repoName, charterPath, this.branch,
       );
-      if (!content) continue;
+      if (!content) return null;
       const meta = parseCharterMetadata(content);
-      manifests.push({
+      return {
         name: meta.name || dir.name,
         role: meta.role || 'agent',
         source: 'github',
-      });
-    }
+      } satisfies AgentManifest;
+    });
 
-    return manifests;
+    return manifests.filter((m): m is AgentManifest => m !== null);
   }
 
   async getAgent(name: string): Promise<AgentDefinition | null> {

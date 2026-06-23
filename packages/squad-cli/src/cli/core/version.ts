@@ -2,9 +2,11 @@
  * Version stamping and reading utilities — zero dependencies
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 
 /**
  * Get package version from package.json
@@ -16,8 +18,8 @@ export function getPackageVersion(): string {
   let dir = path.dirname(currentFile);
   for (let i = 0; i < 6; i++) {
     const candidate = path.join(dir, 'package.json');
-    if (fs.existsSync(candidate)) {
-      const pkg = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+    if (storage.existsSync(candidate)) {
+      const pkg = JSON.parse(storage.readSync(candidate) ?? '{}');
       return pkg.version;
     }
     const parent = path.dirname(dir);
@@ -31,14 +33,14 @@ export function getPackageVersion(): string {
  * Stamp version into squad.agent.md after copying
  */
 export function stampVersion(filePath: string, version: string): void {
-  let content = fs.readFileSync(filePath, 'utf8');
+  let content = storage.readSync(filePath) ?? '';
   // Replace version in HTML comment (must come immediately after frontmatter closing ---)
   content = content.replace(/<!-- version: [^>]+ -->/m, `<!-- version: ${version} -->`);
   // Replace version in the Identity section's Version line
   content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.\d+)?)?/m, `- **Version:** ${version}`);
   // Replace {version} placeholder in the greeting instruction so it's unambiguous
   content = content.replace(/`Squad v\{version\}`/g, `\`Squad v${version}\``);
-  fs.writeFileSync(filePath, content);
+  storage.writeSync(filePath, content);
 }
 
 /**
@@ -46,8 +48,8 @@ export function stampVersion(filePath: string, version: string): void {
  */
 export function readInstalledVersion(filePath: string): string | null {
   try {
-    if (!fs.existsSync(filePath)) return null;
-    const content = fs.readFileSync(filePath, 'utf8');
+    if (!storage.existsSync(filePath)) return null;
+    const content = storage.readSync(filePath) ?? '';
     // Try to read from HTML comment first (new format)
     const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+(?:\.\d+)?)?) -->/);
     if (commentMatch) return commentMatch[1]!;

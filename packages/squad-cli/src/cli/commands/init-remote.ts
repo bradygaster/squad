@@ -9,9 +9,11 @@
  * @module cli/commands/init-remote
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { fatal } from '../core/errors.js';
+
+const storage = new FSStorageProvider();
 
 /**
  * Write `.squad/config.json` for remote mode.
@@ -21,7 +23,7 @@ import { fatal } from '../core/errors.js';
  */
 export function writeRemoteConfig(projectDir: string, teamRepoPath: string): void {
   const squadDir = path.join(projectDir, '.squad');
-  fs.mkdirSync(squadDir, { recursive: true });
+  storage.mkdirSync(squadDir, { recursive: true });
 
   // Always store a relative path from the project root to the team repo
   const absoluteTeam = path.resolve(projectDir, teamRepoPath);
@@ -33,23 +35,22 @@ export function writeRemoteConfig(projectDir: string, teamRepoPath: string): voi
     projectKey: null,
   };
 
-  fs.writeFileSync(
+  storage.writeSync(
     path.join(squadDir, 'config.json'),
     JSON.stringify(config, null, 2) + '\n',
-    'utf-8',
   );
 
   // Ensure .squad/config.json is in .gitignore (machine-local path, never commit)
   const gitignorePath = path.join(projectDir, '.gitignore');
   const ignoreEntry = '.squad/config.json';
   let existingIgnore = '';
-  if (fs.existsSync(gitignorePath)) {
-    existingIgnore = fs.readFileSync(gitignorePath, 'utf-8');
+  if (storage.existsSync(gitignorePath)) {
+    existingIgnore = storage.readSync(gitignorePath) ?? '';
   }
   if (!existingIgnore.includes(ignoreEntry)) {
     const block = (existingIgnore && !existingIgnore.endsWith('\n') ? '\n' : '')
       + '# Squad: local config (machine-specific paths, never commit)\n'
       + ignoreEntry + '\n';
-    fs.appendFileSync(gitignorePath, block);
+    storage.appendSync(gitignorePath, block);
   }
 }

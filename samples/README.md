@@ -36,6 +36,9 @@ The `hello-squad` sample demonstrates core casting and onboarding mechanics in ~
 | [skill-discovery](./skill-discovery) | Intermediate | Agents write, share, and promote `SKILL.md` files; team knowledge base grows | Skills system, confidence levels, knowledge sharing |
 | [autonomous-pipeline](./autonomous-pipeline) | Advanced | Full showcase: casting, governance, cost tracking, streaming, monitoring, live dashboard | All core APIs, terminal UI, comprehensive example |
 | [azure-function-squad](./azure-function-squad) | Intermediate | Serverless multi-agent review: HTTP endpoint → three specialist agents → JSON report | Azure Functions v4, SDK-First builder, JSON output |
+| [plugin-knowledge-graphify](./plugin-knowledge-graphify) | Intermediate | Declarative plugin example for the real `safishamsi/graphify` knowledge graph tool | `squad plugin`, `knowledge`, external metadata |
+| [plugin-knowledge-index-server](./plugin-knowledge-index-server) | Intermediate | Declarative plugin example for the real `jagilber-org/index-server` MCP instruction index | `squad plugin`, `knowledge`, `instructions`, MCP metadata |
+| [plugin-memory-mempalace](./plugin-memory-mempalace) | Intermediate | Declarative plugin example for the real `MemPalace/mempalace` memory CLI/MCP system | `squad plugin`, `memory`, external metadata |
 
 ## Recommended learning path
 
@@ -83,4 +86,3 @@ See each sample's `README.md` for detailed setup, expected output, and customiza
 ## Questions?
 
 Open an issue or check the [Squad SDK documentation](../../README.md).
-

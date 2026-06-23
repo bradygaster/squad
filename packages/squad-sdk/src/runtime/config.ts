@@ -7,11 +7,13 @@
  * @module runtime/config
  */
 
-import { readFileSync, existsSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { pathToFileURL } from 'url';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { MODELS } from './constants.js';
 import type { AgentRole } from './constants.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Configuration Types (from spike #72)
@@ -439,7 +441,7 @@ export function discoverConfigFile(cwd: string = process.cwd()): string | undefi
   while (true) {
     for (const configFile of configFiles) {
       const configPath = join(currentDir, configFile);
-      if (existsSync(configPath)) {
+      if (storage.existsSync(configPath)) {
         return configPath;
       }
     }
@@ -482,7 +484,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
   ];
   
   for (const { path: configPath, type } of localConfigs) {
-    if (existsSync(configPath)) {
+    if (storage.existsSync(configPath)) {
       try {
         if (type === 'ts' || type === 'js') {
           const configUrl = pathToFileURL(configPath).href;
@@ -500,7 +502,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
             isDefault: false
           };
         } else {
-          const content = readFileSync(configPath, 'utf-8');
+          const content = storage.readSync(configPath) ?? '';
           const config = JSON.parse(content);
           const validated = validateConfig(config);
           
@@ -539,7 +541,7 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<ConfigLoa
           isDefault: false
         };
       } else {
-        const content = readFileSync(discoveredPath, 'utf-8');
+        const content = storage.readSync(discoveredPath) ?? '';
         const config = JSON.parse(content);
         const validated = validateConfig(config);
         
@@ -793,9 +795,9 @@ export function loadConfigSync(cwd: string = process.cwd()): ConfigLoadResult {
   
   // Only check squad.config.json (sync loading of .ts not supported)
   const jsonConfigPath = join(resolvedCwd, 'squad.config.json');
-  if (existsSync(jsonConfigPath)) {
+  if (storage.existsSync(jsonConfigPath)) {
     try {
-      const content = readFileSync(jsonConfigPath, 'utf-8');
+      const content = storage.readSync(jsonConfigPath) ?? '';
       const config = JSON.parse(content);
       const validated = validateConfig(config);
       

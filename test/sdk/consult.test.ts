@@ -391,7 +391,25 @@ import {
   extractLearnings,
   loadSessionHistory,
   getPersonalSquadRoot,
+  resolveGlobalSquadPath,
 } from '@bradygaster/squad-sdk';
+
+// ============================================================================
+// getPersonalSquadRoot tests (#590)
+// ============================================================================
+
+describe('getPersonalSquadRoot', () => {
+  it('resolves to personal-squad subdirectory, not .squad', () => {
+    const root = getPersonalSquadRoot();
+    const globalDir = resolveGlobalSquadPath();
+    expect(root).toBe(join(globalDir, 'personal-squad'));
+  });
+
+  it('does not resolve to .squad subdirectory', () => {
+    const root = getPersonalSquadRoot();
+    expect(root).not.toMatch(/[/\\]\.squad$/);
+  });
+});
 
 describe('setupConsultMode', () => {
   const SETUP_ROOT = join(

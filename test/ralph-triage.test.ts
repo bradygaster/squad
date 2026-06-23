@@ -51,6 +51,34 @@ describe('ralph triage parser helpers', () => {
       expect(roster).toEqual([{ name: 'Alpha', role: 'Developer', label: 'squad:alpha' }]);
     });
 
+    it('slugifies multi-word names into labels', () => {
+      const multiWord = [
+        '## Members',
+        '',
+        '| Name | Role |',
+        '|------|------|',
+        '| Steve Rogers | Lead |',
+        '| Tony Stark | Engineer |',
+      ].join('\n');
+
+      const roster = parseRoster(multiWord);
+      expect(roster[0]!.label).toBe('squad:steve-rogers');
+      expect(roster[1]!.label).toBe('squad:tony-stark');
+    });
+
+    it('slugifies names with parentheses into labels', () => {
+      const withParens = [
+        '## Members',
+        '',
+        '| Name | Role |',
+        '|------|------|',
+        '| Tony Stark (Iron Man) | Engineer |',
+      ].join('\n');
+
+      const roster = parseRoster(withParens);
+      expect(roster[0]!.label).toBe('squad:tony-stark-iron-man');
+    });
+
     it('filters out Scribe and Ralph', () => {
       const roster = parseRoster(TEAM_MD);
       expect(roster.some((member) => member.name === 'Scribe')).toBe(false);

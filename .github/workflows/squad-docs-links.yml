@@ -1,8 +1,6 @@
 name: Docs — Weekly Link Check
 
 on:
-  schedule:
-    - cron: '0 9 * * 1'  # Monday 9am UTC
   workflow_dispatch:
 
 jobs:
@@ -20,7 +18,6 @@ jobs:
           args: >-
             --verbose
             --no-progress
-            --exclude-mail
             --timeout 30
             --max-retries 3
             --accept 200..=299,403,429

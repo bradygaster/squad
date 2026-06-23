@@ -128,6 +128,17 @@ export class GitHubAdapter implements PlatformAdapter {
     this.gh(['issue', 'edit', String(workItemId), '--repo', this.repoFlag, '--add-label', tag]);
   }
 
+  async ensureTag(tag: string, options?: { color?: string; description?: string }): Promise<void> {
+    const args = ['label', 'create', tag, '--repo', this.repoFlag, '--force'];
+    if (options?.color) args.push('--color', options.color);
+    if (options?.description) args.push('--description', options.description);
+    try {
+      this.gh(args);
+    } catch {
+      // Label already exists or creation failed — continue either way
+    }
+  }
+
   async removeTag(workItemId: number, tag: string): Promise<void> {
     this.gh(['issue', 'edit', String(workItemId), '--repo', this.repoFlag, '--remove-label', tag]);
   }
@@ -211,6 +222,37 @@ export class GitHubAdapter implements PlatformAdapter {
 
   async mergePullRequest(id: number): Promise<void> {
     this.gh(['pr', 'merge', String(id), '--repo', this.repoFlag, '--merge']);
+  }
+
+  async ensureAuth(preferredUser?: string): Promise<void> {
+    try {
+      // 1. Check current gh auth
+      const authStatus = execFileSync('gh', ['auth', 'status', '--active'], EXEC_OPTS).trim();
+      const activeMatch = authStatus.match(/account\s+(\S+)/);
+      const activeUser = activeMatch?.[1] || '';
+
+      // 2. Determine target user
+      let targetUser = preferredUser || '';
+
+      if (!targetUser) {
+        // Auto-detect from remote URL — works for EMU repos where org = account
+        const remoteUrl = execFileSync('git', ['remote', 'get-url', 'origin'], EXEC_OPTS).trim();
+        const httpsMatch = remoteUrl.match(/github\.com[/:]([^/]+)\//);
+        if (httpsMatch?.[1]) targetUser = httpsMatch[1];
+      }
+
+      if (!targetUser || activeUser === targetUser) return; // Already correct or can't determine
+
+      // 3. Switch
+      try {
+        execFileSync('gh', ['auth', 'switch', '--user', targetUser], EXEC_OPTS);
+        console.log(`✅ Auth context switched to ${targetUser}`);
+      } catch {
+        // targetUser might not be a valid account — non-fatal
+      }
+    } catch {
+      // Non-fatal — continue with whatever auth is active
+    }
   }
 
   async createBranch(name: string, fromBranch?: string): Promise<void> {

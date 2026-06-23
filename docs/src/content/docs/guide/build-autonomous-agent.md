@@ -355,6 +355,10 @@ The autonomous-pipeline sample demonstrates three coordination patterns that age
 
 These patterns let agents coordinate without a central orchestrator. Each agent makes local decisions that accumulate into a shared knowledge base.
 
+:::note[`squad_route` requires `fanOutDepsGetter`]
+For `squad_route` to actually spawn agent sessions, the `ToolRegistry` must be constructed with a `fanOutDepsGetter` callback that provides fan-out dependencies (`sessionPool`, `modelClient`, `squadRoot`, `configGetter`). Without it, the tool returns an honest `fan-out-deps-unavailable` error instead of silently succeeding. See the [SDK reference](/reference/sdk/#toolregistry) for wiring details.
+:::
+
 ---
 
 ## Add observability
@@ -535,3 +539,11 @@ streaming.clear();
 - Read the [SDK reference](/reference/sdk/) for the complete API surface
 - See the [extensibility guide](/guide/extensibility/) for where your agent fits in the Squad ecosystem
 - Check the [Aspire dashboard scenario](/scenarios/aspire-dashboard/) for observability setup
+
+---
+
+## See Also
+
+- [Your Team](../concepts/your-team.md) — Agent roles, charters, and team composition
+- [Architecture](../concepts/architecture.md) — How the coordinator orchestrates work
+- [SDK Reference](../reference/sdk.md) — SDK API for autonomous agents

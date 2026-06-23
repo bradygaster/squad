@@ -6,9 +6,12 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import type { CommitInfo } from './versioning.js';
 import { parseConventionalCommit } from './versioning.js';
+
+const storage = new FSStorageProvider();
 
 // ============================================================================
 // Types
@@ -103,15 +106,15 @@ export function computeSha256(data: Buffer | string): string {
  * Returns null if the file does not exist.
  */
 export function buildArtifact(name: string, filePath: string): ReleaseArtifact | null {
-  if (!existsSync(filePath)) return null;
+  if (!storage.existsSync(filePath)) return null;
 
-  const content = readFileSync(filePath);
-  const stat = statSync(filePath);
+  const content = readFileSync(filePath); // Buffer-based read for correct binary hashing
+  const size = storage.statSync(filePath)?.size ?? 0;
 
   return {
     name,
     path: filePath,
-    size: stat.size,
+    size,
     sha256: computeSha256(content),
   };
 }

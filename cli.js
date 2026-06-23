@@ -5,7 +5,7 @@ if (process.env.npm_execpath) {
   console.error('\x1b[33m');
   console.error('⚠  DEPRECATION NOTICE');
   console.error('   npx github:bradygaster/squad is deprecated.');
-  console.error('   Switch to: npm install -g @bradygaster/squad-cli');
+  console.error('   Switch to: npm install -g @bradygaster/squad-cli@latest');
   console.error('   Or use:    npx @bradygaster/squad-cli');
   console.error('\x1b[0m');
 }

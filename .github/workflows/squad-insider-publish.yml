@@ -1,77 +1,172 @@
 name: Publish Insider to npm
 
 on:
-  push:
-    branches:
-      - insider
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — validate build without publishing'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: dev
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-squad-node
         with:
           node-version: ${{ matrix.node-version }}
-
-      - name: Install dependencies
-        run: npm ci
 
       - name: Build
         run: npm run build
 
-  test:
-    needs: build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20]
-    steps:
-      - uses: actions/checkout@v4
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
+      - name: Run tests (skip docs-build — needs Docker unavailable on publish runner)
+        run: npx vitest run --exclude 'test/docs-build.test.ts'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-  publish:
+  # CI Hardening: npm registry health check (item 10)
+  # Fail early if registry is unreachable instead of failing mid-publish.
+  registry-check:
     needs: test
     runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: "🌐 Verify npm registry is reachable"
+        run: |
+          echo "Checking npm registry health before insider publish..."
+          success=false
+          for i in 1 2 3; do
+            if npm ping 2>&1; then
+              success=true
+              break
+            fi
+            echo "Registry ping attempt $i/3 failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$success" = false ]; then
+            echo "::error::npm registry is unreachable after 3 attempts — publish aborted"
+            echo "::error::Check https://status.npmjs.org/ for registry status"
+            exit 1
+          fi
+          echo "✅ npm registry is reachable"
+          if ! npm view @bradygaster/squad-sdk version 2>/dev/null; then
+            echo "::warning::Cannot verify @bradygaster/squad-sdk on registry — package may not exist yet or registry is degraded"
+          else
+            echo "✅ @bradygaster package namespace is accessible"
+          fi
+
+  publish:
+    needs: [test, registry-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
-        node-version: [20]
+        node-version: [22]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: dev
 
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup-squad-node
         with:
           node-version: ${{ matrix.node-version }}
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Validate npm token
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured — publish will fail"
+            exit 1
+          fi
+          echo "✅ NPM_TOKEN is set"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Compute insider version
+        id: version
+        run: |
+          # Read base version from root package.json
+          BASE=$(node -p "require('./package.json').version")
+          echo "Base version: $BASE"
+
+          # Query npm for the latest insider build number for this base version
+          # Fail hard if npm is unreachable — defaulting to 0 risks republishing an existing version
+          SDK_VERSIONS=$(npm view @bradygaster/squad-sdk versions --json 2>&1) || {
+            echo "::error::Failed to query npm for squad-sdk versions. Cannot safely compute insider version."
+            exit 1
+          }
+          CLI_VERSIONS=$(npm view @bradygaster/squad-cli versions --json 2>&1) || {
+            echo "::error::Failed to query npm for squad-cli versions. Cannot safely compute insider version."
+            exit 1
+          }
+
+          LATEST_SDK=$(echo "$SDK_VERSIONS" | \
+            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0")
+          LATEST_CLI=$(echo "$CLI_VERSIONS" | \
+            node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).filter(v => v.startsWith('${BASE}-insider.')).map(v => parseInt(v.split('.').pop())).sort((a,b) => b-a)[0] || 0")
+
+          # Take the higher of the two and increment
+          NEXT=$(( (LATEST_SDK > LATEST_CLI ? LATEST_SDK : LATEST_CLI) + 1 ))
+          INSIDER_VERSION="${BASE}-insider.${NEXT}"
+          echo "Publishing as: $INSIDER_VERSION"
+          echo "insider_version=$INSIDER_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set insider version in package.json files
+        run: |
+          VERSION="${{ steps.version.outputs.insider_version }}"
+          node -e "
+            const fs = require('fs');
+            const paths = ['package.json', 'packages/squad-sdk/package.json', 'packages/squad-cli/package.json'];
+            for (const p of paths) {
+              const pkg = JSON.parse(fs.readFileSync(p, 'utf8'));
+              pkg.version = '${VERSION}';
+              // Pin CLI's SDK dependency to the exact insider version so npm
+              // resolves the prerelease SDK instead of falling back to latest stable.
+              if (p.includes('squad-cli') && pkg.dependencies && pkg.dependencies['@bradygaster/squad-sdk']) {
+                pkg.dependencies['@bradygaster/squad-sdk'] = '${VERSION}';
+                console.log('  pinned @bradygaster/squad-sdk dep → ' + '${VERSION}');
+              }
+              fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + '\n');
+              console.log(p + ' → ' + '${VERSION}');
+            }
+          "
 
       - name: Build packages
         run: npm -w packages/squad-sdk run build && npm -w packages/squad-cli run build
 
       - name: Publish squad-sdk with insider tag
+        if: ${{ inputs.dry_run != 'true' }}
         run: npm -w packages/squad-sdk publish --tag insider --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish squad-cli with insider tag
+        if: ${{ inputs.dry_run != 'true' }}
         run: npm -w packages/squad-cli publish --tag insider --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Dry run summary
+        if: ${{ inputs.dry_run == 'true' }}
+        run: |
+          echo "🏜️ DRY RUN — would have published:"
+          echo "  @bradygaster/squad-sdk@${{ steps.version.outputs.insider_version }}"
+          echo "  @bradygaster/squad-cli@${{ steps.version.outputs.insider_version }}"

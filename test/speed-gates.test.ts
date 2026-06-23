@@ -41,7 +41,9 @@ describe('Speed: --help is scannable', { timeout: 30_000 }, () => {
     await harness.waitForExit(15000);
     const output = harness.captureFrame();
     const lines = output.split('\n').filter(l => l.trim());
-    expect(lines.length).toBeLessThanOrEqual(110);
+    // Budget grew to accommodate `sync` + `state-mcp` commands. Hard cap
+    // keeps us honest if help text starts ballooning again.
+    expect(lines.length).toBeLessThanOrEqual(150);
   });
 
   it('first 5 lines tell user what to do next', async () => {

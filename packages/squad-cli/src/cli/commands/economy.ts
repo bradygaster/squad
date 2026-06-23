@@ -8,8 +8,10 @@
  */
 
 import { join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { writeEconomyMode, readEconomyMode } from '@bradygaster/squad-sdk/config';
+
+const storage = new FSStorageProvider();
 import { fatal } from '../core/errors.js';
 import { BOLD, RESET, GREEN, DIM } from '../core/output.js';
 
@@ -18,7 +20,7 @@ function resolveSquadDir(cwd: string): string | null {
   let dir = cwd;
   for (let i = 0; i < 10; i++) {
     const candidate = join(dir, '.squad');
-    if (existsSync(candidate)) {
+    if (storage.existsSync(candidate)) {
       return candidate;
     }
     const parent = join(dir, '..');

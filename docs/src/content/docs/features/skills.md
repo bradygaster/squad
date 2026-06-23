@@ -25,10 +25,12 @@ Agents learn from real work and write skill files — reusable patterns, convent
 ## Where Skills Live
 
 ```
-.squad/skills/{skill-name}/SKILL.md
+.copilot/skills/{skill-name}/SKILL.md
 ```
 
 Each skill is a directory containing a `SKILL.md` file. Skills are **team-wide knowledge** — not tied to individual agents. All agents can read and use any skill.
+
+> **Legacy path**: Skills are also discovered at `.squad/skills/` for backward compatibility. If both paths contain a skill with the same name, the `.squad/skills/` version takes precedence. New skills are always written to `.copilot/skills/`.
 
 > **Portable across projects**: Skills export and import with your team. When you move a trained team to a new repo, all their earned knowledge comes with them.
 
@@ -36,13 +38,28 @@ Each skill is a directory containing a `SKILL.md` file. Skills are **team-wide k
 
 ## Types of Skills
 
+### Built-in Skills
+
+Squad ships with **8 built-in skills** that provide foundational patterns for every squad. These are automatically installed during `squad init` and refreshed during `squad upgrade`:
+
+1. **squad-conventions** — Core squad patterns and file layout
+2. **error-recovery** — Graceful failure handling and retry patterns
+3. **secret-handling** — Credential safety and secrets management
+4. **git-workflow** — Branch naming, commit conventions, PR flow
+5. **session-recovery** — Checkpoint and recovery after restarts
+6. **reviewer-protocol** — Code review gates and approval flow
+7. **test-discipline** — Test-first discipline and coverage expectations
+8. **agent-collaboration** — Multi-agent handoff and parallel work patterns
+
+Built-in skills are prefixed with their domain (e.g., `github-`, `secrets-`, `session-`). They're overwritten on upgrade to ensure you always have the latest patterns.
+
 ### Starter skills
 
-Bundled when you initialize Squad. Prefixed with `squad-` (e.g., `squad-conventions`). These encode baseline patterns for working with Squad.
+Legacy term for built-in skills. Previously called "starter skills" and prefixed with `squad-` (e.g., `squad-conventions`). Now standardized as domain-prefixed built-in skills.
 
 ### Session Recovery
 
-The `session-recovery` skill teaches agents to find and resume interrupted Copilot CLI sessions. When a session is interrupted (terminal crash, network drop, machine restart), in-progress work may be left incomplete. This skill uses `session_store` SQL queries to detect abandoned sessions, inspect checkpoint progress, and resume work. See [`.squad/skills/session-recovery/SKILL.md`](https://github.com/bradygaster/squad/blob/dev/.squad/skills/session-recovery/SKILL.md) for query patterns and examples.
+The `session-recovery` skill teaches agents to find and resume interrupted Copilot CLI sessions. When a session is interrupted (terminal crash, network drop, machine restart), in-progress work may be left incomplete. This skill uses `session_store` SQL queries to detect abandoned sessions, inspect checkpoint progress, and resume work. See [`.copilot/skills/session-recovery/SKILL.md`](https://github.com/bradygaster/squad/blob/dev/.copilot/skills/session-recovery/SKILL.md) for query patterns and examples.
 
 ### Earned skills
 
@@ -77,7 +94,7 @@ Confidence only goes up, never down. A skill that reaches `high` stays there.
 After successfully setting up a CI pipeline, an agent might create:
 
 ```
-.squad/skills/ci-github-actions/SKILL.md
+.copilot/skills/ci-github-actions/SKILL.md
 ```
 
 ```markdown
@@ -101,8 +118,8 @@ After successfully setting up a CI pipeline, an agent might create:
 ## Tips
 
 - Skills compound over time. A mature project has skills covering testing patterns, deployment procedures, API conventions, and more.
-- Starter skills (`squad-*`) are overwritten on upgrade. Earned skills are never touched.
-- **Skills are shared across the whole team** — any agent can read any skill. They're stored in a flat `.squad/skills/` directory, not per-agent files.
+- Built-in skills are overwritten on upgrade. Earned skills are never touched.
+- **Skills are shared across the whole team** — any agent can read any skill. They're stored in a flat `.copilot/skills/` directory, not per-agent files.
 - You can manually edit skill files if you want to seed knowledge (e.g., paste your team's existing conventions into a `SKILL.md`).
 - **Skills survive export/import** — your team's accumulated knowledge is fully portable across projects.
 
@@ -112,7 +129,7 @@ After successfully setting up a CI pipeline, an agent might create:
 list all skills
 ```
 
-Shows all skill files in `.squad/skills/` with confidence levels for earned skills.
+Shows all skill files in `.copilot/skills/` with confidence levels for earned skills.
 
 ```
 what's the confidence level for the CI skill?

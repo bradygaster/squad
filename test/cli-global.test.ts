@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { resolveSquad, resolveGlobalSquadPath } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquad, resolveGlobalSquadPath, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
 
 const TMP = join(process.cwd(), `.test-cli-global-${randomBytes(4).toString('hex')}`);
 
@@ -27,11 +27,13 @@ function scaffold(...dirs: string[]): void {
 
 describe('squad status routing logic', () => {
   beforeEach(() => {
+    clearResolveSquadCache();
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
     mkdirSync(TMP, { recursive: true });
   });
 
   afterEach(() => {
+    clearResolveSquadCache();
     if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
   });
 
@@ -48,30 +50,30 @@ describe('squad status routing logic', () => {
     scaffold('.git');
     const repoSquad = resolveSquad(TMP);
     expect(repoSquad).toBeNull();
-    // Without a global .squad/ dir, status shows "none"
+    // Without a global personal-squad/ dir, status shows "none"
     const globalPath = resolveGlobalSquadPath();
-    const globalSquadDir = join(globalPath, '.squad');
-    // When repo squad is null and global .squad doesn't exist → "none"
+    const globalSquadDir = join(globalPath, 'personal-squad');
+    // When repo squad is null and global personal-squad doesn't exist → "none"
     const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'personal' : 'none';
     expect(activeType).toBe(activeType === 'personal' ? 'personal' : 'none');
     // At minimum, repoSquad must be null
     expect(repoSquad).toBeNull();
   });
 
-  it('identifies "personal" when no repo .squad/ but global .squad/ exists', () => {
+  it('identifies "personal" when no repo .squad/ but global personal-squad/ exists', () => {
     scaffold('.git');
     const repoSquad = resolveSquad(TMP);
     expect(repoSquad).toBeNull();
 
     const globalPath = resolveGlobalSquadPath();
-    const globalSquadDir = join(globalPath, '.squad');
-    // Create a .squad/ inside the global path
+    const globalSquadDir = join(globalPath, 'personal-squad');
+    // Create a personal-squad/ inside the global path
     mkdirSync(globalSquadDir, { recursive: true });
 
     const activeType = repoSquad ? 'repo' : existsSync(globalSquadDir) ? 'personal' : 'none';
     expect(activeType).toBe('personal');
 
-    // Cleanup global .squad dir we created
+    // Cleanup global personal-squad dir we created
     rmSync(globalSquadDir, { recursive: true, force: true });
   });
 
@@ -79,7 +81,7 @@ describe('squad status routing logic', () => {
     scaffold('.git', '.squad');
     const repoSquad = resolveSquad(TMP);
     const globalPath = resolveGlobalSquadPath();
-    const globalSquadDir = join(globalPath, '.squad');
+    const globalSquadDir = join(globalPath, 'personal-squad');
     mkdirSync(globalSquadDir, { recursive: true });
 
     // Same logic as status command — repo wins

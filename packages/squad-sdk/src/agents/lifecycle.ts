@@ -12,8 +12,10 @@ import type { SquadSession, SquadSessionConfig } from '../adapter/types.js';
 import { compileCharter, type CharterCompileOptions } from './charter-compiler.js';
 import { resolveModel, type ModelResolutionOptions, type TaskType } from './model-selector.js';
 import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js';
-import * as fs from 'fs/promises';
 import * as path from 'path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import type { StorageProvider } from '../storage/storage-provider.js';
+import { buildActivePluginContext } from '../marketplace/plugin-state.js';
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import { recordAgentSpawn, recordAgentDestroy, recordAgentError } from '../runtime/otel-metrics.js';
 
@@ -94,6 +96,9 @@ export interface LifecycleManagerConfig {
   /** Path to team root directory */
   teamRoot: string;
   
+  /** Storage provider for file I/O (default: FSStorageProvider) */
+  storage?: StorageProvider;
+  
   /** Default idle timeout (default: 5 minutes) */
   defaultIdleTimeout?: number;
 }
@@ -107,6 +112,7 @@ export interface LifecycleManagerConfig {
 export class AgentLifecycleManager {
   private client: SquadClientWithPool;
   private teamRoot: string;
+  private storage: StorageProvider;
   private defaultIdleTimeout: number;
   private agents: Map<string, AgentHandleImpl> = new Map();
   private idleCheckTimer: NodeJS.Timeout | null = null;
@@ -114,6 +120,7 @@ export class AgentLifecycleManager {
   constructor(config: LifecycleManagerConfig) {
     this.client = config.client;
     this.teamRoot = config.teamRoot;
+    this.storage = config.storage ?? new FSStorageProvider();
     this.defaultIdleTimeout = config.defaultIdleTimeout ?? 300_000; // 5 minutes
     
     // Start idle timeout checker
@@ -151,12 +158,16 @@ export class AgentLifecycleManager {
     
     try {
       // Step 1: Read charter.md
-      const charterPath = path.join(this.teamRoot, '.ai-team', 'agents', agentName, 'charter.md');
-      let charterContent: string;
-      
-      try {
-        charterContent = await fs.readFile(charterPath, 'utf-8');
-      } catch (error) {
+      const squadCharterPath = path.join(this.teamRoot, '.squad', 'agents', agentName, 'charter.md');
+      const legacyCharterPath = path.join(this.teamRoot, '.ai-team', 'agents', agentName, 'charter.md');
+      let charterPath = squadCharterPath;
+      let charterContent = await this.storage.read(charterPath);
+      if (charterContent === undefined) {
+        charterPath = legacyCharterPath;
+        charterContent = await this.storage.read(charterPath);
+      }
+
+      if (charterContent === undefined) {
         throw new ConfigurationError(
           `Charter not found for agent '${agentName}' at ${charterPath}`,
           {
@@ -164,8 +175,7 @@ export class AgentLifecycleManager {
             operation: 'spawnAgent',
             timestamp: new Date(),
             metadata: { charterPath },
-          },
-          error instanceof Error ? error : undefined
+          }
         );
       }
       
@@ -173,9 +183,11 @@ export class AgentLifecycleManager {
       const compileOptions: CharterCompileOptions = {
         agentName,
         charterPath,
+        charterContent,
         teamContext,
         routingRules,
         decisions,
+        pluginContext: await buildActivePluginContext(this.storage, path.join(this.teamRoot, '.squad')),
       };
       
       const agentConfig = compileCharter(compileOptions);

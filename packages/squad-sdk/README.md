@@ -85,7 +85,7 @@ Five tools let agents coordinate without calling you back. Here are the three yo
 ```typescript
 const tool = toolRegistry.getTool('squad_route');
 await tool.handler({
-  targetAgent: 'McManus',
+  targetAgent: 'mcmanus',  // lowercase — agent names are normalized
   task: 'Write a blog post on the new casting system',
   priority: 'high',
   context: 'Feature launches next week',
@@ -93,6 +93,31 @@ await tool.handler({
 ```
 
 The lead routes a task to DevRel. A new session is created, context is passed, and the task is queued with priority. No human in the loop.
+
+> **Wiring requirement:** `squad_route` creates sessions via `spawnParallel`, which requires fan-out dependencies. Pass a `fanOutDepsGetter` as the 5th argument to `new ToolRegistry(...)`:
+>
+> ```typescript
+> import { ToolRegistry } from '@bradygaster/squad-sdk/tools';
+> import type { FanOutDependencies } from '@bradygaster/squad-sdk/coordinator';
+>
+> const fanOutDeps: FanOutDependencies = {
+>   compileCharter: async (name) => { /* load agent charter */ },
+>   resolveModel: async (charter, override) => override ?? charter.modelPreference ?? 'default',
+>   createSession: async (config) => ({ sessionId: '...', sendMessage: async () => {} }),
+>   sessionPool,   // SessionPool instance
+>   eventBus,      // EventBus instance
+> };
+>
+> const registry = new ToolRegistry(
+>   './.squad',
+>   () => sessionPool,       // sessionPoolGetter
+>   storageProvider,          // storage
+>   squadState,               // state (enables roster validation)
+>   () => fanOutDeps,         // fanOutDepsGetter
+> );
+> ```
+>
+> Without it, `squad_route` returns `resultType: 'failure'` with `error: 'fan-out-deps-unavailable'`. Agent names must match `/^[a-zA-Z0-9_-]+$/` and, when state is provided, exist in the team roster.
 
 ### `squad_decide` — Record a team decision
 
@@ -204,6 +229,50 @@ const resumed = await client.resumeSession(
 // - Where it left off
 // No repetition, no lost context.
 ```
+
+---
+
+## Storage Abstraction
+
+Squad separates I/O from business logic. All persistent storage — sessions, state, decisions, histories — flows through a pluggable `StorageProvider` interface. Swap the backend (filesystem, database, cloud) without touching orchestration code.
+
+### Built-in Providers
+
+| Provider | Use When |
+|----------|----------|
+| `FSStorageProvider` | Running on Node.js. Stores everything on disk. |
+| `InMemoryStorageProvider` | Writing unit tests or running ephemeral sessions. |
+| `SQLiteStorageProvider` | Need a single portable database file. Works on all platforms (runs on WASM). |
+
+### Build Your Own
+
+Implement the `StorageProvider` interface:
+
+```typescript
+import type { StorageProvider } from '@bradygaster/squad-sdk';
+
+export class MyCloudStorageProvider implements StorageProvider {
+  async read(filePath: string): Promise<string | undefined> {
+    // Fetch from Azure Blob, S3, or your service
+    try {
+      return await this.client.getBlob(filePath);
+    } catch (e) {
+      if (e.code === 'NotFound') return undefined;
+      throw e;
+    }
+  }
+
+  async write(filePath: string, data: string): Promise<void> {
+    // Store to cloud
+    await this.client.putBlob(filePath, data);
+  }
+
+  // Implement remaining methods: append, exists, list, delete, deleteDir, isDirectory, mkdir, rename, copy, stat
+  // + sync variants (deprecated in Wave 2)
+}
+```
+
+See `storage-provider-azure` and `storage-provider-sqlite` samples for complete implementations.
 
 ---
 

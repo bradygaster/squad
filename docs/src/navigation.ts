@@ -31,6 +31,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Interactive Shell', slug: 'guide/shell' },
       { title: 'Extensibility', slug: 'guide/extensibility' },
       { title: 'Building Extensions', slug: 'guide/building-extensions' },
+      { title: 'Building Resilient Agents', slug: 'guide/building-resilient-agents' },
       { title: 'Contributing', slug: 'guide/contributing' },
       { title: 'Contributors', slug: 'guide/contributors' },
     ],
@@ -59,6 +60,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Human Team Members', slug: 'features/human-team-members' },
       { title: 'Consult Mode', slug: 'features/consult-mode' },
       { title: 'Remote Control', slug: 'features/remote-control' },
+      { title: 'Storage Provider', slug: 'features/storage-provider' },
       { title: 'VS Code', slug: 'features/vscode' },
       { title: 'Git Worktrees', slug: 'features/worktrees' },
       { title: 'Export & Import', slug: 'features/export-import' },
@@ -71,6 +73,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'Squad RC', slug: 'features/squad-rc' },
       { title: 'Streams', slug: 'features/streams' },
       { title: 'Distributed Mesh', slug: 'features/distributed-mesh' },
+      { title: 'Capability Routing', slug: 'features/capability-routing' },
+      { title: 'Rate Limiting', slug: 'features/rate-limiting' },
+      { title: 'KEDA Autoscaling', slug: 'features/keda-scaling' },
     ],
   },
   {
@@ -145,3 +150,4 @@ export const STANDALONE_PAGES = [
   { title: 'Community', slug: 'community' },
   { title: 'Insider Program', slug: 'insider-program' },
 ];
+

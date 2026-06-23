@@ -7,11 +7,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readdir, readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import { getPackageVersion } from '@bradygaster/squad-cli/core/version';
 
-const TEST_ROOT = join(process.cwd(), `.test-cli-init-${randomBytes(4).toString('hex')}`);
+const TEST_ROOT = join(tmpdir(), `.test-cli-init-${randomBytes(4).toString('hex')}`);
+const TEST_HOME = join(tmpdir(), `.test-cli-init-home-${randomBytes(4).toString('hex')}`);
 
 describe('CLI: init command', () => {
   beforeEach(async () => {
@@ -19,11 +21,22 @@ describe('CLI: init command', () => {
       await rm(TEST_ROOT, { recursive: true, force: true });
     }
     await mkdir(TEST_ROOT, { recursive: true });
+    if (existsSync(TEST_HOME)) {
+      await rm(TEST_HOME, { recursive: true, force: true });
+    }
+    await mkdir(TEST_HOME, { recursive: true });
+    // iter-7: redirect ~/.copilot/mcp-config.json writes to a temp dir so
+    // tests don't pollute the developer's real HOME.
+    process.env.SQUAD_HOME_DIR_OVERRIDE = TEST_HOME;
   });
 
   afterEach(async () => {
+    delete process.env.SQUAD_HOME_DIR_OVERRIDE;
     if (existsSync(TEST_ROOT)) {
       await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+    if (existsSync(TEST_HOME)) {
+      await rm(TEST_HOME, { recursive: true, force: true });
     }
   });
 
@@ -61,7 +74,7 @@ describe('CLI: init command', () => {
     expect(existsSync(join(TEST_ROOT, '.squad', 'decisions', 'inbox'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'orchestration-log'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'casting'))).toBe(true);
-    expect(existsSync(join(TEST_ROOT, '.copilot', 'skills'))).toBe(true);
+    expect(existsSync(join(TEST_ROOT, '.github', 'skills'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'plugins'))).toBe(true);
     expect(existsSync(join(TEST_ROOT, '.squad', 'identity'))).toBe(true);
   });
@@ -83,15 +96,101 @@ describe('CLI: init command', () => {
     expect(wisdomContent).toContain('Team Wisdom');
   });
 
-  it('should create .copilot/mcp-config.json', async () => {
+  it('should NOT write any squad_state entries to ~/.copilot/mcp-config.json (regression: #1296)', async () => {
+    // iter-8 design: init writes squad_state to repo-root .mcp.json ONLY.
+    // Pre-fix, the unconditional `ensureSquadStateMcpInUserConfig` call
+    // inside both `initSquad` (SDK) and the `upgrade` command used to
+    // write squad_state_<hash> to HOME on every init, accumulating one
+    // entry per project with no GC and contradicting the iter-8
+    // docstring's stated "No HOME modifications" intent. (Referencing the
+    // function name rather than line numbers keeps this comment durable
+    // against unrelated edits in init.ts / upgrade.ts.)
+    //
+    // This test isolates the developer's real HOME by setting USERPROFILE
+    // (Windows) and HOME (POSIX) to a temp dir before init, then asserting
+    // no squad_state* entries appear under that temp HOME.
+    const fakeHome = join(tmpdir(), `.test-fake-home-${randomBytes(4).toString('hex')}`);
+    await mkdir(fakeHome, { recursive: true });
+    const originalUserprofile = process.env.USERPROFILE;
+    const originalHome = process.env.HOME;
+    process.env.USERPROFILE = fakeHome;
+    process.env.HOME = fakeHome;
+    try {
+      await runInit(TEST_ROOT);
+
+      const fakeHomeMcp = join(fakeHome, '.copilot', 'mcp-config.json');
+      if (existsSync(fakeHomeMcp)) {
+        const content = await readFile(fakeHomeMcp, 'utf-8');
+        const config = JSON.parse(content);
+        const servers = (config.mcpServers as Record<string, unknown> | undefined) ?? {};
+        const offending = Object.keys(servers).filter(k => k.startsWith('squad_state'));
+        expect(offending, `init must not write squad_state entries to HOME; found: ${offending.join(', ')}`).toEqual([]);
+      }
+      // (If the file doesn't exist at all, that's also a pass — init touched
+      // nothing under HOME, which is the iter-8 ideal.)
+    } finally {
+      if (originalUserprofile === undefined) { delete process.env.USERPROFILE; } else { process.env.USERPROFILE = originalUserprofile; }
+      if (originalHome === undefined) { delete process.env.HOME; } else { process.env.HOME = originalHome; }
+      if (existsSync(fakeHome)) {
+        await rm(fakeHome, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('should create .copilot/mcp-config.json without squad_state (iter-7: lives in ~/.copilot)', async () => {
     await runInit(TEST_ROOT);
-    
+
     const mcpPath = join(TEST_ROOT, '.copilot', 'mcp-config.json');
     expect(existsSync(mcpPath)).toBe(true);
-    
+
     const content = await readFile(mcpPath, 'utf-8');
     const config = JSON.parse(content);
     expect(config).toHaveProperty('mcpServers');
+    // iter-7: squad_state is now written to ~/.copilot/mcp-config.json and
+    // tombstoned out of the project file so github/copilot auto-loads it.
+    expect(config.mcpServers).not.toHaveProperty('squad_state');
+    expect(content).not.toContain('SQUAD_TEAM_ROOT');
+    expect(content).not.toContain(TEST_ROOT);
+  });
+
+  it('should write MCP config into agent frontmatter when requested', async () => {
+    await runInit(TEST_ROOT, { mcpFrontmatter: true });
+
+    const mcpPath = join(TEST_ROOT, '.copilot', 'mcp-config.json');
+    expect(existsSync(mcpPath)).toBe(false);
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const content = await readFile(agentPath, 'utf-8');
+    expect(content).toContain('mcp-servers:');
+    expect(content).toContain('  squad_state:');
+    expect(content).toContain('    type: local');
+    // args may be pinned (`@bradygaster/squad-cli@<version>`) or unpinned
+    // depending on whether getPackageVersion() resolved a real version at
+    // test time. Either shape is acceptable here.
+    expect(content).toMatch(/args:\s*\['-y',\s*'@bradygaster\/squad-cli(@[^']+)?',\s*'state-mcp'\]/);
+    expect(content).toContain('    tools: ["*"]');
+    const frontmatterEnd = content.indexOf('\n---', 4);
+    expect(frontmatterEnd).toBeGreaterThan(0);
+    const frontmatter = content.slice(0, frontmatterEnd);
+    expect(frontmatter).not.toContain('SQUAD_TEAM_ROOT');
+    expect(frontmatter).not.toContain(TEST_ROOT);
+
+    const squadConfigPath = join(TEST_ROOT, '.squad', 'config.json');
+    const squadConfig = JSON.parse(await readFile(squadConfigPath, 'utf-8'));
+    expect(squadConfig.mcpConfigMode).toBe('agent-frontmatter');
+  });
+
+  it('should not patch existing agent frontmatter on re-init', async () => {
+    await runInit(TEST_ROOT);
+
+    const agentPath = join(TEST_ROOT, '.github', 'agents', 'squad.agent.md');
+    const firstContent = await readFile(agentPath, 'utf-8');
+
+    await runInit(TEST_ROOT, { mcpFrontmatter: true });
+
+    const secondContent = await readFile(agentPath, 'utf-8');
+    expect(secondContent).toBe(firstContent);
+    expect(secondContent).not.toContain('mcp-servers:');
   });
 
   it('should create ceremonies.md', async () => {
@@ -131,14 +230,14 @@ describe('CLI: init command', () => {
     const templatesPath = join(TEST_ROOT, '.squad', 'templates');
     expect(existsSync(templatesPath)).toBe(true);
     
-    // Should contain squad.agent.md
-    expect(existsSync(join(templatesPath, 'squad.agent.md'))).toBe(true);
+    // Should contain squad.agent.md.template (renamed to prevent CLI discovery)
+    expect(existsSync(join(templatesPath, 'squad.agent.md.template'))).toBe(true);
   });
 
   it('should copy starter skills if none exist', async () => {
     await runInit(TEST_ROOT);
     
-    const skillsPath = join(TEST_ROOT, '.copilot', 'skills');
+    const skillsPath = join(TEST_ROOT, '.github', 'skills');
     const skills = await readdir(skillsPath);
     
     // Should have at least one skill

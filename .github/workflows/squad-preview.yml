@@ -4,6 +4,10 @@ on:
   push:
     branches: [preview]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -27,7 +31,7 @@ jobs:
           echo "✅ Version $VERSION validated in CHANGELOG.md"
 
       - name: Run tests
-        run: node --test test/*.test.js
+        run: node --test test/*.test.cjs
 
       - name: Check no .ai-team/ or .squad/ files are tracked
         run: |

@@ -1,0 +1,34 @@
+{
+  "name": "default",
+  "version": "1.0.0",
+  "description": "Starter squad — a well-rounded team for any software project",
+  "author": "Squad Contributors",
+  "tags": ["starter", "general", "software"],
+  "agents": [
+    {
+      "name": "lead",
+      "role": "lead",
+      "description": "Technical lead — owns architecture decisions and coordinates the team"
+    },
+    {
+      "name": "reviewer",
+      "role": "reviewer",
+      "description": "Code reviewer — catches bugs, enforces standards, and improves quality"
+    },
+    {
+      "name": "devrel",
+      "role": "devrel",
+      "description": "Developer relations — writes docs, READMEs, and developer-facing content"
+    },
+    {
+      "name": "security",
+      "role": "security",
+      "description": "Security engineer — reviews for vulnerabilities and enforces security practices"
+    },
+    {
+      "name": "docs",
+      "role": "docs",
+      "description": "Documentation specialist — maintains technical docs and API references"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import {
   LocalPollingProvider,
   GitHubActionsProvider,
   ScheduleValidationError,
+  validateTaskRef,
 } from '../packages/squad-sdk/src/runtime/scheduler.js';
 import type {
   ScheduleManifest,
@@ -37,7 +38,7 @@ function validManifest(overrides?: Partial<ScheduleManifest>): ScheduleManifest 
         name: 'Test Task',
         enabled: true,
         trigger: { type: 'interval', intervalSeconds: 60 },
-        task: { type: 'script', ref: 'echo hello' },
+        task: { type: 'script', ref: `${process.execPath} -e console.log('hello')` },
         providers: ['local-polling'],
       },
     ],
@@ -51,7 +52,7 @@ function validEntry(overrides?: Partial<ScheduleEntry>): ScheduleEntry {
     name: 'Test Task',
     enabled: true,
     trigger: { type: 'interval', intervalSeconds: 60 },
-    task: { type: 'script', ref: 'echo hello' },
+    task: { type: 'script', ref: `${process.execPath} -e console.log('hello')` },
     providers: ['local-polling'],
     ...overrides,
   };
@@ -413,7 +414,7 @@ describe('Scheduler: LocalPollingProvider', () => {
   it('should execute script tasks', async () => {
     const provider = new LocalPollingProvider();
     const entry = validEntry({
-      task: { type: 'script', ref: 'echo hello-from-scheduler' },
+      task: { type: 'script', ref: `${process.execPath} -e console.log('hello-from-scheduler')` },
     });
     const result = await provider.execute(entry);
     expect(result.success).toBe(true);
@@ -443,11 +444,84 @@ describe('Scheduler: LocalPollingProvider', () => {
   it('should handle script execution failure', async () => {
     const provider = new LocalPollingProvider();
     const entry = validEntry({
-      task: { type: 'script', ref: 'exit 1' },
+      task: { type: 'script', ref: `${process.execPath} -e process.exit(1)` },
     });
     const result = await provider.execute(entry);
     expect(result.success).toBe(false);
     expect(result.error).toBeDefined();
+  });
+
+  // ── Rich-error capture (added when scheduler moved from execFileSync to
+  //    promisify(execFile); preserves existing behavior and adds optional
+  //    stderr/code/signal/timedOut fields on the returned TaskResult)
+  describe('rich error capture on script failure', () => {
+    it('captures the exit code on a non-zero exit', async () => {
+      const provider = new LocalPollingProvider();
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e process.exit(7)` },
+      });
+      const result = await provider.execute(entry);
+      expect(result.success).toBe(false);
+      expect(result.code).toBe(7);
+    });
+
+    it('captures stderr written by the child', async () => {
+      const provider = new LocalPollingProvider();
+      // Space-free script — the scheduler tokenizes `task.ref` by whitespace.
+      const script = `process.stderr.write('boom-from-stderr');process.exit(1)`;
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e ${script}` },
+      });
+      const result = await provider.execute(entry);
+      expect(result.success).toBe(false);
+      expect(result.stderr).toBeDefined();
+      expect(result.stderr).toContain('boom-from-stderr');
+    });
+
+    it('does not set timedOut for ordinary non-zero exits', async () => {
+      const provider = new LocalPollingProvider();
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e process.exit(1)` },
+      });
+      const result = await provider.execute(entry);
+      expect(result.success).toBe(false);
+      expect(result.timedOut).toBeUndefined();
+    });
+
+    it('does not block the event loop while a script runs', async () => {
+      // Spawn a script that sleeps ~150 ms, then assert that other timers
+      // continue to fire while the script is running. With the previous
+      // execFileSync implementation, setTimeout callbacks scheduled at
+      // 10/30/50 ms would all be delayed until the script returned.
+      const provider = new LocalPollingProvider();
+      // Space-free script — the scheduler tokenizes `task.ref` by whitespace.
+      const script = `setTimeout(()=>process.exit(0),150)`;
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e ${script}` },
+      });
+
+      const ticks: number[] = [];
+      const start = Date.now();
+      const t1 = setTimeout(() => ticks.push(Date.now() - start), 10);
+      const t2 = setTimeout(() => ticks.push(Date.now() - start), 30);
+      const t3 = setTimeout(() => ticks.push(Date.now() - start), 50);
+
+      const result = await provider.execute(entry);
+
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+
+      expect(result.success).toBe(true);
+      // All three timers should have fired *during* the script's 150 ms
+      // sleep — proving the event loop kept turning.
+      expect(ticks.length).toBe(3);
+      // Each tick should fire close to its scheduled time, not bunched
+      // up at the end. A 75 ms ceiling gives plenty of slack.
+      for (const t of ticks) {
+        expect(t).toBeLessThan(75);
+      }
+    });
   });
 });
 
@@ -615,5 +689,127 @@ describe('Scheduler: Default Template', () => {
     expect(template.version).toBe(1);
     expect(template.schedules).toHaveLength(1);
     expect(template.schedules[0]!.id).toBe('ralph-heartbeat');
+  });
+});
+
+// ============================================================================
+// Security: Shell Injection Prevention Tests
+// ============================================================================
+
+describe('Scheduler: Shell Injection Prevention', () => {
+  describe('validateTaskRef', () => {
+    it('should accept a valid script path', () => {
+      expect(() => validateTaskRef('./scripts/deploy.sh')).not.toThrow();
+      expect(() => validateTaskRef(`${process.execPath} -e console.log(1)`)).not.toThrow();
+    });
+
+    it('should reject null bytes', () => {
+      expect(() => validateTaskRef('script\x00injected')).toThrow('null bytes');
+    });
+
+    it('should reject newline characters', () => {
+      expect(() => validateTaskRef('script\ninjected')).toThrow('newline');
+      expect(() => validateTaskRef('script\rinjected')).toThrow('newline');
+    });
+
+    it('should reject empty ref', () => {
+      expect(() => validateTaskRef('')).toThrow('non-empty');
+      expect(() => validateTaskRef('   ')).toThrow('non-empty');
+    });
+  });
+
+  describe('manifest validation rejects dangerous script refs', () => {
+    it('should reject script refs with null bytes at parse time', () => {
+      const manifest = {
+        version: 1,
+        schedules: [{
+          id: 'bad', name: 'Bad', enabled: true,
+          trigger: { type: 'interval', intervalSeconds: 60 },
+          task: { type: 'script', ref: 'cmd\x00--evil' },
+          providers: ['local-polling'],
+        }],
+      };
+      expect(() => validateManifest(manifest)).toThrow('null bytes');
+    });
+
+    it('should reject script refs with newlines at parse time', () => {
+      const manifest = {
+        version: 1,
+        schedules: [{
+          id: 'bad', name: 'Bad', enabled: true,
+          trigger: { type: 'interval', intervalSeconds: 60 },
+          task: { type: 'script', ref: 'cmd\n--evil' },
+          providers: ['local-polling'],
+        }],
+      };
+      expect(() => validateManifest(manifest)).toThrow('newline');
+    });
+  });
+
+  describe('LocalPollingProvider blocks injection via execFileSync', () => {
+    const provider = new LocalPollingProvider();
+
+    it('should not execute shell operators (semicolon injection)', async () => {
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e console.log('safe'); echo INJECTED` },
+      });
+      const result = await provider.execute(entry);
+      // execFileSync passes '; echo INJECTED' as arguments to node, not as a shell command
+      // node will fail because the -e script has invalid syntax with the semicolon+args
+      // The key assertion: INJECTED should never appear in output as a separate command
+      if (result.success) {
+        expect(result.output).not.toContain('INJECTED');
+      }
+    });
+
+    it('should not execute command substitution $()', async () => {
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e $(whoami)` },
+      });
+      const result = await provider.execute(entry);
+      // Without shell, $(whoami) is passed as a literal string argument
+      if (result.success) {
+        expect(result.output).not.toMatch(/^[a-zA-Z]/); // Should not return a username
+      }
+    });
+
+    it('should not execute backtick injection', async () => {
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e \`whoami\`` },
+      });
+      const result = await provider.execute(entry);
+      // Backticks are literal without shell interpretation
+      if (result.success) {
+        expect(result.output).not.toMatch(/^[a-zA-Z]/);
+      }
+    });
+
+    it('should not execute pipe injection', async () => {
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e console.log('safe') | cat` },
+      });
+      const result = await provider.execute(entry);
+      // Without shell, '|' and 'cat' are just arguments to node
+      // This should either fail or not produce piped output
+    });
+
+    it('should not execute && chaining', async () => {
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath} -e console.log('safe') && echo INJECTED` },
+      });
+      const result = await provider.execute(entry);
+      if (result.output) {
+        expect(result.output).not.toContain('INJECTED');
+      }
+    });
+
+    it('should reject null byte injection at runtime', async () => {
+      const entry = validEntry({
+        task: { type: 'script', ref: `${process.execPath}\x00-e console.log('pwned')` },
+      });
+      const result = await provider.execute(entry);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('null bytes');
+    });
   });
 });

@@ -8,8 +8,12 @@
  * @module runtime/squad-observer
  */
 
-import fs from 'node:fs';
+// fs.watch and fs.FSWatcher retained — not in StorageProvider scope
+import { watch, type FSWatcher } from 'node:fs';
 import path from 'node:path';
+import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+
+const storage = new FSStorageProvider();
 import { SpanStatusCode } from './otel-api.js';
 import { getTracer } from './otel.js';
 import { EventBus, type SquadEvent } from './event-bus.js';
@@ -88,7 +92,7 @@ export function classifyFile(relativePath: string): SquadFileCategory {
  */
 export class SquadObserver {
   private config: Required<Pick<SquadObserverConfig, 'squadDir' | 'debounceMs'>> & Pick<SquadObserverConfig, 'eventBus'>;
-  private watcher: fs.FSWatcher | undefined;
+  private watcher: FSWatcher | undefined;
   private debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private running = false;
 
@@ -106,7 +110,7 @@ export class SquadObserver {
    */
   start(): void {
     if (this.running) return;
-    if (!fs.existsSync(this.config.squadDir)) {
+    if (!storage.existsSync(this.config.squadDir)) {
       throw new Error(`Squad directory not found: ${this.config.squadDir}`);
     }
 
@@ -119,7 +123,7 @@ export class SquadObserver {
     });
 
     try {
-      this.watcher = fs.watch(this.config.squadDir, { recursive: true }, (eventType, filename) => {
+      this.watcher = watch(this.config.squadDir, { recursive: true }, (eventType, filename) => {
         if (!filename) return;
         // Skip high-churn directories that don't affect squad state
         const normalized = filename.replace(/\\/g, '/');
@@ -191,7 +195,7 @@ export class SquadObserver {
   private processChange(filename: string): void {
     const absolutePath = path.join(this.config.squadDir, filename);
     const category = classifyFile(filename);
-    const exists = fs.existsSync(absolutePath);
+    const exists = storage.existsSync(absolutePath);
 
     // Determine change type — basic heuristic since fs.watch doesn't tell us
     const changeType: SquadFileChange['changeType'] = exists ? 'modified' : 'deleted';

@@ -109,7 +109,7 @@ The coordinator routes work automatically using three strategies. First match wi
 |----------|-------------|---------|
 | **Named** | You say who does it | `"Fenster, fix the login bug"` |
 | **Domain** | Pattern matching in `.squad/routing.md` | `src/api/**` → Backend |
-| **Skill-aware** | Capability check in `.squad/skills/` | Auth expertise → Backend or Lead |
+| **Skill-aware** | Capability check in `.copilot/skills/` | Auth expertise → Backend or Lead |
 
 **Routing priority:** Named > Domain > Skill-aware. If nothing matches, the Lead triages.
 
@@ -345,3 +345,12 @@ Who handles authentication work?
 ```
 
 Coordinator checks routing and skills, reports the responsible agent(s).
+
+---
+
+## See Also
+
+- [Architecture](./architecture.md) — How the coordinator, agents, and shared memory work together
+- [Work Routing](../features/routing.md) — How work gets assigned to the right agent
+- [Parallel Work & Models](./parallel-work.md) — Agents working simultaneously without conflicts
+- [Memory & Knowledge](./memory-and-knowledge.md) — How decisions and agent history persist

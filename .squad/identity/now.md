@@ -1,7 +1,7 @@
 ---
-updated_at: 2026-03-22T06:50:31Z
-focus_area: PR Pipeline Cleared, Next-Up Issues Ready
-version: v0.8.24
+updated_at: 2026-03-23T22:00:00Z
+focus_area: Release Stabilized, Process Hardened, Community Engaged
+version: v0.9.1
 branch: main
 tests_passing: 4655+
 tests_todo: ~20
@@ -9,85 +9,121 @@ tests_skipped: ~5
 test_files: 149
 team_size: 19 active agents + Scribe + Ralph + @copilot
 team_identity: Apollo 13 / NASA Mission Control
-process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Never commit to main directly.
+process: All work through PRs. Branch naming squad/{issue-number}-{slug}. Releases driven by Surgeon. Pre-flight gates mandatory. Never commit to main directly.
 ---
 
 # What We're Focused On
 
-**Status:** PR pipeline cleared. 8 PRs reviewed, rebased, and merged. 6 issues triaged. 10 issues labeled `next-up` for immediate pickup. 1 new issue filed (#488 — GitHub auth documentation). Team ready to work through priority issues.
+**Status:** Release v0.9.1 stable on npm. Docs deployed with dark mode fix. 10 community PRs merged. Discussion board fully triaged. Release process hardened with 6 action items (A1–A6). 9 GitHub issues filed for improvements. Ready for next development cycle.
 
-## Session Recap: PR Pipeline & Issue Triage (2026-03-22)
+## Session Recap: Release Crisis Recovery & Governance Hardening (2026-03-23)
 
-**Agents Deployed:** Flight (Lead), EECOM (Core Dev), GNC (Node.js Runtime), PAO (DevRel), Coordinator
+**Agents Deployed:** Flight (Lead), EECOM (SDK/CLI), Booster (DevOps), Surgeon (Release), PAO (DevRel), Coordinator
 
-### PRs Merged (8 total)
+### Release Incident Resolved
+**v0.9.0 → v0.9.1:** Critical defect in CLI package (dependency reference). Published with `"file:../squad-sdk"` (local path) instead of registry version. Broken on global install. Detected immediately; hotfix prepared in minutes. **Publish workflow infrastructure failed:** GitHub Actions cache race condition + npm workspace automation issues + npm 2FA hang. Extended resolution from 10 minutes to 8 hours.
 
-| PR | Title | Agent | Status |
-|---|---|---|---|
-| #483 | az CLI timeout fix | EECOM | ✅ Merged |
-| #480 | history race fix (async mutex + 14 tests) | EECOM | ✅ Merged |
-| #486 | SIGINT handling (two-layer cleanup + 22 tests) | EECOM | ✅ Merged |
-| #474 | Node 22 ESM fix + exports key alignment | GNC | ✅ Merged |
-| #487 | CLI docs expansion + broken link fixes | PAO | ✅ Merged |
-| #482 | Pagefind search integration | PAO | ✅ Merged |
-| #484 | Sample README templates | PAO | ✅ Merged |
-| #473 | Gap analysis | Flight | ✅ Merged |
+**Root causes identified (5 total):**
+1. Dependency validation gap (prefixable — no pre-publish checks)
+2. GitHub workflow cache race condition (GitHub infrastructure bug)
+3. npm workspace publish broken with 2FA enabled (tool gap)
+4. Coordinator repeated failed approaches (process gap)
+5. No pre-publish verification step (preventable)
 
-### Issues Triaged & Labeled (6 total)
+**Outcomes:**
+- ✅ v0.9.1 released and stable
+- ✅ Preflight job added to publish pipeline (dependency scanning)
+- ✅ Release governance hardened (Surgeon owns all publishing)
+- ✅ 6 action items (A1–A6) documented for next release
+- ✅ Release process skill created at `.squad/skills/release-process/SKILL.md`
 
-**Issues:** #485, #481, #479, #478, #477, #476  
-**Assignments:** Distributed across EECOM, CONTROL, RETRO, VOX, FIDO, HANDBOOK, PAO  
-**Status:** All labeled with squad/team ownership
+### PRs Merged (10 total)
+| PR | Title | Status |
+|---|---|---|
+| #569 | Docs deployment | ✅ Merged |
+| #570 | Dark mode fix (ViewTransitions + 3-layer theme) | ✅ Merged |
+| #571 | Docs features | ✅ Merged |
+| #555 | Community contribution | ✅ Merged |
+| #552 | Community contribution | ✅ Merged |
+| #568 | Infrastructure improvement | ✅ Merged |
+| #572 | Chinese README (PAO/community collab) | ✅ Merged |
+| #513 | Earlier feature work | ✅ Merged |
+| #573 | Community contribution | ✅ Merged |
+| #574 | Community contribution | ✅ Merged |
 
-### Next-Up Label (10 issues)
+**PR #507:** Closed (superseded by #572)
 
-**Label:** `next-up`  
-**Type:** Bugs, easy wins, documentation improvements  
-**Status:** Ready for team pickup next sprint
+### Issues Filed (9 total)
+**#556–#564:** Release process improvements documented by Flight:
+- Dependency validation patterns
+- npm workspace publish policy
+- GitHub Actions cache handling
+- Publish escalation protocol
+- Pre-flight checklist
+- Smoke test gating
+- Runbook documentation
 
-### New Issue: #488
+### Community Engagement
+**Discussion Triage:** 15 discussions analyzed by PAO
+- 4 close-as-resolved (features shipped)
+- 1 consolidate (duplicate answer)
+- 2 convert-to-issue (bugs/roadmap)
+- 8 keep-open (ongoing feedback)
 
-**Title:** docs: GitHub auth  
-**Type:** Documentation  
-**Owner:** PAO  
-**Status:** Created and assigned
+**Critical Finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024, needs Power Automate Workflows path.
 
-## Key Patterns Identified
+### Governance Decisions Merged (12 total)
+**Infrastructure & CI:** CI audit (15 workflows, lean + healthy), preflight job (dependency scanning), ghost workflow cleanup
 
-1. **CLI Timeouts** — External CLI calls need explicit timeouts + fallback logic
-2. **File Race Conditions** — History operations require async mutex + atomic writes + comprehensive tests (14 tests validated #480)
-3. **Signal Handling** — SIGINT cleanup needs two-layer approach: parent process handler + child process cleanup (22 tests validated #486)
-4. **ESM Exports** — Node 22 requires explicit exports map + validation that declared paths exist (PR #474 fixed mismatch)
-5. **Documentation Links** — Automated link validation should be CI gate to prevent broken references
+**Release & Process:** Surgeon owns all publishing; strict playbooks; pre-publish validation; escalation protocol; smoke tests mandatory; npm-only distribution; runbooks in PUBLISH-README.md
 
-## Test Coverage Update
+**Community:** README slim-down (512 → 331 lines); discussion triage patterns; v0.9.0 blog structure; Teams MCP urgency
 
-- **New tests:** 36 from EECOM (14 race + 22 signal), GNC ESM validation
-- **Total passing:** 4655+ (per GNC report)
-- **Coverage areas:** Concurrent operations, signal handling, ESM compatibility, timeout scenarios
+### Skills Created
+**`.squad/skills/release-process/SKILL.md`:** Comprehensive skill documenting pre-publish validation, publish automation flow, GitHub Actions failure runbook, npm workspace policy, escalation protocol, post-publish verification.
 
-## 🚨 Next Session: Start Here
-
-**PR pipeline cleared. Work through `next-up` issues.**
-
-Priorities:
-1. **#488** — PAO: GitHub auth documentation (new)
-2. **#481** — EECOM + CONTROL: StorageProvider PRD (architectural)
-3. **#479** — EECOM + RETRO: history-shadow race fix (production bug mitigation)
-4. **#478** — VOX + PAO: Polish REPL (UX readiness)
-5. **#477** — FIDO: Code quality linting PRD (ESLint 9)
-6. **#476** — HANDBOOK + PAO: Guide v0.4.1 update (high community value)
+### Team Learnings Documented
+- **Flight:** Issue filing patterns, PR triage workflow
+- **EECOM:** CLI version subcommand pattern (inline handlers)
+- **Booster:** CI preflight patterns, workflow audit methodology
+- **Surgeon:** Release governance rules, retrospective analysis patterns
+- **PAO:** Discussion triage patterns, Teams MCP urgency, Chinese README workflow
 
 ## Current State
 
-**Version:** v0.8.24 (released, on npm)
-- **Packages:** @bradygaster/squad-sdk, @bradygaster/squad-cli
-- **Branch:** main
+**Version:** v0.9.1 (released, on npm, stable)
+- **Packages:** @bradygaster/squad-sdk@0.9.1, @bradygaster/squad-cli@0.9.1
+- **Branch:** main (default)
 - **Build:** ✅ clean (0 errors)
 - **Tests:** 4,655+ passed, ~20 todo, ~5 skipped, 149 test files
+- **Docs:** Deployed to production with dark mode fix
 
-**Open Issues:** 30 total. 6 triaged today + 10 labeled next-up for immediate work.
+**Open Issues:** 9 filed for release improvements (#556–#564). PR #567 (StorageProvider) parked as draft. Ready for next development phase.
+
+## Next Steps
+
+### Immediate (This Sprint)
+- [ ] Implement A1–A6 action items from release retrospective
+- [ ] Delete ghost workflow (publish-npm.yml) via GitHub API
+- [ ] Update Teams MCP docs (Office 365 → Power Automate)
+- [ ] Enable Ralph's heartbeat cron if periodic triage desired
+
+### Short-Term (Next Release)
+- [ ] Mandatory pre-flight checklist before tagging any release
+- [ ] Update PUBLISH-README.md with full runbook
+- [ ] Add semver validation to bump-build.mjs
+- [ ] Policy: 2FA must be auth-only; always `cd` into package for publish
+
+### Backlog
+- **#556–#564** — Release improvements (9 issues)
+- **#567** — StorageProvider PRD (draft, parked for v1.0)
 
 ## Process
 
-All work through PRs. Branch naming: `squad/{issue-number}-{slug}`. Never commit to main directly. Squad member review before merge.
+All work through PRs. Branch naming: `squad/{issue-number}-{slug}`. Releases driven by **Surgeon** (not Coordinator or user). **Pre-publish gates mandatory.** Never commit to main directly. All decisions in `.squad/decisions.md`; inbox files auto-merged by Scribe.
+
+## Team Identity
+
+**Apollo 13 / NASA Mission Control:** Flight (Lead), EECOM, FIDO, PAO, CAPCOM, CONTROL, SURGEON, Booster, GNC, Network, RETRO, INCO, GUIDO, Telemetry, VOX, DSKY, Sims, Handbook. Scribe (Session Logger), Ralph (Autonomy Agent). @copilot (Coordinator).
+
+**Status:** Team stable, process hardened, community engaged, next cycle ready.

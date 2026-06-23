@@ -7,9 +7,11 @@
  *   activate  — Write .squad-workstream file to activate a SubSquad
  */
 
-import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
+
+const storage = new FSStorageProvider();
 import { loadSubSquadsConfig, resolveSubSquad } from '@bradygaster/squad-sdk';
 import type { SubSquadDefinition } from '@bradygaster/squad-sdk';
 
@@ -169,7 +171,7 @@ function activateSubSquad(cwd: string, name: string): void {
   }
 
   const workstreamFilePath = path.join(cwd, '.squad-workstream');
-  fs.writeFileSync(workstreamFilePath, name + '\n', 'utf-8');
+  storage.writeSync(workstreamFilePath, name + '\n');
   console.log(`${GREEN}✓${RESET} Activated SubSquad: ${BOLD}${name}${RESET}`);
   console.log(`  Written to: ${workstreamFilePath}`);
   console.log(`${DIM}  (This file is gitignored — it's local to your machine/Codespace)${RESET}\n`);

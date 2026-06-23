@@ -160,3 +160,75 @@ export { MarketplaceBackend } from './backend.js';
 export type { PublishResult, OperationResult } from './backend.js';
 export { validateRemoteAgent, quarantineAgent, generateSecurityReport, SECURITY_RULES } from './security.js';
 export type { RemoteAgentDefinition, SecurityReport, SecurityRule, SecuritySeverity } from './security.js';
+export {
+  PLUGIN_MANIFEST_FILENAMES,
+  PLUGIN_MANIFEST_SCHEMA_VERSION,
+  createPluginInstallPlan,
+  derivePluginRoles,
+  describePluginFile,
+  parsePluginManifestContent,
+  toPosixRelativePath,
+  validatePluginManifest,
+} from './plugin-manifest.js';
+export type {
+  CopilotPluginDependency,
+  CopilotPluginRequirements,
+  LifecycleEventName,
+  PluginMcpMetadata,
+  PluginFileDeployment,
+  PluginComponentKind,
+  PluginFileType,
+  PluginInstallPlan,
+  PluginInstallPlanFile,
+  PluginProviderContract,
+  PluginProviderMcpBinding,
+  PluginProviderMode,
+  PluginProviderProtocol,
+  PluginProviderType,
+  PluginRepositoryMetadata,
+  PluginRuntimeCapability,
+  PluginRuntimeManifest,
+  PluginUpstreamMetadata,
+  PluginValidationResult,
+  SquadPluginManifest,
+} from './plugin-manifest.js';
+export {
+  executeLifecycleHook,
+  getApprovedProviderNames,
+  isLifecycleEventName,
+} from './plugin-runtime.js';
+export { LIFECYCLE_EVENT_NAMES } from './plugin-runtime.js';
+export type {
+  ProviderOperationContext,
+  ProviderOperationResult,
+} from './plugin-runtime.js';
+export {
+  INSTALLED_PLUGINS_FILE,
+  PLUGIN_AUDIT_FILE,
+  PLUGIN_LOCK_FILE,
+  PLUGIN_RUNTIME_FILE,
+  PLUGIN_STATE_DIR,
+  appendAuditEvent,
+  buildActivePluginContext,
+  readPluginStates,
+  removeInstalledPlugin,
+  setPluginEnabled,
+  sha256,
+  switchActivePlugin,
+  upsertInstalledPlugin,
+  writePluginStates,
+} from './plugin-state.js';
+export type {
+  InstalledPlugin,
+  InstalledPluginFile,
+  InstalledPluginsState,
+  ActivePluginContextOptions,
+  PluginAuditEvent,
+  PluginAuditEventType,
+  PluginAuditState,
+  PluginLockEntry,
+  PluginLockState,
+  PluginRuntimeEntry,
+  PluginRuntimeState,
+  PluginStates,
+} from './plugin-state.js';

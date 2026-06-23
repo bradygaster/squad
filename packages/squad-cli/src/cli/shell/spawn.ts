@@ -7,9 +7,9 @@
 import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { SquadClient } from '@bradygaster/squad-sdk/client';
 import type { SquadSession } from '@bradygaster/squad-sdk/client';
+import { SquadState, FSStorageProvider } from '@bradygaster/squad-sdk';
 import { SessionRegistry } from './sessions.js';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname } from 'node:path';
 
 /** Debug logger — writes to stderr only when SQUAD_DEBUG=1. */
 function debugLog(...args: unknown[]): void {
@@ -46,18 +46,36 @@ export interface SpawnResult {
 
 /**
  * Load agent charter from .squad/agents/{name}/charter.md
+ *
+ * Reads via SquadState → AgentHandle.charter() so all file access is
+ * routed through the StorageProvider abstraction.
  */
-export function loadAgentCharter(agentName: string, teamRoot?: string): string {
-  const squadDir = teamRoot ? join(teamRoot, '.squad') : resolveSquad();
-  if (!squadDir) {
-    debugLog('loadAgentCharter: no .squad/ directory found');
+export async function loadAgentCharter(agentName: string, teamRoot?: string): Promise<string> {
+  let rootDir: string;
+  if (teamRoot) {
+    rootDir = teamRoot;
+  } else {
+    const squadDir = resolveSquad();
+    if (!squadDir) {
+      debugLog('loadAgentCharter: no .squad/ directory found');
+      throw new Error('No team found. Run `squad init` to set up your project.');
+    }
+    rootDir = dirname(squadDir);
+  }
+
+  const storage = new FSStorageProvider();
+  let state: SquadState;
+  try {
+    state = await SquadState.create(storage, rootDir);
+  } catch {
+    debugLog('loadAgentCharter: no .squad/ directory at', rootDir);
     throw new Error('No team found. Run `squad init` to set up your project.');
   }
-  const charterPath = join(squadDir, 'agents', agentName.toLowerCase(), 'charter.md');
+
   try {
-    return readFileSync(charterPath, 'utf-8');
+    return await state.agents.get(agentName.toLowerCase()).charter();
   } catch (err) {
-    debugLog('loadAgentCharter: failed to read charter at', charterPath, err);
+    debugLog('loadAgentCharter: failed to read charter for', agentName, err);
     throw new Error(`No charter found for "${agentName}". Check that .squad/agents/${agentName.toLowerCase()}/charter.md exists.`);
   }
 }
@@ -87,7 +105,7 @@ export async function spawnAgent(
   options: SpawnOptions = { mode: 'sync' }
 ): Promise<SpawnResult> {
   const teamRoot = options.teamRoot ?? process.cwd();
-  const charter = loadAgentCharter(name, teamRoot);
+  const charter = await loadAgentCharter(name, teamRoot);
 
   const roleMatch = charter.match(/^#\s+\w+\s+—\s+(.+)$/m);
   const role = roleMatch?.[1] ?? 'Agent';

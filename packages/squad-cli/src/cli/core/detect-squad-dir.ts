@@ -20,8 +20,7 @@ export interface SquadDirInfo {
 export function resolveWorktreeMainCheckout(dir: string): string | null {
   const gitPath = path.join(dir, '.git');
   try {
-    const stat = fs.statSync(gitPath);
-    if (stat.isDirectory()) return null;
+    if (fs.statSync(gitPath).isDirectory()) return null;
     const content = fs.readFileSync(gitPath, 'utf-8').trim();
     const match = content.match(/^gitdir:\s*(.+)$/m);
     if (!match || !match[1]) return null;
