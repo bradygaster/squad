@@ -226,7 +226,7 @@ Before running `squad init`, think through these decisions. Squad will scan your
 - **What roles do you need?** The [default composition](#default-team-composition) covers common cases, or let Squad propose custom roles based on your repo
 - **How many agents?** Typical teams are 3–7 agents. Scribe (memory) is always included
 - **Will humans join the team?** [Human members](#human-team-members) can serve as reviewers or domain experts alongside AI agents
-- **Will @copilot participate?** The GitHub Copilot coding agent can pick up issues autonomously — see [Agent anatomy](#agent-anatomy)
+- **Will @copilot participate?** The GitHub Copilot coding agent can pick up issues automatically with your labels — see [Agent anatomy](#agent-anatomy)
 - **How will you track work?** GitHub Issues with `squad:{member}` labels, or conversational tasking via named prompts
 - **Do you want review gates?** [Reviewers](#reviewer-protocol) can approve or reject work before it proceeds
 - **What ceremonies matter?** [Design reviews and retrospectives](#ceremonies) can auto-trigger or run on demand

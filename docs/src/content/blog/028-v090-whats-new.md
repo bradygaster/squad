@@ -170,7 +170,7 @@ No more hunting for telemetry wiring. One call, full observability.
 
 **Teams MCP refresh**: Microsoft Teams integration updated for Workflows webhooks. Full docs at [Teams integration guide](../features/mcp.md).
 
-**Autonomous agents guide**: New guide for building agents that work unsupervised. How to set guardrails, declare intentions, handle escalation.
+**Background agents guide**: New guide for building agents that work with clear guardrails and escalation. How to set guardrails, declare intentions, handle escalation.
 
 ---
 

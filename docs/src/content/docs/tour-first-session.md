@@ -208,7 +208,7 @@ After completion, check decisions:
 **Why:** Native MongoDB capability, no external search service needed
 ```
 
-Every agent reads these decisions before working. As the list grows, the team self-aligns — agents respect each other's architectural choices without you repeating them.
+Every agent reads these decisions before working. As the list grows, the team retains context so you don't need to restate architectural choices.
 
 ---
 

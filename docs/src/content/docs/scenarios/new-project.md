@@ -147,7 +147,7 @@ After agents finish, see what they decided:
 **Why:** Rich formatting, actionable buttons for drill-down
 ```
 
-Every agent reads these decisions before their next task. As the list grows, the team self-aligns.
+Every agent reads these decisions before their next task. As the list grows, the team retains context so you do not need to restate decisions.
 
 ---
 

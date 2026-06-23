@@ -1,7 +1,7 @@
 # Copilot Coding Agent (@copilot)
 
 
-Add the GitHub Copilot coding agent to your Squad as an autonomous team member. It picks up issues, creates branches, and opens PRs — all without a Copilot chat session.
+Add the GitHub Copilot coding agent to your Squad as an async team member. It picks up issues, creates branches, and opens PRs without needing a Copilot chat session.
 
 ---
 
@@ -44,7 +44,7 @@ gh issue edit <number> --add-label "squad:copilot"
 
 Say something like:
 - **"I want to add copilot to the squad"**
-- **"hire copilot to the squad"**
+- **"add copilot to the squad"**
 - **"add team member copilot"**
 
 The coordinator will add @copilot to the roster and ask about auto-assign.
@@ -101,7 +101,7 @@ gh secret set COPILOT_ASSIGN_TOKEN --repo owner/repo
 | Charter | ✅ | ❌ | ❌ (uses `copilot-instructions.md`) |
 | Works in session | ✅ | ❌ | ❌ (asynchronous via issue assignment) |
 | Spawned by coordinator | ✅ | ❌ | ❌ |
-| Creates PRs | Via session commands | Outside Squad | Autonomously |
+| Creates PRs | Via session commands | Outside Squad | Automatically from approved issue flow |
 
 ---
 
@@ -159,7 +159,7 @@ When @copilot is on the team, the `sync-squad-labels` workflow creates:
 
 | Label | Color | Purpose |
 |-------|-------|---------|
-| `squad:copilot` | 🟢 Green | Assigned to @copilot for autonomous work |
+| `squad:copilot` | 🟢 Green | Assigned to @copilot for approved background work |
 
 This works alongside the existing `squad` (triage) and `squad:{member}` labels.
 
@@ -167,7 +167,7 @@ This works alongside the existing `squad` (triage) and `squad:{member}` labels.
 
 ## copilot-instructions.md
 
-The `.github/copilot-instructions.md` file gives the coding agent context about your Squad when it works autonomously. It tells @copilot to:
+The `.github/copilot-instructions.md` file gives the coding agent context about your Squad when it works with your repo guardrails. It tells @copilot to:
 
 - Read `team.md` for roster and capability profile
 - Read `routing.md` for work routing rules
@@ -182,7 +182,7 @@ This file is **upgraded automatically** when you run `squad upgrade` and `@copil
 ## Tips
 
 - Start conservative with the capability profile and expand as you see what @copilot handles well.
-- Use auto-assign for repos where you want fully autonomous issue processing.
+- Use auto-assign for repos where you want background issue processing with human approval.
 - The coding agent works great alongside [issue-driven development](../scenarios/issue-driven-dev.md) — label issues `squad` and the Lead + @copilot handle the rest.
 - @copilot's PRs go through normal review — treat them like any team member's work.
 

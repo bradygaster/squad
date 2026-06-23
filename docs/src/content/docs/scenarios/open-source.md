@@ -12,23 +12,23 @@ Enable auto-triage for incoming issues on my OSS repo
 
 **Try this to handle contributor-friendly tasks:**
 ```
-Handle good-first-issue #42 autonomously
+Handle good-first-issue #42 with your approval flow
 ```
 
-Squad helps OSS maintainers with autonomous issue triage, contributor guidance, and architectural knowledge sharing. Reduces maintainer burden while keeping quality high.
+Squad helps OSS maintainers with background issue triage, contributor guidance, and architectural knowledge sharing. Reduces maintainer burden while keeping quality high.
 
 ---
 
 ## 1. The Open Source Maintainer Problem
 
-Autonomous issue triage, community contributor support, and architectural knowledge sharing.
+Background issue triage with human-defined guardrails, community contributor support, and architectural knowledge sharing.
 
 You maintain an open source project. Issues pile up. PRs from new contributors need guidance. Questions repeat. Triaging takes hours.
 
 Squad helps:
 - **Triage incoming issues** automatically
 - **Guide contributors** with documented patterns
-- **Handle good-first-issue tasks** autonomously
+- **Handle good-first-issue tasks** with approved background flows
 - **Keep architecture decisions visible** in `.ai-team/decisions.md`
 
 ---
@@ -85,7 +85,7 @@ You review triaged issues and add `go:morpheus` if you approve.
 
 ---
 
-## 4. @copilot Picks Up Good-First-Issue Tasks Autonomously
+## 4. @copilot Picks Up Good-First-Issue Tasks Automatically After Approval
 
 Enable the auto-assign workflow:
 
@@ -209,14 +209,14 @@ Now they have **your team's knowledge** — skills, decisions, conventions. They
 > routing rules. Flag any that are duplicates or need clarification.
 ```
 
-**Check which issues are ready for autonomous work:**
+**Check which issues are ready for background work:**
 
 ```
 > Show me all issues labeled good-first-issue and squad:morpheus.
-> Which ones are clear enough for Morpheus to handle autonomously?
+> Which ones are clear enough for Morpheus to handle with the approved background flow?
 ```
 
-**Autonomous issue processing:**
+**Background issue processing:**
 
 ```
 > Issue #152 is labeled go:morpheus. Morpheus, implement the feature,
@@ -273,5 +273,5 @@ Contributors know what to expect.
 - **Skills are living contributor docs.** As your squad learns, `.ai-team/skills/` becomes a knowledge base contributors can read.
 - **Decisions.md is your ADR.** Architectural decisions are visible and explained, not hidden in Git history.
 - **Export your squad for forks.** Forkers get your team's accumulated knowledge — skills, conventions, decisions.
-- **good-first-issue + go:* = autonomous processing.** Mark issues as safe to auto-process, and Squad handles them.
+- **good-first-issue + go:* = background processing.** Mark issues as safe to auto-process, and Squad handles them with human review at merge.
 - **Agents don't merge without approval.** PRs created by agents still require human review before merging.

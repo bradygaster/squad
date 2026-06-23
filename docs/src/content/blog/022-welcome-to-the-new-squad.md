@@ -14,7 +14,7 @@ hero: "Squad v0.8.18 is here — a full TypeScript rewrite, npm distribution, 16
 
 ## The Big Picture
 
-Squad started as a scrappy beta experiment. A few scripts, some clever prompting, and a vision: what if you could build an AI team that lived in your repo, learned your codebase, and got better with every session?
+Squad started as a scrappy beta experiment. A few scripts, some clever prompting, and a vision: what if you could build an augmented team that lived in your repo, learned your codebase, and got better with every session?
 
 Today, Squad is a proper npm-distributed, TypeScript-strict, fully-tested multi-agent runtime. It's not just a rewrite — it's a ground-up rebuild of everything we learned from six months of usage, feedback, and production deployments.
 
@@ -23,7 +23,7 @@ Here's what shipped:
 **Quick Stats:**
 - ✅ Full TypeScript rewrite (strict mode, no `any` escapes)
 - ✅ 16 CLI commands (init, doctor, triage, shell, aspire, and more)
-- ✅ 8 SDK samples (hello-world to full autonomous pipelines)
+- ✅ 8 SDK samples (hello-world to full background-triggered pipelines)
 - ✅ 2200+ tests across 613 test files
 - ✅ npm-only distribution (`@bradygaster/squad-cli`)
 - ✅ Global install: `npm install -g @bradygaster/squad-cli`
@@ -159,11 +159,11 @@ Squad scans open issues, labels them by category (bug/feature/docs/security), an
 squad triage --interval 5   # Poll every 5 minutes
 ```
 
-Your backlog manages itself.
+Your backlog stays moving with agent help and your guidance.
 
 ### 6. **`squad copilot`** — Add @copilot as a Team Member
 
-Want the GitHub Copilot coding agent to pick up issues autonomously? Add it to your team:
+Want the GitHub Copilot coding agent to pick up issues automatically with your labels? Add it to your team:
 
 ```bash
 squad copilot
@@ -514,7 +514,7 @@ npm install && npm start
 
 ### 8. **autonomous-pipeline** (Advanced)
 
-**What it does:** THE showcase. A 10-task dev pipeline runs autonomously. Agents pick up work, route blockers, record decisions, accumulate learnings. A live dashboard shows who's working on what.
+**What it does:** THE showcase. A 10-task dev pipeline runs in the background with your policies. Agents pick up work, route blockers, record decisions, accumulate learnings. A live dashboard shows who's working on what.
 
 **What you'll see:**
 ```
@@ -543,7 +543,7 @@ npm install && npm start
  10. [ ] Record architecture decisions
 
 ────────────────────────────────────────────────────────────
-  Autonomous Execution
+  Background Execution
 ────────────────────────────────────────────────────────────
   McManus picked up: Design REST API
   McManus routed to Fenster: Write unit tests

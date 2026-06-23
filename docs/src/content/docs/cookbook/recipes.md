@@ -72,7 +72,7 @@ Squad uses a three-branch model: dev → preview → main. The guard workflow bl
 
 > "Enable auto-triage for incoming issues on my OSS repo"
 
-Ralph triages issues every 6 hours via the heartbeat workflow. Skills become living contributor docs. Export your squad for forks. `go:*` labels + auto-assign = autonomous issue processing with human approval on merge.
+Ralph triages issues every 6 hours via the heartbeat workflow. Skills become living contributor docs. Export your squad for forks. `go:*` labels + auto-assign = background issue processing with human approval on merge.
 
 ### Private Repos & Security
 

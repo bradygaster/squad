@@ -70,7 +70,7 @@ Squad forms your team and responds with agent names and roles. Say yes, or just 
 > Team, create a basic Express server with a /health endpoint.
 ```
 
-Squad spawns agents and does the work.
+Squad spawns agents and moves the work forward with your direction.
 
 ---
 

@@ -325,5 +325,5 @@ Use these prompts with Squad to implement specific strategies:
 
 - **[Adding Squad to an Existing Repo](existing-repo.md)** — How to integrate Squad into a project with existing code.
 - **[Squad for Solo Developers](solo-dev.md)** — Building alone? Here's how Squad becomes your team.
-- **[Multiple Squads](multiple-squads.md)** — Managing more than one AI team.
+- **[Multiple Squads](multiple-squads.md)** — Managing more than one augmented team.
 - **[Team Portability](team-portability.md)** — Moving your squad to a new repo or machine.

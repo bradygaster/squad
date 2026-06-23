@@ -1,20 +1,20 @@
-# Build an autonomous agent
+# Build a guided background agent
 
-Build a CLI-wrapped autonomous agent pipeline that picks up tasks, coordinates work across teammates, and runs unattended.
+Build a CLI-wrapped background agent pipeline that picks up tasks, coordinates work across teammates, and runs with your guardrails.
 
 **Try this:** Clone the [autonomous-pipeline sample](https://github.com/bradygaster/squad/tree/dev/samples/autonomous-pipeline) and run `npm run dev` to see the pattern in action.
 
-This guide walks you through the pattern used by production autonomous agents — like a docs agent that monitors a repo for changes and generates documentation without human intervention.
+This guide walks you through the pattern used by production background agents — like a docs agent that monitors a repo for changes and generates documentation with human-defined guardrails.
 
 ---
 
-## What an autonomous agent is
+## What a background agent is
 
-An autonomous agent is a program that:
+A background agent is a program that:
 
 - Receives a task (from a queue, a CLI argument, or a cron job)
 - Routes the task to the right agent based on role and skill match
-- Executes the work without waiting for human input
+- Executes approved work without needing a new prompt for each step
 - Records decisions and learnings for future runs
 - Reports results (cost, tokens, timeline)
 
@@ -118,7 +118,7 @@ export default defineSquad({
 
   team: defineTeam({
     name: 'Docs Automator',
-    description: 'Autonomous documentation pipeline',
+    description: 'Background documentation pipeline',
     members: ['lori', 'chen'],
   }),
 
@@ -221,7 +221,7 @@ async function main(): Promise<void> {
     status: 'queued',
   }];
 
-  // Run the autonomous loop
+  // Run the background loop
   await runLoop(team, tasks, costTracker, skillRegistry);
 
   // Print results
@@ -237,9 +237,9 @@ main().catch(err => {
 
 ---
 
-## The autonomous pipeline pattern
+## The background pipeline pattern
 
-The core of an autonomous agent is a loop with four phases:
+The core of a background agent is a loop with four phases:
 
 1. **Assign** — find the next queued task and match it to an available agent by role
 2. **Execute** — the agent processes the task, streaming results and tracking cost
@@ -288,7 +288,7 @@ async function runLoop(
     return { member, status: 'idle', tasksCompleted: 0, sessionId };
   });
 
-  // Autonomous execution loop
+  // Background execution loop
   while (tasks.some(t => t.status !== 'done')) {
     for (const agent of agents) {
       if (agent.status === 'working') continue;
@@ -343,7 +343,7 @@ async function runLoop(
 
 ## Coordination tools
 
-The autonomous-pipeline sample demonstrates three coordination patterns that agents use during the loop:
+The `autonomous-pipeline` sample demonstrates three coordination patterns that agents use during the loop:
 
 | Tool | What it does | Example |
 |------|-------------|---------|
@@ -378,7 +378,7 @@ const otelEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 if (otelEndpoint) {
   initSquadTelemetry({
     endpoint: otelEndpoint,
-    serviceName: 'my-autonomous-agent',
+    serviceName: 'my-guided-agent',
   });
 }
 
@@ -417,7 +417,7 @@ To view traces and metrics in the .NET Aspire dashboard, see the [Aspire dashboa
 
 ## Complete working example
 
-Here is a minimal but complete autonomous agent you can copy and run:
+Here is a minimal but complete background agent you can copy and run:
 
 ```ts
 #!/usr/bin/env node
@@ -481,7 +481,7 @@ const agents: Agent[] = team.map((member, i) => {
   return { member, status: 'idle' as const, tasksCompleted: 0, sessionId };
 });
 
-// Autonomous loop: assign → execute → coordinate → repeat
+// Background loop: assign → execute → coordinate → repeat
 while (tasks.some(t => t.status !== 'done')) {
   for (const agent of agents) {
     if (agent.status === 'working') continue;
@@ -544,4 +544,4 @@ streaming.clear();
 
 - [Your Team](../concepts/your-team.md) — Agent roles, charters, and team composition
 - [Architecture](../concepts/architecture.md) — How the coordinator orchestrates work
-- [SDK Reference](../reference/sdk.md) — SDK API for autonomous agents
+- [SDK Reference](../reference/sdk.md) — SDK API for background agents

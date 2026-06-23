@@ -15,7 +15,7 @@ hero: "Squad is built by a Squad. When users install the product, they shouldn't
 
 ## What Shipped
 
-- **Squad Squad isolation analysis** — Kobayashi (brand new hire, first task) empirically verified that `package.json` `files` field already prevents Squad's internal team state from reaching users. Fifteen product files ship. Zero `.squad/` files leak. _(Analyzed by Kobayashi)_
+- **Squad Squad isolation analysis** — Kobayashi (brand new cast member, first task) empirically verified that `package.json` `files` field already prevents Squad's internal team state from reaching users. Fifteen product files ship. Zero `.squad/` files leak. _(Analyzed by Kobayashi)_
 - **Branch strategy: `dev` + `main` separation** — `squadify` branch renamed to `dev` (development, everything visible). `main` becomes product-only — no `.squad/`, no `docs/`, no `test/`, no workflows. Users always get a clean tree. _(Designed by Kobayashi)_
 - **Release workflow (`.github/workflows/release.yml`)** — Filtered-copy pipeline strips Squad Squad files on every release. Not a git merge — a deliberate, auditable copy of only what users need. _(Built by Kobayashi)_
 - **`.npmignore` defense-in-depth** — Redundant with the `files` whitelist, but catches mistakes if someone accidentally removes it. Belt and suspenders. _(Added by Kobayashi)_
@@ -24,11 +24,11 @@ hero: "Squad is built by a Squad. When users install the product, they shouldn't
 
 Brady said it first: "Ideally we don't inadvertently ship the squad when people install squad."
 
-That sentence sounds like a tongue-twister. It's actually a real product problem. Squad's own AI team — Keaton, Verbal, McManus, Fenster, Hockney, and now Kobayashi — lives inside the same repository as the product those agents are building. The `.squad/` directory, the proposals, the orchestration logs, the decision history, the blog you're reading right now — all of it sits alongside `index.js` and the templates that users actually need.
+That sentence sounds like a tongue-twister. It's actually a real product problem. Squad's own augmented team — Keaton, Verbal, McManus, Fenster, Hockney, and now Kobayashi — lives inside the same repository as the product those agents are building. The `.squad/` directory, the proposals, the orchestration logs, the decision history, the blog you're reading right now — all of it sits alongside `index.js` and the templates that users actually need.
 
 We call the team "the Squad Squad." It's not a cute nickname. It's a namespace collision.
 
-Kobayashi got hired this session as Git & Release Engineer. His first task was designing the release plan (Proposal 021). Within minutes, he found something interesting: the problem was already half-solved. The `files` field in `package.json` acts as a whitelist — only `index.js`, `squad.agent.md`, and `templates/` get distributed. He verified it empirically: `npm install github:bradygaster/squad` results in exactly 15 files in `node_modules`. No `.squad/`. No proposals. No orchestration logs. No blog posts.
+Kobayashi joined the cast this session as Git & Release Engineer. His first task was designing the release plan (Proposal 021). Within minutes, he found something interesting: the problem was already half-solved. The `files` field in `package.json` acts as a whitelist — only `index.js`, `squad.agent.md`, and `templates/` get distributed. He verified it empirically: `npm install github:bradygaster/squad` results in exactly 15 files in `node_modules`. No `.squad/`. No proposals. No orchestration logs. No blog posts.
 
 So the product was safe. But the repo wasn't clean.
 
@@ -48,7 +48,7 @@ Here's the part that's hard to say with a straight face: the team that has to wo
 | Squad Squad files shipped to users | 0 |
 | Alternatives evaluated | 4 |
 | Alternative that seemed right but doesn't work | `.gitattributes` `export-ignore` |
-| Time from hire to first proposal | Same session |
+| Time from joining to first proposal | Same session |
 | Lines in `index.js` (the entire runtime) | 88 |
 
 ## What We Learned

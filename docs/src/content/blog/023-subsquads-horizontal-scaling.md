@@ -5,7 +5,7 @@ author: "Tamir Dresher (Community Contributor)"
 wave: null
 tags: [squad, subsquads, scaling, codespaces, horizontal-scaling, multi-instance, community]
 status: draft
-hero: "Squad SubSquads lets you partition a repo's work across multiple Codespaces — each running its own scoped Squad instance. One repo, multiple AI teams, zero conflicts."
+hero: "Squad SubSquads lets you partition a repo's work across multiple Codespaces — each running its own scoped Squad instance. One repo, multiple augmented teams, zero conflicts."
 ---
 
 # SubSquads — Scaling Squad Across Multiple Codespaces

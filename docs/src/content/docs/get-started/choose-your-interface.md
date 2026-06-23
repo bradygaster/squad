@@ -82,7 +82,7 @@ See [SDK Reference](../reference/sdk.md) for the complete API.
 
 ### Copilot Coding Agent (`@copilot`)
 
-Autonomous GitHub bot that picks up labeled issues and opens draft PRs. Works across your entire organization without human intervention. Issue gets labeled → agent picks it up → PR gets opened → human reviews.
+Background GitHub bot that picks up labeled issues and opens draft PRs. Works across your organization with human-defined guardrails. Issue gets labeled → agent picks it up → PR gets opened → human reviews.
 
 See [Copilot Coding Agent](../features/copilot-coding-agent.md) for setup.
 
@@ -97,7 +97,7 @@ See [Copilot Coding Agent](../features/copilot-coding-agent.md) for setup.
 | **Check if Squad is working** | **Squad CLI** (`squad doctor`) | Validates directory structure, agents, configuration integrity. |
 | **Monitor work 24/7** | **Squad CLI** (`squad watch`) | Persistent polling for new issues, auto-triage, agent assignment. |
 | **View OpenTelemetry traces** | **Squad CLI** (`squad aspire`) | Launches Aspire dashboard for observability. |
-| **Process issues autonomously** | **Copilot Coding Agent** | GitHub Actions workflow watches for labeled issues and dispatches `@copilot`. |
+| **Process approved issues in the background** | **Copilot Coding Agent** | GitHub Actions workflow watches for labeled issues and dispatches `@copilot`. |
 | **Build tools on top of Squad** | **SDK** | Typed APIs, configuration loading, agent lifecycle hooks. |
 
 ---

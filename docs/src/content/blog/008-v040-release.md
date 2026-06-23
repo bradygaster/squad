@@ -65,7 +65,7 @@ And @dnoriegagoodwin caught a UX death cut in the SSH hang scenario: developers 
 
 v0.4.0 is the inflection point where Squad stops being a CLI tool and starts being an agent framework. VS Code support means agents can be embedded. MCP integration means agents can reach out. Notifications mean developers can be in the loop. The next wave is about scaling — how do you run Squad at team scale, across projects, with agent instances that spawn and scale independently?
 
-We're also watching GitHub Projects integration closely. Kanban boards are how teams visualize work. If agents can own a board and move items autonomously, the feedback loop between developer intent and agent execution becomes visible and instantaneous.
+We're also watching GitHub Projects integration closely. Kanban boards are how teams visualize work. If agents can own a board and move items automatically with human-defined guardrails, the feedback loop between developer intent and agent execution becomes visible and instantaneous.
 
 ---
 

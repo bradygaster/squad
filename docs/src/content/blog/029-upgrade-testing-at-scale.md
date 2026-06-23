@@ -8,7 +8,7 @@ status: published
 hero: "We used Squad's own fan-out capability to clone 23 real-world repos from GitHub and validate our upgrade command in 5 minutes flat."
 ---
 
-We shipped a big upgrade fix — 10 changes addressing 13 gaps our AI team found during an audit. The automated tests passed. 18 out of 18. Green across the board.
+We shipped a big upgrade fix — 10 changes addressing 13 gaps our augmented team found during an audit. The automated tests passed. 18 out of 18. Green across the board.
 
 But "tests pass" isn't the same as "this won't break someone's project." We needed a different kind of confidence.
 

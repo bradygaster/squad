@@ -45,7 +45,7 @@ Squad works across multiple interfaces — GitHub Copilot CLI, VS Code, Squad CL
 - **VS Code** — Same experience, editor-integrated
 - **Squad CLI** — Setup, diagnostics, monitoring (`squad init`, `squad doctor`, `squad watch`)
 - **SDK** — Build tools on top of Squad with `squad.config.ts`
-- **Copilot Coding Agent** — Autonomous issue processing via `@copilot`
+- **Copilot Coding Agent** — Background issue processing via `@copilot`
 
 **Multi-platform support:** Squad also works with Azure DevOps (work items, PRs via `az boards`/`az repos`), GitLab Issues, and Microsoft Planner through pluggable platform adapters. See [Enterprise Platforms](features/enterprise-platforms.md) for details.
 

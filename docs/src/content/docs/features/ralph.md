@@ -64,7 +64,7 @@ Once authenticated, Ralph can monitor your repository's issues and PRs.
 
 ## How It Works
 
-Once activated, Ralph continuously checks for pending work — open issues, draft PRs, review feedback, CI failures — and keeps the squad moving through the backlog without manual nudges. Ralph's behavior is built on three layers: in-session coordinator, watch mode for local polling, and cloud heartbeat for fully unattended monitoring.
+Once activated, Ralph continuously checks for pending work — open issues, draft PRs, review feedback, CI failures — and keeps the squad moving through the backlog without manual nudges. Ralph's behavior is built on three layers: in-session coordinator, watch mode for local polling, and cloud heartbeat for event-driven monitoring with your policies.
 
 ### Routing-Aware Triage
 
@@ -82,15 +82,15 @@ This ensures Ralph makes intelligent decisions based on your team's actual struc
 
 ### In-Session (Copilot Chat)
 
-When you're in a Copilot session, Ralph self-chains the coordinator's work loop:
+When you're in a Copilot session, Ralph re-triggers the coordinator's work loop within the guardrails you set:
 
 1. Agents complete a batch of work
 2. Ralph checks GitHub for more: untriaged issues, assigned-but-unstarted items, draft PRs, failing CI
 3. Work found → triage, assign, spawn agents
-4. Results collected → Ralph checks again **immediately** — no pause, no asking permission
+4. Results collected → Ralph checks again **immediately** — no pause, no re-prompting between approved steps
 5. Board clear → Ralph idles (use `squad watch` for persistent polling)
 
-**Ralph never stops on his own while work remains.** He keeps cycling through the backlog until every issue is closed, every PR is merged, and CI is green. When the board clears, Ralph idles — run `squad watch` in a separate terminal for persistent polling, or use the cloud heartbeat for fully unattended monitoring. The only things that stop Ralph's active loop: the board is clear, you say "idle"/"stop", or the session ends.
+**Ralph keeps polling until work is done or you stop it.** He cycles through the backlog until every issue is closed, every PR is merged, and CI is green. When the board clears, Ralph idles — run `squad watch` in a separate terminal for persistent polling, or use the cloud heartbeat for event-driven monitoring with your policies. The only things that stop Ralph's active loop: the board is clear, you say "idle"/"stop", or the session ends.
 
 ### Between Sessions (GitHub Actions Heartbeat)
 
@@ -99,9 +99,9 @@ When no one is at the keyboard, the `squad-heartbeat.yml` workflow runs on event
 - Finds untriaged `squad`-labeled issues
 - Auto-triages based on your routing.md — matching issues to the right agent by work type and module ownership
 - Assigns `squad:{member}` labels
-- For `@copilot` (if enabled with auto-assign): assigns `copilot-swe-agent[bot]` so the coding agent picks up work autonomously
+- For `@copilot` (if enabled with auto-assign): assigns `copilot-swe-agent[bot]` so the coding agent picks up approved work automatically
 
-This creates a fully autonomous loop for `@copilot` — heartbeat triages → assigns → agent works → issue closed → heartbeat finds next issue → repeat. For continuous periodic monitoring, use `squad watch` locally.
+This creates a background loop for `@copilot` with your labels and guardrails — heartbeat triages → assigns → agent works → issue closed → heartbeat finds next issue → repeat. For continuous periodic monitoring, use `squad watch` locally.
 
 ### Work-in-Progress Monitoring
 
@@ -208,7 +208,7 @@ This runs as a standalone local process (not inside Copilot) that:
 
 ### Full Work Monitor Mode (`--execute`)
 
-Add `--execute` to transform Ralph from a triage bot into a full work monitor that spawns Copilot sessions and actually does the work:
+Add `--execute` to transform Ralph from a triage bot into a full work monitor that spawns Copilot sessions and executes approved work:
 
 ```bash
 squad watch --execute                           # basic work monitor
@@ -359,7 +359,7 @@ squad watch --execute                       # full work monitor (auto-detects pl
 |-------|------|-----|
 | **In-session** | You're at the keyboard | "Ralph, go" — active loop while work exists |
 | **Local watchdog** | You're away but machine is on | `squad watch --interval 10` (triage) or `squad watch --execute` (full monitor) |
-| **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions events (issue close, PR merge, manual dispatch) |
+| **Cloud heartbeat** | Event-driven with your policies | `squad-heartbeat.yml` GitHub Actions events (issue close, PR merge, manual dispatch) |
 
 ## Ralph's Board View
 

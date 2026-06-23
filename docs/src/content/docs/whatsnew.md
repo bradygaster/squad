@@ -43,7 +43,7 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 **Docs, Stability & Distribution**
 - **Astro site enhancements** — Search tuning, section badges, coverage indicators (#524)
-- **Autonomous agents guide** — Comprehensive SDK guide for building agents (#492)
+- **Background agents guide** — Comprehensive SDK guide for building guided agents (#492)
 - **CLI terminal rendering** — Fixed scroll flicker, reduced re-render churn, stabilized component keys
 - **Upgrade hardening** — Context-aware footers, EPERM handling, gitignore coverage (#544, #549)
 - **ESM compatibility** — Node 22/24 dual-layer fix, Node 24+ hard-fail with guidance (#449, #502)
@@ -125,7 +125,7 @@ The big rewrite. Everything moved to TypeScript with a clean SDK + CLI split.
 
 ## v0.5.1
 
-- **`squad watch` — Local Watchdog** — Persistent polling for unattended work processing. Run `squad watch` to check GitHub every 10 minutes for untriaged squad work; use `--interval` flag to customize polling
+- **`squad watch` — Local Watchdog** — Persistent polling for background work processing. Run `squad watch` to check GitHub every 10 minutes for untriaged squad work; use `--interval` flag to customize polling
 - **Project type detection** — Squad detects your project's language and stack to intelligently configure workflows
 - **Git safety rules** — Guardrails enforced based on detected project type
 
@@ -167,7 +167,7 @@ The big rewrite. Everything moved to TypeScript with a clean SDK + CLI split.
 ## v0.3.0
 
 - **Per-Agent Model Selection** — Cost-first routing with 16-model catalog and fallback chains
-- **Ralph — Work Monitor** — Built-in squad member that autonomously processes backlogs
+- **Ralph — Work Monitor** — Built-in squad member that helps process backlogs with your guidance
 - **@copilot Coding Agent** — GitHub's Copilot agent as a squad member with three-tier capability profile
 - **Universe Expansion** — 14 → 20 casting universes
 

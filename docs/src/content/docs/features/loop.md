@@ -304,4 +304,4 @@ CLI flags override frontmatter values. If your `loop.md` says `interval: 10` but
 - Loop is session-scoped — it runs in your terminal and stops when you press Ctrl+C
 - Each cycle gets its own Copilot session; state is not preserved between cycles unless your prompt explicitly handles it
 - Loop respects `.squad/` team context: charters, routing, decisions, and directives are all available to the prompt
-- For fully unattended monitoring, use `squad watch` instead — it's designed for running in a separate terminal 24/7
+- For event-driven monitoring with your policies, use `squad watch` instead — it's designed for running in a separate terminal 24/7

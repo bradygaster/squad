@@ -152,7 +152,7 @@ After the initial exploration and 2–3 real tasks, agents are up to speed:
 - **Session 2:** First task — agents implement a feature, learn your patterns
 - **Session 3:** Second task — agents already know the structure, make fewer mistakes
 
-By session 3, agents are making decisions that align with your existing code style without you having to explain.
+By session 3, agents are making decisions that align with your existing code style so you do not need to restate it each time.
 
 ---
 

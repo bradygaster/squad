@@ -57,7 +57,7 @@ The following is **one example** of how a mixed team might divide responsibiliti
 |-------|----------|--------------|
 | **Triage** | Human (or Lead) | Applies `go:yes` / `go:no` — decides what's worth building |
 | **Design review** | Human + team | Auto-triggered ceremony before multi-agent work; humans can participate or observe |
-| **Implementation** | AI agents | Branch, build, test, open PRs — no human input required |
+| **Implementation** | AI agents | Branch, build, test, open PRs — human sets direction; agents handle implementation |
 | **PR review** | Human | Reviews and approves (or requests changes); lockout protocol prevents conflicting edits |
 | **Merge** | Human or Ralph | Squash-merge, branch cleanup, issue closed |
 
@@ -143,7 +143,7 @@ Ralph is a built-in squad member who tracks the work queue, monitors CI status, 
 | CI failures | Notifies agent to fix |
 | Approved PRs | Merges and closes issue |
 
-Ralph **never stops on his own while work remains** — he keeps cycling until the board clears, you say "idle", or the session ends. Every 3–5 rounds he posts a status update and keeps going.
+Ralph keeps polling until work is done or you stop it — he cycles until the board clears, you say "idle", or the session ends. Every 3–5 rounds he posts a status update and keeps going.
 
 ### Three Layers of Ralph
 
@@ -151,7 +151,7 @@ Ralph **never stops on his own while work remains** — he keeps cycling until t
 |-------|------|-----|
 | **In-session** | You're at the keyboard | `"Ralph, go"` — active loop |
 | **Local watchdog** | You're AFK but machine is on | `squad watch --interval 10` |
-| **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions events |
+| **Cloud heartbeat** | Event-driven with your policies | `squad-heartbeat.yml` GitHub Actions events |
 
 The heartbeat workflow (`squad-heartbeat.yml`) is installed during `init` or `upgrade`. It runs on issue close, PR merge, and manual dispatch. Edit the workflow in `.github/workflows/squad-heartbeat.yml` to customize triggers. For periodic polling without events, use `squad watch` locally.
 

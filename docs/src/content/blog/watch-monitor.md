@@ -4,12 +4,12 @@ date: 2026-03-30
 author: "Brady"
 tags: [squad, ralph, watch, work-monitor, automation, execution]
 status: published
-hero: "Ralph started as a label router that idled when the board was clear. Now he spawns Copilot sessions and actually does the work."
+hero: "Ralph started as a label router that idled when the board was clear. Now he spawns Copilot sessions and executes approved work."
 ---
 
 # From Triage Bot to Work Monitor
 
-> _Ralph started as a label router that idled when the board was clear. Now he spawns Copilot sessions and actually does the work._
+> _Ralph started as a label router that idled when the board was clear. Now he spawns Copilot sessions and executes approved work._
 
 ## What Changed
 
@@ -20,7 +20,7 @@ hero: "Ralph started as a label router that idled when the board was clear. Now 
 3. Add labels like `squad:eecom` or `squad:gnc`
 4. Idle when done
 
-That's it. Ralph was a label router — useful, but not autonomous. When the board cleared, Ralph just sat there waiting for humans to do the work.
+That's it. Ralph was a label router — useful, but not yet a full work monitor. When the board cleared, Ralph just sat there waiting for humans to move the work forward.
 
 **Issue #708 changed that.**
 
@@ -133,9 +133,9 @@ When all features are enabled, each round follows this cycle:
 |-------|------|-----|
 | **In-session** | You're at the keyboard | "Ralph, go" — active loop while work exists |
 | **Local watchdog** | You're away but machine is on | `squad watch --execute` |
-| **Cloud heartbeat** | Fully unattended | `squad-heartbeat.yml` GitHub Actions events |
+| **Cloud heartbeat** | Event-driven with your policies | `squad-heartbeat.yml` GitHub Actions events |
 
-The in-session loop is ephemeral — it lives only while the Copilot session is active. The local watchdog runs as a separate process and polls at your chosen interval. The cloud heartbeat is the fully unattended layer that triggers on GitHub events (issue close, PR merge, manual dispatch).
+The in-session loop is ephemeral — it lives only while the Copilot session is active. The local watchdog runs as a separate process and polls at your chosen interval. The cloud heartbeat is the event-driven layer that triggers on GitHub events with your policies (issue close, PR merge, manual dispatch).
 
 ## Why This Matters
 

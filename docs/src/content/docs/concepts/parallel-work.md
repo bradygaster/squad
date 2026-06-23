@@ -192,7 +192,7 @@ Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini
 
 ## Copilot Coding Agent (@copilot)
 
-Add the GitHub Copilot coding agent to your Squad as an autonomous team member. It picks up issues, creates branches, and opens PRs — all without a chat session.
+Add the GitHub Copilot coding agent to your Squad as an async team member. It picks up issues, creates branches, and opens PRs without needing a chat session.
 
 ### Prerequisites
 
@@ -224,7 +224,7 @@ Or in conversation: `"Add copilot to the squad with auto-assign enabled"`
 | Badge | ✅ Active | 👤 Human | 🤖 Coding Agent |
 | Charter | ✅ | ❌ | ❌ (uses `copilot-instructions.md`) |
 | Works in session | ✅ | ❌ | ❌ (async via issue assignment) |
-| Creates PRs | Via session | Outside Squad | Autonomously |
+| Creates PRs | Via session | Outside Squad | Automatically from approved issue flow |
 
 ### Capability Profile
 
@@ -304,7 +304,7 @@ Squad uses `merge=union` for append-only log files to avoid conflicts across wor
 
 - Eager parallelism is the default. Only switch to sequential if cost is a real concern.
 - Start conservative with @copilot's capability profile and expand as you see what it handles well.
-- Use `squad:copilot` labels with [issue-driven development](../scenarios/issue-driven-dev.md) for fully autonomous processing.
+- Use `squad:copilot` labels with [issue-driven development](../scenarios/issue-driven-dev.md) for background issue processing with human approval.
 - Fallback chains are silent — you won't notice model switches unless you ask `"what model did Kane use?"`.
 - For worktrees, main-checkout is usually the right choice unless you need truly isolated teams.
 

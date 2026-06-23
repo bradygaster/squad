@@ -259,7 +259,7 @@ GitHub Issues + templates work from anywhere:
 **10 seconds later:**
 - Issue created with `squad` label
 - Ralph sees it in the next scan
-- Agent picks it up autonomously
+- Agent picks it up automatically after you label it
 
 This workflow enables "capture anywhere, process later" — add tasks while commuting, exercising, or in meetings without context-switching to a laptop.
 

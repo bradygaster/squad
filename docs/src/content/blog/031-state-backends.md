@@ -17,7 +17,7 @@ Every time an agent makes a decision, writes to history, or logs a session, thos
 
 Two completely different workflows sharing one branch:
 - **Code** → slow, human-gated, needs review approval
-- **Squad state** → fast, autonomous, no human ever needs to review it
+- **Squad state** → fast, automated, with human-defined guardrails and optional review
 
 ## The Fix
 

@@ -88,11 +88,11 @@ Squad uses GitHub labels to drive workflows:
 - `release:next` — include in the next release
 - `release:backlog` — not scheduled yet
 
-Ralph applies `squad:*` and `type:*` labels automatically. You apply `go:*` labels manually when you want autonomous processing.
+Ralph applies `squad:*` and `type:*` labels automatically. You apply `go:*` labels manually when you want background processing with human approval.
 
 ---
 
-## 3. @copilot Auto-Assign for Autonomous Issue Processing
+## 3. @copilot Auto-Assign for Background Issue Processing
 
 When you add a `go:*` label to an issue, the `@copilot` automation picks it up:
 
@@ -103,7 +103,7 @@ When you add a `go:*` label to an issue, the `@copilot` automation picks it up:
 5. Morpheus reads the issue, implements the feature, opens a PR
 6. PR is tagged for human review
 
-**This is autonomous issue processing.** You don't open Copilot manually — the workflow does.
+**This is background issue processing.** You don't open Copilot manually — the workflow does after you approve with labels.
 
 Workflow file: `.github/workflows/copilot-auto-assign.yml`:
 
@@ -142,7 +142,7 @@ This means:
 ❌ You **can't** run `Squad, build the feature` inside a GitHub Actions workflow  
 ✅ You **can** use Ralph to triage and label issues  
 ✅ You **can** trigger Copilot sessions via Actions (if you have `gh copilot` access)  
-❌ You **can't** have agents autonomously merge PRs without human approval (by design)
+❌ You **can't** have agents automatically merge PRs without human approval (by design)
 
 ---
 
@@ -203,7 +203,7 @@ squad heartbeat --dry-run
 > which ones are ready to work on.
 ```
 
-**Autonomous issue pickup:**
+**Background issue pickup:**
 
 ```
 > Ralph, triage the 10 newest issues and apply squad labels.
@@ -215,7 +215,7 @@ squad heartbeat --dry-run
 ## Tips
 
 - **Ralph is your assistant between sessions.** It triages issues, applies labels, and keeps things organized while you're not in Copilot.
-- **`go:*` labels mean "approved to proceed."** Don't add them to every issue — only the ones you've reviewed and want agents to handle autonomously.
+- **`go:*` labels mean "approved to proceed."** Don't add them to every issue — only the ones you've reviewed and want agents to handle in the background.
 - **Agents still need human review.** PRs created by agents should be reviewed by a human before merging.
 - **Workflows are templates.** Customize `.squad/templates/` to match your CI/CD setup, then copy to `.github/workflows/`.
 - **Heartbeat frequency is configurable.** Edit `squad-heartbeat.yml` to change from every 6 hours to daily, hourly, etc.
