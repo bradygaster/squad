@@ -9,8 +9,6 @@ hero: "Ralph started as a label router that idled when the board was clear. Now 
 
 # From Triage Bot to Work Monitor
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _Ralph started as a label router that idled when the board was clear. Now he spawns Copilot sessions and actually does the work._
 
 ## What Changed

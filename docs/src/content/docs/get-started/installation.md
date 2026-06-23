@@ -1,7 +1,5 @@
 # Installation
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Three ways to get Squad running. Pick the one that fits.
 

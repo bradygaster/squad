@@ -7,8 +7,6 @@ status: published
 
 # v0.4.0 Sprint Progress — Platform Parity, Client Compatibility, and Project Boards
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Squad v0.4.0 brings **platform parity research complete**, **client compatibility matrix published**, **agent progress updates designed**, and **community features greenlit**. This sprint expanded what's possible on VS Code and locked in the patterns for long-running work visibility.
 

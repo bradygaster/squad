@@ -5,8 +5,6 @@ description: Hybrid dispatch mode for squad watch that batches read-heavy issues
 
 # Fleet Dispatch — Parallel Issue Triage
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this for parallel read-heavy issue triage:**
 ```bash
 squad watch --execute --dispatch-mode fleet

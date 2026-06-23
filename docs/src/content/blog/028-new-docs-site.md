@@ -10,8 +10,6 @@ hero: "Squad's documentation gets a complete rebuild — powered by Astro, Tailw
 
 # New Docs Site: Built by the Community
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _Squad's documentation site has been completely rebuilt from the ground up. A full Astro-powered docs experience with search, responsive design, and content contributed by multiple community members._
 
 ---

@@ -1,7 +1,5 @@
 # Custom Tools & Hooks Guide
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Squad ships with 5 built-in tools and a hook pipeline for policy enforcement. This guide covers extending both.
 
 ---

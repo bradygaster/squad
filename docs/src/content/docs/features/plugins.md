@@ -1,7 +1,5 @@
 # Plugin Marketplace Guide
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Plugins package reusable Squad capabilities: agents, knowledge packs, workflows, ceremonies, memory providers, routing guidance, decisions, hook metadata, adapter metadata, typed provider contracts, and generated knowledge artifacts.
 
 The everyday flow is simple:

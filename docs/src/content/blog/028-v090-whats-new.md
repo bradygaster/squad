@@ -10,8 +10,6 @@ hero: "Squad's biggest release yet — personal agents that follow you across re
 
 # What's New in v0.9.0
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _This is Squad's biggest release. Personal Squad brings ambient agent discovery and project portability. Worktree spawning isolates each issue into its own branch. Cooperative rate limiting maps traffic across multi-agent teams. Economy Mode lets you budget costs. A complete docs refresh, security hardening, and community contributions make this one to upgrade for._
 
 ---

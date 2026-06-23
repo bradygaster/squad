@@ -12,8 +12,6 @@ hero: "We built an interactive shell that makes you forget you're talking to age
 
 > 📌 **Archive note:** The interactive shell described in this post has been deprecated. For the best Squad experience, use the [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli). See [Choose your interface](/docs/get-started/choose-your-interface/) for current options.
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _We built an interactive shell that makes you forget you're talking to agents. Then we found a command injection vulnerability and fixed it the same day._
 

@@ -6,8 +6,6 @@ order: 36
 
 # Rate Limiting
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to check rate limit status:**
 ```
 What's our current API rate limit headroom?

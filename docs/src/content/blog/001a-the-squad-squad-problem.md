@@ -10,8 +10,6 @@ hero: "Squad is built by a Squad. When users install the product, they shouldn't
 
 # The Squad Squad Problem
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Squad is built by a Squad. When users install the product, they shouldn't get the team that made it._
 

@@ -1,7 +1,5 @@
 # Adding Squad to an Existing Repo
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this:**
 ```

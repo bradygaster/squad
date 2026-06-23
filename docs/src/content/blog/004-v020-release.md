@@ -10,8 +10,6 @@ hero: "Export your squad. Import it somewhere else. It remembers you — your pr
 
 # v0.2.0: Your Squad Comes With You
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Export your squad. Import it somewhere else. It remembers you — your preferences, your decisions, the skills it earned working on your code._
 

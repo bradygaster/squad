@@ -1,7 +1,5 @@
 # Parallel Work & Models
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Squad launches independent work in parallel by default — multiple agents working simultaneously, no waiting. It also picks the right AI model for each agent based on what they're doing, so you get quality where it counts and speed everywhere else.
 

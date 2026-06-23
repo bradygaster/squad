@@ -10,8 +10,6 @@ hero: "Squad hit #9 on GitHub Trending Developers today, February 19. Started Fe
 
 # #9 on GitHub Trending Developers
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Squad hit #9 on GitHub Trending Developers today, February 19. Started February 7. 12 days from launch to GitHub's top trending._
 

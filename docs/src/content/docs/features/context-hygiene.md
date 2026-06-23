@@ -1,7 +1,5 @@
 # Context Hygiene: Nap, Reskill, and Compact
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this to compact your team's memory:**
 ```

@@ -1,7 +1,5 @@
 # Squad Alongside a Team of Human Developers
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this:**
 ```

@@ -1,7 +1,5 @@
 # GitHub Issues Mode
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this to connect to your backlog:**
 ```

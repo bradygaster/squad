@@ -10,8 +10,6 @@ hero: "The CLI was at 0.8.1. The SDK was at 0.8.0. The root was at 0.6.0-alpha.0
 
 # Snapping to 0.8.2
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _The CLI was at 0.8.1. The SDK was at 0.8.0. The root was at 0.6.0-alpha.0. We snapped everything to 0.8.2 and published to npm. Then CI told us what we got wrong._
 

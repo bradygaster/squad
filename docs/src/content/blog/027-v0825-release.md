@@ -10,8 +10,6 @@ hero: "Squad now smoke-tests every CLI command in the packaged npm artifact befo
 
 # v0.8.25: Pre-Publish Quality Gate and CLI Smoke Testing
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _This release adds a critical pre-publish quality gate: 32 new tests that pack both `@bradygaster/squad-sdk` and `@bradygaster/squad-cli` into tarballs, install them in a clean temp directory, and verify all 27 CLI commands route correctly through the installed artifact. If a command is missing or broken in the tarball, the release is blocked._
 
 ---

@@ -1,7 +1,5 @@
 # Your First Session
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 A step-by-step walkthrough from install to parallel fan-out. Follow along in your terminal.
 

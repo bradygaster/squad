@@ -1,7 +1,5 @@
 # Scratch Directory
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this to see what's in scratch:**
 ```bash

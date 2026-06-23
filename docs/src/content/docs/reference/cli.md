@@ -1,7 +1,5 @@
 # CLI Reference
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Everything you need to run Squad from the command line — commands, shell interactions, configuration files, and environment variables.
 

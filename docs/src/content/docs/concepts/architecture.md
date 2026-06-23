@@ -1,7 +1,5 @@
 # Architecture
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 How Squad works — one page, no handwaving.
 
 ---

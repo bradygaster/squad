@@ -1,7 +1,5 @@
 # Choose your interface
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Squad works across multiple interfaces. Pick the one that fits your workflow.
 

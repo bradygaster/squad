@@ -1,7 +1,5 @@
 # Marketplace Guide
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Issue:** #39 (M5-16)
 

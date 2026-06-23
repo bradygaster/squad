@@ -1,7 +1,5 @@
 # Building extensions
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 You've decided your idea is a Squad Extension (Layer 2). Now package it so another team can install it, enable it, and give their agents better context in five minutes.
 
 ---

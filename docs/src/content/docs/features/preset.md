@@ -5,8 +5,6 @@ description: Save, share, and apply pre-configured agent rosters across projects
 
 # Presets — Curated Agent Collections
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to see available presets:**
 ```bash
 squad preset list

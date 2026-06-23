@@ -1,7 +1,5 @@
 # Parallel Execution
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this to launch concurrent work streams:**
 ```

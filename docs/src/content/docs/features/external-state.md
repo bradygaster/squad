@@ -1,7 +1,5 @@
 # External State Storage
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this to move state outside the working tree:**
 ```bash

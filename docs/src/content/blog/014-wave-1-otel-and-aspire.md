@@ -10,8 +10,6 @@ hero: "Multi-agent systems without observability are black boxes. Wave 1 wired O
 
 # Wave 1: Giving Squad Eyes
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Multi-agent systems without observability are black boxes. Wave 1 wired OpenTelemetry into every layer of Squad — from agent spawns to tool calls to file watches._
 

@@ -1,7 +1,5 @@
 # Portability & Extensions
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Your squad isn't locked to one repo, one editor, or one set of tools. Export a trained team and import it somewhere else. Install plugins for instant expertise. Inherit org-wide practices from upstream repos. Wire up MCP servers so agents can talk to anything.
 

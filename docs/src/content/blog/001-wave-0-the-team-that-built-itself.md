@@ -10,8 +10,6 @@ hero: "We asked Squad to build itself a team. It wrote 16 proposals, discovered 
 
 # Wave 0: The Team That Built Itself
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _We asked Squad to build itself a team. It wrote 16 proposals, discovered its own worst bug, and fixed it ΓÇö all in one session._
 

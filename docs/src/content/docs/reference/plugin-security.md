@@ -1,7 +1,5 @@
 # Plugin security model
 
-> ⚠️ **Experimental** — This model describes the MVP plugin gate. Any future relaxation requires an RFC and explicit security review.
-
 The plugin MVP is designed for reusable Squad knowledge and configuration, not executable extensions and not a replacement for Copilot plugins. A plugin is a declarative manifest plus static files. Squad may copy those files into `.squad/`, record lock data, and mark roles active, but it must not execute plugin-supplied content.
 
 Copilot plugin dependencies can be declared with `copilot.requires`. They are metadata only: Squad records and displays them so users know which Copilot plugins to install through Copilot's own lifecycle.

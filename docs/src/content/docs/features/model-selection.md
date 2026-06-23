@@ -6,8 +6,6 @@ order: 34
 
 # Per-Agent Model Selection
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this to set a persistent preference (survives across sessions):**
 ```

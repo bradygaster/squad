@@ -9,8 +9,6 @@ hero: "The next Squad release ships 10 new features, 4 bug fixes, and 60+ tests 
 
 # What's Coming in v0.9.2 — 10 Features, Zero Breaking Changes
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _The next Squad release ships 10 new features, 4 bug fixes, and 60+ tests — all backward-compatible. Here's what to expect._
 
 ## The Noise Problem

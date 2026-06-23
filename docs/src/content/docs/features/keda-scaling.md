@@ -6,8 +6,6 @@ order: 38
 
 # KEDA Autoscaling
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to understand your scaling needs:**
 ```
 How many issues are currently queued for Squad agents?

@@ -10,8 +10,6 @@ hero: "Squad goes enterprise with native Azure DevOps support, adds a Communicat
 
 # What's New: Azure DevOps Adapter, CommunicationAdapter, SubSquads, and Security Hardening
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _This batch adds first-class Azure DevOps support, a pluggable communication layer, the community-voted SubSquads rename, and security fixes that prevent shell injection, WIQL injection, and bearer token exposure. 5 PRs merged, 153 new tests, 4 issues closed._
 
 ---

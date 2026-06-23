@@ -10,8 +10,6 @@ hero: "v0.3.0 adds per-agent model selection (16 models, 3 providers), persisten
 
 # v0.3.0 Preview: Give It a Brain
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _v0.3.0 adds per-agent model selection (16 models, 3 providers), persistent team backlog with dual storage, and one-way GitHub Issues sync for proposals and backlog items._
 

@@ -1,7 +1,5 @@
 # State Backends
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Squad supports multiple **state backends** for storing `.squad/` state (decisions, agent memories, session logs, skills). Each backend determines _where_ and _how_ this data is persisted — without changing how agents interact with it. Once configured, everything is automatic.
 
 ---

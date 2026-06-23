@@ -1,7 +1,5 @@
 # Consult Mode
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Consult mode lets you bring your personal squad to projects you don't own — OSS contributions, client work, temporary collaborations — without leaving any trace. Your team consults, does the work, learns things, and returns home with only the generic learnings you approve.
 

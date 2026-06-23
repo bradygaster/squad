@@ -1,7 +1,5 @@
 # Recipes & Advanced Scenarios
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 A compact cookbook of prompts, patterns, and power moves. Each recipe is a prompt you can paste straight into Squad.
 

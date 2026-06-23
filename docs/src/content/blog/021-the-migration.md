@@ -10,8 +10,6 @@ hero: "Squad moves from private repo (bradygaster/squad-pr) to public (bradygast
 
 # The Migration: Private to Public, GitHub to npm
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _Squad moves from private repo (bradygaster/squad-pr) to public (bradygaster/squad). New install path. Unified distribution. v0.5.4 → v0.8.18. Here's what changed and how to upgrade._
 
 ## What Moved

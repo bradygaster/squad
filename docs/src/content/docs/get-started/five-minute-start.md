@@ -1,7 +1,5 @@
 # Quick start
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Your first 5 minutes with Squad. Prove it works before you learn anything.
 
 ---

@@ -1,7 +1,5 @@
 # Frequently asked questions
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Common questions, troubleshooting tips, and clarifications based on community feedback. Can't find your answer? [Open an issue](https://github.com/bradygaster/squad/issues/new).
 

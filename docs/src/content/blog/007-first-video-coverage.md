@@ -10,8 +10,6 @@ hero: "Jeff Fritz published the first public video of Squad — a full demo buil
 
 # First Video Coverage: Jeff Fritz's Squad Demo
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Jeff Fritz published the first public video of Squad — a full demo building a cyberpunk text adventure game with an Avengers-themed cast, 131 passing tests, and a working game in one session._
 

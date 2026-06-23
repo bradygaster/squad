@@ -10,8 +10,6 @@ hero: "Shayne Boyer used Squad to decompose a PRD into 9 GitHub Issues on his sl
 
 # First External Deployment: Shayne Boyer's slidemaker
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Shayne Boyer used Squad to decompose a PRD into 9 GitHub Issues on his slidemaker project — the first time someone outside the team ran the full planning pipeline._
 

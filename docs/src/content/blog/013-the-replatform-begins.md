@@ -10,8 +10,6 @@ hero: "We threw away everything that worked and rewrote Squad from scratch in Ty
 
 # The Replatform Begins
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _We threw away everything that worked and rewrote Squad from scratch in TypeScript. Here's why that was the only honest move._
 

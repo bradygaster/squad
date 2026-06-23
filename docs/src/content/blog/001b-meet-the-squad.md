@@ -9,8 +9,6 @@ hero: "Eight specialists and one silent observer. Here's who builds Squad — an
 
 # Meet the Squad
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Eight specialists and one silent observer. Here's who builds Squad — and what happens when you give each of them a job._
 

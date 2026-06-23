@@ -10,8 +10,6 @@ hero: "v0.8.23 fixes a critical crash when running `squad init` on Node.js 24+ a
 
 # v0.8.23 Release: Node 24+ Compatibility, Squad RC Docs, and Critical Fixes
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _v0.8.23 is a critical hotfix addressing a crash when running `squad init` on Node.js 24+ and GitHub Codespaces. It ships comprehensive Squad RC documentation, introduces lazy module loading for faster CLI startup, and includes a postinstall patch for ESM import issues. 2 issues closed, 3 PRs merged, 3,811 tests passing._
 
 ---

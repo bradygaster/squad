@@ -1,7 +1,5 @@
 # SDK Reference
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Complete reference for `@bradygaster/squad-sdk` — the programmatic API for Squad.
 
 > **See also:** [API Reference](api-reference.md) — Complete auto-generated reference with full type signatures for all exports.

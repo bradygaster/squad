@@ -10,8 +10,6 @@ hero: "v0.4.0 ships VS Code support, GitHub Projects integration, real-time agen
 
 # v0.4.0: Squad Works Everywhere, Talks to You, and Brings Friends
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Squad now runs inside VS Code. Agents post progress updates as they work. MCP tools unlock GitHub, Trello, Azure, and your own infrastructure. When adding teammates, Squad finds the right plugins. And we dropped token costs by 70%._
 

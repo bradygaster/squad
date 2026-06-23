@@ -10,8 +10,6 @@ hero: "Squad agents generate portable SKILL.md files from real work, codifying w
 
 # Skills System: Agents That Learn From Work
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Squad agents generate portable SKILL.md files from real work, codifying what they learned. Other tools make humans write skills by hand. Squad earns them._
 

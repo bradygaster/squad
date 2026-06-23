@@ -10,8 +10,6 @@ hero: "77 pages across 6 sections. Dark mode. Client-side search. Sidebar naviga
 
 # Docs Reborn
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _77 pages across 6 sections. Dark mode. Client-side search. Sidebar navigation. The beta's best UI, rebuilt for v1's content. Squad's docs are a real site now._
 

@@ -5,8 +5,6 @@ description: Compile your squad's coordinator into a repo-native Copilot custom 
 
 # Coordinator-as-Agent Export
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to generate a coordinator agent:**
 ```bash
 squad export agent

@@ -10,8 +10,6 @@ hero: "We built a docs engine from scratch because the docs should teach you how
 
 # Wave 3: Docs That Teach
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _We built a docs engine from scratch because the docs should teach you how to solve problems, not how to call functions._
 

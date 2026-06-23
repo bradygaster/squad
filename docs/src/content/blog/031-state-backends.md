@@ -9,8 +9,6 @@ hero: "Squad now supports 4 state backends that keep .squad/ files out of your P
 
 # State Backends — Keep Your PRs Clean
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > _Squad now supports 4 state backends. Your PRs stay clean — just code._
 
 ## The Problem

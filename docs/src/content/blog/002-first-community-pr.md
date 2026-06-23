@@ -8,8 +8,6 @@ status: published
 hero: "Shayne Boyer shipped three features in one PR. The first external contributor set the bar high."
 ---
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Shayne Boyer shipped three features in one PR. The first external contributor set the bar high.
 

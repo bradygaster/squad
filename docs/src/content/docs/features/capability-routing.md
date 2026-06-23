@@ -6,8 +6,6 @@ order: 35
 
 # Capability Routing
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to declare machine capabilities:**
 ```
 This machine has a GPU — tag it for GPU-required work

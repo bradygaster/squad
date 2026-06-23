@@ -1,7 +1,5 @@
 # Distributed Mesh
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 **Try this to coordinate squads across machines:**
 ```
 Set up a distributed mesh so my local squad can see the state of our CI squad

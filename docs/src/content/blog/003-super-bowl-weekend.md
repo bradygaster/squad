@@ -10,8 +10,6 @@ hero: "Squad shipped three waves of its roadmap in one weekend. Here's the raw a
 
 # Super Bowl Weekend Sprint
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Squad shipped three waves of its roadmap in one weekend. Here's the raw accounting of what landed._
 

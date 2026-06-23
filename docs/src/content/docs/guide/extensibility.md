@@ -1,7 +1,5 @@
 # Extensibility guide
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 Where does your change idea belong? Squad core, marketplace plugin, or team config?
 
 **Key principle:** Squad core stays small. Most ideas are skills, ceremonies, or directives.

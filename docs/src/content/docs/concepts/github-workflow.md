@@ -1,7 +1,5 @@
 # GitHub Integration
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Squad plugs directly into your GitHub workflow — issues become branches, branches become PRs, PRs become merged code. No context-switching, no copy-paste, no ticket juggling. Just tell your squad what to build and watch the commits roll in.
 

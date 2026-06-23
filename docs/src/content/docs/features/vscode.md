@@ -1,7 +1,5 @@
 # Squad in VS Code
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 Squad is fully supported in VS Code (v0.4.0+). Your team runs identically to the CLI, with the same `.squad/` state, same agents, same decisions — but with VS Code-specific tooling and constraints.
 

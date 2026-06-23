@@ -10,8 +10,6 @@ hero: "Shayne Boyer built remote squad mode in the beta. We ported it to the rep
 
 # Shayne's Remote Mode
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _Shayne Boyer built remote squad mode in the beta. We ported it to the replatform — and it taught us something about how teams actually work._
 

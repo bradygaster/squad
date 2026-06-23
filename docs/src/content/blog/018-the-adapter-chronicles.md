@@ -10,8 +10,6 @@ hero: "A P0 crash in Codespaces led to a 7-issue sprint that eliminated every un
 
 # The Adapter Chronicles
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 > _A P0 crash in Codespaces led to a 7-issue sprint that eliminated every unsafe cast in Squad's adapter layer. Zero `as any` remaining._
 

@@ -1,7 +1,5 @@
 # Interactive Shell Guide
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 > 💡 **Recommended: Use GitHub Copilot CLI** — The best way to interact with Squad today is through the [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli). Run `copilot --agent squad` to start a session with your team. The Copilot CLI provides the richest agent experience, including tool use, parallel execution, and full MCP integration.
 
 The Squad interactive shell gives you a persistent connection to your team.Instead of spawning short-lived CLI invocations, the shell maintains a real-time session where you can talk to agents, issue commands, and watch work happen.

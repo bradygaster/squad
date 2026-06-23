@@ -1,7 +1,5 @@
 # Label Taxonomy
 
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
 
 **Try this to apply workflow labels:**
 ```
