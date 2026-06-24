@@ -14,7 +14,7 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { effectiveSquadDir } from '../../core/effective-squad-dir.js';
 import { fatal } from '../../core/errors.js';
 import { GREEN, RED, DIM, BOLD, RESET, YELLOW } from '../../core/output.js';
-import { withAdditionalMcpConfig } from '../../core/copilot-invocation.js';
+import { buildSandboxCommand } from '../sandbox-command.js';
 import {
   parseRoutingRules,
   parseModuleOwnership,
@@ -565,6 +565,9 @@ export interface WatchOptions {
   execute?: boolean;
   copilotFlags?: string;
   agentCmd?: string;
+  sandbox?: 'copilot' | 'sandcastle';
+  sandboxFlags?: string;
+  permissionProfile?: 'interactive' | 'yolo' | 'autopilot';
   maxConcurrent?: number;
   issueTimeoutMinutes?: number;
   monitorTeams?: boolean;
@@ -597,6 +600,9 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
     timeout: options.issueTimeoutMinutes ?? 30,
     copilotFlags: options.copilotFlags,
     agentCmd: options.agentCmd,
+    sandbox: options.sandbox,
+    sandboxFlags: options.sandboxFlags,
+    permissionProfile: options.permissionProfile,
     capabilities,
   };
 }
@@ -617,7 +623,13 @@ export function buildAgentCommand(
   }
   const args = ['-p', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, teamRoot) };
+  return buildSandboxCommand({
+    sandbox: options.sandbox,
+    sandboxFlags: options.sandboxFlags,
+    permissionProfile: options.permissionProfile,
+    teamRoot,
+    baseArgs: args,
+  });
 }
 
 export async function selfPull(teamRoot: string): Promise<void> {
@@ -713,6 +725,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     agentCmd: config.agentCmd ?? '(default: gh copilot)',
     dispatchMode: config.capabilities['wave-dispatch'] ? 'wave' : 'task',
     maxConcurrent: config.maxConcurrent ?? 1,
+    sandbox: config.sandbox ?? 'copilot',
+    sandboxFlags: config.sandboxFlags ?? '(none)',
+    permissionProfile: config.permissionProfile ?? 'yolo',
+    executionSource: config.executionSource ?? 'default',
   });
 
   // Auth check (verbose only — avoid unnecessary process spawn on every startup)
@@ -810,6 +826,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     config: {},
     agentCmd: config.agentCmd,
     copilotFlags: config.copilotFlags,
+    sandbox: config.sandbox,
+    sandboxFlags: config.sandboxFlags,
+    permissionProfile: config.permissionProfile,
+    executionSource: config.executionSource,
     verbose: config.verbose,
     pidTracker,
   };

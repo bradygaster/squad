@@ -4,7 +4,7 @@
 
 import { execFile } from 'node:child_process';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
-import { withAdditionalMcpConfig } from '../../../core/copilot-invocation.js';
+import { buildSandboxCommand } from '../../sandbox-command.js';
 
 function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string; args: string[] } {
   if (context.agentCmd) {
@@ -13,7 +13,13 @@ function buildAgentCommand(prompt: string, context: WatchContext): { cmd: string
   }
   const args = ['-p', prompt];
   if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));
-  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, context.teamRoot) };
+  return buildSandboxCommand({
+    sandbox: context.sandbox,
+    sandboxFlags: context.sandboxFlags,
+    permissionProfile: context.permissionProfile,
+    teamRoot: context.teamRoot,
+    baseArgs: args,
+  });
 }
 
 function spawnWithTimeout(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<void> {

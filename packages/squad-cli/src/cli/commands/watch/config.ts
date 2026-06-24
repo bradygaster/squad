@@ -7,6 +7,12 @@
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
+import {
+  resolveExecutionConfig,
+  type SandboxProvider,
+  type PermissionProfile,
+  type ExecutionSource,
+} from '../../core/execution-config.js';
 
 const storage = new FSStorageProvider();
 
@@ -22,6 +28,14 @@ export interface WatchConfig {
   copilotFlags?: string;
   /** Hidden — fully override the agent command. */
   agentCmd?: string;
+  /** First-class sandbox provider. */
+  sandbox?: SandboxProvider;
+  /** Extra sandbox provider flags, used when sandbox=sandcastle. */
+  sandboxFlags?: string;
+  /** First-class permission profile. */
+  permissionProfile?: PermissionProfile;
+  /** Where execution config came from after precedence resolution. */
+  executionSource?: ExecutionSource;
   /** Dispatch mode: 'task' (default 1:1), 'fleet' (batch read-only), 'hybrid' (auto-classify). */
   dispatchMode?: DispatchMode;
   /** Optional path to a log file. When set, console output is tee'd to the file with timestamps. */
@@ -51,6 +65,9 @@ const DEFAULTS: WatchConfig = {
   execute: false,
   maxConcurrent: 1,
   timeout: 30,
+  sandbox: 'copilot',
+  permissionProfile: 'yolo',
+  executionSource: 'default',
   dispatchMode: undefined,
   capabilities: {},
 };
@@ -88,6 +105,7 @@ export function loadWatchConfig(
     timeout: cliOverrides.timeout ?? fileConfig.timeout ?? DEFAULTS.timeout,
     copilotFlags: cliOverrides.copilotFlags ?? fileConfig.copilotFlags ?? DEFAULTS.copilotFlags,
     agentCmd: cliOverrides.agentCmd ?? fileConfig.agentCmd ?? DEFAULTS.agentCmd,
+    sandboxFlags: cliOverrides.sandboxFlags ?? fileConfig.sandboxFlags ?? process.env['SQUAD_SANDBOX_FLAGS'],
     dispatchMode: cliOverrides.dispatchMode ?? fileConfig.dispatchMode ?? DEFAULTS.dispatchMode,
     logFile: cliOverrides.logFile ?? fileConfig.logFile ?? DEFAULTS.logFile,
     capabilities: {
@@ -105,6 +123,20 @@ export function loadWatchConfig(
     stateContext: cliOverrides.stateContext,
   };
 
+  const execution = resolveExecutionConfig({
+    cliSandbox: cliOverrides.sandbox,
+    configSandbox: fileConfig.sandbox,
+    envSandbox: process.env['SQUAD_SANDBOX'],
+    cliPermissionProfile: cliOverrides.permissionProfile,
+    configPermissionProfile: fileConfig.permissionProfile,
+    envPermissionProfile: process.env['SQUAD_PERMISSION_PROFILE'],
+    agentCmd: merged.agentCmd,
+  });
+
+  merged.sandbox = execution.sandbox;
+  merged.permissionProfile = execution.permissionProfile;
+  merged.executionSource = execution.sourceOfTruth;
+
   return merged;
 }
 
@@ -118,6 +150,11 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['timeout'] === 'number') result.timeout = raw['timeout'];
   if (typeof raw['copilotFlags'] === 'string') result.copilotFlags = raw['copilotFlags'];
   if (typeof raw['agentCmd'] === 'string') result.agentCmd = raw['agentCmd'];
+  if (typeof raw['sandboxFlags'] === 'string') result.sandboxFlags = raw['sandboxFlags'];
+  if (typeof raw['sandbox'] === 'string') result.sandbox = raw['sandbox'] as SandboxProvider;
+  if (typeof raw['permissionProfile'] === 'string') {
+    result.permissionProfile = raw['permissionProfile'] as PermissionProfile;
+  }
   if (typeof raw['verbose'] === 'boolean') result.verbose = raw['verbose'];
   if (typeof raw['dispatchMode'] === 'string') {
     const mode = raw['dispatchMode'] as string;
@@ -146,7 +183,12 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend']);
+  const reserved = new Set([
+    'interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd',
+    'sandbox', 'sandboxFlags', 'permissionProfile',
+    'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel',
+    'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend',
+  ]);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

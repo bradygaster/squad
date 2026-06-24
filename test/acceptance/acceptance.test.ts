@@ -43,6 +43,7 @@ runFeature(join(featuresDir, 'exit-codes.feature'), registry);
 // Consult and extract command tests
 runFeature(join(featuresDir, 'consult-command.feature'), registry);
 runFeature(join(featuresDir, 'extract-command.feature'), registry);
+runFeature(join(featuresDir, 'execution-config.feature'), registry);
 
 // Subcommand --help intercept (#1201)
 runFeature(join(featuresDir, 'subcommand-help.feature'), registry);

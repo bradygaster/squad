@@ -14,7 +14,7 @@ import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FSStorageProvider, RemoteBridge } from '@bradygaster/squad-sdk';
-import { withAdditionalMcpConfig } from '../core/copilot-invocation.js';
+import { resolveExecutionConfig, ExecutionConfigError } from '../core/execution-config.js';
 
 const storage = new FSStorageProvider();
 import type { RemoteBridgeConfig } from '@bradygaster/squad-sdk';
@@ -25,6 +25,7 @@ import {
   getMachineId,
   getGitInfo,
 } from './rc-tunnel.js';
+import { buildSandboxCommand } from './sandbox-command.js';
 
 const BOLD = '\x1b[1m';
 const RESET = '\x1b[0m';
@@ -167,13 +168,44 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     console.log(`  ${DIM}Copilot flags:${RESET} ${copilotExtraArgs.join(' ')}\n`);
   }
 
+  let execution;
+  try {
+    execution = resolveExecutionConfig({
+      envSandbox: process.env['SQUAD_SANDBOX'],
+      envPermissionProfile: process.env['SQUAD_PERMISSION_PROFILE'],
+      agentCmd: options.command,
+    });
+  } catch (err) {
+    if (err instanceof ExecutionConfigError) {
+      console.error(`${YELLOW}✗${RESET} ${err.code}: ${err.message}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  if (execution.sandbox === 'sandcastle') {
+    console.error(`${YELLOW}✗${RESET} SQUAD_SANDBOX_UNSUPPORTED_MODE: squad start requires sandbox=copilot.`);
+    console.error(`${DIM}Use squad watch/loop for sandcastle prompt runs, or set SQUAD_SANDBOX=copilot.${RESET}`);
+    process.exit(1);
+  }
+
   // Inject --additional-mcp-config so the project-level mcp-config.json
   // actually loads in Copilot CLI 1.0.58 (which silently ignores the
   // project file otherwise). Only injects when invoking the bare `copilot`
   // binary; user-overridden commands are left untouched.
   const finalCopilotArgs = (copilotCmd === 'copilot' || copilotCmd === copilotExePath)
-    ? withAdditionalMcpConfig('copilot', copilotExtraArgs, cwd)
+    ? buildSandboxCommand({
+      sandbox: execution.sandbox,
+      sandboxFlags: process.env['SQUAD_SANDBOX_FLAGS'],
+      permissionProfile: execution.permissionProfile,
+      teamRoot: cwd,
+      baseArgs: copilotExtraArgs,
+    }).args
     : copilotExtraArgs;
+
+  const resolvedAgentCmd = (copilotCmd === 'copilot' || copilotCmd === copilotExePath)
+    ? 'copilot'
+    : copilotCmd;
 
   // F-07: Security — blocklist dangerous environment variables for PTY
   const DANGEROUS_VARS = new Set(['NODE_OPTIONS', 'NODE_REPL_HISTORY', 'NODE_EXTRA_CA_CERTS',
@@ -191,7 +223,7 @@ export async function runStart(cwd: string, options: StartOptions): Promise<void
     }
   }
 
-  const pty = nodePty.spawn(copilotCmd, finalCopilotArgs, {
+  const pty = nodePty.spawn(resolvedAgentCmd, finalCopilotArgs, {
     name: 'xterm-256color',
     cols,
     rows,
