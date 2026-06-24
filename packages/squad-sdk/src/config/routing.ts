@@ -238,6 +238,21 @@ export function compileRoutingRules(config: RoutingConfig): CompiledRouter {
 export function matchRoute(message: string, router: CompiledRouter): RoutingMatch {
   const lowerMessage = message.toLowerCase();
   
+  // Explicit @agent mention — highest priority, always route to the named agent (#1029)
+  const explicitMention = lowerMessage.match(/@([a-z][a-z0-9_-]*)/);
+  if (explicitMention) {
+    const agentName = explicitMention[1]!;
+    // Verify the mentioned agent is a known team member (not @coordinator)
+    const allKnownAgents = router.workTypeRules.flatMap(r => r.agents.map(a => a.replace(/^@/, '').toLowerCase()));
+    if (allKnownAgents.includes(agentName) || agentName !== 'coordinator') {
+      return {
+        agents: [`@${agentName}`],
+        confidence: 'high',
+        reason: `Explicit agent mention: @${agentName}`
+      };
+    }
+  }
+
   // Try to match work type rules
   for (const rule of router.workTypeRules) {
     for (const pattern of rule.patterns) {

@@ -51,7 +51,10 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`Usage: squad upgrade [options]\n`);
     console.log(`Overwrites Squad-owned files (squad.agent.md, .squad/templates/) while`);
     console.log(`leaving your team state under .squad/ and .ai-team/ untouched.\n`);
+    console.log(`Local customizations to squad.agent.md are backed up automatically.`);
+    console.log(`Use --dry-run to preview changes before applying.\n`);
     console.log(`Options:`);
+    console.log(`  ${BOLD}--dry-run${RESET}                   Preview changes without writing`);
     console.log(`  ${BOLD}--global${RESET}                    Upgrade the personal (global) squad`);
     console.log(`  ${BOLD}--migrate-directory${RESET}         Rename legacy .ai-team/ to .squad/`);
     console.log(`  ${BOLD}--state-backend <type>${RESET}      Migrate to a new backend (orphan|two-layer)`);
