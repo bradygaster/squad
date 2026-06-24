@@ -274,9 +274,10 @@ async function main(): Promise<void> {
     console.log(`                    upstream sync [name]`);
     console.log(`  ${BOLD}economy${RESET}    Toggle economy mode (cost-conscious model selection)`);
     console.log(`             Usage: economy [on|off]`);
-    console.log(`  ${BOLD}externalize${RESET}  Move .squad/ state out of the working tree (platform-local storage)`);
+    console.log(`  ${BOLD}externalize${RESET}  Move .squad/ state out of the working tree`);
+    console.log(`             Stores state in platform-local storage`);
     console.log(`             Flags: --key <name> (explicit project key)`);
-    console.log(`  ${BOLD}internalize${RESET}  Restore externalized .squad/ state back into the working tree`);
+    console.log(`  ${BOLD}internalize${RESET}  Restore externalized state into the working tree`);
 
     console.log(`  ${BOLD}version${RESET}    Print installed version`);
     console.log(`  ${BOLD}help${RESET}       Show this help message`);

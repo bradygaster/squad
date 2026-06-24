@@ -514,10 +514,6 @@ export async function addAgentToConfig(
       }
     }
 
-    if (!modified) {
-      return false; // Cannot find agents array to update
-    }
-
     // Optionally add routing rule if role maps to a known work type
     const workTypeMap: Record<string, string> = {
       'developer': 'feature-dev',
@@ -546,8 +542,13 @@ export async function addAgentToConfig(
             rulesPattern,
             `rules: [${updatedRules}\n    ]`
           );
+          modified = true;
         }
       }
+    }
+
+    if (!modified) {
+      return false; // Cannot find an agent array or routing rule to update
     }
 
     await storage.write(configPath, updatedContent);
