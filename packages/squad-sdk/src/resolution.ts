@@ -442,6 +442,14 @@ export function resolveGlobalSquadPath(): string {
 export function resolvePersonalSquadDir(): string | null {
   if (process.env['SQUAD_NO_PERSONAL']) return null;
   
+  // Honor SQUAD_PERSONAL_DIR env var override
+  const envDir = process.env['SQUAD_PERSONAL_DIR'];
+  if (envDir) {
+    const resolved = path.resolve(envDir);
+    if (storage.existsSync(resolved)) return resolved;
+    return null;
+  }
+
   const globalDir = resolveGlobalSquadPath();
   const personalDir = path.join(globalDir, 'personal-squad');
   

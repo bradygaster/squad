@@ -284,6 +284,27 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // immediately instead of after the 5-second TTL.
   clearResolveSquadCache();
 
+  // ── Personal squad linking ─────────────────────────────────────────
+  // When a personal squad directory exists and this is a repo init (not global),
+  // set teamRoot in config.json to point to the personal squad directory.
+  // This enables "remote mode" resolution so the project inherits team identity
+  // from the personal squad. (See #984, #1010)
+  if (!options.isGlobal) {
+    const personalDir = resolvePersonalSquadDir();
+    if (personalDir) {
+      const configPath = path.join(squadDir, 'config.json');
+      let config: Record<string, unknown> = {};
+      try {
+        const raw = storage.readSync(configPath);
+        if (raw) config = JSON.parse(raw);
+      } catch { /* start fresh */ }
+      if (!config['teamRoot']) {
+        config['teamRoot'] = personalDir;
+        storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      }
+    }
+  }
+
   // Ensure version is fully stamped in squad.agent.md
   const agentPath = path.join(agentFileRoot, '.github', 'agents', 'squad.agent.md');
   if (storage.existsSync(agentPath)) {

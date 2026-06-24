@@ -10,9 +10,9 @@
 
 import path from 'node:path';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
+import { resolveSquadHome } from '../resolution.js';
 
 const storage = new FSStorageProvider();
-import os from 'node:os';
 
 /** Deployment mode for capability routing */
 export type DeploymentMode = 'agent-per-node' | 'squad-per-pod';
@@ -102,7 +102,10 @@ export async function loadCapabilities(
     }
     candidates.push(path.join(teamRoot, '.squad', 'machine-capabilities.json'));
   }
-  candidates.push(path.join(os.homedir(), '.squad', 'machine-capabilities.json'));
+  const squadHome = resolveSquadHome();
+  if (squadHome) {
+    candidates.push(path.join(squadHome, 'machine-capabilities.json'));
+  }
 
   for (const candidate of candidates) {
     if (storage.existsSync(candidate)) {
