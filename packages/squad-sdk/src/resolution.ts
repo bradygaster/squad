@@ -446,7 +446,7 @@ export function resolvePersonalSquadDir(): string | null {
   const envDir = process.env['SQUAD_PERSONAL_DIR'];
   if (envDir) {
     const resolved = path.resolve(envDir);
-    if (storage.existsSync(resolved)) return resolved;
+    if (storage.existsSync(resolved) && storage.isDirectorySync(resolved)) return resolved;
     return null;
   }
 

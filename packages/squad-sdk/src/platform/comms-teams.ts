@@ -4,7 +4,8 @@
  * Auth priority: cached token → refresh → browser PKCE → device code fallback.
  * Uses the Microsoft Graph PowerShell first-party client ID by default (works
  * in every Microsoft tenant with no custom Entra registration required).
- * Tokens stored per-identity in ~/.squad/teams-tokens-{hash(tenantId:clientId)}.json.
+ * Tokens stored per-identity in <squad-home>/teams-tokens-{hash(tenantId:clientId)}.json
+ * (squad-home defaults to ~/.squad/ but respects the SQUAD_HOME env var).
  *
  * @module platform/comms-teams
  */

@@ -92,17 +92,22 @@ describe('resolveGlobalSquadPath — platform paths', () => {
 // ---------------------------------------------------------------------------
 describe('resolvePersonalSquadDir — discovery & kill-switch', () => {
   let savedNoPersonal: string | undefined;
+  let savedPersonalDir: string | undefined;
 
   beforeEach(() => {
     cleanup();
     mkdirSync(TEST_ROOT, { recursive: true });
     savedNoPersonal = process.env['SQUAD_NO_PERSONAL'];
+    savedPersonalDir = process.env['SQUAD_PERSONAL_DIR'];
     delete process.env['SQUAD_NO_PERSONAL'];
+    delete process.env['SQUAD_PERSONAL_DIR'];
   });
 
   afterEach(() => {
     if (savedNoPersonal !== undefined) process.env['SQUAD_NO_PERSONAL'] = savedNoPersonal;
     else delete process.env['SQUAD_NO_PERSONAL'];
+    if (savedPersonalDir !== undefined) process.env['SQUAD_PERSONAL_DIR'] = savedPersonalDir;
+    else delete process.env['SQUAD_PERSONAL_DIR'];
     cleanup();
     vi.unstubAllEnvs();
   });
@@ -140,6 +145,30 @@ describe('resolvePersonalSquadDir — discovery & kill-switch', () => {
     } finally {
       rmSync(personalDir, { recursive: true, force: true });
     }
+  });
+
+  it('returns env override when SQUAD_PERSONAL_DIR points to an existing directory', () => {
+    const customPersonalDir = join(TEST_ROOT, 'env-personal-squad');
+    mkdirSync(customPersonalDir, { recursive: true });
+
+    process.env['SQUAD_PERSONAL_DIR'] = customPersonalDir;
+
+    expect(resolvePersonalSquadDir()).toBe(customPersonalDir);
+  });
+
+  it('returns null when SQUAD_PERSONAL_DIR points to a missing path', () => {
+    process.env['SQUAD_PERSONAL_DIR'] = join(TEST_ROOT, 'missing-personal-squad');
+
+    expect(resolvePersonalSquadDir()).toBeNull();
+  });
+
+  it('returns null when SQUAD_PERSONAL_DIR points to a file instead of a directory', async () => {
+    const personalFile = join(TEST_ROOT, 'personal-squad.txt');
+    await writeFile(personalFile, 'not a directory', 'utf-8');
+
+    process.env['SQUAD_PERSONAL_DIR'] = personalFile;
+
+    expect(resolvePersonalSquadDir()).toBeNull();
   });
 
   it('works regardless of how the CLI was invoked (npx, global, local)', () => {

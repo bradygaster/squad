@@ -11,7 +11,7 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolveGlobalSquadPath, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { resolveSquadStateMcpSpec } from './mcp-spec.js';
@@ -286,9 +286,9 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // ── Personal squad linking ─────────────────────────────────────────
   // When a personal squad directory exists and this is a repo init (not global),
-  // set teamRoot in config.json to point to the personal squad directory.
-  // This enables "remote mode" resolution so the project inherits team identity
-  // from the personal squad. (See #984, #1010)
+  // set teamRoot in config.json to point to the global squad root that contains
+  // `.squad/`. This enables "remote mode" resolution so the project inherits
+  // team identity from the personal squad. (See #984, #1010)
   if (!options.isGlobal) {
     const personalDir = resolvePersonalSquadDir();
     if (personalDir) {
@@ -299,7 +299,7 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         if (raw) config = JSON.parse(raw);
       } catch { /* start fresh */ }
       if (!config['teamRoot']) {
-        config['teamRoot'] = personalDir;
+        config['teamRoot'] = resolveGlobalSquadPath();
         storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
       }
     }

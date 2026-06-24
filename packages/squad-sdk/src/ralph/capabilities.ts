@@ -80,11 +80,14 @@ export function generatePodCapabilitiesPath(teamRoot: string, podId: string): st
  * `squad-per-pod`, the search order becomes:
  *   1. `.squad/machine-capabilities-{podId}.json` (pod-specific)
  *   2. `.squad/machine-capabilities.json` (shared fallback)
- *   3. `~/.squad/machine-capabilities.json` (user home fallback)
+ *   3. `<squad-home>/machine-capabilities.json` (user fallback resolved via
+ *      `resolveSquadHome()`, defaulting to `~/.squad/` and respecting
+ *      `SQUAD_HOME`)
  *
  * Otherwise (default `agent-per-node` mode):
  *   1. `.squad/machine-capabilities.json` in the team root
- *   2. `~/.squad/machine-capabilities.json` in the user home
+ *   2. `<squad-home>/machine-capabilities.json` resolved via
+ *      `resolveSquadHome()` (defaults to `~/.squad/`, respects `SQUAD_HOME`)
  *
  * Returns null if no capabilities file exists (all issues pass through).
  */
