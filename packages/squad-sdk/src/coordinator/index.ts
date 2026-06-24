@@ -44,6 +44,8 @@ export {
   type SpawnPlatform,
   type SpawnRequest,
   type SpawnHandle,
+  type SpawnedSession,
+  type CreateSessionFn,
   type SessionSpawnOptions,
 } from './spawn-backend.js';
 

@@ -163,6 +163,85 @@ describe('spawnParallel', () => {
     );
   });
 
+  it('should delegate spawning to spawnBackend when available', async () => {
+    const spawn = vi.fn(async (request: any) => ({
+      id: 'spawned-session-123',
+      agentName: request.agentName,
+      platform: 'app' as const,
+      success: true,
+    }));
+    const release = vi.fn();
+
+    mockDeps.spawnBackend = {
+      platform: 'app',
+      isAvailable: vi.fn(() => true),
+      spawn,
+      release,
+    };
+
+    const configs: AgentSpawnConfig[] = [
+      {
+        agentName: 'fenster',
+        task: 'Deep analysis',
+        context: 'Use the latest telemetry',
+        priority: 'high',
+        reasoningEffortOverride: 'high',
+      },
+    ];
+
+    const results = await spawnParallel(configs, mockDeps);
+
+    expect(results[0]).toMatchObject({
+      agentName: 'fenster',
+      sessionId: 'spawned-session-123',
+      status: 'success',
+    });
+    expect(spawn).toHaveBeenCalledWith({
+      agentName: 'fenster',
+      prompt: expect.stringContaining('Deep analysis'),
+      description: 'fenster: Deep analysis',
+      name: 'fenster',
+      model: 'claude-sonnet-4.5',
+      reasoningEffort: 'high',
+      background: true,
+    });
+    expect(mockDeps.createSession).not.toHaveBeenCalled();
+    expect(sessionPool.size).toBe(1);
+  });
+
+  it('releases backend concurrency when a spawned session goes idle', async () => {
+    const spawn = vi.fn(async (request: any) => ({
+      id: 'spawned-session-456',
+      agentName: request.agentName,
+      platform: 'app' as const,
+      success: true,
+    }));
+    const release = vi.fn();
+
+    mockDeps.spawnBackend = {
+      platform: 'app',
+      isAvailable: vi.fn(() => true),
+      spawn,
+      release,
+    };
+
+    await spawnParallel([{ agentName: 'fenster', task: 'Deep analysis' }], mockDeps);
+
+    await eventBus.emit({
+      type: 'session.status_changed',
+      sessionId: 'spawned-session-456',
+      payload: { newStatus: 'idle' },
+      timestamp: new Date(),
+    });
+
+    expect(release).toHaveBeenCalledWith({
+      id: 'spawned-session-456',
+      agentName: 'fenster',
+      platform: 'app',
+      success: true,
+    });
+  });
+
   it('should use charter reasoning effort when no override', async () => {
     (mockDeps.compileCharter as any).mockImplementation(async (agentName: string) => ({
       name: agentName,

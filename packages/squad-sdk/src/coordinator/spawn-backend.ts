@@ -48,6 +48,17 @@ export interface SpawnHandle {
   error?: string;
 }
 
+/** Session object returned by the injected session factory */
+export interface SpawnedSession {
+  /** Unique session identifier */
+  sessionId: string;
+  /** Send the initial message when kickoff is not handled by session creation */
+  sendMessage: (opts: { prompt: string; mode?: 'enqueue' | 'immediate' }) => Promise<void>;
+}
+
+/** Session creation callback injected by SDK callers */
+export type CreateSessionFn = (config: any) => Promise<SpawnedSession>;
+
 /** Options for sub-session creation (App mode) */
 export interface SessionSpawnOptions {
   /** Project ID for session creation */
@@ -79,6 +90,12 @@ export interface SpawnBackend {
   spawn(request: SpawnRequest): Promise<SpawnHandle>;
 
   /**
+   * Release a previously spawned handle once the caller observes completion.
+   * Backends that enforce concurrency caps must decrement their tracking here.
+   */
+  release(handle: SpawnHandle): void;
+
+  /**
    * Check if this backend is available in the current environment.
    * Used by detectSpawnBackend() to pick the right implementation.
    */
@@ -88,11 +105,13 @@ export interface SpawnBackend {
 // --- TaskSpawnBackend (CLI) ---
 
 /**
- * Spawns agents via the `task` tool (CLI and VS Code).
- * This is the default backend and always available as a fallback.
+ * Spawns agents via the injected session factory for CLI / VS Code contexts.
+ * In prompt-only tool contexts, the coordinator LLM maps this abstraction to the `task` tool.
  */
 export class TaskSpawnBackend implements SpawnBackend {
   readonly platform: SpawnPlatform = 'cli';
+
+  constructor(private readonly createSession: CreateSessionFn) {}
 
   isAvailable(): boolean {
     // task tool is always available in CLI/VS Code
@@ -100,21 +119,44 @@ export class TaskSpawnBackend implements SpawnBackend {
   }
 
   async spawn(request: SpawnRequest): Promise<SpawnHandle> {
-    // In the programmatic SDK, this creates a session via SquadClient.
-    // In the agent prompt context, this maps to the `task` tool call.
-    return {
-      id: `task-${request.agentName}-${Date.now()}`,
-      agentName: request.agentName,
-      platform: 'cli',
-      success: true,
-    };
+    try {
+      const session = await this.createSession({
+        model: request.model,
+        clientName: `squad-agent-${request.agentName}`,
+        ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
+      });
+
+      await session.sendMessage({
+        prompt: request.prompt,
+        mode: 'immediate',
+      });
+
+      return {
+        id: session.sessionId,
+        agentName: request.agentName,
+        platform: 'cli',
+        success: true,
+      };
+    } catch (error) {
+      return {
+        id: '',
+        agentName: request.agentName,
+        platform: 'cli',
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  release(_handle: SpawnHandle): void {
+    // No concurrency cap for task-backed spawns.
   }
 }
 
 // --- SessionSpawnBackend (Copilot App) ---
 
 /**
- * Spawns agents as sub-sessions via `create_session` tool (Copilot App).
+ * Spawns agents as sub-sessions via the injected session factory for Copilot App contexts.
  * Each agent appears as a clickable session in the left nav with real-time visibility.
  *
  * Design constraints:
@@ -127,9 +169,13 @@ export class SessionSpawnBackend implements SpawnBackend {
   readonly platform: SpawnPlatform = 'app';
 
   private options: SessionSpawnOptions;
-  private activeSessionCount = 0;
+  private activeSessionIds = new Set<string>();
+  private pendingSpawnCount = 0;
 
-  constructor(options: SessionSpawnOptions = {}) {
+  constructor(
+    private readonly createSession: CreateSessionFn,
+    options: SessionSpawnOptions = {},
+  ) {
     this.options = {
       coordinateWithCreator: true,
       notifyOnIdle: 'once',
@@ -148,53 +194,65 @@ export class SessionSpawnBackend implements SpawnBackend {
 
   async spawn(request: SpawnRequest): Promise<SpawnHandle> {
     const maxConcurrent = this.options.maxConcurrent ?? 5;
+    const inFlightCount = this.activeSessionIds.size + this.pendingSpawnCount;
 
     // Enforce concurrency cap
-    if (this.activeSessionCount >= maxConcurrent) {
+    if (inFlightCount >= maxConcurrent) {
       return {
-        id: `session-${request.agentName}-blocked`,
+        id: '',
         agentName: request.agentName,
         platform: 'app',
         success: false,
-        error: `Concurrency cap reached (${maxConcurrent} active sessions). Queued for later.`,
+        error:
+          `Concurrency cap reached (${maxConcurrent} active or starting sub-sessions). ` +
+          `Spawn rejected because no queue is configured.`,
       };
     }
 
-    this.activeSessionCount++;
+    this.pendingSpawnCount++;
 
-    // In the programmatic SDK, this would call create_session.
-    // The actual session creation parameters:
-    const sessionConfig = {
-      name: truncateSessionName(request.description),
-      coordinateWithCreator: this.options.coordinateWithCreator,
-      notifyOnIdle: this.options.notifyOnIdle,
-      projectId: this.options.projectId,
-      kickoff: {
-        prompt: request.prompt,
-        mode: this.options.mode,
-        model: request.model,
-        ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
-      },
-    };
+    try {
+      const session = await this.createSession({
+        name: truncateSessionName(request.description),
+        coordinate_with_creator: this.options.coordinateWithCreator,
+        notify_on_idle: this.options.notifyOnIdle,
+        project_id: this.options.projectId,
+        kickoff: {
+          prompt: request.prompt,
+          mode: this.options.mode,
+          model: request.model,
+          ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+        },
+      });
 
-    return {
-      id: `session-${request.agentName}-${Date.now()}`,
-      agentName: request.agentName,
-      platform: 'app',
-      success: true,
-    };
+      this.activeSessionIds.add(session.sessionId);
+
+      return {
+        id: session.sessionId,
+        agentName: request.agentName,
+        platform: 'app',
+        success: true,
+      };
+    } catch (error) {
+      return {
+        id: '',
+        agentName: request.agentName,
+        platform: 'app',
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    } finally {
+      this.pendingSpawnCount--;
+    }
   }
 
-  /** Decrement active session count when a session completes */
-  markCompleted(_sessionId: string): void {
-    if (this.activeSessionCount > 0) {
-      this.activeSessionCount--;
-    }
+  release(handle: SpawnHandle): void {
+    this.activeSessionIds.delete(handle.id);
   }
 
   /** Get current active session count */
   getActiveCount(): number {
-    return this.activeSessionCount;
+    return this.activeSessionIds.size + this.pendingSpawnCount;
   }
 }
 
@@ -209,10 +267,12 @@ export class SessionSpawnBackend implements SpawnBackend {
  * 3. Neither → fallback to TaskSpawnBackend
  *
  * @param availableTools - Set of tool names available in the current environment
+ * @param createSession - Injected session creation callback used by the selected backend
  * @param options - Options for SessionSpawnBackend if App mode is detected
  */
 export function detectSpawnBackend(
   availableTools: ReadonlySet<string> | string[],
+  createSession: CreateSessionFn,
   options?: SessionSpawnOptions,
 ): SpawnBackend {
   const tools = availableTools instanceof Set
@@ -220,10 +280,10 @@ export function detectSpawnBackend(
     : new Set(availableTools);
 
   if (tools.has('create_session')) {
-    return new SessionSpawnBackend(options);
+    return new SessionSpawnBackend(createSession, options);
   }
 
-  return new TaskSpawnBackend();
+  return new TaskSpawnBackend(createSession);
 }
 
 /**
