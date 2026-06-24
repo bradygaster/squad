@@ -897,7 +897,11 @@ export interface ExtractionResult {
  * Creates the consultations directory if it doesn't exist.
  * For new projects, creates a full header; for existing projects, appends session entry.
  *
- * @param personalSquadRoot - Path to personal squad root (e.g. ~/.config/squad/.squad)
+ * @param personalSquadRoot - Path to personal squad root. Defaults to the
+ *   platform-specific global config directory (can be overridden with SQUAD_HOME):
+ *   - macOS:   `~/Library/Application Support/squad/.squad`
+ *   - Linux:   `~/.config/squad/.squad`
+ *   - Windows: `%APPDATA%/squad/.squad`
  * @param result - Extraction result with learnings and metadata
  * @returns Path to the consultation log file
  */
