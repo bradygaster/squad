@@ -12,6 +12,7 @@ import type { AgentCharter } from '../agents/index.js';
 import type { EventBus } from '../client/event-bus.js';
 import type { SessionPool } from '../client/session-pool.js';
 import { VALID_REASONING_EFFORTS } from '../config/models.js';
+import type { SpawnBackend, SpawnRequest } from './spawn-backend.js';
 
 // --- Spawn Configuration ---
 
@@ -62,6 +63,12 @@ export interface FanOutDependencies {
   sessionPool: SessionPool;
   /** Event bus for aggregation */
   eventBus: EventBus;
+  /**
+   * Optional spawn backend for platform-aware dispatch (Issue #1377).
+   * When provided, spawn uses the backend's platform-specific mechanism
+   * (e.g., sub-sessions in Copilot App). Falls back to createSession if absent.
+   */
+  spawnBackend?: SpawnBackend;
 }
 
 // --- Fan-Out Orchestrator ---
