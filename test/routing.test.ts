@@ -208,6 +208,34 @@ describe('matchRoute', () => {
     expect(match.reason).toContain('fallback');
   });
 
+  it('routes explicit @agent mentions with high confidence', () => {
+    const match = matchRoute('@lead please review this feature', router);
+
+    expect(match.agents).toEqual(['@lead']);
+    expect(match.confidence).toBe('high');
+    expect(match.reason).toContain('Explicit agent mention: @lead');
+  });
+
+  it('does not let @coordinator override normal routing or fallback', () => {
+    const matchedRoute = matchRoute('@coordinator implement new feature for authentication', router);
+    expect(matchedRoute.agents).toContain('Lead');
+    expect(matchedRoute.confidence).toBe('medium');
+    expect(matchedRoute.rule?.workType).toBe('feature-dev');
+
+    const fallbackRoute = matchRoute('@coordinator what is the weather today?', router);
+    expect(fallbackRoute.agents).toEqual(['@coordinator']);
+    expect(fallbackRoute.confidence).toBe('low');
+    expect(fallbackRoute.reason).toContain('fallback');
+  });
+
+  it('does not treat email addresses as explicit @agent mentions', () => {
+    const match = matchRoute('contact user@example.com about the new feature', router);
+
+    expect(match.agents).toContain('Lead');
+    expect(match.confidence).toBe('medium');
+    expect(match.rule?.workType).toBe('feature-dev');
+  });
+
   it('prefers more specific matches', () => {
     const specificConfig: RoutingConfig = {
       rules: [

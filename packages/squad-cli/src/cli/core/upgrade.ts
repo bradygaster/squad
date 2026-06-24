@@ -249,7 +249,7 @@ function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: str
     // Strip the version stamp before comparing (version line changes every upgrade)
     const stripVersion = (s: string) => s.replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '');
     const normalizedExisting = stripVersion(existing);
-    const normalizedTemplate = stripVersion(agentContent);
+    const normalizedTemplate = stripVersion(agentContent.replace(/\r\n/g, '\n'));
 
     if (normalizedExisting !== normalizedTemplate && normalizedExisting.trim().length > 0) {
       const backupPath = agentDest + '.local-backup';

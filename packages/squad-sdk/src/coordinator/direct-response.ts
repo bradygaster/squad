@@ -178,7 +178,7 @@ export class DirectResponseHandler {
     if (trimmed.length === 0) return false;
 
     // Never handle directly when message contains an explicit @agent mention (#1029)
-    if (/@[a-z][a-z0-9_-]*/i.test(trimmed)) {
+    if (/(?:^|\s)@[a-z][a-z0-9_-]*/i.test(trimmed)) {
       return false;
     }
 

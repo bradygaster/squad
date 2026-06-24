@@ -470,7 +470,7 @@ export async function addAgentToConfig(
 
     // Find the agents array and add new agent definition
     // Match patterns like: agents: [ ... ] or .agents([ ... ])
-    const agentsArrayPattern = /agents:\s*\[([\s\S]*?)\](?=\s*[,}\)])/;
+    const agentsArrayPattern = /agents:\s*\[([\s\S]*?)\](?=\s*[,}\)])/g;
     const builderPattern = /\.agents\(\s*\[([\s\S]*?)\]\s*\)/;
 
     let updatedContent = content;
@@ -481,15 +481,24 @@ export async function addAgentToConfig(
       role: '${role}',
     }`;
 
-    const arrayMatch = content.match(agentsArrayPattern);
-    if (arrayMatch) {
-      const existingAgents = arrayMatch[1]!.trimEnd();
+    let arrayMatch: RegExpExecArray | null;
+    let targetMatch: RegExpExecArray | null = null;
+    while ((arrayMatch = agentsArrayPattern.exec(content)) !== null) {
+      const existingAgents = arrayMatch[1]!;
+      if (existingAgents.includes('{') || existingAgents.trim() === '') {
+        targetMatch = arrayMatch;
+        break;
+      }
+    }
+
+    if (targetMatch) {
+      const existingAgents = targetMatch[1]!.trimEnd();
       const separator = existingAgents.trim() ? ',\n' : '\n';
       const updatedAgents = existingAgents + separator + newAgentDef;
-      updatedContent = content.replace(
-        agentsArrayPattern,
-        `agents: [${updatedAgents}\n  ]`
-      );
+      updatedContent =
+        content.slice(0, targetMatch.index) +
+        `agents: [${updatedAgents}\n  ]` +
+        content.slice(targetMatch.index + targetMatch[0].length);
       modified = true;
     } else {
       const builderMatch = content.match(builderPattern);
