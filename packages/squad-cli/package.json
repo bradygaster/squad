@@ -194,7 +194,7 @@
     "vscode-jsonrpc": "^9.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.0",
     "@types/react": "^19.2.17",
     "typescript": "^6.0.3",
     "ink-testing-library": "^4.0.0"
