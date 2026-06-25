@@ -59,12 +59,17 @@ export async function ghAvailable(): Promise<boolean> {
 }
 
 /**
- * Check if gh CLI is authenticated
+ * Check if gh CLI is authenticated.
+ *
+ * Uses `gh auth token` instead of `gh auth status` because the latter
+ * returns a non-zero exit code when ANY account in the keyring has an
+ * invalid token — even if the active account (e.g. via GH_TOKEN) is
+ * perfectly fine.  `gh auth token` only checks the active account.
  */
 export async function ghAuthenticated(): Promise<boolean> {
   try {
-    await execFileAsync('gh', ['auth', 'status']);
-    return true;
+    const { stdout } = await execFileAsync('gh', ['auth', 'token']);
+    return stdout.trim().length > 0;
   } catch {
     return false;
   }

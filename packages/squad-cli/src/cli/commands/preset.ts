@@ -115,9 +115,12 @@ async function presetInitRemote(): Promise<void> {
     fatal('GitHub CLI (gh) is required for --remote. Install it: https://cli.github.com');
   }
 
-  // Check gh auth
+  // Check gh auth — use `gh auth token` instead of `gh auth status` because
+  // the latter returns non-zero when any keyring entry is stale, even if the
+  // active account (e.g. via GH_TOKEN) works fine.
   try {
-    execSync('gh auth status', { stdio: 'pipe' });
+    const tok = execSync('gh auth token', { encoding: 'utf-8', stdio: 'pipe' }).trim();
+    if (!tok) throw new Error('empty token');
   } catch {
     fatal('Not logged in to GitHub CLI. Run: gh auth login');
   }
