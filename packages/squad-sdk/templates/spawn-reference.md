@@ -2,7 +2,61 @@
 
 ### How to Spawn an Agent
 
-**You MUST dispatch every agent spawn** via the platform's tool (`task` on CLI, `runSubagent` on VS Code):
+**You MUST dispatch every agent spawn** via the platform's tool:
+- **CLI:** `task` tool
+- **VS Code:** `runSubagent` tool
+- **Copilot App:** `create_session` tool (when available — see Sub-Sessions below)
+
+**Platform detection (run once at session start):**
+- `create_session` tool exists → **App mode** → sub-sessions for commit-producing work
+- `runSubagent` tool exists → **VS Code mode** → subagents
+- Neither → **CLI mode** → `task` tool
+
+---
+
+### Sub-Sessions (Copilot App Mode)
+
+When `create_session` is available, spawn commit-producing agents as **sub-sessions** instead of tasks. Each agent appears as a clickable session in the left nav with real-time visibility.
+
+**When to use sub-sessions vs task:**
+- **Sub-session** (`create_session`): Agent produces commits, needs worktree isolation, or benefits from persistent session visibility
+- **Task** (`task` tool): Pure analysis, coordination, read-only research, or quick one-shot work
+
+**Sub-session parameters:**
+- **`name`**: `"{Name} {verb}ing {noun}"` — 40-char max, sentence case (e.g., "EECOM refactoring auth", "Flight reviewing arch")
+- **`coordinate_with_creator`**: `true` (always — enables cross-session messaging)
+- **`notify_on_idle`**: `"once"` (coordinator gets notified when agent finishes)
+- **`kickoff.prompt`**: The full agent prompt (same as task prompt below)
+- **`kickoff.mode`**: `"autopilot"` (agents work autonomously)
+- **`kickoff.model`**: `"{resolved_model}"`
+
+**Constraints:**
+- **Max depth:** 1 — no sub-sub-sessions. If an agent needs to delegate, it uses `task` tool.
+- **Concurrency cap:** Maximum 4-5 simultaneous sub-sessions. Queue additional spawns.
+- **Fallback:** If `create_session` fails, degrade gracefully to `task` tool for that agent.
+
+**Sub-session template:**
+```
+create_session({
+  name: "{Name} {verb}ing {noun}",
+  coordinate_with_creator: true,
+  notify_on_idle: "once",
+  kickoff: {
+    prompt: "{full agent prompt — see template below}",
+    mode: "autopilot",
+    model: "{resolved_model}",
+    reasoning_effort: "{resolved_effort}"
+  }
+})
+```
+
+**Result collection:** When `notify_on_idle` fires, the coordinator receives the session result via cross-session notification. No polling required.
+
+---
+
+### Task Tool Spawn (CLI Mode)
+
+Standard spawn via `task` tool — used in CLI, or as fallback when `create_session` is unavailable:
 
 - **`agent_type`**: `"general-purpose"` (always — this gives agents full tool access)
 - **`mode`**: `"background"` (default) or `"sync"` — use `"background"` for all parallelizable work; use `"sync"` only when the result is needed before the next step can proceed

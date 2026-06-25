@@ -121,9 +121,26 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 **⚠️ CRITICAL RULE: You are a DISPATCHER, not a DOER. Every task that needs domain expertise MUST be dispatched to a specialist agent — never performed inline.**
 
 **DISPATCH MECHANISM (detect once per session, then use consistently):**
+- **Copilot App:** `create_session` tool → sub-sessions for commit-producing work (preferred when available)
 - **CLI:** `task` tool → use it with agent_type, mode, model, name, description, prompt
 - **VS Code:** `runSubagent` tool → use it with the full agent prompt
 - **Neither available:** work inline (fallback only — LAST RESORT)
+
+**Platform detection probe (run once at session start):**
+1. Check: is `create_session` tool available? → **App mode** (sub-sessions)
+2. Else: is `runSubagent` available? → **VS Code mode**
+3. Else: is `task` tool available? → **CLI mode**
+4. Else: none available → **work inline** (last resort fallback)
+5. Cache the result — use the same mechanism for all spawns in this session.
+
+**Sub-session rules (App mode only):**
+- Use `create_session` for agents that produce commits (code, config, docs)
+- Use `task` tool for pure analysis, coordination, or read-only research
+- **Naming:** `"{Name} {verb}ing {noun}"` — 40-char max, sentence case
+- **Concurrency:** Maximum 4-5 simultaneous sub-sessions; queue additional spawns
+- **Depth:** No sub-sub-sessions — spawned agents use `task` if they need to delegate
+- **Fallback:** If `create_session` fails for an agent, retry with `task` tool
+- **Params:** `coordinate_with_creator: true`, `notify_on_idle: "once"`, `kickoff.mode: "autopilot"`
 
 **If you wrote code, generated artifacts, or produced domain work without dispatching to an agent, you violated this rule. The coordinator ROUTES — it does not BUILD. No exceptions.**
 

@@ -12,6 +12,7 @@ import type { AgentCharter } from '../agents/index.js';
 import type { EventBus } from '../client/event-bus.js';
 import type { SessionPool } from '../client/session-pool.js';
 import { VALID_REASONING_EFFORTS } from '../config/models.js';
+import type { CreateSessionFn, SpawnBackend, SpawnHandle, SpawnRequest } from './spawn-backend.js';
 
 // --- Spawn Configuration ---
 
@@ -57,11 +58,17 @@ export interface FanOutDependencies {
   /** Reasoning effort resolution function (optional for backwards compatibility) */
   resolveReasoningEffort?: (charter: AgentCharter, override?: string) => Promise<string | undefined>;
   /** Session creation function */
-  createSession: (config: any) => Promise<{ sessionId: string; sendMessage: (opts: any) => Promise<void> }>;
+  createSession: CreateSessionFn;
   /** Session pool for tracking */
   sessionPool: SessionPool;
   /** Event bus for aggregation */
   eventBus: EventBus;
+  /**
+   * Optional spawn backend for platform-aware dispatch (Issue #1377).
+   * When provided, spawn uses the backend's platform-specific mechanism
+   * (e.g., sub-sessions in Copilot App). Falls back to createSession if absent.
+   */
+  spawnBackend?: SpawnBackend;
 }
 
 // --- Fan-Out Orchestrator ---
@@ -136,39 +143,68 @@ async function spawnSingle(
       ? rawEffort
       : undefined;
 
+    const initialPrompt = buildInitialPrompt(config);
+
     // Step 3: Create session
-    const session = await deps.createSession({
-      model,
-      clientName: `squad-agent-${config.agentName}`,
-      ...(reasoningEffort ? { reasoningEffort } : {}),
-    });
+    let sessionId: string;
+    let spawnHandle: SpawnHandle | undefined;
+
+    if (deps.spawnBackend) {
+      const request: SpawnRequest = {
+        agentName: config.agentName,
+        prompt: initialPrompt,
+        description: `${config.agentName}: ${config.task}`,
+        name: config.agentName,
+        model,
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+        background: true,
+      };
+
+      spawnHandle = await deps.spawnBackend.spawn(request);
+      if (!spawnHandle.success) {
+        throw new Error(spawnHandle.error || `Failed to spawn agent ${config.agentName}`);
+      }
+
+      sessionId = spawnHandle.id;
+    } else {
+      const session = await deps.createSession({
+        model,
+        clientName: `squad-agent-${config.agentName}`,
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+      });
+
+      // Step 5: Send initial task message
+      await session.sendMessage({
+        prompt: initialPrompt,
+        mode: 'immediate',
+      });
+
+      sessionId = session.sessionId;
+    }
 
     // Step 4: Register in session pool
     deps.sessionPool.add({
-      id: session.sessionId,
+      id: sessionId,
       agentName: config.agentName,
       status: 'active',
       createdAt: startTime,
     });
 
-    // Step 5: Send initial task message
-    const initialPrompt = buildInitialPrompt(config);
-    await session.sendMessage({
-      prompt: initialPrompt,
-      mode: 'immediate',
-    });
+    if (deps.spawnBackend && spawnHandle) {
+      registerSpawnRelease(deps.spawnBackend, spawnHandle, deps.eventBus);
+    }
 
     // Step 6: Emit spawn success event
     await deps.eventBus.emit({
       type: 'session.created' as any,
-      sessionId: session.sessionId,
+      sessionId,
       payload: { agentName: config.agentName, priority: config.priority || 'normal' },
       timestamp: new Date(),
     });
 
     return {
       agentName: config.agentName,
-      sessionId: session.sessionId,
+      sessionId,
       status: 'success',
       startTime,
       endTime: new Date(),
@@ -192,6 +228,43 @@ async function spawnSingle(
       endTime: new Date(),
     };
   }
+}
+
+function registerSpawnRelease(
+  backend: SpawnBackend,
+  handle: SpawnHandle,
+  eventBus: EventBus,
+): void {
+  let released = false;
+
+  const releaseOnce = () => {
+    if (released) return;
+    released = true;
+    unsubscribeStatus();
+    unsubscribeDestroyed();
+    unsubscribeError();
+    backend.release(handle);
+  };
+
+  const unsubscribeStatus = eventBus.on('session.status_changed', (event) => {
+    if (event.sessionId !== handle.id) return;
+    const payload = event.payload as { newStatus?: string } | undefined;
+    if (payload?.newStatus === 'idle' || payload?.newStatus === 'error' || payload?.newStatus === 'destroyed') {
+      releaseOnce();
+    }
+  });
+
+  const unsubscribeDestroyed = eventBus.on('session.destroyed', (event) => {
+    if (event.sessionId === handle.id) {
+      releaseOnce();
+    }
+  });
+
+  const unsubscribeError = eventBus.on('session.error', (event) => {
+    if (event.sessionId === handle.id) {
+      releaseOnce();
+    }
+  });
 }
 
 /**
