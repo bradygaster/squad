@@ -260,7 +260,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
   },
 
   aspire: (version) => {
-    header('aspire', version, 'Launch the .NET Aspire dashboard for observability');
+    header('aspire', version, 'Launch the Aspire dashboard for observability');
     console.log(`Usage: squad aspire [options]\n`);
     console.log(`Options:`);
     console.log(`  ${BOLD}--docker${RESET}                    Force the Docker launch path`);

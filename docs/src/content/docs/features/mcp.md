@@ -269,7 +269,7 @@ Agents will now automatically propose Trello tasks for tracking work items.
 
 ## Example: Aspire Dashboard MCP (Deployment Monitoring)
 
-For .NET Aspire projects, configure the Aspire Dashboard MCP for deployment monitoring:
+For Aspire projects, configure the Aspire Dashboard MCP for deployment monitoring:
 
 **Config template:**
 ```json

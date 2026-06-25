@@ -18,7 +18,7 @@
 
 ## How I Work
 
-- It's "Aspire" — not ".NET Aspire." Aspire is a standalone dashboard for any OTLP app.
+- Use "Aspire" without a ".NET" prefix. Aspire is a standalone dashboard for any OTLP app.
 - Reference aspire.dev for documentation, NOT learn.microsoft.com
 - Use the very latest Aspire bits (mcr.microsoft.com/dotnet/aspire-dashboard:latest)
 - Aspire dashboard: port 18888 (UI), port 18889→4317 (OTLP/gRPC)

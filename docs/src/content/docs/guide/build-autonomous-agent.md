@@ -375,7 +375,7 @@ import {
   recordTokenUsage,
 } from '@bradygaster/squad-sdk';
 
-// Initialize OTel (connects to .NET Aspire dashboard if endpoint is set)
+// Initialize OTel (connects to Aspire dashboard if endpoint is set)
 const otelEndpoint = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'];
 if (otelEndpoint) {
   initSquadTelemetry({
@@ -413,7 +413,7 @@ const summary = costTracker.getSummary();
 console.log(`Total: $${summary.totalEstimatedCost.toFixed(4)}`);
 ```
 
-To view traces and metrics in the .NET Aspire dashboard, see the [Aspire dashboard scenario](/scenarios/aspire-dashboard/).
+To view traces and metrics in the Aspire dashboard, see the [Aspire dashboard scenario](/scenarios/aspire-dashboard/).
 
 ---
 
