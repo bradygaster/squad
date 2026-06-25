@@ -17,7 +17,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Version>0.5.1</Version>
+    <Version>0.5.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="samples/**/*.cs" />
