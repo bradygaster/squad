@@ -127,4 +127,61 @@ describe('spawn backends', () => {
     expect(thirdHandle.success).toBe(true);
     expect(backend.getActiveCount()).toBe(1);
   });
+
+  it('isAvailable reflects the injected factory and an injected predicate', () => {
+    const createSession = vi.fn(async () => ({
+      sessionId: 'x',
+      sendMessage: vi.fn(async () => undefined),
+    })) satisfies CreateSessionFn;
+
+    // Default heuristic: a usable factory means available (no more "always true" lie).
+    expect(new TaskSpawnBackend(createSession).isAvailable()).toBe(true);
+    expect(new SessionSpawnBackend(createSession).isAvailable()).toBe(true);
+
+    // Injected predicate overrides the default.
+    expect(
+      new TaskSpawnBackend(createSession, { availabilityCheck: () => false }).isAvailable(),
+    ).toBe(false);
+
+    let avail = false;
+    const session = new SessionSpawnBackend(createSession, { availabilityCheck: () => avail });
+    expect(session.isAvailable()).toBe(false);
+    avail = true;
+    expect(session.isAvailable()).toBe(true);
+  });
+
+  it('SessionSpawnBackend times out a hung createSession and frees the slot', async () => {
+    const createSession = vi.fn(() => new Promise<never>(() => {})) as unknown as CreateSessionFn;
+    const backend = new SessionSpawnBackend(createSession, {
+      createSessionTimeoutMs: 20,
+      maxConcurrent: 1,
+    });
+
+    const handle = await backend.spawn({
+      agentName: 'fenster',
+      name: 'fenster',
+      description: 'Fenster implementing fix',
+      prompt: 'Implement the fix',
+    });
+
+    expect(handle.success).toBe(false);
+    expect(handle.error).toMatch(/timed out/i);
+    // finally{} must have decremented pendingSpawnCount so the slot is not leaked.
+    expect(backend.getActiveCount()).toBe(0);
+  });
+
+  it('TaskSpawnBackend times out a hung createSession', async () => {
+    const createSession = vi.fn(() => new Promise<never>(() => {})) as unknown as CreateSessionFn;
+    const backend = new TaskSpawnBackend(createSession, { createSessionTimeoutMs: 20 });
+
+    const handle = await backend.spawn({
+      agentName: 'fenster',
+      name: 'fenster',
+      description: 'Fenster implementing fix',
+      prompt: 'Implement the fix',
+    });
+
+    expect(handle.success).toBe(false);
+    expect(handle.error).toMatch(/timed out/i);
+  });
 });

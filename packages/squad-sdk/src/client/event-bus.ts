@@ -15,6 +15,7 @@ export type SquadEventType =
   | 'session.message'
   | 'session.tool_call'
   | 'session.error'
+  | 'session.spawn_fallback'
   | 'agent.milestone'
   | 'coordinator.routing'
   | 'pool.health';

@@ -10,7 +10,8 @@
 **Platform detection (run once at session start):**
 - `create_session` tool exists → **App mode** → sub-sessions for commit-producing work
 - `runSubagent` tool exists → **VS Code mode** → subagents
-- Neither → **CLI mode** → `task` tool
+- `task` tool exists → **CLI mode** → task tool
+- None available → **work inline** (last resort fallback)
 
 ---
 

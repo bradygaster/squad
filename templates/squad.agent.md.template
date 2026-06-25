@@ -128,9 +128,10 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 
 **Platform detection probe (run once at session start):**
 1. Check: is `create_session` tool available? → **App mode** (sub-sessions)
-2. Else: is `task` tool available? → **CLI mode**
-3. Else: is `runSubagent` available? → **VS Code mode**
-4. Cache the result — use the same mechanism for all spawns in this session.
+2. Else: is `runSubagent` available? → **VS Code mode**
+3. Else: is `task` tool available? → **CLI mode**
+4. Else: none available → **work inline** (last resort fallback)
+5. Cache the result — use the same mechanism for all spawns in this session.
 
 **Sub-session rules (App mode only):**
 - Use `create_session` for agents that produce commits (code, config, docs)
