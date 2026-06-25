@@ -162,7 +162,16 @@ export function parseRoutingMarkdown(content: string): RoutingConfig {
       if (cells.length >= 2) {
         const workType = cells[0];
         const routeTo = cells[1]!;
-        const examples = cells.length >= 3 ? cells[2]!.split(',').map(ex => ex.trim()) : undefined;
+        // Strip surrounding quotes (", ', `) so quoted and unquoted examples
+        // tokenize identically. Without this, a quoted example like "unit tests"
+        // keeps its quotes and compiles to patterns that never match, which made
+        // quoted routing examples silently route everything to fallback.
+        const examples = cells.length >= 3
+          ? cells[2]!
+              .split(',')
+              .map(ex => ex.trim().replace(/^["'`]+|["'`]+$/g, '').trim())
+              .filter(ex => ex.length > 0)
+          : undefined;
         
         // Parse agent names (may be comma-separated or single)
         const agents = routeTo.split(',').map(a => a.trim()).filter(a => a.length > 0);
