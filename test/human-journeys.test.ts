@@ -565,7 +565,7 @@ describe('Cross-journey: CLI --help is the safety net', () => {
     await harness.close();
 
     // A confused human types --help. Do they see EVERY command?
-    const expectedCommands = ['init', 'status', 'doctor', 'help', 'upgrade', 'export', 'import'];
+    const expectedCommands = ['init', 'status', 'doctor', 'help', 'upgrade', 'export', 'import', 'externalize', 'internalize'];
     for (const cmd of expectedCommands) {
       expect(output.toLowerCase()).toContain(cmd);
     }
