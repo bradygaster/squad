@@ -106,10 +106,7 @@ jobs:
           script: |
             const fs = require('fs');
 
-            let teamFile = '.squad/team.md';
-            if (!fs.existsSync(teamFile)) {
-              teamFile = '.ai-team/team.md';
-            }
+            const teamFile = '.squad/team.md';
             if (!fs.existsSync(teamFile)) return;
 
             const content = fs.readFileSync(teamFile, 'utf8');
@@ -154,7 +151,7 @@ jobs:
                     agent_assignment: {
                       target_repo: `${context.repo.owner}/${context.repo.repo}`,
                       base_branch: repoData.default_branch,
-                      custom_instructions: `Read .squad/team.md (or .ai-team/team.md) for team context and .squad/routing.md (or .ai-team/routing.md) for routing rules.`
+                      custom_instructions: `Read .squad/team.md for team context and .squad/routing.md for routing rules.`
                     }
                   });
                   core.info(`Assigned copilot-swe-agent[bot] to #${issue.number}`);
