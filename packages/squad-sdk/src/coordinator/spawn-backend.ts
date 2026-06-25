@@ -59,8 +59,55 @@ export interface SpawnedSession {
 /** Session creation callback injected by SDK callers */
 export type CreateSessionFn = (config: any) => Promise<SpawnedSession>;
 
+/**
+ * Default timeout (ms) applied to an injected `createSession` call so a hung
+ * factory cannot hold a concurrency slot / pending-spawn counter forever.
+ */
+export const DEFAULT_CREATE_SESSION_TIMEOUT_MS = 60_000;
+
+/** Error thrown when an injected createSession call exceeds its timeout. */
+export class SpawnTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`createSession timed out after ${ms}ms`);
+    this.name = 'SpawnTimeoutError';
+  }
+}
+
+/**
+ * Race a promise against a timeout. A non-positive `ms` disables the timeout.
+ * The timer is unref'd so it never keeps the process alive on its own.
+ */
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  if (!ms || ms <= 0) return promise;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new SpawnTimeoutError(ms)), ms);
+    if (typeof timer.unref === 'function') timer.unref();
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Options shared by all spawn backends. */
+export interface SpawnBackendOptions {
+  /**
+   * Timeout (ms) for the injected `createSession` call.
+   * Defaults to {@link DEFAULT_CREATE_SESSION_TIMEOUT_MS}; set to 0 to disable.
+   */
+  createSessionTimeoutMs?: number;
+  /**
+   * Optional availability predicate. When provided, `isAvailable()` delegates
+   * to it instead of the default heuristic — letting callers gate a backend on
+   * real environment signals (e.g., tool-registry membership).
+   */
+  availabilityCheck?: () => boolean;
+}
+
 /** Options for sub-session creation (App mode) */
-export interface SessionSpawnOptions {
+export interface SessionSpawnOptions extends SpawnBackendOptions {
   /** Project ID for session creation */
   projectId?: string;
   /** Whether to coordinate with creator session */
@@ -111,20 +158,31 @@ export interface SpawnBackend {
 export class TaskSpawnBackend implements SpawnBackend {
   readonly platform: SpawnPlatform = 'cli';
 
-  constructor(private readonly createSession: CreateSessionFn) {}
+  private options: SpawnBackendOptions;
+
+  constructor(
+    private readonly createSession: CreateSessionFn,
+    options: SpawnBackendOptions = {},
+  ) {
+    this.options = options;
+  }
 
   isAvailable(): boolean {
-    // task tool is always available in CLI/VS Code
-    return true;
+    if (this.options.availabilityCheck) return this.options.availabilityCheck();
+    // Requires a usable session factory to map onto the `task` tool.
+    return typeof this.createSession === 'function';
   }
 
   async spawn(request: SpawnRequest): Promise<SpawnHandle> {
     try {
-      const session = await this.createSession({
-        model: request.model,
-        clientName: `squad-agent-${request.agentName}`,
-        ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
-      });
+      const session = await withTimeout(
+        this.createSession({
+          model: request.model,
+          clientName: `squad-agent-${request.agentName}`,
+          ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
+        }),
+        this.options.createSessionTimeoutMs ?? DEFAULT_CREATE_SESSION_TIMEOUT_MS,
+      );
 
       await session.sendMessage({
         prompt: request.prompt,
@@ -186,10 +244,11 @@ export class SessionSpawnBackend implements SpawnBackend {
   }
 
   isAvailable(): boolean {
-    // In the agent context, availability is determined by whether
-    // `create_session` tool exists in the tool registry.
-    // This check is performed by detectSpawnBackend() at startup.
-    return true;
+    if (this.options.availabilityCheck) return this.options.availabilityCheck();
+    // Availability hinges on a usable session factory. Tool-registry gating
+    // (e.g. `create_session` membership) is layered on by detectSpawnBackend()
+    // or via an injected availabilityCheck.
+    return typeof this.createSession === 'function';
   }
 
   async spawn(request: SpawnRequest): Promise<SpawnHandle> {
@@ -212,18 +271,21 @@ export class SessionSpawnBackend implements SpawnBackend {
     this.pendingSpawnCount++;
 
     try {
-      const session = await this.createSession({
-        name: truncateSessionName(request.description),
-        coordinate_with_creator: this.options.coordinateWithCreator,
-        notify_on_idle: this.options.notifyOnIdle,
-        project_id: this.options.projectId,
-        kickoff: {
-          prompt: request.prompt,
-          mode: this.options.mode,
-          model: request.model,
-          ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
-        },
-      });
+      const session = await withTimeout(
+        this.createSession({
+          name: truncateSessionName(request.description),
+          coordinate_with_creator: this.options.coordinateWithCreator,
+          notify_on_idle: this.options.notifyOnIdle,
+          project_id: this.options.projectId,
+          kickoff: {
+            prompt: request.prompt,
+            mode: this.options.mode,
+            model: request.model,
+            ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+          },
+        }),
+        this.options.createSessionTimeoutMs ?? DEFAULT_CREATE_SESSION_TIMEOUT_MS,
+      );
 
       this.activeSessionIds.add(session.sessionId);
 
@@ -283,7 +345,7 @@ export function detectSpawnBackend(
     return new SessionSpawnBackend(createSession, options);
   }
 
-  return new TaskSpawnBackend(createSession);
+  return new TaskSpawnBackend(createSession, options);
 }
 
 /**
