@@ -204,8 +204,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --init (generate boilerplate loop.md)`);
     console.log(`                    --file <path> (custom loop file)`);
     console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
-    console.log(`  ${BOLD}hire${RESET}       Team creation wizard`);
-    console.log(`             Usage: hire [--name <name>] [--role <role>]`);
+    console.log(`  ${BOLD}cast${RESET}       Show roster, or add a new agent (alias: hire)`);
+    console.log(`             Usage: cast [--name <name>] [--role <role>]`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
@@ -784,12 +784,20 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cmd === 'hire') {
+  if (cmd === 'cast' || cmd === 'hire') {
     const nameIdx = args.indexOf('--name');
     const name = (nameIdx !== -1 && args[nameIdx + 1]) ? args[nameIdx + 1] : undefined;
     const roleIdx = args.indexOf('--role');
     const role = (roleIdx !== -1 && args[roleIdx + 1]) ? args[roleIdx + 1] : undefined;
-    console.log('👋 Squad hire — team creation wizard starting... (full implementation pending)');
+
+    // `squad cast` with no wizard flags shows the roster; `squad hire` always runs the wizard
+    if (cmd === 'cast' && !name && !role) {
+      const { runCast } = await import('./cli/commands/cast.js');
+      await runCast(getSquadStartDir());
+      return;
+    }
+
+    console.log('🎬 Squad cast — team creation wizard starting... (full implementation pending)');
     if (name) {
       console.log(`   Name: ${name}`);
     }
@@ -1076,12 +1084,6 @@ async function main(): Promise<void> {
     const { runPreset } = await import('./cli/commands/preset.js');
     const subcommand = args[1] || 'list';
     await runPreset(getSquadStartDir(), subcommand, args.slice(2));
-    return;
-  }
-
-  if (cmd === 'cast') {
-    const { runCast } = await import('./cli/commands/cast.js');
-    await runCast(getSquadStartDir());
     return;
   }
 

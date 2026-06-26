@@ -138,7 +138,7 @@ Say **"squad commands"** in chat to see a categorized menu of common operations 
 
 | Command | What it does |
 |---------|-------------|
-| `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `hire`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
+| `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `cast`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
 | `squad upgrade --self` | Update the Squad CLI package itself; add `--insider` for dev-channel prerelease builds |
 | `squad status` | Show which squad is active and why |

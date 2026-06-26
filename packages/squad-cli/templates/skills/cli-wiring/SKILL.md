@@ -30,7 +30,7 @@
 | Type | Example | How to wire |
 |------|---------|-------------|
 | Standard command | `export.ts`, `build.ts` | `run*()` function, parse flags from `args` |
-| Placeholder command | `loop`, `hire` | Inline in cli-entry.ts, prints pending message |
+| Placeholder command | `loop`, `cast` (alias: `hire`) | Inline in cli-entry.ts, prints pending message |
 | Utility/check module | `rc-tunnel.ts`, `copilot-bridge.ts` | Wire as diagnostic check (e.g., `isDevtunnelAvailable()`) |
 | Subcommand of another | `init-remote.ts` | Already used inside parent + standalone alias |
 
@@ -44,4 +44,4 @@ Use dynamic `await import()` for command modules to keep startup fast (lazy load
 
 ## History
 
-- **#237 / PR #244:** 4 commands wired (rc, copilot-bridge, init-remote, rc-tunnel). aspire, link, loop, hire were already present.
+- **#237 / PR #244:** 4 commands wired (rc, copilot-bridge, init-remote, rc-tunnel). aspire, link, loop, cast (née hire) were already present.

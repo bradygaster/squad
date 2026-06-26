@@ -127,13 +127,16 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  squad loop --monitor-email          ${DIM}# with email monitoring${RESET}`);
   },
 
-  hire: (version) => {
-    header('hire', version, 'Team creation wizard');
-    console.log(`Usage: squad hire [--name <name>] [--role <role>]\n`);
-    console.log(`Interactive wizard that walks you through adding a new agent to the team.\n`);
+  cast: (version) => {
+    header('cast', version, 'Show roster or add a new agent to the team');
+    console.log(`Usage: squad cast                        ${DIM}# show the current cast (roster)${RESET}`);
+    console.log(`       squad cast --name <name> --role <role>  ${DIM}# add a new agent${RESET}\n`);
+    console.log(`With no flags, displays the current session cast (project + personal agents).`);
+    console.log(`With --name/--role, launches the team creation wizard.\n`);
     console.log(`Options:`);
     console.log(`  ${BOLD}--name <name>${RESET}               Pre-fill the agent name`);
-    console.log(`  ${BOLD}--role <role>${RESET}               Pre-select a built-in role (see 'squad roles')\n`);
+    console.log(`  ${BOLD}--role <role>${RESET}               Pre-select a built-in role (see 'squad roles')`);
+    console.log(`\nAlias: ${BOLD}squad hire${RESET} (always runs the creation wizard)\n`);
   },
 
   copilot: (version) => {
@@ -287,11 +290,6 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--remote${RESET}                    init: back presets with a GitHub repo\n`);
   },
 
-  cast: (version) => {
-    header('cast', version, 'Show the current session cast (project + personal agents)');
-    console.log(`Usage: squad cast\n`);
-  },
-
   rc: (version) => printRcHelp('rc', version),
   'remote-control': (version) => printRcHelp('remote-control', version),
 
@@ -402,6 +400,7 @@ function printRcHelp(name: 'rc' | 'remote-control', version: string): void {
  * have explicit help blocks) do NOT need an entry here.
  */
 const COMMAND_ALIASES: Readonly<Record<string, string>> = {
+  hire: 'cast',
   streams: 'subsquads',
   workstreams: 'subsquads',
 };
