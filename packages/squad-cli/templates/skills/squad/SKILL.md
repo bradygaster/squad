@@ -214,9 +214,9 @@ Proceed? (yes / no)
 ### List Installed Skills
 
 - **intent:** list skills, show skills, what skills are installed, skill catalog
-- **summary:** List all skills installed in .squad/skills/ and .copilot/skills/
+- **summary:** List all skills installed in .squad/skills/ and .github/skills/
 - **action:** coordinator
-- **command:** Direct Mode — list .squad/skills/ and .copilot/skills/ directories
+- **command:** Direct Mode — list .squad/skills/ and .github/skills/ directories
 - **args:** (none)
 - **confirm:** false
 

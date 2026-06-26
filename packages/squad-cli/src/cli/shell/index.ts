@@ -1015,7 +1015,7 @@ export async function runShell(): Promise<void> {
 
     shellApi?.addMessage({
       role: 'system',
-      content: `✅ Team hired! ${result.membersCreated.length} members created.`,
+      content: `✅ Team cast! ${result.membersCreated.length} members created.`,
       timestamp: new Date(),
     });
 

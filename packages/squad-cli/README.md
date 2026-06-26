@@ -76,7 +76,7 @@ For detailed documentation on each command, see the [CLI Reference](https://docs
 
 | Command | Purpose |
 |---------|---------|
-| `squad hire --name <name> --role <role>` | Add a new agent to your team |
+| `squad cast --name <name> --role <role>` | Add a new agent to your team (alias: `hire`) |
 | `squad copilot` | Add the @copilot coding agent |
 | `squad copilot --off` | Remove @copilot from the team |
 | `squad copilot --auto-assign` | Enable auto-assignment for @copilot |

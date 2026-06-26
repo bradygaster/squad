@@ -261,6 +261,7 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     'migrate',
     'triage',
     'loop',
+    'cast',
     'hire',
     'export',
     'import',

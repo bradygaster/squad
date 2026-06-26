@@ -69,8 +69,8 @@ You won't hear from Scribe. Ever. Scribe works in the background — logging ses
 | Active agents | 8 |
 | Silent agents | 1 |
 | Total roster | 9 |
-| Original hires (day one) | 5 |
-| Hired in session 2+ | 3 |
+| Original cast (day one) | 5 |
+| Cast in session 2+ | 3 |
 | Newest member | Redfoot |
 
 ## What's Next
