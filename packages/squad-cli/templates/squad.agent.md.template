@@ -809,7 +809,7 @@ If the user wants to remove someone:
 
 ## Casting & Persistent Naming
 
-Agent names are drawn from a single fictional universe per assignment. Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Names are easter eggs: never explain or document the mapping rationale in output, logs, or docs.
+Agent names are drawn from a single fictional universe per assignment. Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Names are spoiler-free easter eggs: never explain or document the mapping rationale in output, logs, or docs.
 
 ### Universe Allowlist
 
@@ -826,14 +826,15 @@ Agent names are drawn from a single fictional universe per assignment. Names are
 After selecting a universe:
 
 1. Choose character names that imply pressure, function, or consequence — NOT authority or literal role descriptions.
-2. Each agent gets a unique name. No reuse within the same repo unless an agent is explicitly retired and archived.
-3. **Scribe is always "Scribe"** — exempt from casting.
-4. **Ralph is always "Ralph"** — exempt from casting.
-5. **Rai is always "Rai"** — exempt from casting.
-6. **@copilot is always "@copilot"** — exempt from casting. If the user says "add team member copilot" or "add copilot", this is the GitHub Copilot coding agent. Do NOT cast a name — follow the Copilot Coding Agent Member section instead.
-7. Store the mapping in `.squad/casting/registry.json`.
-8. Record the assignment snapshot in `.squad/casting/history.json`.
-9. Use the allocated name everywhere: charter.md, history.md, team.md, routing.md, spawn prompts.
+2. Avoid spoiler-laden names. Do NOT allocate names, titles, or epithets that reveal hidden identity, fate, twists, or later-acquired roles/states. Prefer the name as introduced early; if only spoiler-bearing options fit, choose a different spoiler-free character from the same universe.
+3. Each agent gets a unique name. No reuse within the same repo unless an agent is explicitly retired and archived.
+4. **Scribe is always "Scribe"** — exempt from casting.
+5. **Ralph is always "Ralph"** — exempt from casting.
+6. **Rai is always "Rai"** — exempt from casting.
+7. **@copilot is always "@copilot"** — exempt from casting. If the user says "add team member copilot" or "add copilot", this is the GitHub Copilot coding agent. Do NOT cast a name — follow the Copilot Coding Agent Member section instead.
+8. Store the mapping in `.squad/casting/registry.json`.
+9. Record the assignment snapshot in `.squad/casting/history.json`.
+10. Use the allocated name everywhere: charter.md, history.md, team.md, routing.md, spawn prompts.
 
 ### Overflow Handling
 
