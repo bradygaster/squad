@@ -90,7 +90,7 @@ describe('Version stamping in squad.agent.md', () => {
     const content = fs.readFileSync(agentPath, 'utf8');
     
     // Should contain version in HTML comment
-    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+)?) -->/);
+    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?) -->/);
     assert.ok(commentMatch, 'squad.agent.md should contain version HTML comment');
     assert.equal(
       commentMatch[1],
@@ -106,7 +106,7 @@ describe('Version stamping in squad.agent.md', () => {
     const content = fs.readFileSync(agentPath, 'utf8');
     
     // Should contain version in the Identity section's Version line
-    const versionMatch = content.match(/- \*\*Version:\*\* ([0-9.]+(?:-[a-z]+)?)/);
+    const versionMatch = content.match(/- \*\*Version:\*\* ([0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?)/);
     assert.ok(versionMatch, 'squad.agent.md should contain Version field in Identity section');
     assert.equal(
       versionMatch[1],
@@ -125,8 +125,8 @@ describe('Version stamping in squad.agent.md', () => {
     
     // Revert to old version with placeholder
     content = content.replace(/<!-- version: [^>]+ -->/, '<!-- version: 0.4.0 -->');
-    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/, '- **Version:** 0.4.0');
-    content = content.replace(/`Squad v[0-9.]+(?:-[a-z]+)?`/g, '`Squad v{version}`');
+    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?/, '- **Version:** 0.4.0');
+    content = content.replace(/`Squad v[0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?`/g, '`Squad v{version}`');
     fs.writeFileSync(agentPath, content);
     
     // Verify placeholder is there
@@ -172,7 +172,7 @@ describe('compareSemver pre-release handling', () => {
     const agentPath = path.join(tmpDir, '.github', 'agents', 'squad.agent.md');
     let content = fs.readFileSync(agentPath, 'utf8');
     content = content.replace(/<!-- version: [^>]+ -->/, '<!-- version: 0.4.0 -->');
-    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/, '- **Version:** 0.4.0');
+    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?/, '- **Version:** 0.4.0');
     fs.writeFileSync(agentPath, content);
     
     // Run upgrade
@@ -188,7 +188,7 @@ describe('compareSemver pre-release handling', () => {
     // Verify version was updated
     content = fs.readFileSync(agentPath, 'utf8');
     const currentVersion = getPackageVersion();
-    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+)?) -->/);
+    const commentMatch = content.match(/<!-- version: ([0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?) -->/);
     assert.ok(commentMatch, 'squad.agent.md should have version comment after upgrade');
     assert.equal(
       commentMatch[1],
@@ -224,7 +224,7 @@ describe('compareSemver pre-release handling', () => {
     const agentPath = path.join(tmpDir, '.github', 'agents', 'squad.agent.md');
     let content = fs.readFileSync(agentPath, 'utf8');
     content = content.replace(/<!-- version: [^>]+ -->/, '<!-- version: 0.5.2 -->');
-    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/, '- **Version:** 0.5.2');
+    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?/, '- **Version:** 0.5.2');
     fs.writeFileSync(agentPath, content);
     
     // Run upgrade (current package might be 0.5.2, 0.5.3, or 0.5.3-insiders)
@@ -251,7 +251,7 @@ describe('compareSemver pre-release handling', () => {
     const agentPath = path.join(tmpDir, '.github', 'agents', 'squad.agent.md');
     let content = fs.readFileSync(agentPath, 'utf8');
     content = content.replace(/<!-- version: [^>]+ -->/, '<!-- version: 0.5.3-insiders -->');
-    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+)?/, '- **Version:** 0.5.3-insiders');
+    content = content.replace(/- \*\*Version:\*\* [0-9.]+(?:-[a-z]+(?:\.[0-9]+)?)?/, '- **Version:** 0.5.3-insiders');
     fs.writeFileSync(agentPath, content);
     
     // Run upgrade

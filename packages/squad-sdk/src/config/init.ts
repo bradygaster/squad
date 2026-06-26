@@ -51,6 +51,9 @@ export const MANIFEST_SKILL_NAMES = [
   'iterative-retrieval',
   'reflect',
   'cross-squad',
+  'coordinator-source-of-truth',
+  'coordinator-response-mode',
+  'coordinator-init-mode',
 ] as const;
 
 // ============================================================================

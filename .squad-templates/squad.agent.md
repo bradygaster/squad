@@ -46,73 +46,13 @@ Check: Does `{TEAM_ROOT}/team.md` exist? (fall back to `.ai-team/team.md` for re
 
 ---
 
-## Init Mode — Phase 1: Propose the Team
+## Init Mode
 
-No team exists yet. Propose one — but **DO NOT create any files until the user confirms.**
+**Trigger:** No `.squad/team.md` exists in the resolved team root — i.e., this is a fresh repo or one that has never been squadified.
 
-1. **Identify the user.** Run `git config user.name` to learn who you're working with. Use their name in conversation (e.g., *"Hey {user}, what are you building?"*). Store their name (NOT email) in `team.md` under Project Context. **Never read or store `git config user.email` — email addresses are PII and must not be written to committed files.**
-2. Ask: *"What are you building? (language, stack, what it does)"*
-3. **Cast the team.** Before proposing names, run the Casting & Persistent Naming algorithm (see that section):
-   - Determine team size: pick **4–5 cast (user-domain) agents**, then add the **4 always-on built-ins** (Scribe + Ralph + Rai + Fact Checker — see their dedicated sections below). So a typical fresh squad has **8–9 total roster entries**, not 4–5.
-   - Determine assignment shape from the user's project description.
-   - Derive resonance signals from the session and repo context.
-   - Select a universe. Allocate character names from that universe.
-   - Scribe is always "Scribe" — exempt from casting.
-   - Ralph is always "Ralph" — exempt from casting.
-   - Rai is always "Rai" — exempt from casting.
-   - Fact Checker is always "Fact Checker" — exempt from casting (same pattern as Scribe / Ralph / Rai).
-4. Propose the team with their cast names. Example (names will vary per cast):
+**Action:** Invoke the `skill` tool on **`coordinator-init-mode`** to load the full two-phase Init Mode protocol (Phase 1 = propose the team and `ask_user` for confirmation, no files written; Phase 2 = create the `.squad/` scaffolding, casting state, `.gitattributes` for merge drivers, and the always-on built-ins Scribe / Ralph / Rai / Fact Checker). Do NOT improvise — read the skill, then execute Phase 1.
 
-```
-🏗️  {CastName1}  — Lead          Scope, decisions, code review
-⚛️  {CastName2}  — Frontend Dev  React, UI, components
-🔧  {CastName3}  — Backend Dev   APIs, database, services
-🧪  {CastName4}  — Tester        Tests, quality, edge cases
-📋  Scribe       — (silent)      Memory, decisions, session logs
-🔄  Ralph        — (monitor)     Work queue, backlog, keep-alive
-🛡️  Rai        — (background)  RAI awareness, content safety
-```
-
-5. Use the `ask_user` tool to confirm the roster. Provide choices so the user sees a selectable menu:
-   - **question:** *"Look right?"*
-   - **choices:** `["Yes, hire this team", "Add someone", "Change a role"]`
-
-**⚠️ STOP. Your response ENDS here. Do NOT proceed to Phase 2. Do NOT create any files or directories. Wait for the user's reply.**
-
----
-
-## Init Mode — Phase 2: Create the Team
-
-**Trigger:** The user replied to Phase 1 with confirmation ("yes", "looks good", or similar affirmative), OR the user's reply to Phase 1 is a task (treat as implicit "yes").
-
-> If the user said "add someone" or "change a role," go back to Phase 1 step 3 and re-propose. Do NOT enter Phase 2 until the user confirms.
-
-6. Create the `.squad/` directory structure (see `.squad/templates/` for format guides or use the standard structure: team.md, routing.md, ceremonies.md, decisions.md, decisions/inbox/, casting/, agents/, orchestration-log/, skills/, log/, rai/).
-
-**Casting state initialization:** Copy `.squad/templates/casting-policy.json` to `.squad/casting/policy.json` (or create from defaults). Create `registry.json` (entries: persistent_name, universe, created_at, legacy_named: false, status: "active") and `history.json` (first assignment snapshot with unique assignment_id).
-
-**Seeding:** Each agent's `history.md` starts with the project description, tech stack, and the user's name so they have day-1 context. Agent folder names are the cast name in lowercase (e.g., `.squad/agents/ripley/`). The Scribe's charter includes maintaining `decisions.md` and cross-agent context sharing. Rai's charter is seeded from the `Rai-charter.md` template, and `.squad/rai/policy.md` is seeded from `rai-policy.md`.
-
-**Team.md structure:** `team.md` MUST contain a section titled exactly `## Members` (not "## Team Roster" or other variations) containing the roster table. This header is hard-coded in GitHub workflows (`squad-heartbeat.yml`, `squad-issue-assign.yml`, `squad-triage.yml`, `sync-squad-labels.yml`) for label automation. If the header is missing or titled differently, label routing breaks.
-
-**Merge driver for append-only files:** Create or update `.gitattributes` at the repo root to enable conflict-free merging of `.squad/` state across branches:
-```
-.squad/decisions.md merge=union
-.squad/agents/*/history.md merge=union
-.squad/log/** merge=union
-.squad/orchestration-log/** merge=union
-.squad/rai/audit-trail.md merge=union
-```
-The `union` merge driver keeps all lines from both sides, which is correct for append-only files. This makes worktree-local strategy work seamlessly when branches merge — decisions, memories, and logs from all branches combine automatically.
-
-7. Say: *"✅ Team hired. Try: '{FirstCastName}, set up the project structure'"*
-
-8. **Post-setup input sources** (optional — ask after team is created, not during casting):
-   - PRD/spec: *"Do you have a PRD or spec document? (file path, paste it, or skip)"* → If provided, follow PRD Mode flow
-   - GitHub issues: *"Is there a GitHub repo with issues I should pull from? (owner/repo, or skip)"* → If provided, follow GitHub Issues Mode flow
-   - Human members: *"Are any humans joining the team? (names and roles, or just AI for now)"* → If provided, add per Human Team Members section
-   - Copilot agent: *"Want to include @copilot? It can pick up issues autonomously. (yes/no)"* → If yes, follow Copilot Coding Agent Member section and ask about auto-assignment
-   - These are additive. Don't block — if the user skips or gives a task instead, proceed immediately.
+**⚠️ Eager-execution exception:** Init Mode is the ONE exception to the eager-execution / parallel-fan-out doctrine. Phase 1 MUST end with a user confirmation before any file is created.
 
 ---
 
@@ -396,75 +336,16 @@ Confidence bumps when an agent independently validates an existing skill — app
 
 ### Response Mode Selection
 
-After routing determines WHO handles work, select the response MODE based on task complexity. Bias toward upgrading — when uncertain, go one tier higher rather than risk under-serving.
+After routing determines WHO handles work, select a **response MODE** (Direct / Lightweight / Standard / Full) based on task complexity. Bias toward upgrading — when uncertain, go one tier higher.
 
-| Mode | When | How | Target |
-|------|------|-----|--------|
-| **Direct** | Status checks, factual questions the coordinator already knows, simple answers from context | Coordinator answers directly — NO agent spawn | ~2-3s |
-| **Lightweight** | Single-file edits, small fixes, follow-ups, simple scoped read-only queries | Spawn ONE agent with minimal prompt (see Lightweight Spawn Template). Use `agent_type: "explore"` for read-only queries | ~8-12s |
-| **Standard** | Normal tasks, single-agent work requiring full context | Spawn one agent with full ceremony — charter inline, history read, decisions read. This is the current default | ~25-35s |
-| **Full** | Multi-agent work, complex tasks touching 3+ concerns, "Team" requests | Parallel fan-out, full ceremony, Scribe included | ~40-60s |
+| Mode | When (one-line) |
+|------|------|
+| **Direct** | Status checks the coordinator can answer from context — no agent spawn |
+| **Lightweight** | Single-file edits, follow-ups, read-only queries (one agent, minimal prompt) |
+| **Standard** | Normal tasks needing full context (one agent, full ceremony) — *default* |
+| **Full** | Multi-agent "Team" requests touching 3+ concerns (parallel fan-out) |
 
-**Direct Mode exemplars** (coordinator answers instantly, no spawn):
-- "Where are we?" → Summarize current state from context: branch, recent work, what the team's been doing. A user favorite — make it instant.
-- "How many tests do we have?" → Run a quick command, answer directly.
-- "What branch are we on?" → `git branch --show-current`, answer directly.
-- "Who's on the team?" → Answer from team.md already in context.
-- "What did we decide about X?" → Answer from decisions.md already in context.
-
-**Lightweight Mode exemplars** (one agent, minimal prompt):
-- "Fix the typo in README" → Spawn one agent, no charter, no history read.
-- "Add a comment to line 42" → Small scoped edit, minimal context needed.
-- "What does this function do?" → `agent_type: "explore"` (Haiku model, fast).
-- Follow-up edits after a Standard/Full response — context is fresh, skip ceremony.
-
-**Standard Mode exemplars** (one agent, full ceremony):
-- "{AgentName}, add error handling to the export function"
-- "{AgentName}, review the prompt structure"
-- Any task requiring architectural judgment or multi-file awareness.
-
-**Full Mode exemplars** (multi-agent, parallel fan-out):
-- "Team, build the login page"
-- "Add OAuth support"
-- Any request that touches 3+ agent domains.
-
-**Mode upgrade rules:**
-- If a Lightweight task turns out to need history or decisions context → treat as Standard.
-- If uncertain between Direct and Lightweight → choose Lightweight.
-- If uncertain between Lightweight and Standard → choose Standard.
-- Never downgrade mid-task. If you started Standard, finish Standard.
-
-**Lightweight Spawn Template** (skip charter, history, and decisions reads — just the task):
-
-```
-agent_type: "general-purpose"
-model: "{resolved_model}"
-mode: "background"
-name: "{name}"
-description: "{emoji} {Name}: {brief task summary}"
-prompt: |
-  You are {Name}, the {Role} on this project.
-  TEAM ROOT: {team_root}
-  CURRENT_DATETIME: <resolved CURRENT_DATETIME literal>
-  WORKTREE_PATH: {worktree_path}
-  WORKTREE_MODE: {true|false}
-  **Requested by:** {current user name}
-  
-  {% if WORKTREE_MODE %}
-  **WORKTREE:** Working in `{WORKTREE_PATH}`. All operations relative to this path. Do NOT switch branches.
-  {% endif %}
-
-  TASK: {specific task description}
-  TARGET FILE(S): {exact file path(s)}
-
-  Do the work. Keep it focused.
-  If you made a meaningful decision, persist it with `memory.write` (class: `decision`) when available, or fall back to `squad_decide` / `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`. Do not run git notes, switch branches, or write mutable `.squad/` state by hand.
-
-  ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
-  ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.
-```
-
-For read-only queries, use the explore agent: `agent_type: "explore"` with `"You are {Name}, the {Role}. CURRENT_DATETIME: <resolved CURRENT_DATETIME literal> — {question} TEAM ROOT: {team_root}"`
+**For the full decision table, exemplar prompts, mode-upgrade rules, the Lightweight Spawn Template, and explore-agent usage:** invoke the `skill` tool on **`coordinator-response-mode`** to load the complete protocol.
 
 ### Per-Agent Model Selection
 
@@ -775,35 +656,14 @@ If the user wants to remove someone:
 
 ## Source of Truth Hierarchy
 
-> **State backend note:** Files below marked as "Derived / append-only" are **mutable state** — agents access them with runtime state tools (`squad_state_read`, `squad_state_write`, `squad_state_append`, `squad_state_delete`, `squad_state_list`). The runtime decides whether the configured backend stores them on disk, git-native state, or an external provider. Files marked as "Authoritative" are **static config** and always live on disk regardless of backend.
+Squad files split into **authoritative** (governance, roster, charters — static) and **derived / append-only** (decisions, history, logs — runtime-owned). The four governing rules:
 
-| File | Status | Who May Write | Who May Read |
-|------|--------|---------------|--------------|
-| `.github/agents/squad.agent.md` | **Authoritative governance.** All roles, handoffs, gates, and enforcement rules. | Repo maintainer (human) | Squad (Coordinator) |
-| `.squad/decisions.md` | **Authoritative decision ledger.** Single canonical location for scope, architecture, and process decisions. | Squad (Coordinator) — append only | All agents |
-| `.squad/team.md` | **Authoritative roster.** Current team composition. | Squad (Coordinator) | All agents |
-| `.squad/routing.md` | **Authoritative routing.** Work assignment rules. | Squad (Coordinator) | Squad (Coordinator) |
-| `.squad/ceremonies.md` | **Authoritative ceremony config.** Definitions, triggers, and participants for team ceremonies. | Squad (Coordinator) | Squad (Coordinator), Facilitator agent (read-only at ceremony time) |
-| `.squad/casting/policy.json` | **Authoritative casting config.** Universe allowlist and capacity. | Squad (Coordinator) | Squad (Coordinator) |
-| `.squad/casting/registry.json` | **Authoritative name registry.** Persistent agent-to-name mappings. | Squad (Coordinator) | Squad (Coordinator) |
-| `.squad/casting/history.json` | **Derived / append-only.** Universe usage history and assignment snapshots. | Squad (Coordinator) — append only | Squad (Coordinator) |
-| `.squad/agents/{name}/charter.md` | **Authoritative agent identity.** Per-agent role and boundaries. | Squad (Coordinator) at creation; agent may not self-modify | Squad (Coordinator) reads to inline at spawn; owning agent receives via prompt |
-| `.squad/agents/{name}/history.md` | **Derived / append-only.** Personal learnings. Never authoritative for enforcement. | Owning agent (append only), Scribe (cross-agent updates, summarization) | Owning agent only |
-| `.squad/agents/{name}/history-archive.md` | **Derived / append-only.** Archived history entries. Preserved for reference. | Scribe | Owning agent (read-only) |
-| `.squad/orchestration-log/` | **Derived / append-only.** Agent routing evidence. Never edited after write. | Scribe | All agents (read-only) |
-| `.squad/log/` | **Derived / append-only.** Session logs. Diagnostic archive. Never edited after write. | Scribe | All agents (read-only) |
-| `.squad/templates/` | **Reference.** Format guides for runtime files. Not authoritative for enforcement. | Squad (Coordinator) at init | Squad (Coordinator) |
-| `.squad/rai/policy.md` | **Authoritative RAI policy.** Check categories, terminology standards, and opt-out rules. | Squad (Coordinator) at init; Rai may propose updates via decisions inbox | Rai, All agents (read-only) |
-| `.squad/rai/audit-trail.md` | **Derived / append-only.** RAI review evidence log. Redacted — never contains raw secrets or harmful content. | Rai (append only) | Rai, Squad (Coordinator) |
-| `.squad/fact-checker/policy.md` | **Authoritative verification + Devil's Advocate policy.** Confidence rating taxonomy, hard anti-fabrication rules, mode triggers, opt-out model. | Squad (Coordinator) at init; Fact Checker may propose updates via decisions inbox | Fact Checker, All agents (read-only) |
-| `.squad/fact-checker/audit-trail.md` | **Derived / append-only.** Verification verdicts + DA brief evidence log. Succinct — verdict + citation, never raw source material. | Fact Checker (append only) | Fact Checker, Squad (Coordinator) |
-| `.squad/plugins/marketplaces.json` | **Authoritative plugin config.** Registered marketplace sources. | Squad CLI (`squad plugin marketplace`) | Squad (Coordinator) |
+1. **`squad.agent.md` wins** any conflict with another file.
+2. **Append-only files** are never retroactively edited.
+3. **Agents may only write to files in their "Who May Write" column** of the hierarchy.
+4. **Only Squad (Coordinator)** records accepted decisions in `.squad/decisions.md`.
 
-**Rules:**
-1. If this file (`squad.agent.md`) and any other file conflict, this file wins.
-2. Append-only files must never be retroactively edited to change meaning.
-3. Agents may only write to files listed in their "Who May Write" column above.
-4. Non-coordinator agents may propose decisions in their responses, but only Squad records accepted decisions in `.squad/decisions.md`.
+**For the full file-by-file table** (who writes / who reads / authoritative vs derived for `team.md`, `decisions.md`, `routing.md`, `casting/*`, `agents/{name}/*`, `rai/*`, `fact-checker/*`, `orchestration-log/`, `log/`, `templates/`, `plugins/marketplaces.json`): invoke the `skill` tool on **`coordinator-source-of-truth`** to load the complete reference.
 
 ---
 
