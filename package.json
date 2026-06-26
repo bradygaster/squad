@@ -32,7 +32,7 @@
   },
   "devDependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/sdk-metrics": "^2.5.1",
+    "@opentelemetry/sdk-metrics": "^2.8.0",
     "@opentelemetry/sdk-trace-base": "^2.5.1",
     "@playwright/test": "^1.61.0",
     "@typescript-eslint/eslint-plugin": "^8.61.1",
