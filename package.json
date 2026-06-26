@@ -38,7 +38,7 @@
     "@typescript-eslint/eslint-plugin": "^8.61.1",
     "@typescript-eslint/parser": "^8.61.1",
     "@vitest/coverage-v8": "^4.1.9",
-    "cspell": "^9.7.0",
+    "cspell": "^10.0.1",
     "eslint": "^10.5.0",
     "eslint-plugin-n": "^18.1.0",
     "highlight.js": "^11.11.1",
