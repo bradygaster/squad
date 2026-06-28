@@ -975,7 +975,7 @@ export interface SquadModelPolicy {
  * Model billing information.
  */
 export interface SquadModelBilling {
-  multiplier: number;
+  multiplier?: number;
 }
 
 /**

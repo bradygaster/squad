@@ -7,7 +7,7 @@
  * @module adapter/client
  */
 
-import { CopilotClient } from "@github/copilot-sdk";
+import { CopilotClient, RuntimeConnection } from "@github/copilot-sdk";
 import { trace, SpanStatusCode } from '../runtime/otel-api.js';
 import { recordSessionCreated, recordSessionClosed, recordSessionError, recordTokenUsage } from '../runtime/otel-metrics.js';
 import { estimateCost } from '../config/models.js';
@@ -304,16 +304,26 @@ export class SquadClient {
       eventBus: options.eventBus,
     };
 
+    // Build a RuntimeConnection from the legacy Squad options.
+    // The new CopilotClientOptions uses `connection` instead of the old
+    // cliPath/cliArgs/port/useStdio/cliUrl fields (removed in copilot-sdk 1.0.4).
+    const connection = this.options.cliUrl
+      ? RuntimeConnection.forUri(this.options.cliUrl)
+      : this.options.useStdio
+        ? RuntimeConnection.forStdio({
+            path: this.options.cliPath,
+            args: this.options.cliArgs.length > 0 ? this.options.cliArgs : undefined,
+          })
+        : RuntimeConnection.forTcp({
+            port: this.options.port || undefined,
+            path: this.options.cliPath,
+            args: this.options.cliArgs.length > 0 ? this.options.cliArgs : undefined,
+          });
+
     this.client = new CopilotClient({
-      cliPath: this.options.cliPath,
-      cliArgs: this.options.cliArgs,
-      cwd: this.options.cwd,
-      port: this.options.port,
-      useStdio: this.options.useStdio,
-      cliUrl: this.options.cliUrl,
+      connection,
+      workingDirectory: this.options.cwd,
       logLevel: this.options.logLevel,
-      autoStart: false, // We manage connection lifecycle
-      autoRestart: false, // We handle reconnection ourselves
       env: this.options.env,
       gitHubToken: this.options.githubToken,
       useLoggedInUser: this.options.useLoggedInUser,
@@ -671,7 +681,7 @@ export class SquadClient {
   /**
    * Send a ping to verify connectivity.
    */
-  async ping(message?: string): Promise<{ message: string; timestamp: number; protocolVersion?: number }> {
+  async ping(message?: string): Promise<{ message: string; timestamp: string; protocolVersion?: number }> {
     if (!this.isConnected()) {
       throw new Error("Client not connected");
     }
@@ -946,9 +956,9 @@ export class SquadClient {
     handler?: (event: SquadClientEvent) => void
   ): () => void {
     if (typeof eventTypeOrHandler === "string" && handler) {
-      return this.client.on(eventTypeOrHandler, handler);
+      return this.client.onLifecycle(eventTypeOrHandler, handler as any);
     } else {
-      return this.client.on(eventTypeOrHandler as SquadClientEventHandler);
+      return this.client.onLifecycle(eventTypeOrHandler as any);
     }
   }
 
