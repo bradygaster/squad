@@ -248,7 +248,7 @@
     "@opentelemetry/sdk-metrics": "^1.30.0",
     "@opentelemetry/sdk-node": "^0.219.0",
     "@opentelemetry/sdk-trace-base": "^2.8.0",
-    "@opentelemetry/sdk-trace-node": "^1.30.0",
+    "@opentelemetry/sdk-trace-node": "^2.8.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
     "sql.js": "^1.14.1",
     "ws": "^8.21.0"
