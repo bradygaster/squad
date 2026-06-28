@@ -36,7 +36,6 @@
 - **Preferred:** auto
 - **Rationale:** Coordinator selects the best model based on task type — cost first unless writing code
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
-- **Reasoning Effort:** auto
 
 ## Collaboration
 

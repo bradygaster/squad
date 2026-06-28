@@ -37,8 +37,14 @@ vi.mock('@github/copilot-sdk', () => {
         getAuthStatus: vi.fn().mockResolvedValue({ authenticated: true }),
         listModels: vi.fn().mockResolvedValue([]),
         on: vi.fn().mockReturnValue(() => {}),
+        onLifecycle: vi.fn().mockReturnValue(() => {}),
       });
     }),
+    RuntimeConnection: {
+      forStdio: vi.fn(() => ({})),
+      forTcp: vi.fn(() => ({})),
+      forUri: vi.fn(() => ({})),
+    },
   };
 });
 
