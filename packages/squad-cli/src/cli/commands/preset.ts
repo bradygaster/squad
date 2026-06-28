@@ -9,6 +9,7 @@
  *   squad preset show <name>    — show preset details
  *   squad preset apply <name>   — install preset agents into current squad
  *   squad preset save <name>    — save current project agents as a preset
+ *   squad preset install <src>  — install a preset from a GitHub URL or local path
  *   squad preset init           — initialize presets directory in squad home
  *
  * Note: Presets capture agents only (charters). For full squad snapshots
@@ -22,7 +23,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import { resolveSquadHome, ensureSquadHome, resolvePresetsDir } from '@bradygaster/squad-sdk/resolution';
-import { listPresets, loadPreset, applyPreset, savePreset, seedBuiltinPresets } from '@bradygaster/squad-sdk/presets';
+import { listPresets, loadPreset, applyPreset, savePreset, seedBuiltinPresets, installPresetFromSource } from '@bradygaster/squad-sdk/presets';
 import { resolveSquad } from '@bradygaster/squad-sdk/resolution';
 import { success, warn, info, BOLD, RESET, DIM } from '../core/output.js';
 import { fatal } from '../core/errors.js';
@@ -68,6 +69,33 @@ export async function runPreset(cwd: string, subcommand: string, args: string[])
       await presetSave(cwd, name!, force, description);
       break;
     }
+    case 'install': {
+      const source = args[0];
+      if (!source) {
+        fatal('Usage: squad preset install <source> [--name <override>] [--force]\n' +
+              '  <source> can be:\n' +
+              '    - GitHub URL: https://github.com/owner/repo[#preset-name]\n' +
+              '    - GitHub URL with sub-path: https://github.com/owner/repo/tree/main/presets/my-team\n' +
+              '    - SSH URL: git@github.com:owner/repo.git\n' +
+              '    - Local path: ./my-preset OR ./my-presets-collection');
+      }
+      const force = args.includes('--force');
+      const nameIdx = args.indexOf('--name');
+      let nameOverride: string | undefined;
+      if (nameIdx >= 0) {
+        // Defend against `squad preset install <src> --name` (no value) and
+        // `--name --force` (value is another flag) — both currently produce
+        // confusing downstream errors. Fail fast with a clear usage hint
+        // per review on bradygaster/squad#1225.
+        const candidate = args[nameIdx + 1];
+        if (!candidate || candidate.startsWith('-')) {
+          fatal('`--name` requires a value. Usage: squad preset install <source> --name <override>');
+        }
+        nameOverride = candidate;
+      }
+      await presetInstall(source!, nameOverride, force);
+      break;
+    }
     default:
       fatal(
         `Unknown preset subcommand: ${subcommand}\n` +
@@ -76,6 +104,7 @@ export async function runPreset(cwd: string, subcommand: string, args: string[])
         `  squad preset show <name>\n` +
         `  squad preset apply <name> [--force]\n` +
         `  squad preset save <name>\n` +
+        `  squad preset install <source> [--name <override>] [--force]\n` +
         `  squad preset init [--remote]`,
       );
   }
@@ -388,5 +417,31 @@ async function presetSave(cwd: string, name: string, force: boolean, description
     info(`a configured squad or publish to an agent toolbox — use 'squad export'.${RESET}`);
   } catch (err) {
     fatal(String(err));
+  }
+}
+
+// ============================================================================
+// Subcommand: install
+// ============================================================================
+
+/**
+ * Install a preset from a remote URL or local path into $SQUAD_HOME/presets/<name>/.
+ * After install, the preset is available to `squad preset apply <name>`.
+ */
+async function presetInstall(source: string, nameOverride: string | undefined, force: boolean): Promise<void> {
+  info(`Installing preset from: ${source}${DIM}${nameOverride ? ` (as '${nameOverride}')` : ''}${RESET}`);
+  console.log();
+
+  try {
+    const result = installPresetFromSource(source, { name: nameOverride, force });
+    success(`Preset '${result.installedName}' installed`);
+    info(`  Location: ${result.installedDir}`);
+    info(`  Source:   ${result.source}`);
+    console.log();
+    info(`  Apply in a project:  ${BOLD}squad preset apply ${result.installedName}${RESET}`);
+    info(`  Show details:        ${BOLD}squad preset show ${result.installedName}${RESET}`);
+    info(`  Use during init:     ${BOLD}squad init --preset ${result.installedName}${RESET}`);
+  } catch (err) {
+    fatal(String(err instanceof Error ? err.message : err));
   }
 }
