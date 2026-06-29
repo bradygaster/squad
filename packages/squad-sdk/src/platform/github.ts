@@ -67,7 +67,7 @@ export class GitHubAdapter implements PlatformAdapter {
   async getWorkItem(id: number): Promise<WorkItem> {
     const output = this.gh([
       'issue', 'view', String(id), '--repo', this.repoFlag,
-      '--json', 'number,title,state,labels,assignees,url',
+      '--json', 'number,title,state,labels,assignees,url,body',
     ]);
     const issue = parseJson<{
       number: number;
@@ -76,6 +76,7 @@ export class GitHubAdapter implements PlatformAdapter {
       labels: Array<{ name: string }>;
       assignees: Array<{ login: string }>;
       url: string;
+      body?: string;
     }>(output);
 
     return {
@@ -84,6 +85,7 @@ export class GitHubAdapter implements PlatformAdapter {
       state: issue.state.toLowerCase(),
       tags: issue.labels.map((l) => l.name),
       assignedTo: issue.assignees[0]?.login,
+      body: issue.body,
       url: issue.url,
     };
   }

@@ -228,6 +228,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
       state: (fields['System.State'] as string) ?? '',
       tags,
       assignedTo: assignedTo?.displayName ?? assignedTo?.uniqueName,
+      body: typeof fields['System.Description'] === 'string' ? (fields['System.Description'] as string) : undefined,
       url: wi._links?.html?.href ?? wi.url,
     };
   }
