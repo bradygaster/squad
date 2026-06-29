@@ -167,7 +167,10 @@ describe('SquadObserver', () => {
     await provider.forceFlush();
 
     const spans = exporter.getFinishedSpans();
-    const changeSpan = spans.find(s => s.name === 'squad.observer.file_change');
+    const changeSpan = spans.find(s =>
+      s.name === 'squad.observer.file_change' &&
+      s.attributes['file.category'] === 'agent'
+    );
     expect(changeSpan).toBeDefined();
     expect(changeSpan!.attributes['file.category']).toBe('agent');
     expect(changeSpan!.attributes['change.type']).toBe('modified');

@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { chromium, type Browser } from 'playwright';
 import { trace, metrics } from '@opentelemetry/api';
 import { NodeSDK, resources, metrics as sdkMetrics } from '@opentelemetry/sdk-node';
@@ -24,7 +25,13 @@ const { PeriodicExportingMetricReader } = sdkMetrics;
 // Skip guard — bail early if Docker is unavailable or tests disabled
 // ============================================================================
 
-const SKIP_REASON = dockerSkipReason();
+function playwrightBrowserSkipReason(): string | null {
+  return existsSync(chromium.executablePath())
+    ? null
+    : 'Playwright Chromium browser not installed';
+}
+
+const SKIP_REASON = dockerSkipReason() ?? playwrightBrowserSkipReason();
 
 const CONTAINER_NAME = 'squad-aspire-dashboard';
 const DASHBOARD_URL = 'http://localhost:18888';

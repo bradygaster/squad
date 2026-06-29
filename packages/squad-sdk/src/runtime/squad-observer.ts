@@ -193,15 +193,16 @@ export class SquadObserver {
   }
 
   private processChange(filename: string): void {
-    const absolutePath = path.join(this.config.squadDir, filename);
-    const category = classifyFile(filename);
+    const relativePath = this.resolveChangedRelativePath(filename);
+    const absolutePath = path.join(this.config.squadDir, relativePath);
+    const category = classifyFile(relativePath);
     const exists = storage.existsSync(absolutePath);
 
     // Determine change type — basic heuristic since fs.watch doesn't tell us
     const changeType: SquadFileChange['changeType'] = exists ? 'modified' : 'deleted';
 
     const change: SquadFileChange = {
-      relativePath: filename,
+      relativePath,
       absolutePath,
       changeType,
       category,
@@ -215,6 +216,46 @@ export class SquadObserver {
     if (this.config.eventBus) {
       this.emitEvent(change);
     }
+  }
+
+  private resolveChangedRelativePath(filename: string): string {
+    const normalized = filename.replace(/\\/g, '/');
+    const squadDirName = path.basename(this.config.squadDir);
+    const withoutSquadPrefix = normalized.startsWith(`${squadDirName}/`)
+      ? normalized.slice(squadDirName.length + 1)
+      : normalized;
+
+    if (classifyFile(withoutSquadPrefix) !== 'unknown') return withoutSquadPrefix;
+
+    if (normalized === squadDirName) {
+      return this.findMostRecentlyModifiedFile(this.config.squadDir) ?? withoutSquadPrefix;
+    }
+
+    return withoutSquadPrefix;
+  }
+
+  private findMostRecentlyModifiedFile(dir: string, relativeTo = dir): string | null {
+    let newest: { relativePath: string; mtimeMs: number } | null = null;
+    for (const entry of storage.listSync(dir)) {
+      const absolutePath = path.join(dir, entry);
+      if (storage.isDirectorySync(absolutePath)) {
+        const nested = this.findMostRecentlyModifiedFile(absolutePath, relativeTo);
+        if (!nested) continue;
+        const nestedStat = storage.statSync(path.join(relativeTo, nested));
+        if (nestedStat && (!newest || nestedStat.mtimeMs > newest.mtimeMs)) {
+          newest = { relativePath: nested, mtimeMs: nestedStat.mtimeMs };
+        }
+        continue;
+      }
+
+      const stat = storage.statSync(absolutePath);
+      const relativePath = path.relative(relativeTo, absolutePath).replace(/\\/g, '/');
+      if (stat && (!newest || stat.mtimeMs > newest.mtimeMs)) {
+        newest = { relativePath, mtimeMs: stat.mtimeMs };
+      }
+    }
+
+    return newest?.relativePath ?? null;
   }
 
   private emitSpan(change: SquadFileChange): void {
