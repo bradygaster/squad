@@ -41,9 +41,15 @@ export class TwoPassCapability implements WatchCapability {
         return true;
       });
 
-      // Pass 2: hydrate actionable issues (fetch body) via the platform adapter
+      // Pass 2: hydrate actionable issues (fetch body) via the platform adapter.
+      // Some adapters (e.g. ADO) already populate body during listWorkItems,
+      // so skip the extra fetch when it's already present.
       const hydrated: Array<{ number: number; title: string; body?: string }> = [];
       for (const item of actionable) {
+        if (item.body !== undefined) {
+          hydrated.push({ number: item.id, title: item.title, body: item.body });
+          continue;
+        }
         try {
           const full = await context.adapter.getWorkItem(item.id);
           hydrated.push({ number: full.id, title: full.title, body: full.body });
