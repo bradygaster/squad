@@ -167,7 +167,10 @@ describe('SquadObserver', () => {
     await provider.forceFlush();
 
     const spans = exporter.getFinishedSpans();
-    const changeSpan = spans.find(s => s.name === 'squad.observer.file_change');
+    const changeSpan = spans.find(s =>
+      s.name === 'squad.observer.file_change' &&
+      s.attributes['file.category'] === 'agent'
+    );
     expect(changeSpan).toBeDefined();
     expect(changeSpan!.attributes['file.category']).toBe('agent');
     expect(changeSpan!.attributes['change.type']).toBe('modified');
@@ -190,6 +193,39 @@ describe('SquadObserver', () => {
     observer.stop();
 
     expect(events.length).toBeGreaterThan(0);
+  });
+
+  it('does not emit a bogus path when a root directory event cannot be resolved', async () => {
+    const observer = new SquadObserver({ squadDir });
+    const processChange = (observer as unknown as { processChange(filename: string): void }).processChange.bind(observer);
+
+    processChange(path.basename(squadDir));
+    await provider.forceFlush();
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans.some(s => s.name === 'squad.observer.file_change')).toBe(false);
+  });
+
+  it('skips symlinked directories when resolving root directory events', async () => {
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-observer-outside-'));
+    try {
+      fs.writeFileSync(path.join(outsideDir, 'newest.md'), 'outside');
+      fs.symlinkSync(outsideDir, path.join(squadDir, 'linked-outside'), 'dir');
+
+      const olderFile = path.join(squadDir, 'team.md');
+      fs.writeFileSync(olderFile, 'inside');
+      const olderTime = new Date(Date.now() - 10_000);
+      fs.utimesSync(olderFile, olderTime, olderTime);
+
+      const observer = new SquadObserver({ squadDir });
+      const findMostRecentlyModifiedFile = (
+        observer as unknown as { findMostRecentlyModifiedFile(dir: string): string | null }
+      ).findMostRecentlyModifiedFile.bind(observer);
+
+      expect(findMostRecentlyModifiedFile(squadDir)).toBe('team.md');
+    } finally {
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it('is idempotent on start/stop', () => {
