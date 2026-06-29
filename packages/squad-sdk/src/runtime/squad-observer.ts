@@ -9,7 +9,7 @@
  */
 
 // fs.watch and fs.FSWatcher retained — not in StorageProvider scope
-import { watch, type FSWatcher } from 'node:fs';
+import { lstatSync, readdirSync, watch, type Dirent, type FSWatcher } from 'node:fs';
 import path from 'node:path';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 
@@ -194,6 +194,9 @@ export class SquadObserver {
 
   private processChange(filename: string): void {
     const relativePath = this.resolveChangedRelativePath(filename);
+    const squadDirName = path.basename(this.config.squadDir);
+    if (!relativePath || relativePath === squadDirName) return;
+
     const absolutePath = path.join(this.config.squadDir, relativePath);
     const category = classifyFile(relativePath);
     const exists = storage.existsSync(absolutePath);
@@ -236,21 +239,44 @@ export class SquadObserver {
 
   private findMostRecentlyModifiedFile(dir: string, relativeTo = dir): string | null {
     let newest: { relativePath: string; mtimeMs: number } | null = null;
-    for (const entry of storage.listSync(dir)) {
-      const absolutePath = path.join(dir, entry);
-      if (storage.isDirectorySync(absolutePath)) {
+
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+
+      const absolutePath = path.join(dir, entry.name);
+      let stat: ReturnType<typeof lstatSync>;
+      try {
+        stat = lstatSync(absolutePath);
+      } catch {
+        continue;
+      }
+
+      if (stat.isSymbolicLink()) continue;
+
+      if (stat.isDirectory()) {
         const nested = this.findMostRecentlyModifiedFile(absolutePath, relativeTo);
         if (!nested) continue;
-        const nestedStat = storage.statSync(path.join(relativeTo, nested));
-        if (nestedStat && (!newest || nestedStat.mtimeMs > newest.mtimeMs)) {
-          newest = { relativePath: nested, mtimeMs: nestedStat.mtimeMs };
+
+        try {
+          const nestedStat = lstatSync(path.join(relativeTo, nested));
+          if (!nestedStat.isSymbolicLink() && (!newest || nestedStat.mtimeMs > newest.mtimeMs)) {
+            newest = { relativePath: nested, mtimeMs: nestedStat.mtimeMs };
+          }
+        } catch {
+          continue;
         }
         continue;
       }
 
-      const stat = storage.statSync(absolutePath);
       const relativePath = path.relative(relativeTo, absolutePath).replace(/\\/g, '/');
-      if (stat && (!newest || stat.mtimeMs > newest.mtimeMs)) {
+      if (!newest || stat.mtimeMs > newest.mtimeMs) {
         newest = { relativePath, mtimeMs: stat.mtimeMs };
       }
     }

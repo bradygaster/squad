@@ -9,7 +9,7 @@
  * Run them AFTER implementation → all pass (GREEN).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { access, mkdtemp, realpath, rm } from 'fs/promises';
+import { mkdtemp, realpath, rm } from 'fs/promises';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
@@ -402,11 +402,17 @@ describe('cross-platform path handling', () => {
       : rootName.toUpperCase();
     const altCase = join(dirname(canonicalRoot), altName);
 
+    let altCanonicalRoot: string;
     try {
-      await access(altCase);
+      altCanonicalRoot = await realpath(altCase);
     } catch {
       await rm(root, { recursive: true, force: true });
       return; // Only relevant when the actual filesystem is case-insensitive
+    }
+
+    if (altCanonicalRoot !== canonicalRoot) {
+      await rm(root, { recursive: true, force: true });
+      return; // Alternate-cased path exists but points somewhere else
     }
 
     const result = await confinedProvider.read(join(altCase, 'test.txt'));
