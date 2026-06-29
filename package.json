@@ -7,6 +7,14 @@
   "workspaces": [
     "packages/*"
   ],
+  "dependencies": {
+    "@bradygaster/squad-sdk": "file:packages/squad-sdk"
+  },
+  "overrides": {
+    "@bradygaster/squad-cli": {
+      "@bradygaster/squad-sdk": "$@bradygaster/squad-sdk"
+    }
+  },
   "scripts": {
     "prebuild": "node scripts/bump-build.mjs && node scripts/sync-skill-templates.mjs && node scripts/sync-templates.mjs",
     "build": "npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli",
