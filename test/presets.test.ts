@@ -719,6 +719,69 @@ describe('savePreset()', () => {
     expect(readFileSync(join(destAgents, 'alpha', 'charter.md'), 'utf-8')).toContain('Alpha');
     expect(readFileSync(join(destAgents, 'beta', 'charter.md'), 'utf-8')).toContain('Beta');
   });
+
+  it('round-trips routing.md with custom rules (#1412)', () => {
+    const homeDir = join(TMP, 'roundtrip-routing');
+    mkdirSync(homeDir, { recursive: true });
+    process.env['SQUAD_HOME'] = homeDir;
+
+    // Create source project with agents and a custom routing.md
+    const srcSquad = join(TMP, 'src-routing', '.squad');
+    mkdirSync(join(srcSquad, 'agents', 'alpha'), { recursive: true });
+    mkdirSync(join(srcSquad, 'agents', 'beta'), { recursive: true });
+    writeFileSync(join(srcSquad, 'agents', 'alpha', 'charter.md'), '## Alpha — Lead\nLeads the team.');
+    writeFileSync(join(srcSquad, 'agents', 'beta', 'charter.md'), '## Beta — Reviewer\nReviews code.');
+
+    const customRouting = [
+      '# Squad Routing',
+      '',
+      '## Work Type → Agent',
+      '',
+      '| Work Type | Primary | Secondary |',
+      '|-----------|---------|----------|',
+      '| architecture | Alpha | Beta |',
+      '| code-review | Beta | Alpha |',
+      '',
+      '## Label Routing',
+      '',
+      '| Label | Agent | Priority |',
+      '|-------|-------|----------|',
+      '| bug | Beta | high |',
+      '| feature | Alpha | normal |',
+      '',
+      '## Module Ownership',
+      '',
+      '| Path Pattern | Owner |',
+      '|-------------|-------|',
+      '| src/core/** | Alpha |',
+      '| src/tests/** | Beta |',
+      '',
+    ].join('\n');
+    writeFileSync(join(srcSquad, 'routing.md'), customRouting);
+
+    // Save as preset
+    savePreset('routed-squad', srcSquad, { description: 'Squad with routing' });
+
+    // Verify routing.md was captured in the preset
+    const presetDir = join(homeDir, 'presets', 'routed-squad');
+    expect(existsSync(join(presetDir, 'routing.md'))).toBe(true);
+    expect(readFileSync(join(presetDir, 'routing.md'), 'utf-8')).toBe(customRouting);
+
+    // Apply to a new project
+    const destSquad = join(TMP, 'dest-routing', '.squad');
+    const destAgentsDir = join(destSquad, 'agents');
+    mkdirSync(destAgentsDir, { recursive: true });
+
+    const results = applyPreset('routed-squad', destAgentsDir);
+    expect(results.filter(r => r.status === 'installed')).toHaveLength(2);
+
+    // Verify routing.md was faithfully restored (not regenerated from template)
+    const restoredRouting = readFileSync(join(destSquad, 'routing.md'), 'utf-8');
+    expect(restoredRouting).toContain('## Label Routing');
+    expect(restoredRouting).toContain('## Module Ownership');
+    expect(restoredRouting).toContain('src/core/**');
+    expect(restoredRouting).toContain('| bug | Beta | high |');
+  });
 });
 
 // ============================================================================

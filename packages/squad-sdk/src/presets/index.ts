@@ -141,6 +141,24 @@ export function applyPreset(
     }
   }
 
+  // Restore saved routing.md from the preset if present (#1412). This must
+  // happen before scaffolding so that writeOrMergeRouting sees the full custom
+  // routing content and only appends any missing agent rows rather than
+  // regenerating a skeleton.
+  const savedRoutingPath = path.join(presetDir, 'routing.md');
+  if (storage.existsSync(savedRoutingPath)) {
+    const squadDir = path.dirname(targetDir);
+    const destRoutingPath = path.join(squadDir, 'routing.md');
+    // Only overwrite if force is set or routing.md doesn't exist yet
+    if (options.force || !storage.existsSync(destRoutingPath)) {
+      const content = storage.readSync(savedRoutingPath);
+      if (content) {
+        storage.mkdirSync(squadDir, { recursive: true });
+        storage.writeSync(destRoutingPath, content);
+      }
+    }
+  }
+
   // After copying charters, wire the preset agents into team.md, routing.md,
   // and the casting state files (registry/history/policy). Without this, the
   // coordinator's mode-switch check sees an empty ## Members table and
@@ -272,6 +290,15 @@ export function savePreset(
   storage.mkdirSync(destDir, { recursive: true });
   storage.writeSync(path.join(destDir, 'preset.json'), JSON.stringify(manifest, null, 2));
   copyDirRecursive(agentsDir, path.join(destDir, 'agents'));
+
+  // Capture routing.md so custom routing configuration round-trips (#1412)
+  const routingPath = path.join(squadDir, 'routing.md');
+  if (storage.existsSync(routingPath)) {
+    const routingContent = storage.readSync(routingPath);
+    if (routingContent) {
+      storage.writeSync(path.join(destDir, 'routing.md'), routingContent);
+    }
+  }
 
   return destDir;
 }
