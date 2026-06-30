@@ -772,8 +772,6 @@ describe('parseHistory adversarial markdown', () => {
 
 // ── ParseError Wrapping at Facade Boundary ───────────────────────────────
 
-import { parseHistory } from '../../packages/squad-sdk/src/state/io/history-io.js';
-
 const mockedParseDecisions = vi.mocked(parseDecisions);
 const mockedParseRouting = vi.mocked(parseRouting);
 const mockedParseTeam = vi.mocked(parseTeam);

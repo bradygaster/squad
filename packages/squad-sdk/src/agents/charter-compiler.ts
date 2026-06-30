@@ -9,6 +9,10 @@
 import { SquadCustomAgentConfig } from '../adapter/types.js';
 import { ConfigurationError } from '../adapter/errors.js';
 import { normalizeEol } from '../utils/normalize-eol.js';
+import { VALID_REASONING_EFFORTS } from '../config/models.js';
+
+/** Set form for fast lookup. */
+const VALID_EFFORTS = new Set<string>(VALID_REASONING_EFFORTS);
 
 /**
  * Options for compiling a charter.
@@ -43,6 +47,8 @@ export interface CharterConfigOverrides {
   role?: string;
   /** Override or set model */
   model?: string;
+  /** Override or set reasoning effort level */
+  reasoningEffort?: string;
   /** Override or set tools list */
   tools?: string[];
   /** Override or set status */
@@ -72,6 +78,8 @@ export interface ParsedCharter {
   modelRationale?: string;
   /** Fallback model from ## Model section */
   modelFallback?: string;
+  /** Reasoning effort preference from ## Model section */
+  reasoningEffort?: string;
   /** Collaboration section content */
   collaboration?: string;
   /** Full charter content */
@@ -84,6 +92,8 @@ export interface ParsedCharter {
 export interface CompiledCharter extends SquadCustomAgentConfig {
   /** Resolved model (from config override or charter preference) */
   resolvedModel?: string;
+  /** Resolved reasoning effort (from config override or charter preference) */
+  resolvedReasoningEffort?: string;
   /** Resolved tools list (from config override or charter) */
   resolvedTools?: string[];
   /** Parsed charter data */
@@ -160,6 +170,13 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
     // Resolve model: config override > charter preference
     const resolvedModel = configOverrides?.model || parsed.modelPreference;
 
+    // Resolve reasoning effort: config override > charter preference
+    // Normalize: "auto" and invalid values resolve to undefined
+    const configEffort = configOverrides?.reasoningEffort?.toLowerCase();
+    const charterEffort = parsed.reasoningEffort; // already validated during parsing
+    const validConfigEffort = configEffort && configEffort !== 'auto' && VALID_EFFORTS.has(configEffort) ? configEffort : undefined;
+    const resolvedReasoningEffort = validConfigEffort || charterEffort;
+
     // Resolve tools: config override > charter-extracted tools
     const resolvedTools = configOverrides?.tools;
     
@@ -171,6 +188,7 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
       infer: true,
       tools: resolvedTools ?? null,
       resolvedModel,
+      resolvedReasoningEffort,
       resolvedTools,
       parsed,
     };
@@ -257,6 +275,20 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
     const fallbackMatch = modelContent.match(/\*\*Fallback:\*\*\s*(.+)/i);
     if (fallbackMatch) {
       result.modelFallback = fallbackMatch[1]!.trim();
+    }
+    const effortMatch = modelContent.match(/\*\*Reasoning Effort:\*\*\s*(.+)/i);
+    if (effortMatch) {
+      const raw = effortMatch[1]!.trim().toLowerCase();
+      // Normalize: "auto" → undefined, invalid values → undefined
+      if (raw !== 'auto' && VALID_EFFORTS.has(raw)) {
+        result.reasoningEffort = raw;
+      } else if (raw !== 'auto') {
+        // Surface invalid charter input to the author instead of dropping it silently.
+        console.warn(
+          `[squad] charter parse: ignoring invalid reasoning effort "${raw}" `
+          + `(expected ${VALID_REASONING_EFFORTS.join(', ')}, or auto)`,
+        );
+      }
     }
   }
   

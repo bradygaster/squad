@@ -133,6 +133,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             WorkingDirectory = teamRoot,
             ConfigDirectory = squadConfigDir,
             EnableConfigDiscovery = true,
+            Agent = "Squad"
         };
         if (!string.IsNullOrEmpty(options.Instructions))
         {
@@ -151,6 +152,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
                 emitActivities: options.EmitSubagentActivities);
             sessionConfig.IncludeSubAgentStreamingEvents = true;
             sessionConfig.OnEvent = traceMapper.OnSessionEvent;
+            
         }
 
         options.ConfigureSession?.Invoke(sessionConfig);
@@ -298,10 +300,28 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             clientOptions.Connection = RuntimeConnection.ForStdio(options.CliPath, combinedCliArgs);
         }
 
-        // Copy environment variables
+        // Copy environment variables.
+        //
+        // ⚠️ Important: the dictionary assigned to clientOptions.Environment is what the
+        // native CLI process inherits — there is no implicit merge with the parent process
+        // env. If we only forwarded the consumer's overrides, the child would be missing
+        // SYSTEMROOT/PATH/TEMP and Node's crypto initialization would crash
+        // ("Assertion failed: ncrypto::CSPRNG(nullptr, 0)" on Windows).
+        //
+        // So we always start from the current process environment and layer the consumer's
+        // overrides on top. A consumer that genuinely wants a sanitized env can still do so
+        // via the ConfigureCopilotClient delegate (and is responsible for keeping the
+        // crypto-critical vars in that case).
         if (options.Environment.Count > 0)
         {
-            var envDict = new Dictionary<string, string>();
+            var envDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+            {
+                if (entry.Key is string k && entry.Value is string v)
+                {
+                    envDict[k] = v;
+                }
+            }
             foreach (var kvp in options.Environment)
             {
                 if (kvp.Value != null)

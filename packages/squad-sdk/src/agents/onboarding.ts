@@ -461,8 +461,60 @@ export async function addAgentToConfig(
     if (content === undefined) {
       return false;
     }
-    
-    // Simple heuristic: add routing rule if role matches common work types
+
+    // Check if this agent is already defined in the config
+    const agentNamePattern = new RegExp(`name:\\s*['"]${agentName}['"]`);
+    if (agentNamePattern.test(content)) {
+      return false; // Agent already in config
+    }
+
+    // Find the agents array and add new agent definition
+    // Match patterns like: agents: [ ... ] or .agents([ ... ])
+    const agentsArrayPattern = /agents:\s*\[([\s\S]*?)\](?=\s*[,}\)])/g;
+    const builderPattern = /\.agents\(\s*\[([\s\S]*?)\]\s*\)/;
+
+    let updatedContent = content;
+    let modified = false;
+
+    const newAgentDef = `    {
+      name: '${agentName}',
+      role: '${role}',
+    }`;
+
+    let arrayMatch: RegExpExecArray | null;
+    let targetMatch: RegExpExecArray | null = null;
+    while ((arrayMatch = agentsArrayPattern.exec(content)) !== null) {
+      const existingAgents = arrayMatch[1]!;
+      if (existingAgents.includes('{') || existingAgents.trim() === '') {
+        targetMatch = arrayMatch;
+        break;
+      }
+    }
+
+    if (targetMatch) {
+      const existingAgents = targetMatch[1]!.trimEnd();
+      const separator = existingAgents.trim() ? ',\n' : '\n';
+      const updatedAgents = existingAgents + separator + newAgentDef;
+      updatedContent =
+        content.slice(0, targetMatch.index) +
+        `agents: [${updatedAgents}\n  ]` +
+        content.slice(targetMatch.index + targetMatch[0].length);
+      modified = true;
+    } else {
+      const builderMatch = content.match(builderPattern);
+      if (builderMatch) {
+        const existingAgents = builderMatch[1]!.trimEnd();
+        const separator = existingAgents.trim() ? ',\n' : '\n';
+        const updatedAgents = existingAgents + separator + newAgentDef;
+        updatedContent = content.replace(
+          builderPattern,
+          `.agents([\n${updatedAgents}\n  ])`
+        );
+        modified = true;
+      }
+    }
+
+    // Optionally add routing rule if role maps to a known work type
     const workTypeMap: Record<string, string> = {
       'developer': 'feature-dev',
       'tester': 'testing',
@@ -472,36 +524,33 @@ export async function addAgentToConfig(
     };
     
     const workType = workTypeMap[role.toLowerCase()];
-    if (!workType) {
-      return false; // No obvious work type mapping
-    }
-    
-    // Check if this work type already has a rule
-    const workTypePattern = new RegExp(`workType:\\s*['"]${workType}['"]`);
-    if (workTypePattern.test(content)) {
-      return false; // Already has a rule for this work type
-    }
-    
-    // Find the routing rules array and add new rule
-    const rulesPattern = /rules:\s*\[([^\]]*)\]/s;
-    const match = content.match(rulesPattern);
-    
-    if (!match) {
-      return false; // Cannot parse rules array
-    }
-    
-    const newRule = `      {
+    if (workType) {
+      const workTypePattern = new RegExp(`workType:\\s*['"]${workType}['"]`);
+      if (!workTypePattern.test(updatedContent)) {
+        const rulesPattern = /rules:\s*\[([\s\S]*?)\](?=\s*[,}\)])/;
+        const rulesMatch = updatedContent.match(rulesPattern);
+        if (rulesMatch) {
+          const newRule = `      {
         workType: '${workType}',
         agents: ['@${agentName}'],
         confidence: 'high'
       }`;
-    
-    const updatedRules = match[1]!.trim() + ',\n' + newRule;
-    const updatedContent = content.replace(
-      rulesPattern,
-      `rules: [\n${updatedRules}\n    ]`
-    );
-    
+          const existingRules = rulesMatch[1]!.trimEnd();
+          const separator = existingRules.trim() ? ',\n' : '\n';
+          const updatedRules = existingRules + separator + newRule;
+          updatedContent = updatedContent.replace(
+            rulesPattern,
+            `rules: [${updatedRules}\n    ]`
+          );
+          modified = true;
+        }
+      }
+    }
+
+    if (!modified) {
+      return false; // Cannot find an agent array or routing rule to update
+    }
+
     await storage.write(configPath, updatedContent);
     return true;
   } catch (error) {

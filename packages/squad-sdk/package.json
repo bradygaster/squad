@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-sdk",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Squad SDK — Programmable multi-agent runtime for GitHub Copilot",
   "type": "module",
   "main": "./dist/index.js",
@@ -237,29 +237,29 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^0.3.0",
-    "vscode-jsonrpc": "^8.2.1"
+    "@github/copilot-sdk": "^1.0.4",
+    "vscode-jsonrpc": "^9.0.0"
   },
   "optionalDependencies": {
     "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.57.2",
-    "@opentelemetry/exporter-trace-otlp-grpc": "^0.57.2",
-    "@opentelemetry/resources": "^1.30.0",
-    "@opentelemetry/sdk-metrics": "^1.30.0",
-    "@opentelemetry/sdk-node": "^0.57.2",
-    "@opentelemetry/sdk-trace-base": "^1.30.0",
-    "@opentelemetry/sdk-trace-node": "^1.30.0",
+    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.219.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.219.0",
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/sdk-metrics": "^2.8.0",
+    "@opentelemetry/sdk-node": "^0.219.0",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
+    "@opentelemetry/sdk-trace-node": "^2.8.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
     "sql.js": "^1.14.1",
-    "ws": "^8.18.0"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.0.0",
     "@types/sql.js": "^1.4.10",
     "@types/ws": "^8.5.13",
-    "typedoc": "~0.28.18",
-    "typedoc-plugin-markdown": "~4.11.0",
-    "typescript": "^5.7.0"
+    "typedoc": "~0.28.19",
+    "typedoc-plugin-markdown": "~4.12.0",
+    "typescript": "^6.0.3"
   },
   "keywords": [
     "copilot",

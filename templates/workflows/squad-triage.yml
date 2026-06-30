@@ -22,13 +22,9 @@ jobs:
             const fs = require('fs');
             const issue = context.payload.issue;
 
-            // Read team roster — check .squad/ first, fall back to .ai-team/
-            let teamFile = '.squad/team.md';
+            const teamFile = '.squad/team.md';
             if (!fs.existsSync(teamFile)) {
-              teamFile = '.ai-team/team.md';
-            }
-            if (!fs.existsSync(teamFile)) {
-              core.warning('No .squad/team.md or .ai-team/team.md found — cannot triage');
+              core.warning('No .squad/team.md found — cannot triage');
               return;
             }
 
@@ -88,11 +84,7 @@ jobs:
               }
             }
 
-            // Read routing rules — check .squad/ first, fall back to .ai-team/
-            let routingFile = '.squad/routing.md';
-            if (!fs.existsSync(routingFile)) {
-              routingFile = '.ai-team/routing.md';
-            }
+            const routingFile = '.squad/routing.md';
             let routingContent = '';
             if (fs.existsSync(routingFile)) {
               routingContent = fs.readFileSync(routingFile, 'utf8');

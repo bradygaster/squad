@@ -5,7 +5,8 @@
     "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
-    "composite": true
+    "composite": true,
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"]
 }

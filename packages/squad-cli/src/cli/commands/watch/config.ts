@@ -105,6 +105,12 @@ export function loadWatchConfig(
     stateContext: cliOverrides.stateContext,
   };
 
+  // Default to --yolo when execute mode is active and no flags were set.
+  // Copilot CLI hangs in non-interactive (-p) mode without permission flags.
+  if (merged.execute && !merged.copilotFlags && !merged.agentCmd) {
+    merged.copilotFlags = '--yolo';
+  }
+
   return merged;
 }
 

@@ -41,7 +41,7 @@
     "benchmarkfn", "filterissuesbystream", "filterissuesbyworkstream", "Recognised", "recognised",
     "squadified", "TOCTOU", "unflushed", "unparseable", "pluggability",
     "PKCE", "MSAL", "AKIA", "runas",
-    "typoo"
+    "typoo", "Sympy", "mwaskom", "astropy", "sympy", "pylint", "pydata", "xarray", "swebench"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
   "allowCompoundWords": true

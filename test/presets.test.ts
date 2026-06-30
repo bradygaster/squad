@@ -720,3 +720,126 @@ describe('savePreset()', () => {
     expect(readFileSync(join(destAgents, 'beta', 'charter.md'), 'utf-8')).toContain('Beta');
   });
 });
+
+// ============================================================================
+// installPresetFromSource() — new in PR #1225, regression tests added per
+// review feedback (#1225 comment #3369713129: 'add focused tests')
+// ============================================================================
+//
+// These tests cover the LOCAL path branch (single-preset, collection,
+// --force overwrite, --name rename + manifest stamping, plus the validation
+// guards that came out of the review). Remote (URL) branch is exercised by
+// the same code path via resolveInstallSource — splitting the git clone
+// into a small helper so it can be stubbed is a separate follow-up.
+
+import { installPresetFromSource } from '@bradygaster/squad-sdk/presets';
+
+describe('installPresetFromSource() — local paths', () => {
+  const originalEnv = process.env['SQUAD_HOME'];
+  beforeEach(() => {
+    if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+    mkdirSync(TMP, { recursive: true });
+  });
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env['SQUAD_HOME'];
+    else process.env['SQUAD_HOME'] = originalEnv;
+    if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true });
+  });
+
+  it('installs a single-preset local source (startDir/preset.json present)', () => {
+    const homeDir = join(TMP, 'home-single');
+    process.env['SQUAD_HOME'] = homeDir;
+    const src = join(TMP, 'source-single');
+    mkdirSync(join(src, 'agents', 'a1'), { recursive: true });
+    writeFileSync(join(src, 'preset.json'), JSON.stringify({ name: 'starter', version: '1.0.0', description: 'demo', agents: [{ name: 'a1', role: 'lead' }] }));
+    writeFileSync(join(src, 'agents', 'a1', 'charter.md'), '# A1');
+
+    const result = installPresetFromSource(src);
+    expect(result.installedName).toBe('starter');
+    expect(existsSync(join(result.installedDir, 'preset.json'))).toBe(true);
+    expect(existsSync(join(result.installedDir, 'agents', 'a1', 'charter.md'))).toBe(true);
+  });
+
+  it('selects a preset from a collection via --name', () => {
+    const homeDir = join(TMP, 'home-collection');
+    process.env['SQUAD_HOME'] = homeDir;
+    const src = join(TMP, 'source-collection');
+    for (const name of ['alpha', 'beta']) {
+      mkdirSync(join(src, 'presets', name, 'agents', 'lead'), { recursive: true });
+      writeFileSync(join(src, 'presets', name, 'preset.json'), JSON.stringify({ name, version: '1.0.0', description: name, agents: [{ name: 'lead', role: 'lead' }] }));
+      writeFileSync(join(src, 'presets', name, 'agents', 'lead', 'charter.md'), `# ${name} lead`);
+    }
+
+    const result = installPresetFromSource(src, { name: 'beta' });
+    expect(result.installedName).toBe('beta');
+    expect(readFileSync(join(result.installedDir, 'agents', 'lead', 'charter.md'), 'utf-8')).toContain('beta lead');
+  });
+
+  it('throws on collection source without --name (instead of silently grabbing one)', () => {
+    const homeDir = join(TMP, 'home-collection-nopick');
+    process.env['SQUAD_HOME'] = homeDir;
+    const src = join(TMP, 'source-collection-nopick');
+    for (const name of ['alpha', 'beta']) {
+      mkdirSync(join(src, 'presets', name, 'agents', 'lead'), { recursive: true });
+      writeFileSync(join(src, 'presets', name, 'preset.json'), JSON.stringify({ name, version: '1.0.0', description: name, agents: [{ name: 'lead', role: 'lead' }] }));
+      writeFileSync(join(src, 'presets', name, 'agents', 'lead', 'charter.md'), `# ${name}`);
+    }
+    expect(() => installPresetFromSource(src)).toThrow(/multiple presets/i);
+  });
+
+  it('--force overwrites an existing preset of the same name', () => {
+    const homeDir = join(TMP, 'home-force');
+    process.env['SQUAD_HOME'] = homeDir;
+    const src = join(TMP, 'source-force');
+    mkdirSync(join(src, 'agents', 'a1'), { recursive: true });
+    writeFileSync(join(src, 'preset.json'), JSON.stringify({ name: 'collision', version: '1.0.0', description: 'v1', agents: [{ name: 'a1', role: 'lead' }] }));
+    writeFileSync(join(src, 'agents', 'a1', 'charter.md'), '# v1');
+
+    installPresetFromSource(src);
+    // Mutate source to v2
+    writeFileSync(join(src, 'preset.json'), JSON.stringify({ name: 'collision', version: '2.0.0', description: 'v2', agents: [{ name: 'a1', role: 'lead' }] }));
+    writeFileSync(join(src, 'agents', 'a1', 'charter.md'), '# v2');
+
+    expect(() => installPresetFromSource(src)).toThrow(/already exists.*--force/);
+
+    const result = installPresetFromSource(src, { force: true });
+    expect(JSON.parse(readFileSync(join(result.installedDir, 'preset.json'), 'utf-8')).description).toBe('v2');
+    expect(readFileSync(join(result.installedDir, 'agents', 'a1', 'charter.md'), 'utf-8')).toContain('v2');
+  });
+
+  it('--name renames the preset AND stamps manifest.name with the new name', () => {
+    const homeDir = join(TMP, 'home-rename');
+    process.env['SQUAD_HOME'] = homeDir;
+    const src = join(TMP, 'source-rename');
+    mkdirSync(join(src, 'agents', 'a1'), { recursive: true });
+    writeFileSync(join(src, 'preset.json'), JSON.stringify({ name: 'upstream-name', version: '1.0.0', description: 'demo', agents: [{ name: 'a1', role: 'lead' }] }));
+    writeFileSync(join(src, 'agents', 'a1', 'charter.md'), '# A1');
+
+    const result = installPresetFromSource(src, { name: 'my-renamed' });
+    expect(result.installedName).toBe('my-renamed');
+    // Manifest must be stamped so list/show stay consistent
+    const stamped = JSON.parse(readFileSync(join(result.installedDir, 'preset.json'), 'utf-8'));
+    expect(stamped.name).toBe('my-renamed');
+    // Other manifest fields must be preserved
+    expect(stamped.version).toBe('1.0.0');
+    expect(stamped.description).toBe('demo');
+    expect(stamped.agents).toHaveLength(1);
+  });
+
+  it('rejects --name containing path separators (defends against ../escape)', () => {
+    const homeDir = join(TMP, 'home-reject-name');
+    process.env['SQUAD_HOME'] = homeDir;
+    const src = join(TMP, 'source-reject-name');
+    mkdirSync(join(src, 'agents', 'a1'), { recursive: true });
+    writeFileSync(join(src, 'preset.json'), JSON.stringify({ name: 'demo', version: '1.0.0', description: 'demo', agents: [{ name: 'a1', role: 'lead' }] }));
+    writeFileSync(join(src, 'agents', 'a1', 'charter.md'), '# A1');
+
+    for (const bad of ['../escape', 'a/b', 'a\\b', '..', '.', 'foo\0bar']) {
+      expect(() => installPresetFromSource(src, { name: bad }), `must reject '${bad}'`).toThrow();
+    }
+  });
+
+  it('throws on empty source', () => {
+    expect(() => installPresetFromSource('')).toThrow(/required/i);
+  });
+});

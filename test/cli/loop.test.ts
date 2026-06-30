@@ -296,6 +296,7 @@ describe('runLoop', () => {
   });
 
   afterEach(() => {
+    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 

@@ -124,6 +124,14 @@ This is your **team identity**. It contains:
 
 This is the stuff that makes your agents *yours*. It persists across sessions. It grows as you work. It follows you from project to project.
 
+### The global `squad.agent.md` — a reference, not a live file
+
+You'll also see `.github/agents/squad.agent.md` inside your global config directory. This file is **not** discoverable by GitHub Copilot — Copilot only reads agent files inside a git repository's `.github/agents/` folder.
+
+So why is it there? It serves as a **local reference** of the Squad agent instructions that were applied to your projects. The actual source for `squad init` is the packaged template bundled with the CLI (`squad.agent.md.template`), so the global copy is not used as input for future inits. It exists so you can see what Squad generated without opening a project.
+
+If you want Copilot to use Squad's agent instructions in a project, run `squad init` in that project's root — that creates the "real" `.github/agents/squad.agent.md` inside the git repo where Copilot can discover it.
+
 ### The project pointer: `.squad/config.json`
 
 Inside each connected project, `.squad/config.json` looks like this:

@@ -248,7 +248,7 @@ function createNoopAdapter(): ReturnType<typeof createPlatformAdapter> {
 /** Verify the copilot CLI is available. */
 async function checkCopilotCli(): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    execFile('copilot', ['--version'], (err) => {
+    execFile('copilot', ['--version'], { shell: process.platform === 'win32', timeout: 5000 }, (err) => {
       if (err) reject(err);
       else resolve();
     });

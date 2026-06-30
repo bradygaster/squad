@@ -60,6 +60,17 @@ public enum SquadAgentTraceEventKind
 
     /// <summary>The session became idle (the run is complete).</summary>
     SessionIdle,
+
+    /// <summary>
+    /// The coordinator dispatched a subagent via the <c>task</c> tool. Emitted when the
+    /// underlying <c>ToolExecutionStartEvent</c> has <c>ToolName == "task"</c>, this kind
+    /// surfaces the LLM-supplied per-dispatch persona identity (<see cref="SquadAgentTraceEvent.DispatchedPersonaName"/>,
+    /// <see cref="SquadAgentTraceEvent.DispatchedPersonaDescription"/>, <see cref="SquadAgentTraceEvent.DispatchedAgentType"/>,
+    /// <see cref="SquadAgentTraceEvent.DispatchedPrompt"/>) which is otherwise unavailable —
+    /// the subsequent <see cref="SubagentStarted"/> event only carries the agent_type
+    /// catalog identity (e.g. <c>AgentName == "general-purpose"</c>).
+    /// </summary>
+    SubagentDispatched,
 }
 
 /// <summary>
@@ -112,8 +123,50 @@ public sealed record SquadAgentTraceEvent
     /// </summary>
     public string? Content { get; init; }
 
+    /// <summary>
+    /// Names of the tools requested in this assistant turn, populated from
+    /// <c>AssistantMessageData.ToolRequests</c> for <see cref="SquadAgentTraceEventKind.AssistantMessage"/>.
+    /// </summary>
+    /// <remarks>
+    /// An assistant turn can be "tool-only" — the model invokes one or more tools without producing any
+    /// spoken text. In that case <see cref="Content"/> is empty and this list carries the tool names
+    /// (e.g. <c>["gh", "view", "grep"]</c>) so consumers can surface "called X tools" instead of a blank reply.
+    /// Empty (not null) when the assistant turn requested no tools.
+    /// </remarks>
+    public IReadOnlyList<string> RequestedToolNames { get; init; } = Array.Empty<string>();
+
     /// <summary>Tool success flag, for <see cref="SquadAgentTraceEventKind.ToolComplete"/>.</summary>
     public bool? Success { get; init; }
+
+    /// <summary>
+    /// The LLM-supplied per-dispatch persona <c>name</c> parameter passed to the <c>task</c> tool.
+    /// Populated only when <see cref="Kind"/> is <see cref="SquadAgentTraceEventKind.SubagentDispatched"/>.
+    /// </summary>
+    /// <remarks>
+    /// Example: when the coordinator dispatches <c>task(name: "cipher", description: "🛡️ Cipher: ...", agent_type: "general-purpose", prompt: "...")</c>,
+    /// this is <c>"cipher"</c>. The underlying <see cref="SubagentName"/> in the subsequent
+    /// <see cref="SquadAgentTraceEventKind.SubagentStarted"/> event will be <c>"general-purpose"</c>
+    /// (the agent_type catalog identifier) — this property captures the actual persona identity.
+    /// </remarks>
+    public string? DispatchedPersonaName { get; init; }
+
+    /// <summary>
+    /// The LLM-supplied per-dispatch persona <c>description</c> parameter passed to the <c>task</c> tool.
+    /// Populated only when <see cref="Kind"/> is <see cref="SquadAgentTraceEventKind.SubagentDispatched"/>.
+    /// </summary>
+    public string? DispatchedPersonaDescription { get; init; }
+
+    /// <summary>
+    /// The LLM-supplied <c>agent_type</c> parameter passed to the <c>task</c> tool (e.g. <c>"general-purpose"</c>).
+    /// Populated only when <see cref="Kind"/> is <see cref="SquadAgentTraceEventKind.SubagentDispatched"/>.
+    /// </summary>
+    public string? DispatchedAgentType { get; init; }
+
+    /// <summary>
+    /// The LLM-supplied <c>prompt</c> parameter passed to the <c>task</c> tool — the actual instructions
+    /// the persona will execute. Populated only when <see cref="Kind"/> is <see cref="SquadAgentTraceEventKind.SubagentDispatched"/>.
+    /// </summary>
+    public string? DispatchedPrompt { get; init; }
 
     /// <summary>
     /// The original underlying <c>GitHub.Copilot.SessionEvent</c> instance. Kept as <see cref="object"/> on this

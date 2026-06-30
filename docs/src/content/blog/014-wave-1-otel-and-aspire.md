@@ -47,7 +47,7 @@ Every file mutation by every agent becomes a traceable event. In the Aspire dash
 
 ## Aspire Dashboard Integration
 
-The `squad aspire` command (#265) wires Squad's OTLP exporter to a .NET Aspire dashboard. Aspire gives you:
+The `squad aspire` command (#265) wires Squad's OTLP exporter to a Aspire dashboard. Aspire gives you:
 
 - **Trace waterfall** — See agent spawns, tool calls, and file writes as a timeline
 - **Metrics** — Agent spawn counts, tool call durations, event bus throughput

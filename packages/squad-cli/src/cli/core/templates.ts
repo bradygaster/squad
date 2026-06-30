@@ -299,6 +299,24 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Cross-squad discovery — finding peer squads via registry/upstream',
   },
+  {
+    source: 'skills/coordinator-source-of-truth/SKILL.md',
+    destination: '../.github/skills/coordinator-source-of-truth/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Squad file-by-file source-of-truth hierarchy (extracted from squad.agent.md, #1308)',
+  },
+  {
+    source: 'skills/coordinator-response-mode/SKILL.md',
+    destination: '../.github/skills/coordinator-response-mode/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Response Mode Selection (Direct/Lightweight/Standard/Full) — full decision table + Lightweight spawn template',
+  },
+  {
+    source: 'skills/coordinator-init-mode/SKILL.md',
+    destination: '../.github/skills/coordinator-init-mode/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'Init Mode two-phase protocol — propose team (Phase 1) then create .squad/ scaffolding (Phase 2)',
+  },
 
   // Session init reference (squad-owned, coordinator reads at session start)
   {

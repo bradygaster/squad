@@ -14,7 +14,6 @@ process.env.NODE_NO_WARNINGS = '1';
 // process.env.NODE_NO_WARNINGS only works when set BEFORE process starts;
 // this runtime hook catches warnings emitted during dynamic imports below.
 const _origEmit = process.emit;
-// @ts-expect-error — narrowing emit signature for warning suppression
 process.emit = function (evt: string, ...args: unknown[]) {
   if (evt === 'warning' && (args[0] as { name?: string })?.name === 'ExperimentalWarning') {
     return false;
@@ -205,8 +204,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --init (generate boilerplate loop.md)`);
     console.log(`                    --file <path> (custom loop file)`);
     console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
-    console.log(`  ${BOLD}hire${RESET}       Team creation wizard`);
-    console.log(`             Usage: hire [--name <name>] [--role <role>]`);
+    console.log(`  ${BOLD}cast${RESET}       Show roster, or add a new agent (alias: hire)`);
+    console.log(`             Usage: cast [--name <name>] [--role <role>]`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
@@ -240,10 +239,12 @@ async function main(): Promise<void> {
     console.log(`             Aliases: workstreams, streams (deprecated)`);
     console.log(`  ${BOLD}link${RESET}       Link project to a remote team root`);
     console.log(`             Usage: link <team-repo-path>`);
+    console.log(`  ${BOLD}externalize${RESET}  Move local squad state to an external team root`);
+    console.log(`  ${BOLD}internalize${RESET}  Pull an external team root back into the project`);
     console.log(`  ${BOLD}build${RESET}      Compile squad.config.ts into .squad/ markdown`);
     console.log(`             Flags: --check (validate only), --dry-run (preview)`);
     console.log(`                    --watch (rebuild on change)`);
-    console.log(`  ${BOLD}aspire${RESET}     Launch .NET Aspire dashboard for observability`);
+    console.log(`  ${BOLD}aspire${RESET}     Launch Aspire dashboard for observability`);
     console.log(`             Flags: --docker (force Docker), --port <n> (dashboard port)`);
     console.log(`  ${BOLD}schedule${RESET}   Manage scheduled tasks`);
     console.log(`             Usage: schedule list | run <id> | init | status`);
@@ -275,6 +276,10 @@ async function main(): Promise<void> {
     console.log(`                    upstream sync [name]`);
     console.log(`  ${BOLD}economy${RESET}    Toggle economy mode (cost-conscious model selection)`);
     console.log(`             Usage: economy [on|off]`);
+    console.log(`  ${BOLD}externalize${RESET}  Move .squad/ state out of the working tree`);
+    console.log(`             Stores state in platform-local storage`);
+    console.log(`             Flags: --key <name> (explicit project key)`);
+    console.log(`  ${BOLD}internalize${RESET}  Restore externalized state into the working tree`);
 
     console.log(`  ${BOLD}version${RESET}    Print installed version`);
     console.log(`  ${BOLD}help${RESET}       Show this help message`);
@@ -402,6 +407,7 @@ async function main(): Promise<void> {
     const selfUpgrade = args.includes('--self');
     const forceUpgrade = args.includes('--force');
     const insider = args.includes('--insider');
+    const dryRun = args.includes('--dry-run');
     const dest = hasGlobal ? (await lazySquadSdk()).resolveGlobalSquadPath() : getSquadStartDir();
 
     // Parse --state-backend for backend migration
@@ -465,6 +471,7 @@ async function main(): Promise<void> {
         migrateDirectory: migrateDir,
         self: selfUpgrade,
         force: forceUpgrade,
+        dryRun,
       });
     }
 
@@ -777,12 +784,20 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cmd === 'hire') {
+  if (cmd === 'cast' || cmd === 'hire') {
     const nameIdx = args.indexOf('--name');
     const name = (nameIdx !== -1 && args[nameIdx + 1]) ? args[nameIdx + 1] : undefined;
     const roleIdx = args.indexOf('--role');
     const role = (roleIdx !== -1 && args[roleIdx + 1]) ? args[roleIdx + 1] : undefined;
-    console.log('👋 Squad hire — team creation wizard starting... (full implementation pending)');
+
+    // `squad cast` with no wizard flags shows the roster; `squad hire` always runs the wizard
+    if (cmd === 'cast' && !name && !role) {
+      const { runCast } = await import('./cli/commands/cast.js');
+      await runCast(getSquadStartDir());
+      return;
+    }
+
+    console.log('🎬 Squad cast — team creation wizard starting... (full implementation pending)');
     if (name) {
       console.log(`   Name: ${name}`);
     }
@@ -1069,12 +1084,6 @@ async function main(): Promise<void> {
     const { runPreset } = await import('./cli/commands/preset.js');
     const subcommand = args[1] || 'list';
     await runPreset(getSquadStartDir(), subcommand, args.slice(2));
-    return;
-  }
-
-  if (cmd === 'cast') {
-    const { runCast } = await import('./cli/commands/cast.js');
-    await runCast(getSquadStartDir());
     return;
   }
 

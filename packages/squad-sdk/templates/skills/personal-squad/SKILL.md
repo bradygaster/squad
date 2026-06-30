@@ -15,8 +15,9 @@ A personal squad is a user-level collection of AI agents that travel with you ac
 ## Directory Structure
 
 ```
-~/.config/squad/personal-squad/    # Linux/macOS
-%APPDATA%/squad/personal-squad/    # Windows
+~/Library/Application Support/squad/personal-squad/    # macOS
+~/.config/squad/personal-squad/                        # Linux
+%APPDATA%/squad/personal-squad/                        # Windows
 ├── agents/
 │   ├── {agent-name}/
 │   │   ├── charter.md

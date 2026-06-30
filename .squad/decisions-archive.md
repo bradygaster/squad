@@ -75,7 +75,7 @@
 
 ### 2026-02-22: User directive — Aspire testing requirements
 **By:** Brady (via Copilot)
-**What:** Integration tests must launch the Aspire dashboard and validate OTel telemetry shows up. Use Playwright. Use latest Aspire bits. Reference aspire.dev (NOT learn.microsoft.com). It's "Aspire" not ".NET Aspire".
+**What:** Integration tests must launch the Aspire dashboard and validate OTel telemetry shows up. Use Playwright. Use latest Aspire bits. Reference aspire.dev (NOT learn.microsoft.com). Use "Aspire" without a ".NET" prefix.
 
 ### 2026-02-23: User directive — code fences
 **By:** Brady (via Copilot)

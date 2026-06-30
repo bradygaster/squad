@@ -160,29 +160,57 @@ export function createStateMcpSession(
 }
 
 export async function runStateMcp(startDir = process.cwd()): Promise<void> {
-  const registry = createStateMcpToolRegistry(startDir);
-  const runtimeTools = new Map(registry.getTools().map(tool => [tool.name, tool]));
-  const tools = Object.entries(MCP_TOOL_ALIASES).map(([mcpName, runtimeName]) => {
-    const tool = runtimeTools.get(runtimeName);
-    if (!tool) throw new Error(`Missing Squad runtime state tool: ${runtimeName}`);
-    return { mcpName, runtimeName, tool };
-  });
-  const toolMap = new Map(tools.map(entry => [entry.mcpName, entry]));
+  // Lazy initialization: resolve state on first tool call, not at startup (#1353)
+  // This ensures the MCP server connects quickly and doesn't block other MCPs
+  let registry: ToolRegistry | undefined;
+  let initError: Error | undefined;
+
+  function getRegistry(): ToolRegistry {
+    if (initError) throw initError;
+    if (!registry) {
+      try {
+        registry = createStateMcpToolRegistry(startDir);
+      } catch (err) {
+        initError = err instanceof Error ? err : new Error(String(err));
+        throw initError;
+      }
+    }
+    return registry;
+  }
+
   const server = new Server(SERVER_INFO, { capabilities: { tools: {} } });
 
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: tools.map(tool => ({
-      name: tool.mcpName,
-      description: tool.tool.description,
-      inputSchema: tool.tool.parameters as {
-        type: 'object';
-        properties?: Record<string, object>;
-        required?: string[];
-      },
-    })),
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, () => {
+    const reg = getRegistry();
+    const runtimeTools = new Map(reg.getTools().map(tool => [tool.name, tool]));
+    const tools = Object.entries(MCP_TOOL_ALIASES).map(([mcpName, runtimeName]) => {
+      const tool = runtimeTools.get(runtimeName);
+      if (!tool) throw new Error(`Missing Squad runtime state tool: ${runtimeName}`);
+      return { mcpName, runtimeName, tool };
+    });
+    return {
+      tools: tools.map(tool => ({
+        name: tool.mcpName,
+        description: tool.tool.description,
+        inputSchema: tool.tool.parameters as {
+          type: 'object';
+          properties?: Record<string, object>;
+          required?: string[];
+        },
+      })),
+    };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async request => {
+    const reg = getRegistry();
+    const runtimeTools = new Map(reg.getTools().map(tool => [tool.name, tool]));
+    const tools = Object.entries(MCP_TOOL_ALIASES).map(([mcpName, runtimeName]) => {
+      const tool = runtimeTools.get(runtimeName);
+      if (!tool) throw new Error(`Missing Squad runtime state tool: ${runtimeName}`);
+      return { mcpName, runtimeName, tool };
+    });
+    const toolMap = new Map(tools.map(entry => [entry.mcpName, entry]));
+
     const entry = toolMap.get(request.params.name);
     if (!entry) {
       throw new Error(`Unknown Squad state tool: ${request.params.name}`);

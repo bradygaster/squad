@@ -1,26 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "08:00"
-      timezone: "Etc/UTC"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-    groups:
-      opentelemetry:
-        patterns:
-          - "@opentelemetry/*"
-      npm-minor-and-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-
   - package-ecosystem: "nuget"
     directory: "/src/Squad.Agents.AI"
     schedule:
@@ -78,6 +57,85 @@ updates:
       - dependency-name: "OpenTelemetry*"
         update-types:
           - "version-update:semver-major"
+
+  # npm — root workspace (vitest, typescript, shared tooling)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "squad:belanna"]
+    commit-message:
+      prefix: "deps"
+    groups:
+      minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # npm — Squad CLI package
+  - package-ecosystem: "npm"
+    directory: "/packages/squad-cli"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "squad:belanna"]
+    commit-message:
+      prefix: "deps"
+    groups:
+      minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # npm — Squad SDK package
+  - package-ecosystem: "npm"
+    directory: "/packages/squad-sdk"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "squad:belanna"]
+    commit-message:
+      prefix: "deps"
+    groups:
+      minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # npm — Docs site (Astro/Starlight)
+  - package-ecosystem: "npm"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "squad:belanna"]
+    commit-message:
+      prefix: "deps"
+    groups:
+      astro-minor-patch:
+        patterns:
+          - "@astrojs/*"
+          - "astro"
+        update-types:
+          - "minor"
+          - "patch"
+      minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"

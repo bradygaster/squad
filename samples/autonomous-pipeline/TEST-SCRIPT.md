@@ -79,7 +79,7 @@
 
 ### Act 6: OTel / Aspire (30 seconds, if Aspire is running)
 
-**Say:** "And all of this feeds into .NET Aspire."
+**Say:** "And all of this feeds into Aspire."
 
 **Show:** Switch to browser at http://localhost:18888. Show traces and metrics.
 

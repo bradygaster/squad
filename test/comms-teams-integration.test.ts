@@ -25,6 +25,9 @@ const fsMocks = vi.hoisted(() => ({
       expiresAt: Date.now() + 3_600_000,
     }),
   ),
+  statSync: vi.fn(() => ({
+    isDirectory: () => true,
+  })),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
   chmodSync: vi.fn(),
@@ -71,7 +74,20 @@ const httpMocks = vi.hoisted(() => ({
 
 vi.mock('node:fs', async () => {
   const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
-  return { ...actual, ...fsMocks };
+  return {
+    ...actual,
+    ...fsMocks,
+    default: { ...actual, ...fsMocks },
+  };
+});
+
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('fs')>('fs');
+  return {
+    ...actual,
+    ...fsMocks,
+    default: { ...actual, ...fsMocks },
+  };
 });
 
 vi.mock('node:child_process', async () => {
@@ -81,7 +97,16 @@ vi.mock('node:child_process', async () => {
 
 vi.mock('node:os', async () => {
   const actual = await vi.importActual<typeof import('node:os')>('node:os');
-  return { ...actual, platform: osMocks.platform, homedir: osMocks.homedir };
+  return {
+    ...actual,
+    platform: osMocks.platform,
+    homedir: osMocks.homedir,
+    default: {
+      ...actual,
+      platform: osMocks.platform,
+      homedir: osMocks.homedir,
+    },
+  };
 });
 
 vi.mock('node:http', async () => {
@@ -127,6 +152,9 @@ beforeEach(() => {
       expiresAt: Date.now() + 3_600_000,
     }),
   );
+  fsMocks.statSync.mockReturnValue({
+    isDirectory: () => true,
+  });
   fsMocks.writeFileSync.mockReset();
   fsMocks.mkdirSync.mockReset();
 

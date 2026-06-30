@@ -1,6 +1,6 @@
 # Squad.Agents.AI
 
-> **Preview package.** `Squad.Agents.AI` is a `0.1.0-preview` NuGet package for early adopters. It targets `net10.0` and depends on preview Microsoft Agent Framework / GitHub Copilot SDK packages, so APIs may change before a stable release.
+> **Preview package.** `Squad.Agents.AI` is a `0.5.1` preview NuGet package for early adopters. It multi-targets `net8.0`, `net9.0`, and `net10.0`, and depends on preview Microsoft Agent Framework / GitHub Copilot SDK packages, so APIs may change before a stable release.
 
 ## What it does
 

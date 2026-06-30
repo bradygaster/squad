@@ -39,7 +39,7 @@ const {
 // ── Module mocks ────────────────────────────────────────────────────
 
 vi.mock('@bradygaster/squad-sdk', () => ({
-  FSStorageProvider: vi.fn(() => mockStorage),
+  FSStorageProvider: vi.fn(function () { return mockStorage; }),
 }));
 
 vi.mock('node:child_process', () => ({

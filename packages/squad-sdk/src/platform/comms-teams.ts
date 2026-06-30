@@ -4,7 +4,8 @@
  * Auth priority: cached token → refresh → browser PKCE → device code fallback.
  * Uses the Microsoft Graph PowerShell first-party client ID by default (works
  * in every Microsoft tenant with no custom Entra registration required).
- * Tokens stored per-identity in ~/.squad/teams-tokens-{hash(tenantId:clientId)}.json.
+ * Tokens stored per-identity in <squad-home>/teams-tokens-{hash(tenantId:clientId)}.json
+ * (squad-home defaults to ~/.squad/ but respects the SQUAD_HOME env var).
  *
  * @module platform/comms-teams
  */
@@ -15,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSy
 import { createServer } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
+import { resolveSquadHome } from '../resolution.js';
 import type { CommunicationAdapter, CommunicationChannel, CommunicationReply } from './types.js';
 
 // ─── Defaults ────────────────────────────────────────────────────────
@@ -54,9 +56,12 @@ interface StoredTokens {
   authenticatedUserId?: string;
 }
 
-const SQUAD_DIR = join(homedir(), '.squad');
+function getSquadDir(): string {
+  return resolveSquadHome(true) ?? join(homedir(), '.squad');
+}
+
 /** Legacy single-file path (pre-tenant-scoped) — migrated away on first use */
-const LEGACY_TOKEN_PATH = join(SQUAD_DIR, 'teams-tokens.json');
+const LEGACY_TOKEN_PATH = join(homedir(), '.squad', 'teams-tokens.json');
 
 /**
  * Derive a safe, collision-resistant filename for a token cache entry.
@@ -65,7 +70,7 @@ const LEGACY_TOKEN_PATH = join(SQUAD_DIR, 'teams-tokens.json');
  */
 function getTokenPath(tenantId: string, clientId: string): string {
   const hash = createHash('sha256').update(`${tenantId}:${clientId}`).digest('hex').slice(0, 16);
-  return join(SQUAD_DIR, `teams-tokens-${hash}.json`);
+  return join(getSquadDir(), `teams-tokens-${hash}.json`);
 }
 
 function loadTokens(tenantId: string, clientId: string): StoredTokens | null {
@@ -88,8 +93,9 @@ function loadTokens(tenantId: string, clientId: string): StoredTokens | null {
 // Security: tokens stored with 0o600 permissions (owner-only read/write).
 function saveTokens(tenantId: string, clientId: string, tokens: StoredTokens): void {
   const tokenPath = getTokenPath(tenantId, clientId);
-  if (!existsSync(SQUAD_DIR)) {
-    mkdirSync(SQUAD_DIR, { recursive: true, mode: 0o700 });
+  const squadDir = getSquadDir();
+  if (!existsSync(squadDir)) {
+    mkdirSync(squadDir, { recursive: true, mode: 0o700 });
   }
   const jwtClaims = extractJwtClaims(tokens.accessToken);
   const withMeta: StoredTokens = {
@@ -107,7 +113,7 @@ function saveTokens(tenantId: string, clientId: string, tokens: StoredTokens): v
       if (err) console.warn('⚠️ Could not restrict token file permissions:', err.message);
     });
   } else {
-    chmodSync(SQUAD_DIR, 0o700);
+    chmodSync(squadDir, 0o700);
     chmodSync(tokenPath, 0o600);
   }
 }

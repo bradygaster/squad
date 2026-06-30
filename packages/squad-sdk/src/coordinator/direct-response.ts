@@ -177,6 +177,11 @@ export class DirectResponseHandler {
     const trimmed = message.trim();
     if (trimmed.length === 0) return false;
 
+    // Never handle directly when message contains an explicit @agent mention (#1029)
+    if (/(?:^|\s)@[a-z][a-z0-9_-]*/i.test(trimmed)) {
+      return false;
+    }
+
     // Check configurable patterns from squad config
     if (config?.routing?.rules) {
       for (const rule of config.routing.rules) {

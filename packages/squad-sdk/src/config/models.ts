@@ -11,6 +11,7 @@ import { join } from 'path';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
 import type { ModelId, ModelTier } from '../runtime/config.js';
+import type { SquadReasoningEffort } from '../adapter/types.js';
 
 /**
  * Per-token pricing in USD.
@@ -548,6 +549,8 @@ export interface ModelPreferenceConfig {
   defaultModel?: string;
   agentModelOverrides?: Record<string, string>;
   economyMode?: boolean;
+  defaultReasoningEffort?: string;
+  agentReasoningEffortOverrides?: Record<string, string>;
 }
 
 /**
@@ -729,6 +732,336 @@ export function writeAgentModelOverrides(
   }
 
   storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Valid reasoning effort levels, ordered from lowest to highest.
+ * "auto" is a permitted stored sentinel that resolvers treat as "not set".
+ * Canonical runtime list — import this instead of duplicating. The `satisfies`
+ * clause keeps it in lock-step with the canonical {@link SquadReasoningEffort} type.
+ */
+export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly SquadReasoningEffort[];
+/** Canonical reasoning-effort union (alias of {@link SquadReasoningEffort}). */
+export type ValidReasoningEffort = SquadReasoningEffort;
+const VALID_REASONING_EFFORTS_WITH_AUTO: readonly string[] = [...VALID_REASONING_EFFORTS, 'auto'];
+/** String array form for runtime `.includes()` checks with arbitrary strings. */
+const VALID_EFFORTS_SET: readonly string[] = VALID_REASONING_EFFORTS;
+
+/**
+ * Ordered effort levels for clamping. "max" is treated as equivalent to "xhigh".
+ */
+const EFFORT_RANK: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  xhigh: 3,
+  max: 3,
+};
+
+/**
+ * Clamp a requested reasoning effort to the highest level supported by the model.
+ *
+ * If the model does not support reasoning effort at all (empty or missing
+ * supportedEfforts), returns undefined. If the requested effort is within
+ * the model's supported range, returns it unchanged. Otherwise, returns the
+ * highest effort the model supports.
+ *
+ * Deliberate: when the requested effort is *below* the model's minimum
+ * supported level (e.g. "low" against a model that only supports ["high"]),
+ * it is clamped UP to that minimum so a reasoning-capable model always
+ * receives a valid level rather than undefined. This upward clamp is
+ * intentional — see the clampReasoningEffort tests in model-preference.test.ts.
+ *
+ * @param requested - The reasoning effort the user/charter requested
+ * @param supportedEfforts - The model's supportedReasoningEfforts from listModels()
+ * @returns The clamped effort, or undefined if the model doesn't support reasoning effort
+ */
+export function clampReasoningEffort(
+  requested: string | undefined,
+  supportedEfforts: string[] | undefined,
+): string | undefined {
+  if (!requested) return undefined;
+
+  // Model doesn't support reasoning effort at all
+  if (!supportedEfforts || supportedEfforts.length === 0) return undefined;
+
+  const requestedRank = EFFORT_RANK[requested];
+  if (requestedRank === undefined) return undefined;
+
+  // Check if the requested effort is directly supported
+  if (supportedEfforts.includes(requested)) return requested;
+  // "max" and "xhigh" are equivalent
+  if (requested === 'xhigh' && supportedEfforts.includes('max')) return 'xhigh';
+  if (requested === 'max' && supportedEfforts.includes('xhigh')) return 'xhigh';
+
+  // Find the highest supported effort that doesn't exceed the request
+  let bestEffort: string | undefined;
+  let bestRank = -1;
+  for (const effort of supportedEfforts) {
+    const rank = EFFORT_RANK[effort];
+    if (rank !== undefined && rank <= requestedRank && rank > bestRank) {
+      bestRank = rank;
+      bestEffort = effort;
+    }
+  }
+
+  // Deliberate: if nothing is <= requested, the request is below the model's
+  // minimum supported level — clamp UP to the model's lowest so a
+  // reasoning-capable model never receives undefined here.
+  if (!bestEffort) {
+    let lowestRank = Infinity;
+    for (const effort of supportedEfforts) {
+      const rank = EFFORT_RANK[effort];
+      if (rank !== undefined && rank < lowestRank) {
+        lowestRank = rank;
+        bestEffort = effort;
+      }
+    }
+  }
+
+  return bestEffort;
+}
+
+/**
+ * Reads the persistent reasoning effort preference from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns The defaultReasoningEffort string if set, or null
+ */
+export function readReasoningEffort(squadDir: string, storage: StorageProvider = new FSStorageProvider()): string | null {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return null;
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      typeof parsed.defaultReasoningEffort === 'string' &&
+      parsed.defaultReasoningEffort.length > 0 &&
+      VALID_REASONING_EFFORTS_WITH_AUTO.includes(parsed.defaultReasoningEffort)
+    ) {
+      return parsed.defaultReasoningEffort;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads per-agent reasoning effort overrides from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns Record of agent name → reasoning effort, or empty object
+ */
+export function readAgentReasoningEffortOverrides(squadDir: string, storage: StorageProvider = new FSStorageProvider()): Record<string, string> {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return {};
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof parsed.agentReasoningEffortOverrides === 'object' &&
+      parsed.agentReasoningEffortOverrides !== null
+    ) {
+      const result: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed.agentReasoningEffortOverrides)) {
+        if (typeof value === 'string' && VALID_EFFORTS_SET.includes(value)) {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Writes a persistent reasoning effort preference to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param effort - Reasoning effort to persist, or null to clear
+ */
+export function writeReasoningEffort(squadDir: string, effort: string | null, storage: StorageProvider = new FSStorageProvider()): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (effort === null) {
+    delete config.defaultReasoningEffort;
+  } else if (VALID_REASONING_EFFORTS_WITH_AUTO.includes(effort)) {
+    config.defaultReasoningEffort = effort;
+  } else {
+    // Invalid value: warn and leave any existing preference untouched rather
+    // than silently clearing it (a typo shouldn't wipe a valid setting).
+    // Pass null explicitly to clear.
+    console.warn(
+      `[squad] writeReasoningEffort: ignoring invalid reasoning effort "${effort}" `
+      + `(expected ${VALID_REASONING_EFFORTS.join(', ')}, auto, or null to clear); `
+      + `existing preference left unchanged.`,
+    );
+    return;
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Writes per-agent reasoning effort overrides to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param overrides - Record of agent name → reasoning effort, or null to clear
+ */
+export function writeAgentReasoningEffortOverrides(
+  squadDir: string,
+  overrides: Record<string, string> | null,
+  storage: StorageProvider = new FSStorageProvider()
+): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (overrides === null || Object.keys(overrides).length === 0) {
+    delete config.agentReasoningEffortOverrides;
+  } else {
+    // Filter out invalid effort values, warning about any dropped so a typo
+    // isn't silently discarded.
+    const validated: Record<string, string> = {};
+    const dropped: string[] = [];
+    for (const [agent, effort] of Object.entries(overrides)) {
+      if (VALID_REASONING_EFFORTS_WITH_AUTO.includes(effort)) {
+        validated[agent] = effort;
+      } else {
+        dropped.push(`${agent}="${effort}"`);
+      }
+    }
+    if (dropped.length > 0) {
+      console.warn(
+        `[squad] writeAgentReasoningEffortOverrides: ignoring invalid reasoning effort `
+        + `value(s) ${dropped.join(', ')} (expected ${VALID_REASONING_EFFORTS.join(', ')}, or auto).`,
+      );
+    }
+    if (Object.keys(validated).length > 0) {
+      config.agentReasoningEffortOverrides = validated;
+    } else {
+      delete config.agentReasoningEffortOverrides;
+    }
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Resolves the effective reasoning effort for an agent spawn.
+ * Uses a layered priority system matching the model resolution pattern:
+ *   Layer 0a: Per-agent persistent override (.squad/config.json agentReasoningEffortOverrides)
+ *   Layer 0b: Global persistent config (.squad/config.json defaultReasoningEffort)
+ *   Layer 1: Spawn-time override (caller-provided)
+ *   Layer 2: Charter preference (agent's ## Model → **Reasoning Effort:** field)
+ *   Layer 3: Default (undefined — let SDK/API decide)
+ *
+ * The value "auto" at any layer is treated as "not set" and falls through.
+ *
+ * When `supportedEfforts` is provided (from the model's capabilities via
+ * listModels()), the resolved effort is clamped to the highest level the
+ * model supports. This prevents API errors when a user requests e.g.
+ * "xhigh" on a model that only supports up to "high".
+ *
+ * @param options - Resolution inputs
+ * @returns Resolved reasoning effort string, or undefined if unset
+ */
+export function resolveReasoningEffort(options: {
+  agentName?: string;
+  squadDir?: string;
+  spawnOverride?: string | null;
+  charterPreference?: string | null;
+  /** Model's supportedReasoningEfforts from listModels(). When provided, clamps the result. */
+  supportedEfforts?: string[];
+  storage?: StorageProvider;
+}): string | undefined {
+  const { agentName, squadDir, spawnOverride, charterPreference } = options;
+  const storage = options.storage ?? new FSStorageProvider();
+
+  let resolved: string | undefined;
+
+  // Helper: only accept valid effort values (reject invalid strings)
+  const isValid = (v: string | null | undefined): v is string =>
+    typeof v === 'string' && v !== 'auto' && VALID_EFFORTS_SET.includes(v);
+
+  // Layer 0a: Per-agent persistent override
+  if (!resolved && squadDir && agentName) {
+    const agentOverrides = readAgentReasoningEffortOverrides(squadDir, storage);
+    const agentEffort = agentOverrides[agentName];
+    if (isValid(agentEffort)) {
+      resolved = agentEffort;
+    }
+  }
+
+  // Layer 0b: Global persistent config
+  if (!resolved && squadDir) {
+    const persistedEffort = readReasoningEffort(squadDir, storage);
+    if (isValid(persistedEffort)) {
+      resolved = persistedEffort;
+    }
+  }
+
+  // Layer 1: Spawn-time override
+  if (!resolved && isValid(spawnOverride)) {
+    resolved = spawnOverride;
+  }
+
+  // Layer 2: Charter preference
+  if (!resolved && isValid(charterPreference)) {
+    resolved = charterPreference;
+  }
+
+  // Layer 3: Default — undefined (let SDK/API decide)
+  if (!resolved) return undefined;
+
+  // Clamp to model capabilities if available
+  if (options.supportedEfforts) {
+    return clampReasoningEffort(resolved, options.supportedEfforts);
+  }
+
+  return resolved;
 }
 
 /**

@@ -43,8 +43,8 @@ function resolveEndpoint(config?: OTelConfig): string | undefined {
   return config?.endpoint ?? process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? undefined;
 }
 
-function buildResource(config?: OTelConfig, Resource?: any): any { // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (!Resource) return undefined;
+function buildResource(config?: OTelConfig, resourceFromAttributes?: any): any { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (!resourceFromAttributes) return undefined;
   const req = createRequire(import.meta.url);
   let version = 'unknown';
   try {
@@ -61,7 +61,7 @@ function buildResource(config?: OTelConfig, Resource?: any): any { // eslint-dis
   if (config?.mode) {
     attrs['squad.mode'] = config.mode;
   }
-  return new Resource(attrs);
+  return resourceFromAttributes(attrs);
 }
 
 function ensureSDK(config?: OTelConfig): void {
@@ -72,12 +72,12 @@ function ensureSDK(config?: OTelConfig): void {
 
   // Lazy-load optional OTel SDK packages via createRequire (#247)
   const req = createRequire(import.meta.url);
-  let NodeSDK: any, Resource: any, PeriodicExportingMetricReader: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  let NodeSDK: any, resourceFromAttributes: any, PeriodicExportingMetricReader: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   let OTLPTraceExporter: any, OTLPMetricExporter: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   try {
     const sdkNode = req('@opentelemetry/sdk-node');
     NodeSDK = sdkNode.NodeSDK;
-    Resource = sdkNode.resources.Resource;
+    resourceFromAttributes = sdkNode.resources.resourceFromAttributes;
     PeriodicExportingMetricReader = sdkNode.metrics.PeriodicExportingMetricReader;
     OTLPTraceExporter = req('@opentelemetry/exporter-trace-otlp-grpc').OTLPTraceExporter;
     OTLPMetricExporter = req('@opentelemetry/exporter-metrics-otlp-grpc').OTLPMetricExporter;
@@ -94,7 +94,7 @@ function ensureSDK(config?: OTelConfig): void {
     diag.setLogger(new DiagConsoleLogger(), config?.debug ? DiagLogLevel.DEBUG : DiagLogLevel.WARN);
   }
 
-  const resource = buildResource(config, Resource);
+  const resource = buildResource(config, resourceFromAttributes);
 
   const sdk = new NodeSDK({
     resource,

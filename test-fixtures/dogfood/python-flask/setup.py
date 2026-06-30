@@ -5,10 +5,10 @@ setup(
     version="0.1.0",
     packages=find_packages(),
     install_requires=[
-        "Flask==2.3.0",
+        "Flask==3.1.3",
         "Flask-SQLAlchemy==3.0.0",
     ],
     extras_require={
-        "dev": ["pytest==7.3.0", "black==23.3.0"],
+        "dev": ["pytest==9.0.3", "black==26.3.1"],
     },
 )

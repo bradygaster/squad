@@ -150,6 +150,8 @@ export interface UpgradeOptions {
   force?: boolean;
   /** When --self, install the insider (prerelease) tag instead of latest. */
   insider?: boolean;
+  /** Preview what upgrade would change without writing. */
+  dryRun?: boolean;
 }
 
 export interface UpdateInfo {
@@ -235,11 +237,38 @@ function detectIsGitHubForMcp(dest: string, config: Record<string, unknown>): bo
   return true;
 }
 
-function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean): void {
+function writeAgentTemplate(agentSrc: string, agentDest: string, cliVersion: string, mcpConfigMode: McpConfigMode, isGitHub: boolean, options?: { dryRun?: boolean }): void {
   let agentContent = storage.readSync(agentSrc) ?? '';
   if (mcpConfigMode === 'agent-frontmatter') {
     agentContent = injectMcpFrontmatter(agentContent, isGitHub, cliVersion);
   }
+
+  // Back up locally-customized squad.agent.md before overwriting (#1052)
+  if (storage.existsSync(agentDest)) {
+    const existing = (storage.readSync(agentDest) ?? '').replace(/\r\n/g, '\n');
+    // Strip the version stamp before comparing (version line changes every upgrade)
+    const stripVersion = (s: string) => s.replace(/<!-- squad-cli v[\d.]+[-\w.]* -->\n?/g, '');
+    const normalizedExisting = stripVersion(existing);
+    const normalizedTemplate = stripVersion(agentContent.replace(/\r\n/g, '\n'));
+
+    if (normalizedExisting !== normalizedTemplate && normalizedExisting.trim().length > 0) {
+      const backupPath = agentDest + '.local-backup';
+      if (options?.dryRun) {
+        warn(`squad.agent.md has local customizations — would back up to ${path.basename(backupPath)}`);
+        return;
+      }
+      storage.writeSync(backupPath, existing);
+      warn(`squad.agent.md has local customizations — backed up to ${path.basename(backupPath)}`);
+      info(`  To restore: copy ${path.basename(backupPath)} → ${path.basename(agentDest)}`);
+    } else if (options?.dryRun) {
+      info('squad.agent.md is unmodified — would refresh with latest template');
+      return;
+    }
+  } else if (options?.dryRun) {
+    info('squad.agent.md does not exist — would create from template');
+    return;
+  }
+
   storage.writeSync(agentDest, agentContent);
   stampVersion(agentDest, cliVersion);
 }
@@ -975,6 +1004,27 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   const isAlreadyCurrent = !options.force && oldVersion && oldVersion !== '0.0.0' && compareSemver(oldVersion, cliVersion) === 0;
 
   const projectType = detectProjectType(dest);
+
+  // --dry-run: preview what upgrade would do without writing (#1052)
+  if (options.dryRun) {
+    info(`\n${bold('Dry run')} — previewing upgrade from ${oldVersion || 'unknown'} → ${cliVersion}\n`);
+    const templatesDir = getTemplatesDir();
+    const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
+    if (storage.existsSync(agentSrc)) {
+      writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { dryRun: true });
+    }
+    const filesToUpgrade = TEMPLATE_MANIFEST.filter(f => f.overwriteOnUpgrade && f.source !== 'squad.agent.md.template');
+    if (filesToUpgrade.length > 0) {
+      info(`Would overwrite ${filesToUpgrade.length} squad-owned file(s):`);
+      for (const file of filesToUpgrade) {
+        const destPath = path.join(squadDirInfo.path, file.destination);
+        const exists = storage.existsSync(destPath);
+        console.log(`  ${exists ? 'overwrite' : 'create'}  ${file.destination}`);
+      }
+    }
+    console.log(`\nRun without --dry-run to apply.\n`);
+    return { fromVersion: oldVersion, toVersion: cliVersion, filesUpdated: [], migrationsRun: [] };
+  }
 
   if (isAlreadyCurrent) {
     info(`Already up to date (v${cliVersion})`);

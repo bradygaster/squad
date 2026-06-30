@@ -39,13 +39,13 @@ jobs:
   heartbeat:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # CI Hardening: GitHub API rate limit monitoring (item 9)
       # Ralph makes multiple API calls (list issues, add labels, create comments).
       # Check rate limit early to avoid silent failures mid-workflow.
       - name: "📊 Check GitHub API rate limit"
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data: rateLimit } = await github.rest.rateLimit.get();
@@ -63,7 +63,7 @@ jobs:
             }
 
       - name: Ralph — Repair orphaned squad labels
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             // Find issues with squad:{member} labels but missing parent "squad" label
@@ -115,7 +115,7 @@ jobs:
 
       - name: Ralph — Apply triage decisions
         if: steps.check-script.outputs.has_script == 'true' && hashFiles('triage-results.json') != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -167,7 +167,7 @@ jobs:
       # Copilot auto-assign step (uses PAT if available)
       - name: Ralph — Assign @copilot issues
         if: success()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN || secrets.GITHUB_TOKEN }}
           script: |

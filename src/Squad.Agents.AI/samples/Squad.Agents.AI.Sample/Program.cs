@@ -1,16 +1,18 @@
 // ============================================================
 //  Squad.Agents.AI — Sample application
 //
-//  Demonstrates four distinct integration patterns:
+//  Demonstrates five distinct integration patterns:
 //    Flow 1 — Basic DI registration and a single prompt
 //    Flow 2 — Keyed DI with two agents under different service keys
 //    Flow 3 — BYOK / ConfigureCopilotClient delegate
 //    Flow 4 — Streaming via RunStreamingAsync
+//    Flow 5 — Subagent dispatch + OpenTelemetry observability
 //
 //  Run: dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/
 //  Run one flow: dotnet run --project src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/ -- --flow=1
 // ============================================================
 
+using System.Diagnostics;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,7 +25,7 @@ foreach (var arg in args)
 {
     if (arg.StartsWith("--flow=", StringComparison.OrdinalIgnoreCase) &&
         int.TryParse(arg["--flow=".Length..], out var n) &&
-        n is >= 1 and <= 4)
+        n is >= 1 and <= 5)
     {
         selectedFlow = n;
     }
@@ -49,9 +51,52 @@ if (RunFlow(1))
     host1.Logging.SetMinimumLevel(LogLevel.Warning); // keep sample output clean
     host1.Services.AddSquadAgent(o =>
     {
-        o.SquadFolderPath = teamRoot;
+        o.SquadFolderPath = @"C:\Users\tamirdresher\source\repos\squad-squad";
         o.AgentName = "SampleSquad";
-        o.Instructions = "You are a helpful assistant. Respond concisely.";
+        o.EmitSubagentActivities = true;
+        o.Instructions = "You are a helpful assistant. Respond concisely. and ask each subagent for their input before providing a final answer.";
+        o.OnSubagentTrace = evt =>
+        {
+            switch (evt.Kind)
+            {
+                case SquadAgentTraceEventKind.SubagentDispatched:
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"  [dispatch] persona={evt.DispatchedPersonaName} agent_type={evt.DispatchedAgentType}");
+                    Console.WriteLine($"             description={Trim(evt.DispatchedPersonaDescription, 100)}");
+                    Console.WriteLine($"             prompt={Trim(evt.DispatchedPrompt, 80)}");
+                    Console.ResetColor();
+                    break;
+                case SquadAgentTraceEventKind.SubagentStarted:
+                    Console.WriteLine($"  [started ] {ShortId(evt.SdkAgentId)} catalog_name={evt.SubagentName}");
+                    break;
+                case SquadAgentTraceEventKind.AssistantMessage when evt.SdkAgentId is not null:
+                {
+                    var hasText = !string.IsNullOrWhiteSpace(evt.Content);
+                    var hasTools = evt.RequestedToolNames.Count > 0;
+                    if (!hasText && !hasTools) break; // skip empty SDK chatter
+                    var prefix = $"  [reply   ] {ShortId(evt.SdkAgentId)} ";
+                    if (hasText)
+                    {
+                        Console.WriteLine($"{prefix}{Trim(evt.Content, 120)}");
+                    }
+                    if (hasTools)
+                    {
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                        Console.WriteLine($"{prefix}(calls: {string.Join(", ", evt.RequestedToolNames)})");
+                        Console.ResetColor();
+                    }
+                    break;
+                }
+                case SquadAgentTraceEventKind.SubagentCompleted:
+                    Console.WriteLine($"  [done    ] {ShortId(evt.SdkAgentId)}");
+                    break;
+                case SquadAgentTraceEventKind.SubagentFailed:
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"  [FAILED  ] {ShortId(evt.SdkAgentId)}");
+                    Console.ResetColor();
+                    break;
+            }
+        };
     });
 
     using var app1 = host1.Build();
@@ -65,6 +110,7 @@ if (RunFlow(1))
     {
         var session1 = await agent1.CreateSessionAsync();
         return await agent1.RunAsync("What is 2 + 2?", session1);
+        //return await agent1.RunAsync("check and review the latest bradygaster/squad repo PR", session1);
     });
 
     if (result1 is not null)
@@ -162,12 +208,22 @@ if (RunFlow(3))
             // Inject a token from an external credential store
             clientOpts.GitHubToken = simulatedToken;
 
-            // Inject custom process-level variables by assigning a new dictionary.
             // IReadOnlyDictionary indexer is read-only; always assign a new instance.
-            clientOpts.Environment = new Dictionary<string, string>
+            // ⚠️ IMPORTANT: copilot.exe inherits this dictionary verbatim. If you replace
+            // it with only your custom vars (no SYSTEMROOT / PATH / TEMP), the native
+            // Node process will crash during crypto initialization
+            // ("Assertion failed: ncrypto::CSPRNG(nullptr, 0)"). Always MERGE with the
+            // current process environment.
+            var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
             {
-                ["SQUAD_SAMPLE_VAR"] = "demo-value"
-            };
+                if (entry.Key is string k && entry.Value is string v)
+                {
+                    merged[k] = v;
+                }
+            }
+            merged["SQUAD_SAMPLE_VAR"] = "demo-value";
+            clientOpts.Environment = merged;
         };
     });
 
@@ -231,8 +287,180 @@ if (RunFlow(4))
     PrintDone("Flow 4");
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Flow 5: Subagent dispatch + OpenTelemetry observability
+//
+// Demonstrates the two observability surfaces that fire whenever the squad
+// coordinator dispatches a subagent through the LLM's `task` tool:
+//
+//   1. SquadAgentOptions.OnSubagentTrace — typed envelope callback. Receives:
+//        - SubagentDispatched     (NEW: carries LLM persona name/description)
+//        - SubagentStarted        (catalog identifiers; usually "general-purpose")
+//        - AssistantMessage       (subagent reply, streamed)
+//        - SubagentCompleted/Failed
+//        - ToolStart/ToolComplete (every tool call, including `task`)
+//
+//   2. ActivitySource "Microsoft.Agents.AI.Squad" — OpenTelemetry spans.
+//      One span per subagent dispatch, opened when the LLM calls `task` and
+//      tagged with the per-dispatch persona name/description, then closed
+//      when the subagent finishes.
+//
+// In a real app you would hook these into your OpenTelemetry tracer and ship
+// them to a dashboard (e.g. Aspire). This sample prints them to stdout so the
+// flow is self-contained — no OTel collector needed to verify the SDK is
+// emitting what you expect.
+// ─────────────────────────────────────────────────────────────────────────────
+if (RunFlow(5))
+{
+    PrintHeader("Flow 5 — Subagent dispatch + OpenTelemetry observability");
+
+    // ── Tap 1: ActivityListener for the squad ActivitySource ────────────────
+    // This is what an OpenTelemetry tracer's AddSource call wires up under the
+    // hood. We attach a raw ActivityListener so we can prove spans are emitted
+    // even without an OTel SDK installed.
+    var startedSpans = new System.Collections.Concurrent.ConcurrentBag<Activity>();
+    var stoppedSpans = new System.Collections.Concurrent.ConcurrentBag<Activity>();
+    using var spanListener = new ActivityListener
+    {
+        ShouldListenTo = source => source.Name == SquadAgentDiagnostics.ActivitySourceName,
+        Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+        ActivityStarted = a =>
+        {
+            startedSpans.Add(a);
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"  [otel] start  {a.DisplayName}  persona={a.GetTagItem("squad.subagent.persona.name") ?? "(none)"}");
+            Console.ResetColor();
+        },
+        ActivityStopped = a =>
+        {
+            stoppedSpans.Add(a);
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine($"  [otel] stop   {a.DisplayName}  status={a.Status}  duration={a.Duration.TotalSeconds:F1}s");
+            Console.ResetColor();
+        },
+    };
+    ActivitySource.AddActivityListener(spanListener);
+
+    // ── Tap 2: typed-envelope callback ──────────────────────────────────────
+    // OnSubagentTrace runs for every notable session event. The new
+    // SubagentDispatched kind is what surfaces the per-dispatch persona that
+    // the LLM passed to the `task` tool — name, description, agent_type and
+    // prompt — none of which are present on the subsequent SubagentStarted
+    // event (it only carries the agent_type's catalog blurb).
+    var dispatched = new System.Collections.Concurrent.ConcurrentBag<SquadAgentTraceEvent>();
+
+    var host5 = Host.CreateApplicationBuilder(args);
+    host5.Logging.SetMinimumLevel(LogLevel.Warning);
+    host5.Services.AddSquadAgent(o =>
+    {
+        o.SquadFolderPath = teamRoot;
+        o.AgentName = "ObservedSquad";
+        o.EmitSubagentActivities = true; // default — included for clarity
+        o.OnSubagentTrace = evt =>
+        {
+            switch (evt.Kind)
+            {
+                case SquadAgentTraceEventKind.SubagentDispatched:
+                    dispatched.Add(evt);
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine($"  [dispatch] persona={evt.DispatchedPersonaName} agent_type={evt.DispatchedAgentType}");
+                    Console.WriteLine($"             description={Trim(evt.DispatchedPersonaDescription, 100)}");
+                    Console.WriteLine($"             prompt={Trim(evt.DispatchedPrompt, 80)}");
+                    Console.ResetColor();
+                    break;
+                case SquadAgentTraceEventKind.SubagentStarted:
+                    Console.WriteLine($"  [started ] {ShortId(evt.SdkAgentId)} catalog_name={evt.SubagentName}");
+                    break;
+                case SquadAgentTraceEventKind.AssistantMessage when evt.SdkAgentId is not null:
+                {
+                    var hasText = !string.IsNullOrWhiteSpace(evt.Content);
+                    var hasTools = evt.RequestedToolNames.Count > 0;
+                    if (!hasText && !hasTools) break;
+                    var prefix = $"  [reply   ] {ShortId(evt.SdkAgentId)} ";
+                    if (hasText)
+                    {
+                        Console.WriteLine($"{prefix}{Trim(evt.Content, 120)}");
+                    }
+                    if (hasTools)
+                    {
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                        Console.WriteLine($"{prefix}(calls: {string.Join(", ", evt.RequestedToolNames)})");
+                        Console.ResetColor();
+                    }
+                    break;
+                }
+                case SquadAgentTraceEventKind.SubagentCompleted:
+                    Console.WriteLine($"  [done    ] {ShortId(evt.SdkAgentId)}");
+                    break;
+                case SquadAgentTraceEventKind.SubagentFailed:
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"  [FAILED  ] {ShortId(evt.SdkAgentId)}");
+                    Console.ResetColor();
+                    break;
+            }
+        };
+    });
+
+    using var app5 = host5.Build();
+    var agent5 = app5.Services.GetRequiredService<SquadAgent>();
+
+    Console.WriteLine($"Agent name : {agent5.Name}");
+    Console.WriteLine($"Team root  : {teamRoot}");
+    Console.WriteLine("Prompt     : ask the coordinator to dispatch two specialists via the task tool");
+    Console.WriteLine("Observe    : each [otel] line is a span the Aspire dashboard would render");
+    Console.WriteLine("             each [dispatch] line is the LLM's per-call persona identity");
+    Console.WriteLine();
+
+    var result5 = await RunWithErrorHandlingAsync(async () =>
+    {
+        var s = await agent5.CreateSessionAsync();
+        return await agent5.RunAsync(
+            "Use the task tool to dispatch two specialists in parallel. Each one must " +
+            "introduce themselves in a single sentence stating their persona name and " +
+            "focus area. Pass distinct `name` and `description` parameters for each call. " +
+            "Then return the two intros to the user.",
+            s);
+    });
+
+    Console.WriteLine();
+    if (result5 is not null)
+    {
+        Console.WriteLine($"Final reply: {Trim(result5.Text, 240)}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("── Flow 5 summary ──");
+    Console.WriteLine($"  SubagentDispatched events captured : {dispatched.Count}");
+    Console.WriteLine($"  OTel spans opened                  : {startedSpans.Count}");
+    Console.WriteLine($"  OTel spans closed                  : {stoppedSpans.Count}");
+    if (dispatched.Count == 0)
+    {
+        Console.ForegroundColor = ConsoleColor.DarkYellow;
+        Console.WriteLine("  (No dispatches observed. The coordinator may have answered inline,");
+        Console.WriteLine("   or the team root does not have a `.github/agents/squad.agent.md`.)");
+        Console.ResetColor();
+    }
+
+    await DisposeIfNeeded(agent5);
+    PrintDone("Flow 5");
+}
+
 Console.WriteLine();
 PrintBanner("All requested flows completed.");
+
+static string Trim(string? s, int max) =>
+    string.IsNullOrEmpty(s) ? string.Empty :
+    s.Length <= max ? s : s.Substring(0, max) + "…";
+
+// Compact rendering of long SDK agent ids like "toolu_vrtx_01H71tFMdJGjCpQF7JomPVsd".
+// Keeps the head (prefix discriminator) and tail (the unique suffix) so two concurrent
+// subagents are still visually distinct without burning a whole line on the id.
+static string ShortId(string? id)
+{
+    if (string.IsNullOrEmpty(id)) return "(no-id)";
+    if (id.Length <= 16) return id;
+    return $"{id.Substring(0, 6)}…{id.Substring(id.Length - 6)}";
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

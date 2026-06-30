@@ -43,6 +43,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   const wasDisabledRef = useRef(disabled);
   const pendingInputRef = useRef<string[]>([]);
   const pasteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pasteBufferRef = useRef('');
   const valueRef = useRef('');
 
   // When transitioning from disabled → enabled, restore buffered input
@@ -110,7 +111,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         setBufferDisplay(bufferRef.current);
         return;
       }
-      if (key.upArrow || key.downArrow || key.ctrl || key.meta) return;
+      if (key.upArrow || key.downArrow || key.ctrl || key.meta || key.escape) return;
       if (key.backspace || key.delete) {
         bufferRef.current = bufferRef.current.slice(0, -1);
         setBufferDisplay(bufferRef.current);
@@ -132,20 +133,27 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     }
     
     if (key.return) {
-      // Debounce to detect multi-line paste: if more input arrives
-      // within 10ms this is a paste and the newline should be preserved.
+      // Accumulate value and clear input synchronously so the render flushes
+      // within ink 7's discreteUpdates wrapper. History update is also done
+      // synchronously so UP-arrow navigation immediately sees the new entry.
       if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current);
-      valueRef.current += '\n';
+      const line = valueRef.current;
+      pasteBufferRef.current += line + '\n';
+      valueRef.current = '';
+      setValue('');
+      if (line.trim()) {
+        setHistory(prev => [...prev, line.trim()]);
+        setHistoryIndex(-1);
+      }
+      // Defer only onSubmit so rapid consecutive \r keypresses (multi-line paste)
+      // can accumulate into a single submit payload.
       pasteTimerRef.current = setTimeout(() => {
         pasteTimerRef.current = null;
-        const submitVal = valueRef.current.trim();
+        const submitVal = pasteBufferRef.current.trim();
+        pasteBufferRef.current = '';
         if (submitVal) {
           onSubmit(submitVal);
-          setHistory(prev => [...prev, submitVal]);
-          setHistoryIndex(-1);
         }
-        valueRef.current = '';
-        setValue('');
       }, 10);
       return;
     }

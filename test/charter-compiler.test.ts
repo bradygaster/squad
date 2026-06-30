@@ -48,6 +48,7 @@ Do not modify runtime code. Stay within prompt and charter files.
 **Preferred:** claude-sonnet-4.5
 **Rationale:** Best balance of speed and quality for prompt work
 **Fallback:** claude-haiku-4.5
+**Reasoning Effort:** xhigh
 
 ## Collaboration
 
@@ -118,6 +119,23 @@ describe('parseCharterMarkdown', () => {
       expect(parsed.modelFallback).toBe('claude-haiku-4.5');
     });
 
+    it('extracts reasoning effort', () => {
+      const parsed = parseCharterMarkdown(FULL_CHARTER);
+      expect(parsed.reasoningEffort).toBe('xhigh');
+    });
+
+    it('normalizes reasoning effort auto to undefined', () => {
+      const charter = FULL_CHARTER.replace('**Reasoning Effort:** xhigh', '**Reasoning Effort:** auto');
+      const parsed = parseCharterMarkdown(charter);
+      expect(parsed.reasoningEffort).toBeUndefined();
+    });
+
+    it('rejects invalid reasoning effort values', () => {
+      const charter = FULL_CHARTER.replace('**Reasoning Effort:** xhigh', '**Reasoning Effort:** turbo');
+      const parsed = parseCharterMarkdown(charter);
+      expect(parsed.reasoningEffort).toBeUndefined();
+    });
+
     it('extracts collaboration section', () => {
       const parsed = parseCharterMarkdown(FULL_CHARTER);
       expect(parsed.collaboration).toContain('Fenster');
@@ -155,6 +173,11 @@ describe('parseCharterMarkdown', () => {
     it('returns undefined model fallback when section missing', () => {
       const parsed = parseCharterMarkdown(MINIMAL_CHARTER);
       expect(parsed.modelFallback).toBeUndefined();
+    });
+
+    it('returns undefined reasoning effort when section missing', () => {
+      const parsed = parseCharterMarkdown(MINIMAL_CHARTER);
+      expect(parsed.reasoningEffort).toBeUndefined();
     });
   });
 
@@ -230,6 +253,49 @@ describe('compileCharterFull', () => {
     });
 
     expect(result.resolvedModel).toBe('claude-opus-4.6');
+  });
+
+  it('resolves reasoning effort from charter', () => {
+    const result = compileCharterFull({
+      agentName: 'verbal',
+      charterPath: '/test/charter.md',
+      charterContent: FULL_CHARTER,
+    });
+
+    expect(result.resolvedReasoningEffort).toBe('xhigh');
+  });
+
+  it('config override reasoning effort wins over charter', () => {
+    const result = compileCharterFull({
+      agentName: 'verbal',
+      charterPath: '/test/charter.md',
+      charterContent: FULL_CHARTER,
+      configOverrides: { reasoningEffort: 'low' },
+    });
+
+    expect(result.resolvedReasoningEffort).toBe('low');
+  });
+
+  it('invalid config override reasoning effort falls through to charter', () => {
+    const result = compileCharterFull({
+      agentName: 'verbal',
+      charterPath: '/test/charter.md',
+      charterContent: FULL_CHARTER,
+      configOverrides: { reasoningEffort: 'invalid' },
+    });
+
+    // Falls back to charter value since override is invalid
+    expect(result.resolvedReasoningEffort).toBe('xhigh');
+  });
+
+  it('reasoning effort is undefined when not in charter or config', () => {
+    const result = compileCharterFull({
+      agentName: 'minimal',
+      charterPath: '/test/charter.md',
+      charterContent: MINIMAL_CHARTER,
+    });
+
+    expect(result.resolvedReasoningEffort).toBeUndefined();
   });
 
   it('config override role wins over charter role', () => {

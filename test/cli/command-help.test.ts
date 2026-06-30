@@ -110,7 +110,6 @@ describe('printCommandHelp', () => {
       'export',
       'externalize',
       'extract',
-      'hire',
       'import',
       'init',
       'init-remote',

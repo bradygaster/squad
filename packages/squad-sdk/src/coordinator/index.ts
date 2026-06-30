@@ -32,6 +32,23 @@ export {
   type FanOutDependencies,
 } from './fan-out.js';
 
+// --- Issue #1377 Spawn Backend ---
+export {
+  detectSpawnBackend,
+  detectSpawnPlatform,
+  truncateSessionName,
+  buildSessionName,
+  TaskSpawnBackend,
+  SessionSpawnBackend,
+  type SpawnBackend,
+  type SpawnPlatform,
+  type SpawnRequest,
+  type SpawnHandle,
+  type SpawnedSession,
+  type CreateSessionFn,
+  type SessionSpawnOptions,
+} from './spawn-backend.js';
+
 // --- M3-4 Response Tiers ---
 export {
   selectResponseTier,

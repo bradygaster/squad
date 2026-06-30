@@ -36,6 +36,20 @@ describe('parseRoutingMarkdown', () => {
     expect(config.rules[1].agents).toEqual(['Developer']);
   });
 
+  it('strips surrounding quotes from examples', () => {
+    const markdown = `
+## Routing Table
+
+| Work Type | Route To | Examples |
+|-----------|----------|----------|
+| testing | Tester | "unit tests", "jest coverage" |
+`;
+
+    const config = parseRoutingMarkdown(markdown);
+
+    expect(config.rules[0].examples).toEqual(['unit tests', 'jest coverage']);
+  });
+
   it('handles multiple agents per rule', () => {
     const markdown = `
 ## Routing Table
@@ -200,12 +214,54 @@ describe('matchRoute', () => {
     expect(match.rule?.workType).toBe('bug-fix');
   });
 
+  it('matches quoted examples after quote-stripping (regression)', () => {
+    const md = `
+## Routing Table
+
+| Work Type | Route To | Examples |
+|-----------|----------|----------|
+| testing | Tester | "unit tests", "jest coverage" |
+`;
+    const quotedRouter = compileRoutingRules(parseRoutingMarkdown(md));
+    const match = matchRoute('please write unit tests now', quotedRouter);
+
+    expect(match.agents).toEqual(['Tester']);
+  });
+
   it('returns fallback for no match', () => {
     const match = matchRoute('what is the weather today?', router);
     
     expect(match.agents).toEqual(['@coordinator']);
     expect(match.confidence).toBe('low');
     expect(match.reason).toContain('fallback');
+  });
+
+  it('routes explicit @agent mentions with high confidence', () => {
+    const match = matchRoute('@lead please review this feature', router);
+
+    expect(match.agents).toEqual(['@lead']);
+    expect(match.confidence).toBe('high');
+    expect(match.reason).toContain('Explicit agent mention: @lead');
+  });
+
+  it('does not let @coordinator override normal routing or fallback', () => {
+    const matchedRoute = matchRoute('@coordinator implement new feature for authentication', router);
+    expect(matchedRoute.agents).toContain('Lead');
+    expect(matchedRoute.confidence).toBe('medium');
+    expect(matchedRoute.rule?.workType).toBe('feature-dev');
+
+    const fallbackRoute = matchRoute('@coordinator what is the weather today?', router);
+    expect(fallbackRoute.agents).toEqual(['@coordinator']);
+    expect(fallbackRoute.confidence).toBe('low');
+    expect(fallbackRoute.reason).toContain('fallback');
+  });
+
+  it('does not treat email addresses as explicit @agent mentions', () => {
+    const match = matchRoute('contact user@example.com about the new feature', router);
+
+    expect(match.agents).toContain('Lead');
+    expect(match.confidence).toBe('medium');
+    expect(match.rule?.workType).toBe('feature-dev');
   });
 
   it('prefers more specific matches', () => {

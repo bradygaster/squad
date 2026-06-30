@@ -9,10 +9,10 @@
  * Run them AFTER implementation → all pass (GREEN).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, realpath, rm } from 'fs/promises';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import { FSStorageProvider } from '../packages/squad-sdk/src/storage/fs-storage-provider.js';
 import { InMemoryStorageProvider } from '../packages/squad-sdk/src/storage/in-memory-storage-provider.js';
 import type { StorageProvider } from '../packages/squad-sdk/src/storage/storage-provider.js';
@@ -390,18 +390,30 @@ describe('symlink traversal protection', () => {
 
 describe('cross-platform path handling', () => {
   it('allows access with different case on case-insensitive platforms', async () => {
-    if (process.platform !== 'win32' && process.platform !== 'darwin') {
-      return; // Only relevant on case-insensitive filesystems
-    }
     const root = await mkdtemp(join(tmpdir(), 'squad-case-test-'));
     const confinedProvider = new FSStorageProvider(root);
 
     await confinedProvider.write('test.txt', 'hello');
 
-    // Build an alternate-cased root path
-    const altCase = root.charAt(0) === root.charAt(0).toUpperCase()
-      ? root.charAt(0).toLowerCase() + root.slice(1)
-      : root.charAt(0).toUpperCase() + root.slice(1);
+    const canonicalRoot = await realpath(root);
+    const rootName = basename(canonicalRoot);
+    const altName = rootName === rootName.toUpperCase()
+      ? rootName.toLowerCase()
+      : rootName.toUpperCase();
+    const altCase = join(dirname(canonicalRoot), altName);
+
+    let altCanonicalRoot: string;
+    try {
+      altCanonicalRoot = await realpath(altCase);
+    } catch {
+      await rm(root, { recursive: true, force: true });
+      return; // Only relevant when the actual filesystem is case-insensitive
+    }
+
+    if (altCanonicalRoot !== canonicalRoot) {
+      await rm(root, { recursive: true, force: true });
+      return; // Alternate-cased path exists but points somewhere else
+    }
 
     const result = await confinedProvider.read(join(altCase, 'test.txt'));
     expect(result).toBe('hello');

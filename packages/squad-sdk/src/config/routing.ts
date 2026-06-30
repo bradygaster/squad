@@ -162,7 +162,16 @@ export function parseRoutingMarkdown(content: string): RoutingConfig {
       if (cells.length >= 2) {
         const workType = cells[0];
         const routeTo = cells[1]!;
-        const examples = cells.length >= 3 ? cells[2]!.split(',').map(ex => ex.trim()) : undefined;
+        // Strip surrounding quotes (", ', `) so quoted and unquoted examples
+        // tokenize identically. Without this, a quoted example like "unit tests"
+        // keeps its quotes and compiles to patterns that never match, which made
+        // quoted routing examples silently route everything to fallback.
+        const examples = cells.length >= 3
+          ? cells[2]!
+              .split(',')
+              .map(ex => ex.trim().replace(/^["'`]+|["'`]+$/g, '').trim())
+              .filter(ex => ex.length > 0)
+          : undefined;
         
         // Parse agent names (may be comma-separated or single)
         const agents = routeTo.split(',').map(a => a.trim()).filter(a => a.length > 0);
@@ -238,6 +247,21 @@ export function compileRoutingRules(config: RoutingConfig): CompiledRouter {
 export function matchRoute(message: string, router: CompiledRouter): RoutingMatch {
   const lowerMessage = message.toLowerCase();
   
+  // Explicit @agent mention — highest priority, always route to the named agent (#1029)
+  const explicitMention = lowerMessage.match(/(?:^|\s)@([a-z][a-z0-9_-]*)/);
+  if (explicitMention) {
+    const agentName = explicitMention[1]!;
+    // Verify the mentioned agent is a known team member (not @coordinator)
+    const allKnownAgents = router.workTypeRules.flatMap(r => r.agents.map(a => a.replace(/^@/, '').toLowerCase()));
+    if (allKnownAgents.includes(agentName) && agentName !== 'coordinator') {
+      return {
+        agents: [`@${agentName}`],
+        confidence: 'high',
+        reason: `Explicit agent mention: @${agentName}`
+      };
+    }
+  }
+
   // Try to match work type rules
   for (const rule of router.workTypeRules) {
     for (const pattern of rule.patterns) {

@@ -1268,16 +1268,24 @@ describe('Stub command removal', () => {
     expect(result.handled).toBe(false);
   });
 
-  it('commands.ts executeCommand does not have hire command', () => {
+  it('commands.ts executeCommand does not have cast/hire command', () => {
     const reg = new SessionRegistry();
     const renderer = new ShellRenderer();
-    const result = executeCommand('hire', [], {
+    const result = executeCommand('cast', [], {
       registry: reg,
       renderer,
       messageHistory: [],
       teamRoot: '/test',
     });
     expect(result.handled).toBe(false);
+
+    const resultHire = executeCommand('hire', [], {
+      registry: reg,
+      renderer,
+      messageHistory: [],
+      teamRoot: '/test',
+    });
+    expect(resultHire.handled).toBe(false);
   });
 
   it('all known commands are functional (not stubs)', () => {

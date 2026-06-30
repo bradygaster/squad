@@ -11,7 +11,7 @@ import { success, BOLD, RESET, YELLOW, GREEN, DIM } from './output.js';
 import { fatal } from './errors.js';
 import { detectProjectType } from './project-type.js';
 import { getPackageVersion, stampVersion } from './version.js';
-import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
+import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquadDir, resolveGlobalSquadPath, resolvePersonalSquadDir, clearResolveSquadCache, type InitOptions } from '@bradygaster/squad-sdk';
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { resolveSquadStateMcpSpec } from './mcp-spec.js';
@@ -283,6 +283,27 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // ran. Drop the resolution cache so the new directory is observed
   // immediately instead of after the 5-second TTL.
   clearResolveSquadCache();
+
+  // ── Personal squad linking ─────────────────────────────────────────
+  // When a personal squad directory exists and this is a repo init (not global),
+  // set teamRoot in config.json to point to the global squad root that contains
+  // `.squad/`. This enables "remote mode" resolution so the project inherits
+  // team identity from the personal squad. (See #984, #1010)
+  if (!options.isGlobal) {
+    const personalDir = resolvePersonalSquadDir();
+    if (personalDir) {
+      const configPath = path.join(squadDir, 'config.json');
+      let config: Record<string, unknown> = {};
+      try {
+        const raw = storage.readSync(configPath);
+        if (raw) config = JSON.parse(raw);
+      } catch { /* start fresh */ }
+      if (!config['teamRoot']) {
+        config['teamRoot'] = resolveGlobalSquadPath();
+        storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+      }
+    }
+  }
 
   // Ensure version is fully stamped in squad.agent.md
   const agentPath = path.join(agentFileRoot, '.github', 'agents', 'squad.agent.md');

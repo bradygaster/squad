@@ -4,7 +4,7 @@ interface Props {
   description?: string;
 }
 
-import { ViewTransitions } from 'astro:transitions';
+import { ClientRouter } from 'astro:transitions';
 import squadLogo from '../assets/images/squad-logo.png';
 const { title, description = 'Squad — Your AI Development Team. Describe what you\'re building. Get a team of specialists that live in your repo.' } = Astro.props;
 const fullTitle = `${title} — Squad Docs`;
@@ -35,7 +35,7 @@ const ogImage = Astro.site ? new URL(squadLogo.src, Astro.site).href : squadLogo
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
 
-    <ViewTransitions />
+    <ClientRouter />
 
     <script is:inline>
       function restoreTheme() {

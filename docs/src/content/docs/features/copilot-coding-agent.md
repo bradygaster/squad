@@ -46,7 +46,7 @@ gh issue edit <number> --add-label "squad:copilot"
 
 Say something like:
 - **"I want to add copilot to the squad"**
-- **"hire copilot to the squad"**
+- **"cast copilot to the squad"**
 - **"add team member copilot"**
 
 The coordinator will add @copilot to the roster and ask about auto-assign.

@@ -40,7 +40,6 @@ on:
       - main
     paths:
       - 'src/Squad.Agents.AI/**'
-      - 'test/Squad.Agents.AI.Tests/**'
       - 'Directory.*.props'
       - 'global.json'
 
@@ -63,12 +62,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -163,7 +162,7 @@ jobs:
 
       - name: Upload NuGet package artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: squad-agents-ai-nupkgs-${{ steps.version.outputs.PACKAGE_VERSION }}
           path: nupkgs/*

@@ -84,7 +84,13 @@ public class SquadAgentRoutingTests
         var environment = GetRequiredProperty<IReadOnlyDictionary<string, string>>(clientOptions, "Environment");
 
         Assert.Equal("Custom Persona", GetRequiredProperty<string>(inner, "Name"));
-        Assert.True(string.IsNullOrEmpty(GetProperty<string>(sessionConfig, "Agent")));
+        // sessionConfig.Agent is the custom Copilot agent identifier — always "Squad" (the
+        // .github/agents/Squad.agent.md registration). The wrapping SquadAgent's display name
+        // ("Custom Persona") must NOT leak into sessionConfig.Agent; that would tell the SDK
+        // to look up a non-existent custom agent.
+        var sessionAgent = GetProperty<string>(sessionConfig, "Agent");
+        Assert.Equal("Squad", sessionAgent);
+        Assert.NotEqual("Custom Persona", sessionAgent);
         Assert.DoesNotContain("Custom Persona", cliArgs);
         Assert.Equal("enabled", environment["SQUAD_ROUTE"]);
     }

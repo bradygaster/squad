@@ -7,7 +7,8 @@
     "declarationMap": true,
     "jsx": "react-jsx",
     "jsxImportSource": "react",
-    "composite": true
+    "composite": true,
+    "types": ["node"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "references": [{ "path": "../squad-sdk" }]
