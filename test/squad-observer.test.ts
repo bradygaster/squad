@@ -60,6 +60,11 @@ function cleanupTmpDir() {
   }
 }
 
+function isUnsupportedSymlinkError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === 'EPERM' || code === 'EACCES' || code === 'ENOSYS';
+}
+
 // ---------------------------------------------------------------------------
 // classifyFile tests
 // ---------------------------------------------------------------------------
@@ -210,7 +215,13 @@ describe('SquadObserver', () => {
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-observer-outside-'));
     try {
       fs.writeFileSync(path.join(outsideDir, 'newest.md'), 'outside');
-      fs.symlinkSync(outsideDir, path.join(squadDir, 'linked-outside'), 'dir');
+      const symlinkPath = path.join(squadDir, 'linked-outside');
+      try {
+        fs.symlinkSync(outsideDir, symlinkPath, 'dir');
+      } catch (error) {
+        if (isUnsupportedSymlinkError(error)) return;
+        throw error;
+      }
 
       const olderFile = path.join(squadDir, 'team.md');
       fs.writeFileSync(olderFile, 'inside');
