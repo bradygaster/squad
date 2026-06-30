@@ -60,6 +60,31 @@ function cleanupTmpDir() {
   }
 }
 
+function isUnsupportedSymlinkError(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
+  return code === 'EPERM' || code === 'EACCES' || code === 'ENOSYS';
+}
+
+function canCreateSymlink(): boolean {
+  const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-observer-symlink-probe-'));
+  try {
+    const targetDir = path.join(probeDir, 'target');
+    const symlinkPath = path.join(probeDir, 'link');
+    fs.mkdirSync(targetDir);
+    fs.symlinkSync(targetDir, symlinkPath, 'dir');
+    return true;
+  } catch (error) {
+    if (isUnsupportedSymlinkError(error)) return false;
+    throw error;
+  } finally {
+    fs.rmSync(probeDir, { recursive: true, force: true });
+  }
+}
+
+const symlinkSupported = canCreateSymlink();
+
 // ---------------------------------------------------------------------------
 // classifyFile tests
 // ---------------------------------------------------------------------------
@@ -206,11 +231,12 @@ describe('SquadObserver', () => {
     expect(spans.some(s => s.name === 'squad.observer.file_change')).toBe(false);
   });
 
-  it('skips symlinked directories when resolving root directory events', async () => {
+  (symlinkSupported ? it : it.skip)('skips symlinked directories when resolving root directory events', async () => {
     const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-observer-outside-'));
     try {
       fs.writeFileSync(path.join(outsideDir, 'newest.md'), 'outside');
-      fs.symlinkSync(outsideDir, path.join(squadDir, 'linked-outside'), 'dir');
+      const symlinkPath = path.join(squadDir, 'linked-outside');
+      fs.symlinkSync(outsideDir, symlinkPath, 'dir');
 
       const olderFile = path.join(squadDir, 'team.md');
       fs.writeFileSync(olderFile, 'inside');
