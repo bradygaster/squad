@@ -90,7 +90,7 @@ export function loadPreset(name: string): PresetManifest | null {
 export function applyPreset(
   presetName: string,
   targetDir: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; overwriteRouting?: boolean } = {},
 ): PresetApplyResult[] {
   try { validateName(presetName, 'preset'); } catch (err) {
     return [{ agent: presetName, status: 'error', reason: String(err) }];
@@ -149,10 +149,10 @@ export function applyPreset(
   if (storage.existsSync(savedRoutingPath)) {
     const squadDir = path.dirname(targetDir);
     const destRoutingPath = path.join(squadDir, 'routing.md');
-    // Only overwrite if force is set or routing.md doesn't exist yet
-    if (options.force || !storage.existsSync(destRoutingPath)) {
+    // Only overwrite if explicitly requested or routing.md doesn't exist yet
+    if (options.force || options.overwriteRouting || !storage.existsSync(destRoutingPath)) {
       const content = storage.readSync(savedRoutingPath);
-      if (content) {
+      if (content !== undefined) {
         storage.mkdirSync(squadDir, { recursive: true });
         storage.writeSync(destRoutingPath, content);
       }
@@ -295,7 +295,7 @@ export function savePreset(
   const routingPath = path.join(squadDir, 'routing.md');
   if (storage.existsSync(routingPath)) {
     const routingContent = storage.readSync(routingPath);
-    if (routingContent) {
+    if (routingContent !== undefined) {
       storage.writeSync(path.join(destDir, 'routing.md'), routingContent);
     }
   }

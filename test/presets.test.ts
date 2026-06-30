@@ -782,6 +782,53 @@ describe('savePreset()', () => {
     expect(restoredRouting).toContain('src/core/**');
     expect(restoredRouting).toContain('| bug | Beta | high |');
   });
+
+  it('restores preset routing.md over existing skeleton when overwriteRouting is set (#1412)', () => {
+    const homeDir = join(TMP, 'overwrite-routing');
+    mkdirSync(homeDir, { recursive: true });
+    process.env['SQUAD_HOME'] = homeDir;
+
+    // Create source project with agents and a custom routing.md
+    const srcSquad = join(TMP, 'src-overwrite', '.squad');
+    mkdirSync(join(srcSquad, 'agents', 'alpha'), { recursive: true });
+    writeFileSync(join(srcSquad, 'agents', 'alpha', 'charter.md'), '## Alpha — Lead\nLeads the team.');
+
+    const customRouting = [
+      '# Squad Routing',
+      '',
+      '## Work Type → Agent',
+      '',
+      '| Work Type | Primary | Secondary |',
+      '|-----------|---------|----------|',
+      '| architecture | Alpha | — |',
+      '',
+      '## Module Ownership',
+      '',
+      '| Path Pattern | Owner |',
+      '|-------------|-------|',
+      '| src/core/** | Alpha |',
+      '',
+    ].join('\n');
+    writeFileSync(join(srcSquad, 'routing.md'), customRouting);
+
+    // Save as preset
+    savePreset('overwrite-test', srcSquad, { description: 'Test overwrite' });
+
+    // Simulate squad init having already created a skeleton routing.md
+    const destSquad = join(TMP, 'dest-overwrite', '.squad');
+    const destAgentsDir = join(destSquad, 'agents');
+    mkdirSync(destAgentsDir, { recursive: true });
+    writeFileSync(join(destSquad, 'routing.md'), '# Squad Routing\n\n## Work Type → Agent\n\n| Work Type | Primary | Secondary |\n|-----------|---------|----------|\n');
+
+    // Apply with overwriteRouting
+    const results = applyPreset('overwrite-test', destAgentsDir, { overwriteRouting: true });
+    expect(results.filter(r => r.status === 'installed')).toHaveLength(1);
+
+    // Verify the preset's routing was used, not the skeleton
+    const restoredRouting = readFileSync(join(destSquad, 'routing.md'), 'utf-8');
+    expect(restoredRouting).toContain('## Module Ownership');
+    expect(restoredRouting).toContain('src/core/**');
+  });
 });
 
 // ============================================================================
