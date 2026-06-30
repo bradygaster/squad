@@ -204,8 +204,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --init (generate boilerplate loop.md)`);
     console.log(`                    --file <path> (custom loop file)`);
     console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
-    console.log(`  ${BOLD}cast${RESET}       Show roster, or add a new agent (alias: hire)`);
-    console.log(`             Usage: cast [--name <name>] [--role <role>]`);
+    console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
+      console.log(`             Usage: cast [--name <name>] [--role <role>] (alias: hire)`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
@@ -255,7 +255,6 @@ async function main(): Promise<void> {
     console.log(`             Usage: preset list | show <name>`);
     console.log(`                    apply <name> [--force] | save <name>`);
     console.log(`                    init [--remote]`);
-    console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
     console.log(`  ${BOLD}copilot-bridge${RESET}  Check Copilot ACP stdio compatibility`);
