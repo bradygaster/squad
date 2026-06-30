@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-29
+
+### Added
+- (cli) Add `squad preset install <source>` for installing shared presets from GitHub URLs or local paths (#1224).
+- (cli) Add `squad registry add/list/remove` for discovery-only peer squads, plus the bundled cross-squad communication skill.
+- (cli) Add `cast` terminology across help and docs while keeping `hire` as a silent compatibility alias (#1394).
+- (sdk+cli) Add Copilot App sub-session spawning for cast members and thread reasoning-effort settings through agent dispatch (#1385).
+- (sdk+cli) Expose memory tools through the `squad_state` MCP server and improve Fact Checker auto-scaffolding/plumbing.
+
+### Changed
+- (sdk+cli) Slim the bundled `squad.agent.md` by extracting long guidance into satellite skills (#1311).
+- (cli) Move bundled skills from `.copilot/skills/` to `.github/skills/` so they are visible to all Copilot surfaces.
+- (cli) Rename user-facing ".NET Aspire" references to "Aspire" in CLI help and command output (#1239).
+- (sdk+cli) Refresh the toolchain and integrations, including `@github/copilot-sdk` 1.0.4, TypeScript 6, Vitest 4, Ink 7, OpenTelemetry 2.x, and Node type updates.
+
+### Fixed
+- (cli) Pin CLI-to-SDK workspace resolution so local builds and runtime use the workspace SDK instead of a stale published package (#1406).
+- (sdk+cli) Restore the green test suite by reconciling personal squad paths, stabilizing observer category handling, guarding storage case-insensitivity, and skipping environment-dependent tests when prerequisites are missing (#1416).
+- (sdk+cli) Guard symlink-sensitive tests on Windows or restricted CI filesystems (#1418).
+- (sdk+cli) Harden observer change resolution for directory events, symlinks, and filesystem scan errors.
+- (sdk+cli) Fix state-backend handshake, SQUAD_HOME/SQUAD_PERSONAL_DIR resolution, preset apply wiring, routing example quote stripping, YAML escaping, and MCP config pollution regressions.
+- (cli) Fix Windows command escaping, top-level help coverage for `externalize`/`internalize`, slash-command discovery, and upgrade/self-repair flows.
+- (sdk) Export gitignore-state helpers, update OTel resource APIs for 2.x, and align the adapter client with `@github/copilot-sdk` 1.0.4.
+
 ## [0.10.0] — 2026-06-07
 
 First stable release since v0.9.4 (April 25). Consumes 97 changesets (sdk: 50, cli: 71).
@@ -397,6 +421,5 @@ First stable release since v0.9.4 (April 25). Consumes 97 changesets (sdk: 50, c
 - New entry point: `src/cli-entry.ts` (CLI bootstrap separated from library exports)
 - Migrated to npm workspace publishing (`@bradygaster/squad-sdk`, `@bradygaster/squad-cli`)
 - Changesets infrastructure for independent package versioning
-
 
 
