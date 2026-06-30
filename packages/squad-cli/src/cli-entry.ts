@@ -205,7 +205,7 @@ async function main(): Promise<void> {
     console.log(`                    --file <path> (custom loop file)`);
     console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
     console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
-      console.log(`             Usage: cast [--name <name>] [--role <role>] (alias: hire)`);
+    console.log(`             Usage: cast [--name <name>] [--role <role>] (alias: hire)`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
