@@ -525,6 +525,44 @@ describe('squad_decide author validation (Issue #1256)', () => {
 
     expect(result.resultType).toBe('failure');
   });
+
+  it('success message reports slugified filename, not raw author string', async () => {
+    const tool = registry.getTool('squad_decide')!;
+    const author = 'Squad (Coordinator) on behalf of Tamir Dresher (CTO)';
+    const result = await tool.handler(
+      {
+        author,
+        summary: 'Adopt strict mode',
+        body: 'Reduces runtime errors.',
+      } as DecisionRecord,
+      { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_decide', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('success');
+    // textResultForLlm must reference the actual slugified author portion of the filename
+    expect(result.textResultForLlm).toMatch(/squad-coordinator-on-behalf-of-tamir-dresher-cto/);
+    // textResultForLlm must NOT contain the raw author string with spaces/parens
+    expect(result.textResultForLlm).not.toContain('Squad (Coordinator)');
+  });
+
+  it('rejects an author whose slugified form is empty (spaces/punctuation only)', async () => {
+    const tool = registry.getTool('squad_decide')!;
+    const emptySlugAuthors = ['   ', '()', '---', '...'];
+
+    for (const author of emptySlugAuthors) {
+      const result = await tool.handler(
+        {
+          author,
+          summary: 'Some decision',
+          body: 'Body text.',
+        } as DecisionRecord,
+        { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_decide', arguments: {} },
+      );
+
+      expect(result.resultType).toBe('failure');
+      expect(result.textResultForLlm).toMatch(/Invalid author/i);
+    }
+  });
 });
 
 describe('squad_memory handler', () => {

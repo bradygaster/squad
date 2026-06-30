@@ -495,6 +495,9 @@ export class ToolRegistry {
             .replace(/-{2,}/g, '-')
             .replace(/^-|-$/g, '')
             .slice(0, 60);
+          if (!authorSlug) {
+            return { textResultForLlm: 'Invalid author name: must contain at least one letter or digit', resultType: 'failure', error: 'Invalid author' };
+          }
           const filename = path.join(inboxDir, `${authorSlug}-${slug}.md`);
 
           const content = [
@@ -513,7 +516,7 @@ export class ToolRegistry {
           this.storage.writeSync(filename, content);
 
           return {
-            textResultForLlm: `Decision written: ${args.author}-${slug}.md (ID: ${decisionId})`,
+            textResultForLlm: `Decision written: ${authorSlug}-${slug}.md (ID: ${decisionId})`,
             resultType: 'success',
             toolTelemetry: { decisionId, filename, slug },
           };
