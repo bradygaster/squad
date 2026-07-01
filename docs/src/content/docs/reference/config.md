@@ -1,20 +1,12 @@
 # Configuration Reference
-
-> ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
-
-
 **Try this:**
 ```
 squad init
 ```
 That's it. Squad works out of the box. Everything below is optional.
-
 ---
-
 ## squad.config.ts
-
 For type-safe SDK-First configuration, create this at your project root:
-
 ```typescript
 import {
   defineSquad,
@@ -22,7 +14,6 @@ import {
   defineAgent,
   defineRouting,
 } from '@bradygaster/squad-sdk';
-
 export default defineSquad({
   version: '1.0.0',
   team: defineTeam({
@@ -53,15 +44,10 @@ export default defineSquad({
   }),
 });
 ```
-
 Each builder (`defineSquad()`, `defineTeam()`, `defineAgent()`, etc.) validates your config at runtime with type-safe error messages. Edit your `.ts` file, then run `squad build` to generate `.squad/` markdown.
-
 **Or start with markdown:** `squad init` creates a markdown-only squad with no config file needed.
-
 ---
-
 ## .squad/ Directory
-
 ```
 .squad/
 ├── team.md              # Who's on the team
@@ -80,19 +66,12 @@ Each builder (`defineSquad()`, `defineTeam()`, `defineAgent()`, etc.) validates 
 ├── log/                 # Session logs
 └── orchestration-log/   # Coordinator state
 ```
-
 Commit this directory. It's your team's brain. Anyone who clones the repo gets the full team with all their knowledge.
-
 ---
-
 ## .squad/ — Required vs Optional Files
-
 `squad init` creates a working team. Here's what's required and what's optional.
-
 ### Required Files
-
 These are always created by `squad init`. The loader expects them.
-
 | File | Purpose | Can You Edit? |
 |------|---------|---------------|
 | `.squad/team.md` | Team roster — loader requires it | Yes |
@@ -105,42 +84,29 @@ These are always created by `squad init`. The loader expects them.
 | `.squad/identity/now.md` | Current team focus | Auto-updated |
 | `.squad/identity/wisdom.md` | Accumulated team patterns | Auto-updated |
 | `.gitattributes` | Merge drivers for append-only files | Merge rules only |
-
 ### Optional Files
-
 These are created only when you opt in during init.
-
 - **`.squad/templates/`** — SDK templates, overwritten on upgrade
 - **`.github/workflows/*.yml`** — CI/CD workflows (opt-in: `--include-workflows`)
 - **`.copilot/mcp-config.json`** — MCP server config (opt-in: `--include-mcp-config`)
-
 > ⚠️ **Hard rule:** Squad NEVER writes temp files, logs, or memory to your repo root. All team state lives in `.squad/` only. Your project tree stays clean.
-
 ### Quick Recovery
-
 ```bash
 squad doctor                        # Check for issues
 rm -rf .squad && squad init         # Full reset (back up agents/decisions first)
 ```
-
 ---
-
 ## Routing Rules
-
 Control which agent gets which work. Edit `.squad/routing.md` or configure in `squad.config.ts`:
-
 ```markdown
 # Routing Rules
-
 **Frontend changes** → Trinity
 **Backend API work** → Morpheus
 **Database migrations** → Morpheus
 **Test writing** → Tank
 **Architecture decisions** → Neo
 ```
-
 Or programmatically:
-
 ```typescript
 routing: {
   workTypes: [
@@ -153,55 +119,37 @@ routing: {
   ],
 }
 ```
-
 ---
-
 ## Model Configuration
-
 17 models across three tiers. Squad picks the right one, or you override:
-
 | Tier | Models | Use Case |
 |------|--------|----------|
 | **premium** | claude-opus-4, gpt-4.1 | Architecture, code review |
 | **standard** | claude-sonnet-4, gpt-4.1 | Most work |
 | **fast** | claude-haiku-3.5, gpt-4.1-mini | Triage, logging, quick tasks |
-
 Per-agent overrides in `model-config.json`:
-
 ```json
 {
   "neo": "claude-opus-4",
   "tank": "claude-haiku-3.5"
 }
 ```
-
 Resolution order: user override → charter → task auto-select → config default.
-
 ---
-
 ## Resolution Order
-
 Squad finds `.squad/` by walking up:
-
 1. Current directory (`./.squad/`)
 2. Parent directories (up to project root)
-3. Personal squad directory (platform-specific: `~/.config/squad/` on Linux, `~/Library/Application Support/squad/` on macOS, `%APPDATA%\squad\` on Windows)
-4. Global CLI default (fallback)
-
+3. Linked or external Squad state configured for this workspace
+4. Global CLI fallback
 First match wins.
-
 ---
-
 ## Environment Variables
-
 | Variable | Purpose |
 |----------|---------|
 | `SQUAD_CLIENT` | Detected client (`cli` or `vscode`) |
 | `COPILOT_TOKEN` | Auth token for SDK usage |
-
 ---
-
 ## See Also
-
 - [CLI Reference](cli.md) — Commands and shell interactions
 - [SDK Reference](sdk.md) — Programmatic API

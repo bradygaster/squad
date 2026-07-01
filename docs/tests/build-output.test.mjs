@@ -7,10 +7,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-
 const DOCS_ROOT = path.resolve(import.meta.dirname, '..');
 const DIST = path.join(DOCS_ROOT, 'dist');
-
 // Collect HTML files from dist for reuse across tests
 function findHtmlFiles(dir, files = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -23,25 +21,20 @@ function findHtmlFiles(dir, files = []) {
   }
   return files;
 }
-
 const allHtmlFiles = findHtmlFiles(DIST);
-
 // Exclude top-level pages (404, home, blog index) which use different layouts
 const EXCLUDED_PAGES = ['404.html', `blog${path.sep}index.html`, 'index.html'];
 function isContentPage(file) {
   const rel = path.relative(DIST, file);
   return !EXCLUDED_PAGES.some(exc => rel === exc || rel === exc.replace(/\//g, path.sep));
 }
-
 const docsHtmlFiles = allHtmlFiles.filter(f =>
   f.includes(`${path.sep}docs${path.sep}`) && isContentPage(f)
 );
 const blogHtmlFiles = allHtmlFiles.filter(f =>
   f.includes(`${path.sep}blog${path.sep}`) && isContentPage(f)
 );
-
 // ── pagefind.yml ──────────────────────────────────────────────────────────────
-
 describe('pagefind.yml configuration', () => {
   it('exists in the docs root', () => {
     assert.ok(
@@ -49,7 +42,6 @@ describe('pagefind.yml configuration', () => {
       'pagefind.yml should exist at docs root'
     );
   });
-
   it('contains exclude_selectors for nav, footer, aside, pre, .astro-code', () => {
     const content = fs.readFileSync(path.join(DOCS_ROOT, 'pagefind.yml'), 'utf-8');
     for (const selector of ['nav', 'footer', 'aside', 'pre', '.astro-code']) {
@@ -60,9 +52,7 @@ describe('pagefind.yml configuration', () => {
     }
   });
 });
-
 // ── Pagefind index output ─────────────────────────────────────────────────────
-
 describe('pagefind build output', () => {
   it('pagefind directory exists in dist/', () => {
     assert.ok(
@@ -70,7 +60,6 @@ describe('pagefind build output', () => {
       'dist/pagefind/ directory should exist after build'
     );
   });
-
   it('pagefind.js is present in pagefind directory', () => {
     assert.ok(
       fs.existsSync(path.join(DIST, 'pagefind', 'pagefind.js')),
@@ -78,9 +67,7 @@ describe('pagefind build output', () => {
     );
   });
 });
-
 // ── data-pagefind-body on article elements ────────────────────────────────────
-
 describe('data-pagefind-body attribute', () => {
   it('docs pages contain data-pagefind-body on article elements', () => {
     assert.ok(docsHtmlFiles.length > 0, 'Should have docs HTML files to test');
@@ -93,7 +80,6 @@ describe('data-pagefind-body attribute', () => {
     }
     assert.equal(missing.length, 0, `These docs pages lack data-pagefind-body: ${missing.join(', ')}`);
   });
-
   it('blog post pages contain data-pagefind-body on article elements', () => {
     assert.ok(blogHtmlFiles.length > 0, 'Should have blog HTML files to test');
     for (const file of blogHtmlFiles) {
@@ -105,9 +91,7 @@ describe('data-pagefind-body attribute', () => {
     }
   });
 });
-
 // ── data-pagefind-meta with section values ────────────────────────────────────
-
 describe('data-pagefind-meta section attribute', () => {
   it('docs pages have data-pagefind-meta with a section value', () => {
     assert.ok(docsHtmlFiles.length > 0, 'Should have docs HTML files to test');
@@ -124,11 +108,11 @@ describe('data-pagefind-meta section attribute', () => {
       `These docs pages lack data-pagefind-meta section: ${missing.join(', ')}`
     );
   });
-
   it('section values match expected categories', () => {
     const knownSections = new Set([
-      'Get Started', 'Guide', 'Features', 'Reference',
-      'Scenarios', 'Concepts', 'Cookbook', 'Blog', 'Docs', 'Community'
+      'Get Started', 'Guides', 'Core Features', 'Advanced Features',
+      'Infrastructure', 'Reference', 'Scenarios', 'Concepts',
+      'Blog', 'Docs', 'Community'
     ]);
     const sectionPattern = /data-pagefind-meta="section:([^"]+)"/g;
     const foundSections = new Set();
@@ -146,7 +130,6 @@ describe('data-pagefind-meta section attribute', () => {
       );
     }
   });
-
   it('blog pages have section:Blog', () => {
     assert.ok(blogHtmlFiles.length > 0, 'Should have blog HTML files to test');
     for (const file of blogHtmlFiles) {
@@ -158,9 +141,7 @@ describe('data-pagefind-meta section attribute', () => {
     }
   });
 });
-
 // ── data-pagefind-weight on headings ──────────────────────────────────────────
-
 describe('data-pagefind-weight on headings', () => {
   it('docs pages have data-pagefind-weight="2" on h2 or h3 elements inside article', () => {
     const weightPattern = /<h[23][^>]*data-pagefind-weight="2"/;
@@ -171,7 +152,6 @@ describe('data-pagefind-weight on headings', () => {
       return articleHeadingPattern.test(html);
     });
     assert.ok(pagesWithArticleHeadings.length > 0, 'Should have docs pages with h2/h3 inside article');
-
     const missing = [];
     for (const file of pagesWithArticleHeadings) {
       const html = fs.readFileSync(file, 'utf-8');
@@ -185,14 +165,11 @@ describe('data-pagefind-weight on headings', () => {
     );
   });
 });
-
 // ── data-pagefind-ignore on nav, footer, pre ──────────────────────────────────
-
 describe('data-pagefind-ignore attributes', () => {
   // Use one representative docs page that has all elements
   const sampleFile = docsHtmlFiles.find(f => f.includes('built-in-roles'));
   const sampleHtml = sampleFile ? fs.readFileSync(sampleFile, 'utf-8') : '';
-
   it('nav elements have data-pagefind-ignore', () => {
     assert.ok(sampleFile, 'Sample file (built-in-roles) should exist');
     const navTags = [...sampleHtml.matchAll(/<nav[^>]*>/g)].map(m => m[0]);
@@ -204,7 +181,6 @@ describe('data-pagefind-ignore attributes', () => {
       );
     }
   });
-
   it('footer elements have data-pagefind-ignore', () => {
     assert.ok(sampleFile, 'Sample file should exist');
     const footerTags = [...sampleHtml.matchAll(/<footer[^>]*>/g)].map(m => m[0]);
@@ -216,7 +192,6 @@ describe('data-pagefind-ignore attributes', () => {
       );
     }
   });
-
   it('pre (code block) elements have data-pagefind-ignore', () => {
     assert.ok(sampleFile, 'Sample file should exist');
     const preTags = [...sampleHtml.matchAll(/<pre[^>]*>/g)].map(m => m[0]);
