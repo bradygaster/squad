@@ -53,6 +53,8 @@ describe('cross-package exports — CLI → SDK', () => {
         'recordAgentDestroy',
         'safeTimestamp',
         'getMeter',
+        'addSquadStateGitignoreBlock',
+        'removeSquadStateGitignoreBlock',
       ], '@bradygaster/squad-sdk');
     });
 
