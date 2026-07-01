@@ -23,6 +23,7 @@ export interface WorkItem {
   state: string;
   tags: string[];
   assignedTo?: string;
+  body?: string;
   url: string;
 }
 
