@@ -55,6 +55,9 @@ describe('cross-package exports — CLI → SDK', () => {
         'getMeter',
         'addSquadStateGitignoreBlock',
         'removeSquadStateGitignoreBlock',
+        'readSquadRegistry',
+        'addRegistryEntry',
+        'removeRegistryEntry',
       ], '@bradygaster/squad-sdk');
     });
 
