@@ -13,6 +13,13 @@ const CONTENT_DIR = join(DOCS_DIR, 'src', 'content');
 const DOCS_CONTENT_DIR = join(CONTENT_DIR, 'docs');
 const BLOG_CONTENT_DIR = join(CONTENT_DIR, 'blog');
 const DIST_DIR = join(DOCS_DIR, 'dist');
+const ASTRO_BIN = join(DOCS_DIR, 'node_modules', '.bin', process.platform === 'win32' ? 'astro.cmd' : 'astro');
+
+function docsBuildSkipReason(): string | null {
+  if (!existsSync(join(DOCS_DIR, 'package.json'))) return 'docs/package.json missing';
+  if (!existsSync(ASTRO_BIN)) return 'docs dependencies not installed';
+  return null;
+}
 
 // Expected content directories in src/content/docs/
 const EXPECTED_GET_STARTED = ['installation', 'first-session', 'five-minute-start', 'choosing-your-path', 'migration'];
@@ -192,9 +199,12 @@ describe('Docs Structure Validation', () => {
 
 // --- Astro Build Tests ---
 
-describe('Docs Build Script (Astro)', () => {
+const DOCS_BUILD_SKIP_REASON = docsBuildSkipReason();
+
+describe.skipIf(DOCS_BUILD_SKIP_REASON !== null)(
+  `Docs Build Script (Astro) (${DOCS_BUILD_SKIP_REASON ?? 'enabled'})`,
+  () => {
   beforeAll(() => {
-    if (!existsSync(join(DOCS_DIR, 'package.json'))) return;
     if (existsSync(DIST_DIR)) {
       rmSync(DIST_DIR, { recursive: true, force: true });
     }
@@ -223,7 +233,6 @@ describe('Docs Build Script (Astro)', () => {
   });
 
   it('build runs without errors (exit code 0)', () => {
-    if (!existsSync(join(DOCS_DIR, 'package.json'))) return;
     expect(() => {
       execSync('npm run build', { cwd: DOCS_DIR, timeout: 120_000 });
     }).not.toThrow();
@@ -369,4 +378,5 @@ describe('Docs Build Script (Astro)', () => {
     expect(html).toContain('id="search-btn"');
     expect(html).toContain('id="search-modal"');
   });
-});
+  },
+);

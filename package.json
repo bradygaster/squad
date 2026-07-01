@@ -1,12 +1,20 @@
 {
   "name": "@bradygaster/squad",
-  "version": "0.10.0-build.2",
+  "version": "0.11.0",
   "private": true,
   "description": "Squad — Programmable multi-agent runtime for GitHub Copilot, built on @github/copilot-sdk",
   "type": "module",
   "workspaces": [
     "packages/*"
   ],
+  "dependencies": {
+    "@bradygaster/squad-sdk": "file:packages/squad-sdk"
+  },
+  "overrides": {
+    "@bradygaster/squad-cli": {
+      "@bradygaster/squad-sdk": "$@bradygaster/squad-sdk"
+    }
+  },
   "scripts": {
     "prebuild": "node scripts/bump-build.mjs && node scripts/sync-skill-templates.mjs && node scripts/sync-templates.mjs",
     "build": "npm run build -w packages/squad-sdk && npm run build -w packages/squad-cli",
@@ -32,6 +40,7 @@
   },
   "devDependencies": {
     "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/context-async-hooks": "^2.8.0",
     "@opentelemetry/sdk-metrics": "^2.5.1",
     "@opentelemetry/sdk-trace-base": "^2.5.1",
     "@playwright/test": "^1.61.0",

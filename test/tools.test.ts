@@ -217,6 +217,31 @@ describe('ToolRegistry', () => {
       expect(tool).toBeUndefined();
     });
   });
+
+  // #1255: identity/ must be writable via squad_state_write
+  describe('squad_state_write identity/ key (Issue #1255)', () => {
+    it('should succeed when writing identity/now.md', async () => {
+      const tool = registry.getTool('squad_state_write')!;
+      const result = await tool.handler(
+        { key: 'identity/now.md', content: '# Now\n\nActive on #1255 fix.' },
+        { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_state_write', arguments: {} },
+      );
+
+      expect(result.resultType).toBe('success');
+      const written = fs.readFileSync(path.join(testRoot, 'identity', 'now.md'), 'utf-8');
+      expect(written).toContain('Active on #1255 fix.');
+    });
+
+    it('should succeed when writing any path under identity/', async () => {
+      const tool = registry.getTool('squad_state_write')!;
+      const result = await tool.handler(
+        { key: 'identity/focus.md', content: '# Focus\n' },
+        { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_state_write', arguments: {} },
+      );
+
+      expect(result.resultType).toBe('success');
+    });
+  });
 });
 
 describe('squad_route handler', () => {
@@ -437,6 +462,106 @@ describe('squad_decide handler', () => {
     expect(content).toContain('Short decision');
     expect(content).toContain('**By:** brady');
     expect(content).not.toContain('**References:**');
+  });
+});
+
+// #1256: on-behalf-of authors with spaces/parens/etc must be accepted;
+//        filename must be slugified; author > 200 chars must be rejected.
+describe('squad_decide author validation (Issue #1256)', () => {
+  let registry: ToolRegistry;
+  let testRoot: string;
+
+  beforeEach(() => {
+    testRoot = path.join('.', '.test-squad-decide-1256-' + randomUUID());
+    registry = new ToolRegistry(testRoot);
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(testRoot)) {
+      fs.rmSync(testRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts on-behalf-of author with spaces and parens and writes raw author in By: line', async () => {
+    const tool = registry.getTool('squad_decide')!;
+    const author = 'Squad (Coordinator) on behalf of Tamir Dresher (CTO)';
+    const result = await tool.handler(
+      {
+        author,
+        summary: 'Adopt TypeScript strict mode',
+        body: 'Reduces runtime errors across the board.',
+      } as DecisionRecord,
+      { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_decide', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('success');
+
+    const inboxDir = path.join(testRoot, 'decisions', 'inbox');
+    const files = fs.readdirSync(inboxDir);
+    expect(files.length).toBe(1);
+
+    // Filename must NOT contain raw spaces or parens — only [a-z0-9_-]
+    expect(files[0]).toMatch(/^[a-z0-9_-]+-adopt-typescript-strict-mode\.md$/);
+    expect(files[0]).not.toContain(' ');
+    expect(files[0]).not.toContain('(');
+    expect(files[0]).not.toContain(')');
+
+    // The **By:** line in the file content MUST preserve the raw author string
+    const content = fs.readFileSync(path.join(inboxDir, files[0]!), 'utf-8');
+    expect(content).toContain(`**By:** ${author}`);
+  });
+
+  it('rejects an author longer than 200 characters', async () => {
+    const tool = registry.getTool('squad_decide')!;
+    const longAuthor = 'a'.repeat(201);
+    const result = await tool.handler(
+      {
+        author: longAuthor,
+        summary: 'Some decision',
+        body: 'Body text.',
+      } as DecisionRecord,
+      { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_decide', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('failure');
+  });
+
+  it('success message reports slugified filename, not raw author string', async () => {
+    const tool = registry.getTool('squad_decide')!;
+    const author = 'Squad (Coordinator) on behalf of Tamir Dresher (CTO)';
+    const result = await tool.handler(
+      {
+        author,
+        summary: 'Adopt strict mode',
+        body: 'Reduces runtime errors.',
+      } as DecisionRecord,
+      { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_decide', arguments: {} },
+    );
+
+    expect(result.resultType).toBe('success');
+    // textResultForLlm must reference the actual slugified author portion of the filename
+    expect(result.textResultForLlm).toMatch(/squad-coordinator-on-behalf-of-tamir-dresher-cto/);
+    // textResultForLlm must NOT contain the raw author string with spaces/parens
+    expect(result.textResultForLlm).not.toContain('Squad (Coordinator)');
+  });
+
+  it('rejects an author whose slugified form is empty (spaces/punctuation only)', async () => {
+    const tool = registry.getTool('squad_decide')!;
+    const emptySlugAuthors = ['   ', '()', '---', '...'];
+
+    for (const author of emptySlugAuthors) {
+      const result = await tool.handler(
+        {
+          author,
+          summary: 'Some decision',
+          body: 'Body text.',
+        } as DecisionRecord,
+        { sessionId: 'test-session', toolCallId: 'test-call', toolName: 'squad_decide', arguments: {} },
+      );
+
+      expect(result.resultType).toBe('failure');
+      expect(result.textResultForLlm).toMatch(/Invalid author/i);
+    }
   });
 });
 
