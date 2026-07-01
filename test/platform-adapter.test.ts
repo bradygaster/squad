@@ -251,6 +251,7 @@ describe('PlatformAdapter createWorkItem interface', () => {
       addTag: async () => {},
       removeTag: async () => {},
       addComment: async () => {},
+      setAssignee: async () => {},
       listPullRequests: async () => [],
       createPullRequest: async () => ({ id: 1, title: '', sourceBranch: '', targetBranch: '', status: 'active' as const, author: '', url: '' }),
       mergePullRequest: async () => {},
@@ -275,6 +276,7 @@ describe('PlatformAdapter createWorkItem interface', () => {
       addTag: async () => {},
       removeTag: async () => {},
       addComment: async () => {},
+      setAssignee: async () => {},
       listPullRequests: async () => [],
       createPullRequest: async () => ({ id: 1, title: '', sourceBranch: '', targetBranch: '', status: 'active' as const, author: '', url: '' }),
       mergePullRequest: async () => {},
@@ -307,6 +309,7 @@ describe('PlatformAdapter createWorkItem interface', () => {
       addTag: async () => {},
       removeTag: async () => {},
       addComment: async () => {},
+      setAssignee: async () => {},
       listPullRequests: async () => [],
       createPullRequest: async () => ({ id: 1, title: '', sourceBranch: '', targetBranch: '', status: 'active' as const, author: '', url: '' }),
       mergePullRequest: async () => {},
@@ -317,6 +320,31 @@ describe('PlatformAdapter createWorkItem interface', () => {
     expect(wi.id).toBe(10);
     expect(wi.title).toBe('Quick fix');
     expect(wi.tags).toEqual([]);
+  });
+});
+
+// ─── setAssignee ──────────────────────────────────────────────────────
+
+describe('setAssignee', () => {
+  it('is part of the PlatformAdapter interface and accepts a user or undefined', async () => {
+    const calls: Array<string | undefined> = [];
+    const mockAdapter: PlatformAdapter = {
+      type: 'github' as PlatformType,
+      listWorkItems: async () => [],
+      getWorkItem: async (id: number) => ({ id, title: '', state: '', tags: [], url: '' }),
+      createWorkItem: async (o) => ({ id: 1, title: o.title, state: 'new', tags: [], url: '' }),
+      addTag: async () => {},
+      removeTag: async () => {},
+      addComment: async () => {},
+      setAssignee: async (_id, user) => { calls.push(user); },
+      listPullRequests: async () => [],
+      createPullRequest: async () => ({ id: 1, title: '', sourceBranch: '', targetBranch: '', status: 'active' as const, author: '', url: '' }),
+      mergePullRequest: async () => {},
+      createBranch: async () => {},
+    };
+    await mockAdapter.setAssignee(1, 'copilot-swe-agent');
+    await mockAdapter.setAssignee(1, undefined);
+    expect(calls).toEqual(['copilot-swe-agent', undefined]);
   });
 });
 
