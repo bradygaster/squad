@@ -12,7 +12,7 @@
 
 import path from 'node:path';
 import { execFile, execFileSync } from 'node:child_process';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
 import { resolveStateDir } from '../core/effective-squad-dir.js';
 
 const storage = new FSStorageProvider();
@@ -208,8 +208,56 @@ function checkCastingRegistry(squadDir: string): DoctorCheck {
   return { name: 'casting/registry.json exists', status: 'pass', message: 'file present, valid JSON' };
 }
 
-function checkDecisionsMd(squadDir: string): DoctorCheck {
-  const exists = fileExists(path.join(squadDir, 'decisions.md'));
+function configuredStateBackend(squadDir: string): StateBackendType | undefined {
+  const configPath = path.join(squadDir, 'config.json');
+  if (!fileExists(configPath)) return undefined;
+
+  const config = tryReadJson(configPath) as Record<string, unknown> | undefined;
+  const backend = config?.['stateBackend'];
+  if (backend === 'worktree') return 'local';
+  if (backend === 'git-notes') return 'two-layer';
+  if (backend === 'local' || backend === 'external' || backend === 'orphan' || backend === 'two-layer') {
+    return backend;
+  }
+  return undefined;
+}
+
+function checkBackendDecisionsMd(cwd: string, squadDir: string, stateBackend: 'orphan' | 'two-layer'): DoctorCheck {
+  try {
+    const backend = resolveStateBackend(squadDir, cwd, stateBackend);
+    if (backend.name !== stateBackend) {
+      return {
+        name: 'decisions.md exists',
+        status: 'fail',
+        message: `configured '${stateBackend}' backend was not available; could not inspect squad-state`,
+      };
+    }
+
+    const exists = backend.exists('decisions.md');
+    return {
+      name: 'decisions.md exists',
+      status: exists ? 'pass' : 'fail',
+      message: exists
+        ? `file present in squad-state (${stateBackend} backend)`
+        : `file not found in squad-state (${stateBackend} backend)`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      name: 'decisions.md exists',
+      status: 'fail',
+      message: `could not inspect squad-state for '${stateBackend}' backend: ${msg}`,
+    };
+  }
+}
+
+function checkDecisionsMd(cwd: string, squadDir: string, stateDir: string): DoctorCheck {
+  const stateBackend = configuredStateBackend(squadDir);
+  if (stateBackend === 'orphan' || stateBackend === 'two-layer') {
+    return checkBackendDecisionsMd(cwd, squadDir, stateBackend);
+  }
+
+  const exists = fileExists(path.join(stateDir, 'decisions.md'));
   return {
     name: 'decisions.md exists',
     status: exists ? 'pass' : 'fail',
@@ -582,7 +630,7 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     checks.push(checkRoutingMd(stateDir));
     checks.push(checkAgentsDir(stateDir));
     checks.push(checkCastingRegistry(stateDir));
-    checks.push(checkDecisionsMd(stateDir));
+    checks.push(checkDecisionsMd(resolvedCwd, squadDir, stateDir));
     const rateLimitCheck = checkRateLimitStatus(squadDir);
     if (rateLimitCheck) checks.push(rateLimitCheck);
 
