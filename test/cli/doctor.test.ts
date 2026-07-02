@@ -323,6 +323,20 @@ describe('squad doctor', () => {
     expect(result?.message).toContain('squad install-hooks');
   });
 
+  it('reports FAIL when legacy stateBackend=git-notes and squad hooks are missing', async () => {
+    const squadDir = join(TEST_ROOT, '.squad');
+    await mkdir(squadDir, { recursive: true });
+    execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: TEST_ROOT });
+    await writeFile(join(squadDir, 'config.json'), JSON.stringify({ stateBackend: 'git-notes' }));
+    await mkdir(join(TEST_ROOT, '.git', 'hooks'), { recursive: true });
+
+    const result = checkGitSyncHooks(TEST_ROOT, squadDir);
+    expect(result).toBeDefined();
+    expect(result?.status).toBe('fail');
+    expect(result?.message).toContain('two-layer');
+    expect(result?.message).toContain('squad install-hooks');
+  });
+
   it('reports FAIL when stateBackend=orphan and squad hooks are missing', async () => {
     const squadDir = join(TEST_ROOT, '.squad');
     await mkdir(squadDir, { recursive: true });

@@ -524,13 +524,7 @@ const REQUIRED_SYNC_HOOKS = ['pre-push', 'post-merge', 'post-rewrite', 'post-che
  * Returns undefined when the check is not applicable.
  */
 export function checkGitSyncHooks(cwd: string, squadDir: string): DoctorCheck | undefined {
-  const configPath = path.join(squadDir, 'config.json');
-  if (!fileExists(configPath)) return undefined;
-
-  const config = tryReadJson(configPath) as Record<string, unknown> | undefined;
-  if (!config) return undefined;
-
-  const stateBackend = config['stateBackend'];
+  const stateBackend = configuredStateBackend(squadDir);
   if (stateBackend !== 'two-layer' && stateBackend !== 'orphan') return undefined;
 
   // Resolve the git hooks directory (respects core.hooksPath when configured)
