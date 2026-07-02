@@ -45,6 +45,8 @@ jobs:
 
 > ⚡ **Cron is permanently disabled.** Scheduled cron jobs are no longer supported in GitHub Actions to reduce costs. The heartbeat workflow runs on event-based triggers: when issues are closed, PRs are merged, or you manually trigger via `workflow_dispatch`. For periodic polling without events, use `squad watch` in a separate terminal (local, no GitHub Actions cost).
 
+> 🏢 **GitHub Enterprise supported.** Ralph's triage script (`ralph-triage.js`) resolves the GitHub REST API host from `GITHUB_API_URL`, falling back to `GITHUB_SERVER_URL` + `/api/v3`, then `https://api.github.com`. On Actions runners (github.com or GHE) this is set automatically — no configuration needed. Running `squad heartbeat` outside Actions against a GHE instance? Set `GITHUB_API_URL` yourself first: `GITHUB_API_URL=https://ghe.mycompany.com/api/v3 squad heartbeat`.
+
 Ralph reads `.squad/routing.md`, looks at open issues, and applies labels:
 
 ```
