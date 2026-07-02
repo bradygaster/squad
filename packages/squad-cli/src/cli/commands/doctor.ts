@@ -229,7 +229,7 @@ function checkBackendDecisionsMd(cwd: string, squadDir: string, stateBackend: 'o
       return {
         name: 'decisions.md exists',
         status: 'fail',
-        message: `configured '${stateBackend}' backend was not available; could not inspect squad-state`,
+        message: `configured '${stateBackend}' backend was not available; resolved '${backend.name}' instead and could not inspect squad-state`,
       };
     }
 
