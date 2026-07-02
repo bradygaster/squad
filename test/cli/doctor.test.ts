@@ -354,7 +354,7 @@ describe('squad doctor', () => {
     expect(result?.message).toContain('two-layer');
   });
 
-  it.each(['two-layer', 'git-notes'] as const)('reports PASS when stateBackend=%s has decisions.md on squad-state only', async (stateBackend) => {
+  it.each(['two-layer', 'orphan', 'git-notes'] as const)('reports PASS when stateBackend=%s has decisions.md on squad-state only', async (stateBackend) => {
     await scaffold(TEST_ROOT);
     execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: TEST_ROOT });
     execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: TEST_ROOT });
