@@ -109,6 +109,10 @@
       "types": "./dist/cli/commands/doctor.d.ts",
       "import": "./dist/cli/commands/doctor.js"
     },
+    "./commands/update-check": {
+      "types": "./dist/cli/commands/update-check.d.ts",
+      "import": "./dist/cli/commands/update-check.js"
+    },
     "./commands/aspire": {
       "types": "./dist/cli/commands/aspire.d.ts",
       "import": "./dist/cli/commands/aspire.js"

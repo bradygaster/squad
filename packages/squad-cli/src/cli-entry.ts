@@ -168,6 +168,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
+    console.log(`  ${BOLD}update-check${RESET} Report cached CLI update status (for tooling/CI)`);
+    console.log(`             Flags: --json (structured output), --refresh (bypass cache)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
     console.log(`  ${BOLD}sync${RESET}       Sync squad-state branch(es) with remote (push/pull/both)`);
@@ -499,6 +501,12 @@ async function main(): Promise<void> {
     }
 
     return;
+  }
+
+  if (cmd === 'update-check') {
+    const { runUpdateCheckCommand } = await import('./cli/commands/update-check.js');
+    const exitCode = await runUpdateCheckCommand(args.slice(1));
+    process.exit(exitCode);
   }
 
   if (cmd === 'memory') {
