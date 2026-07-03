@@ -13,6 +13,10 @@ import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runExport } from '@bradygaster/squad-cli/commands/export';
 import { runImport } from '@bradygaster/squad-cli/commands/import';
 
+const EXT_ROOT = join(tmpdir(), `.test-cli-export-ext-${randomBytes(4).toString('hex')}`);
+const EXT_GLOBAL = join(tmpdir(), `.test-cli-export-ext-global-${randomBytes(4).toString('hex')}`);
+const EXT_PROJECT_KEY = `test-export-ext-${randomBytes(4).toString('hex')}`;
+
 const TEST_ROOT = join(tmpdir(), `.test-cli-export-import-${randomBytes(4).toString('hex')}`);
 const IMPORT_ROOT = join(tmpdir(), `.test-cli-import-target-${randomBytes(4).toString('hex')}`);
 
@@ -345,5 +349,76 @@ describe('CLI: export/import commands', () => {
     expect(importedDecisions).toBe('');
     // routing.md should not be created if not in bundle
     expect(existsSync(join(IMPORT_ROOT, '.squad', 'routing.md'))).toBe(false);
+  });
+});
+
+describe('CLI: export with externalized state (#1396)', () => {
+  const origAppData = process.env['APPDATA'];
+  const origXdgConfig = process.env['XDG_CONFIG_HOME'];
+  const externalStateDir = join(EXT_GLOBAL, 'squad', 'projects', EXT_PROJECT_KEY);
+
+  beforeEach(async () => {
+    if (existsSync(EXT_ROOT)) {
+      await rm(EXT_ROOT, { recursive: true, force: true });
+    }
+    if (existsSync(EXT_GLOBAL)) {
+      await rm(EXT_GLOBAL, { recursive: true, force: true });
+    }
+
+    // Point resolveGlobalSquadPath() inside EXT_GLOBAL (not the real user dir)
+    if (process.platform === 'win32') {
+      process.env['APPDATA'] = EXT_GLOBAL;
+    } else {
+      process.env['XDG_CONFIG_HOME'] = EXT_GLOBAL;
+    }
+
+    // Local repo: thin .squad/ holding only the marker `squad externalize` leaves behind
+    await mkdir(join(EXT_ROOT, '.squad'), { recursive: true });
+    await writeFile(
+      join(EXT_ROOT, '.squad', 'config.json'),
+      JSON.stringify({ version: 1, teamRoot: '.', projectKey: EXT_PROJECT_KEY, stateLocation: 'external' }, null, 2)
+    );
+
+    // External state dir: the real team state
+    await mkdir(join(externalStateDir, 'agents', 'alice'), { recursive: true });
+    await writeFile(join(externalStateDir, 'team.md'), '# External Team\n');
+    await writeFile(join(externalStateDir, 'decisions.md'), '# External Decisions\n');
+    await writeFile(join(externalStateDir, 'agents', 'alice', 'charter.md'), '# Alice Charter\n');
+  });
+
+  afterEach(async () => {
+    if (origAppData === undefined) delete process.env['APPDATA'];
+    else process.env['APPDATA'] = origAppData;
+    if (origXdgConfig === undefined) delete process.env['XDG_CONFIG_HOME'];
+    else process.env['XDG_CONFIG_HOME'] = origXdgConfig;
+
+    if (existsSync(EXT_ROOT)) {
+      await rm(EXT_ROOT, { recursive: true, force: true });
+    }
+    if (existsSync(EXT_GLOBAL)) {
+      await rm(EXT_GLOBAL, { recursive: true, force: true });
+    }
+  });
+
+  it('exports team state from the external state dir', async () => {
+    await runExport(EXT_ROOT);
+
+    const exportPath = join(EXT_ROOT, 'squad-export.json');
+    expect(existsSync(exportPath)).toBe(true);
+
+    const manifest = JSON.parse(await readFile(exportPath, 'utf-8'));
+    expect(manifest.team_md).toBe('# External Team\n');
+    expect(manifest.decisions_md).toBe('# External Decisions\n');
+    expect(manifest.agents['alice']?.charter).toBe('# Alice Charter\n');
+  });
+
+  it('prefers external state over stale local files when the marker is set', async () => {
+    // Simulate local scaffolding re-created after externalize (e.g. a re-run init)
+    await writeFile(join(EXT_ROOT, '.squad', 'team.md'), '# Stale Local Scaffold\n');
+
+    await runExport(EXT_ROOT);
+
+    const manifest = JSON.parse(await readFile(join(EXT_ROOT, 'squad-export.json'), 'utf-8'));
+    expect(manifest.team_md).toBe('# External Team\n');
   });
 });
