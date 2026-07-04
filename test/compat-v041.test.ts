@@ -467,23 +467,23 @@ describe('Compat v0.4.1: Event Bus Shape', () => {
 describe('Compat v0.4.1: Model Catalog', () => {
   it('catalog contains expected premium models', () => {
     expect(isModelAvailable('claude-opus-4.6')).toBe(true);
-    expect(isModelAvailable('claude-opus-4.5')).toBe(true);
+    expect(isModelAvailable('claude-opus-4.8')).toBe(true);
   });
 
   it('catalog contains expected standard models', () => {
     expect(isModelAvailable('claude-sonnet-4.5')).toBe(true);
-    expect(isModelAvailable('claude-sonnet-4')).toBe(true);
-    expect(isModelAvailable('gpt-5.2-codex')).toBe(true);
+    expect(isModelAvailable('claude-sonnet-4.6')).toBe(true);
+    expect(isModelAvailable('gpt-5.4')).toBe(true);
   });
 
   it('catalog contains expected fast models', () => {
     expect(isModelAvailable('claude-haiku-4.5')).toBe(true);
-    expect(isModelAvailable('gpt-5.1-codex-mini')).toBe(true);
-    expect(isModelAvailable('gpt-4.1')).toBe(true);
+    expect(isModelAvailable('gpt-5.4-mini')).toBe(true);
+    expect(isModelAvailable('gpt-5-mini')).toBe(true);
   });
 
   it('premium fallback chain starts with opus', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.6');
+    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.8');
   });
 
   it('standard fallback chain starts with sonnet', () => {

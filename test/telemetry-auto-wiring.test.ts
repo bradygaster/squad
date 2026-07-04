@@ -189,12 +189,15 @@ describe('estimateCost()', () => {
 // ============================================================================
 
 describe('MODEL_CATALOG pricing', () => {
-  it('all models have pricing data', () => {
+  it('models expose valid pricing when present', () => {
+    // Pricing is optional: newer catalog entries intentionally omit per-token
+    // USD pricing rather than hardcoding guessed values (issue #1080). When a
+    // model does carry pricing, it must be well-formed.
     for (const model of MODEL_CATALOG) {
-      expect(model.pricing, `Model ${model.id} missing pricing`).toBeDefined();
+      if (!model.pricing) continue;
       const pricing = model.pricing as ModelPricing;
-      expect(pricing.inputPerToken).toBeGreaterThan(0);
-      expect(pricing.outputPerToken).toBeGreaterThan(0);
+      expect(pricing.inputPerToken, `Model ${model.id} inputPerToken`).toBeGreaterThan(0);
+      expect(pricing.outputPerToken, `Model ${model.id} outputPerToken`).toBeGreaterThan(0);
     }
   });
 
