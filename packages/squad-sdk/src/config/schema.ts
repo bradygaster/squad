@@ -3,6 +3,8 @@
  * Typed configuration interface for Squad teams
  */
 
+import type { CostPolicyConfig } from './models.js';
+
 export interface SquadConfig {
   version: string;
   team: TeamConfig;
@@ -59,6 +61,8 @@ export interface ModelConfig {
   agentReasoningEffortOverrides?: Record<string, string>;
   agentContextTierOverrides?: Record<string, string>;
   taskTypeMapping?: Record<string, string>;
+  /** Cost-ceiling policy (cost axis, separate from tier). Issue #1080/#1183. */
+  costPolicy?: CostPolicyConfig;
 }
 
 export interface HooksConfig {

@@ -35,6 +35,65 @@ export interface ModelPricing {
 export type GitHubModelCategory = 'lightweight' | 'versatile' | 'powerful';
 
 /**
+ * Ordering of GitHub billing cost-ceiling categories, cheapest → most costly.
+ * "Within ceiling" ⇔ `CATEGORY_ORDER[model] <= CATEGORY_ORDER[maxCategory]`.
+ */
+export const CATEGORY_ORDER: Record<GitHubModelCategory, number> = {
+  lightweight: 0,
+  versatile: 1,
+  powerful: 2,
+};
+
+/**
+ * Persistent (config-level) cost policy.
+ *
+ * This is the COST-CEILING axis, kept deliberately separate from the quality
+ * {@link ModelTier} axis (issue #1080 / #1183). It intentionally does NOT
+ * carry per-token pricing or an `included`/zero-credit flag — both were dropped
+ * as unsourceable/stale-prone (NG2/NG3).
+ */
+export interface CostPolicyConfig {
+  /**
+   * Maximum GitHub billing category permitted for automatic model selection.
+   * When undefined the policy is a no-op (passthrough).
+   */
+  maxCategory?: GitHubModelCategory;
+}
+
+/**
+ * Per-session cost policy override, supplied at spawn time. Takes precedence
+ * over the persistent {@link CostPolicyConfig}.
+ */
+export interface SessionCostPolicyOverride {
+  maxCategory?: GitHubModelCategory;
+}
+
+/**
+ * The action a cost policy took while finalizing a resolved model.
+ * - `none`: model was within ceiling (or chain merely pruned).
+ * - `downgraded-to-ceiling`: an implicit over-ceiling pick was replaced.
+ * - `warn-allow-explicit`: an explicit over-ceiling pick was honored + warned.
+ * - `no-compliant-model`: fail-closed — no in-ceiling model exists anywhere.
+ */
+export type CostPolicyAction =
+  | 'none'
+  | 'downgraded-to-ceiling'
+  | 'warn-allow-explicit'
+  | 'no-compliant-model';
+
+/**
+ * Outcome of applying a cost policy to a resolved model. Surfaced (not
+ * swallowed — this was the #1089 bug) so the lifecycle can emit `warning`.
+ */
+export interface CostPolicyOutcome {
+  action: CostPolicyAction;
+  originalModel: string;
+  finalModel: string;
+  /** Human-readable warning to surface via EventBus/log; present when action ≠ 'none'. */
+  warning?: string;
+}
+
+/**
  * Model capability information.
  */
 export interface ModelInfo {

@@ -1131,6 +1131,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'models') {
+    const { runModels } = await import('./cli/commands/models.js');
+    await runModels(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
   if (cmd === 'notes') {
     const { runNotes } = await import('./cli/commands/notes.js');
     await runNotes(getSquadStartDir(), args.slice(1));

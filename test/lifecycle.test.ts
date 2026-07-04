@@ -2,7 +2,7 @@
  * Tests for Agent Lifecycle (M1-7) and History Shadows (M1-11)
  */
 
-import { describe, it, beforeEach, afterEach, expect } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -17,6 +17,7 @@ import {
   deleteHistoryShadow,
 } from '@bradygaster/squad-sdk/agents';
 import { SquadClientWithPool } from '@bradygaster/squad-sdk/client';
+import { EventBus } from '@bradygaster/squad-sdk/runtime/event-bus';
 
 describe('Agent Lifecycle Manager', () => {
   let tempDir: string;
@@ -336,12 +337,118 @@ describe('History Shadows', () => {
   });
 });
 
+describe('Agent Lifecycle Manager — cost policy wiring (AC11, #1089 fix)', () => {
+  let tempDir: string;
+  let teamRoot: string;
+  let mockClient: SquadClientWithPool;
+  let eventBus: EventBus;
+  let events: Array<{ type: string; payload: unknown }>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+  let manager: AgentLifecycleManager;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'squad-policy-test-'));
+    teamRoot = tempDir;
+    const agentsDir = path.join(teamRoot, '.ai-team', 'agents', 'policy-agent');
+    await fs.mkdir(agentsDir, { recursive: true });
+    // Charter deliberately WITHOUT a ## Model section → implicit task-auto path.
+    const charterContent = `# Policy Agent Charter
+
+## Identity
+
+**Name:** Policy Agent
+**Role:** Test Role
+**Expertise:** Testing
+**Style:** Systematic
+
+## What I Own
+
+Test ownership areas.
+
+## Collaboration
+
+Test collaboration.
+`;
+    await fs.writeFile(path.join(agentsDir, 'charter.md'), charterContent, 'utf-8');
+
+    mockClient = createMockClient();
+    eventBus = new EventBus();
+    events = [];
+    eventBus.subscribe('agent:milestone', (e) => {
+      events.push({ type: e.type, payload: e.payload });
+    });
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    manager = new AgentLifecycleManager({
+      client: mockClient,
+      teamRoot,
+      defaultIdleTimeout: 60_000,
+      eventBus,
+    });
+  });
+
+  afterEach(async () => {
+    warnSpy.mockRestore();
+    await manager.shutdown();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('downgrades an implicit over-ceiling pick end-to-end AND surfaces the change', async () => {
+    // visual → task-auto claude-opus-4.6 (powerful); ceiling versatile ⇒ downgrade.
+    const handle = await manager.spawnAgent({
+      agentName: 'policy-agent',
+      task: 'Draw a diagram',
+      taskType: 'visual',
+      sessionCostPolicy: { maxCategory: 'versatile' },
+    });
+
+    // The wired policy must actually change the session model (the #1089 dead-code bug).
+    expect(handle.model).toBe('claude-sonnet-4.6');
+
+    // The policy change must be SURFACED, not swallowed: emitted on the bus.
+    const policyEvents = events.filter(
+      (e) => (e.payload as { event?: string })?.event === 'model.policy',
+    );
+    expect(policyEvents.length).toBeGreaterThan(0);
+  });
+
+  it('honors an explicit over-ceiling override but emits a loud warning (AC6/FR8)', async () => {
+    const handle = await manager.spawnAgent({
+      agentName: 'policy-agent',
+      task: 'Do work',
+      taskType: 'code',
+      modelOverride: 'claude-opus-4.8', // explicit, powerful
+      sessionCostPolicy: { maxCategory: 'versatile' },
+    });
+
+    // Explicit intent wins — model is NOT downgraded.
+    expect(handle.model).toBe('claude-opus-4.8');
+    // ...but the warning MUST surface (console + bus).
+    expect(warnSpy).toHaveBeenCalled();
+    const warned = warnSpy.mock.calls.flat().join(' ');
+    expect(warned).toMatch(/versatile/i);
+  });
+
+  it('no policy ⇒ unchanged behavior (no warning, no policy event)', async () => {
+    const handle = await manager.spawnAgent({
+      agentName: 'policy-agent',
+      task: 'Draw',
+      taskType: 'visual',
+    });
+    expect(handle.model).toBe('claude-opus-4.6');
+    const policyEvents = events.filter(
+      (e) => (e.payload as { event?: string })?.event === 'model.policy',
+    );
+    expect(policyEvents.length).toBe(0);
+  });
+});
+
 // --- Mock Client ---
 
 function createMockClient(): SquadClientWithPool {
   let sessionCounter = 0;
   const sessions = new Map<string, any>();
-  
+
   return {
     async connect() {},
     async disconnect() { return []; },
