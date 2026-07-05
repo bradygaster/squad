@@ -28,6 +28,8 @@ export interface SpawnRequest {
   model?: string;
   /** Reasoning effort override */
   reasoningEffort?: string;
+  /** Context tier override (context window size) */
+  contextTier?: string;
   /** Whether the spawned work produces commits (sub-session only) */
   producesCommits?: boolean;
   /** Whether to run in background */
@@ -180,6 +182,7 @@ export class TaskSpawnBackend implements SpawnBackend {
           model: request.model,
           clientName: `squad-agent-${request.agentName}`,
           ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
+          ...(request.contextTier ? { contextTier: request.contextTier } : {}),
         }),
         this.options.createSessionTimeoutMs ?? DEFAULT_CREATE_SESSION_TIMEOUT_MS,
       );
@@ -282,6 +285,7 @@ export class SessionSpawnBackend implements SpawnBackend {
             mode: this.options.mode,
             model: request.model,
             ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
+            ...(request.contextTier ? { context_tier: request.contextTier } : {}),
           },
         }),
         this.options.createSessionTimeoutMs ?? DEFAULT_CREATE_SESSION_TIMEOUT_MS,

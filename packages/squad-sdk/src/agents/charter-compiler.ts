@@ -9,10 +9,13 @@
 import { SquadCustomAgentConfig } from '../adapter/types.js';
 import { ConfigurationError } from '../adapter/errors.js';
 import { normalizeEol } from '../utils/normalize-eol.js';
-import { VALID_REASONING_EFFORTS } from '../config/models.js';
+import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS } from '../config/models.js';
 
 /** Set form for fast lookup. */
 const VALID_EFFORTS = new Set<string>(VALID_REASONING_EFFORTS);
+
+/** Set form for fast lookup. */
+const VALID_TIERS = new Set<string>(VALID_CONTEXT_TIERS);
 
 /**
  * Options for compiling a charter.
@@ -49,6 +52,8 @@ export interface CharterConfigOverrides {
   model?: string;
   /** Override or set reasoning effort level */
   reasoningEffort?: string;
+  /** Override or set context tier (context window size) */
+  contextTier?: string;
   /** Override or set tools list */
   tools?: string[];
   /** Override or set status */
@@ -80,6 +85,8 @@ export interface ParsedCharter {
   modelFallback?: string;
   /** Reasoning effort preference from ## Model section */
   reasoningEffort?: string;
+  /** Context tier preference from ## Model section */
+  contextTier?: string;
   /** Collaboration section content */
   collaboration?: string;
   /** Full charter content */
@@ -94,6 +101,8 @@ export interface CompiledCharter extends SquadCustomAgentConfig {
   resolvedModel?: string;
   /** Resolved reasoning effort (from config override or charter preference) */
   resolvedReasoningEffort?: string;
+  /** Resolved context tier (from config override or charter preference) */
+  resolvedContextTier?: string;
   /** Resolved tools list (from config override or charter) */
   resolvedTools?: string[];
   /** Parsed charter data */
@@ -177,6 +186,13 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
     const validConfigEffort = configEffort && configEffort !== 'auto' && VALID_EFFORTS.has(configEffort) ? configEffort : undefined;
     const resolvedReasoningEffort = validConfigEffort || charterEffort;
 
+    // Resolve context tier: config override > charter preference
+    // Normalize: "auto" and invalid values resolve to undefined
+    const configTier = configOverrides?.contextTier?.toLowerCase();
+    const charterTier = parsed.contextTier; // already validated during parsing
+    const validConfigTier = configTier && configTier !== 'auto' && VALID_TIERS.has(configTier) ? configTier : undefined;
+    const resolvedContextTier = validConfigTier || charterTier;
+
     // Resolve tools: config override > charter-extracted tools
     const resolvedTools = configOverrides?.tools;
     
@@ -189,6 +205,7 @@ export function compileCharterFull(options: CharterCompileOptions): CompiledChar
       tools: resolvedTools ?? null,
       resolvedModel,
       resolvedReasoningEffort,
+      resolvedContextTier,
       resolvedTools,
       parsed,
     };
@@ -287,6 +304,20 @@ export function parseCharterMarkdown(content: string): ParsedCharter {
         console.warn(
           `[squad] charter parse: ignoring invalid reasoning effort "${raw}" `
           + `(expected ${VALID_REASONING_EFFORTS.join(', ')}, or auto)`,
+        );
+      }
+    }
+    const tierMatch = modelContent.match(/\*\*Context Tier:\*\*\s*(.+)/i);
+    if (tierMatch) {
+      const raw = tierMatch[1]!.trim().toLowerCase();
+      // Normalize: "auto" → undefined, invalid values → undefined
+      if (raw !== 'auto' && VALID_TIERS.has(raw)) {
+        result.contextTier = raw;
+      } else if (raw !== 'auto') {
+        // Surface invalid charter input to the author instead of dropping it silently.
+        console.warn(
+          `[squad] charter parse: ignoring invalid context tier "${raw}" `
+          + `(expected ${VALID_CONTEXT_TIERS.join(', ')}, or auto)`,
         );
       }
     }

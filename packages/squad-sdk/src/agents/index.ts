@@ -125,6 +125,9 @@ export interface AgentCharter {
 
   /** Reasoning effort preference from charter */
   reasoningEffort?: string;
+
+  /** Context tier preference from charter */
+  contextTier?: string;
 }
 
 export type AgentLifecycleState = 'pending' | 'spawning' | 'active' | 'idle' | 'error' | 'destroyed';
@@ -176,6 +179,7 @@ export class CharterCompiler {
       prompt: content,
       modelPreference: parsed.modelPreference,
       reasoningEffort: parsed.reasoningEffort,
+      contextTier: parsed.contextTier,
     };
   }
 
@@ -205,6 +209,7 @@ export class CharterCompiler {
       prompt: content,
       modelPreference: parsed.modelPreference,
       reasoningEffort: parsed.reasoningEffort,
+      contextTier: parsed.contextTier,
     };
   }
 

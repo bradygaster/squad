@@ -43,6 +43,15 @@ export interface SquadSessionConfig {
   reasoningEffort?: SquadReasoningEffort;
 
   /**
+   * Context tier (context-window size) for models that support it.
+   * Selects between the default context window and an extended
+   * long-context window (e.g. Opus 4.8: 264K default vs 1M long context).
+   * Only valid for models where capabilities support multiple context tiers.
+   * @example "long_context"
+   */
+  contextTier?: SquadContextTier;
+
+  /**
    * Override the default configuration directory location.
    * When specified, the session will use this directory for config and state.
    */
@@ -759,6 +768,17 @@ export interface SquadInfiniteSessionConfig {
  */
 export type SquadReasoningEffort = "low" | "medium" | "high" | "xhigh";
 
+/**
+ * Valid context tiers (context-window sizes) for models that support them.
+ *
+ * `"default"` selects the model's standard context window; `"long_context"`
+ * selects an extended window (e.g. Opus 4.8: 264K default vs 1M long context).
+ * Canonical context-tier union for the SDK — import this type instead of
+ * re-declaring the union inline. The runtime list lives in config/models.ts as
+ * `VALID_CONTEXT_TIERS` (kept in sync via `satisfies`).
+ */
+export type SquadContextTier = "default" | "long_context";
+
 // ============================================================================
 // Session Interface
 // ============================================================================
@@ -951,6 +971,14 @@ export interface SquadModelCapabilities {
   supports: {
     vision: boolean;
     reasoningEffort: boolean;
+    /**
+     * Whether the model exposes a selectable context tier (extended context
+     * window). Optional because the underlying runtime does not model this as
+     * a capability flag; Squad infers per-model support from the billing
+     * signal and surfaces it via `supportedContextTiers` / `defaultContextTier`
+     * on {@link SquadModelInfo} instead.
+     */
+    contextTier?: boolean;
   };
   limits: {
     max_prompt_tokens?: number;
@@ -989,4 +1017,15 @@ export interface SquadModelInfo {
   billing?: SquadModelBilling;
   supportedReasoningEfforts?: SquadReasoningEffort[];
   defaultReasoningEffort?: SquadReasoningEffort;
+  /**
+   * Context tiers (context-window sizes) this model supports. When a model
+   * exposes an extended/long context window this is `["default", "long_context"]`;
+   * otherwise it is `["default"]`. Inferred from the runtime billing signal.
+   */
+  supportedContextTiers?: SquadContextTier[];
+  /**
+   * The context tier used when none is explicitly requested. Almost always
+   * `"default"`; models without an extended window only report `"default"`.
+   */
+  defaultContextTier?: SquadContextTier;
 }
