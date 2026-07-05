@@ -1107,7 +1107,7 @@ export function clampContextTier(
   supportedTiers: string[] | undefined,
   modelDefault?: string,
 ): string | undefined {
-  if (requested === undefined || requested === null || requested === '') return undefined;
+  if (!requested) return undefined;
 
   const fallback = modelDefault && VALID_CONTEXT_TIERS_SET.includes(modelDefault)
     ? modelDefault
