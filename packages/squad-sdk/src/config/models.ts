@@ -11,7 +11,7 @@ import { join } from 'path';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
 import type { ModelId, ModelTier } from '../runtime/config.js';
-import type { SquadReasoningEffort } from '../adapter/types.js';
+import type { SquadReasoningEffort, SquadContextTier } from '../adapter/types.js';
 
 /**
  * Per-token pricing in USD.
@@ -551,6 +551,8 @@ export interface ModelPreferenceConfig {
   economyMode?: boolean;
   defaultReasoningEffort?: string;
   agentReasoningEffortOverrides?: Record<string, string>;
+  defaultContextTier?: string;
+  agentContextTierOverrides?: Record<string, string>;
 }
 
 /**
@@ -1059,6 +1061,307 @@ export function resolveReasoningEffort(options: {
   // Clamp to model capabilities if available
   if (options.supportedEfforts) {
     return clampReasoningEffort(resolved, options.supportedEfforts);
+  }
+
+  return resolved;
+}
+
+/**
+ * Valid context tiers.
+ * "auto" is a permitted stored sentinel that resolvers treat as "not set".
+ * Canonical runtime list — import this instead of duplicating. The `satisfies`
+ * clause keeps it in lock-step with the canonical {@link SquadContextTier} type.
+ *
+ * Unlike reasoning effort there is no ranked scale: this is a two-value enum
+ * ("default" = the model's standard window, "long_context" = its extended/1M
+ * window). Clamping is therefore membership-based, not rank-based.
+ */
+export const VALID_CONTEXT_TIERS = ['default', 'long_context'] as const satisfies readonly SquadContextTier[];
+/** Canonical context-tier union (alias of {@link SquadContextTier}). */
+export type ValidContextTier = SquadContextTier;
+const VALID_CONTEXT_TIERS_WITH_AUTO: readonly string[] = [...VALID_CONTEXT_TIERS, 'auto'];
+/** String array form for runtime `.includes()` checks with arbitrary strings. */
+const VALID_CONTEXT_TIERS_SET: readonly string[] = VALID_CONTEXT_TIERS;
+
+/**
+ * Clamp a requested context tier to what the model actually supports.
+ *
+ * Semantics deliberately differ from {@link clampReasoningEffort}: context tier
+ * is a two-value enum, not a ranked scale, so there is nothing to "clamp down"
+ * to a nearest lower level. The rules are:
+ *   - Nothing requested (undefined/null/empty) → undefined (let the runtime decide).
+ *   - Unknown / invalid tier string → the model default (or "default"). This is
+ *     the "unknown treated as default" rule from issue #1446.
+ *   - Model capabilities unknown (no supportedTiers) → trust the valid request.
+ *   - Requested tier supported → return it unchanged.
+ *   - Requested tier unsupported (e.g. "long_context" on a model without a
+ *     long-context window) → clamp to the model's default tier, or "default".
+ *
+ * @param requested - The context tier the user/charter requested
+ * @param supportedTiers - The model's supportedContextTiers from listModels()
+ * @param modelDefault - The model's defaultContextTier from listModels()
+ * @returns The clamped tier, or undefined if nothing was requested
+ */
+export function clampContextTier(
+  requested: string | undefined,
+  supportedTiers: string[] | undefined,
+  modelDefault?: string,
+): string | undefined {
+  if (requested === undefined || requested === null || requested === '') return undefined;
+
+  const fallback = modelDefault && VALID_CONTEXT_TIERS_SET.includes(modelDefault)
+    ? modelDefault
+    : 'default';
+
+  // Unknown / invalid tier string → treat as default.
+  if (!VALID_CONTEXT_TIERS_SET.includes(requested)) return fallback;
+
+  // Model capabilities unknown → trust the (valid) request; the runtime validates.
+  if (!supportedTiers || supportedTiers.length === 0) return requested;
+
+  // Supported → use it; unsupported → clamp to the model's default (or "default").
+  return supportedTiers.includes(requested) ? requested : fallback;
+}
+
+/**
+ * Reads the persistent context tier preference from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns The defaultContextTier string if set, or null
+ */
+export function readContextTier(squadDir: string, storage: StorageProvider = new FSStorageProvider()): string | null {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return null;
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      typeof parsed.defaultContextTier === 'string' &&
+      parsed.defaultContextTier.length > 0 &&
+      VALID_CONTEXT_TIERS_WITH_AUTO.includes(parsed.defaultContextTier)
+    ) {
+      return parsed.defaultContextTier;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads per-agent context tier overrides from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns Record of agent name → context tier, or empty object
+ */
+export function readAgentContextTierOverrides(squadDir: string, storage: StorageProvider = new FSStorageProvider()): Record<string, string> {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return {};
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof parsed.agentContextTierOverrides === 'object' &&
+      parsed.agentContextTierOverrides !== null
+    ) {
+      const result: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed.agentContextTierOverrides)) {
+        if (typeof value === 'string' && VALID_CONTEXT_TIERS_SET.includes(value)) {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Writes a persistent context tier preference to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param tier - Context tier to persist, or null to clear
+ */
+export function writeContextTier(squadDir: string, tier: string | null, storage: StorageProvider = new FSStorageProvider()): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (tier === null) {
+    delete config.defaultContextTier;
+  } else if (VALID_CONTEXT_TIERS_WITH_AUTO.includes(tier)) {
+    config.defaultContextTier = tier;
+  } else {
+    // Invalid value: warn and leave any existing preference untouched rather
+    // than silently clearing it (a typo shouldn't wipe a valid setting).
+    // Pass null explicitly to clear.
+    console.warn(
+      `[squad] writeContextTier: ignoring invalid context tier "${tier}" `
+      + `(expected ${VALID_CONTEXT_TIERS.join(', ')}, auto, or null to clear); `
+      + `existing preference left unchanged.`,
+    );
+    return;
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Writes per-agent context tier overrides to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param overrides - Record of agent name → context tier, or null to clear
+ */
+export function writeAgentContextTierOverrides(
+  squadDir: string,
+  overrides: Record<string, string> | null,
+  storage: StorageProvider = new FSStorageProvider()
+): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (overrides === null || Object.keys(overrides).length === 0) {
+    delete config.agentContextTierOverrides;
+  } else {
+    // Filter out invalid tier values, warning about any dropped so a typo
+    // isn't silently discarded.
+    const validated: Record<string, string> = {};
+    const dropped: string[] = [];
+    for (const [agent, tier] of Object.entries(overrides)) {
+      if (VALID_CONTEXT_TIERS_WITH_AUTO.includes(tier)) {
+        validated[agent] = tier;
+      } else {
+        dropped.push(`${agent}="${tier}"`);
+      }
+    }
+    if (dropped.length > 0) {
+      console.warn(
+        `[squad] writeAgentContextTierOverrides: ignoring invalid context tier `
+        + `value(s) ${dropped.join(', ')} (expected ${VALID_CONTEXT_TIERS.join(', ')}, or auto).`,
+      );
+    }
+    if (Object.keys(validated).length > 0) {
+      config.agentContextTierOverrides = validated;
+    } else {
+      delete config.agentContextTierOverrides;
+    }
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Resolves the effective context tier for an agent spawn.
+ * Uses a layered priority system matching the reasoning-effort resolution pattern:
+ *   Layer 0a: Per-agent persistent override (.squad/config.json agentContextTierOverrides)
+ *   Layer 0b: Global persistent config (.squad/config.json defaultContextTier)
+ *   Layer 1: Spawn-time override (caller-provided)
+ *   Layer 2: Charter preference (agent's ## Model → **Context Tier:** field)
+ *   Layer 3: Default (undefined — let SDK/runtime decide)
+ *
+ * The value "auto" at any layer is treated as "not set" and falls through.
+ *
+ * When `supportedContextTiers` is provided (from the model's capabilities via
+ * listModels()), the resolved tier is clamped to what the model supports. This
+ * prevents errors when a user requests "long_context" on a model that only
+ * exposes a default window.
+ *
+ * @param options - Resolution inputs
+ * @returns Resolved context tier string, or undefined if unset
+ */
+export function resolveContextTier(options: {
+  agentName?: string;
+  squadDir?: string;
+  spawnOverride?: string | null;
+  charterPreference?: string | null;
+  /** Model's supportedContextTiers from listModels(). When provided, clamps the result. */
+  supportedContextTiers?: string[];
+  /** Model's defaultContextTier from listModels(). Used as the clamp fallback. */
+  defaultContextTier?: string;
+  storage?: StorageProvider;
+}): string | undefined {
+  const { agentName, squadDir, spawnOverride, charterPreference } = options;
+  const storage = options.storage ?? new FSStorageProvider();
+
+  let resolved: string | undefined;
+
+  // Helper: only accept valid tier values (reject invalid strings and "auto")
+  const isValid = (v: string | null | undefined): v is string =>
+    typeof v === 'string' && v !== 'auto' && VALID_CONTEXT_TIERS_SET.includes(v);
+
+  // Layer 0a: Per-agent persistent override
+  if (!resolved && squadDir && agentName) {
+    const agentOverrides = readAgentContextTierOverrides(squadDir, storage);
+    const agentTier = agentOverrides[agentName];
+    if (isValid(agentTier)) {
+      resolved = agentTier;
+    }
+  }
+
+  // Layer 0b: Global persistent config
+  if (!resolved && squadDir) {
+    const persistedTier = readContextTier(squadDir, storage);
+    if (isValid(persistedTier)) {
+      resolved = persistedTier;
+    }
+  }
+
+  // Layer 1: Spawn-time override
+  if (!resolved && isValid(spawnOverride)) {
+    resolved = spawnOverride;
+  }
+
+  // Layer 2: Charter preference
+  if (!resolved && isValid(charterPreference)) {
+    resolved = charterPreference;
+  }
+
+  // Layer 3: Default — undefined (let SDK/runtime decide)
+  if (!resolved) return undefined;
+
+  // Clamp to model capabilities if available
+  if (options.supportedContextTiers) {
+    return clampContextTier(resolved, options.supportedContextTiers, options.defaultContextTier);
   }
 
   return resolved;

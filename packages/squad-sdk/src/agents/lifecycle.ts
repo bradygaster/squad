@@ -8,10 +8,10 @@
  */
 
 import { SquadClientWithPool } from '../client/index.js';
-import type { SquadSession, SquadSessionConfig, SquadReasoningEffort } from '../adapter/types.js';
+import type { SquadSession, SquadSessionConfig, SquadReasoningEffort, SquadContextTier } from '../adapter/types.js';
 import { compileCharterFull, type CharterCompileOptions } from './charter-compiler.js';
 import { resolveModel, type ModelResolutionOptions, type TaskType } from './model-selector.js';
-import { VALID_REASONING_EFFORTS } from '../config/models.js';
+import { VALID_REASONING_EFFORTS, VALID_CONTEXT_TIERS } from '../config/models.js';
 import { ConfigurationError, SessionLifecycleError } from '../adapter/errors.js';
 import * as path from 'path';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
@@ -76,6 +76,9 @@ export interface SpawnAgentOptions {
 
   /** User-specified reasoning effort override */
   reasoningEffortOverride?: SquadReasoningEffort;
+
+  /** User-specified context tier override */
+  contextTierOverride?: SquadContextTier;
   
   /** Team context content (team.md) */
   teamContext?: string;
@@ -155,6 +158,7 @@ export class AgentLifecycleManager {
       taskType = 'code',
       modelOverride,
       reasoningEffortOverride,
+      contextTierOverride,
       teamContext,
       routingRules,
       decisions,
@@ -218,12 +222,21 @@ export class AgentLifecycleManager {
       const validEffort = rawEffort && rawEffort !== 'auto' && (VALID_REASONING_EFFORTS as readonly string[]).includes(rawEffort)
         ? rawEffort as SquadReasoningEffort
         : undefined;
+      // Use compiled charter's resolved context tier (already validated/normalized),
+      // with spawn-time override taking precedence. Validate before passing to session.
+      const rawTier = contextTierOverride
+        || agentConfig.resolvedContextTier
+        || undefined;
+      const validTier = rawTier && rawTier !== 'auto' && (VALID_CONTEXT_TIERS as readonly string[]).includes(rawTier)
+        ? rawTier as SquadContextTier
+        : undefined;
       const sessionConfig: SquadSessionConfig = {
         model: resolvedModel.model,
         systemMessage: {
           content: agentConfig.prompt,
         },
         ...(validEffort ? { reasoningEffort: validEffort } : {}),
+        ...(validTier ? { contextTier: validTier } : {}),
       };
       
       const session = await this.client.createSession(sessionConfig);

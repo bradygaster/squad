@@ -24,6 +24,12 @@ import {
   writeAgentReasoningEffortOverrides,
   resolveReasoningEffort,
   clampReasoningEffort,
+  readContextTier,
+  readAgentContextTierOverrides,
+  writeContextTier,
+  writeAgentContextTierOverrides,
+  resolveContextTier,
+  clampContextTier,
 } from '@bradygaster/squad-sdk/config';
 
 // Temp directory for each test
@@ -651,5 +657,347 @@ describe('clampReasoningEffort', () => {
     expect(clampReasoningEffort('low', ['high'])).toBe('high');
     // Model only supports [medium, high] — requesting "low" clamps up to "medium"
     expect(clampReasoningEffort('low', ['medium', 'high'])).toBe('medium');
+  });
+});
+
+// ============================================================================
+// readContextTier
+// ============================================================================
+
+describe('readContextTier', () => {
+  it('returns null when config.json does not exist', () => {
+    expect(readContextTier(squadDir)).toBeNull();
+  });
+
+  it('returns null when config.json has no defaultContextTier', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1 })
+    );
+    expect(readContextTier(squadDir)).toBeNull();
+  });
+
+  it('returns the tier when defaultContextTier is set', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultContextTier: 'long_context' })
+    );
+    expect(readContextTier(squadDir)).toBe('long_context');
+  });
+
+  it('returns "auto" when persisted (sentinel is readable)', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultContextTier: 'auto' })
+    );
+    expect(readContextTier(squadDir)).toBe('auto');
+  });
+
+  it('returns null on malformed JSON', () => {
+    writeFileSync(join(squadDir, 'config.json'), '{ broken json');
+    expect(readContextTier(squadDir)).toBeNull();
+  });
+});
+
+// ============================================================================
+// readAgentContextTierOverrides
+// ============================================================================
+
+describe('readAgentContextTierOverrides', () => {
+  it('returns empty object when config.json does not exist', () => {
+    expect(readAgentContextTierOverrides(squadDir)).toEqual({});
+  });
+
+  it('reads per-agent overrides', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        agentContextTierOverrides: {
+          fenster: 'long_context',
+          mcmanus: 'default',
+        },
+      })
+    );
+    const overrides = readAgentContextTierOverrides(squadDir);
+    expect(overrides.fenster).toBe('long_context');
+    expect(overrides.mcmanus).toBe('default');
+  });
+
+  it('drops "auto" and invalid values in overrides', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        agentContextTierOverrides: {
+          fenster: 'long_context',
+          keaton: 'auto',
+          bad: 'invalid-tier',
+        },
+      })
+    );
+    const overrides = readAgentContextTierOverrides(squadDir);
+    expect(overrides.fenster).toBe('long_context');
+    expect(overrides).not.toHaveProperty('keaton');
+    expect(overrides).not.toHaveProperty('bad');
+  });
+});
+
+// ============================================================================
+// writeContextTier
+// ============================================================================
+
+describe('writeContextTier', () => {
+  it('creates config.json if missing', () => {
+    writeContextTier(squadDir, 'long_context');
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw.version).toBe(1);
+    expect(raw.defaultContextTier).toBe('long_context');
+  });
+
+  it('merges with existing config without clobbering', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultModel: 'claude-opus-4.6' })
+    );
+    writeContextTier(squadDir, 'long_context');
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw.defaultModel).toBe('claude-opus-4.6');
+    expect(raw.defaultContextTier).toBe('long_context');
+  });
+
+  it('removes defaultContextTier when set to null', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultContextTier: 'long_context' })
+    );
+    writeContextTier(squadDir, null);
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw).not.toHaveProperty('defaultContextTier');
+  });
+
+  it('does not write an invalid tier', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultModel: 'claude-opus-4.6' })
+    );
+    writeContextTier(squadDir, 'invalid-tier' as never);
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw).not.toHaveProperty('defaultContextTier');
+    expect(raw.defaultModel).toBe('claude-opus-4.6');
+  });
+});
+
+// ============================================================================
+// writeAgentContextTierOverrides
+// ============================================================================
+
+describe('writeAgentContextTierOverrides', () => {
+  it('creates config.json with overrides', () => {
+    writeAgentContextTierOverrides(squadDir, { fenster: 'long_context' });
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw.agentContextTierOverrides.fenster).toBe('long_context');
+  });
+
+  it('removes the field when set to null', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        agentContextTierOverrides: { fenster: 'long_context' },
+      })
+    );
+    writeAgentContextTierOverrides(squadDir, null);
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw).not.toHaveProperty('agentContextTierOverrides');
+  });
+
+  it('removes the field when given an empty object', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        agentContextTierOverrides: { fenster: 'long_context' },
+      })
+    );
+    writeAgentContextTierOverrides(squadDir, {});
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw).not.toHaveProperty('agentContextTierOverrides');
+  });
+
+  it('keeps valid entries and drops invalid ones', () => {
+    writeAgentContextTierOverrides(squadDir, {
+      fenster: 'long_context',
+      bad: 'invalid-tier' as never,
+    });
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf8'));
+    expect(raw.agentContextTierOverrides.fenster).toBe('long_context');
+    expect(raw.agentContextTierOverrides).not.toHaveProperty('bad');
+  });
+});
+
+// ============================================================================
+// resolveContextTier
+// ============================================================================
+
+describe('resolveContextTier', () => {
+  it('returns undefined when nothing is set', () => {
+    expect(resolveContextTier({})).toBeUndefined();
+  });
+
+  it('Layer 2: charter preference wins over default', () => {
+    expect(
+      resolveContextTier({ charterPreference: 'long_context' })
+    ).toBe('long_context');
+  });
+
+  it('Layer 1: spawn override wins over charter', () => {
+    expect(
+      resolveContextTier({
+        spawnOverride: 'long_context',
+        charterPreference: 'default',
+      })
+    ).toBe('long_context');
+  });
+
+  it('Layer 0b: persistent config wins over spawn override', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultContextTier: 'default' })
+    );
+    expect(
+      resolveContextTier({
+        squadDir,
+        spawnOverride: 'long_context',
+        charterPreference: 'long_context',
+      })
+    ).toBe('default');
+  });
+
+  it('Layer 0a: per-agent override wins over global', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        defaultContextTier: 'default',
+        agentContextTierOverrides: { fenster: 'long_context' },
+      })
+    );
+    expect(
+      resolveContextTier({
+        agentName: 'fenster',
+        squadDir,
+        spawnOverride: 'default',
+      })
+    ).toBe('long_context');
+  });
+
+  it('auto is treated as absent at all layers', () => {
+    expect(
+      resolveContextTier({ charterPreference: 'auto' })
+    ).toBeUndefined();
+
+    expect(
+      resolveContextTier({ spawnOverride: 'auto', charterPreference: 'long_context' })
+    ).toBe('long_context');
+  });
+
+  it('falls through to charter when config has no tier', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultModel: 'claude-opus-4.6' })
+    );
+    expect(
+      resolveContextTier({
+        squadDir,
+        charterPreference: 'long_context',
+      })
+    ).toBe('long_context');
+  });
+
+  it('clamps to fallback when requested tier is unsupported', () => {
+    // Model only supports the default tier — requesting long_context clamps to default
+    expect(
+      resolveContextTier({
+        charterPreference: 'long_context',
+        supportedContextTiers: ['default'],
+      })
+    ).toBe('default');
+  });
+
+  it('passes through when within model capabilities', () => {
+    expect(
+      resolveContextTier({
+        charterPreference: 'long_context',
+        supportedContextTiers: ['default', 'long_context'],
+      })
+    ).toBe('long_context');
+  });
+
+  it('ignores invalid spawnOverride values', () => {
+    expect(
+      resolveContextTier({ spawnOverride: 'invalid', charterPreference: 'long_context' })
+    ).toBe('long_context');
+  });
+
+  it('ignores invalid charterPreference values', () => {
+    expect(
+      resolveContextTier({ charterPreference: 'turbo' })
+    ).toBeUndefined();
+  });
+
+  it('ignores invalid persisted defaultContextTier', () => {
+    writeFileSync(
+      join(squadDir, 'config.json'),
+      JSON.stringify({ version: 1, defaultContextTier: 'invalid' })
+    );
+    expect(
+      resolveContextTier({
+        squadDir,
+        charterPreference: 'long_context',
+      })
+    ).toBe('long_context');
+  });
+
+  it('ignores all-invalid layers and returns undefined', () => {
+    expect(
+      resolveContextTier({
+        spawnOverride: 'invalid',
+        charterPreference: 'auto',
+      })
+    ).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// clampContextTier
+// ============================================================================
+
+describe('clampContextTier', () => {
+  it('returns undefined when no tier requested', () => {
+    expect(clampContextTier(undefined, ['default', 'long_context'])).toBeUndefined();
+  });
+
+  it('trusts a valid request when model support is unknown', () => {
+    expect(clampContextTier('long_context', undefined)).toBe('long_context');
+    expect(clampContextTier('long_context', [])).toBe('long_context');
+  });
+
+  it('passes through when tier is directly supported', () => {
+    expect(clampContextTier('default', ['default', 'long_context'])).toBe('default');
+    expect(clampContextTier('long_context', ['default', 'long_context'])).toBe('long_context');
+  });
+
+  it('clamps to default when requested tier is unsupported', () => {
+    expect(clampContextTier('long_context', ['default'])).toBe('default');
+  });
+
+  it('clamps to the model default when provided', () => {
+    // long_context unsupported, model default is explicitly "default"
+    expect(clampContextTier('long_context', ['default'], 'default')).toBe('default');
+  });
+
+  it('returns fallback for an unrecognized tier value', () => {
+    expect(clampContextTier('turbo', ['default', 'long_context'])).toBe('default');
   });
 });

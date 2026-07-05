@@ -764,6 +764,14 @@ export class SquadClient {
         billing: m.billing,
         supportedReasoningEfforts: m.supportedReasoningEfforts,
         defaultReasoningEffort: m.defaultReasoningEffort,
+        // Infer context-tier support from billing: models that publish a
+        // long-context token-price schedule support the 1M window. The
+        // runtime does not expose supported tiers directly, so presence of
+        // `billing.tokenPrices.longContext` is the authoritative signal.
+        supportedContextTiers: m.billing?.tokenPrices?.longContext
+          ? ["default", "long_context"]
+          : ["default"],
+        defaultContextTier: "default",
       }));
     } catch (error) {
       if (this.shouldAttemptReconnect(error)) {

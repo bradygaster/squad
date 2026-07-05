@@ -11,7 +11,7 @@
 import type { AgentCharter } from '../agents/index.js';
 import type { EventBus } from '../client/event-bus.js';
 import type { SessionPool } from '../client/session-pool.js';
-import { VALID_REASONING_EFFORTS } from '../config/models.js';
+import { VALID_CONTEXT_TIERS, VALID_REASONING_EFFORTS } from '../config/models.js';
 import type { CreateSessionFn, SpawnBackend, SpawnHandle, SpawnRequest } from './spawn-backend.js';
 
 // --- Spawn Configuration ---
@@ -29,6 +29,8 @@ export interface AgentSpawnConfig {
   modelOverride?: string;
   /** Reasoning effort override */
   reasoningEffortOverride?: string;
+  /** Context tier override */
+  contextTierOverride?: string;
 }
 
 // --- Spawn Result ---
@@ -57,6 +59,8 @@ export interface FanOutDependencies {
   resolveModel: (charter: AgentCharter, override?: string) => Promise<string>;
   /** Reasoning effort resolution function (optional for backwards compatibility) */
   resolveReasoningEffort?: (charter: AgentCharter, override?: string) => Promise<string | undefined>;
+  /** Context tier resolution function (optional for backwards compatibility) */
+  resolveContextTier?: (charter: AgentCharter, override?: string) => Promise<string | undefined>;
   /** Session creation function */
   createSession: CreateSessionFn;
   /** Session pool for tracking */
@@ -143,6 +147,16 @@ async function spawnSingle(
       ? rawEffort
       : undefined;
 
+    // Step 2c: Resolve context tier
+    const rawTier = deps.resolveContextTier
+      ? await deps.resolveContextTier(charter, config.contextTierOverride)
+      : config.contextTierOverride || charter.contextTier || undefined;
+    // Validate: only pass through recognized tier values
+    const validTiers = VALID_CONTEXT_TIERS as readonly string[];
+    const contextTier = rawTier && rawTier !== 'auto' && validTiers.includes(rawTier)
+      ? rawTier
+      : undefined;
+
     const initialPrompt = buildInitialPrompt(config);
 
     // Step 3: Create session
@@ -157,6 +171,7 @@ async function spawnSingle(
         name: config.agentName,
         model,
         ...(reasoningEffort ? { reasoningEffort } : {}),
+        ...(contextTier ? { contextTier } : {}),
         background: true,
       };
 
@@ -182,10 +197,10 @@ async function spawnSingle(
           },
           timestamp: new Date(),
         });
-        sessionId = await spawnViaCreateSession(deps, config, model, reasoningEffort, initialPrompt);
+        sessionId = await spawnViaCreateSession(deps, config, model, reasoningEffort, contextTier, initialPrompt);
       }
     } else {
-      sessionId = await spawnViaCreateSession(deps, config, model, reasoningEffort, initialPrompt);
+      sessionId = await spawnViaCreateSession(deps, config, model, reasoningEffort, contextTier, initialPrompt);
     }
 
     // Step 4: Register in session pool
@@ -246,12 +261,14 @@ async function spawnViaCreateSession(
   config: AgentSpawnConfig,
   model: string,
   reasoningEffort: string | undefined,
+  contextTier: string | undefined,
   initialPrompt: string,
 ): Promise<string> {
   const session = await deps.createSession({
     model,
     clientName: `squad-agent-${config.agentName}`,
     ...(reasoningEffort ? { reasoningEffort } : {}),
+    ...(contextTier ? { contextTier } : {}),
   });
 
   await session.sendMessage({

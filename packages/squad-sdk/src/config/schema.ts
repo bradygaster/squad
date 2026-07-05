@@ -31,6 +31,7 @@ export interface AgentConfig {
   charter?: string;
   model?: string;
   reasoningEffort?: string;
+  contextTier?: string;
   tools?: string[];
   status?: 'active' | 'inactive' | 'retired';
 }
@@ -52,9 +53,11 @@ export interface ModelConfig {
   default: string;
   defaultTier: 'premium' | 'standard' | 'fast';
   defaultReasoningEffort?: string;
+  defaultContextTier?: string;
   tiers: Record<string, string[]>;
   agentOverrides?: Record<string, string>;
   agentReasoningEffortOverrides?: Record<string, string>;
+  agentContextTierOverrides?: Record<string, string>;
   taskTypeMapping?: Record<string, string>;
 }
 
