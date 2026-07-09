@@ -186,7 +186,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--command <cmd>${RESET}             Override the agent command (default: copilot)\n`);
     console.log(`Examples:`);
     console.log(`  squad start --tunnel --yolo`);
-    console.log(`  squad start --tunnel --model claude-sonnet-4`);
+    console.log(`  squad start --tunnel --model claude-sonnet-4.6`);
     console.log(`  squad start --tunnel --command "gh copilot"\n`);
   },
 

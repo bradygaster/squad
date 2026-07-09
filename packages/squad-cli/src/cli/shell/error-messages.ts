@@ -80,7 +80,7 @@ export function rateLimitGuidance(opts?: { retryAfter?: number; model?: string }
     recovery: [
       retryStr,
       'Enable economy mode to switch to cheaper models: `squad economy on`',
-      'Or set a different model: add `"defaultModel": "gpt-4.1"` to .squad/config.json',
+      'Or set a different model: add `"defaultModel": "gpt-5-mini"` to .squad/config.json',
     ],
   };
 }

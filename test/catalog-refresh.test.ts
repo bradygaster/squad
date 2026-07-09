@@ -11,18 +11,24 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { globSync } from 'node:fs';
 import { MODEL_CATALOG, DEFAULT_FALLBACK_CHAINS } from '@bradygaster/squad-sdk/config';
 import { MODELS } from '@bradygaster/squad-sdk/runtime/constants';
 
 /**
  * Model IDs verified as NOT picker-reachable via the copilot-cli models API
- * (verified 2026-07-04). Guards against reintroduction into fallback chains.
+ * (verified 2026-07-04). Guards against reintroduction into fallback chains
+ * AND shipped prompt/template assets.
  *
- * NOTE: this list is deliberately NOT a superset of every ID this PR dropped.
- * Live-but-dropped-from-seed IDs (e.g. `claude-opus-4.5`, still GA + priced in
- * GitHub's public catalog, merely superseded in our seed) are intentionally
- * excluded here — they are not "dead" — and are instead covered by the
- * exact-catalog invariant below.
+ * NOTE: `claude-opus-4.5` and `claude-opus-4.6-fast` are classified as
+ * "live-but-dropped-from-seed" for runtime chain purposes (they are still GA
+ * in GitHub's public catalog), so the runtime chain invariants below do NOT
+ * require them to be absent from chains. However, templates steering agent
+ * spawns toward them will behave unpredictably in practice, so they ARE
+ * included here for the template-asset scan that follows.
  */
 const DEAD_MODEL_IDS = [
   'gpt-4.1',
@@ -36,6 +42,7 @@ const DEAD_MODEL_IDS = [
   'gpt-5.2',
   'gpt-5.2-codex',
   'claude-opus-4.6-fast',
+  'claude-opus-4.5',
 ];
 
 /**
@@ -108,5 +115,44 @@ describe('catalog refresh invariants (#1080/#1183)', () => {
     const actual = [...catalogIds].sort();
     const expected = [...EXPECTED_CATALOG_IDS].sort();
     expect(actual).toEqual(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Resolve repo root relative to this test file so globs work regardless of
+// where vitest is invoked from.
+// ---------------------------------------------------------------------------
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+describe('template asset catalog invariants (#1080/#1183)', () => {
+  // Scan canonical sources only — not sync targets — to avoid triple-counting
+  // the same bug across squad-cli/templates, squad-sdk/templates, .squad-templates.
+  const TEMPLATE_GLOBS = [
+    '.squad-templates/**/*.md',
+    '.squad/skills/**/*.md',
+    '.copilot/skills/**/*.md',
+  ];
+
+  const templateFiles = TEMPLATE_GLOBS.flatMap(g =>
+    globSync(g, { cwd: REPO_ROOT })
+  );
+
+  it('no shipped template asset references a dead model ID', () => {
+    const violations: string[] = [];
+    for (const relPath of templateFiles) {
+      const content = readFileSync(join(REPO_ROOT, relPath), 'utf-8');
+      for (const deadId of DEAD_MODEL_IDS) {
+        // Escape regex metacharacters in the ID (e.g. the dots in "gpt-4.1"),
+        // then use a negative lookahead (?![-.\d]) so that "gpt-5" does not
+        // match inside "gpt-5-mini" or "gpt-5.4", and "claude-sonnet-4" does
+        // not match inside "claude-sonnet-4.5".
+        const escaped = deadId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = new RegExp(escaped + '(?![-\\.\\d])', 'g');
+        if (pattern.test(content)) {
+          violations.push(`${relPath}: contains dead ID "${deadId}"`);
+        }
+      }
+    }
+    expect(violations, `Dead model IDs found in shipped template assets`).toEqual([]);
   });
 });

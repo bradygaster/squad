@@ -117,9 +117,9 @@ After resolving the model and including it in the spawn template, this skill is 
 If a model is unavailable (rate limit, plan restriction), retry within the same tier:
 
 ```
-Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.6
-Standard: claude-sonnet-4.6 → gpt-5.4 → claude-sonnet-4.5 → gpt-5.3-codex → claude-sonnet-4
-Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini
+Premium:  claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
+Standard: claude-sonnet-4.6 → gpt-5.4 → claude-sonnet-4.5 → gpt-5.3-codex → (omit model param)
+Fast:     claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
 ```
 
 **Never fall UP in tier.** A fast task won't land on a premium model via fallback.

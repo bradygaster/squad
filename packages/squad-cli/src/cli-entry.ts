@@ -220,7 +220,7 @@ async function main(): Promise<void> {
     console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>]`);
     console.log(`                    [copilot flags...]`);
     console.log(`             Examples: start --tunnel --yolo`);
-    console.log(`                       start --tunnel --model claude-sonnet-4`);
+    console.log(`                       start --tunnel --model claude-sonnet-4.6`);
     console.log(`                       start --tunnel --command "gh copilot"`);
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
