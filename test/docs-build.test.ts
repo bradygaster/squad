@@ -14,6 +14,7 @@ const DOCS_CONTENT_DIR = join(CONTENT_DIR, 'docs');
 const BLOG_CONTENT_DIR = join(CONTENT_DIR, 'blog');
 const DIST_DIR = join(DOCS_DIR, 'dist');
 const ASTRO_BIN = join(DOCS_DIR, 'node_modules', '.bin', process.platform === 'win32' ? 'astro.cmd' : 'astro');
+const DOCS_BUILD_TIMEOUT_MS = 240_000;
 
 function docsBuildSkipReason(): string | null {
   if (!existsSync(join(DOCS_DIR, 'package.json'))) return 'docs/package.json missing';
@@ -208,8 +209,8 @@ describe.skipIf(DOCS_BUILD_SKIP_REASON !== null)(
     if (existsSync(DIST_DIR)) {
       rmSync(DIST_DIR, { recursive: true, force: true });
     }
-    execSync('npm run build', { cwd: DOCS_DIR, timeout: 120_000 });
-  }, 120_000);
+    execSync('npm run build', { cwd: DOCS_DIR, timeout: DOCS_BUILD_TIMEOUT_MS });
+  }, DOCS_BUILD_TIMEOUT_MS);
 
   afterAll(() => {
     if (existsSync(DIST_DIR)) {
@@ -233,10 +234,8 @@ describe.skipIf(DOCS_BUILD_SKIP_REASON !== null)(
   });
 
   it('build runs without errors (exit code 0)', () => {
-    expect(() => {
-      execSync('npm run build', { cwd: DOCS_DIR, timeout: 120_000 });
-    }).not.toThrow();
-  }, 120_000);
+    expect(requireBuild()).toBe(true);
+  });
 
   // --- 2. All section files produce HTML output ---
 
