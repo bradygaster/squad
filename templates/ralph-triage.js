@@ -414,13 +414,31 @@ function getOwnerRepoFromGit() {
   return parseOwnerRepoFromRemote(remoteUrl);
 }
 
+/**
+ * Resolve the GitHub REST API base URL from the environment, so triage
+ * works on GitHub Enterprise as well as github.com.
+ *
+ * Order: GITHUB_API_URL (set by Actions on both github.com and GHE runners)
+ * > GITHUB_SERVER_URL + /api/v3 (GHE without an explicit API URL)
+ * > https://api.github.com (fallback for local/non-Actions runs).
+ */
+function resolveGithubApiBase() {
+  const apiUrl = process.env.GITHUB_API_URL;
+  if (apiUrl) return apiUrl.replace(/\/+$/, '');
+
+  const serverUrl = process.env.GITHUB_SERVER_URL;
+  if (serverUrl) return `${serverUrl.replace(/\/+$/, '')}/api/v3`;
+
+  return 'https://api.github.com';
+}
+
 function githubRequestJson(pathname, token) {
   return new Promise((resolve, reject) => {
+    const requestUrl = new URL(`${resolveGithubApiBase()}${pathname}`);
     const req = https.request(
+      requestUrl,
       {
-        hostname: 'api.github.com',
         method: 'GET',
-        path: pathname,
         headers: {
           Accept: 'application/vnd.github+json',
           Authorization: `Bearer ${token}`,
@@ -539,7 +557,11 @@ async function main() {
   fs.writeFileSync(outputPath, `${JSON.stringify(results, null, 2)}\n`, 'utf8');
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { resolveGithubApiBase };

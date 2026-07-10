@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, it, expect, expectTypeOf } from 'vitest';
+import { createRequire } from 'node:module';
+import { describe, it, expect, expectTypeOf, afterEach } from 'vitest';
 import {
   parseRoster,
   parseRoutingRules,
@@ -375,6 +376,44 @@ describe('triage parity', () => {
     const ruleIssue = { number: 2, title: 'Fix event loop issue', body: '', labels: [] };
     const result2 = triageIssue(ruleIssue, rules, modules, roster);
     expect(result2?.source).toBe('routing-rule');
+  });
+});
+
+describe('resolveGithubApiBase() — GitHub Enterprise support', () => {
+  const require = createRequire(import.meta.url);
+  const { resolveGithubApiBase } = require('../templates/ralph-triage.js');
+
+  const originalApiUrl = process.env.GITHUB_API_URL;
+  const originalServerUrl = process.env.GITHUB_SERVER_URL;
+
+  afterEach(() => {
+    if (originalApiUrl === undefined) delete process.env.GITHUB_API_URL;
+    else process.env.GITHUB_API_URL = originalApiUrl;
+    if (originalServerUrl === undefined) delete process.env.GITHUB_SERVER_URL;
+    else process.env.GITHUB_SERVER_URL = originalServerUrl;
+  });
+
+  it('uses GITHUB_API_URL when set (GHE runners set this to <host>/api/v3)', () => {
+    process.env.GITHUB_API_URL = 'https://ghe.example.com/api/v3';
+    delete process.env.GITHUB_SERVER_URL;
+    expect(resolveGithubApiBase()).toBe('https://ghe.example.com/api/v3');
+  });
+
+  it('strips a trailing slash from GITHUB_API_URL', () => {
+    process.env.GITHUB_API_URL = 'https://api.github.com/';
+    expect(resolveGithubApiBase()).toBe('https://api.github.com');
+  });
+
+  it('falls back to GITHUB_SERVER_URL + /api/v3 when GITHUB_API_URL is unset', () => {
+    delete process.env.GITHUB_API_URL;
+    process.env.GITHUB_SERVER_URL = 'https://ghe.example.com';
+    expect(resolveGithubApiBase()).toBe('https://ghe.example.com/api/v3');
+  });
+
+  it('falls back to https://api.github.com when neither env var is set', () => {
+    delete process.env.GITHUB_API_URL;
+    delete process.env.GITHUB_SERVER_URL;
+    expect(resolveGithubApiBase()).toBe('https://api.github.com');
   });
 });
 
