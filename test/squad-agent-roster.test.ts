@@ -118,3 +118,103 @@ describe('coordinator-init-mode/SKILL.md — always-on roster instructions (post
     });
   }
 });
+
+/**
+ * Regression for bradygaster/squad#1454 — the Phase 1 ask_user confirmation
+ * must be self-contained. Some clients render the blocking input request
+ * without the preceding assistant text, so a bare "Look right?" leaves the
+ * user unable to see which team they are confirming.
+ *
+ * Counterpart of the shell-path fix in #1134 / #1107 for the Copilot
+ * custom-agent Init Mode path governed by this satellite skill.
+ */
+describe('coordinator-init-mode/SKILL.md — self-contained confirmation (#1454)', () => {
+  for (const rel of INIT_MODE_SKILL_TARGETS) {
+    describe(rel, () => {
+      const fullPath = path.join(REPO_ROOT, rel);
+      if (!existsSync(fullPath)) {
+        it.skip(`(file does not exist in this checkout: ${rel})`, () => {});
+        return;
+      }
+      const content = readFileSync(fullPath, 'utf-8');
+
+      // Narrow to Phase 1 confirmation through the STOP gate so assertions
+      // do not accidentally match Phase 2 / unrelated prose.
+      const phase1Confirm = (() => {
+        const step5 = content.split(/\n5\.\s+Use the `ask_user` tool/)[1] ?? '';
+        return step5.split(/\n##\s+Phase 2:/)[0] ?? '';
+      })();
+
+      it('Phase 1 confirmation still invokes ask_user', () => {
+        expect(content).toMatch(/5\.\s+Use the `ask_user` tool to confirm the roster/);
+        expect(phase1Confirm.length, 'could not extract Phase 1 confirmation section').toBeGreaterThan(0);
+      });
+
+      it('requires the ask_user question to be self-contained', () => {
+        expect(phase1Confirm).toMatch(/self-contained/i);
+        expect(phase1Confirm).toMatch(
+          /without the assistant text that preceded it|without.*preceding.*assistant/i,
+        );
+      });
+
+      it('requires the selected universe in the confirmation question', () => {
+        expect(phase1Confirm).toMatch(/universe/i);
+        expect(phase1Confirm).toMatch(/ActualUniverse|\{ActualUniverse\}|selected universe/i);
+      });
+
+      it('requires reusing every exact step-4 roster line (names, roles, scopes)', () => {
+        expect(phase1Confirm).toMatch(/every roster line|every proposed member/i);
+        expect(phase1Confirm).toMatch(/reuse|copy.*(?:exact|in full).*step 4|copied in full/i);
+        expect(phase1Confirm).toMatch(/cast name|emoji/i);
+        expect(phase1Confirm).toMatch(/role/i);
+        expect(phase1Confirm).toMatch(/responsibility|scope/i);
+      });
+
+      it('requires all four always-on built-ins in the confirmation roster', () => {
+        for (const builtin of ['Scribe', 'Ralph', 'Rai', 'Fact Checker']) {
+          expect(phase1Confirm, `${builtin} must appear in the confirmation question template`).toContain(
+            builtin,
+          );
+        }
+      });
+
+      it('forbids ellipsis, truncation, omission, and regenerating a divergent roster', () => {
+        expect(phase1Confirm).toMatch(
+          /do not.*(?:regenerate|summarize|truncate|omit|ellipsis)|never.*(?:ellipsis|truncate|omit|summarize)/i,
+        );
+
+        // Extract only the illustrative question fenced block so unrelated
+        // prose elsewhere in the skill may still use "..." later.
+        const questionTemplate = (() => {
+          const fenceMatch = phase1Confirm.match(/```[^\n]*\n([\s\S]*?)^\s*```/m);
+          return fenceMatch?.[1] ?? '';
+        })();
+        expect(questionTemplate.length, 'could not extract illustrative question block').toBeGreaterThan(0);
+        expect(questionTemplate).not.toMatch(/^\s*\.\.\.\s*$/m);
+        expect(questionTemplate).toMatch(/Every roster line from step 4/i);
+      });
+
+      it('explicitly forbids a bare Look right? and context-dependent confirmation', () => {
+        expect(phase1Confirm).toMatch(/Never use a bare ["']Look right\?["']/i);
+        expect(phase1Confirm).toMatch(
+          /never rely on preceding assistant output/i,
+        );
+      });
+
+      it('preserves confirmation choices and the Phase 1 STOP gate', () => {
+        expect(phase1Confirm).toMatch(/Yes,\s*hire this team/);
+        expect(phase1Confirm).toMatch(/Add someone/);
+        expect(phase1Confirm).toMatch(/Change a role/);
+        expect(phase1Confirm).toMatch(/STOP/);
+        expect(phase1Confirm).toMatch(/Do NOT proceed to Phase 2/i);
+        expect(phase1Confirm).toMatch(/Do NOT create any files/i);
+      });
+
+      it('keeps Phase 2 gated on affirmative confirmation', () => {
+        const phase2 = content.split(/\n##\s+Phase 2:/)[1] ?? '';
+        expect(phase2).toMatch(/Trigger:.*confirmation|affirmative/i);
+        expect(phase2).toMatch(/Do NOT enter Phase 2 until the user confirms/i);
+      });
+    });
+  }
+});
