@@ -356,7 +356,7 @@ describe('squad doctor', () => {
     await writeFile(join(squadDir, 'config.json'), JSON.stringify({ stateBackend: 'two-layer' }));
     const hooksDir = join(TEST_ROOT, '.git', 'hooks');
     await mkdir(hooksDir, { recursive: true });
-    for (const hookName of ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout']) {
+    for (const hookName of ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout', 'pre-commit', 'post-commit']) {
       await writeFile(
         join(hooksDir, hookName),
         `#!/bin/sh\n# --- squad-sync-hook ---\n# squad sync hook\n`,
@@ -366,6 +366,30 @@ describe('squad doctor', () => {
     const result = checkGitSyncHooks(TEST_ROOT, squadDir);
     expect(result?.status).toBe('pass');
     expect(result?.message).toContain('two-layer');
+  });
+
+  it('reports FAIL when stateBackend=two-layer has sync hooks but no pre-commit/post-commit (#1190)', async () => {
+    const squadDir = join(TEST_ROOT, '.squad');
+    await mkdir(squadDir, { recursive: true });
+    execFileSync('git', ['init', '--quiet', '-b', 'main'], { cwd: TEST_ROOT });
+    await writeFile(join(squadDir, 'config.json'), JSON.stringify({ stateBackend: 'two-layer' }));
+    const hooksDir = join(TEST_ROOT, '.git', 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    // The #1185 upgrade path installed only the four sync hooks — the commit
+    // hooks that actually write to the squad-state branch were never installed.
+    for (const hookName of ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout']) {
+      await writeFile(
+        join(hooksDir, hookName),
+        `#!/bin/sh\n# --- squad-sync-hook ---\n# squad sync hook\n`,
+      );
+    }
+
+    const result = checkGitSyncHooks(TEST_ROOT, squadDir);
+    expect(result).toBeDefined();
+    expect(result?.status).toBe('fail');
+    expect(result?.message).toContain('pre-commit');
+    expect(result?.message).toContain('post-commit');
+    expect(result?.message).toContain('squad install-hooks');
   });
 
   it.each(['two-layer', 'orphan', 'git-notes'] as const)('reports PASS when stateBackend=%s has decisions.md on squad-state only', async (stateBackend) => {
@@ -437,7 +461,7 @@ describe('checkGitSyncHooks — git rev-parse --git-dir resolution', () => {
     // Install squad hooks in the actual .git/hooks dir (same as git rev-parse --git-dir → '.git')
     const hooksDir = join(repoDir, '.git', 'hooks');
     await mkdir(hooksDir, { recursive: true });
-    for (const hookName of ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout']) {
+    for (const hookName of ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout', 'pre-commit', 'post-commit']) {
       await writeFile(
         join(hooksDir, hookName),
         `#!/bin/sh\n# --- squad-sync-hook ---\n# squad sync hook\n`,

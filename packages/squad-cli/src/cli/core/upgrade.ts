@@ -6,6 +6,7 @@
 
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { success, warn, info, dim, bold } from './output.js';
 import { fatal } from './errors.js';
@@ -769,6 +770,49 @@ function refreshSquadTemplatesDir(dest: string, templatesDir: string): void {
 }
 
 /**
+ * Re-run the ESM import patcher against the project's own node_modules (#1190).
+ *
+ * npm runs postinstall with cwd inside the installed package dir, so a global
+ * `npm install -g` only ever patches the global copy — the consumer repo's
+ * node_modules stays unpatched and `squad doctor` keeps failing its
+ * vscode-jsonrpc / copilot-sdk checks there. Loading the patch script and
+ * pointing it at `<dest>/node_modules` closes that gap on every upgrade.
+ *
+ * Returns true when at least one file was patched.
+ */
+export async function ensureEsmImportsPatched(dest: string): Promise<boolean> {
+  // Locate scripts/patch-esm-imports.mjs by walking up from the compiled file,
+  // same approach as getTemplatesDir() — works from dist/cli/core/ and bundles.
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  let scriptPath: string | undefined;
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(dir, 'scripts', 'patch-esm-imports.mjs');
+    if (storage.existsSync(candidate)) {
+      scriptPath = candidate;
+      break;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!scriptPath) return false;
+
+  try {
+    const patcher = await import(pathToFileURL(scriptPath).href) as {
+      patchVscodeJsonrpcExports: (searchRoots?: string[]) => boolean;
+      patchCopilotSdkSessionJs: (searchRoots?: string[]) => boolean;
+    };
+    const roots = [path.join(dest, 'node_modules')];
+    const patchedExports = patcher.patchVscodeJsonrpcExports(roots);
+    const patchedSession = patcher.patchCopilotSdkSessionJs(roots);
+    return patchedExports || patchedSession;
+  } catch (err) {
+    warn(`Could not patch ESM imports in ${path.join(dest, 'node_modules')}: ${err instanceof Error ? err.message : err}`);
+    return false;
+  }
+}
+
+/**
  * Run all ensure* checks and skill/template sync — shared by both code paths
  */
 async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): Promise<void> {
@@ -852,6 +896,13 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
   if (tomb.removed) {
     success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
     filesUpdated.push('.copilot/mcp-config.json (tombstoned)');
+  }
+
+  // #1190: patch ESM imports in the repo-local node_modules — postinstall only
+  // ever runs against the installed package's own directory tree.
+  if (await ensureEsmImportsPatched(dest)) {
+    success('patched ESM imports in repo-local node_modules (vscode-jsonrpc / copilot-sdk, see #449)');
+    filesUpdated.push('node_modules (ESM patch)');
   }
 }
 
