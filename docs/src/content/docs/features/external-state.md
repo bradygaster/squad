@@ -94,13 +94,16 @@ squad externalize
 **What happens:**
 1. Resolves platform-specific global path (e.g., `~/Library/Application Support/squad/projects/my-repo/`)
 2. Moves `.squad/` contents to global path
-3. Creates thin marker file `.squad/config.json` in working tree:
+3. Creates thin marker file `.squad/config.json` in working tree (existing config fields are preserved):
    ```json
    {
+     "version": 1,
+     "teamRoot": ".",
+     "projectKey": "my-repo",
      "stateLocation": "external"
    }
    ```
-4. Adds `.squad/` to `.gitignore` (if not already present)
+4. Adds `.squad/config.json` to `.gitignore` (if not already present) — the marker is machine-specific and must not be committed
 
 **After externalization:**
 - Working tree has only `.squad/config.json` (gitignored marker)
@@ -119,9 +122,9 @@ squad internalize
 
 **What happens:**
 1. Reads marker file to find external state location
-2. Moves state from global directory back to `.squad/`
-3. Removes marker file
-4. Removes `.squad/` from `.gitignore`
+2. Copies state from the global directory back to `.squad/` (the external copy is left in place)
+3. Removes the external-state fields (`stateLocation`, `teamRoot`, `projectKey`) from `.squad/config.json` — the file is deleted when no other settings remain
+4. Leaves `.gitignore` unchanged
 
 **After internalization:**
 - `.squad/` lives in working tree again
@@ -136,19 +139,22 @@ The thin marker file `.squad/config.json` tracks state location:
 
 ```json
 {
+  "version": 1,
+  "teamRoot": ".",
+  "projectKey": "my-repo",
   "stateLocation": "external"
 }
 ```
 
-| Value | Meaning |
+| `stateLocation` | Meaning |
 |-------|---------|
-| `"internal"` | State lives in working tree (`.squad/` in repo) |
+| absent (or no marker file) | State lives in working tree (`.squad/` in repo) |
 | `"external"` | State lives in global directory (platform-specific path) |
 
 **Notes:**
 - Marker file is created by `squad externalize`
 - Marker file is gitignored — not committed to repo
-- Marker file is removed by `squad internalize`
+- `squad internalize` removes the external-state fields from the file (and deletes it when nothing else remains)
 
 ---
 
@@ -210,19 +216,19 @@ No cross-repo state pollution.
 
 ## Git Integration
 
-After externalization, `.squad/` is gitignored. Only the thin marker file exists in the working tree:
+After externalization, only the thin marker file exists in the working tree, and it is gitignored:
 
 ```bash
 $ git status
 On branch feature-branch
-Untracked files:
-  .squad/config.json    # gitignored marker — not committed
+nothing to commit, working tree clean
+# .squad/config.json exists on disk but is gitignored — not committed
 ```
 
 This means:
 - PRs never show squad state changes
 - Branch switches don't affect squad data
-- `git clean -fdx` doesn't delete squad state
+- `git clean -fdx` doesn't delete squad state (it lives outside the repo — though it does remove the gitignored marker, which `squad externalize` can recreate)
 
 ---
 
