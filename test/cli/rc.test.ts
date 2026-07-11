@@ -459,3 +459,72 @@ describe('CLI: rc command', () => {
     });
   });
 });
+
+describe('loadRosterAgents — externalized state (#1398)', () => {
+  const suffix = Math.random().toString(36).slice(2, 10);
+  const ROOT = path.join(os.tmpdir(), `.test-rc-roster-${suffix}`);
+  const EXT_GLOBAL = path.join(os.tmpdir(), `.test-rc-roster-global-${suffix}`);
+  const PROJECT_KEY = `test-rc-ext-${suffix}`;
+  const externalStateDir = path.join(EXT_GLOBAL, 'squad', 'projects', PROJECT_KEY);
+  const origAppData = process.env['APPDATA'];
+  const origXdgConfig = process.env['XDG_CONFIG_HOME'];
+  const ROSTER_MD =
+    '# Team\n\n| Name | Role | Status |\n|------|------|--------|\n| Kovash | Lead | Active |\n| Edie | Dev | Active |\n';
+
+  beforeEach(() => {
+    for (const d of [ROOT, EXT_GLOBAL]) {
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+    fs.mkdirSync(path.join(ROOT, '.squad'), { recursive: true });
+  });
+
+  afterEach(() => {
+    if (origAppData === undefined) delete process.env['APPDATA'];
+    else process.env['APPDATA'] = origAppData;
+    if (origXdgConfig === undefined) delete process.env['XDG_CONFIG_HOME'];
+    else process.env['XDG_CONFIG_HOME'] = origXdgConfig;
+
+    for (const d of [ROOT, EXT_GLOBAL]) {
+      if (fs.existsSync(d)) fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
+
+  it('reads the roster from local .squad when state is not externalized', async () => {
+    const { loadRosterAgents } = await import('@bradygaster/squad-cli/commands/rc');
+    fs.writeFileSync(path.join(ROOT, '.squad', 'team.md'), ROSTER_MD);
+
+    const agents = loadRosterAgents(path.join(ROOT, '.squad'));
+
+    expect(agents).toEqual([
+      { name: 'Kovash', role: 'Lead' },
+      { name: 'Edie', role: 'Dev' },
+    ]);
+  });
+
+  it('follows the stateLocation marker to the external team.md', async () => {
+    const { loadRosterAgents } = await import('@bradygaster/squad-cli/commands/rc');
+
+    // Point resolveGlobalSquadPath() inside EXT_GLOBAL (not the real user dir)
+    if (process.platform === 'win32') {
+      process.env['APPDATA'] = EXT_GLOBAL;
+    } else {
+      process.env['XDG_CONFIG_HOME'] = EXT_GLOBAL;
+    }
+
+    fs.writeFileSync(
+      path.join(ROOT, '.squad', 'config.json'),
+      JSON.stringify({ version: 1, teamRoot: '.', projectKey: PROJECT_KEY, stateLocation: 'external' })
+    );
+    // Stale local roster that must NOT win over the external one
+    fs.writeFileSync(path.join(ROOT, '.squad', 'team.md'), '# Team\n| Stale | Old | Active |\n');
+    fs.mkdirSync(externalStateDir, { recursive: true });
+    fs.writeFileSync(path.join(externalStateDir, 'team.md'), ROSTER_MD);
+
+    const agents = loadRosterAgents(path.join(ROOT, '.squad'));
+
+    expect(agents).toEqual([
+      { name: 'Kovash', role: 'Lead' },
+      { name: 'Edie', role: 'Dev' },
+    ]);
+  });
+});

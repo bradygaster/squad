@@ -8,7 +8,7 @@ import { FSStorageProvider } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 import { success, dim, bold, info, BOLD, RESET, DIM } from '../core/output.js';
-import { detectSquadDir } from '../core/detect-squad-dir.js';
+import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import {
   readTeamMd,
   writeTeamMd,
@@ -27,15 +27,15 @@ export interface CopilotFlags {
  * Run copilot command
  */
 export async function runCopilot(dest: string, flags: CopilotFlags): Promise<void> {
-  const squadDirInfo = detectSquadDir(dest);
-  const squadDir = squadDirInfo.path;
+  // Roster lives in the effective state dir when state is externalized (#1397)
+  const { stateDir } = effectiveSquadDir(dest);
 
-  // Ensure squad directory exists
-  if (!storage.existsSync(squadDir)) {
+  // Ensure squad state exists
+  if (!storage.existsSync(stateDir)) {
     throw new Error('No squad found — run init first, then add the copilot agent.');
   }
 
-  let content = readTeamMd(squadDir);
+  let content = readTeamMd(stateDir);
   const copilotExists = hasCopilot(content);
 
   // Remove copilot
@@ -47,7 +47,7 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
     
     // Remove the Coding Agent section
     content = removeCopilotSection(content);
-    writeTeamMd(squadDir, content);
+    writeTeamMd(stateDir, content);
     success('Removed @copilot from the team roster');
 
     // Remove copilot-instructions.md
@@ -63,7 +63,7 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
   if (copilotExists) {
     if (flags.autoAssign) {
       content = setAutoAssign(content, true);
-      writeTeamMd(squadDir, content);
+      writeTeamMd(stateDir, content);
       success('Enabled @copilot auto-assign');
     } else {
       console.log(`${DIM}@copilot is already on the team${RESET}`);
@@ -73,7 +73,7 @@ export async function runCopilot(dest: string, flags: CopilotFlags): Promise<voi
 
   // Add copilot
   content = insertCopilotSection(content, flags.autoAssign);
-  writeTeamMd(squadDir, content);
+  writeTeamMd(stateDir, content);
   success('Added @copilot (Coding Agent) to team roster');
   
   if (flags.autoAssign) {
