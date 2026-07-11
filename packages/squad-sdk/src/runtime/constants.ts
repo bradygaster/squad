@@ -27,8 +27,8 @@ export const MODELS = {
       'claude-opus-4.6',
       'claude-sonnet-4.6',
     ],
-  // claude-sonnet-4.6 leads as the established default (MODELS.DEFAULT) with proven reliability and
-  // known per-token pricing; claude-sonnet-5 is newer with no tracked pricing yet and is first fallback.
+  // claude-sonnet-4.6 leads as the established default (MODELS.DEFAULT); claude-sonnet-5 was
+  // newly added in this catalog refresh and is promoted to first fallback.
   standard: [
       'claude-sonnet-4.6',
       'claude-sonnet-5',
