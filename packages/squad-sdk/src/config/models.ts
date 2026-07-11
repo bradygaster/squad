@@ -247,6 +247,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
  */
 export const DEFAULT_FALLBACK_CHAINS: Record<ModelTier, ModelId[]> = {
   premium: ['claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6', 'claude-sonnet-4.6'],
+  // claude-sonnet-4.6 leads as the established default (MODELS.DEFAULT) with proven reliability and
+  // known per-token pricing; claude-sonnet-5 is newer with no tracked pricing yet and is first fallback.
   standard: ['claude-sonnet-4.6', 'claude-sonnet-5', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-2.5-pro'],
   fast: ['claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
 };

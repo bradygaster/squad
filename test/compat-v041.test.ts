@@ -632,3 +632,25 @@ describe('Compat v0.4.1: Version Comparison', () => {
     expect(() => parseSemVer('not-a-version')).toThrow();
   });
 });
+
+// ============================================================================
+// 12. Removed model IDs degrade safely through fallback chains
+// ============================================================================
+
+describe('Compat v0.4.1: Removed Model Fallback Degradation', () => {
+  it('getNextFallback for removed "gpt-4.1" resolves to a live catalog model without throwing', () => {
+    const registry = new ModelRegistry();
+    let result: string | null;
+    expect(() => { result = registry.getNextFallback('gpt-4.1', 'standard'); }).not.toThrow();
+    expect(result!).not.toBeNull();
+    expect(isModelAvailable(result!)).toBe(true);
+  });
+
+  it('getNextFallback for removed "claude-sonnet-4" resolves to a live catalog model without throwing', () => {
+    const registry = new ModelRegistry();
+    let result: string | null;
+    expect(() => { result = registry.getNextFallback('claude-sonnet-4', 'standard'); }).not.toThrow();
+    expect(result!).not.toBeNull();
+    expect(isModelAvailable(result!)).toBe(true);
+  });
+});

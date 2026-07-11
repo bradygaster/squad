@@ -695,6 +695,19 @@ describe('Integration: Config validation error paths', () => {
     expect(result.warnings?.some(w => w.includes('Duplicate'))).toBe(true);
   });
 
+  it('validateConfigDetailed warns when defaultModel is not in MODEL_CATALOG', () => {
+    const result = validateConfigDetailed({
+      ...RUNTIME_DEFAULT,
+      models: {
+        ...RUNTIME_DEFAULT.models,
+        defaultModel: 'gpt-4.1',
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors.length).toBe(0);
+    expect(result.warnings?.some(w => w.includes('gpt-4.1') && w.includes('not in the current model catalog'))).toBe(true);
+  });
+
   it('schema validateConfig rejects non-object', () => {
     expect(validateSchemaConfig(null)).toBe(false);
     expect(validateSchemaConfig(42)).toBe(false);
