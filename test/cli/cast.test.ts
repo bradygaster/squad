@@ -150,4 +150,51 @@ describe('squad cast', () => {
     expect(output).toContain('RemoteAgent');
     expect(output).toContain('Session Cast');
   });
+
+  it('discovers agents from the external state dir when state is externalized (#1399)', async () => {
+    const extGlobal = join(TEST_ROOT, 'global');
+    const projectKey = `test-cast-ext-${randomBytes(4).toString('hex')}`;
+    const origAppData = process.env['APPDATA'];
+    const origXdg = process.env['XDG_CONFIG_HOME'];
+    // Point resolveGlobalSquadPath() inside extGlobal (not the real user dir)
+    if (process.platform === 'win32') process.env['APPDATA'] = extGlobal;
+    else process.env['XDG_CONFIG_HOME'] = extGlobal;
+
+    try {
+      // Local repo: marker .squad as `squad externalize` leaves it, plus a
+      // stale local agent that must NOT be discovered
+      const sq = join(TEST_ROOT, '.squad');
+      await mkdir(join(sq, 'agents', 'stale-agent'), { recursive: true });
+      await writeFile(
+        join(sq, 'config.json'),
+        JSON.stringify({ version: 1, teamRoot: '.', projectKey, stateLocation: 'external' }),
+      );
+      await writeFile(
+        join(sq, 'agents', 'stale-agent', 'charter.md'),
+        `## Identity\n\n**Name:** StaleAgent\n**Role:** Leftover\n`,
+      );
+
+      // External state dir: agents live directly under it, no .squad nesting
+      const extAgent = join(extGlobal, 'squad', 'projects', projectKey, 'agents', 'ext-agent');
+      await mkdir(extAgent, { recursive: true });
+      await writeFile(
+        join(extAgent, 'charter.md'),
+        `## Identity\n\n**Name:** ExternalAgent\n**Role:** External Dev\n`,
+      );
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      const { runCast } = await import('@bradygaster/squad-cli/commands/cast');
+      await runCast(TEST_ROOT);
+
+      const output = logSpy.mock.calls.map(c => c.join(' ')).join('\n');
+      expect(output).toContain('ExternalAgent');
+      expect(output).not.toContain('StaleAgent');
+    } finally {
+      if (origAppData === undefined) delete process.env['APPDATA'];
+      else process.env['APPDATA'] = origAppData;
+      if (origXdg === undefined) delete process.env['XDG_CONFIG_HOME'];
+      else process.env['XDG_CONFIG_HOME'] = origXdg;
+    }
+  });
 });
