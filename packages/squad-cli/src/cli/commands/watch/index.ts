@@ -704,7 +704,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     verbose: config.verbose ?? false,
     interval: `${config.interval}m`,
     execute: config.execute ?? false,
-    agentCmd: config.agentCmd ?? '(default: gh copilot)',
+    agentCmd: config.agentCmd ?? '(default: copilot)',
     dispatchMode: config.capabilities['wave-dispatch'] ? 'wave' : 'task',
     maxConcurrent: config.maxConcurrent ?? 1,
   });

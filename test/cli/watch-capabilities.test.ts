@@ -361,6 +361,34 @@ describe('Watch Capabilities', () => {
           expect.any(Function),
         );
       });
+
+      it('tracks and untracks the spawned pid via context.pidTracker', async () => {
+        let exitHandler: (() => void) | undefined;
+        mockExecFile.mockImplementation((...args: unknown[]) => {
+          const cb = findCallback(args);
+          if (cb) cb(null, '', '');
+          return {
+            pid: 4242,
+            on: (event: string, handler: () => void) => {
+              if (event === 'exit') exitHandler = handler;
+            },
+          };
+        });
+        const track = vi.fn();
+        const untrack = vi.fn();
+        const cap = new ExecuteCapability();
+        const ctx = makeContext({
+          pidTracker: { track, untrack },
+          adapter: mockAdapter([{ id: 1, title: 'Fix', tags: ['squad'] }]),
+        });
+
+        await cap.execute(ctx);
+
+        expect(track).toHaveBeenCalledWith(4242, expect.stringContaining('#1'));
+        expect(untrack).not.toHaveBeenCalled();
+        exitHandler?.();
+        expect(untrack).toHaveBeenCalledWith(4242);
+      });
     });
   });
 
