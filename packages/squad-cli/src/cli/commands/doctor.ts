@@ -516,7 +516,9 @@ function checkCopilotCli(): Promise<DoctorCheck> {
 // ── git sync hooks check ─────────────────────────────────────────────
 
 const SQUAD_SYNC_HOOK_MARKER = '# --- squad-sync-hook ---';
-const REQUIRED_SYNC_HOOKS = ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout'] as const;
+// Must match the full set installed by install-hooks.ts: the four sync hooks
+// plus pre-commit/post-commit, which guard and flush two-layer state (#1190).
+const REQUIRED_SYNC_HOOKS = ['pre-push', 'post-merge', 'post-rewrite', 'post-checkout', 'pre-commit', 'post-commit'] as const;
 
 /**
  * Check that squad git sync hooks are installed when the state backend requires them.
