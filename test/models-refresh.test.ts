@@ -86,6 +86,56 @@ const DOCS_YAML_REAL = `# github/docs models-and-pricing.yml (shape)
   output: $2.00
 `;
 
+// gpt-5.6 fixture — mirrors the live docs YAML two-row format (Default + Long context).
+// Asserts that "GPT-5.6 Luna/Sol/Terra" (proper-noun suffixes) join correctly to
+// their hyphenated catalog ids. Bug: DOCS_NAME_TO_ID was missing these entries.
+const DOCS_YAML_GPT56 = `# github/docs models-and-pricing.yml (gpt-5.6 section)
+- model: GPT-5.6 Luna
+  provider: openai
+  release_status: GA
+  category: Lightweight
+  input: $1.00
+  output: $6.00
+
+- model: GPT-5.6 Luna
+  provider: openai
+  release_status: GA
+  category: Lightweight
+  context_window: Long context
+  input: $1.20
+  output: $7.20
+
+- model: GPT-5.6 Sol
+  provider: openai
+  release_status: GA
+  category: Powerful
+  input: $5.00
+  output: $30.00
+
+- model: GPT-5.6 Sol
+  provider: openai
+  release_status: GA
+  category: Powerful
+  context_window: Long context
+  input: $6.00
+  output: $36.00
+
+- model: GPT-5.6 Terra
+  provider: openai
+  release_status: GA
+  category: Versatile
+  input: $2.50
+  output: $15.00
+
+- model: GPT-5.6 Terra
+  provider: openai
+  release_status: GA
+  category: Versatile
+  context_window: Long context
+  input: $3.00
+  output: $18.00
+`;
+
 describe('parseApiModels', () => {
   it('maps id + category and drops picker-disabled models', () => {
     const models = parseApiModels(API_JSON);
@@ -127,6 +177,32 @@ describe('parseDocsYaml', () => {
     expect(haiku.pricing?.output).toBe('$5.00');
     const sonnet5 = models.find((m) => m.id === 'claude-sonnet-5')!;
     expect(sonnet5.pricing?.input).toBe('$5.00');
+  });
+
+  it('maps GPT-5.6 Luna/Sol/Terra display names to their hyphenated catalog ids with pricing', () => {
+    // Regression: DOCS_NAME_TO_ID was missing these entries; proper-noun suffixes
+    // (Luna/Sol/Terra) were silently skipped, leaving gpt-5.6 models un-enriched.
+    const models = parseDocsYaml(DOCS_YAML_GPT56);
+    const ids = models.map((m) => m.id);
+    expect(ids).toContain('gpt-5.6-luna');
+    expect(ids).toContain('gpt-5.6-sol');
+    expect(ids).toContain('gpt-5.6-terra');
+
+    const luna = models.find((m) => m.id === 'gpt-5.6-luna')!;
+    expect(luna.githubCategory).toBe('lightweight');
+    expect(luna.pricing?.input).toBe('$1.00');
+    expect(luna.pricing?.output).toBe('$6.00');
+    expect(luna.releaseStatus).toBe('GA');
+
+    const sol = models.find((m) => m.id === 'gpt-5.6-sol')!;
+    expect(sol.githubCategory).toBe('powerful');
+    expect(sol.pricing?.input).toBe('$5.00');
+    expect(sol.pricing?.output).toBe('$30.00');
+
+    const terra = models.find((m) => m.id === 'gpt-5.6-terra')!;
+    expect(terra.githubCategory).toBe('versatile');
+    expect(terra.pricing?.input).toBe('$2.50');
+    expect(terra.pricing?.output).toBe('$15.00');
   });
 });
 
