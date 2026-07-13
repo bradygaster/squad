@@ -27,7 +27,7 @@ Check these layers in order — first match wins:
 | Writing code (implementation, refactoring, test code, bug fixes) | `claude-sonnet-4.6` | Standard | Quality and accuracy matter for code. Use standard tier. |
 | Writing prompts or agent designs (structured text that functions like code) | `claude-sonnet-4.6` | Standard | Prompts are executable — treat like code. |
 | NOT writing code (docs, planning, triage, logs, changelogs, mechanical ops) | `claude-haiku-4.5` | Fast | Cost first. Haiku handles non-code tasks. |
-| Visual/design work requiring image analysis | `claude-opus-4.6` | Premium | Vision capability required. Overrides cost rule. |
+| Visual/design work requiring image analysis | `claude-opus-4.8` | Premium | Vision capability required. Overrides cost rule. |
 
 **Role-to-model mapping** (applying cost-first principle):
 
@@ -38,7 +38,7 @@ Check these layers in order — first match wins:
 | Lead / Architect | auto (per-task) | Mixed: code review needs quality, planning needs cost | Architecture proposals → premium; triage/planning → haiku |
 | Prompt Engineer | auto (per-task) | Mixed: prompt design is like code, research is not | Prompt architecture → sonnet; research/analysis → haiku |
 | Copilot SDK Expert | `claude-sonnet-4.6` | Technical analysis that often touches code | Pure research → `claude-haiku-4.5` |
-| Designer / Visual | `claude-opus-4.6` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
+| Designer / Visual | `claude-opus-4.8` | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
 | DevRel / Writer | `claude-haiku-4.5` | Docs and writing — not code | — |
 | Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops — cheapest possible | — (never bump Scribe) |
 | Git / Release | `claude-haiku-4.5` | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
@@ -56,8 +56,8 @@ Check these layers in order — first match wins:
 If a spawn fails because the selected model is unavailable (plan restriction, org policy, rate limit, deprecation, or any other reason), silently retry with the next model in the chain. Do NOT tell the user about fallback attempts. Maximum 3 retries before jumping to the nuclear fallback.
 
 ```
-Premium:  claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
-Standard: claude-sonnet-4.6 → gpt-5.4 → claude-sonnet-4.5 → gpt-5.3-codex → (omit model param)
+Premium:  claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
+Standard: claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.6-sol → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → (omit model param)
 Fast:     claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
 ```
 
@@ -90,10 +90,10 @@ If you've exhausted the fallback chain and reached nuclear fallback, omit the `m
 When spawning, include the model in your acknowledgment:
 
 ```
-🔧 Fenster (claude-sonnet-4.6) — refactoring auth module
-🎨 Redfoot (claude-opus-4.6 · vision) — designing color system
+🔧 Fenster (claude-sonnet-5) — refactoring auth module
+🎨 Redfoot (claude-opus-4.8 · vision) — designing color system
 📋 Scribe (claude-haiku-4.5 · fast) — logging session
-⚡ Keaton (claude-opus-4.6 · bumped for architecture) — reviewing proposal
+⚡ Keaton (claude-opus-4.8 · bumped for architecture) — reviewing proposal
 📝 McManus (claude-haiku-4.5 · fast) — updating docs
 ```
 
@@ -101,8 +101,8 @@ Include tier annotation only when the model was bumped or a specialist was chose
 
 ### Valid Models
 
-**Premium:** `claude-opus-4.6`, `claude-opus-4.7`, `claude-opus-4.8`
-**Standard:** `claude-sonnet-4.6`, `claude-sonnet-4.5`, `claude-sonnet-5`, `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.5`, `gemini-2.5-pro`
+**Premium:** `claude-opus-4.8`, `claude-opus-4.7`, `claude-opus-4.6`
+**Standard:** `claude-sonnet-5`, `claude-sonnet-4.6`, `claude-sonnet-4.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.3-codex`, `gemini-2.5-pro`
 **Fast/Cheap:** `claude-haiku-4.5`, `gpt-5.4-mini`, `gpt-5-mini`
 
 ## Examples

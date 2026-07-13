@@ -19,7 +19,7 @@ export const MODELS = {
   /** Default tier for the model-selector Layer 4 fallback */
   SELECTOR_DEFAULT_TIER: 'fast',
 
-  /** Fallback chains by tier — ordered by preference */
+  /** Fallback chains by tier — ordered by preference (newest per series first) */
   FALLBACK_CHAINS: {
     premium: [
       'claude-opus-4.8',
@@ -27,11 +27,12 @@ export const MODELS = {
       'claude-opus-4.6',
       'claude-sonnet-4.6',
     ],
-  // claude-sonnet-4.6 leads as the established default (MODELS.DEFAULT); claude-sonnet-5 was
-  // newly added in this catalog refresh and is promoted to first fallback.
-  standard: [
-      'claude-sonnet-4.6',
+    standard: [
       'claude-sonnet-5',
+      'claude-sonnet-4.6',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
       'gpt-5.4',
       'gpt-5.3-codex',
       'claude-sonnet-4.5',
