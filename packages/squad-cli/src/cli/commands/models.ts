@@ -100,20 +100,29 @@ export function parseApiModels(json: unknown): DiscoveredModel[] {
 }
 
 /**
- * Derive the catalog id from a docs YAML display name deterministically.
+ * Derive the candidate catalog id from a docs YAML display name deterministically.
  * Steps:
- *   1. Strip markdown footnote markers `[^...]`
- *   2. Strip trailing parentheticals `(...)`
+ *   1. Strip markdown footnote markers `[^...]` — these are promo markers on the SAME model
+ *   2. Strip literal `(` and `)` chars but KEEP the words inside — parenthetical qualifiers
+ *      denote a DIFFERENT SKU (e.g. fast-mode, preview), so they must NOT collapse to the
+ *      base model id. The extra words produce a longer, non-catalog-matching id instead.
  *   3. Lowercase and trim
  *   4. Collapse any run of whitespace to a single hyphen
  *
- * Examples: "GPT-5.6 Luna"→"gpt-5.6-luna", "Claude Sonnet 5[^promo]"→"claude-sonnet-5",
- * "Claude Opus 4.8 (fast mode) (preview)"→"claude-opus-4.8", "Gemini 2.5 Pro"→"gemini-2.5-pro".
+ * Examples:
+ *   "GPT-5.6 Luna"                       → "gpt-5.6-luna"              (matches catalog)
+ *   "Claude Sonnet 5[^sonnet-5-promo]"   → "claude-sonnet-5"           (footnote stripped, matches)
+ *   "Claude Opus 4.8"                    → "claude-opus-4.8"           (matches catalog → $5/$25)
+ *   "Claude Opus 4.8 (fast mode) (prev)" → "claude-opus-4.8-fast-mode-prev"  (ignored — not in catalog)
+ *   "Gemini 2.5 Pro"                     → "gemini-2.5-pro"            (matches catalog)
  */
 export function normalizeDisplayName(name: string): string {
   return name
-    .replace(/\[\^[^\]]*\]/g, '')   // strip footnote markers
-    .replace(/\s*\([^)]*\)/g, '')   // strip parentheticals
+    .replace(/\[\^[^\]]*\]/g, '')   // strip footnote markers [^...] (same promo, correct id)
+    .replace(/[()]/g, '')            // strip ( ) chars but KEEP words inside — parenthetical
+                                     // qualifiers (e.g. "fast mode") become part of the id
+                                     // so "Opus 4.8 (fast mode)" ≠ "Opus 4.8" and won't
+                                     // collide with the base model's pricing row
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '-');          // spaces → hyphens

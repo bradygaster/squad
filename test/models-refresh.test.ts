@@ -155,13 +155,68 @@ describe('normalizeDisplayName', () => {
     expect(normalizeDisplayName('GPT-5.4[^note]')).toBe('gpt-5.4');
   });
 
-  it('strips trailing parentheticals before normalizing', () => {
-    expect(normalizeDisplayName('Claude Opus 4.8 (fast mode) (preview)')).toBe('claude-opus-4.8');
-    expect(normalizeDisplayName('GPT-5 mini (legacy)')).toBe('gpt-5-mini');
+  it('keeps parenthetical words as hyphenated tokens so different SKUs get distinct ids', () => {
+    // Parenthetical qualifier denotes a DIFFERENT product SKU — it must NOT collapse to the
+    // base model id. "Claude Opus 4.8 (fast mode) (preview)" and "Claude Opus 4.8" are
+    // different rows in the docs YAML; stripping the parenthetical would cause the fast-mode
+    // pricing ($10/$50) to overwrite the real model pricing ($5/$25) via last-wins in the Map.
+    // Fix: strip `(` and `)` chars but KEEP the words, producing a longer non-matching id.
+    expect(normalizeDisplayName('Claude Opus 4.8 (fast mode) (preview)')).toBe('claude-opus-4.8-fast-mode-preview');
+    expect(normalizeDisplayName('GPT-5 mini (legacy)')).toBe('gpt-5-mini-legacy');
+    // Base model (no parenthetical) still normalizes cleanly to the catalog id
+    expect(normalizeDisplayName('Claude Opus 4.8')).toBe('claude-opus-4.8');
   });
 
   it('collapses multiple spaces to a single hyphen', () => {
     expect(normalizeDisplayName('Claude  Sonnet  4.6')).toBe('claude-sonnet-4.6');
+  });
+});
+
+describe('parseDocsYaml — parenthetical SKU collision protection', () => {
+  // Regression guard: the docs YAML has "Claude Opus 4.8" ($5/$25) AND
+  // "Claude Opus 4.8 (fast mode) (preview)" ($10/$50) as separate rows.
+  // Both used to normalize to "claude-opus-4.8" (last-wins → wrong price).
+  // Now only the base row matches the catalog id; the fast-mode row is harmlessly ignored.
+  const OPUS_COLLISION_YAML = `# two rows — only the base one should enrich claude-opus-4.8
+- model: Claude Opus 4.8
+  provider: anthropic
+  release_status: GA
+  category: Powerful
+  input: $5.00
+  output: $25.00
+
+- model: Claude Opus 4.8 (fast mode) (preview)
+  provider: anthropic
+  release_status: Public preview
+  category: Powerful
+  input: $10.00
+  output: $50.00
+`;
+
+  it('base "Claude Opus 4.8" row wins; fast-mode row is harmlessly ignored (non-catalog id)', () => {
+    const models = parseDocsYaml(OPUS_COLLISION_YAML);
+    // Base row normalizes to catalog id "claude-opus-4.8"
+    const base = models.find((m) => m.id === 'claude-opus-4.8');
+    expect(base).toBeDefined();
+    expect(base!.pricing?.input).toBe('$5.00');
+    expect(base!.pricing?.output).toBe('$25.00');
+    // Fast-mode row normalizes to "claude-opus-4.8-fast-mode-preview" — not a catalog id
+    const fastMode = models.find((m) => m.id === 'claude-opus-4.8-fast-mode-preview');
+    expect(fastMode).toBeDefined(); // present in parsed output...
+    // ...but enrichWithPricing ignores it because it's not in the API/seed catalog
+  });
+
+  it('enrichWithPricing: fast-mode row is filtered out during join (not a catalog id)', () => {
+    const apiModels = [
+      { id: 'claude-opus-4.8', githubCategory: 'powerful' as const },
+    ];
+    const docsModels = parseDocsYaml(OPUS_COLLISION_YAML);
+    const merged = enrichWithPricing(apiModels, docsModels);
+    const opus = merged.find((m) => m.id === 'claude-opus-4.8')!;
+    expect(opus.pricing?.input).toBe('$5.00');   // base price, not fast-mode
+    expect(opus.pricing?.output).toBe('$25.00');
+    // No fast-mode SKU injected into the enriched set
+    expect(merged.find((m) => m.id === 'claude-opus-4.8-fast-mode-preview')).toBeUndefined();
   });
 });
 
