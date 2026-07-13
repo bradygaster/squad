@@ -430,6 +430,79 @@ describe('refreshModelCatalog — seed-only degradation', () => {
   });
 });
 
+describe('parseDocsYaml — Default-tier row selection (Comment 1 fix)', () => {
+  // The docs YAML has two rows per model: "Default" (≤threshold) and "Long context" (>threshold).
+  // Only the Default row should be used for pricing — the Long context row is a different billing
+  // tier and makes cached prices misleading for typical usage.
+  // RED until parseDocsYaml skips rows with a non-empty `context_window` field.
+  const TWO_ROW_YAML = `# Default row ($10/$45) + Long-context row ($12/$54) for gpt-5.5
+- model: GPT-5.5
+  provider: openai
+  release_status: GA
+  category: Powerful
+  tier: Default
+  input: $10.00
+  output: $45.00
+
+- model: GPT-5.5
+  provider: openai
+  release_status: GA
+  category: Powerful
+  tier: Long context
+  input: $12.00
+  output: $54.00
+`;
+
+  it('skips Long-context rows and emits only the Default-tier pricing entry per model', () => {
+    const models = parseDocsYaml(TWO_ROW_YAML);
+    const entries = models.filter((m) => m.id === 'gpt-5.5');
+    // exactly ONE entry — the Default row
+    expect(entries).toHaveLength(1);
+    expect(entries[0].pricing?.input).toBe('$10.00');
+    expect(entries[0].pricing?.output).toBe('$45.00');
+  });
+
+  it('enrichWithPricing uses Default-tier price (not Long-context) for two-row models', () => {
+    const apiModels = [{ id: 'gpt-5.5', githubCategory: 'powerful' as const }];
+    const docsModels = parseDocsYaml(TWO_ROW_YAML);
+    const merged = enrichWithPricing(apiModels, docsModels);
+    expect(merged[0].pricing?.input).toBe('$10.00');   // Default, not $12.00 Long-context
+    expect(merged[0].pricing?.output).toBe('$45.00');  // Default, not $54.00 Long-context
+  });
+});
+
+describe('refreshModelCatalog — unpricedIds suppression when enrichment fails (Comment 2 fix)', () => {
+  // unpricedIds must NOT fire when docs enrichment itself failed or returned nothing —
+  // that signals a source problem, not genuinely new/unpriced models.
+  // RED until refreshModelCatalog tracks whether enrichment ran.
+  it('unpricedIds is empty when docs fetch throws (no spurious warning)', async () => {
+    const deps: RefreshDeps = {
+      getToken: async () => 'fake-token',
+      fetchApiModels: async () => API_JSON,
+      fetchDocsYaml: async () => { throw new Error('network down during enrichment'); },
+      seed: SEED,
+    };
+    const result = await refreshModelCatalog(deps);
+    expect(result.source).toBe('api');
+    // All models are unpriced but that's because enrichment failed — suppress the warning.
+    expect(result.models.every((m) => m.pricing === undefined)).toBe(true);
+    expect(result.unpricedIds).toEqual([]);
+  });
+
+  it('unpricedIds is empty when docs fetch returns no usable pricing (all models stay unpriced)', async () => {
+    const EMPTY_YAML = '# no model entries\n';
+    const deps: RefreshDeps = {
+      getToken: async () => 'fake-token',
+      fetchApiModels: async () => API_JSON,
+      fetchDocsYaml: async () => EMPTY_YAML,
+      seed: SEED,
+    };
+    const result = await refreshModelCatalog(deps);
+    expect(result.source).toBe('api');
+    expect(result.unpricedIds).toEqual([]);
+  });
+});
+
 describe('refreshModelCatalog — unpricedIds warning (loud unmatched signal)', () => {
   // RED until RefreshResult.unpricedIds exists and is computed in refreshModelCatalog.
   it('lists catalog models present in API response but absent from docs pricing', async () => {

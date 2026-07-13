@@ -149,6 +149,11 @@ export function parseDocsYaml(text: string): DiscoveredModel[] {
   for (const block of blocks) {
     const nameMatch = block.match(/^\s*['"]?(.+?)['"]?\s*$/m);
     if (!nameMatch) continue;
+    // Skip "Long context" threshold rows — only the Default (≤threshold) row
+    // is canonical for pricing; the long-context row is a different billing tier.
+    // The docs YAML marks these rows with `tier: Long context` (or `tier: 'Long context'`).
+    const tier = block.match(/^\s*tier:\s*['"]?(.+?)['"]?\s*$/m)?.[1]?.trim();
+    if (tier && tier.toLowerCase().includes('long context')) continue;
     const displayName = nameMatch[1]!.trim();
     const normalized = normalizeDisplayName(displayName);
     const id = DOCS_NAME_OVERRIDES[normalized] ?? normalized;
@@ -230,11 +235,16 @@ export async function refreshModelCatalog(deps: RefreshDeps): Promise<RefreshRes
   // ALONGSIDE the canonical catalog and enrich by id. Best-effort / fail-open:
   // if the docs fetch or parse throws, keep the API models (without pricing) and
   // keep source: 'api'. Refresh must never hard-fail because enrichment failed.
+  // enrichmentRan tracks whether enrichment produced at least one priced result —
+  // used to distinguish "enrichment failed" from "genuinely new unpriced models".
+  let enrichmentRan = false;
   if (source === 'api') {
     try {
       const yamlText = await deps.fetchDocsYaml();
       const docsModels = parseDocsYaml(yamlText);
-      models = enrichWithPricing(models, docsModels);
+      const enriched = enrichWithPricing(models, docsModels);
+      enrichmentRan = enriched.some((m) => m.pricing != null);
+      models = enriched;
     } catch {
       // swallow — API catalog stands on its own without pricing
     }
@@ -260,7 +270,12 @@ export async function refreshModelCatalog(deps: RefreshDeps): Promise<RefreshRes
     ? { added: [], removed: [] }
     : computeDiff(seedIds, discoveredIds);
 
-  const unpricedIds = models.filter((m) => !m.pricing).map((m) => m.id);
+  // Only emit unpricedIds when enrichment actually ran — if docs fetch/parse failed,
+  // all models would be "unpriced" due to source failure, not because they're genuinely
+  // new. Suppress the warning in that case to avoid misleading output.
+  const unpricedIds = enrichmentRan
+    ? models.filter((m) => !m.pricing).map((m) => m.id)
+    : [];
 
   return { source, models, added, removed, unpricedIds };
 }
