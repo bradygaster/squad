@@ -46,10 +46,9 @@ const DEAD_MODEL_IDS = [
 ];
 
 /**
- * The exact set of CLI-reachable seed model IDs (verified 2026-07-04). A
- * positive invariant: any unexpected reintroduction — including live-but-dropped
- * IDs like `claude-opus-4.5` — fails immediately, which a blocklist alone cannot
- * guarantee.
+ * The exact set of CLI-reachable seed model IDs.
+ * gpt-5.6-sol/terra/luna added 2026-07-13 (env-observed as Standard-tier
+ * reachable via Copilot CLI; tamirdresher follow-up request on PR #1444).
  */
 const EXPECTED_CATALOG_IDS = [
   'claude-haiku-4.5',
@@ -65,6 +64,9 @@ const EXPECTED_CATALOG_IDS = [
   'gpt-5.4',
   'gpt-5.4-mini',
   'gpt-5.5',
+  'gpt-5.6-luna',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
 ];
 
 const CONFIG_CHAINS = DEFAULT_FALLBACK_CHAINS as Record<string, string[]>;
@@ -115,6 +117,47 @@ describe('catalog refresh invariants (#1080/#1183)', () => {
     const actual = [...catalogIds].sort();
     const expected = [...EXPECTED_CATALOG_IDS].sort();
     expect(actual).toEqual(expected);
+  });
+
+  // ── Ordering invariants (tamirdresher PR #1444 follow-up) ──────────────────
+  // Prefer the NEWEST model in each series at [0]. Verified 2026-07-13.
+
+  it('config premium chain[0] is claude-opus-4.8 (newest Opus series)', () => {
+    expect(CONFIG_CHAINS.premium[0]).toBe('claude-opus-4.8');
+  });
+
+  it('config standard chain[0] is claude-sonnet-5 (newest Sonnet series)', () => {
+    expect(CONFIG_CHAINS.standard[0]).toBe('claude-sonnet-5');
+  });
+
+  it('runtime premium chain[0] is claude-opus-4.8 (newest Opus series)', () => {
+    expect(RUNTIME_CHAINS.premium[0]).toBe('claude-opus-4.8');
+  });
+
+  it('runtime standard chain[0] is claude-sonnet-5 (newest Sonnet series)', () => {
+    expect(RUNTIME_CHAINS.standard[0]).toBe('claude-sonnet-5');
+  });
+
+  // ── GPT-5.6 catalog membership (tamirdresher PR #1444 follow-up) ──────────
+
+  it('MODEL_CATALOG contains gpt-5.6-sol', () => {
+    expect(catalogIds.has('gpt-5.6-sol')).toBe(true);
+  });
+
+  it('MODEL_CATALOG contains gpt-5.6-terra', () => {
+    expect(catalogIds.has('gpt-5.6-terra')).toBe(true);
+  });
+
+  it('MODEL_CATALOG contains gpt-5.6-luna', () => {
+    expect(catalogIds.has('gpt-5.6-luna')).toBe(true);
+  });
+
+  it('gpt-5.6-sol appears in config standard fallback chain', () => {
+    expect(CONFIG_CHAINS.standard).toContain('gpt-5.6-sol');
+  });
+
+  it('gpt-5.6-sol appears in runtime standard fallback chain', () => {
+    expect(RUNTIME_CHAINS.standard).toContain('gpt-5.6-sol');
   });
 });
 

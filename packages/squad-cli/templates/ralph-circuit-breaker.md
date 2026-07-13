@@ -1,21 +1,24 @@
 # Ralph Circuit Breaker — Model Rate Limit Fallback
 
 > Classic circuit breaker pattern (Hystrix / Polly / Resilience4j) applied to Copilot model selection.
-> When the preferred model hits rate limits, Ralph automatically degrades to free-tier models, then self-heals.
+> When the preferred model hits rate limits, Ralph automatically degrades to lower-cost models, then self-heals.
 
 ## Problem
 
 When running multiple Ralph instances across repos, Copilot model rate limits cause cascading failures.
-All Ralphs fail simultaneously when the preferred model (e.g., `claude-sonnet-4.6`) hits quota.
+All Ralphs fail simultaneously when the preferred model (e.g., `claude-sonnet-5`) hits quota.
 
-Premium models burn quota fast:
-| Model | Multiplier | Risk |
-|-------|-----------|------|
-| `claude-sonnet-4.6` | 1x | Moderate with many Ralphs |
-| `claude-opus-4.6` | 10x | High |
-| `gpt-5.4` | 50x | Very high |
-| `gpt-5.4-mini` | **0x** | **Free — unlimited** |
-| `gpt-5-mini` | **0x** | **Free — unlimited** |
+Under usage-based billing, all models incur cost — there are no "free" or unlimited models.
+Lightweight-category models have lower per-token cost and are therefore preferred for fallback,
+but they are still billed:
+
+| Model | Category | Cost profile |
+|-------|----------|--------------|
+| `claude-sonnet-5` | versatile | Moderate — standard-tier default |
+| `claude-opus-4.8` | powerful | Higher — reserve for premium work |
+| `gpt-5.4` | powerful | Higher — standard-tier specialist |
+| `gpt-5.4-mini` | lightweight | Lower-cost — preferred fallback |
+| `gpt-5-mini` | lightweight | Lowest-cost — final fallback |
 
 ## Circuit Breaker States
 
@@ -39,7 +42,7 @@ Premium models burn quota fast:
 - On rate limit error → transition to OPEN
 
 ### OPEN (rate limited — fallback active)
-- Fall back through the free-tier model chain:
+- Fall back through the lightweight-category model chain:
   1. `gpt-5.4-mini`
   2. `gpt-5-mini`
 - Start cooldown timer (default: 10 minutes)
@@ -55,7 +58,7 @@ Premium models burn quota fast:
 ```json
 {
   "state": "closed",
-  "preferredModel": "claude-sonnet-4.6",
+  "preferredModel": "claude-sonnet-5",
   "fallbackChain": ["gpt-5.4-mini", "gpt-5-mini"],
   "currentFallbackIndex": 0,
   "cooldownMinutes": 10,
@@ -84,7 +87,7 @@ function Get-CircuitBreakerState {
     if (-not (Test-Path $StateFile)) {
         $default = @{
             state              = "closed"
-            preferredModel     = "claude-sonnet-4.6"
+            preferredModel     = "claude-sonnet-5"
             fallbackChain      = @("gpt-5.4-mini", "gpt-5-mini")
             currentFallbackIndex = 0
             cooldownMinutes    = 10
@@ -291,8 +294,8 @@ Override defaults by editing `.squad/ralph-circuit-breaker.json`:
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `preferredModel` | `claude-sonnet-4.6` | Model to use when circuit is closed |
-| `fallbackChain` | `["gpt-5.4-mini", "gpt-5-mini"]` | Ordered fallback models (all free-tier) |
+| `preferredModel` | `claude-sonnet-5` | Model to use when circuit is closed |
+| `fallbackChain` | `["gpt-5.4-mini", "gpt-5-mini"]` | Ordered fallback models (lightweight-category — lowest cost, still billed) |
 | `cooldownMinutes` | `10` | How long to wait before testing recovery |
 
 ## Metrics

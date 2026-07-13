@@ -173,6 +173,39 @@ export const MODEL_CATALOG: ModelInfo[] = [
     cost: 6,
     speed: 7,
   },
+  // gpt-5.6 family — CLI-observed Standard-tier reachable models (2026-07-13).
+  // Tier: standard (quality axis). githubCategory per live Copilot API (canonical billing axis):
+  //   sol=powerful, terra=versatile, luna=lightweight.
+  {
+    id: 'gpt-5.6-sol',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'powerful',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 6,
+    speed: 7,
+  },
+  {
+    id: 'gpt-5.6-terra',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'versatile',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 5,
+    speed: 8,
+  },
+  {
+    id: 'gpt-5.6-luna',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'lightweight',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 3,
+    speed: 9,
+  },
   {
     id: 'gpt-5.4',
     tier: 'standard',
@@ -244,12 +277,11 @@ export const MODEL_CATALOG: ModelInfo[] = [
 
 /**
  * Default fallback chains per tier — real, CLI-reachable IDs ordered by preference.
+ * Newest model in each series is first (tamirdresher PR #1444 follow-up, 2026-07-13).
  */
 export const DEFAULT_FALLBACK_CHAINS: Record<ModelTier, ModelId[]> = {
   premium: ['claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6', 'claude-sonnet-4.6'],
-  // claude-sonnet-4.6 leads as the established default (MODELS.DEFAULT); claude-sonnet-5 was
-  // newly added in this catalog refresh and is promoted to first fallback.
-  standard: ['claude-sonnet-4.6', 'claude-sonnet-5', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-2.5-pro'],
+  standard: ['claude-sonnet-5', 'claude-sonnet-4.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-2.5-pro'],
   fast: ['claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
 };
 
