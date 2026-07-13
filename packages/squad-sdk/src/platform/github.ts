@@ -147,6 +147,19 @@ export class GitHubAdapter implements PlatformAdapter {
     this.gh(['issue', 'comment', String(workItemId), '--repo', this.repoFlag, '--body', comment]);
   }
 
+  async setAssignee(workItemId: number, assignee: string | undefined): Promise<void> {
+    const args = ['issue', 'edit', String(workItemId), '--repo', this.repoFlag];
+    if (assignee) {
+      args.push('--add-assignee', assignee);
+    } else {
+      // Unassign: remove the current assignee (if any).
+      const wi = await this.getWorkItem(workItemId);
+      if (!wi.assignedTo) return;
+      args.push('--remove-assignee', wi.assignedTo);
+    }
+    this.gh(args);
+  }
+
   async listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]> {
     const args = ['pr', 'list', '--repo', this.repoFlag, '--json', 'number,title,headRefName,baseRefName,state,isDraft,reviewDecision,author,url'];
     if (options.status) args.push('--state', mapStatusToGhState(options.status));

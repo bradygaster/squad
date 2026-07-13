@@ -136,28 +136,20 @@ async function listWatchPullRequests(
 async function editWorkItem(
   adapter: PlatformAdapter,
   id: number,
-  options: { addLabel?: string; removeLabel?: string; addAssignee?: string; removeAssignee?: string },
+  options: { addLabel?: string; removeLabel?: string; addAssignee?: string; removeAssignee?: boolean },
 ): Promise<void> {
   if (options.addLabel) await adapter.addTag(id, options.addLabel);
   if (options.removeLabel) await adapter.removeTag(id, options.removeLabel);
   if (options.addAssignee) {
-    if (adapter.type === 'github') {
-      try {
-        await execFileAsync('gh', ['issue', 'edit', String(id), '--add-assignee', options.addAssignee]);
-      } catch { /* best-effort */ }
-    } else if (adapter.type === 'azure-devops') {
-      const assignee = options.addAssignee === '@me' ? '' : options.addAssignee;
-      if (assignee) {
-        try {
-          execFileSync(azCmd, [
-            'boards', 'work-item', 'update',
-            '--id', String(id),
-            '--fields', `System.AssignedTo=${assignee}`,
-            '--output', 'json',
-          ], { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...azExecOpts });
-        } catch { /* best-effort */ }
-      }
-    }
+    try {
+      await adapter.setAssignee(id, options.addAssignee);
+    } catch { /* best-effort */ }
+  }
+  if (options.removeAssignee) {
+    try {
+      // setAssignee(undefined) unassigns the current assignee on both platforms.
+      await adapter.setAssignee(id, undefined);
+    } catch { /* best-effort */ }
   }
 }
 

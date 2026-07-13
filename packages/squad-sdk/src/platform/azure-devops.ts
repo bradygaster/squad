@@ -341,6 +341,17 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     ]);
   }
 
+  async setAssignee(workItemId: number, assignee: string | undefined): Promise<void> {
+    // ADO has no '@me' token; the az CLI can't resolve current user, so skip it
+    // (matches prior behavior). undefined/empty unassigns; a name assigns.
+    if (assignee === '@me') return;
+    const value = assignee ?? '';
+    this.az([
+      'boards', 'work-item', 'update', '--id', String(workItemId),
+      '--fields', `System.AssignedTo=${value}`, ...this.workItemArgs, '--output', 'json',
+    ]);
+  }
+
   async listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]> {
     const args = [
       'repos', 'pr', 'list',

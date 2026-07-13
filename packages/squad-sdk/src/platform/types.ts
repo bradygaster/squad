@@ -49,6 +49,11 @@ export interface PlatformAdapter {
   addTag(workItemId: number, tag: string): Promise<void>;
   removeTag(workItemId: number, tag: string): Promise<void>;
   addComment(workItemId: number, comment: string): Promise<void>;
+  /**
+   * Assign a work item to a user. Pass undefined/empty to unassign the current assignee.
+   * '@me' assigns the current user on GitHub; the ADO adapter cannot resolve '@me' and skips it (no-op).
+   */
+  setAssignee(workItemId: number, assignee: string | undefined): Promise<void>;
 
   /** Ensure a tag/label exists (creates it if missing). No-op on platforms with auto-created tags. */
   ensureTag?(tag: string, options?: { color?: string; description?: string }): Promise<void>;
