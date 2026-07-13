@@ -27,30 +27,30 @@ describe('MODEL_CATALOG', () => {
     const modelIds = MODEL_CATALOG.map(m => m.id);
     
     expect(modelIds).toContain('claude-opus-4.6');
-    expect(modelIds).toContain('claude-opus-4.6-fast');
-    expect(modelIds).toContain('claude-opus-4.5');
+    expect(modelIds).toContain('claude-opus-4.8');
+    expect(modelIds).toContain('claude-opus-4.7');
   });
 
   it('includes expected standard models', () => {
     const modelIds = MODEL_CATALOG.map(m => m.id);
     
     expect(modelIds).toContain('claude-sonnet-4.5');
-    expect(modelIds).toContain('gpt-5.2-codex');
-    expect(modelIds).toContain('gemini-3-pro-preview');
+    expect(modelIds).toContain('gpt-5.4');
+    expect(modelIds).toContain('gemini-2.5-pro');
   });
 
   it('includes expected fast models', () => {
     const modelIds = MODEL_CATALOG.map(m => m.id);
     
     expect(modelIds).toContain('claude-haiku-4.5');
-    expect(modelIds).toContain('gpt-5.1-codex-mini');
+    expect(modelIds).toContain('gpt-5.4-mini');
     expect(modelIds).toContain('gpt-5-mini');
   });
 
   it('assigns correct providers', () => {
     const claude = MODEL_CATALOG.find(m => m.id === 'claude-sonnet-4.5');
-    const gpt = MODEL_CATALOG.find(m => m.id === 'gpt-5.2-codex');
-    const gemini = MODEL_CATALOG.find(m => m.id === 'gemini-3-pro-preview');
+    const gpt = MODEL_CATALOG.find(m => m.id === 'gpt-5.4');
+    const gemini = MODEL_CATALOG.find(m => m.id === 'gemini-2.5-pro');
     
     expect(claude?.provider).toBe('anthropic');
     expect(gpt?.provider).toBe('openai');
@@ -72,7 +72,7 @@ describe('DEFAULT_FALLBACK_CHAINS', () => {
   });
 
   it('starts premium chain with opus models', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.6');
+    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.8');
   });
 
   it('starts standard chain with sonnet', () => {
@@ -107,7 +107,7 @@ describe('ModelRegistry', () => {
   describe('isModelAvailable', () => {
     it('returns true for catalog models', () => {
       expect(registry.isModelAvailable('claude-opus-4.6')).toBe(true);
-      expect(registry.isModelAvailable('gpt-5.2-codex')).toBe(true);
+      expect(registry.isModelAvailable('gpt-5.4')).toBe(true);
       expect(registry.isModelAvailable('claude-haiku-4.5')).toBe(true);
     });
 
@@ -190,14 +190,14 @@ describe('ModelRegistry', () => {
 
   describe('getNextFallback', () => {
     it('returns next model in chain', () => {
-      const next = registry.getNextFallback('claude-opus-4.6', 'premium');
+      const next = registry.getNextFallback('claude-opus-4.8', 'premium');
       
-      expect(next).toBe('claude-opus-4.6-fast');
+      expect(next).toBe('claude-opus-4.7');
     });
 
     it('skips already attempted models', () => {
-      const attempted = new Set(['claude-opus-4.6-fast', 'claude-opus-4.5']);
-      const next = registry.getNextFallback('claude-opus-4.6', 'premium', attempted);
+      const attempted = new Set(['claude-opus-4.7', 'claude-opus-4.6']);
+      const next = registry.getNextFallback('claude-opus-4.8', 'premium', attempted);
       
       expect(next).not.toBeNull();
       expect(attempted.has(next!)).toBe(false);
@@ -205,7 +205,7 @@ describe('ModelRegistry', () => {
 
     it('returns null when chain exhausted', () => {
       const allModels = new Set(DEFAULT_FALLBACK_CHAINS.premium);
-      const next = registry.getNextFallback('claude-opus-4.6', 'premium', allModels);
+      const next = registry.getNextFallback('claude-opus-4.8', 'premium', allModels);
       
       expect(next).toBeNull();
     });
@@ -241,7 +241,7 @@ describe('ModelRegistry', () => {
       
       expect(ids.length).toBe(MODEL_CATALOG.length);
       expect(ids).toContain('claude-opus-4.6');
-      expect(ids).toContain('gpt-5.2-codex');
+      expect(ids).toContain('gpt-5.4');
       expect(ids).toContain('claude-haiku-4.5');
     });
   });

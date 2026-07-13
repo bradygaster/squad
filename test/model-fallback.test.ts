@@ -47,7 +47,7 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
 
   it('premium chain starts with opus and walks through all premium options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.premium;
-    expect(chain[0]).toBe('claude-opus-4.6');
+    expect(chain[0]).toBe('claude-opus-4.8');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -176,7 +176,7 @@ describe('Provider preference — Claude family preference', () => {
   });
 
   it('prefer GPT: getFallbackChain reorders for OpenAI models', () => {
-    const chain = registry.getFallbackChain('standard', true, 'gpt-5.2-codex');
+    const chain = registry.getFallbackChain('standard', true, 'gpt-5.4');
 
     // First models should be OpenAI
     const firstInfo = registry.getModelInfo(chain[0]!);
@@ -259,9 +259,9 @@ describe('Model fallback — edge cases', () => {
   const registry = new ModelRegistry();
 
   it('getNextFallback with empty attempted set returns second in chain', () => {
-    const next = registry.getNextFallback('claude-opus-4.6', 'premium');
+    const next = registry.getNextFallback('claude-opus-4.8', 'premium');
     // With no attempted set, it should return the next in chain after current
-    expect(next).toBe('claude-opus-4.6-fast');
+    expect(next).toBe('claude-opus-4.7');
   });
 
   it('getNextFallback for unknown model returns null', () => {

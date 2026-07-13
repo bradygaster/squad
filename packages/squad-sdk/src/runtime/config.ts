@@ -12,6 +12,7 @@ import { pathToFileURL } from 'url';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
 import { MODELS } from './constants.js';
 import type { AgentRole } from './constants.js';
+import { MODEL_CATALOG } from '../config/models.js';
 
 const storage = new FSStorageProvider();
 
@@ -600,6 +601,8 @@ export function validateConfigDetailed(config: unknown): ValidationResult {
     
     if (!models.defaultModel || typeof models.defaultModel !== 'string') {
       errors.push('config.models.defaultModel is required and must be a string');
+    } else if (!MODEL_CATALOG.some(m => m.id === models.defaultModel)) {
+      warnings.push(`config.models.defaultModel "${models.defaultModel}" is not in the current model catalog; it will fall back to a default at runtime.`);
     }
     
     if (!models.defaultTier || !['premium', 'standard', 'fast'].includes(models.defaultTier)) {

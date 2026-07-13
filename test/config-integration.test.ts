@@ -695,6 +695,19 @@ describe('Integration: Config validation error paths', () => {
     expect(result.warnings?.some(w => w.includes('Duplicate'))).toBe(true);
   });
 
+  it('validateConfigDetailed warns when defaultModel is not in MODEL_CATALOG', () => {
+    const result = validateConfigDetailed({
+      ...RUNTIME_DEFAULT,
+      models: {
+        ...RUNTIME_DEFAULT.models,
+        defaultModel: 'gpt-4.1',
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors.length).toBe(0);
+    expect(result.warnings?.some(w => w.includes('gpt-4.1') && w.includes('not in the current model catalog'))).toBe(true);
+  });
+
   it('schema validateConfig rejects non-object', () => {
     expect(validateSchemaConfig(null)).toBe(false);
     expect(validateSchemaConfig(42)).toBe(false);
@@ -906,7 +919,7 @@ describe('Integration: Full pipeline — discover → compile → resolve → fi
 
     expect(config.team.name).toBe('Integration Squad');
     expect(config.agents.length).toBe(1);
-    expect(config.models.default).toBe('claude-sonnet-4');
+    expect(config.models.default).toBe('claude-sonnet-4.6');
   });
 });
 
