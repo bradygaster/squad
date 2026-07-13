@@ -174,7 +174,8 @@ export const MODEL_CATALOG: ModelInfo[] = [
     speed: 7,
   },
   // gpt-5.6 family — CLI-observed Standard-tier reachable models (2026-07-13).
-  // Tier: standard (quality axis); githubCategory: powerful (cost axis) — mirrors gpt-5.5.
+  // Tier: standard (quality axis). githubCategory per live Copilot API (canonical billing axis):
+  //   sol=powerful, terra=versatile, luna=lightweight.
   {
     id: 'gpt-5.6-sol',
     tier: 'standard',
@@ -190,20 +191,20 @@ export const MODEL_CATALOG: ModelInfo[] = [
     tier: 'standard',
     provider: 'openai',
     family: 'gpt',
-    githubCategory: 'powerful',
+    githubCategory: 'versatile',
     useCases: ['general purpose', 'code generation', 'analysis'],
-    cost: 6,
-    speed: 7,
+    cost: 5,
+    speed: 8,
   },
   {
     id: 'gpt-5.6-luna',
     tier: 'standard',
     provider: 'openai',
     family: 'gpt',
-    githubCategory: 'powerful',
+    githubCategory: 'lightweight',
     useCases: ['general purpose', 'code generation', 'analysis'],
-    cost: 6,
-    speed: 7,
+    cost: 3,
+    speed: 9,
   },
   {
     id: 'gpt-5.4',
