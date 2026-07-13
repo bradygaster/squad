@@ -57,7 +57,7 @@ If a spawn fails because the selected model is unavailable (plan restriction, or
 
 ```
 Premium:  claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6 → (omit model param)
-Standard: claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.6-sol → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → (omit model param)
+Standard: claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.6-sol → gpt-5.6-terra → gpt-5.6-luna → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-2.5-pro → (omit model param)
 Fast:     claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit model param)
 ```
 
