@@ -339,9 +339,13 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
+      // Chain reordered to prefer newest per series first (PR #1444 follow-up, tamirdresher request).
       expect(result.fallbackChain).toEqual([
-        'claude-sonnet-4.6',
         'claude-sonnet-5',
+        'claude-sonnet-4.6',
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
         'gpt-5.4',
         'gpt-5.3-codex',
         'claude-sonnet-4.5',

@@ -76,7 +76,8 @@ describe('DEFAULT_FALLBACK_CHAINS', () => {
   });
 
   it('starts standard chain with sonnet', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-4.6');
+    // Reordered to prefer newest Sonnet series first (PR #1444 follow-up, tamirdresher request).
+    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-5');
   });
 
   it('starts fast chain with haiku', () => {
