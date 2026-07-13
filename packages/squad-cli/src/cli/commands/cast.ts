@@ -10,7 +10,7 @@
 import * as path from 'node:path';
 import { LocalAgentSource } from '@bradygaster/squad-sdk/config/agent-source';
 import { resolvePersonalAgents, mergeSessionCast } from '@bradygaster/squad-sdk/agents/personal';
-import { resolveSquadPaths } from '@bradygaster/squad-sdk/resolution';
+import { resolveSquadPaths, resolveExternalStateDir } from '@bradygaster/squad-sdk/resolution';
 import { BOLD, RESET, DIM, GREEN, YELLOW } from '../core/output.js';
 import { fatal } from '../core/errors.js';
 
@@ -32,7 +32,17 @@ export async function runCast(cwd: string): Promise<void> {
     paths.mode === 'remote'
       ? paths.teamDir
       : path.resolve(paths.projectDir, '..');
-  const projectSource = new LocalAgentSource(agentBase);
+  // #1399: when state is externalized, agents live at <externalStateDir>/agents
+  // (no .squad nesting), so the base-path probing above can't reach them —
+  // externalize sets teamRoot '.' which lands here as remote mode with a
+  // repo-local teamDir. Hand LocalAgentSource the explicit directory instead.
+  // (resolveExternalStateDir comes from the /resolution subpath on purpose:
+  // importing the sdk root barrel here adds seconds to this module's load.)
+  const externalAgentsDir =
+    paths.config?.stateLocation === 'external' && paths.config.projectKey
+      ? path.join(resolveExternalStateDir(paths.config.projectKey, false), 'agents')
+      : undefined;
+  const projectSource = new LocalAgentSource(agentBase, undefined, undefined, externalAgentsDir);
   const projectAgents = await projectSource.listAgents();
   
   // Discover personal agents

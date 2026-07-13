@@ -171,6 +171,37 @@ describe('Integration: LocalAgentSource discovery', () => {
     expect(manifests).toEqual([]);
   });
 
+  it('uses an explicit agentsDir override instead of probing .squad/agents (#1399)', async () => {
+    const base = fixture('project-external');
+    // Decoy in the probed location — must lose when the override is set
+    const probedDir = join(base, '.squad', 'agents');
+    mkdirSync(probedDir, { recursive: true });
+    setupAgentDir(probedDir, 'decoy', MINIMAL_CHARTER);
+    // External-state layout: agents directly under the state dir, no .squad nesting
+    const externalAgents = join(base, 'external-state', 'agents');
+    mkdirSync(externalAgents, { recursive: true });
+    setupAgentDir(externalAgents, 'fenster', SAMPLE_CHARTER);
+
+    const source = new LocalAgentSource(base, undefined, undefined, externalAgents);
+    const manifests = await source.listAgents();
+
+    expect(manifests.length).toBe(1);
+    expect(manifests[0].name).toBe('Fenster');
+  });
+
+  it('returns empty array when the agentsDir override does not exist', async () => {
+    const base = fixture('project-external-missing');
+    const probedDir = join(base, '.squad', 'agents');
+    mkdirSync(probedDir, { recursive: true });
+    setupAgentDir(probedDir, 'decoy', MINIMAL_CHARTER);
+
+    // Override points at a missing dir — must not fall back to probing
+    const source = new LocalAgentSource(base, undefined, undefined, join(base, 'nope', 'agents'));
+    const manifests = await source.listAgents();
+
+    expect(manifests).toEqual([]);
+  });
+
   it('skips agents with missing charter.md', async () => {
     const base = fixture('project-missing-charter');
     const agentsDir = join(base, '.squad', 'agents');
