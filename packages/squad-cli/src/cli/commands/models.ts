@@ -52,6 +52,8 @@ export interface RefreshResult {
   added: string[];
   /** seed ids absent from the discovered set (candidates to prune) */
   removed: string[];
+  /** discovered models that have no pricing from the docs YAML — visible signal for new/unpriced models */
+  unpricedIds: string[];
 }
 
 /** Injectable side effects (network + auth), so both paths are unit-testable. */
@@ -98,34 +100,39 @@ export function parseApiModels(json: unknown): DiscoveredModel[] {
 }
 
 /**
- * Best-effort display-name → id map for the docs YAML fallback. Unmatched
- * entries are intentionally skipped (the YAML uses human display names, not ids).
+ * Derive the catalog id from a docs YAML display name deterministically.
+ * Steps:
+ *   1. Strip markdown footnote markers `[^...]`
+ *   2. Strip trailing parentheticals `(...)`
+ *   3. Lowercase and trim
+ *   4. Collapse any run of whitespace to a single hyphen
+ *
+ * Examples: "GPT-5.6 Luna"→"gpt-5.6-luna", "Claude Sonnet 5[^promo]"→"claude-sonnet-5",
+ * "Claude Opus 4.8 (fast mode) (preview)"→"claude-opus-4.8", "Gemini 2.5 Pro"→"gemini-2.5-pro".
  */
-export const DOCS_NAME_TO_ID: Record<string, string> = {
-  // Keyed by the LOWERCASED spaced display name exactly as it appears in the
-  // docs `- model:` field. Every id below is present in the 13-model seed
-  // MODEL_CATALOG; ids without a docs display name simply won't get pricing.
-  'gpt-5 mini': 'gpt-5-mini',
-  'gpt-5.4 mini': 'gpt-5.4-mini',
-  'gpt-5.3-codex': 'gpt-5.3-codex',
-  'gpt-5.4': 'gpt-5.4',
-  'gpt-5.5': 'gpt-5.5',
-  'gpt-5.6 luna': 'gpt-5.6-luna',
-  'gpt-5.6 sol': 'gpt-5.6-sol',
-  'gpt-5.6 terra': 'gpt-5.6-terra',
-  'claude haiku 4.5': 'claude-haiku-4.5',
-  'claude sonnet 4.5': 'claude-sonnet-4.5',
-  'claude sonnet 4.6': 'claude-sonnet-4.6',
-  'claude sonnet 5': 'claude-sonnet-5',
-  'claude opus 4.6': 'claude-opus-4.6',
-  'claude opus 4.7': 'claude-opus-4.7',
-  'claude opus 4.8': 'claude-opus-4.8',
-  'gemini 2.5 pro': 'gemini-2.5-pro',
-};
+export function normalizeDisplayName(name: string): string {
+  return name
+    .replace(/\[\^[^\]]*\]/g, '')   // strip footnote markers
+    .replace(/\s*\([^)]*\)/g, '')   // strip parentheticals
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-');          // spaces → hyphens
+}
+
+/**
+ * Escape hatch for docs display names whose normalization cannot derive the
+ * correct catalog id. Keys are the NORMALIZED form (output of normalizeDisplayName).
+ * Add an entry only when normalization produces the wrong id for a specific name;
+ * the canonical approach is zero overrides — algorithmic normalization handles all
+ * current model names without any manual mappings.
+ */
+export const DOCS_NAME_OVERRIDES: Record<string, string> = {};
 
 /**
  * Minimal, tolerant parser for the docs `models-and-pricing.yml` flat list of
- * `- model:` blocks. Avoids adding a YAML dependency; unmatched names skipped.
+ * `- model:` blocks. Avoids adding a YAML dependency; unmatched names are kept
+ * by their normalized id (filtering against the live catalog happens in the caller
+ * via enrichWithPricing or the docs-fallback seed filter).
  */
 export function parseDocsYaml(text: string): DiscoveredModel[] {
   const out: DiscoveredModel[] = [];
@@ -133,13 +140,9 @@ export function parseDocsYaml(text: string): DiscoveredModel[] {
   for (const block of blocks) {
     const nameMatch = block.match(/^\s*['"]?(.+?)['"]?\s*$/m);
     if (!nameMatch) continue;
-    const displayName = nameMatch[1]!
-      .trim()
-      // strip trailing markdown footnote markers, e.g. `Claude Sonnet 5[^sonnet-5-promo]`
-      .replace(/\[\^[^\]]*\]/g, '')
-      .trim();
-    const id = DOCS_NAME_TO_ID[displayName.toLowerCase()];
-    if (!id) continue; // best-effort join — skip unmatched
+    const displayName = nameMatch[1]!.trim();
+    const normalized = normalizeDisplayName(displayName);
+    const id = DOCS_NAME_OVERRIDES[normalized] ?? normalized;
     const category = normalizeCategory(block.match(/^\s*category:\s*(.+)$/m)?.[1]);
     const releaseStatus = block.match(/^\s*release_status:\s*(.+)$/m)?.[1]?.trim();
     const input = block.match(/^\s*input:\s*(.+)$/m)?.[1]?.trim();
@@ -231,7 +234,9 @@ export async function refreshModelCatalog(deps: RefreshDeps): Promise<RefreshRes
   if (source !== 'api') {
     try {
       const yamlText = await deps.fetchDocsYaml();
-      const parsed = parseDocsYaml(yamlText);
+      const seedIdSet = new Set(seedIds);
+      // Filter to seed-known IDs only — extra docs rows (Fable 5, Kimi, etc.) are harmless noise.
+      const parsed = parseDocsYaml(yamlText).filter((m) => seedIdSet.has(m.id));
       if (parsed.length > 0) {
         models = parsed;
         source = 'docs-fallback';
@@ -246,7 +251,9 @@ export async function refreshModelCatalog(deps: RefreshDeps): Promise<RefreshRes
     ? { added: [], removed: [] }
     : computeDiff(seedIds, discoveredIds);
 
-  return { source, models, added, removed };
+  const unpricedIds = models.filter((m) => !m.pricing).map((m) => m.id);
+
+  return { source, models, added, removed, unpricedIds };
 }
 
 // --- Real dependency wiring -------------------------------------------------
@@ -317,6 +324,9 @@ export async function runModels(cwd: string, subArgs: string[]): Promise<void> {
   console.log(`  Discovered: ${result.models.length} model(s)`);
   console.log(`  ${GREEN}Added${RESET}:      ${result.added.length ? result.added.join(', ') : `${DIM}none${RESET}`}`);
   console.log(`  ${YELLOW}Removed${RESET}:    ${result.removed.length ? result.removed.join(', ') : `${DIM}none${RESET}`}`);
+  if (result.unpricedIds.length > 0) {
+    console.log(`  ${YELLOW}⚠ ${result.unpricedIds.length} catalog model(s) have no pricing from docs: ${result.unpricedIds.join(', ')}${RESET}`);
+  }
 
   const cacheDir = resolveCacheDir(cwd);
   const cachePath = join(cacheDir, 'models.json');

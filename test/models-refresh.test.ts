@@ -14,6 +14,7 @@ import {
   parseDocsYaml,
   refreshModelCatalog,
   enrichWithPricing,
+  normalizeDisplayName,
   type RefreshDeps,
 } from '../packages/squad-cli/src/cli/commands/models.js';
 import type { ModelInfo } from '@bradygaster/squad-sdk/config';
@@ -87,8 +88,8 @@ const DOCS_YAML_REAL = `# github/docs models-and-pricing.yml (shape)
 `;
 
 // gpt-5.6 fixture — mirrors the live docs YAML two-row format (Default + Long context).
-// Asserts that "GPT-5.6 Luna/Sol/Terra" (proper-noun suffixes) join correctly to
-// their hyphenated catalog ids. Bug: DOCS_NAME_TO_ID was missing these entries.
+// Asserts that "GPT-5.6 Luna/Sol/Terra" (proper-noun word suffixes) normalize correctly
+// to their hyphenated catalog ids via the algorithmic normalizeDisplayName function.
 const DOCS_YAML_GPT56 = `# github/docs models-and-pricing.yml (gpt-5.6 section)
 - model: GPT-5.6 Luna
   provider: openai
@@ -136,6 +137,34 @@ const DOCS_YAML_GPT56 = `# github/docs models-and-pricing.yml (gpt-5.6 section)
   output: $18.00
 `;
 
+describe('normalizeDisplayName', () => {
+  // Unit tests for the algorithmic docs-name → catalog-id normalization.
+  // RED until normalizeDisplayName is exported from models.ts.
+  it('lowercases and replaces spaces with hyphens', () => {
+    expect(normalizeDisplayName('GPT-5.6 Luna')).toBe('gpt-5.6-luna');
+    expect(normalizeDisplayName('GPT-5 mini')).toBe('gpt-5-mini');
+    expect(normalizeDisplayName('Claude Haiku 4.5')).toBe('claude-haiku-4.5');
+    expect(normalizeDisplayName('Gemini 2.5 Pro')).toBe('gemini-2.5-pro');
+    expect(normalizeDisplayName('GPT-5.3-Codex')).toBe('gpt-5.3-codex');
+    expect(normalizeDisplayName('GPT-5.6 Sol')).toBe('gpt-5.6-sol');
+    expect(normalizeDisplayName('GPT-5.6 Terra')).toBe('gpt-5.6-terra');
+  });
+
+  it('strips markdown footnote markers before normalizing', () => {
+    expect(normalizeDisplayName('Claude Sonnet 5[^sonnet-5-promo]')).toBe('claude-sonnet-5');
+    expect(normalizeDisplayName('GPT-5.4[^note]')).toBe('gpt-5.4');
+  });
+
+  it('strips trailing parentheticals before normalizing', () => {
+    expect(normalizeDisplayName('Claude Opus 4.8 (fast mode) (preview)')).toBe('claude-opus-4.8');
+    expect(normalizeDisplayName('GPT-5 mini (legacy)')).toBe('gpt-5-mini');
+  });
+
+  it('collapses multiple spaces to a single hyphen', () => {
+    expect(normalizeDisplayName('Claude  Sonnet  4.6')).toBe('claude-sonnet-4.6');
+  });
+});
+
 describe('parseApiModels', () => {
   it('maps id + category and drops picker-disabled models', () => {
     const models = parseApiModels(API_JSON);
@@ -180,8 +209,8 @@ describe('parseDocsYaml', () => {
   });
 
   it('maps GPT-5.6 Luna/Sol/Terra display names to their hyphenated catalog ids with pricing', () => {
-    // Regression: DOCS_NAME_TO_ID was missing these entries; proper-noun suffixes
-    // (Luna/Sol/Terra) were silently skipped, leaving gpt-5.6 models un-enriched.
+    // Normalization: "GPT-5.6 Luna" → lowercase + spaces→hyphens → "gpt-5.6-luna".
+    // Previously broken when DOCS_NAME_TO_ID had no entries; now algorithmic.
     const models = parseDocsYaml(DOCS_YAML_GPT56);
     const ids = models.map((m) => m.id);
     expect(ids).toContain('gpt-5.6-luna');
@@ -343,5 +372,52 @@ describe('refreshModelCatalog — seed-only degradation', () => {
     expect(result.source).toBe('seed-only');
     expect(result.added).toEqual([]);
     expect(result.removed).toEqual([]);
+  });
+});
+
+describe('refreshModelCatalog — unpricedIds warning (loud unmatched signal)', () => {
+  // RED until RefreshResult.unpricedIds exists and is computed in refreshModelCatalog.
+  it('lists catalog models present in API response but absent from docs pricing', async () => {
+    // API returns gpt-5.5 but DOCS_YAML has no gpt-5.5 entry → unpricedIds includes it.
+    const deps: RefreshDeps = {
+      getToken: async () => 'fake-token',
+      fetchApiModels: async () => API_JSON, // includes gpt-5.5
+      fetchDocsYaml: async () => DOCS_YAML, // covers gpt-5-mini + claude-sonnet-4.6 only
+      seed: SEED,
+    };
+    const result = await refreshModelCatalog(deps);
+    expect(result.unpricedIds).toBeDefined();
+    expect(result.unpricedIds).toContain('gpt-5.5');
+    // priced models must NOT appear in the list
+    expect(result.unpricedIds).not.toContain('gpt-5-mini');
+    expect(result.unpricedIds).not.toContain('claude-sonnet-4.6');
+  });
+
+  it('unpricedIds is empty when every discovered model has pricing', async () => {
+    const deps: RefreshDeps = {
+      getToken: async () => 'fake-token',
+      fetchApiModels: async () => ({
+        object: 'list',
+        data: [
+          { id: 'gpt-5-mini', model_picker_category: 'lightweight', model_picker_enabled: true },
+        ],
+      }),
+      fetchDocsYaml: async () => DOCS_YAML, // gpt-5-mini IS in DOCS_YAML with pricing
+      seed: SEED,
+    };
+    const result = await refreshModelCatalog(deps);
+    expect(result.unpricedIds).toEqual([]);
+  });
+
+  it('unpricedIds is empty for seed-only source (no enrichment attempted)', async () => {
+    const deps: RefreshDeps = {
+      getToken: async () => null,
+      fetchApiModels: async () => { throw new Error('unreachable'); },
+      fetchDocsYaml: async () => { throw new Error('network down'); },
+      seed: SEED,
+    };
+    const result = await refreshModelCatalog(deps);
+    expect(result.source).toBe('seed-only');
+    expect(result.unpricedIds).toEqual([]);
   });
 });
