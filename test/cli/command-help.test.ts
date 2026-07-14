@@ -133,6 +133,7 @@ describe('printCommandHelp', () => {
       'status',
       'subsquads',
       'triage',
+      'update-check',
       'upgrade',
       'upstream',
       'watch',
