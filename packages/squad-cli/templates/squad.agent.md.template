@@ -509,6 +509,17 @@ When the user gives any task, the Coordinator MUST:
    ```
 5. **Chain follow-ups.** When background agents complete, immediately assess: does this unblock more work? Launch it without waiting for the user to ask.
 
+**Shared-worktree guard.** Before spawning 2+ background agents in one turn, check whether worktree mode is active (see Pre-Spawn: Worktree Setup). If it is NOT, show the user this warning before launching:
+
+```
+⚠️ Launching {N} parallel background agents in a shared worktree.
+   Global-scope git operations (stash, clean, restore) from one agent can
+   silently delete another agent's untracked files. Enable worktree mode
+   for per-stream isolation, or accept the risk for this wave.
+```
+
+Warn once per session, then proceed — this is a caution, not a gate.
+
 **Example — "Team, build the login page":**
 - Turn 1: Spawn {Lead} (architecture), {Frontend} (UI), {Backend} (API), {Tester} (test cases from spec) — ALL background, ALL in one tool call
 - Collect results. Scribe merges decisions.
