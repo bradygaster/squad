@@ -4,7 +4,7 @@
  * Tests module exports and error handling for missing squad directory.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -62,5 +62,67 @@ describe('CLI: copilot command', () => {
 
     // Should return without throwing
     await expect(runCopilot(TEST_ROOT, {})).resolves.toBeUndefined();
+  });
+});
+
+describe('CLI: copilot with externalized state (#1397)', () => {
+  const EXT_GLOBAL = join(tmpdir(), `.test-cli-copilot-ext-global-${randomBytes(4).toString('hex')}`);
+  const EXT_PROJECT_KEY = `test-copilot-ext-${randomBytes(4).toString('hex')}`;
+  const externalStateDir = join(EXT_GLOBAL, 'squad', 'projects', EXT_PROJECT_KEY);
+  const origAppData = process.env['APPDATA'];
+  const origXdgConfig = process.env['XDG_CONFIG_HOME'];
+
+  beforeEach(() => {
+    if (existsSync(TEST_ROOT)) rmSync(TEST_ROOT, { recursive: true, force: true });
+    if (existsSync(EXT_GLOBAL)) rmSync(EXT_GLOBAL, { recursive: true, force: true });
+
+    // Point resolveGlobalSquadPath() inside EXT_GLOBAL (not the real user dir)
+    if (process.platform === 'win32') {
+      process.env['APPDATA'] = EXT_GLOBAL;
+    } else {
+      process.env['XDG_CONFIG_HOME'] = EXT_GLOBAL;
+    }
+
+    // Local repo: thin .squad/ holding only the marker `squad externalize` leaves behind
+    mkdirSync(join(TEST_ROOT, '.squad'), { recursive: true });
+    writeFileSync(
+      join(TEST_ROOT, '.squad', 'config.json'),
+      JSON.stringify({ version: 1, teamRoot: '.', projectKey: EXT_PROJECT_KEY, stateLocation: 'external' }, null, 2)
+    );
+
+    // External state dir: the real roster
+    mkdirSync(externalStateDir, { recursive: true });
+    writeFileSync(join(externalStateDir, 'team.md'), '# Team\n\n## Members\n\n## Project Context\n');
+  });
+
+  afterEach(() => {
+    if (origAppData === undefined) delete process.env['APPDATA'];
+    else process.env['APPDATA'] = origAppData;
+    if (origXdgConfig === undefined) delete process.env['XDG_CONFIG_HOME'];
+    else process.env['XDG_CONFIG_HOME'] = origXdgConfig;
+
+    if (existsSync(TEST_ROOT)) rmSync(TEST_ROOT, { recursive: true, force: true });
+    if (existsSync(EXT_GLOBAL)) rmSync(EXT_GLOBAL, { recursive: true, force: true });
+  });
+
+  it('adds copilot to the external team.md, not a local copy', async () => {
+    const { runCopilot } = await import('@bradygaster/squad-cli/commands/copilot');
+
+    await runCopilot(TEST_ROOT, {});
+
+    const external = readFileSync(join(externalStateDir, 'team.md'), 'utf-8');
+    expect(external).toContain('Coding Agent');
+    // The marker-only local .squad/ must not grow a team.md
+    expect(existsSync(join(TEST_ROOT, '.squad', 'team.md'))).toBe(false);
+  });
+
+  it('removes copilot from the external team.md with --off', async () => {
+    const { runCopilot } = await import('@bradygaster/squad-cli/commands/copilot');
+
+    await runCopilot(TEST_ROOT, {});
+    await runCopilot(TEST_ROOT, { off: true });
+
+    const external = readFileSync(join(externalStateDir, 'team.md'), 'utf-8');
+    expect(external).not.toContain('🤖 Coding Agent');
   });
 });
