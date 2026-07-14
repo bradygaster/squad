@@ -157,7 +157,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --sdk (SDK builder syntax)`);
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
-    console.log(`                    --no-workflows (skip CI setup)`);
+    console.log(`                        --no-workflows (skip CI setup)
+    --no-vscode-default (skip .vscode/settings.json update)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
@@ -353,6 +354,7 @@ async function main(): Promise<void> {
     const sdkMod = hasGlobal ? await lazySquadSdk() : null;
     const dest = hasGlobal ? sdkMod!.resolveGlobalSquadPath() : process.cwd();
     const noWorkflows = args.includes('--no-workflows');
+    const noVscodeDefault = args.includes('--no-vscode-default');
     const mcpFrontmatter = args.includes('--mcp-frontmatter');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
@@ -362,7 +364,7 @@ async function main(): Promise<void> {
     const sbIdx = args.indexOf('--state-backend');
     const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter }).then(async () => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, includeVscodeDefault: !noVscodeDefault }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
         const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
