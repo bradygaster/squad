@@ -117,7 +117,7 @@ function isExpectedMissing(err: unknown): boolean {
   return GIT_EXPECTED_MISSING_RE.test(stderr) || GIT_EXPECTED_MISSING_RE.test(msg);
 }
 
-export type StateBackendType = 'local' | 'external' | 'orphan' | 'two-layer';
+export type StateBackendType = 'local' | 'external-stub' | 'orphan' | 'two-layer';
 
 export interface StateBackend {
   read(relativePath: string): string | undefined;
@@ -338,7 +338,13 @@ export class WorktreeBackend implements StateBackend {
     const key = normalizeKey(relativePath);
     const full = path.join(this.root, key);
     if (!storage.existsSync(full)) return false;
-    storage.deleteSync(full);
+    // Directory keys are removed with their subtree — matching the orphan
+    // backend, where deleting a tree entry drops everything beneath it.
+    if (storage.isDirectorySync(full)) {
+      storage.deleteDirSync(full);
+    } else {
+      storage.deleteSync(full);
+    }
     return true;
   }
   append(relativePath: string, content: string): void {
@@ -811,9 +817,7 @@ export class StateBackendStorageAdapter implements StorageProvider {
     this.backend.delete(this.toRelative(filePath));
   }
   async deleteDir(dirPath: string): Promise<void> {
-    const rel = this.toRelative(dirPath);
-    const entries = this.backend.list(rel);
-    for (const entry of entries) { this.backend.delete(rel ? rel + '/' + entry : entry); }
+    this.deleteDirRecursive(this.toRelative(dirPath));
   }
   async isDirectory(targetPath: string): Promise<boolean> {
     return this.backend.list(this.toRelative(targetPath)).length > 0;
@@ -841,12 +845,24 @@ export class StateBackendStorageAdapter implements StorageProvider {
   listSync(dirPath: string): string[] { return this.backend.list(this.toRelative(dirPath)); }
   deleteSync(filePath: string): void { this.backend.delete(this.toRelative(filePath)); }
   deleteDirSync(dirPath: string): void {
-    const rel = this.toRelative(dirPath);
-    const entries = this.backend.list(rel);
-    for (const entry of entries) { this.backend.delete(rel ? rel + '/' + entry : entry); }
+    this.deleteDirRecursive(this.toRelative(dirPath));
   }
   isDirectorySync(targetPath: string): boolean {
     return this.backend.list(this.toRelative(targetPath)).length > 0;
+  }
+  /**
+   * Delete every key under `rel`, including nested subtrees. A single-level
+   * list+delete pass is not enough: git-notes stores flat keys whose "directory"
+   * segments are not deletable keys themselves, so `agents/x/history/2026/log.md`
+   * would survive a delete of `agents/x`. delete() first (removes leaf keys, and
+   * whole subtrees on tree-based backends), then recurse into whatever remains.
+   */
+  private deleteDirRecursive(rel: string): void {
+    for (const entry of this.backend.list(rel)) {
+      const child = rel ? rel + '/' + entry : entry;
+      this.backend.delete(child);
+      if (this.backend.list(child).length > 0) this.deleteDirRecursive(child);
+    }
   }
   mkdirSync(_dirPath: string, _options?: { recursive?: boolean }): void { /* no-op */ }
   renameSync(oldPath: string, newPath: string): void {
@@ -1143,17 +1159,29 @@ export function verifyStateBackend(backend: StateBackend): { ok: boolean; error?
 }
 
 function isValidBackendType(value: string): value is StateBackendType {
-  return ['local', 'worktree', 'external', 'git-notes', 'orphan', 'two-layer'].includes(value);
+  return ['local', 'worktree', 'external', 'external-stub', 'git-notes', 'orphan', 'two-layer'].includes(value);
 }
-// Note: 'worktree' and 'git-notes' are accepted for backward compatibility but normalized away
+// Note: 'worktree', 'git-notes', and 'external' are accepted for backward compatibility but normalized away
 
-// One-shot flag: warn once per process so repeated resolveStateBackend() calls
+// One-shot flags: warn once per process so repeated resolveStateBackend() calls
 // (e.g. multiple agent startups in the same process) don't spam the console.
 let _warnedGitNotesMigration = false;
+let _warnedExternalStubMigration = false;
 
 /** Normalize legacy aliases to canonical backend type names. */
 function normalizeBackendType(type: string): StateBackendType {
   if (type === 'worktree') return 'local';
+  if (type === 'external') {
+    if (!_warnedExternalStubMigration) {
+      _warnedExternalStubMigration = true;
+      console.warn(
+        "[deprecation] stateBackend: 'external' is renamed to 'external-stub'; please update .squad/config.json. " +
+        "Note: 'external-stub' is an unimplemented placeholder that falls back to 'local'. " +
+        "To store state outside the working tree, use `squad externalize` instead."
+      );
+    }
+    return 'external-stub';
+  }
   if (type === 'git-notes') {
     if (!_warnedGitNotesMigration) {
       _warnedGitNotesMigration = true;
@@ -1180,8 +1208,8 @@ function createBackend(type: StateBackendType, squadDir: string, repoRoot: strin
     case 'two-layer':
       requireGitRepository(repoRoot);
       return new TwoLayerBackend(repoRoot);
-    case 'external': {
-      console.warn(`⚠️  State backend 'external' is a stub (PR #797). Using 'local' backend.`);
+    case 'external-stub': {
+      console.warn(`⚠️  State backend 'external-stub' is a stub (PR #797). Using 'local' backend.`);
       return new WorktreeBackend(squadDir);
     }
     default: throw new Error(`Unknown state backend type: ${type}`);
@@ -1195,4 +1223,9 @@ function requireGitRepository(repoRoot: string): void {
 /** @internal Reset the one-shot git-notes migration warn flag. Only for use in tests. */
 export function _resetGitNotesMigrationWarnForTesting(): void {
   _warnedGitNotesMigration = false;
+}
+
+/** @internal Reset the one-shot external-stub migration warn flag. Only for use in tests. */
+export function _resetExternalStubMigrationWarnForTesting(): void {
+  _warnedExternalStubMigration = false;
 }

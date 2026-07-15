@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { execSync, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend, CircuitBreaker, GitExecError, resolveStateBackend, validateStateKey, StateBackendStorageAdapter, verifyStateBackend, _resetGitNotesMigrationWarnForTesting } from '../packages/squad-sdk/src/state-backend.js';
-import type { StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
+import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend, CircuitBreaker, GitExecError, resolveStateBackend, validateStateKey, StateBackendStorageAdapter, verifyStateBackend, _resetGitNotesMigrationWarnForTesting, _resetExternalStubMigrationWarnForTesting } from '../packages/squad-sdk/src/state-backend.js';
+import type { StateBackend, StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
 import { resolveSquadState, clearResolveSquadCache } from '../packages/squad-sdk/src/resolution.js';
 import { ToolRegistry } from '../packages/squad-sdk/src/tools/index.js';
 
@@ -35,6 +35,14 @@ describe('WorktreeBackend', () => {
   });
   it('list returns empty for non-existent directory', () => { expect(new WorktreeBackend(squadDir()).list('nonexistent')).toEqual([]); });
   it('name is local', () => { expect(new WorktreeBackend(squadDir()).name).toBe('local'); });
+  it('delete on a directory key removes the whole subtree', () => {
+    const b = new WorktreeBackend(squadDir());
+    b.write('agents/x/history/log.md', 'entry');
+    b.write('agents/other.md', 'keep');
+    expect(b.delete('agents/x')).toBe(true);
+    expect(b.exists('agents/x/history/log.md')).toBe(false);
+    expect(b.read('agents/other.md')).toBe('keep');
+  });
 });
 
 describe('GitNotesBackend', () => {
@@ -104,7 +112,7 @@ describe('OrphanBranchBackend', () => {
 
 describe('resolveStateBackend()', () => {
   const squadDir = () => join(TMP, '.squad');
-  beforeEach(() => { clearResolveSquadCache(); _resetGitNotesMigrationWarnForTesting(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
+  beforeEach(() => { clearResolveSquadCache(); _resetGitNotesMigrationWarnForTesting(); _resetExternalStubMigrationWarnForTesting(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); initRepo(); mkdirSync(squadDir(), { recursive: true }); });
   afterEach(() => { clearResolveSquadCache(); if (existsSync(TMP)) rmSync(TMP, { recursive: true, force: true }); });
   it('defaults to local', () => { expect(resolveStateBackend(squadDir(), TMP).name).toBe('local'); });
   it('reads stateBackend from config.json (git-notes migrates to two-layer)', () => {
@@ -120,10 +128,11 @@ describe('resolveStateBackend()', () => {
     expect(resolveStateBackend(squadDir(), TMP).name).toBe('local');
   });
   it('falls back on malformed JSON', () => { writeFileSync(join(squadDir(), 'config.json'), 'bad'); expect(resolveStateBackend(squadDir(), TMP).name).toBe('local'); });
-  it('external returns local stub', () => { expect(resolveStateBackend(squadDir(), TMP, 'external').name).toBe('local'); });
+  it('external-stub returns local stub', () => { expect(resolveStateBackend(squadDir(), TMP, 'external-stub').name).toBe('local'); });
+  it('legacy external alias migrates to external-stub (local)', () => { expect(resolveStateBackend(squadDir(), TMP, 'external' as any).name).toBe('local'); });
   it('legacy worktree alias accepted', () => { expect(resolveStateBackend(squadDir(), TMP, 'worktree' as any).name).toBe('local'); });
   it('all valid types accepted', () => {
-    for (const t of ['local', 'external', 'orphan', 'two-layer'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
+    for (const t of ['local', 'external-stub', 'orphan', 'two-layer'] as const) expect(resolveStateBackend(squadDir(), TMP, t)).toBeDefined();
   });
   it('legacy git-notes migrates to two-layer', () => {
     expect(resolveStateBackend(squadDir(), TMP, 'git-notes' as any).name).toBe('two-layer');
@@ -137,6 +146,20 @@ describe('resolveStateBackend()', () => {
       // Warn should fire on the FIRST call only, never again.
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy.mock.calls[0][0]).toContain("'git-notes' is deprecated");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+  it('external deprecation warning fires exactly once per process across repeated calls', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      resolveStateBackend(squadDir(), TMP, 'external' as any);
+      resolveStateBackend(squadDir(), TMP, 'external' as any);
+      resolveStateBackend(squadDir(), TMP, 'external' as any);
+      // The deprecation warning fires on the FIRST call only; the per-call
+      // "is a stub" warning from createBackend still fires every time.
+      const deprecations = warnSpy.mock.calls.filter((c) => String(c[0]).includes("renamed to 'external-stub'"));
+      expect(deprecations).toHaveLength(1);
     } finally {
       warnSpy.mockRestore();
     }
@@ -561,6 +584,53 @@ describe('StateBackendStorageAdapter', () => {
     const backend = new GitNotesBackend(TMP);
     const adapter = new StateBackendStorageAdapter(backend, squadDir());
     expect(await adapter.stat('nope.md')).toBeUndefined();
+  });
+
+  // Recursive deleteDir regression (#1211 concern E): a single-level
+  // list+delete pass left nested keys behind — deleteDir must walk the
+  // full subtree on every backend.
+  const deleteDirBackends: Array<[string, () => StateBackend]> = [
+    ['worktree', () => new WorktreeBackend(squadDir())],
+    ['git-notes', () => new GitNotesBackend(TMP)],
+    ['orphan', () => new OrphanBranchBackend(TMP)],
+    ['two-layer', () => new TwoLayerBackend(TMP)],
+  ];
+  for (const [name, makeBackend] of deleteDirBackends) {
+    it(`deleteDir removes nested subtrees (${name})`, { timeout: 30_000 }, async () => {
+      const adapter = new StateBackendStorageAdapter(makeBackend(), squadDir());
+      for (const key of ['a/b/c', 'a/b/d', 'a/b/e/f', 'a/b/e/g/h', 'a/other']) {
+        adapter.writeSync(key, `content of ${key}`);
+      }
+      await adapter.deleteDir('a/b');
+      expect(adapter.existsSync('a/b/c')).toBe(false);
+      expect(adapter.existsSync('a/b/d')).toBe(false);
+      expect(adapter.existsSync('a/b/e/f')).toBe(false);
+      expect(adapter.existsSync('a/b/e/g/h')).toBe(false);
+      expect(adapter.listSync('a/b')).toEqual([]);
+      expect(adapter.readSync('a/other')).toBe('content of a/other');
+    });
+  }
+
+  it('deleteDirSync removes nested subtrees (git-notes)', () => {
+    const adapter = new StateBackendStorageAdapter(new GitNotesBackend(TMP), squadDir());
+    adapter.writeSync('a/b/c', 'x');
+    adapter.writeSync('a/b/e/g/h', 'y');
+    adapter.writeSync('a/other', 'keep');
+    adapter.deleteDirSync('a/b');
+    expect(adapter.existsSync('a/b/c')).toBe(false);
+    expect(adapter.existsSync('a/b/e/g/h')).toBe(false);
+    expect(adapter.readSync('a/other')).toBe('keep');
+  });
+
+  it('deleteDir removes a git-notes key that is both a file and a directory prefix', async () => {
+    const backend = new GitNotesBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    // Flat-key stores allow 'a/b' to be a leaf AND a directory prefix at once.
+    backend.write('a/b', 'leaf');
+    backend.write('a/b/c', 'nested');
+    await adapter.deleteDir('a');
+    expect(backend.exists('a/b')).toBe(false);
+    expect(backend.exists('a/b/c')).toBe(false);
   });
 });
 

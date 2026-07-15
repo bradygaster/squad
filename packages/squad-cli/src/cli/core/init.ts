@@ -320,17 +320,20 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Configure state backend if specified at init time
   if (options.stateBackend) {
-    const validBackends = ['local', 'orphan', 'two-layer', 'external'];
+    const validBackends = ['local', 'orphan', 'two-layer', 'external', 'external-stub'];
     if (validBackends.includes(options.stateBackend)) {
+      // 'external' is the legacy name for the 'external-stub' placeholder —
+      // write the canonical name so configs don't trip the deprecation warning.
+      const backendValue = options.stateBackend === 'external' ? 'external-stub' : options.stateBackend;
       const configPath = path.join(squadDir, 'config.json');
       let config: Record<string, unknown> = {};
       try {
         const raw = storage.readSync(configPath);
         if (raw) config = JSON.parse(raw);
       } catch { /* start fresh */ }
-      config['stateBackend'] = options.stateBackend;
+      config['stateBackend'] = backendValue;
       storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
-      success(`state backend: ${options.stateBackend}`);
+      success(`state backend: ${backendValue}`);
 
       // Auto-create orphan branch for orphan/two-layer backends
       // Uses git plumbing (mktree + commit-tree + update-ref) so the working tree is never touched.

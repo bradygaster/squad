@@ -216,7 +216,8 @@ function configuredStateBackend(squadDir: string): StateBackendType | undefined 
   const backend = config?.['stateBackend'];
   if (backend === 'worktree') return 'local';
   if (backend === 'git-notes') return 'two-layer';
-  if (backend === 'local' || backend === 'external' || backend === 'orphan' || backend === 'two-layer') {
+  if (backend === 'external') return 'external-stub';
+  if (backend === 'local' || backend === 'external-stub' || backend === 'orphan' || backend === 'two-layer') {
     return backend;
   }
   return undefined;

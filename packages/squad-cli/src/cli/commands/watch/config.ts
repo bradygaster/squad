@@ -144,9 +144,9 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   if (typeof raw['sentinelFile'] === 'string') result.sentinelFile = raw['sentinelFile'];
   if (typeof raw['stateBackend'] === 'string') {
     const backend = raw['stateBackend'];
-    const validBackends = ['local', 'orphan', 'two-layer', 'external'] as const;
+    const validBackends = ['local', 'orphan', 'two-layer', 'external', 'external-stub'] as const;
     if ((validBackends as readonly string[]).includes(backend)) {
-      result.stateBackend = backend as StateBackendType;
+      result.stateBackend = (backend === 'external' ? 'external-stub' : backend) as StateBackendType;
     }
   }
 
