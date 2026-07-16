@@ -160,16 +160,33 @@ export default defineConfig({
 
 ### `squad: command not found`
 
-Your npm global bin isn't in your PATH. Fix:
+Your npm global bin isn't in your PATH. This usually happens with a custom npm prefix (e.g. `npm config set prefix ~/.npm-global`). Diagnose:
 
 ```bash
 # Check if installed
 npm list -g @bradygaster/squad-cli
 
-# If installed but not found, check PATH:
-echo $PATH | grep npm          # macOS/Linux
-echo %PATH% | findstr npm      # Windows
+# Find where npm puts global commands
+npm prefix -g
 ```
+
+On macOS/Linux, `squad` is installed to `$(npm prefix -g)/bin`. On Windows, it's installed to the prefix directory itself (no `bin` subdirectory). If that directory isn't in your PATH, add it:
+
+**macOS/Linux** — add the bin directory to your shell profile:
+
+```bash
+echo 'export PATH="$(npm prefix -g)/bin:$PATH"' >> ~/.zshrc   # or ~/.bashrc
+source ~/.zshrc
+```
+
+**Windows (PowerShell)** — append the prefix to your user PATH:
+
+```powershell
+$npmPrefix = npm prefix -g
+[Environment]::SetEnvironmentVariable('Path', "$([Environment]::GetEnvironmentVariable('Path', 'User'));$npmPrefix", 'User')
+```
+
+Then open a new terminal and verify with `squad --version`.
 
 ### `Cannot find .squad/ directory`
 
