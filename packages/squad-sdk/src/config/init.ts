@@ -174,7 +174,7 @@ export interface InitOptions {
    * staged into the working-tree commit graph.
    * When 'local' (or undefined), removes the marker block if present.
    */
-  stateBackend?: 'local' | 'orphan' | 'two-layer' | 'external' | string;
+  stateBackend?: 'local' | 'orphan' | 'two-layer' | 'external-stub' | string;
 }
 
 /**
