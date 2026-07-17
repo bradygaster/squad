@@ -160,15 +160,75 @@ export default defineConfig({
 
 ### `squad: command not found`
 
-Your npm global bin isn't in your PATH. Fix:
+Your npm global bin directory isn't in your PATH. Follow these steps:
+
+**1. Confirm the package is installed:**
 
 ```bash
-# Check if installed
 npm list -g @bradygaster/squad-cli
+```
 
-# If installed but not found, check PATH:
-echo $PATH | grep npm          # macOS/Linux
-echo %PATH% | findstr npm      # Windows
+If it's not listed, re-run `npm install -g @bradygaster/squad-cli`.
+
+**2. Find your npm global bin directory:**
+
+```bash
+npm prefix -g
+```
+
+This prints the directory where npm installs global packages (e.g. `/usr/local`, `~/.npm-global`, or `C:\Users\<you>\AppData\Roaming\npm`). The `squad` binary lives in the `bin/` subdirectory on macOS/Linux, or directly in that directory on Windows.
+
+**3. Add it to your PATH:**
+
+<details>
+<summary><strong>macOS / Linux</strong></summary>
+
+Add this line to your shell profile (`~/.bashrc`, `~/.zshrc`, or `~/.profile`):
+
+```bash
+export PATH="$(npm prefix -g)/bin:$PATH"
+```
+
+Then reload your shell using the command for the shell you use:
+
+```bash
+# Bash
+source ~/.bashrc
+```
+
+```bash
+# Zsh
+source ~/.zshrc
+```
+
+</details>
+
+<details>
+<summary><strong>Windows (PowerShell)</strong></summary>
+
+Run this in PowerShell to permanently add the npm global directory to your user PATH. It reads only the **User**-scoped PATH (not the merged process PATH) and skips the append if the entry is already present, so repeated runs won't duplicate entries or copy Machine-level paths into your User PATH:
+
+```powershell
+$npmPrefix = (npm prefix -g).Trim()
+$userPath  = [Environment]::GetEnvironmentVariable("PATH", "User")
+if (-not (($userPath -split ';') -contains $npmPrefix)) {
+    $newUserPath = if ([string]::IsNullOrEmpty($userPath)) { $npmPrefix } else { $userPath.TrimEnd(';') + ";" + $npmPrefix }
+    [Environment]::SetEnvironmentVariable("PATH", $newUserPath, "User")
+}
+```
+
+Then **restart your terminal** for the change to take effect.
+
+</details>
+
+:::note
+If you use a Node version manager like [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm), `npm prefix -g` points to a version-specific directory that changes when you switch Node versions. Rather than hardcoding it in your PATH, let the version manager manage your PATH (it adds the active version's bin directory automatically), and make sure its shell initialization runs in your profile.
+:::
+
+**4. Verify it works:**
+
+```bash
+squad --version
 ```
 
 ### `Cannot find .squad/ directory`
