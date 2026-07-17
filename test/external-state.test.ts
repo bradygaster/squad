@@ -248,6 +248,30 @@ describe('runExternalize / runInternalize', () => {
     expect(readFileSync(path.join(squadDir, 'log', 'session.md'), 'utf-8')).toBe('## Session 1\n');
   });
 
+  // T4b: binary files survive externalize → internalize byte-for-byte (#1489)
+  it('preserves non-UTF-8 binary files across the round-trip', () => {
+    // Every byte value 0x00–0xFF: invalid as UTF-8, so a string round-trip
+    // would replace bytes >= 0x80 with U+FFFD and change the length.
+    const original = Buffer.alloc(256);
+    for (let i = 0; i < 256; i++) original[i] = i;
+    const assetsDir = path.join(squadDir, 'assets');
+    mkdirSync(assetsDir, { recursive: true });
+    writeFileSync(path.join(assetsDir, 'diagram.png'), original);
+
+    runExternalize(projectDir);
+
+    // The externalized copy must be identical bytes, not a lossy decode.
+    const key = deriveProjectKey(projectDir);
+    const externalDir = resolveExternalStateDir(key, false);
+    const externalized = readFileSync(path.join(externalDir, 'assets', 'diagram.png'));
+    expect(externalized.equals(original)).toBe(true);
+
+    runInternalize(projectDir);
+
+    const restored = readFileSync(path.join(squadDir, 'assets', 'diagram.png'));
+    expect(restored.equals(original)).toBe(true);
+  });
+
   // T5: runInternalize cleans config — external-state fields removed
   it('removes stateLocation/projectKey/teamRoot from config after internalize', () => {
     // Seed config with an extra field so config.json survives (not deleted)
