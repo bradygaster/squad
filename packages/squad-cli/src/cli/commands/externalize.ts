@@ -70,11 +70,9 @@ export function runExternalize(projectDir: string, projectKey?: string): void {
       copyDirRecursive(src, dest);
       storage.deleteDirSync?.(src);
     } else {
-      const content = storage.readSync(src);
-      if (content != null) {
-        storage.mkdirSync(path.dirname(dest), { recursive: true });
-        storage.writeSync(dest, content);
-      }
+      // Copy bytes, not a UTF-8 string round-trip — readSync/writeSync
+      // corrupts any non-UTF-8 file, and the source is deleted right after.
+      storage.copySync(src, dest);
       storage.deleteSync?.(src);
     }
     movedCount++;
@@ -158,10 +156,8 @@ export function runInternalize(projectDir: string): void {
     if (storage.isDirectorySync(src)) {
       copyDirRecursive(src, dest);
     } else {
-      const content = storage.readSync(src);
-      if (content != null) {
-        storage.writeSync(dest, content);
-      }
+      // Byte-accurate copy (see externalize branch above).
+      storage.copySync(src, dest);
     }
     movedCount++;
   }
@@ -206,10 +202,8 @@ function copyDirRecursive(src: string, dest: string): void {
     if (storage.isDirectorySync(srcPath)) {
       copyDirRecursive(srcPath, destPath);
     } else {
-      const content = storage.readSync(srcPath);
-      if (content != null) {
-        storage.writeSync(destPath, content);
-      }
+      // Byte-accurate copy (see externalize branch above).
+      storage.copySync(srcPath, destPath);
     }
   }
 }
