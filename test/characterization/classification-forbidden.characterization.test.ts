@@ -24,6 +24,14 @@ import { LocalMemoryStore } from '../../packages/squad-sdk/src/memory/index.js';
 import { makeWriteGuardedStorage, withHermeticRoot } from './_helpers/hermetic-root.js';
 
 const REJECTION_REASON_PREFIX = 'Rejected as forbidden memory: ';
+
+// The placeholder title `safeAuditTitle()` substitutes when a title is
+// missing or is itself forbidden-shaped. It is NOT what gets recorded when
+// the caller supplies a safe title (see the FORBIDDEN_ROWS test below, which
+// always supplies the safe title 'do not care'). The missing-title path is
+// already covered by test/memory-governance.test.ts
+// ("uses a safe placeholder title for no-title rejected sensitive writes"),
+// so it is intentionally not duplicated here.
 const SAFE_AUDIT_TITLE = 'Rejected governed memory';
 
 async function readJsonl(file: string): Promise<Array<Record<string, unknown>>> {
@@ -143,9 +151,14 @@ describe('classification and forbidden-content characterization (C1)', () => {
         expect(rejectRecords).toHaveLength(1);
         const record = rejectRecords[0];
 
-        // Pin current safe-by-default behavior exactly. Any regression that
-        // starts leaking raw content into `title` or `reason` will fail here.
-        expect(record.title).toBe(SAFE_AUDIT_TITLE);
+        // Pin current behavior exactly: safeAuditTitle() preserves a caller
+        // supplied title verbatim as long as the title itself does not match
+        // a forbidden pattern, so the recorded title is the literal 'do not
+        // care' string this suite always supplies, not the SAFE_AUDIT_TITLE
+        // placeholder (that placeholder is only substituted when the title
+        // is missing or is itself forbidden-shaped). Any regression that
+        // starts leaking raw content into `reason` will still fail below.
+        expect(record.title).toBe('do not care');
         expect(record.reason).toBe(REJECTION_REASON_PREFIX + row.reasonSuffix);
         expect(record.class).toBe('FORBIDDEN');
       });
@@ -178,7 +191,17 @@ interface ClassifyRow {
 const CLASSIFY_ROWS: ClassifyRow[] = [
   {
     label: 'TRANSIENT',
-    canonical: { content: 'CI failed on the release branch', expected: 'TRANSIENT' },
+    // The TRANSIENT auto-classification heuristic
+    // (/\b(CI|PR|build)\s+(status|failed|passed|output|log)\b/i) is shadowed
+    // by an identical pattern in FORBIDDEN_PATTERNS (reason: "transient
+    // CI/PR status"), which classify() checks first, unconditionally. Any
+    // content that would trip the TRANSIENT heuristic trips the FORBIDDEN
+    // check first, so this canonical sample classifies FORBIDDEN, not
+    // TRANSIENT. The TRANSIENT heuristic branch is unreachable via
+    // content-only input; see the dedicated
+    // "TRANSIENT is reachable only via an explicit requestedClass override"
+    // test below for the one real public path that does produce TRANSIENT.
+    canonical: { content: 'CI failed on the release branch', expected: 'FORBIDDEN' },
     // "build velocity" contains no CI/PR/build+status pair, so falls through
     // to LOCAL under the current heuristic.
     ambiguous: { content: 'Interested in build velocity', expected: 'LOCAL' },
@@ -231,6 +254,26 @@ describe('classify heuristic characterization (C2)', () => {
       const classification = await store.classify({ content: row.ambiguous.content });
       // Current behavior; may be revisited by #1309.
       expect(classification.class).toBe(row.ambiguous.expected);
+    });
+  });
+
+  it('TRANSIENT is reachable only via an explicit requestedClass override', async () => {
+    await withHermeticRoot(async (root) => {
+      const storage = makeWriteGuardedStorage(new FSStorageProvider(), root);
+      const store = new LocalMemoryStore(storage, root);
+      // This content matches none of the FORBIDDEN_PATTERNS entries, so the
+      // unconditional forbidden check at the top of classify() falls through
+      // and the requestedClass override below is honored as-is. This is the
+      // one real, currently-reachable public path to a TRANSIENT
+      // classification; the content-matching heuristic for TRANSIENT is
+      // otherwise unreachable, see the CLASSIFY_ROWS 'TRANSIENT' comment above.
+      const classification = await store.classify({
+        content: 'Quick scratch note for today',
+        requestedClass: 'TRANSIENT',
+      });
+      expect(classification.class).toBe('TRANSIENT');
+      expect(classification.allowed).toBe(false);
+      expect(classification.reason).toBe('Transient task state is not persisted as durable memory');
     });
   });
 });

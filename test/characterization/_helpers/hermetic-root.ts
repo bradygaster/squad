@@ -57,9 +57,18 @@ const MUTATING_METHODS = new Set<string>([
 /** Methods that take two path arguments (source, destination). */
 const TWO_PATH_METHODS = new Set<string>(['rename', 'renameSync', 'copy', 'copySync']);
 
-function assertInsideRoot(root: string, target: string, operation: string): void {
-  const resolved = path.resolve(target);
+function resolveInsideRoot(root: string, target: string, operation: string): string {
   const normalizedRoot = path.resolve(root);
+  // Resolve a relative target against the hermetic root, not against
+  // process.cwd(). path.resolve(normalizedRoot, target) ignores the first
+  // argument when target is already absolute, so this is safe for both
+  // absolute and relative targets and keeps containment deterministic
+  // regardless of the test runner's working directory. The resolved,
+  // root-anchored path is returned so the caller can forward it to the
+  // underlying storage instead of the original (possibly relative) target,
+  // otherwise a relative target would still hit the real filesystem
+  // relative to process.cwd(), defeating the containment check entirely.
+  const resolved = path.resolve(normalizedRoot, target);
   const rootWithSep = normalizedRoot.endsWith(path.sep) ? normalizedRoot : normalizedRoot + path.sep;
   if (resolved !== normalizedRoot && !resolved.startsWith(rootWithSep)) {
     throw new Error(
@@ -67,6 +76,7 @@ function assertInsideRoot(root: string, target: string, operation: string): void
         `A test attempted to write to a path that is not contained by this suite's temp directory.`,
     );
   }
+  return resolved;
 }
 
 /**
@@ -90,7 +100,11 @@ export function makeWriteGuardedStorage(base: StorageProvider, root: string): St
             `Hermetic write guard: refused ${propertyKey} with non-string first argument.`,
           );
         }
-        assertInsideRoot(root, first, propertyKey);
+        // Forward the resolved, root-anchored path rather than the raw
+        // argument so a relative target actually lands inside the hermetic
+        // root on disk, not just passes the containment check.
+        const resolvedArgs = [...args];
+        resolvedArgs[0] = resolveInsideRoot(root, first, propertyKey);
         if (TWO_PATH_METHODS.has(propertyKey)) {
           const second = args[1];
           if (typeof second !== 'string') {
@@ -98,9 +112,9 @@ export function makeWriteGuardedStorage(base: StorageProvider, root: string): St
               `Hermetic write guard: refused ${propertyKey} with non-string second argument.`,
             );
           }
-          assertInsideRoot(root, second, propertyKey);
+          resolvedArgs[1] = resolveInsideRoot(root, second, propertyKey);
         }
-        return (original as (...a: unknown[]) => unknown).apply(target, args);
+        return (original as (...a: unknown[]) => unknown).apply(target, resolvedArgs);
       };
     },
   }) as StorageProvider;
