@@ -93,7 +93,7 @@ export function makeWriteGuardedStorage(base: StorageProvider, root: string): St
       if (!MUTATING_METHODS.has(propertyKey)) {
         return original.bind(target);
       }
-      return (...args: unknown[]): unknown => {
+      const invoke = (args: unknown[]): unknown => {
         const first = args[0];
         if (typeof first !== 'string') {
           throw new Error(
@@ -116,6 +116,17 @@ export function makeWriteGuardedStorage(base: StorageProvider, root: string): St
         }
         return (original as (...a: unknown[]) => unknown).apply(target, resolvedArgs);
       };
+      // The *Sync methods have a synchronous contract, so a containment
+      // failure must throw synchronously to match that contract. The
+      // non-Sync methods return a Promise, so a containment failure is
+      // wrapped in an async function here: without this, resolveInsideRoot's
+      // synchronous throw would escape as an unhandled synchronous exception
+      // instead of a rejected Promise, which breaks callers using
+      // `await expect(storage.write(...)).rejects.toThrow(...)`.
+      if (propertyKey.endsWith('Sync')) {
+        return (...args: unknown[]): unknown => invoke(args);
+      }
+      return async (...args: unknown[]): Promise<unknown> => invoke(args);
     },
   }) as StorageProvider;
 }
