@@ -1,0 +1,4 @@
+# Lock line endings for characterization fixtures so the byte-exact
+# spawn-context baseline assertion is stable on Windows and Linux checkouts.
+*.json text eol=lf
+*.md text eol=lf

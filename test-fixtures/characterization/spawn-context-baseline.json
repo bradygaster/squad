@@ -1,0 +1,123 @@
+{
+  "taskResults": [
+    {
+      "taskId": "aspire-docs",
+      "baselineLoadedIds": [
+        "policy-aspire-config",
+        "archive-raw-env-config",
+        "local-memory-diagnostics",
+        "local-memory-governance",
+        "archive-ci-rotation",
+        "never-secret",
+        "policy-headed-browser",
+        "local-teams-reporting"
+      ],
+      "governedLoadedIds": [
+        "policy-aspire-config",
+        "policy-headed-browser"
+      ],
+      "baselineContextBytes": 942,
+      "governedContextBytes": 251,
+      "baselinePrecision": 0.125,
+      "governedPrecision": 0.5,
+      "baselineRecall": 1,
+      "governedRecall": 1,
+      "baselineDecisionConsistent": false,
+      "governedDecisionConsistent": true
+    },
+    {
+      "taskId": "memory-diagnostics",
+      "baselineLoadedIds": [
+        "policy-aspire-config",
+        "archive-raw-env-config",
+        "local-memory-diagnostics",
+        "local-memory-governance",
+        "archive-ci-rotation",
+        "never-secret",
+        "policy-headed-browser",
+        "local-teams-reporting"
+      ],
+      "governedLoadedIds": [
+        "policy-aspire-config",
+        "policy-headed-browser",
+        "local-memory-diagnostics",
+        "local-memory-governance",
+        "local-teams-reporting"
+      ],
+      "baselineContextBytes": 942,
+      "governedContextBytes": 620,
+      "baselinePrecision": 0.25,
+      "governedPrecision": 0.4,
+      "baselineRecall": 1,
+      "governedRecall": 1,
+      "baselineDecisionConsistent": false,
+      "governedDecisionConsistent": true
+    },
+    {
+      "taskId": "browser-tests",
+      "baselineLoadedIds": [
+        "policy-aspire-config",
+        "archive-raw-env-config",
+        "local-memory-diagnostics",
+        "local-memory-governance",
+        "archive-ci-rotation",
+        "never-secret",
+        "policy-headed-browser",
+        "local-teams-reporting"
+      ],
+      "governedLoadedIds": [
+        "policy-aspire-config",
+        "policy-headed-browser"
+      ],
+      "baselineContextBytes": 942,
+      "governedContextBytes": 251,
+      "baselinePrecision": 0.125,
+      "governedPrecision": 0.5,
+      "baselineRecall": 1,
+      "governedRecall": 1,
+      "baselineDecisionConsistent": true,
+      "governedDecisionConsistent": true
+    },
+    {
+      "taskId": "teams-update",
+      "baselineLoadedIds": [
+        "policy-aspire-config",
+        "archive-raw-env-config",
+        "local-memory-diagnostics",
+        "local-memory-governance",
+        "archive-ci-rotation",
+        "never-secret",
+        "policy-headed-browser",
+        "local-teams-reporting"
+      ],
+      "governedLoadedIds": [
+        "policy-aspire-config",
+        "policy-headed-browser",
+        "local-memory-diagnostics",
+        "local-teams-reporting"
+      ],
+      "baselineContextBytes": 942,
+      "governedContextBytes": 479,
+      "baselinePrecision": 0.125,
+      "governedPrecision": 0.25,
+      "baselineRecall": 1,
+      "governedRecall": 1,
+      "baselineDecisionConsistent": true,
+      "governedDecisionConsistent": true
+    }
+  ],
+  "baselineContextBytes": 3768,
+  "governedContextBytes": 1601,
+  "baselineEstimatedTokens": 942,
+  "governedEstimatedTokens": 401,
+  "contextReductionPercent": 57.510615711252655,
+  "baselinePrecision": 0.15625,
+  "governedPrecision": 0.4125,
+  "baselineRecall": 1,
+  "governedRecall": 1,
+  "baselineDecisionConsistency": 0.5,
+  "governedDecisionConsistency": 1,
+  "staleOrUnsafeFactsAvoided": 12,
+  "staleOrUnsafeFactsLoadedByBaseline": 12,
+  "verdict": "pass"
+}
