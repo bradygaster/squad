@@ -237,7 +237,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^1.0.6",
+    "@github/copilot-sdk": "^1.0.7",
     "vscode-jsonrpc": "^9.0.1"
   },
   "optionalDependencies": {
@@ -251,7 +251,7 @@
     "@opentelemetry/sdk-trace-node": "^2.8.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
     "sql.js": "^1.14.1",
-    "ws": "^8.21.0"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
