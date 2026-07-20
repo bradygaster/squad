@@ -200,7 +200,7 @@
   "devDependencies": {
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "ink-testing-library": "^4.0.0"
   },
   "keywords": [

@@ -53,7 +53,7 @@
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.3.0",
     "markdownlint-cli2": "^0.23.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.9"
   },
   "keywords": [
