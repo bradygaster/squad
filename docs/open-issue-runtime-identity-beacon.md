@@ -73,7 +73,7 @@ This axis detects read/assembly loss and is enforced fail-closed. It compares `s
 - `PARTIAL`: read or assembly truncation detected, including missing EOF/boundary, short byte length, partial file read, or attach clipping.
 - `UNKNOWN`: insufficient evidence to prove transport integrity.
 
-Policy: `PARTIAL` or `UNKNOWN` => HALT / UNKNOWN-halt. Transport loss dominates release status.
+Policy: `PARTIAL` => `HALT_CORRUPT` (proven read/assembly loss). `UNKNOWN` => `UNKNOWN_HALT` (insufficient evidence; halts for safety but is not classified as proven corruption). Both stop the session, but the distinction is required for telemetry so missing evidence does not inflate the corruption count.
 
 ### Release integrity (reporting/provenance axis)
 
@@ -103,12 +103,12 @@ Evaluated outside the prompt:
 | Host state | Outcome |
 |---|---|
 | `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=VERIFIED` | `LOADED` |
-| `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=UNREGISTERED` | `LOADED` with unregistered-local / unregistered-release report; MUST NOT halt |
-| `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=MISMATCH` | `HALT`; proven wrong or mutated release |
-| `selected_agent_id` set + `transport_integrity=PARTIAL` | `HALT`; read/assembly transport loss dominates release status |
-| `selected_agent_id` set + `transport_integrity=UNKNOWN` | `UNKNOWN`/halt; insufficient transport evidence dominates release status |
+| `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=UNREGISTERED` | `LOADED_WITH_REPORT`; unregistered-local / unregistered-release report; MUST NOT halt |
+| `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=MISMATCH` | `HALT_RELEASE_MISMATCH`; proven wrong or mutated release |
+| `selected_agent_id` set + `transport_integrity=PARTIAL` | `HALT_CORRUPT`; proven read/assembly transport loss dominates release status |
+| `selected_agent_id` set + `transport_integrity=UNKNOWN` | `UNKNOWN_HALT`; insufficient transport evidence dominates release status and is not proven corruption |
 | `selected_agent_id` absent because a Squad coordinator was independently proven not selected | `SKIP`; safe non-Squad classification is based on host selection state, not canary absence |
-| Any missing event in the expected ordered sequence | `UNKNOWN`; absent evidence never resolves to success |
+| Any missing event in the expected ordered sequence | `UNKNOWN_HALT`; absent evidence never resolves to success and is not proven corruption |
 
 ## Acceptance tests
 
@@ -117,13 +117,13 @@ Each fixture must assert the final outcome **and** the raw ordered event sequenc
 | Fixture | Setup | Required ordered evidence | Expected outcome |
 |---|---|---|---|
 | 1. Full payload, registered | Select `--agent squad`; full `squad.agent.md` read and attached; manifest entry exists | `selected_agent_id` set -> `payload_read_status=LOADED`, `source_sha_after_read` -> `prompt_attach_status=ATTACHED_FULL`, `attached_sha` -> `transport_integrity=INTACT` -> `release_integrity=VERIFIED` | `LOADED` |
-| 2. Head-only / oversized-prompt clip | Select `--agent squad`; source may read fully, but assembled prompt loses tail/EOF | ordered events emitted; `prompt_attach_status=ATTACHED_PARTIAL` or missing boundary; `transport_integrity=PARTIAL`; release verdict still recorded if possible | `HALT` |
-| 3. Missing/empty Squad payload | Select `--agent squad`; suppress, empty, or fail reading coordinator payload | `selected_agent_id` set -> `payload_read_status=EMPTY` or `ABSENT` -> `prompt_attach_status=NOT_ATTACHED` -> `transport_integrity=UNKNOWN`; release usually `UNREGISTERED`/unavailable | `UNKNOWN`/halt |
+| 2. Head-only / oversized-prompt clip | Select `--agent squad`; source may read fully, but assembled prompt loses tail/EOF | ordered events emitted; `prompt_attach_status=ATTACHED_PARTIAL` or missing boundary; `transport_integrity=PARTIAL`; release verdict still recorded if possible | `HALT_CORRUPT` |
+| 3. Missing/empty Squad payload | Select `--agent squad`; suppress, empty, or fail reading coordinator payload | `selected_agent_id` set -> `payload_read_status=EMPTY` or `ABSENT` -> `prompt_attach_status=NOT_ATTACHED` -> `transport_integrity=UNKNOWN`; release usually `UNREGISTERED`/unavailable | `UNKNOWN_HALT` |
 | 4. Proven non-Squad | Host proves Squad coordinator was not selected | Squad `selected_agent_id` absent; non-Squad/default selection evidence emitted by host | `SKIP` |
-| 5. WRONG-VERSION | Full source read and full attachment, but source SHA differs from trusted manifest for (`agent_version`, `client_id`, `client_version`) | `transport_integrity=INTACT`; `release_integrity=MISMATCH`; source/attached SHA recorded | `HALT` |
-| 6. LEGITIMATE UNREGISTERED-LOCAL | Healthy user-local custom agent or freshly-updated/unpublished Squad artifact with no manifest entry | `transport_integrity=INTACT`; `release_integrity=UNREGISTERED`; source/attached SHA recorded | `LOADED` with unregistered-local report; MUST NOT false-halt |
+| 5. WRONG-VERSION | Full source read and full attachment, but source SHA differs from trusted manifest for (`agent_version`, `client_id`, `client_version`) | `transport_integrity=INTACT`; `release_integrity=MISMATCH`; source/attached SHA recorded | `HALT_RELEASE_MISMATCH` |
+| 6. LEGITIMATE UNREGISTERED-LOCAL | Healthy user-local custom agent or freshly-updated/unpublished Squad artifact with no manifest entry | `transport_integrity=INTACT`; `release_integrity=UNREGISTERED`; source/attached SHA recorded | `LOADED_WITH_REPORT`; MUST NOT false-halt |
 
-Fixtures 5 and 6 exist to measure whether `UNKNOWN`/`HALT` protects safety without an unacceptable healthy-session false-halt rate. Fixture 6 is especially important: registry staleness or local customization must not be converted into a release `MISMATCH` or transport failure.
+Fixtures 5 and 6 exist to measure whether safety halts protect users without an unacceptable healthy-session false-halt rate. Telemetry must keep `HALT_CORRUPT` separate from `UNKNOWN_HALT` so missing evidence is not counted as proven corruption. Fixture 6 is especially important: registry staleness or local customization must not be converted into a release `MISMATCH` or transport failure.
 
 ## Caveman telemetry join protocol (not started)
 
