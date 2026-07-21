@@ -51,8 +51,10 @@ The host must evaluate this state machine outside the prompt. A single pre-read 
    - Must include host timestamp or monotonic order (for example, `selected_at` / `selection_order`).
 
 2. `payload_read_status`
-   - Separate transition recorded by the host **after** the `.agent.md` read attempt.
+   - Separate READ-dimension transition recorded by the host **after** the `.agent.md` read attempt.
    - Enum committed here: `LOADED`, `TRUNCATED`, `EMPTY`, `ABSENT`.
+   - `TRUNCATED` is reserved for a partial **file read** proven by expected/actual byte counts, expected EOF evidence, or equivalent host read evidence.
+   - A completed file read whose prompt attachment is clipped is `payload_read_status=LOADED` plus `prompt_attach_status=ATTACHED_PARTIAL`; do not encode attach clipping as read truncation.
    - Important: `LOADED` only proves the source file was read; it does **not** prove the full payload reached the assembled prompt.
    - Must include host timestamp or monotonic order.
 
@@ -61,7 +63,7 @@ The host must evaluate this state machine outside the prompt. A single pre-read 
    - Attach enum: `ATTACHED_FULL`, `ATTACHED_PARTIAL`, `NOT_ATTACHED`.
    - Integrity subfield: `attach_integrity` enum `INTACT`, `BOUNDARY_MISSING`, `PARTIAL`, `SHA_MISMATCH`.
    - `INTACT` means both boundary markers (HEAD canary and EOF canary) are present in the assembled artifact **and** the attached-artifact SHA matches the expected payload SHA when known (for the current Squad artifact, `525a919f2b8c3c2586dcb2862de3cff63c85128cd63702e96c83be83d0ed631f`).
-   - `BOUNDARY_MISSING` / `PARTIAL` means the host read succeeded but prompt assembly dropped a boundary or tail; this is a truncation HALT even when `payload_read_status=LOADED`.
+   - `BOUNDARY_MISSING` / `PARTIAL` means the host read may have succeeded but prompt assembly dropped a boundary or tail; this is attach-dimension clipping and fails closed even when `payload_read_status=LOADED`.
    - `SHA_MISMATCH` means the wrong or mutated payload was attached; this is a HALT.
    - Must include host timestamp or monotonic order and the attached-artifact SHA when available.
 
@@ -75,26 +77,27 @@ The host must evaluate this state machine outside the prompt. A single pre-read 
 
 ### Decision function
 
-Evaluated outside the prompt:
+Evaluated outside the prompt. This mapping fails closed: absent or partial evidence never resolves to success.
 
 | Host state | Outcome |
 |---|---|
-| `selected_agent_id` set + `payload_read_status=LOADED` + `prompt_attach_status=ATTACHED_FULL` + `attach_integrity=INTACT` | `LOADED`; normal Squad behavior may proceed |
-| `selected_agent_id` set + `payload_read_status=LOADED` + `attach_integrity=BOUNDARY_MISSING` or `attach_integrity=PARTIAL` | `HALT`; truncated during prompt assembly |
-| `selected_agent_id` set + `payload_read_status=TRUNCATED` | `HALT`; visible truncation warning |
-| `selected_agent_id` set + `payload_read_status=EMPTY` or `payload_read_status=ABSENT` | `UNKNOWN`/halt; no silent continuation |
+| `selected_agent_id` set + `payload_read_status=LOADED` + `prompt_attach_status=ATTACHED_FULL` + `attach_integrity=INTACT` | `LOADED`; this is the sole success state for selected Squad |
+| `selected_agent_id` set + `payload_read_status=EMPTY` or `payload_read_status=ABSENT` | `UNKNOWN`/halt; empty or absent read evidence is not success |
+| `selected_agent_id` set + `prompt_attach_status=ATTACHED_PARTIAL` or `prompt_attach_status=NOT_ATTACHED` | `UNKNOWN`/halt; partial or absent attach evidence is not success |
+| `selected_agent_id` set + `payload_read_status=TRUNCATED` | `HALT`; partial file read proven in the READ dimension |
 | `selected_agent_id` set + `attach_integrity=SHA_MISMATCH` | `HALT`; wrong or mutated payload attached |
-| `selected_agent_id` absent because a Squad coordinator was not selected | `SKIP`; safe non-Squad classification is based on host selection state, not canary absence |
+| `selected_agent_id` set + `attach_integrity=BOUNDARY_MISSING` or `attach_integrity=PARTIAL` | `UNKNOWN`/halt unless the host can additionally prove a read-dimension `TRUNCATED`; attach clipping is not success |
+| `selected_agent_id` absent because a Squad coordinator was independently proven not selected | `SKIP`; safe non-Squad classification is based on host selection state, not canary absence |
 | Any missing event in the expected ordered sequence | `UNKNOWN`; absent evidence never resolves to success |
 
 ## Four-fixture acceptance test
 
-Each fixture must assert the final outcome **and** the raw ordered event sequence: selection record -> read result -> attach status/integrity. Each fixture must include the attached-artifact SHA when available and explicitly preserve `UNKNOWN` for absent evidence.
+Each fixture must assert the final outcome **and** the raw ordered event sequence: selection record -> read result -> attach status/integrity. Each fixture must include the attached-artifact SHA when available and explicitly preserve `UNKNOWN` for absent or partial evidence. A separate read-truncation fixture may assert `payload_read_status=TRUNCATED -> HALT`, but attach clipping must remain `LOADED + ATTACHED_PARTIAL`, not read `TRUNCATED`.
 
 | Fixture | Setup | Required ordered event sequence | Expected outcome |
 |---|---|---|---|
 | A. Full Squad payload | Select `--agent squad`; inject full `squad.agent.md` with HEAD and EOF canaries | `selected_agent_id` set -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_FULL`, `attach_integrity=INTACT`, attached SHA equals expected SHA when known | `LOADED`; normal Squad behavior may proceed |
-| B. Head-only / assembly-truncated Squad payload | Select `--agent squad`; source read may succeed, but assembled prompt contains HEAD canary without EOF canary | `selected_agent_id` set -> `payload_read_status=LOADED` or `TRUNCATED` -> `prompt_attach_status=ATTACHED_PARTIAL`, `attach_integrity=BOUNDARY_MISSING` or `PARTIAL`, attached SHA recorded when available | `HALT`; visible truncation warning |
+| B. Head-only / assembly-clipped Squad payload | Select `--agent squad`; source read succeeds, but assembled prompt contains HEAD canary without EOF canary | `selected_agent_id` set -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_PARTIAL`, `attach_integrity=BOUNDARY_MISSING` or `PARTIAL`, attached SHA recorded when available | `UNKNOWN`/halt; fail closed because attach evidence is partial |
 | C. Missing/empty Squad payload | Select `--agent squad`; suppress, empty, or fail reading the coordinator payload entirely | `selected_agent_id` set -> `payload_read_status=EMPTY` or `payload_read_status=ABSENT` -> `prompt_attach_status=NOT_ATTACHED`; no attached SHA | `UNKNOWN`/halt; no silent continuation |
 | D. Proven non-Squad | Select a host-proven non-Squad/default agent with no Squad coordinator payload | Squad `selected_agent_id` absent; non-Squad/default selection evidence emitted by host; no Squad coordinator payload attached | `SKIP`; safe non-Squad classification is based on host beacon, not canary absence |
 
