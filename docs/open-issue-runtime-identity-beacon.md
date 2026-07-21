@@ -32,19 +32,17 @@ Observed boundary:
 - `packages/squad-cli` passes through `copilotFlags`, `agentCmd`, or `--agent <config.agent>` to the `copilot` process, but does not read/assemble `.github/agents/*.agent.md` into model messages (`packages/squad-cli/src/cli/commands/watch/agent-spawn.ts:95-140`, `packages/squad-cli/src/cli/commands/loop.ts:136-148`, `packages/squad-cli/src/cli/commands/watch/index.ts:608-615`, `packages/squad-cli/src/cli/commands/copilot-bridge.ts:72-84`).
 - The SDK wrapper also confirms that the Copilot CLI `--agent` flag is the path that reads on-disk agent definitions (`src/Squad.Agents.AI/SquadAgent.cs:249-282`, `src/Squad.Agents.AI/SquadAgentOptions.cs:87-112`, `src/Squad.Agents.AI/README.md:155-165`).
 
-Therefore the reliable identity beacon must be a GitHub Copilot CLI host capability captured at the **agent-selection step** and persisted in host/session metadata before any `.agent.md` file access. An identity value derived only after successfully reading `.github/agents/squad.agent.md` is not sufficient: it disappears in exactly the empty/missing-payload case that must become `UNKNOWN`/halt.
-
-Squad-provided MCP state tools cannot close this gap either; if the coordinator payload is wholly absent, no instruction inside that absent payload can tell the model to call any `squad_state_*` identity tool.
+Therefore the reliable identity beacon must be a GitHub Copilot CLI host capability captured at the **agent-selection step** and persisted in host/session metadata before any `.agent.md` file access. Squad-provided MCP state tools cannot close this gap; if the coordinator payload is wholly absent, no instruction inside that absent payload can tell the model to call any `squad_state_*` identity tool.
 
 ## Host-owned pre-ingestion state machine
 
-The host must evaluate this state machine outside the prompt. A single pre-read field is insufficient; the state machine needs three distinct fields plus an attach-integrity result computed on the assembled artifact.
+The host must evaluate this state machine outside the prompt. The state machine has ordered selection/read/attach events, then two orthogonal integrity verdicts: transport integrity for enforcement and release integrity for reporting/provenance.
 
-### Fields
+### Ordered fields
 
 1. `selected_agent_id`
    - Immutable selection record created at agent-selection time **before any file access**.
-   - Carries raw host identity, for example:
+   - Carries raw host identity and registry keys, for example:
      - `custom_agent.name = "squad"`
      - `custom_agent.file = ".github/agents/squad.agent.md"`
      - `custom_agent.role = "root-coordinator"`
@@ -52,63 +50,94 @@ The host must evaluate this state machine outside the prompt. A single pre-read 
      - `client_id = "<host client identifier>"`
      - `client_version = "<host client version>"`
    - Must include host timestamp or monotonic order (for example, `selected_at` / `selection_order`).
-   - `agent_version`, `client_id`, and `client_version` key the trusted expected-SHA registry used by attach integrity.
 
 2. `payload_read_status`
    - Separate READ-dimension transition recorded by the host **after** the `.agent.md` read attempt.
-   - Enum committed here: `LOADED`, `TRUNCATED`, `EMPTY`, `ABSENT`.
+   - Enum: `LOADED`, `TRUNCATED`, `EMPTY`, `ABSENT`.
    - `TRUNCATED` is reserved for a partial **file read** proven by expected/actual byte counts, expected EOF evidence, or equivalent host read evidence.
    - A completed file read whose prompt attachment is clipped is `payload_read_status=LOADED` plus `prompt_attach_status=ATTACHED_PARTIAL`; do not encode attach clipping as read truncation.
-   - Important: `LOADED` only proves the source file was read; it does **not** prove the full payload reached the assembled prompt.
-   - Must include host timestamp or monotonic order.
+   - Must record `source_sha_after_read` when bytes were read.
 
 3. `prompt_attach_status`
    - Records what actually reached the assembled prompt.
-   - Attach enum: `ATTACHED_FULL`, `ATTACHED_PARTIAL`, `NOT_ATTACHED`.
-   - Integrity subfield: `attach_integrity` enum `INTACT`, `BOUNDARY_MISSING`, `PARTIAL`, `SHA_MISMATCH`.
-   - `expected_sha` MUST come from a trusted host-side registry keyed by (`agent_version`, `client_id`, `client_version`); it must NEVER be derived from the attached or assembled bytes.
-   - `attached_sha` is computed by the host over the **assembled artifact**.
-   - `INTACT` means both boundary markers (HEAD canary and EOF canary) are present in the assembled artifact **and** `attached_sha == expected_sha` from trusted provenance (for the current Squad artifact, the expected SHA is `525a919f2b8c3c2586dcb2862de3cff63c85128cd63702e96c83be83d0ed631f` when that registry key applies).
-   - `BOUNDARY_MISSING` / `PARTIAL` means the host read may have succeeded but prompt assembly dropped a boundary or tail; this is attach-dimension clipping and fails closed even when `payload_read_status=LOADED`.
-   - `SHA_MISMATCH` means `attached_sha != expected_sha`; the wrong or mutated payload was attached, so this is a HALT.
-   - Must include host timestamp or monotonic order, `attached_sha` when available, and the trusted `expected_sha` registry key/provenance.
+   - Enum: `ATTACHED_FULL`, `ATTACHED_PARTIAL`, `NOT_ATTACHED`.
+   - Must record `attached_sha` when bytes were attached, computed by the host over the **assembled artifact**.
+
+### Transport integrity (enforcement axis)
+
+`transport_integrity ∈ { INTACT, PARTIAL, UNKNOWN }`
+
+This axis detects read/assembly loss and is enforced fail-closed. It compares `source_sha_after_read` to `attached_sha` **and** requires independent source completeness proof. Hash equality alone is insufficient: a partial host read can match an equally partial attachment.
+
+- `INTACT`: source proven fully read by EOF/boundary evidence or expected byte length; `attached_sha == source_sha_after_read`; attached artifact contains required boundaries (HEAD and EOF canaries).
+- `PARTIAL`: read or assembly truncation detected, including missing EOF/boundary, short byte length, partial file read, or attach clipping.
+- `UNKNOWN`: insufficient evidence to prove transport integrity.
+
+Policy: `PARTIAL` or `UNKNOWN` => HALT / UNKNOWN-halt. Transport loss dominates release status.
+
+### Release integrity (reporting/provenance axis)
+
+`release_integrity ∈ { VERIFIED, MISMATCH, UNREGISTERED }`
+
+This axis compares `source_sha_after_read` with an optional trusted, preferably signed or release-bound manifest keyed by (`agent_version`, `client_id`, `client_version`). The expected SHA provenance rule applies here only: expected release SHAs must come from the trusted host-side manifest and must NEVER be derived from attached or assembled bytes.
+
+- `VERIFIED`: `source_sha_after_read` matches the trusted manifest entry.
+- `MISMATCH`: `source_sha_after_read` differs from the trusted manifest entry for that version (wrong or mutated release).
+- `UNREGISTERED`: no manifest entry exists, the version key is unknown, the artifact is user-local, or the Squad artifact is newly updated/unpublished.
+
+Policy: no manifest entry or unknown version key => `UNREGISTERED`, never `MISMATCH`, and never accept `attached_sha` as fallback. `UNREGISTERED` is surfaced distinctly and does **not** by itself halt a healthy session. Only `MISMATCH` escalates/halts as a proven wrong release.
 
 ### Frozen transition invariants
 
 1. `selected_agent_id` is emitted before `payload_read_status`.
-2. `payload_read_status` is emitted before `prompt_attach_status` / `attach_integrity`.
-3. `attach_integrity` is computed by the host on the **assembled artifact**, outside the prompt, using both `attached_sha` and the boundary-marker check; `expected_sha` comes only from the trusted host-side registry keyed by (`agent_version`, `client_id`, `client_version`).
-4. Any missing event in the ordered sequence resolves to `UNKNOWN`; absent evidence never resolves to success.
-5. `selected + missing` must never collapse into `not selected`.
+2. `payload_read_status` is emitted before `prompt_attach_status`.
+3. `transport_integrity` is computed by the host on source/read/assembled artifacts, outside the prompt, using `source_sha_after_read`, `attached_sha`, boundary markers, and independent source completeness proof.
+4. `release_integrity` is computed separately from a trusted manifest keyed by (`agent_version`, `client_id`, `client_version`) and `source_sha_after_read`.
+5. Any missing event in the ordered sequence resolves to `UNKNOWN`; absent evidence never resolves to success.
+6. `selected + missing` must never collapse into `not selected`.
 
 ### Decision function
 
-Evaluated outside the prompt. This mapping fails closed: absent or partial evidence never resolves to success.
+Evaluated outside the prompt:
 
 | Host state | Outcome |
 |---|---|
-| `selected_agent_id` set + `payload_read_status=LOADED` + `prompt_attach_status=ATTACHED_FULL` + `attach_integrity=INTACT` | `LOADED`; this is the sole success state for selected Squad |
-| `selected_agent_id` set + `payload_read_status=EMPTY` or `payload_read_status=ABSENT` | `UNKNOWN`/halt; empty or absent read evidence is not success |
-| `selected_agent_id` set + `prompt_attach_status=ATTACHED_PARTIAL` or `prompt_attach_status=NOT_ATTACHED` | `UNKNOWN`/halt; partial or absent attach evidence is not success |
-| `selected_agent_id` set + `payload_read_status=TRUNCATED` | `HALT`; partial file read proven in the READ dimension |
-| `selected_agent_id` set + `attach_integrity=SHA_MISMATCH` | `HALT`; wrong or mutated payload attached |
-| `selected_agent_id` set + `attach_integrity=BOUNDARY_MISSING` or `attach_integrity=PARTIAL` | `UNKNOWN`/halt unless the host can additionally prove a read-dimension `TRUNCATED`; attach clipping is not success |
+| `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=VERIFIED` | `LOADED` |
+| `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=UNREGISTERED` | `LOADED` with unregistered-local / unregistered-release report; MUST NOT halt |
+| `selected_agent_id` set + `transport_integrity=INTACT` + `release_integrity=MISMATCH` | `HALT`; proven wrong or mutated release |
+| `selected_agent_id` set + `transport_integrity=PARTIAL` | `HALT`; read/assembly transport loss dominates release status |
+| `selected_agent_id` set + `transport_integrity=UNKNOWN` | `UNKNOWN`/halt; insufficient transport evidence dominates release status |
 | `selected_agent_id` absent because a Squad coordinator was independently proven not selected | `SKIP`; safe non-Squad classification is based on host selection state, not canary absence |
 | Any missing event in the expected ordered sequence | `UNKNOWN`; absent evidence never resolves to success |
 
-## Four-fixture acceptance test
+## Acceptance tests
 
-Each fixture must assert the final outcome **and** the raw ordered event sequence: selection record -> read result -> attach status/integrity. Each fixture must include the attached-artifact SHA when available and explicitly preserve `UNKNOWN` for absent or partial evidence. A separate read-truncation fixture may assert `payload_read_status=TRUNCATED -> HALT`, but attach clipping must remain `LOADED + ATTACHED_PARTIAL`, not read `TRUNCATED`.
+Each fixture must assert the final outcome **and** the raw ordered event sequence: selection record -> read result -> attach result -> `transport_integrity` -> `release_integrity`. Each fixture records both verdict axes and artifact SHAs when available.
 
-| Fixture | Setup | Required ordered event sequence | Expected outcome |
+| Fixture | Setup | Required ordered evidence | Expected outcome |
 |---|---|---|---|
-| A. Full Squad payload | Select `--agent squad`; inject full `squad.agent.md` with HEAD and EOF canaries | `selected_agent_id` set with `agent_version`, `client_id`, `client_version` -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_FULL`, `attach_integrity=INTACT`, `attached_sha` equals trusted-registry `expected_sha` | `LOADED`; normal Squad behavior may proceed |
-| B. Head-only / assembly-clipped Squad payload | Select `--agent squad`; source read succeeds, but assembled prompt contains HEAD canary without EOF canary | `selected_agent_id` set with registry keys -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_PARTIAL`, `attach_integrity=BOUNDARY_MISSING` or `PARTIAL`, `attached_sha` recorded when available | `UNKNOWN`/halt; fail closed because attach evidence is partial |
-| C. Missing/empty Squad payload | Select `--agent squad`; suppress, empty, or fail reading the coordinator payload entirely | `selected_agent_id` set -> `payload_read_status=EMPTY` or `payload_read_status=ABSENT` -> `prompt_attach_status=NOT_ATTACHED`; no attached SHA | `UNKNOWN`/halt; no silent continuation |
-| D. Proven non-Squad | Select a host-proven non-Squad/default agent with no Squad coordinator payload | Squad `selected_agent_id` absent; non-Squad/default selection evidence emitted by host; no Squad coordinator payload attached | `SKIP`; safe non-Squad classification is based on host beacon, not canary absence |
+| 1. Full payload, registered | Select `--agent squad`; full `squad.agent.md` read and attached; manifest entry exists | `selected_agent_id` set -> `payload_read_status=LOADED`, `source_sha_after_read` -> `prompt_attach_status=ATTACHED_FULL`, `attached_sha` -> `transport_integrity=INTACT` -> `release_integrity=VERIFIED` | `LOADED` |
+| 2. Head-only / oversized-prompt clip | Select `--agent squad`; source may read fully, but assembled prompt loses tail/EOF | ordered events emitted; `prompt_attach_status=ATTACHED_PARTIAL` or missing boundary; `transport_integrity=PARTIAL`; release verdict still recorded if possible | `HALT` |
+| 3. Missing/empty Squad payload | Select `--agent squad`; suppress, empty, or fail reading coordinator payload | `selected_agent_id` set -> `payload_read_status=EMPTY` or `ABSENT` -> `prompt_attach_status=NOT_ATTACHED` -> `transport_integrity=UNKNOWN`; release usually `UNREGISTERED`/unavailable | `UNKNOWN`/halt |
+| 4. Proven non-Squad | Host proves Squad coordinator was not selected | Squad `selected_agent_id` absent; non-Squad/default selection evidence emitted by host | `SKIP` |
+| 5. WRONG-VERSION | Full source read and full attachment, but source SHA differs from trusted manifest for (`agent_version`, `client_id`, `client_version`) | `transport_integrity=INTACT`; `release_integrity=MISMATCH`; source/attached SHA recorded | `HALT` |
+| 6. LEGITIMATE UNREGISTERED-LOCAL | Healthy user-local custom agent or freshly-updated/unpublished Squad artifact with no manifest entry | `transport_integrity=INTACT`; `release_integrity=UNREGISTERED`; source/attached SHA recorded | `LOADED` with unregistered-local report; MUST NOT false-halt |
+
+Fixtures 5 and 6 exist to measure whether `UNKNOWN`/`HALT` protects safety without an unacceptable healthy-session false-halt rate. Fixture 6 is especially important: registry staleness or local customization must not be converted into a release `MISMATCH` or transport failure.
+
+## Caveman telemetry join protocol (not started)
+
+When Caveman joins, pin the static identity **before execution**:
+
+- artifact SHA: `525a919f2b8c3c2586dcb2862de3cff63c85128cd63702e96c83be83d0ed631f`
+- client, client version, model, tokenizer
+- raw usage/cache objects
+- fresh-vs-continued condition
+
+Run one fresh session and one continued session. Join telemetry only on the exact static identity above. Caveman remains **NOT-STARTED**.
 
 ## In-Squad vs upstream split
 
 **In Squad's control:** install and upgrade the custom-agent file, pass/advise `--agent squad`, keep canary payload-integrity wording accurate, write/load `.mcp.json`, document Cases 1-4, and consume the future host state machine when exposed.
 
-**Upstream Copilot CLI capability required:** the host-owned state machine above, evaluated before and outside prompt ingestion, plus the trusted expected-SHA registry keyed by (`agent_version`, `client_id`, `client_version`). The `.agent.md` file must not be able to overwrite, suppress, or fabricate `selected_agent_id`, `payload_read_status`, `prompt_attach_status`, `attach_integrity`, `expected_sha`, or `attached_sha`.
+**Upstream Copilot CLI capability required:** the host-owned state machine above, evaluated before and outside prompt ingestion, plus the optional trusted/signed release manifest keyed by (`agent_version`, `client_id`, `client_version`). The `.agent.md` file must not be able to overwrite, suppress, or fabricate `selected_agent_id`, `payload_read_status`, `prompt_attach_status`, `source_sha_after_read`, `attached_sha`, `transport_integrity`, or `release_integrity`.
