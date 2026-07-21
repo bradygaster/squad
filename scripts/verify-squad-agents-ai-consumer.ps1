@@ -107,8 +107,27 @@ try {
     $programContent = 'System.Console.WriteLine("Squad.Agents.AI consumer packaging check placeholder.");'
     Set-Content -Path (Join-Path $scratchDir "Program.cs") -Value $programContent -Encoding utf8
 
-    Write-Section "Restoring scratch consumer (local nupkg + nuget.org only)"
-    & dotnet restore $csprojPath --source $nupkgsFull --source "https://api.nuget.org/v3/index.json"
+    # Use a scratch nuget.config instead of repeated `dotnet restore --source` arguments: passing
+    # multiple --source values has proven unreliable across platforms when invoked from a PowerShell
+    # script (observed producing a bogus combined path on Windows), while an explicit,
+    # colocated nuget.config is picked up automatically and unambiguously by both platforms. Only
+    # two well-known, standard sources are listed: nuget.org over HTTPS, and the local nupkgs folder
+    # this same CI job just produced with `dotnet pack`.
+    $nugetConfigPath = Join-Path $scratchDir "nuget.config"
+    $nugetConfigContent = @"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="local-squad-agents-ai" value="$nupkgsFull" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  </packageSources>
+</configuration>
+"@
+    Set-Content -Path $nugetConfigPath -Value $nugetConfigContent -Encoding utf8
+
+    Write-Section "Restoring scratch consumer (local nupkg + nuget.org only, via scratch nuget.config)"
+    & dotnet restore $csprojPath
     if ($LASTEXITCODE -ne 0) {
         throw "Restore of scratch consumer project failed (exit code $LASTEXITCODE)."
     }
