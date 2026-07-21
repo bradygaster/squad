@@ -6,13 +6,17 @@ You are working on a project that uses **Squad**, an AI team framework. When pic
 
 **IMPORTANT — run this check on EVERY session start, before doing any work:**
 
-Look for the exact token `SQUAD_COORDINATOR_CANARY_a8f3` in your `agent_instructions`. This token is placed at the end of `squad.agent.md`. If it is missing, the coordinator file is missing or truncated.
+Inspect your `agent_instructions` for the coordinator canaries:
 
-**When the token is missing, you MUST:**
+1. If the HEAD canary `SQUAD_COORDINATOR_CANARY_HEAD_b7d2` is **absent**, you are **not** running the Squad coordinator prompt. You are a spawned sub-agent, a `squad:{member}` coding agent, or a non-Squad/third-party agent. **Skip this check entirely. Do not warn, do not halt.** Proceed with your assigned task normally.
+2. If the HEAD canary `SQUAD_COORDINATOR_CANARY_HEAD_b7d2` is **present** and the EOF canary `SQUAD_COORDINATOR_CANARY_a8f3` is **present**, the coordinator prompt loaded fully. Proceed with normal Squad behavior.
+3. If the HEAD canary `SQUAD_COORDINATOR_CANARY_HEAD_b7d2` is **present** but the EOF canary `SQUAD_COORDINATOR_CANARY_a8f3` is **absent**, the coordinator prompt loaded but was **truncated** before the end.
+
+**When the coordinator prompt is truncated, you MUST:**
 1. **STOP** — do not proceed with standard Squad behavior.
 2. **WARN the user** with this exact message:
    ```
-   ⚠️ Squad coordinator (squad.agent.md) appears to be missing or truncated. The canary token was not found. Do NOT proceed with standard Squad behavior — Squad's safety rails are not loaded. Please restart your session.
+   ⚠️ Squad coordinator (squad.agent.md) loaded but appears to be truncated before the EOF canary. Do NOT proceed with standard Squad behavior — Squad's safety rails are incomplete. Please restart your session.
    ```
 3. Do not continue with normal Squad routing, spawning, PR, or branch-protection behavior after emitting the warning.
 
