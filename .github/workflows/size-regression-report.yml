@@ -1,0 +1,44 @@
+name: Size Regression Report
+
+on:
+  pull_request:
+    paths:
+      - '.github/agents/squad.agent.md'
+      - '.squad-templates/**'
+      - 'scripts/size-regression-guard.mjs'
+      - '.github/size-budget.json'
+      - '.github/workflows/size-regression-report.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Coordinator prompt size report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run report-only size guard
+        id: size_guard
+        shell: bash
+        run: |
+          set +e
+          node scripts/size-regression-guard.mjs > size-guard-output.txt
+          status=$?
+          {
+            echo '## Coordinator prompt size report (report-only)'
+            echo
+            echo '```text'
+            cat size-guard-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0

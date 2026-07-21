@@ -1,0 +1,8 @@
+{
+  "artifact": ".github/agents/squad.agent.md",
+  "mode": "report-only",
+  "soft_ceiling_bytes": 80000,
+  "soft_ceiling_o200k_tokens": 19000,
+  "reviewed_overrides": [],
+  "note": "Report-only. No enforced thresholds yet; ceilings are provisional pending cross-squad backtest."
+}
