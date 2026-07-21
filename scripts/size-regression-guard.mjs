@@ -11,6 +11,13 @@ const BUDGET_PATH = '.github/size-budget.json';
 const REPORT_PATH = 'size-guard-report.json';
 const HEAD_CANARY = 'SQUAD_COORDINATOR_CANARY_HEAD_b7d2';
 const EOF_CANARY = 'SQUAD_COORDINATOR_CANARY_a8f3';
+const GOLDEN_CANARY_MARKERS = {
+  head_canary_present: HEAD_CANARY,
+  head_canary_first_15_lines: HEAD_CANARY,
+  eof_canary_present: EOF_CANARY,
+  eof_canary_last_non_empty_line: EOF_CANARY,
+};
+const canaryIntroductionRefs = new Map();
 
 const args = new Set(process.argv.slice(2));
 const jsonOnly = args.has('--json');
@@ -66,7 +73,52 @@ function countTokens(text) {
   };
 }
 
-function evaluateGoldens(text) {
+function findCanaryIntroductionRef(marker) {
+  if (canaryIntroductionRefs.has(marker)) return canaryIntroductionRefs.get(marker);
+  const result = spawnSync('git', [
+    'log',
+    '--all',
+    '--reverse',
+    '--format=%H',
+    '-S',
+    marker,
+    '--',
+    ARTIFACT_PATH,
+    TEMPLATE_PATH,
+  ], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  const ref = result.status === 0 ? result.stdout.trim().split('\n').find(Boolean) : undefined;
+  canaryIntroductionRefs.set(marker, ref);
+  return ref;
+}
+
+function isAncestor(ancestor, ref) {
+  if (!ancestor || !ref) return undefined;
+  const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, ref], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  return undefined;
+}
+
+function isGoldenApplicable(checkId, text, ref) {
+  const marker = GOLDEN_CANARY_MARKERS[checkId];
+  if (!marker) return true;
+
+  const introductionRef = findCanaryIntroductionRef(marker);
+  const ancestry = isAncestor(introductionRef, ref);
+  if (ancestry !== undefined) return ancestry;
+
+  return text.includes(marker);
+}
+
+function evaluateGoldens(text, options = {}) {
   const lines = text.split(/\r?\n/);
   const headLine = lines.findIndex(line => line.includes(HEAD_CANARY)) + 1;
   const eofLine = lines.findIndex(line => line.includes(EOF_CANARY)) + 1;
@@ -121,11 +173,26 @@ function evaluateGoldens(text) {
       detail: 'stable strings: copilot-auto-assign: true/false / lowercase cast name',
     },
   ];
-  const passed = checks.filter(check => check.pass).length;
-  return { passed, failed: checks.length - passed, total: checks.length, checks };
+  for (const check of checks) {
+    check.applicable = isGoldenApplicable(check.id, text, options.ref);
+    if (!check.applicable) {
+      const marker = GOLDEN_CANARY_MARKERS[check.id];
+      check.detail = `N/A: ${marker} not introduced at ref ${options.ref ?? '(unknown ref)'}`;
+    }
+  }
+  const applicableChecks = checks.filter(check => check.applicable);
+  const passed = applicableChecks.filter(check => check.pass).length;
+  return {
+    passed,
+    failed: applicableChecks.length - passed,
+    applicable: applicableChecks.length,
+    not_applicable: checks.length - applicableChecks.length,
+    total: checks.length,
+    checks,
+  };
 }
 
-function measureText(text, sourcePath = ARTIFACT_PATH) {
+function measureText(text, sourcePath = ARTIFACT_PATH, options = {}) {
   return {
     path: sourcePath,
     bytes: bytesOf(text),
@@ -133,7 +200,7 @@ function measureText(text, sourcePath = ARTIFACT_PATH) {
     lines: countLines(text),
     tokens: countTokens(text),
     artifact_sha256: sha256(text),
-    goldens: evaluateGoldens(text),
+    goldens: evaluateGoldens(text, options),
   };
 }
 
@@ -310,7 +377,7 @@ function backtestReport() {
       ? { text: readText(ARTIFACT_PATH), path: ARTIFACT_PATH }
       : gitShowText(entry.ref, [ARTIFACT_PATH, TEMPLATE_PATH]);
     if (!content) return { ...entry, available: false, note: `${entry.note}; artifact/template unavailable at ref` };
-    const metrics = measureText(content.text, content.path);
+    const metrics = measureText(content.text, content.path, { ref: entry.ref });
     return {
       ...entry,
       available: true,
@@ -322,6 +389,8 @@ function backtestReport() {
       tokens: metrics.tokens,
       golden_passed: metrics.goldens.passed,
       golden_failed: metrics.goldens.failed,
+      golden_applicable: metrics.goldens.applicable,
+      golden_not_applicable: metrics.goldens.not_applicable,
       golden_total: metrics.goldens.total,
     };
   });
@@ -332,7 +401,7 @@ function backtestReport() {
 function currentReport() {
   const artifact = readText(ARTIFACT_PATH);
   const template = tryReadText(TEMPLATE_PATH);
-  const d1 = measureText(artifact, ARTIFACT_PATH);
+  const d1 = measureText(artifact, ARTIFACT_PATH, { ref: 'HEAD' });
   return {
     mode: 'current',
     report_only: true,
@@ -359,7 +428,7 @@ function tokenText(tokens) {
 function renderBacktest(report) {
   const header = ['Ref', 'Bytes', 'Chars', 'Lines', 'Tokens', 'Goldens', 'Source'];
   const rows = report.refs.map(row => row.available
-    ? [row.label, row.bytes, row.chars, row.lines, tokenText(row.tokens), `${row.golden_passed}/${row.golden_total} pass`, row.source_path]
+    ? [row.label, row.bytes, row.chars, row.lines, tokenText(row.tokens), `${row.golden_passed}/${row.golden_applicable} applicable pass + ${row.golden_not_applicable} N/A`, row.source_path]
     : [row.label, 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', row.note ?? 'unavailable']);
   const widths = header.map((title, index) => Math.max(title.length, ...rows.map(row => String(row[index]).length)));
   const lines = [
@@ -369,7 +438,7 @@ function renderBacktest(report) {
     widths.map(width => '-'.repeat(width)).join('-|-'),
     ...rows.map(row => row.map((cell, index) => pad(cell, widths[index])).join(' | ')),
     '',
-    'Note: older refs are expected to fail new canary goldens; this is historical signal, not an error.',
+    'Note: goldens introduced after a historical ref are N/A; FAIL is reserved for applicable regressions.',
   ];
   return lines.join('\n');
 }
@@ -383,14 +452,14 @@ function renderCurrent(report) {
     'Size Regression Guard (REPORT-ONLY)',
     '',
     `D1 artifact: ${d1.bytes} bytes, ${d1.chars} chars, ${d1.lines} lines, ${d1.tokens.count} tokens${tokenSuffix}`,
-    `D3 goldens: ${d1.goldens.passed}/${d1.goldens.total} pass (${d1.goldens.failed} fail)`,
+    `D3 goldens: ${d1.goldens.passed}/${d1.goldens.applicable} applicable pass (${d1.goldens.failed} fail, ${d1.goldens.not_applicable} N/A)`,
     `D2 local estimate only: ${d2.total_bytes} bytes; skill frontmatter=${d2.components.always_loaded_skill_frontmatter.status}; squad_state schema=${d2.components.squad_state_tool_schema.status}`,
     `D4 budget: ${d4.status}${d4.status === 'loaded' ? `; soft_ceiling_bytes=${d4.soft_ceiling_bytes}; ${d4.note}` : ''}`,
     `artifact_sha256: ${report.artifact_sha256}`,
     `template_sha256: ${report.template_sha256 ?? 'unavailable'}`,
     '',
     'Governance goldens:',
-    ...d1.goldens.checks.map(check => `- ${check.pass ? 'PASS' : 'FAIL'} ${check.id}: ${check.detail}`),
+    ...d1.goldens.checks.map(check => `- ${check.applicable ? (check.pass ? 'PASS' : 'FAIL') : 'N/A'} ${check.id}: ${check.detail}`),
     '',
     `Machine-readable JSON written to ${REPORT_PATH}`,
   ].join('\n');
