@@ -295,11 +295,42 @@ function readBudget() {
   }
 }
 
-function evaluateBudget(artifactBytes) {
+function percentOfCurrent(delta, current) {
+  return Number.isFinite(delta) && Number.isFinite(current) && current > 0
+    ? (delta / current) * 100
+    : null;
+}
+
+function sizeDelta(current, limit) {
+  if (!Number.isFinite(current) || !Number.isFinite(limit)) {
+    return { value: null, percent_of_current: null };
+  }
+  return {
+    value: limit - current,
+    percent_of_current: percentOfCurrent(limit - current, current),
+  };
+}
+
+function reductionGap(current, target) {
+  if (!Number.isFinite(current) || !Number.isFinite(target)) {
+    return { value: null, percent_of_current: null };
+  }
+  return {
+    value: Math.max(0, current - target),
+    percent_of_current: percentOfCurrent(Math.max(0, current - target), current),
+  };
+}
+
+function evaluateBudget(metrics) {
   const budget = readBudget();
   if (budget.status !== 'loaded') return budget;
-  const softCeiling = Number(budget.data.soft_ceiling_bytes);
-  const grewBeyondSoftCeiling = Number.isFinite(softCeiling) && artifactBytes > softCeiling;
+  const artifactBytes = metrics.bytes;
+  const artifactTokens = metrics.tokens.count;
+  const regressionCeilingBytes = Number(budget.data.regression_ceiling_bytes);
+  const regressionCeilingTokens = Number(budget.data.regression_ceiling_o200k_tokens);
+  const reductionTargetBytes = Number(budget.data.reduction_target_bytes);
+  const reductionTargetTokens = Number(budget.data.reduction_target_o200k_tokens);
+  const grewBeyondRegressionCeiling = Number.isFinite(regressionCeilingBytes) && artifactBytes > regressionCeilingBytes;
   const overrides = Array.isArray(budget.data.reviewed_overrides) ? budget.data.reviewed_overrides : [];
   const coveringOverride = overrides.find(entry => {
     const approvedBytes = Number(entry?.approved_bytes);
@@ -309,13 +340,24 @@ function evaluateBudget(artifactBytes) {
     status: 'loaded',
     path: BUDGET_PATH,
     mode: budget.data.mode,
-    soft_ceiling_bytes: softCeiling,
-    grew_beyond_soft_ceiling: grewBeyondSoftCeiling,
+    regression_ceiling_bytes: regressionCeilingBytes,
+    regression_ceiling_o200k_tokens: regressionCeilingTokens,
+    reduction_target_bytes: reductionTargetBytes,
+    reduction_target_o200k_tokens: reductionTargetTokens,
+    regression_headroom: {
+      bytes: sizeDelta(artifactBytes, regressionCeilingBytes),
+      o200k_tokens: sizeDelta(artifactTokens, regressionCeilingTokens),
+    },
+    reduction_gap: {
+      bytes: reductionGap(artifactBytes, reductionTargetBytes),
+      o200k_tokens: reductionGap(artifactTokens, reductionTargetTokens),
+    },
+    grew_beyond_regression_ceiling: grewBeyondRegressionCeiling,
     reviewed_override_covers_current_size: Boolean(coveringOverride),
     covering_override: coveringOverride ?? null,
-    note: grewBeyondSoftCeiling
-      ? (coveringOverride ? 'grew beyond soft ceiling; reviewed override covers current size' : 'grew beyond soft ceiling; no reviewed override covers current size')
-      : 'within provisional soft ceiling',
+    note: grewBeyondRegressionCeiling
+      ? (coveringOverride ? 'grew beyond regression ceiling; reviewed override covers current size' : 'grew beyond regression ceiling; no reviewed override covers current size')
+      : 'within report-only anti-regrowth ceiling; reduction target remains separate',
   };
 }
 
@@ -378,6 +420,7 @@ function backtestReport() {
       : gitShowText(entry.ref, [ARTIFACT_PATH, TEMPLATE_PATH]);
     if (!content) return { ...entry, available: false, note: `${entry.note}; artifact/template unavailable at ref` };
     const metrics = measureText(content.text, content.path, { ref: entry.ref });
+    const budgetMetrics = evaluateBudget(metrics);
     return {
       ...entry,
       available: true,
@@ -392,6 +435,7 @@ function backtestReport() {
       golden_applicable: metrics.goldens.applicable,
       golden_not_applicable: metrics.goldens.not_applicable,
       golden_total: metrics.goldens.total,
+      budget: budgetMetrics,
     };
   });
 
@@ -409,7 +453,7 @@ function currentReport() {
     d1_artifact_ceiling: d1,
     d2_net_resident_startup_estimate: computeD2(d1.bytes),
     d3_governance_golden_regression: d1.goldens,
-    d4_reviewed_override: evaluateBudget(d1.bytes),
+    d4_reviewed_override: evaluateBudget(d1),
     artifact_sha256: d1.artifact_sha256,
     template_sha256: template ? sha256(template) : null,
     template_path: TEMPLATE_PATH,
@@ -425,11 +469,36 @@ function tokenText(tokens) {
   return `${tokens.count}${tokens.estimate ? ' est' : ''}`;
 }
 
+function formatInteger(value) {
+  return Number.isFinite(value) ? Math.round(value).toLocaleString('en-US') : 'n/a';
+}
+
+function formatPercent(value) {
+  return Number.isFinite(value) ? `${value.toFixed(2)}%` : 'n/a';
+}
+
+function formatBudgetDelta(label, delta) {
+  if (!delta) return 'n/a';
+  const bytes = delta.bytes;
+  const tokens = delta.o200k_tokens;
+  return `${label}: ${formatInteger(bytes.value)} B / ${formatInteger(tokens.value)} tok (${formatPercent(bytes.percent_of_current)} B / ${formatPercent(tokens.percent_of_current)} tok)`;
+}
+
 function renderBacktest(report) {
-  const header = ['Ref', 'Bytes', 'Chars', 'Lines', 'Tokens', 'Goldens', 'Source'];
+  const header = ['Ref', 'Bytes', 'Chars', 'Lines', 'Tokens', 'Goldens', 'Ceiling headroom', 'Reduction gap', 'Source'];
   const rows = report.refs.map(row => row.available
-    ? [row.label, row.bytes, row.chars, row.lines, tokenText(row.tokens), `${row.golden_passed}/${row.golden_applicable} applicable pass + ${row.golden_not_applicable} N/A`, row.source_path]
-    : [row.label, 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', row.note ?? 'unavailable']);
+    ? [
+      row.label,
+      row.bytes,
+      row.chars,
+      row.lines,
+      tokenText(row.tokens),
+      `${row.golden_passed}/${row.golden_applicable} applicable pass + ${row.golden_not_applicable} N/A`,
+      formatBudgetDelta('headroom', row.budget?.regression_headroom),
+      formatBudgetDelta('gap', row.budget?.reduction_gap),
+      row.source_path,
+    ]
+    : [row.label, 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', 'n/a', row.note ?? 'unavailable']);
   const widths = header.map((title, index) => Math.max(title.length, ...rows.map(row => String(row[index]).length)));
   const lines = [
     'Size Regression Guard Backtest (REPORT-ONLY)',
@@ -448,13 +517,17 @@ function renderCurrent(report) {
   const tokenSuffix = d1.tokens.estimate ? ' (estimate; python3+tiktoken unavailable)' : ' (o200k_base)';
   const d2 = report.d2_net_resident_startup_estimate;
   const d4 = report.d4_reviewed_override;
+  const regressionHeadroom = formatBudgetDelta('regression headroom', d4.regression_headroom);
+  const reductionGap = formatBudgetDelta('reduction gap', d4.reduction_gap);
   return [
     'Size Regression Guard (REPORT-ONLY)',
     '',
     `D1 artifact: ${d1.bytes} bytes, ${d1.chars} chars, ${d1.lines} lines, ${d1.tokens.count} tokens${tokenSuffix}`,
     `D3 goldens: ${d1.goldens.passed}/${d1.goldens.applicable} applicable pass (${d1.goldens.failed} fail, ${d1.goldens.not_applicable} N/A)`,
     `D2 local estimate only: ${d2.total_bytes} bytes; skill frontmatter=${d2.components.always_loaded_skill_frontmatter.status}; squad_state schema=${d2.components.squad_state_tool_schema.status}`,
-    `D4 budget: ${d4.status}${d4.status === 'loaded' ? `; soft_ceiling_bytes=${d4.soft_ceiling_bytes}; ${d4.note}` : ''}`,
+    `D4 budget: ${d4.status}${d4.status === 'loaded' ? `; regression_ceiling_bytes=${d4.regression_ceiling_bytes}; regression_ceiling_o200k_tokens=${d4.regression_ceiling_o200k_tokens}; ${d4.note}` : ''}`,
+    `D4 ${regressionHeadroom}`,
+    `D4 ${reductionGap} beyond provisional target`,
     `artifact_sha256: ${report.artifact_sha256}`,
     `template_sha256: ${report.template_sha256 ?? 'unavailable'}`,
     '',
