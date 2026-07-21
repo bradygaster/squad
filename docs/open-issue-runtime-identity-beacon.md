@@ -48,7 +48,11 @@ The host must evaluate this state machine outside the prompt. A single pre-read 
      - `custom_agent.name = "squad"`
      - `custom_agent.file = ".github/agents/squad.agent.md"`
      - `custom_agent.role = "root-coordinator"`
+     - `agent_version = "<resolved Squad agent/template version>"`
+     - `client_id = "<host client identifier>"`
+     - `client_version = "<host client version>"`
    - Must include host timestamp or monotonic order (for example, `selected_at` / `selection_order`).
+   - `agent_version`, `client_id`, and `client_version` key the trusted expected-SHA registry used by attach integrity.
 
 2. `payload_read_status`
    - Separate READ-dimension transition recorded by the host **after** the `.agent.md` read attempt.
@@ -62,16 +66,18 @@ The host must evaluate this state machine outside the prompt. A single pre-read 
    - Records what actually reached the assembled prompt.
    - Attach enum: `ATTACHED_FULL`, `ATTACHED_PARTIAL`, `NOT_ATTACHED`.
    - Integrity subfield: `attach_integrity` enum `INTACT`, `BOUNDARY_MISSING`, `PARTIAL`, `SHA_MISMATCH`.
-   - `INTACT` means both boundary markers (HEAD canary and EOF canary) are present in the assembled artifact **and** the attached-artifact SHA matches the expected payload SHA when known (for the current Squad artifact, `525a919f2b8c3c2586dcb2862de3cff63c85128cd63702e96c83be83d0ed631f`).
+   - `expected_sha` MUST come from a trusted host-side registry keyed by (`agent_version`, `client_id`, `client_version`); it must NEVER be derived from the attached or assembled bytes.
+   - `attached_sha` is computed by the host over the **assembled artifact**.
+   - `INTACT` means both boundary markers (HEAD canary and EOF canary) are present in the assembled artifact **and** `attached_sha == expected_sha` from trusted provenance (for the current Squad artifact, the expected SHA is `525a919f2b8c3c2586dcb2862de3cff63c85128cd63702e96c83be83d0ed631f` when that registry key applies).
    - `BOUNDARY_MISSING` / `PARTIAL` means the host read may have succeeded but prompt assembly dropped a boundary or tail; this is attach-dimension clipping and fails closed even when `payload_read_status=LOADED`.
-   - `SHA_MISMATCH` means the wrong or mutated payload was attached; this is a HALT.
-   - Must include host timestamp or monotonic order and the attached-artifact SHA when available.
+   - `SHA_MISMATCH` means `attached_sha != expected_sha`; the wrong or mutated payload was attached, so this is a HALT.
+   - Must include host timestamp or monotonic order, `attached_sha` when available, and the trusted `expected_sha` registry key/provenance.
 
 ### Frozen transition invariants
 
 1. `selected_agent_id` is emitted before `payload_read_status`.
 2. `payload_read_status` is emitted before `prompt_attach_status` / `attach_integrity`.
-3. `attach_integrity` is computed by the host on the **assembled artifact**, outside the prompt, using both the attached-artifact SHA and boundary-marker check.
+3. `attach_integrity` is computed by the host on the **assembled artifact**, outside the prompt, using both `attached_sha` and the boundary-marker check; `expected_sha` comes only from the trusted host-side registry keyed by (`agent_version`, `client_id`, `client_version`).
 4. Any missing event in the ordered sequence resolves to `UNKNOWN`; absent evidence never resolves to success.
 5. `selected + missing` must never collapse into `not selected`.
 
@@ -96,8 +102,8 @@ Each fixture must assert the final outcome **and** the raw ordered event sequenc
 
 | Fixture | Setup | Required ordered event sequence | Expected outcome |
 |---|---|---|---|
-| A. Full Squad payload | Select `--agent squad`; inject full `squad.agent.md` with HEAD and EOF canaries | `selected_agent_id` set -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_FULL`, `attach_integrity=INTACT`, attached SHA equals expected SHA when known | `LOADED`; normal Squad behavior may proceed |
-| B. Head-only / assembly-clipped Squad payload | Select `--agent squad`; source read succeeds, but assembled prompt contains HEAD canary without EOF canary | `selected_agent_id` set -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_PARTIAL`, `attach_integrity=BOUNDARY_MISSING` or `PARTIAL`, attached SHA recorded when available | `UNKNOWN`/halt; fail closed because attach evidence is partial |
+| A. Full Squad payload | Select `--agent squad`; inject full `squad.agent.md` with HEAD and EOF canaries | `selected_agent_id` set with `agent_version`, `client_id`, `client_version` -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_FULL`, `attach_integrity=INTACT`, `attached_sha` equals trusted-registry `expected_sha` | `LOADED`; normal Squad behavior may proceed |
+| B. Head-only / assembly-clipped Squad payload | Select `--agent squad`; source read succeeds, but assembled prompt contains HEAD canary without EOF canary | `selected_agent_id` set with registry keys -> `payload_read_status=LOADED` -> `prompt_attach_status=ATTACHED_PARTIAL`, `attach_integrity=BOUNDARY_MISSING` or `PARTIAL`, `attached_sha` recorded when available | `UNKNOWN`/halt; fail closed because attach evidence is partial |
 | C. Missing/empty Squad payload | Select `--agent squad`; suppress, empty, or fail reading the coordinator payload entirely | `selected_agent_id` set -> `payload_read_status=EMPTY` or `payload_read_status=ABSENT` -> `prompt_attach_status=NOT_ATTACHED`; no attached SHA | `UNKNOWN`/halt; no silent continuation |
 | D. Proven non-Squad | Select a host-proven non-Squad/default agent with no Squad coordinator payload | Squad `selected_agent_id` absent; non-Squad/default selection evidence emitted by host; no Squad coordinator payload attached | `SKIP`; safe non-Squad classification is based on host beacon, not canary absence |
 
@@ -105,4 +111,4 @@ Each fixture must assert the final outcome **and** the raw ordered event sequenc
 
 **In Squad's control:** install and upgrade the custom-agent file, pass/advise `--agent squad`, keep canary payload-integrity wording accurate, write/load `.mcp.json`, document Cases 1-4, and consume the future host state machine when exposed.
 
-**Upstream Copilot CLI capability required:** the host-owned state machine above, evaluated before and outside prompt ingestion. The `.agent.md` file must not be able to overwrite, suppress, or fabricate `selected_agent_id`, `payload_read_status`, `prompt_attach_status`, or `attach_integrity`.
+**Upstream Copilot CLI capability required:** the host-owned state machine above, evaluated before and outside prompt ingestion, plus the trusted expected-SHA registry keyed by (`agent_version`, `client_id`, `client_version`). The `.agent.md` file must not be able to overwrite, suppress, or fabricate `selected_agent_id`, `payload_read_status`, `prompt_attach_status`, `attach_integrity`, `expected_sha`, or `attached_sha`.
