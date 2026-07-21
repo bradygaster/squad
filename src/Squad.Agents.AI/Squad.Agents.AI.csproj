@@ -78,35 +78,56 @@
     out of sync with $(SquadCopilotSdkVersion) / the GitHub.Copilot.SDK PackageReference
     above; mirroring exactly how Microsoft.Agents.AI.GitHub.Copilot.props itself is
     "generated at [that package's] pack time" per its own doc comments.
+
+    Generated with System.Xml.Linq (XDocument/XElement) via an inline RoslynCodeTaskFactory
+    task, not hand-built entity-escaped strings, so the interpolated
+    $(SquadCopilotSdkVersion) value is guaranteed to be escaped correctly for XML by the
+    same writer .NET itself uses, regardless of what characters that property ever
+    contains.
   -->
+  <UsingTask TaskName="GenerateCopilotSdkVersionBridgeProps" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SdkVersion ParameterType="System.String" Required="true" />
+      <OutputPath ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.Xml.Linq" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+          var doc = new XDocument(
+            new XComment(
+              " Generated at Squad.Agents.AI pack time. Do not edit, see " + "\n" +
+              "   GenerateCopilotSdkVersionBridge in Squad.Agents.AI.csproj. " + "\n" + "\n" +
+              "   Microsoft.Agents.AI.GitHub.Copilot's own buildTransitive bridge " + "\n" +
+              "   (Microsoft.Agents.AI.GitHub.Copilot.targets) imports GitHub.Copilot.SDK's " + "\n" +
+              "   build/ CLI-download targets from a path keyed on the " + "\n" +
+              "   _MicrosoftAgentsAICopilotSdkVersion property, which (unless overridden) " + "\n" +
+              "   defaults to the SDK version THAT PACKAGE was built against (its nuspec " + "\n" +
+              "   dependency floor), not the version Squad.Agents.AI actually references. " + "\n" +
+              "   Setting it here (unconditionally, so it wins regardless of NuGet's props " + "\n" +
+              "   import order relative to that package) makes every consumer of " + "\n" +
+              "   Squad.Agents.AI resolve the SAME GitHub.Copilot.SDK build/ targets, and " + "\n" +
+              "   therefore the same native Copilot CLI / runtime.node payload, that " + "\n" +
+              "   Squad.Agents.AI itself does. "
+            ),
+            new XElement(
+              "Project",
+              new XElement(
+                "PropertyGroup",
+                new XElement("_MicrosoftAgentsAICopilotSdkVersion", SdkVersion)
+              )
+            )
+          );
+          doc.Save(OutputPath);
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
   <Target Name="GenerateCopilotSdkVersionBridge" BeforeTargets="GenerateNuspec;_GetPackageFiles">
     <PropertyGroup>
       <_CopilotSdkVersionBridgePropsPath>$(IntermediateOutputPath)Squad.Agents.AI.props</_CopilotSdkVersionBridgePropsPath>
     </PropertyGroup>
-    <ItemGroup>
-      <_CopilotSdkVersionBridgeLines Include="&lt;Project&gt;" />
-      <_CopilotSdkVersionBridgeLines Include="  &lt;!--" />
-      <_CopilotSdkVersionBridgeLines Include="    Generated at Squad.Agents.AI pack time. Do not edit, see" />
-      <_CopilotSdkVersionBridgeLines Include="    GenerateCopilotSdkVersionBridge in Squad.Agents.AI.csproj." />
-      <_CopilotSdkVersionBridgeLines Include=" " />
-      <_CopilotSdkVersionBridgeLines Include="    Microsoft.Agents.AI.GitHub.Copilot's own buildTransitive bridge" />
-      <_CopilotSdkVersionBridgeLines Include="    (Microsoft.Agents.AI.GitHub.Copilot.targets) imports GitHub.Copilot.SDK's" />
-      <_CopilotSdkVersionBridgeLines Include="    build/ CLI-download targets from a path keyed on" />
-      <_CopilotSdkVersionBridgeLines Include="    the _MicrosoftAgentsAICopilotSdkVersion property, which (unless overridden)" />
-      <_CopilotSdkVersionBridgeLines Include="    defaults" />
-      <_CopilotSdkVersionBridgeLines Include="    to the SDK version THAT PACKAGE was built against (its nuspec dependency" />
-      <_CopilotSdkVersionBridgeLines Include="    floor), not the version Squad.Agents.AI actually references. Setting it here" />
-      <_CopilotSdkVersionBridgeLines Include="    (unconditionally, so it wins regardless of NuGet's props import order" />
-      <_CopilotSdkVersionBridgeLines Include="    relative to that package) makes every consumer of Squad.Agents.AI resolve" />
-      <_CopilotSdkVersionBridgeLines Include="    the SAME GitHub.Copilot.SDK build/ targets, and therefore the same native" />
-      <_CopilotSdkVersionBridgeLines Include="    Copilot CLI / runtime.node payload, that Squad.Agents.AI itself does." />
-      <_CopilotSdkVersionBridgeLines Include="  --&gt;" />
-      <_CopilotSdkVersionBridgeLines Include="  &lt;PropertyGroup&gt;" />
-      <_CopilotSdkVersionBridgeLines Include="    &lt;_MicrosoftAgentsAICopilotSdkVersion&gt;$(SquadCopilotSdkVersion)&lt;/_MicrosoftAgentsAICopilotSdkVersion&gt;" />
-      <_CopilotSdkVersionBridgeLines Include="  &lt;/PropertyGroup&gt;" />
-      <_CopilotSdkVersionBridgeLines Include="&lt;/Project&gt;" />
-    </ItemGroup>
-    <WriteLinesToFile File="$(_CopilotSdkVersionBridgePropsPath)" Lines="@(_CopilotSdkVersionBridgeLines)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <GenerateCopilotSdkVersionBridgeProps SdkVersion="$(SquadCopilotSdkVersion)" OutputPath="$(_CopilotSdkVersionBridgePropsPath)" />
     <ItemGroup>
       <None Include="$(_CopilotSdkVersionBridgePropsPath)" Pack="true" PackagePath="buildTransitive\Squad.Agents.AI.props" Visible="false" />
       <FileWrites Include="$(_CopilotSdkVersionBridgePropsPath)" />

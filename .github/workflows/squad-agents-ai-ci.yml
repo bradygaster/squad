@@ -6,6 +6,7 @@ on:
       - 'src/Squad.Agents.AI/**'
       - 'test/Squad.Agents.AI.Tests/**'
       - 'src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/**'
+      - 'scripts/verify-squad-agents-ai-consumer.ps1'
       - '.github/workflows/squad-agents-ai-ci.yml'
       - 'Directory.*.props'
       - 'Directory.*.json'
@@ -17,6 +18,7 @@ on:
       - 'src/Squad.Agents.AI/**'
       - 'test/Squad.Agents.AI.Tests/**'
       - 'src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/**'
+      - 'scripts/verify-squad-agents-ai-consumer.ps1'
       - '.github/workflows/squad-agents-ai-ci.yml'
       - 'Directory.*.props'
       - 'Directory.*.json'
@@ -62,16 +64,29 @@ jobs:
 
       # Resolves the Copilot CLI version that GitHub.Copilot.SDK (the version this repo
       # actually references, $(SquadCopilotSdkVersion)) pins, straight from that package's
-      # own build/GitHub.Copilot.SDK.props in the local NuGet cache -- so the expected/
+      # own build/GitHub.Copilot.SDK.props in the local NuGet cache, so the expected/
       # forbidden CLI versions used by the checks below never need to be hardcoded here
       # and can't drift out of sync with a future SDK version bump.
+      #
+      # CopilotCliVersion is untrusted third-party content (it comes from the
+      # GitHub.Copilot.SDK NuGet package, not this repo), so it is validated against a
+      # narrow version grammar before being written to $GITHUB_OUTPUT. Downstream steps
+      # then read it via env: rather than interpolating the ${{ }} expression directly
+      # into their run: script bodies, so a malformed or hostile value can never be
+      # concatenated into, and executed as, PowerShell source.
       - name: Resolve expected Copilot CLI version
         id: copilot-cli-version
         shell: pwsh
         run: |
+          # Same grammar as the version-validation guard in
+          # scripts/verify-squad-agents-ai-consumer.ps1 (kept in sync by hand: both
+          # accept dotted release/prerelease CLI versions such as 1.0.71 or 1.0.64-1,
+          # single line, no surrounding whitespace).
+          $versionGrammar = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.]*)?$'
+
           $sdkVersion = (dotnet msbuild src/Squad.Agents.AI/Squad.Agents.AI.csproj -getProperty:SquadCopilotSdkVersion -nologo).Trim()
-          if ([string]::IsNullOrWhiteSpace($sdkVersion)) {
-            throw "Could not resolve SquadCopilotSdkVersion from Squad.Agents.AI.csproj."
+          if ([string]::IsNullOrWhiteSpace($sdkVersion) -or $sdkVersion -notmatch $versionGrammar) {
+            throw "SquadCopilotSdkVersion resolved to an empty or invalid value from Squad.Agents.AI.csproj: '$sdkVersion'."
           }
 
           $globalPackagesOutput = dotnet nuget locals global-packages --list
@@ -82,9 +97,9 @@ jobs:
           }
 
           [xml]$sdkProps = Get-Content $sdkPropsPath
-          $cliVersion = $sdkProps.Project.PropertyGroup.CopilotCliVersion
-          if ([string]::IsNullOrWhiteSpace($cliVersion)) {
-            throw "Could not parse CopilotCliVersion out of '$sdkPropsPath'."
+          $cliVersion = "$($sdkProps.Project.PropertyGroup.CopilotCliVersion)".Trim()
+          if ([string]::IsNullOrWhiteSpace($cliVersion) -or $cliVersion -notmatch $versionGrammar -or $cliVersion.Contains("`n")) {
+            throw "CopilotCliVersion parsed from '$sdkPropsPath' is empty, multiline, or does not match the expected grammar ($versionGrammar): '$cliVersion'."
           }
 
           Write-Host "GitHub.Copilot.SDK $sdkVersion pins Copilot CLI $cliVersion"
@@ -108,8 +123,15 @@ jobs:
       # on, because neither project has a direct PackageReference to GitHub.Copilot.SDK.
       - name: Verify no stale Copilot CLI payload in repo builds
         shell: pwsh
+        env:
+          EXPECTED_COPILOT_CLI_VERSION: ${{ steps.copilot-cli-version.outputs.cli-version }}
         run: |
-          $expected = "${{ steps.copilot-cli-version.outputs.cli-version }}"
+          $versionGrammar = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.]*)?$'
+          $expected = $env:EXPECTED_COPILOT_CLI_VERSION
+          if ([string]::IsNullOrWhiteSpace($expected) -or $expected -notmatch $versionGrammar) {
+            throw "EXPECTED_COPILOT_CLI_VERSION is empty or does not match the expected grammar ($versionGrammar): '$expected'."
+          }
+
           $forbidden = @('1.0.67')
           $projectObjDirs = @(
             'src/Squad.Agents.AI/obj',
@@ -137,7 +159,7 @@ jobs:
           }
 
           if ($failed) {
-            throw "Stale or missing Copilot CLI payload detected -- see ::error annotations above."
+            throw "Stale or missing Copilot CLI payload detected, see ::error annotations above."
           }
           Write-Host "All Squad.Agents.AI-related builds resolved Copilot CLI $expected."
 
@@ -154,10 +176,10 @@ jobs:
       # Squad.Agents.AI.csproj). See scripts/verify-squad-agents-ai-consumer.ps1.
       - name: Verify Squad.Agents.AI consumer packaging (native Copilot CLI payload)
         shell: pwsh
+        env:
+          EXPECTED_COPILOT_CLI_VERSION: ${{ steps.copilot-cli-version.outputs.cli-version }}
         run: |
-          ./scripts/verify-squad-agents-ai-consumer.ps1 `
-            -NupkgsDir nupkgs `
-            -ExpectedCopilotCliVersion "${{ steps.copilot-cli-version.outputs.cli-version }}"
+          ./scripts/verify-squad-agents-ai-consumer.ps1 -NupkgsDir nupkgs -ExpectedCopilotCliVersion $env:EXPECTED_COPILOT_CLI_VERSION
 
       - name: Upload test results
         if: always()
