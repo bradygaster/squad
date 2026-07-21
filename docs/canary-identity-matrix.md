@@ -13,6 +13,33 @@ Therefore marker-only logic cannot discriminate these two cases:
 
 Both present the same in-prompt observation: HEAD canary absent and EOF canary absent. Treating `head absent` as `not coordinator; safe skip` converts Case 3 from a loud governance failure into a silent bypass.
 
+## Reclassification
+
+The dual canary is a **two-state payload-integrity detector** that only operates inside an independently-known Squad coordinator session:
+
+- HEAD present + EOF present = the coordinator payload is visible and loaded fully.
+- HEAD present + EOF absent = the coordinator payload is visible but truncated; halt.
+
+`HEAD absent + EOF absent` is externally unobservable from inside the missing payload. It is **not** a third success state and does not prove a safe non-Squad skip. Cases 3 and 4 remain open until an instruction-independent runtime identity signal can distinguish “the selected Squad coordinator payload failed to inject” from “this is not a Squad coordinator session.”
+
+## Owning runtime surface (cases 3 & 4 — OPEN)
+
+Repository inspection points to the custom-agent host runtime as the only layer that can close the zero-marker ambiguity:
+
+- `squad init` installs the coordinator prompt at the git-root custom-agent path. The manifest maps `squad.agent.md.template` to `../.github/agents/squad.agent.md`, and monorepo init explicitly places `squad.agent.md` under the git root because Copilot resolves `.github/agents/` there (`packages/squad-cli/src/cli/core/templates.ts:31-36`, `packages/squad-cli/src/cli/core/init.ts:142-155`). Init then stamps `.github/agents/squad.agent.md` after creation (`packages/squad-cli/src/cli/core/init.ts:308-313`).
+- `squad upgrade` refreshes the same `.github/agents/squad.agent.md` target from `squad.agent.md.template` (`packages/squad-cli/src/cli/core/upgrade.ts:1048`, `packages/squad-cli/src/cli/core/upgrade.ts:1102-1108`, `packages/squad-cli/src/cli/core/upgrade.ts:1124-1137`).
+- The repository identifies GitHub Copilot CLI's `--agent` custom-agent path as the host that loads `.github/agents/*.agent.md`: `SquadAgent` adds `--agent squad` when `.github/agents/squad.agent.md` exists, and comments state that this CLI flag is the path that reads on-disk agent definitions (`src/Squad.Agents.AI/SquadAgent.cs:249-282`, `src/Squad.Agents.AI/SquadAgentOptions.cs:87-112`, `src/Squad.Agents.AI/README.md:155-165`).
+- Squad also writes a repo-root `.mcp.json` `squad_state` entry for Copilot CLI to load (`packages/squad-cli/src/cli/core/mcp-root.ts:9-14`, `packages/squad-cli/src/cli/core/mcp-root.ts:59-73`) and explicitly injects `--additional-mcp-config @<abs-path>` for non-interactive spawned sessions so `squad_state_*` tools register (`packages/squad-cli/src/cli/core/copilot-invocation.ts:1-16`, `packages/squad-cli/src/cli/core/copilot-invocation.ts:53-66`). The MCP server exposes `squad_state_*`, `squad_decide`, and `memory.*` tools (`packages/squad-cli/src/cli/commands/state-mcp.ts:24-35`). **Fatal flaw:** if the coordinator payload is wholly absent, no instruction inside that absent payload can tell the model to call an MCP identity tool, so a Squad-provided MCP beacon cannot close Case 3.
+- The only Copilot-related environment signal found in the inspected CLI code is `COPILOT_CLI`, used as a coarse environment heuristic (`packages/squad-cli/src/cli/copilot-install.ts:69-85`). It is not a custom-agent identity, role, selected agent file, or payload-load attestation.
+
+**IN Squad's control:** install and upgrade the custom-agent file, keep canary payload-integrity wording accurate, write/load `.mcp.json`, and document/test Cases 1 and 2. Squad can also request and consume a future host signal.
+
+**UPSTREAM Copilot CLI capability required:** a host-guaranteed, untruncatable, pre-ingestion identity beacon emitted by the runtime that selected the custom agent file. Candidate fields include a system-level preamble or metadata/tool property such as `custom_agent.name=squad`, `custom_agent.file=.github/agents/squad.agent.md`, `custom_agent.role=root-coordinator`, and `custom_agent.payload_status=loaded|missing|truncated`. The agent file must not be able to overwrite or suppress this value.
+
+## Required runtime test
+
+Add a host-level behavioral test that selects the Squad coordinator custom agent, removes or suppresses the coordinator payload entirely, and asserts a visible `UNKNOWN`/halt instead of silent continuation. This test cannot pass today because the only instructions that could classify the failure live inside the payload being removed; that is the proof that Cases 3 and 4 remain open.
+
 ## Candidate independent identity signals
 
 | Signal | Observable from inside the agent? | Orthogonal to truncatable coordinator payload? | Reliability / risks | Resolves wholly-absent payload ambiguity? |
