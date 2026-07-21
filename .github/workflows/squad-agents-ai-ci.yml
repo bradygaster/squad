@@ -60,6 +60,37 @@ jobs:
       - name: Restore sample
         run: dotnet restore src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/Squad.Agents.AI.Sample.csproj -p:NuGetAudit=true
 
+      # Resolves the Copilot CLI version that GitHub.Copilot.SDK (the version this repo
+      # actually references, $(SquadCopilotSdkVersion)) pins, straight from that package's
+      # own build/GitHub.Copilot.SDK.props in the local NuGet cache -- so the expected/
+      # forbidden CLI versions used by the checks below never need to be hardcoded here
+      # and can't drift out of sync with a future SDK version bump.
+      - name: Resolve expected Copilot CLI version
+        id: copilot-cli-version
+        shell: pwsh
+        run: |
+          $sdkVersion = (dotnet msbuild src/Squad.Agents.AI/Squad.Agents.AI.csproj -getProperty:SquadCopilotSdkVersion -nologo).Trim()
+          if ([string]::IsNullOrWhiteSpace($sdkVersion)) {
+            throw "Could not resolve SquadCopilotSdkVersion from Squad.Agents.AI.csproj."
+          }
+
+          $globalPackagesOutput = dotnet nuget locals global-packages --list
+          $nugetPackagesRoot = ($globalPackagesOutput -split ':', 2)[1].Trim()
+          $sdkPropsPath = Join-Path $nugetPackagesRoot "github.copilot.sdk/$sdkVersion/build/GitHub.Copilot.SDK.props"
+          if (-not (Test-Path $sdkPropsPath)) {
+            throw "GitHub.Copilot.SDK $sdkVersion props file not found at '$sdkPropsPath'. Was the package restored yet?"
+          }
+
+          [xml]$sdkProps = Get-Content $sdkPropsPath
+          $cliVersion = $sdkProps.Project.PropertyGroup.CopilotCliVersion
+          if ([string]::IsNullOrWhiteSpace($cliVersion)) {
+            throw "Could not parse CopilotCliVersion out of '$sdkPropsPath'."
+          }
+
+          Write-Host "GitHub.Copilot.SDK $sdkVersion pins Copilot CLI $cliVersion"
+          echo "sdk-version=$sdkVersion" >> $env:GITHUB_OUTPUT
+          echo "cli-version=$cliVersion" >> $env:GITHUB_OUTPUT
+
       - name: Build package
         run: dotnet build src/Squad.Agents.AI/Squad.Agents.AI.csproj --no-restore -c Release
 
@@ -69,11 +100,64 @@ jobs:
       - name: Build sample
         run: dotnet build src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/Squad.Agents.AI.Sample.csproj --no-restore -c Release
 
+      # Regression guard for Reviewer finding #1 (Squad.Agents.AI PR #1519): before the
+      # Directory.Build.props fix, test/Squad.Agents.AI.Tests and
+      # src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample downloaded an OLDER Copilot CLI
+      # (pinned by whatever GitHub.Copilot.SDK version Microsoft.Agents.AI.GitHub.Copilot's
+      # buildTransitive bridge defaults to) instead of the CLI this repo actually depends
+      # on, because neither project has a direct PackageReference to GitHub.Copilot.SDK.
+      - name: Verify no stale Copilot CLI payload in repo builds
+        shell: pwsh
+        run: |
+          $expected = "${{ steps.copilot-cli-version.outputs.cli-version }}"
+          $forbidden = @('1.0.67')
+          $projectObjDirs = @(
+            'src/Squad.Agents.AI/obj',
+            'test/Squad.Agents.AI.Tests/obj',
+            'src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample/obj'
+          )
+
+          $failed = $false
+          foreach ($objDir in $projectObjDirs) {
+            $cliDirs = Get-ChildItem -Path $objDir -Recurse -Directory -Filter 'copilot-cli' -ErrorAction SilentlyContinue
+            $versions = $cliDirs | ForEach-Object { Get-ChildItem -Path $_.FullName -Directory } | Select-Object -ExpandProperty Name -Unique
+
+            Write-Host "$objDir -> Copilot CLI version(s): $($versions -join ', ')"
+
+            if ($versions -notcontains $expected) {
+              Write-Host "::error::$objDir did not download the expected Copilot CLI $expected (found: $($versions -join ', '))"
+              $failed = $true
+            }
+            foreach ($bad in $forbidden) {
+              if ($versions -contains $bad) {
+                Write-Host "::error::$objDir downloaded forbidden stale Copilot CLI $bad"
+                $failed = $true
+              }
+            }
+          }
+
+          if ($failed) {
+            throw "Stale or missing Copilot CLI payload detected -- see ::error annotations above."
+          }
+          Write-Host "All Squad.Agents.AI-related builds resolved Copilot CLI $expected."
+
       - name: Test
         run: dotnet test test/Squad.Agents.AI.Tests/Squad.Agents.AI.Tests.csproj --no-build -c Release --logger trx --results-directory TestResults
 
       - name: Pack
         run: dotnet pack src/Squad.Agents.AI/Squad.Agents.AI.csproj --no-build -c Release -o nupkgs
+
+      # Hermetic consumer-level packaging check (Reviewer finding #1): proves the fix also
+      # works for a REAL external NuGet consumer of Squad.Agents.AI, not just this repo's
+      # own ProjectReference-based test/sample projects above (which Directory.Build.props
+      # alone would cover even without the buildTransitive/Squad.Agents.AI.props fix in
+      # Squad.Agents.AI.csproj). See scripts/verify-squad-agents-ai-consumer.ps1.
+      - name: Verify Squad.Agents.AI consumer packaging (native Copilot CLI payload)
+        shell: pwsh
+        run: |
+          ./scripts/verify-squad-agents-ai-consumer.ps1 `
+            -NupkgsDir nupkgs `
+            -ExpectedCopilotCliVersion "${{ steps.copilot-cli-version.outputs.cli-version }}"
 
       - name: Upload test results
         if: always()
