@@ -1,0 +1,178 @@
+name: Squad npm Dist-Tag
+
+# Move the `insider` npm dist-tag for the two Squad packages to an
+# already-published stable version.
+#
+# Context: Issue #1491. When a stable release publishes to `latest`, the
+# `insider` dist-tag can end up semver-lower than `latest`, pinning
+# insider-channel users below stable. PR #1495 wired
+# `scripts/promote-insider-tag.mjs` into the main publish flow so future
+# releases auto-promote. This workflow is the manual, tag-only repair
+# path when a release has already occurred without triggering that flow
+# (or when insider drift is discovered after the fact).
+#
+# Guarantees enforced by this workflow (see test/npm-dist-tag-workflow.test.cjs):
+#   - workflow_dispatch trigger only (no push/pull_request/schedule/release).
+#   - Least-privilege permissions: `contents: read` only.
+#   - Hard-coded package allow-list (no arbitrary package input).
+#   - Version input strictly semver-validated (via env var, no shell
+#     interpolation of untrusted input).
+#   - No `npm publish` step, no `--force`, no lifecycle scripts.
+#   - Actions pinned to full commit SHAs, matching repo convention.
+#   - Sequential: promote SDK, verify, then CLI, verify, then final proof.
+#   - Idempotent: the reviewed `promote-insider-tag.mjs` skips packages
+#     whose insider tag is already >= the requested version.
+#
+# Reuses the merged, tested `scripts/promote-insider-tag.mjs` (PR #1495)
+# so the tag-move logic is exactly the same as the auto-promotion path.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Immutable stable version to point `insider` at (e.g. 0.11.0). Must already be published on npm.'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  promote-insider-tag:
+    name: Move insider dist-tag to requested version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout reviewed promotion script from dev
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
+        with:
+          ref: dev
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e #v6
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Validate npm token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Presence check only. Never echo, redact, or inspect the token.
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::NPM_TOKEN secret is not configured — dist-tag move cannot proceed"
+            exit 1
+          fi
+          echo "NPM_TOKEN is set"
+
+      - name: Validate version input (strict semver)
+        id: version
+        env:
+          # Read dispatch input into env to avoid `${{ }}` interpolation
+          # inside a shell script (script-injection hardening — same
+          # pattern as squad-npm-publish.yml's promote-insider-tag job).
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          RAW="$INPUT_VERSION"
+          if ! printf '%s' "$RAW" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Invalid version format: $RAW"
+            exit 1
+          fi
+          echo "version=$RAW" >> "$GITHUB_OUTPUT"
+          echo "Promotion target: $RAW"
+
+      - name: Preflight — verify target version exists for both packages
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for PKG in "@bradygaster/squad-sdk" "@bradygaster/squad-cli"; do
+            if ! npm view "${PKG}@${NEW_VERSION}" version >/dev/null 2>&1; then
+              echo "::error::${PKG}@${NEW_VERSION} is not published on npm — refusing to move insider tag to a nonexistent version"
+              exit 1
+            fi
+            echo "verified ${PKG}@${NEW_VERSION} is published"
+          done
+
+      - name: Capture BEFORE dist-tags (audit evidence)
+        run: |
+          set -euo pipefail
+          echo "── BEFORE ──"
+          npm view @bradygaster/squad-sdk dist-tags --json
+          npm view @bradygaster/squad-cli dist-tags --json
+
+      - name: Verify npm actor is authorized publisher
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          ACTOR="$(npm whoami 2>&1 || true)"
+          # Guard: fail fast if authentication is broken. We deliberately
+          # print the actor name (public info) but never the token.
+          if [ -z "$ACTOR" ] || printf '%s' "$ACTOR" | grep -qi 'ENEEDAUTH\|unauth\|error'; then
+            echo "::error::npm whoami failed — token is missing, expired, or unauthorized. Actor output: $ACTOR"
+            exit 1
+          fi
+          echo "npm actor: $ACTOR"
+
+      - name: Promote insider dist-tag for @bradygaster/squad-sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/promote-insider-tag.mjs @bradygaster/squad-sdk "$NEW_VERSION"
+
+      - name: Verify SDK insider tag now points at target
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Poll briefly for registry propagation. Do NOT re-run the tag move.
+          for i in 1 2 3 4 5; do
+            ACTUAL="$(npm view @bradygaster/squad-sdk dist-tags.insider 2>/dev/null || true)"
+            if [ "$ACTUAL" = "$NEW_VERSION" ]; then
+              echo "SDK insider = $ACTUAL"
+              exit 0
+            fi
+            echo "propagation attempt $i/5: insider=$ACTUAL (expected $NEW_VERSION), retrying in 10s"
+            sleep 10
+          done
+          echo "::error::SDK insider tag did not propagate to $NEW_VERSION after 5 attempts"
+          exit 1
+
+      - name: Promote insider dist-tag for @bradygaster/squad-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/promote-insider-tag.mjs @bradygaster/squad-cli "$NEW_VERSION"
+
+      - name: Verify CLI insider tag now points at target
+        env:
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5; do
+            ACTUAL="$(npm view @bradygaster/squad-cli dist-tags.insider 2>/dev/null || true)"
+            if [ "$ACTUAL" = "$NEW_VERSION" ]; then
+              echo "CLI insider = $ACTUAL"
+              exit 0
+            fi
+            echo "propagation attempt $i/5: insider=$ACTUAL (expected $NEW_VERSION), retrying in 10s"
+            sleep 10
+          done
+          echo "::error::CLI insider tag did not propagate to $NEW_VERSION after 5 attempts"
+          exit 1
+
+      - name: Emit AFTER dist-tags (audit evidence)
+        run: |
+          set -euo pipefail
+          echo "── AFTER ──"
+          npm view @bradygaster/squad-sdk dist-tags --json
+          npm view @bradygaster/squad-cli dist-tags --json
