@@ -157,8 +157,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --sdk (SDK builder syntax)`);
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
-    console.log(`                        --no-workflows (skip CI setup)
-    --no-vscode-default (skip .vscode/settings.json update)`);
+    console.log(`                    --no-workflows (skip CI setup)`);
+    console.log(`                    --no-vscode-default (skip .vscode/settings.json update)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
