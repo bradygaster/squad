@@ -51,9 +51,10 @@
 ## Routing Principles
 
 1. **Eager by default** — spawn agents who could usefully start work, including anticipatory downstream work.
-2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks.
+2. **Scribe always runs** after substantial work, always as `mode: "background"`. Never blocks. Also spawned in **DispatchGuard mode** at every session start (see `squad.agent.md` §Session Init) to mechanically audit coordinator turns for dispatch compliance.
 3. **Quick facts → coordinator answers directly.** Don't spawn for trivial questions.
 4. **Two agents could handle it** → pick the one whose domain is the primary concern.
 5. **"Team, ..." → fan-out.** Spawn all relevant agents in parallel as `mode: "background"`.
 6. **Anticipate downstream.** Feature being built? Spawn tester for test cases from requirements simultaneously.
 7. **Doc-impact check → PAO.** Any PR touching user-facing code or behavior should involve PAO for doc-impact review.
+8. **Ralph consumes DispatchGuard verdicts.** When Ralph's work-monitor loop is active, it reads `.squad/orchestration-log/dispatchguard/verdicts-{SESSION_ID}.jsonl` and alerts the coordinator on `warn`/`block` verdicts.
