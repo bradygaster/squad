@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  validateConfigDetailed,
+  DEFAULT_CONFIG as RUNTIME_DEFAULT_CONFIG,
+} from '@bradygaster/squad-sdk/runtime';
+import {
   SquadConfig,
   AgentConfig,
   defineConfig,
@@ -154,6 +158,38 @@ describe('Configuration Schema', () => {
     it('should enforce fallback behavior enum', () => {
       const behavior = DEFAULT_CONFIG.routing.fallbackBehavior;
       expect(['ask', 'default-agent', 'coordinator']).toContain(behavior);
+    });
+  });
+
+  describe('cost policy validation (AC12)', () => {
+    it('rejects an invalid models.costPolicy.maxCategory', () => {
+      const cfg = {
+        ...RUNTIME_DEFAULT_CONFIG,
+        models: {
+          ...RUNTIME_DEFAULT_CONFIG.models,
+          costPolicy: { maxCategory: 'ultra-mega' as unknown as 'lightweight' },
+        },
+      };
+      const result = validateConfigDetailed(cfg);
+      expect(result.valid).toBe(false);
+      expect(result.errors.some((e) => /maxCategory/i.test(e))).toBe(true);
+    });
+
+    it('accepts a valid models.costPolicy.maxCategory', () => {
+      const cfg = {
+        ...RUNTIME_DEFAULT_CONFIG,
+        models: {
+          ...RUNTIME_DEFAULT_CONFIG.models,
+          costPolicy: { maxCategory: 'versatile' as const },
+        },
+      };
+      const result = validateConfigDetailed(cfg);
+      expect(result.errors.some((e) => /maxCategory/i.test(e))).toBe(false);
+    });
+
+    it('treats an absent costPolicy as valid (no-op)', () => {
+      const result = validateConfigDetailed(RUNTIME_DEFAULT_CONFIG);
+      expect(result.errors.some((e) => /maxCategory/i.test(e))).toBe(false);
     });
   });
 });

@@ -65,6 +65,14 @@ export interface ModelSelectionConfig {
   /** Default tier when no specific model is chosen */
   defaultTier: ModelTier;
   
+  /**
+   * Cost-ceiling policy (cost axis, separate from tier/quality axis).
+   * Issue #1080 / #1183. No-op when `maxCategory` is unset.
+   */
+  costPolicy?: {
+    maxCategory?: 'lightweight' | 'versatile' | 'powerful';
+  };
+  
   /** Task output type → model mapping */
   taskRules?: TaskToModelRule[];
   
@@ -607,6 +615,20 @@ export function validateConfigDetailed(config: unknown): ValidationResult {
     
     if (!models.defaultTier || !['premium', 'standard', 'fast'].includes(models.defaultTier)) {
       errors.push('config.models.defaultTier must be "premium", "standard", or "fast"');
+    }
+    
+    // Validate cost policy if present (cost-ceiling axis, issue #1080/#1183)
+    if (models.costPolicy !== undefined) {
+      if (typeof models.costPolicy !== 'object' || models.costPolicy === null) {
+        errors.push('config.models.costPolicy must be an object');
+      } else if (
+        models.costPolicy.maxCategory !== undefined &&
+        !['lightweight', 'versatile', 'powerful'].includes(models.costPolicy.maxCategory)
+      ) {
+        errors.push(
+          'config.models.costPolicy.maxCategory must be "lightweight", "versatile", or "powerful"',
+        );
+      }
     }
     
     if (!models.fallbackChains) {
