@@ -9,6 +9,7 @@ import { scratchFile } from '@bradygaster/squad-sdk';
 const promptPath = scratchFile(squadRoot, 'coordinator-prompt', '.txt', promptContent);
 ```
 Squad provides `.squad/.scratch/` as the canonical location for ephemeral temp files — prompt files, commit drafts, processing artifacts — keeping the repo root clean.
+
 ---
 ## Why Scratch Dir?
 Before scratch dir, agents wrote temp files to the repo root:
@@ -20,6 +21,7 @@ This polluted the working directory and risked accidental commits. Scratch dir s
 2. **Gitignored by default** — automatically excluded during `squad init`
 3. **Auto-created on demand** — no setup required
 4. **Cleaned regularly** — purged during `squad watch` cleanup cycles
+
 ---
 ## API
 ### `scratchDir(squadRoot: string): string`
@@ -34,6 +36,7 @@ const scratchPath = scratchDir('/path/to/repo');
 - Returns absolute path to `.squad/.scratch/`
 - Creates directory if missing (including parent `.squad/` if needed)
 - Idempotent — safe to call multiple times
+
 ---
 ### `scratchFile(squadRoot: string, prefix: string, ext: string, content: string): string`
 Creates a named temp file in scratch dir.
@@ -62,6 +65,7 @@ const promptPath = scratchFile(
 - `coordinator-prompt-20250125-a3f2.txt`
 - `commit-draft-20250125-b8d1.txt`
 - `processing-temp-20250125-c4e9.json`
+
 ---
 ## Common Use Cases
 ### Coordinator Prompts
@@ -95,6 +99,7 @@ const dataPath = scratchFile(
 // Process data...
 // File will be cleaned up during next cleanup cycle
 ```
+
 ---
 ## Lifecycle
 **Created:**
@@ -107,6 +112,7 @@ const dataPath = scratchFile(
 **Cleaned:**
 - During `squad watch` cleanup cycles (default: every 10 rounds)
 - Manual cleanup: `rm -rf .squad/.scratch/*`
+
 ---
 ## Migration
 Old code that wrote to repo root:
@@ -120,12 +126,14 @@ New code using scratch dir:
 // ✅ After: uses scratch dir
 const promptPath = scratchFile(repoRoot, 'prompt', '.txt', content);
 ```
+
 ---
 ## Notes
 - Scratch dir is **ephemeral by design** — nothing in `.squad/.scratch/` should be committed or preserved long-term
 - Cleanup is safe — scratch files are temporary and safe to delete anytime
 - Scratch dir is **team-wide** — not per-agent, not per-session
 - `.gitignore` entry is added during `squad init` and preserved during `squad upgrade`
+
 ---
 ## Sample Prompts
 ```

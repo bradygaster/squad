@@ -30,5 +30,6 @@ or upgrade if you have it:
 ```
 npx @bradygaster/create-squad upgrade
 ```
+
 ---
 Thanks to everyone who reported bugs. Your feedback shaped this release. 🚀

@@ -5,6 +5,7 @@ Connect to myorg/recipe-app
 ```
 End-to-end workflow: connect to a repo, pick issues from backlog, let agents create branches, implement, open PRs, handle review feedback, and close issues. See also [GitHub Issues Mode](../features/github-issues.md) for detailed guidance.
 **Prerequisite:** The `gh` CLI must be installed and authenticated (`gh auth login`).
+
 ---
 ## 1. Connect to the Repository
 Tell Squad which repo to track:
@@ -16,6 +17,7 @@ Tell Squad which repo to track:
    Using gh CLI for issue tracking.
 ```
 Squad stores the issue source in team state. From now on, it can read issues, create branches, and open PRs against this repo.
+
 ---
 ## 2. View the Backlog
 ```
@@ -33,6 +35,7 @@ Squad stores the issue source in team state. From now on, it can read issues, cr
 └─────┴──────────────────────────────────────────┴───────────┴────────────┘
 5 open issues
 ```
+
 ---
 ## 3. Assign an Issue
 Pick an issue for an agent to work on:
@@ -57,6 +60,7 @@ When the agent finishes:
    - src/routes/recipes.ts (fixed cursor calculation)
    - test/pagination.test.ts (3 new test cases)
 ```
+
 ---
 ## 4. Handle Review Feedback
 A reviewer leaves comments on the PR. Tell Squad:
@@ -76,6 +80,7 @@ The agent reads the comments, makes changes, and pushes new commits to the same 
    - Pushed 2 new commits to 15-fix-pagination-on-recipe-list
 ```
 No force-pushes, no new branches. Just additional commits on the existing PR.
+
 ---
 ## 5. Merge
 When the PR is approved:
@@ -88,6 +93,7 @@ When the PR is approved:
    Branch 15-fix-pagination-on-recipe-list deleted.
 ```
 The issue closes automatically — the PR body includes a `Closes #15` reference.
+
 ---
 ## 6. Check Remaining Work
 ```
@@ -104,6 +110,7 @@ The issue closes automatically — the PR body includes a `Closes #15` reference
 └─────┴──────────────────────────────────────────┴───────────┴────────────┘
 4 open issues
 ```
+
 ---
 ## 7. Work Multiple Issues in Parallel
 Assign several issues at once:
@@ -116,6 +123,7 @@ Assign several issues at once:
 📋 Scribe  — logging session
 ```
 Each agent creates its own branch and works independently. Both PRs open when agents finish.
+
 ---
 ## Full Lifecycle at a Glance
 ```mermaid
@@ -131,6 +139,7 @@ graph LR
     style D fill:#e1f5ff
     style E fill:#f3e5f5
 ```
+
 ---
 ## Tips
 - **You don't pick the agent.** Squad routes each issue to the agent whose expertise matches.

@@ -1,5 +1,6 @@
 # Recipes & Advanced Scenarios
 A compact cookbook of prompts, patterns, and power moves. Each recipe is a prompt you can paste straight into Squad.
+
 ---
 ## Starting Out
 ### New Project from Scratch
@@ -11,6 +12,7 @@ Never too late. Run `squad`, describe the project as it is today, and let agents
 ### Large Codebase (200K+ Lines)
 > "This is a 200k line codebase — help me understand the architecture before we start making changes"
 Each agent gets its own 200K context window. Routing ensures only the right agent looks at relevant code. Use routing rules in `.squad/routing.md` to keep agents focused on their domain. Be explicit about scope on monorepos.
+
 ---
 ## Team Management
 ### Running Multiple Squads
@@ -29,6 +31,7 @@ Six storage options: committed (default), gitignored, separate branch, submodule
 ### Keeping Your Squad Across Projects
 > "I want to keep my current team — don't cast a new one for this project"
 Export often — at the end of each project or after a major milestone. Your squad gets smarter over time. Generic skills carry forward; project-specific details are stripped on export.
+
 ---
 ## Workflows
 ### Release Process
@@ -40,6 +43,7 @@ Ralph triages issues every 6 hours via the heartbeat workflow. Skills become liv
 ### Private Repos & Security
 > "I need to know Squad's data security model"
 Squad runs entirely in your Copilot session. Nothing leaves your machine beyond Copilot's standard operation. Skills are generic and safe to share. Review agent histories before exporting — they may contain project-specific details.
+
 ---
 ## Configuration
 ### Switching Models
@@ -48,11 +52,13 @@ Squad supports 17 models across three tiers. Budget mode: `claude-haiku-4.5` for
 ### Client Compatibility
 > "Does Squad work in VS Code?"
 CLI is the primary platform with full features. VS Code works with conditional support — parallel subagents, workspace-scoped file access, session model selection. JetBrains and GitHub.com are untested. Both CLI and VS Code share the same `.squad/` state.
+
 ---
 ## Recovery
 ### Disaster Recovery
 > "My .squad/ directory was deleted — help me recover the team state"
 If committed: `git checkout .squad/`. If not: rebuild with `squad` or import from a previous export. Override bad decisions with directives. Archive confused agent histories. Upgrades never touch `.squad/`.
+
 ---
 ## Pro Tips
 > Patterns from real usage that make Squad click.
@@ -79,6 +85,7 @@ Team, design the user model. Don't code yet. Write decisions to decisions.md.
 ```
 Keaton, do a 20-minute spike on authentication patterns. Write a decision.
 ```
+
 ---
 ## Power Prompts
 Copy these directly into Squad.
@@ -125,6 +132,7 @@ Write your summary to history.md.
 ```
 What did the team accomplish last session? Any blockers?
 ```
+
 ---
 ## See Also
 - [CLI Reference](../reference/cli.md) — Every command and config file

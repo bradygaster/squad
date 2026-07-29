@@ -9,6 +9,7 @@ hero: "Squad goes enterprise with native Azure DevOps support, adds a Communicat
 ---
 # What's New: Azure DevOps Adapter, CommunicationAdapter, SubSquads, and Security Hardening
 > _This batch adds first-class Azure DevOps support, a pluggable communication layer, the community-voted SubSquads rename, and security fixes that prevent shell injection, WIQL injection, and bearer token exposure. 5 PRs merged, 153 new tests, 4 issues closed._
+
 ---
 ## What Shipped
 ### 1. Azure DevOps Platform Adapter — The Enterprise Feature
@@ -54,13 +55,16 @@ interface CommunicationAdapter {
 }
 ```
 Four adapters:
+
 | Adapter | Phone-capable | Setup |
 |---------|:---:|---|
 | **FileLog** | Via git | Zero-config fallback |
 | **GitHub Discussions** | ✅ Browser | Auto-detected |
 | **ADO Work Item Discussions** | ✅ ADO mobile | Auto-detected |
 | **Teams Webhook** | ✅ Teams mobile | Stubbed (Phase 2) |
+
 Factory auto-detects platform: `createCommunicationAdapter(repoRoot)`.
+
 ### 3. SubSquads — The Community-Voted Rename
 Workstreams → SubSquads. The community decided.
 - CLI: `squad subsquads` (with `workstreams` and `streams` as deprecated aliases)
@@ -69,6 +73,7 @@ Workstreams → SubSquads. The community decided.
 - Config file stays at `.squad/streams.json` (file rename deferred)
 ### 4. Security Hardening
 Every platform adapter went through a community-driven 5-model security review (thanks [@wiisaacs](https://github.com/wiisaacs)):
+
 | Fix | What it prevents |
 |-----|-----------------|
 | `execSync` → `execFileSync` | Shell injection via user input |
@@ -78,12 +83,14 @@ Every platform adapter went through a community-driven 5-model security review (
 | Cross-platform draft filter | `findstr` → JMESPath (macOS/Linux compat) |
 | PR status mapping | `active`→`open` for `gh` CLI compatibility |
 | `gh issue create` fix | No `--json` flag — parse URL from stdout |
+
 ### 5. ESM Runtime Patch + Secret Guardrails (Brady)
 - Runtime `Module._resolveFilename` intercept for Node 24+ ESM compatibility
 - 5-layer secret defense architecture
 - `.copilot/skills/secret-handling/SKILL.md` team reference
 - 59 TDD security hook tests
 - Charter hardening for Trejo (Git & Release) and Drucker (CI/CD)
+
 ---
 ## Quick Stats
 - ✅ 5 PRs merged (#191, #263, #268, #272, #266)
@@ -92,15 +99,18 @@ Every platform adapter went through a community-driven 5-model security review (
 - ✅ 4 issues closed (#240, #261, #271, #273)
 - ✅ Security review: 7 code fixes from 10 review comments
 - ✅ External integration testing: 10/13 ADO tests passed
+
 ---
 ## Breaking Changes
 None. All changes are additive. Repos without ADO remotes work exactly as before. Old `workstreams`/`streams` names still work as deprecated aliases.
+
 ---
 ## Contributors
 - **[@tamirdresher](https://github.com/tamirdresher)** — ADO adapter, CommunicationAdapter, SubSquads rename, security fixes, docs, blog
 - **[@wiisaacs](https://github.com/wiisaacs)** — 5-model security review with test validation
 - **[@dfberry](https://github.com/dfberry)** — CommunicationAdapter requirements, tiered deployment proposal
 - **[@bradygaster](https://github.com/bradygaster)** — ESM fix, secret guardrails sprint, SubSquads merge, architecture guidance
+
 ---
 ## What's Next
 - **Process template introspection** — auto-detect ADO work item types (#240)

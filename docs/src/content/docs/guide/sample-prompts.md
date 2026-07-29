@@ -1,5 +1,6 @@
 # Sample Prompts
 **Copy any of these, open Copilot, select Squad, and paste.** Each one is a ready-to-go project that shows a different Squad capability.
+
 ---
 ## Quick Builds
 Small enough to ship in a single session. Great for seeing fan-out in action.
@@ -13,6 +14,7 @@ I'm building a cross-platform CLI pomodoro timer in Python. It should support:
 Set up the team. I want this done fast — everyone works at once.
 ```
 **Shows:** Parallel fan-out on a small project. Backend handles timer logic, tester writes test cases from the spec while implementation is in flight.
+
 ---
 ### Retro Snake Game
 ```
@@ -25,6 +27,7 @@ Build a browser-based Snake game using vanilla HTML, CSS, and JavaScript. No fra
 Start building immediately — I want to play this in 20 minutes.
 ```
 **Shows:** Fast iteration — frontend, audio, and input handling all built in parallel. Tester writes Playwright tests while the game is being built.
+
 ---
 ## Mid-Size Projects
 These take a few sessions and show how decisions and memory compound over time.
@@ -39,6 +42,7 @@ I'm building a React dashboard that shows sales metrics. Stack: React 19, Vite, 
 Set up the team and start with the backend data layer.
 ```
 **Shows:** Agents specialize (frontend on Recharts, backend on Express/SQLite, tester on Playwright). Decisions about chart library and data format propagate automatically.
+
 ---
 ### Aspire Cloud-Native App
 ```
@@ -52,6 +56,7 @@ Build a cloud-native distributed app with Aspire. I want:
 Use the latest .NET 9 templates as a starting point.
 ```
 **Shows:** Full-stack cloud-native development. Agents handle service discovery, container orchestration, and distributed tracing setup in parallel.
+
 ---
 ## Feature Showcases
 Prompts designed to exercise specific Squad features.
@@ -65,6 +70,7 @@ Build a cross-platform habit tracker with a shared Squad config. I want to:
 Start with the backend. When it's solid, I'll export and we'll start the mobile app.
 ```
 **Shows:** Export/import, portability, and how decisions persist across projects.
+
 ---
 ### Issue-Driven Development
 ```
@@ -76,6 +82,7 @@ I have 12 open issues on my GitHub repo. I want the team to:
 Ralph, go.
 ```
 **Shows:** Ralph's work monitor loop, GitHub Issues integration, automatic triage and assignment.
+
 ---
 ### Full Ceremony Lifecycle
 ```
@@ -87,6 +94,7 @@ We're building an IoT dashboard for smart home sensors. Before we write any code
 Start with the design review.
 ```
 **Shows:** Ceremonies, PRD mode, sprint planning, and how they feed into parallel execution.
+
 ---
 ## Make Your Own
 Template for any project:

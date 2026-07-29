@@ -24,6 +24,7 @@ Here's what shipped:
 - ✅ Security hardening (CWE-78 fixes, PII scrubbing, governance hooks)
 - ✅ Semantic versioning compliance (`X.Y.Z-preview.N`)
 If you were on the beta (v0.5.x), this is your upgrade moment. If you're new to Squad, this is the best time to jump in.
+
 ---
 ## How to Get It
 Three lines:
@@ -37,9 +38,11 @@ squad init
 npx @bradygaster/squad-cli
 ```
 **Upgrading from beta?** Check the [Migration Guide](../get-started/migration.md) for step-by-step upgrade instructions covering 9 scenarios from brand-new users to CI/CD pipelines.
+
 ---
 ## What Changed — The Headlines
 Here's the side-by-side comparison of beta vs. v0.8.18:
+
 | Area | Beta (v0.5.x) | New (v0.8.18) |
 |------|---------------|---------------|
 | **Language** | JavaScript | TypeScript (strict mode) |
@@ -52,7 +55,9 @@ Here's the side-by-side comparison of beta vs. v0.8.18:
 | **Security** | Basic | CWE-78 fixes, PII scrubbing, governance hooks |
 | **Versioning** | Inconsistent | Semver compliant (`X.Y.Z-preview.N`) |
 | **Documentation** | Sparse | Comprehensive docs, samples, and tutorials |
+
 The beta was a proof of concept. v0.8.18 is the production-ready runtime.
+
 ---
 ## The CLI — Your New Command Center
 The CLI went from "a few scripts" to "a full terminal experience." Here's what you get:
@@ -160,6 +165,7 @@ This updates Squad-owned files (templates, CLI scripts, SDK code) but never touc
 - `.copilot/skills/**` (learned patterns)
 - `.squad/history/**` (session logs)
 Your team's memory is sacred. Upgrades respect that.
+
 ---
 ## The SDK — Build Your Own Multi-Agent Apps
 The CLI is built on the SDK. The SDK is the runtime. You can use it directly to build custom multi-agent applications.
@@ -172,6 +178,7 @@ They evolve separately. CLI features can ship without breaking SDK consumers.
 npm install @bradygaster/squad-sdk
 ```
 **Key SDK Capabilities:**
+
 | Component | What It Does |
 |-----------|-------------|
 | **CastingEngine** | Deterministic, themed agent naming. Cast a team from "The Usual Suspects" or "The Avengers." Names persist across sessions. |
@@ -181,8 +188,10 @@ npm install @bradygaster/squad-sdk
 | **SkillRegistry** | Runtime pattern discovery. Agents write `SKILL.md` files, share knowledge across sessions. |
 | **EventBus** | Pub/sub for cross-agent communication. Subscribe to `session:created`, `message:sent`, `cost:threshold`. |
 | **SessionPool** | Managed Copilot session lifecycle. Reuse sessions across messages, clean up on shutdown. |
+
 **TypeScript-first:**
 Every interface, type, and function is fully typed. No `any` escapes. If it compiles, it's correct.
+
 ---
 ## The Samples — See It In Action
 Eight samples ship with v0.8.18. Each one demonstrates a slice of the SDK. Run them, read the code, learn the patterns.
@@ -206,6 +215,7 @@ Eight samples ship with v0.8.18. Each one demonstrates a slice of the SDK. Run t
 cd samples/hello-squad
 npm install && npm start
 ```
+
 ---
 ### 2. **knock-knock** (Intermediate)
 **What it does:** Two Copilot sessions trade live knock-knock jokes, streaming token-by-token. Demonstrates `SquadClientWithPool`, casting, and `StreamingPipeline`.
@@ -225,6 +235,7 @@ Responses stream word-by-word in real time. Watch the jokes build character by c
 cd samples/knock-knock
 npm install && npm start
 ```
+
 ---
 ### 3. **rock-paper-scissors** (Advanced)
 **What it does:** Nine strategic agents battle in a tournament. Rocky always throws rock. Sherlock analyzes opponent history to predict and counter moves. A live leaderboard tracks wins.
@@ -252,6 +263,7 @@ Watch the learning agent adapt. Sherlock's win rate climbs as it detects pattern
 cd samples/rock-paper-scissors
 npm install && npm start
 ```
+
 ---
 ### 4. **hook-governance** (Intermediate)
 **What it does:** Four governance hooks in action. File-write guards block `/etc/passwd`. PII scrubber redacts emails. Reviewer lockout prevents self-revision. Rate limiter caps user interruptions.
@@ -278,6 +290,7 @@ npm install && npm start
 cd samples/hook-governance
 npm install && npm start
 ```
+
 ---
 ### 5. **streaming-chat** (Intermediate)
 **What it does:** Three agents respond to keyword-routed messages in real time. Ask for an API design → Backend responds. Ask for dark mode → Frontend delivers. Token-by-token streaming.
@@ -300,6 +313,7 @@ Use JSON for all payloads. Add pagination with ?page= and ?limit=.
 cd samples/streaming-chat
 npm install && npm start
 ```
+
 ---
 ### 6. **cost-aware-router** (Beginner)
 **What it does:** Five tasks flow through a cost-optimized router. Typo fix → Direct tier (cheapest). Architecture review → Full tier (premium). A budget bar fills up with warnings at 70% and 90%.
@@ -330,6 +344,7 @@ Task 4: Architecture review
 cd samples/cost-aware-router
 npm install && npm start
 ```
+
 ---
 ### 7. **skill-discovery** (Intermediate)
 **What it does:** Agents load domain knowledge from SKILL.md files, match skills to tasks, and discover NEW patterns at runtime. Confidence tracks from low → medium → high as patterns are confirmed.
@@ -353,6 +368,7 @@ npm install && npm start
 cd samples/skill-discovery
 npm install && npm start
 ```
+
 ---
 ### 8. **autonomous-pipeline** (Advanced)
 **What it does:** THE showcase. A 10-task dev pipeline runs in the background. Agents pick up work, route blockers, record decisions, accumulate learnings. A live dashboard shows who's working on what.
@@ -403,6 +419,7 @@ This is the "wow demo" — everything Squad can do in one running script.
 cd samples/autonomous-pipeline
 npm install && npm start
 ```
+
 ---
 ## Under the Hood — What We Rebuilt
 ### TypeScript Strict Mode
@@ -479,6 +496,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 squad aspire
 ```
 Open `http://localhost:18888` to see your multi-agent pipeline visualized.
+
 ---
 ## Migrating from Beta
 If you're on beta (v0.5.x), here's the upgrade path:
@@ -511,6 +529,7 @@ The [Migration Guide](../get-started/migration.md) covers 9 scenarios:
 - Directory: `.ai-team/` → `.squad/` (auto-migrated with `--migrate-directory`)
 - Config: JSON → Markdown (`.squad/team.md`, `.squad/decisions.md`)
 - Commands: Some were renamed or merged (check `squad help`)
+
 ---
 ## What's Next
 Squad v0.8.18 is the foundation. Here's what we're working on:
@@ -530,6 +549,7 @@ Squad v0.8.18 is the foundation. Here's what we're working on:
 - Cloud-hosted squads (no local setup required)
 - Enterprise features (SSO, audit logs, compliance hooks)
 **Community contributions welcome!** Issues and PRs at [github.com/bradygaster/squad](https://github.com/bradygaster/squad).
+
 ---
 ## Get Started Today
 Squad v0.8.18 is live on npm. Install it:
@@ -546,6 +566,7 @@ Launch the shell:
 squad
 ```
 Start building.
+
 ---
 ## Resources
 - **GitHub:** [github.com/bradygaster/squad](https://github.com/bradygaster/squad)
@@ -554,8 +575,10 @@ Start building.
 - **Migration Guide:** [docs/get-started/migration.md](../get-started/migration.md)
 - **Samples:** [samples/README.md](https://github.com/bradygaster/squad/blob/main/samples/README.md)
 - **Issues:** [github.com/bradygaster/squad/issues](https://github.com/bradygaster/squad/issues)
+
 ---
 **Questions? Feedback? Ideas?** File an issue. Join the community. Build something amazing.
 Welcome to Squad v0.8.18. Let's build better software, together. 🚀
+
 ---
 _McManus (DevRel) — March 10, 2026_

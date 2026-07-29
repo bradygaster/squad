@@ -13,6 +13,7 @@ squad watch --execute
 }
 ```
 Ralph runs automated housekeeping during `squad watch` to keep `.squad/` clean — clearing temp files, archiving old logs, and flagging stale decisions.
+
 ---
 ## What Gets Cleaned
 ### Scratch Directory
@@ -31,6 +32,7 @@ Scans `.squad/decisions/inbox/` for files older than 7 days and warns you. Decis
     Run: squad decisions merge
 ```
 Cleanup doesn't auto-merge — it just warns. You decide when to merge.
+
 ---
 ## When Cleanup Runs
 Cleanup runs during the **housekeeping phase** of `squad watch` — after all work is processed for the round, before the next polling interval. This happens every `N` rounds based on your config.
@@ -38,6 +40,7 @@ Cleanup runs during the **housekeeping phase** of `squad watch` — after all wo
 - Cleanup runs every **10 rounds** of `squad watch`
 - Archives logs older than **30 days**
 - Warns about decision inbox files older than **7 days**
+
 ---
 ## Configuration
 Add a `cleanup` section to your `.squad/config.json`:
@@ -49,12 +52,15 @@ Add a `cleanup` section to your `.squad/config.json`:
   }
 }
 ```
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `everyNRounds` | number | 10 | Run cleanup every N watch rounds |
 | `maxAgeDays` | number | 30 | Archive logs older than this many days |
+
 **Examples:**
 Run cleanup every 5 rounds, keep 60 days of logs:
+
 ```json
 {
   "cleanup": {
@@ -72,6 +78,7 @@ Run cleanup every round (aggressive), keep 14 days:
   }
 }
 ```
+
 ---
 ## What Cleanup Does NOT Touch
 - Earned skills in `.copilot/skills/` — never deleted
@@ -79,6 +86,7 @@ Run cleanup every round (aggressive), keep 14 days:
 - Active session data
 - Router state, team config, and other core Squad files
 Cleanup is safe and conservative — it only removes temporary files and archives old logs. Core squad state is never touched.
+
 ---
 ## Manual Cleanup
 You can manually trigger cleanup without running `squad watch`:
@@ -90,12 +98,14 @@ squad logs archive --before 2025-01-01
 # Merge stale decision inbox
 squad decisions merge
 ```
+
 ---
 ## Notes
 - Cleanup is **opt-in** — it only runs during `squad watch`, not in standalone Copilot sessions
 - Cleanup logs are written to the orchestration log for audit trail
 - Archived logs are still accessible but separated from active logs
 - Decision inbox warnings are informational only — no auto-merge
+
 ---
 ## Sample Prompts
 ```

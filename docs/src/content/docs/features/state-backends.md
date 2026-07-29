@@ -1,5 +1,6 @@
 # State Backends
 Squad supports multiple **state backends** for storing `.squad/` state (decisions, agent memories, session logs, skills). Each backend determines _where_ and _how_ this data is persisted — without changing how agents interact with it. Once configured, everything is automatic.
+
 ---
 ## The Problem
 By default, Squad stores `.squad/` state as regular files in your working tree. This works for solo workflows but has real trade-offs for teams:
@@ -7,6 +8,7 @@ By default, Squad stores `.squad/` state as regular files in your working tree. 
 - **Branch-switch loss:** State can be lost when switching branches (if not committed)
 - **Merge conflicts:** Multiple team members modifying `.squad/` files creates frequent conflicts
 State backends solve this by moving `.squad/` data into Git-native structures that live outside the working tree — keeping your PRs clean and your state safe across branches.
+
 ---
 ## Getting Started
 ### New project — choose a backend during init
@@ -37,6 +39,7 @@ When you choose `orphan` or `two-layer`:
 - The **pre-commit** hook guards against accidentally staging two-layer mutable state (decisions, histories, casting, routing) into a working-tree commit — it refuses with an explanation if detected
 - The **post-commit** hook flushes any pending two-layer state onto the orphan branch after each commit (best-effort, never blocks)
 - Hooks chain with existing hooks (husky, etc.) — nothing is overwritten
+
 ---
 ## Available Backends
 ### Local (default)
@@ -49,6 +52,7 @@ State lives as regular files in `.squad/` inside the working tree. This is the s
 - Files appear in `git status` and diffs
 - Branch switches can lose uncommitted state
 **Best for:** Most projects, especially when you want squad state committed alongside code.
+
 ---
 ### Git Notes (Deprecated → Two-Layer)
 > ⚠️ **Deprecated:** The standalone `git-notes` backend has been removed as a user-facing option. If your config still references `git-notes`, it will be **automatically migrated to `two-layer`** at runtime.
@@ -56,6 +60,7 @@ State lives as regular files in `.squad/` inside the working tree. This is the s
 > **Why:** Standalone git-notes stores all state as a single JSON blob on the root commit. This fundamentally cannot handle concurrent writes from multiple team members — `git notes merge` cannot merge opaque JSON, causing silent data loss.
 >
 > **Replacement:** The `two-layer` backend uses git notes as best-effort commit annotations (the "why" layer) while storing durable state on an orphan branch with per-file granularity (the "state" layer). This gives you the clean working tree of git-notes with the team-safe mergeability of the orphan approach.
+
 ---
 ### Orphan Branch
 State lives on a dedicated orphan branch (`squad-state` by default). The branch has no common history with your main branches — it's a completely separate tree used only for squad data.
@@ -74,6 +79,7 @@ State lives on a dedicated orphan branch (`squad-state` by default). The branch 
 - Slightly more complex than `local` for debugging
 - Concurrent writes to the branch can conflict (single-writer recommended)
 **Best for:** Teams who want Git-versioned state without polluting the main branch history.
+
 ---
 ## Configuration
 The state backend is set once (during `squad init` or `squad upgrade`) and stored in `.squad/config.json`:
@@ -91,8 +97,10 @@ If a non-default backend fails to initialize (e.g., Git is not available, permis
 ```
 Warning: State backend 'two-layer' failed: <reason>. Falling back to 'local'.
 ```
+
 ---
 ## Comparison
+
 | Feature | Local | Orphan Branch | Two-Layer |
 |---------|-------|---------------|-----------|
 | Working tree clean | ❌ | ✅ | ✅ |
@@ -104,6 +112,7 @@ Warning: State backend 'two-layer' failed: <reason>. Falling back to 'local'.
 | Sharing across clones | Normal push/pull | Normal branch push/pull | Normal branch push/pull |
 | Concurrent-write safe | ✅ (filesystem) | ⚠️ (single writer) | ✅ (per-file merge) |
 | Team-safe (multi-user) | ❌ (merge conflicts) | ⚠️ (needs coordination) | ✅ (designed for teams) |
+
 ---
 ## Inspecting State
 ### Local
@@ -127,6 +136,7 @@ git show squad-state:decisions.md
 # View commit history
 git log --oneline squad-state
 ```
+
 ---
 ## SDK Usage
 The state backend is available programmatically via the Squad SDK:
@@ -164,6 +174,7 @@ interface StateBackend {
   readonly name: string;
 }
 ```
+
 ---
 ## Security
 State backends include hardening against common injection attacks:
@@ -173,6 +184,7 @@ State backends include hardening against common injection attacks:
 - **Tab injection:** `\t` characters are rejected (prevents mktree format corruption)
 - **Empty segments:** Double slashes (`//`) are rejected
 All validation is centralized in `validateStateKey()` and applied uniformly across all backends.
+
 ---
 ## Content Fidelity
 All backends preserve content exactly as written — including trailing newlines, leading whitespace,
@@ -181,12 +193,14 @@ multiple agents append entries over time.
 The orphan and two-layer backends use raw `execFileSync` for content reads (without trimming) to
 ensure faithful round-trips. Git plumbing helpers that trim output are only used for non-content
 operations like `rev-parse` and `ls-tree`.
+
 ---
 ## Worktree Awareness
 When running in a git worktree, `resolveSquadState()` uses `git rev-parse --show-toplevel` to
 determine the actual current worktree root — not the parent of `.squad/`. This ensures that
 git-native backends (orphan, two-layer) operate in the correct repository context, even when
 `.squad/` is resolved from the main checkout via the worktree fallback strategy.
+
 ---
 ## Notes
 - State backends are **opt-in** — the default is `local` (no behavior change)
@@ -195,6 +209,7 @@ git-native backends (orphan, two-layer) operate in the correct repository contex
 - The `external` backend type exists as a stub for future external storage (see [External State](./external-state))
 - State backends are available in the **insider** release channel (`@bradygaster/squad-cli@insider`)
 - 63 unit tests + 46 E2E tests cover all backends including security hardening, content fidelity, and directory pruning
+
 ---
 ## Using with Copilot CLI Sessions
 The SDK's `StateBackend` interface handles programmatic state for Squad internals, but Copilot agents also need a way to write commit-scoped context — decisions, research, reviews — without creating `.squad/` file changes that pollute PRs.
@@ -255,22 +270,28 @@ See `.squad/notes-protocol.md` for the full contract.
    - Notes on rejected PRs are silently ignored
 ### Template files
 When `stateBackend` is set to `two-layer` or `orphan`, the following templates are available:
+
 | Template | Purpose |
 |----------|---------|
 | `notes-protocol.md` | The full agent contract for git notes |
 | `scripts/notes/fetch.ps1` | Fetch + setup refspec + merge after conflict |
 | `scripts/notes/write-note.ps1` | Agent helper — handles JSON, conflicts, push |
+
 ### Automatic Coordinator Integration
 **You don't need to manually add copilot-instructions.md snippets.** When `stateBackend` is set in `.squad/config.json`, the Squad coordinator (`squad.agent.md`) automatically adapts its agent spawn prompts:
+
 | Backend | Agent reads | Agent writes | Scribe commits to |
 |---------|-------------|--------------|-------------------|
 | `local` | `.squad/` files on disk | `.squad/` files on disk | Working branch |
 | `orphan` | `.squad/` files on disk (synced) | `.squad/` files on disk | `squad-state` orphan branch (NOT working branch) |
 | `two-layer` | Git notes + orphan branch | Git notes via `write-note.ps1` + orphan | Pushes note refs + orphan branch |
+
 **Config vs State distinction:**
+
 - **Static config** (charters, team.md, routing.md, casting/) — always on disk, all backends
 - **Mutable state** (history.md, decisions/inbox/, logs, orchestration-log/) — backend-dependent
 The coordinator passes `STATE_BACKEND` into every agent spawn prompt. Agents receive backend-specific instructions for reading and writing state. Scribe receives backend-specific commit instructions. This is fully automatic — no user configuration beyond setting `stateBackend` in config.json is needed.
+
 ---
 ## Migrating an Existing Squad
 Use `squad upgrade` to migrate — it handles everything:
@@ -286,6 +307,7 @@ This will:
 **What happens:** Existing `.squad/` files are migrated to the orphan branch and may be removed from the working tree on subsequent commits. New decisions and state writes go to the orphan branch (and git notes for two-layer). The pre-commit hook prevents you from accidentally re-committing mutable state files into the working tree.
 ### Switching between orphan and two-layer
 Change `stateBackend` in `.squad/config.json`. The coordinator adapts on the next session. Both use the `squad-state` orphan branch, so existing state is preserved. Two-layer additionally enables git notes for commit-scoped annotations.
+
 ---
 ## Steady-state safety net
 Once you've migrated to `orphan` or `two-layer`, two additional git hooks enforce the invariant that mutable state never lands in your working branch.
@@ -354,6 +376,7 @@ Scribe will auto-create it on the next session if it doesn't exist (via git plum
 **Workaround:** The note is still accessible via `git notes --ref=squad/{agent} show {commit-sha}`. The ref itself (`refs/notes/squad/{agent}`) is visible from all branches regardless of which commit the note is on.
 ### "Config.json doesn't have stateBackend"
 **This is fine.** The default is `local` — the current behavior. No config change needed unless you want a different backend.
+
 ---
 ## Multi-User Synchronization
 When multiple team members work on the same repo with Squad, the state backend determines how state stays in sync.
@@ -399,6 +422,7 @@ To make `git pull` automatically fetch notes, add this to `.git/config` (or use 
 git config --add remote.origin.fetch '+refs/notes/*:refs/notes/*'
 ```
 After this, every `git fetch origin` includes notes automatically.
+
 ---
 ## FAQ
 ### What's the default state backend?

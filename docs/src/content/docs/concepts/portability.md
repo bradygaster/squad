@@ -1,5 +1,6 @@
 # Portability & Extensions
 Your squad isn't locked to one repo, one editor, or one set of tools. Export a trained team and import it somewhere else. Install plugins for instant expertise. Inherit org-wide practices from upstream repos. Wire up MCP servers so agents can talk to anything.
+
 ---
 ## Try This
 ```
@@ -11,15 +12,18 @@ Install the AWS deployment plugin
 ```
 Add the platform team's repo as an upstream source
 ```
+
 ---
 ## How It Works
 Squad is designed to be **portable by default**. Four systems make this possible:
+
 | System | What It Does |
 |--------|-------------|
 | **Export/Import** | Snapshot your entire team to a JSON file, import it anywhere |
 | **Plugins** | Install community bundles of agent templates, skills, and best practices |
 | **Upstream Inheritance** | Inherit skills, decisions, and routing from other repos |
 | **MCP Servers** | Extend agents with external services (GitHub, Trello, notifications) |
+
 ```
 Your Repo (.squad/)
     ↑ inherits from
@@ -29,6 +33,7 @@ Plugins (community marketplaces)
     ↑ connected to
 MCP Servers (GitHub, Teams, Trello, Aspire, etc.)
 ```
+
 ---
 ## Export & Import
 Squad teams are portable. Export your trained agents, casting state, skills, and decisions to a single JSON file.
@@ -38,6 +43,7 @@ squad export                          # creates squad-export.json
 squad export --out ./backups/team.json  # custom path
 ```
 ### What's Included
+
 | Data | Included |
 |------|----------|
 | Agent charters | ✅ |
@@ -45,7 +51,9 @@ squad export --out ./backups/team.json  # custom path
 | Casting state | ✅ |
 | Skills | ✅ All earned skills from `.copilot/skills/` |
 | Decisions | ✅ |
+
 Skills are fully portable — they export and import with perfect fidelity.
+
 ### Import
 ```bash
 squad import squad-export.json
@@ -60,6 +68,7 @@ During import, agent histories are split into:
 - **Portable knowledge** — general patterns and conventions that transfer across projects
 - **Project-specific learnings** — context-tagged entries tied to the original repo
 Imported agents bring their skills and general knowledge without assuming your project works the same way.
+
 ---
 ## Plugins
 Plugins are community-curated bundles of agent templates, skills, and best practices. Install one and your agents get instant expertise.
@@ -69,12 +78,14 @@ Plugins are community-curated bundles of agent templates, skills, and best pract
 - **Instructions** — `decisions.md` snippets for conventions and routing
 - **Sample prompts** — ready-to-use prompts that activate plugin capabilities
 ### Available Marketplaces
+
 | Marketplace | What's Inside |
 |-------------|--------------|
 | **awesome-copilot** | Frontend frameworks, backend stacks, deployment patterns |
 | **anthropic-skills** | Claude-optimized patterns, prompt engineering, RAG |
 | **azure-cloud-dev** | Azure VMs, App Service, Cosmos DB, GitHub Actions |
 | **security-hardening** | OWASP, input validation, secrets management |
+
 ### Installing a Plugin
 ```
 Install the react-component-library plugin from awesome-copilot
@@ -108,15 +119,18 @@ my-team-plugins/
 └── README.md
 ```
 Register it with `squad` and your team can install from it.
+
 ---
 ## Upstream Inheritance
 Declare external Squad sources and automatically inherit their context at session start. Knowledge flows down from org → team → repo without duplicating configuration.
 ### Three Source Types
+
 | Type | Example | Use Case |
 |------|---------|----------|
 | **local** | `../org-practices/.squad/` | Sibling repo, monorepo package |
 | **git** | `https://github.com/acme/platform-squad.git` | Public or private org repo |
 | **export** | `./exports/snapshot.json` | Offline use or version pinning |
+
 ### What Gets Inherited
 - **Skills** — all `.copilot/skills/*/SKILL.md` files
 - **Decisions** — `.squad/decisions.md`
@@ -148,14 +162,17 @@ squad upstream list
 squad upstream sync
 ```
 Git upstreams clone to `.squad/_upstream_repos/{name}` (auto-added to `.gitignore`). Local and export upstreams are read live at session start — no sync needed.
+
 ---
 ## MCP Setup
 MCP (Model Context Protocol) servers extend Squad with external services. Agents discover and use MCP tools automatically — no per-agent configuration required.
 ### Configuration
+
 | Platform | Config File |
 |----------|------------|
 | **Copilot CLI** | `.copilot/mcp-config.json` |
 | **VS Code** | `.vscode/settings.json` (under `copilot.mcp.servers`) |
+
 ### Example: GitHub MCP
 ```json
 {
@@ -175,23 +192,28 @@ Use environment variables instead of hardcoding tokens:
 export GITHUB_TOKEN=$(gh auth token)
 ```
 ### Other Integrations
+
 | Service | What Agents Can Do |
 |---------|-------------------|
 | **GitHub** | List issues/PRs, create branches, post comments |
 | **Trello** | Create cards, move between lists, update descriptions |
 | **Notifications** | Ping you on Teams, Discord, iMessage, webhooks |
 | **Aspire** | Monitor .NET deployments, check service health |
+
 Agents discover tools at spawn time and use them naturally during work. See [GitHub Integration](github-workflow.md) for how notifications connect to your workflow.
+
 ---
 ## VS Code Integration
 Squad runs identically in VS Code — same `.squad/` state, same agents, same decisions. Initialize with CLI, open in VS Code, and everything just works.
 ### Key Differences from CLI
+
 | Feature | CLI | VS Code |
 |---------|-----|---------|
 | Per-spawn model selection | ✅ | ❌ (uses session model) |
 | Agent execution | Background + polling | Parallel sync (results arrive together) |
 | SQL tool | ✅ | ❌ (use file-based state) |
 | File writes | Automatic | May prompt for approval (once) |
+
 ### What's the Same
 - Same `.squad/` directory and state
 - Same team roster, skills, and decisions
@@ -202,6 +224,7 @@ Squad runs identically in VS Code — same `.squad/` state, same agents, same de
 - Accept file modification approval once — subsequent writes are automatic
 - For heavy parallel work (5+ agents), SQL workflows, or per-spawn model selection → use CLI
 - Check the model picker if agents seem slow — switch to Haiku for cost savings
+
 ---
 ## Tips
 - Export before running `upgrade` — it's your rollback point.
@@ -209,6 +232,7 @@ Squad runs identically in VS Code — same `.squad/` state, same agents, same de
 - Imported agents keep their names and universe casting.
 - Commit `.squad/` after importing so everyone who clones the repo gets the team.
 - Order matters in `upstream.json` — later entries override earlier ones. Use `remove` + `add` to reorder.
+
 ---
 ## Sample Prompts
 ```

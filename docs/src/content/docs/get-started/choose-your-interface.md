@@ -1,5 +1,6 @@
 # Choose your interface
 Squad works across multiple interfaces. Pick the one that fits your workflow.
+
 ---
 ## Try this:
 ```bash
@@ -9,6 +10,7 @@ copilot --agent squad
 squad init
 squad doctor
 ```
+
 ---
 ## What are the ways to use Squad?
 Squad runs in multiple modes and across multiple platforms:
@@ -45,8 +47,10 @@ See [SDK Reference](../reference/sdk.md) for the complete API.
 ### Copilot Coding Agent (`@copilot`)
 Background GitHub automation that picks up labeled issues and opens draft PRs. Works across your organization with human-defined guardrails. Issue gets labeled → agent picks it up → PR gets opened → human reviews.
 See [Copilot Coding Agent](../features/copilot-coding-agent.md) for setup.
+
 ---
 ## Which should I use?
+
 | You want to... | Use | Why |
 |----------------|-----|-----|
 | **Work with your squad day-to-day** | **GitHub Copilot CLI** or **VS Code** | Conversational interface, full agent spawning, parallel execution. Most natural way to collaborate with your team. |
@@ -56,9 +60,11 @@ See [Copilot Coding Agent](../features/copilot-coding-agent.md) for setup.
 | **View OpenTelemetry traces** | **Squad CLI** (`squad aspire`) | Launches Aspire dashboard for observability. |
 | **Process approved issues in the background** | **Copilot Coding Agent** | GitHub Actions workflow watches for labeled issues and dispatches `@copilot`. |
 | **Build tools on top of Squad** | **SDK** | Typed APIs, configuration loading, agent lifecycle hooks. |
+
 ---
 ## Feature availability matrix
 Not every feature works everywhere. Here's what's available where:
+
 | Feature | GitHub Copilot CLI | VS Code | Squad CLI | SDK |
 |---------|:------------------:|:-------:|:---------:|:---:|
 | Agent spawning | ✅ | ✅ | ✅ | ✅ |
@@ -69,11 +75,14 @@ Not every feature works everywhere. Here's what's available where:
 | Aspire dashboard | ❌ | ❌ | ✅ | ❌ |
 | `squad doctor` diagnostics | ❌ | ❌ | ✅ | ✅ |
 | Issue assignment to `@copilot` | ❌ | ❌ | ✅ (setup) | ❌ |
+
 **Legend:**
+
 - ✅ Fully supported
 - ⚠️ Limited or constrained
 - ❌ Not available
 For a detailed breakdown of VS Code constraints and CLI parity, see [Client Compatibility Matrix](../scenarios/client-compatibility.md).
+
 ---
 ## Common workflows
 ### "I use GitHub Copilot CLI for everything"
@@ -100,6 +109,7 @@ squad doctor
 # Same .squad/ directory, same team
 ```
 Initialize with CLI, work in VS Code.
+
 ---
 ## See also
 - [Installation](installation.md) — Install Squad CLI, SDK, or use in VS Code

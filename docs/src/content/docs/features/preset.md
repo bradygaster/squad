@@ -13,9 +13,11 @@ squad init --preset backend-team
 ```
 Presets are reusable, named bundles of agent charters you can apply to any squad. Built-in presets ship with Squad; you can save your own from any project's current agents and (optionally) sync them across machines via a private GitHub repo.
 Each preset is a directory at `~/.squad/presets/<name>/` containing a `preset.json` manifest and `agents/` charter files. The preset name is the directory name.
+
 ---
 ## What presets capture
 Presets capture **agents only** (charters). For full squad snapshots including casting state, skills, routing rules, and decisions — for example to share a configured squad or publish to an agent toolbox — use [`squad export`](/squad/docs/features/export-import/) instead.
+
 | Captured by preset | NOT captured by preset |
 |---|---|
 | Agent charters (role, expertise, prompt style) | Casting state (registry, history) |
@@ -24,7 +26,9 @@ Presets capture **agents only** (charters). For full squad snapshots including c
 | | Skills (`.copilot/skills/`) |
 | | Ceremonies |
 | | Memory (`.squad/memory/`) |
+
 This split is intentional. Presets are about the **shape** of a team. Skills, decisions, and history are about the **work** that team did.
+
 ---
 ## Commands
 ### `squad preset list`
@@ -73,6 +77,7 @@ Requirements for `--remote`:
 - GitHub CLI (`gh`) installed and authenticated (`gh auth login`)
 - Permission to create private repos
 On a second machine, run `squad preset init --remote` again and it will detect and clone your existing `squad-home` repo automatically.
+
 ---
 ## Applying a preset at init time
 The most common usage — bootstrap a new project with a preset team:
@@ -83,6 +88,7 @@ git init
 squad init --preset backend-team
 ```
 This creates the standard `.squad/` scaffold AND applies the preset's agents. If `~/.squad/presets/` doesn't exist yet, `squad init` auto-runs `squad preset init` first to seed the built-in presets.
+
 ---
 ## Cross-machine workflow
 Use the remote-backed setup if you want presets to follow you to new machines or shared dev environments:
@@ -95,6 +101,7 @@ squad preset init --remote   # detects existing squad-home repo, clones it
 squad preset list            # my-team is already here
 ```
 The remote repo lives at `https://github.com/<your-user>/squad-home` (private by default).
+
 ---
 ## Sharing presets between users
 Today, the simplest path to share a preset with someone else is:
@@ -102,6 +109,7 @@ Today, the simplest path to share a preset with someone else is:
 2. You manually copy the preset directory across (or clone yours, copy the directory in, push)
 A formal "publish/install from another user's repo" flow is on the roadmap but not in v0.10.
 For collaborative team rosters that go beyond just agents (skills, decisions, routing), use [`squad export`](/squad/docs/features/export-import/) instead.
+
 ---
 ## What's in a preset directory
 ```
@@ -134,6 +142,7 @@ The `preset.json` manifest format:
 }
 ```
 You can hand-edit this file to refine descriptions or add/remove agents — but the corresponding `agents/<name>/charter.md` files must match.
+
 ---
 ## See also
 - [Export & Import](/squad/docs/features/export-import/) — full squad snapshots including state

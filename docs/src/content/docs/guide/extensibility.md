@@ -1,13 +1,16 @@
 # Extensibility guide
 Where does your change idea belong? Squad core, marketplace plugin, or team config?
 **Key principle:** Squad core stays small. Most ideas are skills, ceremonies, or directives.
+
 ---
 ## The three layers
+
 | Layer | What lives here | Who changes it | Distribution |
 |-------|----------------|----------------|--------------|
 | **Squad Core** | Coordinator behavior, routing logic, reviewer protocol | Squad maintainers only | npm releases |
 | **Squad Extension** | Reusable capabilities (skills, ceremonies, workflows, memory guidance, provider contracts, generated artifacts) | Plugin authors | Marketplace plugins |
 | **Team Configuration** | Decisions unique to THIS team | The team itself | `.squad/` files |
+
 ---
 ## Decision tree
 ```
@@ -30,6 +33,7 @@ Where does your change idea belong? Squad core, marketplace plugin, or team conf
          Action: Update `.squad/` files
 ```
 **Heuristic:** "Squad should..." → check if it's really "My team should..." or "Teams using X should...".
+
 ---
 ## Worked example: Client-delivery RFC
 [RFC #328](https://github.com/bradygaster/squad/issues/328) proposed a sophisticated client-delivery workflow: discovery interviews, research sprints, multi-round review with `SHIP`/`NEEDS_WORK`/`BLOCKED` verdicts, evidence bundles.
@@ -54,6 +58,7 @@ client-delivery-workflow/
 squad plugin install github/awesome-copilot/client-delivery-workflow
 ```
 **Lesson:** Most sophisticated workflows are compositions of primitives, not core features.
+
 ---
 ## When to escalate to core
 You likely need a core change if:
@@ -68,6 +73,7 @@ You DON'T need core if:
 - **Team process** → Add a ceremony to `.squad/ceremonies.md`
 - **Reusable templates** → Build a plugin
 - **Configuring existing behavior** → Update `.squad/routing.md`
+
 ---
 ## Build an extension
 Ready to build? See [Building extensions](./building-extensions.md) for a five-minute walkthrough.
@@ -80,6 +86,7 @@ squad plugin enable my-extension
 squad plugin refresh my-extension
 ```
 Install records lock data and leaves the plugin disabled. Enable activates the roles declared in the manifest. Refresh updates approved generated artifacts for built-in providers such as Graphify. See [Plugin security model](../reference/plugin-security.md) for the guardrails under the pluggability model.
+
 ---
 ## Summary
 1. **Start with the decision tree** — Most ideas are Layer 2 or 3
@@ -87,6 +94,7 @@ Install records lock data and leaves the plugin disabled. Enable activates the r
 3. **Build a plugin if reusable** — Other teams benefit? → Package and share
 4. **Escalate to core rarely** — Need coordinator/routing changes? → Open an RFC
 **When in doubt:** Start with team config. Copy-pasting to other teams? Promote to plugin. Plugins repeatedly hitting limits? Signal for core change.
+
 ---
 ## Related documentation
 - [Plugin Marketplace](../features/plugins.md) — How to browse, install, and share plugins
@@ -95,5 +103,6 @@ Install records lock data and leaves the plugin disabled. Enable activates the r
 - [Routing](../features/routing.md) — How to configure work assignment rules
 - [Building extensions](./building-extensions.md) — Step-by-step guide to building and sharing extensions
 - [Contributing](https://github.com/bradygaster/squad/blob/main/CONTRIBUTING.md) — How to propose changes to Squad core
+
 ---
 **Questions?** [Open an issue](https://github.com/bradygaster/squad/issues/new) or join the discussion in the Squad community.

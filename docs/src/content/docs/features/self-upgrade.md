@@ -12,6 +12,7 @@ squad upgrade --self --insider
 squad upgrade --self && squad upgrade
 ```
 Squad can upgrade itself to the latest stable or insider release, then automatically refresh your repo templates. Insider builds are published from the `dev` branch to the npm `insider` dist-tag.
+
 ---
 ## What It Does
 `squad upgrade --self` upgrades the Squad CLI package to the latest stable release:
@@ -22,6 +23,7 @@ Squad can upgrade itself to the latest stable or insider release, then automatic
 - Squad CLI upgraded to latest stable
 - Your repo's `.squad/` templates refreshed with latest version
 - All in one command
+
 ---
 ## Usage
 ### Upgrade to Latest Stable
@@ -37,6 +39,7 @@ squad upgrade --self
    Running: squad upgrade (to refresh repo templates)
 ✅ Repo templates upgraded to v0.8.0
 ```
+
 ---
 ### Upgrade to Latest Insider
 ```bash
@@ -55,19 +58,24 @@ squad upgrade --self --insider
    Running: squad upgrade (to refresh repo templates)
 ✅ Repo templates upgraded to v0.9.0-insider.3
 ```
+
 ---
 ## Package Manager Auto-Detection
 Squad auto-detects your package manager based on lock files in the current directory:
+
 | Lock File | Detected Manager | Command Used |
 |-----------|------------------|--------------|
 | `pnpm-lock.yaml` | pnpm | `pnpm add -g @bradygaster/squad@latest` |
 | `yarn.lock` | Yarn | `yarn global add @bradygaster/squad@latest` |
 | `package-lock.json` | npm | `npm install -g @bradygaster/squad@latest` |
 | *(none)* | npm (fallback) | `npm install -g @bradygaster/squad@latest` |
+
 **Notes:**
+
 - Detection runs in current working directory
 - If no lock file found, defaults to npm
 - For insider upgrades, `@latest` becomes `@insider`
+
 ---
 ## Auto-Refresh Repo Templates
 After upgrading the CLI, `squad upgrade --self` automatically runs `squad upgrade` to refresh your repo's `.squad/` templates. This ensures:
@@ -81,6 +89,7 @@ If you want to upgrade the CLI without refreshing repo templates:
 squad upgrade --self --skip-repo-upgrade
 ```
 *(This flag may not exist yet — just showing the pattern. For now, self-upgrade always runs repo upgrade.)*
+
 ---
 ## Permission Errors
 If upgrade fails with permission denied:
@@ -103,6 +112,7 @@ If upgrade fails with permission denied:
 3. **Use a version manager (recommended):**
    - **nvm** (Node Version Manager) — avoids global permission issues
    - **volta** — handles global installs without sudo
+
 ---
 ## Version Check
 Check current Squad version:
@@ -122,13 +132,17 @@ npm outdated -g @bradygaster/squad
 Package             Current  Wanted  Latest  Location
 @bradygaster/squad  0.7.5    0.8.0   0.8.0   global
 ```
+
 ---
 ## Release Channels
+
 | Channel | Tag | Description |
 |---------|-----|-------------|
 | **Stable** | `@latest` | Production-ready releases (e.g., `v0.8.0`) |
 | **Insider** | `@insider` | Prerelease builds for testing (e.g., `v0.9.0-insider.3`) |
+
 **When to use insider:**
+
 - You want to test upcoming features
 - You're contributing to Squad development
 - You need a bug fix before the next stable release
@@ -136,6 +150,7 @@ Package             Current  Wanted  Latest  Location
 - Production use
 - You want predictable, tested releases
 - You follow semantic versioning
+
 ---
 ## Workflow
 **Typical upgrade workflow:**
@@ -152,6 +167,7 @@ Package             Current  Wanted  Latest  Location
    squad --version
    ```
 4. **Repo templates auto-refreshed** — no extra step needed
+
 ---
 ## Notes
 - Self-upgrade requires network access to npm registry
@@ -159,6 +175,7 @@ Package             Current  Wanted  Latest  Location
 - Repo upgrade (template refresh) runs automatically after successful CLI upgrade
 - If CLI upgrade fails, repo upgrade is skipped
 - Insider builds may have breaking changes — read release notes before upgrading
+
 ---
 ## Sample Prompts
 ```

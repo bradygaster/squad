@@ -12,6 +12,7 @@ Fenster, fix the login validation bug
 Who handles src/api/ changes?
 ```
 The coordinator routes work to the right agent using named routing (explicit), domain routing (pattern matching), and skill-aware routing (capability checking). No manual triage needed.
+
 ---
 ## Routing Strategies
 The coordinator decides who handles each piece of work using a three-layer routing system: named routing (explicit assignments), domain routing (pattern matching), and skill-aware routing (capability checking). The goal: get work to the right agent without manual triage overhead.
@@ -31,6 +32,7 @@ The coordinator checks `.squad/routing.md` for pattern matches:
 | `*.test.ts` | Tester | Test files |
 | `docs/**` | DevRel | Documentation |
 | `package.json`, `tsconfig.json` | Lead | Config changes |
+
 ```
 When work involves `src/api/auth.ts`, it routes to Backend automatically.
 ### 3. Skill-Aware Routing
@@ -55,6 +57,7 @@ Default assignments for common patterns.
 | `*.test.js` | Tester | Test coverage |
 | `README.md`, `docs/**` | DevRel | User-facing docs |
 | `.github/workflows/**` | Lead | CI/CD config |
+
 ## Fallback
 If no match: route to Lead for triage.
 ```
@@ -64,6 +67,7 @@ Tell the coordinator:
 Coordinator adds to routing.md:
 ```markdown
 | `migrations/**`, `*.sql` | Backend | Database schema changes |
+
 ```
 Or edit `.squad/routing.md` directly.
 ## Routing Ambiguity
@@ -110,6 +114,7 @@ Coordinator explains the routing decision based on pattern match or skill fit.
 Fenster, implement the new search API. Hockney, write integration tests for it.
 ```
 Named routing to two agents. Both spawn in parallel.
+
 ---
 ## See Also
 - [Your Team](../concepts/your-team.md) — How team members and roles are defined

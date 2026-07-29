@@ -12,6 +12,7 @@ Where is my squad data stored?
 Create a StorageProvider for Azure Blob Storage
 ```
 All of Squad's data — sessions, decisions, agent memories, event logs — flows through a pluggable storage interface. Pick the provider that matches your deployment: filesystem, database, or cloud.
+
 ---
 ## What is StorageProvider?
 `StorageProvider` is Squad's I/O contract. Every read, write, delete, and directory operation goes through this interface. This decoupling means:
@@ -34,6 +35,7 @@ rename(oldPath: string, newPath: string): Promise<void>
 copy(srcPath: string, destPath: string): Promise<void>
 stat(targetPath: string): Promise<StorageStats | undefined>
 ```
+
 ---
 ## Built-in Providers
 ### FSStorageProvider
@@ -64,6 +66,8 @@ stat(targetPath: string): Promise<StorageStats | undefined>
 | Speed | Disk I/O latency | Instant (memory) | Query overhead |
 | Portability | Windows/Linux/Mac | Yes | Yes |
 | Suitable for | Development, production | Tests | Portable deployments |
+
+
 ---
 ## Create a Custom Provider
 Implement the `StorageProvider` interface to plug in any backend. Here's a skeleton:
@@ -135,8 +139,10 @@ const client = new SquadClient({
 ```
 See `storage-provider-azure` and `storage-provider-sqlite` samples for complete, production-ready implementations.
 [^1]: The full interface also includes 12 deprecated synchronous variants (`readSync`, `writeSync`, `appendSync`, `existsSync`, `listSync`, `deleteSync`, `deleteDirSync`, `isDirectorySync`, `mkdirSync`, `renameSync`, `copySync`, `statSync`) — 24 methods total. The sync methods exist for backward compatibility and will be removed in Wave 2. New code should use the async methods exclusively.
+
 ---
 ## Choose the Right Provider
+
 | Goal | Provider |
 |------|----------|
 | **Local development** | FSStorageProvider |
@@ -145,6 +151,7 @@ See `storage-provider-azure` and `storage-provider-sqlite` samples for complete,
 | **Scale across multiple machines** | Custom provider (your database, blob store, or message queue) |
 | **Azure Blob Storage** | Use `storage-provider-azure` sample as reference |
 | **DynamoDB, Firestore, etc.** | Implement StorageProvider — the interface maps cleanly |
+
 ---
 ## Sample Projects
 - **storage-provider-sqlite** — Complete SQLite implementation using sql.js

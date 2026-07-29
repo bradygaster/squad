@@ -1,5 +1,6 @@
 # CLI Reference
 Everything you need to run Squad from the command line — setup, monitoring, remote access, configuration files, and environment variables.
+
 ---
 ## Installation
 ```bash
@@ -10,8 +11,10 @@ npx @bradygaster/squad-cli init
 # Latest from GitHub (bleeding edge)
 squad init
 ```
+
 ---
 ## CLI Commands (17 commands)
+
 | Command | Description | Requires `.squad/` |
 |---------|-------------|:------------------:|
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
@@ -57,12 +60,14 @@ squad init
 | `squad nap --dry-run` | Preview cleanup actions without changes | Yes |
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) | No |
 | `squad --version` | Print installed version | No |
+
 ### Remote Init Mode
 Use `--mode remote` to link your project to a shared team root:
 ```bash
 squad init --mode remote ../team-repo
 ```
 In dual-root mode, project-specific state lives in your local `.squad/` while team identity (casting, charters, shared decisions) lives in the remote location. This is useful for monorepos or organizations with a shared team definition.
+
 ---
 ### squad start
 Start Copilot with optional remote access via phone. Spawns Copilot in a PTY and mirrors to your phone via WebSocket + devtunnel.
@@ -87,6 +92,7 @@ squad start --tunnel --yolo
 squad start --tunnel --model gpt-4 --no-config
 ```
 For remote Copilot access, architecture notes, and troubleshooting, see [Squad RC](../features/squad-rc.md).
+
 ---
 ### squad loop
 Run a prompt-driven work loop from a `loop.md` file. Each cycle, Loop sends your prompt to Copilot and loops again at your chosen interval.
@@ -114,6 +120,7 @@ Loop.md requires YAML frontmatter with:
 | `interval` | number | Minutes between cycles (default: 10) |
 | `timeout` | number | Max runtime in minutes per cycle (default: 30) |
 | `description` | string | Human-readable description of the loop |
+
 **Examples:**
 ```bash
 # Create a starter loop
@@ -131,11 +138,13 @@ squad loop --copilot-flags "--model gpt-4"
 ```
 **Example loop.md:**
 ```markdown
+
 ---
 configured: true
 interval: 10
 timeout: 20
 description: "Monitor failing CI and fix issues"
+
 ---
 # CI Monitor Loop
 Each cycle, you will:
@@ -147,6 +156,7 @@ Keep cycles to 20 minutes max.
 ```
 **MCP auto-injection:** When using the default Copilot agent, `squad loop` automatically injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot invocation. See [Copilot CLI MCP Trust Gate](../features/copilot-mcp-trust.md).
 For complete documentation and examples, see [Loop — Prompt-driven work loop](../features/loop.md).
+
 ---
 ### Prompting agents through Copilot CLI
 Launch Squad with `copilot --agent squad`, then prompt it directly:
@@ -156,6 +166,7 @@ Keaton, set up the database schema
 Build a blog post about our casting system
 ```
 Agent name matching is **case-insensitive** — `@keaton`, `@Keaton`, and `@KEATON` all route to the same agent. Name an agent to route directly. Omit the name and the coordinator routes to the best fit.
+
 ---
 ## Configuration Files
 ### `.squad/` Directory Structure
@@ -217,6 +228,7 @@ Permanent rules agents always follow:
 - No any/unknown casts
 - All database queries through Prisma, no raw SQL
 ```
+
 ---
 ## Resolution Order
 When Squad starts, it looks for `.squad/` in this order:
@@ -225,13 +237,17 @@ When Squad starts, it looks for `.squad/` in this order:
 3. Linked or external Squad state configured for this workspace
 4. Global CLI fallback (when explicitly configured)
 First match wins.
+
 ---
 ## Environment Variables
+
 | Variable | Purpose | Values |
 |----------|---------|--------|
 | `SQUAD_CLIENT` | Detected client platform | `cli`, `vscode` |
 | `COPILOT_TOKEN` | Copilot auth token (SDK usage) | Token string |
+
 ---
+
 ---
 ## Troubleshooting with `squad doctor`
 When something isn't working, run:
@@ -262,6 +278,7 @@ git clone my-project && cd my-project && squad doctor
 ✓ .gitattributes rules applied
 ```
 The doctor always exits cleanly (no error code) because it's a diagnostic tool, not a gate. Use it to troubleshoot setup issues, validate team state, or run before opening an issue on GitHub.
+
 ---
 ## Version Management
 ```bash
@@ -270,6 +287,7 @@ npm install -g @bradygaster/squad-cli@latest # Update
 npm install -g @bradygaster/squad-cli@1.2.3  # Pin version
 npm install -g @bradygaster/squad-cli@insider # Dev-channel prerelease builds
 ```
+
 ---
 ## See Also
 - [SDK Reference](./sdk.md) — Programmatic API

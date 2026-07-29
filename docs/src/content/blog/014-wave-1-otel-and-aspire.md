@@ -32,6 +32,7 @@ The `squad aspire` command (#265) wires Squad's OTLP exporter to a Aspire dashbo
 - **Structured logs** — Every span carries attributes (agent name, tool name, file path)
 The integration is optional. Squad doesn't depend on .NET or Aspire. But if you're running Aspire (common in .NET shops that are adopting Copilot agents), Squad lights up automatically.
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | Issues closed | #254–#268 (15 issues) |
@@ -40,11 +41,13 @@ The integration is optional. Squad doesn't depend on .NET or Aspire. But if you'
 | Event types bridged | agent:spawn, tool:call, file:change, routing:decision |
 | Performance overhead (no provider) | Zero |
 | New SDK exports | 8 (initializeOTel, shutdownOTel, getTracer, getMeter, bridgeEventBusToOTel, createOTelTransport, initSquadTelemetry, SquadObserver) |
+
 ## What We Learned
 - **Observability isn't optional for multi-agent systems.** Single-agent debugging is print statements. Multi-agent debugging is distributed tracing. The same tools that work for microservices — traces, spans, metrics — work for agent coordination. OTel was the right bet.
 - **The EventBus bridge pattern is powerful.** Instead of instrumenting every function, we instrument the event bus once. Every new event type gets tracing for free. This scales with the codebase without scaling instrumentation effort.
 - **Zero-overhead matters more than features.** The biggest adoption risk for telemetry is performance fear. Making every OTel call a provable no-op when unconfigured removes the objection entirely.
 ## What's Next
 Wave 1 gave Squad the ability to see. Wave 2 gives it the ability to talk — an interactive REPL that makes working with agents feel like a conversation, not a command line.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

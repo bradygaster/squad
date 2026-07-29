@@ -33,6 +33,7 @@ Each guide follows the scenario-first pattern. The architecture guide doesn't st
 ## Issues Closed
 Wave 3 touched a broad set of documentation issues: #185, #188, #191, #192, #195, #196, #199, #201, #203, #206, #207. Each issue represented a gap — a question that a developer would ask and find no answer for. The guides fill those gaps.
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | PR | #310 |
@@ -41,11 +42,13 @@ Wave 3 touched a broad set of documentation issues: #185, #188, #191, #192, #195
 | Build tool | markdown-it (custom build.js) |
 | Build time | <1 second for 62 pages |
 | Framework dependencies | 0 |
+
 ## What We Learned
 - **Scenario-first docs convert better.** When a developer lands on "How do I migrate from beta?" they stay. When they land on "loadConfig() API reference" they bounce. The scenario is the hook. The API is the payload.
 - **Custom beats framework for small sites.** Docusaurus would have taken longer to configure than `build.js` took to write. For a docs site with no dynamic content, a 200-line build script is the right tool.
 - **Five guides is the right starting number.** Enough to cover the core paths. Not so many that you can't maintain quality. The guides expand from here, but the first five set the tone.
 ## What's Next
 The docs engine is built. The initial guides are live. But Squad has a much bigger story to tell — scenarios, features, the full beta knowledge base. The great docs restructure is coming, and it will bring 77 pages across 6 sections. But first, we need to align versions and ship to npm.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

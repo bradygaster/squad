@@ -1,5 +1,6 @@
 # Marketplace Guide
 **Issue:** #39 (M5-16)
+
 ---
 ## Overview
 The Squad marketplace lets teams export, import, browse, and install agent configurations. This guide covers the full lifecycle: packaging, publishing, discovery, installation, versioning, caching, and security.

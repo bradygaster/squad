@@ -2,6 +2,7 @@
 Build a CLI-wrapped background agent pipeline that picks up tasks, coordinates work across teammates, and runs with clear guardrails.
 **Try this:** Clone the [autonomous-pipeline sample](https://github.com/bradygaster/squad/tree/dev/samples/autonomous-pipeline) and run `npm run dev` to see the pattern in action.
 This guide walks you through the pattern used by production background agents — like a docs agent that monitors a repo for changes and generates documentation with human-defined guardrails.
+
 ---
 ## What a background agent is
 A background agent is a program that:
@@ -11,6 +12,7 @@ A background agent is a program that:
 - Records decisions and learnings for future runs
 - Reports results (cost, tokens, timeline)
 In Squad, you build this by composing SDK primitives — `CastingEngine`, `CostTracker`, `SkillRegistry`, and `StreamingPipeline` — into a loop that assigns work, collects results, and decides what to do next.
+
 ---
 ## Set up the project
 Create a new directory and initialize it with the Squad SDK dependency:
@@ -48,6 +50,7 @@ Set `"type": "module"` in your `package.json` and add scripts:
   }
 }
 ```
+
 ---
 ## Define your agents
 Use `defineAgent()` to declare each agent's name, role, and capabilities:
@@ -74,6 +77,7 @@ const reviewer = defineAgent({
 });
 ```
 Each `defineAgent()` call validates the config at runtime and returns a typed `AgentDefinition` object.
+
 ---
 ## Build the squad
 Compose your agents into a squad with `defineSquad()`:
@@ -124,6 +128,7 @@ export default defineSquad({
 });
 ```
 `defineSquad()` validates every nested section through its respective builder — `defineTeam()`, `defineAgent()`, `defineRouting()`, `defineDefaults()`. If any field is invalid, you get a `BuilderValidationError` at startup, not at runtime.
+
 ---
 ## Create a CLI wrapper
 Wrap your pipeline in a CLI entry point so you can invoke it from a terminal, cron job, or CI workflow:
@@ -186,6 +191,7 @@ main().catch(err => {
   process.exit(1);
 });
 ```
+
 ---
 ## The background pipeline pattern
 The core of a background agent is a loop with four phases:
@@ -273,18 +279,23 @@ async function runLoop(
   streaming.clear();
 }
 ```
+
 ---
 ## Coordination tools
 The autonomous-pipeline sample demonstrates three coordination patterns that agents use during the loop:
+
 | Tool | What it does | Example |
 |------|-------------|---------|
 | `squad_route` | Routes a follow-up task to a teammate | Developer finishes auth → routes test-writing to Tester |
 | `squad_decide` | Records an architectural decision | "Use JWT with RS256 signing for auth" |
 | `squad_memory` | Saves a learning for future sessions | "Connection pool sweet spot: 20 connections" |
+
 These patterns let agents coordinate without a central orchestrator. Each agent makes local decisions that accumulate into a shared knowledge base.
+
 :::note[`squad_route` requires `fanOutDepsGetter`]
 For `squad_route` to actually spawn agent sessions, the `ToolRegistry` must be constructed with a `fanOutDepsGetter` callback that provides fan-out dependencies (`sessionPool`, `modelClient`, `squadRoot`, `configGetter`). Without it, the tool returns an honest `fan-out-deps-unavailable` error instead of silently succeeding. See the [SDK reference](/reference/sdk/#toolregistry) for wiring details.
 :::
+
 ---
 ## Add observability
 Track cost, token usage, and agent activity with the built-in `CostTracker` and OpenTelemetry integration:
@@ -331,6 +342,7 @@ const summary = costTracker.getSummary();
 console.log(`Total: $${summary.totalEstimatedCost.toFixed(4)}`);
 ```
 To view traces and metrics in the Aspire dashboard, see the [Aspire dashboard scenario](/scenarios/aspire-dashboard/).
+
 ---
 ## Complete working example
 Here is a minimal but complete background agent you can copy and run:
@@ -428,12 +440,14 @@ console.log('Agents:', agents.map(a => `${a.member.displayName} (${a.tasksComple
 for (const a of agents) streaming.detachFromSession(a.sessionId);
 streaming.clear();
 ```
+
 ---
 ## Next steps
 - Run the [autonomous-pipeline sample](https://github.com/bradygaster/squad/tree/dev/samples/autonomous-pipeline) to see the full pattern with OTel, cost dashboards, and skill matching
 - Read the [SDK reference](/reference/sdk/) for the complete API surface
 - See the [extensibility guide](/guide/extensibility/) for where your agent fits in the Squad ecosystem
 - Check the [Aspire dashboard scenario](/scenarios/aspire-dashboard/) for observability setup
+
 ---
 ## See Also
 - [Your Team](../concepts/your-team.md) — Agent roles, charters, and team composition

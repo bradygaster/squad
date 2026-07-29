@@ -33,6 +33,7 @@ Remote mode revealed something about how development teams use Squad in practice
 - **Enterprise teams** post-acquisition merge two squad configurations into one
 The common thread: identity is shared, workspace is local. Decisions, skills, and casting policy are organizational. History and runtime state are per-project. Remote mode makes that separation explicit and manageable.
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | Issues | #311–#314 |
@@ -40,11 +41,13 @@ The common thread: identity is shared, workspace is local. Decisions, skills, an
 | New commands | 3 (doctor, link, init --mode remote) |
 | Doctor checks | 9 |
 | New SDK functions | 4 (resolveSquadPaths, ensureSquadPathDual, ensureSquadPathResolved, plus init mode) |
+
 ## What We Learned
 - **Port the design, not just the code.** Shayne's beta implementation was JavaScript. We didn't transliterate it to TypeScript. We understood the design — dual roots, link-not-copy, resolve chain — and re-implemented it with the replatform's patterns (strict types, write guards, constants).
 - **Doctor commands pay for themselves.** Nine checks. Three minutes to run. Saves hours of debugging when something is misconfigured. Every CLI tool should have a doctor command.
 - **Credit the origin.** Remote mode works because Shayne saw the problem first. Open source runs on attribution. When you port someone's feature, say so.
 ## What's Next
 Remote mode completes the replatform's feature set. What's left is the biggest docs effort yet — restructuring everything we've built into a site that developers can actually navigate. 77 pages. 6 sections. The great docs restructure.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

@@ -4,6 +4,7 @@
 This is a SaaS app with React frontend, Node.js API, and PostgreSQL — set up Squad
 ```
 Squad discovers your existing project — stack, patterns, conventions — and proposes a team that fits. Agents explore the codebase first, then start working with full context.
+
 ---
 ## 1. Install Squad
 Navigate to your existing repo and run:
@@ -25,6 +26,7 @@ Next steps:
   3. Tell it what you're building
 ```
 If you already have a `.gitattributes` file, Squad appends `merge=union` rules for append-only team state files. Your existing rules are untouched.
+
 ---
 ## 2. Open Copilot and Describe What Exists
 ```bash
@@ -46,6 +48,7 @@ Here's your team:
 📋  Scribe   — (silent)      Memory, decisions, session logs
 Look right? Say yes, add someone, or change a role.
 ```
+
 ---
 ## 3. Let the Team Explore First
 Before giving implementation tasks, let agents discover your codebase:
@@ -80,6 +83,7 @@ Results come back labeled by agent:
    Test fixtures in /server/test/fixtures/.
 ```
 These findings land in each agent's `history.md`. From now on, agents know your project.
+
 ---
 ## 4. Give Context About Conventions
 Feed agents information they can't discover from code alone:
@@ -96,6 +100,7 @@ Feed agents information they can't discover from code alone:
    - Stripe payment integration is fragile — handle with care
 ```
 These directives persist across every future session. Every agent reads them before working.
+
 ---
 ## 5. Start Working
 Now give a real task:
@@ -109,12 +114,14 @@ Morpheus is reading existing invoice models and API patterns
 before starting implementation.
 ```
 Because Morpheus already explored the codebase, he knows the Prisma schema, the router pattern, and the validation conventions. No guessing.
+
 ---
 ## 6. Commit Your Team
 ```bash
 git add .squad/ .github/ .gitattributes
 git commit -m "Add Squad team"
 ```
+
 ---
 ## Tips
 - **Explore first, build second.** The initial codebase review pays for itself immediately.

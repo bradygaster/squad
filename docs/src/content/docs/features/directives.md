@@ -12,6 +12,7 @@ Always use single quotes in TypeScript
 Never commit directly to main
 ```
 Directives are team rules that persist across sessions. When you say "always" or "never", Squad captures it and writes it to the team's permanent memory. Every agent reads these before working.
+
 ---
 ## How Directives Work
 A directive is a preference, rule, or constraint the team remembers across sessions. When you say "always do X" or "never do Y", Squad captures it as a directive, writes it to the decisions inbox, and the Scribe merges it into `.squad/decisions.md` — the team's permanent memory.
@@ -21,6 +22,7 @@ A directive is a preference, rule, or constraint the team remembers across sessi
 3. **Scribe Merge** — Scribe consolidates inbox files into `decisions.md` during the next coordination cycle.
 4. **Agent Awareness** — All agents read `decisions.md` before starting work. Directives shape behavior.
 ## Signal Words
+
 | Phrase | Example |
 |--------|---------|
 | "always" | "Always use TypeScript strict mode" |
@@ -29,6 +31,7 @@ A directive is a preference, rule, or constraint the team remembers across sessi
 | "remember to" | "Remember to run tests before pushing" |
 | "don't" | "Don't use var — only let and const" |
 | "make sure to" | "Make sure to document all public APIs" |
+
 ## Directive Scope
 Directives can apply to:
 - **Coding style** — Formatting, naming conventions, language features

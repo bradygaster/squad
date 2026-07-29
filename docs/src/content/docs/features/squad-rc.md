@@ -1,5 +1,6 @@
 # squad rc
 > **Full remote control of GitHub Copilot from any device.** ACP passthrough mode for complete Copilot CLI access via secure tunnel.
+
 ---
 ## What It Does
 `squad rc` (remote control) exposes GitHub Copilot CLI over a secure WebSocket tunnel, letting you chat with Copilot from your phone, tablet, or any browser. Unlike `squad start` (which mirrors terminal output), `squad rc` uses **ACP passthrough** — raw JSON-RPC communication directly with Copilot's Agent Communication Protocol. You get full Copilot capabilities, not just terminal visibility.
@@ -9,8 +10,10 @@ squad rc --tunnel
 # → Scan with phone
 # → Chat with Copilot in browser (full capabilities)
 ```
+
 ---
 ## How It Differs from `squad start`
+
 | Feature                  | `squad rc`                          | `squad start`                    |
 |--------------------------|-------------------------------------|----------------------------------|
 | **Mode**                 | ACP passthrough (JSON-RPC)          | PTY mirror (terminal streaming)  |
@@ -22,9 +25,12 @@ squad rc --tunnel
 | **Mobile Optimized**     | Yes (PWA, QR code, chat UI)         | Yes (xterm.js, keyboard overlay) |
 | **Startup Time**         | ~15-20s (MCP server loading)        | Immediate                        |
 | **Team Roster**          | Loaded from `.squad/team.md`        | Not applicable                   |
+
 **When to use `squad rc`:** You want to control Copilot remotely (ask questions, run commands, access full agent capabilities).
 **When to use `squad start`:** You want to mirror a terminal session to your phone (demos, pairing, watching long-running processes).
+
 > 💡 **Looking for terminal mirroring?** Use `squad start` for PTY-based terminal streaming, or stay on this page for full remote Copilot control.
+
 ---
 ## Prerequisites
 ### Required
@@ -53,6 +59,7 @@ squad rc --tunnel
    copilot --version
    ```
    Should return `0.0.420` or higher.
+
 ---
 ## Quick Start
 **Local testing (no tunnel):**
@@ -76,20 +83,25 @@ squad rc --port 8080
 ```bash
 squad rc --path ~/my-project --tunnel
 ```
+
 ---
 ## All Flags & Options
+
 | Flag                | Description                                      | Default              |
 |---------------------|--------------------------------------------------|----------------------|
 | `--tunnel`          | Create a devtunnel for remote access             | `false` (local only) |
 | `--port <n>`        | HTTP server port                                 | `0` (random)         |
 | `--path <dir>`      | Working directory for Copilot                    | Current directory    |
+
 **Example:**
+
 ```bash
 # Local access on port 5000
 squad rc --port 5000
 # Remote tunnel from specific project
 squad rc --tunnel --path ~/repos/my-app
 ```
+
 ---
 ## How It Works
 ### Architecture Diagram
@@ -153,6 +165,7 @@ If `.squad/team.md` exists, `squad rc` parses the Active members table:
 |-----------|---------------|--------|
 | Fenster   | Core Dev      | Active |
 | Edie      | TypeScript    | Active |
+
 ```
 Agents appear in the `/agents` command and are available for direct messages (`@Fenster ...`).
 ### Connection Monitoring
@@ -160,6 +173,7 @@ Every 5 seconds, the bridge logs connected client count:
 ```
 ● 2 client(s) connected
 ```
+
 ---
 ## Security Model
 `squad rc` implements 7 layers of security:
@@ -199,6 +213,7 @@ Every 5 seconds, the bridge logs connected client count:
 - **TTL:** 4 hours from bridge startup
 - **Check:** Every 60 seconds (line 60-67 in `bridge.ts`)
 - **Enforcement:** New connections rejected, existing connections closed
+
 ---
 ## Built-in Commands
 Type these in the PWA chat:
@@ -223,6 +238,7 @@ Direct message to a specific agent:
 @Edie Can you review the TypeScript types in src/index.ts?
 ```
 Routed to the named agent if supported by your squad configuration.
+
 ---
 ## Mobile Experience
 ### QR Code
@@ -239,6 +255,7 @@ The remote UI is a PWA with:
 - **Offline support:** Service worker caches UI assets
 - **Install prompt:** Add to Home Screen on iOS/Android
 - **Responsive layout:** Mobile-first design, adapts to desktop
+
 ---
 ## Audit Logging
 ### Log Location
@@ -266,6 +283,7 @@ tail -f ~/.cli-tunnel/audit/squad-audit-*.jsonl
 # Search for prompts
 grep '"type":"prompt"' ~/.cli-tunnel/audit/squad-audit-*.jsonl | jq .
 ```
+
 ---
 ## Troubleshooting
 ### `Copilot not available` error
@@ -278,6 +296,7 @@ grep '"type":"prompt"' ~/.cli-tunnel/audit/squad-audit-*.jsonl | jq .
 ```bash
 npm install -g @github/copilot
 ```
+
 ---
 ### `devtunnel CLI not found`
 **Symptom:**
@@ -290,6 +309,7 @@ npm install -g @github/copilot
 - **Windows:** `winget install Microsoft.devtunnel`
 - **macOS:** `brew install devtunnel`
 - **Linux:** Download from https://aka.ms/devtunnels/download
+
 ---
 ### `Tunnel failed: devtunnel host exited with code 1`
 **Symptom:**
@@ -303,6 +323,7 @@ npm install -g @github/copilot
 devtunnel user login
 ```
 Sign in with your Microsoft or GitHub account, then retry.
+
 ---
 ### WebSocket connection refused
 **Symptom:** Browser console shows `WebSocket connection to 'wss://...' failed: Error during WebSocket handshake`
@@ -311,6 +332,7 @@ Sign in with your Microsoft or GitHub account, then retry.
 1. **Refresh the QR code:** Stop `squad rc` (Ctrl+C) and restart
 2. **Check expiry:** Sessions expire after 4 hours. Restart the bridge.
 3. **Verify token:** Ensure you're using the URL from the QR code exactly as printed.
+
 ---
 ### Copilot responses are slow or not appearing
 **Symptom:** You send a message but see no response for 20+ seconds.
@@ -321,6 +343,7 @@ Spawning copilot --acp (MCP servers loading ~15-20s)...
 ✓ Copilot ACP passthrough active
 ```
 **Fix:** Wait ~20 seconds after seeing the "Spawning copilot" message. Copilot is loading its Model Context Protocol servers (GitHub, Bing, etc.) and won't respond until ready.
+
 ---
 ### `[Copilot passthrough not active] Echo: ...`
 **Symptom:** Responses are prefixed with `[Copilot passthrough not active]`.
@@ -329,6 +352,7 @@ Spawning copilot --acp (MCP servers loading ~15-20s)...
 1. Verify Copilot CLI: `copilot --version`
 2. Check logs for "Spawning copilot" errors
 3. On Windows, ensure `copilot.exe` is at `C:\ProgramData\global-npm\node_modules\@github\copilot\node_modules\@github\copilot-win32-x64\copilot.exe` (line 185-189 in `rc.ts` for hardcoded fallback)
+
 ---
 ### Port already in use
 **Symptom:**
@@ -342,6 +366,7 @@ squad rc --port 0  # Auto-assign free port
 # OR
 squad rc --port 8080  # Specific port
 ```
+
 ---
 ### Can't connect from mobile (tunnel URL works on desktop)
 **Symptom:** Desktop browser connects fine, mobile shows "Connection refused" or "Unauthorized".
@@ -349,6 +374,7 @@ squad rc --port 8080  # Specific port
 **Fix:** Sign in to your MS/GitHub account in your mobile browser, then open the tunnel URL.
 **Cause 2:** Tunnel expired (24-hour TTL).
 **Fix:** Restart `squad rc --tunnel` to create a new tunnel.
+
 ---
 ## See Also
 - `squad start` — PTY mirror mode for terminal streaming (see the CLI reference for command details)

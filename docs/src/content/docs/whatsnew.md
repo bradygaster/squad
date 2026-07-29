@@ -1,5 +1,6 @@
 # What's New
 Full release history for Squad — from beta through the v1 TypeScript replatform. Jump to the version you're looking for, or read top-down to see how the project evolved.
+
 ---
 ## v0.9.1 — Current Release
 - **Shell agent name extraction** — Robust multi-pattern fallback for extracting agent names from shell transcripts (#577)
@@ -84,12 +85,14 @@ The big rewrite. Everything moved to TypeScript with a clean SDK + CLI split.
 - **CLI entry point** — Moved from `dist/index.js` to `dist/cli-entry.js`
 - **CRLF normalization** — All 8 parsers normalize line endings; Windows users with `core.autocrlf=true` work correctly
 ### Breaking Changes (v0.6.0)
+
 | Change | Migration |
 |--------|-----------|
 | Config file: `squad.agent.md` → `squad.config.ts` | Run `squad init` to generate typed config |
 | Team dir: `.squad/` | Standard directory for all team state |
 | Routing: markdown rules → typed `RoutingRule[]` | Export existing rules with `squad export` |
 | Models: string names → tier-based `ModelConfig` | Use `defaultTier` + `fallbackChains` in config |
+
 ## v0.6.0-alpha.0
 - **Initial replatform** — First working TypeScript build
 - **CLI commands** — init, upgrade, shell, doctor, link

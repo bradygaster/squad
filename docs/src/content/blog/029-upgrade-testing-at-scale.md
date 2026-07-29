@@ -34,16 +34,20 @@ Result: **245 public repositories.** Real projects, real users, real configurati
 8. Cleaned up
 **Zero impact to any public repo.** Shallow clones to temp directories, tested locally, deleted when done. No pushes, no PRs, no issues, no comments. Read-only interaction with GitHub.
 ## The Numbers
+
 | Tier | Targets | Checks | Passed | Failed |
 |------|---------|--------|--------|--------|
 | Synthetic scenarios | 4 | 60 | 59 | 1 |
 | Our own repos | 3 | 45 | 45 | 0 |
 | Public repos | 16 | 140 | 140 | 0 |
 | **Total** | **23** | **245** | **244** | **1** |
+
 **99.6% pass rate.** The one failure was a read-only filesystem edge case — the upgrade threw a raw stack trace instead of a friendly warning. Valid bug, easy fix, and we never would have tested for it with synthetic fixtures alone.
 Wall-clock time for all of this: **about 5 minutes.** Nine agents working simultaneously, each taking 3-5 minutes to clone, build, test, and clean up.
+
 ## What the Version Span Looked Like
 We tested upgrades from every version we encountered in the wild:
+
 | Starting Version | Repos |
 |-----------------|-------|
 | v0.0.0 (source installs) | 4 |
@@ -52,7 +56,9 @@ We tested upgrades from every version we encountered in the wild:
 | v0.5.x | 6 |
 | v0.8.x | 9 |
 | "Already current" | 2 |
+
 No version was too old. The oldest repo — installed from source with version `0.0.0` — upgraded cleanly to current. Every version in between worked too.
+
 ## What We Actually Checked
 Every repo got the same verification checklist. Infrastructure on one side, user state on the other:
 **Must change:**
@@ -88,5 +94,6 @@ That last tier is the one most teams skip. It's also the one that found the most
 ## The Takeaway
 If your tool has a public footprint — if real people have installed it and configured it and built things on top of it — you have a free test corpus sitting on GitHub. Clone it, test against it, delete it. Zero impact, maximum confidence.
 Your upgrade command's job is to make old installs current without touching what users built on top. That's the contract. Your test suite tells you the code works. Real repos tell you the *contract* holds.
+
 ---
 *We tested 23 repos in about 5 minutes. Found 3 bugs (1 real, 2 messaging). Fixed them before merging. The upgrade shipped the next morning.*

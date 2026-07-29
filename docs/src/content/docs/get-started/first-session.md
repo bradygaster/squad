@@ -1,5 +1,6 @@
 # Your First Session
 A step-by-step walkthrough from install to parallel fan-out. Follow along in your terminal.
+
 ---
 ## Try this:
 ```bash
@@ -7,6 +8,7 @@ mkdir my-app && cd my-app && git init
 squad
 ```
 Then tell your team what you're building.
+
 ---
 ## 1. Install Squad
 Start with a git repo — new or existing:
@@ -22,6 +24,7 @@ You'll see:
    .squad/templates/ — 11 template files
 Open GitHub Copilot and select Squad from the agent list.
 ```
+
 ---
 ## 2. Open Copilot — Your Team Forms
 Start the Copilot CLI:
@@ -49,6 +52,7 @@ Here's your team:
 Look right? Say yes, add someone, or change a role.
 (Or just give me a task to start!)
 ```
+
 ---
 ## 3. Confirm and Give Your First Task
 Say "yes" or skip straight to a task (which is implicit confirmation):
@@ -57,6 +61,7 @@ Say "yes" or skip straight to a task (which is implicit confirmation):
 ```
 Squad creates the `.squad/` directory structure — team roster, routing rules, casting state, ceremony config, agent charters, and histories — all seeded with your project context. Each agent spawns to do their work.
 ### What's inside .squad/?
+
 | File/Directory | Purpose |
 |---|---|
 | `team.md` | Team roster, roles, and member info |
@@ -67,13 +72,16 @@ Squad creates the `.squad/` directory structure — team roster, routing rules, 
 | `casting/` | Team formation history and casting state |
 | `skills/` | Reusable capabilities agents can learn |
 | `templates/` | Format reference files for docs, PRDs, charters |
+
 **You own these files.** Edit them anytime — change roles, add routing rules, fix decisions. Squad reads them before every spawn.
 **Commit `.squad/` to version control.** It's your team's brain. Anyone who clones the repo gets the team with all their knowledge.
 Then it spawns Dallas:
+
 ```
 🔧 Dallas — setting up Express server with routing
 Dallas is on it — building the Express server now.
 ```
+
 ---
 ## 4. Parallel Fan-Out — The Launch Table
 Now give a bigger task to see parallel work:
@@ -90,6 +98,7 @@ Squad decomposes the work and launches agents simultaneously:
 📋 Scribe  — logging session
 ```
 All five agents are working at the same time in separate context windows. The tester writes test cases from the requirements *while* the implementation is being built — no waiting.
+
 ---
 ## 5. Results Labeled by Agent
 When agents finish, you see results tagged with each agent's identity:
@@ -113,6 +122,7 @@ When agents finish, you see results tagged with each agent's identity:
    [+4 more]
 ```
 Behind the scenes, the Scribe merged decisions from each agent into `decisions.md` and logged the session.
+
 ---
 ## 6. Ask "Where Are We?" — Instant Status
 At any point, check status:
@@ -133,6 +143,7 @@ Key decisions:
 - MongoDB as database
 3 decisions in decisions.md, 4 agent history entries updated.
 ```
+
 ---
 ## 7. Follow-Up — Watch Decisions Accumulate
 Give a follow-up task:
@@ -166,6 +177,7 @@ After completion, check decisions:
 **Why:** Native MongoDB capability, no external search service needed
 ```
 Every agent reads these decisions before working. As the list grows, the team retains context so you don't need to restate architectural choices.
+
 ---
 ## 8. Set a Directive
 You notice something you want to standardize:
@@ -177,6 +189,7 @@ Squad captures it — no agent spawn needed:
 📌 Captured. All API input validation must use Zod.
 ```
 This gets written to `decisions.md`. Every agent will see it in their next spawn.
+
 ---
 ## 9. Export Your Squad
 After a productive session, export your team for portability:
@@ -193,6 +206,7 @@ cd ../other-project
 squad
 squad import ../my-app/squad-export.json
 ```
+
 ---
 ## Tips
 - **First session is slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions.
@@ -200,6 +214,7 @@ squad import ../my-app/squad-export.json
 - **Say "team" for big tasks.** The word "team" triggers parallel fan-out across multiple agents.
 - **Name an agent for focused work.** `"Dallas, fix the login bug"` sends work to one specific agent.
 - **Directives are sticky.** Once captured, they persist across all future sessions.
+
 ---
 ## What to Try Next
 - [**Your Team**](../concepts/your-team.md) — How agents form, specialize, and collaborate

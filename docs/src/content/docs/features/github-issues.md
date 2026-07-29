@@ -12,16 +12,19 @@ Work on issue #42
 There's review feedback on PR #24
 ```
 Squad connects to your GitHub repository, fetches issues from the backlog, routes work to the right agents, creates branches, implements changes, and opens PRs — all from natural language requests.
+
 ---
 ## Requirements
 - **`gh` CLI** installed and authenticated (`gh auth status` to check)
 - A GitHub repository with issues
+
 ---
 ## Connect to a Repository
 ```
 > Connect to myorg/myrepo
 ```
 Squad stores the issue source in `team.md`. You only need to do this once per project.
+
 ---
 ## View the Backlog
 ```
@@ -34,6 +37,7 @@ Squad fetches open issues and displays them in a table:
 15  Fix responsive nav           frontend      —
 18  Write API integration tests  testing       —
 ```
+
 ---
 ## Work on Issues
 ### Single issue
@@ -49,26 +53,31 @@ The coordinator routes the issue to the best-fit agent. That agent:
 > Work on #12 and #15
 ```
 Agents work in parallel — each issue gets its own branch and PR.
+
 ---
 ## Handle PR Review Feedback
 ```
 > There's review feedback on PR #24
 ```
 The agent who opened the PR reads the review comments and addresses them. Commits are pushed to the existing branch.
+
 ---
 ## Merge Completed Work
 ```
 > Merge PR #24
 ```
 Squad squash-merges the PR, deletes the branch, and closes the linked issue.
+
 ---
 ## Check Remaining Work
 ```
 > What's left?
 ```
 Squad refreshes the backlog and shows remaining open issues.
+
 ---
 ## Workflow Summary
+
 | You say | What happens |
 |---------|-------------|
 | `"Connect to myorg/myrepo"` | Stores issue source |
@@ -78,6 +87,7 @@ Squad refreshes the backlog and shows remaining open issues.
 | `"There's review feedback on PR #24"` | Agent addresses review comments |
 | `"Merge PR #24"` | Squash merge, delete branch, close issue |
 | `"What's left?"` | Refreshes and shows remaining issues |
+
 ---
 ## Tips
 - You don't need to assign issues to specific agents — Squad routes based on domain expertise.

@@ -30,14 +30,18 @@ Everything. But the important parts:
 - **Barrel exports.** Every public API surfaces through `packages/squad-sdk/src/index.ts`. One import path: `import { resolveSquad, loadConfig, CastingEngine } from '@bradygaster/squad-sdk'`.
 ## The Wave Plan
 Brady didn't just replatform — he structured the work into waves. Each wave had a theme, a PR, and a definition of done:
+
 | Wave | Theme | PR |
 |------|-------|----|
 | Wave 1 | OTel + Aspire (observability) | #307, #308 |
 | Wave 2 | REPL polish (developer experience) | #309 |
 | Wave 3 | Docs migration (knowledge transfer) | #310 |
+
 The waves weren't arbitrary. Wave 1 gave Squad eyes (telemetry). Wave 2 gave Squad a voice (the interactive shell). Wave 3 gave Squad a memory (documentation that teaches). Each wave built on the last.
+
 ## What's Next
 Wave 1 starts immediately. OpenTelemetry integration, Aspire dashboard, and the SquadObserver file watcher. The goal: when agents work, you can see what they're doing — not in log files, but in real-time traces and metrics.
 The replatform is the foundation. The waves are the house. Time to build.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

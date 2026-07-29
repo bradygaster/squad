@@ -22,13 +22,16 @@ Three categories exist:
 Skills are **portable**. When a squad exports, skills travel with the team. A squad that learned API testing patterns in Project A arrives at Project B already knowing how to write those tests.
 ### Lifecycle
 Skills evolve through four stages:
+
 | Stage | What Happens |
 |-------|-------------|
 | **Acquisition** | Agent encounters a pattern, writes SKILL.md with `confidence: low`, `source: earned` |
 | **Reinforcement** | Agent applies the skill again, bumps `confidence: low → medium → high` |
 | **Correction** | Agent discovers the pattern doesn't work, updates the skill with exceptions or anti-patterns |
 | **Deprecation** | Pattern becomes obsolete, skill is archived |
+
 Confidence increases monotonically (never downgrades). Once a skill reaches `confidence: high` after 3+ successful applications, it's considered validated.
+
 ## The Design Story
 The skills system was a three-way collaboration between **Brady** (product owner), **Kujan** (platform expert), and **Verbal** (prompt engineer).
 ### Brady's Directive (2026-02-08)
@@ -51,6 +54,7 @@ The final decision (Verbal, 2026-02-09):
 ## Technical Details
 ### SKILL.md Format
 ```yaml
+
 ---
 name: "jest-testing-patterns"
 description: "Test isolation patterns for Jest test suites"
@@ -61,6 +65,7 @@ tools:
   - name: "run_tests"
     description: "Execute Jest test suite"
     when: "After writing or modifying tests"
+
 ---
 ## Context
 When and why this skill applies
@@ -132,6 +137,7 @@ Three features depend on skills existing:
 2. **Skill confidence metrics** (v0.6.0+) — analytics on which skills are validated and which are trial
 3. **Cross-squad skill sharing** (v0.7.0+) — teams publish their best skills to a registry
 The skills system is foundational. v0.2.0 planted the seed. Future versions harvest the returns.
+
 ---
 ## Attribution
 - **Design**: Verbal (prompt engineer)
@@ -140,5 +146,6 @@ The skills system is foundational. v0.2.0 planted the seed. Future versions harv
 - **Directive**: bradygaster (product owner)
 - **Format standard**: Anthropic (agentskills.io)
 - **Implementation**: Verbal (spawn templates), Fenster (`squad init` scaffolding), Hockney (skill extraction validation)
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

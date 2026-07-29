@@ -12,13 +12,16 @@ squad watch --notify-level all
 { "watch": { "notifyLevel": "important" } }
 ```
 When `squad watch` runs continuously, it prints a board report after every round. In production setups where output is forwarded to Teams, Slack, or email, this creates noise — hundreds of "Round N" messages with no useful content when the board is clear.
+
 ---
 ## Notify Levels
+
 | Level | Behavior | When to use |
 |-------|----------|-------------|
 | `important` | Only print rounds with actual work items | **Default.** Best for production/Teams channels |
 | `all` | Print every round, including empty ones | Debugging. Old behavior before this feature |
 | `none` | Suppress all round output | Headless/CI — only errors matter |
+
 ## Machine and Repo Attribution
 Every round header now includes the machine hostname and repo name:
 ```

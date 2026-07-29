@@ -12,6 +12,7 @@ Ralph, what's blocking progress on issue #42?
 Ralph, assign the next high-priority issue
 ```
 Ralph tracks the work queue, monitors CI status, and ensures the team never sits idle when there's work to do. He's always on the roster and requires GitHub CLI access.
+
 ---
 ## What Ralph Does
 Ralph is a built-in squad member whose job is keeping tabs on work. Like Scribe tracks decisions, **Ralph tracks and drives the work queue**. He's always on the roster — not cast from a universe — and has one job: make sure the team never sits idle when there's work to do.
@@ -81,6 +82,7 @@ Ralph doesn't just dispatch work and forget about it. Once an issue is assigned 
 This continuous watch prevents work from getting stuck in intermediate states — Ralph catches stalled PRs, failed CI, and review bottlenecks automatically.
 ### Board State
 Ralph maintains an internal view of the work board. Work items flow through these categories:
+
 | Category | Meaning | Label(s) |
 |----------|---------|----------|
 | **Untriaged** | Issue has `squad` label but no `squad:{member}` assignment | `squad` only |
@@ -91,7 +93,9 @@ Ralph maintains an internal view of the work board. Work items flow through thes
 | **CI Failure** | PR checks are failing | `squad:{member}` + `ci-failure` |
 | **Ready to Merge** | PR approved, all checks passing | `squad:{member}` + `approved` |
 | **Done** | PR merged, issue closed | *(removed from board)* |
+
 Ralph uses these categories internally to decide what action to take next. When you ask for status, Ralph reports the current board state across all these categories.
+
 ### What Wakes Ralph Up
 Ralph monitors work at three different layers, each with different wake-up triggers:
 **In-Session (Copilot Chat):**
@@ -107,6 +111,7 @@ Ralph monitors work at three different layers, each with different wake-up trigg
 - Manual dispatch via GitHub Actions UI → Ralph checks GitHub
 In all three layers, when Ralph wakes up, he scans the board, triages any untriaged items using routing.md, dispatches work to the right agent, watches in-flight items for progress, and reports results.
 ## Talking to Ralph
+
 | What you say | What happens |
 |---|---|
 | "Ralph, go" / "Ralph, start monitoring" | Activates the work-check loop |
@@ -114,7 +119,9 @@ In all three layers, when Ralph wakes up, he scans the board, triages any untria
 | "Ralph, status" / "What's on the board?" | Runs one check cycle, reports results |
 | "Ralph, idle" / "Take a break" | Stops the loop |
 | "Ralph, scope: just issues" | Monitors only issues, skips PRs/CI |
+
 ## What Ralph Monitors
+
 | Category | Signal | Action |
 |---|---|---|
 | **Untriaged issues** | `squad` label, no `squad:{member}` label | Lead triages and assigns |
@@ -123,6 +130,7 @@ In all three layers, when Ralph wakes up, he scans the board, triages any untria
 | **Review feedback** | Changes requested on PR | Route to author agent |
 | **CI failures** | PR checks failing | Notify agent to fix |
 | **Approved PRs** | Ready to merge | Merge and close issue |
+
 ## Periodic Check-In
 Ralph doesn't run silently forever. Every 3-5 rounds, Ralph reports and **keeps going**:
 ```
@@ -177,28 +185,37 @@ If the file is missing, Ralph falls back to the built-in execution prompt.
 ### All Watch Flags
 All new features are **opt-in** and disabled by default. Existing `squad watch` behavior is unchanged.
 #### Execution Control
+
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--execute` | Enable work execution (spawn Copilot to work on issues) | `squad watch --execute` |
 | `--max-concurrent N` | Max parallel issues per round (default: 1) | `squad watch --execute --max-concurrent 3` |
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
 | `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-4"` |
+
 #### Issue Scanning
+
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--two-pass` | Lightweight list → hydrate actionable only (saves API quota) | `squad watch --two-pass` |
 | `--wave-dispatch` | Parallel sub-task execution within issues (dependency-aware) | `squad watch --execute --wave-dispatch` |
+
 #### Communication Bridges
+
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--monitor-teams` | Scan Teams for actionable messages each round (requires WorkIQ MCP) | `squad watch --monitor-teams` |
 | `--monitor-email` | Scan email for alerts and action items each round (requires WorkIQ MCP) | `squad watch --monitor-email` |
+
 #### Project Board Lifecycle
+
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--board` | Enable project board lifecycle (In Progress / Done / Blocked + reconciliation) | `squad watch --board` |
 | `--board-project N` | Project board number (default: 1) | `squad watch --board --board-project 2` |
+
 #### Housekeeping & Governance
+
 | Flag | Description | Example |
 |------|-------------|---------|
 | `--notify-level LEVEL` | Control round reporting noise: `important` (default), `all`, `none` | `squad watch --notify-level important` |
@@ -206,6 +223,7 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--decision-hygiene` | Auto-merge decision inbox when >5 files | `squad watch --decision-hygiene` |
 | `--cleanup` | Auto-clear scratch files, archive old logs (every 10 rounds) | `squad watch --cleanup` |
 | `--channel-routing` | Route notifications to specific Teams channels (requires `.squad/teams-channels.json`) | `squad watch --channel-routing` |
+
 ### Common Workflows
 **Basic triage + work execution:**
 ```bash
@@ -265,11 +283,13 @@ squad watch --execute                       # full work monitor (auto-detects pl
 - ADO rate limiting is handled differently — the circuit breaker skips quota checks
 - ADO PRs don't expose `statusCheckRollup` — CI status columns may be empty
 ### Three layers of Ralph
+
 | Layer | When | How |
 |-------|------|-----|
 | **In-session** | You're at the keyboard | "Ralph, go" — active loop while work exists |
 | **Local watchdog** | You're away but machine is on | `squad watch --interval 10` (triage) or `squad watch --execute` (full monitor) |
 | **Cloud heartbeat** | Event-driven | `squad-heartbeat.yml` GitHub Actions events (issue close, PR merge, manual dispatch) |
+
 ## Ralph's Board View
 When you ask for status:
 ```

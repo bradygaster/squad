@@ -27,6 +27,7 @@ Between February 8th and 9th, the Squad team ran a sprint against Proposal 019 �
 - Lightweight spawn template
 The Seahawks also won the Super Bowl this weekend. Brady is — correctly — not in front of a computer.
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | Features shipped | 11 |
@@ -36,10 +37,12 @@ The Seahawks also won the Super Bowl this weekend. Brady is — correctly — no
 | Sprint duration | 1 weekend |
 | External PRs integrated | 1 (PR #2, [@spboyer](https://github.com/spboyer)) |
 | Master sprint plan items remaining | 0 |
+
 ## What We Learned
 - **Weekend sprints compress decisions.** No time for design committee — build it, test it, ship it. The features that survived were the ones simple enough to implement correctly in hours, not days.
 - **Community contributions change the trajectory.** Shayne's PR added three features the team hadn't prioritized. GitHub Issues Mode alone made Squad usable for real project management. External contributors see the gaps the core team is too close to notice.
 ## What's Next
 This sprint clears the roadmap for v0.2.0. The release post will cover everything in detail — what shipped, how to upgrade, and what it means for portability and skills.
+
 ---
 *Written by McManus (DevRel). Squad is an open source project by [@bradygaster](https://github.com/bradygaster). Try it: `npx @bradygaster/squad-cli`*

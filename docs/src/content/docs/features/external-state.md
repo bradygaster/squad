@@ -12,6 +12,7 @@ squad internalize
 cat .squad/config.json | grep stateLocation
 ```
 Squad can store `.squad/` state outside the working tree in a platform-specific global directory — solving branch-switch data loss and PR pollution.
+
 ---
 ## The Problem
 By default, `.squad/` lives in the working tree alongside your code:
@@ -39,6 +40,7 @@ If you commit `.squad/` to preserve it, every branch includes squad state in PRs
 + .squad/team.md
 ```
 Reviewers see squad metadata mixed with your actual code changes.
+
 ---
 ## The Solution: External State
 `squad externalize` moves `.squad/` to a platform-specific Squad data root **outside the working tree**:
@@ -48,6 +50,7 @@ Squad stores externalized state under your platform's standard application-data 
 - Squad state persists across branch switches
 - PRs never contain `.squad/` files
 - State is isolated per repository (based on repo name)
+
 ---
 ## Usage
 ### Externalize
@@ -73,6 +76,7 @@ squad externalize
 - `.squad/config.json` stays in the repo as the machine-local marker file
 - Other local-only resolver files under `.squad/` can also remain in the working tree
 - Branch switches no longer affect the externalized state
+
 ---
 ### Internalize
 Move state back to working tree:
@@ -88,6 +92,7 @@ squad internalize
 - Mutable state lives in the working tree again
 - Any unrelated `.squad/config.json` settings are preserved
 - The command does **not** edit `.gitignore`; the `config.json` ignore entry is left in place
+
 ---
 ## Configuration
 The marker file `.squad/config.json` is the source of truth for externalized state:
@@ -99,15 +104,19 @@ The marker file `.squad/config.json` is the source of truth for externalized sta
   "stateLocation": "external"
 }
 ```
+
 | Field | Meaning |
 |-------|---------|
 | `"projectKey"` | Stable key used to choose the external directory |
 | `"stateLocation": "external"` | This repo should resolve mutable state from the platform-specific external directory |
 | `"teamRoot": "."` | Resolver hint preserved in config |
+
 **Notes:**
+
 - `squad externalize` writes these fields while preserving unrelated config keys
 - `.squad/config.json` is gitignored because it is machine-local
 - `squad internalize` removes the external-state fields, then deletes the file only if nothing meaningful remains
+
 ---
 ## Global Directory Structure
 ```
@@ -127,6 +136,7 @@ The marker file `.squad/config.json` is the source of truth for externalized sta
       team.md
 ```
 Each repo gets its own isolated directory based on repository name. State is never shared across repos.
+
 ---
 ## When to Use External State
 **Use `squad externalize` when:**
@@ -138,6 +148,7 @@ Each repo gets its own isolated directory based on repository name. State is nev
 - You want squad state committed to the repo (e.g., decisions, skills travel with code)
 - You rarely switch branches
 - You want squad state versioned alongside code
+
 ---
 ## Multi-Repo Workflows
 External state is **isolated per repository** — each repo gets its own global directory. If you work on multiple repos, each maintains separate squad state:
@@ -152,6 +163,7 @@ External state is **isolated per repository** — each repo gets its own global 
     team.md
 ```
 No cross-repo state pollution.
+
 ---
 ## Git Integration
 Externalization only adds **`.squad/config.json`** to `.gitignore`.
@@ -161,6 +173,7 @@ That means:
 - Other local `.squad/` files such as `manifest.json` or `workstreams.json` still follow normal Git rules
 - Externalized mutable state stays out of PRs because it no longer lives in the working tree
 - `git clean -fdx` does not delete the external directory
+
 ---
 ## Migration
 ### From Internal to External
@@ -184,6 +197,7 @@ ls .squad/
 # decisions/  skills/  team.md  routing.md  ...
 # config.json only remains if it still has other settings
 ```
+
 ---
 ## Notes
 - External state is **opt-in** — default is internal (working tree)
@@ -193,6 +207,7 @@ ls .squad/
 - Local resolver/bootstrap files are intentionally left in the working tree
 - `squad internalize` does not clean up the `.gitignore` entry for `config.json`
 - `squad upgrade` respects current state location (doesn't force internal/external)
+
 ---
 ## Sample Prompts
 ```

@@ -12,6 +12,7 @@ List all skills
 Create a skill for our deployment process
 ```
 Agents learn from real work and write skill files — reusable patterns, conventions, and techniques. Skills compound over time, making your team smarter with each project.
+
 ---
 ## Where Skills Live
 ```
@@ -20,6 +21,7 @@ Agents learn from real work and write skill files — reusable patterns, convent
 Each skill is a directory containing a `SKILL.md` file. Skills are **team-wide knowledge** — not tied to individual agents. All agents can read and use any skill.
 > **Legacy path**: Skills are also discovered at `.squad/skills/` for backward compatibility. If both paths contain a skill with the same name, the `.squad/skills/` version takes precedence. New skills are always written to `.copilot/skills/`.
 > **Portable across projects**: Skills export and import with your team. When you move a trained team to a new repo, all their earned knowledge comes with them.
+
 ---
 ## Types of Skills
 ### Built-in Skills
@@ -39,20 +41,25 @@ Legacy term for built-in skills. Previously called "starter skills" and prefixed
 The `session-recovery` skill teaches agents to find and resume interrupted Copilot CLI sessions. When a session is interrupted (terminal crash, network drop, machine restart), in-progress work may be left incomplete. This skill uses `session_store` SQL queries to detect abandoned sessions, inspect checkpoint progress, and resume work. See [`.copilot/skills/session-recovery/SKILL.md`](https://github.com/bradygaster/squad/blob/dev/.copilot/skills/session-recovery/SKILL.md) for query patterns and examples.
 ### Earned skills
 Written by agents from real work on your project. When an agent discovers a reusable pattern — a deployment strategy, a testing technique, an API integration approach — it writes a skill file.
+
 ---
 ## Confidence Lifecycle
 Earned skills have a confidence level that reflects how battle-tested they are:
+
 | Level | Meaning |
 |-------|---------|
 | **Low** | First written — based on a single experience |
 | **Medium** | Applied successfully in multiple contexts |
 | **High** | Well-established, consistently reliable |
+
 Confidence only goes up, never down. A skill that reaches `high` stays there.
+
 ---
 ## How Skills Are Used
 1. **Before working**, agents read skill files relevant to the task at hand
 2. **Skill-aware routing** — the coordinator checks available skills when deciding which agent to spawn. An agent with a relevant earned skill may be preferred over one without.
 3. **After working**, agents may write new skills or update existing ones based on what they learned
+
 ---
 ## Example
 After successfully setting up a CI pipeline, an agent might create:
@@ -71,6 +78,7 @@ After successfully setting up a CI pipeline, an agent might create:
 - Initial CI setup (session 3)
 - Pipeline optimization after slow builds (session 7)
 ```
+
 ---
 ## Tips
 - Skills compound over time. A mature project has skills covering testing patterns, deployment procedures, API conventions, and more.

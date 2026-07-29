@@ -1,10 +1,12 @@
 # Token Usage & Cost Tracking
 Squad can track token usage and estimated cost for each agent spawn, roll that data up by session, and expose it through orchestration logs, terminal summaries, and telemetry backends.
+
 ---
 ## Overview
 - Squad tracks token usage (input/output tokens) and estimated cost per agent spawn
 - Usage data is recorded in orchestration logs and available via `squad cost` CLI
 - Optional budget limits can be configured per agent or per session
+
 ---
 ## How It Works
 - The `CostTracker` class (`packages/squad-sdk/src/runtime/cost-tracker.ts`) accumulates token data
@@ -13,7 +15,9 @@ Squad can track token usage and estimated cost for each agent spawn, roll that d
 The orchestration log template stores usage in a markdown table row like this:
 ```md
 | **Token usage** | 12,450 in / 3,200 out — $0.0234 |
+
 ```
+
 ---
 ## Viewing Costs
 ```bash
@@ -32,6 +36,7 @@ Estimated cost:      $0.0234
 --- By Session ---
   session-abc123: 12,450in / 3,200out ($0.0234) [1 turns]
 ```
+
 ---
 ## Budget Configuration
 ```typescript
@@ -56,6 +61,7 @@ export default defineSquad({
 - `perAgentSpawn` limits an individual agent invocation
 - `perSession` limits the total budget for the coordinator session
 - `warnAt` emits warnings when usage reaches a fraction of the configured limit
+
 ---
 ## OTel Integration
 - Token metrics are exported as OpenTelemetry counters when telemetry is enabled

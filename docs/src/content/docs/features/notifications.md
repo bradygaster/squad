@@ -8,9 +8,11 @@ Notify me when the build finishes
 Ping me on Teams when you need my input
 ```
 Your squad sends you instant messages when they need input, hit an error, or complete work. Works with Teams, Discord, Slack, webhooks — whatever you configure.
+
 ---
 ## How It Works
 Your squad can send you instant messages when they need your input. Leave your terminal, get pinged on your phone.
+
 ---
 ## How It Works
 Squad ships zero notification infrastructure. Instead, it uses **skills** — reusable knowledge files — to teach agents when and how to ping you. You bring your own notification delivery by configuring an MCP notification server in your Copilot environment.
@@ -19,6 +21,7 @@ The flow:
 2. **Agent** calls the skill, which invokes your configured MCP server
 3. **Your MCP server** (Teams, iMessage, Discord, webhook, etc.) sends the actual message to your device
 This means Squad works with any notification service. Pick your favorite messaging platform, configure it once, and your squad has a direct line to you.
+
 ---
 ## Quick Start: Teams (Simplest Path)
 ### What you need to know
@@ -61,6 +64,7 @@ Teams Workflows (Power Automate) webhooks are the recommended approach. Office 3
 5. **Use it:**
    - Start a Squad session with `copilot squad`
    - When an agent needs input, your Teams channel lights up
+
 ---
 ## Quick Start: iMessage (Mac Only)
 iMessage is built into macOS. If you're on a Mac, this is the fastest personal setup.
@@ -92,6 +96,7 @@ iMessage is built into macOS. If you're on a Mac, this is the fastest personal s
    - Start a Squad session
    - When agents need input, it appears in Messages on your phone
 **Limitation:** iMessage only works on Mac. If you use Windows, Linux, or CI environments, use Teams or webhook instead.
+
 ---
 ## Quick Start: Discord
 Discord is flexible and works everywhere (web, mobile, desktop).
@@ -126,6 +131,7 @@ https://www.npmjs.com/package/mcp-notifications supports Discord, Slack, Teams, 
         ```
 ### Option B: Using Discord Official MCP
 For more advanced Discord integrations, search Discord's MCP marketplace.
+
 ---
 ## Quick Start: Custom Webhook
 For any HTTP endpoint (custom service, Zapier, IFTTT, etc.):
@@ -158,9 +164,11 @@ For any HTTP endpoint (custom service, Zapier, IFTTT, etc.):
      }
    }
    ```
+
 ---
 ## What Triggers a Notification
 Agents ping you when:
+
 | Trigger | Example |
 |---------|---------|
 | **Blocked on input** | "Keaton needs your decision on which API approach to use (Issue #42)" |
@@ -168,7 +176,9 @@ Agents ping you when:
 | **Error hit** | "McManus got an authentication error and needs credentials for the staging API" |
 | **Work complete** | "Fenster finished the test suite — 142 tests passing, 3 flaky (check the logs)" |
 | **Review feedback** | "Your PR review on #78 needs a response before Keaton can merge" |
+
 You control which triggers send notifications (see Configuration below).
+
 ---
 ## Notification Format
 Notifications are **agent-branded, context-rich, and actionable.**
@@ -190,6 +200,7 @@ Session still running. Come back to the terminal to decide next steps.
 - **Context** — why (decision, blocked, complete, etc.)
 - **What to do** — specific action (check issue, review logs, come back to terminal)
 - **Link** — clickable GitHub issue, PR, or breadcrumb to your session
+
 ---
 ## Configuration
 ### Choosing What Triggers Notifications
@@ -228,6 +239,7 @@ To test without running a full Squad session:
 copilot squad test-notification --agent Keaton --reason blocked
 ```
 This fires a sample notification through your configured server so you can verify delivery and formatting.
+
 ---
 ## Troubleshooting
 ### Notifications aren't arriving
@@ -253,6 +265,7 @@ Use the `NOTIFY_*` environment variables (see Configuration above) to disable no
 1. Ensure the MCP server command in `.vscode/mcp.json` points to a valid executable
 2. Check that all `env` variables are set and accessible
 3. Review the Copilot startup logs for the actual error
+
 ---
 ## Architecture Notes
 The `human-notification` skill lives in `.copilot/skills/squad-human-notification/SKILL.md`. Agents read it before working and decide whether to ping you. You can edit the skill directly if you want to:
@@ -263,6 +276,7 @@ For advanced use cases, you can also:
 - Create a custom MCP server that combines multiple notification channels (Teams + Slack)
 - Route notifications based on agent and trigger type (errors to you, completions to your manager)
 - Add intelligent rate limiting (don't ping for 30 minutes if already pinged once)
+
 ---
 ## Sample MCP Configs
 Below are complete, copy-pasteable `.copilot/mcp-config.json` examples for each notification platform. Pick the one that matches your setup and copy the entire `mcpServers` block into your config file.
@@ -284,6 +298,7 @@ Below are complete, copy-pasteable `.copilot/mcp-config.json` examples for each 
 1. Create a Workflows webhook in your Teams channel (Workflows app → "Post to a channel when a webhook request is received")
 2. Download a Teams webhook MCP server (see [community reference implementation](https://gist.github.com/benleane83/f37b5bc1ed3d00e320ba48886109b82a))
 3. Replace `/absolute/path/to/teams-webhook-mcp.js` with the actual path to your MCP server script
+
 ---
 ### iMessage (Mac Only)
 ```json
@@ -303,6 +318,7 @@ Below are complete, copy-pasteable `.copilot/mcp-config.json` examples for each 
 1. Download an iMessage MCP server from https://mcpmarket.com
 2. Replace `/absolute/path/to/imessage-mcp.js` with the actual path to your MCP server script
 3. Replace `+1234567890` with your phone number or email address registered in iCloud
+
 ---
 ### Discord Webhook
 ```json
@@ -322,6 +338,7 @@ Below are complete, copy-pasteable `.copilot/mcp-config.json` examples for each 
 1. In Discord, right-click channel → Edit Channel → Integrations → Webhooks → New Webhook → copy the URL
 2. Download or create a Discord webhook MCP server (see mcp-notifications package or build your own)
 3. Replace `/absolute/path/to/discord-webhook-mcp.js` with the actual path to your MCP server script
+
 ---
 ### Generic Webhook (Zapier, Custom Endpoint, etc.)
 ```json
@@ -343,6 +360,7 @@ Below are complete, copy-pasteable `.copilot/mcp-config.json` examples for each 
 1. Create or download a generic webhook MCP server
 2. Replace `/absolute/path/to/webhook-mcp.js` with the actual path to your MCP server script
 3. Your endpoint receives POST requests with agent name, message, and context
+
 ---
 ## See Also
 - [MCP Setup Guide](./mcp.md) — detailed MCP configuration walkthrough

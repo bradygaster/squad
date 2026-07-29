@@ -28,6 +28,7 @@ import {
   initSquadTelemetry,
 } from '@bradygaster/squad-sdk';
 ```
+
 ---
 ## Resolution
 Functions to locate Squad directories.
@@ -41,6 +42,7 @@ const squadPath = resolveSquad('/home/user/project/src');
 Get the platform-specific root used for shared or external Squad state.
 ### `ensureSquadPath(startPath?: string): string`
 Like `resolveSquad()`, but creates the directory if it doesn't exist.
+
 ---
 ## Runtime Constants
 ### `MODELS: ModelCatalog`
@@ -59,6 +61,7 @@ TIMEOUTS.coordinatorRouteMs; // 5000 (5s)
 ```
 ### `AGENT_ROLES: Record<string, RoleDefinition>`
 Standard agent roles and their default properties.
+
 ---
 ## Configuration
 ### `loadConfig(squadPath: string): Promise<ConfigLoadResult>`
@@ -89,6 +92,7 @@ interface AgentConfig {
 ```
 ### `loadConfigSync(squadPath: string): ConfigLoadResult`
 Synchronous version of `loadConfig()`.
+
 ---
 ## Agents & Onboarding
 ### `onboardAgent(options: OnboardOptions): Promise<OnboardResult>`
@@ -121,6 +125,7 @@ interface OnboardResult {
   historyPath: string;
 }
 ```
+
 ---
 ## Casting
 ### `CastingEngine`
@@ -151,6 +156,7 @@ interface CastMember {
   displayName: string;
 }
 ```
+
 ---
 ## Coordinator
 ### `SquadCoordinator`
@@ -183,6 +189,7 @@ type ResponseTier = 'direct' | 'lightweight' | 'standard' | 'full';
 Choose the right response tier for a task.
 ### `getTier(name: TierName): TierDefinition`
 Get configuration for a specific tier (max agents, default model, available tools).
+
 ---
 ## Tools
 ### `defineTool<TArgs>(config: ToolConfig<TArgs>): SquadTool<TArgs>`
@@ -229,6 +236,8 @@ const agentTools = registry.getToolsForAgent(['squad_route', 'squad_decide']);
 | `squad_memory` | Append to agent history |
 | `squad_status` | Query session pool state |
 | `squad_skill` | Read/write agent skills |
+
+
 ---
 ## Observability (OpenTelemetry)
 Three-layer observability API for traces, metrics, and telemetry.
@@ -259,6 +268,7 @@ const telemetry = await initSquadTelemetry({
 });
 await telemetry.shutdown();
 ```
+
 ---
 ## Streaming
 ### `createReadableStream(response: unknown): ReadableStream<string>`
@@ -271,6 +281,7 @@ while (!(result = await reader.read()).done) {
   console.log(result.value);
 }
 ```
+
 ---
 ## Upstream Inheritance
 ### `readUpstreamConfig(squadPath: string): Promise<UpstreamConfig>`
@@ -281,8 +292,10 @@ Resolve all upstreams and return their inherited content.
 Build a markdown block of all inherited context (for agent charters).
 ### `buildSessionDisplay(resolved: ResolvedUpstream[]): string`
 Build a human-readable display of upstream sources (for `squad status`).
+
 ---
 ## Glossary of Exports
+
 | Export | Type | Module | Purpose |
 |--------|------|--------|---------|
 | `resolveSquad` | function | resolution | Find .squad directory |
@@ -308,6 +321,7 @@ Build a human-readable display of upstream sources (for `squad status`).
 | `bridgeEventBusToOTel` | function | runtime/otel-bridge | EventBus → OTel |
 | `createOTelTransport` | function | runtime/otel-bridge | Create OTel transport |
 | `initSquadTelemetry` | function | runtime/otel-init | One-call setup |
+
 ---
 ## See Also
 - [SDK Reference](sdk.md) — Quick reference for common SDK usage

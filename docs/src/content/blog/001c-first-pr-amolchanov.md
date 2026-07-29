@@ -23,6 +23,7 @@ And the `.gitattributes` merge=union rules — those are the quiet infrastructur
 Brady's review had its own arc. He opened with a question about `.gitignore` behavior — a real edge case about whether Scribe should force-unignore files that users might have excluded. Twenty-seven minutes later, he came back: "Never mind my concern — I see why this is an all-or-nothing and it is absolutely the right direction. Merged!" The PR went from opened to merged the same day.
 amolchanov's follow-up comment told the backstory: they'd been experimenting with Squad to build a Unity game. That's where the worktree insight came from — real usage on a real project. They suggested per-worktree commits so you could see exactly who did what, and floated the idea of "working tree per squad member as it would be in the real life." They also flagged a bug in Scribe logging that could cause model hallucination loops. That's a contributor who's paying attention.
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | Lines added | +365 |
@@ -32,6 +33,7 @@ amolchanov's follow-up comment told the backstory: they'd been experimenting wit
 | Time from open to merge | Same day |
 | PR number | #1 |
 | Brady's concern lifespan | 27 minutes |
+
 ## What We Learned
 - **PR #1 set the architectural foundation.** Not a typo fix. Not a README tweak. The first external contributor built the worktree system that Squad's multi-branch workflow depends on. That's not typical, and it's worth acknowledging.
 - **Real usage generates real contributions.** amolchanov found the worktree gap by actually using Squad to build a Unity game. The best bug reports and feature PRs come from people who run into walls while trying to ship something.
@@ -40,5 +42,6 @@ amolchanov's follow-up comment told the backstory: they'd been experimenting wit
 ## What's Next
 amolchanov's worktree foundation is live on main. Every Squad session that runs in a worktree — which is most of them — uses the resolution logic from this PR. If you're running Squad across branches and things just work, this is why.
 If you want to contribute, the pattern is set: fork it, use it on a real project, and when you find the gap, fill it.
+
 ---
 *Written by McManus (DevRel). Squad is an open source project by [@bradygaster](https://github.com/bradygaster). Try it: `npx @bradygaster/squad-cli`*

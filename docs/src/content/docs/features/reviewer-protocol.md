@@ -8,6 +8,7 @@ Review the changes in src/auth/ and check for security issues
 Lead, review the PR from Fenster
 ```
 When a reviewer (Lead, Tester) rejects work, the original agent is locked out from self-revision. This prevents endless fix-retry loops and forces human oversight or reassignment.
+
 ---
 ## How It Works
 1. **Agent submits work** — Creates draft PR, requests review from Lead or Tester.
@@ -36,10 +37,12 @@ With lockout:
 - Work gets done or human intervenes
 ## Reassign vs. Escalate
 When rejection happens, coordinator has two options:
+
 | Option | When to Use | How It Works |
 |--------|-------------|--------------|
 | **Reassign** | Another agent has the skill | Route work to different squad member with relevant expertise |
 | **Escalate** | No other agent fits, or multiple rejections | Notify user, ask for manual intervention or guidance |
+
 ### Reassign Example
 1. Fenster (Frontend) writes a React component → Lead rejects: "Accessibility issues"
 2. Fenster locked out
@@ -53,12 +56,15 @@ When rejection happens, coordinator has two options:
 4. Core Dev locked out
 5. **All agents exhausted** → Coordinator escalates to user: "Issue #42 rejected twice. Need guidance or manual fix."
 ## Lockout Scope and Duration
+
 | Scope | Duration |
 |-------|----------|
 | **Task-specific** | Lockout applies to the specific PR/issue, not all work |
 | **Session-persistent** | Lockout survives session restarts (stored in `.squad/orchestration-log/`) |
 | **Clearable** | User can manually unlock: "Unlock Fenster for issue #42" |
+
 An agent locked out of issue #42 can still work on issue #43, #44, etc. Lockout is not a global ban.
+
 ## Deadlock Handling
 If **all capable agents are locked out**:
 1. Coordinator detects deadlock: no available agents for work.
@@ -67,12 +73,15 @@ If **all capable agents are locked out**:
 This prevents the team from getting stuck in a state where no one can proceed.
 ## Reviewer Authority
 Only **designated reviewers** can lock out agents:
+
 | Reviewer | Authority | Scope |
 |----------|-----------|-------|
 | **Lead** | Code quality, architecture, security | All code submissions |
 | **Tester** | Test coverage, correctness | Test-related changes |
 | **User (you)** | Final arbiter | Can override any decision |
+
 Other agents (Frontend, Backend, DevRel) cannot lock out peers.
+
 ## Unlocking an Agent
 > "Unlock Fenster for issue #42"
 Coordinator clears the lockout. Fenster can now revise the PR. Use this when:
@@ -103,12 +112,15 @@ Squad creates, reviews, approves, and merges its own PRs. The human only jumps i
 **When to use:** Solo personal projects where you're the sole maintainer and experimentation speed matters more than pre-merge safety.
 **Risk:** Higher — but fast; review PRs retroactively.
 ### Decision Matrix
+
 | Trust Level | When | Risk |
 |-------------|------|------|
 | Full review | Team repos, shared codebases, public packages | Low — human gate on every change |
 | Selective review | Personal projects with established patterns | Medium — some changes skip human eyes |
 | Self-managing | Solo personal projects, experimentation | Higher — but fast; review PRs retroactively |
+
 **Important:** Self-managing mode doesn't mean unmonitored. Use Ralph's work monitoring, Teams notifications, and periodic code review to stay informed. The difference is that you review *after* merge rather than *before*.
+
 ---
 ## Sample Prompts
 ```

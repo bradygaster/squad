@@ -18,12 +18,15 @@ The `@github/copilot-sdk` session object in Codespaces exposes `send()`, not `se
 This is the failure mode of `as unknown as TargetType` — it compiles, it passes tests in one environment, and it crashes in another. The cast tells TypeScript "trust me." TypeScript trusts you. The runtime doesn't.
 ## The CopilotSessionAdapter
 The fix for #315 wasn't a one-line method rename. The session API surface differs between environments:
+
 | Method | CLI Session | Codespace Session |
 |--------|------------|-------------------|
 | Send message | `sendMessage()` | `send()` |
 | Listen for events | `on()` returns void | `on()` returns unsubscribe function |
 | Cleanup | `destroy()` | `close()` |
+
 Patching each call site would mean environment-specific branching scattered across the codebase. Instead, we built `CopilotSessionAdapter` — a wrapper that normalizes the session API:
+
 - `send()` → delegates to whatever the underlying session calls its send method
 - `on(event, handler)` → always returns an unsubscribe function (wraps if needed)
 - `destroy()` → calls `close()` or `destroy()` depending on what exists
@@ -49,5 +52,6 @@ After the sprint:
 - **Sprint the sweep.** Seven issues filed and closed in sequence. Not a backlog item that ages for weeks. When you find a category of bugs, sweep the category. Don't fix one and hope the others don't bite.
 ## What's Next
 The adapter layer is clean. The type system is honest. Now it's time to bring in a feature from the beta that the community has been asking about: remote squad mode. And it comes with a story about team collaboration.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

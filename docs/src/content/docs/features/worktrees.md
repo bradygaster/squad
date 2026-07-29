@@ -8,6 +8,7 @@ Use worktree-local mode — I want each branch to have its own team state
 Share the team across all worktrees — use main-checkout mode
 ```
 Squad supports git worktrees with two strategies: **worktree-local** (each worktree has its own `.squad/` state) and **main-checkout** (shared state across all worktrees).
+
 ---
 ## What Are Worktrees?
 ## What Are Worktrees?
@@ -87,13 +88,16 @@ Squad uses `merge=union` for append-only log files to avoid conflicts across wor
 This ensures log entries from different worktrees don't conflict when merged back to main.
 ## Worktree-Aware Commands
 When using main-checkout strategy:
+
 | Command | Behavior |
 |---------|----------|
 | `"Show team roster"` | Reads shared `team.md` from main worktree |
 | `"Add a directive"` | Writes to shared `decisions/inbox/` in main worktree |
 | `"Who's working on issue #42?"` | Checks orchestration log in main worktree (sees all agents across worktrees) |
 | `"Initialize Squad"` | Prompts: "Use main worktree's team or create new?" |
+
 ## When to Use Which Strategy
+
 | Scenario | Strategy | Reason |
 |----------|----------|--------|
 | **Parallel features, same team** | Main-checkout | Shared context, coordinated work |
@@ -101,6 +105,7 @@ When using main-checkout strategy:
 | **Hotfix branch + feature branch** | Main-checkout | Same squad, need shared decisions |
 | **Multiple teams in same repo** | Worktree-local | Different roles, different directives |
 | **Solo dev, multiple branches** | Main-checkout | No need for duplicate state |
+
 ## Switching Strategies
 You can convert between strategies:
 ### Worktree-Local → Main-Checkout

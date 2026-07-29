@@ -8,6 +8,7 @@ Create a project board for v0.5.0 with columns for each workflow stage
 Sync issue #42 to the project board
 ```
 Squad integrates with GitHub Projects V2 for visual workflow tracking. Labels are the source of truth, boards are one-way projections that visualize the state machine.
+
 ---
 ## Prerequisites
 GitHub Projects V2 access requires the `project` scope:
@@ -27,6 +28,7 @@ Squad treats labels as the state machine and boards as a **read-mostly visualiza
 Labels are authoritative. Boards reflect labels, not the other way around.
 ## Board Structure
 Squad's default board has 5 columns matching issue lifecycle:
+
 | Column | Label State | Description |
 |--------|-------------|-------------|
 | **Backlog** | `go:no` or `release:backlog` | Not approved or deferred |
@@ -34,6 +36,7 @@ Squad's default board has 5 columns matching issue lifecycle:
 | **Ready** | `go:yes`, no `squad:*` | Approved, awaiting assignment |
 | **In Progress** | `go:yes` + `squad:{member}` | Agent actively working |
 | **Done** | Issue closed | Completed and merged |
+
 ## Creating a Board
 > "Create a project board for this repository"
 Squad runs:
@@ -60,6 +63,7 @@ Example:
 - Drag issue from "Backlog" to "Ready" → Squad applies `go:yes`
 - Drag issue from "Ready" to "In Progress" → Squad prompts: "Assign to which member?" then applies `squad:{member}`
 ## Board CLI Commands
+
 | Command | What it does |
 |---------|--------------|
 | `gh project list --owner {org}` | List all projects in org/repo |
@@ -67,7 +71,9 @@ Example:
 | `gh project item-add {id} --url {issue-url}` | Add issue to board |
 | `gh project item-delete {id} --item-id {item}` | Remove issue from board |
 | `gh project field-list {id}` | List custom fields (Status, Priority, etc.) |
+
 **Note:** `gh project` uses GraphQL, not REST. All operations are against the Projects V2 API.
+
 ## Custom Fields
 You can add custom fields to the board (Assignee, Priority, Release):
 ```bash

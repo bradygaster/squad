@@ -1,9 +1,11 @@
 # Quick start
 Your first 5 minutes with Squad. Prove it works before you learn anything.
+
 ---
 ## Prerequisites
 - **Node.js 20+** — Check with `node --version`
 - **Git repository** — New or existing
+
 ---
 ## Install
 ```bash
@@ -20,6 +22,7 @@ You'll see:
    .squad/templates/ — 11 template files
 Open GitHub Copilot and select Squad from the agent list.
 ```
+
 ---
 ## Validate
 Check that Squad created your team directory:
@@ -31,6 +34,7 @@ Confirm Squad is ready:
 ```bash
 npx squad status
 ```
+
 ---
 ## Try it
 Open GitHub Copilot in your terminal or VS Code. Select **Squad** from the agent list (`/agent Squad` in CLI or `/agents` in VS Code).
@@ -44,9 +48,11 @@ Squad forms your team and responds with agent names and roles. Say yes, or just 
 > Team, create a basic Express server with a /health endpoint.
 ```
 Squad spawns agents and moves the work forward.
+
 ---
 ## What just happened?
 Squad read your description, formed a team of specialists, wrote their charters to `.squad/agents/`, and coordinated parallel work. Check `.squad/decisions.md` to see what they decided.
+
 ---
 ## Next steps
 [**Your first session**](first-session) — Step-by-step walkthrough of parallel work, decisions, and memory.

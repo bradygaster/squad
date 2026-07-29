@@ -1,5 +1,6 @@
 # First Session Walkthrough
 A step-by-step tour of your first time using Squad. Follow along in your terminal.
+
 ---
 ## 1. Install Squad
 Start with a git repo (new or existing):
@@ -17,6 +18,7 @@ You'll see:
    .squad/templates/             — 11 template files
 Open GitHub Copilot and select Squad from the agent list.
 ```
+
 ---
 ## 2. Open Copilot — Your Team Forms
 Start the Copilot CLI:
@@ -43,6 +45,7 @@ Here's your team:
 Look right? Say yes, add someone, or change a role.
 (Or just give me a task to start!)
 ```
+
 ---
 ## 3. Confirm and Give Your First Task
 You can say "yes" or skip straight to a task (which is implicit confirmation):
@@ -54,6 +57,7 @@ Squad creates the `.ai-team/` directory structure (team roster, routing rules, c
 🔧 Dallas — setting up Express server with routing
 Dallas is on it — building the Express server now.
 ```
+
 ---
 ## 4. Parallel Fan-Out — The Launch Table
 Now give a bigger task to see parallel work:
@@ -70,6 +74,7 @@ Squad decomposes the work and launches agents simultaneously:
 📋 Scribe  — logging session
 ```
 All five agents are working at the same time in separate context windows. The tester writes test cases from the requirements *while* the implementation is being built — no waiting.
+
 ---
 ## 5. Results Labeled by Agent
 When agents finish, you see results tagged with each agent's identity:
@@ -93,6 +98,7 @@ When agents finish, you see results tagged with each agent's identity:
    [+4 more]
 ```
 Behind the scenes, the Scribe merged decisions from each agent into `decisions.md` and logged the session.
+
 ---
 ## 6. Ask "Where Are We?" — Instant Status
 At any point, you can check status:
@@ -113,6 +119,7 @@ Key decisions:
 - MongoDB as database
 3 decisions in decisions.md, 4 agent history entries updated.
 ```
+
 ---
 ## 7. Follow-Up Task — Watch Decisions Accumulate
 Give a follow-up task:
@@ -146,6 +153,7 @@ After completion, check decisions:
 **Why:** Native MongoDB capability, no external search service needed
 ```
 Every agent reads these decisions before working. As the list grows, the team retains context so you don't need to restate architectural choices.
+
 ---
 ## 8. Set a Directive
 You notice something you want to standardize:
@@ -157,6 +165,7 @@ Squad captures this as a directive — no agent spawn needed:
 📌 Captured. All API input validation must use Zod.
 ```
 This is written to `decisions.md` via the inbox. Every agent will see it in their next spawn.
+
 ---
 ## 9. Export Your Squad
 After a productive session, export your team for portability:
@@ -174,6 +183,7 @@ npm install -g @bradygaster/squad-cli
 squad init
 squad import ../my-app/squad-export.json
 ```
+
 ---
 ## What to Try Next
 - **Add a team member:** `"I need a DevOps person"`
@@ -181,6 +191,7 @@ squad import ../my-app/squad-export.json
 - **Direct an agent:** `"Lambert, run the test suite and tell me what's failing"`
 - **Remove someone:** `"Remove the designer — we don't need them anymore"`
 - **Connect to issues:** `"Connect to myorg/myrepo"` (see [GitHub Issues Walkthrough](tour-github-issues.md))
+
 ---
 ## Tips
 - **First session is the slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions and stop asking questions they've answered before.

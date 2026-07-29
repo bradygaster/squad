@@ -12,6 +12,7 @@ Team, reskill
 Team, reskill, take a nap, and let me know how much context you cleared out collectively for future iterations
 ```
 Over multiple sessions, Squad's `.squad/` files grow — agent histories, decisions, skill files. Context hygiene commands let you actively manage that growth so agents stay fast and focused.
+
 ---
 ## Nap
 **What it does:** Summarizes accumulated work into smaller, more efficient memory files. This is the same as running `/compact` in the CLI or `squad nap` from the command line.
@@ -22,11 +23,14 @@ When you tell the team to "take a nap," each agent:
 4. Reports how much context was reclaimed
 ### Nap ≠ Shutting Down
 This is the most common misconception:
+
 | Action | What happens to `.squad/` files |
 |--------|-------------------------------|
 | **Shutting down Squad** (closing the CLI, killing the process) | Files stay exactly as they are. Nothing is summarized or compacted. |
 | **Nap** (`team, take a nap` or `squad nap`) | Files are actively summarized and compacted. Older entries are archived, working context gets leaner. |
+
 Shutting down Squad every night does **not** perform context hygiene. You must explicitly tell the team to take a nap.
+
 ### CLI equivalents
 ```bash
 squad nap              # Standard context hygiene
@@ -34,6 +38,7 @@ squad nap --deep       # Thorough cleanup with recursive descent
 squad nap --dry-run    # Preview what would be cleaned up
 ```
 In the interactive shell, use `/compact` for the same effect.
+
 ---
 ## Reskill
 **What it does:** Tells agents to re-examine their skills, validate them against the current codebase, and potentially discover new patterns.
@@ -44,6 +49,7 @@ When you tell the team to "reskill," agents:
 4. Update skill confidence levels based on current evidence
 ### Availability
 > **Note:** As of now, reskill requires running Squad from source (via symlink). It is not yet available through `squad upgrade`. This will change in a future release.
+
 ---
 ## Combined Commands
 You can trigger nap and reskill together in a single prompt:
@@ -51,14 +57,17 @@ You can trigger nap and reskill together in a single prompt:
 Team, reskill, take a nap, and let me know how much context you cleared out collectively for future iterations
 ```
 This runs both behaviors and gives you a report on how much context was reduced — useful for understanding how lean your team's working memory is before the next session.
+
 ---
 ## When to Use These
+
 | Situation | Command |
 |-----------|---------|
 | After several work sessions, agents feel slow or unfocused | `team, take a nap` |
 | Codebase has changed significantly and skills may be stale | `team, reskill` |
 | Before a major new phase of work | Combine both |
 | End of sprint / milestone | `squad nap --deep` |
+
 ---
 ## Tips
 - **Nap regularly.** A few sessions of heavy work can bloat history files. Napping keeps context budgets in check.

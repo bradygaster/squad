@@ -9,6 +9,7 @@ hero: "Squad's biggest release yet — isolated worktrees for conflict-free para
 ---
 # What's New in v0.9.0
 > _This is Squad's biggest release. Worktree spawning isolates each issue into its own branch. Cooperative rate limiting maps traffic across multi-agent teams. Economy Mode lets you budget costs. A complete docs refresh, security hardening, and community contributions make this one to upgrade for._
+
 ---
 ## What Shipped
 ### 1. Worktree Spawning — No More Branch Conflicts (#529)
@@ -25,6 +26,7 @@ Before: Agents working on multiple issues could block each other on branch confl
 - Multiple agents can work simultaneously across different worktrees
 - On completion, worktree is cleaned up automatically
 This is the foundation for true parallel work at scale.
+
 ---
 ### 2. Machine Capability Discovery — Routing to Capable Hardware (#514)
 Agents declare what they need. Ralph routes work to machines that can handle it.
@@ -43,6 +45,7 @@ Ralph's dispatcher reads these labels and routes the work to the machine in your
 :::note
 Capability Discovery works with Ralph's mesh routing. If you're not running Ralph, this is aspirational.
 :::
+
 ---
 ### 3. Cooperative Rate Limiting — Predictive Circuit Breaker (#515)
 Multi-agent teams share rate limits responsibly.
@@ -59,6 +62,7 @@ Rate limit errors now surface with recovery suggestions:
 Agent: MyAgent | Remaining: 0/60 | Resets: 14:32 UTC
 Suggestion: 1 agent idle, 2 backing off. Try serial mode with --cooperative-delay=30s
 ```
+
 ---
 ### 4. Economy Mode — Cost-Conscious Model Selection (#500)
 Budget-aware routing falls back to cheaper models when spend is high.
@@ -78,6 +82,7 @@ const role = await squad.resolveRole('coding-agent', {
 - Reduces spend 40–60% for suitable tasks
 - Agents choose the most cost-effective model for their task
 - Human stays in budget control
+
 ---
 ### 5. Auto-Wired Telemetry (#281)
 One call to wire up full observability.
@@ -96,6 +101,7 @@ const { eventBus, costTracker } = await initSquadTelemetry({
 - ✅ Custom event handlers (e.g., Slack alerts on high spend)
 - ✅ Zero additional setup
 No more hunting for telemetry wiring. One call, full observability.
+
 ---
 ### 6. Upgrade Path Overhaul — P0 Fixes (#544, #549)
 **Windows EPERM handling** — File permission errors on Windows no longer break upgrades. Automatic retry with temporary directory fallback.
@@ -106,6 +112,7 @@ No more hunting for telemetry wiring. One call, full observability.
 - Memory safety caps to prevent runaway allocations
 - ESM patch improvements for Node 22/24 compatibility
 - Rate limit errors now surface with recovery options
+
 ---
 ### 7. Documentation Refresh
 **README slimmed**: 512 → 218 lines. Removed noise, kept substance.
@@ -114,6 +121,7 @@ No more hunting for telemetry wiring. One call, full observability.
 **Astro features**: 10 new Astro features implemented — section badges, improved search with Pagefind, better syntax highlighting.
 **Teams MCP refresh**: Microsoft Teams integration updated for Workflows webhooks. Full docs at [Teams integration guide](../features/mcp.md).
 **Background agent pipeline guide**: New guide for building agents that run in the background with guardrails, clear intentions, and escalation paths.
+
 ---
 ### 8. Quality & Stability
 - ✅ Node <22.5.0 hard-fail with clear message (prevents silent failures)
@@ -123,11 +131,13 @@ No more hunting for telemetry wiring. One call, full observability.
 - ✅ SIGINT/SIGTERM signal handling (graceful shutdown, 22 tests)
 - ✅ Read-modify-write race condition fixed in history-shadow.ts
 - ✅ ADO CLI exec timeout (prevent hanging on slow networks)
+
 ---
 ### 9. Community Contributions
 **Worktree regression tests** — @diberry added tests that guard against regressions in worktree `.git` handling (file vs. directory).
 **Docs improvements** — @diberry contributed docs expansion for CLI README and reference.
 **Community security review** — Thanks to @wiisaacs and the community for 5-model security review of platform adapters.
+
 ---
 ## Quick Stats
 - ✅ **4 major features** (Worktrees, Capability Discovery, Cooperative Rate Limiting, Economy Mode)
@@ -136,9 +146,11 @@ No more hunting for telemetry wiring. One call, full observability.
 - ✅ **Docs refresh** — README -46%, new upgrade guide, consistent install path
 - ✅ **3,963+ tests passing**, 150 test files
 - ✅ **Community contributions** from 8+ contributors
+
 ---
 ## Breaking Changes
 **None.** All changes are additive. Existing Squads work as-is. New features are opt-in via CLI or config.
+
 ---
 ## Upgrading
 Upgrade to v0.9.0 with:
@@ -151,6 +163,7 @@ squad upgrade  # Walks you through any project-level config updates
 ```
 **Docs:** [Upgrade Guide](../scenarios/upgrading.md) | [Troubleshooting](../scenarios/troubleshooting.md)
 If you hit issues, [open a GitHub issue](https://github.com/bradygaster/squad/issues). We're here to help.
+
 ---
 ## What's Next
 - **Persistent Ralph** — Watch mode with heartbeat improvements, multi-region mesh routing
@@ -158,6 +171,7 @@ If you hit issues, [open a GitHub issue](https://github.com/bradygaster/squad/is
 - **Teams webhook CommunicationAdapter** — Full implementation of Teams mobile notifications
 - **SubSquad orchestration** — Compose squads from other squads; cross-team work at scale
 This is an exciting time. v0.9.0 is the release where Squad scales from solo developers to distributed teams.
+
 ---
 **Questions?** Drop by [Squad Discussions](https://github.com/bradygaster/squad/discussions) or ping us on [Discord](https://discord.gg/squad-community).
 **Want to contribute?** Check out [Contributing Guide](../guide/contributing.md). We're hiring agents (and humans who build them).

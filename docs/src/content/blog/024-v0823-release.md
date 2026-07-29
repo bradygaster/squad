@@ -9,6 +9,7 @@ hero: "v0.8.23 fixes a critical crash when running `squad init` on Node.js 24+ a
 ---
 # v0.8.23 Release: Node 24+ Compatibility, Squad RC Docs, and Critical Fixes
 > _v0.8.23 is a critical hotfix addressing a crash when running `squad init` on Node.js 24+ and GitHub Codespaces. It ships comprehensive Squad RC documentation, introduces lazy module loading for faster CLI startup, and includes a postinstall patch for ESM import issues. 2 issues closed, 3 PRs merged, 3,811 tests passing._
+
 ---
 ## What Shipped
 ### 1. SDK-First Mode (Phase 1) — The Headline Feature
@@ -120,6 +121,7 @@ npm install @bradygaster/squad-sdk
 npx squad build
 # Generates .squad/team.md, .squad/routing.md, .squad/agents/*/charter.md
 ```
+
 ---
 ### 2. Azure Function Sample — Serverless Multi-Agent Workflows
 New sample: `samples/azure-function-squad/` — a **Content Review Squad** that wires an HTTP-triggered Azure Function to a multi-agent review pipeline.
@@ -182,6 +184,7 @@ curl -X POST http://localhost:7071/api/squad-prompt \
 }
 ```
 The Azure sample is a drop-in starting point for serverless multi-agent workflows. Replace the mock review handlers with live Squad runtime calls using `SquadClient`, and you have a production-ready review pipeline.
+
 ---
 ### 3. Remote Squad Mode
 Cross-machine squad collaboration via new `squad rc` commands for linking project-local squads to remote team roots.
@@ -195,6 +198,7 @@ Cross-machine squad collaboration via new `squad rc` commands for linking projec
 - `squad link <path>` — link a project to a remote team root
 - `ensureSquadPathDual()` / `ensureSquadPathResolved()` — dual-root write guards
 Remote Squad Mode enables teams to share squad identity across multiple projects while maintaining project-local customization.
+
 ---
 ### 4. Critical Bug Fixes
 #### **Installation Crash Fix (#247) — The Big One**
@@ -208,6 +212,7 @@ Error: Cannot find module '@opentelemetry/api'
 2. Moved OTel to optional dependencies (not required by default)
 3. Telemetry now gracefully degrades when OTel is absent — zero crashes
 **Impact:** Fresh installs now work reliably. Telemetry is truly optional.
+
 ---
 #### **CLI Command Wiring (#244)**
 Four commands were implemented but never wired into the CLI entry point:
@@ -217,6 +222,7 @@ Four commands were implemented but never wired into the CLI entry point:
 - `rc-tunnel`
 **Fix:** Commands are now properly connected and accessible via `squad rc`, `squad copilot-bridge`, etc.
 **Impact:** Remote squad features are now discoverable and functional.
+
 ---
 #### **Model Config Round-Trip (#245)**
 **Problem:** `AgentDefinition.model` didn't accept structured model configuration — only strings.
@@ -225,16 +231,19 @@ Four commands were implemented but never wired into the CLI entry point:
 - Charter compiler updated to emit and parse the new format correctly
 - Round-trip config survives compile → parse → serialize cycles intact
 **Impact:** Advanced model selection (fallback chains, cost-aware routing) now works end-to-end.
+
 ---
 #### **ExperimentalWarning Suppression**
 **Problem:** Node's `ExperimentalWarning` for `node:sqlite` was leaking into terminal output, cluttering user experience.
 **Fix:** Process.emit override in `cli-entry.ts` filters experimental warnings before they reach stdout.
 **Impact:** Clean, focused terminal output.
+
 ---
 #### **Blankspace Fix (#239)**
 **Problem:** Idle blank space appeared below the agent panel even when no output was present.
 **Fix:** Conditional height constraint only active during processing. Removes visual clutter.
 **Impact:** Cleaner UI, professional appearance.
+
 ---
 ### 5. Test Hardening
 #### **Windows Race Condition (EBUSY)**
@@ -243,15 +252,19 @@ Race condition in `fs.rm` with retry logic on Windows. Fixed with exponential ba
 Test speed gate thresholds adjusted for growing CLI codebase. No more false-positive timeout failures.
 #### **Regression Fix Wave (#221)**
 **Massive batch:** PR #221 resolved 25 test regressions across the suite. CRLF normalization, cross-platform path handling, and mock cleanup.
+
 ---
 ### 6. CI Stabilization (#232, #228)
 GitHub Actions pipeline fixed and green. All workflows now run reliably without transient failures.
+
 ---
 ### 7. Community Contributions
 - **PR #199 (migration command)** — Received, reviewed, and feedback captured as issue #231 for future implementation
 - **PR #243 (blankspace fix)** — Community contribution cherry-picked and credited
+
 ---
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | Issues closed | 26 |
@@ -265,6 +278,7 @@ GitHub Actions pipeline fixed and green. All workflows now run reliably without 
 | Documentation pages added | 2 (SDK-First Mode + SDK Reference) |
 | Sample projects | 1 (Azure Function Content Review Squad) |
 | Release candidate version | 0.8.22-preview.9 |
+
 ---
 ## Technical Details
 ### SDK Mode Detection
@@ -277,6 +291,7 @@ if (fs.existsSync(resolve('.', 'squad.config.ts'))) {
 }
 ```
 Fallback: if `squad.config.ts` is missing, Squad operates in traditional markdown-first mode (backward compatible).
+
 ---
 ### Telemetry Architecture (OTel Resilience)
 New `otel-api.ts` wrapper ensures telemetry is truly optional:
@@ -296,6 +311,7 @@ export function initTelemetry(config?: TelemetryConfig) {
 }
 ```
 **Benefit:** Telemetry is an optional add-on, not a blocker.
+
 ---
 ### Remote Squad Path Resolution
 Dual-root resolver supports both project-local and team-identity directories:
@@ -306,9 +322,11 @@ function resolveSquadPaths(projectRoot: string, remoteTeamRoot?: string) {
   // Load routing, teams, charters from first match
 }
 ```
+
 ---
 ### OTel Readiness Assessment
 All 8 telemetry modules (`defineHooks`, `defineTelemetry`, meter providers, span processors, exporters) compile and validate with zero runtime errors. This unblocks **Phase 3: OpenTelemetry Integration** — where agents report metrics and traces to Prometheus, Jaeger, and Datadog.
+
 ---
 ## Documentation Updates
 ### New Guides
@@ -319,6 +337,7 @@ All 8 telemetry modules (`defineHooks`, `defineTelemetry`, meter providers, span
 - CHANGELOG updated with Phase 1 + bug fix deliverables
 - All sample code demonstrates the builder pattern
 - Blog post (this document) serves as release announcement
+
 ---
 ## Testing & Stability
 **Test Coverage (v0.8.22 focus areas):**
@@ -329,6 +348,7 @@ All 8 telemetry modules (`defineHooks`, `defineTelemetry`, meter providers, span
 - 2 Windows EBUSY race condition tests (fs.rm retry logic)
 - 13 known timeout flakes on Windows (non-logic, environment-related)
 **Total test suite:** 3,811 passing tests (3,840 total, 0 logic failures)
+
 ---
 ## What We Learned
 1. **Type safety is a UX feature.** Developers writing `squad.config.ts` get autocomplete and catch misconfiguration errors at edit time, not at runtime. This pays for itself immediately.
@@ -337,6 +357,7 @@ All 8 telemetry modules (`defineHooks`, `defineTelemetry`, meter providers, span
 4. **Azure Functions unlock serverless agents.** The sample demonstrates that Squad agents can run in a stateless HTTP function. This opens up cost-efficient deployments for batch processing workloads (content review, code analysis, compliance checks).
 5. **Protected files are critical.** `.squad/decisions.md` and `.squad/history.md` must never be overwritten by generated files. This ensures human-written knowledge persists across recompiles.
 6. **Windows needs dedicated testing.** Race conditions in `fs.rm`, CRLF normalization, and timeout thresholds are distinct from Unix environments. CI/CD must test both.
+
 ---
 ## Node 24+ Compatibility Fix
 v0.8.23 fixes a critical crash when running `squad init` on Node.js 24+ (including GitHub Codespaces):
@@ -347,9 +368,11 @@ The root cause was an upstream ESM import issue in `@github/copilot-sdk`. Squad 
 - **Lazy imports** — commands like `init`, `build`, `link`, and `migrate` no longer eagerly load copilot-sdk
 - **Postinstall patch** — automatically fixes the broken import at install time
 This also means CLI startup is faster for non-session commands.
+
 ---
 ## Squad RC Documentation
 Comprehensive documentation for `squad rc` (Remote Control) is now available. The new guide covers ACP passthrough architecture, the 7-layer security model, mobile keyboard shortcuts, and troubleshooting. See [Squad RC](../features/squad-rc.md).
+
 ---
 ## What's Coming Next
 ### v0.8.23 (Roadmap)
@@ -369,6 +392,7 @@ Comprehensive documentation for `squad rc` (Remote Control) is now available. Th
 - **Builder linting:** `squad lint` validates config against best practices (agent capability coverage, routing gaps, ceremony scheduling conflicts)
 - **Config versioning:** `squad config migrate` helpers for breaking changes across SDK versions
 - **Casting system integration:** `defineCasting()` → live universe selection and overflow handling in coordinator
+
 ---
 ## Upgrade Path
 ### From v0.8.20 → v0.8.22
@@ -390,6 +414,7 @@ npx @bradygaster/squad-cli@latest doctor
 3. Run `squad build` to generate `.squad/` markdown
 4. Commit the config, version control the generated files, and sync your team
 Alternatively, keep your markdown-first squad — both modes will coexist indefinitely.
+
 ---
 ## Getting Started with v0.8.22
 ### Option 1: Stick with Markdown (No Changes Needed)
@@ -424,6 +449,7 @@ curl -X POST http://localhost:7071/api/squad-prompt \
   -d '{"prompt": "Your review text here"}'
 ```
 Full sample: [github.com/bradygaster/squad/tree/main/samples/azure-function-squad](https://github.com/bradygaster/squad/tree/main/samples/azure-function-squad)
+
 ---
 ## Important Fixes for Your Setup
 If you've experienced any of these issues, v0.8.22 resolves them:
@@ -434,6 +460,7 @@ If you've experienced any of these issues, v0.8.22 resolves them:
 - ✅ **Extra blank space in UI** (#239) — Removed
 - ✅ **Timeout flakes on Windows** — Hardened with retry logic
 - ✅ **25 test regressions** (#221) — All fixed
+
 ---
 ## Community Credits
 This release was shipped by the Squad core team with community contributions:
@@ -446,6 +473,7 @@ This release was shipped by the Squad core team with community contributions:
 - PR #199 — Migration command (feedback captured in #231)
 - PR #243 — Blankspace fix (cherry-picked)
 Thanks to all early SDK-First adopters for feedback.
+
 ---
 ## Try It Now
 ```bash
@@ -461,6 +489,7 @@ cat .squad/team.md
 # Run agents (same CLI, same experience)
 npx squad start
 ```
+
 ---
 ## Links
 - [GitHub Repository](https://github.com/bradygaster/squad)
@@ -479,5 +508,6 @@ npx squad start
 - #221 — Regression fixes (25 tests)
 - #232, #228 — CI stabilization
 - #231 — Migration command feedback
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try SDK-First Mode →](../sdk-first-mode.md)_

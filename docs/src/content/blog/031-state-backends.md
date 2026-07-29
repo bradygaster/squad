@@ -20,11 +20,13 @@ PR #1004 adds state backend support. One line in your config, and all mutable st
 squad init --state-backend two-layer
 ```
 ## Four Options
+
 | Backend | Where state goes | PRs clean? | Setup |
 |---------|-----------------|------------|-------|
 | `local` | Working branch (default) | ❌ | Zero config |
 | `orphan` | `squad-state` branch | ✅ | Config + branch |
 | `two-layer` | Notes + orphan combined | ✅ | `--state-backend two-layer` |
+
 ## The Two-Layer Architecture
 The `two-layer` option implements the architecture from [Tamir's blog post](https://www.tamirdresher.com/blog/2026/03/23/scaling-ai-part7b-git-notes):
 - **Layer 1 (git notes):** Thin commit-scoped "why" annotations. Invisible in PR diffs. Attached to specific commits.

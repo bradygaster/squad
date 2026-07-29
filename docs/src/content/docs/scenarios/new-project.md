@@ -8,12 +8,14 @@ Set up Squad for a new React + Node.js app
 Initialize a team for a task management app that can run in Azure Web App PaaS
 ```
 Start from zero: new directory, new repo, full team in under a minute. Squad analyzes your description and assembles the right specialists.
+
 ---
 ## 1. Create the Repo
 ```bash
 mkdir my-app && cd my-app
 git init
 ```
+
 ---
 ## 2. Install Squad
 ```bash
@@ -34,6 +36,7 @@ Next steps:
   2. Select Squad from the /agent list (CLI) or /agents (VS Code)
   3. Tell it what you're building
 ```
+
 ---
 ## 3. Open Copilot and Describe Your Project
 ```bash
@@ -48,6 +51,7 @@ Describe the project — language, stack, what it does:
 > I'm building a CLI tool in Go that monitors AWS costs and sends
 > Slack alerts when spending exceeds thresholds.
 ```
+
 ---
 ## 4. Confirm the Team
 Squad proposes a team. Names come from a fictional universe:
@@ -70,6 +74,7 @@ Squad creates `.ai-team/` (roster, charters, histories, routing rules, casting s
 🔧 Rusty — setting up Go module and project structure
 Rusty is on it.
 ```
+
 ---
 ## 5. Give a Bigger Task — Parallel Fan-Out
 Use the word "team" to trigger parallel work:
@@ -87,6 +92,7 @@ Squad decomposes the work and launches agents simultaneously:
 📋 Scribe  — logging session
 ```
 All five agents work at the same time in separate context windows.
+
 ---
 ## 6. Check Decisions
 After agents finish, see what they decided:
@@ -104,6 +110,7 @@ After agents finish, see what they decided:
 **Why:** Rich formatting, actionable buttons for drill-down
 ```
 Every agent reads these decisions before their next task. As the list grows, the team retains context so you don't need to restate decisions.
+
 ---
 ## 7. Commit Your Team
 ```bash
@@ -111,6 +118,7 @@ git add .ai-team/ .ai-team-templates/ .github/ .gitattributes
 git commit -m "Add Squad team"
 ```
 Commit `.ai-team/` — it's your team's brain. Anyone who clones the repo gets the full team with all their accumulated knowledge.
+
 ---
 ## Tips
 - **First session is the slowest.** Agents have no history yet. After 2–3 sessions, they know your conventions and stop asking redundant questions.

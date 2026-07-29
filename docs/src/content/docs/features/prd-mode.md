@@ -8,6 +8,7 @@ Read the PRD at docs/product-spec.md and summarize the key requirements
 Read docs/product-spec.md and suggest implementation slices or GitHub issues
 ```
 Squad can **read an existing PRD or spec** and help you reason about it in chat. Today, this is an ingestion workflow — not a dedicated PRD authoring system or a built-in persistent work-item tracker.
+
 ---
 ## What works today
 Squad can:
@@ -16,6 +17,7 @@ Squad can:
 - Summarize requirements, risks, and open questions
 - Suggest implementation slices, milestones, or issue breakdowns
 There is **no special CLI command or router for PRD mode** in the current implementation. The feature works because you can point Squad at an existing document and ask for analysis.
+
 ---
 ## How to use it
 Paste the PRD directly into chat:
@@ -28,6 +30,7 @@ Or reference a file that already exists in the repo:
 ```
 > Read the PRD at docs/product-spec.md and call out the main requirements
 ```
+
 ---
 ## What to expect
 A good PRD-ingestion session usually produces:
@@ -36,6 +39,7 @@ A good PRD-ingestion session usually produces:
 3. A suggested implementation breakdown you can turn into issues or milestones
 4. Follow-up prompts for the lead, reviewers, or implementers
 This is best thought of as **spec reading and decomposition assistance**.
+
 ---
 ## What it does not do today
 Be careful not to over-read the feature:
@@ -43,6 +47,7 @@ Be careful not to over-read the feature:
 - It does **not** maintain a first-class backlog with stored WI-1 / WI-2 style identifiers
 - It does **not** persist dependency graphs or a PRD-specific board you can query later with commands like “show me the work items”
 If you want durable tracking, use the decomposition output to create GitHub issues, project-board items, or other repo artifacts explicitly.
+
 ---
 ## Tips
 - Start from a real document — a PRD, spec, RFC, or issue write-up already in the repo.

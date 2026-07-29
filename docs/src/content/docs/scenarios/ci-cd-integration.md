@@ -4,6 +4,7 @@
 Enable Ralph's heartbeat workflow to triage issues automatically
 ```
 Ralph runs periodically via GitHub Actions to handle housekeeping between Copilot sessions — triage new issues, apply squad labels, check stale branches, archive old decisions.
+
 ---
 ## 1. The Heartbeat Workflow — Ralph Between Sessions
 Ralph (the manager agent) runs via GitHub Actions on event-based triggers:
@@ -38,6 +39,7 @@ Issue #42: "Add Stripe payment integration"
   → priority:high
 ```
 Now when you open Copilot, you see issues pre-triaged.
+
 ---
 ## 2. Label-Driven Automation
 Squad uses GitHub labels to drive workflows:
@@ -65,6 +67,7 @@ Squad uses GitHub labels to drive workflows:
 - `release:next` — include in the next release
 - `release:backlog` — not scheduled yet
 Ralph applies `squad:*` and `type:*` labels automatically. You apply `go:*` labels manually when you want background processing with review gates.
+
 ---
 ## 3. @copilot Auto-Assign for Background Issue Processing
 When you add a `go:*` label to an issue, the `@copilot` automation picks it up:
@@ -97,6 +100,7 @@ jobs:
           copilot --agent squad --message "${{ steps.agent.outputs.agent }}, handle issue #${{ github.event.issue.number }}"
 ```
 **Note:** This workflow requires GitHub Actions to have access to your Copilot session. See GitHub's docs for `gh copilot` in Actions.
+
 ---
 ## 4. What You CAN'T Do: Agents Can't Run in Actions (Yet)
 **Squad agents require a live Copilot session.** They can't run in a GitHub Actions runner without Copilot CLI access.
@@ -105,6 +109,7 @@ This means:
 ✅ You **can** use Ralph to triage and label issues  
 ✅ You **can** trigger Copilot sessions via Actions (if you have `gh copilot` access)  
 ❌ You **can't** have agents merge PRs without human approval (by design)
+
 ---
 ## 5. Sample Workflow: Issue Filed → Triage → Assign → Build → Review
 1. **User files issue** #42: "Add Stripe payment integration"
@@ -116,6 +121,7 @@ This means:
 7. **Neo (Lead) reviews** PR #43, approves or requests changes
 8. **You merge** PR #43 after human review
 Steps 2, 4, 5, 6, 7 are **automated**. You only do steps 3 and 8.
+
 ---
 ## 6. Workflow Templates Ship with Squad
 When you run `squad`, these workflow templates are installed:
@@ -130,6 +136,7 @@ git commit -m "Enable Squad workflows"
 git push
 ```
 Now they're live.
+
 ---
 ## 7. Sample Prompts for CI-Adjacent Workflows
 **Trigger Ralph manually:**
@@ -150,6 +157,7 @@ squad heartbeat --dry-run
 > Ralph, triage the 10 newest issues and apply squad labels.
 > If any are ready to start, let me know.
 ```
+
 ---
 ## Tips
 - **Ralph is your assistant between sessions.** It triages issues, applies labels, and keeps things organized while you're not in Copilot.

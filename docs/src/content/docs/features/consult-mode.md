@@ -1,20 +1,24 @@
 # Consult Mode
 Consult mode lets you bring an established squad into projects you don't own — OSS contributions, client work, temporary collaborations — without leaving any trace. Your team consults, executes the approved work, learns things, and returns home with only the generic learnings you approve.
+
 ---
 ## The Problem
 You have an established source squad stored outside the target repository, with agents, skills, and decisions refined over time. When you contribute to someone else's project, you face a dilemma:
 - **Pollute the project?** Running `squad init` creates a `.squad/` folder they didn't ask for
 - **Pollute your squad?** Project-specific knowledge bleeds into your global squad
 - **Work without your team?** Lose the productivity benefits you've built up
+
 ---
 ## The Solution
 Your team **consults** on a project. They bring their expertise, do the work, and learn things. When done, they extract what's reusable and return home. The project never knows Squad was there.
+
 | Aspect | Normal Mode | Consult Mode |
 |--------|-------------|--------------|
 | Squad location | `.squad/` in project | **Copy** of source squad into project `.squad/` |
 | Git visibility | Committed or `.gitignore` | Invisible via `.git/info/exclude` |
 | Writes go to | Project `.squad/` | Project `.squad/` (isolated copy) |
 | After session | Stays in project | Extract generic learnings → source squad, discard rest |
+
 ---
 ## Quick Start
 ### OSS Contribution
@@ -38,6 +42,7 @@ squad extract --clean         # Extract and clean up (prompts for confirmation)
 squad consult --status        # See if consult mode is active
 squad consult --check         # Dry-run: show what would happen
 ```
+
 ---
 ## Command Reference
 ### `squad consult`
@@ -68,6 +73,7 @@ squad consult --check      # Dry-run: show what would happen without creating fi
 **Requirements:**
 - You must have a source squad configured
 - The project must not already have a committed `.squad/` folder
+
 ---
 ### `squad extract`
 Extract generic learnings from a consult session back to your source squad.
@@ -99,6 +105,7 @@ Select learnings to extract (space to toggle, enter to confirm):
   ◉ prefer-composition.md
 Extract 3 learning(s)? [Y/n]
 ```
+
 ---
 ## Learning Classification
 During your consult session, the **Scribe** automatically classifies decisions as they're made:
@@ -114,6 +121,7 @@ Kept in local `decisions.md` only — not extracted:
 - Project-specific config, APIs, or schemas
 - Decisions that mention "this project" or "this codebase"
 **You always have final say.** The Scribe proposes by writing to `extract/`, you approve or reject via `squad extract`. No extraction happens without your explicit confirmation.
+
 ---
 ## License Handling
 ### Permissive Licenses (Safe)
@@ -136,6 +144,7 @@ To override:
 ```bash
 squad extract --accept-risks
 ```
+
 ---
 ## Technical Notes
 ### Git Invisibility
@@ -164,6 +173,7 @@ All consultations are tracked in your source squad at `consultations/{project}.m
 ### 2026-03-15
 - prefer-composition.md: "### Prefer composition over..."
 ```
+
 ---
 ## Tips
 - Run `squad consult --check` before entering consult mode to preview what will happen
@@ -171,6 +181,7 @@ All consultations are tracked in your source squad at `consultations/{project}.m
 - The `--clean` flag is convenient for OSS drive-by contributions where you won't return
 - Consult mode errors out if the project already has a committed `.squad/` — use normal mode instead
 - Your source squad is never modified during the session — only via explicit `squad extract`
+
 ---
 ## Next Steps
 - **Learn about sharing:** See [Export & Import](./export-import.md) for portable team snapshots

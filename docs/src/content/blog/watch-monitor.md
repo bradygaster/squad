@@ -100,12 +100,15 @@ When all features are enabled, each round follows this cycle:
 [14:58:26] Round 1 complete — sleeping 15 minutes
 ```
 ## The Three Layers of Ralph
+
 | Layer | When | How |
 |-------|------|-----|
 | **In-session** | You're at the keyboard | "Ralph, go" — active loop while work exists |
 | **Local watchdog** | You're away but machine is on | `squad watch --execute` |
 | **Cloud heartbeat** | Event-driven | `squad-heartbeat.yml` GitHub Actions events |
+
 The in-session loop is ephemeral — it lives only while the Copilot session is active. The local watchdog runs as a separate process and polls at your chosen interval. The cloud heartbeat is the event-driven layer that triggers on GitHub events (issue close, PR merge, manual dispatch).
+
 ## Why This Matters
 Before #708, Ralph was a coordinator. He routed work to team members but never picked up the tools himself.
 Now, Ralph is a worker. He claims issues, posts comments, spawns Copilot sessions, manages the project board, scans Teams and email, and enforces governance checks.
@@ -116,6 +119,7 @@ The next iteration will add:
 - **Channel routing**: route notifications to specific Teams channels based on work type
 - **Multi-machine coordination**: distribute work across multiple Ralph instances
 Ralph is no longer just a triage bot. He's a work monitor — and he's just getting started.
+
 ---
 **Try it:**
 ```bash
@@ -125,5 +129,6 @@ squad watch --execute --interval 15
 ```bash
 squad watch --execute --board --two-pass --monitor-teams --retro --decision-hygiene --max-concurrent 2
 ```
+
 ---
 _PR #709 · Issue #708 · Shipped 2026-03-30_

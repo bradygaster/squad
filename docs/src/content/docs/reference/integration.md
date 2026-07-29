@@ -1,5 +1,6 @@
 # SDK Integration Guide
 This guide covers connecting to the Copilot SDK via Squad's adapter layer, managing sessions, handling events, and recovering from errors.
+
 ---
 ## SquadClient Setup
 `SquadClient` wraps `@github/copilot-sdk` with lifecycle management and auto-reconnection:
@@ -13,6 +14,7 @@ const client = new SquadClient({
 await client.connect();
 ```
 The client tracks connection state via `SquadConnectionState`: `disconnected → connecting → connected → reconnecting → error`. Auto-reconnection uses exponential backoff with jitter.
+
 ---
 ## Session Management
 Use `SquadClientWithPool` for production workloads — it composes `SquadClient`, `SessionPool`, and `EventBus`:
@@ -27,6 +29,7 @@ const response = await session.sendMessage('Implement the /users endpoint');
 await session.destroy();
 ```
 `SessionPool` enforces concurrency limits, runs health checks, and reaps idle sessions automatically. `SessionStatus` tracks each session through `creating → active → idle → error → destroyed`.
+
 ---
 ## Event Handling
 `EventBus` provides typed pub/sub for session lifecycle events:
@@ -41,6 +44,7 @@ squad.events.on('session.status_changed', (event) => {
 });
 ```
 Events include `session.created`, `session.destroyed`, `session.status_changed`, and tool execution events.
+
 ---
 ## Error Handling
 All SDK errors are wrapped in `SquadError` subtypes with severity, category, and recoverability:
@@ -56,6 +60,7 @@ try {
 }
 ```
 Error classes:
+
 | Class | Description |
 |-------|-------------|
 | `SDKConnectionError` | Connection failures (retryable) |
@@ -67,10 +72,13 @@ Error classes:
 | `RateLimitError` | Rate limit exceeded |
 | `RuntimeError` | General runtime errors |
 | `ValidationError` | Input validation failures |
+
 Use `ErrorFactory` to wrap raw SDK errors with Squad context.
+
 ---
 ## Telemetry
 `TelemetryCollector` tracks operation latency and error rates. `HealthMonitor` runs periodic connection checks returning `HealthCheckResult` with status (`healthy | degraded | unhealthy`) and response time.
+
 ---
 ## See Also
 - [SDK API Reference](api-reference.md) — Full type and function reference

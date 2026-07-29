@@ -33,12 +33,14 @@ npx @bradygaster/squad-cli
 npm install @bradygaster/squad-sdk
 ```
 ### Package Names
+
 | Aspect | Beta | Current |
 |--------|------|---------|
 | CLI package | `@bradygaster/create-squad` | `@bradygaster/squad-cli` |
 | SDK package | bundled in CLI | `@bradygaster/squad-sdk` |
 | Distribution | GitHub-native (no versioning) | npm (semver: latest, insider) |
 | Repository | private | [bradygaster/squad](https://github.com/bradygaster/squad) (public) |
+
 ### Why the Migration?
 The move to npm and public distribution gives you:
 - **Faster installs** — npm cache; no git clone on every run
@@ -135,5 +137,6 @@ If you hit issues:
 - **[Start a discussion](https://github.com/bradygaster/squad/discussions)** — Ideas, questions, feedback.
 - **[Check the docs](https://github.com/bradygaster/squad#what-is-squad)** — migration guides, scenarios, reference.
 Welcome to the public Squad. Let's build.
+
 ---
 _This post was written by McManus, DevRel on Squad's team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

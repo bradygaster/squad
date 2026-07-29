@@ -9,6 +9,7 @@ hero: "Squad's documentation gets a complete rebuild — powered by Astro, Tailw
 ---
 # New Docs Site: Built by the Community
 > _Squad's documentation site has been completely rebuilt from the ground up. A full Astro-powered docs experience with search, responsive design, and content contributed by multiple community members._
+
 ---
 ## What Shipped
 ### Complete Astro Docs Rewrite
@@ -33,6 +34,7 @@ This was a fast-follow polish pass on the Astro rewrite, catching the details th
 - **PR #290** — ".squad/ directory explainer" for the first-session guide — a table showing every file and directory in `.squad/` with its purpose, plus ownership guidance
 - **PR #292** — Doc-impact review process added to team workflows
 All four contributions have been merged or ported into the new Astro docs structure.
+
 ---
 ## What Changed for Users
 ### Better Navigation
@@ -45,14 +47,18 @@ copilot --agent squad
 ```
 ### CI/CD Safety Warnings
 The CI/CD integration page now ships with the cron schedule **commented out by default** and a warning about GitHub Actions minutes consumption when enabling heartbeats and scheduled runs.
+
 ---
 ## Community Impact
 This release represents a milestone for Squad's community. Two external contributors shaped the docs you'll use:
+
 | Contributor | Impact |
 |-------------|--------|
 | [@IEvangelist](https://github.com/IEvangelist) | Complete Astro docs site architecture and build |
 | [@diberry](https://github.com/diberry) | Four PRs improving installation, getting-started, and team workflow docs |
+
 Both contributors are now credited in [CONTRIBUTORS.md](https://github.com/bradygaster/squad/blob/main/CONTRIBUTORS.md).
+
 ---
 ## Try It
 Visit the docs at [bradygaster.github.io/squad](https://bradygaster.github.io/squad/) or run them locally:
@@ -62,6 +68,7 @@ npm install
 npm run dev
 ```
 Open [localhost:4321/squad/](http://localhost:4321/squad/) and explore.
+
 ---
 ## What's Next
 - Search refinements and indexing improvements

@@ -8,21 +8,26 @@ Set up a distributed mesh so my local squad can see the state of our CI squad
 Run sync-mesh.sh to pull the latest state from all remote squads
 ```
 The distributed mesh lets squads on different machines coordinate through git and HTTP. Local squads read remote squad state after syncing it locally.
+
 ---
 ## What Is the Distributed Mesh?
 One sentence:
 > **"The filesystem is the mesh, and git is how the mesh crosses machine boundaries."**
 Squad agents always read local files. When squads live on different machines, you need to materialize remote state locally before agents can see it. The distributed mesh does this through simple sync scripts — no servers, no federation protocols, no real-time messaging.
+
 ---
 ## Three Zones
+
 | Zone | Description | Transport | Complexity |
 |------|-------------|-----------|------------|
 | **1 — Local** | Same host/filesystem | Direct file read | Zero |
 | **2 — Remote-Trusted** | Different host, same org | `git pull` from shared repo | Zero new (git exists) |
 | **3 — Remote-Opaque** | Different org, no shared auth | `curl` / HTTP fetch | ~15 lines of shell |
+
 **Zone 1 (Local):** `cat ../squad-b/SUMMARY.md` works because the file is on your disk.
 **Zone 2 (Remote-Trusted):** Squads push their state to a shared git repo. You pull from that repo to materialize their state locally.
 **Zone 3 (Remote-Opaque):** A remote organization publishes their squad's `SUMMARY.md` at an HTTPS URL. You curl it to materialize locally.
+
 ---
 ## How It Works
 ### Agent Lifecycle with Sync
@@ -44,6 +49,7 @@ Two new steps (SYNC, PUBLISH). Both are transport only — they move files, not 
 - LLMs as the relevance engine
 ### What Changes
 Remote files need to arrive locally before agents can read them.
+
 ---
 ## Configuration
 ### The `mesh.json` File
@@ -76,6 +82,7 @@ One JSON file lists where to find each squad:
 .\sync-mesh.ps1 -MeshJson custom.json  # custom config path
 ```
 Both scripts read `mesh.json`, pull from remote-trusted repos, curl from remote-opaque URLs, and materialize everything into `.mesh/remotes/`.
+
 ---
 ## Getting Started
 ### Prerequisites
@@ -126,6 +133,7 @@ Point at the shared repo:
 ls .mesh/remotes/       # should show directories per remote squad
 ```
 > **Does the mesh state repo need its own Squad?** No. It's a shared data directory — a dumb pipe. No agents, no `.squad/` folder, no automation. Each squad pushes its own state via write partitioning. The repo is just a git-based rendezvous point. If you later want a "mesh observer" that monitors all squads, THAT would be its own Squad project — but it's not required and shouldn't be the state repo itself.
+
 ---
 ## Cross-Org Setup (Zone 3)
 Remote org publishes `SUMMARY.md` at a URL. Add an HTTP entry to `mesh.json`:
@@ -136,6 +144,7 @@ Remote org publishes `SUMMARY.md` at a URL. Add an HTTP entry to `mesh.json`:
   "sync_to": ".mesh/remotes/partner-squad"
 }
 ```
+
 ---
 ## How This Relates to Other Features
 ### SubSquads (Streams)
@@ -148,6 +157,7 @@ See [SubSquads](./streams.md) for within-repo partitioning.
 **Distributed mesh** is **continuous coordination**. Remote squads keep working; you sync their latest state every time your agents wake up.
 Use export/import when you want to **clone a team**. Use distributed mesh when you want **live coordination**.
 See [Multiple Squads scenario](../scenarios/multiple-squads.md) for when to use each approach.
+
 ---
 ## Upstream inheritance
 The **upstream module** and the **distributed mesh** serve different coordination needs. They're complementary, not competing.
@@ -160,6 +170,7 @@ A squad can have **both** an upstream (inheriting org conventions) **and** mesh 
 - Your project squad inherits security policies and routing rules from the org-level squad via `upstream.json`
 - The same squad coordinates with other project squads (auth, ci, data) via `mesh.json`
 ### Comparison
+
 | | Upstream | Mesh |
 |---|---|---|
 | **Direction** | Top-down (parent → child) | Peer-to-peer (squad ↔ squad) |
@@ -168,8 +179,10 @@ A squad can have **both** an upstream (inheriting org conventions) **and** mesh 
 | **Config file** | `upstream.json` | `mesh.json` |
 | **Transport** | Local path / git clone / export JSON | Local path / git pull / HTTP curl |
 | **Use case** | Org policies flowing into team projects | Sibling squads keeping each other informed |
+
 ### What neither does
 Neither upstream nor mesh is about **agent-to-agent communication within a single squad**. That's the drop-box pattern — agents write to `decisions/inbox/`, read from `history.md`, and coordinate asynchronously within one `.squad/` directory.
+
 ---
 ## Skill scope
 When you ask an agent to set up a distributed mesh, the skill produces three things:
@@ -182,6 +195,7 @@ The skill does **not** generate:
 - ❌ Custom sync scripts (bundled scripts are copied, not regenerated)
 **Why this matters:** Deterministic skills give you consistent results. The sync scripts are bundled with the distributed-mesh skill. Agents shouldn't waste time generating validators or rewriting sync logic from scratch — they should copy the bundled scripts and configure your `mesh.json`.
 If you need to customize the sync behavior, edit the copied scripts in your project root. The mesh skill's job ends at configuration.
+
 ---
 ## What We're NOT Building
 - ❌ Federation protocol (git push/pull IS federation)
@@ -192,6 +206,7 @@ If you need to customize the sync behavior, edit the copied scripts in your proj
 - ❌ Real-time sync (agents are async; eventual consistency is correct)
 - ❌ Message queues (agents aren't persistent; nobody's listening)
 - ❌ CRDTs/conflict resolution (write partitioning; no conflicts possible)
+
 ---
 ## Sample Prompts
 ```

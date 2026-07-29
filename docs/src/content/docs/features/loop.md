@@ -12,6 +12,7 @@ squad loop
 squad loop --monitor-email --monitor-teams
 ```
 Loop reads a `loop.md` prompt file and runs it as a continuous work loop. No GitHub issues needed — the prompt is the work driver. Each cycle, Loop sends the prompt to Copilot, collects the work, and loops again at your chosen interval.
+
 ---
 ## What loop does
 Loop is a prompt-driven work engine. Unlike Ralph (which routes GitHub issues to team members), Loop takes a **single `.md` file** with a prompt and your work directives, then runs that prompt continuously.
@@ -44,11 +45,13 @@ squad loop --init
 ```
 This creates a starter `loop.md` file in your project root:
 ```markdown
+
 ---
 configured: false
 interval: 10
 timeout: 30
 description: "My work loop"
+
 ---
 # Work Loop Prompt
 You are a team member on this squad. Each cycle, you will:
@@ -60,11 +63,13 @@ Start with small, focused tasks. Expand the scope once you're confident the loop
 ### Step 2: Edit `loop.md`
 Update the prompt to describe the work you want done each cycle:
 ```markdown
+
 ---
 configured: false
 interval: 10
 timeout: 20
 description: "Monitor and fix failing CI"
+
 ---
 # CI Monitoring Loop
 Each cycle, you will:
@@ -78,11 +83,13 @@ Keep runs focused — 20 minutes max per cycle.
 ### Step 3: Enable the loop
 Set `configured: true` in the frontmatter to unlock the loop:
 ```markdown
+
 ---
 configured: true
 interval: 10
 timeout: 20
 description: "Monitor and fix failing CI"
+
 ---
 ```
 ### Step 4: Run the loop
@@ -92,19 +99,24 @@ squad loop
 Loop will run your prompt every 10 minutes until you press Ctrl+C.
 ## Frontmatter reference
 The YAML frontmatter at the top of `loop.md` controls Loop's behavior:
+
 | Field | Type | Required | Default | Description |
 |-------|------|:--------:|:-------:|-------------|
 | `configured` | boolean | Yes | `false` | Safety check — must be `true` to run. Prevents accidental execution of incomplete loops. |
 | `interval` | number | No | `10` | Minutes between cycles. Loop will wait this long after each cycle completes before running again. |
 | `timeout` | number | No | `30` | Max runtime in minutes for each cycle. If Copilot doesn't finish within this time, the cycle is marked incomplete and the next cycle starts. |
 | `description` | string | No | `"Squad Loop"` | Human-readable description of what this loop does. Shown in logs and status when `description` is omitted. |
+
 Example:
+
 ```markdown
+
 ---
 configured: true
 interval: 15
 timeout: 45
 description: "Process inbox and clean up stale branches"
+
 ---
 ```
 ## Writing a good loop prompt
@@ -115,11 +127,13 @@ A good loop prompt is:
 - **Idempotent** — Safe to run repeatedly; doesn't duplicate work or corrupt state
 ### Example: Team work queue
 ```markdown
+
 ---
 configured: true
 interval: 5
 timeout: 15
 description: "Process team work queue from Teams"
+
 ---
 # Team Work Queue
 Each cycle:
@@ -131,11 +145,13 @@ Keep this quick — 15 minutes per cycle, process at most 3 items.
 ```
 ### Example: Monitoring and alerting
 ```markdown
+
 ---
 configured: true
 interval: 30
 timeout: 20
 description: "Monitor uptime and alert team"
+
 ---
 # Uptime Monitor
 Each cycle:
@@ -147,11 +163,13 @@ This is passive — no fixing, just reporting.
 ```
 ### Example: Mixed mode (queue + monitoring)
 ```markdown
+
 ---
 configured: true
 interval: 10
 timeout: 30
 description: "Work queue + monitoring + cleanup"
+
 ---
 # Daily Squad Loop
 Each cycle, in order:
@@ -179,6 +197,7 @@ squad loop --monitor-email --monitor-teams --self-pull
 When enabled, these capabilities are available inside your loop prompt as context. For example, with `--monitor-email`, your prompt can reference email alerts and action items.
 ## CLI reference
 All `squad loop` flags:
+
 | Flag | Type | Description | Example |
 |------|------|-------------|---------|
 | `--init` | boolean | Create a starter `loop.md` file | `squad loop --init` |
@@ -190,6 +209,7 @@ All `squad loop` flags:
 | `--monitor-email` | boolean | Scan email for alerts each cycle | `squad loop --monitor-email` |
 | `--monitor-teams` | boolean | Scan Teams for action items each cycle | `squad loop --monitor-teams` |
 | `--self-pull` | boolean | Run `git fetch && git pull` before each cycle | `squad loop --self-pull` |
+
 ### Examples
 **Basic loop:**
 ```bash

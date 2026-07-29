@@ -50,5 +50,6 @@ Three features are deferred because they depend on v0.3.0 shipping first:
 - **Proactive backlog surfacing** (coordinator suggests relevant backlog items based on current work) — requires populated backlog data.
 - **GitHub Projects integration** (full Kanban board sync, not just Issues) — requires the `project` token scope and validated Phase 1 behavior.
 v0.3.0 features reduce implementation cost for these deferred items. Model selection enables cheaper models for parallel agent instances. Backlog capture provides data for proactive surfacing. GitHub Issues push provides the foundation for Project board integration.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

@@ -4,15 +4,19 @@ If you're deciding where team state should live, there are two different mechani
 1. **External state location** — `squad externalize` / `squad internalize`
 2. **State backends** — `local`, `orphan`, and `two-layer`
 Those shipped mechanisms are the options this page focuses on.
+
 ---
 ## What ships today
+
 | Option | How you enable it | What it stores | Best fit |
 |---|---|---|---|
 | **Local working tree** | default | `.squad/` files in the repo | simplest workflow |
 | **External state location** | `squad externalize` | mutable `.squad/` state in a platform-specific app-data directory | branch-switch safety without Git plumbing |
 | **Orphan backend** | `squad init --state-backend orphan` or `squad upgrade --state-backend orphan` | mutable state on the `squad-state` orphan branch | clean working tree, Git history |
 | **Two-layer backend** | `squad init --state-backend two-layer` or `squad upgrade --state-backend two-layer` | durable state on `squad-state`, plus best-effort git notes annotations | recommended team backend |
+
 > `stateBackend: "external"` is **not** a real backend today. The SDK accepts the value for compatibility, warns that it is a stub, and falls back to `local`.
+
 ---
 ## 1. Local working tree (default)
 This is the default behavior. Squad reads and writes regular files under `.squad/` in your working tree.
@@ -25,6 +29,7 @@ This is the default behavior. Squad reads and writes regular files under `.squad
 - Uncommitted state is vulnerable to branch switches and cleanup commands
 - Shared editing can create merge conflicts in files like `decisions.md`
 **Good fit when** you want the repo itself to be the source of truth.
+
 ---
 ## 2. External state location (`squad externalize`)
 External state location moves mutable state out of the working tree and into a platform-specific Squad home directory.
@@ -46,6 +51,7 @@ What actually happens today:
 - This is separate from the `stateBackend` system
 **Good fit when** you want clean code branches but do not need Git-native history for team state.
 See also: [External State Storage](/squad/docs/features/external-state/).
+
 ---
 ## 3. Orphan backend (`squad-state` branch)
 The **orphan** backend stores mutable state on a dedicated `squad-state` branch using Git plumbing commands. The branch is never checked out as your working branch.
@@ -67,6 +73,7 @@ What the SDK actually ships:
 - More Git machinery than local or external state
 - Single-writer coordination is still helpful during concurrent updates
 **Good fit when** you want Git-versioned squad state without mixing it into normal code commits.
+
 ---
 ## 4. Two-layer backend (recommended for teams)
 The **two-layer** backend combines the orphan branch with best-effort Git notes.
@@ -89,6 +96,7 @@ What the SDK actually ships:
 - Requires Git repository semantics and hook setup
 **Good fit when** multiple people or agents need a branch-safe, team-oriented backend.
 See also: [State Backends](/squad/docs/features/state-backends/).
+
 ---
 ## What the SDK exports today
 If you're building on the SDK, there are two public surfaces to know about.
@@ -113,6 +121,7 @@ The `./state` export provides a typed facade over `.squad/` state, including:
 - `ConfigCollection`
 - `LogCollection`
 Use this when you want typed access to Squad state without dealing with raw file paths yourself.
+
 ---
 ## Important distinction: location vs backend
 These are related, but not the same thing:
@@ -122,12 +131,14 @@ If you are choosing a strategy, decide first whether you want:
 1. plain files,
 2. an external directory, or
 3. Git-native storage.
+
 ---
 ## Quick guidance
 - **Want the simplest setup?** Stay on **local**.
 - **Want branch-safe local storage without Git plumbing?** Use **externalize/internalize**.
 - **Want Git history but a clean working tree?** Use **orphan**.
 - **Want the most team-oriented shipped backend?** Use **two-layer**.
+
 ---
 ## See Also
 - [External State Storage](/squad/docs/features/external-state/)

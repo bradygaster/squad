@@ -1,5 +1,6 @@
 # Architecture
 How Squad works — one page, no handwaving.
+
 ---
 ## System diagram
 ```
@@ -15,6 +16,7 @@ Scribe merges decisions, Ralph tracks issues
     ↓
 Results returned to user
 ```
+
 ---
 ## Components
 ### Coordinator
@@ -29,6 +31,7 @@ Routing rules in `.squad/routing.md` define which agent handles which work. The 
 The Scribe is a silent agent that tracks decisions and logs sessions. Every team has a Scribe. You never talk to them directly — they work in the background, merging decisions from all agents into `.squad/decisions.md`.
 ### Ralph
 Ralph is the work monitor. He watches your GitHub or GitLab issues, tracks work in progress, and alerts the team when something is ready. Every team has a Ralph. He's silent unless you ask him for status.
+
 ---
 ## What happens when you say "Team, build X"?
 1. **Coordinator reads the request** and checks `.squad/routing.md` for decomposition rules.
@@ -37,6 +40,7 @@ Ralph is the work monitor. He watches your GitHub or GitLab issues, tracks work 
 4. **Agents write results** to their history files and propose decisions.
 5. **Scribe merges all decisions** into `.squad/decisions.md`.
 6. **Coordinator returns labeled results** to you, tagged with each agent's name.
+
 ---
 ## Learn more
 - [**Your Team**](./your-team.md) — How agents form, specialize, and work together

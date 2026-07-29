@@ -4,6 +4,7 @@
 @copilot How does authentication work in this project?
 ```
 You don't always have the repo cloned locally. Sometimes you want to ask your Squad a question from the browser, the GitHub CLI, or a mobile device — without pulling code.
+
 ---
 ## Current options
 Squad already supports several remote interaction paths. Each trades off convenience, depth, and setup effort.
@@ -31,6 +32,7 @@ Add a `squad:{member}` label to any issue, and Squad routes it to the right team
 3. Work proceeds through the normal Squad flow
 **Good for:** Routing specific work to specific team members without cloning.
 **Limitation:** Requires label setup on the repo. Routes work, not questions.
+
 ---
 ## What's not supported yet
 These features don't exist today but would make remote Q&A more powerful:
@@ -41,6 +43,7 @@ All current remote paths read the default branch. You can't ask "How does auth w
 A Discussions-based Q&A channel where Squad monitors and answers questions would make remote interaction feel conversational. This would need a new workflow trigger on `discussion` events.
 ### Issue comment commands
 A `/squad ask "question"` command in issue comments that triggers Squad to respond inline would enable threaded Q&A without creating new issues.
+
 ---
 ## Tips
 - **Start with Copilot Chat.** It's the lowest-effort path and works today for repos with `squad.agent.md`.

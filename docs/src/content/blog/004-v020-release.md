@@ -28,6 +28,7 @@ Skills make the portability story real. In v0.1.0, agent knowledge was implicit 
 The other half of this release came from outside the team. Shayne Boyer ([@spboyer](https://github.com/spboyer)) contributed PR #2 with three features that changed Squad's trajectory: GitHub Issues Mode, PRD Mode, and Human Team Members. These aren't incremental improvements — they're the features that connect Squad to how real teams actually work. Issues Mode gives Squad a project management backbone. PRD Mode turns specifications into executing work. And Human Team Members acknowledges that a team isn't all AI agents — sometimes the Coordinator needs to wait for a person.
 The test suite tells the reliability story. v0.1.0 shipped with 27 tests. v0.2.0 has 92, all passing. Shayne contributed 27 prompt validation tests with his PR. The test infrastructure now covers every new feature by default.
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | New features | 10 |
@@ -36,6 +37,7 @@ The test suite tells the reliability story. v0.1.0 shipped with 27 tests. v0.2.0
 | Waves completed | Waves 2, 2.5, and 3 |
 | Skill confidence levels | 3 (low → medium → high) |
 | Response mode tiers | 4 (Direct, Lightweight, Standard, Full) |
+
 ## What We Learned
 - **Portability is the product, not a feature.** Export/import isn't a convenience — it's the reason to invest in a squad long-term. Without portability, agents are disposable. With it, they're an asset that compounds. The possessive pronoun matters: it's not "a squad," it's "MY squad."
 - **Earned skills beat configured skills.** Telling an agent what you prefer is setup. Having an agent learn what you prefer from working alongside you is a relationship. Skills Phase 2 is the difference.
@@ -60,5 +62,6 @@ npx @bradygaster/squad-cli import
 ```
 ## What's Next
 The roadmap for v0.2.0 is clear. The roadmap after v0.2.0 is wide open. Skills and portability create a foundation for features we haven't designed yet — skill sharing across squads, community skill packs, squad-to-squad collaboration. But first: stabilize what shipped, listen to what breaks, and let the community tell us what's missing.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

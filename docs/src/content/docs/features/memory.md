@@ -15,6 +15,7 @@ Squad remembers the durable things that help future work — decisions, conventi
 architecture patterns, and individual agent learnings. It should not retain secrets, raw
 logs, transient CI/PR status, or other data that is unsafe or too short-lived to become
 memory.
+
 ---
 ## Memory Layers
 Squad's memory is layered. Each layer serves a different purpose, and knowledge grows with every session.
@@ -37,15 +38,18 @@ memory.audit
 ```
 Governed memory records include load-guidance metadata so prompts and providers can choose
 what to load without weakening safety gates:
+
 | Tag | Meaning |
 | --- | --- |
 | `[ALWAYS]` | Durable policies and decisions that should be loaded eagerly. |
 | `[ON-DEMAND]` | Stable local or semantic facts retrieved when relevant to a query. |
 | `[ARCHIVE]` | Superseded/deleted entries and tombstones kept for audit/history, not active prompt loading. |
 | `[NEVER]` | Forbidden or transient content that must not be persisted or loaded. |
+
 When an entry is promoted or superseded, the previous index entry is marked `[ARCHIVE]`
 and records `supersededBy` so tooling can follow the forward link to the active successor.
 The CLI exposes the same local bridge:
+
 ```bash
 squad memory classify "Always run tests before merge"
 squad memory write --content "Use Vitest for SDK regression tests" --class DECISION --author scribe
@@ -82,6 +86,7 @@ concept, not as a documented SDK storage client for write/search/delete. Config 
 contain `defaultProvider: "copilot"` for forward compatibility, but status reports it as
 configured and unavailable, and governed reads/writes fail closed until a real callable API
 exists.
+
 ---
 ## Personal Memory: `history.md`
 Each agent has its own history file at `.squad/agents/{name}/history.md`. After every session, agents append what they learned — architecture decisions, conventions, file paths, user preferences.
@@ -89,6 +94,7 @@ Each agent has its own history file at `.squad/agents/{name}/history.md`. After 
 After a few sessions, agents stop asking questions they've already answered.
 ### Progressive summarization
 Histories grow over time. When an agent's `history.md` exceeds ~12KB, older entries are archived into a summary section. Recent entries stay detailed; older entries are condensed. This keeps the file within a useful context budget without losing accumulated knowledge.
+
 ---
 ## Shared Memory: `decisions.md`
 Team-wide decisions live in `.squad/decisions.md`. **Every agent reads this before working.** This is the team's shared brain.
@@ -115,17 +121,21 @@ The Scribe agent (a silent team member) periodically:
 ### Decision archiving
 As your project grows, `decisions.md` accumulates hundreds of blocks. Stale sprint artifacts, completed analysis docs, and one-time planning fragments consume context window space without adding value. When this happens, old decisions are archived to `.squad/decisions-archive.md` — preserved for reference but no longer loaded into agent context.
 Active decisions (ongoing policies, user preferences, current architecture) stay in `decisions.md`. Agents always read the lean, current shared brain.
+
 ---
 ## Skills
 Reusable knowledge files at `.copilot/skills/{skill-name}/SKILL.md`. See [Skills System](skills.md) for details.
 Skills differ from decisions — decisions are project policies ("use PostgreSQL"), while skills are transferable techniques ("how to set up CI with GitHub Actions").
+
 ---
 ## How Memory Compounds
+
 | Stage | What agents know |
 |-------|-----------------|
 | 🌱 First session | Project description, tech stack, your name |
 | 🌿 After a few sessions | Conventions, component patterns, API design, test strategies |
 | 🌳 Mature project | Full architecture, tech debt map, regression patterns, performance conventions |
+
 ---
 ## Memory Architecture
 ```
@@ -145,6 +155,7 @@ Skills differ from decisions — decisions are project policies ("use PostgreSQL
     ├── squad-conventions/SKILL.md        # Starter skill
     └── ci-github-actions/SKILL.md        # Earned skill
 ```
+
 ---
 ## Tips
 - **Commit intentional `.squad/` state** — anyone who clones the repo gets the team with

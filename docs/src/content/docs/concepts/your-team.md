@@ -1,5 +1,6 @@
 # Your Team
 Squad builds you a team of AI specialists that live in your repo. Tell it what you're working on, and it proposes a roster — backend devs, testers, writers, a lead — each with their own personality, expertise, and memory. Your team grows smarter every session.
+
 ---
 ## Try This
 ```
@@ -11,6 +12,7 @@ Fenster, fix the login validation bug
 ```
 Add a security specialist to the team
 ```
+
 ---
 ## How It Works
 When you first run Squad in a repository, it walks through a four-step init flow:
@@ -47,6 +49,7 @@ graph LR
 └── casting/                        # Universe assignments
 ```
 ### Default Team Composition
+
 | Role | When Included |
 |------|--------------|
 | **Lead** | Always — triages, reviews, unblocks |
@@ -56,6 +59,7 @@ graph LR
 | **Frontend** | If React/Vue/Svelte/Angular detected |
 | **Backend** | If API routes, database code, or server framework detected |
 | **Scribe** | Always — silent decision logger |
+
 ---
 ## Human Team Members
 Not every team member needs to be AI. Add real people for decisions that need a human — design sign-off, security review, product approval.
@@ -63,6 +67,7 @@ Not every team member needs to be AI. Add real people for decisions that need a 
 Add Sarah as design reviewer
 ```
 Sarah appears on the roster with a 👤 Human badge.
+
 | | AI Agent | Human Member |
 |---|----------|-------------|
 | Badge | Role-specific emoji | 👤 Human |
@@ -70,17 +75,22 @@ Sarah appears on the roster with a 👤 Human badge.
 | History | ✅ | ❌ |
 | Spawned as sub-agent | ✅ | ❌ |
 | Can review work | ✅ | ✅ |
+
 When work routes to a human, Squad **pauses** and tells you someone needs to act. You relay the task outside of Squad, then report back what happened. Stale reminders keep things moving.
 Not sure whether someone should be a roster member or just a normal GitHub collaborator? See [When to add a human member](../features/human-team-members.md#when-to-add-a-human-member) for a decision framework.
+
 ---
 ## Work Routing
 The coordinator routes work automatically using three strategies. First match wins:
+
 | Strategy | How It Works | Example |
 |----------|-------------|---------|
 | **Named** | You say who does it | `"Fenster, fix the login bug"` |
 | **Domain** | Pattern matching in `.squad/routing.md` | `src/api/**` → Backend |
 | **Skill-aware** | Capability check in `.copilot/skills/` | Auth expertise → Backend or Lead |
+
 **Routing priority:** Named > Domain > Skill-aware. If nothing matches, the Lead triages.
+
 ### Sample Routing Table
 ```markdown
 | Pattern | Owner | Reason |
@@ -89,6 +99,7 @@ The coordinator routes work automatically using three strategies. First match wi
 | `src/components/**/*.tsx` | Frontend | React components |
 | `*.test.ts` | Tester | Test files |
 | `docs/**` | DevRel | Documentation |
+
 ```
 GitHub issues with `squad:{member}` labels route directly — `squad:fenster` goes to Fenster, no triage needed.
 ### Multi-Agent Work
@@ -97,6 +108,7 @@ Some tasks need multiple agents:
 Fenster, implement the API. Hockney, write the tests.
 ```
 The coordinator spawns both in parallel. They work independently and coordinate through shared `.squad/` state. See [Parallel Work & Models](parallel-work.md) for details.
+
 ---
 ## Reviewer Protocol
 When a reviewer (Lead, Tester) rejects work, the original agent gets **locked out** — no self-revision allowed. This prevents endless fix-retry loops.
@@ -104,46 +116,59 @@ When a reviewer (Lead, Tester) rejects work, the original agent gets **locked ou
 Agent A writes code → Lead rejects → Agent A locked out
   → Coordinator reassigns to Agent B or escalates to you
 ```
+
 | Outcome | What Happens |
 |---------|-------------|
 | **Approve** | PR merges, issue closes, agent unlocked |
 | **Request changes** | Author locked out, work reassigned or escalated |
+
 ### Lockout Details
 - **Task-specific** — locked out of that PR/issue, not all work
 - **Session-persistent** — survives restarts (stored in `.squad/orchestration-log/`)
 - **Clearable** — `"Unlock Fenster for issue #42"`
 ### Reviewer Authority
+
 | Reviewer | Scope |
 |----------|-------|
 | **Lead** | Code quality, architecture, security — all submissions |
 | **Tester** | Correctness, test coverage — test-related changes |
 | **You** | Final arbiter — can override any decision |
+
 ### Deadlock Handling
 If all capable agents are locked out, the coordinator escalates to you with options: manual fix, unlock with guidance, or close as won't-fix.
+
 ---
 ## Ceremonies
 Structured team meetings that trigger at key moments — automatically or on demand.
+
 | Ceremony | Auto-Triggers When | What Happens |
 |----------|-------------------|-------------|
 | **Design Review** | Multi-agent task with 2+ agents modifying shared systems | Lead facilitates; agents weigh in on interfaces, risks, contracts |
 | **Retrospective** | Build failures, test failures, reviewer rejections | Lead runs root-cause analysis; decisions written to `decisions.md` |
+
 Run either manually anytime:
+
 ```
 Run a design review before we start the authentication rebuild
 ```
 You can also create custom ceremonies, disable auto-triggers, or skip a ceremony for a single task. Config lives in `.squad/ceremonies.md`.
+
 ---
 ## Response Modes
 Squad auto-selects the right level of effort for each request:
+
 | Mode | Time | What Happens | Triggered By |
 |------|------|-------------|-------------|
 | **Direct** | ~2–3s | Coordinator answers from memory, no agent spawned | Status checks, factual questions |
 | **Lightweight** | ~8–12s | One agent, minimal prompt — skips charter/history/decisions | Small fixes, typos, quick follow-ups |
 | **Standard** | ~25–35s | Full agent spawn with charter, history, and decisions | Normal work requests |
 | **Full** | ~40–60s | Multi-agent parallel spawn, may trigger design review | Complex multi-domain tasks |
+
 **Pro tip:** `"Team, ..."` prompts trigger Full mode. Named agent prompts (`"Kane, ..."`) trigger Standard. Quick questions get Direct automatically.
+
 ---
 ## Customizing After Init
+
 | What You Say | What Happens |
 |--------------|-------------|
 | `"Add a database specialist"` | Coordinator casts a new member, creates charter, updates routing |
@@ -151,7 +176,9 @@ Squad auto-selects the right level of effort for each request:
 | `"Change the tester to focus on integration tests"` | Updates the tester's charter and expertise |
 | `"Route all CSS files to Frontend"` | Adds a rule to `.squad/routing.md` |
 | `"From now on, McManus reviews all docs before merge"` | Creates routing rule + [directive](../features/memory.md) |
+
 Running `init` on an existing Squad repo automatically offers upgrade mode.
+
 ---
 ## Planning your team
 Before running `squad init`, think through these decisions. Squad will scan your repo and propose a team — having answers ready makes setup faster.
@@ -165,19 +192,23 @@ Before running `squad init`, think through these decisions. Squad will scan your
 - **What ceremonies matter?** [Design reviews and retrospectives](#ceremonies) can auto-trigger or run on demand
 - **What model preferences?** Default is automatic selection, or specify preferred models per agent — see [Parallel Work & Models](parallel-work.md)
 - **How many squads, and where do they live?** One squad per repo is the default — your `.squad/` directory lives alongside your code. For multi-repo projects, start with one squad per repo, then use linked team roots, exports, or upstream inheritance when you need shared context.
+
 ---
 ## Agent anatomy
 An agent is a directory at `.squad/agents/{name}/`. The contents depend on the member type.
 For how humans differ from AI agents, see [Human team members](#human-team-members) above.
+
 | | @copilot (🤖) |
 |---|---|
 | Directory | None |
 | `charter.md` | ❌ Uses `copilot-instructions.md` |
 | `history.md` | ❌ |
 | Spawnable | ❌ Works via issue assignment |
+
 **AI agents** have a `charter.md` (identity, expertise, voice — compiled into the system prompt at spawn time) and an optional `history.md` (append-only cross-session learnings).
 **@copilot** (🤖) appears on the roster and works via GitHub issue assignment. It reads `.github/copilot-instructions.md` instead of a charter.
 **Retired agents** move to `.squad/agents/_alumni/{name}/` — charter preserved as a read-only archive, not spawnable.
+
 ---
 ## Cross-agent context
 Agents don't share memory directly. Context flows through explicit shared files:
@@ -186,6 +217,7 @@ Agents don't share memory directly. Context flows through explicit shared files:
 - **`decisions.md`** — canonical team memory: directives, patterns, learnings
 - **`.squad/decisions/inbox/`** — agents drop decision files here; the Scribe merges them into `decisions.md`
 Each agent's `history.md` is personal — only that agent reads it at spawn time. For the full picture on knowledge flow, see [Memory and knowledge](../features/memory.md).
+
 ---
 ## Hiring an agent
 To add a new AI agent to your team:
@@ -196,6 +228,7 @@ To add a new AI agent to your team:
 - [ ] (Optional) Create `history.md` for persistent memory
 - [ ] (Optional) Allocate a name via the casting system
 To add a **human member**, skip the directory — just add them to `team.md`. See [Human team members](#human-team-members) for badge and routing details.
+
 ---
 ## Tips
 - **Commit `.squad/`** to version control — anyone who clones the repo gets the full team with all accumulated knowledge.
@@ -203,6 +236,7 @@ To add a **human member**, skip the directory — just add them to `team.md`. Se
 - Design reviews prevent agents from building conflicting implementations — let them run on multi-agent tasks.
 - Retros produce [decisions](../features/memory.md) that improve future work, not just diagnose the current failure.
 - You're the relay for human members. Squad can't message them directly — it tells you, and you coordinate.
+
 ---
 ## Sample Prompts
 ```
@@ -237,6 +271,7 @@ Starts a retrospective ceremony to analyze failures and capture learnings.
 Who handles authentication work?
 ```
 Coordinator checks routing and skills, reports the responsible agent(s).
+
 ---
 ## See Also
 - [Architecture](./architecture.md) — How the coordinator, agents, and shared memory work together

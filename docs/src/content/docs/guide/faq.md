@@ -1,5 +1,6 @@
 # Frequently asked questions
 Common questions, troubleshooting tips, and clarifications based on community feedback. Can't find your answer? [Open an issue](https://github.com/bradygaster/squad/issues/new).
+
 ---
 ## Which CLI should I use?
 **Short answer:** Use **GitHub Copilot CLI** for day-to-day work. Use **Squad CLI** for setup, diagnostics, and specific features.
@@ -24,6 +25,7 @@ gh copilot
 > @squad what issues are ready to work?
 ```
 For a detailed feature comparison, see [Client Compatibility Matrix](../scenarios/client-compatibility.md).
+
 ---
 ## Why doesn't `gh issue edit --add-assignee "@copilot"` work?
 **Problem:** Running `gh issue edit <number> --add-assignee "@copilot"` (or variants like `copilot-swe-agent[bot]`) fails locally, even with a Personal Access Token.
@@ -39,6 +41,7 @@ For a detailed feature comparison, see [Client Compatibility Matrix](../scenario
 - Add it as a repository secret: `gh secret set COPILOT_ASSIGN_TOKEN`
 - The workflow uses this token to perform the assignment on your behalf
 See [Copilot Coding Agent](../features/copilot-coding-agent.md) for full setup instructions.
+
 ---
 ## I don't see anything on the Aspire dashboard
 **Problem:** You ran `squad aspire` and opened the dashboard, but no telemetry is showing up.
@@ -61,6 +64,7 @@ See [Copilot Coding Agent](../features/copilot-coding-agent.md) for full setup i
 5. Refresh the Aspire dashboard — you should see traces, metrics, and logs appear
 **Note:** GitHub Copilot CLI sessions do **not** send telemetry to Aspire. Only Squad CLI commands emit OpenTelemetry data to the dashboard.
 See [Using Squad with the Aspire Dashboard](../scenarios/aspire-dashboard.md) for details.
+
 ---
 ## `squad doctor` complains about absolute path for teamRoot
 **Problem:** Running `squad doctor` shows a warning like:
@@ -94,6 +98,7 @@ The path should be relative to your **project root** (where `.squad/` or `squad.
 squad doctor
 ```
 You should see `✓ teamRoot is relative` or no warning.
+
 ---
 ## Can I use Squad CLI and GitHub Copilot CLI at the same time?
 Yes! They complement each other:
@@ -104,6 +109,7 @@ Yes! They complement each other:
 - Use `gh copilot` (or `@squad` in VS Code) for all team interactions
 - Use `squad doctor` or `squad aspire` for diagnostics when needed
 Both CLIs read and write the same `.squad/` directory, so state stays synchronized.
+
 ---
 ## What's the difference between Ralph and triage?
 **Ralph** and **triage** are different names for the same functionality:
@@ -114,6 +120,7 @@ Both CLIs read and write the same `.squad/` directory, so state stays synchroniz
 - Existing scripts using `squad ralph` will continue to work (it's an alias)
 - New projects should use `squad triage` in documentation and automation
 - The `ralph/` directory in `.squad/` remains unchanged for backward compatibility
+
 ---
 ## How do I add a new agent to my squad?
 **In conversation (recommended):**
@@ -131,6 +138,7 @@ Squad will create the charter, update the team roster, and add routing rules.
 3. Add routing rules in `.squad/routing.md` (if applicable)
 4. Optionally add a history file in `.squad/agents/<name>/history.md`
 See [Team Setup](../features/team-setup.md) for details.
+
 ---
 ## What happens if I run `squad init` twice?
 Nothing breaks! `squad init` is **idempotent** — it's safe to run multiple times.
@@ -143,6 +151,7 @@ Nothing breaks! `squad init` is **idempotent** — it's safe to run multiple tim
 - Recover from partial initialization
 - Update workflows after a Squad upgrade
 - Add missing templates without overwriting custom changes
+
 ---
 ## Can I use Squad without GitHub Issues?
 Yes, but with limitations.
@@ -159,6 +168,7 @@ Yes, but with limitations.
 - Label-based routing
 - Copilot coding agent auto-assignment
 If you're using GitLab, see [GitLab Issues](../features/gitlab-issues.md) for integration options.
+
 ---
 ## How do I reset my squad without losing decisions?
 **Option 1: Archive and start fresh**
@@ -179,6 +189,7 @@ rm -rf .squad/sessions/
 # Keep .squad/decisions.md, .squad/team.md, .squad/routing.md
 ```
 See [Disaster Recovery](../scenarios/disaster-recovery.md) for more recovery patterns.
+
 ---
 ## Where should I report bugs or request features?
 [Open an issue on GitHub](https://github.com/bradygaster/squad/issues/new) with:

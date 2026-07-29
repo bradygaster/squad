@@ -29,6 +29,7 @@ The plugin marketplace is where community energy meets developer experience. Whe
 On the implementation side, Fenster did context optimization work that's invisible to users but changes the economics of running Squad at scale. `decisions.md` went from 298KB to 50KB. Spawn templates collapsed from 3 separate patterns to 1 unified one. The result: per-agent spawn cost dropped by 70%. That compounds across teams and teams across organizations.
 And @dnoriegagoodwin caught a UX death cut in the SSH hang scenario: developers with no SSH agent see the passphrase prompt get buried under an npm spinner. Documented workaround, and we're watching for the cleaner fix.
 ## By the Numbers
+
 | Metric | Value |
 |--------|-------|
 | Issues closed | 12 |
@@ -37,6 +38,7 @@ And @dnoriegagoodwin caught a UX death cut in the SSH hang scenario: developers 
 | Context reduction | 70% (spawn costs from 82–93K tokens → 19–28K tokens) |
 | Client compatibility matrix | Complete (✅/❌/⚠️ across CLI vs VS Code) |
 | MCP integrations | 5+ (GitHub, Trello, Aspire, Azure, custom) |
+
 ## What We Learned
 - **Multi-client is the game changer, not the nice-to-have.** Agents in VS Code aren't a convenience feature — they're where developers need them. The CLI was the start. The real product happens where developers work.
 - **Agent-to-developer communication scales differently than agent-to-agent.** Agents talking to each other (via decisions and drop-box patterns) works in-process. Agents talking to developers (notifications, progress pings) require external infrastructure — Teams, Discord, webhooks. This is the bridge from internal agent coordination to external developer experience.
@@ -44,5 +46,6 @@ And @dnoriegagoodwin caught a UX death cut in the SSH hang scenario: developers 
 ## What's Next
 v0.4.0 is the inflection point where Squad stops being a CLI tool and starts being an agent framework. VS Code support means agents can be embedded. MCP integration means agents can reach out. Notifications mean developers can be in the loop. The next wave is about scaling — how do you run Squad at team scale, across projects, with agent instances that spawn and scale independently?
 We're also watching GitHub Projects integration closely. Kanban boards are how teams visualize work. If agents can own a board and move items automatically, the feedback loop between developer intent and agent execution becomes visible and instantaneous.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

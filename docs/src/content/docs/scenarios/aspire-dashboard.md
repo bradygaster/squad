@@ -5,6 +5,7 @@
 squad aspire
 ```
 Aspire is a free, open-source dashboard for observing any OpenTelemetry app — traces, metrics, logs, all in one place. Squad ships with an Aspire integration that streams all your telemetry (agent spawns, token usage, session metrics, errors) to the dashboard in real time.
+
 ---
 ## 1. What Is Aspire?
 Aspire is not a .NET thing — it's a **standalone dashboard for any app that speaks OpenTelemetry**. You can run it in Docker, point any OTLP client at it, and watch telemetry flow in:
@@ -12,6 +13,7 @@ Aspire is not a .NET thing — it's a **standalone dashboard for any app that sp
 - **Metrics** — counters (agents spawned, tokens consumed), histograms (latency), gauges (active sessions)
 - **Resources** — grouping by service and environment
 Squad's OTel integration exports OTLP/gRPC (the only protocol Aspire understands), so you get instant visibility into what your agents are doing.
+
 ---
 ## 2. Launch the Aspire Container
 The easiest way is the built-in `squad aspire` command:
@@ -50,6 +52,7 @@ docker run -d \
 export OTEL_EXPORTER_OTLP_HEADERS="x-otlp-api-key=my-dev-key"
 ```
 For local dev, unsecured mode is simplest. For shared environments, use an API key.
+
 ---
 ## 3. Connect Squad to Aspire
 When you run Squad (via the CLI or SDK), set the OTLP endpoint:
@@ -77,6 +80,7 @@ That's it. Squad will automatically:
 1. Initialize OpenTelemetry providers (tracing + metrics)
 2. Export all agent spawns, token usage, session metrics, and errors to Aspire
 3. Flush telemetry on shutdown
+
 ---
 ## 4. What You'll See in the Dashboard
 Open **http://localhost:18888** and navigate to:
@@ -112,16 +116,19 @@ You'll see gauges, counters, and histograms:
 - `squad.response.duration` — total response duration (ms)
 ### Rework Rate Metrics (5th DORA)
 PR rework rate instruments, exported alongside the core metrics above:
+
 | Instrument | Type | Unit | Description |
 |-----------|------|------|-------------|
 | `squad.rework.rate` | Gauge | % | Current rework rate percentage |
 | `squad.rework.cycles` | Histogram | — | Review cycles per PR |
 | `squad.rework.rejection_rate` | Gauge | % | Percentage of PRs with changes requested |
 | `squad.rework.time_ms` | Histogram | ms | Time spent in rework |
+
 ### **Resources**
 Aspire groups all telemetry by service. You'll see:
 - `service.name` — "squad-cli" or your custom app name
 - `squad.version` — which version of Squad you're running
+
 ---
 ## 5. Example Workflow
 ### 1. Start Aspire
@@ -147,6 +154,7 @@ Attributes:
   session.id:  "abc-123"
   mode:        "sync"
 ```
+
 ---
 ## 6. Troubleshooting
 ### "API key from 'x-otlp-api-key' header is missing"
@@ -205,6 +213,7 @@ If no telemetry appears in the Aspire dashboard, walk through this list:
 - **Ensure port 4317 is mapped:** The docker run command above maps `-p 4317:18889`
 - **On Windows/Mac:** If using Docker Desktop, localhost:4317 should work. If not, try `host.docker.internal:4317`
 - **Custom endpoint?** Set `OTEL_EXPORTER_OTLP_ENDPOINT` explicitly
+
 ---
 ## 7. Stop Aspire
 ```bash
@@ -215,12 +224,14 @@ Or manually:
 docker stop aspire-dashboard
 docker rm aspire-dashboard
 ```
+
 ---
 ## 8. Pro Tips
 - **Export metrics frequently:** Set `OTEL_METRIC_EXPORT_INTERVAL_MILLIS=1000` for near-real-time metric updates (default is 60s)
 - **Tag your service:** Customize the service name with `OTEL_SERVICE_NAME=my-app`
 - **Batch size:** Adjust `OTEL_BSP_MAX_QUEUE_SIZE` if you're emitting tons of spans
 - **Only export what you need:** If Squad is a tiny part of your app, filter traces by service name in Aspire UI
+
 ---
 ## 9. Learn More
 - [Aspire Documentation](https://aspire.dev)

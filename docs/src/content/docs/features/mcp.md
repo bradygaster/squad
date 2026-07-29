@@ -8,17 +8,22 @@ Show me which MCP servers are available
 Configure the GitHub MCP server
 ```
 MCP (Model Context Protocol) servers extend Squad with external services — GitHub, notifications, deployments, Trello, and more. Agents discover and use MCP tools automatically.
+
 ---
 ## What MCP Means for Squad
 MCP bridges Squad agents and external services. Agents use MCP tools to send notifications, query GitHub, monitor deployments, integrate with Trello, and more. You define which services are available; agents discover and use them automatically.
+
 ---
 ## MCP Configuration Files
 There are two places to configure MCP, depending on your platform:
+
 | Platform | Config File | How to Edit | Startup |
 |----------|------------|-----------|---------|
 | **Copilot CLI** | `.copilot/mcp-config.json` | Text editor | Add to shell initialization (`~/.bashrc`, `~/.zshrc`, etc.) |
 | **VS Code** | `.vscode/settings.json` | VS Code Settings GUI or JSON editor | Built-in; restarts Copilot extension |
+
 This guide covers both. Pick the one that matches your workflow.
+
 ---
 ## Step-by-Step: CLI Setup
 ### Step 1: Create the `.copilot` directory and config file
@@ -75,6 +80,7 @@ In your Squad session, ask:
 > Show me available MCP tools
 ```
 If configured correctly, you'll see your GitHub server and its available tools (e.g., `github.list_issues`, `github.get_commit`).
+
 ---
 ## Step-by-Step: VS Code Setup
 ### Step 1: Open VS Code Settings
@@ -106,6 +112,7 @@ export GITHUB_TOKEN=$(gh auth token)
 This sets the token for the current terminal session. To make it permanent, add it to your shell profile (see CLI Step 3 above).
 ### Step 5: Reload VS Code
 Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows) and select **"Copilot: Reload Copilot Servers"**.
+
 ---
 ## Example: GitHub MCP (Already Included)
 Most Squad installs come with GitHub MCP pre-configured. Here's what it looks like:
@@ -144,6 +151,7 @@ Replace `/absolute/path/to/github-mcp.js` with the actual path to your GitHub MC
 - Create, update, and search issues
 - Fetch commit history and diffs
 - Post and edit PR comments
+
 ---
 ## Example: Trello MCP
 Trello MCP lets agents interact with your Trello boards — create cards, move them between lists, and update descriptions.
@@ -154,12 +162,15 @@ Trello MCP lets agents interact with your Trello boards — create cards, move t
 4. Copy the **Token**
 ### Step 2: Add to your MCP config
 Add the Trello server configuration (see [MCP Configuration Files](#mcp-configuration-files) for CLI vs VS Code):
+
 | Variable | How to Get It |
 |----------|---------------|
 | `TRELLO_API_KEY` | Visit https://trello.com/app-key |
 | `TRELLO_TOKEN` | Click "Tokens" on the API key page, generate with read/write permissions |
 | `TRELLO_BOARD_ID` | Open any card, get ID from URL: `trello.com/c/{{CARD_ID}}/{{BOARD_ID}}/` |
+
 **Config template:**
+
 ```json
 {
   "mcpServers": {
@@ -183,6 +194,7 @@ In your Squad session:
 > Keaton, create a Trello card for the auth refactor
 ```
 Agents will now automatically propose Trello tasks for tracking work items.
+
 ---
 ## Example: Aspire Dashboard MCP (Deployment Monitoring)
 For Aspire projects, configure the Aspire Dashboard MCP for deployment monitoring:
@@ -208,6 +220,7 @@ Agents can now ask:
 > Squad, check the Aspire dashboard — any service errors?
 ```
 The monitoring agent (or any agent) pulls live deployment status and alerts you to issues.
+
 ---
 ## How Agents Discover and Use MCP Tools
 Agents don't need special setup to discover tools. Here's the flow:
@@ -216,6 +229,7 @@ Agents don't need special setup to discover tools. Here's the flow:
 3. **Agent uses tools naturally** — when working, if a tool matches the task (e.g., "create a GitHub issue"), agents call it automatically
 4. **Tools return results** — the agent receives structured data back (e.g., issue ID, status, etc.) and continues working
 **See also:** [Skills System](./skills.md) — how agents learn reusable patterns for complex MCP workflows.
+
 ---
 ## Troubleshooting
 ### MCP Server Not Starting
@@ -303,6 +317,7 @@ Agents don't need special setup to discover tools. Here's the flow:
   }
    ```
    This starts the server only when its first tool is called. Replace `/absolute/path/to/github-mcp.js` with your actual MCP server path.
+
 ---
 ## Sample Prompts
 ### Setting up notifications
@@ -330,6 +345,7 @@ Agents automatically use the GitHub MCP to search and report findings.
 Aspire dashboard is running at localhost:18888. Set up monitoring so you can tell me about deployment issues.
 ```
 Agents configure Aspire MCP and start checking service health automatically.
+
 ---
 ## See Also
 - [Notifications Guide](./notifications.md) — set up agent notifications via MCP

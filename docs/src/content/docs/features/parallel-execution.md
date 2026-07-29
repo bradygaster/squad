@@ -12,6 +12,7 @@ Work on issues #12, #15, and #18 at the same time
 Run at most 2 agents at once to save costs
 ```
 Squad launches independent work in parallel by default — multiple agents work simultaneously, no waiting. You control concurrency limits and can force sequential execution when needed.
+
 ---
 ## How Parallel Execution Works
 Squad runs agents in parallel whenever possible. The fan-out pattern launches all independent agents simultaneously, waits for results, then proceeds — no sequential bottlenecks unless data dependencies or reviewer gates require them.
@@ -30,11 +31,13 @@ Coordinator spawns **4 agents in parallel**:
 - DevRel → Auth documentation
 All work simultaneously. No agent waits for another unless there's a code dependency.
 ## Background vs Sync Mode
+
 | Mode | When to Use | Behavior |
 |------|-------------|----------|
 | `background` | Independent work, no data dependencies | Agent runs in parallel, coordinator polls for completion |
 | `sync` | Data dependency (one agent needs output from another) | Agent runs sequentially, coordinator waits |
 | `sync` | Reviewer gate (Lead must approve before continuing) | Agent runs, coordinator waits for review decision |
+
 ### Background Mode
 Used for **fan-out parallelism**:
 ```

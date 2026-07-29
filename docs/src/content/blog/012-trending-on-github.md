@@ -39,5 +39,6 @@ Trending changes three things:
 This is a moment-in-time milestone. The real work is what happens after trending dies down — and it will. Trending is a sprint, not a strategy. The test is: Do people who starred today still use Squad in March? Do they file issues? Do they contribute? Do they build teams?
 That's where the real story unfolds.
 The 12-day arc from launch to #9 trending means one thing: we built something people genuinely want. Now we prove we can deliver on that promise.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

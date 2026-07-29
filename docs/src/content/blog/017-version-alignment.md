@@ -43,5 +43,6 @@ A CLI bugfix bumps `@bradygaster/squad-cli` without touching the SDK. An SDK fea
 - **Three versions is two too many for users.** Users don't care about workspace architecture. They see one tool. It should have one version number — or at minimum, version numbers that make sense together.
 ## What's Next
 With versions aligned and packages on npm, the next challenge is closer to the metal: the adapter layer between Squad and `@github/copilot-sdk` has unsafe type casts that need to go. A P0 bug in Codespaces is about to make that very urgent.
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

@@ -1,5 +1,6 @@
 # Custom Tools & Hooks Guide
 Squad ships with 5 built-in tools and a hook pipeline for policy enforcement. This guide covers extending both.
+
 ---
 ## ToolRegistry API
 `ToolRegistry` manages tool definitions. Each tool has a name, JSON schema, and async handler:
@@ -25,6 +26,7 @@ registry.register(myTool);
 ```
 The handler returns a `ToolResult` with `success` flag and `data` payload.
 **Built-in tools:**
+
 | Tool | Purpose |
 |------|---------|
 | `route` | Dispatch to another agent |
@@ -32,6 +34,7 @@ The handler returns a `ToolResult` with `success` flag and `data` payload.
 | `memory` | Agent history |
 | `status` | Session pool query |
 | `skill` | Read/write skills |
+
 ---
 ## HookPipeline
 `HookPipeline` intercepts tool calls at two points: before execution (`PreToolUseHook`) and after (`PostToolUseHook`). Hooks return a `HookAction`: `allow`, `block`, or `modify`.
@@ -44,6 +47,7 @@ const auditHook: PreToolUseHook = async (toolName, params, context) => {
 const pipeline = new HookPipeline();
 pipeline.addPreHook(auditHook);
 ```
+
 ---
 ## Writing Custom Hooks
 Custom hooks receive the tool name, parameters, and agent context. Use them for logging, validation, or transformation:
@@ -56,6 +60,7 @@ const sanitizeHook: PreToolUseHook = async (toolName, params, context) => {
 };
 ```
 Post-tool hooks inspect results and can trigger follow-up actions like notifications or audit logging.
+
 ---
 ## Built-in Policies
 Squad ships 5 policies configured via `PolicyConfig`:
@@ -74,6 +79,7 @@ export default defineConfig({
   },
 });
 ```
+
 ---
 ## See Also
 - [SDK API Reference](api-reference.md) — Full type and function reference

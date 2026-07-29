@@ -1,9 +1,11 @@
 # VS Code Troubleshooting
 This page covers known issues and mitigations when running Squad inside VS Code's integrated terminal.
+
 ---
 ## Symptom: VS Code closes unexpectedly during Squad execution
 **Reported in:** [Issue #259](https://github.com/bradygaster/squad/issues/259), [Discussion #174](https://github.com/bradygaster/squad/discussions/174)
 VS Code (especially Insiders/Nightly builds) may close without a crash dialog while Squad tasks are executing. This is most often caused by resource pressure — not a bug in Squad itself — but Squad's runtime patterns can contribute to the problem.
+
 ---
 ## Root cause analysis
 An audit of the Squad codebase (SDK and CLI) identified the following resource-pressure vectors:
@@ -21,6 +23,7 @@ All child processes (`node-pty` for Copilot, `devtunnel`, Docker, .NET) are prop
 Squad uses the Ink framework for rendering, which batches React state updates. Direct `process.stdout.write` calls are rate-limited by the model's token generation speed. No fire-hose output patterns were found.
 ### 6. Synchronous I/O (startup only)
 `existsSync` and `readFileSync` calls exist in config loading and shell initialization, but these run only at startup — not in hot paths or event loops.
+
 ---
 ## Recommended mitigations
 ### For users
@@ -58,8 +61,10 @@ Squad uses the Ink framework for rendering, which batches React state updates. D
 - When adding file watchers, always filter high-churn directories in the callback.
 - Prefer `async` file I/O in any code path that runs during active sessions.
 - Test long-running sessions (2+ hours) to verify memory stays bounded.
+
 ---
 ## Related issues
+
 | Issue | Description | Status |
 |-------|-------------|--------|
 | [#259](https://github.com/bradygaster/squad/issues/259) | VS Code crash during Squad execution | This investigation |

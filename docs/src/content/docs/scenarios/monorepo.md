@@ -4,6 +4,7 @@
 I'm building a microservices platform in a monorepo with 8 services — set up specialists for each domain
 ```
 One squad per monorepo, not per service. Squad adds specialists per domain and routes work to the right agent based on which service is being modified.
+
 ---
 ## 1. The Monorepo Challenge
 You have a monorepo with 8 services:
@@ -25,6 +26,7 @@ monorepo/
 └── infra/
 ```
 Do you need 8 squads (one per service)? **No. One squad with specialists.**
+
 ---
 ## 2. One Squad, Multiple Specialists
 Tell Squad about your monorepo structure:
@@ -54,6 +56,7 @@ That's a **10-agent team** (9 active + Scribe). You can trim it if you want:
 > users), frontend (gateway, notifications), and infra (analytics, products,
 > orders). Plus a Lead and Tester.
 ```
+
 ---
 ## 3. Routing Rules Direct Work to the Right Specialist
 Edit `.squad/routing.md`:
@@ -81,6 +84,7 @@ The coordinator routes to Fredo (auth specialist). **Only Fredo** loads the auth
 > Add Stripe subscription management to the payment service.
 ```
 Routes to Sonny (payments specialist).
+
 ---
 ## 4. Worktree Awareness — Multiple Services Simultaneously
 You can work on multiple services at once:
@@ -98,6 +102,7 @@ Squad decomposes and routes:
 🧪 Hagen    — writing integration tests across services
 ```
 All four work in parallel, each in their own service directory.
+
 ---
 ## 5. Skills That Span Services
 Some patterns apply **across all services**:
@@ -131,6 +136,7 @@ Rules:
 - Use circuit breakers for downstream failures
 ```
 Agents know: **don't tightly couple services**.
+
 ---
 ## 6. Shared Code in `/shared`
 The `/shared` directory has utilities, types, and config used by all services:
@@ -143,6 +149,7 @@ The `/shared` directory has utilities, types, and config used by all services:
 Kay is checking which services import this utility before changing it.
 ```
 Kay knows changes to `/shared` affect multiple services.
+
 ---
 ## 7. Sample Prompts for Monorepo Workflows
 **Cross-service feature:**
@@ -176,6 +183,7 @@ Kay knows changes to `/shared` affect multiple services.
 > Clemenza, review the product service. We haven't touched it in weeks.
 > Tell me what's there and what needs work.
 ```
+
 ---
 ## 8. One Squad, Not Eight
 **Why one squad instead of one per service?**
@@ -184,6 +192,7 @@ Kay knows changes to `/shared` affect multiple services.
 - **Fewer exports/imports.** You don't have to export/import squads between services.
 - **Consistent conventions.** All services follow the same patterns because the same agents work on them.
 If you had 8 separate squads, they'd diverge. One squad keeps the monorepo aligned.
+
 ---
 ## Tips
 - **One squad per monorepo.** Add specialists per service, keep them in one team.

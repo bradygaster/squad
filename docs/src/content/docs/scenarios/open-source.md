@@ -12,6 +12,7 @@ Enable auto-triage for incoming issues on my OSS repo
 Handle good-first-issue #42 in the background
 ```
 Squad helps OSS maintainers with automatic issue triage, contributor guidance, and architectural knowledge sharing. It reduces maintainer burden while keeping quality high.
+
 ---
 ## 1. The Open Source Maintainer Problem
 Automatic issue triage, community contributor support, and architectural knowledge sharing.
@@ -21,6 +22,7 @@ Squad helps:
 - **Guide contributors** with documented patterns
 - **Handle good-first-issue tasks** in the background
 - **Keep architecture decisions visible** in `.squad/decisions.md`
+
 ---
 ## 2. Install Squad and Set Up Triage
 ```bash
@@ -47,6 +49,7 @@ Issue #143: "Documentation typo in README"
   → priority:low
   → good-first-issue
 ```
+
 ---
 ## 3. Community Contributors File Issues, Squad Triages
 A contributor files an issue:
@@ -59,6 +62,7 @@ Ralph (heartbeat workflow) reads the issue, applies:
 - `priority:high`
 - `good-first-issue` (if it's suitable)
 You review triaged issues and add `go:morpheus` if you approve.
+
 ---
 ## 4. @copilot Picks Up Good-First-Issue Tasks in the Background
 Enable the auto-assign workflow:
@@ -76,6 +80,7 @@ Morpheus opens PR #145 → "Add TypeScript type definitions"
 ```
 You review PR #145, approve, merge. Issue #144 closed.
 **The contributor filed the issue. Squad handled it.**
+
 ---
 ## 5. Skills Document Your Project's Patterns
 After Squad works on your project for a few weeks, `.squad/skills/` becomes a **living contributor guide**:
@@ -105,6 +110,7 @@ Use HTTP status codes correctly:
 - 500 Internal Server Error for server issues
 ```
 **These skills are contributor documentation** that stays up to date because agents use them.
+
 ---
 ## 6. Decisions.md is Your Architecture Decision Record (ADR)
 `.squad/decisions.md` becomes your **public ADR**:
@@ -124,6 +130,7 @@ Use HTTP status codes correctly:
 **Why:** Type-safe, composable, generates TypeScript types
 ```
 Contributors see **why you made decisions**, not just what the code does.
+
 ---
 ## 7. Export Your Squad for Forks
 When someone forks your project, they can **import your squad**:
@@ -138,6 +145,7 @@ cd my-lib-fork
 squad import squad-export-2025-07-15.zip
 ```
 Now they have **your team's knowledge** — skills, decisions, conventions. They're not starting from scratch.
+
 ---
 ## 8. Sample Prompts for Open Source Workflows
 **Triage a batch of issues:**
@@ -172,6 +180,7 @@ Now they have **your team's knowledge** — skills, decisions, conventions. They
 > Scribe, write a skill file for this so we can point future
 > contributors to it.
 ```
+
 ---
 ## 9. Label Your Repo as Squad-Enabled
 Add a badge to your README:
@@ -184,6 +193,7 @@ This project uses [Squad](https://github.com/bradygaster/squad) for AI-assisted 
 - **Import the squad:** `squad import squad-export.zip`
 ```
 Contributors know what to expect.
+
 ---
 ## Tips
 - **Ralph triages issues for you.** Run the heartbeat workflow every 6 hours to auto-label new issues.

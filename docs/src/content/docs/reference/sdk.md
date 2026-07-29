@@ -8,19 +8,23 @@ All imports work from the barrel export:
 ```typescript
 import { resolveSquad, loadConfig, SquadCoordinator, defineTool } from '@bradygaster/squad-sdk';
 ```
+
 ---
 ## Resolution
 Find `.squad/` directories on disk.
+
 | Function | Description |
 |----------|-------------|
 | `resolveSquad(startPath?)` | Find `.squad/` walking up from `startPath` (throws if not found) |
 | `resolveGlobalSquadPath()` | Get the platform-specific Squad data root |
 | `ensureSquadPath(startPath?)` | Like `resolveSquad`, but creates `.squad/` if missing |
+
 ```typescript
 const squadPath = resolveSquad();                // '/home/user/project/.squad'
 const globalPath = resolveGlobalSquadPath();      // Platform-specific Squad data root
 const safePath = ensureSquadPath();               // Creates if needed
 ```
+
 ---
 ## Configuration
 ### `loadConfig(squadPath): Promise<ConfigLoadResult>`
@@ -73,6 +77,7 @@ interface AgentConfig {
   status?: 'active' | 'inactive';
 }
 ```
+
 ---
 ## Builder Functions (SDK-First Mode)
 Type-safe team configuration with runtime validation. Each builder accepts a config object, validates it, and returns the typed value.
@@ -97,6 +102,7 @@ interface TeamDefinition {
   readonly members: readonly string[];
 }
 ```
+
 ---
 ### `defineAgent(config): AgentDefinition`
 Define a single agent with role, tools, model, and capabilities.
@@ -129,6 +135,7 @@ interface AgentCapability {
   readonly level: 'expert' | 'proficient' | 'basic';
 }
 ```
+
 ---
 ### `defineRouting(config): RoutingDefinition`
 Define routing rules with pattern matching and tier assignment.
@@ -156,6 +163,7 @@ interface RoutingRule {
   readonly priority?: number;
 }
 ```
+
 ---
 ### `defineCeremony(config): CeremonyDefinition`
 Define ceremonies (standups, retros, etc.) with schedule and participants.
@@ -179,6 +187,7 @@ interface CeremonyDefinition {
   readonly hooks?: readonly string[];
 }
 ```
+
 ---
 ### `defineHooks(config): HooksDefinition`
 Define governance hooks — write paths, blocked commands, PII scrubbing.
@@ -201,6 +210,7 @@ interface HooksDefinition {
   readonly reviewerLockout?: boolean;
 }
 ```
+
 ---
 ### `defineCasting(config): CastingDefinition`
 Define casting configuration — universe allowlists and overflow behavior.
@@ -219,6 +229,7 @@ interface CastingDefinition {
   readonly capacity?: Readonly<Record<string, number>>;
 }
 ```
+
 ---
 ### `defineTelemetry(config): TelemetryDefinition`
 Define OpenTelemetry configuration for observability.
@@ -241,6 +252,7 @@ interface TelemetryDefinition {
   readonly aspireDefaults?: boolean;
 }
 ```
+
 ---
 ### `defineSquad(config): SquadSDKConfig`
 Compose all builders into a single SDK config.
@@ -265,6 +277,7 @@ interface SquadSDKConfig {
   readonly telemetry?: TelemetryDefinition;
 }
 ```
+
 ---
 ## SquadClient
 Wraps `@github/copilot-sdk` with lifecycle management and auto-reconnection.
@@ -291,6 +304,7 @@ const response = await session.sendMessage('Implement the /users endpoint');
 await session.destroy();
 ```
 **Session states:** `creating → active → idle → error → destroyed`
+
 ---
 ## Coordinator
 Central routing and orchestration engine.
@@ -319,6 +333,7 @@ tier.maxAgents;     // Max parallel agents
 tier.defaultModel;  // Default model
 tier.toolset;       // Available tools
 ```
+
 ---
 ## Event Handling
 Typed pub/sub for session lifecycle events:
@@ -331,6 +346,7 @@ squad.events.on('session.status_changed', (event) => {
 });
 ```
 **Events:** `session.created`, `session.destroyed`, `session.status_changed`, tool execution events.
+
 ---
 ## Tools & Hooks
 ### `defineTool<TArgs>(config): SquadTool<TArgs>`
@@ -370,6 +386,7 @@ registry.getTool('squad_route');                         // Single lookup
 | `squad_memory` | Append to agent history |
 | `squad_status` | Query session pool state |
 | `squad_skill` | Read/write agent skills |
+
 ### HookPipeline
 Intercept tool calls before (`PreToolUseHook`) and after (`PostToolUseHook`) execution:
 ```typescript
@@ -383,6 +400,7 @@ pipeline.addPreHook(auditHook);
 ```
 **Hook actions:** `allow`, `block`, `modify`
 **Built-in policies:** ReviewerLockout, File Guards, Shell Restrictions, Rate Limits, PII Filters.
+
 ---
 ## Agents & Casting
 ### `onboardAgent(options): Promise<OnboardResult>`
@@ -406,6 +424,7 @@ const members = await engine.castTeam([
 ]);
 // members[0].name → 'Stringer', members[0].universe → 'The Wire'
 ```
+
 ---
 ## Runtime Constants
 ```typescript
@@ -417,6 +436,7 @@ TIMEOUTS.agentInitMs;        // 30000
 TIMEOUTS.agentExecuteMs;     // 300000
 TIMEOUTS.coordinatorRouteMs; // 5000
 ```
+
 ---
 ## Upstream Inheritance
 Share skills, decisions, and routing across teams.
@@ -427,6 +447,7 @@ const resolved = await resolveUpstreams(config, './.squad');
 const contextBlock = buildInheritedContextBlock(resolved);
 ```
 **Upstream types:** `local`, `git`, `export`
+
 ---
 ## Observability (OpenTelemetry)
 ### Quick Setup
@@ -453,9 +474,11 @@ const counter = meter.createCounter('requests_total');
 counter.add(1);
 await shutdownOTel();
 ```
+
 ---
 ## Error Classes
 All errors extend `SquadError` with severity, category, and recoverability:
+
 | Error | When |
 |-------|------|
 | `SDKConnectionError` | Connection failures (retryable) |
@@ -466,8 +489,10 @@ All errors extend `SquadError` with severity, category, and recoverability:
 | `ConfigurationError` | Invalid config (includes field + reason) |
 | `RateLimitError` | Too many requests |
 | `ValidationError` | Schema validation failures |
+
 ---
 ## Exports at a Glance
+
 | Export | Type | Module |
 |--------|------|--------|
 | `resolveSquad` | function | resolution |
@@ -485,6 +510,7 @@ All errors extend `SquadError` with severity, category, and recoverability:
 | `initializeOTel` / `shutdownOTel` | function | runtime/otel |
 | `getTracer` / `getMeter` | function | runtime/otel |
 | `initSquadTelemetry` | function | runtime/otel-init |
+
 ---
 ## See Also
 - [CLI Reference](./cli.md) — Shell commands and config files

@@ -1,5 +1,6 @@
 # Glossary
 Key terms defined in one sentence each. Alphabetical order.
+
 ---
 **Agent** — A specialist team member with a role, charter, and persistent memory that handles specific types of work.
 **Casting** — The process of forming your team by proposing agents, confirming roles, and writing their charters to `.squad/`.

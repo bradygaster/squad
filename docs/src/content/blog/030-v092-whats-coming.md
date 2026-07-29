@@ -51,6 +51,7 @@ squad new agent fact-checker
 Confidence ratings: ✅ Verified, ⚠️ Unverified, ❌ Contradicted. Routes automatically on "fact-check", "verify", "audit" keywords.
 ### 5. 8 Built-in Skills
 `squad init` and `squad upgrade` now ship 8 curated skills:
+
 | Skill | What it teaches |
 |-------|-----------------|
 | squad-conventions | Core patterns and file layout |
@@ -61,6 +62,7 @@ Confidence ratings: ✅ Verified, ⚠️ Unverified, ❌ Contradicted. Routes au
 | reviewer-protocol | Code review gates |
 | test-discipline | Test-first discipline |
 | agent-collaboration | Multi-agent handoffs |
+
 ### 6. Scratch Directory (`.squad/.scratch/`)
 Agents no longer dump temp files in the repo root. The new `scratchDir()` and `scratchFile()` SDK APIs route all ephemeral files to `.squad/.scratch/` — gitignored and auto-cleaned.
 ### 7. Cleanup Watch Capability

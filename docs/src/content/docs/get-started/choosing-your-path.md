@@ -1,5 +1,6 @@
 # Choose your path
 CLI, Copilot agent, or SDK? Pick the right mode for your workflow.
+
 ---
 ## Three modes
 ### CLI mode
@@ -11,6 +12,7 @@ squad status
 squad watch
 ```
 **Use for:** Terminal workflows, automation scripts, CI/CD integration.
+
 ---
 ### Copilot agent mode
 Talk to Squad in GitHub Copilot CLI or VS Code. Squad is built-in as an agent. Your `.squad/` directory works identically to CLI mode.
@@ -20,6 +22,7 @@ copilot
 Squad: Hey Brady, what are you building?
 ```
 **Use for:** Conversational workflows, exploratory work, VS Code users.
+
 ---
 ### SDK mode
 Write TypeScript code that spawns agents, routes work, and coordinates teams programmatically. Full access to Squad's internals.
@@ -32,8 +35,10 @@ const coordinator = new Coordinator();
 const result = await coordinator.route('Build a login page');
 ```
 **Use for:** Building tools on Squad, custom integrations, advanced automation.
+
 ---
 ## Decision table
+
 | **Your goal** | **Use** |
 |---------------|---------|
 | Try Squad quickly | **Copilot agent** — no install |
@@ -42,6 +47,7 @@ const result = await coordinator.route('Build a login page');
 | Automate repetitive tasks | **CLI** or **SDK** |
 | Build custom tooling | **SDK** |
 | CI/CD integration | **CLI** or **SDK** |
+
 ---
 ## Can I use multiple modes?
 Yes. Your `.squad/` directory is the source of truth. CLI, Copilot agent, and SDK all read and write the same files. You can switch between modes anytime.

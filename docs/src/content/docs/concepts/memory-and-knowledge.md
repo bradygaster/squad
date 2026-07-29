@@ -1,5 +1,6 @@
 # Memory & Knowledge
 Squad remembers everything — coding conventions, architecture decisions, deployment patterns, your personal preferences. Memory grows with every session, compounding across three layers so agents stop making the same mistakes and start anticipating your needs.
+
 ---
 ## Try This
 ```
@@ -11,6 +12,7 @@ What decisions has the team made about testing strategy?
 ```
 Show me what skills this team has learned
 ```
+
 ---
 ## How It Works
 Memory lives in three layers, each serving a different purpose:
@@ -24,18 +26,22 @@ graph TD
     B --> C
 ```
 ### How Memory Compounds
+
 | Stage | What Agents Know |
 |-------|-----------------|
 | 🌱 First session | Project description, tech stack, your name |
 | 🌿 After a few sessions | Conventions, component patterns, API design, test strategies |
 | 🌳 Mature project | Full architecture, tech debt map, regression patterns, performance conventions |
+
 The first session is always the least capable. Give the team a few sessions to build up context — they'll stop asking questions they've already answered.
+
 ---
 ## Personal Memory: `history.md`
 Each agent has its own history file at `.squad/agents/{name}/history.md`. After every session, agents append what they learned — architecture decisions, conventions, file paths, user preferences.
 **Only that agent reads its own history.** This means each team member builds specialized knowledge about their domain. Kane learns the auth system inside and out. Dallas masters the component library. Lambert memorizes the test infrastructure.
 ### Progressive Summarization
 When an agent's `history.md` exceeds ~12KB, older entries get archived into a summary section. Recent entries stay detailed; older entries condense. This keeps files within a useful context budget without losing accumulated knowledge.
+
 ---
 ## Shared Decisions: `decisions.md`
 Team-wide decisions live in `.squad/decisions.md`. **Every agent reads this before working.** This is the team's shared brain.
@@ -65,11 +71,13 @@ Active decisions (ongoing policies, user preferences, current architecture) stay
     ├── squad-conventions/SKILL.md        # Starter skill
     └── ci-github-actions/SKILL.md        # Earned skill
 ```
+
 ---
 ## Directives
 Directives are team rules that persist across sessions. Say "always" or "never" and Squad captures it permanently. Every agent reads directives before working.
 ### Signal Word Detection
 The coordinator listens for these phrases and captures them as directives:
+
 | Phrase | Example |
 |--------|---------|
 | `"always"` | "Always use TypeScript strict mode" |
@@ -78,6 +86,7 @@ The coordinator listens for these phrases and captures them as directives:
 | `"remember to"` | "Remember to run tests before pushing" |
 | `"don't"` | "Don't use var — only let and const" |
 | `"make sure to"` | "Make sure to document all public APIs" |
+
 ### Capture Flow
 ```mermaid
 sequenceDiagram
@@ -116,33 +125,42 @@ Remove the no-Friday-deploy rule
 You can also edit `.squad/decisions.md` directly — it's plain Markdown.
 ### Compliance
 Directives are context-aware guidelines, not hard constraints. If an agent violates one, the [reviewer protocol](your-team.md#reviewer-protocol) catches it during review, or you flag it directly.
+
 ---
 ## Skills
 Skills are reusable knowledge files that live at `.copilot/skills/{skill-name}/SKILL.md`. Unlike decisions (project policies like "use PostgreSQL"), skills are transferable techniques ("how to set up CI with GitHub Actions").
 **All agents can read any skill.** Skills are team-wide knowledge, not per-agent.
 ### Starter vs. Earned
+
 | Type | Source | Example |
 |------|--------|---------|
 | **Starter** | Bundled at init, prefixed `squad-` | `squad-conventions` |
 | **Earned** | Written by agents from real work | `ci-github-actions` |
+
 Starter skills are overwritten on upgrade. Earned skills are never touched.
+
 ### Confidence Lifecycle
 Earned skills have a confidence level reflecting how battle-tested they are:
+
 | Level | Meaning |
 |-------|---------|
 | **Low** | First written — based on a single experience |
 | **Medium** | Applied successfully in multiple contexts |
 | **High** | Well-established, consistently reliable |
+
 Confidence only goes up, never down. A skill that reaches `high` stays there.
+
 ### How Skills Get Used
 1. **Before working** — agents read skill files relevant to the task
 2. **During routing** — the coordinator checks skills when deciding who to spawn (an agent with a relevant earned skill may be preferred)
 3. **After working** — agents may write new skills or update existing ones based on what they learned
 ### Portability
 Skills export and import with your team. Move a trained team to a new repo, and all their earned knowledge comes along. This makes skills the most portable form of [team](your-team.md) intelligence.
+
 ---
 ## Knowledge persistence
 Not all knowledge in `.squad/` lasts forever. When files grow large, Squad compacts them to keep performance fast. Here's what persists and what gets summarized:
+
 | What | File | Compacted? | Where old content goes | Who reads it |
 |------|------|-----------|----------------------|-------------|
 | Personal history | `history.md` | Yes, at ~12 KB | `history-archive.md` (preserved, read-only) | Owning agent |
@@ -153,8 +171,11 @@ Not all knowledge in `.squad/` lasts forever. When files grow large, Squad compa
 | Casting registry | `casting/registry.json` | Never | Permanent | Coordinator |
 | Session logs | `log/*.md` | Never edited | Append-only archive | Read-only |
 | Orchestration logs | `orchestration-log/*.md` | Never edited | Append-only archive | Read-only |
+
 Knowledge that needs to survive compaction belongs in **skills**. Reusable patterns, code conventions, and technical techniques live here because they grow without limits. Team rules and preferences go in directives (stored in `decisions.md`) — they persist through compaction cycles because directives are preserved when decisions get summarized.
+
 > 💡 **Where to store permanent knowledge:** Put reusable patterns and techniques in `.copilot/skills/`. Put team rules and preferences in directives (they persist in `decisions.md`). For org-wide knowledge that multiple teams need, use [upstream inheritance](/features/upstream-inheritance) to share a skills library.
+
 ---
 ## Tips
 - **Commit `.squad/`** — anyone who clones the repo gets the team with all their accumulated knowledge.
@@ -162,6 +183,7 @@ Knowledge that needs to survive compaction belongs in **skills**. Reusable patte
 - If an agent keeps making the same mistake, check `decisions.md` — the relevant convention might be missing.
 - You can edit `decisions.md`, `history.md`, and skill files directly. They're all plain Markdown.
 - Manually seed skills by pasting your existing conventions into a `SKILL.md` — instant team knowledge.
+
 ---
 ## Sample Prompts
 ```
@@ -196,6 +218,7 @@ Establishes a type safety directive. Agents will avoid `any` and use proper type
 Search past decisions for database choices
 ```
 Finds historical decisions related to a specific topic or keyword.
+
 ---
 ## See Also
 - [Your Team](./your-team.md) — How agents use shared memory to coordinate

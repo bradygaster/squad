@@ -20,6 +20,7 @@ We proved what intuition suggested: **Squad works identically on VS Code as it d
 ### 2. Client Compatibility Matrix Shipped
 We published the first production compatibility matrix covering CLI, VS Code, JetBrains (untested), and GitHub.com (untested). This unblocks VS Code adoption and surfaces what needs testing.
 **What's documented:**
+
 | Feature | CLI | VS Code | JetBrains | GitHub.com |
 |---------|-----|---------|-----------|-----------|
 | Sub-agent spawning | ✅ | ✅ | ⚠️ | ❌ |
@@ -27,7 +28,9 @@ We published the first production compatibility matrix covering CLI, VS Code, Je
 | Background/async execution | ✅ | ⚠️ | ? | ? |
 | `.squad/` file access | ✅ | ✅ | ? | ? |
 | SQL tool | ✅ | ❌ | ❌ | ❌ |
+
 **Also documented:** Platform adaptation guide for Squad developers. Coordinator instructions for platform detection (CLI mode vs VS Code mode vs fallback mode).
+
 ### 3. Agent Progress Updates Designed (Proposal 022a)
 User feedback: **long-running background agents felt invisible.** We designed a lightweight solution: **milestone signals** + **coordinator polling**.
 **The UX:**
@@ -77,6 +80,7 @@ Issue: `npx github:bradygaster/squad` previously appeared to hang during install
 - **1 proposal designed & approved** (agent progress updates)
 - **1 SSH bug fixed & documented**
 - **4 external contributors engaged** this sprint
+
 ---
 ## The Vibe
 This sprint was about **reducing uncertainty.** We came into v0.4.0 with questions: *Does Squad work on VS Code? What are the constraints? How do we show progress on long work?*

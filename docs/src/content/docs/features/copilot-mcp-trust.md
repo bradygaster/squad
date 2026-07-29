@@ -1,12 +1,15 @@
 # Copilot CLI Non-Interactive MCP Trust Gate
 When `squad watch` or another Squad automation spawns `copilot -p` (non-interactive mode), it automatically injects `--yolo --additional-mcp-config @.mcp.json` into every Copilot sub-invocation. This page explains why that injection is mandatory and what to do if `squad_state_*` tools are silently unavailable.
+
 ---
 ## What Is the Trust Gate?
 Copilot CLI 1.0.59+ protects against loading arbitrary MCP binaries from workspace files by requiring the user to explicitly trust a folder before its `.mcp.json` is auto-loaded. In **interactive mode** this is a one-time prompt ("Trust this folder?"). In **non-interactive (`-p`) mode** there is no UI, so the gate cannot be satisfied and workspace `.mcp.json` is silently skipped.
 This is a security measure (RCE prevention), not a bug.
+
 ---
 ## Empirical Test Matrix
 The following was verified against Copilot CLI 1.0.59:
+
 | Invocation | `.mcp.json` loaded? |
 |------------|---------------------|
 | `copilot -p "..."` | ❌ No |
@@ -14,7 +17,9 @@ The following was verified against Copilot CLI 1.0.59:
 | `copilot --yolo --autopilot -p "..."` | ❌ No |
 | `copilot --additional-mcp-config @.mcp.json --yolo -p "..."` | ✅ **Yes** |
 | Interactive `copilot` → "Trust folder?" → Yes | ✅ Yes (not automatable) |
+
 The `--additional-mcp-config @<path>` flag bypasses the trust gate for the explicitly named file and is the only proven workaround for non-interactive sessions.
+
 ---
 ## How Squad Handles This Automatically
 `squad watch`, the loop command, and any other Squad automation that spawns `copilot` as a subprocess automatically prepend:
@@ -23,6 +28,7 @@ The `--additional-mcp-config @<path>` flag bypasses the trust gate for the expli
 ```
 before the `-p` prompt and any other flags. You do **not** need to add these flags yourself when using Squad commands.
 `--yolo` also suppresses the per-tool-call consent prompt that would cause `copilot -p` to hang waiting for input in non-interactive mode.
+
 ---
 ## Recommended `package.json` Script
 If you write your own non-interactive Copilot scripts (CI, cron jobs, shell aliases), use this pattern to ensure `.mcp.json` is loaded:
@@ -38,6 +44,7 @@ Then invoke it as:
 npm run squad:copilot -- --yolo -p "Your prompt here"
 ```
 The `--yolo` flag is intentionally omitted from the `package.json` script itself so that interactive runs (`npm run squad:copilot`) still show per-tool consent prompts by default.
+
 ---
 ## Troubleshooting
 **`squad_state_*` tools are not available in `squad watch` sessions**

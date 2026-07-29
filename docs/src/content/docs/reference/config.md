@@ -4,6 +4,7 @@
 squad init
 ```
 That's it. Squad works out of the box. Everything below is optional.
+
 ---
 ## squad.config.ts
 For type-safe SDK-First configuration, create this at your project root:
@@ -46,6 +47,7 @@ export default defineSquad({
 ```
 Each builder (`defineSquad()`, `defineTeam()`, `defineAgent()`, etc.) validates your config at runtime with type-safe error messages. Edit your `.ts` file, then run `squad build` to generate `.squad/` markdown.
 **Or start with markdown:** `squad init` creates a markdown-only squad with no config file needed.
+
 ---
 ## .squad/ Directory
 ```
@@ -67,11 +69,13 @@ Each builder (`defineSquad()`, `defineTeam()`, `defineAgent()`, etc.) validates 
 └── orchestration-log/   # Coordinator state
 ```
 Commit this directory. It's your team's brain. Anyone who clones the repo gets the full team with all their knowledge.
+
 ---
 ## .squad/ — Required vs Optional Files
 `squad init` creates a working team. Here's what's required and what's optional.
 ### Required Files
 These are always created by `squad init`. The loader expects them.
+
 | File | Purpose | Can You Edit? |
 |------|---------|---------------|
 | `.squad/team.md` | Team roster — loader requires it | Yes |
@@ -84,6 +88,7 @@ These are always created by `squad init`. The loader expects them.
 | `.squad/identity/now.md` | Current team focus | Auto-updated |
 | `.squad/identity/wisdom.md` | Accumulated team patterns | Auto-updated |
 | `.gitattributes` | Merge drivers for append-only files | Merge rules only |
+
 ### Optional Files
 These are created only when you opt in during init.
 - **`.squad/templates/`** — SDK templates, overwritten on upgrade
@@ -95,6 +100,7 @@ These are created only when you opt in during init.
 squad doctor                        # Check for issues
 rm -rf .squad && squad init         # Full reset (back up agents/decisions first)
 ```
+
 ---
 ## Routing Rules
 Control which agent gets which work. Edit `.squad/routing.md` or configure in `squad.config.ts`:
@@ -119,15 +125,19 @@ routing: {
   ],
 }
 ```
+
 ---
 ## Model Configuration
 17 models across three tiers. Squad picks the right one, or you override:
+
 | Tier | Models | Use Case |
 |------|--------|----------|
 | **premium** | claude-opus-4, gpt-4.1 | Architecture, code review |
 | **standard** | claude-sonnet-4, gpt-4.1 | Most work |
 | **fast** | claude-haiku-3.5, gpt-4.1-mini | Triage, logging, quick tasks |
+
 Per-agent overrides in `model-config.json`:
+
 ```json
 {
   "neo": "claude-opus-4",
@@ -135,6 +145,7 @@ Per-agent overrides in `model-config.json`:
 }
 ```
 Resolution order: user override → charter → task auto-select → config default.
+
 ---
 ## Resolution Order
 Squad finds `.squad/` by walking up:
@@ -143,12 +154,15 @@ Squad finds `.squad/` by walking up:
 3. Linked or external Squad state configured for this workspace
 4. Global CLI fallback
 First match wins.
+
 ---
 ## Environment Variables
+
 | Variable | Purpose |
 |----------|---------|
 | `SQUAD_CLIENT` | Detected client (`cli` or `vscode`) |
 | `COPILOT_TOKEN` | Auth token for SDK usage |
+
 ---
 ## See Also
 - [CLI Reference](cli.md) — Commands and shell interactions

@@ -4,6 +4,7 @@
 My team is all human devs — I just want Squad to help with coordination and memory
 ```
 Mixed AI + human teams: AI agents handle implementation, humans review and make critical decisions. Route work to humans just like AI agents.
+
 ---
 ## 1. Add Human Members to the Roster
 Tell Squad about your human team members:
@@ -25,6 +26,7 @@ Squad adds them to `.squad/team.md`:
 - **Sarah** — Senior Backend Engineer
 - **Jamal** — Frontend Lead
 ```
+
 ---
 ## 2. Routing Rules for Mixed Teams
 Edit `.squad/routing.md` to route work to humans:
@@ -52,6 +54,7 @@ The coordinator sees "architectural change" and routes to humans:
    vs polling). Resume with their decision.
 ```
 The AI agents **don't start implementation** until the humans decide.
+
 ---
 ## 3. Humans Decide, AI Implements
 Sarah and Jamal discuss and decide: WebSockets via Socket.IO.
@@ -73,6 +76,7 @@ Scribe logs the decision:
 **Why:** Need bi-directional communication, Socket.IO has better mobile client support than raw WebSockets
 ```
 AI agents read this before starting. They know the humans already decided.
+
 ---
 ## 4. AI Agents Work, Humans Review PRs
 Agents create pull requests. Humans review them.
@@ -94,6 +98,7 @@ Sarah and Jamal review the PR on GitHub. If they request changes, relay that bac
 🔧 Morpheus — fixing socket reconnection to handle token expiration
 ```
 Morpheus pushes a fix. The humans approve. Merge.
+
 ---
 ## 5. Pausing the Coordinator
 When work routes to a human, the coordinator **pauses** — it doesn't guess what the human will decide.
@@ -116,6 +121,7 @@ You ask Sarah. She says no, stick with REST.
 **What:** Not migrating to GraphQL
 **Why:** Current REST API works well, migration cost isn't justified
 ```
+
 ---
 ## 6. Use Agents for the Tedious Work
 Humans handle high-level decisions and code review. Agents handle implementation, testing, and grunt work.
@@ -128,6 +134,7 @@ Humans handle high-level decisions and code review. Agents handle implementation
    Checking for regressions after WebSocket integration...
 ```
 Tank finds a broken test, fixes it, commits. Sarah doesn't have to.
+
 ---
 ## 7. Sample Prompts for Mixed Teams
 **Route a decision to a human:**
@@ -150,6 +157,7 @@ Tank finds a broken test, fixes it, commits. Sarah doesn't have to.
 > Neo, create a PR for the caching layer work. Assign it to Sarah
 > for review.
 ```
+
 ---
 ## Tips
 - **Humans in the roster, not as agents.** Humans don't get charters or histories, but they appear in routing rules.

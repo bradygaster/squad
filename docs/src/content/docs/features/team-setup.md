@@ -12,6 +12,7 @@ Add a security specialist to the team
 Show me the current team roster
 ```
 Squad analyzes your project and proposes a team roster with 3-7 members tailored to your stack. You can accept as-is, customize during setup, or modify the team anytime after.
+
 ---
 ## How Init Works
 When you first run Squad in a repository, it doesn't impose a team — it proposes one. The init flow analyzes your project, suggests roles and members, waits for your confirmation, then creates the `.squad/` directory structure and installs the crew.
@@ -44,6 +45,7 @@ By default, Squad uses the **CastingEngine** to assign agent names from fictiona
 └── casting/                        # Universe assignments
 ```
 ## Customizing During Init
+
 | What you say | What happens |
 |--------------|--------------|
 | "Accept" / "Looks good" | Creates team as proposed |
@@ -51,6 +53,7 @@ By default, Squad uses the **CastingEngine** to assign agent names from fictiona
 | "Remove the tester" | Drops tester from the team |
 | "Change backend to Rust specialist" | Adjusts role focus for that member |
 | "Make Fenster the frontend lead" | Assigns specific name to role |
+
 ## Customizing After Init
 You can modify `.squad/team.md` directly or ask the coordinator:
 > "Add a security specialist to the team"
@@ -65,6 +68,7 @@ The coordinator will:
 3. Update routing rules
 ## Default Team Composition
 For most projects, Squad proposes:
+
 | Role | When Included |
 |------|--------------|
 | **Lead** | Always — triages, reviews, unblocks |
@@ -74,12 +78,16 @@ For most projects, Squad proposes:
 | **Frontend** | If React/Vue/Svelte/Angular detected |
 | **Backend** | If API routes, database code, or server framework detected |
 | **Scribe** | Always — decision logger |
+
 ## Upgrade vs. Init
+
 | Command | When to Use |
 |---------|------------|
 | `init` | First-time setup in a new repository |
 | `upgrade` | Existing `.squad/` — updates templates, adds new members, migrates config |
+
 Running `init` on an existing Squad repository prompts for upgrade mode automatically.
+
 ## Sample Prompts
 ```
 Start a new Squad team for this project

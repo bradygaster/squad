@@ -5,6 +5,7 @@ Ralph, show me untriaged issues
 ```
 **Then watch Ralph auto-triage based on labels.**
 When GitHub Issues are your work queue, creating tasks should be frictionless. Issue templates pre-fill labels, structure task descriptions, and work beautifully on mobile — making it possible to add tasks in 10 seconds from anywhere.
+
 ---
 ## Why Issue Templates Matter for Squad
 GitHub provides Issue Templates — a platform feature that pre-fills labels, fields, and structure when creating new issues. This guide shows how to configure templates that work smoothly with Squad's label-based routing.
@@ -15,6 +16,7 @@ Issue templates solve this:
 - **Mobile-friendly** — Works in the GitHub mobile app
 - **Fast task creation** — Add work while walking the dog, waiting for coffee, or during a meeting
 With templates, creating a Squad task takes 10 seconds instead of 2 minutes.
+
 ---
 ## Basic Squad Task Template
 Create `.github/ISSUE_TEMPLATE/squad-task.yml` in your repository:
@@ -73,6 +75,7 @@ body:
 - **Structured sections** — Description, acceptance criteria, priority
 - **Markdown support** — Use checklists, code blocks, links
 - **Works on mobile** — GitHub app renders forms beautifully
+
 ---
 ## Custom Labels for Routing
 Ralph uses `.squad/routing.md` to route work to agents. Add `squad:{member}` labels to your template for pre-triaging:
@@ -99,6 +102,7 @@ gh label create "squad:flight" --description "Architecture and planning" --color
 gh label create "squad:fido" --description "Testing and quality" --color "0e8a16"
 ```
 Or use the [label sync workflow](../features/labels.md) to automate label management across repositories.
+
 ---
 ## Template Variants
 Different work types need different structures:
@@ -203,6 +207,7 @@ body:
     validations:
       required: false
 ```
+
 ---
 ## Mobile Workflow
 GitHub Issues + templates work from anywhere:
@@ -218,6 +223,7 @@ GitHub Issues + templates work from anywhere:
 - Ralph sees it in the next scan
 - Agent picks it up in the background
 This workflow enables "capture anywhere, process later" — add tasks while commuting, exercising, or in meetings without context-switching to a laptop.
+
 ---
 ## Template Configuration
 GitHub supports multiple templates. Create a config file to customize the issue creation experience:
@@ -233,6 +239,7 @@ contact_links:
     about: Read the full Squad documentation
 ```
 This disables blank issues (forcing template use) and provides helpful links when users click "New Issue."
+
 ---
 ## Template Best Practices
 - **Keep templates short** — Long forms reduce completion rates
@@ -242,6 +249,7 @@ This disables blank issues (forcing template use) and provides helpful links whe
 - **Test on mobile** — Ensure forms render well in the GitHub app
 - **Use dropdown for enums** — Priority, Type, Severity (reduces typos)
 - **Add markdown help** — Link to GitHub markdown guide in template
+
 ---
 ## Integration with Ralph
 Ralph's heartbeat workflow (`.github/workflows/squad-heartbeat.yml`) scans for untriaged issues:
@@ -251,6 +259,7 @@ Ralph's heartbeat workflow (`.github/workflows/squad-heartbeat.yml`) scans for u
 4. Ralph adds `squad:{member}` label
 5. Next heartbeat run (or in-session Ralph) assigns agent
 If your template pre-fills `squad:{member}`, Ralph skips triage and goes straight to assignment.
+
 ---
 ## Sample Prompts
 ```
@@ -261,6 +270,7 @@ Lists all issues with `squad` label but no `squad:{member}` assignment.
 Ralph, triage and assign the backlog
 ```
 Ralph reads routing rules, applies member labels, and prepares work for agents.
+
 ---
 ## Notes
 - Templates don't prevent manual issue creation — users can still click "Open a blank issue"
@@ -268,6 +278,7 @@ Ralph reads routing rules, applies member labels, and prepares work for agents.
 - Use `.yml` or `.yaml` extension (both work)
 - Test templates by creating issues yourself before announcing to the team
 - Mobile workflow requires GitHub app (iOS or Android) — works on tablets too
+
 ---
 ## See Also
 - [GitHub Issues Mode](./github-issues.md) — Issue-driven development workflow

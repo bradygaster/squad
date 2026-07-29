@@ -25,6 +25,7 @@ Use Sonnet for code, Haiku for everything else
 Switch back to automatic model selection
 ```
 Squad adjusts model selection based on your directive. Agents writing code get quality models (Sonnet/Opus), agents doing docs/logs get cost-optimized models (Haiku). You can override anytime — and persistent overrides survive across sessions.
+
 ---
 ## How It Works
 Squad routes each agent to the right model based on what they're doing — not a one-size-fits-all default. The governing principle: **cost first, unless code is being written** — but your preferences always take priority.
@@ -40,6 +41,7 @@ Model selection uses a layered system. First match wins:
 | Writing prompts or agent designs | `claude-sonnet-4.6` | Standard |
 | Non-code work (docs, planning, triage, changelogs) | `claude-haiku-4.5` | Fast |
 | Visual/design work requiring image analysis | `claude-opus-4.6` | Premium |
+
 5. **Default** — If nothing matched, `claude-haiku-4.5`. Cost wins when in doubt.
 ## Persistent Model Preferences
 Squad stores your model preferences in `.squad/config.json`:
@@ -57,6 +59,7 @@ Squad stores your model preferences in `.squad/config.json`:
 - **`agentModelOverrides`** — per-agent overrides. Set with "use X for {agent}".
 - **Clear with** "switch back to automatic" — removes `defaultModel`, returns to auto-selection.
 ## Role-to-Model Mapping
+
 | Role | Default Model | Why |
 |------|--------------|-----|
 | Core Dev / Backend / Frontend | `claude-sonnet-4.6` | Writes code — quality first |
@@ -67,6 +70,7 @@ Squad stores your model preferences in `.squad/config.json`:
 | Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops |
 | Git / Release | `claude-haiku-4.5` | Changelogs, tags, version bumps |
 | Designer / Visual | `claude-opus-4.6` | Vision capability required |
+
 ## 18-Model Catalog
 Squad supports 18 models across three tiers:
 - **Premium:** claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5
@@ -97,13 +101,16 @@ Switch to economy mode
 Turn off economy mode
 ```
 When economy mode is active, Squad remaps models using the `ECONOMY_MODEL_MAP`:
+
 | Normal Tier | Economy Model |
 |-------------|--------------|
 | Standard (Sonnet) | `gpt-4.1` |
 | Fast (Haiku) | `gpt-4.1` |
+
 **Fallback chains in economy mode** run the same logic as normal fallback chains, but start one tier lower. A code task that would normally use `claude-sonnet-4.6` uses `claude-haiku-4.5` instead.
 **Cost tradeoffs:** Economy mode trades output quality for lower cost and reduced rate limit pressure. Use it for bulk triage, log analysis, or changelog generation — not for architecture work or complex refactors where quality matters.
 **Persistent economy mode** saves to `.squad/config.json`:
+
 ```json
 {
   "version": 1,

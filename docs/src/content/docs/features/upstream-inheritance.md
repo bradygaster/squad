@@ -14,6 +14,7 @@ At session start, the coordinator reads all declared upstreams from `upstream.js
 | **local** | `../org-practices/.squad/` | Sibling repo, shared drive, monorepo package |
 | **git** | `https://github.com/acme/platform-squad.git` | Public/private team repo (with credentials) |
 | **export** | `./exports/squad-export.json` | Snapshot for offline use or version pinning |
+
 ## Quick start
 **Local upstream:**
 ```bash
@@ -245,6 +246,7 @@ squad upstream add https://github.com/acme/platform-squad.git --name platform --
 **Also works for:**
 - Open-source frameworks with community plugins
 - Consultancy methodology across client projects
+
 ---
 ### Domain consistency across services
 **Problem:** Multiple microservices share a domain model (user, order, payment). You need a single source of truth for how agents work with that model.
@@ -261,6 +263,7 @@ squad upstream add https://github.com/acme/platform-squad.git --name platform --
 squad upstream add https://github.com/acme/shared-domain.git --name domain
 ```
 **Outcome:** All agents across services understand the domain model. Domain conventions change once; each service pulls independently. Services stay decoupled with consistency.
+
 ---
 ### Multi-team scaling patterns
 **Problem:** Post-acquisition, migration, or enterprise modernization requires coordinating practices across teams with different histories.

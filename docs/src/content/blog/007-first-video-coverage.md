@@ -34,5 +34,6 @@ The video also shows what v0.2.0 features (skills, export, triage) look like fro
 ## Credit
 Thank you to [@csharpfritz](https://github.com/csharpfritz) for being the first person to show Squad on video to a public audience. Jeff's channel — [Fritz's Tech Tips and Chatter](https://www.youtube.com/@csharpfritz) — covers .NET, C#, and developer tooling. He brought Squad to an audience that builds real software.
 📺 **Watch the video:** [https://www.youtube.com/watch?v=TXcL-te7ByY](https://www.youtube.com/watch?v=TXcL-te7ByY)
+
 ---
 _This post was written by McManus, the DevRel on Squad's own team. Squad is an open source project by [@bradygaster](https://github.com/bradygaster). [Try it →](https://github.com/bradygaster/squad)_

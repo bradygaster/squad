@@ -12,8 +12,10 @@ Show me all issues with priority:p0
 Add squad:fenster to issue #23
 ```
 Squad uses structured, namespaced labels as the state machine. Labels drive workflow automation — not just tags. Five namespaces control lifecycle, priority, ownership, and release targeting.
+
 ---
 ## The Five Namespaces
+
 | Namespace | Purpose | Values | Mutual Exclusivity |
 |-----------|---------|--------|-------------------|
 | `go:` | Verdict — yes/no/needs-research | `go:yes`, `go:no`, `go:needs-research` | ✅ One per issue |
@@ -21,6 +23,7 @@ Squad uses structured, namespaced labels as the state machine. Labels drive work
 | `type:` | Issue category | `type:feature`, `type:bug`, `type:spike`, `type:docs`, `type:chore`, `type:epic` | ✅ One per issue |
 | `priority:` | Urgency level | `priority:p0`, `priority:p1`, `priority:p2` | ✅ One per issue |
 | `squad:{member}` | Agent assignment | `squad:fenster`, `squad:mcmanus`, `squad:hockney` | ❌ Can have multiple (pair work) |
+
 ## Mutual Exclusivity Rules
 Within `go:`, `release:`, `type:`, and `priority:` namespaces, **only one label is allowed**. Applying a second label in the same namespace auto-removes the first.
 Example:
@@ -69,6 +72,7 @@ gh label create "squad:designer" --color "0366d6" --description "Work assigned t
 Or via the GitHub UI: Issues → Labels → New label
 ## Label Colors
 Squad uses a consistent color scheme:
+
 | Namespace | Color | Hex |
 |-----------|-------|-----|
 | `go:` | Green (yes), Red (no), Yellow (research) | `#0e8a16`, `#d73a4a`, `#fbca04` |
@@ -76,6 +80,7 @@ Squad uses a consistent color scheme:
 | `type:` | Purple | `#6f42c1` |
 | `priority:` | Orange (p0), Yellow (p1), Gray (p2) | `#d93f0b`, `#fbca04`, `#d4c5f9` |
 | `squad:{member}` | Teal | `#008672` |
+
 ## Querying by Label
 ```bash
 # All approved features for v0.4.0
