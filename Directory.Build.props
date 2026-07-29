@@ -25,15 +25,15 @@
       "$(NuGetPackageRoot)/github.copilot.sdk/$(_MicrosoftAgentsAICopilotSdkVersion)/build/GitHub.Copilot.SDK.targets"
       and, when $(_MicrosoftAgentsAICopilotSdkVersion) is unset, defaults it to the SDK
       version the adapter itself was packed against, its nuspec's dependency FLOOR
-      (1.0.5 for Microsoft.Agents.AI.GitHub.Copilot 1.14.0-rc1), NOT the version this repo
-      actually depends on ($(SquadCopilotSdkVersion), i.e. 1.0.7). Left unset, any project
+      (still 1.0.5 in Microsoft.Agents.AI.GitHub.Copilot 1.15.0-rc1), NOT the version this repo
+      actually depends on ($(SquadCopilotSdkVersion)). Left unset, any project
       that pulls in the adapter WITHOUT a direct PackageReference to GitHub.Copilot.SDK
       (test/Squad.Agents.AI.Tests, src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample here,
       and any real external NuGet consumer of Squad.Agents.AI) downloads and bundles the
       OLDER Copilot CLI build pinned to SDK 1.0.5 (Copilot CLI 1.0.67) instead of the CLI
-      pinned to SDK 1.0.7 (Copilot CLI 1.0.71); verified against this repo's own CI logs
+      pinned to this repo's requested SDK / CLI pair; verified against the repo's own CI logs
       for PR #1519 (run 29856026557): "Build package" (src/Squad.Agents.AI, which DOES have
-      the direct PackageReference) downloaded CLI 1.0.71, while "Build tests" and
+      the direct PackageReference) downloaded the requested CLI, while "Build tests" and
       "Build sample" (no direct PackageReference) downloaded CLI 1.0.67, on both
       ubuntu-latest and windows-latest.
 
@@ -51,14 +51,15 @@
       (generated at pack time from this same property, see Squad.Agents.AI.csproj)
       unconditionally overwrites it again for real external consumers.
 
-      Excluded for the Squad.Agents.AI project itself: it already gets the right SDK
-      version via its own direct PackageReference to GitHub.Copilot.SDK (whose build/
-      import happens unconditionally, ahead of the adapter's fallback), so setting the
-      override there too would just make NuGet import the SAME
-      github.copilot.sdk/$(SquadCopilotSdkVersion)/build/GitHub.Copilot.SDK.targets file
-      twice, and MSBuild warns (MSB4011) about the resulting harmless-but-noisy duplicate
-      import.
+      This override is applied to the package project itself too because the MAF buildTransitive bridge otherwise
+      imports the SDK targets a second time using its packaged floor (1.0.5), which can override the direct
+      reference during target execution. A duplicate-import warning is acceptable; the
+      important invariant is that every project resolves the same SDK-backed native payload rather than the
+      adapter's stale floor.
+
+
     -->
-    <_MicrosoftAgentsAICopilotSdkVersion Condition="'$(MSBuildProjectName)' != 'Squad.Agents.AI'">$(SquadCopilotSdkVersion)</_MicrosoftAgentsAICopilotSdkVersion>
+    <_MicrosoftAgentsAICopilotSdkVersion>$(SquadCopilotSdkVersion)</_MicrosoftAgentsAICopilotSdkVersion>
   </PropertyGroup>
 </Project>
+
