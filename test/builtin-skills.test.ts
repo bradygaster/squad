@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { TEMPLATE_MANIFEST } from '../packages/squad-cli/src/cli/core/templates.js';
-import { existsSync } from 'node:fs';
+import { MANIFEST_SKILL_NAMES } from '@bradygaster/squad-sdk/config';
+import { SkillRegistry, parseSkillFile } from '@bradygaster/squad-sdk/skills';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 // Use __dirname for reliable resolution regardless of working directory
@@ -16,6 +18,7 @@ const EXPECTED_BUILTIN_SKILLS = [
   'reviewer-protocol',
   'test-discipline',
   'agent-collaboration',
+  'adr-lifecycle-manager',
 ];
 
 // Unit tests for the skill manifest declarations. End-to-end scaffolding
@@ -32,6 +35,15 @@ describe('built-in skills in TEMPLATE_MANIFEST', () => {
     for (const expected of EXPECTED_BUILTIN_SKILLS) {
       expect(skillNames, `missing skill: ${expected}`).toContain(expected);
     }
+  });
+
+  it('keeps CLI and SDK skill manifests in sync', () => {
+    const cliSkillNames = skillEntries.map(entry => {
+      const match = entry.destination.match(/skills\/([^/]+)\//);
+      return match ? match[1] : '';
+    });
+
+    expect(cliSkillNames.sort()).toEqual([...MANIFEST_SKILL_NAMES].sort());
   });
 
   it('all skill entries have overwriteOnUpgrade: true (squad-owned)', () => {
@@ -55,5 +67,31 @@ describe('built-in skills in TEMPLATE_MANIFEST', () => {
 
   it(`ships at least ${EXPECTED_BUILTIN_SKILLS.length} skills`, () => {
     expect(skillEntries.length).toBeGreaterThanOrEqual(EXPECTED_BUILTIN_SKILLS.length);
+  });
+
+  it('routes ADR lifecycle work to architecture roles', () => {
+    const skillPath = path.join(
+      TEMPLATES_DIR,
+      'skills',
+      'adr-lifecycle-manager',
+      'SKILL.md',
+    );
+    const skill = parseSkillFile(
+      'adr-lifecycle-manager',
+      readFileSync(skillPath, 'utf8'),
+    );
+
+    expect(skill).toBeDefined();
+    expect(skill!.agentRoles).toEqual(['lead', 'architect']);
+
+    const registry = new SkillRegistry();
+    registry.registerSkill(skill!);
+
+    for (const role of ['lead', 'architect']) {
+      const match = registry
+        .matchSkills('Create an ADR for this architecture decision', role)
+        .find(result => result.skill.id === 'adr-lifecycle-manager');
+      expect(match?.reason).toContain(`role affinity: ${role}`);
+    }
   });
 });

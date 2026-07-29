@@ -317,6 +317,12 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
     overwriteOnUpgrade: true,
     description: 'Init Mode two-phase protocol — propose team (Phase 1) then create .squad/ scaffolding (Phase 2)',
   },
+  {
+    source: 'skills/adr-lifecycle-manager/SKILL.md',
+    destination: '../.github/skills/adr-lifecycle-manager/SKILL.md',
+    overwriteOnUpgrade: true,
+    description: 'ADR lifecycle governance for architecture agents',
+  },
 
   // Session init reference (squad-owned, coordinator reads at session start)
   {

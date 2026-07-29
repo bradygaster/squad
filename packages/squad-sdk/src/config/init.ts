@@ -54,6 +54,7 @@ export const MANIFEST_SKILL_NAMES = [
   'coordinator-source-of-truth',
   'coordinator-response-mode',
   'coordinator-init-mode',
+  'adr-lifecycle-manager',
 ] as const;
 
 // ============================================================================
