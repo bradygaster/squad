@@ -18,7 +18,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
-      Prerelease because Microsoft.Agents.AI.GitHub.Copilot 1.14.0-rc1 (below) is itself a
+      Prerelease because Microsoft.Agents.AI.GitHub.Copilot 1.15.0-rc1 (below) is itself a
       prerelease package. A STABLE Squad.Agents.AI depending on a prerelease package makes
       `dotnet pack` emit NU5104 ("A stable release ... should not have a prerelease
       dependency"). Prior releases (0.2.0 through 0.5.5) stayed stable and carried that
@@ -35,7 +35,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Squad.Agents.AI.Tests" />
-    <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" Version="1.14.0-rc1" />
+    <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" Version="1.15.0-rc1" />
     <!--
       Direct reference to GitHub.Copilot.SDK so its build/ targets fire during our build.
       Without this, the SDK's MSBuild download/copy targets only flow to projects with a
@@ -52,11 +52,11 @@
       project (see Directory.Build.props for the full explanation).
     -->
     <PackageReference Include="GitHub.Copilot.SDK" Version="$(SquadCopilotSdkVersion)" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.1" />
-    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.7.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
@@ -134,3 +134,4 @@
     </ItemGroup>
   </Target>
 </Project>
+
