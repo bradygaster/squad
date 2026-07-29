@@ -21,16 +21,16 @@ Pattern: Critical production bug identified. Race condition in history-shadow re
 
 Diagnosed and fixed a false positive in `scripts/security-review.mjs` that was blocking PR #1558 (squad state-sync — Scribe memory consolidation).
 
-**Root cause:** The `unsafe-git` check (check #4) scanned ALL changed files in the PR diff with no file-type filter. When Scribe merged `.squad/decisions/inbox/` entries into `.squad/decisions.md`, a historical entry documenting the `git add .` prohibition surfaced as new `+` lines. The scanner pattern-matched the literal string inside backtick prose and fired an error. The inbox was gitignored — that's why the same content never tripped the scanner before.
+**Root cause:** The `unsafe-git` check (check #4) scanned ALL changed files in the PR diff with no file-type filter. When Scribe merged `.squad/decisions/inbox/` entries into `.squad/decisions.md`, a historical entry documenting the broad repo-root staging prohibition surfaced as new `+` lines. The scanner pattern-matched the literal string inside backtick prose and fired an error. The inbox was gitignored — that's why the same content never tripped the scanner before.
 
 **Fix:** Added `UNSAFE_GIT_EXCLUDED_PATHS` list to skip append-only log files: `.squad/decisions.md`, `.squad/agents/*/history.md`, `.squad/log/**`, `.squad/orchestration-log/**`. Instruction surfaces (copilot-instructions.md, charter files, team.md, routing.md) are deliberately kept in scope.
 
-**Verified locally:** (a) scanner returns zero findings on the state-sync PR diff; (b) a probe file `scripts/__scan-probe.sh` with bare `git add .` and `git push --force` was caught by two errors. Probe deleted after test.
+**Verified locally:** (a) scanner returns zero findings on the state-sync PR diff; (b) a probe file `scripts/__scan-probe.sh` with bare repo-root staging and force-push commands was caught by two errors. Probe deleted after test.
 
 **Latent false positives found:**
-- `.github/copilot-instructions.md` line 21 contains `git add .`, `git add -A`, `git commit -a` in a prohibition list — would be flagged if that file changes. Kept in scope intentionally (instruction surface). Acceptable noise on future edits.
-- `.squad/agents/scribe/charter.md` has `git add .squad/` — the regex `/git\s+add\s+\./` also matches scoped paths starting with `.`. Not fixed here; that's a pattern-precision issue separate from this scoping bug.
-- `.squad/templates/issue-lifecycle.md` has `git add .` in a code fence example. Kept in scope (template = instruction surface).
+- `.github/copilot-instructions.md` line 21 contains broad staging / commit-all command examples in a prohibition list — would be flagged if that file changes. Kept in scope intentionally (instruction surface). Acceptable noise on future edits.
+- `.squad/agents/scribe/charter.md` has a scoped dot-prefixed add command — the regex `/git\s+add\s+\./` also matches scoped paths starting with `.`. Not fixed here; that's a pattern-precision issue separate from this scoping bug.
+- `.squad/templates/issue-lifecycle.md` has a repo-root staging example in a code fence. Kept in scope (template = instruction surface).
 - `.squad/log/` and `.squad/orchestration-log/` files have the patterns but are gitignored — will never appear in PR diffs. No action needed.
 
 Decision filed in inbox: `retro-scanner-log-exclusion.md`.
@@ -47,7 +47,7 @@ Fixed a false-positive regression in PR #1559 (`squad/fix-security-scanner-prose
 - `.squad/agents/retro/history.md` → excluded ✅
 - `.squad/agents/_alumni/kobayashi/history.md` → excluded ✅ (was broken)
 - `.squad/agents/retro/charter.md` → still scanned ✅
-- Probe `scripts/__scan-probe.sh` (containing `git add .` + `git push --force`) → 2 errors detected ✅; probe deleted, no trace in commit.
+- Probe `scripts/__scan-probe.sh` (containing repo-root staging + force-push forms) → 2 errors detected ✅; probe deleted, no trace in commit.
 - PR #1558 diff (`squad/state-sync-2026-07-29`) — scanner returned no findings after fix.
 
-**Known follow-up (not fixed here):** `/git\s+add\s+\./` also matches the safe scoped form `git add .squad/`. Separate issue documented in PR body.
+**Known follow-up (not fixed here):** `/git\s+add\s+\./` also matches safe scoped dot-prefixed add commands. Separate issue documented in PR body.
