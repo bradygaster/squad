@@ -31,9 +31,9 @@ jobs:
         id: check-script
         run: |
           if [ -f ".squad/templates/ralph-triage.js" ]; then
-            echo "has_script=true" >> $GITHUB_OUTPUT
+            echo "has_script=true" >> "$GITHUB_OUTPUT"
           else
-            echo "has_script=false" >> $GITHUB_OUTPUT
+            echo "has_script=false" >> "$GITHUB_OUTPUT"
             echo "⚠️ ralph-triage.js not found — run 'squad upgrade' to install"
           fi
 

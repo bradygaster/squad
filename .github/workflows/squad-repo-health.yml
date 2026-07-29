@@ -42,10 +42,10 @@ jobs:
           OUTPUT=$(node scripts/check-bootstrap-deps.mjs --ref ${{ github.event.pull_request.head.sha }} 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
-          echo "result<<EOF" >> $GITHUB_OUTPUT
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+          echo "result<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$OUTPUT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           exit $EXIT_CODE
 
   # ─── Diff Size Guard (WARNING) ─────────────────────────────────────
@@ -96,9 +96,9 @@ jobs:
           git fetch origin dev --quiet
           OUTPUT=$(node scripts/check-squad-leakage.mjs origin/dev ${{ github.event.pull_request.head.sha }} 2>&1)
           echo "$OUTPUT"
-          echo "result<<EOF" >> $GITHUB_OUTPUT
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "result<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$OUTPUT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Comment on leakage
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
@@ -133,9 +133,9 @@ jobs:
           git fetch origin dev --quiet
           OUTPUT=$(node scripts/architectural-review.mjs origin/dev ${{ github.event.pull_request.head.sha }} 2>&1)
           echo "$OUTPUT"
-          echo "result<<EOF" >> $GITHUB_OUTPUT
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "result<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$OUTPUT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Comment on findings
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
@@ -170,9 +170,9 @@ jobs:
           git fetch origin dev --quiet
           OUTPUT=$(node scripts/security-review.mjs origin/dev ${{ github.event.pull_request.head.sha }} 2>&1)
           echo "$OUTPUT"
-          echo "result<<EOF" >> $GITHUB_OUTPUT
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "result<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$OUTPUT" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Comment on findings
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
