@@ -174,6 +174,21 @@ for (const file of jstsFiles) {
 }
 
 // 4. Unsafe git operations
+//
+// Excluded paths: append-only memory/log files that document history and prohibitions.
+// These are never executed — they record what happened, not what to do.
+// Instruction surfaces (.github/copilot-instructions.md, agent charters, squad.agent.md,
+// team.md, routing.md) are deliberately kept in scope: a malicious PR could replace a
+// prohibition with an instruction, and we want the scanner to catch that.
+// .squad/log/ and .squad/orchestration-log/ are gitignored (never in PR diffs) but
+// listed here for documentation completeness.
+const UNSAFE_GIT_EXCLUDED_PATHS = [
+  /^\.squad\/decisions\.md$/,
+  /^\.squad\/agents\/.+\/history\.md$/,
+  /^\.squad\/log\//,
+  /^\.squad\/orchestration-log\//,
+];
+
 const GIT_UNSAFE_PATTERNS = [
   { pattern: /git\s+add\s+\./, label: 'git add .' },
   { pattern: /git\s+add\s+-A/, label: 'git add -A' },
@@ -183,6 +198,7 @@ const GIT_UNSAFE_PATTERNS = [
 ];
 
 for (const file of changedFiles) {
+  if (UNSAFE_GIT_EXCLUDED_PATHS.some((p) => p.test(file))) continue;
   const added = addedByFile.get(file) || [];
   for (const { line, text } of added) {
     for (const { pattern, label } of GIT_UNSAFE_PATTERNS) {
