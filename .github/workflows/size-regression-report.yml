@@ -33,7 +33,6 @@ jobs:
         run: |
           set +e
           node scripts/size-regression-guard.mjs > size-guard-output.txt
-          status=$?
           {
             echo '## Coordinator prompt size report (report-only)'
             echo
