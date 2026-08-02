@@ -31,6 +31,139 @@ import type {
 
 const tracer = trace.getTracer('squad-sdk');
 
+// ============================================================================
+// Tool Name Normalization
+// ============================================================================
+
+/**
+ * The Copilot SDK external-tool wire format only permits `^[a-zA-Z0-9_-]+$`.
+ * Squad's ToolRegistry uses canonical dotted names (e.g. `memory.classify`).
+ * This function converts dots to underscores to produce a valid wire name.
+ *
+ * All other characters already permitted by the SDK are left unchanged, so
+ * tool names that do not contain dots pass through unmodified.
+ *
+ * @example
+ * normalizeToolNameForCopilot('memory.classify') // → 'memory_classify'
+ * normalizeToolNameForCopilot('squad_route')      // → 'squad_route'
+ */
+export function normalizeToolNameForCopilot(name: string): string {
+  return name.replace(/\./g, '_');
+}
+
+/**
+ * Normalize all tool-name surfaces in a `SquadSessionConfig` before the
+ * config is forwarded to the Copilot SDK external-tool API.
+ *
+ * Surfaces covered:
+ *   - `config.tools[].name`              — wire names sent to the SDK
+ *   - `config.availableTools[]`          — allow-list filter strings
+ *   - `config.excludedTools[]`           — deny-list filter strings
+ *   - `config.customAgents[].tools[]`    — per-agent tool filter strings
+ *
+ * Canonical dotted names (`memory.classify`) are preserved inside Squad; only
+ * the copy forwarded to the Copilot SDK receives the underscore form.
+ *
+ * Collision detection: if two distinct canonical names would produce the same
+ * wire name (e.g. `memory.classify` and `memory_classify`), an error is thrown
+ * with a clear message identifying the conflicting names.
+ *
+ * @throws Error when a wire-name collision is detected in `config.tools`
+ */
+export function normalizeToolsInConfig(config: SquadSessionConfig): SquadSessionConfig {
+  if (!config.tools?.length && !config.availableTools && !config.excludedTools && !config.customAgents) {
+    return config;
+  }
+
+  // Build separate maps:
+  //   allWireNames — every wire name, used for collision detection
+  //   wireToCanonical — only entries where normalization changed the name,
+  //                     used for hook reverse-mapping (wire → canonical)
+  const allWireNames = new Map<string, string>();
+  const wireToCanonical = new Map<string, string>();
+  if (config.tools?.length) {
+    for (const tool of config.tools) {
+      const wireName = normalizeToolNameForCopilot(tool.name);
+      if (allWireNames.has(wireName)) {
+        const first = allWireNames.get(wireName)!;
+        throw new Error(
+          `Tool name collision: "${tool.name}" and "${first}" both normalize to wire name "${wireName}". ` +
+          `Rename one of these tools to avoid the conflict.`
+        );
+      }
+      allWireNames.set(wireName, tool.name);
+      if (wireName !== tool.name) {
+        wireToCanonical.set(wireName, tool.name);
+      }
+    }
+  }
+
+  const result: SquadSessionConfig = { ...config };
+
+  if (config.tools?.length) {
+    result.tools = config.tools.map(tool => ({
+      ...tool,
+      name: normalizeToolNameForCopilot(tool.name),
+    }));
+  }
+
+  if (config.availableTools) {
+    result.availableTools = config.availableTools.map(normalizeToolNameForCopilot);
+  }
+
+  if (config.excludedTools) {
+    result.excludedTools = config.excludedTools.map(normalizeToolNameForCopilot);
+  }
+
+  if (config.customAgents) {
+    result.customAgents = config.customAgents.map(agent => ({
+      ...agent,
+      tools: agent.tools?.map(normalizeToolNameForCopilot) ?? agent.tools,
+    }));
+  }
+
+  // Wrap onPreToolUse / onPostToolUse hooks so callers always receive canonical
+  // dotted names (e.g. `memory.classify`) even though the SDK invokes handlers
+  // using the underscore wire name (e.g. `memory_classify`).
+  if (config.hooks && wireToCanonical.size > 0) {
+    result.hooks = wrapHooksWithCanonicalNames(config.hooks, wireToCanonical);
+  }
+
+  return result;
+}
+
+/**
+ * Wraps `onPreToolUse` and `onPostToolUse` in a `SquadSessionHooks` object to
+ * translate wire-format tool names back to their canonical dotted equivalents
+ * before the user-supplied handler is called.
+ *
+ * All other hook types are passed through unchanged.
+ */
+function wrapHooksWithCanonicalNames(
+  hooks: NonNullable<SquadSessionConfig['hooks']>,
+  wireToCanonical: Map<string, string>
+): NonNullable<SquadSessionConfig['hooks']> {
+  const result = { ...hooks };
+
+  if (hooks.onPreToolUse) {
+    const original = hooks.onPreToolUse;
+    result.onPreToolUse = (input, invocation) => {
+      const canonical = wireToCanonical.get(input.toolName) ?? input.toolName;
+      return original({ ...input, toolName: canonical }, invocation);
+    };
+  }
+
+  if (hooks.onPostToolUse) {
+    const original = hooks.onPostToolUse;
+    result.onPostToolUse = (input, invocation) => {
+      const canonical = wireToCanonical.get(input.toolName) ?? input.toolName;
+      return original({ ...input, toolName: canonical }, invocation);
+    };
+  }
+
+  return result;
+}
+
 /**
  * Adapts @github/copilot-sdk CopilotSession to our SquadSession interface.
  * Maps sendMessage() → send(), off() via unsubscribe tracking, close() → destroy().
@@ -478,24 +611,12 @@ export class SquadClient {
       }
 
       try {
-        // Normalize legacy 'approved' permission kind → 'approve-once' before forwarding to SDK
-        const normalizedConfig: SquadSessionConfig = config.onPermissionRequest
-          ? {
-              ...config,
-              onPermissionRequest: async (
-                req: Parameters<NonNullable<SquadSessionConfig['onPermissionRequest']>>[0],
-                inv: Parameters<NonNullable<SquadSessionConfig['onPermissionRequest']>>[1],
-              ) => {
-                const result = await config.onPermissionRequest!(req, inv);
-                if (result.kind === 'approved') {
-                  return { ...result, kind: 'approve-once' as const };
-                }
-                return result;
-              },
-            }
-          : config;
+        // Normalize dotted tool names (e.g. `memory.classify` → `memory_classify`)
+        // before forwarding to the Copilot SDK external-tool API, which enforces
+        // ^[a-zA-Z0-9_-]+$ on external tool definition names.
+        const normalizedConfig = normalizeToolsInConfig(config);
         // Cast config to handle SDK version differences in SessionConfig type
-        const session = await this.client.createSession(normalizedConfig as unknown as Parameters<typeof this.client.createSession>[0]);
+        const session = await this.client.createSession(normalizedConfig as Parameters<typeof this.client.createSession>[0]);
         const result = new CopilotSessionAdapter(session);
         if (result.sessionId) {
           span.setAttribute('session.id', result.sessionId);
@@ -571,8 +692,10 @@ export class SquadClient {
       }
 
       try {
+        // Normalize dotted tool names before forwarding to the Copilot SDK.
+        const normalizedConfig = normalizeToolsInConfig(config);
         // Cast config to handle SDK version differences in ResumeSessionConfig type
-        const session = await this.client.resumeSession(sessionId, config as unknown as Parameters<typeof this.client.resumeSession>[1]);
+        const session = await this.client.resumeSession(sessionId, normalizedConfig as unknown as Parameters<typeof this.client.resumeSession>[1]);
         return new CopilotSessionAdapter(session);
       } catch (error) {
         if (this.shouldAttemptReconnect(error)) {
