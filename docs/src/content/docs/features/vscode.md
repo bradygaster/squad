@@ -241,5 +241,5 @@ const decision = await coordinator.route(userTask, {
 - [Getting Started](../get-started/installation.md) — Installation and setup guide
 - [Parallel Execution](parallel-execution.md) — How Squadron fan-outs agents
 - [Model Selection](model-selection.md) — Cost-first routing strategy
-- [Interactive Shell](../guide/shell.md) — Shell commands and features
+- [CLI Reference](../reference/cli.md) — Shell commands and features
 - [SDK API Reference](../reference/api-reference.md) — Full SDK type and function reference
