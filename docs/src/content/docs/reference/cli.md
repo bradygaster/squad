@@ -118,7 +118,7 @@ squad start --tunnel --yolo
 squad start --tunnel --model gpt-4 --no-config
 ```
 
-For details on architecture, security, mobile keyboard, and troubleshooting, see [Remote Control Guide](../features/remote-control.md).
+For details on architecture, security, mobile keyboard, and troubleshooting, see [Remote Control Guide](../features/squad-rc.md).
 
 ---
 

@@ -258,6 +258,6 @@ All consultations are tracked in your personal squad at `consultations/{project}
 
 ## Next Steps
 
-- **Set up a personal squad:** See [Your Personal Squad](../guide/personal-squad.md) for initial setup with `squad init --global`
+- **Set up a personal squad:** See [Team Setup](../features/team-setup.md) for initial setup with `squad init --global`
 - **Learn about sharing:** See [Export & Import](./export-import.md) for portable team snapshots
 - **Upstream inheritance:** See [Upstream Inheritance](./upstream-inheritance.md) for knowledge sharing across teams

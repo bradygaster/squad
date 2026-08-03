@@ -853,6 +853,12 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
     filesUpdated.push(...builtinAgents);
   }
 
+  const userOwned = ensureUserOwnedTemplates(dest, templatesDir);
+  if (userOwned.length > 0) {
+    success(`installed ${userOwned.length} missing user-owned template(s): ${userOwned.join(', ')}`);
+    filesUpdated.push(...userOwned);
+  }
+
   const skillMigration = migrateLegacyCopilotSkills(dest);
   if (skillMigration.migrated.length > 0) {
     success(`migrated ${skillMigration.migrated.length} skill(s) from .copilot/skills/ → .github/skills/`);
@@ -1021,6 +1027,39 @@ export function ensureBuiltinAgents(dest: string, templatesDir: string): string[
     }
   }
 
+  return created;
+}
+
+/**
+ * Install user-owned template files that are missing on disk.
+ *
+ * Iterates TEMPLATE_MANIFEST entries with `overwriteOnUpgrade: false` and
+ * copies each source template to its destination only if the destination
+ * does not yet exist.  Existing user-customized files are never touched.
+ *
+ * Called during both `squad init` (post-SDK scaffolding) and `squad upgrade`
+ * (via runEnsureChecks) so that newly-added user-owned templates are installed
+ * for existing squads on upgrade without overwriting any prior customization.
+ */
+export function ensureUserOwnedTemplates(dest: string, templatesDir: string): string[] {
+  const created: string[] = [];
+  const squadDir = path.join(dest, '.squad');
+  const userOwned = TEMPLATE_MANIFEST.filter(f => !f.overwriteOnUpgrade && !f.source.startsWith('skills/'));
+
+  for (const entry of userOwned) {
+    const srcPath = path.join(templatesDir, entry.source);
+    // Destination paths can be relative to .squad/ or can use '../' for repo root
+    const destPath = entry.destination.startsWith('../')
+      ? path.join(dest, entry.destination.slice(3))
+      : path.join(squadDir, entry.destination);
+
+    if (!storage.existsSync(srcPath)) continue;
+    if (storage.existsSync(destPath)) continue;
+
+    storage.mkdirSync(path.dirname(destPath), { recursive: true });
+    storage.copySync(srcPath, destPath);
+    created.push(entry.destination);
+  }
   return created;
 }
 
