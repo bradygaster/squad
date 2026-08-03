@@ -25,9 +25,9 @@ function docsBuildSkipReason(): string | null {
 // Expected content directories in src/content/docs/
 const EXPECTED_GET_STARTED = ['installation', 'first-session', 'five-minute-start', 'choose-your-interface', 'migration'];
 
-const EXPECTED_GUIDES = ['build-autonomous-agent', 'building-extensions', 'building-resilient-agents', 'contributing', 'contributors', 'extensibility', 'faq', 'github-auth-setup', 'sample-prompts', 'tips-and-tricks'];
+const EXPECTED_GUIDES = ['agent-framework-integration', 'build-autonomous-agent', 'building-extensions', 'building-resilient-agents', 'contributing', 'contributors', 'extensibility', 'faq', 'github-auth-setup', 'sample-prompts', 'tips-and-tricks'];
 
-const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
+const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary', 'container-image', 'state-backend-selection'];
 
 const EXPECTED_SCENARIOS = [
   'aspire-dashboard',
@@ -55,6 +55,10 @@ const EXPECTED_SCENARIOS = [
   'team-state-storage',
   'troubleshooting',
   'upgrading',
+  'azure-container-apps',
+  'aks-deployment',
+  'production-observability',
+  'production-troubleshooting',
 ];
 
 const EXPECTED_FEATURES = [
@@ -88,6 +92,7 @@ const EXPECTED_FEATURES = [
   'skills',
   'storage-provider',
   'squad-rc',
+  'security-hardening',
   'streams',
   'team-setup',
   'upstream-inheritance',
