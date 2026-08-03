@@ -317,3 +317,12 @@ docker rm aspire-dashboard
 - [Squad SDK Reference](../reference/sdk.md) — detailed API documentation
 
 Aspire pairs perfectly with Squad: **watch your agents work in real time, catch performance issues early, and prove to yourself (and your team) that AI agents are deterministic and safe.**
+
+---
+
+## Taking telemetry to production
+
+`squad aspire` and the Aspire Dashboard are **local development tools**. They are not designed for production cluster deployments. When you move to Kubernetes or Azure Container Apps, you need a real OTLP collector and a production-grade backend.
+
+- **[Production Observability](./production-observability)** — OTLP flow from Squad containers to Azure Monitor / Application Insights, Managed Grafana, and Log Analytics.
+- **[Production Troubleshooting Runbook](./production-troubleshooting)** — Diagnosing "no traces appear" and other production observability failures.
