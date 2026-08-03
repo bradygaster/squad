@@ -299,10 +299,18 @@ spec:
 
           # Squad exposes no HTTP health endpoints (see #1577).
           # Kubernetes restarts exited containers automatically.
-          # Use an exec process-check probe if your cluster policy requires one:
+          # If your cluster policy requires an exec probe, use Node.js (present in
+          # node:22-alpine) to check /proc/1/status. This is a shallow PID-1
+          # existence check only — not a readiness guarantee. See #1577 for the
+          # tracked HTTP health endpoint implementation.
           livenessProbe:
             exec:
-              command: ["pgrep", "-f", "squad"]
+              command:
+                - node
+                - -e
+                - |
+                  const fs = require('fs');
+                  fs.accessSync('/proc/1/status');
             initialDelaySeconds: 15
             periodSeconds: 30
             failureThreshold: 3
@@ -591,7 +599,7 @@ Common causes:
 | Remote dispatch (`--remote` flag for webhook-triggered runs) | RFC — [#1189](https://github.com/bradygaster/squad/issues/1189) |
 | External state backend safety for multi-replica writes | Design — [#1402](https://github.com/bradygaster/squad/issues/1402) |
 | FSStorageProvider rootDir bug (no env-var override; set `rootDir` explicitly in `config.json`) | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) |
-| HTTP health/readiness endpoints | Planned — [#1577](https://github.com/bradygaster/squad/issues/1592) |
+| HTTP health/readiness endpoints | Planned — [#1577](https://github.com/bradygaster/squad/issues/1577) |
 | Helm chart for Squad (community request) | Not planned in this issue — contributions welcome |
 
 ---

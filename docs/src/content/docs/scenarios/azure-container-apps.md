@@ -350,7 +350,7 @@ az containerapp identity show \
 
 **Symptom:** First issue pickup after scale-from-zero is slow (15–45 s typical).
 
-- This is expected behavior — Squad has no readiness endpoint yet (see [#1577](https://github.com/bradygaster/squad/issues/1592)). ACA restarts exited containers automatically; no HTTP probe is needed.
+- This is expected behavior — Squad has no readiness endpoint yet (see [#1577](https://github.com/bradygaster/squad/issues/1577)). ACA restarts exited containers automatically; no HTTP probe is needed.
 - Set `--min-replicas 1` to keep one warm replica if latency matters.
 - Use `node:22-alpine` base image (not `node:22`) for a smaller, faster startup.
 
@@ -371,7 +371,7 @@ az containerapp identity show \
 | `--remote` dispatch (webhook-triggered issue execution) | RFC — [#1189](https://github.com/bradygaster/squad/issues/1189) |
 | External state gap for multi-replica deployments | Design — [#1402](https://github.com/bradygaster/squad/issues/1402) |
 | FSStorageProvider rootDir bug (no env-var override; set `rootDir` in `config.json`) | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) |
-| HTTP health/readiness endpoints | Planned — [#1577](https://github.com/bradygaster/squad/issues/1592) |
+| HTTP health/readiness endpoints | Planned — [#1577](https://github.com/bradygaster/squad/issues/1577) |
 | ACA Dynamic Sessions / Sandbox execution | Planned — [#1564](https://github.com/bradygaster/squad/issues/1564) |
 
 ---
