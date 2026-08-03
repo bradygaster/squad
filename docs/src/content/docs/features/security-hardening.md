@@ -284,22 +284,26 @@ See [Agent Framework Integration](/squad/docs/guide/agent-framework-integration/
 Squad's `HookPipeline` intercepts tool calls before and after execution. Use pre-hooks to enforce security policy at the tool layer, independent of the agent's prompt instructions — hooks are code; prompts can be ignored.
 
 ```typescript
-import { HookPipeline, PreToolUseHook } from '@bradygaster/squad-sdk';
+import { HookPipeline, PreToolUseHook, PreToolUseContext, PreToolUseResult } from '@bradygaster/squad-sdk';
 
 // Block writes outside .squad/
-const writeGuardHook: PreToolUseHook = async (toolName, params, context) => {
-  if (toolName === 'write_file') {
-    const target = params.path as string;
-    if (!target.startsWith('.squad/') && !target.startsWith('/app/.squad/')) {
+// PreToolUseHook signature: (ctx: PreToolUseContext) => PreToolUseResult | Promise<PreToolUseResult>
+const writeGuardHook: PreToolUseHook = (ctx: PreToolUseContext): PreToolUseResult => {
+  const writeTools = ['edit', 'create', 'write_file', 'create_file'];
+  if (writeTools.includes(ctx.toolName)) {
+    const target = (ctx.arguments as { path?: string }).path ?? '';
+    if (target && !target.startsWith('.squad/') && !target.startsWith('/app/.squad/')) {
       return { action: 'block', reason: `Write outside .squad/ denied: ${target}` };
     }
   }
   return { action: 'allow' };
 };
 
-const pipeline = new HookPipeline();
-pipeline.addPreHook(writeGuardHook);
+const pipeline = new HookPipeline({ allowedWritePaths: ['.squad/**'] });
+pipeline.addPreToolHook(writeGuardHook);
 ```
+
+> **Source:** `PreToolUseContext` properties (`toolName`, `arguments`, `agentName`, `sessionId`) and `addPreToolHook` method are verified against [`packages/squad-sdk/src/hooks/index.ts`](https://github.com/bradygaster/squad/blob/dev/packages/squad-sdk/src/hooks/index.ts).
 
 See [Custom Tools & Hooks](/squad/docs/reference/tools-and-hooks/) for the full `HookPipeline` API.
 
@@ -431,7 +435,7 @@ Squad emits structured spans when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Security
 | Tool calls | Tool name, parameters, agent ID |
 | Agent lifecycle | Session start/stop, agent identity |
 
-Route these spans to Azure Monitor / Log Analytics for retention and alerting. See [Azure Monitor integration](/squad/docs/features/enterprise-platforms/) for configuration.
+Route these spans to Azure Monitor / Log Analytics for retention and alerting. See [Production Observability](/squad/docs/scenarios/production-observability/) for OTEL collector wiring and Azure Monitor alert configuration.
 
 ### Recommended security alerts
 
