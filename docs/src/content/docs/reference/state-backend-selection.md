@@ -120,20 +120,11 @@ git fetch origin squad-state:squad-state
 
 ## Known bug: FSStorageProvider `rootDir` (#1555)
 
-> ⚠️ **Open bug [#1555](https://github.com/bradygaster/squad/issues/1555):** `FSStorageProvider` resolves state paths relative to the Node.js process working directory rather than the volume mount path when `rootDir` is not set in `config.json`. This causes state writes to go to the wrong path when the process `cwd` does not match `/app/.squad/`.
+> ⚠️ **Open bug [#1555](https://github.com/bradygaster/squad/issues/1555):** `FSStorageProvider` is constructed without a `rootDir` argument in `resolveSquadState()`. All relative state keys resolve against the Node.js process working directory (the repo root) rather than `.squad/`, silently creating a shadow state tree that diverges from the authoritative `.squad/` copy agents actually read.
 >
-> **Workaround:** Explicitly set `rootDir` in `.squad/config.json`:
+> **There is no configuration-level workaround.** Because `FSStorageProvider` is constructed with zero arguments regardless of any user configuration, setting `rootDir` in `config.json` has no effect — the constructor call ignores it. This must be fixed in the SDK itself ([#1555](https://github.com/bradygaster/squad/issues/1555)).
 >
-> ```json
-> {
->   "version": 1,
->   "teamRoot": ".",
->   "stateBackend": "local",
->   "rootDir": "/app/.squad"
-> }
-> ```
->
-> This ensures Squad resolves state paths against the correct directory regardless of the process working directory. Track [#1555](https://github.com/bradygaster/squad/issues/1555) for a fix.
+> **Until #1555 is resolved:** Run only a single Squad replica. Avoid deployment paths where the MCP server process `cwd` differs from the volume mount path. Track [#1555](https://github.com/bradygaster/squad/issues/1555) for the fix.
 
 ---
 

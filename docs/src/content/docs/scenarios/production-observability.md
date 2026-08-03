@@ -8,7 +8,7 @@ order: 26
 
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
-> 🔗 **Related:** [Aspire Dashboard](./aspire-dashboard) (local dev telemetry) · [Container Image — Env Var Contract](/squad/docs/reference/container-image/) · [#1144](https://github.com/bradygaster/squad/issues/1144) (embedded-host telemetry — tracked separately)
+> 🔗 **Related:** [Aspire Dashboard](./aspire-dashboard) (local dev telemetry) · [Production Troubleshooting Runbook](./production-troubleshooting) · [Container Image — Env Var Contract](/squad/docs/reference/container-image/) · [#1144](https://github.com/bradygaster/squad/issues/1144) (embedded-host telemetry — tracked separately)
 
 ---
 
@@ -205,8 +205,9 @@ Recommended alerts once traces are flowing to Azure Monitor or Grafana:
 
 | Signal | Recommended threshold | Alert type |
 |---|---|---|
-| `squad.agent.duration` p95 > 5 minutes | Warning | Metric alert |
-| `squad.issue.dispatch.errors` rate > 5/min | Critical | Log alert |
+| `squad.agent.duration` p95 > 5 minutes | Warning | Metric alert (histogram) |
+| `squad.agent.errors` rate > 5/min | Critical | Metric alert (counter) |
+| `squad.sessions.errors` rate > 5/min | Warning | Metric alert (counter) |
 | Pod OOM restarts > 2 in 10 min | Critical | Container Insights alert |
 | GitHub API 401 errors in structured logs | Critical | Log alert |
 | No spans received from service in 10 min | Warning | Availability alert |
@@ -217,7 +218,7 @@ Recommended alerts once traces are flowing to Azure Monitor or Grafana:
 
 When Kubernetes sends `SIGTERM`, Squad begins graceful shutdown. The default pod `terminationGracePeriodSeconds` is 30 seconds. If an agent is mid-task, in-flight work may be interrupted. Squad does not currently checkpoint in-progress tasks before shutdown.
 
-Mitigation: Set `terminationGracePeriodSeconds: 120` in your Deployment spec to give long-running agents time to finish. There is no guarantee all work completes — monitor `squad.agent.interrupted` spans in your telemetry backend to measure the impact.
+Mitigation: Set `terminationGracePeriodSeconds: 120` in your Deployment spec to give long-running agents time to finish. There is no guarantee all work completes — monitor `squad.coordinator.shutdown` spans and the `squad.agent.errors` counter in your telemetry backend to assess shutdown impact. Squad does not emit an interrupted-specific span; shutdown scope is visible only through these existing signals.
 
 ---
 

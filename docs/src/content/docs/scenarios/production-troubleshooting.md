@@ -47,7 +47,7 @@ Is the state backend accessible?
 Root causes in order of frequency:
 1. **KEDA not scaling** — queue depth below threshold or scaler unreachable
 2. **Wrong or missing env vars** — `GITHUB_TOKEN` absent or wrong scope
-3. **State backend inaccessible** — PVC mount failure or `rootDir` mismatch (#1555)
+3. **State backend inaccessible** — PVC mount failure or `FSStorageProvider` path bug (#1555)
 4. **GitHub API 401** — expired token, missing scope, or org SSO not enabled
 5. **No qualifying labels** — issues exist but labels don't match routing rules
 6. **Image pull failure** — ACR credentials expired or image tag not found
@@ -154,21 +154,13 @@ If the PVC mount is missing, the pod is writing state to the container's ephemer
 
 ### FSStorageProvider rootDir bug (#1555)
 
-If `kubectl exec -n squad <pod> -- ls /app/.squad` shows the correct files but Squad cannot find them, the process `cwd` does not match the volume mount path.
+If Squad logs show state files at the repo root (e.g., `agents/`, `log/`, `decisions.md` appearing at `/app/` rather than `/app/.squad/`), this is [#1555](https://github.com/bradygaster/squad/issues/1555): `FSStorageProvider` is constructed without a `rootDir` argument, so all state keys resolve against the process `cwd` (the repo root) instead of `.squad/`.
 
-**Workaround:**
+> ⚠️ **There is no configuration-level workaround for #1555.** Setting `rootDir` in `config.json` has no effect — `FSStorageProvider` ignores constructor arguments in the affected code path. This must be fixed in the SDK itself.
+>
+> **Mitigation until #1555 is resolved:** Run only a single Squad replica. Avoid deployment shapes where the MCP server process `cwd` differs from the intended state path. Track [#1555](https://github.com/bradygaster/squad/issues/1555) for status.
 
-```json
-// /app/.squad/config.json
-{
-  "version": 1,
-  "teamRoot": ".",
-  "stateBackend": "local",
-  "rootDir": "/app/.squad"
-}
-```
-
-See [State Backend Selection — Known bug #1555](/squad/docs/reference/state-backend-selection/#known-bug-fsstorageprovider-rootdir-1555) for details.
+See [State Backend Selection — Known bug #1555](/squad/docs/reference/state-backend-selection/#known-bug-fsstorageprovider-rootdir-1555) for background.
 
 ### `squad-state` branch push rejected (two-layer / orphan)
 
@@ -319,5 +311,5 @@ Open an issue at [bradygaster/squad](https://github.com/bradygaster/squad/issues
 |---|---|
 | [#1144](https://github.com/bradygaster/squad/issues/1144) | Embedded host (copilot-sdk) telemetry not available in production — agents must use Squad CLI container mode |
 | [#1402](https://github.com/bradygaster/squad/issues/1402) | External state backend for multi-pod deployments — not yet GA |
-| [#1555](https://github.com/bradygaster/squad/issues/1555) | FSStorageProvider `rootDir` bug — workaround documented above |
+| [#1555](https://github.com/bradygaster/squad/issues/1555) | FSStorageProvider `rootDir` bug — no configuration-level workaround; run single replica and track issue for fix |
 | [#1577](https://github.com/bradygaster/squad/issues/1577) | HTTP health/readiness endpoints — not yet implemented |
