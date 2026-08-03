@@ -194,6 +194,26 @@ describe('Watch Capabilities', () => {
         expect(prompt).not.toContain('Ralph, Go!');
       });
 
+      it('checks .squad/ralph-instructions.md inside teamRoot', () => {
+        // Verify that existsSync is called with the correct path so that the
+        // TEMPLATE_MANIFEST destination ('ralph-instructions.md' under .squad/)
+        // matches the lookup in execute.ts.
+        mockFsExistsSync.mockImplementation((p: unknown) => {
+          return typeof p === 'string' && p.endsWith('.squad/ralph-instructions.md');
+        });
+        const issues: ExecutableWorkItem[] = [
+          { number: 1, title: 'Task', labels: [{ name: 'squad' }], assignees: [] },
+        ];
+        const prompt = buildAgentPrompt(issues, '/some/repo');
+        expect(mockFsExistsSync).toHaveBeenCalledWith(
+          expect.stringContaining('.squad/ralph-instructions.md'),
+        );
+        // Path must be constructed from teamRoot, not a global path
+        const [calledPath] = mockFsExistsSync.mock.calls[0] as [string];
+        expect(calledPath).toContain('/some/repo');
+        expect(prompt).toContain('Ralph, Go!');
+      });
+
       it('formats labels and assignees in issue list', () => {
         const issues: ExecutableWorkItem[] = [{
           number: 42,

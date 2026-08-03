@@ -15,7 +15,8 @@ import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquad
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { resolveSquadStateMcpSpec } from './mcp-spec.js';
-import { describeMcpSpec } from './upgrade.js';
+import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
+import { getTemplatesDir } from './templates.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 import {
   readTeamMd,
@@ -325,6 +326,17 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // ran. Drop the resolution cache so the new directory is observed
   // immediately instead of after the 5-second TTL.
   clearResolveSquadCache();
+
+  // Install user-owned template files that are not yet present on disk.
+  // These were not created by sdkInitSquad (which owns ceremonies.md, routing.md, etc.
+  // via the SDK templates path).  ensureUserOwnedTemplates reads TEMPLATE_MANIFEST
+  // entries with overwriteOnUpgrade: false and copies each one only if absent.
+  try {
+    const templatesDir = getTemplatesDir();
+    ensureUserOwnedTemplates(dest, templatesDir);
+  } catch {
+    // Non-fatal: if templates dir is not found (unusual install), skip silently.
+  }
 
   // ── Personal squad linking ─────────────────────────────────────────
   // When a personal squad directory exists and this is a repo init (not global),

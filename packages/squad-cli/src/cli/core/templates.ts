@@ -168,6 +168,15 @@ export const TEMPLATE_MANIFEST: TemplateFile[] = [
   
   // User-owned files (never overwrite)
   {
+    // ralph-instructions.md is read by execute.ts when `squad watch --execute` is run.
+    // User-owned so customizations survive upgrade.  Install path must match the
+    // existsSync lookup in execute.ts: path.join(teamRoot, '.squad', 'ralph-instructions.md').
+    source: 'ralph-instructions.md',
+    destination: 'ralph-instructions.md',
+    overwriteOnUpgrade: false,
+    description: 'Ralph autonomous-execution instructions (user-customizable override)',
+  },
+  {
     source: 'ceremonies.md',
     destination: 'ceremonies.md',
     overwriteOnUpgrade: false,
