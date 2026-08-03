@@ -41,6 +41,7 @@
     "benchmarkfn", "filterissuesbystream", "filterissuesbyworkstream", "Recognised", "recognised",
     "squadified", "TOCTOU", "unflushed", "unparseable", "pluggability",
     "PKCE", "MSAL", "AKIA", "runas",
+    "eastus", "eastus2", "kubeconfig", "healthz", "readyz",
     "typoo"
   ],
   "dictionaries": ["en_US", "typescript", "node", "npm", "bash"],
