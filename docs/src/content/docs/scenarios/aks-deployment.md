@@ -291,36 +291,20 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name   # unique per pod replica
 
-            - name: SQUAD_HEALTH_PORT
-              value: "3000"
-
-            - name: SQUAD_STATE_ROOT_DIR
-              value: "/app/.squad"           # workaround for #1555
-
             # Optional — OpenTelemetry
             # - name: OTEL_EXPORTER_OTLP_ENDPOINT
             #   value: "http://otel-collector.monitoring:4317"
             # - name: OTEL_SERVICE_NAME
             #   value: "squad-agent"
 
-          ports:
-            - containerPort: 3000
-              name: health
-
+          # Squad exposes no HTTP health endpoints (see #1577).
+          # Kubernetes restarts exited containers automatically.
+          # Use an exec process-check probe if your cluster policy requires one:
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: 3000
+            exec:
+              command: ["pgrep", "-f", "squad"]
             initialDelaySeconds: 15
             periodSeconds: 30
-            failureThreshold: 3
-
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: 3000
-            initialDelaySeconds: 10
-            periodSeconds: 10
             failureThreshold: 3
 
           securityContext:
@@ -423,6 +407,12 @@ kubectl get scaledobject -n squad
 ```
 
 Reference: [KEDA + AKS workload identity](https://learn.microsoft.com/azure/aks/keda-workload-identity)
+
+> **KEDA scaler PAT rotation and asymmetry:** The `TriggerAuthentication` above references `squad-github-token` — a Kubernetes Secret holding a GitHub PAT used by KEDA to poll the issue queue. This token is **separate** from the `GITHUB_TOKEN` the Squad pod itself uses to act on issues. They require independent rotation:
+> - **Scaler PAT** — rotate by updating the Kubernetes Secret and restarting the KEDA operator or re-applying the `TriggerAuthentication`. KEDA does not hot-reload secrets.
+> - **Agent token** — rotate via the CSI driver (Key Vault auto-rotation picks up the new version on the next CSI mount refresh cycle, without pod restart).
+>
+> Minimum scaler PAT scopes: `repo` (read issues/labels). The agent token needs the full scope set documented in the [Container Image contract](/squad/docs/reference/container-image/).
 
 ---
 
@@ -600,7 +590,8 @@ Common causes:
 |---|---|
 | Remote dispatch (`--remote` flag for webhook-triggered runs) | RFC — [#1189](https://github.com/bradygaster/squad/issues/1189) |
 | External state backend safety for multi-replica writes | Design — [#1402](https://github.com/bradygaster/squad/issues/1402) |
-| FSStorageProvider rootDir bug (set `SQUAD_STATE_ROOT_DIR` as workaround) | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) |
+| FSStorageProvider rootDir bug (no env-var override; set `rootDir` explicitly in `config.json`) | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) |
+| HTTP health/readiness endpoints | Planned — [#1577](https://github.com/bradygaster/squad/issues/1592) |
 | Helm chart for Squad (community request) | Not planned in this issue — contributions welcome |
 
 ---
@@ -613,7 +604,7 @@ Common causes:
 - [AKS security concepts](https://learn.microsoft.com/azure/aks/concepts-security) — Microsoft Learn
 - *Scaling AI Agents on Kubernetes with KEDA and Workload Identity* — Tamir Dresher, March 2026. Describes a reference deployment pattern for AI agent fleets on AKS using Helm, KEDA ScaledObjects, and Azure Workload Identity federation. The Squad configuration and KEDA trigger patterns in this runbook are informed by and consistent with that approach. [tamirdresher.com/blog/2026/03/26/scaling-ai-part8-pathfinder](https://www.tamirdresher.com/blog/2026/03/26/scaling-ai-part8-pathfinder)
 - [squad-on-aks reference repository](https://github.com/tamirdresher/squad-on-aks) — Tamir Dresher's Helm + KEDA + Workload Identity reference repo, demonstrating the full deployment topology this runbook is based on.
-- [Container Image contract](/squad/docs/reference/container-image/) — environment variables, Dockerfile, health endpoints
+- [Container Image contract](/squad/docs/reference/container-image/) — environment variables, Dockerfile, process lifecycle
 - [KEDA Autoscaling](/squad/docs/features/keda-scaling/) — Squad KEDA ScaledObject configuration
 - [Dual-Mode Deployment](/squad/docs/features/dual-mode-deployment/) — `SQUAD_DEPLOYMENT_MODE` and `SQUAD_POD_ID`
 - [State Backends](/squad/docs/features/state-backends/) — choosing and migrating state backends

@@ -164,10 +164,9 @@ Reference: [Key Vault secret references in Azure Container Apps](https://learn.m
 ## Step 4 — Deploy the Container App
 
 ```bash
-KV_SECRET_URI=$(az keyvault secret show \
-  --vault-name $KEYVAULT_NAME \
-  --name github-token \
-  --query id -o tsv)
+# Use a versionless URI so ACA automatically picks up rotated secrets.
+# az keyvault secret show returns a versioned URI — strip the version segment.
+KV_SECRET_URI="https://${KEYVAULT_NAME}.vault.azure.net/secrets/github-token"
 
 az containerapp create \
   --name $APP_NAME \
@@ -185,12 +184,12 @@ az containerapp create \
   --cpu 0.5 \
   --memory 1.0Gi \
   --min-replicas 0 \
-  --max-replicas 5 \
-  --ingress internal \
-  --target-port 3000
+  --max-replicas 5
 ```
 
-> **No public ingress by default.** Squad agents poll GitHub and do not need to receive inbound HTTP traffic. Setting `--ingress internal` (or omitting ingress entirely) restricts access to the ACA environment. If you add a webhook-triggered scaler or health dashboard in the future, switch to `--ingress external`.
+> **Versionless URI and rotation:** Using the versionless secret URI (`…/secrets/<name>` with no version segment) means ACA will resolve the latest active version of the secret on each new revision. If you rotate your GitHub token in Key Vault, create a new container app revision to pick up the new value. Using a versioned URI pins the secret and will not pick up rotations automatically.
+
+> **No ingress required.** Squad agents poll GitHub; they do not need to receive inbound HTTP traffic. Omit `--ingress` (or use `--ingress internal`) to restrict access to the ACA environment.
 
 ---
 
@@ -250,47 +249,13 @@ az containerapp update \
 
 Reference: [KEDA scaling rules in Azure Container Apps](https://learn.microsoft.com/azure/container-apps/scale-app?pivots=azure-cli#custom)
 
+> **KEDA scaler PAT rotation:** The KEDA external scaler uses `github-token` (a GitHub PAT) to poll the issue queue — this is a separate credential from the Squad agent's own `GITHUB_TOKEN` (which can also be a PAT). Both tokens need to be rotated independently. When you rotate the scaler's PAT in Key Vault and update the ACA secret, redeploy the scaler container to pick up the new value. There is no automatic token refresh in the current scaler implementation. See [KEDA Autoscaling](/squad/docs/features/keda-scaling/) for scaler configuration details.
+
 ### Scaling to zero — cold start tradeoffs
 
 Setting `--min-replicas 0` eliminates idle cost but introduces a cold start penalty (typically 15–45 seconds for a Node.js container). During a cold start, issues that arrive are queued by KEDA and picked up when the first replica becomes ready.
 
 For time-sensitive workloads, set `--min-replicas 1` to keep one warm replica.
-
----
-
-## Step 6 — Health Probes
-
-ACA supports startup, liveness, and readiness probes. Squad exposes `/healthz` (liveness) and `/readyz` (readiness) when `SQUAD_HEALTH_PORT` is set.
-
-```bash
-az containerapp update \
-  --name $APP_NAME \
-  --resource-group $RESOURCE_GROUP \
-  --env-vars "SQUAD_HEALTH_PORT=3000" \
-```
-
-Health probes are configured in the app's YAML revision spec. Use `az containerapp show --name $APP_NAME --resource-group $RESOURCE_GROUP -o yaml` to export, then apply:
-
-```yaml
-# Excerpt from container spec in revision YAML
-probes:
-  - type: liveness
-    httpGet:
-      path: /healthz
-      port: 3000
-    initialDelaySeconds: 10
-    periodSeconds: 30
-    failureThreshold: 3
-  - type: readiness
-    httpGet:
-      path: /readyz
-      port: 3000
-    initialDelaySeconds: 5
-    periodSeconds: 10
-    failureThreshold: 3
-```
-
-Reference: [Health probes in Azure Container Apps](https://learn.microsoft.com/azure/container-apps/health-probes)
 
 ---
 
@@ -381,13 +346,13 @@ az containerapp identity show \
 - Confirm the `targetQueueLength` is below the current issue count.
 - Check the ACA scaling logs in Log Analytics: `az monitor log-analytics query --workspace $LOG_WORKSPACE_ID --analytics-query "ContainerAppConsoleLogs_CL | where ContainerName_s == 'squad-agent' | take 50"`
 
-### Cold start failures
+### Cold start delays
 
-**Symptom:** First request after scale-from-zero times out; KEDA marks the replica unhealthy before readiness probe passes.
+**Symptom:** First issue pickup after scale-from-zero is slow (15–45 s typical).
 
-- Increase `initialDelaySeconds` on the readiness probe.
-- Set `--min-replicas 1` to keep one warm replica.
-- Use a smaller base image (ensure `node:22-alpine` not `node:22`).
+- This is expected behavior — Squad has no readiness endpoint yet (see [#1577](https://github.com/bradygaster/squad/issues/1592)). ACA restarts exited containers automatically; no HTTP probe is needed.
+- Set `--min-replicas 1` to keep one warm replica if latency matters.
+- Use `node:22-alpine` base image (not `node:22`) for a smaller, faster startup.
 
 ### Container exits immediately
 
@@ -405,7 +370,8 @@ az containerapp identity show \
 |---|---|
 | `--remote` dispatch (webhook-triggered issue execution) | RFC — [#1189](https://github.com/bradygaster/squad/issues/1189) |
 | External state gap for multi-replica deployments | Design — [#1402](https://github.com/bradygaster/squad/issues/1402) |
-| FSStorageProvider rootDir bug | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) |
+| FSStorageProvider rootDir bug (no env-var override; set `rootDir` in `config.json`) | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) |
+| HTTP health/readiness endpoints | Planned — [#1577](https://github.com/bradygaster/squad/issues/1592) |
 | ACA Dynamic Sessions / Sandbox execution | Planned — [#1564](https://github.com/bradygaster/squad/issues/1564) |
 
 ---
@@ -416,6 +382,6 @@ az containerapp identity show \
 - [Managed identities in Azure Container Apps](https://learn.microsoft.com/azure/container-apps/managed-identity) — first-party guide
 - [KEDA scaling in Azure Container Apps](https://learn.microsoft.com/azure/container-apps/scale-app) — built-in and custom scalers
 - [Key Vault secret references](https://learn.microsoft.com/azure/container-apps/manage-secrets?tabs=azure-portal#reference-secret-from-key-vault) — secretless secret management
-- [Container Image contract](/squad/docs/reference/container-image/) — environment variables, health endpoints, Dockerfile reference
+- [Container Image contract](/squad/docs/reference/container-image/) — environment variables, Dockerfile reference, process lifecycle
 - [KEDA Autoscaling](/squad/docs/features/keda-scaling/) — Squad-specific KEDA ScaledObject configuration
 - [State Backends](/squad/docs/features/state-backends/) — choosing a backend safe for container deployments

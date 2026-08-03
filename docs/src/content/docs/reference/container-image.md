@@ -1,6 +1,6 @@
 ---
 title: Container Image — Environment Variable Contract
-description: Canonical reference for Squad container image configuration — environment variables, config/state paths, health behavior, graceful shutdown, and secret injection patterns.
+description: Canonical reference for Squad container image configuration — environment variables, config/state paths, process lifecycle, graceful shutdown, and secret injection patterns.
 order: 10
 ---
 
@@ -29,20 +29,6 @@ This page is the canonical reference for running `@bradygaster/squad-cli` in a c
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional | — | OTLP endpoint for OpenTelemetry traces and metrics (e.g., `https://otelcollector:4317`). When set, Squad emits structured spans for issue dispatch, agent lifecycle, and tool calls. |
 | `OTEL_SERVICE_NAME` | Optional | `squad-agent` | Service name reported to your OTLP collector. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Optional | — | Key-value pairs appended to every span (e.g., `deployment.environment=production,cluster=aks-eastus`). |
-| `SQUAD_LOG_LEVEL` | Optional | `info` | Minimum log level: `debug`, `info`, `warn`, `error`. |
-
-### Optional — GitHub Copilot CLI path
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `GITHUB_COPILOT_CLI_PATH` | Optional | resolved from `$PATH` | Absolute path to the `gh copilot` extension binary. Useful when the binary is installed to a non-standard location inside the image. |
-
-### Optional — state and config
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `SQUAD_CONFIG_DIR` | Optional | `.squad/` (repo root) | Override where Squad reads `.squad/` config and state. Use when the repo is volume-mounted read-only and you want writable state on a separate volume. |
-| `SQUAD_STATE_ROOT_DIR` | Optional | — | **Workaround for [#1555](https://github.com/bradygaster/squad/issues/1555) (FSStorageProvider rootDir bug).** When the `local` state backend is used with a volume-mounted `.squad/`, set this to the absolute path of the mounted directory (e.g., `/mnt/squad-state`). Without this, FSStorageProvider may write state relative to the process working directory instead of the volume mount. Remove after #1555 is resolved. |
 
 ### GitHub API scopes required
 
@@ -54,7 +40,7 @@ This page is the canonical reference for running `@bradygaster/squad-cli` in a c
 | `read:org` | Org-level label and project read access |
 | `workflow` | Trigger GitHub Actions workflows (if used) |
 
-With workload identity / OIDC (recommended for production), scopes are configured in the trust policy rather than a static token.
+> **Important:** Azure managed identity / workload identity authenticates to **Azure** services (Key Vault, ACR, etc.), not to the GitHub API. `GITHUB_TOKEN` must always be a GitHub personal access token or GitHub App token injected at runtime (via Key Vault reference or Kubernetes Secret). Workload identity does not replace it.
 
 ---
 
@@ -89,7 +75,7 @@ volumeMounts:
     mountPath: /app/.squad
 ```
 
-The config is injected at runtime from a ConfigMap or Azure Files share. Supports live config updates without rebuilding the image. Requires setting `SQUAD_STATE_ROOT_DIR` as a workaround until [#1555](https://github.com/bradygaster/squad/issues/1555) is resolved if using the `local` state backend.
+The config is injected at runtime from a ConfigMap or Azure Files share. Supports live config updates without rebuilding the image. Note that FSStorageProvider may resolve state paths relative to the process working directory rather than the volume mount when `rootDir` is not set in `config.json` — see [#1555](https://github.com/bradygaster/squad/issues/1555).
 
 > ⚠️ **Multi-replica state warning:** The `local` state backend (files on disk) is **not safe for concurrent writes** from multiple pod replicas. If you scale beyond one replica, use the `orphan` or `two-layer` state backend, or persist state to an external store. See [State Backends](/squad/docs/features/state-backends/) and [#1402](https://github.com/bradygaster/squad/issues/1402).
 
@@ -129,17 +115,11 @@ RUN npm install -g @bradygaster/squad-cli --ignore-scripts
 # Drop privileges
 USER squad
 
-# Signal handler — Squad listens for SIGTERM and drains in-flight work before
-# exiting. Default drain timeout is 30 s; override with SQUAD_DRAIN_TIMEOUT_MS.
+# Squad handles SIGTERM: drains in-flight work, then exits cleanly.
 STOPSIGNAL SIGTERM
 
-# Liveness / readiness: Squad exposes a health HTTP endpoint on port 3000
-# when SQUAD_HEALTH_PORT is set. See health probe section below.
-ENV SQUAD_HEALTH_PORT=3000
-EXPOSE 3000
-
 # GITHUB_TOKEN must be provided at runtime — never bake it into the image.
-# Preferred: workload identity; fallback: Kubernetes Secret / ACA secret.
+# Inject via Kubernetes Secret, ACA Key Vault reference, or CSI driver.
 CMD ["squad", "watch", "--execute"]
 ```
 
@@ -147,16 +127,28 @@ CMD ["squad", "watch", "--execute"]
 
 ---
 
-## Health Behavior
+## Process Lifecycle and Health
 
-Set `SQUAD_HEALTH_PORT=3000` (or any available port) to enable the built-in health HTTP server.
+Squad does not expose an HTTP health server or liveness/readiness endpoints. There is no `SQUAD_HEALTH_PORT`, `/healthz`, or `/readyz` — these are planned features tracked in [#1577](https://github.com/bradygaster/squad/issues/1592).
 
-| Endpoint | Method | Use |
-|---|---|---|
-| `/healthz` | GET | Liveness probe — returns `200 OK` when the process is running |
-| `/readyz` | GET | Readiness probe — returns `200 OK` only after Squad has finished startup and connected to the GitHub API |
+**Current container health behavior:**
+- The container is healthy as long as the `squad watch --execute` process is running.
+- If `squad` exits for any reason, the container exits. Kubernetes and ACA restart exited containers automatically via the container restart policy — this is sufficient for the current release.
+- Do **not** configure HTTP liveness or readiness probes — there is no listener and probes will always fail, crash-looping your pod.
 
-Kubernetes / ACA probe configuration is covered in the scenario pages.
+For AKS, use a `startupProbe` or `livenessProbe` based on `exec` against a process check if a probe is required by your cluster policy:
+
+```yaml
+# Minimal process-check probe (no HTTP server required)
+livenessProbe:
+  exec:
+    command: ["pgrep", "-f", "squad"]
+  initialDelaySeconds: 15
+  periodSeconds: 30
+  failureThreshold: 3
+```
+
+> **Tracking:** An explicit HTTP health/readiness contract is planned. See [#1577](https://github.com/bradygaster/squad/issues/1592) for status.
 
 ---
 
@@ -169,9 +161,7 @@ When Squad receives `SIGTERM` it:
 3. Flushes pending state to the configured backend.
 4. Exits with code `0`.
 
-The default drain timeout is **30 seconds**. Override with `SQUAD_DRAIN_TIMEOUT_MS=<ms>`. After the timeout, Squad exits with code `1` and logs incomplete work.
-
-For Kubernetes, set `terminationGracePeriodSeconds` to at least `60` to give Squad time to drain plus the container runtime overhead.
+For Kubernetes, set `terminationGracePeriodSeconds` to at least `60` to give Squad time to drain in-flight work before the container runtime forcibly terminates it.
 
 ---
 
@@ -239,7 +229,8 @@ Azure Container Apps supports [Key Vault secret references](https://learn.micros
 
 | Limitation | Status | Workaround |
 |---|---|---|
-| FSStorageProvider ignores `rootDir` when state is volume-mounted | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) | Set `SQUAD_STATE_ROOT_DIR` to the mount path |
+| FSStorageProvider may resolve state paths relative to process working directory instead of volume mount when `rootDir` is not explicit in `config.json` | Open — [#1555](https://github.com/bradygaster/squad/issues/1555) | Set `rootDir` explicitly in `.squad/config.json` to the absolute volume mount path; no env var override exists yet |
+| No HTTP health/readiness endpoints | Planned — [#1577](https://github.com/bradygaster/squad/issues/1592) | Use process-check exec probe; Kubernetes restarts exited containers automatically |
 | `local` state backend not safe for concurrent multi-replica writes | Design gap — [#1402](https://github.com/bradygaster/squad/issues/1402) | Use `orphan` or `two-layer` backend, or scale to one replica |
 | Remote dispatch (`--remote` flag) | RFC in progress — [#1189](https://github.com/bradygaster/squad/issues/1189) | Use KEDA queue-based scaling as a near-term alternative |
 
@@ -291,3 +282,4 @@ az aks update \
 - [State Backends](/squad/docs/features/state-backends/) — choosing a backend safe for multi-replica deployments
 - [Azure Container Apps deployment](../scenarios/azure-container-apps) — end-to-end ACA scenario
 - [AKS deployment runbook](../scenarios/aks-deployment) — Kubernetes scenario with workload identity and KEDA
+- [#1577](https://github.com/bradygaster/squad/issues/1592) — health/readiness endpoint product gap
