@@ -88,6 +88,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Guides',
     dir: 'guide',
     items: [
+      { title: 'Choose Your Interface', slug: 'get-started/choose-your-interface' },
       { title: 'Tips & Tricks', slug: 'guide/tips-and-tricks' },
       { title: 'Sample Prompts', slug: 'guide/sample-prompts' },
       { title: 'Recipes', slug: 'cookbook/recipes' },
