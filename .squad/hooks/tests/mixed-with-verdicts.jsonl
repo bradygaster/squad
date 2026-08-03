@@ -1,0 +1,2 @@
+{"turn_id":"sess-test-006","timestamp":"2026-07-26T20:10:00Z","mode":"Direct","task_calls_since_last_turn":0,"write_tools_used":["edit"],"domain_artifact_declared":{"value":true,"description":"inline"},"justification":"","record_type":"coordinator_turn"}
+{"record_type":"audit_verdict","verdict_id":"sess-test-006-v1","audited_turn_id":"sess-test-006","timestamp":"2026-07-26T20:10:30Z","verdict":"warn","triggered_criteria":[{"id":1,"name":"wrote-without-dispatch","explanation":"..."}],"flags":["justification_missing"]}
