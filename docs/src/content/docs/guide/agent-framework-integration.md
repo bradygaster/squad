@@ -116,6 +116,7 @@ Console.WriteLine(response.Text);
 ### Streaming
 
 ```csharp
+// Assumes host is the IHost built in the DI registration step above.
 var squad = host.Services.GetRequiredService<SquadAgent>();
 var session = await squad.CreateSessionAsync();
 
@@ -196,7 +197,15 @@ The Copilot CLI runs as a subprocess. It must be present in the deployment envir
 
 - **Local dev / CI:** `GitHub.Copilot.SDK`'s MSBuild targets copy the correct RID binary into `bin/{cfg}/{tfm}/runtimes/{rid}/native/` at build time.
 - **Container images:** Verify the `{rid}` artefact matches the container OS/arch. For Linux containers built on Windows, use `--runtime linux-x64` or equivalent.
-- **Azure Container Apps / AKS:** Set the `GITHUB_COPILOT_CLI_PATH` environment variable to the CLI binary path, or install the CLI in the container image via `npm install -g @github/copilot` (requires Node.js in the base image).
+- **Azure Container Apps / AKS:** Install the CLI in the container image (`npm install -g @github/copilot`, requires Node.js in the base image), then set `SquadAgentOptions.CliPath` at DI registration time to the absolute binary path. `CliPath` is a property on `SquadAgentOptions` — set it in your `AddSquadAgent` callback and Squad passes it to the SDK's `RuntimeConnection.ForStdio` at startup:
+
+  ```csharp
+  builder.Services.AddSquadAgent(o =>
+  {
+      o.SquadFolderPath = "/teams/main";
+      o.CliPath = "/usr/local/bin/copilot"; // absolute path inside the container
+  });
+  ```
 - **GitHub Actions:** Install the CLI in a workflow step and authenticate via a Copilot-enabled PAT or `GITHUB_TOKEN`.
 
 ---
@@ -216,7 +225,7 @@ The Copilot CLI runs as a subprocess. It must be present in the deployment envir
 
 | Error | Cause | Fix |
 |---|---|---|
-| `InvalidOperationException: Copilot runtime not found` | Native CLI binary not in output; old package version | Upgrade to `Squad.Agents.AI 0.5.6-rc1+`; if still failing, add direct `GitHub.Copilot.SDK` reference |
+| `InvalidOperationException: Copilot runtime not found` | Native CLI binary not in output; old package version | Upgrade to `Squad.Agents.AI` version 0.5.6-rc1 or later; if still failing, add direct `GitHub.Copilot.SDK` reference |
 | `GitHub Copilot CLI was not found on PATH` | `copilot` binary missing | Install from [github.com/github/copilot-cli](https://github.com/github/copilot-cli) and verify with `copilot --version` |
 | `Authentication failed` / `401` | CLI not signed in | Run `gh auth login` or `copilot auth login` |
 | `SquadFolderPath does not exist` | Path does not point to an initialized team root | Run `squad init` in the target directory |
