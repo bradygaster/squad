@@ -238,4 +238,41 @@ describe('Init / Upgrade parity', () => {
       expect(count).toBe(1);
     }
   });
+
+  // -------------------------------------------------------------------------
+  // 8. ralph-instructions.md: init installs, upgrade preserves
+  // -------------------------------------------------------------------------
+  it('init installs .squad/ralph-instructions.md', async () => {
+    await runInit(TEST_ROOT);
+    const filePath = join(TEST_ROOT, '.squad', 'ralph-instructions.md');
+    expect(existsSync(filePath)).toBe(true);
+    const content = await readFile(filePath, 'utf-8');
+    expect(content).toContain('ralph-instructions.md');
+    expect(content).toContain('squad watch --execute');
+  });
+
+  it('upgrade does not overwrite a customized .squad/ralph-instructions.md', async () => {
+    await runInit(TEST_ROOT);
+    const filePath = join(TEST_ROOT, '.squad', 'ralph-instructions.md');
+    const custom = '# My Custom Ralph Instructions\nDo something special.';
+    await writeFile(filePath, custom, 'utf-8');
+
+    await runUpgrade(TEST_ROOT);
+
+    const afterUpgrade = await readFile(filePath, 'utf-8');
+    expect(afterUpgrade).toBe(custom);
+  });
+
+  it('upgrade installs .squad/ralph-instructions.md when it does not exist', async () => {
+    // init first to get a valid .squad dir, then remove the file to simulate
+    // a repo that predates this template entry.
+    await runInit(TEST_ROOT);
+    const filePath = join(TEST_ROOT, '.squad', 'ralph-instructions.md');
+    const { rm: rmFile } = await import('fs/promises');
+    if (existsSync(filePath)) await rmFile(filePath);
+
+    await runUpgrade(TEST_ROOT);
+
+    expect(existsSync(filePath)).toBe(true);
+  });
 });
