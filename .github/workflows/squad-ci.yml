@@ -26,7 +26,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
       - name: Detect changed paths
@@ -62,8 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e #v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
           cache: 'npm'
@@ -91,8 +91,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e #v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
           cache: 'npm'
@@ -184,10 +184,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e #v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
       - name: Check changeset drift
@@ -208,10 +208,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e #v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
       - name: Fetch PR labels
@@ -234,7 +234,7 @@ jobs:
           && steps.labels.outputs.skip_changelog != 'true'
           && vars.SQUAD_CHANGELOG_CHECK != 'false'
         run: |
-          echo "## 📋 Changelog Gate" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Changelog Gate" >> "$GITHUB_STEP_SUMMARY"
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
           CHANGED=$(git diff --name-only "$BASE"..."$HEAD")
@@ -246,7 +246,7 @@ jobs:
           SDK_CLI_PATH_REGEX='^packages/squad-(sdk|cli)/src/|^packages/squad-(sdk|cli)/templates/|^\.squad-templates/|^templates/|^\.squad/agents/.+/charter\.md$'
           SDK_CLI_CHANGED=$(echo "$CHANGED" | grep -E "$SDK_CLI_PATH_REGEX" || true)
           if [ -z "$SDK_CLI_CHANGED" ]; then
-            echo "✅ Not applicable (no SDK/CLI source or template changes)" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Not applicable (no SDK/CLI source or template changes)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           echo "SDK/CLI source or template files changed:"
@@ -254,16 +254,16 @@ jobs:
           CHANGESET_ADDED=$(git diff --diff-filter=AM --name-only "$BASE"..."$HEAD" | grep -E '^\.changeset/[^/]+\.md$' | grep -vxF '.changeset/README.md' || true)
           CHANGELOG_CHANGED=$(echo "$CHANGED" | grep -E '^CHANGELOG\.md$' || true)
           if [ -n "$CHANGESET_ADDED" ]; then
-            echo "✅ Changeset file detected" >> $GITHUB_STEP_SUMMARY
+            echo "✅ Changeset file detected" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ -n "$CHANGELOG_CHANGED" ]; then
-            echo "✅ CHANGELOG.md updated" >> $GITHUB_STEP_SUMMARY
+            echo "✅ CHANGELOG.md updated" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           echo "::error::No changeset or CHANGELOG.md update found, but SDK/CLI source or template files were changed."
           echo "::error::Run 'npx changeset add' or edit CHANGELOG.md. Escape hatch: add 'skip-changelog' label."
-          echo "❌ No changeset or CHANGELOG.md update" >> $GITHUB_STEP_SUMMARY
+          echo "❌ No changeset or CHANGELOG.md update" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
       # ─── CHANGELOG Write Protection ────────────────────────────────────
@@ -273,18 +273,18 @@ jobs:
           APPROVED_AUTHORS: 'bradygaster tamirdresher github-actions[bot] copilot-swe-agent[bot]'
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          echo "## 🔒 CHANGELOG Write Protection" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔒 CHANGELOG Write Protection" >> "$GITHUB_STEP_SUMMARY"
           CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '^CHANGELOG.md$' || true)
           if [ -n "$CHANGED" ]; then
             if echo "$APPROVED_AUTHORS" | tr ' ' '\n' | grep -qxF "$PR_AUTHOR"; then
-              echo "✅ $PR_AUTHOR is approved" >> $GITHUB_STEP_SUMMARY
+              echo "✅ $PR_AUTHOR is approved" >> "$GITHUB_STEP_SUMMARY"
             else
               echo "::error::$PR_AUTHOR is not approved to modify CHANGELOG.md directly. Use 'npx changeset add' instead."
-              echo "❌ $PR_AUTHOR is not approved" >> $GITHUB_STEP_SUMMARY
+              echo "❌ $PR_AUTHOR is not approved" >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
           else
-            echo "✅ CHANGELOG.md not modified" >> $GITHUB_STEP_SUMMARY
+            echo "✅ CHANGELOG.md not modified" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # ─── Workspace Integrity ───────────────────────────────────────────
@@ -294,7 +294,7 @@ jobs:
           && steps.labels.outputs.skip_workspace != 'true'
           && vars.SQUAD_WORKSPACE_CHECK != 'false'
         run: |
-          echo "## 🔗 Workspace Integrity" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔗 Workspace Integrity" >> "$GITHUB_STEP_SUMMARY"
           node -e "
             const fs = require('fs');
             const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
@@ -314,7 +314,7 @@ jobs:
             }
             console.log('✅ All workspace packages resolve to local file: links');
           "
-          echo "✅ All workspace packages resolve to local links" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All workspace packages resolve to local links" >> "$GITHUB_STEP_SUMMARY"
 
       # ─── Prerelease Version Guard ──────────────────────────────────────
       - name: "Gate: Prerelease Version Guard"
@@ -324,7 +324,7 @@ jobs:
           && vars.SQUAD_VERSION_CHECK != 'false'
           && true
         run: |
-          echo "## 🏷️ Prerelease Version Guard" >> $GITHUB_STEP_SUMMARY
+          echo "## 🏷️ Prerelease Version Guard" >> "$GITHUB_STEP_SUMMARY"
           node -e "
             const fs = require('fs');
             const path = require('path');
@@ -355,7 +355,7 @@ jobs:
               }
             });
           "
-          echo "✅ All versions are release versions" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All versions are release versions" >> "$GITHUB_STEP_SUMMARY"
 
       # ─── Publish Policy ────────────────────────────────────────────────
       - name: "Gate: Workspace-scoped npm publish"
@@ -405,10 +405,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e #v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
       - name: Check skip conditions
@@ -538,10 +538,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 #v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e #v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
           cache: 'npm'

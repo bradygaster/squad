@@ -23,10 +23,50 @@ import {
   hasCopilot,
   insertCopilotSection,
 } from './team-md.js';
+import { modify, applyEdits, parse as parseJsonc } from 'jsonc-parser';
 
 const storage = new FSStorageProvider();
 
 const CYAN = '\x1b[36m';
+
+/**
+ * Applies "chat.newSession.defaultMode": "Squad" to .vscode/settings.json.
+ * JSONC-aware: preserves existing comments, trailing commas, and formatting.
+ * Idempotent: if the key already exists (any value), leaves it untouched.
+ * On parse failure of an existing file, warns and skips without corruption.
+ */
+async function applyVscodeDefaultMode(dest: string): Promise<void> {
+  const settingsPath = path.join(dest, '.vscode', 'settings.json');
+  const KEY = 'chat.newSession.defaultMode';
+  const VALUE = 'Squad';
+
+  if (!storage.existsSync(settingsPath)) {
+    // Create new file with just the one key
+    storage.writeSync(settingsPath, `{\n  "${KEY}": "${VALUE}"\n}\n`);
+    success(`.vscode/settings.json created — ${KEY}: "${VALUE}"`);
+    return;
+  }
+
+  const content = storage.readSync(settingsPath) ?? '';
+  const parseErrors: Array<{ error: number; offset: number; length: number }> = [];
+  const parsed = parseJsonc(content, parseErrors, { allowTrailingComma: true });
+
+  if (parseErrors.length > 0) {
+    console.warn(`${YELLOW}⚠ .vscode/settings.json could not be parsed — skipping VS Code default mode setup${RESET}`);
+    return;
+  }
+
+  if (parsed && Object.prototype.hasOwnProperty.call(parsed, KEY)) {
+    // Already set — respect user ownership, no change
+    return;
+  }
+
+  const edits = modify(content, [KEY], VALUE, {
+    formattingOptions: { tabSize: 2, insertSpaces: true, eol: '\n' },
+  });
+  storage.writeSync(settingsPath, applyEdits(content, edits));
+  success(`.vscode/settings.json updated — ${KEY}: "${VALUE}"`);
+}
 
 /**
  * Detect if the target directory is inside a parent git repo.
@@ -123,6 +163,8 @@ export interface RunInitOptions {
   stateBackend?: string;
   /** If true, write MCP server config into squad.agent.md frontmatter instead of .copilot/mcp-config.json */
   mcpFrontmatter?: boolean;
+  /** If false, skip writing "chat.newSession.defaultMode": "Squad" to .vscode/settings.json (default: true) */
+  includeVscodeDefault?: boolean;
 }
 
 /**
@@ -438,6 +480,15 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     }
   } catch {
     // best-effort: .mcp.json write failure does not block init
+  }
+
+  // Apply VS Code default chat session mode (opt-out: --no-vscode-default)
+  if (options.includeVscodeDefault !== false && !options.isGlobal) {
+    try {
+      await applyVscodeDefaultMode(dest);
+    } catch {
+      console.warn(`${YELLOW}⚠ could not apply VS Code default mode setting${RESET}`);
+    }
   }
 
   // Report .init-prompt storage

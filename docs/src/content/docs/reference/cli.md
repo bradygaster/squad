@@ -30,6 +30,7 @@ squad init
 | `squad init` | Initialize Squad in the current repo (idempotent — safe to run multiple times) | No |
 | `squad init --state-backend <type>` | Initialize with a specific state backend (`local`, `orphan`, `two-layer`) | No |
 | `squad init --global` | Create a personal squad in your platform-specific directory | No |
+| `squad init --no-vscode-default` | Skip writing `chat.newSession.defaultMode` to `.vscode/settings.json` | No |
 | `squad init --mode remote <path>` | Initialize linked to a remote team root (dual-root mode) | No |
 | `squad link <team-repo-path>` | Link project to a remote team root | Yes |
 | `squad loop` | Run a prompt-driven work loop from `loop.md` | Yes |

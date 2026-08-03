@@ -1,0 +1,18 @@
+# actionlint configuration for Squad CI.
+# Ref: https://github.com/rhysd/actionlint/blob/main/docs/config.md
+
+paths:
+  # Apply to all YAML files linted by the squad-workflow-lint job, whether they live
+  # under .github/workflows/ or in the bundled template directories.
+  "**/*.yml":
+    ignore:
+      # SC2129 (style): "Consider using { cmd1; cmd2; } >> file instead of individual
+      # redirects." This is a pure style suggestion — not a correctness issue. It fires
+      # on the GitHub Actions multiline-output heredoc pattern:
+      #   echo "key<<EOF" >> "$GITHUB_OUTPUT"
+      #   echo "$VALUE"   >> "$GITHUB_OUTPUT"
+      #   echo "EOF"      >> "$GITHUB_OUTPUT"
+      # which predates this CI gate and is functionally correct. The gate still enforces
+      # SC2086 (info: quoting/word-splitting) and SC2034+ (warning: unused variables),
+      # as well as all actionlint-native checks.
+      - "SC2129"

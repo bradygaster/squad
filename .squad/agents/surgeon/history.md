@@ -135,3 +135,5 @@ Prepared comprehensive release playbook and CI improvement plan for Brady's revi
 - Pre-release validation prevents 90% of publish issues
 - Culture: "If the same problem happens twice, the playbook failed"
 - Documentation must be user-first (Brady's perspective, not technical jargon)
+
+📌 **Team update (2026-07-29T17:11:56+10:00 — Issue #1556 / PR #1557):** A changeset `.changeset/fix-workflow-shellcheck-quoting.md` (patch, squad-cli + squad-sdk) landed in PR #1557. Separately, a new `squad-workflow-lint` job (`.github/workflows/squad-workflow-lint.yml`) runs actionlint 1.7.12 + shellcheck 0.10.0 on workflow templates — this is a distinct check, entirely independent of `changelog-gate`, which only enforces changeset/CHANGELOG requirements and has no role in linting. For future releases, be aware that PRs touching `.github/workflows/`, `.squad-templates/workflows/`, `templates/workflows/`, or either package's `templates/workflows/` will trigger this lint check. Whether `squad-workflow-lint` is configured as a required branch-protection gate has not been verified — confirm before treating it as a hard release blocker.

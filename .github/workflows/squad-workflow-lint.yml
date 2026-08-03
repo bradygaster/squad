@@ -1,0 +1,94 @@
+name: Workflow Lint
+
+# Lints Squad's own workflows AND the bundled workflow templates that get
+# shipped to downstream repos via `squad upgrade`.  Templates live in
+# packages/squad-cli/templates/workflows/ and packages/squad-sdk/templates/workflows/
+# (both mirrored from .squad-templates/ at build time).  Because templates are
+# NOT under .github/workflows/, actionlint won't pick them up by default — we
+# pass them as explicit file arguments so they receive the same shellcheck
+# scrutiny as live workflows.
+
+on:
+  pull_request:
+    branches: [dev, preview, main]
+    paths:
+      - '.github/workflows/**'
+      - 'packages/squad-cli/templates/workflows/**'
+      - 'packages/squad-sdk/templates/workflows/**'
+      - '.squad-templates/workflows/**'
+      - 'templates/workflows/**'
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/**'
+      - 'packages/squad-cli/templates/workflows/**'
+      - 'packages/squad-sdk/templates/workflows/**'
+      - '.squad-templates/workflows/**'
+      - 'templates/workflows/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: Lint workflows and templates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+
+      - name: Install actionlint 1.7.12 and shellcheck 0.10.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Installer pinned to v1.7.12 tag — not `main` — to avoid moving-ref RCE surface.
+          # Download to a named file before executing: curl -f hard-fails on non-200 so
+          # an unavailable URL aborts the step rather than silently feeding error HTML to bash.
+          # A named file is also inspectable on failure (vs opaque process substitution).
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash \
+            > install-actionlint.bash
+          bash install-actionlint.bash 1.7.12
+          rm install-actionlint.bash
+          sudo mv actionlint /usr/local/bin/actionlint
+          # ubuntu-latest ships shellcheck 0.9.0 (via apt); install 0.10.0 explicitly
+          # to match the version that surfaced the original SC2086 reports.
+          # pipefail (set above) ensures a failed curl is not masked by tar's exit status.
+          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz \
+            | tar -xJf - --strip-components=1 shellcheck-v0.10.0/shellcheck
+          sudo mv shellcheck /usr/local/bin/shellcheck
+          echo "✅ actionlint $(actionlint --version)"
+          echo "✅ shellcheck $(shellcheck --version | grep 'version:')"
+
+      - name: Lint .github/workflows/*.yml
+        run: |
+          echo "--- Linting .github/workflows/ ---"
+          actionlint .github/workflows/*.yml
+
+      - name: Lint squad-cli template workflows
+        run: |
+          echo "--- Linting packages/squad-cli/templates/workflows/ ---"
+          actionlint packages/squad-cli/templates/workflows/*.yml
+
+      - name: Lint squad-sdk template workflows
+        run: |
+          echo "--- Linting packages/squad-sdk/templates/workflows/ ---"
+          actionlint packages/squad-sdk/templates/workflows/*.yml
+
+      # Lint the canonical source and root mirror independently from their committed state.
+      # All five directories contain tracked files; we lint what is actually committed rather
+      # than running sync-then-lint, because:
+      #   (a) a bug introduced in .squad-templates/ is caught here before sync propagates it, and
+      #   (b) mirror drift is already enforced by template-sync.test.ts as a separate gate.
+      - name: Lint canonical template source (.squad-templates/workflows/)
+        run: |
+          echo "--- Linting .squad-templates/workflows/ (canonical source) ---"
+          actionlint .squad-templates/workflows/*.yml
+
+      - name: Lint root mirror template workflows (templates/workflows/)
+        run: |
+          echo "--- Linting templates/workflows/ (root mirror) ---"
+          actionlint templates/workflows/*.yml
