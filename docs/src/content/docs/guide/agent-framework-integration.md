@@ -179,24 +179,7 @@ Cross-reference: open issue [#1144](https://github.com/bradygaster/squad/issues/
 >
 > `SquadAgent` sets `OnPermissionRequest = PermissionHandler.ApproveAll` on the `SessionConfig` by default. This silently approves every permission request — shell access, file reads, URL fetches — without review. **Do not use this in public-facing or multi-tenant server deployments.**
 
-For production, supply a scoped handler via `SquadAgentOptions.ConfigureSession`:
-
-```csharp
-builder.Services.AddSquadAgent(o =>
-{
-    o.SquadFolderPath = "/teams/main";
-    o.ConfigureSession = sessionConfig =>
-    {
-        sessionConfig.OnPermissionRequest = async (request, ct) =>
-        {
-            // Approve only text-reasoning operations; deny shell and file access
-            if (request.Kind is PermissionKind.Shell or PermissionKind.File)
-                return PermissionResult.Deny;
-            return PermissionResult.Allow;
-        };
-    };
-});
-```
+For production, supply a scoped handler via `SquadAgentOptions.ConfigureSession`. Set `sessionConfig.OnPermissionRequest` to a delegate that inspects the incoming permission request and returns a `PermissionDecision` — for example, rejecting shell or file requests while approving others. The full `PermissionDecision` API surface (including `ApproveOnce`, `Reject`, and session-scoped variants) is documented in the [GitHub Copilot SDK permission handler reference](https://docs.github.com/en/copilot/how-tos/copilot-sdk/integrations/microsoft-agent-framework).
 
 Additional security notes:
 
@@ -252,6 +235,8 @@ The Copilot CLI runs as a subprocess. It must be present in the deployment envir
 | Squad + MAF demo repo | [github.com/tamirdresher/squad-agent-framework-demo](https://github.com/tamirdresher/squad-agent-framework-demo) |
 | Microsoft devblogs post | [devblogs.microsoft.com/agent-framework/building-agent-teams-with-agent-framework-github-copilot-cli-and-squad/](https://devblogs.microsoft.com/agent-framework/building-agent-teams-with-agent-framework-github-copilot-cli-and-squad/) |
 | `Squad.Agents.AI` package source | [`src/Squad.Agents.AI/`](https://github.com/bradygaster/squad/tree/main/src/Squad.Agents.AI) |
-| microsoft/agent-framework#6457 | Upstream `buildTransitive` fix (merged 2026-06-10; not yet in NuGet preview) |
+| `microsoft/agent-framework#6457` | [Upstream `buildTransitive` fix (merged 2026-06-10; not yet in NuGet preview)](https://github.com/microsoft/agent-framework/issues/6457) |
 
 > **Credit:** The integration pattern and companion demo were co-authored with [Tamir Dresher](https://www.tamirdresher.com). The tutorial gist and blog post are the original source of record for this guide.
+
+<!-- cspell:ignore nupkgs devblogs -->
