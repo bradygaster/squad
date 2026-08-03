@@ -466,3 +466,12 @@ Yes. If your CI/CD workflow needs to read squad state:
 State stays local to your machine. Other team members won't see your latest decisions or agent histories until you push. This is no different from forgetting to push any other branch — Git is distributed, and state only syncs when you push/fetch.
 ### Can the `squad-state` branch be deleted safely?
 **No.** Deleting it loses all permanent squad state (decisions, agent histories, logs). Treat it like your main branch — push it to the remote and don't delete it. You can recover from a local deletion by re-fetching from the remote: `git fetch origin squad-state:squad-state`.
+
+
+---
+
+## Deploying to containers and Kubernetes?
+
+The backends above are designed for developer machines and single-clone repositories. Container and Kubernetes deployments have different requirements — persistent volumes, multi-replica write safety, and backup/restore procedures.
+
+See **[State Backend Selection](/squad/docs/reference/state-backend-selection/)** for the full decision matrix covering single-pod, multi-pod, PVC configuration, and current limitations.
