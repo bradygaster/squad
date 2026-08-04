@@ -43,8 +43,17 @@ agent job, the integration sidesteps the sandbox entirely.
 
 The coordinator reaches the agent through gh-aw's own mechanism: gh-aw natively
 restores `.github/agents/*.agent.md` files as inline sub-agents, so the
-`squad.agent.md` that `squad init` writes is picked up automatically. There is
-**no `--agent` flag** involved.
+`squad.agent.md` that `squad init` writes is picked up automatically. The
+component also sets `engine.agent: squad`, so the compiler emits `--agent squad`
+on the Copilot invocation.
+
+> **`ambient-folders` (gh-aw main).** Upstream now bundles `.squad/` and
+> `.github/agents/` into the standard activation artifact via a top-level
+> `ambient-folders: [.squad, .github/agents]` key, replacing the manual artifact
+> upload/download. That key is **unreleased** — it is absent from the pinned
+> `gh aw` v0.81.6 (and v0.84.3), and `gh aw compile --strict` rejects it as an
+> unknown property. Squad's component keeps the explicit upload/download for now
+> and will switch to `ambient-folders` once it ships in a release.
 
 ---
 
@@ -104,6 +113,35 @@ Use the Squad team to triage this repo's open issues and file a report.
 The shared component itself has **no `on:` field** — that is what makes it an
 importable component rather than a standalone workflow. Your consuming workflow
 supplies the trigger.
+
+### Fail-fast preflight — `pre-agent-steps`
+
+A consuming workflow can add a `pre-agent-steps` step that verifies Squad's
+files were restored before the agent runs, and emits a `noop` safe-output if
+they are missing (so the run ends cleanly instead of the coordinator
+improvising a team). The `squad-backlog-triage.md` example uses this:
+
+```yaml
+pre-agent-steps:
+  - name: Check Squad files
+    run: |
+      set -euo pipefail
+      GH_AW_SAFE_OUTPUTS="${GH_AW_SAFE_OUTPUTS:-${RUNNER_TEMP:-/tmp}/gh-aw/safeoutputs/outputs.jsonl}"
+      mkdir -p "$(dirname "$GH_AW_SAFE_OUTPUTS")"
+
+      missing=()
+      for path in .squad/team.md .github/agents/squad.agent.md; do
+        if [ ! -f "$path" ]; then
+          missing+=("$path")
+        fi
+      done
+
+      if [ "${#missing[@]}" -gt 0 ]; then
+        message="Squad files are unavailable: ${missing[*]}. The activation-job bootstrap step likely failed."
+        printf '{"type":"noop","message":"%s"}\n' "$message" >> "$GH_AW_SAFE_OUTPUTS"
+        echo "$message"
+      fi
+```
 
 ---
 

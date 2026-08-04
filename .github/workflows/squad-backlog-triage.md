@@ -30,6 +30,25 @@ safe-outputs:
     expires: 7
     close-older-issues: true
     close-older-key: squad-backlog-triage
+pre-agent-steps:
+  - name: Check Squad files
+    run: |
+      set -euo pipefail
+      GH_AW_SAFE_OUTPUTS="${GH_AW_SAFE_OUTPUTS:-${RUNNER_TEMP:-/tmp}/gh-aw/safeoutputs/outputs.jsonl}"
+      mkdir -p "$(dirname "$GH_AW_SAFE_OUTPUTS")"
+
+      missing=()
+      for path in .squad/team.md .github/agents/squad.agent.md; do
+        if [ ! -f "$path" ]; then
+          missing+=("$path")
+        fi
+      done
+
+      if [ "${#missing[@]}" -gt 0 ]; then
+        message="Squad files are unavailable: ${missing[*]}. The activation-job bootstrap step likely failed."
+        printf '{"type":"noop","message":"%s"}\n' "$message" >> "$GH_AW_SAFE_OUTPUTS"
+        echo "$message"
+      fi
 ---
 
 # Squad Backlog Triage
@@ -40,9 +59,10 @@ prioritized triage report.
 
 ## Task
 
-1. Confirm Squad is initialized: `.squad/team.md` should exist. If it does not,
-   the activation bootstrap failed — call `noop` with a short explanation
-   instead of proceeding.
+1. Confirm Squad files are available before delegating work to the team:
+   `.squad/team.md` and `.github/agents/squad.agent.md` should exist. If
+   either file is missing, call `noop` with a short explanation instead of
+   proceeding.
 2. Read the repository's open issues (use the GitHub tools). Focus on issues
    that are unlabeled, stale, or missing a clear owner.
 3. Work with the Squad team to triage the backlog. For each notable issue,

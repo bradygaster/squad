@@ -25,8 +25,19 @@
 # `.github/agents/*.agent.md` as inline sub-agents (its compiled lock has a
 # "Restore inline sub-agents from activation artifact" step keyed on
 # GH_AW_SUB_AGENT_DIR=".github/agents" / GH_AW_SUB_AGENT_EXT=".agent.md"). The
-# `squad.agent.md` this bootstrap produces is picked up by that mechanism — there is
-# NO `--agent squad` flag on the compiled Copilot invocation, so do not rely on one.
+# `squad.agent.md` this bootstrap produces is picked up by that mechanism.
+#
+# gh-aw fully supports `engine.agent`: when set, the compiler emits `--agent squad`
+# on the Copilot invocation (verified on v0.81.6). The original version of this file
+# simply had not set the field; Peli de Halleux has since set it upstream, and we now
+# set it here too (see `engine.agent` below).
+#
+# `ambient-folders` (gh-aw main): upstream now uses a top-level
+# `ambient-folders: [.squad, .github/agents]` key to bundle Squad's files into the
+# standard activation artifact, replacing the manual upload/download below. That
+# feature is unreleased — it is absent from our pinned v0.81.6 (and from v0.84.3), and
+# `gh aw compile --strict` rejects it as an unknown property — so we keep the explicit
+# artifact upload/download here. Switch to `ambient-folders` once it ships in a release.
 #
 # Optional custom credentials for `squad init` (only needed when Squad must reach other
 # organizations or private repositories beyond the current one):
@@ -50,6 +61,7 @@
 # handoff with retention-days: 1) — every run starts from a fresh `squad init`.
 engine:
   id: copilot
+  agent: squad
 
 jobs:
   activation:
