@@ -18,7 +18,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!--
-      Prerelease because Microsoft.Agents.AI.GitHub.Copilot 1.14.0-rc1 (below) is itself a
+      Prerelease because Microsoft.Agents.AI.GitHub.Copilot 1.15.0-rc1 (below) is itself a
       prerelease package. A STABLE Squad.Agents.AI depending on a prerelease package makes
       `dotnet pack` emit NU5104 ("A stable release ... should not have a prerelease
       dependency"). Prior releases (0.2.0 through 0.5.5) stayed stable and carried that
