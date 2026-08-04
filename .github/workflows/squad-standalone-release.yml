@@ -1,0 +1,180 @@
+name: Squad Standalone Bundles
+
+# Builds self-contained, npm-free Squad bundles for every supported platform and
+# attaches them to a GitHub Release.
+#
+# Each bundle vendors its own Node.js runtime, so installing Squad from these
+# artifacts touches github.com only — never registry.npmjs.org. This is what
+# unblocks self-hosted runners and developer machines behind a firewall that
+# blocks the npm registry (see #1593, and the deferred limitation in #1587).
+#
+# npm is still used at *build* time inside this workflow to resolve the
+# dependency tree; it is the runtime dependency that is removed.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      node_version:
+        description: 'Node.js runtime version to vendor into the bundles'
+        required: false
+        default: '22.20.0'
+        type: string
+      upload:
+        description: 'Attach the built bundles to the release matching the current tag'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: ${{ inputs.node_version || '22.20.0' }}
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            platform: linux
+            arch: x64
+            runner: ubuntu-latest
+          - target: linux-arm64
+            platform: linux
+            arch: arm64
+            runner: ubuntu-latest
+          - target: darwin-x64
+            platform: darwin
+            arch: x64
+            runner: ubuntu-latest
+          - target: darwin-arm64
+            platform: darwin
+            arch: arm64
+            runner: ubuntu-latest
+          - target: win32-x64
+            platform: win32
+            arch: x64
+            runner: ubuntu-latest
+          - target: win32-arm64
+            platform: win32
+            arch: arm64
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+
+      - name: Install workspace dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build packages
+        run: npm run build
+
+      - name: Build standalone bundle
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          node scripts/build-standalone.mjs \
+            --platform "${TARGET_PLATFORM}" \
+            --arch "${TARGET_ARCH}" \
+            --node-version "${NODE_VERSION}"
+
+      - name: Package bundle
+        id: package
+        working-directory: dist-standalone
+        env:
+          TARGET: ${{ matrix.target }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          if [ "${TARGET_PLATFORM}" = "win32" ]; then
+            asset="squad-${TARGET}.zip"
+            zip -qr "${asset}" "squad-${TARGET}"
+          else
+            asset="squad-${TARGET}.tar.gz"
+            tar -czf "${asset}" "squad-${TARGET}"
+          fi
+          sha256sum "${asset}" > "${asset}.sha256"
+          echo "asset=${asset}" >> "${GITHUB_OUTPUT}"
+          ls -lh "${asset}"
+
+      - name: Smoke test bundle
+        # The vendored runtime only executes on a matching host, so the CLI can
+        # only be invoked for the native target. Cross-built bundles are
+        # verified structurally instead.
+        env:
+          TARGET: ${{ matrix.target }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          bundle="dist-standalone/squad-${TARGET}"
+          if [ "${TARGET}" = "linux-x64" ]; then
+            actual="$("${bundle}/squad" --version)"
+            echo "squad --version -> ${actual}"
+            test -n "${actual}"
+          else
+            test -f "${bundle}/BUNDLE-INFO.json"
+            test -d "${bundle}/app/node_modules/@bradygaster/squad-cli"
+            if [ "${TARGET_PLATFORM}" = "win32" ]; then
+              test -f "${bundle}/runtime/node.exe"
+              test -f "${bundle}/squad.cmd"
+            else
+              test -f "${bundle}/runtime/bin/node"
+              test -f "${bundle}/squad"
+            fi
+            echo "Layout verified for ${TARGET} (cross-built, not executable here)"
+          fi
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7
+        with:
+          name: squad-${{ matrix.target }}
+          path: |
+            dist-standalone/${{ steps.package.outputs.asset }}
+            dist-standalone/${{ steps.package.outputs.asset }}.sha256
+          retention-days: 7
+          if-no-files-found: error
+
+  publish:
+    name: Attach bundles to release
+    needs: build
+    if: github.event_name == 'release' || inputs.upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Build combined SHA256SUMS.txt
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          cat ./*.sha256 > SHA256SUMS.txt
+          rm -f ./*.sha256
+          cat SHA256SUMS.txt
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" ./* --clobber --repo "${GITHUB_REPOSITORY}"
