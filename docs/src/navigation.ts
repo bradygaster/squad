@@ -45,6 +45,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: 'GitLab Issues', slug: 'features/gitlab-issues' },
       { title: 'Ralph — Work Monitor', slug: 'features/ralph' },
       { title: '@copilot Coding Agent', slug: 'features/copilot-coding-agent' },
+      { title: 'Standalone Install (no npm)', slug: 'features/standalone-install' },
       { title: 'VS Code', slug: 'features/vscode' },
     ],
   },

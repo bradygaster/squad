@@ -90,6 +90,7 @@ const EXPECTED_FEATURES = [
   'reviewer-protocol',
   'routing',
   'skills',
+  'standalone-install',
   'storage-provider',
   'squad-rc',
   'security-hardening',

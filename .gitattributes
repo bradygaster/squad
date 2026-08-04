@@ -17,3 +17,6 @@
 # Squad: pin LF for YAML to prevent CRLF<->LF flip on Windows checkouts (PR #1200 concern G)
 *.yml text eol=lf
 *.yaml text eol=lf
+
+# Squad: shell scripts must stay LF — CRLF breaks the shebang on Linux/macOS.
+*.sh text eol=lf
