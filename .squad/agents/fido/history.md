@@ -65,3 +65,21 @@ Peli's reference: documented repo-local + SHA-pinned remote imports; pinned
 flag, `.github/agents` sub-agent pickup, and `--disable-builtin-mcps`. Drive-by:
 synced `EXPECTED_GUIDES` (missing `agent-framework-integration` from #1574).
 docs-build 22/22, cspell + markdownlint clean.
+
+---
+
+## 2026-08-04 — PR #1587 follow-up: `--ignore-scripts` supply-chain hardening
+
+Peli de Halleux's review of PR #1587 asked for `--ignore-scripts` on the activation
+`npx`. Empirically verified before adopting: `@bradygaster/squad-cli@0.11.0` DOES ship a
+postinstall (`patch-esm-imports.mjs` + `patch-ink-rendering.mjs`, both in the tarball).
+`patch-esm-imports.mjs` is load-bearing (patches `vscode-jsonrpc` exports for Copilot SDK
+sessions, bradygaster/squad#449) but `squad init` is pure file scaffolding and never opens
+an SDK session. A/B test on Node v24.16.0: `init` with vs without `--ignore-scripts`
+produced byte-identical `.squad/` trees (only timestamps + temp-dir name differed),
+`squad.agent.md` byte-identical. Added flag BEFORE the package spec in
+`.github/workflows/shared/squad.md` + a header comment crediting Peli so nobody removes it.
+Recompiled lock with `gh aw compile` (v0.81.6, strict, 0 errors) — lock run line now
+matches source byte-for-byte (grep: 1 occurrence each). Updated docs table. docs-build
+22/22, cspell clean on in-scope docs. Staged only my 4 files — left the ~28 unrelated
+loose worktree changes untouched. Branch `squad/gh-aw-shared-component` only; dev untouched.

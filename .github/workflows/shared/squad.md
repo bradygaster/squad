@@ -66,7 +66,13 @@ jobs:
         env:
           SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
-        run: npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.11.0}" init --preset default --state-backend local
+        # `--ignore-scripts` hardens the install against supply-chain attacks (blocks npm
+        # lifecycle scripts from a compromised transitive dep) — suggested by Peli de Halleux.
+        # squad-cli ships a postinstall that patches vscode-jsonrpc so Node 22+ strict ESM can
+        # resolve subpath imports for Copilot SDK sessions (bradygaster/squad#449). `init` is
+        # pure file scaffolding and never opens an SDK session, so skipping it is safe —
+        # verified byte-identical `.squad/` output with and without the flag on Node 24.
+        run: npx --yes --ignore-scripts "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.11.0}" init --preset default --state-backend local
 
       - name: Upload Squad state artifact
         if: success()

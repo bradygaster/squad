@@ -34,7 +34,7 @@ A gh-aw workflow runs in two phases with very different network rules:
 
 | Phase | Network | What the component does |
 |-------|---------|-------------------------|
-| **Activation job** (`jobs.activation.pre-steps`) | Unrestricted egress | Runs `npx @bradygaster/squad-cli@… init --preset default --state-backend local`, then uploads `.squad/` + `.github/agents/squad.agent.md` as a `squad-state` artifact. |
+| **Activation job** (`jobs.activation.pre-steps`) | Unrestricted egress | Runs `npx --ignore-scripts @bradygaster/squad-cli@… init --preset default --state-backend local`, then uploads `.squad/` + `.github/agents/squad.agent.md` as a `squad-state` artifact. (`--ignore-scripts` blocks npm lifecycle scripts as supply-chain hardening; `init` is pure scaffolding so nothing is lost.) |
 | **Agent job** (`steps:`) | Restricted by `network:` | Downloads the `squad-state` artifact and restores it into the workspace. No CLI, no npm. |
 
 The gh-aw firewall **only constrains the agent job** — activation runs unblocked.
