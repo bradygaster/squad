@@ -46,3 +46,22 @@ Added `publish-policy` job to squad-ci.yml: scans `.github/workflows/*.yml` for 
 Community contributors consistently struggle with: (a) scoped npm package names in changesets (use `@bradygaster/squad-cli` not `squad-cli`), (b) monorepo file placement (skills in `packages/squad-cli/templates/skills/`). Both preventable with better contributor docs. Changeset package name mismatch is most common error (4/9 Tamir PRs).
 
 📌 **Team update (2026-07-29T17:11:56+10:00 — Issue #1556 / PR #1557):** A new required CI check `squad-workflow-lint` now exists in `.github/workflows/squad-workflow-lint.yml`. It runs actionlint 1.7.12 + shellcheck 0.10.0 against all 5 workflow/template directories, including the canonical `.squad-templates/workflows/` sources. FIDO should treat this as a required gate alongside existing CI checks — PRs that introduce SC2086, unquoted variables, or invalid action syntax in workflow files will fail this check. All known SC2086 findings across Squad's own workflows were fixed in PR #1557.
+
+### 📌 Team update — 2026-08-03: gh-aw integration proposal
+Flight's gh-aw integration proposal is awaiting Brady's review and may generate owner-specific follow-up work. No product source changes yet.
+### 📌 Team update — 2026-08-03: gh-aw round-2 revision
+gh-aw round 2: tests should cover gh-aw import wiring, headless coordinator behavior, installer fallbacks, SEA packaging, and no accidental engine/substrate framing.
+
+### 📌 gh-aw shared component shipped — 2026-08-03
+Adapted Peli de Halleux's gh-aw integration into this repo on branch
+`squad/gh-aw-shared-component`. Added `.github/workflows/shared/squad.md`
+(activation/agent split, auth ladder, no `on:`), sample
+`.github/workflows/squad-backlog-triage.md` (`workflow_dispatch`), and
+`docs/src/content/docs/features/gh-aw.md` (+ nav). Four intentional deltas from
+Peli's reference: documented repo-local + SHA-pinned remote imports; pinned
+`--state-backend local` (agent runs `--disable-builtin-mcps`); dropped the false
+`--agent squad` claim; noted `SQUAD_CLI_VERSION` bump-per-release. Validated with
+`gh aw compile` (v0.81.6, strict, 0 errors) — lock confirmed the state-backend
+flag, `.github/agents` sub-agent pickup, and `--disable-builtin-mcps`. Drive-by:
+synced `EXPECTED_GUIDES` (missing `agent-framework-integration` from #1574).
+docs-build 22/22, cspell + markdownlint clean.
