@@ -175,12 +175,29 @@ describe('sync-templates.mjs script execution', () => {
 // 3. Negative guard — .github/agents/ should only have squad.agent.md
 // ---------------------------------------------------------------------------
 
+// Files in .github/agents/ that are NOT produced by Squad's template sync but
+// are legitimately present because other toolchains share this directory:
+//
+//   • agentic-workflows.md — installed by `gh aw init` (GitHub Agentic Workflows
+//     dispatcher agent).  Squad does not create or own this file; gh-aw does.
+//
+// Add entries here when a new well-known third-party agent is introduced.
+// Any file NOT in this allowlist and NOT squad.agent.md will still fail the test.
+const KNOWN_NON_SQUAD_AGENTS = new Set(['agentic-workflows.md']);
+
 describe('.github/agents/ contains only squad.agent.md', () => {
   it('has no files beyond squad.agent.md from the sync', () => {
     const agentDir = resolve(ROOT, AGENT_MD_EXTRA_TARGET);
     expect(existsSync(agentDir), '.github/agents/ should exist').toBe(true);
     const files = readdirSync(agentDir);
-    expect(files).toEqual([AGENT_MD_FILE]);
+    const unexpected = files.filter(
+      f => f !== AGENT_MD_FILE && !KNOWN_NON_SQUAD_AGENTS.has(f),
+    );
+    expect(
+      unexpected,
+      `unexpected file(s) in .github/agents/ that are neither squad.agent.md nor a known third-party agent: ${unexpected.join(', ')}`,
+    ).toEqual([]);
+    expect(files, '.github/agents/ must contain squad.agent.md').toContain(AGENT_MD_FILE);
   });
 });
 
