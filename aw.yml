@@ -1,0 +1,4 @@
+name: squad
+description: Squad — spin up an AI team inside your agentic workflows
+includes:
+  - .github/workflows/squad-backlog-triage.md

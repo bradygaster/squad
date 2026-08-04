@@ -59,7 +59,25 @@ on the Copilot invocation.
 
 ## Using it
 
-### Option A — repo-local (vendored)
+### Option A — install the package (`gh aw add`)
+
+Squad ships an `aw.yml` package manifest at its repository root, so you can
+install its ready-made workflows in one command:
+
+```bash
+gh aw add bradygaster/squad
+```
+
+`gh aw add` reads the root `aw.yml`, which lists the workflows Squad packages
+(via `includes:`) — currently the `squad-backlog-triage` workflow — and pulls
+them into your repository. This is the fastest way to get a working
+Squad-powered agentic workflow without hand-wiring imports.
+
+> **Credit:** packaging Squad as a `gh aw` manifest was Peli de Halleux's
+> suggestion — that a Squad could ship its workflows out of the box so users
+> `gh aw add bradygaster/squad` and get them all.
+
+### Option B — repo-local (vendored)
 
 Copy `shared/squad.md` into your repo at `.github/workflows/shared/squad.md`,
 then import it with a repo-relative path:
@@ -69,7 +87,7 @@ imports:
   - shared/squad.md
 ```
 
-### Option B — remote import (pinned)
+### Option C — remote import (pinned)
 
 Import straight from `bradygaster/squad`, pinned to a commit SHA for
 reproducible builds:
