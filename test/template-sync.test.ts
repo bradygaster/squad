@@ -118,6 +118,21 @@ const CASTING_POLICY_LOCATIONS = [
 // ---------------------------------------------------------------------------
 
 describe('dynamic template enumeration (all synced files)', () => {
+  // Re-sync immediately before byte comparisons to guard against a race
+  // condition with test/init-scaffolding.test.ts.  That suite runs runInit()
+  // with a subdirectory of the repo root as cwd; in monorepo mode the init
+  // command places squad.agent.md at the real git root (.github/agents/) via
+  // stampVersion(), which races with the file-level beforeAll sync.  A
+  // describe-scoped beforeAll runs synchronously, right before any test in
+  // this suite, minimising the window to near-zero.
+  beforeAll(() => {
+    execSync('node scripts/sync-templates.mjs', {
+      cwd: ROOT,
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+  });
+
   const sourceFiles = collectFiles(SOURCE_DIR);
 
   it('.squad-templates/ contains files to sync', () => {
