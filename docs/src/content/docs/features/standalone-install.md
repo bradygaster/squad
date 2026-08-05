@@ -188,3 +188,19 @@ npm is still used at *build* time to resolve the dependency tree. It is the
   winget and Homebrew packaging are not part of this yet.
 - **`squad upgrade` does not manage bundles.** Re-run the install script (or
   pull a newer image) to move between versions.
+
+## Verifying a bundle locally
+
+You can exercise the whole install path without a published release by serving
+an asset yourself:
+
+```sh
+node scripts/build-standalone.mjs --platform linux --arch x64 --out-dir /tmp/out
+cd /tmp/out && tar -czf squad-linux-x64.tar.gz squad-linux-x64
+sha256sum squad-linux-x64.tar.gz > SHA256SUMS.txt
+```
+
+Serve that directory under `<repo>/releases/download/<tag>/` on a local HTTP
+server, then point the installer at it with `REPO` and `VERSION`. The script
+verifies the checksum before unpacking and aborts on a mismatch, so this also
+exercises the tamper path.
