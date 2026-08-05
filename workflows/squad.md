@@ -36,7 +36,6 @@ safe-outputs:
     labels: [squad]
     max: 3
     expires: 14
-    close-older-prs: false
 ---
 
 # Squad — Unified `/squad` Slash Command
