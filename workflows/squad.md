@@ -2,7 +2,7 @@
 name: Squad
 description: Cast, connect, or adopt a Squad AI team for your repository
 emoji: "🧑‍🤝‍🧑"
-private: true
+private: false
 on:
   slash_command:
     name: squad
