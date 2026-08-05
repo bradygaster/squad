@@ -103,11 +103,16 @@ Targets: ${SUPPORTED.join(', ')}`);
 }
 
 function run(cmd, cmdArgs, cwd) {
-  return execFileSync(cmd, cmdArgs, {
+  // shell:true is needed on Windows so npm/npx (.cmd shims) resolve, but the
+  // shell then splits an unquoted command path on spaces — which breaks
+  // anything under "C:\Program Files\".
+  const useShell = process.platform === 'win32';
+  const command = useShell && /\s/.test(cmd) ? `"${cmd}"` : cmd;
+  return execFileSync(command, cmdArgs, {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf-8',
-    shell: process.platform === 'win32',
+    shell: useShell,
   });
 }
 
@@ -186,20 +191,11 @@ function vendorRuntime(bundleDir, platform, arch, version, stagingDir) {
   run('curl', ['-fsSL', '-o', archivePath, url], stagingDir);
 
   step('Extracting runtime');
-  // Extract only what the bundle actually ships. The full POSIX archives
-  // contain symlinks (bin/npm, bin/npx, bin/corepack) that cannot be created
-  // on a Windows host, which would break cross-building a Linux or macOS
-  // bundle from Windows.
-  const members = platform === 'win32'
-    // Windows archives keep node.exe plus its ICU data at the archive root.
-    ? [`${base}/node.exe`]
-    : [`${base}/bin/node`];
-  try {
-    run('tar', ['-xf', archivePath, '-C', stagingDir, ...members], stagingDir);
-  } catch (error) {
-    const detail = error?.stderr?.toString().trim() || error?.message || String(error);
-    throw new Error(`Failed to extract ${members.join(', ')} from ${file}: ${detail}`);
-  }
+  const member = platform === 'win32'
+    // Windows archives keep node.exe at the archive root.
+    ? `${base}/node.exe`
+    : `${base}/bin/node`;
+  extractArchiveMember(archivePath, member, ext, stagingDir);
 
   const extracted = path.join(stagingDir, base);
   if (!existsSync(extracted)) {
@@ -229,9 +225,157 @@ function vendorRuntime(bundleDir, platform, arch, version, stagingDir) {
 
 const CLI_ENTRY = 'app/node_modules/@bradygaster/squad-cli/dist/cli-entry.js';
 
+/**
+ * Script embedded into the Windows `squad.exe` single executable.
+ *
+ * It runs inside a SEA, so `require()` resolves builtins only — external code
+ * has to be loaded with a dynamic import of a file URL. Because a SEA has no
+ * script argument, `process.argv` is already `[exe, exe, ...userArgs]`, which
+ * has the same shape as `[node, script, ...userArgs]`. The CLI therefore sees
+ * exactly the arguments it expects with no rewriting.
+ */
+const SEA_LAUNCHER = `const path = require('node:path');
+const fs = require('node:fs');
+const { pathToFileURL } = require('node:url');
+
+const ENTRY = ${JSON.stringify(CLI_ENTRY)};
+
+// winget installs portables by symlinking the exe into a links directory, and
+// process.execPath may report that link rather than the bundle. Try the exe's
+// own directory first, then its resolved real path.
+function resolveRoot() {
+  const candidates = [process.execPath];
+  try {
+    const real = fs.realpathSync(process.execPath);
+    if (real !== process.execPath) candidates.push(real);
+  } catch {}
+  for (const candidate of candidates) {
+    const root = path.dirname(candidate);
+    if (fs.existsSync(path.join(root, ENTRY))) return root;
+  }
+  return null;
+}
+
+const root = resolveRoot();
+if (!root) {
+  console.error('Squad: could not locate the bundle from ' + process.execPath + '.');
+  console.error('The squad.exe launcher must stay alongside its app/ directory.');
+  process.exit(1);
+}
+
+process.env.SQUAD_STANDALONE_HOME = root;
+import(pathToFileURL(path.join(root, ENTRY)).href).catch((error) => {
+  console.error('Squad: failed to start.', error && error.message ? error.message : error);
+  process.exit(1);
+});
+`;
+
+/**
+ * Extract a single member from a downloaded Node archive.
+ *
+ * bsdtar (Windows, macOS) reads zip archives; GNU tar (Linux) does not, so a
+ * Linux runner cross-building a Windows bundle has to use unzip. Extracting one
+ * member also avoids the POSIX archives' symlinks (bin/npm, bin/npx,
+ * bin/corepack), which cannot be created on a Windows host.
+ */
+function extractArchiveMember(archivePath, member, ext, stagingDir) {
+  try {
+    if (ext === 'zip' && process.platform !== 'win32') {
+      run('unzip', ['-o', '-q', archivePath, member, '-d', stagingDir], stagingDir);
+    } else {
+      run('tar', ['-xf', archivePath, '-C', stagingDir, member], stagingDir);
+    }
+  } catch (error) {
+    const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+    throw new Error(`Failed to extract ${member} from ${path.basename(archivePath)}: ${detail}`);
+  }
+}
+
+/**
+ * Obtain a Node binary that can generate a SEA blob for `version`.
+ *
+ * The blob format is tied to the Node version that produced it — injecting a
+ * blob built by a different version into the vendored runtime produces an exe
+ * that crashes on startup with an access violation. When the host already runs
+ * the right version we use it directly; otherwise we download that version for
+ * the *host* platform purely to generate the blob. (The host cannot execute the
+ * target's binary when cross-building, which is the normal case in CI.)
+ */
+function resolveBlobBuilder(version, stagingDir) {
+  if (process.versions.node === version) return process.execPath;
+
+  const hostPlatform = process.platform;
+  const { base, file, ext } = nodeArtifactName(hostPlatform, process.arch, version);
+  const archivePath = path.join(stagingDir, `host-${file}`);
+
+  step(`Fetching Node ${version} for the host to generate the SEA blob`);
+  run('curl', ['-fsSL', '-o', archivePath, `https://nodejs.org/dist/v${version}/${file}`], stagingDir);
+
+  const member = hostPlatform === 'win32' ? `${base}/node.exe` : `${base}/bin/node`;
+  extractArchiveMember(archivePath, member, ext, stagingDir);
+
+  const builder = path.join(stagingDir, base, ...(hostPlatform === 'win32' ? ['node.exe'] : ['bin', 'node']));
+  if (!existsSync(builder)) throw new Error(`Host Node ${version} not found at ${builder}`);
+  if (hostPlatform !== 'win32') chmodSync(builder, 0o755);
+  rmSync(archivePath, { force: true });
+  return builder;
+}
+
+/**
+ * Build a real `squad.exe` for Windows bundles using Node's single executable
+ * application support.
+ *
+ * This exists because winget's portable installer only accepts `.exe` targets —
+ * `.cmd` and `.bat` are explicitly unsupported, so a manifest pointing at
+ * `squad.cmd` would install something unusable. The SEA is produced from the
+ * *vendored* runtime for the target architecture, so `squad.exe` replaces
+ * `runtime/node.exe` entirely rather than adding to the bundle's size.
+ */
+function buildWindowsExe(bundleDir, stagingDir, nodeVersion) {
+  const runtimeExe = path.join(bundleDir, 'runtime', 'node.exe');
+  if (!existsSync(runtimeExe)) {
+    throw new Error(`Cannot build squad.exe — vendored runtime missing at ${runtimeExe}`);
+  }
+
+  const launcherPath = path.join(stagingDir, 'sea-launcher.js');
+  const configPath = path.join(stagingDir, 'sea-config.json');
+  const blobPath = path.join(stagingDir, 'sea-prep.blob');
+
+  writeFileSync(launcherPath, SEA_LAUNCHER);
+  writeFileSync(
+    configPath,
+    `${JSON.stringify({
+      main: launcherPath,
+      output: blobPath,
+      disableExperimentalSEAWarning: true,
+      // V8 code cache is architecture-specific; leaving it off keeps the blob
+      // portable so win32-arm64 bundles can be built on an x64 runner.
+      useCodeCache: false,
+      useSnapshot: false,
+    }, null, 2)}\n`,
+  );
+
+  const builder = resolveBlobBuilder(nodeVersion, stagingDir);
+  run(builder, ['--experimental-sea-config', configPath], stagingDir);
+  if (!existsSync(blobPath)) throw new Error('SEA blob was not produced');
+
+  const exePath = path.join(bundleDir, 'squad.exe');
+  cpSync(runtimeExe, exePath);
+  run('npx', ['--yes', 'postject', exePath, 'NODE_SEA_BLOB', blobPath,
+    '--sentinel-fuse', 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2'], stagingDir);
+
+  // squad.exe *is* the runtime now — keeping node.exe would double the size.
+  rmSync(path.join(bundleDir, 'runtime'), { recursive: true, force: true });
+  return exePath;
+}
+
 function writeLaunchers(bundleDir, platform, skipRuntime) {
   if (platform === 'win32') {
-    const nodeCmd = skipRuntime ? 'node' : '"%~dp0runtime\\node.exe"';
+    // With a real squad.exe present the runtime lives inside it; the .cmd and
+    // .ps1 shims stay for people who unpack the archive and run it in place.
+    const hasExe = !skipRuntime;
+    const nodeCmd = hasExe ? '"%~dp0squad.exe"' : 'node';
+    const entryArg = hasExe ? '' : ` "%~dp0${CLI_ENTRY.replace(/\//g, '\\')}"`;
     writeFileSync(
       path.join(bundleDir, 'squad.cmd'),
       [
@@ -240,7 +384,7 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
         // Lets the CLI detect it is running from a bundle so it writes an
         // npx-free squad_state MCP spec (see mcp-spec.ts tier 0).
         'set "SQUAD_STANDALONE_HOME=%~dp0"',
-        `${nodeCmd} "%~dp0${CLI_ENTRY.replace(/\//g, '\\')}" %*`,
+        `${nodeCmd}${entryArg} %*`,
         'exit /b %ERRORLEVEL%',
         '',
       ].join('\r\n'),
@@ -248,15 +392,24 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
     // PowerShell shim so `squad` resolves for users whose PATHEXT excludes .CMD.
     writeFileSync(
       path.join(bundleDir, 'squad.ps1'),
-      [
-        '$ErrorActionPreference = "Stop"',
-        '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
-        '$env:SQUAD_STANDALONE_HOME = $root',
-        skipRuntime ? '$node = "node"' : '$node = Join-Path $root "runtime\\node.exe"',
-        `& $node (Join-Path $root "${CLI_ENTRY.replace(/\//g, '\\')}") @args`,
-        'exit $LASTEXITCODE',
-        '',
-      ].join('\r\n'),
+      hasExe
+        ? [
+            '$ErrorActionPreference = "Stop"',
+            '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
+            '$env:SQUAD_STANDALONE_HOME = $root',
+            '& (Join-Path $root "squad.exe") @args',
+            'exit $LASTEXITCODE',
+            '',
+          ].join('\r\n')
+        : [
+            '$ErrorActionPreference = "Stop"',
+            '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
+            '$env:SQUAD_STANDALONE_HOME = $root',
+            '$node = "node"',
+            `& $node (Join-Path $root "${CLI_ENTRY.replace(/\//g, '\\')}") @args`,
+            'exit $LASTEXITCODE',
+            '',
+          ].join('\r\n'),
     );
     return;
   }
@@ -326,6 +479,11 @@ function main() {
       step('Skipping Node runtime (--skip-runtime): bundle will use system node');
     } else {
       vendorRuntime(bundleDir, args.platform, args.arch, args.nodeVersion, stagingDir);
+      if (args.platform === 'win32') {
+        // Must run before writeLaunchers so the shims know squad.exe exists.
+        step('Building squad.exe (single executable)');
+        buildWindowsExe(bundleDir, stagingDir, args.nodeVersion);
+      }
     }
 
     step('Writing launcher');

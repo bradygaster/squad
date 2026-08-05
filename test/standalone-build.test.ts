@@ -24,12 +24,19 @@ describe('build-standalone.mjs — runtime extraction', () => {
     // because node's archives contain symlinks (bin/npm, bin/npx,
     // bin/corepack) that Windows cannot create — which broke cross-building
     // a linux bundle from Windows with "Can't create ... Invalid argument".
-    expect(build).toMatch(/const members = platform === 'win32'/);
     expect(build).toContain('${base}/bin/node');
     expect(build).toContain('${base}/node.exe');
 
     // The bare full-archive extraction must not come back.
     expect(build).not.toMatch(/run\('tar', \['-xf', archivePath, '-C', stagingDir\]/);
+  });
+
+  it('uses unzip for zip archives on non-Windows hosts', () => {
+    // GNU tar (Linux) cannot read zip archives while bsdtar (Windows, macOS)
+    // can. The release workflow builds every target on ubuntu-latest, so
+    // without this every win32 bundle would fail to unpack its runtime.
+    expect(build).toMatch(/ext === 'zip' && process\.platform !== 'win32'/);
+    expect(build).toMatch(/run\('unzip'/);
   });
 
   it('surfaces the underlying tar error instead of a bare exit code', () => {
@@ -38,6 +45,52 @@ describe('build-standalone.mjs — runtime extraction', () => {
 
   it('marks the vendored posix node binary executable', () => {
     expect(build).toMatch(/chmodSync\(path\.join\(runtimeDir, 'bin', 'node'\), 0o755\)/);
+  });
+
+  it('quotes the command when shelling out on Windows', () => {
+    // process.execPath is under "C:\Program Files\" on most Windows hosts, and
+    // execFileSync with shell:true splits an unquoted path on the space.
+    expect(build).toMatch(/useShell && \/\\s\/\.test\(cmd\)/);
+  });
+});
+
+describe('build-standalone.mjs — Windows squad.exe', () => {
+  it('builds a real executable via Node SEA', () => {
+    // winget's portable installer only symlinks .exe targets, so a bundle
+    // whose entry point is squad.cmd cannot be packaged for winget at all.
+    expect(build).toContain('buildWindowsExe');
+    expect(build).toContain('--experimental-sea-config');
+    expect(build).toContain('NODE_SEA_BLOB');
+  });
+
+  it('generates the blob with a Node matching the vendored runtime', () => {
+    // The SEA blob format is tied to the Node version that produced it.
+    // Injecting a mismatched blob yields an exe that dies at startup with an
+    // access violation, which is not obvious from the build output.
+    expect(build).toContain('resolveBlobBuilder');
+    expect(build).toMatch(/process\.versions\.node === version/);
+  });
+
+  it('keeps the blob architecture-independent', () => {
+    // V8 code cache is arch-specific; leaving it off lets an x64 runner build
+    // the win32-arm64 bundle.
+    expect(build).toContain('useCodeCache: false');
+  });
+
+  it('drops the vendored runtime once squad.exe exists', () => {
+    // squad.exe *is* the runtime; keeping node.exe too would double the size.
+    expect(build).toMatch(/rmSync\(path\.join\(bundleDir, 'runtime'\)/);
+  });
+
+  it('resolves the bundle through a symlink in the SEA launcher', () => {
+    // winget installs portables by symlinking the exe into a links directory,
+    // so process.execPath may not be inside the bundle.
+    expect(build).toContain('realpathSync');
+    expect(build).toContain('resolveRoot');
+  });
+
+  it('sets SQUAD_STANDALONE_HOME from the SEA launcher too', () => {
+    expect(build).toMatch(/process\.env\.SQUAD_STANDALONE_HOME = root/);
   });
 });
 

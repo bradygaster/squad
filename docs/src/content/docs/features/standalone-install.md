@@ -40,10 +40,25 @@ curl -fsSL https://raw.githubusercontent.com/bradygaster/squad/dev/scripts/insta
 
 ### Windows
 
-Download `squad-win32-x64.zip` (or `squad-win32-arm64.zip`) from the
+Install with winget:
+
+```powershell
+winget install bradygaster.Squad
+```
+
+Or download `squad-win32-x64.zip` (or `squad-win32-arm64.zip`) from the
 [releases page](https://github.com/bradygaster/squad/releases), unpack it, and
-add the folder to your `PATH`. The bundle ships both `squad.cmd` and
-`squad.ps1`.
+add the folder to your `PATH`.
+
+### macOS
+
+Install with Homebrew:
+
+```sh
+brew install --cask bradygaster/squad/squad
+```
+
+Or use the install script above, which works on macOS too.
 
 ### Direct download
 
@@ -59,8 +74,8 @@ SHA256SUMS.txt
 
 ```
 squad-<platform>-<arch>/
-├── squad               launcher (squad.cmd + squad.ps1 on Windows)
-├── runtime/            vendored Node.js runtime
+├── squad               launcher (squad.exe + squad.cmd + squad.ps1 on Windows)
+├── runtime/            vendored Node.js runtime (POSIX only — see below)
 ├── app/                squad-cli, squad-sdk, templates, presets
 └── BUNDLE-INFO.json    version, target, vendored Node version, build time
 ```
@@ -72,6 +87,23 @@ Squad locates its templates, presets and version by walking up from the module
 path at runtime, so the bundle deliberately preserves a real directory layout
 rather than compiling to a single executable. That keeps behavior identical to
 an npm install with no source changes.
+
+### Why Windows bundles ship a real `squad.exe`
+
+winget's portable installer only creates command aliases for `.exe` targets —
+`.cmd` and `.bat` are explicitly unsupported — so a package pointing at
+`squad.cmd` would install something that cannot be invoked.
+
+Windows bundles therefore ship `squad.exe`, built with Node's
+[single executable application](https://nodejs.org/api/single-executable-applications.html)
+support. It is the vendored Node runtime with a small launcher embedded, so it
+*replaces* `runtime/node.exe` rather than adding to the bundle: a Windows bundle
+is the same size as before. `squad.cmd` and `squad.ps1` remain for anyone who
+unpacks the archive and runs it in place.
+
+The launcher resolves the bundle from its own location, following a symlink if
+it finds one, because winget installs portables by symlinking the executable
+into a links directory.
 
 ## Prerequisite: Copilot CLI
 
@@ -174,20 +206,38 @@ need telemetry export or the `sql.js` state backend inside the bundle.
 npm is still used at *build* time to resolve the dependency tree. It is the
 **runtime** dependency on the registry that these bundles remove.
 
+## Packaging manifests
+
+Homebrew and winget both embed the release version and a SHA-256 per artifact,
+so their manifests cannot be hand-maintained without going stale every release.
+They are generated from the release's own `SHA256SUMS.txt`:
+
+```sh
+node scripts/generate-packaging.mjs --version v0.11.0
+```
+
+That writes `dist-packaging/homebrew/squad.rb` and the three winget manifests
+(version, installer, locale). The release workflow runs this automatically and
+attaches the result as a `packaging-manifests` artifact; a maintainer submits
+them to the tap and to `winget-pkgs`.
+
 ## Known limitations
 
 - **Cross-built bundles are not executed in CI.** A vendored runtime only runs
   on a matching host, so the release workflow smoke-tests `linux-x64` by
   invoking the CLI and verifies the other five targets structurally.
 - **No code signing or notarization yet.** macOS Gatekeeper will quarantine the
-  downloaded bundle until it is signed and notarized.
+  downloaded bundle until it is signed and notarized, and injecting the SEA blob
+  invalidates the Node runtime's original Authenticode signature on Windows, so
+  SmartScreen will warn. This is the main gap before the Homebrew and winget
+  packages should be recommended widely.
 - **Optional deps are excluded by default**, so the bundled CLI has no
   OpenTelemetry exporter and no `sql.js` state backend unless it was built with
   `--include-optional`. The container image builds with them included.
-- **The installer is POSIX-only.** Windows installs are download-and-unpack;
-  winget and Homebrew packaging are not part of this yet.
-- **`squad upgrade` does not manage bundles.** Re-run the install script (or
-  pull a newer image) to move between versions.
+- **The install script is POSIX-only.** On Windows use winget or
+  download-and-unpack.
+- **`squad upgrade` does not manage bundles.** Re-run the install script, use
+  your package manager, or pull a newer image to move between versions.
 
 ## Verifying a bundle locally
 

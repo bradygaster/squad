@@ -77,8 +77,11 @@ export function _resetMcpSpecCache(): void {
 export function detectStandaloneLauncher(): string | null {
   const home = process.env[STANDALONE_HOME_ENV];
   if (!home) return null;
+  // Order matters on Windows: prefer the real executable. Since the fix for
+  // CVE-2024-27980, Node refuses to spawn a `.cmd`/`.bat` without `shell:true`,
+  // so an MCP client that spawns the command directly would fail on squad.cmd.
   const candidates = process.platform === 'win32'
-    ? ['squad.cmd', 'squad.ps1']
+    ? ['squad.exe', 'squad.cmd', 'squad.ps1']
     : ['squad'];
   for (const candidate of candidates) {
     const full = path.join(home, candidate);
