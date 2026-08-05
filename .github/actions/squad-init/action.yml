@@ -100,14 +100,29 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_PREFIX: ${{ inputs.install-prefix }}
         INPUT_REPO: ${{ inputs.repository }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
         prefix="${INPUT_PREFIX:-${HOME}/.squad-standalone}"
-        script_url="https://raw.githubusercontent.com/${INPUT_REPO}/HEAD/scripts/install.sh"
 
-        curl -fsSL "${script_url}" -o "${RUNNER_TEMP}/squad-install.sh"
+        # Run the installer that shipped with this action rather than fetching
+        # it from a branch head. Consumers pin this action to a SHA, so the
+        # installer is pinned with it — no unpinned remote code execution, and
+        # no drift between the installer and the release it is installing.
+        #
+        # github.action_path is <checkout>/.github/actions/squad-init when the
+        # action is used from a repo reference, so the repo root is three
+        # levels up. Resolve it explicitly and verify rather than trusting the
+        # relative walk.
+        repo_root="$(cd "${ACTION_PATH}/../../.." && pwd)"
+        installer="${repo_root}/scripts/install.sh"
+        if [ ! -f "${installer}" ]; then
+          echo "::error::install.sh not found at ${installer}. Resolved repo root '${repo_root}' from action path '${ACTION_PATH}'."
+          exit 1
+        fi
+
         VERSION="${INPUT_VERSION}" PREFIX="${prefix}" REPO="${INPUT_REPO}" \
-          sh "${RUNNER_TEMP}/squad-install.sh"
+          sh "${installer}"
 
         squad_bin="${prefix}/bin/squad"
         if [ ! -x "${squad_bin}" ]; then
@@ -143,7 +158,7 @@ runs:
         set -euo pipefail
         "${SQUAD_BIN}" init --preset "${INPUT_PRESET}" --state-backend "${INPUT_BACKEND}"
 
-    - name: Summarize
+    - name: Verify npm-free MCP wiring
       if: inputs.skip-init != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
@@ -155,18 +170,20 @@ runs:
           echo "::error::squad init completed but .squad/team.md is missing"
           exit 1
         fi
+
+        # An npx-based squad_state entry is unrunnable on the firewalled
+        # runners this action exists for, and it fails at Copilot start rather
+        # than here — so fail the build now instead of warning.
+        if [ -f .mcp.json ] && grep -q '"npx"' .mcp.json; then
+          echo "::error::.mcp.json references npx — squad_state will not start without npm registry access. Expected the standalone launcher path."
+          cat .mcp.json
+          exit 1
+        fi
+
         {
           echo "### Squad ${SQUAD_VERSION} initialized"
           echo ""
           echo "Installed from a standalone release bundle — no npm registry access used."
           echo ""
-          # The MCP spec is the thing that silently breaks when a firewalled
-          # machine writes an npx-based launcher, so surface it here.
-          if [ -f .mcp.json ] && grep -q '"npx"' .mcp.json; then
-            echo "> [!WARNING]"
-            echo "> \`.mcp.json\` still references npx. squad_state will fail to start"
-            echo "> on a runner without npm registry access."
-          else
-            echo "\`.mcp.json\` points at the bundled launcher (no npx)."
-          fi
+          echo "\`.mcp.json\` points at the bundled launcher (no npx)."
         } >> "${GITHUB_STEP_SUMMARY}"
