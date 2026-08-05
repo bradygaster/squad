@@ -226,7 +226,16 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
     const nodeCmd = skipRuntime ? 'node' : '"%~dp0runtime\\node.exe"';
     writeFileSync(
       path.join(bundleDir, 'squad.cmd'),
-      ['@echo off', 'setlocal', `${nodeCmd} "%~dp0${CLI_ENTRY.replace(/\//g, '\\')}" %*`, 'exit /b %ERRORLEVEL%', ''].join('\r\n'),
+      [
+        '@echo off',
+        'setlocal',
+        // Lets the CLI detect it is running from a bundle so it writes an
+        // npx-free squad_state MCP spec (see mcp-spec.ts tier 0).
+        'set "SQUAD_STANDALONE_HOME=%~dp0"',
+        `${nodeCmd} "%~dp0${CLI_ENTRY.replace(/\//g, '\\')}" %*`,
+        'exit /b %ERRORLEVEL%',
+        '',
+      ].join('\r\n'),
     );
     // PowerShell shim so `squad` resolves for users whose PATHEXT excludes .CMD.
     writeFileSync(
@@ -234,6 +243,7 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
       [
         '$ErrorActionPreference = "Stop"',
         '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
+        '$env:SQUAD_STANDALONE_HOME = $root',
         skipRuntime ? '$node = "node"' : '$node = Join-Path $root "runtime\\node.exe"',
         `& $node (Join-Path $root "${CLI_ENTRY.replace(/\//g, '\\')}") @args`,
         'exit $LASTEXITCODE',
@@ -259,6 +269,10 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
       '  esac',
       'done',
       'root="$(cd "$(dirname "$target")" && pwd)"',
+      '# Lets the CLI detect it is running from a bundle so it writes an',
+      '# npx-free squad_state MCP spec (see mcp-spec.ts tier 0).',
+      'SQUAD_STANDALONE_HOME="$root"',
+      'export SQUAD_STANDALONE_HOME',
       skipRuntime ? 'node_bin="node"' : 'node_bin="$root/runtime/bin/node"',
       `exec "$node_bin" "$root/${CLI_ENTRY}" "$@"`,
       '',

@@ -20,3 +20,8 @@
 
 # Squad: shell scripts must stay LF — CRLF breaks the shebang on Linux/macOS.
 *.sh text eol=lf
+
+# Squad: CRLF breaks RUN line-continuations when the image builds on Linux.
+Dockerfile text eol=lf
+Dockerfile.* text eol=lf
+.dockerignore text eol=lf
