@@ -71,12 +71,28 @@ jobs:
           private-key: ${{ secrets.SQUAD_GITHUB_APP_PRIVATE_KEY }}
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
 
+      - name: Detect existing squad config
+        id: detect-config
+        shell: bash
+        run: |
+          if [ -f .squad/config.json ]; then
+            mode=$(jq -r '.mode // "default"' .squad/config.json)
+            source=$(jq -r '.squadSource // ""' .squad/config.json)
+            echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+            echo "source=${source}" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=default" >> "$GITHUB_OUTPUT"
+            echo "source=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Initialize Squad team
         uses: bradygaster/squad/.github/actions/squad-init@main
         with:
           version: ${{ vars.SQUAD_CLI_VERSION || 'latest' }}
           preset: default
           state-backend: local
+          mode: ${{ steps.detect-config.outputs.mode }}
+          source: ${{ steps.detect-config.outputs.source }}
         env:
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
 

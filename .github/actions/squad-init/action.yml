@@ -50,6 +50,14 @@ inputs:
     description: 'Directory to run squad init in'
     required: false
     default: '.'
+  mode:
+    description: 'Init mode: default runs squad init, connect fetches from a remote source'
+    required: false
+    default: 'default'
+  source:
+    description: 'Remote squad source (owner/repo) for connect mode. Only used when mode=connect.'
+    required: false
+    default: ''
 
 outputs:
   squad-path:
@@ -70,6 +78,8 @@ runs:
         INPUT_BACKEND: ${{ inputs.state-backend }}
         INPUT_REPO: ${{ inputs.repository }}
         INPUT_SKIP_INIT: ${{ inputs.skip-init }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_SOURCE: ${{ inputs.source }}
       run: |
         set -euo pipefail
         # These values reach a shell command below, so constrain them tightly.
@@ -90,6 +100,18 @@ runs:
         fi
         if [ "${INPUT_SKIP_INIT}" != "true" ] && [ "${INPUT_SKIP_INIT}" != "false" ]; then
           echo "::error::skip-init must be 'true' or 'false'"
+          exit 1
+        fi
+        if [ "${INPUT_MODE}" != "default" ] && [ "${INPUT_MODE}" != "connect" ]; then
+          echo "::error::mode must be 'default' or 'connect'"
+          exit 1
+        fi
+        if [ "${INPUT_MODE}" = "connect" ] && [ -z "${INPUT_SOURCE}" ]; then
+          echo "::error::source is required when mode=connect"
+          exit 1
+        fi
+        if [ -n "${INPUT_SOURCE}" ] && ! echo "${INPUT_SOURCE}" | LC_ALL=C grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+          echo "::error::source must be in owner/repo form"
           exit 1
         fi
 
@@ -146,8 +168,52 @@ runs:
         "${SQUAD_BIN}" --version > /dev/null
         echo "Squad $("${SQUAD_BIN}" --version) installed and runnable without npm"
 
+    - name: Fetch remote squad (connect mode)
+      if: inputs.mode == 'connect' && inputs.skip-init != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        INPUT_SOURCE: ${{ inputs.source }}
+      run: |
+        set -euo pipefail
+        echo "::group::Fetching squad from ${INPUT_SOURCE}"
+        # Create .squad/config.json pointer
+        mkdir -p .squad
+        cat > .squad/config.json <<EOF
+        {
+          "squadSource": "${INPUT_SOURCE}",
+          "mode": "connect",
+          "connectedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        # Fetch .squad/ from remote via gh API
+        # Download team.md, routing.md from source
+        for path in team.md routing.md; do
+          content=$(gh api "repos/${INPUT_SOURCE}/contents/.squad/${path}" --jq '.content' 2>/dev/null | base64 -d) || true
+          if [ -n "${content}" ]; then
+            echo "${content}" > ".squad/${path}"
+          fi
+        done
+        # Fetch agent charters
+        agents=$(gh api "repos/${INPUT_SOURCE}/contents/.squad/agents" --jq '.[].name' 2>/dev/null) || true
+        for agent in ${agents}; do
+          charter=$(gh api "repos/${INPUT_SOURCE}/contents/.squad/agents/${agent}/charter.md" --jq '.content' 2>/dev/null | base64 -d) || true
+          if [ -n "${charter}" ]; then
+            mkdir -p ".squad/agents/${agent}"
+            echo "${charter}" > ".squad/agents/${agent}/charter.md"
+          fi
+        done
+        # Fetch squad.agent.md
+        agent_md=$(gh api "repos/${INPUT_SOURCE}/contents/.github/agents/squad.agent.md" --jq '.content' 2>/dev/null | base64 -d) || true
+        if [ -n "${agent_md}" ]; then
+          mkdir -p .github/agents
+          echo "${agent_md}" > .github/agents/squad.agent.md
+        fi
+        echo "::endgroup::"
+        echo "Squad connected from ${INPUT_SOURCE}"
+
     - name: Run squad init
-      if: inputs.skip-init != 'true'
+      if: inputs.skip-init != 'true' && inputs.mode != 'connect'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       env:
