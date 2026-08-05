@@ -10,8 +10,9 @@
  * and tier-3 never fired.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 vi.mock(
@@ -23,8 +24,11 @@ vi.mock(
 
 import {
   resolveSquadStateMcpSpec,
+  detectStandaloneLauncher,
+  STANDALONE_HOME_ENV,
   _resetMcpSpecCache,
 } from '../packages/squad-cli/src/cli/core/mcp-spec.js';
+import { describeMcpSpec } from '../packages/squad-cli/src/cli/core/upgrade.js';
 import { isSquadCliVersionPublished } from '../packages/squad-cli/src/cli/core/npm-registry.js';
 
 const mockIsPublished = vi.mocked(isSquadCliVersionPublished);
@@ -99,6 +103,106 @@ describe('resolveSquadStateMcpSpec (iter-7: 2-tier resolver)', () => {
     const spec = await resolveSquadStateMcpSpec('0.9.6-preview.99999');
     expect(mockIsPublished).toHaveBeenCalledWith('0.9.6-preview.99999');
     expect(spec.source).toBe('insider');
+  });
+});
+
+describe('resolveSquadStateMcpSpec — standalone bundle tier (#1593)', () => {
+  beforeEach(() => {
+    mockIsPublished.mockReset();
+    _resetMcpSpecCache();
+  });
+
+  it('spawns the bundle launcher by absolute path instead of npx', async () => {
+    const launcher = '/opt/squad/squad';
+    const spec = await resolveSquadStateMcpSpec('0.11.0', {
+      standaloneCheck: () => launcher,
+    });
+    expect(spec.source).toBe('standalone');
+    expect(spec.command).toBe(launcher);
+    expect(spec.args).toEqual(['state-mcp']);
+  });
+
+  it('never touches the npm registry when running from a bundle', async () => {
+    // The whole point: a machine installed from a bundle may have no route to
+    // registry.npmjs.org at all, so the probe must not fire.
+    const spec = await resolveSquadStateMcpSpec('0.11.0', {
+      standaloneCheck: () => '/opt/squad/squad',
+      publishedCheck: async () => {
+        throw new Error('publishedCheck must not run in standalone mode');
+      },
+    });
+    expect(spec.source).toBe('standalone');
+    expect(mockIsPublished).not.toHaveBeenCalled();
+  });
+
+  it('takes precedence over a published pinned version', async () => {
+    const spec = await resolveSquadStateMcpSpec('0.11.0', {
+      standaloneCheck: () => '/opt/squad/squad',
+      publishedCheck: async () => true,
+    });
+    expect(spec.source).toBe('standalone');
+    expect(spec.command).not.toBe('npx');
+  });
+
+  it('falls through to the npx tiers when not running from a bundle', async () => {
+    const spec = await resolveSquadStateMcpSpec('0.11.0', {
+      standaloneCheck: () => null,
+      publishedCheck: async () => true,
+    });
+    expect(spec.source).toBe('pinned');
+    expect(spec.command).toBe('npx');
+  });
+
+  it('emits a spec Copilot can spawn without PATH or env help', async () => {
+    // Copilot launches the MCP server in its own environment, so the written
+    // command has to be self-sufficient — no bare `squad`, no env expansion.
+    const spec = await resolveSquadStateMcpSpec('0.11.0', {
+      standaloneCheck: () => '/opt/squad/squad',
+    });
+    expect(path.isAbsolute(spec.command)).toBe(true);
+    expect(spec.command).not.toContain('$');
+    expect(spec.command).not.toContain('%');
+  });
+});
+
+describe('detectStandaloneLauncher (#1593)', () => {
+  const ORIGINAL = process.env[STANDALONE_HOME_ENV];
+
+  afterEach(() => {
+    if (ORIGINAL === undefined) delete process.env[STANDALONE_HOME_ENV];
+    else process.env[STANDALONE_HOME_ENV] = ORIGINAL;
+  });
+
+  it('returns null when the env var is unset (normal npm install)', () => {
+    delete process.env[STANDALONE_HOME_ENV];
+    expect(detectStandaloneLauncher()).toBeNull();
+  });
+
+  it('returns null when the env var points at a directory with no launcher', () => {
+    process.env[STANDALONE_HOME_ENV] = mkdtempSync(path.join(tmpdir(), 'squad-nolauncher-'));
+    expect(detectStandaloneLauncher()).toBeNull();
+  });
+
+  it('finds the launcher when the env var points at a real bundle', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'squad-bundle-'));
+    const name = process.platform === 'win32' ? 'squad.cmd' : 'squad';
+    writeFileSync(path.join(dir, name), '#!/bin/sh\n');
+    process.env[STANDALONE_HOME_ENV] = dir;
+    expect(detectStandaloneLauncher()).toBe(path.join(dir, name));
+  });
+});
+
+describe('describeMcpSpec — standalone specs (#1593)', () => {
+  it('reports the launcher path rather than <unknown>', () => {
+    // Standalone specs have no package name at args[1]; the describer must
+    // not fall through to the npx-shaped branch.
+    const described = describeMcpSpec({
+      command: '/opt/squad/squad',
+      args: ['state-mcp'],
+      source: 'standalone',
+    });
+    expect(described).toContain('/opt/squad/squad');
+    expect(described).not.toContain('<unknown>');
   });
 });
 

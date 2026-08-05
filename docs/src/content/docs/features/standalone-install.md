@@ -91,6 +91,19 @@ The bundles are what make an npm-free CI job possible — including the
 [gh-aw](/features/gh-aw/) activation job, which previously required `npx` and so
 could not run on a runner without npm registry access.
 
+The `squad-init` action wraps the install and init steps:
+
+```yaml
+- uses: bradygaster/squad/.github/actions/squad-init@<sha>
+  with:
+    version: v0.11.0        # default: latest release
+    preset: default
+    state-backend: local
+```
+
+Point `repository:` at an internal mirror if your runners cannot reach
+`github.com` either. To do it by hand instead:
+
 ```yaml
 - name: Install Squad
   env:
@@ -104,8 +117,43 @@ could not run on a runner without npm registry access.
   run: squad init --preset default --state-backend local
 ```
 
-Set `REPO` to an internal mirror if your runners cannot reach `github.com`
-either.
+## Containers
+
+The repository `Dockerfile` builds an image from a bundle rather than
+`npm install -g`, so the resulting image has no runtime dependency on the npm
+registry. It follows the same contract as every other Squad image — see
+[Container Image](/reference/container-image/) for the environment variables,
+paths, and shutdown behavior.
+
+```sh
+docker build -t squad:local .
+docker run --rm -e GITHUB_TOKEN=... -v "$PWD/.squad:/app/.squad" squad:local
+```
+
+The image sets `SQUAD_STANDALONE_HOME=/opt/squad`, which is what makes
+`squad init` inside the container write an npx-free MCP spec (below).
+
+## The squad_state MCP server
+
+`squad init` writes a `squad_state` MCP entry into `.mcp.json` so Copilot can
+reach Squad's state tools. Normally that entry launches through `npx`:
+
+```json
+{ "command": "npx", "args": ["-y", "@bradygaster/squad-cli@0.11.0", "state-mcp"] }
+```
+
+That would defeat the purpose here — the CLI would install fine from a bundle,
+then the MCP server would fail to start on the first run because npm is
+unreachable. When Squad is running from a bundle it instead writes:
+
+```json
+{ "command": "/opt/squad/squad", "args": ["state-mcp"] }
+```
+
+The launcher exports `SQUAD_STANDALONE_HOME`, and the resolver checks it
+*before* probing the npm registry, so a firewalled machine makes no registry
+call at all. The path is absolute because Copilot spawns the MCP server in its
+own environment, where neither `PATH` nor that variable is guaranteed.
 
 ## Building a bundle yourself
 
@@ -135,6 +183,24 @@ npm is still used at *build* time to resolve the dependency tree. It is the
   downloaded bundle until it is signed and notarized.
 - **Optional deps are excluded by default**, so the bundled CLI has no
   OpenTelemetry exporter and no `sql.js` state backend unless it was built with
-  `--include-optional`.
+  `--include-optional`. The container image builds with them included.
 - **The installer is POSIX-only.** Windows installs are download-and-unpack;
   winget and Homebrew packaging are not part of this yet.
+- **`squad upgrade` does not manage bundles.** Re-run the install script (or
+  pull a newer image) to move between versions.
+
+## Verifying a bundle locally
+
+You can exercise the whole install path without a published release by serving
+an asset yourself:
+
+```sh
+node scripts/build-standalone.mjs --platform linux --arch x64 --out-dir /tmp/out
+cd /tmp/out && tar -czf squad-linux-x64.tar.gz squad-linux-x64
+sha256sum squad-linux-x64.tar.gz > SHA256SUMS.txt
+```
+
+Serve that directory under `<repo>/releases/download/<tag>/` on a local HTTP
+server, then point the installer at it with `REPO` and `VERSION`. The script
+verifies the checksum before unpacking and aborts on a mismatch, so this also
+exercises the tamper path.

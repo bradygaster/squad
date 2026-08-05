@@ -914,7 +914,12 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
 
 /** Human-readable single-line description of an McpSpec for success() messages. */
 export function describeMcpSpec(spec: SquadStateMcpSpec): string {
-  // After iter-7 all specs are `npx -y <pkg@version-or-tag> state-mcp`.
+  // Standalone bundles spawn their own launcher by absolute path rather than
+  // going through npx, so there is no package spec in args to report.
+  if (spec.source === 'standalone') {
+    return `${spec.command} (standalone bundle)`;
+  }
+  // Every other spec is `npx -y <pkg@version-or-tag> state-mcp`.
   const pkg = spec.args[1] ?? '<unknown>';
   return spec.source === 'insider' ? `${pkg} (@insider fallback)` : pkg;
 }

@@ -186,7 +186,20 @@ function vendorRuntime(bundleDir, platform, arch, version, stagingDir) {
   run('curl', ['-fsSL', '-o', archivePath, url], stagingDir);
 
   step('Extracting runtime');
-  run('tar', ['-xf', archivePath, '-C', stagingDir], stagingDir);
+  // Extract only what the bundle actually ships. The full POSIX archives
+  // contain symlinks (bin/npm, bin/npx, bin/corepack) that cannot be created
+  // on a Windows host, which would break cross-building a Linux or macOS
+  // bundle from Windows.
+  const members = platform === 'win32'
+    // Windows archives keep node.exe plus its ICU data at the archive root.
+    ? [`${base}/node.exe`]
+    : [`${base}/bin/node`];
+  try {
+    run('tar', ['-xf', archivePath, '-C', stagingDir, ...members], stagingDir);
+  } catch (error) {
+    const detail = error?.stderr?.toString().trim() || error?.message || String(error);
+    throw new Error(`Failed to extract ${members.join(', ')} from ${file}: ${detail}`);
+  }
 
   const extracted = path.join(stagingDir, base);
   if (!existsSync(extracted)) {
@@ -197,20 +210,15 @@ function vendorRuntime(bundleDir, platform, arch, version, stagingDir) {
   mkdirSync(runtimeDir, { recursive: true });
 
   if (platform === 'win32') {
-    // Windows archives keep node.exe plus its ICU data at the archive root.
-    for (const entry of readdirSync(extracted)) {
-      if (entry === 'node.exe' || entry.endsWith('.dll') || entry.endsWith('.dat')) {
-        cpSync(path.join(extracted, entry), path.join(runtimeDir, entry));
-      }
-    }
-    if (!existsSync(path.join(runtimeDir, 'node.exe'))) {
-      throw new Error('node.exe not found in downloaded runtime');
-    }
+    const exeSrc = path.join(extracted, 'node.exe');
+    if (!existsSync(exeSrc)) throw new Error('node.exe not found in downloaded runtime');
+    cpSync(exeSrc, path.join(runtimeDir, 'node.exe'));
   } else {
     const binSrc = path.join(extracted, 'bin', 'node');
     if (!existsSync(binSrc)) throw new Error('node binary not found in downloaded runtime');
     mkdirSync(path.join(runtimeDir, 'bin'), { recursive: true });
     cpSync(binSrc, path.join(runtimeDir, 'bin', 'node'));
+    // cpSync does not preserve the executable bit on every host filesystem.
     chmodSync(path.join(runtimeDir, 'bin', 'node'), 0o755);
   }
 
@@ -226,7 +234,16 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
     const nodeCmd = skipRuntime ? 'node' : '"%~dp0runtime\\node.exe"';
     writeFileSync(
       path.join(bundleDir, 'squad.cmd'),
-      ['@echo off', 'setlocal', `${nodeCmd} "%~dp0${CLI_ENTRY.replace(/\//g, '\\')}" %*`, 'exit /b %ERRORLEVEL%', ''].join('\r\n'),
+      [
+        '@echo off',
+        'setlocal',
+        // Lets the CLI detect it is running from a bundle so it writes an
+        // npx-free squad_state MCP spec (see mcp-spec.ts tier 0).
+        'set "SQUAD_STANDALONE_HOME=%~dp0"',
+        `${nodeCmd} "%~dp0${CLI_ENTRY.replace(/\//g, '\\')}" %*`,
+        'exit /b %ERRORLEVEL%',
+        '',
+      ].join('\r\n'),
     );
     // PowerShell shim so `squad` resolves for users whose PATHEXT excludes .CMD.
     writeFileSync(
@@ -234,6 +251,7 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
       [
         '$ErrorActionPreference = "Stop"',
         '$root = Split-Path -Parent $MyInvocation.MyCommand.Path',
+        '$env:SQUAD_STANDALONE_HOME = $root',
         skipRuntime ? '$node = "node"' : '$node = Join-Path $root "runtime\\node.exe"',
         `& $node (Join-Path $root "${CLI_ENTRY.replace(/\//g, '\\')}") @args`,
         'exit $LASTEXITCODE',
@@ -259,6 +277,10 @@ function writeLaunchers(bundleDir, platform, skipRuntime) {
       '  esac',
       'done',
       'root="$(cd "$(dirname "$target")" && pwd)"',
+      '# Lets the CLI detect it is running from a bundle so it writes an',
+      '# npx-free squad_state MCP spec (see mcp-spec.ts tier 0).',
+      'SQUAD_STANDALONE_HOME="$root"',
+      'export SQUAD_STANDALONE_HOME',
       skipRuntime ? 'node_bin="node"' : 'node_bin="$root/runtime/bin/node"',
       `exec "$node_bin" "$root/${CLI_ENTRY}" "$@"`,
       '',

@@ -1,0 +1,15 @@
+# Keep the build context small and avoid copying host-built artifacts into the
+# image — the builder stage compiles everything from source.
+node_modules
+**/node_modules
+dist
+**/dist
+dist-standalone
+docs/dist
+coverage
+.git
+.github
+.squad/.scratch
+*.log
+*.tsbuildinfo
+.env
