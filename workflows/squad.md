@@ -272,37 +272,93 @@ team in a friendly, readable format:
 This squad was cast from **{Universe Name}** — a team of {N} specialists
 tailored to this repository.
 
-| Name | Role | What They Own |
-|------|------|---------------|
-| {Name} | {Role} | {brief ownership summary} |
-| ... | ... | ... |
+| Name | Role | Specialty | How to Talk to Them |
+|------|------|-----------|---------------------|
+| {emoji} {Name} | {Role} | {area of expertise} | `squad:{id}` label or mention in issue |
+| ... | ... | ... | ... |
 
 ### Always-On Support
 
-| Name | Role | Notes |
-|------|------|-------|
-| Scribe | Session Logger | Tracks all agent sessions silently |
-| Ralph | Work Monitor | Watches the backlog and alerts on stale work |
+| Name | Role | Specialty | How to Talk to Them |
+|------|------|-----------|---------------------|
+| 📋 Scribe | Session Logger | Tracking all agent sessions | Automatic — never needs explicit routing |
+| 🔄 Ralph | Work Monitor | Backlog health and stale work alerts | Automatic — watches for idle work |
 
-## How It Works
+## How to Work With Your Squad
 
-Each squad member has a **charter** (`.squad/agents/{name}/charter.md`) that
-defines their expertise, boundaries, and personality. Work is routed to the
-right specialist automatically via `.squad/routing.md`.
+### Label-Based Assignment
 
-## Getting Started
+Apply a `squad:{name}` label to any issue or PR to route it directly to that
+specialist. For example, `squad:fido` sends work to your test engineer.
 
-- View the full roster: `.squad/team.md`
-- See routing rules: `.squad/routing.md`
-- Customize a member: `/squad cast-member <name> <changes>`
-- Check status: `/squad status`
+### Iteration Commands
+
+| Command | What It Does |
+|---------|--------------|
+| `/squad cast` | Re-cast the full team (replaces current squad) |
+| `/squad cast-member <spec>` | Add or modify a single team member |
+| `/squad retire <name>` | Remove a team member from the roster |
+| `/squad status` | Check current team composition and health |
+
+### Routing
+
+Work is routed automatically via `.squad/routing.md`. Each member has a
+**charter** (`.squad/agents/{name}/charter.md`) defining their expertise,
+boundaries, and personality.
+
+## What Happened Here
+
+{mode_rationale_block}
 
 ---
 
 *Cast on {date} for {owner}/{repo}*
 ```
 
-##### Step 6: Open PR
+**Mode-specific content for `{mode_rationale_block}`:**
+
+- **Cast mode:** Include full analysis rationale:
+  ```markdown
+  This team was assembled based on automated analysis of your repository:
+
+  - **Languages detected:** {languages}
+  - **Repo structure:** {structure summary, e.g., monorepo, single-package, etc.}
+  - **CI/CD patterns:** {CI tools found, e.g., GitHub Actions, Docker, etc.}
+  - **Rationale:** {why these roles were chosen over alternatives}
+  ```
+
+- **Connect mode:**
+  ```markdown
+  This squad is externally managed — connected from `{source}`. Local changes
+  will be overwritten on the next sync. To customize, disconnect first with
+  `/squad cast`.
+  ```
+
+- **Adopt mode:**
+  ```markdown
+  This squad was adopted from `{url}` and is now locally owned. You can
+  freely modify charters, add members, or re-cast. The original source is
+  no longer tracked.
+  ```
+
+##### Step 6: Auto-Include copilot-setup-steps.yml
+
+Check if `.github/workflows/copilot-setup-steps.yml` exists in the repository.
+
+If **missing:**
+1. Generate a `copilot-setup-steps.yml` appropriate for the detected language/toolchain:
+   - For Node.js projects: include `actions/setup-node@v4` + `npm ci`
+   - For Python projects: include `actions/setup-python@v5` + `pip install`
+   - For Go projects: include `actions/setup-go@v5`
+   - For other/mixed: include a minimal checkout-only version
+2. Place it at `.github/workflows/copilot-setup-steps.yml`
+3. Include it in the PR files (see Step 7)
+4. Mention in the PR body: "Also included `copilot-setup-steps.yml` since it was
+   missing — this enables the Copilot coding agent to work with your squad immediately."
+
+If **present:** Do nothing. Never overwrite an existing setup steps file.
+
+##### Step 7: Open PR
 
 Open a pull request using the `create-pull-request` safe-output:
 
@@ -315,6 +371,7 @@ Open a pull request using the `create-pull-request` safe-output:
   - `.squad/` (entire directory)
   - `.github/agents/squad.agent.md`
   - `meet-the-squad.md`
+  - `.github/workflows/copilot-setup-steps.yml` (only if generated in Step 6)
 
 Stage only the files listed above. Do NOT commit unrelated changes.
 
