@@ -80,6 +80,17 @@ jobs:
       - name: Install workspace dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Ensure unzip is available
+        # GNU tar cannot read zip archives, so cross-building a Windows bundle
+        # on a Linux runner needs unzip to unpack the Node runtime.
+        if: matrix.platform == 'win32'
+        run: |
+          set -euo pipefail
+          command -v unzip >/dev/null 2>&1 || {
+            sudo apt-get update -qq && sudo apt-get install -y -qq unzip
+          }
+          unzip -v | head -n 1
+
       - name: Build packages
         run: npm run build
 
@@ -130,8 +141,13 @@ jobs:
             test -f "${bundle}/BUNDLE-INFO.json"
             test -d "${bundle}/app/node_modules/@bradygaster/squad-cli"
             if [ "${TARGET_PLATFORM}" = "win32" ]; then
-              test -f "${bundle}/runtime/node.exe"
+              # squad.exe is a Node single executable built from the vendored
+              # runtime, so it replaces runtime/node.exe rather than sitting
+              # next to it. winget requires this real .exe — its portable
+              # installer does not accept .cmd targets.
+              test -f "${bundle}/squad.exe"
               test -f "${bundle}/squad.cmd"
+              test ! -d "${bundle}/runtime"
             else
               test -f "${bundle}/runtime/bin/node"
               test -f "${bundle}/squad"
@@ -178,3 +194,61 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "${TAG}" ./* --clobber --repo "${GITHUB_REPOSITORY}"
+
+  packaging:
+    name: Generate Homebrew and winget manifests
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate manifests
+        env:
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: |
+          set -euo pipefail
+          cat artifacts/*.sha256 > "${RUNNER_TEMP}/SHA256SUMS.txt"
+          node scripts/generate-packaging.mjs \
+            --version "${TAG}" \
+            --checksums "${RUNNER_TEMP}/SHA256SUMS.txt" \
+            --out-dir dist-packaging
+
+      # Submitting to homebrew-core and winget-pkgs requires pushing to
+      # repositories this workflow has no credentials for, so the manifests are
+      # published as an artifact for a maintainer to submit. Automating the
+      # submission is follow-up work once the packages are accepted once.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7
+        with:
+          name: packaging-manifests
+          path: dist-packaging/
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Summarize
+        env:
+          TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Packaging manifests for ${TAG}"
+            echo ""
+            echo "Download the \`packaging-manifests\` artifact, then:"
+            echo ""
+            # shellcheck disable=SC2016
+            echo '- Homebrew — copy `homebrew/squad.rb` into the tap as `Casks/squad.rb`.'
+            # shellcheck disable=SC2016
+            echo '- winget — copy `winget/` into `winget-pkgs/manifests/b/bradygaster/Squad/<version>/`,'
+            # shellcheck disable=SC2016
+            echo '  validate with `winget validate --manifest <dir>`, then open the PR.'
+          } >> "${GITHUB_STEP_SUMMARY}"
+

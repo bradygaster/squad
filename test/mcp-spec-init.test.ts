@@ -190,6 +190,17 @@ describe('detectStandaloneLauncher (#1593)', () => {
     process.env[STANDALONE_HOME_ENV] = dir;
     expect(detectStandaloneLauncher()).toBe(path.join(dir, name));
   });
+
+  it.runIf(process.platform === 'win32')('prefers squad.exe over squad.cmd on Windows', () => {
+    // Since the fix for CVE-2024-27980 Node refuses to spawn a .cmd without
+    // shell:true, so an MCP client spawning the command directly would fail.
+    // The .exe must win whenever the bundle ships one.
+    const dir = mkdtempSync(path.join(tmpdir(), 'squad-bundle-exe-'));
+    writeFileSync(path.join(dir, 'squad.cmd'), '@echo off\n');
+    writeFileSync(path.join(dir, 'squad.exe'), 'MZ');
+    process.env[STANDALONE_HOME_ENV] = dir;
+    expect(detectStandaloneLauncher()).toBe(path.join(dir, 'squad.exe'));
+  });
 });
 
 describe('describeMcpSpec — standalone specs (#1593)', () => {
