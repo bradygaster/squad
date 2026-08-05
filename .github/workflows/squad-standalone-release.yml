@@ -244,8 +244,11 @@ jobs:
             echo ""
             echo "Download the \`packaging-manifests\` artifact, then:"
             echo ""
+            # shellcheck disable=SC2016
             echo '- Homebrew — copy `homebrew/squad.rb` into the tap as `Casks/squad.rb`.'
+            # shellcheck disable=SC2016
             echo '- winget — copy `winget/` into `winget-pkgs/manifests/b/bradygaster/Squad/<version>/`,'
+            # shellcheck disable=SC2016
             echo '  validate with `winget validate --manifest <dir>`, then open the PR.'
           } >> "${GITHUB_STEP_SUMMARY}"
 
