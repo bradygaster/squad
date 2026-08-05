@@ -72,7 +72,7 @@ jobs:
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
 
       - name: Initialize Squad team
-        uses: bradygaster/squad/.github/actions/squad-init@dev
+        uses: bradygaster/squad/.github/actions/squad-init@main
         with:
           version: ${{ vars.SQUAD_CLI_VERSION || 'latest' }}
           preset: default
@@ -89,7 +89,7 @@ jobs:
           path: |
             .squad
             .github/agents/squad.agent.md
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 1
 
 steps:
