@@ -378,38 +378,312 @@ Stage only the files listed above. Do NOT commit unrelated changes.
 ---
 
 #### Connect Mode
-<!-- TODO: Full implementation in #1615 -->
 
-Connect mode links a repository to an existing Squad source (remote team
-configuration). Not yet implemented — reply with a comment explaining that
-Connect mode is coming soon and link to the Squad repository for updates.
+Connect mode links a repository to an externally managed Squad source. It
+commits only a lightweight config pointer — squad files are never stored in the
+target repo. The `shared/squad.md` bootstrap component pulls remote squad files
+at activation time.
+
+##### Step 1: Parse Source URL
+
+1. Extract the source argument from the parsed command text (e.g.,
+   `/squad connect org/repo` → `org/repo`).
+2. Normalize the source to `owner/repo` format. Accept both full GitHub URLs
+   (`https://github.com/org/repo`) and shorthand (`org/repo`).
+3. If no source argument is provided, post a comment explaining correct usage:
+   `/squad connect <owner/repo>` and stop.
+
+##### Step 2: Validate Source Accessibility
+
+1. Run `gh api repos/{owner}/{repo}/contents/.squad/team.md --jq .name` to
+   verify the source repo exists and contains a `.squad/` directory.
+2. If the API call fails with a 404 or permission error:
+   - Post a comment on the triggering issue/PR explaining the error:
+     > ❌ Could not access `{source}`. Please verify:
+     > - The repository exists and is not private (or the app has access)
+     > - The `SQUAD_GITHUB_APP_*` secrets are configured correctly
+     > - The source repo contains a `.squad/` directory
+   - Stop execution — do not open a PR.
+3. If accessible, continue to Step 3.
+
+##### Step 3: Write Config Pointer
+
+1. Create `.squad/config.json` with the following content:
+   ```json
+   {
+     "squadSource": "{owner}/{repo}",
+     "mode": "connect",
+     "connectedAt": "{ISO-8601 timestamp}"
+   }
+   ```
+2. This is the ONLY `.squad/` file committed to the target repo. All other squad
+   files are resolved at runtime from the source.
+
+##### Step 4: Generate meet-the-squad.md
+
+Create `meet-the-squad.md` at the repository root. Use the standard template
+from Step 5 of Cast Mode with the Connect mode rationale block:
+
+```markdown
+This squad is externally managed — connected from `{source}`. Local changes
+will be overwritten on the next sync. To customize, disconnect first with
+`/squad cast`.
+```
+
+Include a note that the team roster is managed in the source repo and link to
+`https://github.com/{source}/.squad/team.md` for details.
+
+##### Step 5: Open PR
+
+Open a pull request using the `create-pull-request` safe-output:
+
+- **Branch:** `squad/connect-{short-repo-name}`
+- **Title:** `[squad] Connect to {source}`
+- **Body:** Explain that the repo is now linked to an external squad source.
+  Note that squad files are fetched at activation time — nothing else is
+  committed locally. Link to the source repo.
+- **Files to include:**
+  - `.squad/config.json`
+  - `meet-the-squad.md`
+
+Stage only the files listed above. Do NOT commit `.squad/agents/`, `.squad/team.md`,
+or any other scaffolding — those live in the source repo.
 
 ---
 
 #### Adopt Mode
-<!-- TODO: Full implementation in #1616 -->
 
-Adopt mode pulls a complete squad configuration from a remote URL and installs
-it locally. Not yet implemented — reply with a comment explaining that Adopt
-mode is coming soon.
+Adopt mode fetches a complete squad definition from a remote source and commits
+it locally. Unlike Connect mode, everything is owned by the target repo — there
+is no ongoing sync. The user can freely customize after adoption.
+
+##### Step 1: Parse Source URL
+
+1. Extract the source argument from the parsed command text (e.g.,
+   `/squad adopt org/repo` → `org/repo`).
+2. Normalize the source to `owner/repo` format. Accept both full GitHub URLs
+   and shorthand notation.
+3. If no source argument is provided, post a comment explaining correct usage:
+   `/squad adopt <owner/repo>` and stop.
+
+##### Step 2: Validate & Fetch Source
+
+1. Run `gh api repos/{owner}/{repo}/contents/.squad --jq '.[].name'` to verify
+   the source repo is accessible and contains a `.squad/` directory.
+2. If the API call fails with a 404 or permission error:
+   - Post a comment on the triggering issue/PR explaining the error:
+     > ❌ Could not access `{source}`. Please verify:
+     > - The repository exists and is not private (or the app has access)
+     > - The `SQUAD_GITHUB_APP_*` secrets are configured correctly
+     > - The source repo contains a `.squad/` directory
+   - Stop execution — do not open a PR.
+3. Clone or download the `.squad/` directory contents from the source repo using
+   `gh api` to fetch each file recursively.
+4. Also fetch `.github/agents/squad.agent.md` from the source if it exists.
+
+##### Step 3: Install Scaffolding Locally
+
+1. Copy the entire `.squad/` directory into the target repo workspace, replacing
+   any existing scaffolding from `squad init`.
+2. Copy `.github/agents/squad.agent.md` into position.
+3. Write `.squad/config.json` with:
+   ```json
+   {
+     "squadSource": "{owner}/{repo}",
+     "mode": "adopt",
+     "adoptedAt": "{ISO-8601 timestamp}"
+   }
+   ```
+
+##### Step 4: Adapt Repo-Specific References
+
+1. Read the target repo structure (top-level dirs, package files, CI config).
+2. Update `.squad/routing.md` to reference paths and patterns that actually
+   exist in the target repo (e.g., if source routing references `packages/`
+   but target uses `src/`, adjust accordingly).
+3. If any charter references source-repo-specific files or directories, update
+   those paths to match the target repo's structure.
+
+##### Step 5: Generate meet-the-squad.md
+
+Create `meet-the-squad.md` at the repository root. Use the standard template
+from Step 5 of Cast Mode with the Adopt mode rationale block:
+
+```markdown
+This squad was adopted from `{source}` and is now locally owned. You can
+freely modify charters, add members, or re-cast. The original source is
+no longer tracked.
+```
+
+Include the full team table from the adopted `.squad/team.md`.
+
+##### Step 6: Auto-Include copilot-setup-steps.yml
+
+Same as Cast Mode Step 6. Check if `.github/workflows/copilot-setup-steps.yml`
+exists. If missing, generate one appropriate for the target repo's detected
+language/toolchain and include it in the PR.
+
+##### Step 7: Open PR
+
+Open a pull request using the `create-pull-request` safe-output:
+
+- **Branch:** `squad/adopt-{short-repo-name}`
+- **Title:** `[squad] Adopt squad from {source}`
+- **Body:** Explain that the full squad was adopted from the source and is now
+  locally owned. List the team members adopted, the universe, and note that
+  routing was adapted for this repo's structure.
+- **Files to include:**
+  - `.squad/` (entire directory)
+  - `.github/agents/squad.agent.md`
+  - `meet-the-squad.md`
+  - `.github/workflows/copilot-setup-steps.yml` (only if generated in Step 6)
+
+Stage only the files listed above. Do NOT commit unrelated changes.
 
 ---
 
 #### Cast Member Mutation
-<!-- TODO: Full implementation in #1617 -->
 
-Cast Member mode adds or modifies a single team member in an existing squad.
-Not yet implemented — reply with a comment explaining that Cast Member mutations
-are coming soon.
+Cast Member mode adds, modifies, or renames a single team member within an
+existing squad. It preserves the current universe and avoids name conflicts.
+
+**Subcommands:**
+- `/squad cast-member <description>` — Add a new member with the described specialty
+- `/squad cast-member rename <name> to <new-focus>` — Modify an existing member
+- `/squad cast-member modify <name> to <change>` — Modify an existing member
+
+##### Step 1: Parse the Spec
+
+1. Extract the description or subcommand from the argument text.
+2. Determine the operation:
+   - If text starts with `rename` or `modify`: this is a member modification.
+     Parse `<name>` (the existing member) and `<change>` (the new focus).
+   - Otherwise: this is a new member addition. The full text describes the
+     desired role/specialty.
+
+##### Step 2: Validate Existing Squad
+
+1. Verify `.squad/team.md` and `.squad/casting/registry.json` exist. If not,
+   post a comment suggesting `/squad cast` first and stop.
+2. Read the current registry to load active members, universe, and used names.
+
+##### Step 3: Check for Duplicates (New Member Only)
+
+1. Compare the requested specialty against existing active members' roles.
+2. If a substantially similar role already exists, post a comment asking the
+   user to confirm or suggesting they modify the existing member instead.
+   Include the conflicting member's name and role.
+
+##### Step 4: Allocate Identity (New Member Only)
+
+1. Read `.squad/casting/registry.json` to determine the active universe.
+2. Select an unused character name from the same universe that thematically
+   fits the new role. Follow the same naming rules as Cast Mode Step 3
+   (pressure/function over authority, no spoilers, early-introduction names).
+3. If the universe has no remaining capacity, post a comment explaining the
+   universe is full and suggest retiring a member first or re-casting.
+
+##### Step 5: Generate or Regenerate Charter
+
+**For new members:**
+1. Create `.squad/agents/{id}/charter.md` using the standard charter template
+   from Cast Mode Step 4. Tailor expertise, ownership, and boundaries to the
+   specified specialty.
+
+**For modifications (rename/modify):**
+1. Read the existing charter at `.squad/agents/{id}/charter.md`.
+2. Regenerate the charter with the new focus/specialty while preserving:
+   - The assigned character name (persistent identity)
+   - The `created_at` timestamp in the registry
+3. Update expertise, ownership areas, and boundaries to reflect the new focus.
+
+##### Step 6: Update Squad Files
+
+1. **`.squad/team.md`** — Add (or update) the member row in the Members table.
+2. **`.squad/routing.md`** — Add (or update) routing rules for the member's
+   domain. For modifications, update the domain mapping if it changed.
+3. **`.squad/casting/registry.json`** — Add the new entry (or update the
+   existing entry for modifications). Preserve `created_at` for modifications.
+4. **`meet-the-squad.md`** — Add (or update) the member in the team table.
+
+##### Step 7: Open PR or Push Commit
+
+Determine context-aware behavior based on the trigger location:
+
+- **Triggered on a Squad PR** (a PR with the `squad` label on a `squad/*` branch):
+  Push a new commit to the existing PR branch with the member changes.
+  Post a comment on the PR noting the addition/modification.
+- **Triggered on an issue or non-Squad PR:**
+  Open a new pull request using the `create-pull-request` safe-output:
+  - **Branch:** `squad/cast-member-{id}`
+  - **Title:** `[squad] Add {Name} — {Role}` (or `Modify {Name}` for updates)
+  - **Body:** Describe the new/updated member, their role, and how to route
+    work to them.
+  - **Files to include:** `.squad/team.md`, `.squad/routing.md`,
+    `.squad/casting/registry.json`, `.squad/agents/{id}/charter.md`,
+    `meet-the-squad.md`
+
+Stage only the affected files. Do NOT commit unrelated changes.
 
 ---
 
 #### Retire Mode
-<!-- TODO: Full implementation in #1617 -->
 
-Retire mode removes a named team member, archives their charter, and updates
-the roster. Not yet implemented — reply with a comment explaining that Retire
-mode is coming soon.
+Retire mode removes a named team member from the active roster, archives their
+charter, and updates all squad files to reflect the removal.
+
+##### Step 1: Identify Target Member
+
+1. Extract the name or role argument from `/squad retire <name-or-role>`.
+2. Read `.squad/casting/registry.json` and `.squad/team.md`.
+3. Match the argument against:
+   - Exact character name (case-insensitive)
+   - Role title (partial match acceptable)
+   - Agent ID (kebab-case identifier)
+4. If no match is found, post a comment listing active members and ask the
+   user to clarify which member to retire.
+5. If multiple matches are found, post a comment listing the ambiguous matches
+   and ask for clarification.
+
+##### Step 2: Archive Charter
+
+1. Create `.squad/agents/_alumni/` directory if it does not exist.
+2. Move `.squad/agents/{id}/charter.md` to `.squad/agents/_alumni/{id}.md`.
+3. Add a frontmatter note to the archived charter:
+   ```markdown
+   <!-- Retired: {ISO-8601 timestamp} | Previously: {Name} — {Role} -->
+   ```
+4. Remove the now-empty `.squad/agents/{id}/` directory.
+
+##### Step 3: Update Squad Files
+
+1. **`.squad/casting/registry.json`** — Set the member's `status` to `"retired"`
+   and add a `retired_at` timestamp. Do NOT delete the entry (preserves history).
+2. **`.squad/team.md`** — Remove the member row from the active Members table.
+   Optionally add an Alumni section if one doesn't exist.
+3. **`.squad/routing.md`** — Remove or reassign routing rules that pointed to
+   the retired member. If their domain is still needed, note it as unassigned
+   or suggest the user cast a replacement.
+4. **`meet-the-squad.md`** — Remove the member from the team table.
+
+##### Step 4: Open PR or Push Commit
+
+Same context-aware behavior as Cast Member mode:
+
+- **Triggered on a Squad PR:** Push a commit to the existing PR branch.
+  Post a comment noting the retirement.
+- **Triggered on an issue or non-Squad PR:**
+  Open a new pull request using the `create-pull-request` safe-output:
+  - **Branch:** `squad/retire-{id}`
+  - **Title:** `[squad] Retire {Name} — {Role}`
+  - **Body:** Explain who was retired, that their charter is archived in
+    `_alumni/`, and note any routing rules that may need a replacement.
+  - **Files to include:** `.squad/team.md`, `.squad/routing.md`,
+    `.squad/casting/registry.json`, `.squad/agents/_alumni/{id}.md`,
+    `meet-the-squad.md`
+  - **Files to delete:** `.squad/agents/{id}/charter.md`
+
+Stage only the affected files. Do NOT commit unrelated changes.
 
 ---
 
