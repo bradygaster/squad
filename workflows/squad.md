@@ -10,6 +10,11 @@ on:
       - issue_comment
       - pull_request_review_comment
   workflow_dispatch:
+    inputs:
+      command:
+        description: 'Squad command (e.g., cast, connect org/repo, adopt org/repo, status)'
+        required: false
+        default: 'cast'
 permissions:
   contents: write
   issues: write
@@ -175,7 +180,7 @@ Select a fictional universe and assign character names:
    ```json
    {
      "agents": {
-       "role-id": {
+       "{lowercase-name}": {
          "created_at": "2026-08-05T19:00:00.000Z",
          "persistent_name": "CharacterName",
          "universe": "Universe Name",
@@ -212,12 +217,20 @@ Create or replace the following files and directories:
    ## Members
    | Name | Role | Charter | Status |
    |------|------|---------|--------|
-   | {Name} | {Role} | `.squad/agents/{id}/charter.md` | ✅ Active |
+   | {Name} | {Role} | `.squad/agents/{lowercase-name}/charter.md` | ✅ Active |
    | Scribe | Session Logger | — | 📋 Silent |
    | Ralph | Work Monitor | — | 🔄 Monitor |
+
+   ## Coding Agent
+
+   <!-- copilot-auto-assign: false -->
+
+   | Name | Role | Charter | Status |
+   |------|------|---------|--------|
+   | @copilot | Coding Agent | — | 🤖 Coding Agent |
    ```
 
-2. **`.squad/agents/{id}/charter.md`** for each agent — minimal charter:
+2. **`.squad/agents/{lowercase-name}/charter.md`** for each agent — minimal charter:
    ```markdown
    # {Name} — {Role}
 
@@ -274,7 +287,7 @@ tailored to this repository.
 
 | Name | Role | Specialty | How to Talk to Them |
 |------|------|-----------|---------------------|
-| {emoji} {Name} | {Role} | {area of expertise} | `squad:{id}` label or mention in issue |
+| {emoji} {Name} | {Role} | {area of expertise} | `squad:{lowercase-name}` label or mention in issue |
 | ... | ... | ... | ... |
 
 ### Always-On Support
@@ -586,12 +599,12 @@ existing squad. It preserves the current universe and avoids name conflicts.
 ##### Step 5: Generate or Regenerate Charter
 
 **For new members:**
-1. Create `.squad/agents/{id}/charter.md` using the standard charter template
+1. Create `.squad/agents/{lowercase-name}/charter.md` using the standard charter template
    from Cast Mode Step 4. Tailor expertise, ownership, and boundaries to the
    specified specialty.
 
 **For modifications (rename/modify):**
-1. Read the existing charter at `.squad/agents/{id}/charter.md`.
+1. Read the existing charter at `.squad/agents/{lowercase-name}/charter.md`.
 2. Regenerate the charter with the new focus/specialty while preserving:
    - The assigned character name (persistent identity)
    - The `created_at` timestamp in the registry
@@ -615,12 +628,12 @@ Determine context-aware behavior based on the trigger location:
   Post a comment on the PR noting the addition/modification.
 - **Triggered on an issue or non-Squad PR:**
   Open a new pull request using the `create-pull-request` safe-output:
-  - **Branch:** `squad/cast-member-{id}`
+  - **Branch:** `squad/cast-member-{lowercase-name}`
   - **Title:** `[squad] Add {Name} — {Role}` (or `Modify {Name}` for updates)
   - **Body:** Describe the new/updated member, their role, and how to route
     work to them.
   - **Files to include:** `.squad/team.md`, `.squad/routing.md`,
-    `.squad/casting/registry.json`, `.squad/agents/{id}/charter.md`,
+    `.squad/casting/registry.json`, `.squad/agents/{lowercase-name}/charter.md`,
     `meet-the-squad.md`
 
 Stage only the affected files. Do NOT commit unrelated changes.
@@ -647,13 +660,12 @@ charter, and updates all squad files to reflect the removal.
 
 ##### Step 2: Archive Charter
 
-1. Create `.squad/agents/_alumni/` directory if it does not exist.
-2. Move `.squad/agents/{id}/charter.md` to `.squad/agents/_alumni/{id}.md`.
-3. Add a frontmatter note to the archived charter:
+1. Create `.squad/agents/_alumni/{lowercase-name}/` directory if it does not exist.
+2. Move the entire `.squad/agents/{lowercase-name}/` directory to `.squad/agents/_alumni/{lowercase-name}/`.
+3. Add a retirement header to the archived `charter.md`:
    ```markdown
    <!-- Retired: {ISO-8601 timestamp} | Previously: {Name} — {Role} -->
    ```
-4. Remove the now-empty `.squad/agents/{id}/` directory.
 
 ##### Step 3: Update Squad Files
 
@@ -674,14 +686,14 @@ Same context-aware behavior as Cast Member mode:
   Post a comment noting the retirement.
 - **Triggered on an issue or non-Squad PR:**
   Open a new pull request using the `create-pull-request` safe-output:
-  - **Branch:** `squad/retire-{id}`
+  - **Branch:** `squad/retire-{lowercase-name}`
   - **Title:** `[squad] Retire {Name} — {Role}`
   - **Body:** Explain who was retired, that their charter is archived in
     `_alumni/`, and note any routing rules that may need a replacement.
   - **Files to include:** `.squad/team.md`, `.squad/routing.md`,
-    `.squad/casting/registry.json`, `.squad/agents/_alumni/{id}.md`,
+    `.squad/casting/registry.json`, `.squad/agents/_alumni/{lowercase-name}/`,
     `meet-the-squad.md`
-  - **Files to delete:** `.squad/agents/{id}/charter.md`
+  - **Files to delete:** `.squad/agents/{lowercase-name}/`
 
 Stage only the affected files. Do NOT commit unrelated changes.
 
