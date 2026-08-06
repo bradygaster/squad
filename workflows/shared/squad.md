@@ -55,10 +55,6 @@ engine:
   id: copilot
   agent: squad
 
-ambient-folders:
-  - ".squad"
-  - ".github/agents"
-
 jobs:
   activation:
     pre-steps:
