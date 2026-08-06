@@ -16,9 +16,7 @@ on:
         required: false
         default: 'cast'
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
   copilot-requests: write
 network:
   allowed:
@@ -36,6 +34,11 @@ safe-outputs:
     labels: [squad]
     max: 3
     expires: 14
+  create-issue:
+    labels: [squad]
+    max: 5
+  add-comment:
+    max: 10
 ---
 
 # Squad — Unified `/squad` Slash Command
@@ -623,8 +626,9 @@ existing squad. It preserves the current universe and avoids name conflicts.
 Determine context-aware behavior based on the trigger location:
 
 - **Triggered on a Squad PR** (a PR with the `squad` label on a `squad/*` branch):
-  Push a new commit to the existing PR branch with the member changes.
-  Post a comment on the PR noting the addition/modification.
+  Open a follow-up pull request using the `create-pull-request` safe-output targeting
+  the existing PR branch with the member changes.
+  Post a comment on the PR using the `add-comment` safe-output noting the addition/modification.
 - **Triggered on an issue or non-Squad PR:**
   Open a new pull request using the `create-pull-request` safe-output:
   - **Branch:** `squad/cast-member-{lowercase-name}`
@@ -681,8 +685,9 @@ charter, and updates all squad files to reflect the removal.
 
 Same context-aware behavior as Cast Member mode:
 
-- **Triggered on a Squad PR:** Push a commit to the existing PR branch.
-  Post a comment noting the retirement.
+- **Triggered on a Squad PR:** Open a follow-up pull request using the
+  `create-pull-request` safe-output targeting the existing PR branch.
+  Post a comment using the `add-comment` safe-output noting the retirement.
 - **Triggered on an issue or non-Squad PR:**
   Open a new pull request using the `create-pull-request` safe-output:
   - **Branch:** `squad/retire-{lowercase-name}`
