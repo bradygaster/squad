@@ -113,8 +113,10 @@ and opens a PR introducing the new team.
 ##### Step 0: Brief Resolution
 
 Before analyzing the repo, determine the **primary casting input** by evaluating
-two signals: the parent issue body (`github.event.issue.body`) and the repository
-content (README, file structure, etc.).
+two signals: the parent issue title and body (`github.event.issue.title` +
+`github.event.issue.body`) and the repository content (README, file structure,
+etc.). Both title and body contribute to the casting brief — a non-empty title
+with an empty body is still a valid issue signal.
 
 **Priority cascade:**
 
@@ -124,9 +126,9 @@ content (README, file structure, etc.).
 | Empty/bare | Has content | **Issue wins** — cast from the issue description |
 | Has content | Has content | **Merge** — repo is base context, issue augments or overrides |
 | Has content | Empty/minimal | **Repo wins** — standard cast behavior |
-| Any | Explicit SOT signal | **Issue is SOT** — user intent overrides, repo validates only |
+| Any | Explicit source-of-truth signal | **Issue is source of truth** — user intent overrides, repo validates only |
 
-"Explicit SOT signal" means the issue body reads like a team spec — explicit role
+"Explicit source-of-truth signal" means the issue body reads like a team spec — explicit role
 lists, team-size declarations, operating-model descriptions, or language that
 signals "this is what I want." Infer this from structure and detail level.
 
