@@ -14,7 +14,7 @@
 # The Squad CLI is never installed or executed in the agent job — only the files it
 # produces (`.squad/` team state and `.github/agents/squad.agent.md`) are restored
 # there. This is deliberate: gh-aw's network firewall only constrains the agent job,
-# so all install/network work happens in the unrestricted activation job.
+# so the npm install and initialization happen in the unrestricted activation job.
 #
 # Usage (as an import in your gh-aw workflow):
 #   imports:
@@ -45,7 +45,7 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-#   Default is determined by the squad-init composite action (latest release).
+#   Default is 0.11.0.
 #
 # State backend is pinned to `local`: the compiled agent invocation passes
 # `--disable-builtin-mcps`, so Squad's `state-mcp` bridge does not load. A non-local
@@ -53,11 +53,8 @@
 # from a fresh `squad init`.
 engine:
   id: copilot
+  version: 1.0.78
   agent: squad
-
-ambient-folders:
-  - ".squad"
-  - ".github/agents"
 
 jobs:
   activation:
@@ -72,13 +69,10 @@ jobs:
           owner: ${{ vars.SQUAD_GITHUB_APP_OWNER }}
 
       - name: Initialize Squad team
-        uses: bradygaster/squad/.github/actions/squad-init@dev
-        with:
-          version: ${{ vars.SQUAD_CLI_VERSION || 'latest' }}
-          preset: default
-          state-backend: local
         env:
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.11.0' }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
+        run: npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.11.0}" init --preset default --state-backend local
 
       - name: Upload Squad state artifact
         if: success()
@@ -89,7 +83,7 @@ jobs:
           path: |
             .squad
             .github/agents/squad.agent.md
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 1
 
 steps:
@@ -110,18 +104,14 @@ agent sandbox:
 
 1. **`jobs.activation.pre-steps`** — the repository is already checked out by the
    activation job. This step optionally mints a GitHub App installation token (or
-   uses a supplied PAT), runs Squad initialization via the `squad-init` composite
-   action (from bradygaster/squad/.github/actions/squad-init@dev — the npm-free
-   replacement for `npx @bradygaster/squad-cli`), and uploads the resulting
-   `.squad/` team state plus `.github/agents/squad.agent.md` as a `squad-state`
-   artifact — all inside the activation job with unrestricted egress.
+   uses a supplied PAT), runs the pinned `@bradygaster/squad-cli` package, and
+   uploads the resulting `.squad/` team state plus
+   `.github/agents/squad.agent.md` as a `squad-state` artifact — all inside the
+   activation job with unrestricted egress.
 
 2. **`steps:`** (agent job) — downloads the `squad-state` artifact and restores it
    into the workspace. The Squad CLI is never installed here; only the files it
    produced are needed.
-
-Key difference from the .github/workflows/shared/ version: this file uses the
-squad-init composite action instead of npx, eliminating the npm registry dependency.
 
 -->
 
@@ -130,7 +120,7 @@ squad-init composite action instead of npx, eliminating the npm registry depende
 Squad's team state (`.squad/`) and its Copilot custom agent
 (`.github/agents/squad.agent.md`) were initialized during activation and restored
 into this checkout before you started — do **not** install Squad or run `squad init`
-yourself, and do **not** try to reach the npm registry.
+yourself.
 
 - Verify `.squad/team.md` exists before delegating work to the team. If it is
   missing, the activation-job bootstrap step failed — call `noop` and explain
