@@ -1,3 +1,8 @@
+---
+title: GitHub Agentic Workflows
+description: Setup and usage guide for Squad's /squad slash commands via GitHub Agentic Workflows
+---
+
 # GitHub Agentic Workflows integration
 
 Squad ships a first-class integration with **GitHub Agentic Workflows (`gh aw`)**.
@@ -384,6 +389,6 @@ are used. State does not persist across runs.
 
 ## See also
 
-- [Squad README](../README.md) — project overview and local CLI usage
-- [Workflow definition](../workflows/squad.md) — full slash command specification
-- [Bootstrap component](../workflows/shared/squad.md) — activation and artifact lifecycle
+- [Squad README](https://github.com/bradygaster/squad#readme) — project overview and local CLI usage
+- [Workflow definition](https://github.com/bradygaster/squad/blob/dev/workflows/squad.md) — full slash command specification
+- [Bootstrap component](https://github.com/bradygaster/squad/blob/dev/workflows/shared/squad.md) — activation and artifact lifecycle
