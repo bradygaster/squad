@@ -557,7 +557,7 @@ git add .github/workflows/ && git commit -m "Add Squad workflow" && git push
 
 Write a detailed team description in the issue body, then comment `/squad cast` — the issue becomes your casting brief. The more context you give, the better Squad tailors your team.
 
-📖 See [GitHub Agentic Workflows guide](docs/gh-aw.md) for the complete setup, configuration, and usage reference.
+📖 See [GitHub Agentic Workflows guide](https://bradygaster.github.io/squad/guide/gh-aw/) for the complete setup, configuration, and usage reference.
 
 ---
 
