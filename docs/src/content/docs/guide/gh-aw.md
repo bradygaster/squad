@@ -22,7 +22,7 @@ Five steps from zero to a working Squad team:
 gh extension install github/gh-aw
 
 # 2. Add the Squad workflow to your repo
-gh aw add bradygaster/squad/workflows/squad.md
+gh aw add bradygaster/squad/workflows/squad.md@dev
 
 # 3. Compile the workflow to a lock file
 gh aw compile
@@ -56,8 +56,12 @@ and opens a PR with the result.
 ### Install the workflow
 
 ```bash
-gh aw add bradygaster/squad/workflows/squad.md
+gh aw add bradygaster/squad/workflows/squad.md@dev
 ```
+
+:::note[Branch note]
+`@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
+:::
 
 This registers the Squad workflow in your repository's agentic workflow
 configuration.

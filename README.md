@@ -535,10 +535,12 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 ### Install
 
 ```bash
-gh aw add bradygaster/squad/workflows/squad.md
+gh aw add bradygaster/squad/workflows/squad.md@dev
 gh aw compile
 git add .github/workflows/ && git commit -m "Add Squad workflow" && git push
 ```
+
+> `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
 
 ### Slash commands
 
