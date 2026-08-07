@@ -110,6 +110,35 @@ Cast mode analyzes the target repository, composes a specialist team, assigns
 character names from a fictional universe, generates full `.squad/` scaffolding,
 and opens a PR introducing the new team.
 
+##### Step 0: Brief Resolution
+
+Before analyzing the repo, determine the **primary casting input** by evaluating
+two signals: the parent issue body (`github.event.issue.body`) and the repository
+content (README, file structure, etc.).
+
+**Priority cascade:**
+
+| Repo Signal | Issue Signal | Result |
+|-------------|-------------|--------|
+| Empty/bare | Empty/no body | **Noop** — post a comment (see below), stop |
+| Empty/bare | Has content | **Issue wins** — cast from the issue description |
+| Has content | Has content | **Merge** — repo is base context, issue augments or overrides |
+| Has content | Empty/minimal | **Repo wins** — standard cast behavior |
+| Any | Explicit SOT signal | **Issue is SOT** — user intent overrides, repo validates only |
+
+"Explicit SOT signal" means the issue body reads like a team spec — explicit role
+lists, team-size declarations, operating-model descriptions, or language that
+signals "this is what I want." Infer this from structure and detail level.
+
+**Noop handling:** When both inputs are empty, use the `add-comment` safe-output
+to post: "Nothing to cast from — the repo has no substantive content and the
+issue has no casting brief. Add a README describing your project, or write your
+desired team composition in this issue body, then re-run `/squad cast`." Then
+stop — do not proceed to Step 1 or open a PR.
+
+Carry the cascade result forward: it determines whether Step 1's repo analysis
+is the primary input, an augmenting signal, or a validation-only pass.
+
 ##### Step 1: Repo Analysis
 
 Analyze the repository to understand what kind of team it needs:
