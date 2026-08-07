@@ -41,7 +41,6 @@ safe-outputs:
     allowed-files:
       - ".squad/**"
       - ".github/agents/squad.agent.md"
-      - ".github/workflows/copilot-setup-steps.yml"
       - "meet-the-squad.md"
     protected-files: allowed
     max-patch-files: 500
@@ -70,6 +69,9 @@ Access the slash command text from the GitHub event payload:
 The activation job already ran `squad init --preset default`, which produced a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
 mode REPLACES this scaffolding with a team tailored to the repository.
+
+This workflow does not create or modify files under `.github/workflows/`.
+Repository owners must configure Copilot setup steps separately when needed.
 
 ## Modes
 
@@ -371,24 +373,7 @@ boundaries, and personality.
   no longer tracked.
   ```
 
-##### Step 6: Auto-Include copilot-setup-steps.yml
-
-Check if `.github/workflows/copilot-setup-steps.yml` exists in the repository.
-
-If **missing:**
-1. Generate a `copilot-setup-steps.yml` appropriate for the detected language/toolchain:
-   - For Node.js projects: include `actions/setup-node@v4` + `npm ci`
-   - For Python projects: include `actions/setup-python@v5` + `pip install`
-   - For Go projects: include `actions/setup-go@v5`
-   - For other/mixed: include a minimal checkout-only version
-2. Place it at `.github/workflows/copilot-setup-steps.yml`
-3. Include it in the PR files (see Step 7)
-4. Mention in the PR body: "Also included `copilot-setup-steps.yml` since it was
-   missing — this enables the Copilot coding agent to work with your squad immediately."
-
-If **present:** Do nothing. Never overwrite an existing setup steps file.
-
-##### Step 7: Open PR
+##### Step 6: Open PR
 
 Open a pull request using the `create-pull-request` safe-output:
 
@@ -401,7 +386,6 @@ Open a pull request using the `create-pull-request` safe-output:
   - `.squad/` (entire directory)
   - `.github/agents/squad.agent.md`
   - `meet-the-squad.md`
-  - `.github/workflows/copilot-setup-steps.yml` (only if generated in Step 6)
 
 Stage only the files listed above. Do NOT commit unrelated changes.
 
@@ -545,13 +529,7 @@ no longer tracked.
 
 Include the full team table from the adopted `.squad/team.md`.
 
-##### Step 6: Auto-Include copilot-setup-steps.yml
-
-Same as Cast Mode Step 6. Check if `.github/workflows/copilot-setup-steps.yml`
-exists. If missing, generate one appropriate for the target repo's detected
-language/toolchain and include it in the PR.
-
-##### Step 7: Open PR
+##### Step 6: Open PR
 
 Open a pull request using the `create-pull-request` safe-output:
 
@@ -564,7 +542,6 @@ Open a pull request using the `create-pull-request` safe-output:
   - `.squad/` (entire directory)
   - `.github/agents/squad.agent.md`
   - `meet-the-squad.md`
-  - `.github/workflows/copilot-setup-steps.yml` (only if generated in Step 6)
 
 Stage only the files listed above. Do NOT commit unrelated changes.
 
