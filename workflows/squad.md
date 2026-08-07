@@ -7,6 +7,7 @@ on:
   slash_command:
     name: squad
     events:
+      - issues
       - issue_comment
       - pull_request_review_comment
   workflow_dispatch:
@@ -35,7 +36,16 @@ safe-outputs:
     title-prefix: "[squad] "
     labels: [squad]
     max: 3
-    expires: 14
+    allowed-base-branches:
+      - "squad/*"
+    allowed-files:
+      - ".squad/**"
+      - ".github/agents/squad.agent.md"
+      - ".github/workflows/copilot-setup-steps.yml"
+      - "meet-the-squad.md"
+    protected-files: allowed
+    max-patch-files: 500
+    expires: 14d
   create-issue:
     labels: [squad]
     max: 5
@@ -45,13 +55,14 @@ safe-outputs:
 
 # Squad — Unified `/squad` Slash Command
 
-Invoked via `/squad <mode> [options]` in issue comments or PR review comments,
-or manually via workflow_dispatch.
+Invoked via `/squad <mode> [options]` in issue bodies, issue comments, or PR
+review comments, or manually via workflow_dispatch.
 
 ## Trigger Context
 
 Access the slash command text from the GitHub event payload:
 
+- **Issue body:** `github.event.issue.body` — the full issue description
 - **Issue comment:** `github.event.comment.body` — the full comment text
 - **PR review comment:** `github.event.comment.body` — the full comment text
 - **Workflow dispatch:** `github.event.inputs.command` — manual input (default: `cast`)
@@ -80,7 +91,7 @@ Parse the slash command text to determine the mode:
 
 Extract the mode and arguments from the slash command text:
 
-1. Read the trigger comment body from the event payload.
+1. Read the trigger body from the event payload described above.
 2. Strip the `/squad` prefix and trim whitespace.
 3. Match the first word against known modes: `cast`, `connect`, `adopt`,
    `cast-member`, `retire`, `status`.
@@ -143,7 +154,7 @@ Based on the analysis, decide which roles the team needs. Every team gets a
 - Every team needs at minimum: Lead + 2 specialists + 1 quality role (tester or reviewer).
 - Avoid redundant roles — merge "reviewer" into Lead for small teams.
 - The built-in agents Scribe (session logger), Ralph (work monitor), and Rai
-  (interactive coach) are always present and do NOT count toward team composition.
+  (RAI reviewer) are always present and do NOT count toward team composition.
 
 ##### Step 3: Universe & Name Allocation
 
@@ -224,6 +235,7 @@ Create or replace the following files and directories:
    | {Name} | {Role} | `.squad/agents/{lowercase-name}/charter.md` | ✅ Active |
    | Scribe | Session Logger | — | 📋 Silent |
    | Ralph | Work Monitor | — | 🔄 Monitor |
+   | Rai | RAI Reviewer | — | 🛡️ RAI |
 
    ## Coding Agent
 
@@ -300,6 +312,7 @@ tailored to this repository.
 |------|------|-----------|---------------------|
 | 📋 Scribe | Session Logger | Tracking all agent sessions | Automatic — never needs explicit routing |
 | 🔄 Ralph | Work Monitor | Backlog health and stale work alerts | Automatic — watches for idle work |
+| 🛡️ Rai | RAI Reviewer | Responsible AI and safety review | Automatic — reviews high-risk output |
 
 ## How to Work With Your Squad
 
@@ -320,7 +333,7 @@ specialist. For example, `squad:fido` sends work to your test engineer.
 ### Routing
 
 Work is routed automatically via `.squad/routing.md`. Each member has a
-**charter** (`.squad/agents/{name}/charter.md`) defining their expertise,
+**charter** (`.squad/agents/{lowercase-name}/charter.md`) defining their expertise,
 boundaries, and personality.
 
 ## What Happened Here
@@ -417,8 +430,7 @@ at activation time.
 2. If the API call fails with a 404 or permission error:
    - Post a comment on the triggering issue/PR explaining the error:
      > ❌ Could not access `{source}`. Please verify:
-     > - The repository exists and is not private (or the app has access)
-     > - The `SQUAD_GITHUB_APP_*` secrets are configured correctly
+     > - The repository exists and is accessible to this workflow's GitHub tool
      > - The source repo contains a `.squad/` directory
    - Stop execution — do not open a PR.
 3. If accessible, continue to Step 3.
@@ -490,8 +502,7 @@ is no ongoing sync. The user can freely customize after adoption.
 2. If the API call fails with a 404 or permission error:
    - Post a comment on the triggering issue/PR explaining the error:
      > ❌ Could not access `{source}`. Please verify:
-     > - The repository exists and is not private (or the app has access)
-     > - The `SQUAD_GITHUB_APP_*` secrets are configured correctly
+     > - The repository exists and is accessible to this workflow's GitHub tool
      > - The source repo contains a `.squad/` directory
    - Stop execution — do not open a PR.
 3. Clone or download the `.squad/` directory contents from the source repo using
