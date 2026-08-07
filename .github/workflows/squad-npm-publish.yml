@@ -341,6 +341,23 @@ jobs:
             echo "::error::Cannot verify SDK dependency is resolvable — aborting CLI publish to prevent #1203"
             exit 1
           fi
+      - name: "Pin squad-sdk dependency to the exact published version (#1588)"
+        run: |
+          # Source keeps a floor range (">=x.y.z") so local workspace installs
+          # still resolve the in-repo SDK. That range is unbounded upward
+          # though, so a CLI version pinned by a downstream consumer silently
+          # picks up whatever SDK version is newest at their install time.
+          # Rewrite the published package.json to an exact pin so a given CLI
+          # version always resolves the same SDK version it shipped with.
+          PKG_VERSION="${{ steps.version.outputs.version }}"
+          node -e "
+            const fs = require('fs');
+            const path = 'packages/squad-cli/package.json';
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+            pkg.dependencies['@bradygaster/squad-sdk'] = '$PKG_VERSION';
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+            console.log('Pinned @bradygaster/squad-sdk dependency to ' + '$PKG_VERSION');
+          "
       - name: Build squad-sdk (required for CLI project references)
         run: npm -w packages/squad-sdk run build
       - name: Build squad-cli
