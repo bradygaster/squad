@@ -1872,6 +1872,15 @@ If any check fails, list the failures and reply with:
 *"Implementation plan has validation errors — cannot accept. Fix these and
 re-run `/squad plan accept implementation`."* Include specific diagnostics.
 
+**Sizing summary sourcing:** Search for the latest `<!-- squad-validation-v1 -->`
+comment. If found, extract the Sizing Summary table from it — this is the
+authoritative sizing record. Copy the sizing summary verbatim from the
+validation result. Do NOT re-count or regenerate sizing from the
+implementation plan text (which can be misread due to table formatting). If
+no validation result exists, derive sizing from the implementation plan's
+Sizing Summary section (the table at the bottom of the implementation plan
+comment), but prefer the validation result when available.
+
 ##### Step 3: Record Acceptance
 
 Use the `add-comment` safe-output to post the acceptance record.
@@ -1893,8 +1902,9 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 - **Date:** {ISO-8601 timestamp}
 - **What was approved:**
   - {count} tasks across {count} phases
-  - Total sizing: {XS}×n, {S}×n, {M}×n, {L}×n
+  - Total sizing: {copied verbatim from validation result's Sizing Summary table — e.g., XS×2, S×4, M×6, L×3}
   - {count} agents assigned
+- **Sizing source:** `<!-- squad-validation-v1 -->` result (do NOT re-derive from plan text)
 - **Notes:** Implementation is now locked. Reply `/squad plan activate` to
   create issues and begin execution.
 ```
