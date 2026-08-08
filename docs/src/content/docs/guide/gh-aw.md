@@ -138,6 +138,10 @@ PR review comment.
 | `/squad cast-member rename <name> to <new-focus>` | Change an existing member's specialty |
 | `/squad retire <name>` | Remove a team member (archived, not deleted) |
 | `/squad status` | Report current team composition (read-only, no PR) |
+| `/squad research` | Deep-dive analysis of the repo and issue; posts findings as a comment |
+| `/squad plan` | Decompose an issue into sub-issues; posts a proposed plan for review |
+| `/squad plan accept` | Create sub-issues from the last approved plan |
+| `/squad plan revise <feedback>` | Revise the plan based on your feedback |
 
 ### Where you can use slash commands
 
@@ -163,8 +167,10 @@ When you run `/squad cast`, the workflow follows these steps:
    project structure
 3. **Team composition** — selects roles (4–7 agents: a Lead, specialists, and
    at least one quality role)
-4. **Universe and naming** — picks a fictional universe and assigns character
-   names to each agent
+4. **Naming** — uses descriptive role-based names by default (Lead, Frontend,
+   Backend, Tester). If you request a themed universe in your brief, Squad picks
+   character names from that universe instead — any universe works, not just the
+   15 built-in ones.
 5. **Scaffolding** — generates all squad files (charters, routing, registry)
 6. **Pull request** — opens a PR on a `squad/cast-{repo}` branch with the full
    team for review
@@ -238,6 +244,144 @@ meet-the-squad.md                # Friendly team intro at the repo root
 
 The `squad.agent.md` file registers your Squad as a custom Copilot agent. Once
 merged, you can `@squad` in Copilot Chat to talk to your team.
+
+---
+
+## Naming modes
+
+Squad supports three naming conventions for your team:
+
+### Descriptive (default)
+
+When you don't request a themed universe, agents get short functional names:
+Lead, Frontend, Backend, Tester, Security, Docs, etc. This is the default.
+
+### Built-in universes
+
+Squad includes 15 pre-built fictional universes (The Usual Suspects, Star Wars,
+Futurama, Marvel, etc.) with pre-vetted character names. If you ask for themed
+names without specifying a universe, Squad auto-selects the best fit based on
+your team size and project type.
+
+### Custom universes
+
+You can request **any universe** — it doesn't have to be in the built-in list.
+Just say so in your casting brief or slash command:
+
+```
+/squad cast use Doctor Who characters
+```
+
+Squad allocates character names from its knowledge of the source material.
+Spoiler-safety rules still apply (names use early introductions, avoiding
+fate-revealing titles or epithets).
+
+### Re-casting with a different naming mode
+
+You can switch naming modes at any time by re-casting:
+
+```
+/squad cast switch to Firefly universe
+/squad cast use descriptive names instead
+```
+
+All agents are renamed and their files updated accordingly.
+
+---
+
+## Research and planning
+
+Squad's SDLC commands let you go from an issue to a fully decomposed, agent-assigned
+backlog without leaving the issue thread. The flow is:
+
+```
+/squad research  →  /squad plan  →  /squad plan accept
+```
+
+Each step is user-initiated — Squad proposes, you review and approve.
+
+### Research
+
+```
+/squad research
+```
+
+Squad performs a deep analysis of your repository in context of the issue, then
+posts structured findings as a comment. This is the discovery phase — no issues
+or PRs are created.
+
+The research comment includes:
+- **Current state** — architecture, patterns, dependency versions, code health
+- **Gap analysis** — what's missing or incomplete relative to the issue/goal
+- **Risk assessment** — complexity and risk ratings per area
+- **Key findings** — specific evidence with file paths and version numbers
+- **Recommendations** — sequencing suggestions and things to avoid
+
+You can focus the research with additional context:
+
+```
+/squad research focus on the authentication and authorization gaps
+/squad research what's the current state of the test coverage?
+```
+
+Research works on issues in any state (open or closed).
+
+### Plan
+
+```
+/squad plan
+```
+
+Squad reads the issue (and any prior research findings) and proposes a set of
+sub-issues organized into phases. The plan is posted as a comment for review —
+**no issues are created yet**.
+
+The plan comment includes:
+- Phased issue breakdown with titles, owners, sizes, and dependencies
+- Expandable details for each issue (scope, acceptance criteria, notes)
+- A dependency graph showing what blocks what
+- Execution notes and sequencing advice
+
+You can guide the planning:
+
+```
+/squad plan keep it to 5 issues max
+/squad plan focus on the backend first
+```
+
+### Plan accept
+
+```
+/squad plan accept
+```
+
+Once you're happy with the plan, accept it. Squad creates sub-issues from the
+plan with proper labels (`squad`, `squad:{agent-name}`), acceptance criteria,
+dependency references, and phase assignments.
+
+### Plan revise
+
+```
+/squad plan revise merge the two security issues into one and add a migration step
+```
+
+If the plan needs adjustments, revise it. Squad reads your feedback, modifies
+the plan, and posts an updated plan comment. The revised plan supersedes the
+previous one — `/squad plan accept` always uses the latest.
+
+### Full example
+
+Here's a real workflow from an actual project:
+
+```
+1. /squad cast                    → PR with 8-member team
+2. /squad research                → Deep repo analysis validating the brief
+3. /squad plan                    → 14 issues across 5 phases proposed
+4. /squad plan accept             → 14 issues created with labels and dependencies
+```
+
+Four comments. Under 75 minutes. From zero to a fully decomposed, dependency-ordered,
+agent-assigned backlog.
 
 ---
 
@@ -388,6 +532,8 @@ are used. State does not persist across runs.
 | "Could not access" error on Connect/Adopt | Source repo is private or doesn't exist | Verify the source repo is accessible and contains a `.squad/` directory |
 | `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile`, commit the lock file, and push |
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
+| "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
+| Plan accept creates fewer issues than expected | `create-issue` safe-output has a max of 20 | Split into multiple plan/accept cycles for very large decompositions |
 
 ---
 
