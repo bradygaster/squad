@@ -373,6 +373,12 @@ tailored to this repository.
 Apply a `squad:{name}` label to any issue or PR to route it directly to that
 specialist. For example, `squad:fido` sends work to your test engineer.
 
+> **Label color uniqueness:** Each `squad:{agent}` label MUST receive a unique
+> color from the `SQUAD_MEMBER_PALETTE` defined in `sync-squad-labels.yml`.
+> Colors are assigned deterministically based on agent name (hash-based index)
+> so they remain stable across re-runs. The parent `squad` label retains its
+> distinct color (`0075ca`). Do NOT hardcode a single color for all agent labels.
+
 ### Iteration Commands
 
 | Command | What It Does |
@@ -431,7 +437,7 @@ Open a pull request using the `create-pull-request` safe-output:
 - **Title:** `[squad] Cast your Squad — {brief repo description}`
 - **Body:** Summary of the team composition, universe chosen, and links to key
   files (team.md, routing.md, meet-the-squad.md).
-- **Labels:** `squad` (applied automatically by safe-outputs)
+- **Labels:** `squad` (color: `0075ca`, applied automatically by safe-outputs)
 - **Files to include:**
   - `.squad/` (entire directory)
   - `.github/agents/squad.agent.md`
@@ -1002,7 +1008,7 @@ hierarchy: Root → Phase/group issues → Task issues. If the plan is flat
 - **Title:** The work item title
 - **Labels:**
   - `squad` — description: "Squad-managed work item" — color: `0075ca`
-  - `squad:{owner-name}` — description: "Assigned to {agent}" — color: `e4e669` (if assigned)
+  - `squad:{owner-name}` — description: "Assigned to {agent}" — color: unique per agent, from `SQUAD_MEMBER_PALETTE` (deterministic hash of agent name)
   (Do NOT create `size:*` labels unless `size_representation: label` is
   explicitly set in planning policy.)
 - **Body:**
