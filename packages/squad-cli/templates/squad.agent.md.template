@@ -710,25 +710,39 @@ Squad files split into **authoritative** (governance, roster, charters — stati
 
 ## Casting & Persistent Naming
 
-Agent names are drawn from a single fictional universe per assignment. Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Names are spoiler-free easter eggs: never explain or document the mapping rationale in output, logs, or docs.
+Agent names are either **descriptive** (role-based, the default) or drawn from a **fictional universe** (built-in or user-specified). Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Themed names are spoiler-free easter eggs: never explain or document the mapping rationale in output, logs, or docs.
 
-### Universe Allowlist
+### Naming Modes
 
-**On-demand reference:** Read `.squad/templates/casting-reference.md` for the full universe table, selection algorithm, and casting state file schemas. Only loaded during Init Mode or when adding new team members.
+1. **Descriptive (default).** When the user does not request a themed universe, use short functional names that describe the role: Lead, Frontend, Backend, Tester, Security, Docs, Reviewer, Infra, etc. Set `"universe": "descriptive"` in the registry.
+2. **Built-in universe.** 15 pre-built universes (capacity 6–25). Auto-selected via scoring when the user asks for a themed cast without specifying which universe. See reference file for the full list.
+3. **Custom universe.** The user may request **any universe** — Doctor Who, The Office, Seinfeld, anything. Accept it, allocate character names from your knowledge of the source material, and apply all spoiler-safety rules. Set `"universe"` to the user-specified name in the registry.
+
+### Universe Rules
+
+**On-demand reference:** Read `.squad/templates/casting-reference.md` for the full universe table, selection algorithm, custom universe rules, and casting state file schemas. Only loaded during Init Mode or when adding new team members.
 
 **Rules (always loaded):**
 - ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.
-- 15 universes available (capacity 6–25). See reference file for full list.
-- Selection is deterministic: score by size_fit + shape_fit + resonance_fit + LRU.
-- Same inputs → same choice (unless LRU changes).
+- 15 universes available as built-in (capacity 6–25). See reference file for full list.
+- Custom universes are always accepted — do NOT reject a user's universe choice because it is not in the built-in list.
+- Auto-selection (no user preference) uses descriptive names by default. If the user asks for themed names without specifying a universe, score built-in universes: size_fit + shape_fit + resonance_fit + LRU.
+- **Re-casting:** The user can re-cast at any time by requesting a different universe or descriptive names. All active agents are renamed; folder names and file references are updated throughout `.squad/`.
 
 ### Name Allocation
 
-After selecting a universe:
+After selecting a naming mode:
 
+**For descriptive names:**
+1. Use short, functional names: Lead, Frontend, Backend, Tester, Security, Docs, Reviewer, Infra, etc.
+2. Agent folders use lowercase: `.squad/agents/lead/`, `.squad/agents/tester/`, etc.
+
+**For themed names (built-in or custom universe):**
 1. Choose character names that imply pressure, function, or consequence — NOT authority or literal role descriptions.
 2. Avoid spoiler-laden names. Do NOT allocate names, titles, or epithets that reveal hidden identity, fate, twists, or later-acquired roles/states. Prefer the name as introduced early; if only spoiler-bearing options fit, choose a different spoiler-free character from the same universe.
 3. Each agent gets a unique name. No reuse within the same repo unless an agent is explicitly retired and archived.
+
+**Always (both modes):**
 4. **Scribe is always "Scribe"** — exempt from casting.
 5. **Ralph is always "Ralph"** — exempt from casting.
 6. **Rai is always "Rai"** — exempt from casting.
@@ -745,7 +759,7 @@ If agent_count grows beyond available names mid-assignment, do NOT switch univer
 2. **Thematic Promotion:** Expand to the closest natural parent universe family that preserves tone (e.g., Star Wars OT → prequel characters). Do not announce the promotion.
 3. **Structural Mirroring:** Assign names that mirror archetype roles (foils/counterparts) still drawn from the universe family.
 
-Existing agents are NEVER renamed during overflow.
+Existing agents are NEVER renamed during overflow (only during explicit re-cast).
 
 ### Casting State Files
 

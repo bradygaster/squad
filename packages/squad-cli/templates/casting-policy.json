@@ -1,5 +1,7 @@
 {
-  "casting_policy_version": "1.1",
+  "casting_policy_version": "1.2",
+  "allow_custom_universes": true,
+  "default_naming": "descriptive",
   "allowlist_universes": [
     "The Usual Suspects",
     "Reservoir Dogs",
