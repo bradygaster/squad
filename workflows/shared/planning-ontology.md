@@ -82,7 +82,7 @@ impl_accepted → activated
   produces: <!-- squad-activated-v1 -->
 ```
 
-**Idempotency rule:** Re-running any command updates the existing marker comment (edit, not duplicate). The lifecycle state comment is always updated on every transition.
+**Idempotency rule:** Re-running any command updates the existing marker comment (edit, not duplicate). The lifecycle state comment is always updated on every transition. Idempotency applies to all planning-phase markers (research, triage, program plan, implementation plan, validation). Acceptance and activation markers are immutable once written — re-running these commands is a no-op if the marker already exists.
 
 **Revision:** `/squad plan revise <feedback>` may be issued from any planning state (program_planning, implementation_planning, or validating). It revises the most recent plan artifact and resets validation if present.
 

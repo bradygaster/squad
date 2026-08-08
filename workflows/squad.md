@@ -1508,13 +1508,13 @@ task must specify:
 - **Title** — Clear, action-oriented description of what the PR delivers
 - **Scope** — Concrete description of the work (files, modules, APIs affected)
 - **Acceptance criteria** — Testable conditions that define "done"
-- **Size** — XS (<1h) · S (1–3h) · M (3–8h) · L (1–2d) — no task may exceed L
+- **Size** — XS (<1h) · S (1–3h) · M (3–8h) · L (1–2d) — no task may exceed the policy's `max_task_size` (default: `L`)
 - **Dependencies** — Which other tasks must complete first (by task number)
 - **Agent assignment** — Which squad member owns this task (from `.squad/team.md`)
 - **Rollout notes** — Deployment, migration, or feature-flag considerations
 
 **Decomposition rules:**
-- No task larger than L. If a task would be XL, split it into smaller tasks.
+- No task may exceed the policy's `max_task_size` (default: `L`). If a task would exceed this, split it into smaller tasks.
 - No circular dependencies. The dependency graph must be a DAG.
 - Every task traces to a program plan item (epic or story).
 - Every epic in the program plan must have at least one task.
@@ -1844,13 +1844,19 @@ decomposition so activation can proceed.
 
 ##### Step 1: Validate Preconditions
 
+**Precondition:** A `<!-- squad-validation-v1 -->` marker with status `PASS` must exist for the current implementation plan. If validation has not been run, or the latest result is `FAIL`, prompt the user to run `/squad plan validate` first.
+
 1. Search for `<!-- squad-scope-accepted-v1 -->`. If not found, reply with:
    *"Scope must be accepted before implementation can be approved. Run
    `/squad plan accept scope` first."* — then stop.
 2. Search for `<!-- squad-implementation-v1 -->`. If not found, reply with:
    *"No implementation plan found. Run `/squad plan implementation` first."*
    — then stop.
-3. Check for an existing `<!-- squad-impl-accepted-v1 -->` comment. If one
+3. Search for `<!-- squad-validation-v1 -->` with status `PASS`. If not found
+   or status is `FAIL`, reply with:
+   *"Validation must pass before implementation can be accepted. Run
+   `/squad plan validate` first."* — then stop.
+4. Check for an existing `<!-- squad-impl-accepted-v1 -->` comment. If one
    already exists, reply with:
    *"Implementation was already accepted on {date} by {actor}. To revise,
    run `/squad plan revise <feedback>` which will invalidate the acceptance."*

@@ -142,9 +142,9 @@ PR review comment.
 | `/squad triage` | Classify research findings as work, decision, or excluded |
 | `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback |
 | `/squad plan` | Fast path: program plan + implementation plan in one step |
-| `/squad plan program` | Create a program plan with initiatives, epics, and milestones *(coming soon)* |
+| `/squad plan program` | Create a program plan with initiatives, epics, and milestones |
 | `/squad plan implementation` | Decompose a program plan into PR-sized tasks |
-| `/squad plan validate` | Validate plan readiness before acceptance *(coming soon)* |
+| `/squad plan validate` | Validate plan readiness before acceptance |
 | `/squad plan accept` | Fast path: accept scope + implementation + activate |
 | `/squad plan accept scope` | Approve the program plan scope |
 | `/squad plan accept implementation` | Approve the implementation plan |
@@ -381,8 +381,6 @@ Triage posts its classifications as a comment. To adjust:
 /squad plan program
 ```
 
-*(Coming soon — [#1652](https://github.com/bradygaster/squad/issues/1652))*
-
 Creates a high-level program plan organized into initiatives, epics, and
 milestones. This is strategic structure — not yet PR-sized tasks.
 
@@ -406,8 +404,6 @@ The plan comment includes:
 ```
 /squad plan validate
 ```
-
-*(Coming soon — [#1654](https://github.com/bradygaster/squad/issues/1654))*
 
 Validates that a plan is ready for acceptance — checks for missing dependencies,
 unresolved decisions, and sizing gaps.
