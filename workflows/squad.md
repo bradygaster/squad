@@ -88,12 +88,15 @@ Parse the slash command text to determine the mode:
 | `/squad status` | Status | Report current team composition |
 | `/squad research` | Research | Deep-dive analysis of the repo/issue; posts findings as a comment |
 | `/squad plan` | Plan | Decompose the issue into sub-issues; posts proposed plan as a comment |
-| `/squad plan accept` | Plan Accept | Create sub-issues from the last plan comment |
 | `/squad plan revise <feedback>` | Plan Revise | Revise the last plan based on feedback |
 | `/squad triage` | Triage | Classify research findings as work / decision / excluded |
 | `/squad triage revise <feedback>` | Triage Revise | Adjust triage dispositions based on feedback |
 | `/squad plan program` | Plan Program | Strategic decomposition into initiatives and epics |
 | `/squad plan implementation` | Plan Implementation | Decompose program plan into PR-sized tasks with deps and sizing |
+| `/squad plan accept` | Plan Accept | Fast-path: accept scope + impl + activate in sequence (legacy) |
+| `/squad plan accept scope` | Plan Accept Scope | Approve the program plan's scope (the WHAT) |
+| `/squad plan accept implementation` | Plan Accept Implementation | Approve the implementation plan (the HOW) |
+| `/squad plan activate` | Plan Activate | Create GitHub issues and milestones from accepted implementation |
 | `/squad` (no args) | Cast | Default to cast mode |
 
 ## Task
@@ -937,7 +940,23 @@ Do NOT create issues. Plan mode only posts the comment.
 
 ---
 
-#### Plan Accept Mode
+#### Plan Accept Mode (Fast Path / Legacy)
+
+Plan Accept mode (`/squad plan accept` with no qualifier) is a **fast-path alias**
+that combines scope acceptance, implementation acceptance, and activation into a
+single command. It exists for backward compatibility and simple workflows.
+
+**Behavior:**
+- If granular planning artifacts exist (`<!-- squad-program-v1 -->` or
+  `<!-- squad-implementation-v1 -->`), run Plan Accept Scope → Plan Accept
+  Implementation → Plan Activate in sequence.
+- If only a combined plan exists (`<!-- squad-plan-v1 -->`), fall back to legacy
+  behavior: create issues directly from the combined plan (original behavior below).
+- If a granular planning workflow is in progress and the user runs `/squad plan accept`,
+  post a note explaining the three-step alternative and ask for confirmation before
+  proceeding with the fast path.
+
+**Legacy behavior (when only `<!-- squad-plan-v1 -->` exists):**
 
 Plan Accept mode reads the most recent plan comment (marked with
 `<!-- squad-plan-v1 -->`) from the issue and creates sub-issues from it.
@@ -1267,3 +1286,228 @@ record the current timestamp. Set `Current state: Implementation planned` and
 `Last command: /squad plan implementation`.
 
 Do NOT create issues or PRs. Plan Implementation mode only posts a comment.
+
+---
+
+#### Plan Accept Scope Mode
+
+Plan Accept Scope mode (`/squad plan accept scope`) records formal approval of the
+program plan's scope — the WHAT. It locks the strategic decomposition so
+implementation planning can proceed on a stable foundation.
+
+##### Step 1: Validate Preconditions
+
+1. Search the triggering issue's comments for the latest comment containing
+   `<!-- squad-program-v1 -->`. If no program plan exists, reply with:
+   *"No program plan found. Run `/squad plan program` first to define scope."*
+   — then stop.
+2. Check for an existing `<!-- squad-scope-accepted-v1 -->` comment. If one
+   already exists, reply with:
+   *"Scope was already accepted on {date} by {actor}. To re-scope, run
+   `/squad plan revise <feedback>` to update the program plan, which will
+   invalidate the current acceptance."* — then stop.
+
+##### Step 2: Validate Readiness
+
+1. Check the triage comment (`<!-- squad-triage-v1 -->`) if it exists. Verify
+   that all items classified as `decision` have been resolved (look for
+   follow-up comments or edits that indicate decisions were made). If unresolved
+   decisions remain, list them and reply with:
+   *"Scope cannot be accepted — {n} decisions are still unresolved: {list}.
+   Resolve these decisions and re-run `/squad plan accept scope`."* — then stop.
+2. Check the program plan for unresolved temporary IDs or placeholder references.
+   If found, list them and reply with a request to resolve before acceptance.
+
+##### Step 3: Record Acceptance
+
+Use the `add-comment` safe-output to post the acceptance record. The comment
+MUST begin with `<!-- squad-scope-accepted-v1 -->` on its own line.
+
+**Comment structure:**
+
+```markdown
+<!-- squad-scope-accepted-v1 -->
+## ✅ Scope Accepted
+
+- **Program plan version:** {link to the program plan comment}
+- **Accepted by:** @{triggering user}
+- **Date:** {ISO-8601 timestamp}
+- **What was approved:**
+  - {count} initiatives
+  - {count} epics
+  - Scope boundary: {in-scope summary}
+- **Notes:** Scope is now locked. Changes require `/squad plan revise` which
+  will invalidate this acceptance.
+```
+
+##### Step 4: Update Lifecycle Summary
+
+Update the `<!-- squad-lifecycle-state -->` comment. Set the Scope Accepted row
+to `✅ Done`. Set `Current state: Scope accepted` and
+`Last command: /squad plan accept scope`.
+
+End with: *"Scope approved. Reply `/squad plan implementation` to create the
+implementation plan."*
+
+---
+
+#### Plan Accept Implementation Mode
+
+Plan Accept Implementation mode (`/squad plan accept implementation`) records
+formal approval of the implementation plan — the HOW. It locks the task
+decomposition so activation can proceed.
+
+##### Step 1: Validate Preconditions
+
+1. Search for `<!-- squad-scope-accepted-v1 -->`. If not found, reply with:
+   *"Scope must be accepted before implementation can be approved. Run
+   `/squad plan accept scope` first."* — then stop.
+2. Search for `<!-- squad-implementation-v1 -->`. If not found, reply with:
+   *"No implementation plan found. Run `/squad plan implementation` first."*
+   — then stop.
+3. Check for an existing `<!-- squad-impl-accepted-v1 -->` comment. If one
+   already exists, reply with:
+   *"Implementation was already accepted on {date} by {actor}. To revise,
+   run `/squad plan revise <feedback>` which will invalidate the acceptance."*
+   — then stop.
+
+##### Step 2: Validate Plan Integrity
+
+Run the same structural validations as Plan Implementation Step 3:
+
+1. **Size check** — All tasks ≤ L.
+2. **Cycle check** — Dependency graph is acyclic.
+3. **Traceability** — Every task traces to a program plan item.
+4. **Coverage** — Every epic has at least one task.
+5. **Agent validity** — All assigned agents are active squad members.
+
+If any check fails, list the failures and reply with:
+*"Implementation plan has validation errors — cannot accept. Fix these and
+re-run `/squad plan accept implementation`."* Include specific diagnostics.
+
+##### Step 3: Record Acceptance
+
+Use the `add-comment` safe-output to post the acceptance record. The comment
+MUST begin with `<!-- squad-impl-accepted-v1 -->` on its own line.
+
+**Comment structure:**
+
+```markdown
+<!-- squad-impl-accepted-v1 -->
+## ✅ Implementation Accepted
+
+- **Implementation plan version:** {link to impl plan comment}
+- **Scope acceptance:** {link to scope acceptance comment}
+- **Accepted by:** @{triggering user}
+- **Date:** {ISO-8601 timestamp}
+- **What was approved:**
+  - {count} tasks across {count} phases
+  - Total sizing: {XS}×n, {S}×n, {M}×n, {L}×n
+  - {count} agents assigned
+- **Notes:** Implementation is now locked. Reply `/squad plan activate` to
+  create issues and begin execution.
+```
+
+##### Step 4: Update Lifecycle Summary
+
+Update the `<!-- squad-lifecycle-state -->` comment. Set the Impl Accepted row
+to `✅ Done`. Set `Current state: Implementation accepted` and
+`Last command: /squad plan accept implementation`.
+
+End with: *"Implementation approved. Reply `/squad plan activate` to create
+issues and begin execution."*
+
+---
+
+#### Plan Activate Mode
+
+Plan Activate mode (`/squad plan activate`) is the terminal transition that
+creates real GitHub issues and milestones from the accepted implementation plan.
+This is an irreversible action (issues are created in the repository).
+
+##### Step 1: Validate Preconditions
+
+1. Search for `<!-- squad-impl-accepted-v1 -->`. If not found, reply with:
+   *"Implementation must be accepted before activation. Run
+   `/squad plan accept implementation` first."* — then stop.
+2. Check for an existing `<!-- squad-activated-v1 -->` comment. If one exists,
+   this is a **re-activation**. Compare the existing activation record against
+   the current implementation plan to identify only the tasks that have NOT
+   been created as issues yet. Only create missing issues (idempotent behavior).
+
+##### Step 2: Create GitHub Issues
+
+For each task in the implementation plan, use the `create-issue` safe-output:
+
+- Create issues in dependency order (earlier tasks = lower issue numbers so
+  later tasks can reference them).
+- **Title:** The task title from the implementation plan
+- **Labels:** `squad`, `squad:{assigned-agent-name}`, `size:{size}`
+- **Body:**
+  ```markdown
+  {Scope description from the implementation plan}
+
+  ## Acceptance Criteria
+  {Criteria from the task}
+
+  ## Context
+  - Parent: #{triggering-issue-number}
+  - Phase: {phase name}
+  - Depends on: #{dep-issue-numbers} (referencing created issue numbers)
+  - Agent: {assigned agent name}
+  - Traces to: {program plan epic/story reference}
+
+  ## Rollout
+  {Rollout notes from the task, or "No special rollout considerations."}
+
+  ---
+  > Created by `/squad plan activate` from #{triggering-issue-number}
+  ```
+
+##### Step 3: Create Milestones (If Defined)
+
+If the program plan defines milestones, create GitHub milestones:
+
+1. Check if the milestone already exists (by title). If so, reuse it.
+2. Create new milestones for any that don't exist.
+3. Assign created issues to their corresponding milestones based on the
+   program plan's milestone map.
+
+##### Step 4: Post Activation Record
+
+Use the `add-comment` safe-output to post the activation record. The comment
+MUST begin with `<!-- squad-activated-v1 -->` on its own line.
+
+**Comment structure:**
+
+```markdown
+<!-- squad-activated-v1 -->
+## ✅ Plan Activated — {count} issues created
+
+- **Activated by:** @{triggering user}
+- **Date:** {ISO-8601 timestamp}
+- **Milestone(s):** {milestone links, or "None"}
+- **Assigned agents:** {comma-separated list}
+
+### Created Issues
+| # | Title | Issue | Size | Agent | Phase |
+|---|-------|-------|------|-------|-------|
+| 1 | {title} | #{number} | S | {agent} | {phase} |
+| 2 | {title} | #{number} | M | {agent} | {phase} |
+
+### Dependency Order
+{Brief summary of blocking relationships using created issue numbers}
+
+---
+The squad is ready to begin work. Issues are created in dependency order
+and assigned to their respective agents.
+```
+
+##### Step 5: Update Lifecycle Summary
+
+Update the `<!-- squad-lifecycle-state -->` comment. Set the Activated row
+to `✅ Done`. Set `Current state: Activated` and
+`Last command: /squad plan activate`.
+
+End with: *"✅ Plan activated — {n} issues created. The squad is ready to
+begin work."*
