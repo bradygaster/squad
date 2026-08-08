@@ -94,6 +94,7 @@ Parse the slash command text to determine the mode:
 | `/squad plan program` | Plan Program | Strategic decomposition into initiatives and epics |
 | `/squad plan program revise <feedback>` | Plan Program Revise | Revise program plan based on feedback |
 | `/squad plan implementation` | Plan Implementation | Decompose program plan into PR-sized tasks with deps and sizing |
+| `/squad plan validate` | Plan Validate | Validate plan artifacts for structural issues before acceptance |
 | `/squad plan accept` | Plan Accept | Fast-path: accept scope + impl + activate in sequence (legacy) |
 | `/squad plan accept scope` | Plan Accept Scope | Approve the program plan's scope (the WHAT) |
 | `/squad plan accept implementation` | Plan Accept Implementation | Approve the implementation plan (the HOW) |
@@ -111,8 +112,8 @@ Extract the mode and arguments from the slash command text:
 3. Match the first word(s) against known modes: `cast`, `connect`, `adopt`,
    `cast-member`, `retire`, `status`, `research`, `triage`, `triage revise`,
    `plan`, `plan program`, `plan program revise`, `plan implementation`,
-   `plan accept`, `plan accept scope`, `plan accept implementation`,
-   `plan activate`, `plan revise`.
+   `plan validate`, `plan accept`, `plan accept scope`,
+   `plan accept implementation`, `plan activate`, `plan revise`.
 4. If no subcommand is provided or the text is empty, default to `cast`.
 5. Store any remaining text as arguments for the matched mode.
 
@@ -1506,6 +1507,149 @@ record the current timestamp. Set `Current state: Implementation planned` and
 `Last command: /squad plan implementation`.
 
 Do NOT create issues or PRs. Plan Implementation mode only posts a comment.
+
+---
+
+#### Plan Validate Mode
+
+Plan Validate mode (`/squad plan validate`) checks existing program and/or
+implementation plan artifacts for structural issues before acceptance. It is a
+readiness gate — not a compiler — that pattern-matches markdown content for
+common problems.
+
+##### Step 1: Locate Artifacts
+
+1. Search the triggering issue's comments for:
+   - `<!-- squad-program-v1 -->` — the program plan
+   - `<!-- squad-implementation-v1 -->` — the implementation plan
+   - `<!-- squad-triage-v1 -->` — the triage (for traceability checks)
+2. At minimum, one of the program plan or implementation plan MUST exist.
+   If neither is found, reply with:
+   *"Nothing to validate — no program or implementation plan found. Run
+   `/squad plan program` or `/squad plan implementation` first."* — then stop.
+
+##### Step 2: Run Validation Checks
+
+Run every applicable check from the table below. A check "applies" only when the
+artifact it targets exists. Record each check result as Pass (✅), Warning (⚠️),
+or Fail (❌).
+
+| # | Check | Applies To | Fails When |
+|---|-------|-----------|-----------|
+| 1 | Unresolved temporary IDs | Program, Impl | References like `TBD`, `TODO`, `???` in fields that should contain real values |
+| 2 | Missing traceability | Impl → Program | A task doesn't trace back to any program item (epic/story) |
+| 3 | Invalid hierarchy | Program | An epic has no stories, or a story has no parent epic |
+| 4 | Dependency cycles | Impl | Circular dependency chains (A→B→C→A) |
+| 5 | Oversized work | Impl | Any task sized > L (XL tasks must be split) |
+| 6 | Missing decisions | Program | Unresolved decisions that block epics |
+| 7 | Incomplete metadata | Both | Missing sizes, missing agent assignments, empty acceptance criteria |
+| 8 | Orphaned items | Both | Triage work items (from `<!-- squad-triage-v1 -->`) not represented in program plan |
+| 9 | Milestone gaps | Program | Epics not assigned to any milestone |
+
+**Detection heuristics** (pattern-matching, not parsing):
+
+- **Unresolved IDs:** Scan field values for `TBD`, `TODO`, `???`, `N/A`,
+  `(placeholder)`, or empty cells in tables.
+- **Traceability:** Each task's `Traces to:` or `Epic` column must reference
+  a valid epic/story ID that appears in the program plan.
+- **Hierarchy:** Every epic MUST have at least one user story in the program
+  plan's User Stories table. Every user story must reference a valid epic.
+- **Cycles:** Build a directed graph from the `Depends On` column in the
+  implementation plan task table; run a topological sort — if it fails, report
+  the cycle.
+- **Oversized work:** Any task with size `XL` or larger triggers a fail.
+- **Decisions:** Cross-reference `Unresolved Decisions` in the program plan
+  with any follow-up comments that resolve them. Decisions still open that
+  block named epics are failures.
+- **Metadata:** Tasks without a size, agent, or acceptance criteria (empty
+  details block or missing `Acceptance criteria:` section) fail this check.
+- **Orphaned items:** Compare the triage `Work Items` table entries against
+  the program plan's epics/stories. Any work item not traceable to a
+  program item is orphaned.
+- **Milestone gaps:** Every epic must appear in the Milestone Map table.
+
+**Severity rules:**
+- ❌ Critical (blocks acceptance): Checks 1–6 and 8 when they fail.
+- ⚠️ Warning (advisory): Check 7 (incomplete metadata) when only minor fields
+  are missing; Check 5 when a task is at the L boundary (not XL but worth
+  flagging); Check 9 (milestone gaps).
+
+##### Step 3: Post Validation Result
+
+Use the `add-comment` safe-output to post (or update, if one already exists)
+the validation result comment. The comment MUST begin with
+`<!-- squad-validation-v1 -->` on its own line.
+
+**Comment structure:**
+
+```markdown
+<!-- squad-validation-v1 -->
+## ✅ Squad Plan Validation — PASSED  (or ❌ FAILED)
+
+> Validated: {which artifacts were checked, e.g., "Program Plan + Implementation Plan"}
+> Run at: {ISO-8601 timestamp}
+
+### Results
+
+| # | Check | Status | Details |
+|---|-------|--------|---------|
+| 1 | Unresolved temporary IDs | ✅ Pass | — |
+| 2 | Traceability (impl → program) | ✅ Pass | All {n} tasks trace to program items |
+| 3 | Hierarchy validity | ✅ Pass | — |
+| 4 | Dependency cycles | ✅ Pass | DAG validated, no cycles |
+| 5 | Work sizing | ⚠️ Warning | 1 task at L boundary (consider splitting) |
+| 6 | Unresolved decisions | ❌ Fail | D2 still unresolved, blocks E3 |
+| 7 | Metadata completeness | ✅ Pass | — |
+| 8 | Orphaned items | ✅ Pass | All triage items represented |
+| 9 | Milestone coverage | ✅ Pass | — |
+
+### Issues Found ({count})
+
+#### ❌ Critical (blocks acceptance)
+1. **{Check name}** — "{description of what's wrong}" blocks {what it blocks}.
+   - Fix: {actionable fix instruction}.
+
+#### ⚠️ Warnings (advisory, does not block)
+1. **{Check name}** — "{description}". {Suggestion}.
+
+### Summary
+- **Checks run:** {n}
+- **Passed:** {n} | **Warnings:** {n} | **Failed:** {n}
+- **Verdict:** ✅ Plan validated — ready for acceptance. | ❌ Cannot accept until critical issues resolved.
+
+> {If PASSED: "Run `/squad plan accept scope` or `/squad plan accept implementation` to proceed."}
+> {If FAILED: "Fix the issues above, then re-run `/squad plan validate`."}
+```
+
+**Result rules:**
+- If ALL checks pass (no ❌ failures): heading is `✅ Squad Plan Validation — PASSED`
+  and verdict is `✅ Plan validated — ready for acceptance.`
+- If ANY check is ❌: heading is `❌ Squad Plan Validation — FAILED` and
+  verdict is `❌ Cannot accept until critical issues resolved.`
+- Warnings alone do NOT cause failure.
+
+##### Step 4: Update Lifecycle Summary
+
+Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it
+exists, update it; if not, create it. Set the Validation row:
+- On PASS: `✅ Done`
+- On FAIL: `❌ Failed`
+
+Record the current timestamp. Set `Current state: Validated` (on pass) or
+`Current state: Validation failed` (on fail) and
+`Last command: /squad plan validate`.
+
+##### Step 5: Surface Next Action
+
+- **If PASSED:** End the comment with:
+  *"✅ Plan validated — ready for acceptance. Run `/squad plan accept scope`
+  to approve the program plan, or `/squad plan accept implementation` to
+  approve the implementation plan."*
+- **If FAILED:** End the comment with:
+  *"❌ Validation failed — {n} issues found. Fix and re-run
+  `/squad plan validate`."*
+
+Do NOT create issues or PRs. Plan Validate mode only posts a comment.
 
 ---
 
