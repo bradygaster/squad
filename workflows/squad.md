@@ -49,6 +49,8 @@ safe-outputs:
   create-issue:
     labels: [squad]
     max: 20
+  create-milestone:
+    max: 5
   add-comment:
     max: 10
 ---
@@ -978,12 +980,29 @@ Plan Accept mode reads the most recent plan comment (marked with
 2. Parse the plan comment to extract work items (titles, scopes, acceptance
    criteria, owners, dependencies, phases).
 
-##### Step 2: Create Sub-Issues
+##### Step 2: Create Sub-Issues — Hierarchical
 
-For each work item in the plan, use the `create-issue` safe-output:
+If the plan defines phases (which map to epics/groups), create issues in a
+hierarchy: Root → Phase/group issues → Task issues. If the plan is flat
+(no phase groupings), create tasks directly under the root.
+
+**When hierarchy applies (plan has phases):**
+
+1. For each phase/group, create a parent issue:
+   - **Title:** `[Phase] {phase name}`
+   - **Labels:**
+     - `squad` — description: "Squad-managed work item" — color: `0075ca`
+     - `squad:{owner-name}` — description: "Assigned to {agent}" — color: `e4e669` (if assigned)
+   - **Parent relationship:** Sub-issue of the root intent issue
+2. For each work item within a phase, create a task issue:
+   - Parent relationship: Sub-issue of the PHASE issue, not the root
+
+**For all work items** (whether hierarchical or flat), use the `create-issue` safe-output:
 
 - **Title:** The work item title
-- **Labels:** `squad`, plus `squad:{owner-name}` if an agent is assigned
+- **Labels:**
+  - `squad` — description: "Squad-managed work item" — color: `0075ca`
+  - `squad:{owner-name}` — description: "Assigned to {agent}" — color: `e4e669` (if assigned)
   (Do NOT create `size:*` labels unless `size_representation: label` is
   explicitly set in planning policy.)
 - **Body:**
@@ -994,7 +1013,7 @@ For each work item in the plan, use the `create-issue` safe-output:
   {Criteria from the plan}
 
   ## Context
-  - Parent: #{triggering-issue-number}
+  - Parent: #{parent-issue-number} (phase issue or root)
   - Phase: {phase name}
   - **Size:** {XS|S|M|L|XL}
   - Depends on: #{dep-issue-numbers if already created}
@@ -1010,6 +1029,12 @@ For each work item in the plan, use the `create-issue` safe-output:
   **Size handling:** If a GitHub Project is configured with a Size single-select
   field, set the Project field value for the issue. Otherwise, the `**Size:**`
   line in the body is the canonical representation.
+
+**Label requirements:**
+- Labels MUST have descriptions and intentional colors:
+  - `squad` — "Squad-managed work item" — color: `0075ca` (blue)
+  - `squad:{agent}` — "Assigned to {agent}" — color: `e4e669` (yellow)
+- If labels don't exist yet, create them with the specified descriptions and colors.
 
 Create issues in dependency order so earlier issues get lower numbers that
 later issues can reference.
@@ -1901,14 +1926,76 @@ This is an irreversible action (issues are created in the repository).
    the current implementation plan to identify only the tasks that have NOT
    been created as issues yet. Only create missing issues (idempotent behavior).
 
-##### Step 2: Create GitHub Issues
+##### Step 2: Create GitHub Issues — Full Hierarchy
+
+Activation MUST create the full program hierarchy as GitHub issues, NOT a flat
+list of tasks directly under the root. The structure is:
+
+**Root intent issue → Epic issues → Task issues**
+
+Follow this order:
+
+**2a. Create Milestones First**
+
+Use the `create-milestone` safe-output to create GitHub milestones BEFORE issues:
+
+1. For each milestone defined in the program plan (`<!-- squad-program-v1 -->`),
+   check if a milestone with that title already exists. If so, reuse it.
+2. Create new milestones for any that don't exist. Use the milestone's outcome
+   description as the milestone description.
+3. Record the milestone IDs for assignment in subsequent steps.
+
+If `create-milestone` is unavailable (permissions or feature limitation), document
+milestones as metadata in the root issue body instead:
+```
+## Milestones
+- M1: {name} — {outcome} — Contains: E1, E2
+- M2: {name} — {outcome} — Contains: E3, E4
+```
+
+**2b. Create Epic Issues**
+
+For each epic in the program plan, use the `create-issue` safe-output:
+
+- **Title:** `[Epic] {epic name}`
+- **Labels:**
+  - `squad` — description: "Squad-managed work item" — color: `0075ca`
+  - `squad:{assigned-agent-name}` — description: "Assigned to {agent}" — color: `e4e669`
+- **Body:**
+  ```markdown
+  {Epic outcome and description from the program plan}
+
+  ## Stories
+  {List of user stories under this epic}
+
+  ## Acceptance Criteria (Epic-Level)
+  {Criteria from the program plan}
+
+  ## Context
+  - Parent: #{triggering-issue-number}
+  - Initiative: {initiative name}
+  - Milestone: {milestone name}
+  - Depends on: #{dep-epic-issue-numbers} (if any)
+
+  ---
+  > Created by `/squad plan activate` from #{triggering-issue-number}
+  ```
+- **Parent relationship:** Add as a sub-issue of the root intent issue
+  (native GitHub sub-issues). The root intent issue is the triggering issue.
+- **Milestone:** Assign to the corresponding GitHub milestone created in 2a.
+
+Create epics in dependency order.
+
+**2c. Create Task Issues**
 
 For each task in the implementation plan, use the `create-issue` safe-output:
 
 - Create issues in dependency order (earlier tasks = lower issue numbers so
   later tasks can reference them).
 - **Title:** The task title from the implementation plan
-- **Labels:** `squad`, `squad:{assigned-agent-name}`
+- **Labels:**
+  - `squad` — description: "Squad-managed work item" — color: `0075ca`
+  - `squad:{assigned-agent-name}` — description: "Assigned to {agent}" — color: `e4e669`
   (Do NOT create `size:*` labels unless `size_representation: label` is
   explicitly set in planning policy.)
 - **Body:**
@@ -1919,7 +2006,7 @@ For each task in the implementation plan, use the `create-issue` safe-output:
   {Criteria from the task}
 
   ## Context
-  - Parent: #{triggering-issue-number}
+  - Parent: #{epic-issue-number} (the epic this task belongs to)
   - Phase: {phase name}
   - **Size:** {XS|S|M|L|XL}
   - Depends on: #{dep-issue-numbers} (referencing created issue numbers)
@@ -1932,10 +2019,19 @@ For each task in the implementation plan, use the `create-issue` safe-output:
   ---
   > Created by `/squad plan activate` from #{triggering-issue-number}
   ```
+- **Parent relationship:** Add as a sub-issue of the EPIC issue (NOT the root
+  intent issue). Tasks are children of their epic, not of the root.
+- **Milestone:** Assign to the same milestone as the parent epic.
 
   **Size handling:** If a GitHub Project is configured with a Size single-select
   field, set the Project field value for the issue. Otherwise, the `**Size:**`
   line in the body is the canonical representation.
+
+**Label requirements:**
+- Labels MUST have descriptions and intentional colors:
+  - `squad` — "Squad-managed work item" — color: `0075ca` (blue)
+  - `squad:{agent}` — "Assigned to {agent}" — color: `e4e669` (yellow)
+- If labels don't exist yet, create them with the specified descriptions and colors.
 
 ##### Step 3: Create Native Dependency Edges
 
@@ -1945,24 +2041,17 @@ GitHub blocked-by/blocking edges:
 1. For each task that declares dependencies, use the GitHub API to add
    `blockedBy` relationships linking the dependent issue to its prerequisite
    issues.
-2. Prefer native blocked-by relationships — they surface in the GitHub UI and
+2. For each epic that declares dependencies on other epics, create the same
+   `blockedBy` relationships at the epic level.
+3. Prefer native blocked-by relationships — they surface in the GitHub UI and
    enable dependency-aware project views.
-3. If native dependency APIs are unavailable (insufficient permissions, feature
+4. If native dependency APIs are unavailable (insufficient permissions, feature
    not enabled for the repository), fall back gracefully. The body-text
    `Depends on: #N` references already created in Step 2 serve as the fallback.
-4. Do NOT fail activation if dependency edge creation fails — log the issue in
+5. Do NOT fail activation if dependency edge creation fails — log the issue in
    the activation record and continue.
 
-##### Step 4: Create Milestones (If Defined)
-
-If the program plan defines milestones, create GitHub milestones:
-
-1. Check if the milestone already exists (by title). If so, reuse it.
-2. Create new milestones for any that don't exist.
-3. Assign created issues to their corresponding milestones based on the
-   program plan's milestone map.
-
-##### Step 5: Post Activation Record
+##### Step 4: Post Activation Record
 
 Use the `add-comment` safe-output to post the activation record.
 
@@ -1975,28 +2064,35 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 
 ```markdown
 <!-- squad-activated-v1 -->
-## ✅ Plan Activated — {count} issues created
+## ✅ Plan Activated — {epic count} epics, {task count} tasks created
 
 - **Activated by:** @{triggering user}
 - **Date:** {ISO-8601 timestamp}
 - **Milestone(s):** {milestone links, or "None"}
+- **Hierarchy:** Root #{root} → {epic count} epics → {task count} tasks
 - **Assigned agents:** {comma-separated list}
 
-### Created Issues
-| # | Title | Issue | Size | Agent | Phase |
-|---|-------|-------|------|-------|-------|
-| 1 | {title} | #{number} | S | {agent} | {phase} |
-| 2 | {title} | #{number} | M | {agent} | {phase} |
+### Created Epics
+| # | Title | Issue | Milestone | Tasks |
+|---|-------|-------|-----------|-------|
+| E1 | {epic title} | #{number} | {milestone} | {task count} |
+| E2 | {epic title} | #{number} | {milestone} | {task count} |
+
+### Created Tasks
+| # | Title | Issue | Size | Agent | Parent Epic | Phase |
+|---|-------|-------|------|-------|-------------|-------|
+| 1 | {title} | #{number} | S | {agent} | #{epic-number} | {phase} |
+| 2 | {title} | #{number} | M | {agent} | #{epic-number} | {phase} |
 
 ### Dependency Order
 {Brief summary of blocking relationships using created issue numbers}
 
 ---
 The squad is ready to begin work. Issues are created in dependency order
-and assigned to their respective agents.
+with full hierarchy (Root → Epics → Tasks) and assigned to their respective agents.
 ```
 
-##### Step 6: Update Lifecycle Summary
+##### Step 5: Update Lifecycle Summary
 
 Update the `<!-- squad-lifecycle-state -->` comment. Set the Activated row
 to `✅ Done`. Set `Current state: Activated` and
