@@ -92,6 +92,8 @@ Parse the slash command text to determine the mode:
 | `/squad plan revise <feedback>` | Plan Revise | Revise the last plan based on feedback |
 | `/squad triage` | Triage | Classify research findings as work / decision / excluded |
 | `/squad triage revise <feedback>` | Triage Revise | Adjust triage dispositions based on feedback |
+| `/squad plan program` | Plan Program | Strategic decomposition into initiatives and epics |
+| `/squad plan implementation` | Plan Implementation | Decompose program plan into PR-sized tasks with deps and sizing |
 | `/squad` (no args) | Cast | Default to cast mode |
 
 ## Task
@@ -1124,3 +1126,144 @@ triage comment.
    *"Revised based on feedback: {summary of changes}"*
 5. Update the lifecycle summary comment.
 6. The new triage comment becomes the one that `/squad plan program` will use.
+
+---
+
+#### Plan Implementation Mode
+
+Plan Implementation mode decomposes a program plan (or accepted scope) into
+PR-sized leaf work items with explicit dependencies, sizing, acceptance criteria,
+agent assignments, and rollout metadata. It is the tactical counterpart to the
+strategic program plan.
+
+Plan Implementation mode works on issues in any state (open or closed).
+
+##### Step 1: Validate Preconditions
+
+1. Search the triggering issue's comments for the latest comment containing
+   `<!-- squad-scope-accepted-v1 -->`. If found, use the accepted scope as the
+   authoritative input (scope is locked).
+2. If no scope acceptance exists, search for the latest `<!-- squad-program-v1 -->`
+   comment. If found, use the program plan draft.
+3. If neither exists, check for a `<!-- squad-plan-v1 -->` comment (fast-path
+   plan). If found, use it as input.
+4. If no program plan or fast-path plan exists, reply with:
+   *"No program plan found. Run `/squad plan program` first to create a strategic
+   decomposition, or `/squad plan` for a combined plan."* — then stop.
+
+##### Step 2: Decompose Into PR-Sized Tasks
+
+For each epic/story in the program plan, decompose into PR-sized tasks. Each
+task must specify:
+
+- **Title** — Clear, action-oriented description of what the PR delivers
+- **Scope** — Concrete description of the work (files, modules, APIs affected)
+- **Acceptance criteria** — Testable conditions that define "done"
+- **Size** — XS (<1h) · S (1–3h) · M (3–8h) · L (1–2d) — no task may exceed L
+- **Dependencies** — Which other tasks must complete first (by task number)
+- **Agent assignment** — Which squad member owns this task (from `.squad/team.md`)
+- **Rollout notes** — Deployment, migration, or feature-flag considerations
+
+**Decomposition rules:**
+- No task larger than L. If a task would be XL, split it into smaller tasks.
+- No circular dependencies. The dependency graph must be a DAG.
+- Every task traces to a program plan item (epic or story).
+- Every epic in the program plan must have at least one task.
+- Prefer vertical slices (end-to-end functionality) over horizontal layers.
+- Group tasks into phases based on dependency order (Phase 1 has no deps).
+
+##### Step 3: Validate Structure
+
+Before posting, run structural validation:
+
+1. **Size check** — Verify no task exceeds L. If any do, split them.
+2. **Cycle check** — Verify the dependency graph is acyclic.
+3. **Traceability check** — Verify every task references a program plan item.
+4. **Coverage check** — Verify every epic has at least one task.
+5. **Agent check** — If `.squad/team.md` exists, verify all assigned agents are
+   active members.
+
+If validation fails, fix the issues before posting (split oversized tasks,
+resolve cycles by reordering, etc.).
+
+##### Step 4: Post Implementation Plan Comment
+
+Use the `add-comment` safe-output to post a structured implementation plan. The
+comment MUST begin with `<!-- squad-implementation-v1 -->` on its own line.
+
+**Comment structure:**
+
+```markdown
+<!-- squad-implementation-v1 -->
+## 🔧 Squad Implementation Plan
+
+> Program: {program plan title or initiative summary}
+> Traces to: #{root issue number}
+
+### Tasks ({count}) — Dependency Order
+
+#### Phase 1 — {phase name}
+| # | Title | Size | Depends On | Agent | Epic |
+|---|-------|------|-----------|-------|------|
+| 1 | {title} | S | — | {agent} | {epic ref} |
+| 2 | {title} | M | #1 | {agent} | {epic ref} |
+
+#### Phase 2 — {phase name}
+| # | Title | Size | Depends On | Agent | Epic |
+|---|-------|------|-----------|-------|------|
+| 3 | {title} | M | #1, #2 | {agent} | {epic ref} |
+
+<details>
+<summary>1. {Task title}</summary>
+
+**Scope:** {What this PR delivers — files, modules, APIs affected}
+**Acceptance criteria:**
+- [ ] {criterion}
+- [ ] {criterion}
+**Dependencies:** None
+**Rollout:** {Deployment/migration/feature-flag notes, or "None"}
+**Traces to:** {Program plan epic/story reference}
+</details>
+
+<details>
+<summary>2. {Task title}</summary>
+
+**Scope:** {What this PR delivers}
+**Acceptance criteria:**
+- [ ] {criterion}
+- [ ] {criterion}
+**Dependencies:** #1
+**Rollout:** {Notes}
+**Traces to:** {Reference}
+</details>
+
+### Dependency Graph
+```
+{ASCII graph showing blocking relationships between task numbers}
+```
+
+### Sizing Summary
+| Size | Count | Notes |
+|------|-------|-------|
+| XS | {n} | |
+| S | {n} | |
+| M | {n} | |
+| L | {n} | Max allowed without split |
+
+### Validation Pre-check
+- [x] All tasks ≤ L
+- [x] No circular dependencies
+- [x] Every task traces to a program item
+- [x] Every epic has ≥ 1 task
+
+> Reply `/squad plan validate` to run formal validation, or `/squad plan accept implementation` to approve.
+```
+
+##### Step 5: Update Lifecycle Summary
+
+Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it exists,
+update it; if not, create it. Set the Implementation Plan row to `✅ Done` and
+record the current timestamp. Set `Current state: Implementation planned` and
+`Last command: /squad plan implementation`.
+
+Do NOT create issues or PRs. Plan Implementation mode only posts a comment.
