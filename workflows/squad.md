@@ -19,7 +19,7 @@ on:
 permissions:
   contents: read
   copilot-requests: write
-  issues: read
+  issues: write
   pull-requests: read
 network:
   allowed:
@@ -47,7 +47,7 @@ safe-outputs:
     expires: 14d
   create-issue:
     labels: [squad]
-    max: 5
+    max: 20
   add-comment:
     max: 10
 ---
@@ -85,6 +85,10 @@ Parse the slash command text to determine the mode:
 | `/squad cast-member <spec>` | Cast Member | Add/modify a single team member |
 | `/squad retire <name>` | Retire | Remove a team member |
 | `/squad status` | Status | Report current team composition |
+| `/squad research` | Research | Deep-dive analysis of the repo/issue; posts findings as a comment |
+| `/squad plan` | Plan | Decompose the issue into sub-issues; posts proposed plan as a comment |
+| `/squad plan accept` | Plan Accept | Create sub-issues from the last plan comment |
+| `/squad plan revise <feedback>` | Plan Revise | Revise the last plan based on feedback |
 | `/squad` (no args) | Cast | Default to cast mode |
 
 ## Task
@@ -95,8 +99,9 @@ Extract the mode and arguments from the slash command text:
 
 1. Read the trigger body from the event payload described above.
 2. Strip the `/squad` prefix and trim whitespace.
-3. Match the first word against known modes: `cast`, `connect`, `adopt`,
-   `cast-member`, `retire`, `status`.
+3. Match the first word(s) against known modes: `cast`, `connect`, `adopt`,
+   `cast-member`, `retire`, `status`, `research`, `plan`, `plan accept`,
+   `plan revise`.
 4. If no subcommand is provided or the text is empty, default to `cast`.
 5. Store any remaining text as arguments for the matched mode.
 
@@ -738,3 +743,265 @@ open a PR.
    - Member count (active / total)
    - Table of active members: name, role, status
    - Link to `.squad/team.md` for full details
+
+---
+
+#### Research Mode
+
+Research mode performs a deep analysis of the repository and/or issue context,
+then posts structured findings as a comment. This is the discovery phase that
+informs subsequent planning. It does NOT create issues or PRs — it only posts
+a comment.
+
+Research mode works on issues in any state (open or closed).
+
+##### Step 1: Determine Research Scope
+
+Evaluate the issue body and repository to determine what to research:
+
+1. **Issue-driven research:** If the issue has substantial content (feature
+   request, epic, architecture description, bug report), research the codebase
+   in context of that issue. The issue defines what to investigate.
+2. **Repo-driven research:** If the issue is minimal but the repo has content,
+   perform a general architecture and health assessment.
+3. **Combined:** If both have content, use the issue as the research lens
+   applied to the repository.
+
+Any additional text after `/squad research` is treated as a research focus or
+question (e.g., `/squad research what's the current state of the Orleans grains?`).
+
+##### Step 2: Deep Repository Analysis
+
+Go beyond surface-level file listing. Perform a thorough investigation:
+
+1. **Architecture mapping** — Identify major components, their boundaries,
+   communication patterns, and dependencies. Trace data flow through the system.
+2. **Technology audit** — Catalog frameworks, libraries, package versions,
+   and their current vs. latest versions. Note deprecated or EOL dependencies.
+3. **Code health assessment** — Look for patterns: test coverage gaps, dead code,
+   inconsistent patterns, TODO/FIXME density, complexity hotspots, circular
+   dependencies, and technical debt.
+4. **Gap analysis** — Compare what the issue/brief describes as desired state
+   against the current state. Identify what exists, what's partial, what's
+   missing, and what conflicts.
+5. **Risk identification** — Note areas of high coupling, missing error handling,
+   security concerns, performance risks, and migration hazards.
+6. **Prior art** — Check for existing issues, PRs, branches, or documentation
+   that relate to the research topic.
+
+If a `.squad/team.md` exists, consider the team composition when framing findings
+(which agent would own which area of concern).
+
+##### Step 3: Post Research Findings
+
+Use the `add-comment` safe-output to post a structured research comment. The
+comment MUST begin with the HTML marker `<!-- squad-research-v1 -->` on its own
+line (this allows future commands to locate and reference it).
+
+**Comment structure:**
+
+```markdown
+<!-- squad-research-v1 -->
+## 🔬 Squad Research — {Brief Title}
+
+### Summary
+{2-3 sentence executive summary of findings}
+
+### Current State
+{What exists today — architecture, patterns, health}
+
+### Gap Analysis
+{What's missing or incomplete relative to the issue/goal}
+
+### Risk & Complexity Assessment
+| Area | Risk | Complexity | Notes |
+|------|------|-----------|-------|
+| {area} | 🟢/🟡/🔴 | S/M/L/XL | {why} |
+
+### Key Findings
+1. {Finding with evidence — file paths, version numbers, specific code patterns}
+2. ...
+
+### Recommendations
+{What the squad should do — sequencing suggestions, approach options, things to avoid}
+
+### Next Step
+> Reply `/squad plan` to generate a detailed execution plan with sub-issues based on these findings.
+```
+
+Tailor the sections to the research scope — omit sections that don't apply, add
+sections that do (e.g., "### Dependency Upgrade Path" or "### Migration Risks").
+
+Do NOT create issues, PRs, or modify files. Research mode is read-only + comment.
+
+---
+
+#### Plan Mode
+
+Plan mode reads the issue context (and any prior research comment) and proposes
+a set of sub-issues as a structured comment. It does NOT create issues — it
+posts a plan for the user to review. The user then accepts, revises, or discards.
+
+Plan mode works on issues in any state (open or closed).
+
+##### Step 1: Gather Context
+
+1. Read the triggering issue body (the "epic" or "brief").
+2. Search the issue's comments for the latest research comment
+   (marked with `<!-- squad-research-v1 -->`). If found, use it as primary
+   context for planning. If not, perform lightweight repo analysis.
+3. If `.squad/team.md` exists, read the team roster to assign agents to work items.
+4. Any text after `/squad plan` is treated as planning guidance
+   (e.g., `/squad plan keep it to 5 issues max` or `/squad plan focus on the backend first`).
+
+##### Step 2: Decompose Into Work Items
+
+Break the issue/research into discrete, actionable work items. Each work item
+should be:
+
+- **Independently deliverable** — can be worked on and merged without waiting
+  for all other items (respect dependency ordering, but minimize blocking chains)
+- **Single-owner** — assigned to one squad member (if team exists)
+- **Testable** — has clear acceptance criteria
+- **Right-sized** — not so large it's an epic itself, not so small it's a commit
+
+Consider:
+- Dependency order (what must come first?)
+- Parallel tracks (what can happen simultaneously?)
+- Risk ordering (tackle high-risk/uncertainty items earlier)
+- Vertical slices over horizontal layers where possible
+
+##### Step 3: Post Plan Comment
+
+Use the `add-comment` safe-output to post a structured plan comment. The comment
+MUST begin with `<!-- squad-plan-v1 -->` on its own line.
+
+**Comment structure:**
+
+```markdown
+<!-- squad-plan-v1 -->
+## 📋 Squad Plan — {Brief Title}
+
+> Based on {reference: issue body / research findings / both}
+
+### Proposed Issues ({count})
+
+#### Phase 1 — {phase name}
+| # | Title | Owner | Size | Depends On |
+|---|-------|-------|------|-----------|
+| 1 | {title} | {agent name or "unassigned"} | S/M/L | — |
+| 2 | {title} | {agent name} | M | #1 |
+
+<details>
+<summary>1. {Issue title}</summary>
+
+**Scope:** {What this issue covers}
+
+**Acceptance criteria:**
+- [ ] {criterion}
+- [ ] {criterion}
+
+**Notes:** {Implementation hints, risks, relevant files}
+</details>
+
+<details>
+<summary>2. {Issue title}</summary>
+...
+</details>
+
+#### Phase 2 — {phase name}
+...
+
+### Dependency Graph
+```
+{simple ASCII or text showing what blocks what}
+```
+
+### Execution Notes
+{Sequencing advice, parallel tracks, known risks}
+
+### Next Steps
+> - Reply `/squad plan accept` to create these issues
+> - Reply `/squad plan revise {feedback}` to adjust the plan
+> - Reply `/squad plan` to regenerate from scratch
+```
+
+Do NOT create issues. Plan mode only posts the comment.
+
+---
+
+#### Plan Accept Mode
+
+Plan Accept mode reads the most recent plan comment (marked with
+`<!-- squad-plan-v1 -->`) from the issue and creates sub-issues from it.
+
+##### Step 1: Find the Plan
+
+1. Search the triggering issue's comments for the latest comment containing
+   `<!-- squad-plan-v1 -->`. If no plan comment exists, reply with a comment:
+   *"No plan found. Run `/squad plan` first to generate a plan for review."*
+2. Parse the plan comment to extract work items (titles, scopes, acceptance
+   criteria, owners, dependencies, phases).
+
+##### Step 2: Create Sub-Issues
+
+For each work item in the plan, use the `create-issue` safe-output:
+
+- **Title:** The work item title
+- **Labels:** `squad`, plus `squad:{owner-name}` if an agent is assigned
+- **Body:**
+  ```markdown
+  {Scope description from the plan}
+
+  ## Acceptance Criteria
+  {Criteria from the plan}
+
+  ## Context
+  - Parent: #{triggering-issue-number}
+  - Phase: {phase name}
+  - Depends on: #{dep-issue-numbers if already created}
+  - Owner: {agent name}
+
+  ## Notes
+  {Implementation hints from the plan}
+
+  ---
+  > Created by `/squad plan accept` from #{triggering-issue-number}
+  ```
+
+Create issues in dependency order so earlier issues get lower numbers that
+later issues can reference.
+
+##### Step 3: Post Summary Comment
+
+After creating all issues, post a summary comment on the triggering issue:
+
+```markdown
+<!-- squad-plan-accepted -->
+## ✅ Plan Accepted — {count} issues created
+
+| # | Issue | Title | Owner | Phase |
+|---|-------|-------|-------|-------|
+| 1 | #{number} | {title} | {owner} | {phase} |
+| 2 | #{number} | {title} | {owner} | {phase} |
+...
+
+Dependency order and phase assignments are reflected in the issue bodies.
+The squad is ready to begin work.
+```
+
+---
+
+#### Plan Revise Mode
+
+Plan Revise mode takes user feedback, finds the latest plan comment, and posts
+a revised plan.
+
+1. Find the latest `<!-- squad-plan-v1 -->` comment. If none exists, reply:
+   *"No plan found to revise. Run `/squad plan` first."*
+2. Read the feedback text after `/squad plan revise` (everything after "revise").
+3. Apply the feedback to the existing plan — merge items, split items, reorder,
+   add or remove items, change owners, adjust scope.
+4. Post a NEW plan comment (with `<!-- squad-plan-v1 -->` marker) that supersedes
+   the old one. Note at the top: *"Revised based on feedback: {summary of changes}"*
+5. The new plan comment becomes the one that `/squad plan accept` will use.
