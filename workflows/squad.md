@@ -1,5 +1,6 @@
 ---
 name: Squad
+run-name: "Squad — ${{ github.event.inputs.command || github.event.comment.body || github.event.issue.title || 'run' }}"
 description: Cast, connect, or adopt a Squad AI team for your repository
 emoji: "🧑‍🤝‍🧑"
 private: false
