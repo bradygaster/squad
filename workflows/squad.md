@@ -977,6 +977,8 @@ For each work item in the plan, use the `create-issue` safe-output:
 
 - **Title:** The work item title
 - **Labels:** `squad`, plus `squad:{owner-name}` if an agent is assigned
+  (Do NOT create `size:*` labels unless `size_representation: label` is
+  explicitly set in planning policy.)
 - **Body:**
   ```markdown
   {Scope description from the plan}
@@ -987,6 +989,7 @@ For each work item in the plan, use the `create-issue` safe-output:
   ## Context
   - Parent: #{triggering-issue-number}
   - Phase: {phase name}
+  - **Size:** {XS|S|M|L|XL}
   - Depends on: #{dep-issue-numbers if already created}
   - Owner: {agent name}
 
@@ -997,10 +1000,28 @@ For each work item in the plan, use the `create-issue` safe-output:
   > Created by `/squad plan accept` from #{triggering-issue-number}
   ```
 
+  **Size handling:** If a GitHub Project is configured with a Size single-select
+  field, set the Project field value for the issue. Otherwise, the `**Size:**`
+  line in the body is the canonical representation.
+
 Create issues in dependency order so earlier issues get lower numbers that
 later issues can reference.
 
-##### Step 3: Post Summary Comment
+##### Step 3: Create Native Dependency Edges
+
+After all issues are created, establish dependency relationships using native
+GitHub blocked-by/blocking edges:
+
+1. For each work item that declares dependencies, use the GitHub API to add
+   `blockedBy` relationships linking the dependent issue to its prerequisite
+   issues.
+2. Prefer native blocked-by relationships. If native dependency APIs are
+   unavailable (permissions, feature not enabled), the body-text
+   `Depends on: #N` references serve as the fallback.
+3. Do NOT fail acceptance if dependency edge creation fails — continue
+   gracefully.
+
+##### Step 4: Post Summary Comment
 
 After creating all issues, post a summary comment on the triggering issue:
 
@@ -1843,7 +1864,9 @@ For each task in the implementation plan, use the `create-issue` safe-output:
 - Create issues in dependency order (earlier tasks = lower issue numbers so
   later tasks can reference them).
 - **Title:** The task title from the implementation plan
-- **Labels:** `squad`, `squad:{assigned-agent-name}`, `size:{size}`
+- **Labels:** `squad`, `squad:{assigned-agent-name}`
+  (Do NOT create `size:*` labels unless `size_representation: label` is
+  explicitly set in planning policy.)
 - **Body:**
   ```markdown
   {Scope description from the implementation plan}
@@ -1854,6 +1877,7 @@ For each task in the implementation plan, use the `create-issue` safe-output:
   ## Context
   - Parent: #{triggering-issue-number}
   - Phase: {phase name}
+  - **Size:** {XS|S|M|L|XL}
   - Depends on: #{dep-issue-numbers} (referencing created issue numbers)
   - Agent: {assigned agent name}
   - Traces to: {program plan epic/story reference}
@@ -1865,7 +1889,27 @@ For each task in the implementation plan, use the `create-issue` safe-output:
   > Created by `/squad plan activate` from #{triggering-issue-number}
   ```
 
-##### Step 3: Create Milestones (If Defined)
+  **Size handling:** If a GitHub Project is configured with a Size single-select
+  field, set the Project field value for the issue. Otherwise, the `**Size:**`
+  line in the body is the canonical representation.
+
+##### Step 3: Create Native Dependency Edges
+
+After all issues are created, establish dependency relationships using native
+GitHub blocked-by/blocking edges:
+
+1. For each task that declares dependencies, use the GitHub API to add
+   `blockedBy` relationships linking the dependent issue to its prerequisite
+   issues.
+2. Prefer native blocked-by relationships — they surface in the GitHub UI and
+   enable dependency-aware project views.
+3. If native dependency APIs are unavailable (insufficient permissions, feature
+   not enabled for the repository), fall back gracefully. The body-text
+   `Depends on: #N` references already created in Step 2 serve as the fallback.
+4. Do NOT fail activation if dependency edge creation fails — log the issue in
+   the activation record and continue.
+
+##### Step 4: Create Milestones (If Defined)
 
 If the program plan defines milestones, create GitHub milestones:
 
@@ -1874,7 +1918,7 @@ If the program plan defines milestones, create GitHub milestones:
 3. Assign created issues to their corresponding milestones based on the
    program plan's milestone map.
 
-##### Step 4: Post Activation Record
+##### Step 5: Post Activation Record
 
 Use the `add-comment` safe-output to post the activation record. The comment
 MUST begin with `<!-- squad-activated-v1 -->` on its own line.
@@ -1904,7 +1948,7 @@ The squad is ready to begin work. Issues are created in dependency order
 and assigned to their respective agents.
 ```
 
-##### Step 5: Update Lifecycle Summary
+##### Step 6: Update Lifecycle Summary
 
 Update the `<!-- squad-lifecycle-state -->` comment. Set the Activated row
 to `✅ Done`. Set `Current state: Activated` and
