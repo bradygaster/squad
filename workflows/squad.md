@@ -1150,6 +1150,43 @@ triage comment.
 
 ---
 
+#### Planning Policy Resolution
+
+All planning modes (`plan program`, `plan implementation`, `plan validate`,
+`plan accept`, `plan activate`) resolve planning policy before executing.
+See `shared/planning-policy.md` for the full schema and profile definitions.
+
+##### Policy Resolution Steps
+
+1. **Check the issue body** for `<!-- squad-policy: {name} -->` or
+   `<!-- squad-setting: key=value, ... -->` directives.
+2. **Check the repository** for `.squad/planning-policy.md` with YAML frontmatter.
+3. **Match a profile** — if a profile name is specified (`default`, `lean`,
+   `enterprise`, `spike`, or a custom profile), load its settings.
+4. **Fall back to defaults** — any setting not explicitly configured uses the
+   default value from the schema.
+
+Settings from higher-precedence sources override lower ones. Individual
+`squad-setting` overrides layer on top of a named profile.
+
+##### Applying Policy
+
+- **Artifact limits** — cap issue/milestone/epic/task counts during generation.
+- **Sizing** — enforce `max_task_size` and `sizing_scale` during implementation planning.
+- **Hierarchy** — enforce `require_milestones`, `require_acceptance_criteria`, etc.
+- **GitHub representation** — control whether milestones, sub-issues, and project
+  fields are created during activation.
+- **Validation strictness** — control what triggers errors vs. warnings in
+  `plan validate`.
+
+##### Reporting Active Policy
+
+Include in every plan output (program plan, implementation plan, validation):
+
+> Policy: {profile name} ({comma-separated overrides, or "no overrides"})
+
+---
+
 #### Plan Program Mode
 
 Plan Program mode creates a high-level program plan — the WHAT, not the HOW.
