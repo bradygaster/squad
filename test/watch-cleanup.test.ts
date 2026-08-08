@@ -14,6 +14,7 @@ import type { WatchContext } from '../packages/squad-cli/src/cli/commands/watch/
 function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
   return {
     teamRoot: TEST_ROOT,
+    stateRoot: SQUAD_DIR,
     adapter: {} as WatchContext['adapter'],
     round: 1,
     roster: [],

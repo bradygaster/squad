@@ -350,6 +350,7 @@ export async function runLoop(dest: string, options: LoopConfig): Promise<void> 
 
   const baseContext: WatchContext = {
     teamRoot,
+    stateRoot: stateDir,
     adapter,
     round: 0,
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),

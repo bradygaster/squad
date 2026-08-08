@@ -23,7 +23,9 @@ const REQUIRED_FIELDS: ReadonlyArray<keyof WatchCapability> = [
 ];
 
 /**
- * Load external WatchCapability modules from `{teamRoot}/.squad/capabilities/`.
+ * Load external WatchCapability modules from `{teamRoot}/.squad/capabilities/`,
+ * or from `capabilitiesDir` directly when given (the external state dir's
+ * `capabilities/` when `squad externalize` is active — #1490).
  *
  * - Skips silently when the directory does not exist.
  * - Logs a warning and continues when a file fails to load.
@@ -32,8 +34,9 @@ const REQUIRED_FIELDS: ReadonlyArray<keyof WatchCapability> = [
 export async function loadExternalCapabilities(
   teamRoot: string,
   registry: CapabilityRegistry,
+  capabilitiesDir?: string,
 ): Promise<number> {
-  const capDir = join(teamRoot, '.squad', 'capabilities');
+  const capDir = capabilitiesDir ?? join(teamRoot, '.squad', 'capabilities');
 
   if (!existsSync(capDir)) {
     return 0;
