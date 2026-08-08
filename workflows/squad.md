@@ -49,8 +49,6 @@ safe-outputs:
   create-issue:
     labels: [squad]
     max: 20
-  create-milestone:
-    max: 5
   add-comment:
     max: 10
 ---
@@ -1947,7 +1945,7 @@ Follow this order:
 
 **2a. Create Milestones First**
 
-Use the `create-milestone` safe-output to create GitHub milestones BEFORE issues:
+Use the GitHub API (via the `issues: write` permission) to create milestones BEFORE issues:
 
 1. For each milestone defined in the program plan (`<!-- squad-program-v1 -->`),
    check if a milestone with that title already exists. If so, reuse it.
@@ -1955,7 +1953,7 @@ Use the `create-milestone` safe-output to create GitHub milestones BEFORE issues
    description as the milestone description.
 3. Record the milestone IDs for assignment in subsequent steps.
 
-If `create-milestone` is unavailable (permissions or feature limitation), document
+If milestone creation fails (insufficient permissions or API error), document
 milestones as metadata in the root issue body instead:
 ```
 ## Milestones
