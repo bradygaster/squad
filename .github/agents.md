@@ -1,21 +1,63 @@
 ---
-description: Agent-facing guide to using Squad — the multi-agent team orchestrator for GitHub Copilot. Covers slash commands, planning lifecycle, artifact markers, and safe-output constraints.
+description: Agent-facing guide to using Squad — the multi-agent team orchestrator for GitHub Copilot. Covers installation, slash commands, planning lifecycle, artifact markers, and safe-output constraints.
 ---
 
 # Using Squad in This Repository
 
 Squad is a multi-agent team orchestrator for GitHub Copilot. It composes specialist AI agents into a coordinated team that lives in your repository, then drives planning and execution through structured workflows.
 
-## Usage Modes
+---
+
+## Getting started
+
+GitHub Agentic Workflows (`gh-aw`) are composable AI workflows triggered by slash commands in GitHub issues. Squad uses them to orchestrate multi-agent planning and execution directly inside your repository.
+
+### Prerequisites
+
+- **GitHub CLI** (`gh`) installed and authenticated — [install guide](https://cli.github.com/)
+- **`gh aw` extension** available (ships with recent `gh` versions; run `gh aw --help` to verify)
+
+### Install the Squad workflow
+
+```bash
+gh aw add bradygaster/squad/workflows/squad.md@dev
+```
+
+This command:
+
+1. Fetches the Squad workflow definition from the source repository
+2. Compiles it into a GitHub Actions–compatible workflow
+3. Adds the workflow to your repository's `.github/` directory
+
+### Verify installation
+
+After running the command, confirm the workflow appears in your repository's **Actions** tab. You should see a new workflow named "Squad" (or similar) listed and ready to trigger.
+
+### Try your first command
+
+1. Create a new issue describing what you want to build.
+2. Post a comment on that issue:
+   ```
+   /squad cast
+   ```
+3. Squad generates a specialist team tailored to your project and opens a PR with the `.squad/` directory.
+
+---
+
+## Usage modes
+
+Once installed, Squad supports two interaction modes:
 
 | Mode | Trigger | Best for |
 |------|---------|----------|
 | **gh-aw** (GitHub Agentic Workflows) | Slash commands in issues | Automated, issue-driven planning and execution |
 | **CLI** (interactive) | `squad` command in terminal | Local development, experimentation |
 
-This guide focuses on the **gh-aw** approach — the primary mode for agent-driven work.
+This guide focuses on the **gh-aw** approach — the primary mode for agent-driven work. Everything below assumes you've completed the installation steps above.
 
-## Where the Team Lives
+---
+
+## Where the team lives
 
 ```
 .squad/
