@@ -139,9 +139,17 @@ PR review comment.
 | `/squad retire <name>` | Remove a team member (archived, not deleted) |
 | `/squad status` | Report current team composition (read-only, no PR) |
 | `/squad research` | Deep-dive analysis of the repo and issue; posts findings as a comment |
-| `/squad plan` | Decompose an issue into sub-issues; posts a proposed plan for review |
-| `/squad plan accept` | Create sub-issues from the last approved plan |
-| `/squad plan revise <feedback>` | Revise the plan based on your feedback |
+| `/squad triage` | Classify research findings as work, decision, or excluded |
+| `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback |
+| `/squad plan` | Fast path: program plan + implementation plan in one step |
+| `/squad plan program` | Create a program plan with initiatives, epics, and milestones *(coming soon)* |
+| `/squad plan implementation` | Decompose a program plan into PR-sized tasks |
+| `/squad plan validate` | Validate plan readiness before acceptance *(coming soon)* |
+| `/squad plan accept` | Fast path: accept scope + implementation + activate |
+| `/squad plan accept scope` | Approve the program plan scope |
+| `/squad plan accept implementation` | Approve the implementation plan |
+| `/squad plan activate` | Create GitHub issues from an accepted plan |
+| `/squad plan revise <feedback>` | Revise the current plan based on your feedback |
 
 ### Where you can use slash commands
 
@@ -292,13 +300,34 @@ All agents are renamed and their files updated accordingly.
 ## Research and planning
 
 Squad's SDLC commands let you go from an issue to a fully decomposed, agent-assigned
-backlog without leaving the issue thread. The flow is:
+backlog without leaving the issue thread.
+
+### The full lifecycle
 
 ```
-/squad research  →  /squad plan  →  /squad plan accept
+research → triage → plan program → plan implementation → accept → activate
+    │         │           │                │                │         │
+    ▼         ▼           ▼                ▼                ▼         ▼
+ findings  classify   initiatives/     PR-sized         approve   create
+ posted    as work/   epics/           tasks            scope &   GitHub
+           decision/  milestones                        impl      issues
+           excluded
 ```
 
 Each step is user-initiated — Squad proposes, you review and approve.
+
+### Fast paths (backward compatible)
+
+You don't have to use every step. Fast-path commands combine multiple stages:
+
+| Fast path | Equivalent to |
+|-----------|---------------|
+| `/squad plan` | `/squad plan program` + `/squad plan implementation` |
+| `/squad plan accept` | `/squad plan accept scope` + `/squad plan accept implementation` + `/squad plan activate` |
+
+Use the granular commands when you need tighter review gates (large projects,
+cross-team coordination). Use the fast paths for smaller work where one
+review pass is enough.
 
 ### Research
 
@@ -326,15 +355,45 @@ You can focus the research with additional context:
 
 Research works on issues in any state (open or closed).
 
-### Plan
+### Triage
 
 ```
-/squad plan
+/squad triage
 ```
 
-Squad reads the issue (and any prior research findings) and proposes a set of
-sub-issues organized into phases. The plan is posted as a comment for review —
-**no issues are created yet**.
+After research, triage classifies each finding into one of three dispositions:
+
+| Disposition | Meaning |
+|-------------|---------|
+| **work** | Becomes a plannable unit of work |
+| **decision** | Requires a team decision before planning |
+| **excluded** | Out of scope — documented but not planned |
+
+Triage posts its classifications as a comment. To adjust:
+
+```
+/squad triage revise move the caching finding to "excluded" — we'll handle that next quarter
+```
+
+### Plan program
+
+```
+/squad plan program
+```
+
+*(Coming soon — [#1652](https://github.com/bradygaster/squad/issues/1652))*
+
+Creates a high-level program plan organized into initiatives, epics, and
+milestones. This is strategic structure — not yet PR-sized tasks.
+
+### Plan implementation
+
+```
+/squad plan implementation
+```
+
+Decomposes the program plan into PR-sized tasks with owners, sizes, dependencies,
+and acceptance criteria. The implementation plan is posted as a comment for review.
 
 The plan comment includes:
 - Phased issue breakdown with titles, owners, sizes, and dependencies
@@ -342,22 +401,44 @@ The plan comment includes:
 - A dependency graph showing what blocks what
 - Execution notes and sequencing advice
 
-You can guide the planning:
+### Plan validate
 
 ```
-/squad plan keep it to 5 issues max
-/squad plan focus on the backend first
+/squad plan validate
 ```
 
-### Plan accept
+*(Coming soon — [#1654](https://github.com/bradygaster/squad/issues/1654))*
+
+Validates that a plan is ready for acceptance — checks for missing dependencies,
+unresolved decisions, and sizing gaps.
+
+### Plan accept scope
 
 ```
-/squad plan accept
+/squad plan accept scope
 ```
 
-Once you're happy with the plan, accept it. Squad creates sub-issues from the
-plan with proper labels (`squad`, `squad:{agent-name}`), acceptance criteria,
-dependency references, and phase assignments.
+Approves the program plan scope (initiatives, epics, milestones). This locks the
+strategic structure before implementation decomposition proceeds.
+
+### Plan accept implementation
+
+```
+/squad plan accept implementation
+```
+
+Approves the implementation plan (PR-sized tasks, assignments, dependencies).
+After this, the plan is ready to activate.
+
+### Plan activate
+
+```
+/squad plan activate
+```
+
+Creates GitHub issues from the accepted plan with proper labels (`squad`,
+`squad:{agent-name}`), acceptance criteria, dependency references, and phase
+assignments.
 
 ### Plan revise
 
@@ -365,23 +446,33 @@ dependency references, and phase assignments.
 /squad plan revise merge the two security issues into one and add a migration step
 ```
 
-If the plan needs adjustments, revise it. Squad reads your feedback, modifies
-the plan, and posts an updated plan comment. The revised plan supersedes the
-previous one — `/squad plan accept` always uses the latest.
+If the plan needs adjustments, revise it at any stage. Squad reads your feedback,
+modifies the current plan, and posts an updated comment. The revised plan
+supersedes the previous one.
 
-### Full example
+### Examples
 
-Here's a real workflow from an actual project:
+**Small project — fast path (4 commands):**
 
 ```
-1. /squad cast                    → PR with 8-member team
-2. /squad research                → Deep repo analysis validating the brief
-3. /squad plan                    → 14 issues across 5 phases proposed
-4. /squad plan accept             → 14 issues created with labels and dependencies
+1. /squad research                → Deep repo analysis
+2. /squad plan                    → Program + implementation in one pass
+3. /squad plan revise fewer tasks → Adjusted plan
+4. /squad plan accept             → Issues created
 ```
 
-Four comments. Under 75 minutes. From zero to a fully decomposed, dependency-ordered,
-agent-assigned backlog.
+**Large project — granular lifecycle (7+ commands):**
+
+```
+1. /squad research                       → Deep repo analysis
+2. /squad triage                         → Classify findings
+3. /squad triage revise move X to excluded → Adjust scope
+4. /squad plan program                   → Strategic plan with milestones
+5. /squad plan accept scope              → Lock the program structure
+6. /squad plan implementation            → PR-sized task decomposition
+7. /squad plan accept implementation     → Approve tasks
+8. /squad plan activate                  → Create GitHub issues
+```
 
 ---
 
