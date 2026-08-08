@@ -92,6 +92,7 @@ Parse the slash command text to determine the mode:
 | `/squad triage` | Triage | Classify research findings as work / decision / excluded |
 | `/squad triage revise <feedback>` | Triage Revise | Adjust triage dispositions based on feedback |
 | `/squad plan program` | Plan Program | Strategic decomposition into initiatives and epics |
+| `/squad plan program revise <feedback>` | Plan Program Revise | Revise program plan based on feedback |
 | `/squad plan implementation` | Plan Implementation | Decompose program plan into PR-sized tasks with deps and sizing |
 | `/squad plan accept` | Plan Accept | Fast-path: accept scope + impl + activate in sequence (legacy) |
 | `/squad plan accept scope` | Plan Accept Scope | Approve the program plan's scope (the WHAT) |
@@ -109,9 +110,9 @@ Extract the mode and arguments from the slash command text:
 2. Strip the `/squad` prefix and trim whitespace.
 3. Match the first word(s) against known modes: `cast`, `connect`, `adopt`,
    `cast-member`, `retire`, `status`, `research`, `triage`, `triage revise`,
-   `plan`, `plan program`, `plan implementation`, `plan accept`,
-   `plan accept scope`, `plan accept implementation`, `plan activate`,
-   `plan revise`.
+   `plan`, `plan program`, `plan program revise`, `plan implementation`,
+   `plan accept`, `plan accept scope`, `plan accept implementation`,
+   `plan activate`, `plan revise`.
 4. If no subcommand is provided or the text is empty, default to `cast`.
 5. Store any remaining text as arguments for the matched mode.
 
@@ -1145,6 +1146,225 @@ triage comment.
    *"Revised based on feedback: {summary of changes}"*
 5. Update the lifecycle summary comment.
 6. The new triage comment becomes the one that `/squad plan program` will use.
+
+---
+
+#### Plan Program Mode
+
+Plan Program mode creates a high-level program plan — the WHAT, not the HOW.
+It transforms triaged work items into a structured hierarchy of initiatives,
+epics, user stories, milestones, and dependency relationships. The output is a
+strategic scope document that defines what will be built and in what order, without
+specifying implementation-level tasks.
+
+Plan Program mode works on issues in any state (open or closed).
+
+##### Step 1: Validate Preconditions
+
+1. Search the triggering issue's comments for the latest comment containing
+   `<!-- squad-triage-v1 -->`. If none exists, reply with:
+   *"No triage found. Run `/squad triage` first to classify research findings
+   before program planning."* — then stop.
+2. Read the root issue body (the Intent) for context — this defines the overall
+   goal and success criteria.
+
+##### Step 2: Parse Triage Inputs
+
+From the triage comment, extract:
+
+1. **Work items** — items classified as work that will become epics/stories
+2. **Decisions needed** — unresolved decisions that may block planning
+3. **Excluded items** — confirm they remain out of scope
+
+Count the work items and decisions for the output header.
+
+##### Step 3: Construct Program Hierarchy
+
+From the triage work items and the intent context, construct:
+
+1. **Initiatives** — top-level outcome-bearing bodies of work. Group related work
+   items by the outcome they serve. Each initiative has a clear success statement.
+2. **Epics** — coherent capability/workstream groupings under initiatives. Each
+   epic represents a self-contained body of work that delivers a specific
+   capability.
+3. **User stories/features** — user-observable increments under epics. Written as
+   "As a {who}, I want {what}, so that {why}" or as concise feature descriptions.
+4. **Milestones** — independently demonstrable delivery outcomes. A milestone
+   groups epics/stories that together prove something works end-to-end.
+5. **Dependencies** — explicit relationships between epics (e.g., E2 depends on
+   E1 because it uses the API E1 introduces).
+
+**Construction rules:**
+- Every triage work item must trace to at least one story.
+- Every story belongs to exactly one epic.
+- Every epic belongs to exactly one initiative.
+- Every epic appears in exactly one milestone.
+- Dependencies must form a DAG (no circular dependencies).
+- Milestones represent demonstrable outcomes, not arbitrary time-boxes.
+- Prefer vertical slices (end-to-end user value) over horizontal layers.
+
+##### Step 4: Map to GitHub Representations
+
+Use GitHub-native representations where possible:
+
+| Concept | GitHub Representation | Notes |
+|---------|----------------------|-------|
+| Initiatives | Root issues (when native issue types unavailable) | Labeled `initiative` |
+| Epics | Parent issues with sub-issues | Labeled `epic` |
+| User stories | Issues beneath epics (sub-issues) | Standard issues |
+| Milestones | GitHub milestones | Named after delivery outcome |
+| Dependencies | Documented in issue bodies | Native `blocked-by` when available |
+
+These mappings are NOT created yet — they describe what `/squad plan activate`
+will create once the plan is accepted.
+
+##### Step 5: Post Program Plan Comment
+
+Post (or update) a comment on the issue with marker `<!-- squad-program-v1 -->`:
+
+```markdown
+<!-- squad-program-v1 -->
+## 📋 Squad Program Plan
+
+> Intent: {one-line summary from root issue}
+> Based on: Triage from {date} ({n} work items, {n} decisions)
+
+### Milestones ({count})
+| # | Milestone | Outcome | Target Contains |
+|---|-----------|---------|-----------------|
+| M1 | {name} | {what it demonstrates} | E1, E2 |
+| M2 | {name} | {what it demonstrates} | E3, E4, E5 |
+
+### Initiatives & Epics
+
+#### Initiative 1: {name}
+> Outcome: {what success looks like}
+
+| Epic | Description | Stories | Milestone | Depends On |
+|------|-------------|---------|-----------|-----------|
+| E1 | {epic name} | {count} | M1 | — |
+| E2 | {epic name} | {count} | M1 | E1 |
+
+<details>
+<summary>E1: {Epic name}</summary>
+
+**Outcome:** {What this epic delivers}
+**Stories:**
+1. {User story — user-observable increment}
+2. {User story}
+3. {User story}
+
+**Acceptance criteria (epic-level):**
+- [ ] {criterion}
+- [ ] {criterion}
+</details>
+
+<details>
+<summary>E2: {Epic name}</summary>
+
+**Outcome:** {What this epic delivers}
+**Stories:**
+1. {User story — user-observable increment}
+2. {User story}
+
+**Acceptance criteria (epic-level):**
+- [ ] {criterion}
+- [ ] {criterion}
+</details>
+
+### Unresolved Decisions ({count})
+| # | Decision | Impact | Blocking |
+|---|----------|--------|----------|
+| D1 | {what needs deciding} | {what it affects} | {epics blocked} |
+
+### Program Metadata
+- **Total epics:** {n}
+- **Total stories:** {n}
+- **Milestones:** {n}
+- **Unresolved decisions:** {n}
+- **Estimated GitHub artifacts on activation:** {n} issues, {n} milestones
+
+### Dependency Graph
+```
+{ASCII showing initiative → epic → milestone relationships}
+```
+
+> Reply `/squad plan accept scope` to approve this scope, or `/squad plan revise <feedback>` to adjust.
+```
+
+If a section has zero items, still include the heading with a note: *"None identified."*
+
+##### Step 6: Update Lifecycle Summary
+
+Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it exists,
+update it; if not, create it. Set the Program Plan row to `✅ Done` and record the
+current timestamp. Set `Current state: Program Planned` and
+`Last command: /squad plan program`.
+
+Do NOT create issues, milestones, or PRs. Plan Program mode is read-only + comment.
+
+---
+
+#### Plan Program Revise Mode
+
+Plan Program Revise mode takes user feedback and adjusts the latest program plan.
+It finds the most recent `<!-- squad-program-v1 -->` comment, applies the requested
+changes, and posts a new superseding program plan comment.
+
+Plan Program Revise mode works on issues in any state (open or closed).
+
+##### Step 1: Validate Preconditions
+
+1. Search the triggering issue's comments for the latest comment containing
+   `<!-- squad-program-v1 -->`. If none exists, reply with:
+   *"No program plan found to revise. Run `/squad plan program` first."* — then stop.
+2. Check whether a `<!-- squad-scope-accepted-v1 -->` exists. If scope has been
+   accepted, reply with:
+   *"Scope is already accepted. To revise, scope acceptance must first be
+   invalidated. This is a destructive operation — confirm by running
+   `/squad plan revise override`."* — then stop (unless override flag is present).
+
+##### Step 2: Parse Feedback
+
+Read the feedback text after `/squad plan program revise` (everything after
+"revise"). The feedback may include:
+
+- Requests to split, merge, add, or remove epics
+- Requests to reorganize initiative grouping
+- Requests to adjust milestone composition
+- Requests to add/remove/rephrase user stories
+- Requests to re-prioritize or reorder
+- New information that changes scope
+
+##### Step 3: Apply Revisions
+
+Apply the feedback to the existing program plan. Maintain structural integrity:
+
+1. All construction rules from Plan Program Mode Step 3 still apply.
+2. If splitting an epic, ensure stories redistribute cleanly.
+3. If merging epics, combine stories and unify acceptance criteria.
+4. If adjusting milestones, ensure every epic still belongs to exactly one.
+5. Preserve dependency DAG — if feedback creates a cycle, note the conflict
+   and propose an alternative.
+
+##### Step 4: Post Revised Program Plan
+
+Post a NEW program plan comment (with `<!-- squad-program-v1 -->` marker) that
+supersedes the old one. Include at the top:
+
+*"Revised based on feedback: {summary of changes made}"*
+
+The format is identical to Plan Program Mode Step 5, with the revision note
+prepended.
+
+##### Step 5: Update Lifecycle Summary
+
+Update the `<!-- squad-lifecycle-state -->` comment. Keep Program Plan as
+`✅ Done` (it's a revision, not a new phase). Update the timestamp and set
+`Last command: /squad plan program revise`.
+
+If a `<!-- squad-scope-accepted-v1 -->` was invalidated (override case), set
+the Scope Accepted row back to `⬚ Pending`.
 
 ---
 
