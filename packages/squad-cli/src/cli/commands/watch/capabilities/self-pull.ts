@@ -42,25 +42,48 @@ export class SelfPullCapability implements WatchCapability {
         }
       } catch { /* non-fatal — proceed without stash */ }
 
-      // Fetch + pull
-      await new Promise<void>((resolve, reject) => {
-        execFile('git', ['fetch', '--quiet'], { cwd }, (err) =>
-          err ? reject(err) : resolve(),
-        );
-      });
-      await new Promise<void>((resolve, reject) => {
-        execFile('git', ['pull', '--ff-only', '--quiet'], { cwd }, (err) =>
-          err ? reject(err) : resolve(),
-        );
-      });
+      // Fetch + pull. A thrown error here (no tracking branch, diverged
+      // history, network failure) must not skip the stash-pop below — a
+      // stash created above and never popped silently strips the user's
+      // uncommitted work out of the working tree while this still reports
+      // success further down.
+      let pullError: unknown;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          execFile('git', ['fetch', '--quiet'], { cwd }, (err) =>
+            err ? reject(err) : resolve(),
+          );
+        });
+        await new Promise<void>((resolve, reject) => {
+          execFile('git', ['pull', '--ff-only', '--quiet'], { cwd }, (err) =>
+            err ? reject(err) : resolve(),
+          );
+        });
+      } catch (err) {
+        pullError = err;
+      }
 
-      // Pop stash if we created one
+      // Pop stash if we created one — always attempted, regardless of
+      // whether fetch/pull above succeeded.
+      let stashRestored = !didStash;
       if (didStash) {
         try {
           execFileSync('git', ['stash', 'pop'], { cwd, encoding: 'utf-8' });
+          stashRestored = true;
         } catch {
-          console.log('⚠️  git stash pop failed (possible merge conflict) — changes remain in stash');
+          stashRestored = false;
         }
+      }
+
+      if (!stashRestored) {
+        const cause = pullError ? 'pull failed' : 'stash pop conflict';
+        const summary = `git pull left local changes stashed (${cause}) — run \`git stash pop\` in ${cwd} manually`;
+        console.log(`⚠️  ${summary}`);
+        return { success: false, summary };
+      }
+
+      if (pullError) {
+        return { success: true, summary: 'git pull skipped (not on tracking branch or conflicts)' };
       }
 
       // Check if watch source files changed
