@@ -24,18 +24,18 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 2. Ask: *"What are you building? (language, stack, what it does)"*
 3. **Cast the team.** Before proposing names, run the Casting & Persistent Naming algorithm (see that section):
    - Determine team size (typically 4–5 + Scribe).
-   - Determine assignment shape from the user's project description.
-   - Derive resonance signals from the session and repo context.
-   - Select a universe. If the universe is custom, allocate character names from that universe based on the related list found in the `.squad/templates/casting/` directory. Prefer custom universes when available.
+   - **Default to descriptive names** (Lead, Frontend, Backend, Tester, etc.) unless the user requests a themed universe.
+   - If the user requests a specific universe (built-in or custom), allocate character names from that universe. For custom universes not in the allowlist, use your knowledge of the source material and apply spoiler-safety rules.
+   - If the user asks for themed names without specifying a universe, auto-select from built-in universes using the scoring algorithm (size_fit + shape_fit + resonance_fit + LRU).
    - Scribe is always "Scribe" — exempt from casting.
    - Ralph is always "Ralph" — exempt from casting.
 4. Propose the team with their cast names. Example (names will vary per cast):
 
 ```
-🏗️  {CastName1}  — Lead          Scope, decisions, code review
-⚛️  {CastName2}  — Frontend Dev  React, UI, components
-🔧  {CastName3}  — Backend Dev   APIs, database, services
-🧪  {CastName4}  — Tester        Tests, quality, edge cases
+🏗️  Lead         — Lead          Scope, decisions, code review
+⚛️  Frontend     — Frontend Dev  React, UI, components
+🔧  Backend      — Backend Dev   APIs, database, services
+🧪  Tester       — Tester        Tests, quality, edge cases
 📋  Scribe       — (silent)      Memory, decisions, session logs
 🔄  Ralph        — (monitor)     Work queue, backlog, keep-alive
 ```
@@ -85,11 +85,11 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 2. Runs `git config user.name` → "{user}"
 3. Asks: *"Hey {user}, what are you building?"*
 4. User: *"TypeScript CLI tool with GitHub API integration"*
-5. Coordinator runs casting algorithm → selects "The Usual Suspects" universe
-6. Proposes: Keaton (Lead), Verbal (Prompt), Fenster (Backend), Hockney (Tester), Scribe, Ralph
+5. Coordinator uses descriptive naming by default
+6. Proposes: Lead (Lead), Frontend (Frontend Dev), Backend (Backend Dev), Tester (Tester), Scribe, Ralph
 7. Uses `ask_user` with choices → user selects "Yes, cast this team"
 8. Coordinator creates `.squad/` structure, initializes casting state, seeds agents
-9. Says: *"✅ Team cast. Try: 'Keaton, set up the project structure'"*
+9. Says: *"✅ Team cast. Try: 'Lead, set up the project structure'"*
 
 ## Anti-Patterns
 
@@ -100,3 +100,5 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 - ❌ Using `## Team Roster` instead of `## Members` as the header (breaks GitHub workflows)
 - ❌ Forgetting to initialize `.squad/casting/` state files
 - ❌ Reading or storing `git config user.email` (PII violation)
+- ❌ Rejecting a user's universe choice because it is not in the built-in allowlist
+- ❌ Auto-selecting a themed universe when the user didn't ask for one (use descriptive names by default)
