@@ -806,9 +806,12 @@ If a `.squad/team.md` exists, consider the team composition when framing finding
 
 ##### Step 3: Post Research Findings
 
-Use the `add-comment` safe-output to post a structured research comment. The
-comment MUST begin with the HTML marker `<!-- squad-research-v1 -->` on its own
-line (this allows future commands to locate and reference it).
+Use the `add-comment` safe-output to post a structured research comment.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-research-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -885,8 +888,12 @@ Consider:
 
 ##### Step 3: Post Plan Comment
 
-Use the `add-comment` safe-output to post a structured plan comment. The comment
-MUST begin with `<!-- squad-plan-v1 -->` on its own line.
+Use the `add-comment` safe-output to post a structured plan comment.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-plan-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1023,7 +1030,12 @@ GitHub blocked-by/blocking edges:
 
 ##### Step 4: Post Summary Comment
 
-After creating all issues, post a summary comment on the triggering issue:
+After creating all issues, post a summary comment on the triggering issue.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-plan-accepted -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 ```markdown
 <!-- squad-plan-accepted -->
@@ -1105,8 +1117,12 @@ Classification criteria:
 
 ##### Step 3: Post Triage Comment
 
-Use the `add-comment` safe-output to post a structured triage comment. The comment
-MUST begin with `<!-- squad-triage-v1 -->` on its own line.
+Use the `add-comment` safe-output to post a structured triage comment.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-triage-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1146,7 +1162,14 @@ findings classified as {other categories}."*
 ##### Step 4: Update Lifecycle Summary
 
 Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it exists,
-update it; if not, create it. Set the Triage row to `✅ Done` and record the
+update it; if not, create it.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The lifecycle state comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-lifecycle-state -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
+
+Set the Triage row to `✅ Done` and record the
 current timestamp. Set `Current state: Triaged` and `Last command: /squad triage`.
 
 Do NOT create issues or PRs. Triage mode is read-only + comment.
@@ -1278,6 +1301,11 @@ These mappings are NOT created yet — they describe what `/squad plan activate`
 will create once the plan is accepted.
 
 ##### Step 5: Post Program Plan Comment
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-program-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 Post (or update) a comment on the issue with marker `<!-- squad-program-v1 -->`:
 
@@ -1486,8 +1514,12 @@ resolve cycles by reordering, etc.).
 
 ##### Step 4: Post Implementation Plan Comment
 
-Use the `add-comment` safe-output to post a structured implementation plan. The
-comment MUST begin with `<!-- squad-implementation-v1 -->` on its own line.
+Use the `add-comment` safe-output to post a structured implementation plan.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-implementation-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1635,8 +1667,12 @@ or Fail (❌).
 ##### Step 3: Post Validation Result
 
 Use the `add-comment` safe-output to post (or update, if one already exists)
-the validation result comment. The comment MUST begin with
-`<!-- squad-validation-v1 -->` on its own line.
+the validation result comment.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-validation-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1742,8 +1778,12 @@ implementation planning can proceed on a stable foundation.
 
 ##### Step 3: Record Acceptance
 
-Use the `add-comment` safe-output to post the acceptance record. The comment
-MUST begin with `<!-- squad-scope-accepted-v1 -->` on its own line.
+Use the `add-comment` safe-output to post the acceptance record.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-scope-accepted-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1809,8 +1849,12 @@ re-run `/squad plan accept implementation`."* Include specific diagnostics.
 
 ##### Step 3: Record Acceptance
 
-Use the `add-comment` safe-output to post the acceptance record. The comment
-MUST begin with `<!-- squad-impl-accepted-v1 -->` on its own line.
+Use the `add-comment` safe-output to post the acceptance record.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-impl-accepted-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1920,8 +1964,12 @@ If the program plan defines milestones, create GitHub milestones:
 
 ##### Step 5: Post Activation Record
 
-Use the `add-comment` safe-output to post the activation record. The comment
-MUST begin with `<!-- squad-activated-v1 -->` on its own line.
+Use the `add-comment` safe-output to post the activation record.
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-activated-v1 -->`
+
+This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
