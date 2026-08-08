@@ -90,6 +90,8 @@ Parse the slash command text to determine the mode:
 | `/squad plan` | Plan | Decompose the issue into sub-issues; posts proposed plan as a comment |
 | `/squad plan accept` | Plan Accept | Create sub-issues from the last plan comment |
 | `/squad plan revise <feedback>` | Plan Revise | Revise the last plan based on feedback |
+| `/squad triage` | Triage | Classify research findings as work / decision / excluded |
+| `/squad triage revise <feedback>` | Triage Revise | Adjust triage dispositions based on feedback |
 | `/squad` (no args) | Cast | Default to cast mode |
 
 ## Task
@@ -101,7 +103,9 @@ Extract the mode and arguments from the slash command text:
 1. Read the trigger body from the event payload described above.
 2. Strip the `/squad` prefix and trim whitespace.
 3. Match the first word(s) against known modes: `cast`, `connect`, `adopt`,
-   `cast-member`, `retire`, `status`, `research`, `plan`, `plan accept`,
+   `cast-member`, `retire`, `status`, `research`, `triage`, `triage revise`,
+   `plan`, `plan program`, `plan implementation`, `plan accept`,
+   `plan accept scope`, `plan accept implementation`, `plan activate`,
    `plan revise`.
 4. If no subcommand is provided or the text is empty, default to `cast`.
 5. Store any remaining text as arguments for the matched mode.
@@ -1006,3 +1010,117 @@ a revised plan.
 4. Post a NEW plan comment (with `<!-- squad-plan-v1 -->` marker) that supersedes
    the old one. Note at the top: *"Revised based on feedback: {summary of changes}"*
 5. The new plan comment becomes the one that `/squad plan accept` will use.
+
+---
+
+#### Triage Mode
+
+Triage mode classifies research findings into actionable dispositions: work items,
+decisions needed, or excluded. It is the bridge between research (evidence gathering)
+and planning (scope definition). It does NOT create issues or PRs — it posts a
+structured triage comment.
+
+Triage mode works on issues in any state (open or closed).
+
+##### Step 1: Validate Preconditions
+
+1. Search the triggering issue's comments for the latest comment containing
+   `<!-- squad-research-v1 -->`. If no research comment exists, reply with:
+   *"No research findings found. Run `/squad research` first to gather evidence
+   before triaging."* — then stop.
+2. Read the root issue body — this is the **Intent** that guides classification.
+   If the issue body is empty, reply with:
+   *"The issue body is empty — triage needs an intent to classify against.
+   Add a description of what you're building and why, then re-run `/squad triage`."*
+   — then stop.
+
+##### Step 2: Classify Findings
+
+For each key finding in the research comment, determine its disposition:
+
+1. **`work`** — The finding identifies something that needs to be built, changed,
+   or fixed. It will become a backlog item in the program plan. Include a scope
+   sketch describing what the work item would encompass, an effort estimate
+   (S/M/L/XL), and a rationale explaining why it's work.
+2. **`decision`** — The finding raises a question that requires human judgment
+   before planning can proceed. Flag what needs deciding, what it impacts, and
+   what planning items it blocks. Decisions are gates — they prevent premature
+   commitment.
+3. **`excluded`** — The finding is not relevant to the stated intent. Provide a
+   clear explanation referencing the intent to justify exclusion.
+
+**Default to `decision` when uncertain.** It is better to surface something for
+human review than to silently exclude it or prematurely commit it as work.
+
+Classification criteria:
+- Does it directly advance the stated intent? → `work`
+- Does it present a fork in the road? → `decision`
+- Does it require information only the user has? → `decision`
+- Is it interesting but orthogonal to the intent? → `excluded`
+- Is it a pre-existing concern unrelated to the goal? → `excluded`
+
+##### Step 3: Post Triage Comment
+
+Use the `add-comment` safe-output to post a structured triage comment. The comment
+MUST begin with `<!-- squad-triage-v1 -->` on its own line.
+
+**Comment structure:**
+
+```markdown
+<!-- squad-triage-v1 -->
+## 🔍 Squad Triage — Dispositions
+
+> Intent: {one-line summary from root issue body}
+> Based on: Research from {date of research comment}
+
+### Work Items ({count})
+| # | Finding | Scope Sketch | Effort | Rationale |
+|---|---------|-------------|--------|-----------|
+| 1 | {finding title} | {what this becomes as a work item} | S/M/L/XL | {why it's work} |
+
+### Decisions Needed ({count})
+| # | Finding | Question | Impact | Blocks |
+|---|---------|----------|--------|--------|
+| 1 | {finding title} | {what needs deciding} | {what it affects} | {what can't proceed without this} |
+
+### Excluded ({count})
+| # | Finding | Reason |
+|---|---------|--------|
+| 1 | {finding title} | {why excluded — must reference intent} |
+
+### Summary
+- **{n}** findings triaged
+- **{n}** ready for planning | **{n}** need decisions | **{n}** excluded
+- Decisions blocking planning: {list or "none"}
+
+> Reply `/squad plan program` to create a program plan from these dispositions, or `/squad triage revise <feedback>` to adjust.
+```
+
+If a section has zero items, still include the heading with a note: *"None — all
+findings classified as {other categories}."*
+
+##### Step 4: Update Lifecycle Summary
+
+Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it exists,
+update it; if not, create it. Set the Triage row to `✅ Done` and record the
+current timestamp. Set `Current state: Triaged` and `Last command: /squad triage`.
+
+Do NOT create issues or PRs. Triage mode is read-only + comment.
+
+---
+
+#### Triage Revise Mode
+
+Triage Revise mode takes user feedback and adjusts the dispositions in the latest
+triage comment.
+
+1. Find the latest `<!-- squad-triage-v1 -->` comment. If none exists, reply:
+   *"No triage found to revise. Run `/squad triage` first."*
+2. Read the feedback text after `/squad triage revise` (everything after "revise").
+3. Apply the feedback — reclassify items, split findings, merge duplicates,
+   adjust scope sketches, or change effort estimates.
+4. Post a NEW triage comment (with `<!-- squad-triage-v1 -->` marker) that
+   supersedes the old one. Note at the top:
+   *"Revised based on feedback: {summary of changes}"*
+5. Update the lifecycle summary comment.
+6. The new triage comment becomes the one that `/squad plan program` will use.
