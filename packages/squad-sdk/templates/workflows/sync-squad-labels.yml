@@ -96,14 +96,24 @@ jobs:
               'A9DC76', // chartreuse
             ];
 
-            // Deterministic color from palette based on agent name hash
-            function getAgentColor(agentName) {
+            // Deterministic color from palette based on agent slug hash
+            const usedColors = new Set();
+
+            function getAgentColor(slug) {
               let hash = 0;
-              for (const char of agentName) {
+              for (const char of slug) {
                 hash = ((hash << 5) - hash) + char.charCodeAt(0);
                 hash = hash & hash;
               }
-              return SQUAD_MEMBER_PALETTE[Math.abs(hash) % SQUAD_MEMBER_PALETTE.length];
+              let index = Math.abs(hash) % SQUAD_MEMBER_PALETTE.length;
+              // Linear probe to avoid collisions
+              let attempts = 0;
+              while (usedColors.has(SQUAD_MEMBER_PALETTE[index]) && attempts < SQUAD_MEMBER_PALETTE.length) {
+                index = (index + 1) % SQUAD_MEMBER_PALETTE.length;
+                attempts++;
+              }
+              usedColors.add(SQUAD_MEMBER_PALETTE[index]);
+              return SQUAD_MEMBER_PALETTE[index];
             }
 
             // Define go: and release: labels (static)
