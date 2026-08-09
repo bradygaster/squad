@@ -347,9 +347,11 @@ The original `/squad plan` and `/squad plan accept` commands remain fully suppor
 | Legacy Command | Equivalent Phases | Marker Produced |
 |---------------|-------------------|-----------------|
 | `/squad plan` | program + implementation (combined) | `<!-- squad-plan-v1 -->` |
-| `/squad plan accept` | scope + impl + activate (combined) | `<!-- squad-plan-accepted -->` |
+| `/squad plan accept` | scope + impl + activate (combined) | See note below |
 | `/squad plan revise` | revise (same as granular) | `<!-- squad-plan-v1 -->` |
 | `/squad research` | research (unchanged) | `<!-- squad-research-v1 -->` |
+
+> **`/squad plan accept` marker behavior:** When only a fast-path plan (`<!-- squad-plan-v1 -->`) exists, accept produces `<!-- squad-plan-accepted -->`. When granular artifacts exist (program plan + implementation plan), accept runs the granular accept/activate sequence, producing `<!-- squad-scope-accepted-v1 -->`, `<!-- squad-impl-accepted-v1 -->`, and `<!-- squad-activated-v1 -->` instead.
 
 ### Coexistence Rules
 
