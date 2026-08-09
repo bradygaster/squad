@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -459,6 +459,51 @@ describe('resolveSquadState()', () => {
     const ctx = resolveSquadState(TMP);
     expect(ctx).not.toBeNull();
     expect(ctx!.storage.constructor.name).toBe('StateBackendStorageAdapter');
+  });
+
+  describe('#1555 regression: rootDir wiring + teamRoot=. sentinel', () => {
+    it('teamDir stays inside .squad/ when config.teamRoot is the "." sentinel externalize.ts writes', () => {
+      writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', projectKey: 'some-key', stateLocation: 'external' }));
+      const ctx = resolveSquadState(TMP);
+      expect(ctx).not.toBeNull();
+      // Before the fix this resolved one level too high (path.resolve(projectRoot, '.') === projectRoot,
+      // the parent of .squad/) because the truthy check on config.teamRoot didn't special-case '.'.
+      expect(ctx!.paths.mode).toBe('local');
+      expect(ctx!.paths.teamDir).toBe(squadDir());
+    });
+
+    it('local-backend storage rootDir is wired to teamDir, not left unset', () => {
+      writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.' }));
+      const ctx = resolveSquadState(TMP);
+      expect(ctx).not.toBeNull();
+
+      // A key that escapes teamDir must now be rejected instead of the traversal
+      // guard silently no-op'ing on an unset rootDir.
+      expect(() => ctx!.storage.readSync(join(ctx!.paths.teamDir, '..', 'outside.md')))
+        .toThrow(/Path traversal blocked/);
+
+      // A key inside teamDir still round-trips normally.
+      ctx!.storage.writeSync(join(ctx!.paths.teamDir, 'agents', 'data', 'history.md'), '# Data\n');
+      expect(existsSync(join(squadDir(), 'agents', 'data', 'history.md'))).toBe(true);
+    });
+
+    it('squad_decide via ToolRegistry writes into .squad/decisions/inbox/, matching what state-mcp.ts wires up', async () => {
+      writeFileSync(join(squadDir(), 'config.json'), JSON.stringify({ version: 1, teamRoot: '.', projectKey: 'some-key', stateLocation: 'external' }));
+      const ctx = resolveSquadState(TMP);
+      expect(ctx).not.toBeNull();
+
+      // Same construction as createStateMcpToolRegistry() in state-mcp.ts.
+      const registry = new ToolRegistry(ctx!.paths.teamDir, undefined, ctx!.storage);
+      const decide = registry.getTool('squad_decide')!;
+      const result = await decide.handler({ author: 'test-agent', summary: 'Use FSStorageProvider rootDir', body: 'Confine local-backend writes to teamDir.' });
+
+      expect(result.resultType).toBe('success');
+      const inboxDir = join(squadDir(), 'decisions', 'inbox');
+      expect(existsSync(inboxDir)).toBe(true);
+      expect(readdirSync(inboxDir).length).toBeGreaterThan(0);
+      // Must not have landed one level up, in the repo root.
+      expect(existsSync(join(TMP, 'decisions'))).toBe(false);
+    });
   });
 });
 
