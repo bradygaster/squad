@@ -41,6 +41,7 @@ Use `assertions.md` as a machine-checkable spec. A test harness should:
 ### Scenario Parameters
 
 - **Policy profile:** `default`
+- **Size representation:** `label` (demonstrates the `size_representation: label` mode; the default policy is `size_representation: body` which embeds sizing in the issue body instead of labels)
 - **Complexity:** Medium (3 milestones, 6 epics, 14 tasks)
 - **Domain:** .NET Aspire / Orleans / ASP.NET Core
 - **Planning path:** Full lifecycle (not fast-path)

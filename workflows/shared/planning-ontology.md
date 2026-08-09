@@ -84,6 +84,8 @@ impl_accepted → activated
 
 **Idempotency rule:** Re-running any command updates the existing marker comment (edit, not duplicate). The lifecycle state comment is always updated on every transition. Idempotency applies to all planning-phase markers (research, triage, program plan, implementation plan, validation). Acceptance and activation markers are immutable once written — re-running these commands is a no-op if the marker already exists.
 
+**Concurrency:** Concurrent acceptance commands are serialized by the workflow's concurrency group. Duplicate markers are harmless — subsequent phases find the first matching marker.
+
 **Revision:** `/squad plan revise <feedback>` may be issued from any planning state (program_planning, implementation_planning, or validating). It revises the most recent plan artifact and resets validation if present.
 
 ---
@@ -224,7 +226,7 @@ The issue body IS the intent. No special format required, but structured intents
 - Issues: one per task row
 - Dependencies: GitHub sub-issue relationships
 - Milestones: one per rollout phase
-- Labels: `size:S`, `size:M`, etc. + `squad` + agent label
+- Labels: per `size_representation` policy (default: body; when `label`: `size:{t-shirt}`) + `squad` + agent label
 ```
 
 ### 3.6 Validation Result

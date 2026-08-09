@@ -20,13 +20,15 @@ on:
 permissions:
   contents: read
   copilot-requests: write
-  issues: read
+  issues: write
   pull-requests: read
 network:
   allowed:
     - defaults
 imports:
   - shared/squad.md
+  - shared/planning-ontology.md
+  - shared/planning-policy.md
 tools:
   bash: true
   github:
@@ -48,7 +50,7 @@ safe-outputs:
     expires: 14d
   create-issue:
     labels: [squad]
-    max: 20
+    max: 30
   add-comment:
     max: 10
 ---
@@ -1399,7 +1401,7 @@ Post (or update) a comment on the issue with marker `<!-- squad-program-v1 -->`:
 {ASCII showing initiative → epic → milestone relationships}
 ```
 
-> Reply `/squad plan accept scope` to approve this scope, or `/squad plan revise <feedback>` to adjust.
+> Reply `/squad plan accept scope` to approve this scope, or `/squad plan program revise <feedback>` to adjust.
 ```
 
 If a section has zero items, still include the heading with a note: *"None identified."*

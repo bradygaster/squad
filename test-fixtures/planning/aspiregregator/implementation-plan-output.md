@@ -46,4 +46,4 @@
   - `M1: Foundation & Safety Net` → Tasks 1, 2, 3, 4, 5, 6, 7
   - `M2: Platform & Persistence` → Tasks 8, 9, 10, 11
   - `M3: Integration & Observability` → Tasks 12, 13, 14
-- **Labels:** `size:S`, `size:M`, `size:L` + `squad` + `squad:{agent}`
+- **Labels:** `size:S`, `size:M`, `size:L` + `squad` + `squad:{agent}` _(label mode — see README for size_representation note)_

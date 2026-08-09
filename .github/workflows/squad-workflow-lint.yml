@@ -17,6 +17,7 @@ on:
       - 'packages/squad-sdk/templates/workflows/**'
       - '.squad-templates/workflows/**'
       - 'templates/workflows/**'
+      - 'workflows/**'
   push:
     branches: [dev, main]
     paths:
@@ -25,6 +26,7 @@ on:
       - 'packages/squad-sdk/templates/workflows/**'
       - '.squad-templates/workflows/**'
       - 'templates/workflows/**'
+      - 'workflows/**'
 
 permissions:
   contents: read

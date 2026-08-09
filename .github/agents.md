@@ -276,3 +276,5 @@ When scanning issue comments for Squad artifacts, search for these HTML comment 
 ```
 
 Each marker appears at the top of its respective comment body. To find the latest artifact of a given type, scan comments in reverse chronological order and take the first match.
+
+> **Fast-path markers** (`squad-plan-v1`, `squad-plan-accepted`) also exist for legacy/simplified compatibility. See the planning ontology §6 (Backward Compatibility) for the full marker registry.

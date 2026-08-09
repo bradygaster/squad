@@ -610,6 +610,24 @@ are used. State does not persist across runs.
 
 ---
 
+## Upgrading
+
+To update your compiled workflow after pulling upstream changes:
+
+```bash
+gh aw add bradygaster/squad/workflows/squad.md@dev
+```
+
+This re-compiles the workflow from source. If you have local customizations in your compiled `.github/workflows/squad-*.lock.yml`, they will be overwritten — keep customizations in the source `.md` files instead.
+
+For manual recompilation of all workflows:
+
+```bash
+gh aw compile
+```
+
+---
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -620,7 +638,7 @@ are used. State does not persist across runs.
 | `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile`, commit the lock file, and push |
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
 | "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
-| Plan accept creates fewer issues than expected | `create-issue` safe-output has a max of 20 | Split into multiple plan/accept cycles for very large decompositions |
+| Plan accept creates fewer issues than expected | `create-issue` safe-output has a max of 30 | Split into multiple plan/accept cycles for very large decompositions |
 
 ---
 
