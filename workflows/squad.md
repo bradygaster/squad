@@ -50,7 +50,7 @@ safe-outputs:
     expires: 14d
   create-issue:
     labels: [squad]
-    max: 30
+    max: 50
   add-comment:
     max: 10
 ---
@@ -1088,9 +1088,10 @@ a revised plan.
 2. Read the feedback text after `/squad plan revise` (everything after "revise").
 3. Apply the feedback to the existing plan — merge items, split items, reorder,
    add or remove items, change owners, adjust scope.
-4. Post a NEW plan comment (with `<!-- squad-plan-v1 -->` marker) that supersedes
-   the old one. Note at the top: *"Revised based on feedback: {summary of changes}"*
-5. The new plan comment becomes the one that `/squad plan accept` will use.
+4. **EDIT the existing `<!-- squad-plan-v1 -->` comment** with the revised content.
+   Do NOT post a new comment — there must only ever be ONE comment with this marker
+   on an issue. Prepend at the top: *"Revised based on feedback: {summary of changes}"*
+5. The updated plan comment remains the one that `/squad plan accept` will use.
 
 ---
 
@@ -1211,11 +1212,12 @@ triage comment.
 2. Read the feedback text after `/squad triage revise` (everything after "revise").
 3. Apply the feedback — reclassify items, split findings, merge duplicates,
    adjust scope sketches, or change effort estimates.
-4. Post a NEW triage comment (with `<!-- squad-triage-v1 -->` marker) that
-   supersedes the old one. Note at the top:
+4. **EDIT the existing `<!-- squad-triage-v1 -->` comment** with the revised content.
+   Do NOT post a new comment — there must only ever be ONE comment with this marker
+   on an issue. Prepend at the top:
    *"Revised based on feedback: {summary of changes}"*
 5. Update the lifecycle summary comment.
-6. The new triage comment becomes the one that `/squad plan program` will use.
+6. The updated triage comment remains the one that `/squad plan program` will use.
 
 ---
 
@@ -1461,8 +1463,9 @@ Apply the feedback to the existing program plan. Maintain structural integrity:
 
 ##### Step 4: Post Revised Program Plan
 
-Post a NEW program plan comment (with `<!-- squad-program-v1 -->` marker) that
-supersedes the old one. Include at the top:
+**EDIT the existing `<!-- squad-program-v1 -->` comment** with the revised content.
+Do NOT post a new comment — there must only ever be ONE comment with this marker
+on an issue. Include at the top:
 
 *"Revised based on feedback: {summary of changes made}"*
 
@@ -1941,6 +1944,21 @@ This is an irreversible action (issues are created in the repository).
    this is a **re-activation**. Compare the existing activation record against
    the current implementation plan to identify only the tasks that have NOT
    been created as issues yet. Only create missing issues (idempotent behavior).
+
+##### Issue Creation Integrity — Hallucination Guard
+
+> **CRITICAL:** After every `create-issue` safe-output call, you MUST:
+>
+> 1. **Verify the returned issue number** — confirm the response contains a valid
+>    issue number before referencing it in any subsequent issue body, dependency,
+>    or parent relationship.
+> 2. **Stop on failure** — if any `create-issue` call fails or returns an error,
+>    STOP activation immediately. Report which issues were successfully created
+>    (with their numbers) and which failed. Do NOT continue creating downstream
+>    issues that reference a failed parent or dependency.
+> 3. **Never predict issue numbers** — always use the ACTUAL returned value from
+>    each `create-issue` call. Do not hardcode, increment, or guess issue numbers
+>    based on repository state or previous creations.
 
 ##### Step 2: Create GitHub Issues — Full Hierarchy
 
