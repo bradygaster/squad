@@ -373,12 +373,9 @@ tailored to this repository.
 Apply a `squad:{name}` label to any issue or PR to route it directly to that
 specialist. For example, `squad:fido` sends work to your test engineer.
 
-> **Label color uniqueness:** Each `squad:{agent}` label MUST receive a unique
-> color from the `SQUAD_MEMBER_PALETTE` defined in `sync-squad-labels.yml`.
-> Colors are assigned deterministically based on the slugified agent name
-> (hash-based index with linear probing to guarantee no collisions) so they
-> remain stable across re-runs. The parent `squad` label retains its distinct
-> color (`9B8FCC`). Do NOT hardcode a single color for all agent labels.
+> **Label colors:** All `squad:*` labels use the uniform color `9B8FCC`
+> (matching the parent `squad` label). The `sync-squad-labels` workflow
+> enforces this on every push.
 
 ### Iteration Commands
 
@@ -1010,7 +1007,7 @@ hierarchy: Root → Phase/group issues → Task issues. If the plan is flat
 - **Title:** The work item title
 - **Labels:**
   - `squad` — description: "Squad-managed work item" — color: `9B8FCC`
-  - `squad:{owner-name}` — description: "Assigned to {agent}" — color: unique per agent, from `SQUAD_MEMBER_PALETTE` (deterministic hash of slugified name)
+  - `squad:{owner-name}` — description: "Assigned to {agent}" — color: `9B8FCC`
   (Do NOT create `size:*` labels unless `size_representation: label` is
   explicitly set in planning policy.)
 - **Body:**
