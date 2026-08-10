@@ -1777,7 +1777,7 @@ Record the current timestamp. Set `Current state: Validated` (on pass) or
 `Current state: Validation failed` (on fail) and
 `Last command: /squad plan validate`.
 On PASS: Set `**Next action:**` to `/squad plan accept implementation` — approve the implementation plan.
-On FAIL: Set `**Next action:**` to `Fix issues, then /squad plan validate` — re-run validation.
+On FAIL: Set `**Next action:**` to `/squad plan validate` — fix the reported issues, then re-run validation.
 
 ##### Step 5: Surface Next Action
 
