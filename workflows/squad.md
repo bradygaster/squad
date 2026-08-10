@@ -850,7 +850,8 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 {What the squad should do — sequencing suggestions, approach options, things to avoid}
 
 ### Next Step
-> Reply `/squad plan` to generate a detailed execution plan with sub-issues based on these findings.
+> Reply `/squad triage` to classify these findings into work items, decisions, and exclusions.
+> Or reply `/squad plan` to skip triage and generate a combined plan directly (fast path).
 ```
 
 Tailor the sections to the research scope — omit sections that don't apply, add
@@ -1204,6 +1205,8 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 
 Set the Triage row to `✅ Done` and record the
 current timestamp. Set `Current state: Triaged` and `Last command: /squad triage`.
+Set `**Next action:**` to `/squad plan program` — create a program plan from triage dispositions.
+Set `**Also available:**` to `/squad triage revise <feedback>` — adjust triage before planning.
 
 Do NOT create issues or PRs. Triage mode is read-only + comment.
 
@@ -1421,6 +1424,8 @@ Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it exis
 update it; if not, create it. Set the Program Plan row to `✅ Done` and record the
 current timestamp. Set `Current state: Program Planned` and
 `Last command: /squad plan program`.
+Set `**Next action:**` to `/squad plan accept scope` — approve the program scope.
+Set `**Also available:**` to `/squad plan program revise <feedback>` — adjust the program plan.
 
 Do NOT create issues, milestones, or PRs. Plan Program mode is read-only + comment.
 
@@ -1484,6 +1489,8 @@ prepended.
 Update the `<!-- squad-lifecycle-state -->` comment. Keep Program Plan as
 `✅ Done` (it's a revision, not a new phase). Update the timestamp and set
 `Last command: /squad plan program revise`.
+Set `**Next action:**` to `/squad plan accept scope` — approve the program scope.
+Set `**Also available:**` to `/squad plan program revise <feedback>` — adjust the program plan again.
 
 If a `<!-- squad-scope-accepted-v1 -->` was invalidated (override case), set
 the Scope Accepted row back to `⬚ Pending`.
@@ -1630,6 +1637,8 @@ Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it exis
 update it; if not, create it. Set the Implementation Plan row to `✅ Done` and
 record the current timestamp. Set `Current state: Implementation planned` and
 `Last command: /squad plan implementation`.
+Set `**Next action:**` to `/squad plan validate` — run validation checks.
+Set `**Also available:**` to `/squad plan accept implementation` — approve the implementation plan directly.
 
 Do NOT create issues or PRs. Plan Implementation mode only posts a comment.
 
@@ -1767,6 +1776,8 @@ exists, update it; if not, create it. Set the Validation row:
 Record the current timestamp. Set `Current state: Validated` (on pass) or
 `Current state: Validation failed` (on fail) and
 `Last command: /squad plan validate`.
+On PASS: Set `**Next action:**` to `/squad plan accept implementation` — approve the implementation plan.
+On FAIL: Set `**Next action:**` to `/squad plan validate` — fix the reported issues, then re-run validation.
 
 ##### Step 5: Surface Next Action
 
@@ -1842,6 +1853,7 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 Update the `<!-- squad-lifecycle-state -->` comment. Set the Scope Accepted row
 to `✅ Done`. Set `Current state: Scope accepted` and
 `Last command: /squad plan accept scope`.
+Set `**Next action:**` to `/squad plan implementation` — create the implementation plan.
 
 End with: *"Scope approved. Reply `/squad plan implementation` to create the
 implementation plan."*
@@ -1930,6 +1942,7 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 Update the `<!-- squad-lifecycle-state -->` comment. Set the Impl Accepted row
 to `✅ Done`. Set `Current state: Implementation accepted` and
 `Last command: /squad plan accept implementation`.
+Set `**Next action:**` to `/squad plan activate` — create issues and begin execution.
 
 End with: *"Implementation approved. Reply `/squad plan activate` to create
 issues and begin execution."*
@@ -2138,6 +2151,7 @@ with full hierarchy (Root → Epics → Tasks) and assigned to their respective 
 Update the `<!-- squad-lifecycle-state -->` comment. Set the Activated row
 to `✅ Done`. Set `Current state: Activated` and
 `Last command: /squad plan activate`.
+(Terminal state — no `**Next action:**` or `**Also available:**` fields needed.)
 
 End with: *"✅ Plan activated — {n} issues created. The squad is ready to
 begin work."*

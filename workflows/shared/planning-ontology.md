@@ -322,7 +322,7 @@ This comment is created on first transition and updated on every subsequent tran
 |-------|--------|----------|---------|
 | Intent | ✅ Done | (issue body) | <date> |
 | Research | ✅ Done | <comment link> | <date> |
-| Triage | ⏳ In Progress | — | <date> |
+| Triage | ✅ Done | <comment link> | <date> |
 | Program Plan | ⬚ Pending | — | — |
 | Implementation Plan | ⬚ Pending | — | — |
 | Validation | ⬚ Pending | — | — |
@@ -330,8 +330,10 @@ This comment is created on first transition and updated on every subsequent tran
 | Impl Accepted | ⬚ Pending | — | — |
 | Activated | ⬚ Pending | — | — |
 
-**Current state:** Triaging
+**Current state:** Triaged
 **Last command:** `/squad triage` by @user at <timestamp>
+**Next action:** `/squad plan program` — create a program plan from triage dispositions
+**Also available:** `/squad triage revise <feedback>` — adjust triage before planning
 ```
 
 Status icons: `✅ Done` · `⏳ In Progress` · `⬚ Pending` · `❌ Failed` · `⏭ Skipped`
