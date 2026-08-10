@@ -27,8 +27,12 @@ gh aw add bradygaster/squad/workflows/squad.md@dev
 # 3. Compile the workflow to a lock file
 gh aw compile
 
-# 4. Commit and push the compiled workflow
-git add .github/workflows/squad.lock.yml
+# 4. Commit and push the workflow source, imports, and lock file
+git add .gitattributes \
+  .github/aw/actions-lock.json \
+  .github/workflows/squad.md \
+  .github/workflows/shared/squad.md \
+  .github/workflows/squad.lock.yml
 git commit -m "ci: add Squad agentic workflow"
 git push
 
@@ -76,12 +80,32 @@ Compiling resolves the workflow definition (including the shared bootstrap
 component) into a deterministic `.github/workflows/squad.lock.yml` file. This
 lock file is what GitHub Actions actually executes.
 
-### Commit the lock file
+### Commit the workflow files
 
 ```bash
-git add .github/workflows/squad.lock.yml
+git add .gitattributes \
+  .github/aw/actions-lock.json \
+  .github/workflows/squad.md \
+  .github/workflows/shared/squad.md \
+  .github/workflows/squad.lock.yml
 git commit -m "ci: add Squad agentic workflow"
 git push
+```
+
+The source and imported shared workflow must be present so `gh aw` can verify
+that the compiled lock file is current. The action lock and attributes files
+keep compilation reproducible and identify generated workflow files.
+
+Downloaded workflow audit data under `.github/aw/logs/` is local diagnostic
+output and should not be committed. The `gh aw logs` and `gh aw audit` commands
+normally create `.github/aw/logs/.gitignore`; if it is missing, add:
+
+```gitignore
+# Ignore all downloaded workflow logs
+*
+
+# But keep this file
+!.gitignore
 ```
 
 Once pushed, the `/squad` slash command is live on your repo.
