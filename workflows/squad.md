@@ -443,6 +443,18 @@ Open a pull request using the `create-pull-request` safe-output:
 
 Stage only the files listed above. Do NOT commit unrelated changes.
 
+##### Step 7: Post Completion Comment
+
+Post a comment on the triggering issue using the `add-comment` safe-output:
+
+```markdown
+🧑‍🤝‍🧑 Your Squad is ready for review.
+
+**PR:** #{pr_number}
+
+Merge the PR to activate your team. Run `/squad status` afterward to verify.
+```
+
 ---
 
 #### Connect Mode
@@ -515,6 +527,18 @@ Open a pull request using the `create-pull-request` safe-output:
 
 Stage only the files listed above. Do NOT commit `.squad/agents/`, `.squad/team.md`,
 or any other scaffolding — those live in the source repo.
+
+##### Step 6: Post Completion Comment
+
+Post a comment on the triggering issue using the `add-comment` safe-output:
+
+```markdown
+🔗 Squad connection configured.
+
+**PR:** #{pr_number}
+
+Merge the PR to activate the remote squad link.
+```
 
 ---
 
@@ -598,6 +622,18 @@ Open a pull request using the `create-pull-request` safe-output:
   - `meet-the-squad.md`
 
 Stage only the files listed above. Do NOT commit unrelated changes.
+
+##### Step 7: Post Completion Comment
+
+Post a comment on the triggering issue using the `add-comment` safe-output:
+
+```markdown
+📥 Squad adopted from remote source.
+
+**PR:** #{pr_number}
+
+Merge the PR to activate the adopted team.
+```
 
 ---
 
@@ -685,6 +721,16 @@ Determine context-aware behavior based on the trigger location:
 
 Stage only the affected files. Do NOT commit unrelated changes.
 
+##### Step 8: Post Completion Comment
+
+Post a comment on the triggering issue or PR using the `add-comment` safe-output:
+
+```markdown
+👤 {Name} ({Role}) has been added to the team.
+
+**PR:** #{pr_number}
+```
+
 ---
 
 #### Retire Mode
@@ -744,6 +790,16 @@ Same context-aware behavior as Cast Member mode:
   - **Files to delete:** `.squad/agents/{lowercase-name}/`
 
 Stage only the affected files. Do NOT commit unrelated changes.
+
+##### Step 5: Post Completion Comment
+
+Post a comment on the triggering issue or PR using the `add-comment` safe-output:
+
+```markdown
+👋 {Name} has been retired from the team.
+
+**PR:** #{pr_number}
+```
 
 ---
 
