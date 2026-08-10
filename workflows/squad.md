@@ -20,7 +20,7 @@ on:
 permissions:
   contents: read
   copilot-requests: write
-  issues: write
+  issues: read
   pull-requests: read
 network:
   allowed:
@@ -1988,7 +1988,7 @@ Follow this order:
 
 **2a. Create Milestones First**
 
-Use the GitHub API (via the `issues: write` permission) to create milestones BEFORE issues:
+Use the GitHub API (via the `github` tool in gh-proxy mode) to create milestones BEFORE issues:
 
 1. For each milestone defined in the program plan (`<!-- squad-program-v1 -->`),
    check if a milestone with that title already exists. If so, reuse it.
