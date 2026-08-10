@@ -2093,6 +2093,14 @@ For each epic in the program plan, use the `create-issue` safe-output:
 
 Create epics in dependency order.
 
+> **⚠️ HARD GATE — DO NOT STOP HERE.**
+>
+> You have created epic issues. Task issues MUST follow immediately.
+> Do NOT post the activation record comment, do NOT generate a summary,
+> and do NOT end your response until ALL tasks from the implementation
+> plan are created as issues in Step 2c below. Stopping after epics is
+> the #1 failure mode of this step.
+
 **2c. Create Task Issues**
 
 For each task in the implementation plan, use the `create-issue` safe-output:
@@ -2107,24 +2115,18 @@ For each task in the implementation plan, use the `create-issue` safe-output:
   explicitly set in planning policy.)
 - **Body:**
   ```markdown
-  {Scope description from the implementation plan}
+  {2-3 sentence scope description from the implementation plan}
 
   ## Acceptance Criteria
-  {Criteria from the task}
+  {Criteria from the task — bullet list, no preamble}
 
   ## Context
-  - Parent: #{epic-issue-number} (the epic this task belongs to)
-  - Phase: {phase name}
+  - Parent: #{epic-issue-number}
   - **Size:** {XS|S|M|L|XL}
-  - Depends on: #{dep-issue-numbers} (referencing created issue numbers)
-  - Agent: {assigned agent name}
-  - Traces to: {program plan epic/story reference}
-
-  ## Rollout
-  {Rollout notes from the task, or "No special rollout considerations."}
+  - Depends on: #{dep-issue-numbers}
 
   ---
-  > Created by `/squad plan activate` from #{triggering-issue-number}
+  > `/squad plan activate` · #{triggering-issue-number}
   ```
 - **Parent relationship:** Add as a sub-issue of the EPIC issue (NOT the root
   intent issue). Tasks are children of their epic, not of the root.
@@ -2133,6 +2135,27 @@ For each task in the implementation plan, use the `create-issue` safe-output:
   **Size handling:** If a GitHub Project is configured with a Size single-select
   field, set the Project field value for the issue. Otherwise, the `**Size:**`
   line in the body is the canonical representation.
+
+**2d. Self-Validation — Verify Completeness**
+
+After all `create-issue` calls complete, count the issues actually created
+and compare against the implementation plan:
+
+- Count epic issues created (titles matching `[Epic] *`)
+- Count task issues created (all other issues created in this activation)
+- Compare against the expected counts from the implementation plan
+
+If counts match: continue to Step 3.
+If counts do NOT match: STOP and include in the activation record:
+```
+⚠️ Partial activation — {actual_epics}/{expected_epics} epics,
+{actual_tasks}/{expected_tasks} tasks created. Re-run `/squad plan activate`
+to create remaining issues (activation is idempotent — existing issues
+are skipped via title-match dedup).
+```
+
+Do NOT silently succeed with partial creation. The user must see the
+mismatch. Activation is idempotent, so re-running creates only missing items.
 
 **Label requirements:**
 - Labels MUST have descriptions and intentional colors:
@@ -2161,6 +2184,10 @@ GitHub blocked-by/blocking edges:
 ##### Step 4: Post Activation Record
 
 Use the `add-comment` safe-output to post the activation record.
+
+> **Ordering:** This step MUST be the LAST creation action. Do not begin
+> drafting or posting this comment until Steps 2 and 3 are fully complete
+> (all epics, all tasks, all dependency edges created).
 
 **CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
 `<!-- squad-activated-v1 -->`
