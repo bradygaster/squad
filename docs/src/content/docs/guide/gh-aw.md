@@ -15,19 +15,24 @@ This guide covers setup, every slash command, and daily usage patterns.
 
 ## Quick start
 
-Five steps from zero to a working Squad team:
+Six steps from zero to a working Squad team:
 
 ```bash
 # 1. Install the gh-aw extension (one-time)
 gh extension install github/gh-aw
 
-# 2. Add the Squad workflow to your repo
+# 2. Allow GitHub Actions to create pull requests
+gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
+  -f default_workflow_permissions=read \
+  -F can_approve_pull_request_reviews=true
+
+# 3. Add the Squad workflow to your repo
 gh aw add bradygaster/squad/workflows/squad.md@dev
 
-# 3. Compile the workflow to a lock file
+# 4. Compile the workflow to a lock file
 gh aw compile
 
-# 4. Commit and push the workflow source, imports, and lock file
+# 5. Commit and push the workflow source, imports, and lock file
 git add .gitattributes \
   .github/aw/actions-lock.json \
   .github/workflows/squad.md \
@@ -36,7 +41,7 @@ git add .gitattributes \
 git commit -m "ci: add Squad agentic workflow"
 git push
 
-# 5. Open an issue and type /squad cast — done!
+# 6. Open an issue and type /squad cast — done!
 ```
 
 After pushing, open an issue in your repo and write `/squad cast` in the body or
@@ -56,6 +61,27 @@ and opens a PR with the result.
 ---
 
 ## Setup
+
+### Allow workflow-created pull requests
+
+Squad opens pull requests through GitHub Actions. Enable this repository setting
+under **Settings → Actions → General → Workflow permissions → Allow GitHub
+Actions to create and approve pull requests**.
+
+You can also enable it from the command line while keeping the default workflow
+token read-only:
+
+```bash
+gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
+  -f default_workflow_permissions=read \
+  -F can_approve_pull_request_reviews=true
+```
+
+Replace `{owner}` and `{repo}` with the repository owner and name. Without this
+setting, Squad pushes the generated branch but falls back to an issue containing
+a link for you to create the pull request manually. A manually created pull
+request is authored by your account, and GitHub does not allow authors to
+approve their own pull requests.
 
 ### Install the workflow
 
