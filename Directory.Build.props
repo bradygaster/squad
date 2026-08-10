@@ -13,7 +13,7 @@
       below keeps the Microsoft.Agents.AI.GitHub.Copilot native-payload bridge in sync
       with it, so bumping this one property is enough to move both together.
     -->
-    <SquadCopilotSdkVersion>1.0.8</SquadCopilotSdkVersion>
+    <SquadCopilotSdkVersion>1.0.9</SquadCopilotSdkVersion>
 
     <!--
       Why this override is required:
