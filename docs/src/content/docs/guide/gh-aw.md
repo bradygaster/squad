@@ -33,7 +33,8 @@ gh aw add bradygaster/squad/workflows/squad.md@dev
 gh aw compile
 
 # 5. Commit and push the workflow source, imports, and lock file
-git add .gitattributes \
+git add -- \
+  .gitattributes \
   .github/aw/actions-lock.json \
   .github/workflows/squad.md \
   .github/workflows/shared/squad.md \
@@ -109,7 +110,8 @@ lock file is what GitHub Actions actually executes.
 ### Commit the workflow files
 
 ```bash
-git add .gitattributes \
+git add -- \
+  .gitattributes \
   .github/aw/actions-lock.json \
   .github/workflows/squad.md \
   .github/workflows/shared/squad.md \
