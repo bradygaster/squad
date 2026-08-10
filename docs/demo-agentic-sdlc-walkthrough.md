@@ -1,15 +1,43 @@
 # Demo: The Agentic SDLC — From Intent to Execution
 
-> **Duration:** 10–15 minutes  
+> **Duration:** 12–18 minutes  
 > **Audience:** Developers familiar with GitHub and .NET Aspire  
 > **Scenario:** Add real-time notifications via SignalR to a .NET Aspire app using the Squad agentic SDLC  
-> **Prerequisite:** The presenter has a fresh .NET Aspire app (AppHost, ServiceDefaults, WebFrontend, ApiService) and has installed the Squad workflow via `gh aw add bradygaster/squad/workflows/squad.md@latest`
+> **Prerequisite:** The presenter has a fresh .NET Aspire app (AppHost, ServiceDefaults, WebFrontend, ApiService) and has installed the Squad workflow via `gh aw add bradygaster/squad/workflows/squad.md@latest`. No squad has been cast yet.
 
 ---
 
-## Step 1: Set the stage — The intent
+## Step 1: Cast the squad
 
-**Say:** "I've got a standard .NET Aspire app — AppHost, ServiceDefaults, a Blazor frontend, and an API service. I want to add real-time notifications using SignalR. Rather than jumping straight into code, I'm going to use the Squad agentic SDLC to plan this work. I've already installed the workflow with one command — `gh aw add` — and now I'll open an issue describing what I want."
+**Say:** "First things first — I need a team. I'll open a quick issue to cast my squad. This is a one-time setup step that analyzes the repo and proposes a team tailored to this project."
+
+**Do:** Open a new GitHub issue titled "Cast a Squad for this repo" with this body:
+
+```markdown
+/squad cast
+```
+
+**Screen shows:** *(after ~60 seconds, a comment appears with a PR link)*
+
+```markdown
+🧑‍🤝‍🧑 Your Squad is ready for review.
+
+**PR:** #2
+
+Merge the PR to activate your team. Run `/squad status` afterward to verify.
+```
+
+**Do:** Click the PR link, review the team composition in `meet-the-squad.md`, then merge.
+
+**Screen shows:** The PR merges. The casting issue closes (its job is done).
+
+**Key point:** Casting is a one-time setup action — it gets its own issue so it can close cleanly. Your actual work intent goes in a separate issue that stays open throughout the SDLC lifecycle.
+
+---
+
+## Step 2: Set the stage — The intent
+
+**Say:** "Now that the squad is cast and the PR is merged, I have a team ready to work. Next I'll open a separate issue for my actual work intent — what I want to build. This issue stays open throughout the entire SDLC lifecycle."
 
 **Do:** Open a new GitHub issue titled "Add real-time notifications via SignalR" with this body:
 
@@ -37,7 +65,7 @@ to connected browser clients via SignalR.
 
 ---
 
-## Step 2: Research — Deep-dive analysis
+## Step 3: Research — Deep-dive analysis
 
 **Say:** "Now I ask Squad to research my codebase in the context of this issue. It's going to analyze my project structure, dependencies, patterns, and gaps — then report back what it finds."
 
@@ -103,7 +131,7 @@ all four projects with careful registration in the AppHost resource model.
 
 ---
 
-## Step 3: Triage — Classify the findings
+## Step 4: Triage — Classify the findings
 
 **Say:** "Research gave us findings. Now triage classifies each one: Is it work? Does it need a decision? Or is it out of scope? This is where the human stays in the loop — nothing becomes work without your consent."
 
@@ -149,7 +177,7 @@ all four projects with careful registration in the AppHost resource model.
 
 ---
 
-## Step 4: Program plan — Strategic decomposition
+## Step 5: Program plan — Strategic decomposition
 
 **Say:** "Now we go from classified findings to a strategic plan. This is the WHAT — initiatives, epics, user stories, milestones. Watch how the triage work items transform into a structured program with delivery milestones."
 
@@ -232,7 +260,7 @@ E1 (Hub) ──→ E2 (Aspire) ──→ E3 (Blazor UI)
 
 ---
 
-## Step 5: Implementation plan — PR-sized tasks
+## Step 6: Implementation plan — PR-sized tasks
 
 **Say:** "Scope looks good. Now I accept it and ask for the implementation plan — the HOW. This breaks every epic into PR-sized tasks with dependencies, sizing, and agent assignments."
 
@@ -304,7 +332,7 @@ E1 (Hub) ──→ E2 (Aspire) ──→ E3 (Blazor UI)
 
 ---
 
-## Step 6: Validate — Structural integrity check
+## Step 7: Validate — Structural integrity check
 
 **Say:** "Before I accept this, I run validation. Think of it as a linter for your plan — it checks for circular dependencies, orphaned items, sizing violations, and traceability gaps. It's a safety net before you commit to creating real issues."
 
@@ -346,7 +374,7 @@ E1 (Hub) ──→ E2 (Aspire) ──→ E3 (Blazor UI)
 
 ---
 
-## Step 7: Accept and activate — Creating real issues
+## Step 8: Accept and activate — Creating real issues
 
 **Say:** "Plan is validated. Now I accept the implementation and activate. This is the irreversible step — it creates real GitHub issues with full hierarchy, milestones, sub-issue relationships, and blocked-by dependencies. Watch the issue count."
 
@@ -392,7 +420,7 @@ with full hierarchy (Root → Epics → Tasks) and assigned to their respective 
 
 ---
 
-## Step 8: The lifecycle tracker — Your progress dashboard
+## Step 9: The lifecycle tracker — Your progress dashboard
 
 **Say:** "Throughout this entire flow, there's been a single comment on the issue that updates itself at every step — the lifecycle state tracker. Let me show you what it looks like now."
 
@@ -424,7 +452,7 @@ with full hierarchy (Root → Epics → Tasks) and assigned to their respective 
 
 ---
 
-## Step 9: What just happened — The big picture
+## Step 10: What just happened — The big picture
 
 **Say:** "Let's zoom out. In about eight commands — typed as comments on a single GitHub issue — we went from a one-paragraph idea to a fully structured project backlog with:"
 
@@ -449,7 +477,7 @@ with full hierarchy (Root → Epics → Tasks) and assigned to their respective 
 
 ---
 
-## Step 10: The "Next Steps" pattern — Why it matters
+## Step 11: The "Next Steps" pattern — Why it matters
 
 **Say:** "One more thing I want to call out. Did you notice that every single output ended with a 'Next Step' block? That's not just UX polish — it's how the system composes. When Copilot sees that guidance, it knows what command to suggest next. When another agent reads the issue, it knows what phase it's in. The SDLC is self-documenting and self-guiding."
 
