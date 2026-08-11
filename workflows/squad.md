@@ -17,6 +17,10 @@ on:
         description: 'Squad command (e.g., cast, connect org/repo, adopt org/repo, status)'
         required: false
         default: 'cast'
+      issue_number:
+        description: 'Issue number to implement when run manually'
+        required: false
+        type: string
 permissions:
   contents: read
   copilot-requests: write
@@ -53,6 +57,10 @@ safe-outputs:
     max: 75
   add-comment:
     max: 20
+    target: "*"
+  dispatch-workflow:
+    workflows: [squad-implement-worker]
+    max: 3
 ---
 
 ## Comment Search Rules (all modes)
@@ -67,7 +75,19 @@ safe-outputs:
 
 Read slash command from: `github.event.comment.body` (issue/PR comment), `github.event.issue.body` (issue body), or `github.event.inputs.command` (workflow_dispatch, default: `cast`).
 
-The activation job ran `squad init --preset default` producing generic `.squad/` scaffolding. Cast mode REPLACES this. This workflow never creates/modifies `.github/workflows/`.
+- **Issue body:** `github.event.issue.body` — the full issue description
+- **Issue comment:** `github.event.comment.body` — the full comment text
+- **PR review comment:** `github.event.comment.body` — the full comment text
+- **Workflow dispatch:** `github.event.inputs.command` — manual input (default: `cast`)
+- **Manual issue target:** `github.event.inputs.issue_number` — issue number for
+  `/squad implement` runs started from the Actions tab
+
+The activation job already ran `squad init --preset default`, which produced a
+generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
+mode REPLACES this scaffolding with a team tailored to the repository.
+
+This workflow does not create or modify files under `.github/workflows/`.
+Repository owners must configure Copilot setup steps separately when needed.
 
 ## Modes
 
@@ -95,6 +115,7 @@ The activation job ran `squad init --preset default` producing generic `.squad/`
 | `/squad plan accept implementation phase {N}` | Plan Accept Implementation |
 | `/squad plan activate` | Plan Activate |
 | `/squad plan activate phase {N}` | Plan Activate |
+| `/squad implement` | Implement |
 | `/squad` (no args) | Cast |
 
 ## Parse Command
@@ -104,7 +125,7 @@ The activation job ran `squad init --preset default` producing generic `.squad/`
 3. Match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
-   - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `research`, `triage`
+   - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `research`, `triage`, `implement`
 4. Default to `cast` if empty.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
 
@@ -282,6 +303,64 @@ Read-only team composition report.
 1. If `.squad/team.md` missing, reply "no squad cast yet, suggest `/squad cast`".
 2. Read team.md + registry.json.
 3. Post comment: team name, universe, member count, active members table, link to team.md.
+
+---
+
+#### Implement Mode
+
+Implement mode dispatches an isolated implementation worker for a regular issue.
+When invoked on an epic, it dispatches workers for up to three currently
+unblocked children.
+
+**Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
+`add-comment` safe-output.
+
+##### Step 1: Validate and Gather Context
+
+1. Resolve the target issue number from `github.event.inputs.issue_number` for a
+   workflow dispatch, otherwise from the triggering issue. If invoked from a
+   pull request review comment, explain that `/squad implement` must be run from
+   the target issue.
+2. Read the target issue title, body, labels, state, and relevant comments.
+3. Find open child issues using native GitHub sub-issue relationships. Also
+   include open issues whose body contains a
+   `Parent: #{target-issue-number}` line for compatibility with older plans.
+4. If child issues exist, treat the target as an epic and follow the Epic
+   Dispatch procedure below. Do not implement the epic body directly.
+5. If no child issues exist, use the `dispatch-workflow` safe-output to dispatch
+   `squad-implement-worker` with `issue_number` set to the target issue number.
+6. Post a comment linking the dispatched worker run. The worker performs
+   dependency, duplicate pull request, routing, implementation, and validation
+   checks.
+
+##### Epic Dispatch
+
+For each open child issue:
+
+1. Parse its `Depends on:` line and check the state of every referenced issue.
+2. Exclude children with any open dependency.
+3. Exclude children that already have an open pull request whose branch starts
+   with `squad/implement-{child-number}-` or whose body closes that child.
+4. Sort ready children by issue number and select at most three.
+
+For each selected child, use the `dispatch-workflow` safe-output:
+
+```json
+{
+  "type": "dispatch_workflow",
+  "workflow_name": "squad-implement-worker",
+  "inputs": {
+    "issue_number": "{child-issue-number}"
+  }
+}
+```
+
+Post a comment on the epic listing the dispatched children, blocked children,
+children with existing implementation pull requests, and any ready children
+deferred by the concurrency limit. If no child is ready, post the blocker
+summary and do not dispatch a workflow. Run `/squad implement` on the epic again
+after the current implementation pull requests are merged to start the next
+dependency wave.
 
 ---
 

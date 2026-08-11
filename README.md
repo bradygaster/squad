@@ -535,9 +535,10 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 ### Install
 
 ```bash
+gh aw add bradygaster/squad/workflows/squad-implement-worker.md@dev
 gh aw add bradygaster/squad/workflows/squad.md@dev
 gh aw compile
-git add .github/workflows/ && git commit -m "Add Squad workflow" && git push
+git add .github/workflows/ .gitattributes && git commit -m "Add Squad workflow" && git push
 ```
 
 > `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
@@ -552,6 +553,7 @@ git add .github/workflows/ && git commit -m "Add Squad workflow" && git push
 | `/squad cast-member <spec>` | Add a team member |
 | `/squad retire <name>` | Remove a team member |
 | `/squad status` | Check current team |
+| `/squad implement` | Implement an issue or dispatch ready tasks from an epic |
 
 ### Casting brief tip
 
