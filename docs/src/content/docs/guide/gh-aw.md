@@ -145,9 +145,11 @@ PR review comment.
 | `/squad plan program` | Create a program plan with initiatives, epics, and milestones |
 | `/squad plan implementation` | Decompose a program plan into PR-sized tasks |
 | `/squad plan validate` | Validate plan readiness before acceptance |
-| `/squad plan accept` | Fast path: accept scope + implementation + activate |
+| `/squad plan accept` | Fast path: accept all phases of scope + implementation + activate |
+| `/squad plan accept phase {N}` | Accept only Phase N of a plan (incremental, in order) |
 | `/squad plan accept scope` | Approve the program plan scope |
-| `/squad plan accept implementation` | Approve the implementation plan |
+| `/squad plan accept implementation` | Approve all phases of the implementation plan |
+| `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan |
 | `/squad plan activate` | Create GitHub issues from an accepted plan |
 | `/squad plan revise <feedback>` | Revise the current plan based on your feedback |
 
@@ -316,6 +318,23 @@ research → triage → plan program → plan implementation → accept → acti
 
 Each step is user-initiated — Squad proposes, you review and approve.
 
+### Lifecycle state tracking
+
+After each command, Squad posts (or updates) a **lifecycle state comment** on the
+issue. This comment shows where you are, what just happened, and what to do next:
+
+```
+**Current state:** Triaged
+**Last command:** `/squad triage` by @user at 2026-08-10
+**Next action:** `/squad plan program` — create a program plan from triage dispositions
+**Also available:** `/squad triage revise <feedback>` — adjust triage before planning
+```
+
+The `Next action` field tells you (or any agent reading the issue) the primary
+next command. `Also available` shows alternative valid commands at this point in
+the lifecycle. This means you never have to remember the state machine — the
+issue thread always shows what's next.
+
 ### Fast paths (backward compatible)
 
 You don't have to use every step. Fast-path commands combine multiple stages:
@@ -345,6 +364,9 @@ The research comment includes:
 - **Risk assessment** — complexity and risk ratings per area
 - **Key findings** — specific evidence with file paths and version numbers
 - **Recommendations** — sequencing suggestions and things to avoid
+- **Next Step** — tells you what to do next:
+  - `/squad triage` — classify findings into work items, decisions, and exclusions (granular path)
+  - `/squad plan` — skip triage and generate a combined plan directly (fast path)
 
 You can focus the research with additional context:
 
@@ -436,6 +458,29 @@ Creates GitHub issues from the accepted plan with proper labels (`squad`,
 `squad:{agent-name}`), acceptance criteria, dependency references, and phase
 assignments.
 
+### Incremental phase acceptance
+
+Instead of accepting an entire plan at once, you can accept one phase at a time:
+
+```
+/squad plan accept implementation phase 1
+```
+
+This creates issues only for Phase 1 tasks. After completing Phase 1 work, continue with:
+
+```
+/squad plan accept implementation phase 2
+```
+
+**Rules:**
+- Phases must be accepted in order (Phase 2 requires Phase 1 to be accepted first)
+- Each acceptance posts a summary showing created issues and remaining phases
+- Dependencies in later phases automatically reference issue numbers from earlier phases
+- `/squad plan accept implementation` with no phase arg still accepts everything (backward compatible)
+- The same pattern works for the legacy fast path: `/squad plan accept phase {N}`
+
+This is useful for large projects where you want to review and iterate between phases — ship Phase 1, learn from it, then decide whether to adjust Phase 2's plan before accepting it.
+
 ### Plan revise
 
 ```
@@ -452,8 +497,11 @@ supersedes the previous one.
 
 ```
 1. /squad research                → Deep repo analysis
+   Next step shown: "/squad triage" or "/squad plan" (fast path)
 2. /squad plan                    → Program + implementation in one pass
+   Next action: "/squad plan accept"
 3. /squad plan revise fewer tasks → Adjusted plan
+   Next action: "/squad plan accept"
 4. /squad plan accept             → Issues created
 ```
 
@@ -461,14 +509,31 @@ supersedes the previous one.
 
 ```
 1. /squad research                       → Deep repo analysis
+   Next step shown: "/squad triage" or "/squad plan"
 2. /squad triage                         → Classify findings
+   Next action: "/squad plan program"
+   Also available: "/squad triage revise"
 3. /squad triage revise move X to excluded → Adjust scope
+   Next action: "/squad plan program"
 4. /squad plan program                   → Strategic plan with milestones
+   Next action: "/squad plan accept scope"
+   Also available: "/squad plan program revise"
 5. /squad plan accept scope              → Lock the program structure
+   Next action: "/squad plan implementation"
 6. /squad plan implementation            → PR-sized task decomposition
-7. /squad plan accept implementation     → Approve tasks
-8. /squad plan activate                  → Create GitHub issues
+   Next action: "/squad plan validate"
+   Also available: "/squad plan accept implementation"
+7. /squad plan accept implementation     → Approve all tasks at once
+   — OR —
+   /squad plan accept implementation phase 1  → Approve Phase 1 only
+   /squad plan accept implementation phase 2  → Continue with Phase 2
+   ...
+   Next action: "/squad plan activate"
+8. /squad plan activate                  → Create GitHub issues (terminal)
 ```
+
+At every step, the lifecycle state comment on the issue shows exactly what to do
+next — no need to memorize the command sequence.
 
 ---
 
@@ -580,6 +645,20 @@ a new analysis of the repo (and any casting brief you provide).
 When you comment `/squad cast-member` or `/squad retire` on a PR that already
 has the `squad` label and is on a `squad/*` branch, the changes are pushed to
 that branch as a follow-up PR — keeping all squad changes in one review thread.
+
+---
+
+## Acknowledgment messages
+
+When Squad starts processing a slash command, it posts a brief, mode-specific
+acknowledgment comment on the issue before doing work:
+
+- `/squad research` → `🤖 Squad is researching this…`
+- `/squad plan` → `🤖 Squad is creating a plan…`
+- `/squad plan accept implementation phase 1` → `🤖 Squad is creating implementation tasks…`
+
+This replaces the previous generic "processing" message with context about what
+Squad is actually doing.
 
 ---
 
