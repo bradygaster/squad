@@ -538,7 +538,11 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 gh aw add bradygaster/squad/workflows/squad-implement-worker.md@dev
 gh aw add bradygaster/squad/workflows/squad.md@dev
 gh aw compile
-git add .github/workflows/ .gitattributes && git commit -m "Add Squad workflow" && git push
+git add -- \
+  .github/workflows/ \
+  .gitattributes
+git commit -m "Add Squad workflow"
+git push
 ```
 
 > `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
