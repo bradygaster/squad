@@ -1,0 +1,7 @@
+manifest-version: "1"
+name: Squad Agentic Workflows
+emoji: "🤖"
+description: Cast, plan, and implement work with a Squad AI team
+includes:
+  - squad-implement-worker.md
+  - squad.md
