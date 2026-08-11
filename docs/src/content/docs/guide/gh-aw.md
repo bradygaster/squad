@@ -32,13 +32,8 @@ gh aw add bradygaster/squad/workflows/squad.md@dev
 # 4. Compile the workflow to a lock file
 gh aw compile
 
-# 5. Commit and push the workflow source, imports, and lock file
-git add -- \
-  .gitattributes \
-  .github/aw/actions-lock.json \
-  .github/workflows/squad.md \
-  .github/workflows/shared/squad.md \
-  .github/workflows/squad.lock.yml
+# 5. Commit and push the changes
+git add .
 git commit -m "ci: add Squad agentic workflow"
 git push
 
