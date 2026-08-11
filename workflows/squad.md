@@ -2,7 +2,7 @@
 name: Squad
 run-name: "Squad — ${{ github.event.inputs.command || github.event.comment.body || github.event.issue.title || 'run' }}"
 description: Cast, connect, or adopt a Squad AI team for your repository
-emoji: "🧑‍🤝‍🧑"
+emoji: "🤖"
 private: false
 on:
   slash_command:
@@ -128,6 +128,8 @@ Extract the mode and arguments from the slash command text:
 Cast mode analyzes the target repository, composes a specialist team, assigns
 character names from a fictional universe, generates full `.squad/` scaffolding,
 and opens a PR introducing the new team.
+
+**Acknowledge:** Post `🤖 Squad is analyzing your repo and assembling a team…` using the `add-comment` safe-output.
 
 ##### Step 0: Brief Resolution
 
@@ -464,6 +466,11 @@ commits only a lightweight config pointer — squad files are never stored in th
 target repo. The `shared/squad.md` bootstrap component pulls remote squad files
 at activation time.
 
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is setting up the remote connection…`
+
 ##### Step 1: Parse Source URL
 
 1. Extract the source argument from the parsed command text (e.g.,
@@ -547,6 +554,11 @@ Merge the PR to activate the remote squad link.
 Adopt mode fetches a complete squad definition from a remote source and commits
 it locally. Unlike Connect mode, everything is owned by the target repo — there
 is no ongoing sync. The user can freely customize after adoption.
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is importing the team definition…`
 
 ##### Step 1: Parse Source URL
 
@@ -808,6 +820,8 @@ Post a comment on the triggering issue or PR using the `add-comment` safe-output
 Status mode reports the current team composition. It is read-only and does not
 open a PR.
 
+**Acknowledge:** Post `🤖 Squad is checking team status…` using the `add-comment` safe-output.
+
 1. Check if `.squad/team.md` exists. If not, reply with a comment stating that
    no squad has been cast for this repository yet and suggest running `/squad cast`.
 2. Read `.squad/team.md` and parse the members table.
@@ -828,6 +842,11 @@ informs subsequent planning. It does NOT create issues or PRs — it only posts
 a comment.
 
 Research mode works on issues in any state (open or closed).
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is researching this…`
 
 ##### Step 1: Determine Research Scope
 
@@ -921,6 +940,11 @@ a set of sub-issues as a structured comment. It does NOT create issues — it
 posts a plan for the user to review. The user then accepts, revises, or discards.
 
 Plan mode works on issues in any state (open or closed).
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is creating a plan…`
 
 ##### Step 1: Gather Context
 
@@ -1027,6 +1051,8 @@ single command. It exists for backward compatibility and simple workflows.
 - If a granular planning workflow is in progress and the user runs `/squad plan accept`,
   post a note explaining the three-step alternative and ask for confirmation before
   proceeding with the fast path.
+
+**Acknowledge:** Post `🤖 Squad is creating the planned issues…` using the `add-comment` safe-output.
 
 **Legacy behavior (when only `<!-- squad-plan-v1 -->` exists):**
 
@@ -1144,6 +1170,8 @@ The squad is ready to begin work.
 Plan Revise mode takes user feedback, finds the latest plan comment, and posts
 a revised plan.
 
+**Acknowledge:** Post `🤖 Squad is revising the plan…` using the `add-comment` safe-output.
+
 1. Find the latest `<!-- squad-plan-v1 -->` comment. If none exists, reply:
    *"No plan found to revise. Run `/squad plan` first."*
 2. Read the feedback text after `/squad plan revise` (everything after "revise").
@@ -1164,6 +1192,11 @@ and planning (scope definition). It does NOT create issues or PRs — it posts a
 structured triage comment.
 
 Triage mode works on issues in any state (open or closed).
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is triaging research findings…`
 
 ##### Step 1: Validate Preconditions
 
@@ -1270,6 +1303,8 @@ Do NOT create issues or PRs. Triage mode is read-only + comment.
 Triage Revise mode takes user feedback and adjusts the dispositions in the latest
 triage comment.
 
+**Acknowledge:** Post `🤖 Squad is revising triage dispositions…` using the `add-comment` safe-output.
+
 1. Find the latest `<!-- squad-triage-v1 -->` comment. If none exists, reply:
    *"No triage found to revise. Run `/squad triage` first."*
 2. Read the feedback text after `/squad triage revise` (everything after "revise").
@@ -1330,6 +1365,11 @@ strategic scope document that defines what will be built and in what order, with
 specifying implementation-level tasks.
 
 Plan Program mode works on issues in any state (open or closed).
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is building the program plan…`
 
 ##### Step 1: Validate Preconditions
 
@@ -1491,6 +1531,11 @@ It finds the most recent `<!-- squad-program-v1 -->` comment, applies the reques
 changes, and posts a new superseding program plan comment.
 
 Plan Program Revise mode works on issues in any state (open or closed).
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is revising the program plan…`
 
 ##### Step 1: Validate Preconditions
 
@@ -1852,6 +1897,11 @@ Plan Accept Scope mode (`/squad plan accept scope`) records formal approval of t
 program plan's scope — the WHAT. It locks the strategic decomposition so
 implementation planning can proceed on a stable foundation.
 
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is accepting scope and creating the program backlog…`
+
 ##### Step 1: Validate Preconditions
 
 1. Search the triggering issue's comments for the latest comment containing
@@ -1918,6 +1968,11 @@ implementation plan."*
 Plan Accept Implementation mode (`/squad plan accept implementation`) records
 formal approval of the implementation plan — the HOW. It locks the task
 decomposition so activation can proceed.
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is creating implementation tasks…`
 
 ##### Step 1: Validate Preconditions
 
@@ -2007,6 +2062,11 @@ issues and begin execution."*
 Plan Activate mode (`/squad plan activate`) is the terminal transition that
 creates real GitHub issues and milestones from the accepted implementation plan.
 This is an irreversible action (issues are created in the repository).
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is activating the team…`
 
 ##### Step 1: Validate Preconditions
 
