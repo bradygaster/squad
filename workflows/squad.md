@@ -310,7 +310,8 @@ Read-only team composition report.
 
 Implement mode dispatches an isolated implementation worker for a regular issue.
 When invoked on an epic, it dispatches workers for up to three currently
-unblocked children.
+unblocked children. The worker relays merged implementation pull requests back
+to this mode so it can automatically refill the parent epic's available slots.
 
 **Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
 `add-comment` safe-output.
@@ -340,9 +341,12 @@ For each open child issue:
 
 1. Parse its `Depends on:` line and check the state of every referenced issue.
 2. Exclude children with any open dependency.
-3. Exclude children that already have an open pull request whose branch starts
+3. Find children that already have an open pull request whose branch starts
    with `squad/implement-{child-number}-` or whose body closes that child.
-4. Sort ready children by issue number and select at most three.
+   These are active implementation children.
+4. Calculate `available-slots = max(0, 3 - active-implementation-count)`.
+5. Exclude active implementation children from the ready set.
+6. Sort ready children by issue number and select at most `available-slots`.
 
 For each selected child, call the workflow-specific `squad_implement_worker`
 safe-output tool with this input:
@@ -360,10 +364,12 @@ success.
 
 Post a comment on the epic listing the dispatched children, blocked children,
 children with existing implementation pull requests, and any ready children
-deferred by the concurrency limit. If no child is ready, post the blocker
-summary and do not dispatch a workflow. Run `/squad implement` on the epic again
-after the current implementation pull requests are merged to start the next
-dependency wave.
+deferred because all three slots are occupied. If no child is ready or no slot
+is available, post the status summary and do not dispatch a workflow.
+
+After each implementation pull request merges, this workflow runs again and
+fills newly available slots. Continue until the epic has no open children.
+`/squad implement` remains available as a manual recovery command.
 
 ---
 

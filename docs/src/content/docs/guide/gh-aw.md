@@ -654,12 +654,22 @@ relationships and `Parent: #N` metadata. It then:
 
 1. Excludes tasks with open dependencies
 2. Excludes tasks that already have an implementation pull request
-3. Dispatches up to three ready tasks to isolated implementation workers
+3. Keeps up to three implementation pull requests active
 4. Comments with the dispatched, blocked, existing, and deferred tasks
 
-Each worker creates its own branch and pull request. After those pull requests
-are merged, run `/squad implement` on the epic again to start the next
-dependency wave. Automatic continuation after merge is not currently enabled.
+Each worker creates its own branch and pull request. When one of those pull
+requests merges, the existing worker resolves the parent epic and dispatches
+the main Squad workflow in implement mode. Squad then dispatches enough ready
+children to refill the three active slots. This continues until no open
+children remain, without installing a third workflow.
+
+For example, an epic with ten independent tasks starts three workers. Each merge
+automatically starts one replacement, keeping three implementation pull requests
+active until the final task is dispatched. Dependencies may temporarily reduce
+the active count when no additional child is ready.
+
+`/squad implement` remains available as a manual recovery command if a run is
+cancelled or an external change requires the epic to be reevaluated.
 
 :::note[Repository setting]
 Pull-request delivery requires **Settings → Actions → General → Workflow

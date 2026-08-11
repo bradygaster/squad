@@ -27,8 +27,21 @@ describe('gh-aw implement workflows', () => {
     expect(dispatcher).toMatch(/dispatch-workflow:\r?\n\s+workflows: \[squad-implement-worker\]\r?\n\s+max: 3/);
     expect(dispatcher).toContain('Never call the generic `dispatch_workflow` tool');
     expect(dispatcher).toContain('Never emit a dispatch without a');
-    expect(worker).toContain('group: "squad-implement-${{ github.event.inputs.issue_number }}"');
+    expect(worker).toContain(
+      'group: "squad-implement-${{ github.event.inputs.issue_number || github.event.pull_request.number }}"',
+    );
     expect(worker).toContain('cancel-in-progress: false');
+  });
+
+  it('continues epic execution after implementation PRs merge', () => {
+    expect(dispatcher).not.toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
+    expect(worker).toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
+    expect(worker).toContain("startsWith(github.event.pull_request.head.ref, 'squad/implement-')");
+    expect(worker).toContain('workflows: [squad]');
+    expect(worker).toContain('"command": "implement"');
+    expect(worker).toContain('Never call the generic `dispatch_workflow` tool');
+    expect(dispatcher).toContain('available-slots = max(0, 3 - active-implementation-count)');
+    expect(dispatcher).toContain('fills newly available slots');
   });
 
   it('guards implementation branches, files, dependencies, and duplicate PRs', () => {

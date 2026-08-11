@@ -1,8 +1,8 @@
 ---
 name: Squad Implement Worker
-run-name: "Squad implement #${{ github.event.inputs.issue_number }}"
-description: Implement one Squad issue and open a pull request
-private: true
+run-name: "Squad implement — ${{ github.event.inputs.issue_number || github.event.pull_request.head.ref }}"
+description: Implement one Squad issue or continue its parent epic after merge
+private: false
 on:
   workflow_dispatch:
     inputs:
@@ -10,13 +10,19 @@ on:
         description: Issue number to implement
         required: true
         type: string
+  pull_request:
+    types: [closed]
+if: >-
+  github.event_name != 'pull_request' ||
+  (github.event.pull_request.merged == true &&
+  startsWith(github.event.pull_request.head.ref, 'squad/implement-'))
 permissions:
   contents: read
   copilot-requests: write
   issues: read
   pull-requests: read
 concurrency:
-  group: "squad-implement-${{ github.event.inputs.issue_number }}"
+  group: "squad-implement-${{ github.event.inputs.issue_number || github.event.pull_request.number }}"
   cancel-in-progress: false
 network:
   allowed:
@@ -62,12 +68,41 @@ safe-outputs:
   add-comment:
     max: 3
     target: "*"
+  dispatch-workflow:
+    workflows: [squad]
+    max: 1
 ---
 
 # Squad Implementation Worker
 
-Implement issue `${{ github.event.inputs.issue_number }}` in the current
-repository and open a focused pull request.
+This workflow has two modes:
+
+1. A `workflow_dispatch` implements issue
+   `${{ github.event.inputs.issue_number }}` and opens a focused pull request.
+2. A merged `pull_request` continues the parent epic.
+
+## Continue Parent Epic After Merge
+
+For a merged pull request:
+
+1. Extract the child issue number from the
+   `squad/implement-{issue-number}-` head branch.
+2. Read the child issue and resolve its parent epic using the native parent
+   relationship, falling back to its `Parent: #N` body line.
+3. If no parent epic exists, emit `noop` and stop.
+4. Call the workflow-specific `squad` safe-output tool exactly once:
+
+```json
+{
+  "command": "implement",
+  "issue_number": "{parent-epic-number}"
+}
+```
+
+Never call the generic `dispatch_workflow` tool. Never edit files or create a
+pull request in this mode. Stop after the `squad` workflow is dispatched.
+
+The remaining instructions apply only to `workflow_dispatch`.
 
 ## Gather Context
 
