@@ -883,17 +883,37 @@ a comment.
 
 Research mode works on issues in any state (open or closed).
 
-> **⚠️ COMPLETION GATE:** This task is NOT complete until the research findings
-> comment is posted via `add-comment` in Step 3. The acknowledgment in Step 0
-> is not the deliverable — the structured findings comment IS. If you reach
-> your context or turn limit before posting findings, post what you have so far
-> rather than ending with only the acknowledgment. An incomplete research
-> comment is infinitely more valuable than no research comment.
+##### Research Completion Gate [HARD REQUIREMENT]
+
+This gate is NON-NEGOTIABLE. Read it before doing anything else.
+
+You MUST use the `add-comment` safe-output to post your research findings
+back to the issue BEFORE ending. The acknowledgment breadcrumb ("Squad is
+researching this…") is NOT the research output — it is only the start signal.
+
+Your research findings comment MUST contain:
+- The `<!-- squad-research-v1 -->` marker as the FIRST line
+- A summary of findings (minimum 200 characters of substantive content)
+- Specific technical recommendations based on your analysis
+- At least one of: architecture observations, gap analysis, or risk assessment
+
+**FAILURE CONDITION:** If you end this run without posting a second `add-comment`
+containing the `<!-- squad-research-v1 -->` marker, the run has FAILED — even if
+the system reports success. The breadcrumb acknowledgment is NOT the deliverable.
+Posting only the breadcrumb and stopping is a critical failure.
+
+**BUDGET RULE:** Reserve at least 40% of your remaining turns/budget for Step 3
+(composing and posting findings). An incomplete research comment with partial
+findings is infinitely more valuable than no research comment at all.
 
 ##### Step 0: Acknowledge
 
 Post a brief acknowledgment using the `add-comment` safe-output:
 `🤖 Squad is researching this…`
+
+⚠️ **DO NOT STOP HERE.** This acknowledgment is Step 0 of 3. You MUST continue
+to Step 1, Step 2, and Step 3. The run is not complete until Step 3 posts the
+findings comment with the `<!-- squad-research-v1 -->` marker.
 
 ##### Step 1: Determine Research Scope
 
@@ -913,7 +933,7 @@ question (e.g., `/squad research what's the current state of the Orleans grains?
 ##### Step 2: Deep Repository Analysis
 
 Go beyond surface-level file listing. Perform a thorough investigation, but
-**manage your budget** — reserve at least 30% of your remaining turns for
+**manage your budget** — reserve at least 40% of your remaining turns for
 composing and posting findings in Step 3. Breadth-first analysis that covers
 all areas at moderate depth is better than exhaustive analysis of one area that
 leaves no room to report findings.
@@ -980,10 +1000,21 @@ sections that do (e.g., "### Dependency Upgrade Path" or "### Migration Risks").
 
 Do NOT create issues, PRs, or modify files. Research mode is read-only + comment.
 
-> **HARD GATE — POST-COMPLETION CHECK:** Verify that you called `add-comment`
-> with the `<!-- squad-research-v1 -->` marker. If you have not posted the
-> findings comment, you MUST do so before ending. Do NOT call `task_complete`
-> or end without posting findings.
+##### Step 4: Verify Completion [MANDATORY — DO NOT SKIP]
+
+Before ending, confirm ALL of the following are true:
+
+- [ ] You called `add-comment` with a comment whose first line is `<!-- squad-research-v1 -->`
+- [ ] The comment contains a `## 🔬 Squad Research` heading
+- [ ] The comment body is at least 200 characters of substantive findings (not just headings)
+- [ ] The comment includes at least one concrete recommendation
+
+If ANY checkbox above is not satisfied, you MUST go back and post findings NOW.
+Do NOT call `task_complete` or end the run. Do NOT rationalize skipping this step.
+
+**This is the deliverable.** The breadcrumb in Step 0 was a courtesy notification.
+This findings comment is the actual work product. A run that ends without it has
+produced nothing of value.
 
 ---
 
