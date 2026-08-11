@@ -151,6 +151,7 @@ PR review comment.
 | `/squad plan accept implementation` | Approve all phases of the implementation plan |
 | `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan |
 | `/squad plan activate` | Create GitHub issues from an accepted plan |
+| `/squad plan activate phase {N}` | Create GitHub issues for only Phase N of the accepted plan |
 | `/squad plan revise <feedback>` | Revise the current plan based on your feedback |
 
 ### Where you can use slash commands
@@ -460,23 +461,39 @@ assignments.
 
 ### Incremental phase acceptance
 
-Instead of accepting an entire plan at once, you can accept one phase at a time:
+Instead of accepting an entire plan at once, you can accept and activate one
+phase at a time:
 
 ```
 /squad plan accept implementation phase 1
 ```
 
-This creates issues only for Phase 1 tasks. After completing Phase 1 work, continue with:
+This accepts Phase 1 **and automatically creates its GitHub issues** in a single
+step. After completing Phase 1 work, continue with:
 
 ```
 /squad plan accept implementation phase 2
 ```
 
+The accept command automatically activates the phase (creates issues) when all
+prior phases are already activated. This means you don't need a separate
+`/squad plan activate phase N` command in the common case — accept does it all.
+
+If you need to activate a phase separately (e.g., you accepted it earlier but
+skipped auto-activation), use:
+
+```
+/squad plan activate phase 1
+```
+
 **Rules:**
 - Phases must be accepted in order (Phase 2 requires Phase 1 to be accepted first)
-- Each acceptance posts a summary showing created issues and remaining phases
+- Phases must be activated in order (Phase 2 requires Phase 1 to be activated first)
+- Accept automatically activates when prior phases are ready (no separate activate needed)
+- Each acceptance/activation posts a summary showing created issues and remaining phases
 - Dependencies in later phases automatically reference issue numbers from earlier phases
 - `/squad plan accept implementation` with no phase arg still accepts everything (backward compatible)
+- `/squad plan activate` with no phase arg still activates everything (backward compatible)
 - The same pattern works for the legacy fast path: `/squad plan accept phase {N}`
 
 This is useful for large projects where you want to review and iterate between phases — ship Phase 1, learn from it, then decide whether to adjust Phase 2's plan before accepting it.
@@ -523,13 +540,16 @@ supersedes the previous one.
 6. /squad plan implementation            → PR-sized task decomposition
    Next action: "/squad plan validate"
    Also available: "/squad plan accept implementation"
-7. /squad plan accept implementation     → Approve all tasks at once
-   — OR —
-   /squad plan accept implementation phase 1  → Approve Phase 1 only
-   /squad plan accept implementation phase 2  → Continue with Phase 2
+7. /squad plan accept implementation phase 1  → Accept + auto-activate Phase 1
+   (issues created immediately)
+   Next action: "/squad plan accept implementation phase 2"
+   /squad plan accept implementation phase 2  → Accept + auto-activate Phase 2
    ...
+   — OR —
+   /squad plan accept implementation     → Accept all at once
    Next action: "/squad plan activate"
 8. /squad plan activate                  → Create GitHub issues (terminal)
+   — only needed if step 7 used full accept without auto-activate —
 ```
 
 At every step, the lifecycle state comment on the issue shows exactly what to do

@@ -103,6 +103,7 @@ Parse the slash command text to determine the mode:
 | `/squad plan accept implementation` | Plan Accept Implementation | Approve the implementation plan (the HOW) |
 | `/squad plan accept implementation phase {N}` | Plan Accept Implementation | Accept only Phase N of the implementation plan (incremental) |
 | `/squad plan activate` | Plan Activate | Create GitHub issues and milestones from accepted implementation |
+| `/squad plan activate phase {N}` | Plan Activate | Create GitHub issues for only Phase N of the accepted plan |
 | `/squad` (no args) | Cast | Default to cast mode |
 
 ## Task
@@ -125,6 +126,7 @@ Extract the mode and arguments from the slash command text:
    extract and store the phase number. Examples:
    - `/squad plan accept phase 1` → mode: Plan Accept, phase: 1
    - `/squad plan accept implementation phase 3` → mode: Plan Accept Implementation, phase: 3
+   - `/squad plan activate phase 2` → mode: Plan Activate, phase: 2
    - `/squad plan accept` → mode: Plan Accept, phase: null (all phases)
 
 ### 2. Execute Mode
@@ -2234,20 +2236,82 @@ End with:
 - Full: *"Implementation approved. Reply `/squad plan activate` to create
   issues and begin execution."*
 
+##### Step 5: Auto-Activate (Phase-Specific Only)
+
+This step only applies when a specific phase was accepted (not full acceptance).
+It eliminates the need for a separate `/squad plan activate phase N` command in
+the common case — the user says `/squad plan accept implementation phase 1` and
+gets issues created immediately.
+
+After posting the phase acceptance comment, check whether the accepted phase is
+ready for automatic activation:
+
+1. **Check prior phases:** All phases before the just-accepted phase must be both
+   accepted AND activated. Find previously activated phases by searching for
+   `<!-- squad-phases-activated: [...] -->`. Parse the JSON array to get
+   `activated_phases`.
+
+2. **Decision:**
+   - If `requested_phase == 1` (no prior phases required), proceed to
+     auto-activate.
+   - If `requested_phase > 1` and ALL phases `1` through `requested_phase - 1`
+     are in `activated_phases`, proceed to auto-activate.
+   - If prior phases are NOT yet activated, skip auto-activation and tell the
+     user: *"Phase {N} accepted. Activate prior phases first:
+     `/squad plan activate phase {N-1}`"*
+
+3. **Auto-activate:** Follow the Plan Activate mode logic for the specific phase:
+   - Create issues for the phase's tasks (Steps 2a–2d of Plan Activate Mode,
+     scoped to this phase only)
+   - Create native dependency edges for the phase's issues (Step 3)
+   - Post the phase activation comment with issue links (Step 4, phase-specific
+     variant)
+   - Update lifecycle state (Step 5, phase-specific variant)
+
+4. **Lifecycle update after auto-activate:** If auto-activation succeeds, update
+   the lifecycle summary to reflect both acceptance AND activation of the phase.
+   Set `**Next action:**` to `/squad plan accept implementation phase {next}` if
+   more phases remain, or note terminal completion if this was the last phase.
+
 ---
 
 #### Plan Activate Mode
 
-Plan Activate mode (`/squad plan activate`) is the terminal transition that
-creates real GitHub issues and milestones from the accepted implementation plan.
-This is an irreversible action (issues are created in the repository).
+Plan Activate mode (`/squad plan activate`, optionally with `phase {N}`) is the
+transition that creates real GitHub issues and milestones from the accepted
+implementation plan. When used without a phase selector, this is the terminal
+transition (all phases at once). When used with `phase {N}`, it creates issues
+for only that phase. Issue creation is irreversible.
 
 ##### Step 0: Acknowledge
 
 Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is activating the team…`
+- Phase-specific: `🤖 Squad is activating Phase {N}…`
+- Full activation: `🤖 Squad is activating the team…`
 
 ##### Step 1: Validate Preconditions
+
+**If a phase is specified (`/squad plan activate phase {N}`):**
+
+1. **Check phase acceptance.** Search for the latest
+   `<!-- squad-impl-phases-accepted: [...] -->` comment. Parse the JSON array.
+   The requested phase number MUST be in this array. If not found, reply with:
+   *"Phase {N} hasn't been accepted yet. Run
+   `/squad plan accept implementation phase {N}` first."* — then stop.
+
+2. **Check phase ordering.** If `requested_phase > 1`, search for the latest
+   `<!-- squad-phases-activated: [...] -->` comment. Parse the JSON array to get
+   `activated_phases`. Phase `requested_phase - 1` MUST be in
+   `activated_phases`. If not, reply with:
+   *"Phase {requested_phase - 1} must be activated first. Run
+   `/squad plan activate phase {requested_phase - 1}`"* — then stop.
+
+3. **Check already activated.** If `requested_phase` is in `activated_phases`,
+   compute `next_available` = max of `activated_phases` + 1. Reply with:
+   *"Phase {N} has already been activated. Next available:
+   `/squad plan activate phase {next_available}`"* — then stop.
+
+**If no phase specified (`/squad plan activate`):**
 
 1. Search for `<!-- squad-impl-accepted-v1 -->`. If not found, also check for
    `<!-- squad-impl-phases-accepted: [...] -->` where the array contains ALL
@@ -2277,6 +2341,15 @@ Post a brief acknowledgment using the `add-comment` safe-output:
 
 ##### Step 2: Create GitHub Issues — Full Hierarchy
 
+**When a phase is specified:** Filter the implementation plan to only include
+tasks under the matching `#### Phase {N}` heading. Use the same heading-based
+parsing as Plan Accept Implementation's phase selector. Create only those tasks
+(and their parent epic issues, if not already created by a prior phase). For
+cross-phase dependencies, look up actual issue numbers from the earlier phase's
+activation comment (`<!-- squad-phases-activated: [...] -->`).
+
+**When no phase is specified:** Create issues for all phases (full activation).
+
 Activation MUST create the full program hierarchy as GitHub issues, NOT a flat
 list of tasks directly under the root. The structure is:
 
@@ -2304,7 +2377,10 @@ milestones as metadata in the root issue body instead:
 
 **2b. Create Epic Issues**
 
-For each epic in the program plan, use the `create-issue` safe-output:
+For each epic in the program plan (scoped to the target phase if phase-specific),
+use the `create-issue` safe-output. If an epic was already created by a prior
+phase activation (check existing issues by title match `[Epic] {name}`), reuse
+its issue number instead of creating a duplicate.
 
 - **Title:** `[Epic] {epic name}`
 - **Labels:**
@@ -2339,13 +2415,14 @@ Create epics in dependency order.
 >
 > You have created epic issues. Task issues MUST follow immediately.
 > Do NOT post the activation record comment, do NOT generate a summary,
-> and do NOT end your response until ALL tasks from the implementation
-> plan are created as issues in Step 2c below. Stopping after epics is
-> the #1 failure mode of this step.
+> and do NOT end your response until ALL tasks (for the target phase or all
+> phases) from the implementation plan are created as issues in Step 2c below.
+> Stopping after epics is the #1 failure mode of this step.
 
 **2c. Create Task Issues**
 
-For each task in the implementation plan, use the `create-issue` safe-output:
+For each task in the implementation plan (scoped to the target phase if
+phase-specific), use the `create-issue` safe-output:
 
 - Create issues in dependency order (earlier tasks = lower issue numbers so
   later tasks can reference them).
@@ -2381,7 +2458,8 @@ For each task in the implementation plan, use the `create-issue` safe-output:
 **2d. Self-Validation — Verify Completeness**
 
 After all `create-issue` calls complete, count the issues actually created
-and compare against the implementation plan:
+and compare against the implementation plan (scoped to the target phase if
+phase-specific):
 
 - Count epic issues created (titles matching `[Epic] *`)
 - Count task issues created (all other issues created in this activation)
@@ -2431,12 +2509,43 @@ Use the `add-comment` safe-output to post the activation record.
 > drafting or posting this comment until Steps 2 and 3 are fully complete
 > (all epics, all tasks, all dependency edges created).
 
+**Phase-specific activation comment:**
+
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+`<!-- squad-phases-activated: [{accumulated}] -->`
+
+Where `{accumulated}` is the JSON array of ALL activated phases including the
+one just activated (e.g., `[1, 2]` after activating phase 2 when phase 1 was
+previously activated).
+
+```markdown
+<!-- squad-phases-activated: [{accumulated}] -->
+## ✅ Phase {N} Activated — {count} issues created
+
+- **Activated by:** @{triggering user}
+- **Date:** {ISO-8601 timestamp}
+
+| # | Title | Issue | Owner |
+|---|-------|-------|-------|
+| 1 | {title} | #{issue_number} | {agent} |
+
+### Remaining Phases
+| Phase | Accepted | Activated |
+|-------|----------|-----------|
+| Phase 1 — {name} | ✅ | ✅ |
+| Phase 2 — {name} | ✅ | ✅ Just activated |
+| Phase 3 — {name} | ✅ | ⬚ Pending |
+| Phase 4 — {name} | ⬚ | ⬚ Pending |
+
+> Reply `/squad plan accept implementation phase {next}` to continue, or `/squad plan activate phase {next}` if Phase {next} is already accepted.
+```
+
+**Full activation comment (no phase arg):**
+
 **CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
 `<!-- squad-activated-v1 -->`
 
 This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
-
-**Comment structure:**
 
 ```markdown
 <!-- squad-activated-v1 -->
@@ -2468,12 +2577,40 @@ The squad is ready to begin work. Issues are created in dependency order
 with full hierarchy (Root → Epics → Tasks) and assigned to their respective agents.
 ```
 
+**Terminal completion on last phase:** When a phase-specific activation completes
+the last remaining phase (all phases are now activated), ALSO post the
+`<!-- squad-activated-v1 -->` marker so the lifecycle state tracks terminal
+completion. Include both markers in the comment:
+
+```markdown
+<!-- squad-phases-activated: [{all_phases}] -->
+<!-- squad-activated-v1 -->
+## ✅ All Phases Activated — {epic count} epics, {task count} tasks total
+
+All phases have been activated. The squad is ready to begin work.
+```
+
 ##### Step 5: Update Lifecycle Summary
 
-Update the `<!-- squad-lifecycle-state -->` comment. Set the Activated row
-to `✅ Done`. Set `Current state: Activated` and
-`Last command: /squad plan activate`.
-(Terminal state — no `**Next action:**` or `**Also available:**` fields needed.)
+Update the `<!-- squad-lifecycle-state -->` comment.
 
-End with: *"✅ Plan activated — {n} issues created. The squad is ready to
-begin work."*
+**Phase-specific activation:**
+- Set the Activated row to `🔄 Phase {N} of {total} activated`.
+- Set `Last command: /squad plan activate phase {N}`.
+- If more phases remain:
+  - If the next phase is already accepted: set `**Next action:**` to
+    `/squad plan activate phase {next}`.
+  - If the next phase is NOT yet accepted: set `**Next action:**` to
+    `/squad plan accept implementation phase {next}`.
+  - Set `**Also available:**` to `/squad plan activate` (to activate all
+    remaining accepted phases at once).
+- End with: *"Phase {N} activated — {count} issues created. Reply
+  `/squad plan accept implementation phase {next}` to continue."* (or
+  appropriate next command).
+
+**Full activation (no phase arg) or last phase activated:**
+- Set the Activated row to `✅ Done`.
+- Set `Current state: Activated` and `Last command: /squad plan activate`.
+- Terminal state — no `**Next action:**` or `**Also available:**` fields needed.
+- End with: *"✅ Plan activated — {n} issues created. The squad is ready to
+  begin work."*
