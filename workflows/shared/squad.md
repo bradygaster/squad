@@ -58,10 +58,10 @@
 # `--disable-builtin-mcps`, so Squad's `state-mcp` bridge does not load. A non-local
 # backend would fail silently. If a committed .squad/team.md with roster entries
 # exists (e.g. from a previous /squad cast), init is skipped to preserve it.
+model: ${{ vars.SQUAD_MODEL || 'auto' }}
 engine:
   id: copilot
   version: 1.0.78
-  model: ${{ vars.SQUAD_MODEL || 'auto' }}
   agent: squad
 
 jobs:
