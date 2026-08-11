@@ -853,6 +853,13 @@ a comment.
 
 Research mode works on issues in any state (open or closed).
 
+> **⚠️ COMPLETION GATE:** This task is NOT complete until the research findings
+> comment is posted via `add-comment` in Step 3. The acknowledgment in Step 0
+> is not the deliverable — the structured findings comment IS. If you reach
+> your context or turn limit before posting findings, post what you have so far
+> rather than ending with only the acknowledgment. An incomplete research
+> comment is infinitely more valuable than no research comment.
+
 ##### Step 0: Acknowledge
 
 Post a brief acknowledgment using the `add-comment` safe-output:
@@ -875,7 +882,11 @@ question (e.g., `/squad research what's the current state of the Orleans grains?
 
 ##### Step 2: Deep Repository Analysis
 
-Go beyond surface-level file listing. Perform a thorough investigation:
+Go beyond surface-level file listing. Perform a thorough investigation, but
+**manage your budget** — reserve at least 30% of your remaining turns for
+composing and posting findings in Step 3. Breadth-first analysis that covers
+all areas at moderate depth is better than exhaustive analysis of one area that
+leaves no room to report findings.
 
 1. **Architecture mapping** — Identify major components, their boundaries,
    communication patterns, and dependencies. Trace data flow through the system.
@@ -941,6 +952,11 @@ sections that do (e.g., "### Dependency Upgrade Path" or "### Migration Risks").
 
 Do NOT create issues, PRs, or modify files. Research mode is read-only + comment.
 
+> **HARD GATE — POST-COMPLETION CHECK:** Verify that you called `add-comment`
+> with the `<!-- squad-research-v1 -->` marker. If you have not posted the
+> findings comment, you MUST do so before ending. Do NOT call `task_complete`
+> or end without posting findings.
+
 ---
 
 #### Plan Mode
@@ -950,6 +966,12 @@ a set of sub-issues as a structured comment. It does NOT create issues — it
 posts a plan for the user to review. The user then accepts, revises, or discards.
 
 Plan mode works on issues in any state (open or closed).
+
+> **⚠️ COMPLETION GATE:** This task is NOT complete until the plan comment is
+> posted via `add-comment` in Step 3. The acknowledgment in Step 0 is not the
+> deliverable — the structured plan comment IS. If you reach your context or
+> turn limit before posting the plan, post what you have so far rather than
+> ending with only the acknowledgment.
 
 ##### Step 0: Acknowledge
 
@@ -1284,6 +1306,12 @@ structured triage comment.
 
 Triage mode works on issues in any state (open or closed).
 
+> **⚠️ COMPLETION GATE:** This task is NOT complete until the triage comment is
+> posted via `add-comment` in Step 3. The acknowledgment in Step 0 is not the
+> deliverable — the structured triage comment IS. If you reach your context or
+> turn limit before posting the triage, post what you have so far rather than
+> ending with only the acknowledgment.
+
 ##### Step 0: Acknowledge
 
 Post a brief acknowledgment using the `add-comment` safe-output:
@@ -1456,6 +1484,12 @@ strategic scope document that defines what will be built and in what order, with
 specifying implementation-level tasks.
 
 Plan Program mode works on issues in any state (open or closed).
+
+> **⚠️ COMPLETION GATE:** This task is NOT complete until the program plan
+> comment is posted via `add-comment` in Step 5. The acknowledgment in Step 0
+> is not the deliverable — the structured program plan IS. If you reach your
+> context or turn limit, post what you have so far rather than ending with only
+> the acknowledgment.
 
 ##### Step 0: Acknowledge
 

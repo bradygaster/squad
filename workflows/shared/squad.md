@@ -47,6 +47,13 @@
 #   vars.SQUAD_CLI_VERSION
 #   Default is 0.11.0.
 #
+# Optional model override:
+#   vars.SQUAD_MODEL
+#   Set to a model name or alias (e.g., 'agent', 'opus', 'gpt-5.6-sol',
+#   'claude-opus-4.6'). Omit or set to 'auto' for engine default. The gh-aw
+#   proxy resolves aliases based on model availability, so if the chosen model
+#   is unavailable the proxy walks a fallback chain automatically.
+#
 # State backend is pinned to `local`: the compiled agent invocation passes
 # `--disable-builtin-mcps`, so Squad's `state-mcp` bridge does not load. A non-local
 # backend would fail silently. If a committed .squad/team.md with roster entries
@@ -54,6 +61,7 @@
 engine:
   id: copilot
   version: 1.0.78
+  model: ${{ vars.SQUAD_MODEL || 'auto' }}
   agent: squad
 
 jobs:
