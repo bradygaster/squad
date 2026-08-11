@@ -27,7 +27,9 @@ gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
   -F can_approve_pull_request_reviews=true
 
 # 3. Add the Squad workflows to your repo
-gh aw add bradygaster/squad/workflows@dev
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
 
 # 4. Compile the workflows to lock files
 gh aw compile
@@ -91,11 +93,13 @@ approve their own pull requests.
 ### Install the workflows
 
 ```bash
-gh aw add bradygaster/squad/workflows@dev
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
 ```
 
-The package manifest installs the private worker first so the main workflow can
-validate its `dispatch-workflow` target during compilation.
+The single command installs the dedicated worker first, then the main workflow
+that dispatches it.
 
 :::note[Branch note]
 `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
@@ -832,7 +836,9 @@ are used. State does not persist across runs.
 To update your compiled workflow after pulling upstream changes:
 
 ```bash
-gh aw add bradygaster/squad/workflows@dev
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
 ```
 
 This re-compiles the workflow from source. If you have local customizations in your compiled `.github/workflows/squad-*.lock.yml`, they will be overwritten — keep customizations in the source `.md` files instead.

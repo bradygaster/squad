@@ -13,7 +13,6 @@ describe('gh-aw implement workflows', () => {
   const dispatcher = read('workflows/squad.md');
   const worker = read('workflows/squad-implement-worker.md');
   const guide = read('docs/src/content/docs/guide/gh-aw.md');
-  const manifest = read('workflows/aw.yml');
 
   it('keeps repository editing isolated to the dispatch-only worker', () => {
     expect(dispatcher).not.toMatch(/^tools:\r?\n\s+edit:/m);
@@ -39,12 +38,11 @@ describe('gh-aw implement workflows', () => {
   });
 
   it('documents one-command installation in dependency order', () => {
-    const workerIndex = manifest.indexOf('squad-implement-worker.md');
-    const dispatcherIndex = manifest.indexOf('squad.md');
+    const workerIndex = guide.indexOf('bradygaster/squad/workflows/squad-implement-worker.md@dev');
+    const dispatcherIndex = guide.indexOf('bradygaster/squad/workflows/squad.md@dev');
 
     expect(workerIndex).toBeGreaterThan(-1);
     expect(dispatcherIndex).toBeGreaterThan(workerIndex);
-    expect(guide).toContain('gh aw add bradygaster/squad/workflows@dev');
-    expect(guide).toContain('The package manifest installs the dedicated worker first');
+    expect(guide).toContain('The single command installs the dedicated worker first');
   });
 });

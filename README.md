@@ -535,7 +535,9 @@ If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-g
 ### Install
 
 ```bash
-gh aw add bradygaster/squad/workflows@dev
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
 gh aw compile
 git add -- \
   .github/workflows/ \
