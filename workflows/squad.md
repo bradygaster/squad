@@ -327,8 +327,9 @@ unblocked children.
    `Parent: #{target-issue-number}` line for compatibility with older plans.
 4. If child issues exist, treat the target as an epic and follow the Epic
    Dispatch procedure below. Do not implement the epic body directly.
-5. If no child issues exist, use the `dispatch-workflow` safe-output to dispatch
-   `squad-implement-worker` with `issue_number` set to the target issue number.
+5. If no child issues exist, call the workflow-specific
+   `squad_implement_worker` safe-output tool with `issue_number` set to the
+   target issue number.
 6. Post a comment linking the dispatched worker run. The worker performs
    dependency, duplicate pull request, routing, implementation, and validation
    checks.
@@ -343,17 +344,19 @@ For each open child issue:
    with `squad/implement-{child-number}-` or whose body closes that child.
 4. Sort ready children by issue number and select at most three.
 
-For each selected child, use the `dispatch-workflow` safe-output:
+For each selected child, call the workflow-specific `squad_implement_worker`
+safe-output tool with this input:
 
 ```json
 {
-  "type": "dispatch_workflow",
-  "workflow_name": "squad-implement-worker",
-  "inputs": {
-    "issue_number": "{child-issue-number}"
-  }
+  "issue_number": "{child-issue-number}"
 }
 ```
+
+Never call the generic `dispatch_workflow` tool. Never emit a dispatch without a
+non-empty numeric `issue_number`. Emit exactly one workflow-specific dispatch
+per selected child, and only report a child as dispatched after the tool returns
+success.
 
 Post a comment on the epic listing the dispatched children, blocked children,
 children with existing implementation pull requests, and any ready children

@@ -25,6 +25,8 @@ describe('gh-aw implement workflows', () => {
   it('bounds dispatch and serializes workers for the same issue', () => {
     expect(dispatcher).toContain('workflows: [squad-implement-worker]');
     expect(dispatcher).toMatch(/dispatch-workflow:\r?\n\s+workflows: \[squad-implement-worker\]\r?\n\s+max: 3/);
+    expect(dispatcher).toContain('Never call the generic `dispatch_workflow` tool');
+    expect(dispatcher).toContain('Never emit a dispatch without a');
     expect(worker).toContain('group: "squad-implement-${{ github.event.inputs.issue_number }}"');
     expect(worker).toContain('cancel-in-progress: false');
   });
