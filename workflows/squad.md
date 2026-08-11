@@ -52,8 +52,19 @@ safe-outputs:
     labels: [squad]
     max: 50
   add-comment:
-    max: 10
+    max: 20
 ---
+
+### Comment Search Rules (apply to ALL modes)
+
+When searching an issue's comments for HTML comment markers:
+1. **Paginate fully** — fetch ALL comments (paginate through all pages if >30).
+   Markers may be beyond the first page of results.
+2. **Match the FIRST LINE only** — a valid marker is the first non-empty line
+   of a comment body. Ignore markers inside code fences, blockquotes, or
+   `<details>` blocks that are not the comment's opening content.
+3. **"Latest" means newest** — when multiple comments contain the same marker
+   (shouldn't happen, but may due to re-runs), use the most recent one.
 
 # Squad — Unified `/squad` Slash Command
 
@@ -114,11 +125,24 @@ Extract the mode and arguments from the slash command text:
 
 1. Read the trigger body from the event payload described above.
 2. Strip the `/squad` prefix and trim whitespace.
-3. Match the first word(s) against known modes: `cast`, `connect`, `adopt`,
-   `cast-member`, `retire`, `status`, `research`, `triage`, `triage revise`,
-   `plan`, `plan program`, `plan program revise`, `plan implementation`,
-   `plan validate`, `plan accept`, `plan accept scope`,
-   `plan accept implementation`, `plan activate`, `plan revise`.
+3. Match using **longest-prefix-first**: try multi-word mode names before
+   single-word ones. The matching order MUST be (longest first):
+   - `plan accept implementation` (3 words)
+   - `plan accept scope` (3 words)
+   - `plan program revise` (3 words)
+   - `plan implementation` (2 words)
+   - `plan program` (2 words)
+   - `plan activate` (2 words)
+   - `plan validate` (2 words)
+   - `plan accept` (2 words)
+   - `plan revise` (2 words)
+   - `triage revise` (2 words)
+   - `cast-member` (1 hyphenated)
+   - `plan` (1 word)
+   - `cast`, `connect`, `adopt`, `retire`, `status`, `research`, `triage`
+   Stop at the first (longest) match. Everything after the matched prefix
+   is the argument string (e.g., `/squad plan accept implementation phase 2`
+   → mode: `plan accept implementation`, args: `phase 2`).
 4. If no subcommand is provided or the text is empty, default to `cast`.
 5. Store any remaining text as arguments for the matched mode.
 6. **Phase selector:** After matching the mode, if the remaining arguments
@@ -130,6 +154,12 @@ Extract the mode and arguments from the slash command text:
    - `/squad plan accept` → mode: Plan Accept, phase: null (all phases)
 
 ### 2. Execute Mode
+
+**⚠️ MODE ISOLATION RULE:** After determining the active mode, execute ONLY
+the instructions in that mode's section. Instructions in OTHER mode sections
+(including their prohibitions like "Do NOT create issues") apply ONLY to their
+own mode — they do NOT constrain the active mode. Treat non-active mode
+sections as if they do not exist.
 
 ---
 
@@ -910,10 +940,8 @@ If a `.squad/team.md` exists, consider the team composition when framing finding
 
 Use the `add-comment` safe-output to post a structured research comment.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-research-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -973,6 +1001,15 @@ Plan mode works on issues in any state (open or closed).
 > turn limit before posting the plan, post what you have so far rather than
 > ending with only the acknowledgment.
 
+**Steps (ALL required — this mode is not complete until Step 3 posts the plan):**
+
+| Step | Action | Valid exit point? |
+|------|--------|-------------------|
+| 0 | Acknowledge (post ack comment) | ❌ NO — ack is not the deliverable |
+| 1 | Gather Context | ❌ NO |
+| 2 | Decompose Into Work Items | ❌ NO |
+| 3 | Post Plan Comment via `add-comment` | ✅ YES — this is the deliverable |
+
 ##### Step 0: Acknowledge
 
 Post a brief acknowledgment using the `add-comment` safe-output:
@@ -990,7 +1027,15 @@ Post a brief acknowledgment using the `add-comment` safe-output:
 
 ##### Step 2: Decompose Into Work Items
 
-Break the issue/research into discrete, actionable work items. Each work item
+Break the issue/research into discrete, actionable work items.
+
+**Minimum output rule:** Produce at least 3 work items unless the issue is
+genuinely atomic (a single bug fix or one-line change). If producing fewer
+than 3, include a `### Decomposition Note` section explaining why further
+breakdown is unnecessary. Never produce 0 items — that means plan mode failed.
+If research findings classified N items as work, produce at least N plan items.
+
+Each work item
 should be:
 
 - **Independently deliverable** — can be worked on and merged without waiting
@@ -1009,10 +1054,8 @@ Consider:
 
 Use the `add-comment` safe-output to post a structured plan comment.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-plan-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1223,13 +1266,11 @@ GitHub blocked-by/blocking edges:
 
 After creating all issues, post a summary comment on the triggering issue.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content. The marker varies by acceptance type:
+**First line MUST be the marker** (per Comment Search Rules above). The marker varies by acceptance type:
 
 - **Phase-specific acceptance:** `<!-- squad-phases-accepted: [N, ...] -->`
 - **Full acceptance (no phase arg, no prior phases):** `<!-- squad-plan-accepted -->`
 - **Full acceptance (completing remaining phases):** Both `<!-- squad-plan-accepted -->` AND `<!-- squad-phases-accepted: [all phase numbers] -->`
-
-These markers are machine-readable and non-negotiable. Without them, subsequent phases cannot find these artifacts.
 
 **Phase-specific acceptance comment:**
 
@@ -1358,10 +1399,8 @@ Classification criteria:
 
 Use the `add-comment` safe-output to post a structured triage comment.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-triage-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1403,10 +1442,8 @@ findings classified as {other categories}."*
 Search for the `<!-- squad-lifecycle-state -->` comment on the issue. If it exists,
 update it; if not, create it.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The lifecycle state comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-lifecycle-state -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 Set the Triage row to `✅ Done` and record the
 current timestamp. Set `Current state: Triaged` and `Last command: /squad triage`.
@@ -1557,10 +1594,8 @@ will create once the plan is accepted.
 
 ##### Step 5: Post Program Plan Comment
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-program-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 Post (or update) a comment on the issue with marker `<!-- squad-program-v1 -->`:
 
@@ -1729,6 +1764,26 @@ strategic program plan.
 
 Plan Implementation mode works on issues in any state (open or closed).
 
+> **⚠️ COMPLETION GATE:** This task is NOT complete until the implementation
+> plan comment is posted via `add-comment` in Step 4. If you reach your context
+> or turn limit before posting, post what you have so far rather than ending
+> with only partial analysis.
+
+**Steps (ALL required — this mode is not complete until Step 4 posts the implementation plan):**
+
+| Step | Action | Valid exit point? |
+|------|--------|-------------------|
+| 1 | Validate Preconditions | ❌ NO |
+| 2 | Decompose Into PR-Sized Tasks | ❌ NO |
+| 3 | Validate Structure | ❌ NO |
+| 4 | Post Implementation Plan Comment | ✅ YES — this is the deliverable |
+| 5 | Update Lifecycle Summary | ✅ (best-effort after deliverable) |
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is building the implementation plan…`
+
 ##### Step 1: Validate Preconditions
 
 1. Search the triggering issue's comments for the latest comment containing
@@ -1781,10 +1836,8 @@ resolve cycles by reordering, etc.).
 
 Use the `add-comment` safe-output to post a structured implementation plan.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-implementation-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -1874,6 +1927,25 @@ implementation plan artifacts for structural issues before acceptance. It is a
 readiness gate — not a compiler — that pattern-matches markdown content for
 common problems.
 
+> **⚠️ COMPLETION GATE:** This task is NOT complete until the validation
+> result comment is posted via `add-comment` in Step 3. If you reach your
+> context or turn limit, post what you have so far.
+
+**Steps (ALL required — this mode is not complete until Step 3 posts the validation result):**
+
+| Step | Action | Valid exit point? |
+|------|--------|-------------------|
+| 1 | Locate Artifacts | ❌ NO |
+| 2 | Run Validation Checks | ❌ NO |
+| 3 | Post Validation Result | ✅ YES — this is the deliverable |
+| 4 | Update Lifecycle Summary | ✅ (best-effort after deliverable) |
+| 5 | Surface Next Action | ✅ (best-effort after deliverable) |
+
+##### Step 0: Acknowledge
+
+Post a brief acknowledgment using the `add-comment` safe-output:
+`🤖 Squad is validating the plan…`
+
 ##### Step 1: Locate Artifacts
 
 1. Search the triggering issue's comments for:
@@ -1936,10 +2008,8 @@ or Fail (❌).
 Use the `add-comment` safe-output to post (or update, if one already exists)
 the validation result comment.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-validation-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -2054,10 +2124,8 @@ Post a brief acknowledgment using the `add-comment` safe-output:
 
 Use the `add-comment` safe-output to post the acceptance record.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-scope-accepted-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 **Comment structure:**
 
@@ -2193,13 +2261,11 @@ comment), but prefer the validation result when available.
 
 Use the `add-comment` safe-output to post the acceptance record.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content. The marker varies by acceptance type:
+**First line MUST be the marker** (per Comment Search Rules above). The marker varies by acceptance type:
 
 - **Phase-specific acceptance:** `<!-- squad-impl-phases-accepted: [N, ...] -->`
 - **Full acceptance (no phase arg, no prior phases):** `<!-- squad-impl-accepted-v1 -->`
 - **Full acceptance (completing remaining phases):** Both `<!-- squad-impl-accepted-v1 -->` AND `<!-- squad-impl-phases-accepted: [all phase numbers] -->`
-
-These markers are machine-readable and non-negotiable. Without them, subsequent phases cannot find these artifacts.
 
 **Phase-specific acceptance comment:**
 
@@ -2545,7 +2611,7 @@ Use the `add-comment` safe-output to post the activation record.
 
 **Phase-specific activation comment:**
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-phases-activated: [{accumulated}] -->`
 
 Where `{accumulated}` is the JSON array of ALL activated phases including the
@@ -2576,10 +2642,8 @@ previously activated).
 
 **Full activation comment (no phase arg):**
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
+**First line MUST be the marker** (per Comment Search Rules above):
 `<!-- squad-activated-v1 -->`
-
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
 
 ```markdown
 <!-- squad-activated-v1 -->
