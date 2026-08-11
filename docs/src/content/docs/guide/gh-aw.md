@@ -663,6 +663,10 @@ the main Squad workflow in implement mode. Squad then dispatches enough ready
 children to refill the three active slots. This continues until no open
 children remain, without installing a third workflow.
 
+Both workflows accept gh-aw's propagated `aw_context` and allow the repository's
+`github-actions[bot]` to pass the workflow-dispatch activation gate. Human
+slash commands retain the normal repository-role checks.
+
 For example, an epic with ten independent tasks starts three workers. Each merge
 automatically starts one replacement, keeping three implementation pull requests
 active until the final task is dispatched. Dependencies may temporarily reduce

@@ -4,11 +4,16 @@ run-name: "Squad implement — ${{ github.event.inputs.issue_number || github.ev
 description: Implement one Squad issue or continue its parent epic after merge
 private: false
 on:
+  bots: ["github-actions[bot]"]
   workflow_dispatch:
     inputs:
       issue_number:
         description: Issue number to implement
         required: true
+        type: string
+      aw_context:
+        description: Originating agentic workflow context
+        required: false
         type: string
   pull_request:
     types: [closed]

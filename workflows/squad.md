@@ -5,6 +5,7 @@ description: Cast, connect, or adopt a Squad AI team for your repository
 emoji: "🤖"
 private: false
 on:
+  bots: ["github-actions[bot]"]
   slash_command:
     name: squad
     events:
@@ -19,6 +20,10 @@ on:
         default: 'cast'
       issue_number:
         description: 'Issue number to implement when run manually'
+        required: false
+        type: string
+      aw_context:
+        description: 'Originating agentic workflow context'
         required: false
         type: string
 permissions:

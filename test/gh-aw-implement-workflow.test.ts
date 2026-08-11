@@ -23,6 +23,10 @@ describe('gh-aw implement workflows', () => {
   });
 
   it('bounds dispatch and serializes workers for the same issue', () => {
+    expect(dispatcher).toContain('bots: ["github-actions[bot]"]');
+    expect(worker).toContain('bots: ["github-actions[bot]"]');
+    expect(dispatcher).toContain('aw_context:');
+    expect(worker).toContain('aw_context:');
     expect(dispatcher).toContain('workflows: [squad-implement-worker]');
     expect(dispatcher).toMatch(/dispatch-workflow:\r?\n\s+workflows: \[squad-implement-worker\]\r?\n\s+max: 3/);
     expect(dispatcher).toContain('Never call the generic `dispatch_workflow` tool');
