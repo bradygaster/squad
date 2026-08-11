@@ -50,7 +50,7 @@ safe-outputs:
     expires: 14d
   create-issue:
     labels: [squad]
-    max: 50
+    max: 75
   add-comment:
     max: 20
 ---
@@ -2391,6 +2391,16 @@ Post a brief acknowledgment using the `add-comment` safe-output:
 
 ##### Step 1: Validate Preconditions
 
+**Label pre-flight (all activations):**
+
+Before creating any issues, ensure required labels exist in the repository:
+1. Check if the `squad` label exists using `gh label list --search squad`.
+2. If missing, create it: `gh label create squad --description "Squad-managed work item" --color 0075ca`
+3. For each agent label needed (`squad:{name}`), check and create if missing:
+   `gh label create "squad:{name}" --description "Assigned to {name}" --color e4e669`
+
+This prevents safe-output failures due to missing labels in newly-onboarded repos.
+
 **If a phase is specified (`/squad plan activate phase {N}`):**
 
 1. **Check phase acceptance.** Search for the latest
@@ -2438,6 +2448,32 @@ Post a brief acknowledgment using the `add-comment` safe-output:
 > 3. **Never predict issue numbers** — always use the ACTUAL returned value from
 >    each `create-issue` call. Do not hardcode, increment, or guess issue numbers
 >    based on repository state or previous creations.
+
+##### Transient Failure Handling
+
+> If a `create-issue` or `add-comment` call returns a 5xx error or timeout:
+>
+> 1. **Retry once** — repeat the identical safe-output call.
+> 2. **If retry fails** — STOP and report per Hallucination Guard rules above.
+> 3. **Do NOT retry on 4xx errors** — these indicate a real problem (label
+>    missing, max limit reached, malformed body). Report immediately.
+
+##### Output Budget Awareness
+
+Before beginning issue creation, count the total issues to create (epics +
+tasks for the target scope):
+
+- **≤ 30 issues:** Proceed normally with standard issue bodies.
+- **31–50 issues:** Use MINIMAL bodies — scope sentence + AC bullets only.
+  Omit the `---` footer and `> /squad plan activate` attribution line.
+- **> 50 issues:** STOP and post a comment:
+  *"This plan requires {N} issues, which exceeds the safe single-run budget.
+  Use `/squad plan activate phase {N}` to activate one phase at a time."*
+  Then end the run. Do NOT attempt partial creation.
+
+> **Recommended:** For plans with more than 3 epics or 15 total tasks,
+> prefer `/squad plan activate phase {N}` over full activation. Phase-by-phase
+> is more reliable and stays within output budget limits.
 
 ##### Step 2: Create GitHub Issues — Full Hierarchy
 
@@ -2507,6 +2543,9 @@ its issue number instead of creating a duplicate.
   ```
 - **Parent relationship:** Add as a sub-issue of the root intent issue
   (native GitHub sub-issues). The root intent issue is the triggering issue.
+  If the sub-issue API fails (404, 422, or permission error), fall back
+  gracefully — the `Parent: #{N}` line in the body provides traceability.
+  Do NOT fail activation on sub-issue relationship failures.
 - **Milestone:** Assign to the corresponding GitHub milestone created in 2a.
 
 Create epics in dependency order.
@@ -2549,6 +2588,8 @@ phase-specific), use the `create-issue` safe-output:
   ```
 - **Parent relationship:** Add as a sub-issue of the EPIC issue (NOT the root
   intent issue). Tasks are children of their epic, not of the root.
+  If the sub-issue API fails, fall back gracefully — the `Parent: #{N}` line
+  in the body provides traceability. Continue creating remaining issues.
 - **Milestone:** Assign to the same milestone as the parent epic.
 
   **Size handling:** If a GitHub Project is configured with a Size single-select
