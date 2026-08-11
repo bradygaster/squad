@@ -161,6 +161,12 @@ the instructions in that mode's section. Instructions in OTHER mode sections
 own mode — they do NOT constrain the active mode. Treat non-active mode
 sections as if they do not exist.
 
+**⚠️ BREADCRUMB ≠ DELIVERABLE:** Every mode starts by posting an acknowledgment
+comment (breadcrumb). This is NEVER the deliverable — it is a progress signal.
+After posting it, you MUST execute ALL remaining steps in the mode. The actual
+deliverable is always a LATER step (a structured findings/plan/triage comment).
+Stopping after the breadcrumb is a critical failure that produces zero value.
+
 ---
 
 #### Cast Mode
@@ -506,10 +512,7 @@ commits only a lightweight config pointer — squad files are never stored in th
 target repo. The `shared/squad.md` bootstrap component pulls remote squad files
 at activation time.
 
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is setting up the remote connection…`
+**Acknowledge:** Post `🤖 Squad is setting up the remote connection…` using the `add-comment` safe-output, then continue to Step 1.
 
 ##### Step 1: Parse Source URL
 
@@ -595,10 +598,7 @@ Adopt mode fetches a complete squad definition from a remote source and commits
 it locally. Unlike Connect mode, everything is owned by the target repo — there
 is no ongoing sync. The user can freely customize after adoption.
 
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is importing the team definition…`
+**Acknowledge:** Post `🤖 Squad is importing the team definition…` using the `add-comment` safe-output, then continue to Step 1.
 
 ##### Step 1: Parse Source URL
 
@@ -883,37 +883,21 @@ a comment.
 
 Research mode works on issues in any state (open or closed).
 
-##### Research Completion Gate [HARD REQUIREMENT]
+**Acknowledge:** Post `🤖 Squad is researching this…` using the `add-comment` safe-output, then continue to Step 1.
 
-This gate is NON-NEGOTIABLE. Read it before doing anything else.
+**TASK (4 steps — the acknowledge above is NOT the deliverable):**
 
-You MUST use the `add-comment` safe-output to post your research findings
-back to the issue BEFORE ending. The acknowledgment breadcrumb ("Squad is
-researching this…") is NOT the research output — it is only the start signal.
+| Step | Action | Deliverable? |
+|------|--------|-------------|
+| 1 | Determine research scope | ❌ |
+| 2 | Deep repository analysis | ❌ |
+| 3 | Post findings with `<!-- squad-research-v1 -->` marker | ✅ **THIS is the deliverable** |
+| 4 | Verify completion | ❌ (gate check) |
 
-Your research findings comment MUST contain:
-- The `<!-- squad-research-v1 -->` marker as the FIRST line
-- A summary of findings (minimum 200 characters of substantive content)
-- Specific technical recommendations based on your analysis
-- At least one of: architecture observations, gap analysis, or risk assessment
-
-**FAILURE CONDITION:** If you end this run without posting a second `add-comment`
-containing the `<!-- squad-research-v1 -->` marker, the run has FAILED — even if
-the system reports success. The breadcrumb acknowledgment is NOT the deliverable.
-Posting only the breadcrumb and stopping is a critical failure.
-
-**BUDGET RULE:** Reserve at least 40% of your remaining turns/budget for Step 3
-(composing and posting findings). An incomplete research comment with partial
-findings is infinitely more valuable than no research comment at all.
-
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is researching this…`
-
-⚠️ **DO NOT STOP HERE.** This acknowledgment is Step 0 of 3. You MUST continue
-to Step 1, Step 2, and Step 3. The run is not complete until Step 3 posts the
-findings comment with the `<!-- squad-research-v1 -->` marker.
+You MUST post a second `add-comment` containing the `<!-- squad-research-v1 -->`
+marker with ≥200 chars of substantive findings. Ending without this is a FAILED run.
+Reserve ≥40% of your budget for Step 3. An incomplete findings comment is infinitely
+better than no findings comment.
 
 ##### Step 1: Determine Research Scope
 
@@ -1012,7 +996,7 @@ Before ending, confirm ALL of the following are true:
 If ANY checkbox above is not satisfied, you MUST go back and post findings NOW.
 Do NOT call `task_complete` or end the run. Do NOT rationalize skipping this step.
 
-**This is the deliverable.** The breadcrumb in Step 0 was a courtesy notification.
+**This is the deliverable.** The breadcrumb acknowledgment was a courtesy notification.
 This findings comment is the actual work product. A run that ends without it has
 produced nothing of value.
 
@@ -1026,25 +1010,15 @@ posts a plan for the user to review. The user then accepts, revises, or discards
 
 Plan mode works on issues in any state (open or closed).
 
-> **⚠️ COMPLETION GATE:** This task is NOT complete until the plan comment is
-> posted via `add-comment` in Step 3. The acknowledgment in Step 0 is not the
-> deliverable — the structured plan comment IS. If you reach your context or
-> turn limit before posting the plan, post what you have so far rather than
-> ending with only the acknowledgment.
+**Acknowledge:** Post `🤖 Squad is creating a plan…` using the `add-comment` safe-output, then continue to Step 1.
 
-**Steps (ALL required — this mode is not complete until Step 3 posts the plan):**
+**TASK (3 steps — the acknowledge above is NOT the deliverable):**
 
-| Step | Action | Valid exit point? |
-|------|--------|-------------------|
-| 0 | Acknowledge (post ack comment) | ❌ NO — ack is not the deliverable |
-| 1 | Gather Context | ❌ NO |
-| 2 | Decompose Into Work Items | ❌ NO |
-| 3 | Post Plan Comment via `add-comment` | ✅ YES — this is the deliverable |
-
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is creating a plan…`
+| Step | Action | Deliverable? |
+|------|--------|-------------|
+| 1 | Gather Context | ❌ |
+| 2 | Decompose Into Work Items | ❌ |
+| 3 | Post Plan Comment via `add-comment` | ✅ **THIS is the deliverable** |
 
 ##### Step 1: Gather Context
 
@@ -1378,16 +1352,16 @@ structured triage comment.
 
 Triage mode works on issues in any state (open or closed).
 
-> **⚠️ COMPLETION GATE:** This task is NOT complete until the triage comment is
-> posted via `add-comment` in Step 3. The acknowledgment in Step 0 is not the
-> deliverable — the structured triage comment IS. If you reach your context or
-> turn limit before posting the triage, post what you have so far rather than
-> ending with only the acknowledgment.
+**Acknowledge:** Post `🤖 Squad is triaging research findings…` using the `add-comment` safe-output, then continue to Step 1.
 
-##### Step 0: Acknowledge
+**TASK (4 steps — the acknowledge above is NOT the deliverable):**
 
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is triaging research findings…`
+| Step | Action | Deliverable? |
+|------|--------|-------------|
+| 1 | Validate Preconditions | ❌ |
+| 2 | Classify Findings | ❌ |
+| 3 | Post Triage Comment with `<!-- squad-triage-v1 -->` marker | ✅ **THIS is the deliverable** |
+| 4 | Update Lifecycle Summary | ❌ (best-effort) |
 
 ##### Step 1: Validate Preconditions
 
@@ -1553,16 +1527,7 @@ specifying implementation-level tasks.
 
 Plan Program mode works on issues in any state (open or closed).
 
-> **⚠️ COMPLETION GATE:** This task is NOT complete until the program plan
-> comment is posted via `add-comment` in Step 5. The acknowledgment in Step 0
-> is not the deliverable — the structured program plan IS. If you reach your
-> context or turn limit, post what you have so far rather than ending with only
-> the acknowledgment.
-
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is building the program plan…`
+**Acknowledge:** Post `🤖 Squad is building the program plan…` using the `add-comment` safe-output, then continue to Step 1.
 
 ##### Step 1: Validate Preconditions
 
@@ -1723,10 +1688,7 @@ changes, and posts a new superseding program plan comment.
 
 Plan Program Revise mode works on issues in any state (open or closed).
 
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is revising the program plan…`
+**Acknowledge:** Post `🤖 Squad is revising the program plan…` using the `add-comment` safe-output, then continue to Step 1.
 
 ##### Step 1: Validate Preconditions
 
@@ -1795,25 +1757,17 @@ strategic program plan.
 
 Plan Implementation mode works on issues in any state (open or closed).
 
-> **⚠️ COMPLETION GATE:** This task is NOT complete until the implementation
-> plan comment is posted via `add-comment` in Step 4. If you reach your context
-> or turn limit before posting, post what you have so far rather than ending
-> with only partial analysis.
+**Acknowledge:** Post `🤖 Squad is building the implementation plan…` using the `add-comment` safe-output, then continue to Step 1.
 
-**Steps (ALL required — this mode is not complete until Step 4 posts the implementation plan):**
+**TASK (5 steps — the acknowledge above is NOT the deliverable):**
 
-| Step | Action | Valid exit point? |
-|------|--------|-------------------|
-| 1 | Validate Preconditions | ❌ NO |
-| 2 | Decompose Into PR-Sized Tasks | ❌ NO |
-| 3 | Validate Structure | ❌ NO |
-| 4 | Post Implementation Plan Comment | ✅ YES — this is the deliverable |
-| 5 | Update Lifecycle Summary | ✅ (best-effort after deliverable) |
-
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is building the implementation plan…`
+| Step | Action | Deliverable? |
+|------|--------|-------------|
+| 1 | Validate Preconditions | ❌ |
+| 2 | Decompose Into PR-Sized Tasks | ❌ |
+| 3 | Validate Structure | ❌ |
+| 4 | Post Implementation Plan Comment | ✅ **THIS is the deliverable** |
+| 5 | Update Lifecycle Summary | ❌ (best-effort) |
 
 ##### Step 1: Validate Preconditions
 
@@ -1958,24 +1912,17 @@ implementation plan artifacts for structural issues before acceptance. It is a
 readiness gate — not a compiler — that pattern-matches markdown content for
 common problems.
 
-> **⚠️ COMPLETION GATE:** This task is NOT complete until the validation
-> result comment is posted via `add-comment` in Step 3. If you reach your
-> context or turn limit, post what you have so far.
+**Acknowledge:** Post `🤖 Squad is validating the plan…` using the `add-comment` safe-output, then continue to Step 1.
 
-**Steps (ALL required — this mode is not complete until Step 3 posts the validation result):**
+**TASK (5 steps — the acknowledge above is NOT the deliverable):**
 
-| Step | Action | Valid exit point? |
-|------|--------|-------------------|
-| 1 | Locate Artifacts | ❌ NO |
-| 2 | Run Validation Checks | ❌ NO |
-| 3 | Post Validation Result | ✅ YES — this is the deliverable |
-| 4 | Update Lifecycle Summary | ✅ (best-effort after deliverable) |
-| 5 | Surface Next Action | ✅ (best-effort after deliverable) |
-
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is validating the plan…`
+| Step | Action | Deliverable? |
+|------|--------|-------------|
+| 1 | Locate Artifacts | ❌ |
+| 2 | Run Validation Checks | ❌ |
+| 3 | Post Validation Result | ✅ **THIS is the deliverable** |
+| 4 | Update Lifecycle Summary | ❌ (best-effort) |
+| 5 | Surface Next Action | ❌ (best-effort) |
 
 ##### Step 1: Locate Artifacts
 
@@ -2123,10 +2070,7 @@ Plan Accept Scope mode (`/squad plan accept scope`) records formal approval of t
 program plan's scope — the WHAT. It locks the strategic decomposition so
 implementation planning can proceed on a stable foundation.
 
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is accepting scope and creating the program backlog…`
+**Acknowledge:** Post `🤖 Squad is accepting scope and creating the program backlog…` using the `add-comment` safe-output, then continue to Step 1.
 
 ##### Step 1: Validate Preconditions
 
@@ -2195,10 +2139,7 @@ It locks the task decomposition so activation can proceed. It supports
 **incremental phase acceptance** — users can approve one implementation phase
 at a time via `/squad plan accept implementation phase {N}`.
 
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-`🤖 Squad is creating implementation tasks…`
+**Acknowledge:** Post `🤖 Squad is creating implementation tasks…` using the `add-comment` safe-output, then continue to Step 1.
 
 ##### Step 1: Validate Preconditions
 
@@ -2414,11 +2355,7 @@ implementation plan. When used without a phase selector, this is the terminal
 transition (all phases at once). When used with `phase {N}`, it creates issues
 for only that phase. Issue creation is irreversible.
 
-##### Step 0: Acknowledge
-
-Post a brief acknowledgment using the `add-comment` safe-output:
-- Phase-specific: `🤖 Squad is activating Phase {N}…`
-- Full activation: `🤖 Squad is activating the team…`
+**Acknowledge:** Post a brief acknowledgment using the `add-comment` safe-output (phase-specific: `🤖 Squad is activating Phase {N}…` or full: `🤖 Squad is activating the team…`), then continue to Step 1.
 
 ##### Step 1: Validate Preconditions
 
