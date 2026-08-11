@@ -98,8 +98,10 @@ Parse the slash command text to determine the mode:
 | `/squad plan implementation` | Plan Implementation | Decompose program plan into PR-sized tasks with deps and sizing |
 | `/squad plan validate` | Plan Validate | Validate plan artifacts for structural issues before acceptance |
 | `/squad plan accept` | Plan Accept | Fast-path: accept scope + impl + activate in sequence (legacy) |
+| `/squad plan accept phase {N}` | Plan Accept | Accept only Phase N issues (incremental; phases accepted in order) |
 | `/squad plan accept scope` | Plan Accept Scope | Approve the program plan's scope (the WHAT) |
 | `/squad plan accept implementation` | Plan Accept Implementation | Approve the implementation plan (the HOW) |
+| `/squad plan accept implementation phase {N}` | Plan Accept Implementation | Accept only Phase N of the implementation plan (incremental) |
 | `/squad plan activate` | Plan Activate | Create GitHub issues and milestones from accepted implementation |
 | `/squad` (no args) | Cast | Default to cast mode |
 
@@ -118,6 +120,12 @@ Extract the mode and arguments from the slash command text:
    `plan accept implementation`, `plan activate`, `plan revise`.
 4. If no subcommand is provided or the text is empty, default to `cast`.
 5. Store any remaining text as arguments for the matched mode.
+6. **Phase selector:** After matching the mode, if the remaining arguments
+   contain `phase {N}` (case-insensitive, where N is a positive integer),
+   extract and store the phase number. Examples:
+   - `/squad plan accept phase 1` → mode: Plan Accept, phase: 1
+   - `/squad plan accept implementation phase 3` → mode: Plan Accept Implementation, phase: 3
+   - `/squad plan accept` → mode: Plan Accept, phase: null (all phases)
 
 ### 2. Execute Mode
 
@@ -1027,7 +1035,8 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 {Sequencing advice, parallel tracks, known risks}
 
 ### Next Steps
-> - Reply `/squad plan accept` to create these issues
+> - Reply `/squad plan accept` to create all issues at once
+> - Reply `/squad plan accept phase 1` to accept Phase 1 only (then phase 2, 3, …)
 > - Reply `/squad plan revise {feedback}` to adjust the plan
 > - Reply `/squad plan` to regenerate from scratch
 ```
@@ -1038,9 +1047,11 @@ Do NOT create issues. Plan mode only posts the comment.
 
 #### Plan Accept Mode (Fast Path / Legacy)
 
-Plan Accept mode (`/squad plan accept` with no qualifier) is a **fast-path alias**
-that combines scope acceptance, implementation acceptance, and activation into a
-single command. It exists for backward compatibility and simple workflows.
+Plan Accept mode (`/squad plan accept` with no qualifier, or with `phase {N}`)
+is a **fast-path alias** that combines scope acceptance, implementation
+acceptance, and activation into a single command. It exists for backward
+compatibility and simple workflows. It supports **incremental phase acceptance**
+— users can accept one phase at a time via `/squad plan accept phase {N}`.
 
 **Behavior:**
 - If granular planning artifacts exist (`<!-- squad-program-v1 -->` or
@@ -1067,6 +1078,44 @@ Plan Accept mode reads the most recent plan comment (marked with
 2. Parse the plan comment to extract work items (titles, scopes, acceptance
    criteria, owners, dependencies, phases).
 
+##### Step 1a: Resolve Phase Selector
+
+After parsing the plan, determine which items to create:
+
+1. **Extract the phase selector** from the parsed command arguments. If the
+   command text contains `phase {N}` (case-insensitive), set
+   `requested_phase = N`. Otherwise `requested_phase = null`.
+
+2. **Find previously accepted phases.** Search the triggering issue's comments
+   for the latest comment containing `<!-- squad-phases-accepted: [...] -->`.
+   Parse the JSON array to get `accepted_phases` (e.g., `[1, 2]`). If no
+   such comment exists, `accepted_phases = []`.
+
+3. **Phase validation** (only when `requested_phase` is set):
+
+   a. **Already accepted:** If `requested_phase` is in `accepted_phases`,
+      compute `next_available` = max of `accepted_phases` + 1. Reply with:
+      *"Phase {requested_phase} has already been accepted. Next available:
+      `/squad plan accept phase {next_available}`"* — then stop.
+
+   b. **Out of order:** If `requested_phase > 1` and
+      `(requested_phase - 1)` is NOT in `accepted_phases`, reply with:
+      *"Phase {requested_phase - 1} hasn't been accepted yet. Accept phases
+      in order: `/squad plan accept phase {requested_phase - 1}`"* — then stop.
+
+4. **Filter work items by phase:**
+
+   - If `requested_phase` is set: only keep items under the matching
+     `#### Phase {N}` heading in the plan comment. Skip all other phases.
+   - If `requested_phase` is null AND `accepted_phases` is non-empty:
+     only keep items from phases NOT already in `accepted_phases`
+     (accept all remaining phases).
+   - If `requested_phase` is null AND `accepted_phases` is empty:
+     keep all items (full backward-compatible accept-all behavior).
+
+5. If after filtering no items remain, reply with:
+   *"No items to create — all phases have already been accepted."* — then stop.
+
 ##### Step 2: Create Sub-Issues — Hierarchical
 
 If the plan defines phases (which map to epics/groups), create issues in a
@@ -1075,7 +1124,7 @@ hierarchy: Root → Phase/group issues → Task issues. If the plan is flat
 
 **When hierarchy applies (plan has phases):**
 
-1. For each phase/group, create a parent issue:
+1. For each phase/group being accepted, create a parent issue:
    - **Title:** `[Phase] {phase name}`
    - **Labels:**
      - `squad` — description: "Squad-managed work item" — color: `0075ca`
@@ -1083,6 +1132,12 @@ hierarchy: Root → Phase/group issues → Task issues. If the plan is flat
    - **Parent relationship:** Sub-issue of the root intent issue
 2. For each work item within a phase, create a task issue:
    - Parent relationship: Sub-issue of the PHASE issue, not the root
+
+**Cross-phase dependency resolution:** When creating Phase 2+ issues that
+reference dependencies from earlier phases, look up the actual issue numbers
+from the earlier phase's acceptance comment (`<!-- squad-phases-accepted: ... -->`
+or `<!-- squad-plan-accepted -->`). Use those real `#N` issue numbers in
+`Depends on:` references instead of plan-internal ordinals.
 
 **For all work items** (whether hierarchical or flat), use the `create-issue` safe-output:
 
@@ -1144,10 +1199,44 @@ GitHub blocked-by/blocking edges:
 
 After creating all issues, post a summary comment on the triggering issue.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
-`<!-- squad-plan-accepted -->`
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content. The marker varies by acceptance type:
 
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
+- **Phase-specific acceptance:** `<!-- squad-phases-accepted: [N, ...] -->`
+- **Full acceptance (no phase arg, no prior phases):** `<!-- squad-plan-accepted -->`
+- **Full acceptance (completing remaining phases):** Both `<!-- squad-plan-accepted -->` AND `<!-- squad-phases-accepted: [all phase numbers] -->`
+
+These markers are machine-readable and non-negotiable. Without them, subsequent phases cannot find these artifacts.
+
+**Phase-specific acceptance comment:**
+
+```markdown
+<!-- squad-phases-accepted: [{accumulated_phases}] -->
+## ✅ Phase {N} Accepted
+
+**Issues created:** {count}
+
+| # | Issue | Title | Owner |
+|---|-------|-------|-------|
+| 1 | #{number} | {title} | {owner} |
+| 2 | #{number} | {title} | {owner} |
+...
+
+### Remaining Phases
+| Phase | Items | Status |
+|-------|-------|--------|
+| Phase {M} — {name} | {count} | ✅ Accepted |
+| Phase {N} — {name} | {count} | ✅ Just accepted |
+| Phase {P} — {name} | {count} | ⬚ Pending |
+...
+
+> Reply `/squad plan accept phase {next}` to continue, or `/squad plan accept` to accept all remaining.
+```
+
+Where `{accumulated_phases}` is the JSON array of ALL accepted phases including
+the one just accepted (e.g., `[1, 2]` after accepting phase 2 when phase 1
+was previously accepted).
+
+**Full acceptance comment (no phases or all at once):**
 
 ```markdown
 <!-- squad-plan-accepted -->
@@ -1965,9 +2054,11 @@ implementation plan."*
 
 #### Plan Accept Implementation Mode
 
-Plan Accept Implementation mode (`/squad plan accept implementation`) records
-formal approval of the implementation plan — the HOW. It locks the task
-decomposition so activation can proceed.
+Plan Accept Implementation mode (`/squad plan accept implementation`, optionally
+with `phase {N}`) records formal approval of the implementation plan — the HOW.
+It locks the task decomposition so activation can proceed. It supports
+**incremental phase acceptance** — users can approve one implementation phase
+at a time via `/squad plan accept implementation phase {N}`.
 
 ##### Step 0: Acknowledge
 
@@ -1989,14 +2080,59 @@ Post a brief acknowledgment using the `add-comment` safe-output:
    *"Validation must pass before implementation can be accepted. Run
    `/squad plan validate` first."* — then stop.
 4. Check for an existing `<!-- squad-impl-accepted-v1 -->` comment. If one
-   already exists, reply with:
+   already exists AND no `phase {N}` selector was provided, reply with:
    *"Implementation was already accepted on {date} by {actor}. To revise,
    run `/squad plan revise <feedback>` which will invalidate the acceptance."*
-   — then stop.
+   — then stop. (If a phase selector IS provided, continue — this is
+   incremental acceptance.)
+
+##### Step 1a: Resolve Phase Selector (Implementation)
+
+After validating preconditions, determine which implementation items to approve:
+
+1. **Extract the phase selector** from the parsed command arguments. If the
+   command text contains `phase {N}` (case-insensitive), set
+   `requested_phase = N`. Otherwise `requested_phase = null`.
+
+2. **Find previously accepted implementation phases.** Search the triggering
+   issue's comments for the latest comment containing
+   `<!-- squad-impl-phases-accepted: [...] -->`. Parse the JSON array to get
+   `accepted_impl_phases` (e.g., `[1, 2]`). If no such comment exists,
+   `accepted_impl_phases = []`.
+
+3. **Phase validation** (only when `requested_phase` is set):
+
+   a. **Already accepted:** If `requested_phase` is in `accepted_impl_phases`,
+      compute `next_available` = max of `accepted_impl_phases` + 1. Reply with:
+      *"Implementation Phase {requested_phase} has already been accepted. Next
+      available: `/squad plan accept implementation phase {next_available}`"*
+      — then stop.
+
+   b. **Out of order:** If `requested_phase > 1` and
+      `(requested_phase - 1)` is NOT in `accepted_impl_phases`, reply with:
+      *"Implementation Phase {requested_phase - 1} hasn't been accepted yet.
+      Accept phases in order:
+      `/squad plan accept implementation phase {requested_phase - 1}`"*
+      — then stop.
+
+4. **Scope the acceptance:**
+
+   - If `requested_phase` is set: only validate and approve items under the
+     matching phase in the implementation plan.
+   - If `requested_phase` is null AND `accepted_impl_phases` is non-empty:
+     approve all phases NOT already in `accepted_impl_phases`.
+   - If `requested_phase` is null AND `accepted_impl_phases` is empty:
+     approve the entire implementation plan (full backward-compatible behavior).
+
+5. If after filtering no items remain, reply with:
+   *"No implementation items to approve — all phases have already been
+   accepted."* — then stop.
 
 ##### Step 2: Validate Plan Integrity
 
-Run the same structural validations as Plan Implementation Step 3:
+Run the same structural validations as Plan Implementation Step 3, scoped to
+the items being accepted (all items if full acceptance, phase items if
+incremental):
 
 1. **Size check** — All tasks ≤ L.
 2. **Cycle check** — Dependency graph is acyclic.
@@ -2021,12 +2157,44 @@ comment), but prefer the validation result when available.
 
 Use the `add-comment` safe-output to post the acceptance record.
 
-**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content:
-`<!-- squad-impl-accepted-v1 -->`
+**CRITICAL — FIRST LINE REQUIREMENT:** The comment MUST begin with the marker on its own line BEFORE any other content. The marker varies by acceptance type:
 
-This marker is machine-readable and non-negotiable. Without it, subsequent phases cannot find this artifact.
+- **Phase-specific acceptance:** `<!-- squad-impl-phases-accepted: [N, ...] -->`
+- **Full acceptance (no phase arg, no prior phases):** `<!-- squad-impl-accepted-v1 -->`
+- **Full acceptance (completing remaining phases):** Both `<!-- squad-impl-accepted-v1 -->` AND `<!-- squad-impl-phases-accepted: [all phase numbers] -->`
 
-**Comment structure:**
+These markers are machine-readable and non-negotiable. Without them, subsequent phases cannot find these artifacts.
+
+**Phase-specific acceptance comment:**
+
+```markdown
+<!-- squad-impl-phases-accepted: [{accumulated_phases}] -->
+## ✅ Implementation Phase {N} Accepted
+
+- **Implementation plan version:** {link to impl plan comment}
+- **Scope acceptance:** {link to scope acceptance comment}
+- **Accepted by:** @{triggering user}
+- **Date:** {ISO-8601 timestamp}
+- **What was approved (this phase):**
+  - {count} tasks in Phase {N}
+  - Phase sizing: {sizing for this phase's tasks only}
+  - {count} agents assigned
+
+### Remaining Implementation Phases
+| Phase | Tasks | Status |
+|-------|-------|--------|
+| Phase {M} — {name} | {count} | ✅ Accepted |
+| Phase {N} — {name} | {count} | ✅ Just accepted |
+| Phase {P} — {name} | {count} | ⬚ Pending |
+...
+
+> Reply `/squad plan accept implementation phase {next}` to continue, or `/squad plan accept implementation` to accept all remaining.
+```
+
+Where `{accumulated_phases}` is the JSON array of ALL accepted implementation
+phases including the one just accepted (e.g., `[1, 2]`).
+
+**Full acceptance comment:**
 
 ```markdown
 <!-- squad-impl-accepted-v1 -->
@@ -2047,13 +2215,24 @@ This marker is machine-readable and non-negotiable. Without it, subsequent phase
 
 ##### Step 4: Update Lifecycle Summary
 
-Update the `<!-- squad-lifecycle-state -->` comment. Set the Impl Accepted row
-to `✅ Done`. Set `Current state: Implementation accepted` and
-`Last command: /squad plan accept implementation`.
-Set `**Next action:**` to `/squad plan activate` — create issues and begin execution.
+Update the `<!-- squad-lifecycle-state -->` comment.
 
-End with: *"Implementation approved. Reply `/squad plan activate` to create
-issues and begin execution."*
+- **Phase-specific acceptance:** Set the Impl Accepted row to
+  `🔄 Phase {N} of {total} accepted`. Set
+  `Last command: /squad plan accept implementation phase {N}`.
+  Set `**Next action:**` to `/squad plan accept implementation phase {next}` if
+  phases remain, or `/squad plan activate` if all phases are now accepted.
+- **Full acceptance:** Set the Impl Accepted row to `✅ Done`. Set
+  `Current state: Implementation accepted` and
+  `Last command: /squad plan accept implementation`.
+  Set `**Next action:**` to `/squad plan activate` — create issues and begin execution.
+
+End with:
+- Phase-specific: *"Implementation Phase {N} approved. Reply
+  `/squad plan accept implementation phase {next}` to continue, or
+  `/squad plan activate` if all phases are accepted."*
+- Full: *"Implementation approved. Reply `/squad plan activate` to create
+  issues and begin execution."*
 
 ---
 
@@ -2070,7 +2249,10 @@ Post a brief acknowledgment using the `add-comment` safe-output:
 
 ##### Step 1: Validate Preconditions
 
-1. Search for `<!-- squad-impl-accepted-v1 -->`. If not found, reply with:
+1. Search for `<!-- squad-impl-accepted-v1 -->`. If not found, also check for
+   `<!-- squad-impl-phases-accepted: [...] -->` where the array contains ALL
+   phases from the implementation plan (meaning all phases were incrementally
+   accepted). If neither marker indicates full acceptance, reply with:
    *"Implementation must be accepted before activation. Run
    `/squad plan accept implementation` first."* — then stop.
 2. Check for an existing `<!-- squad-activated-v1 -->` comment. If one exists,
