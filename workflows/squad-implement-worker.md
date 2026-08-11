@@ -76,6 +76,7 @@ safe-outputs:
   dispatch-workflow:
     workflows: [squad]
     max: 1
+    target-ref: ${{ github.event.repository.default_branch }}
 ---
 
 # Squad Implementation Worker

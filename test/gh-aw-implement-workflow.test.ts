@@ -42,6 +42,7 @@ describe('gh-aw implement workflows', () => {
     expect(worker).toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
     expect(worker).toContain("startsWith(github.event.pull_request.head.ref, 'squad/implement-')");
     expect(worker).toContain('workflows: [squad]');
+    expect(worker).toContain('target-ref: ${{ github.event.repository.default_branch }}');
     expect(worker).toContain('"command": "implement"');
     expect(worker).toContain('Never call the generic `dispatch_workflow` tool');
     expect(dispatcher).toContain('available-slots = max(0, 3 - active-implementation-count)');

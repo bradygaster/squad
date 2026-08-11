@@ -665,7 +665,9 @@ children remain, without installing a third workflow.
 
 Both workflows accept gh-aw's propagated `aw_context` and allow the repository's
 `github-actions[bot]` to pass the workflow-dispatch activation gate. Human
-slash commands retain the normal repository-role checks.
+slash commands retain the normal repository-role checks. The merge relay
+targets the repository's default branch so deleting a merged implementation
+branch cannot prevent the continuation dispatch.
 
 For example, an epic with ten independent tasks starts three workers. Each merge
 automatically starts one replacement, keeping three implementation pull requests
