@@ -238,6 +238,12 @@ describe('gh-aw: safe-output configuration', () => {
     expect(safeOutputs['create-issue'], 'create-issue should exist').toBeDefined();
     expect(safeOutputs['add-comment'], 'add-comment should exist').toBeDefined();
   });
+
+  it('create-issue max is 75 (supports large plans, forward-port of #1683)', () => {
+    const ci = safeOutputs['create-issue'];
+    expect(ci, 'create-issue block must exist').toBeDefined();
+    expect(ci['max'], 'create-issue max must be 75 — do not reduce below this').toBe(75);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -527,5 +533,48 @@ describe('gh-aw: prompt budget & planning import regression', () => {
       totalBytes,
       `Combined prompt is ${totalKB} KB — exceeds the gh-aw ${GH_AW_PROMPT_CEILING_KB} KB ceiling. Headroom: ${headroomKB} KB.`
     ).toBeLessThan(GH_AW_PROMPT_CEILING_BYTES);
+  });
+
+  it('reports combined bytes and headroom', () => {
+    let totalBytes = Buffer.byteLength(squadContent, 'utf8');
+    for (const importPath of imports) {
+      const fullPath = join(WORKFLOWS_DIR, importPath);
+      if (existsSync(fullPath)) totalBytes += Buffer.byteLength(readFileSync(fullPath, 'utf8'), 'utf8');
+    }
+    const headroomBytes = GH_AW_PROMPT_CEILING_BYTES - totalBytes;
+    // Informational — log bytes/headroom; fail only if headroom < 5 KB (regression guard)
+    expect(
+      headroomBytes,
+      `Headroom too low: ${(headroomBytes / 1024).toFixed(1)} KB remaining of ${GH_AW_PROMPT_CEILING_KB} KB ceiling`
+    ).toBeGreaterThan(5 * 1024);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Plan Activate hardening behaviors (forward-port #1683)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: Plan Activate hardening behaviors', () => {
+  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  it('includes output budget awareness guidance', () => {
+    expect(content).toContain('Output Budget Awareness');
+    expect(content).toMatch(/total.*>\s*50.*phased activation|phased.*activation.*>\s*50/i);
+  });
+
+  it('includes label pre-flight step before issue creation', () => {
+    expect(content).toContain('Label Pre-flight');
+    expect(content).toMatch(/squad.*label.*exist|label.*squad.*exist/i);
+  });
+
+  it('includes transient failure handling with single retry', () => {
+    expect(content).toContain('Transient Failure Handling');
+    expect(content).toMatch(/5xx.*retry|retry.*5xx/i);
+  });
+
+  it('includes graceful sub-issue fallback for 404/422', () => {
+    expect(content).toContain('Sub-issue Fallback');
+    expect(content).toMatch(/404.*422|422.*404/);
+    expect(content).toMatch(/degrade gracefully|graceful/i);
   });
 });
