@@ -1,4 +1,3 @@
-<!-- squad-validation-v1 -->
 ## Plan Validation
 
 ### Result: ✅ PASS
@@ -57,3 +56,13 @@ Cycle detection: **No cycles found.** Longest path: Task 7 → 8 → 9 → 10 (l
 ### Diagnostics
 
 No issues found. Plan is ready for acceptance.
+
+Structured data:
+```json
+{
+  "squad_artifact": "validation",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```

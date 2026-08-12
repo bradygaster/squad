@@ -5,17 +5,23 @@
  * - safe-output configuration schema
  * - mode dispatch completeness
  * - shared component imports
- * - planning state machine marker consistency
+ * - planning state machine structured-artifact consistency
  */
 
-import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { afterAll, describe, it, expect } from 'vitest';
+import { cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
 const SHARED_DIR = join(WORKFLOWS_DIR, 'shared');
+const TEST_WORKSPACES_DIR = join(process.cwd(), '.test-workspaces');
+
+afterAll(() => {
+  rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,6 +82,8 @@ function extractSafeOutputs(frontmatter: string): Record<string, Record<string, 
         const arrayMatch = value.match(/^\[(.+)\]$/);
         if (arrayMatch) {
           outputs[currentOutput][key] = arrayMatch[1].split(',').map(s => s.trim().replace(/"/g, ''));
+        } else if (value === 'true' || value === 'false') {
+          outputs[currentOutput][key] = value === 'true';
         } else if (!isNaN(Number(value))) {
           outputs[currentOutput][key] = Number(value);
         } else {
@@ -148,32 +156,43 @@ function extractModeTable(content: string): Array<{ command: string; mode: strin
   return rows;
 }
 
-/** Extract HTML comment markers from the planning ontology. */
-function extractOntologyMarkers(filePath: string): string[] {
-  const content = readFileSync(filePath, 'utf8');
-  const markers: string[] = [];
-  const markerRegex = /`(<!-- squad-[\w-]+ -->)`/g;
-  let match: RegExpExecArray | null;
-  while ((match = markerRegex.exec(content)) !== null) {
-    if (!markers.includes(match[1])) {
-      markers.push(match[1]);
-    }
-  }
-  return markers;
+interface SquadArtifactData {
+  squad_artifact: string;
+  schema_version: string;
+  origin_issue: number;
+  phases: number[];
 }
 
-/** Extract markers referenced in squad.md (both in code fences and inline). */
-function extractSquadMarkerReferences(content: string): string[] {
-  const markers: string[] = [];
-  const markerRegex = /`?(<!-- squad-[\w-]+ -->)`?/g;
-  let match: RegExpExecArray | null;
-  while ((match = markerRegex.exec(content)) !== null) {
-    const marker = match[0].replace(/`/g, '');
-    if (!markers.includes(marker)) {
-      markers.push(marker);
+/** Parse gh-aw's durable Structured data footer from a normalized body. */
+function extractStructuredData(content: string): SquadArtifactData[] {
+  return [...content.matchAll(/Structured data:\s*```json\s*([\s\S]*?)```/g)].map(match =>
+    JSON.parse(match[1]) as SquadArtifactData
+  );
+}
+
+/** Locate the newest compatible artifact exactly as downstream planning modes do. */
+function findLatestArtifact(
+  comments: string[],
+  artifactKind: string,
+  originIssue: number
+): { body: string; data: SquadArtifactData } | undefined {
+  for (const body of [...comments].reverse()) {
+    const data = extractStructuredData(body).find(
+      item =>
+        item.squad_artifact === artifactKind &&
+        item.schema_version === '1' &&
+        item.origin_issue === originIssue
+    );
+    if (data) {
+      return { body, data };
     }
   }
-  return markers;
+  return undefined;
+}
+
+function createTestWorkspace(prefix: string): string {
+  mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
+  return mkdtempSync(join(TEST_WORKSPACES_DIR, prefix));
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +209,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
+      if (name === 'data') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
@@ -232,6 +252,16 @@ describe('gh-aw: safe-output configuration', () => {
     expect(pr.labels, 'should have labels').toBeDefined();
     expect(pr.max, 'should have max').toBeDefined();
     expect(pr['allowed-base-branches'], 'should have allowed-base-branches').toBeDefined();
+    expect(pr['auto-close-issue'], 'Cast PR must not close the originating work issue').toBe(false);
+  });
+
+  it('defines the minimum schema-validated durable artifact envelope', () => {
+    expect(frontmatter).toMatch(/data:\n\s+type: object/);
+    expect(frontmatter).toMatch(/squad_artifact:\n\s+type: string/);
+    expect(frontmatter).toMatch(/schema_version:\n\s+type: string\n\s+enum: \["1"\]/);
+    expect(frontmatter).toMatch(/origin_issue:\n\s+type: integer\n\s+minimum: 1/);
+    expect(frontmatter).toMatch(/phases:\n\s+type: array\n\s+items:\n\s+type: integer\n\s+minimum: 1/);
+    expect(frontmatter).toMatch(/required:\n\s+- squad_artifact\n\s+- schema_version\n\s+- origin_issue\n\s+- phases/);
   });
 
   it('create-issue and add-comment outputs exist', () => {
@@ -373,84 +403,110 @@ describe('gh-aw: shared component imports', () => {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: planning state machine', () => {
-  const ontologyPath = join(SHARED_DIR, 'planning-ontology.md');
-  const ontologyContent = readFileSync(ontologyPath, 'utf8');
+  const ontologyContent = readFileSync(join(SHARED_DIR, 'planning-ontology.md'), 'utf8');
   const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
 
-  const ontologyMarkers = extractOntologyMarkers(ontologyPath);
-  const squadMarkers = extractSquadMarkerReferences(squadContent);
+  function registryArtifactKinds(): string[] {
+    const registry = ontologyContent.match(/## 4\. Structured Artifact Registry([\s\S]*?)(?=\n---|\n## \d)/);
+    if (!registry) throw new Error('Structured Artifact Registry section is missing');
+    return [...registry[1].matchAll(/^\| `([^`]+)` \|/gm)].map(match => match[1]);
+  }
 
-  it('ontology defines markers', () => {
-    expect(ontologyMarkers.length).toBeGreaterThan(0);
+  it('uses no Squad HTML comment as machine state', () => {
+    const unsupportedMarker = /<!-- squad-[\w-]+(?:-v\d+)? -->/;
+    expect(squadContent).not.toMatch(unsupportedMarker);
+    expect(ontologyContent).not.toMatch(unsupportedMarker);
   });
 
-  it('all markers follow naming convention: <!-- squad-{name}-v{N} -->', () => {
-    // Allow both versioned (squad-X-vN) and unversioned (squad-X) markers
-    const markerPattern = /^<!-- squad-[\w-]+(-(v\d+))? -->$/;
-    for (const marker of ontologyMarkers) {
-      expect(marker, `Marker "${marker}" should follow naming convention`).toMatch(markerPattern);
-    }
-  });
-
-  it('all markers referenced in squad.md are defined in planning-ontology.md', () => {
-    // Filter to only planning-related markers (skip markers that might be internal)
-    const planningMarkers = squadMarkers.filter(m =>
-      m.includes('squad-') && !m.includes('squad-plan-v1') && !m.includes('squad-plan-accepted')
-    );
-
-    for (const marker of planningMarkers) {
-      // Check if the marker is defined in the ontology (either in ontology table
-      // or in the broader ontology content)
-      const defined = ontologyContent.includes(marker);
-      expect(defined, `Marker "${marker}" referenced in squad.md should be defined in planning-ontology.md`).toBe(true);
-    }
-  });
-
-  it('state transition table defines produces/requires markers consistently', () => {
-    // Extract state transitions from the ontology
+  it('state transition table defines produced and required artifact kinds consistently', () => {
     const transitionBlock = ontologyContent.match(/```\n(idle[\s\S]*?)```/);
     expect(transitionBlock, 'Should have a state transition code block').not.toBeNull();
 
     const transitions = transitionBlock![1];
-    const producesMarkers = [...transitions.matchAll(/produces:\s*(<!-- [\w-]+ -->)/g)]
-      .map(m => m[1]);
-    const requiresMarkers = [...transitions.matchAll(/requires:\s*(<!-- [\w-]+ -->)/g)]
-      .map(m => m[1]);
+    const produced = [...transitions.matchAll(/produces:\s*squad_artifact=([\w-]+)/g)].map(match => match[1]);
+    const required = [...transitions.matchAll(/requires:\s*squad_artifact=([\w-]+)/g)].map(match => match[1]);
 
-    // Every required marker should be produced by some prior transition
-    // (except the first which requires "intent")
-    for (const required of requiresMarkers) {
-      if (required.includes('intent')) continue;
-      const isProduced = producesMarkers.includes(required);
-      expect(isProduced, `Required marker "${required}" should be produced by a prior state`).toBe(true);
+    for (const artifactKind of required) {
+      expect(
+        produced,
+        `Required artifact "${artifactKind}" should be produced by a lifecycle transition`
+      ).toContain(artifactKind);
     }
   });
 
-  it('Comment Marker Registry section covers all state-produced markers', () => {
-    // Extract markers from the "Comment Marker Registry" table
-    const registrySection = ontologyContent.match(/## 4\. Comment Marker Registry[\s\S]*?(?=\n---|\n## \d)/);
-    expect(registrySection, 'Should have a Comment Marker Registry section').not.toBeNull();
-
-    // Extract from state transitions
+  it('Structured Artifact Registry covers all state-produced artifacts', () => {
     const transitionBlock = ontologyContent.match(/```\n(idle[\s\S]*?)```/);
     const transitions = transitionBlock![1];
-    const producedMarkers = [...transitions.matchAll(/produces:\s*(<!-- [\w-]+ -->)/g)]
-      .map(m => m[1]);
+    const produced = [...transitions.matchAll(/produces:\s*squad_artifact=([\w-]+)/g)].map(match => match[1]);
+    const registry = registryArtifactKinds();
 
-    for (const marker of producedMarkers) {
-      expect(
-        registrySection![0].includes(marker),
-        `Produced marker "${marker}" should be listed in Comment Marker Registry`
-      ).toBe(true);
+    for (const artifactKind of produced) {
+      expect(registry, `Produced artifact "${artifactKind}" should be listed in the registry`).toContain(artifactKind);
     }
   });
 
-  it('ontology marker versions are consistent (all v1 in current spec)', () => {
-    const versionedMarkers = ontologyMarkers.filter(m => m.match(/v\d+/));
-    const versions = versionedMarkers.map(m => m.match(/v(\d+)/)![1]);
-    const uniqueVersions = [...new Set(versions)];
-    // Currently all should be v1
-    expect(uniqueVersions, 'All versioned markers should use the same version').toEqual(['1']);
+  it('workflow schema enumerates every registered artifact kind', () => {
+    for (const artifactKind of registryArtifactKinds()) {
+      expect(squadContent, `safe-outputs.data should allow "${artifactKind}"`).toMatch(
+        new RegExp(`^\\s+- ${artifactKind}$`, 'm')
+      );
+    }
+  });
+
+  it('Research fixture data supports downstream Triage discovery', () => {
+    const fixtures = join(process.cwd(), 'test-fixtures', 'planning', 'aspiregregator');
+    const researchBody = readFileSync(join(fixtures, 'research-output.md'), 'utf8');
+    const wrongOrigin = researchBody.replace('"origin_issue": 8', '"origin_issue": 999');
+    const discovered = findLatestArtifact(
+      ['No structured artifact here', wrongOrigin, researchBody],
+      'research',
+      8
+    );
+
+    expect(discovered?.data).toEqual({
+      squad_artifact: 'research',
+      schema_version: '1',
+      origin_issue: 8,
+      phases: [],
+    });
+    expect(discovered?.body).toContain('## Research Findings');
+  });
+
+  it('planning fixtures model normalized gh-aw bodies with durable JSON data', () => {
+    const fixtures = join(process.cwd(), 'test-fixtures', 'planning', 'aspiregregator');
+    const expected = new Map([
+      ['research-output.md', ['research']],
+      ['triage-output.md', ['triage']],
+      ['program-plan-output.md', ['program']],
+      ['implementation-plan-output.md', ['implementation']],
+      ['validation-output.md', ['validation']],
+      ['acceptance-outputs.md', ['scope-accepted', 'impl-accepted', 'activated']],
+      ['lifecycle-state.md', ['lifecycle-state']],
+    ]);
+
+    for (const [file, artifactKinds] of expected) {
+      const artifacts = extractStructuredData(readFileSync(join(fixtures, file), 'utf8'));
+      expect(artifacts.map(item => item.squad_artifact), file).toEqual(artifactKinds);
+      for (const artifact of artifacts) {
+        expect(artifact.schema_version, file).toBe('1');
+        expect(artifact.origin_issue, file).toBe(8);
+        expect(artifact.phases, file).toEqual([]);
+      }
+    }
+  });
+
+  it('phase-state artifacts retain accumulated phases in structured data', () => {
+    const body = [
+      '## Phase 2 Accepted',
+      '',
+      'Structured data:',
+      '```json',
+      '{"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":8,"phases":[1,2]}',
+      '```',
+    ].join('\n');
+
+    expect(findLatestArtifact([body], 'phases-accepted', 8)?.data.phases).toEqual([1, 2]);
+    expect(squadContent).toContain('"phases":[{accumulated}]');
   });
 });
 
@@ -551,6 +607,38 @@ describe('gh-aw: prompt budget & planning import regression', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Test: gh-aw compilation retains durable state and Auto-Cast contracts
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: compiled workflow contract', () => {
+  const ghAwAvailable = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' }).status === 0;
+
+  it.skipIf(!ghAwAvailable)('strict-compiles and preserves prompt/config behavior', () => {
+    const workspace = createTestWorkspace('gh-aw-compile-');
+    try {
+      execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+      cpSync(WORKFLOWS_DIR, join(workspace, 'workflows'), { recursive: true });
+      execFileSync('gh', ['aw', 'compile', 'workflows/squad.md', '--strict'], {
+        cwd: workspace,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+
+      const compiled = readFileSync(join(workspace, 'workflows', 'squad.lock.yml'), 'utf8');
+      expect(compiled).toContain('"auto_close_issue":false');
+      expect(compiled).toContain('"data_enabled":true');
+      expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
+      expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
+      expect(compiled).toContain('{{#runtime-import shared/planning-ontology.md}}');
+      expect(compiled).toContain('{{#runtime-import squad.md}}');
+      expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Test: Plan Activate hardening behaviors (forward-port #1683)
 // ---------------------------------------------------------------------------
 
@@ -630,5 +718,372 @@ describe('gh-aw: Plan Activate atomic task-call contract', () => {
 
   it('2d states re-run is idempotent via title match', () => {
     expect(content).toMatch(/idempotent via title match/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Auto-Cast Pivot and resumable work (#1689)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
+  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  it('Team Guard section exists and lists covered modes', () => {
+    expect(content).toMatch(/## Team Guard/);
+    expect(content).toMatch(/Applies to:.*Research/i);
+    expect(content).toMatch(/Applies to:.*Triage/i);
+    expect(content).toMatch(/Applies to:.*Plan/i);
+  });
+
+  it('Team Guard is exempt for Cast, Connect, Adopt, Status, Implement', () => {
+    expect(content).toMatch(/Exempt:.*Cast/i);
+    expect(content).toMatch(/Exempt:.*Connect/i);
+    expect(content).toMatch(/Exempt:.*Status/i);
+    expect(content).toMatch(/Exempt:.*Implement/i);
+  });
+
+  it('Team Guard uses a roster-row detection check that emits TEAM_PRESENT or TEAM_ABSENT', () => {
+    expect(content).toMatch(/TEAM_PRESENT/);
+    expect(content).toMatch(/TEAM_ABSENT/);
+    // Must inspect ## Members section for real data rows — not just file size
+    expect(content).toMatch(/## Members/);
+    expect(content).toMatch(/awk.*## Members.*TEAM_PRESENT.*TEAM_ABSENT|TEAM_ABSENT.*awk.*## Members/s);
+    // Must NOT use the shallow `test -s` check that treats scaffold-only files as TEAM_PRESENT
+    expect(content).not.toMatch(/test -s \.squad\/team\.md/);
+  });
+
+  it('Team Guard TG-1 reads committed HEAD state via git show, not local filesystem', () => {
+    // Must use git show HEAD:.squad/team.md to read the committed blob, not a local file path
+    expect(content).toMatch(/git show HEAD:\.squad\/team\.md/);
+    // Must NOT read the local .squad/team.md file directly as an awk argument
+    expect(content).not.toMatch(/awk '[^']*' \.squad\/team\.md/);
+    expect(content).not.toMatch(/awk "[^"]*" \.squad\/team\.md/);
+  });
+
+  it('Team Guard description explains committed-HEAD vs local-activation distinction', () => {
+    expect(content).toMatch(/committed.*HEAD|HEAD.*committed/i);
+    expect(content).toMatch(/activation|local.*scaffold|scaffold.*local/i);
+  });
+
+  it('Auto-Cast Pivot stops and does not run original mode when TEAM_ABSENT', () => {
+    expect(content).toMatch(/do not proceed with the original mode this run|do not run the original command this run/i);
+    expect(content).toMatch(/Stop\. Do not run (Cast|the original)/i);
+  });
+
+  it('does not require unsupported Auto-Cast HTML markers', () => {
+    expect(content).not.toMatch(/squad-(pending-intent|cast-opened|cast-pr)-v1/);
+    expect(readFileSync(join(SHARED_DIR, 'planning-ontology.md'), 'utf8'))
+      .not.toMatch(/squad-(pending-intent|cast-opened|cast-pr)-v1/);
+  });
+
+  it('first run completion copy does not fabricate or promise a PR number', () => {
+    // Must tell user to check PRs tab, not promise a specific PR number
+    expect(content).toMatch(/Pull Requests.*tab|check.*Pull Requests/i);
+    const castOpenedBlock = content.match(/No roster \+ no open Cast PR[\s\S]{0,1200}/)?.[0] ?? '';
+    // Must NOT have a fabricated #{number} link in the cast-opened user copy
+    expect(castOpenedBlock).not.toMatch(/PR:.*#\d{1,6}/);
+  });
+
+  it('rerun path reads actual GitHub state via gh pr list with headRefName + startsWith filter', () => {
+    // Must use headRefName field and startsWith to match squad/cast-{repo} patterns
+    expect(content).toMatch(/gh pr list/i);
+    expect(content).toMatch(/headRefName/);
+    expect(content).toMatch(/startswith\("squad\/cast-"\)/);
+    expect(content).toMatch(/open Cast PR.*found|cast PR.*found|Cast PR is found/i);
+    // Exact --head matching truncates the branch name and never finds squad/cast-{repo}; must be forbidden
+    expect(content).not.toMatch(/--head "squad\/cast-"/);
+    // squad/cast-member-* must be excluded so Cast Member PRs cannot satisfy Cast dedup
+    expect(content).toMatch(/startswith\("squad\/cast-member-"\).*\| not|\| not.*startswith\("squad\/cast-member-"\)/);
+  });
+
+  it('Cast PR dedup stops without opening a duplicate PR', () => {
+    expect(content).toMatch(/already opened a Cast PR[\s\S]*\*\*Cast PR:\*\* \{pr_url\}/i);
+    expect(content).toMatch(/No duplicate PR opened|do not run Cast mode/i);
+  });
+
+  it('no open Cast PR always retries Cast, including after a closed or failed PR', () => {
+    expect(content).toMatch(/If no open Cast PR found.*Execute Cast Mode/s);
+    expect(content).toMatch(/closed or failed Cast PR is not durable team state/i);
+  });
+
+  it('Cast PR instructions forbid issue-closing keywords', () => {
+    expect(content).toMatch(/MUST NOT contain.*Fixes.*Closes.*Resolves/i);
+  });
+
+  it('normal-flow recovery never instructs user to run /squad cast separately', () => {
+    // The Auto-Cast section must explicitly forbid instructing the user to run /squad cast
+    expect(content).toMatch(/Never instruct.*\/squad cast|never.*\/squad cast separately/i);
+  });
+
+  it('partial activation N/M copy uses plan total not safe-output cap', () => {
+    expect(content).toMatch(/plan.*declared total|use the plan.*total.*not the safe-output cap/i);
+  });
+
+  it('partial activation post message includes rerun instruction', () => {
+    expect(content).toMatch(/N of M issues created.*rerun the identical|rerun the identical.*command to continue/i);
+  });
+
+  it('partial activation never surfaces safe-output cap as reason', () => {
+    expect(content).toMatch(/Never surface.*safe-output cap|never surface.*create-issue.*cap/i);
+  });
+
+  it('safe-output caps (75 create-issue / 20 add-comment) are not conflated with plan limits', () => {
+    // The workflow frontmatter must declare max=75 for create-issue and max=20 for add-comment
+    const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+    const safeOutputs = extractSafeOutputs(frontmatter);
+    expect((safeOutputs['create-issue'] as { max: number })?.max).toBe(75);
+    expect((safeOutputs['add-comment'] as { max: number })?.max).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Team Guard roster-row detection — git-committed state coverage (#1689 revision 3)
+//
+// These tests replicate the exact TG-1 shell command from workflows/squad.md against
+// a real project-local scratch git repository. This validates the committed-HEAD contract: only a
+// team.md that is committed to HEAD can produce TEAM_PRESENT. Local working-tree files
+// (e.g., from activation pre-steps like `squad init --preset default`) are invisible to
+// the guard, preventing false TEAM_PRESENT in fresh repos.
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo coverage (#1689 revision 3)', () => {
+  // Content shared across test cases
+  const SCAFFOLD_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n`;
+  const ONE_MEMBER_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n| Eecom | Core Dev | .squad/agents/eecom/charter.md | active |\n`;
+  const ONE_MEMBER_CRLF_CONTENT = ONE_MEMBER_CONTENT.replace(/\n/g, '\r\n');
+  const SCAFFOLD_CRLF_CONTENT = SCAFFOLD_CONTENT.replace(/\n/g, '\r\n');
+
+  // Runs the exact TG-1 command from squad.md in a given working directory.
+  // The command reads .squad/team.md from the committed HEAD via git show.
+  function runCommittedRosterCheck(cwd: string): string {
+    return execSync(
+      `git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\\|/&&!/^\\|[-: |]*\\|$/&&!/\\| *Name *\\|/' | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT`,
+      { cwd, shell: '/bin/sh', encoding: 'utf8' }
+    ).trim();
+  }
+
+  // Creates a project-local scratch git repo, runs the setup callback, then returns the dir.
+  // Caller must call cleanup() when done.
+  function makeGitRepo(setup: (dir: string) => void): { dir: string; cleanup: () => void } {
+    const dir = createTestWorkspace('team-guard-');
+    execFileSync('git', ['init', '--quiet'], { cwd: dir });
+    setup(dir);
+    return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  function commitFile(dir: string, relPath: string, content: string): void {
+    const fullPath = join(dir, relPath);
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, content);
+    execFileSync('git', ['add', '--', relPath], { cwd: dir });
+    execFileSync('git', ['commit', '--quiet', '-m', 'test'], {
+      cwd: dir,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Squad Test',
+        GIT_AUTHOR_EMAIL: 'squad-test',
+        GIT_COMMITTER_NAME: 'Squad Test',
+        GIT_COMMITTER_EMAIL: 'squad-test',
+      },
+    });
+  }
+
+  function addWorkingTree(dir: string, relPath: string, content: string): void {
+    const fullPath = join(dir, relPath);
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, content);
+  }
+
+  // ── Case 1: no committed team.md but working-tree scaffold present ────────
+  it('no committed .squad/team.md but working-tree scaffold → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      // Create an initial commit with an unrelated file so HEAD is valid
+      commitFile(d, 'README.md', '# Test\n');
+      // Add scaffold to working tree only — never committed
+      addWorkingTree(d, '.squad/team.md', SCAFFOLD_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 2: committed empty team.md ──────────────────────────────────────
+  it('committed empty .squad/team.md → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', '');
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 3: committed header-only scaffold ────────────────────────────────
+  it('committed header-only .squad/team.md (## Members + header + separator, no data rows) → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', SCAFFOLD_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 4: committed real roster ────────────────────────────────────────
+  it('committed .squad/team.md with one real member row → TEAM_PRESENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', ONE_MEMBER_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_PRESENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 5: working-tree real roster over absent committed path ──────────
+  it('working-tree real roster over absent committed .squad/team.md → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, 'README.md', '# Test\n');
+      // Full roster in working tree, but never committed
+      addWorkingTree(d, '.squad/team.md', ONE_MEMBER_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 6: committed real roster with dirty working-tree changes ─────────
+  it('committed real roster with dirty working-tree changes → TEAM_PRESENT (reads HEAD)', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', ONE_MEMBER_CONTENT);
+      // Overwrite with scaffold in working tree — guard must still read HEAD
+      addWorkingTree(d, '.squad/team.md', SCAFFOLD_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_PRESENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 7: committed CRLF scaffold → TEAM_ABSENT ────────────────────────
+  it('committed CRLF header-only .squad/team.md (Windows line endings) → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', SCAFFOLD_CRLF_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 8: committed CRLF real roster → TEAM_PRESENT ────────────────────
+  it('committed CRLF .squad/team.md with one real member row (Windows line endings) → TEAM_PRESENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', ONE_MEMBER_CRLF_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_PRESENT');
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Auto-Cast prompt hygiene (#1689 revision)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: Auto-Cast prompt hygiene (#1689 revision)', () => {
+  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  it('{original_command} does not appear anywhere in workflow — only canonical command variables are used', () => {
+    expect(content).not.toMatch(/\{original_command\}/);
+  });
+
+  it('contains no source-only assertion that Squad HTML comments survive gh-aw', () => {
+    expect(content).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Cast PR dedup jq filter — behavioral coverage (#1689 revision)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', () => {
+  const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  // Extract the exact --jq expression from squad.md so this test stays in sync.
+  function extractJqFilter(): string {
+    const m = squadContent.match(/--jq '([^']+)'/);
+    if (!m) throw new Error('Could not extract --jq filter from squad.md TG-3');
+    return m[1];
+  }
+
+  function runJqFilter(jsonInput: string, filter: string): string {
+    return execSync(
+      `echo '${jsonInput.replace(/'/g, "'\\''")}' | jq -r '${filter}'`,
+      { shell: '/bin/sh', encoding: 'utf8' }
+    ).trim();
+  }
+
+  it('extracts a jq filter from squad.md TG-3 block', () => {
+    expect(() => extractJqFilter()).not.toThrow();
+    const filter = extractJqFilter();
+    expect(filter).toMatch(/startswith/);
+    expect(filter).toMatch(/headRefName/);
+  });
+
+  it('real Cast branch (squad/cast-{repo}) satisfies the filter and returns the PR', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/cast-myrepo', number: 42, url: 'https://github.com/org/repo/pull/42' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toContain('"headRefName": "squad/cast-myrepo"');
+    expect(result).toContain('"number": 42');
+  });
+
+  it('Cast Member branch (squad/cast-member-*) is excluded and returns null', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toBe('null');
+  });
+
+  it('a closed Cast PR is absent from the open-PR scan, allowing additive retry', () => {
+    const filter = extractJqFilter();
+    const allPrs = [
+      {
+        headRefName: 'squad/cast-myrepo',
+        number: 41,
+        state: 'CLOSED',
+        url: 'https://github.com/org/repo/pull/41',
+      },
+    ];
+    const openPrs = allPrs.filter(pr => pr.state === 'OPEN');
+    expect(runJqFilter(JSON.stringify(openPrs), filter)).toBe('null');
+    expect(squadContent).toMatch(/If no open Cast PR found.*Execute Cast Mode/s);
+  });
+
+  it('Cast branch is selected and Cast Member branch is excluded when both are open', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
+      { headRefName: 'squad/cast-myrepo', number: 42, url: 'https://github.com/org/repo/pull/42' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toContain('"headRefName": "squad/cast-myrepo"');
+    expect(result).not.toContain('squad/cast-member-dev');
   });
 });

@@ -8,16 +8,16 @@ The Aspiregregator is a .NET Aspire community content aggregator application. Th
 
 ## Fixture Contents
 
-| File | Planning Phase | Marker |
-|------|---------------|--------|
+| File | Planning Phase | `squad_artifact` |
+|------|---------------|------------------|
 | `intent.md` | Intent (issue body) | — |
-| `research-output.md` | Research | `<!-- squad-research-v1 -->` |
-| `triage-output.md` | Triage | `<!-- squad-triage-v1 -->` |
-| `program-plan-output.md` | Program Plan | `<!-- squad-program-v1 -->` |
-| `implementation-plan-output.md` | Implementation Plan | `<!-- squad-implementation-v1 -->` |
-| `validation-output.md` | Validation | `<!-- squad-validation-v1 -->` |
-| `acceptance-outputs.md` | Scope + Impl + Activation | Three markers |
-| `lifecycle-state.md` | Lifecycle State | `<!-- squad-lifecycle-state -->` |
+| `research-output.md` | Research | `research` |
+| `triage-output.md` | Triage | `triage` |
+| `program-plan-output.md` | Program Plan | `program` |
+| `implementation-plan-output.md` | Implementation Plan | `implementation` |
+| `validation-output.md` | Validation | `validation` |
+| `acceptance-outputs.md` | Scope + Impl + Activation | Three structured artifacts |
+| `lifecycle-state.md` | Lifecycle State | `lifecycle-state` |
 | `assertions.md` | Test Assertions | — |
 
 ## How to Use for Regression Testing
@@ -25,14 +25,14 @@ The Aspiregregator is a .NET Aspire community content aggregator application. Th
 ### Manual Validation
 
 1. Compare each output file against the schema in `workflows/shared/planning-ontology.md`
-2. Verify all markers are present and well-formed
+2. Verify every `Structured data:` JSON block has `schema_version: "1"`, `origin_issue: 8`, `phases: []`, and the expected `squad_artifact`
 3. Confirm traceability: every task → epic → initiative → triage item
 
 ### Automated Validation
 
 Use `assertions.md` as a machine-checkable spec. A test harness should:
 
-1. Parse each fixture file for its expected marker
+1. Parse each fixture file's gh-aw `Structured data:` fenced JSON
 2. Validate internal structure matches the ontology schema
 3. Cross-reference items across phases (traceability)
 4. Verify dependency graph is a valid DAG

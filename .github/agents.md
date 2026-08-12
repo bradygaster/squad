@@ -1,5 +1,5 @@
 ---
-description: Agent-facing guide to using Squad — the multi-agent team orchestrator for GitHub Copilot. Covers installation, slash commands, planning lifecycle, artifact markers, and safe-output constraints.
+description: Agent-facing guide to using Squad — the multi-agent team orchestrator for GitHub Copilot. Covers installation, slash commands, planning lifecycle, structured artifacts, and safe-output constraints.
 ---
 
 # Using Squad in This Repository
@@ -92,19 +92,19 @@ All commands are issued as comments on a GitHub issue. Prefix: `/squad`.
 
 | Command | Purpose | Preconditions | Repo artifacts | User sees |
 |---------|---------|---------------|----------------|-----------|
-| `/squad research` | Deep-dive analysis of the issue and repository | Issue exists with intent | Comment with `<!-- squad-research-v1 -->` marker | Structured research findings |
-| `/squad triage` | Classify research findings into work, decisions, and exclusions | Research artifact exists | Comment with `<!-- squad-triage-v1 -->` marker | Categorized findings table |
-| `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback | Triage artifact exists | Updated comment with `<!-- squad-triage-v1 -->` marker | Revised triage |
-| `/squad plan` | Generate combined program + implementation plan (fast path) | Triage artifact exists | Comments with `<!-- squad-program-v1 -->` and `<!-- squad-implementation-v1 -->` markers | Both plans in sequence |
-| `/squad plan program` | Generate high-level program plan with epics and milestones | Triage artifact exists | Comment with `<!-- squad-program-v1 -->` marker | Epics, milestones, user stories |
-| `/squad plan program revise <feedback>` | Adjust program plan based on feedback | Program plan artifact exists | Updated comment with `<!-- squad-program-v1 -->` marker | Revised program plan |
-| `/squad plan implementation` | Decompose program plan into PR-sized tasks | Program plan artifact exists | Comment with `<!-- squad-implementation-v1 -->` marker | Task breakdown with deps and sizing |
-| `/squad plan validate` | Run structural readiness checks on the plan | Implementation plan artifact exists | Comment with `<!-- squad-validation-v1 -->` marker | Pass/fail checklist |
+| `/squad research` | Deep-dive analysis of the issue and repository | Issue exists with intent | Comment with `squad_artifact: research` data | Structured research findings |
+| `/squad triage` | Classify research findings into work, decisions, and exclusions | Research artifact exists | Comment with `squad_artifact: triage` data | Categorized findings table |
+| `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback | Triage artifact exists | Updated `triage` artifact | Revised triage |
+| `/squad plan` | Generate combined program + implementation plan (fast path) | Triage artifact exists | Comment with `squad_artifact: plan` data | Combined plan |
+| `/squad plan program` | Generate high-level program plan with epics and milestones | Triage artifact exists | Comment with `squad_artifact: program` data | Epics, milestones, user stories |
+| `/squad plan program revise <feedback>` | Adjust program plan based on feedback | Program plan artifact exists | Updated `program` artifact | Revised program plan |
+| `/squad plan implementation` | Decompose program plan into PR-sized tasks | Program plan artifact exists | Comment with `squad_artifact: implementation` data | Task breakdown with deps and sizing |
+| `/squad plan validate` | Run structural readiness checks on the plan | Implementation plan artifact exists | Comment with `squad_artifact: validation` data | Pass/fail checklist |
 | `/squad plan revise <feedback>` | Revise the current plan based on feedback | Program or implementation plan exists | Updated plan artifact | Revised plan |
-| `/squad plan accept` | Accept scope + implementation + activate (fast path) | Implementation plan + validation pass | Comments with `<!-- squad-scope-accepted-v1 -->`, `<!-- squad-impl-accepted-v1 -->`, `<!-- squad-activated-v1 -->` markers; issues created | Acceptance confirmations + issue links |
-| `/squad plan accept scope` | Approve the program plan's scope | Program plan artifact exists | Comment with `<!-- squad-scope-accepted-v1 -->` marker | Scope lock confirmation |
-| `/squad plan accept implementation` | Approve the implementation plan | Implementation plan + validation pass | Comment with `<!-- squad-impl-accepted-v1 -->` marker | Implementation lock confirmation |
-| `/squad plan activate` | Create GitHub issues from accepted plan | Both scope and implementation accepted | Issues + milestones + labels created; comment with `<!-- squad-activated-v1 -->` marker | Issue links and summary |
+| `/squad plan accept` | Accept scope + implementation + activate (fast path) | Implementation plan + validation pass | Structured acceptance/activation artifacts; issues created | Acceptance confirmations + issue links |
+| `/squad plan accept scope` | Approve the program plan's scope | Program plan artifact exists | Comment with `squad_artifact: scope-accepted` data | Scope lock confirmation |
+| `/squad plan accept implementation` | Approve the implementation plan | Implementation plan + validation pass | Comment with `squad_artifact: impl-accepted` data | Implementation lock confirmation |
+| `/squad plan activate` | Create GitHub issues from accepted plan | Both scope and implementation accepted | Issues + milestones + labels; `activated` artifact | Issue links and summary |
 
 ---
 
@@ -126,18 +126,18 @@ idle
 
 ### Stage-by-Stage Reference
 
-| Stage | Command | Artifact marker | Location | Idempotent? |
-|-------|---------|-----------------|----------|-------------|
+| Stage | Command | `squad_artifact` | Location | Idempotent? |
+|-------|---------|------------------|----------|-------------|
 | Intent | (issue body) | — | Issue description | N/A |
-| Research | `/squad research` | `<!-- squad-research-v1 -->` | Issue comment | Yes — re-running replaces previous |
-| Triage | `/squad triage` | `<!-- squad-triage-v1 -->` | Issue comment | Yes |
-| Program Plan | `/squad plan program` | `<!-- squad-program-v1 -->` | Issue comment | Yes |
-| Implementation Plan | `/squad plan implementation` | `<!-- squad-implementation-v1 -->` | Issue comment | Yes |
-| Validation | `/squad plan validate` | `<!-- squad-validation-v1 -->` | Issue comment | Yes |
-| Scope Acceptance | `/squad plan accept scope` | `<!-- squad-scope-accepted-v1 -->` | Issue comment | No — locks scope |
-| Impl Acceptance | `/squad plan accept implementation` | `<!-- squad-impl-accepted-v1 -->` | Issue comment | No — locks implementation |
-| Activation | `/squad plan activate` | `<!-- squad-activated-v1 -->` | Issue comment | No — creates issues |
-| Lifecycle State | (auto-updated) | `<!-- squad-lifecycle-state -->` | Issue comment | Auto-maintained |
+| Research | `/squad research` | `research` | Issue comment | Yes — re-running replaces previous |
+| Triage | `/squad triage` | `triage` | Issue comment | Yes |
+| Program Plan | `/squad plan program` | `program` | Issue comment | Yes |
+| Implementation Plan | `/squad plan implementation` | `implementation` | Issue comment | Yes |
+| Validation | `/squad plan validate` | `validation` | Issue comment | Yes |
+| Scope Acceptance | `/squad plan accept scope` | `scope-accepted` | Issue comment | No — locks scope |
+| Impl Acceptance | `/squad plan accept implementation` | `impl-accepted` | Issue comment | No — locks implementation |
+| Activation | `/squad plan activate` | `activated` | Issue comment | No — creates issues |
+| Lifecycle State | (auto-updated) | `lifecycle-state` | Issue comment | Auto-maintained |
 
 **Idempotency note:** Research, triage, plans, and validation can be re-run safely — each re-run replaces the previous artifact. Acceptance and activation are one-way transitions.
 
@@ -197,7 +197,7 @@ Created during activation to group epics by delivery phase.
 
 ### Comments
 
-Structured planning artifacts posted as issue comments. Each contains an HTML marker (listed above) for programmatic identification.
+Structured planning artifacts are posted as human-readable issue comments. gh-aw appends a validated `Structured data:` JSON block for programmatic identification.
 
 ### Pull requests
 
@@ -245,9 +245,9 @@ GitHub Agentic Workflows enforce output limits per run to prevent runaway mutati
 
 | Output type | Maximum per run | Notes |
 |-------------|----------------|-------|
-| `create-issue` | 20 | For large decompositions, split into multiple plan/accept cycles |
+| `create-issue` | 75 | For large decompositions, split into multiple plan/accept cycles |
 | `create-pull-request` | 3 | Cast, cast-member, and retire each produce one PR |
-| `add-comment` | 10 | Planning artifacts are posted as comments |
+| `add-comment` | 20 | Planning artifacts are posted as comments |
 
 ### Implications
 
@@ -259,22 +259,19 @@ GitHub Agentic Workflows enforce output limits per run to prevent runaway mutati
 
 ---
 
-## Key Markers for Programmatic Access
+## Structured Data for Programmatic Access
 
-When scanning issue comments for Squad artifacts, search for these HTML comment markers:
+Every planning artifact uses the gh-aw safe-output data envelope:
 
-```
-<!-- squad-research-v1 -->
-<!-- squad-triage-v1 -->
-<!-- squad-program-v1 -->
-<!-- squad-implementation-v1 -->
-<!-- squad-validation-v1 -->
-<!-- squad-scope-accepted-v1 -->
-<!-- squad-impl-accepted-v1 -->
-<!-- squad-activated-v1 -->
-<!-- squad-lifecycle-state -->
+```json
+{
+  "squad_artifact": "research",
+  "schema_version": "1",
+  "origin_issue": 123,
+  "phases": []
+}
 ```
 
-Each marker appears at the top of its respective comment body. To find the latest artifact of a given type, scan comments in reverse chronological order and take the first match.
+gh-aw appends the envelope as a `Structured data:` fenced JSON block. `phases` is empty except on phase-state artifacts, where it contains the accumulated phase numbers. Paginate all comments, parse the JSON, match the current `origin_issue` and desired `squad_artifact`, then take the newest match.
 
-> **Fast-path markers** (`squad-plan-v1`, `squad-plan-accepted`) also exist for legacy/simplified compatibility. See the planning ontology §6 (Backward Compatibility) for the full marker registry.
+HTML comments are not Squad state: gh-aw removes them from compiled prompts and sanitized safe-output bodies. See the planning ontology §4 for the complete artifact registry.

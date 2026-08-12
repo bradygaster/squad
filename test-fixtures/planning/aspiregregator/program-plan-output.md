@@ -1,4 +1,3 @@
-<!-- squad-program-v1 -->
 ## Program Plan
 
 ### Initiatives
@@ -71,3 +70,13 @@
   - Cosmos DB evaluation (decision resolved: Azure Table Storage selected)
   - Performance optimization beyond the 10% regression constraint
   - Multi-region deployment topology
+
+Structured data:
+```json
+{
+  "squad_artifact": "program",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```

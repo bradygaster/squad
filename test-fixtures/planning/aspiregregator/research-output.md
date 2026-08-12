@@ -1,4 +1,3 @@
-<!-- squad-research-v1 -->
 ## Research Findings
 
 ### Summary
@@ -77,3 +76,13 @@ This makes the modernization risky without adding test coverage first.
 - Adopt a vertical-slice approach: complete one grain end-to-end (persistence, telemetry, tests) then replicate pattern
 - Wire service discovery early — it simplifies the remaining integration work
 - Defer Blazor WASM frontend changes to a separate initiative (no coupling to backend modernization)
+
+Structured data:
+```json
+{
+  "squad_artifact": "research",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```

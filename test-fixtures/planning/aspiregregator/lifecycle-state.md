@@ -1,4 +1,3 @@
-<!-- squad-lifecycle-state -->
 ## Planning Lifecycle
 
 | Phase | Status | Artifact | Updated |
@@ -15,3 +14,13 @@
 
 **Current state:** Activated
 **Last command:** `/squad plan activate` by @bradygaster at 2026-07-15T14:36:00Z
+
+Structured data:
+```json
+{
+  "squad_artifact": "lifecycle-state",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```
