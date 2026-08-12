@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-12
+
+### Added
+- (cli) Ship GitHub Agentic Workflows (`gh-aw`): an executable SDLC lifecycle for Squad with `/squad research`, `/squad plan` (split into scope/impl/activate phases), `/squad cast`, and phased plan activation/acceptance, plus program-level planning (initiatives, epics, milestones), a planning policy schema, native dependency edges, and body-metadata sizing (#1649-#1658, #1680, #1685).
+- (cli) Add standalone, npm-free distribution: Homebrew and winget packaging, a native `squad.exe`, and npm-free `squad_state` MCP spec generation for standalone bundles (#1593, #1610, #1611).
+- (cli) Ship the `ralph-instructions.md` template and install pipeline for `squad watch --execute` (#1314).
+- (sdk+cli) Add category-based model cost policy with a live catalog/pricing refresh and `squad models refresh` (#1080, #1183, #1445).
+- (cli) Support custom universes and descriptive default naming in casting, and add descriptive run-names to the Squad GitHub Actions workflow (#1635, #1643, #1646).
+- (cli) Assign unique colors to squad member labels via deterministic hashing of slugified names (#1663).
+- (cli) Add `squad update-check --json` for tooling/CI (#1440).
+- (sdk) Hydrate `WorkItem.body` via `getWorkItem` and route the two-pass scan through the platform adapter (#1414).
+- (cli) Default new VS Code chat sessions to Squad on `squad init`.
+- (sdk+cli) Add Layer A/B/C dispatch-enforcement governance: coordinator tool-profile restriction plus Scribe DispatchGuard audit infrastructure, with an identity lock and routing guard in `copilot-instructions.md` (#1537).
+- Docs: add Azure hosting guides (Dockerfile contract, ACA, AKS), a production security-hardening guide (threat model, prompt-injection defense, credential hygiene), a production-operations runbook (observability, state-backend selection, troubleshooting), and a Microsoft Agent Framework integration guide (#1574, #1575, #1578, #1579).
+- (cli) Add `gh aw init` tooling — skills, MCP config, and setup/maintenance workflows — for consuming gh-aw from a project (#1592).
+- (sdk) Expose `memory.*` tools (classify, write, search, promote, delete, audit) through the `squad_state` MCP server so agents can manage tiered memory directly.
+
+### Changed
+- (cli) Harden the Squad coordinator workflow prompt for gh-aw reliability: hard completion gates, atomic task-call contracts, configurable model selection, forward-ported safe-output hardening, and prompt-size compression (135KB → under the 100KB gh-aw limit) (#1669, #1678, #1680, #1683, #1685).
+- (cli) Make the coordinator canary check three-state and add a HEAD canary to catch false positives (#1461, #1517).
+- (cli) Warn before launching 2+ parallel background agents in a shared worktree (#1484).
+- (cli) CI: pin GitHub Actions references to immutable commit SHAs across shipped workflow templates, and fail CI when unreleased changesets accumulate (#1475, #1481).
+- Docs: restructure navigation and do a voice pass across get-started, concepts, and issue-truth content; add the agentic-SDLC demo walkthrough (#1570-#1573).
+- Refresh dependencies across the workspace, including TypeScript, Vitest 4, Ink 7, `@github/copilot-sdk`, `@github/copilot`, and OpenTelemetry, plus routine security/patch bumps.
+
+### Fixed
+- (cli) Pin the CLI's `squad-sdk` dependency to the exact published version in `publish-cli` so installs can no longer resolve a stale SDK (#1638).
+- (cli) `squad watch`'s self-pull capability no longer abandons stashed local changes when `git pull --ff-only` fails (#1640).
+- (sdk) Normalize dotted `ToolRegistry` names at the Copilot external-tool boundary.
+- (sdk) Add a recursive `deleteDir` and rename the `external` stub to `external-stub` (#1487).
+- (cli) Fix `squad externalize`/`internalize` corrupting non-UTF-8 files under `.squad/` (#1492).
+- (sdk+cli) Promote the insider dist-tag when `latest` is newer (#1495).
+- (cli) Follow externalized state in `squad copilot` and `squad rc` (#1464).
+- (cli) Quote `GITHUB_OUTPUT`/`GITHUB_STEP_SUMMARY` redirects (SC2086) and add an `actionlint` CI gate (#1557).
+- (cli) Downgrade the `issues` permission to read in the gh-aw workflow, and fix the gh-aw guide link in the README.
+- Docs: fix pre-existing broken links, correct platform-specific path examples, and add PATH-fix installation troubleshooting guidance (#1459).
+- (cli) `ralph-triage` no longer hardcodes `api.github.com`; it resolves the GitHub API base from `GITHUB_API_URL`/`GITHUB_SERVER_URL` so Squad Heartbeat triage works on GitHub Enterprise runners (#1142).
+- (cli) `squad export` now resolves externalized state: after `squad externalize`, export reads from the external state directory instead of the stale local `.squad/` copy (#1396).
+
+### Security
+- (cli) Exclude nested/alumni agent history paths from the unsafe-git scanner so DispatchGuard audits don't false-positive on archived agent state (#1559).
+
 ## [0.11.0] - 2026-06-29
 
 ### Added
