@@ -26,14 +26,25 @@ gh api --method PUT repos/{owner}/{repo}/actions/permissions/workflow \
   -f default_workflow_permissions=read \
   -F can_approve_pull_request_reviews=true
 
-# 3. Add the Squad workflow to your repo
-gh aw add bradygaster/squad/workflows/squad.md@dev
+# 3. Add the Squad workflows to your repo
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
 
-# 4. Compile the workflow to a lock file
+# 4. Compile the workflows to lock files
 gh aw compile
 
-# 5. Commit and push the changes
-git add .
+# 5. Commit and push the workflow sources and generated files
+git add -- \
+  .gitattributes \
+  .github/aw/actions-lock.json \
+  .github/workflows/squad.md \
+  .github/workflows/squad.lock.yml \
+  .github/workflows/squad-implement-worker.md \
+  .github/workflows/squad-implement-worker.lock.yml \
+  .github/workflows/shared/squad.md \
+  .github/workflows/shared/planning-ontology.md \
+  .github/workflows/shared/planning-policy.md
 git commit -m "ci: add Squad agentic workflow"
 git push
 
@@ -79,11 +90,16 @@ a link for you to create the pull request manually. A manually created pull
 request is authored by your account, and GitHub does not allow authors to
 approve their own pull requests.
 
-### Install the workflow
+### Install the workflows
 
 ```bash
-gh aw add bradygaster/squad/workflows/squad.md@dev
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
 ```
+
+The single command installs the dedicated worker first, then the main workflow
+that dispatches it.
 
 :::note[Branch note]
 `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
@@ -92,15 +108,15 @@ gh aw add bradygaster/squad/workflows/squad.md@dev
 This registers the Squad workflow in your repository's agentic workflow
 configuration.
 
-### Compile to a lock file
+### Compile to lock files
 
 ```bash
 gh aw compile
 ```
 
-Compiling resolves the workflow definition (including the shared bootstrap
-component) into a deterministic `.github/workflows/squad.lock.yml` file. This
-lock file is what GitHub Actions actually executes.
+Compiling resolves both workflow definitions and their shared imports into
+deterministic `.lock.yml` files. These lock files are what GitHub Actions
+actually executes.
 
 ### Commit the workflow files
 
@@ -109,8 +125,12 @@ git add -- \
   .gitattributes \
   .github/aw/actions-lock.json \
   .github/workflows/squad.md \
+  .github/workflows/squad.lock.yml \
+  .github/workflows/squad-implement-worker.md \
+  .github/workflows/squad-implement-worker.lock.yml \
   .github/workflows/shared/squad.md \
-  .github/workflows/squad.lock.yml
+  .github/workflows/shared/planning-ontology.md \
+  .github/workflows/shared/planning-policy.md
 git commit -m "ci: add Squad agentic workflow"
 git push
 ```
@@ -200,6 +220,7 @@ PR review comment.
 | `/squad plan activate` | Create GitHub issues from an accepted plan |
 | `/squad plan activate phase {N}` | Create GitHub issues for only Phase N of the accepted plan |
 | `/squad plan revise <feedback>` | Revise the current plan based on your feedback |
+| `/squad implement` | Implement an issue, or start the next ready wave of an epic |
 
 ### Where you can use slash commands
 
@@ -604,6 +625,76 @@ next — no need to memorize the command sequence.
 
 ---
 
+## Implementing issues
+
+After `/squad plan activate` creates the implementation backlog, run:
+
+```
+/squad implement
+```
+
+### Regular issues
+
+On a regular issue, Squad:
+
+1. Dispatches an isolated implementation worker
+2. Checks that every issue listed in `Depends on:` is closed
+3. Routes the work using the issue's `squad:{member}` label
+4. Implements and validates the acceptance criteria
+5. Opens a focused pull request that closes the issue
+
+The main Squad workflow retains its narrow cast and planning permissions. Only
+the private implementation worker can edit repository files, and it delivers
+changes through gh-aw's guarded `create-pull-request` safe output.
+
+### Epics
+
+On an epic, Squad finds its open child issues through native sub-issue
+relationships and `Parent: #N` metadata. It then:
+
+1. Excludes tasks with open dependencies
+2. Excludes tasks that already have an implementation pull request
+3. Keeps up to three implementation pull requests active
+4. Comments with the dispatched, blocked, existing, and deferred tasks
+
+Each worker creates its own branch and pull request. When one of those pull
+requests merges, the existing worker resolves the parent epic and dispatches
+the main Squad workflow in implement mode. Squad then dispatches enough ready
+children to refill the three active slots. This continues until no open
+children remain, without installing a third workflow.
+
+Both workflows accept gh-aw's propagated `aw_context` and allow the repository's
+`github-actions[bot]` to pass the workflow-dispatch activation gate. Human
+slash commands retain the normal repository-role checks. The merge relay
+targets the repository's default branch so deleting a merged implementation
+branch cannot prevent the continuation dispatch.
+
+For example, an epic with ten independent tasks starts three workers. Each merge
+automatically starts one replacement, keeping three implementation pull requests
+active until the final task is dispatched. Dependencies may temporarily reduce
+the active count when no additional child is ready.
+
+`/squad implement` remains available as a manual recovery command if a run is
+cancelled or an external change requires the epic to be reevaluated.
+
+:::note[Repository setting]
+Pull-request delivery requires **Settings → Actions → General → Workflow
+permissions → Allow GitHub Actions to create and approve pull requests**.
+:::
+
+:::note[Pull request CI]
+Pull requests created with the default `GITHUB_TOKEN` do not trigger other
+workflow runs. Set `GH_AW_CI_TRIGGER_TOKEN` to a suitable fine-grained PAT if
+implementation pull requests must start repository CI automatically.
+:::
+
+:::note[Manual runs]
+From **Actions → Squad → Run workflow**, enter `implement` as the command and
+provide the target issue number.
+:::
+
+---
+
 ## Connect vs. Adopt
 
 Squad supports two ways to bring in a team from another repository.
@@ -761,7 +852,9 @@ are used. State does not persist across runs.
 To update your compiled workflow after pulling upstream changes:
 
 ```bash
-gh aw add bradygaster/squad/workflows/squad.md@dev
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
 ```
 
 This re-compiles the workflow from source. If you have local customizations in your compiled `.github/workflows/squad-*.lock.yml`, they will be overwritten — keep customizations in the source `.md` files instead.
@@ -785,6 +878,8 @@ gh aw compile
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
 | "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
 | Plan accept creates fewer issues than expected | `create-issue` safe-output has a max of 30 | Split into multiple plan/accept cycles for very large decompositions |
+| `/squad implement` cannot create a PR | Actions is not allowed to create pull requests | Enable **Allow GitHub Actions to create and approve pull requests** in repository Actions settings |
+| Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |
 
 ---
 
@@ -792,4 +887,5 @@ gh aw compile
 
 - [Squad README](https://github.com/bradygaster/squad#readme) — project overview and local CLI usage
 - [Workflow definition](https://github.com/bradygaster/squad/blob/dev/workflows/squad.md) — full slash command specification
+- [Implementation worker](https://github.com/bradygaster/squad/blob/dev/workflows/squad-implement-worker.md) — isolated issue implementation workflow
 - [Bootstrap component](https://github.com/bradygaster/squad/blob/dev/workflows/shared/squad.md) — activation and artifact lifecycle
