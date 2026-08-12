@@ -116,6 +116,72 @@ The activation job ran `squad init --preset default` producing generic `.squad/`
 
 ---
 
+## Team Guard
+
+**Applies to:** Research, Triage, Plan, Plan Program, Plan Implementation, Plan Validate, Plan Revise, Triage Revise, Plan Accept, Plan Accept Scope, Plan Accept Implementation, Plan Activate.
+**Exempt:** Cast, Connect, Adopt, Cast Member, Retire, Status, Implement (these run their own pre-checks).
+
+### Step TG-1: Check Team Presence
+
+```bash
+test -s .squad/team.md && echo TEAM_PRESENT || echo TEAM_ABSENT
+```
+
+- `TEAM_PRESENT` → proceed to the original mode's section.
+- `TEAM_ABSENT` → execute **Auto-Cast Pivot** below; do not proceed with the original mode this run.
+
+### Auto-Cast Pivot
+
+**Universal response invariant:** current state · result · one primary next action · recovery on ⚠️/🔴.
+
+#### TG-2: Record Pending Intent (write-once)
+
+Scan ALL issue comments for `<!-- squad-pending-intent-v1 -->` as the first non-empty line.
+- Found → skip to TG-3 (never write a second pending-intent comment).
+- Not found → `add-comment` (immutable; never edited):
+  ```
+  <!-- squad-pending-intent-v1 issue={issue_number} command="{original_command}" -->
+  ```
+
+#### TG-3: Dedup Open Cast PR
+
+```bash
+gh pr list --head "squad/cast-" --state open --json number,url,title
+```
+
+**If an open Cast PR is found (rerun before merge):**
+- `add-comment`:
+  ```
+  🤖 Squad has already opened a Cast PR for this issue.
+
+  **Current state:** Cast PR open — your team is ready for review.
+  **Result:** No duplicate PR opened.
+  **Next action:** Merge the Cast PR, then return to this issue and rerun: `{original_command}`
+
+  **Cast PR:** {pr_url}
+  ```
+- Stop. Do not run Cast mode.
+
+**If no open Cast PR found (first run or Cast PR was merged/closed):**
+- Scan ALL issue comments for `<!-- squad-cast-opened-v1 -->` as the first non-empty line.
+- If `<!-- squad-cast-opened-v1 -->` found but no open PR → Cast PR may have been closed without merging. `add-comment` with recovery guidance: "The previous Cast PR appears to be closed. Rerun `{original_command}` to open a new one."  Stop.
+- If `<!-- squad-cast-opened-v1 -->` not found → **FIRST RUN**: execute Cast Mode Steps 0–6 using this issue as the casting brief. In the Cast PR body, include: `<!-- squad-cast-pr-v1 origin-issue={issue_number} origin-command="{original_command}" -->`. Then `add-comment` (immutable; never edited):
+  ```
+  <!-- squad-cast-opened-v1 -->
+  🤖 Squad is assembling your team.
+
+  **Current state:** No team detected — Squad auto-pivoted to Cast.
+  **Result:** A Cast PR has been opened. Check the **Pull Requests** tab to find and review it.
+  **Next action:** Merge the Cast PR, then return to this issue and rerun: `{original_command}`
+
+  ⚠️ The PR link is not available in this comment — find it in the **Pull Requests** tab.
+  ```
+- Stop. Do not run the original command this run.
+
+**Recovery (Cast step failure):** Report the exact error in plain language. Tell the user to rerun `{original_command}` on this issue to retry. Never instruct the user to run `/squad cast` separately.
+
+---
+
 #### Cast Mode
 
 Analyze repo, compose team, assign character names from a fictional universe, generate `.squad/` scaffolding, open PR.
@@ -755,7 +821,7 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 - Milestone: same as parent epic
 - Size: Project field if available, else body line
 
-**2d. Self-Validation:** Compare created/recognized task count vs expected. If created count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last verified issue number — never noop. Re-runs are idempotent via title match.
+**2d. Self-Validation:** Compare created/recognized task count vs expected (use the plan's declared total — not the safe-output cap). If created count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last verified issue number — never noop. Post: `N of M issues created so far — rerun the identical activation command to continue.` Re-runs are idempotent via title match. Never surface the `create-issue` or `add-comment` safe-output caps as the reason for a partial run.
 
 Labels must have descriptions and intentional colors.
 

@@ -296,6 +296,9 @@ The issue body IS the intent. No special format required, but structured intents
 
 | Marker | Artifact | Cardinality | Update Behavior |
 |--------|----------|-------------|-----------------|
+| `<!-- squad-pending-intent-v1 -->` | Auto-Cast: original issue + command | 1 per issue | Immutable once written; never written a second time |
+| `<!-- squad-cast-opened-v1 -->` | Auto-Cast: Cast was initiated | 1 per issue | Immutable once written |
+| `<!-- squad-cast-pr-v1 -->` | Cast PR body: origin issue + command reference | 1 per Cast PR | Immutable (in PR body, not issue comment) |
 | `<!-- squad-research-v1 -->` | Research findings | 1 per run (edit on re-run) | Replace body |
 | `<!-- squad-triage-v1 -->` | Triage disposition | 1 per run | Replace body |
 | `<!-- squad-program-v1 -->` | Program plan | 1 per run | Replace body |

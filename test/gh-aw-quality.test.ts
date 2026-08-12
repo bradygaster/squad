@@ -632,3 +632,107 @@ describe('gh-aw: Plan Activate atomic task-call contract', () => {
     expect(content).toMatch(/idempotent via title match/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test: Auto-Cast Pivot and resumable work (#1689)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
+  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const ontologyPath = join(SHARED_DIR, 'planning-ontology.md');
+  const ontologyContent = readFileSync(ontologyPath, 'utf8');
+
+  it('Team Guard section exists and lists covered modes', () => {
+    expect(content).toMatch(/## Team Guard/);
+    expect(content).toMatch(/Applies to:.*Research/i);
+    expect(content).toMatch(/Applies to:.*Triage/i);
+    expect(content).toMatch(/Applies to:.*Plan/i);
+  });
+
+  it('Team Guard is exempt for Cast, Connect, Adopt, Status, Implement', () => {
+    expect(content).toMatch(/Exempt:.*Cast/i);
+    expect(content).toMatch(/Exempt:.*Connect/i);
+    expect(content).toMatch(/Exempt:.*Status/i);
+    expect(content).toMatch(/Exempt:.*Implement/i);
+  });
+
+  it('Team Guard uses a bash file check that emits TEAM_PRESENT or TEAM_ABSENT', () => {
+    expect(content).toMatch(/TEAM_PRESENT/);
+    expect(content).toMatch(/TEAM_ABSENT/);
+    expect(content).toMatch(/test -s .squad\/team\.md/);
+  });
+
+  it('Auto-Cast Pivot stops and does not run original mode when TEAM_ABSENT', () => {
+    expect(content).toMatch(/do not proceed with the original mode this run|do not run the original command this run/i);
+    expect(content).toMatch(/Stop\. Do not run (Cast|the original)/i);
+  });
+
+  it('squad-pending-intent-v1 marker is scanned before writing (write-once)', () => {
+    expect(content).toMatch(/squad-pending-intent-v1/);
+    // Must check for existing marker before posting
+    expect(content).toMatch(/Scan.*squad-pending-intent-v1|never write a second pending-intent/i);
+  });
+
+  it('squad-cast-opened-v1 marker is immutable (written once)', () => {
+    expect(content).toMatch(/squad-cast-opened-v1/);
+    expect(content).toMatch(/immutable.*never edited|never edited|immutable.*cast-opened/i);
+  });
+
+  it('first run completion copy does not fabricate or promise a PR number', () => {
+    // Must tell user to check PRs tab, not promise a specific PR number
+    expect(content).toMatch(/Pull Requests.*tab|check.*Pull Requests/i);
+    const castOpenedBlock = content.match(/squad-cast-opened-v1[\s\S]{0,800}/)?.[0] ?? '';
+    // Must NOT have a fabricated #{number} link in the cast-opened user copy
+    expect(castOpenedBlock).not.toMatch(/PR:.*#\d{1,6}/);
+  });
+
+  it('rerun path reads actual GitHub state via gh pr list before posting link', () => {
+    expect(content).toMatch(/gh pr list.*--head.*squad\/cast|gh pr list.*squad\/cast/i);
+    expect(content).toMatch(/open Cast PR.*found|cast PR.*found|Cast PR is found/i);
+  });
+
+  it('Cast PR dedup stops without opening a duplicate PR', () => {
+    expect(content).toMatch(/No duplicate PR opened|do not run Cast mode/i);
+  });
+
+  it('Cast PR body includes squad-cast-pr-v1 origin reference', () => {
+    expect(content).toMatch(/squad-cast-pr-v1.*origin-issue|origin-issue.*squad-cast-pr-v1/i);
+  });
+
+  it('normal-flow recovery never instructs user to run /squad cast separately', () => {
+    // The Auto-Cast section must explicitly forbid instructing the user to run /squad cast
+    expect(content).toMatch(/Never instruct.*\/squad cast|never.*\/squad cast separately/i);
+  });
+
+  it('partial activation N/M copy uses plan total not safe-output cap', () => {
+    expect(content).toMatch(/plan.*declared total|use the plan.*total.*not the safe-output cap/i);
+  });
+
+  it('partial activation post message includes rerun instruction', () => {
+    expect(content).toMatch(/N of M issues created.*rerun the identical|rerun the identical.*command to continue/i);
+  });
+
+  it('partial activation never surfaces safe-output cap as reason', () => {
+    expect(content).toMatch(/Never surface.*safe-output cap|never surface.*create-issue.*cap/i);
+  });
+
+  it('squad-pending-intent-v1 is registered in planning-ontology.md', () => {
+    expect(ontologyContent).toContain('<!-- squad-pending-intent-v1 -->');
+  });
+
+  it('squad-cast-opened-v1 is registered in planning-ontology.md', () => {
+    expect(ontologyContent).toContain('<!-- squad-cast-opened-v1 -->');
+  });
+
+  it('squad-cast-pr-v1 is registered in planning-ontology.md', () => {
+    expect(ontologyContent).toContain('<!-- squad-cast-pr-v1 -->');
+  });
+
+  it('safe-output caps (75 create-issue / 20 add-comment) are not conflated with plan limits', () => {
+    // The workflow frontmatter must declare max=75 for create-issue and max=20 for add-comment
+    const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+    const safeOutputs = extractSafeOutputs(frontmatter);
+    expect((safeOutputs['create-issue'] as { max: number })?.max).toBe(75);
+    expect((safeOutputs['add-comment'] as { max: number })?.max).toBe(20);
+  });
+});
