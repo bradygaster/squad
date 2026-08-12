@@ -766,7 +766,7 @@ export interface SquadInfiniteSessionConfig {
  * re-declaring the union inline. The runtime list lives in config/models.ts as
  * `VALID_REASONING_EFFORTS` (kept in sync via `satisfies`).
  */
-export type SquadReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type SquadReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * Valid context tiers (context-window sizes) for models that support them.
