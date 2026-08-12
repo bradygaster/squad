@@ -50,7 +50,7 @@ safe-outputs:
     expires: 14d
   create-issue:
     labels: [squad]
-    max: 50
+    max: 75
   add-comment:
     max: 20
 ---
@@ -710,6 +710,22 @@ After phase acceptance, check if ready for automatic activation:
 ##### Hallucination Guard
 
 After EVERY `create-issue` call: verify returned issue number, stop on failure, NEVER predict issue numbers.
+
+##### Output Budget Awareness
+
+Count expected issues before starting. If total > 50: recommend phased activation (`/squad plan activate phase {N}`) and proceed with the current phase only. If total > 30: use compact issue bodies (scope + acceptance criteria only; omit elaboration).
+
+##### Label Pre-flight
+
+Before the first `create-issue`, verify labels `squad` and any `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
+
+##### Transient Failure Handling
+
+On `5xx` response from `create-issue`: wait briefly and retry once. On second failure or `4xx`: record the issue title as skipped in the activation summary, continue with remaining issues. Never abort the full run for a single transient failure.
+
+##### Sub-issue Fallback
+
+When setting a `parent` sub-issue relationship returns `404` or `422` (feature disabled or repo plan): degrade gracefully — record the intended parent as a body reference (`Parent: #{issue_number}`), then continue. Never fail activation over sub-issue API unavailability.
 
 ##### Step 2: Create Issues — Full Hierarchy
 
