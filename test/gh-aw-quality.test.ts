@@ -594,3 +594,41 @@ describe('gh-aw: Plan Activate hardening behaviors', () => {
     expect(content).toMatch(/degrade gracefully|graceful/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test: Plan Activate atomic task-call contract (#1678 / run 31555893180)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: Plan Activate atomic task-call contract', () => {
+  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  it('2c contains explicit ATOMIC CONTRACT heading', () => {
+    expect(content).toMatch(/ATOMIC CONTRACT/i);
+  });
+
+  it('2c requires immediate call after each task body (one compose → one call)', () => {
+    // Must encode the sequential compose/call/verify pattern
+    expect(content).toMatch(/compose.*call.*verify|compose only that task.*call.*immediately/i);
+  });
+
+  it('2c explicitly forbids batching task bodies before calls', () => {
+    expect(content).toMatch(/DO NOT.*compose.*batch|DO NOT.*buffer|not.*compose.*multiple.*before/i);
+  });
+
+  it('2c task body is compact: one sentence scope, 1-2 acceptance criteria', () => {
+    expect(content).toMatch(/one sentence.*scope|1-2 acceptance criteria/i);
+  });
+
+  it('2d incomplete fallback calls report_incomplete with created/expected counts', () => {
+    expect(content).toContain('report_incomplete');
+    expect(content).toMatch(/created.*expected|expected.*created/i);
+  });
+
+  it('2d incomplete fallback never noops on count mismatch', () => {
+    expect(content).toMatch(/never noop/i);
+  });
+
+  it('2d states re-run is idempotent via title match', () => {
+    expect(content).toMatch(/idempotent via title match/i);
+  });
+});

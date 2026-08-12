@@ -743,14 +743,19 @@ Root → Epics → Tasks. Phase-specific: filter to matching phase heading.
 **⚠️ DO NOT STOP after epics. Tasks MUST follow immediately.**
 
 **2c. Create Task Issues:** `create-issue` per task in dependency order.
+
+> **⚠️ ATOMIC CONTRACT — strictly one task at a time:**
+> For each task: compose ONLY that task's body → call `create-issue` immediately → verify the returned issue number → then move to the next task.
+> **DO NOT** compose or buffer multiple task bodies before making calls. One compose → one call → one verify, repeated per task.
+
 - Title: task title
 - Labels: `squad` (0075ca), `squad:{agent}` (e4e669). No `size:*` labels unless policy says so.
-- Body: scope (2-3 sentences), acceptance criteria, context (parent epic, size, deps)
+- Body: one sentence describing scope; 1-2 acceptance criteria; one compact context line (parent epic, size, deps)
 - Parent: sub-issue of EPIC (not root)
 - Milestone: same as parent epic
 - Size: Project field if available, else body line
 
-**2d. Self-Validation:** Compare created counts vs expected. If mismatch: report partial activation with counts, note idempotent re-run.
+**2d. Self-Validation:** Compare created/recognized task count vs expected. If created count is below expected: call `report_incomplete` immediately with `created={N}`, `expected={M}`, and the last verified issue number — never noop. Re-runs are idempotent via title match.
 
 Labels must have descriptions and intentional colors.
 
