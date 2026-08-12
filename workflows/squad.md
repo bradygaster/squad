@@ -27,6 +27,8 @@ network:
     - defaults
 imports:
   - shared/squad.md
+  - shared/planning-ontology.md
+  - shared/planning-policy.md
 tools:
   bash: true
   github:
@@ -412,7 +414,7 @@ Classify research findings as work/decision/excluded. Bridge between research an
 
 **TASK:** Steps 1–4. Deliverable = Step 3.
 
-**First:** `cat .github/workflows/shared/planning-ontology.md` to load planning schemas.
+The planning ontology is imported — follow its schemas directly.
 
 ##### Step 1: Validate
 
@@ -456,7 +458,7 @@ Find/create `<!-- squad-lifecycle-state -->` comment. Set Triage = `✅ Done`, s
 
 All planning modes resolve policy before executing.
 
-**First:** `cat .github/workflows/shared/planning-policy.md` to load the policy schema.
+The planning policy schema is imported — follow it directly.
 
 Steps:
 1. Check issue body for `<!-- squad-policy: {name} -->` or `<!-- squad-setting: key=value -->`.
@@ -474,7 +476,7 @@ High-level program plan (the WHAT). Transforms triage work items into initiative
 
 **Acknowledge:** `🤖 Squad is building the program plan…`
 
-**First:** `cat .github/workflows/shared/planning-ontology.md` to load planning schemas.
+The planning ontology is imported — follow its schemas directly.
 
 ##### Step 1: Validate
 
@@ -535,7 +537,7 @@ Decompose program plan into PR-sized tasks with deps, sizing, agent assignments.
 
 **Acknowledge:** `🤖 Squad is building the implementation plan…`
 
-**First:** `cat .github/workflows/shared/planning-ontology.md` to load planning schemas.
+The planning ontology is imported — follow its schemas directly.
 
 **TASK:** Steps 1–5. Deliverable = Step 4.
 
@@ -571,7 +573,7 @@ Readiness gate checking plan artifacts for structural issues.
 
 **Acknowledge:** `🤖 Squad is validating the plan…`
 
-**First:** `cat .github/workflows/shared/planning-ontology.md` to load planning schemas.
+The planning ontology is imported — follow its schemas directly.
 
 **TASK:** Steps 1–5. Deliverable = Step 3.
 
