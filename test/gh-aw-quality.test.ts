@@ -480,3 +480,52 @@ describe('gh-aw: workflow frontmatter schema', () => {
     expect(frontmatter).toMatch(/allowed:/m);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Test: Prompt Budget & Planning Import Regression (#1684)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: prompt budget & planning import regression', () => {
+  const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+  const imports = extractImports(frontmatter);
+  const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  // gh-aw enforces a hard 100 KB prompt ceiling (102 400 bytes)
+  const GH_AW_PROMPT_CEILING_KB = 100;
+  const GH_AW_PROMPT_CEILING_BYTES = GH_AW_PROMPT_CEILING_KB * 1024;
+
+  it('planning-ontology.md is in the imports list', () => {
+    expect(imports, 'shared/planning-ontology.md must be imported').toContain('shared/planning-ontology.md');
+  });
+
+  it('planning-policy.md is in the imports list', () => {
+    expect(imports, 'shared/planning-policy.md must be imported').toContain('shared/planning-policy.md');
+  });
+
+  it('no runtime cat of planning files remains in squad.md', () => {
+    expect(
+      squadContent,
+      'squad.md must not contain runtime `cat .github/workflows/shared/planning-*.md` instructions'
+    ).not.toMatch(/cat .github\/workflows\/shared\/planning-[\w-]+\.md/);
+  });
+
+  it(`combined prompt (workflow + all imports) is under ${GH_AW_PROMPT_CEILING_KB} KB`, () => {
+    let totalBytes = Buffer.byteLength(squadContent, 'utf8');
+
+    for (const importPath of imports) {
+      const fullPath = join(WORKFLOWS_DIR, importPath);
+      if (existsSync(fullPath)) {
+        const content = readFileSync(fullPath, 'utf8');
+        totalBytes += Buffer.byteLength(content, 'utf8');
+      }
+    }
+
+    const totalKB = (totalBytes / 1024).toFixed(1);
+    const headroomKB = ((GH_AW_PROMPT_CEILING_BYTES - totalBytes) / 1024).toFixed(1);
+
+    expect(
+      totalBytes,
+      `Combined prompt is ${totalKB} KB — exceeds the gh-aw ${GH_AW_PROMPT_CEILING_KB} KB ceiling. Headroom: ${headroomKB} KB.`
+    ).toBeLessThan(GH_AW_PROMPT_CEILING_BYTES);
+  });
+});
