@@ -567,6 +567,22 @@ describe('gh-aw: Plan Activate hardening behaviors', () => {
     expect(content).toMatch(/squad.*label.*exist|label.*squad.*exist/i);
   });
 
+  it('label pre-flight does not claim impossible label creation', () => {
+    // Workflow has issues: read and no create-label safe-output; must not claim it can create labels
+    const preflight = content.match(/##### Label Pre-flight\n([\s\S]*?)(?=\n#####|\n####)/)?.[1] ?? '';
+    expect(preflight).not.toMatch(/create them|safe-output permissions handle the write|no additional token scope/i);
+  });
+
+  it('label pre-flight reports missing labels as prerequisite gap', () => {
+    expect(content).toMatch(/prerequisite gap|prerequisite/i);
+    expect(content).toMatch(/issues: write/i);
+    expect(content).toMatch(/create-label.*safe-output|safe-output.*create-label/i);
+  });
+
+  it('label pre-flight continues activation and omits unavailable labels with report', () => {
+    expect(content).toMatch(/unavailable labels are omitted and reported|omitted and reported/i);
+  });
+
   it('includes transient failure handling with single retry', () => {
     expect(content).toContain('Transient Failure Handling');
     expect(content).toMatch(/5xx.*retry|retry.*5xx/i);

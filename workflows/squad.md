@@ -717,7 +717,7 @@ Count expected issues before starting. If total > 50: recommend phased activatio
 
 ##### Label Pre-flight
 
-Before the first `create-issue`, check that labels `squad` and any `squad:{agent}` exist. If missing, create them with color `0075ca` / `e4e669` and description. Safe-output permissions handle the write — no additional token scope needed. Skip silently if label creation fails; continue activation.
+Before the first `create-issue`, verify labels `squad` and any `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
 
 ##### Transient Failure Handling
 
