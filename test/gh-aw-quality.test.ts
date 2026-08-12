@@ -9,8 +9,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
 
@@ -667,6 +667,19 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     expect(content).not.toMatch(/test -s \.squad\/team\.md/);
   });
 
+  it('Team Guard TG-1 reads committed HEAD state via git show, not local filesystem', () => {
+    // Must use git show HEAD:.squad/team.md to read the committed blob, not a local file path
+    expect(content).toMatch(/git show HEAD:\.squad\/team\.md/);
+    // Must NOT read the local .squad/team.md file directly as an awk argument
+    expect(content).not.toMatch(/awk '[^']*' \.squad\/team\.md/);
+    expect(content).not.toMatch(/awk "[^"]*" \.squad\/team\.md/);
+  });
+
+  it('Team Guard description explains committed-HEAD vs local-activation distinction', () => {
+    expect(content).toMatch(/committed.*HEAD|HEAD.*committed/i);
+    expect(content).toMatch(/activation|local.*scaffold|scaffold.*local/i);
+  });
+
   it('Auto-Cast Pivot stops and does not run original mode when TEAM_ABSENT', () => {
     expect(content).toMatch(/do not proceed with the original mode this run|do not run the original command this run/i);
     expect(content).toMatch(/Stop\. Do not run (Cast|the original)/i);
@@ -750,43 +763,157 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test: Team Guard roster-row detection — conceptual fixture coverage (#1689 revision)
+// Test: Team Guard roster-row detection — git-committed state coverage (#1689 revision 3)
+//
+// These tests replicate the exact TG-1 shell command from workflows/squad.md against
+// a real temporary git repository. This validates the committed-HEAD contract: only a
+// team.md that is committed to HEAD can produce TEAM_PRESENT. Local working-tree files
+// (e.g., from activation pre-steps like `squad init --preset default`) are invisible to
+// the guard, preventing false TEAM_PRESENT in fresh repos.
 // ---------------------------------------------------------------------------
 
-describe('gh-aw: Team Guard roster-row detection logic (conceptual fixture coverage)', () => {
-  const TEAM_GUARD_FIXTURES = join(process.cwd(), 'test', 'fixtures', 'team-guard');
+describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo coverage (#1689 revision 3)', () => {
+  // Content shared across test cases
+  const SCAFFOLD_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n`;
+  const ONE_MEMBER_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n| Eecom | Core Dev | .squad/agents/eecom/charter.md | active |\n`;
+  const ONE_MEMBER_CRLF_CONTENT = ONE_MEMBER_CONTENT.replace(/\n/g, '\r\n');
+  const SCAFFOLD_CRLF_CONTENT = SCAFFOLD_CONTENT.replace(/\n/g, '\r\n');
 
-  // Duplicate of the exact TG-1 shell snippet from workflows/squad.md (kept in sync).
-  // sub(/\r$/,"") normalizes CRLF so Windows-formatted team.md files are classified correctly.
-  function runRosterCheck(filePath: string): string {
+  // Runs the exact TG-1 command from squad.md in a given working directory.
+  // The command reads .squad/team.md from the committed HEAD via git show.
+  function runCommittedRosterCheck(cwd: string): string {
     return execSync(
-      `awk '{sub(/\\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\\|/&&!/^\\|[-: |]*\\|$/&&!/\\| *Name *\\|/' '${filePath}' 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT`,
-      { shell: '/bin/sh', encoding: 'utf8' }
+      `git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\\|/&&!/^\\|[-: |]*\\|$/&&!/\\| *Name *\\|/' | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT`,
+      { cwd, shell: '/bin/sh', encoding: 'utf8' }
     ).trim();
   }
 
-  it('missing file → TEAM_ABSENT', () => {
-    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'nonexistent-fixture-file.md'))).toBe('TEAM_ABSENT');
+  // Creates a temp git repo, runs the provided setup callback, then returns the dir.
+  // Caller must call cleanup() when done.
+  function makeGitRepo(setup: (dir: string) => void): { dir: string; cleanup: () => void } {
+    const dir = execSync('mktemp -d', { encoding: 'utf8' }).trim();
+    execSync('git init', { cwd: dir, shell: '/bin/sh' });
+    execSync('git config user.email "test@squad.test"', { cwd: dir, shell: '/bin/sh' });
+    execSync('git config user.name "Squad Test"', { cwd: dir, shell: '/bin/sh' });
+    setup(dir);
+    return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  function commitFile(dir: string, relPath: string, content: string): void {
+    const fullPath = join(dir, relPath);
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, content);
+    execSync(`git add "${relPath}"`, { cwd: dir, shell: '/bin/sh' });
+    execSync('git commit -m "test"', { cwd: dir, shell: '/bin/sh' });
+  }
+
+  function addWorkingTree(dir: string, relPath: string, content: string): void {
+    const fullPath = join(dir, relPath);
+    mkdirSync(dirname(fullPath), { recursive: true });
+    writeFileSync(fullPath, content);
+  }
+
+  // ── Case 1: no committed team.md but working-tree scaffold present ────────
+  it('no committed .squad/team.md but working-tree scaffold → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      // Create an initial commit with an unrelated file so HEAD is valid
+      commitFile(d, 'README.md', '# Test\n');
+      // Add scaffold to working tree only — never committed
+      addWorkingTree(d, '.squad/team.md', SCAFFOLD_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
   });
 
-  it('empty file → TEAM_ABSENT', () => {
-    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'empty.md'))).toBe('TEAM_ABSENT');
+  // ── Case 2: committed empty team.md ──────────────────────────────────────
+  it('committed empty .squad/team.md → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', '');
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
   });
 
-  it('scaffold/header-only (## Members with header + separator, no data rows) → TEAM_ABSENT', () => {
-    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'scaffold.md'))).toBe('TEAM_ABSENT');
+  // ── Case 3: committed header-only scaffold ────────────────────────────────
+  it('committed header-only .squad/team.md (## Members + header + separator, no data rows) → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', SCAFFOLD_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
   });
 
-  it('one real member data row → TEAM_PRESENT', () => {
-    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'one-member.md'))).toBe('TEAM_PRESENT');
+  // ── Case 4: committed real roster ────────────────────────────────────────
+  it('committed .squad/team.md with one real member row → TEAM_PRESENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', ONE_MEMBER_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_PRESENT');
+    } finally {
+      cleanup();
+    }
   });
 
-  it('CRLF scaffold/header-only (no data rows, Windows line endings) → TEAM_ABSENT', () => {
-    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'scaffold-crlf.md'))).toBe('TEAM_ABSENT');
+  // ── Case 5: working-tree real roster over absent committed path ──────────
+  it('working-tree real roster over absent committed .squad/team.md → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, 'README.md', '# Test\n');
+      // Full roster in working tree, but never committed
+      addWorkingTree(d, '.squad/team.md', ONE_MEMBER_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
   });
 
-  it('CRLF one real member data row (Windows line endings) → TEAM_PRESENT', () => {
-    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'one-member-crlf.md'))).toBe('TEAM_PRESENT');
+  // ── Case 6: committed real roster with dirty working-tree changes ─────────
+  it('committed real roster with dirty working-tree changes → TEAM_PRESENT (reads HEAD)', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', ONE_MEMBER_CONTENT);
+      // Overwrite with scaffold in working tree — guard must still read HEAD
+      addWorkingTree(d, '.squad/team.md', SCAFFOLD_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_PRESENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 7: committed CRLF scaffold → TEAM_ABSENT ────────────────────────
+  it('committed CRLF header-only .squad/team.md (Windows line endings) → TEAM_ABSENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', SCAFFOLD_CRLF_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_ABSENT');
+    } finally {
+      cleanup();
+    }
+  });
+
+  // ── Case 8: committed CRLF real roster → TEAM_PRESENT ────────────────────
+  it('committed CRLF .squad/team.md with one real member row (Windows line endings) → TEAM_PRESENT', () => {
+    const { dir, cleanup } = makeGitRepo((d) => {
+      commitFile(d, '.squad/team.md', ONE_MEMBER_CRLF_CONTENT);
+    });
+    try {
+      expect(runCommittedRosterCheck(dir)).toBe('TEAM_PRESENT');
+    } finally {
+      cleanup();
+    }
   });
 });
 

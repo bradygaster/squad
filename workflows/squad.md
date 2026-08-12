@@ -124,10 +124,14 @@ The activation job ran `squad init --preset default` producing generic `.squad/`
 ### Step TG-1: Check Team Presence
 
 ```bash
-awk '{sub(/\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\|/&&!/^\|[-: |]*\|$/&&!/\| *Name *\|/' .squad/team.md 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
+git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\|/&&!/^\|[-: |]*\|$/&&!/\| *Name *\|/' | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
 ```
 
-`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section — neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`). A missing file, empty file, header-only scaffold, or zero-member table all yield `TEAM_ABSENT`. The leading `sub(/\r$/,"")` normalizes CRLF line endings so Windows-formatted team.md files are classified correctly.
+`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section of the **git-committed HEAD revision** of `.squad/team.md`. Neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`) qualifies. A path absent from HEAD, an empty committed file, a header-only scaffold, or zero member rows all yield `TEAM_ABSENT`.
+
+**Why committed HEAD, not local files:** The activation pre-step (e.g., `squad init --preset default`) may restore a local `.squad/` scaffold before the agent job runs. Reading the local filesystem would return TEAM_PRESENT for that scaffold even though no team has been cast and committed. `git show HEAD:.squad/team.md` reads only what is in the repository's committed state — activation-restored local files are intentionally invisible to this guard. Local activation state is preserved for Cast generation (TG-3 onward); only the guard decision reads committed HEAD.
+
+The leading `sub(/\r$/,"")` normalizes CRLF line endings so Windows-formatted team.md files are classified correctly. If the repo has no commits yet, `git show HEAD:...` exits non-zero and the pipe produces no output → TEAM_ABSENT.
 
 - `TEAM_PRESENT` → proceed to the original mode's section.
 - `TEAM_ABSENT` → execute **Auto-Cast Pivot** below; do not proceed with the original mode this run.
