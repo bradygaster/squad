@@ -1,6 +1,6 @@
 # Planning Ontology & Artifact Schemas
 
-> **Version:** 1.0 · **Owner:** Procedures · **Status:** Active
+> **Version:** 2.0 · **Owner:** Procedures · **Status:** Active
 >
 > **Decision Ratifications:**
 > - `copilot-plan-workflow-ux.md` → **Ratified Option A + Option 3**: Explicit commands (`/squad plan accept`) under the `/squad` namespace; planning logic lives in `shared/` components imported by `squad.md`. This file IS the shared component.
@@ -10,18 +10,18 @@
 
 ## 1. Ontology Table
 
-| Concept | Purpose | GitHub Representation | Marker | Version |
-|---------|---------|----------------------|--------|---------|
+| Concept | Purpose | GitHub Representation | `squad_artifact` | Schema |
+|---------|---------|----------------------|------------------|--------|
 | **Intent** | Define what we're building and why | Root issue body | (issue body itself) | — |
-| **Research** | Gather evidence and context | Issue comment | `<!-- squad-research-v1 -->` | v1 |
-| **Triage** | Classify findings → work / decision / excluded | Issue comment | `<!-- squad-triage-v1 -->` | v1 |
-| **Program Plan** | Strategic decomposition into initiatives/epics | Issue comment | `<!-- squad-program-v1 -->` | v1 |
-| **Implementation Plan** | PR-sized tasks with deps and sizing | Issue comment | `<!-- squad-implementation-v1 -->` | v1 |
-| **Validation** | Verify postconditions before activation | Issue comment | `<!-- squad-validation-v1 -->` | v1 |
-| **Scope Acceptance** | Confirm program plan is approved | Issue comment | `<!-- squad-scope-accepted-v1 -->` | v1 |
-| **Impl Acceptance** | Confirm implementation plan is approved | Issue comment | `<!-- squad-impl-accepted-v1 -->` | v1 |
-| **Activation** | Create sub-issues and begin execution | Issue comment | `<!-- squad-activated-v1 -->` | v1 |
-| **Lifecycle State** | Running summary updated on each transition | Issue comment | `<!-- squad-lifecycle-state -->` | v1 |
+| **Research** | Gather evidence and context | Issue comment | `research` | 1 |
+| **Triage** | Classify findings → work / decision / excluded | Issue comment | `triage` | 1 |
+| **Program Plan** | Strategic decomposition into initiatives/epics | Issue comment | `program` | 1 |
+| **Implementation Plan** | PR-sized tasks with deps and sizing | Issue comment | `implementation` | 1 |
+| **Validation** | Verify postconditions before activation | Issue comment | `validation` | 1 |
+| **Scope Acceptance** | Confirm program plan is approved | Issue comment | `scope-accepted` | 1 |
+| **Impl Acceptance** | Confirm implementation plan is approved | Issue comment | `impl-accepted` | 1 |
+| **Activation** | Create sub-issues and begin execution | Issue comment | `activated` | 1 |
+| **Lifecycle State** | Running summary updated on each transition | Issue comment | `lifecycle-state` | 1 |
 
 ### Preconditions & Postconditions
 
@@ -44,53 +44,66 @@
 idle → researching
   triggered_by: /squad research
   requires: intent (issue body)
-  produces: <!-- squad-research-v1 -->
+  produces: squad_artifact=research
 
 researching → triaging
   triggered_by: /squad triage
-  requires: <!-- squad-research-v1 -->
-  produces: <!-- squad-triage-v1 -->
+  requires: squad_artifact=research
+  produces: squad_artifact=triage
 
 triaging → program_planning
   triggered_by: /squad plan program
-  requires: <!-- squad-triage-v1 -->
-  produces: <!-- squad-program-v1 -->
+  requires: squad_artifact=triage
+  produces: squad_artifact=program
 
 program_planning → implementation_planning
   triggered_by: /squad plan implementation
-  requires: <!-- squad-program-v1 -->
-  produces: <!-- squad-implementation-v1 -->
+  requires: squad_artifact=program
+  produces: squad_artifact=implementation
 
 implementation_planning → validating
   triggered_by: /squad plan validate
-  requires: <!-- squad-implementation-v1 -->
-  produces: <!-- squad-validation-v1 -->
+  requires: squad_artifact=implementation
+  produces: squad_artifact=validation
 
 validating → scope_accepted
   triggered_by: /squad plan accept scope
-  requires: <!-- squad-program-v1 -->
-  produces: <!-- squad-scope-accepted-v1 -->
+  requires: squad_artifact=program
+  produces: squad_artifact=scope-accepted
 
 scope_accepted → impl_accepted
   triggered_by: /squad plan accept implementation
-  requires: <!-- squad-validation-v1 --> (pass)
-  produces: <!-- squad-impl-accepted-v1 -->
+  requires: squad_artifact=validation with human-readable RESULT: PASS
+  produces: squad_artifact=impl-accepted
 
 impl_accepted → activated
   triggered_by: /squad plan activate
-  requires: <!-- squad-impl-accepted-v1 -->
-  produces: <!-- squad-activated-v1 -->
+  requires: squad_artifact=impl-accepted
+  produces: squad_artifact=activated
 ```
 
-**Idempotency rule:** Re-running any command updates the existing marker comment (edit, not duplicate). The lifecycle state comment is always updated on every transition. Idempotency applies to all planning-phase markers (research, triage, program plan, implementation plan, validation). Acceptance and activation markers are immutable once written — re-running these commands is a no-op if the marker already exists.
+**Idempotency rule:** Re-running any command updates the existing artifact comment (edit, not duplicate). The lifecycle state comment is always updated on every transition. Idempotency applies to research, triage, program plan, implementation plan, and validation artifacts. Acceptance and activation artifacts are immutable once written — re-running these commands is a no-op if matching structured data already exists.
 
-**Concurrency:** Concurrent acceptance commands are serialized by the workflow's concurrency group. Duplicate markers are harmless — subsequent phases find the first matching marker.
+**Concurrency:** Concurrent acceptance commands are serialized by the workflow's concurrency group. Duplicate artifacts are harmless — subsequent phases select the newest matching structured data.
 
 **Revision:** `/squad plan revise <feedback>` may be issued from any planning state (program_planning, implementation_planning, or validating). It revises the most recent plan artifact and resets validation if present.
 
 ---
 
 ## 3. Artifact Schemas
+
+Each artifact is a human-readable Markdown comment plus gh-aw safe-output `data`. The minimum envelope is:
+
+```json
+{
+  "squad_artifact": "{artifact_kind}",
+  "schema_version": "1",
+  "origin_issue": 123,
+  "phases": []
+}
+```
+
+gh-aw requires every declared schema property. Use `phases: []` for non-phase artifacts and the accumulated phase numbers for phase-state artifacts. gh-aw appends the validated envelope as a `Structured data:` fenced JSON block. HTML comments are unsupported for Squad state because gh-aw removes them from compiled prompts and sanitized bodies.
 
 ### 3.1 Intent (Root Issue Body)
 
@@ -114,7 +127,6 @@ The issue body IS the intent. No special format required, but structured intents
 ### 3.2 Research Findings
 
 ```markdown
-<!-- squad-research-v1 -->
 ## Research Findings
 
 ### Summary
@@ -142,7 +154,6 @@ The issue body IS the intent. No special format required, but structured intents
 ### 3.3 Triage Disposition
 
 ```markdown
-<!-- squad-triage-v1 -->
 ## Triage Disposition
 
 ### Work Items (→ planning)
@@ -169,7 +180,6 @@ The issue body IS the intent. No special format required, but structured intents
 ### 3.4 Program Plan
 
 ```markdown
-<!-- squad-program-v1 -->
 ## Program Plan
 
 ### Initiatives
@@ -201,7 +211,6 @@ The issue body IS the intent. No special format required, but structured intents
 ### 3.5 Implementation Plan
 
 ```markdown
-<!-- squad-implementation-v1 -->
 ## Implementation Plan
 
 ### Tasks
@@ -232,7 +241,6 @@ The issue body IS the intent. No special format required, but structured intents
 ### 3.6 Validation Result
 
 ```markdown
-<!-- squad-validation-v1 -->
 ## Plan Validation
 
 ### Result: ✅ PASS | ❌ FAIL
@@ -255,7 +263,6 @@ The issue body IS the intent. No special format required, but structured intents
 
 **Scope Acceptance:**
 ```markdown
-<!-- squad-scope-accepted-v1 -->
 ## Scope Accepted
 
 - **Program plan version:** <comment link>
@@ -266,7 +273,6 @@ The issue body IS the intent. No special format required, but structured intents
 
 **Implementation Acceptance:**
 ```markdown
-<!-- squad-impl-accepted-v1 -->
 ## Implementation Accepted
 
 - **Implementation plan version:** <comment link>
@@ -278,7 +284,6 @@ The issue body IS the intent. No special format required, but structured intents
 
 **Activation Record:**
 ```markdown
-<!-- squad-activated-v1 -->
 ## Execution Activated
 
 - **Issues created:** N
@@ -292,24 +297,28 @@ The issue body IS the intent. No special format required, but structured intents
 
 ---
 
-## 4. Comment Marker Registry
+## 4. Structured Artifact Registry
 
-| Marker | Artifact | Cardinality | Update Behavior |
-|--------|----------|-------------|-----------------|
-| `<!-- squad-pending-intent-v1 -->` | Auto-Cast: original issue + command | 1 per issue | Immutable once written; never written a second time |
-| `<!-- squad-cast-opened-v1 -->` | Auto-Cast: Cast was initiated | 1 per issue | Immutable once written |
-| `<!-- squad-cast-pr-v1 -->` | Cast PR body: origin issue + command reference | 1 per Cast PR | Immutable (in PR body, not issue comment) |
-| `<!-- squad-research-v1 -->` | Research findings | 1 per run (edit on re-run) | Replace body |
-| `<!-- squad-triage-v1 -->` | Triage disposition | 1 per run | Replace body |
-| `<!-- squad-program-v1 -->` | Program plan | 1 per run | Replace body |
-| `<!-- squad-implementation-v1 -->` | Implementation plan | 1 per run | Replace body |
-| `<!-- squad-validation-v1 -->` | Validation result | 1 per run | Replace body |
-| `<!-- squad-scope-accepted-v1 -->` | Scope acceptance | 1 total | Immutable once written |
-| `<!-- squad-impl-accepted-v1 -->` | Impl acceptance | 1 total | Immutable once written |
-| `<!-- squad-activated-v1 -->` | Activation record | 1 total | Immutable once written |
-| `<!-- squad-lifecycle-state -->` | Lifecycle summary | 1 total | Updated every transition |
+| `squad_artifact` | Artifact | `phases` Data | Cardinality | Update Behavior |
+|------------------|----------|---------------|-------------|-----------------|
+| `research` | Research findings | `[]` | 1 current per issue | Replace body |
+| `plan` | Fast-path plan | `[]` | 1 current per issue | Replace body |
+| `plan-accepted` | Fast-path full acceptance | `[]` | 1 total | Immutable |
+| `phases-accepted` | Fast-path accepted phase state | Accumulated accepted phases | 1 current per issue | Replace accumulated state |
+| `triage` | Triage disposition | `[]` | 1 current per issue | Replace body |
+| `program` | Program plan | `[]` | 1 current per issue | Replace body |
+| `implementation` | Implementation plan | `[]` | 1 current per issue | Replace body |
+| `validation` | Validation result | `[]`; body has `RESULT: PASS` or `FAIL` | 1 current per issue | Replace body |
+| `scope-accepted` | Scope acceptance | `[]` | 1 total | Immutable |
+| `impl-accepted` | Full implementation acceptance | `[]` | 1 total | Immutable |
+| `impl-phases-accepted` | Accepted implementation phase state | Accumulated accepted phases | 1 current per issue | Replace accumulated state |
+| `phases-activated` | Activated phase state | Accumulated activated phases | 1 current per issue | Replace accumulated state |
+| `activated` | Terminal activation record | All phases when phased; otherwise `[]` | 1 total | Immutable |
+| `lifecycle-state` | Lifecycle summary | `[]` | 1 current per issue | Updated every transition |
 
-**Version bump rule:** When schema changes are breaking, bump the version suffix (e.g., `v1` → `v2`). Old markers remain valid; new commands produce new versions.
+Every entry also requires `schema_version: "1"` and the triggering `origin_issue`.
+
+**Version bump rule:** When this data contract changes incompatibly, increment `schema_version`. Consumers may continue recognizing earlier structured schemas during a migration window.
 
 ---
 
@@ -318,7 +327,6 @@ The issue body IS the intent. No special format required, but structured intents
 This comment is created on first transition and updated on every subsequent transition:
 
 ```markdown
-<!-- squad-lifecycle-state -->
 ## Planning Lifecycle
 
 | Phase | Status | Artifact | Updated |
@@ -349,39 +357,41 @@ Status icons: `✅ Done` · `⏳ In Progress` · `⬚ Pending` · `❌ Failed` �
 
 The original `/squad plan` and `/squad plan accept` commands remain fully supported as **fast paths** that combine multiple lifecycle phases:
 
-| Legacy Command | Equivalent Phases | Marker Produced |
-|---------------|-------------------|-----------------|
-| `/squad plan` | program + implementation (combined) | `<!-- squad-plan-v1 -->` |
+| Legacy Command | Equivalent Phases | Artifact Data Produced |
+|---------------|-------------------|------------------------|
+| `/squad plan` | program + implementation (combined) | `squad_artifact=plan` |
 | `/squad plan accept` | scope + impl + activate (combined) | See note below |
-| `/squad plan revise` | revise (same as granular) | `<!-- squad-plan-v1 -->` |
-| `/squad research` | research (unchanged) | `<!-- squad-research-v1 -->` |
+| `/squad plan revise` | revise (same as granular) | Updates `squad_artifact=plan` |
+| `/squad research` | research (unchanged) | `squad_artifact=research` |
 
-> **`/squad plan accept` marker behavior:** When only a fast-path plan (`<!-- squad-plan-v1 -->`) exists, accept produces `<!-- squad-plan-accepted -->`. When granular artifacts exist (program plan + implementation plan), accept runs the granular accept/activate sequence, producing `<!-- squad-scope-accepted-v1 -->`, `<!-- squad-impl-accepted-v1 -->`, and `<!-- squad-activated-v1 -->` instead.
+> **`/squad plan accept` behavior:** When only a fast-path `plan` artifact exists, accept produces `plan-accepted` or `phases-accepted`. When granular artifacts exist, accept runs the granular accept/activate sequence, producing `scope-accepted`, `impl-accepted`, and `activated` artifacts instead.
 
 ### Coexistence Rules
 
-1. Fast-path markers (`squad-plan-v1`, `squad-plan-accepted`) and granular markers (`squad-program-v1`, `squad-implementation-v1`, etc.) are **independent namespaces** — they do not interfere.
+1. Fast-path artifact kinds (`plan`, `plan-accepted`, `phases-accepted`) and granular artifact kinds (`program`, `implementation`, etc.) are **independent namespaces** — they do not interfere.
 2. An issue may use EITHER the fast path OR the granular path, not both simultaneously.
-3. If a granular marker exists and a user runs `/squad plan` (fast path), the system warns that granular planning is in progress and asks for confirmation.
+3. If a granular artifact exists and a user runs `/squad plan` (fast path), the system warns that granular planning is in progress and asks for confirmation.
 4. The lifecycle state comment tracks whichever path is active.
+
+Legacy Squad HTML markers are not scanned. gh-aw removes HTML comments during prompt compilation and safe-output sanitization; durable state uses the structured data registry above.
 
 ---
 
 ## 7. Command Surface
 
-| Command | Mode | Phase | Output |
-|---------|------|-------|--------|
-| `/squad research` | Research | researching | `<!-- squad-research-v1 -->` |
-| `/squad triage` | Triage | triaging | `<!-- squad-triage-v1 -->` |
-| `/squad plan program` | Program Planning | program_planning | `<!-- squad-program-v1 -->` |
-| `/squad plan implementation` | Impl Planning | implementation_planning | `<!-- squad-implementation-v1 -->` |
-| `/squad plan validate` | Validation | validating | `<!-- squad-validation-v1 -->` |
-| `/squad plan accept scope` | Scope Acceptance | scope_accepted | `<!-- squad-scope-accepted-v1 -->` |
-| `/squad plan accept implementation` | Impl Acceptance | impl_accepted | `<!-- squad-impl-accepted-v1 -->` |
-| `/squad plan activate` | Activation | activated | `<!-- squad-activated-v1 -->` |
+| Command | Mode | Phase | `squad_artifact` Output |
+|---------|------|-------|-------------------------|
+| `/squad research` | Research | researching | `research` |
+| `/squad triage` | Triage | triaging | `triage` |
+| `/squad plan program` | Program Planning | program_planning | `program` |
+| `/squad plan implementation` | Impl Planning | implementation_planning | `implementation` |
+| `/squad plan validate` | Validation | validating | `validation` |
+| `/squad plan accept scope` | Scope Acceptance | scope_accepted | `scope-accepted` |
+| `/squad plan accept implementation` | Impl Acceptance | impl_accepted | `impl-accepted` or `impl-phases-accepted` |
+| `/squad plan activate` | Activation | activated | `activated` or `phases-activated` |
 | `/squad plan revise <feedback>` | Revision | (current phase) | Updates latest plan artifact |
-| `/squad plan` | Fast path (plan) | — | `<!-- squad-plan-v1 -->` |
-| `/squad plan accept` | Fast path (accept) | — | `<!-- squad-plan-accepted -->` |
+| `/squad plan` | Fast path (plan) | — | `plan` |
+| `/squad plan accept` | Fast path (accept) | — | `plan-accepted` or `phases-accepted` |
 
 ### Execution Model Support
 

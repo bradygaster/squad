@@ -35,10 +35,48 @@ tools:
     mode: gh-proxy
     toolsets: [default]
 safe-outputs:
+  data:
+    type: object
+    properties:
+      squad_artifact:
+        type: string
+        enum:
+          - research
+          - plan
+          - plan-accepted
+          - phases-accepted
+          - triage
+          - lifecycle-state
+          - program
+          - implementation
+          - validation
+          - scope-accepted
+          - impl-accepted
+          - impl-phases-accepted
+          - phases-activated
+          - activated
+      schema_version:
+        type: string
+        enum: ["1"]
+      origin_issue:
+        type: integer
+        minimum: 1
+      phases:
+        type: array
+        items:
+          type: integer
+          minimum: 1
+    required:
+      - squad_artifact
+      - schema_version
+      - origin_issue
+      - phases
+    additionalProperties: false
   create-pull-request:
     title-prefix: "[squad] "
     labels: [squad]
     max: 3
+    auto-close-issue: false
     allowed-base-branches:
       - "squad/*"
     allowed-files:
@@ -55,11 +93,27 @@ safe-outputs:
     max: 20
 ---
 
-## Comment Search Rules (all modes)
+## Planning Artifact Data Contract (all modes)
 
-1. **Paginate fully** — fetch ALL comments (paginate if >30). Markers may be beyond page 1.
-2. **Match FIRST LINE only** — marker must be the first non-empty line of the comment body.
-3. **Latest = newest** — if multiple comments share a marker, use the most recent.
+gh-aw removes HTML comments from prompts and sanitized output bodies. Never use HTML comments as Squad state markers.
+
+Every machine-readable planning comment MUST include safe-output `data` with:
+
+```json
+{
+  "squad_artifact": "{artifact_kind}",
+  "schema_version": "1",
+  "origin_issue": 123,
+  "phases": []
+}
+```
+
+Use the triggering issue number for `origin_issue`. Because gh-aw requires every declared schema property, emit `phases: []` for non-phase artifacts and the accumulated phase numbers for phase-state artifacts. Validation results remain in the human-readable body. gh-aw appends the validated envelope as a `Structured data:` fenced JSON block in the GitHub body.
+
+When locating artifacts:
+1. **Paginate fully** — fetch ALL comments (paginate if >30).
+2. **Parse structured data** — match exact `squad_artifact`, `schema_version: "1"`, and the current `origin_issue`.
+3. **Latest = newest** — if multiple comments match, use the most recent.
 
 # Squad — `/squad` Slash Command
 
@@ -145,16 +199,6 @@ The leading `sub(/\r$/,"")` normalizes CRLF line endings so Windows-formatted te
 
 **Universal response invariant:** current state · result · one primary next action · recovery on ⚠️/🔴.
 
-#### TG-2: Record Pending Intent (write-once)
-
-Scan ALL issue comments for `<!-- squad-pending-intent-v1 -->` as the first non-empty line.
-- Found → skip to TG-3 (never write a second pending-intent comment).
-- Not found → `add-comment` (immutable; never edited):
-  ```
-  <!-- squad-pending-intent-v1 issue={issue_number} mode={canonical_mode} -->
-  ```
-  (Include `phase={phase_n}` only when a phase was parsed. Never embed raw user input in marker attributes.)
-
 #### TG-3: Dedup Open Cast PR
 
 ```bash
@@ -174,12 +218,11 @@ gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headR
   ```
 - Stop. Do not run Cast mode.
 
-**If no open Cast PR found (first run or Cast PR was merged/closed):**
-- Scan ALL issue comments for `<!-- squad-cast-opened-v1 -->` as the first non-empty line.
-- If `<!-- squad-cast-opened-v1 -->` found but no open PR → Cast PR may have been closed without merging. `add-comment` with recovery guidance: "The previous Cast PR appears to be closed. Rerun `{canonical_command}` to open a new one."  Stop.
-- If `<!-- squad-cast-opened-v1 -->` not found → **FIRST RUN**: execute Cast Mode Steps 0–6 using this issue as the casting brief. In the Cast PR body, include: `<!-- squad-cast-pr-v1 origin-issue={issue_number} origin-mode={canonical_mode} -->`. Then `add-comment` (immutable; never edited):
+**If no open Cast PR found (first run, failed run, or a prior Cast PR was closed):**
+- Execute Cast Mode Steps 0–6 using this issue as the casting brief.
+- The Cast PR body may reference the originating issue and canonical command in plain language, but MUST NOT contain `Fixes`, `Closes`, or `Resolves` closing keywords for the originating work issue.
+- Then `add-comment`:
   ```
-  <!-- squad-cast-opened-v1 -->
   🤖 Squad is assembling your team.
 
   **Current state:** No team detected — Squad auto-pivoted to Cast.
@@ -188,6 +231,7 @@ gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headR
 
   ⚠️ The PR link is not available in this comment — find it in the **Pull Requests** tab.
   ```
+- A closed or failed Cast PR is not durable team state. A later rerun with no committed roster and no open Cast PR MUST attempt Cast again.
 - Stop. Do not run the original command this run.
 
 **Recovery (Cast step failure):** Report the exact error in plain language. Tell the user to rerun `{canonical_command}` on this issue to retry. Never instruct the user to run `/squad cast` separately.
@@ -384,7 +428,7 @@ Budget-aware breadth-first investigation: architecture mapping, technology audit
 
 ##### Step 3: Post Findings
 
-`add-comment` with marker `<!-- squad-research-v1 -->` as first line.
+`add-comment` with `data: {"squad_artifact":"research","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
 Structure: `## 🔬 Squad Research — {Title}` → Summary (2-3 sentences) → Current State → Gap Analysis → Risk & Complexity table (Area|Risk 🟢/🟡/🔴|Complexity S/M/L/XL|Notes) → Key Findings (with evidence) → Recommendations → Next Step (`/squad triage` or `/squad plan`).
 
@@ -392,7 +436,7 @@ Must be ≥200 chars of substantive findings. Tailor sections to scope.
 
 ##### Step 4: Verify Completion [MANDATORY]
 
-Confirm: marker posted, heading present, ≥200 chars substantive content, ≥1 recommendation. If ANY fails, go back and post now.
+Confirm: structured artifact data posted, heading present, ≥200 chars substantive content, ≥1 recommendation. If ANY fails, go back and post now.
 
 ---
 
@@ -407,7 +451,7 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 ##### Step 1: Gather Context
 
 1. Read issue body (the epic/brief).
-2. Find latest `<!-- squad-research-v1 -->` comment. If found, use as primary context. If not, do lightweight repo analysis.
+2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
 3. Read `.squad/team.md` if exists for agent assignments.
 4. Text after `/squad plan` = planning guidance.
 
@@ -417,7 +461,7 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 
 ##### Step 3: Post Plan
 
-`add-comment` with marker `<!-- squad-plan-v1 -->` as first line.
+`add-comment` with `data: {"squad_artifact":"plan","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
 
@@ -429,18 +473,18 @@ Do NOT create issues.
 
 `/squad plan accept` [phase {N}] — combines scope+impl+activation for simple workflows.
 
-**Behavior:** If granular artifacts exist (`<!-- squad-program-v1 -->` or `<!-- squad-implementation-v1 -->`), run Accept Scope → Accept Impl → Activate in sequence. If only `<!-- squad-plan-v1 -->` exists, use legacy behavior below.
+**Behavior:** If `program` or `implementation` artifacts exist, run Accept Scope → Accept Impl → Activate in sequence. If only a `plan` artifact exists, use legacy behavior below.
 
 **Acknowledge:** `🤖 Squad is creating the planned issues…`
 
 ##### Step 1: Find Plan
 
-Find latest `<!-- squad-plan-v1 -->` comment. If none: reply "No plan found. Run `/squad plan` first."
+Find latest `plan` artifact comment for this issue. If none: reply "No plan found. Run `/squad plan` first."
 
 ##### Step 1a: Phase Resolution
 
 1. Extract `requested_phase` from args (or null).
-2. Find `<!-- squad-phases-accepted: [...] -->` → `accepted_phases` (or []).
+2. Find the latest `phases-accepted` artifact and read its `phases` array → `accepted_phases` (or []).
 3. Validate: already-accepted → stop with next-available hint. Out-of-order → stop with sequential hint.
 4. Filter items: by phase if set, by unaccepted if prior phases exist, all if fresh.
 5. If no items remain after filter: stop.
@@ -466,9 +510,9 @@ Add `blockedBy` relationships via GitHub API. Graceful fallback to body-text ref
 
 ##### Step 4: Post Summary
 
-Marker varies:
-- Phase-specific: `<!-- squad-phases-accepted: [{accumulated}] -->` → Phase accepted table + remaining phases table
-- Full (no phases): `<!-- squad-plan-accepted -->` → All issues table
+Artifact data varies:
+- Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table
+- Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table
 
 ---
 
@@ -476,10 +520,10 @@ Marker varies:
 
 **Acknowledge:** `🤖 Squad is revising the plan…`
 
-1. Find `<!-- squad-plan-v1 -->`. If none: reply "No plan found."
+1. Find the latest `plan` artifact. If none: reply "No plan found."
 2. Read feedback after "revise".
 3. Apply feedback to plan.
-4. **EDIT the existing comment** (never post a new one with same marker).
+4. **EDIT the existing artifact comment** (never post a duplicate).
 5. Prepend revision note.
 
 ---
@@ -496,7 +540,7 @@ The planning ontology is imported — follow its schemas directly.
 
 ##### Step 1: Validate
 
-1. Find `<!-- squad-research-v1 -->`. If none: reply "Run `/squad research` first." Stop.
+1. Find the latest `research` artifact for this issue. If none: reply "Run `/squad research` first." Stop.
 2. Read root issue body (the Intent). If empty: reply "Issue body empty — add description." Stop.
 
 ##### Step 2: Classify
@@ -510,13 +554,13 @@ Default to `decision` when uncertain.
 
 ##### Step 3: Post Triage
 
-`add-comment` with marker `<!-- squad-triage-v1 -->` as first line.
+`add-comment` with `data: {"squad_artifact":"triage","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
 Structure: `## 🔍 Squad Triage — Dispositions` → Intent + reference lines → Work Items table (Finding|Scope Sketch|Effort|Rationale) → Decisions Needed table (Finding|Question|Impact|Blocks) → Excluded table (Finding|Reason) → Summary counts → Next step: `/squad plan program` or `/squad triage revise`.
 
 ##### Step 4: Update Lifecycle
 
-Find/create `<!-- squad-lifecycle-state -->` comment. Set Triage = `✅ Done`, state = Triaged, next = `/squad plan program`.
+Find/create the `lifecycle-state` artifact comment. Include `data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`. Set Triage = `✅ Done`, state = Triaged, next = `/squad plan program`.
 
 ---
 
@@ -524,10 +568,10 @@ Find/create `<!-- squad-lifecycle-state -->` comment. Set Triage = `✅ Done`, s
 
 **Acknowledge:** `🤖 Squad is revising triage dispositions…`
 
-1. Find `<!-- squad-triage-v1 -->`. If none: reply "Run `/squad triage` first."
+1. Find the latest `triage` artifact. If none: reply "Run `/squad triage` first."
 2. Read feedback after "revise".
 3. Apply: reclassify, split, merge, adjust.
-4. **EDIT existing comment** (one marker per issue). Prepend revision note.
+4. **EDIT the existing artifact comment** (one current artifact per issue). Prepend revision note.
 5. Update lifecycle.
 
 ---
@@ -539,7 +583,7 @@ All planning modes resolve policy before executing.
 The planning policy schema is imported — follow it directly.
 
 Steps:
-1. Check issue body for `<!-- squad-policy: {name} -->` or `<!-- squad-setting: key=value -->`.
+1. Check issue body HTML-comment content for a line beginning `squad-policy:` or `squad-setting:`. Match the comment content, not the HTML delimiters.
 2. Check repo for `.squad/planning-policy.md` with YAML frontmatter.
 3. Match profile (`default`, `lean`, `enterprise`, `spike`, or custom).
 4. Fall back to defaults for unset values.
@@ -558,7 +602,7 @@ The planning ontology is imported — follow its schemas directly.
 
 ##### Step 1: Validate
 
-Find `<!-- squad-triage-v1 -->`. If none: reply "Run `/squad triage` first." Stop. Read root issue body.
+Find the latest `triage` artifact. If none: reply "Run `/squad triage` first." Stop. Read root issue body.
 
 ##### Step 2: Parse Triage
 
@@ -584,7 +628,7 @@ Not created yet — describes what activation will produce.
 
 ##### Step 5: Post Program Plan
 
-`add-comment` with marker `<!-- squad-program-v1 -->` as first line.
+`add-comment` with `data: {"squad_artifact":"program","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
 Structure: `## 📋 Squad Program Plan` → Intent + triage ref → Milestones table (Milestone|Outcome|Contains) → Initiatives & Epics (per initiative: outcome, epic table with Description|Stories|Milestone|Depends On, details per epic with Outcome/Stories/Acceptance criteria) → Unresolved Decisions table → Program Metadata → Dependency Graph → Next: `/squad plan accept scope` or `/squad plan program revise`.
 
@@ -600,8 +644,8 @@ Set Program Plan = `✅ Done`, state = Program Planned, next = `/squad plan acce
 
 Works on open/closed issues.
 
-1. Find `<!-- squad-program-v1 -->`. If none: reply "Run `/squad plan program` first."
-2. Check `<!-- squad-scope-accepted-v1 -->`. If scope accepted: require override flag or stop.
+1. Find the latest `program` artifact. If none: reply "Run `/squad plan program` first."
+2. Check for a `scope-accepted` artifact. If scope accepted: require override flag or stop.
 3. Read feedback after "revise".
 4. Apply revisions maintaining structural integrity (all Step 3 rules still apply, DAG preserved).
 5. **EDIT existing comment**. Prepend revision note.
@@ -621,7 +665,7 @@ The planning ontology is imported — follow its schemas directly.
 
 ##### Step 1: Validate
 
-Search in order: `<!-- squad-scope-accepted-v1 -->` (use as authoritative) → `<!-- squad-program-v1 -->` (draft) → `<!-- squad-plan-v1 -->` (fast-path). If none: reply "Run `/squad plan program` or `/squad plan` first." Stop.
+Search in order: `scope-accepted` artifact (use as authoritative) → `program` artifact (draft) → `plan` artifact (fast-path). If none: reply "Run `/squad plan program` or `/squad plan` first." Stop.
 
 ##### Step 2: Decompose Into Tasks
 
@@ -635,7 +679,7 @@ Check: sizes ≤ L, no cycles, traceability, coverage, agent validity. Fix befor
 
 ##### Step 4: Post Implementation Plan
 
-`add-comment` with marker `<!-- squad-implementation-v1 -->` as first line.
+`add-comment` with `data: {"squad_artifact":"implementation","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
 Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Validation Pre-check → Next: `/squad plan validate` or `/squad plan accept implementation`.
 
@@ -657,7 +701,7 @@ The planning ontology is imported — follow its schemas directly.
 
 ##### Step 1: Locate Artifacts
 
-Find: `<!-- squad-program-v1 -->`, `<!-- squad-implementation-v1 -->`, `<!-- squad-triage-v1 -->`. At minimum one of program/impl must exist or stop.
+Find the latest `program`, `implementation`, and `triage` artifacts. At minimum one of program/implementation must exist or stop.
 
 ##### Step 2: Run Checks
 
@@ -677,7 +721,7 @@ Severity: ❌ Critical (blocks acceptance): 1–6, 8. ⚠️ Warning: 7, 9, bord
 
 ##### Step 3: Post Result
 
-`add-comment` with marker `<!-- squad-validation-v1 -->` as first line.
+`add-comment` with `data: {"squad_artifact":"validation","schema_version":"1","origin_issue":{issue_number},"phases":[]}`. Keep `RESULT: PASS` or `RESULT: FAIL` in the human-readable body.
 
 Structure: `## ✅/❌ Squad Plan Validation — PASSED/FAILED` → Validated artifacts + timestamp → Results table (Check|Status|Details) → Issues Found (Critical ❌ then Warnings ⚠️ with fix instructions) → Summary (counts + verdict) → Next action.
 
@@ -701,8 +745,8 @@ Pass: suggest accept. Fail: suggest fix + re-validate.
 
 ##### Step 1: Validate
 
-1. Find `<!-- squad-program-v1 -->`. If none: reply "Run `/squad plan program` first." Stop.
-2. Check `<!-- squad-scope-accepted-v1 -->` already exists → reply already accepted, stop.
+1. Find the latest `program` artifact. If none: reply "Run `/squad plan program` first." Stop.
+2. Check whether a `scope-accepted` artifact already exists → reply already accepted, stop.
 
 ##### Step 2: Readiness
 
@@ -711,7 +755,7 @@ Pass: suggest accept. Fail: suggest fix + re-validate.
 
 ##### Step 3: Record
 
-`add-comment` with marker `<!-- squad-scope-accepted-v1 -->` as first line.
+`add-comment` with `data: {"squad_artifact":"scope-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
 Content: `## ✅ Scope Accepted` → program plan version link, accepted by, date, what was approved (initiative/epic counts, scope boundary), lock note.
 
@@ -729,28 +773,28 @@ Set Scope = `✅ Done`, next = `/squad plan implementation`.
 
 ##### Step 1: Validate
 
-**Precondition:** `<!-- squad-validation-v1 -->` with PASS status must exist.
+**Precondition:** a `validation` artifact whose human-readable body contains `RESULT: PASS` must exist.
 
-1. Find `<!-- squad-scope-accepted-v1 -->`. If none: reply "Accept scope first." Stop.
-2. Find `<!-- squad-implementation-v1 -->`. If none: reply "Run implementation first." Stop.
+1. Find a `scope-accepted` artifact. If none: reply "Accept scope first." Stop.
+2. Find the latest `implementation` artifact. If none: reply "Run implementation first." Stop.
 3. Find validation PASS. If none/FAIL: reply "Run validate first." Stop.
-4. Check `<!-- squad-impl-accepted-v1 -->`. If exists and no phase arg: reply already accepted, stop.
+4. Check for an `impl-accepted` artifact. If it exists and no phase arg: reply already accepted, stop.
 
 ##### Step 1a: Phase Resolution
 
-Same pattern as Plan Accept: extract `requested_phase`, find `<!-- squad-impl-phases-accepted: [...] -->` → `accepted_impl_phases`, validate order/duplication, scope acceptance to phase or remaining.
+Same pattern as Plan Accept: extract `requested_phase`, find the latest `impl-phases-accepted` artifact and read its `phases` array → `accepted_impl_phases`, validate order/duplication, scope acceptance to phase or remaining.
 
 ##### Step 2: Validate Integrity
 
 Run: size ≤ L, no cycles, traceability, coverage, agent validity (scoped to target items). On failure: list issues, stop.
 
-**Sizing source:** Use `<!-- squad-validation-v1 -->` Sizing Summary table as authoritative. Copy verbatim. Do NOT re-derive from plan text.
+**Sizing source:** Use the latest passed `validation` artifact's Sizing Summary table as authoritative. Copy verbatim. Do NOT re-derive from plan text.
 
 ##### Step 3: Record
 
-Marker varies:
-- Phase: `<!-- squad-impl-phases-accepted: [{accumulated}] -->` → `## ✅ Implementation Phase {N} Accepted` with phase sizing, remaining phases table
-- Full: `<!-- squad-impl-accepted-v1 -->` → `## ✅ Implementation Accepted` with total sizing (from validation), lock note
+Artifact data varies:
+- Phase: `data: {"squad_artifact":"impl-phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Implementation Phase {N} Accepted` with phase sizing, remaining phases table
+- Full: `data: {"squad_artifact":"impl-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → `## ✅ Implementation Accepted` with total sizing (from validation), lock note
 
 Both include: impl plan link, scope acceptance link, accepted by, date, counts.
 
@@ -761,7 +805,7 @@ Phase: `🔄 Phase {N} of {total}`. Full: `✅ Done`, next = `/squad plan activa
 ##### Step 5: Auto-Activate (Phase-Specific Only)
 
 After phase acceptance, check if ready for automatic activation:
-1. All prior phases must be accepted AND activated (check `<!-- squad-phases-activated: [...] -->`).
+1. All prior phases must be accepted AND activated (check the latest `phases-activated` artifact's `phases` array).
 2. If Phase 1 or all prior activated: auto-activate using Plan Activate logic for this phase.
 3. If prior phases not activated: tell user to activate them first.
 4. Update lifecycle to reflect both acceptance and activation.
@@ -777,13 +821,13 @@ After phase acceptance, check if ready for automatic activation:
 ##### Step 1: Validate
 
 **Phase-specific:**
-1. Check `<!-- squad-impl-phases-accepted: [...] -->` contains requested phase. If not: stop.
-2. Check ordering: prior phase must be in `<!-- squad-phases-activated: [...] -->`. If not: stop.
+1. Check the latest `impl-phases-accepted` artifact's `phases` array contains requested phase. If not: stop.
+2. Check ordering: prior phase must be in the latest `phases-activated` artifact's `phases` array. If not: stop.
 3. Check not already activated.
 
 **No phase:**
-1. Find `<!-- squad-impl-accepted-v1 -->` or fully-accepted phases array. If none: stop.
-2. Check for re-activation (`<!-- squad-activated-v1 -->`): if exists, only create missing issues (idempotent).
+1. Find an `impl-accepted` artifact or fully accepted `impl-phases-accepted` state. If none: stop.
+2. Check for an `activated` artifact: if it exists, only create missing issues (idempotent).
 
 ##### Hallucination Guard
 
@@ -845,11 +889,11 @@ Add `blockedBy` via API for tasks and epics. Graceful fallback. Never fail activ
 
 **LAST action** — only after Steps 2+3 complete.
 
-Phase marker: `<!-- squad-phases-activated: [{accumulated}] -->` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
+Phase artifact: `data: {"squad_artifact":"phases-activated","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → `## ✅ Phase {N} Activated — {count} issues` + issue table + remaining phases table.
 
-Full marker: `<!-- squad-activated-v1 -->` → `## ✅ Plan Activated — {epic_count} epics, {task_count} tasks` + hierarchy summary, created epics table, created tasks table, dependency order.
+Full artifact: `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → `## ✅ Plan Activated — {epic_count} epics, {task_count} tasks` + hierarchy summary, created epics table, created tasks table, dependency order.
 
-Terminal (last phase): include BOTH markers + "All Phases Activated" heading.
+Terminal (last phase): emit `data: {"squad_artifact":"activated","schema_version":"1","origin_issue":{issue_number},"phases":[{all_phases}]}` with an "All Phases Activated" heading.
 
 ##### Step 5: Update Lifecycle
 

@@ -5,6 +5,8 @@
 > **Scenario:** Add real-time notifications via SignalR to a .NET Aspire app using the Squad agentic SDLC  
 > **Prerequisite:** The presenter has a fresh .NET Aspire app (AppHost, ServiceDefaults, WebFrontend, ApiService) and has installed the Squad workflow via `gh aw add bradygaster/squad/workflows/squad.md@latest`. No squad has been cast yet.
 
+Planning comments remain human-readable. For programmatic discovery, gh-aw appends a validated `Structured data:` JSON block containing `squad_artifact`, `schema_version: "1"`, `origin_issue`, and a `phases` array. The screen excerpts below omit that footer for readability.
+
 ---
 
 ## Step 1: Cast the squad
@@ -29,9 +31,9 @@ Merge the PR to activate your team. Run `/squad status` afterward to verify.
 
 **Do:** Click the PR link, review the team composition in `meet-the-squad.md`, then merge.
 
-**Screen shows:** The PR merges. The casting issue closes (its job is done).
+**Screen shows:** The PR merges. The casting issue remains open until the user closes it.
 
-**Key point:** Casting is a one-time setup action — it gets its own issue so it can close cleanly. Your actual work intent goes in a separate issue that stays open throughout the SDLC lifecycle.
+**Key point:** Casting is a one-time setup action — it gets its own issue that the user closes after merge. Your actual work intent goes in a separate issue that stays open throughout the SDLC lifecycle.
 
 ---
 
@@ -74,7 +76,6 @@ to connected browser clients via SignalR.
 **Screen shows:** *(after ~30 seconds, a structured comment appears)*
 
 ```markdown
-<!-- squad-research-v1 -->
 ## 🔬 Squad Research — SignalR Notifications for Aspire App
 
 ### Summary
@@ -140,7 +141,6 @@ all four projects with careful registration in the AppHost resource model.
 **Screen shows:**
 
 ```markdown
-<!-- squad-triage-v1 -->
 ## 🔍 Squad Triage — Dispositions
 
 > Intent: Add real-time SignalR notifications to Aspire app
@@ -186,7 +186,6 @@ all four projects with careful registration in the AppHost resource model.
 **Screen shows:**
 
 ```markdown
-<!-- squad-program-v1 -->
 ## 📋 Squad Program Plan
 
 > Intent: Add real-time SignalR notifications to Aspire app
@@ -269,7 +268,6 @@ E1 (Hub) ──→ E2 (Aspire) ──→ E3 (Blazor UI)
 **Screen shows:** *(first, scope acceptance)*
 
 ```markdown
-<!-- squad-scope-accepted-v1 -->
 ## ✅ Scope Accepted
 
 - **Program plan version:** [comment link]
@@ -283,7 +281,6 @@ E1 (Hub) ──→ E2 (Aspire) ──→ E3 (Blazor UI)
 *(then, the implementation plan)*
 
 ```markdown
-<!-- squad-implementation-v1 -->
 ## 🔧 Squad Implementation Plan
 
 > Program: Real-Time Notification Infrastructure
@@ -341,7 +338,6 @@ E1 (Hub) ──→ E2 (Aspire) ──→ E3 (Blazor UI)
 **Screen shows:**
 
 ```markdown
-<!-- squad-validation-v1 -->
 ## ✅ Squad Plan Validation — PASSED
 
 > Validated: Program Plan + Implementation Plan
@@ -383,7 +379,6 @@ E1 (Hub) ──→ E2 (Aspire) ──→ E3 (Blazor UI)
 **Screen shows:** *(activation record)*
 
 ```markdown
-<!-- squad-activated-v1 -->
 ## ✅ Plan Activated — 4 epics, 7 tasks created
 
 - **Activated by:** @bradygaster
@@ -429,7 +424,6 @@ with full hierarchy (Root → Epics → Tasks) and assigned to their respective 
 **Screen shows:**
 
 ```markdown
-<!-- squad-lifecycle-state -->
 ## Planning Lifecycle
 
 | Phase | Status | Artifact | Updated |

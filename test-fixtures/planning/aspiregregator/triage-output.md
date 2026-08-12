@@ -1,4 +1,3 @@
-<!-- squad-triage-v1 -->
 ## Triage Disposition
 
 ### Work Items (→ planning)
@@ -42,3 +41,13 @@
 - **Work items:** 16
 - **Decisions pending:** 2
 - **Excluded:** 3
+
+Structured data:
+```json
+{
+  "squad_artifact": "triage",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```

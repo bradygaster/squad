@@ -1,4 +1,3 @@
-<!-- squad-scope-accepted-v1 -->
 ## Scope Accepted
 
 - **Program plan version:** #8 (comment-id: 2847301)
@@ -6,9 +5,18 @@
 - **Date:** 2026-07-15T14:22:00Z
 - **Notes:** Confirmed scope with both decisions resolved — Azure Table Storage for grain persistence, Blazor frontend deferred. Three milestones over six weeks is acceptable timeline.
 
+Structured data:
+```json
+{
+  "squad_artifact": "scope-accepted",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```
+
 ---
 
-<!-- squad-impl-accepted-v1 -->
 ## Implementation Accepted
 
 - **Implementation plan version:** #8 (comment-id: 2847456)
@@ -17,9 +25,18 @@
 - **Date:** 2026-07-15T14:35:00Z
 - **Notes:** Task sizing looks right. The L-sized API rewiring task (Task 12) is the riskiest — contract tests in Phase 1 provide adequate safety net. Approved for activation.
 
+Structured data:
+```json
+{
+  "squad_artifact": "impl-accepted",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```
+
 ---
 
-<!-- squad-activated-v1 -->
 ## Execution Activated
 
 - **Issues created:** 14
@@ -46,3 +63,13 @@
 
 Dependency order and phase assignments are reflected in the issue bodies.
 The squad is ready to begin work.
+
+Structured data:
+```json
+{
+  "squad_artifact": "activated",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```

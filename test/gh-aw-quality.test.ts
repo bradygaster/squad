@@ -5,18 +5,23 @@
  * - safe-output configuration schema
  * - mode dispatch completeness
  * - shared component imports
- * - planning state machine marker consistency
+ * - planning state machine structured-artifact consistency
  */
 
-import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { afterAll, describe, it, expect } from 'vitest';
+import { cpSync, readFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
 const SHARED_DIR = join(WORKFLOWS_DIR, 'shared');
+const TEST_WORKSPACES_DIR = join(process.cwd(), '.test-workspaces');
+
+afterAll(() => {
+  rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,6 +82,8 @@ function extractSafeOutputs(frontmatter: string): Record<string, Record<string, 
         const arrayMatch = value.match(/^\[(.+)\]$/);
         if (arrayMatch) {
           outputs[currentOutput][key] = arrayMatch[1].split(',').map(s => s.trim().replace(/"/g, ''));
+        } else if (value === 'true' || value === 'false') {
+          outputs[currentOutput][key] = value === 'true';
         } else if (!isNaN(Number(value))) {
           outputs[currentOutput][key] = Number(value);
         } else {
@@ -149,32 +156,43 @@ function extractModeTable(content: string): Array<{ command: string; mode: strin
   return rows;
 }
 
-/** Extract HTML comment markers from the planning ontology. */
-function extractOntologyMarkers(filePath: string): string[] {
-  const content = readFileSync(filePath, 'utf8');
-  const markers: string[] = [];
-  const markerRegex = /`(<!-- squad-[\w-]+ -->)`/g;
-  let match: RegExpExecArray | null;
-  while ((match = markerRegex.exec(content)) !== null) {
-    if (!markers.includes(match[1])) {
-      markers.push(match[1]);
-    }
-  }
-  return markers;
+interface SquadArtifactData {
+  squad_artifact: string;
+  schema_version: string;
+  origin_issue: number;
+  phases: number[];
 }
 
-/** Extract markers referenced in squad.md (both in code fences and inline). */
-function extractSquadMarkerReferences(content: string): string[] {
-  const markers: string[] = [];
-  const markerRegex = /`?(<!-- squad-[\w-]+ -->)`?/g;
-  let match: RegExpExecArray | null;
-  while ((match = markerRegex.exec(content)) !== null) {
-    const marker = match[0].replace(/`/g, '');
-    if (!markers.includes(marker)) {
-      markers.push(marker);
+/** Parse gh-aw's durable Structured data footer from a normalized body. */
+function extractStructuredData(content: string): SquadArtifactData[] {
+  return [...content.matchAll(/Structured data:\s*```json\s*([\s\S]*?)```/g)].map(match =>
+    JSON.parse(match[1]) as SquadArtifactData
+  );
+}
+
+/** Locate the newest compatible artifact exactly as downstream planning modes do. */
+function findLatestArtifact(
+  comments: string[],
+  artifactKind: string,
+  originIssue: number
+): { body: string; data: SquadArtifactData } | undefined {
+  for (const body of [...comments].reverse()) {
+    const data = extractStructuredData(body).find(
+      item =>
+        item.squad_artifact === artifactKind &&
+        item.schema_version === '1' &&
+        item.origin_issue === originIssue
+    );
+    if (data) {
+      return { body, data };
     }
   }
-  return markers;
+  return undefined;
+}
+
+function createTestWorkspace(prefix: string): string {
+  mkdirSync(TEST_WORKSPACES_DIR, { recursive: true });
+  return mkdtempSync(join(TEST_WORKSPACES_DIR, prefix));
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +209,7 @@ describe('gh-aw: safe-output configuration', () => {
 
   it('each safe-output has a max value that is a positive integer ≤ 1000', () => {
     for (const [name, config] of Object.entries(safeOutputs)) {
+      if (name === 'data') continue;
       expect(config.max, `${name} should have a max field`).toBeDefined();
       const max = config.max as number;
       expect(max, `${name}.max should be > 0`).toBeGreaterThan(0);
@@ -233,6 +252,16 @@ describe('gh-aw: safe-output configuration', () => {
     expect(pr.labels, 'should have labels').toBeDefined();
     expect(pr.max, 'should have max').toBeDefined();
     expect(pr['allowed-base-branches'], 'should have allowed-base-branches').toBeDefined();
+    expect(pr['auto-close-issue'], 'Cast PR must not close the originating work issue').toBe(false);
+  });
+
+  it('defines the minimum schema-validated durable artifact envelope', () => {
+    expect(frontmatter).toMatch(/data:\n\s+type: object/);
+    expect(frontmatter).toMatch(/squad_artifact:\n\s+type: string/);
+    expect(frontmatter).toMatch(/schema_version:\n\s+type: string\n\s+enum: \["1"\]/);
+    expect(frontmatter).toMatch(/origin_issue:\n\s+type: integer\n\s+minimum: 1/);
+    expect(frontmatter).toMatch(/phases:\n\s+type: array\n\s+items:\n\s+type: integer\n\s+minimum: 1/);
+    expect(frontmatter).toMatch(/required:\n\s+- squad_artifact\n\s+- schema_version\n\s+- origin_issue\n\s+- phases/);
   });
 
   it('create-issue and add-comment outputs exist', () => {
@@ -374,84 +403,110 @@ describe('gh-aw: shared component imports', () => {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: planning state machine', () => {
-  const ontologyPath = join(SHARED_DIR, 'planning-ontology.md');
-  const ontologyContent = readFileSync(ontologyPath, 'utf8');
+  const ontologyContent = readFileSync(join(SHARED_DIR, 'planning-ontology.md'), 'utf8');
   const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
 
-  const ontologyMarkers = extractOntologyMarkers(ontologyPath);
-  const squadMarkers = extractSquadMarkerReferences(squadContent);
+  function registryArtifactKinds(): string[] {
+    const registry = ontologyContent.match(/## 4\. Structured Artifact Registry([\s\S]*?)(?=\n---|\n## \d)/);
+    if (!registry) throw new Error('Structured Artifact Registry section is missing');
+    return [...registry[1].matchAll(/^\| `([^`]+)` \|/gm)].map(match => match[1]);
+  }
 
-  it('ontology defines markers', () => {
-    expect(ontologyMarkers.length).toBeGreaterThan(0);
+  it('uses no Squad HTML comment as machine state', () => {
+    const unsupportedMarker = /<!-- squad-[\w-]+(?:-v\d+)? -->/;
+    expect(squadContent).not.toMatch(unsupportedMarker);
+    expect(ontologyContent).not.toMatch(unsupportedMarker);
   });
 
-  it('all markers follow naming convention: <!-- squad-{name}-v{N} -->', () => {
-    // Allow both versioned (squad-X-vN) and unversioned (squad-X) markers
-    const markerPattern = /^<!-- squad-[\w-]+(-(v\d+))? -->$/;
-    for (const marker of ontologyMarkers) {
-      expect(marker, `Marker "${marker}" should follow naming convention`).toMatch(markerPattern);
-    }
-  });
-
-  it('all markers referenced in squad.md are defined in planning-ontology.md', () => {
-    // Filter to only planning-related markers (skip markers that might be internal)
-    const planningMarkers = squadMarkers.filter(m =>
-      m.includes('squad-') && !m.includes('squad-plan-v1') && !m.includes('squad-plan-accepted')
-    );
-
-    for (const marker of planningMarkers) {
-      // Check if the marker is defined in the ontology (either in ontology table
-      // or in the broader ontology content)
-      const defined = ontologyContent.includes(marker);
-      expect(defined, `Marker "${marker}" referenced in squad.md should be defined in planning-ontology.md`).toBe(true);
-    }
-  });
-
-  it('state transition table defines produces/requires markers consistently', () => {
-    // Extract state transitions from the ontology
+  it('state transition table defines produced and required artifact kinds consistently', () => {
     const transitionBlock = ontologyContent.match(/```\n(idle[\s\S]*?)```/);
     expect(transitionBlock, 'Should have a state transition code block').not.toBeNull();
 
     const transitions = transitionBlock![1];
-    const producesMarkers = [...transitions.matchAll(/produces:\s*(<!-- [\w-]+ -->)/g)]
-      .map(m => m[1]);
-    const requiresMarkers = [...transitions.matchAll(/requires:\s*(<!-- [\w-]+ -->)/g)]
-      .map(m => m[1]);
+    const produced = [...transitions.matchAll(/produces:\s*squad_artifact=([\w-]+)/g)].map(match => match[1]);
+    const required = [...transitions.matchAll(/requires:\s*squad_artifact=([\w-]+)/g)].map(match => match[1]);
 
-    // Every required marker should be produced by some prior transition
-    // (except the first which requires "intent")
-    for (const required of requiresMarkers) {
-      if (required.includes('intent')) continue;
-      const isProduced = producesMarkers.includes(required);
-      expect(isProduced, `Required marker "${required}" should be produced by a prior state`).toBe(true);
+    for (const artifactKind of required) {
+      expect(
+        produced,
+        `Required artifact "${artifactKind}" should be produced by a lifecycle transition`
+      ).toContain(artifactKind);
     }
   });
 
-  it('Comment Marker Registry section covers all state-produced markers', () => {
-    // Extract markers from the "Comment Marker Registry" table
-    const registrySection = ontologyContent.match(/## 4\. Comment Marker Registry[\s\S]*?(?=\n---|\n## \d)/);
-    expect(registrySection, 'Should have a Comment Marker Registry section').not.toBeNull();
-
-    // Extract from state transitions
+  it('Structured Artifact Registry covers all state-produced artifacts', () => {
     const transitionBlock = ontologyContent.match(/```\n(idle[\s\S]*?)```/);
     const transitions = transitionBlock![1];
-    const producedMarkers = [...transitions.matchAll(/produces:\s*(<!-- [\w-]+ -->)/g)]
-      .map(m => m[1]);
+    const produced = [...transitions.matchAll(/produces:\s*squad_artifact=([\w-]+)/g)].map(match => match[1]);
+    const registry = registryArtifactKinds();
 
-    for (const marker of producedMarkers) {
-      expect(
-        registrySection![0].includes(marker),
-        `Produced marker "${marker}" should be listed in Comment Marker Registry`
-      ).toBe(true);
+    for (const artifactKind of produced) {
+      expect(registry, `Produced artifact "${artifactKind}" should be listed in the registry`).toContain(artifactKind);
     }
   });
 
-  it('ontology marker versions are consistent (all v1 in current spec)', () => {
-    const versionedMarkers = ontologyMarkers.filter(m => m.match(/v\d+/));
-    const versions = versionedMarkers.map(m => m.match(/v(\d+)/)![1]);
-    const uniqueVersions = [...new Set(versions)];
-    // Currently all should be v1
-    expect(uniqueVersions, 'All versioned markers should use the same version').toEqual(['1']);
+  it('workflow schema enumerates every registered artifact kind', () => {
+    for (const artifactKind of registryArtifactKinds()) {
+      expect(squadContent, `safe-outputs.data should allow "${artifactKind}"`).toMatch(
+        new RegExp(`^\\s+- ${artifactKind}$`, 'm')
+      );
+    }
+  });
+
+  it('Research fixture data supports downstream Triage discovery', () => {
+    const fixtures = join(process.cwd(), 'test-fixtures', 'planning', 'aspiregregator');
+    const researchBody = readFileSync(join(fixtures, 'research-output.md'), 'utf8');
+    const wrongOrigin = researchBody.replace('"origin_issue": 8', '"origin_issue": 999');
+    const discovered = findLatestArtifact(
+      ['No structured artifact here', wrongOrigin, researchBody],
+      'research',
+      8
+    );
+
+    expect(discovered?.data).toEqual({
+      squad_artifact: 'research',
+      schema_version: '1',
+      origin_issue: 8,
+      phases: [],
+    });
+    expect(discovered?.body).toContain('## Research Findings');
+  });
+
+  it('planning fixtures model normalized gh-aw bodies with durable JSON data', () => {
+    const fixtures = join(process.cwd(), 'test-fixtures', 'planning', 'aspiregregator');
+    const expected = new Map([
+      ['research-output.md', ['research']],
+      ['triage-output.md', ['triage']],
+      ['program-plan-output.md', ['program']],
+      ['implementation-plan-output.md', ['implementation']],
+      ['validation-output.md', ['validation']],
+      ['acceptance-outputs.md', ['scope-accepted', 'impl-accepted', 'activated']],
+      ['lifecycle-state.md', ['lifecycle-state']],
+    ]);
+
+    for (const [file, artifactKinds] of expected) {
+      const artifacts = extractStructuredData(readFileSync(join(fixtures, file), 'utf8'));
+      expect(artifacts.map(item => item.squad_artifact), file).toEqual(artifactKinds);
+      for (const artifact of artifacts) {
+        expect(artifact.schema_version, file).toBe('1');
+        expect(artifact.origin_issue, file).toBe(8);
+        expect(artifact.phases, file).toEqual([]);
+      }
+    }
+  });
+
+  it('phase-state artifacts retain accumulated phases in structured data', () => {
+    const body = [
+      '## Phase 2 Accepted',
+      '',
+      'Structured data:',
+      '```json',
+      '{"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":8,"phases":[1,2]}',
+      '```',
+    ].join('\n');
+
+    expect(findLatestArtifact([body], 'phases-accepted', 8)?.data.phases).toEqual([1, 2]);
+    expect(squadContent).toContain('"phases":[{accumulated}]');
   });
 });
 
@@ -552,6 +607,38 @@ describe('gh-aw: prompt budget & planning import regression', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Test: gh-aw compilation retains durable state and Auto-Cast contracts
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: compiled workflow contract', () => {
+  const ghAwAvailable = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' }).status === 0;
+
+  it.skipIf(!ghAwAvailable)('strict-compiles and preserves prompt/config behavior', () => {
+    const workspace = createTestWorkspace('gh-aw-compile-');
+    try {
+      execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+      cpSync(WORKFLOWS_DIR, join(workspace, 'workflows'), { recursive: true });
+      execFileSync('gh', ['aw', 'compile', 'workflows/squad.md', '--strict'], {
+        cwd: workspace,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+
+      const compiled = readFileSync(join(workspace, 'workflows', 'squad.lock.yml'), 'utf8');
+      expect(compiled).toContain('"auto_close_issue":false');
+      expect(compiled).toContain('"data_enabled":true');
+      expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
+      expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
+      expect(compiled).toContain('{{#runtime-import shared/planning-ontology.md}}');
+      expect(compiled).toContain('{{#runtime-import squad.md}}');
+      expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Test: Plan Activate hardening behaviors (forward-port #1683)
 // ---------------------------------------------------------------------------
 
@@ -640,8 +727,6 @@ describe('gh-aw: Plan Activate atomic task-call contract', () => {
 
 describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
   const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
-  const ontologyPath = join(SHARED_DIR, 'planning-ontology.md');
-  const ontologyContent = readFileSync(ontologyPath, 'utf8');
 
   it('Team Guard section exists and lists covered modes', () => {
     expect(content).toMatch(/## Team Guard/);
@@ -685,21 +770,16 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     expect(content).toMatch(/Stop\. Do not run (Cast|the original)/i);
   });
 
-  it('squad-pending-intent-v1 marker is scanned before writing (write-once)', () => {
-    expect(content).toMatch(/squad-pending-intent-v1/);
-    // Must check for existing marker before posting
-    expect(content).toMatch(/Scan.*squad-pending-intent-v1|never write a second pending-intent/i);
-  });
-
-  it('squad-cast-opened-v1 marker is immutable (written once)', () => {
-    expect(content).toMatch(/squad-cast-opened-v1/);
-    expect(content).toMatch(/immutable.*never edited|never edited|immutable.*cast-opened/i);
+  it('does not require unsupported Auto-Cast HTML markers', () => {
+    expect(content).not.toMatch(/squad-(pending-intent|cast-opened|cast-pr)-v1/);
+    expect(readFileSync(join(SHARED_DIR, 'planning-ontology.md'), 'utf8'))
+      .not.toMatch(/squad-(pending-intent|cast-opened|cast-pr)-v1/);
   });
 
   it('first run completion copy does not fabricate or promise a PR number', () => {
     // Must tell user to check PRs tab, not promise a specific PR number
     expect(content).toMatch(/Pull Requests.*tab|check.*Pull Requests/i);
-    const castOpenedBlock = content.match(/squad-cast-opened-v1[\s\S]{0,800}/)?.[0] ?? '';
+    const castOpenedBlock = content.match(/No roster \+ no open Cast PR[\s\S]{0,1200}/)?.[0] ?? '';
     // Must NOT have a fabricated #{number} link in the cast-opened user copy
     expect(castOpenedBlock).not.toMatch(/PR:.*#\d{1,6}/);
   });
@@ -717,11 +797,17 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
   });
 
   it('Cast PR dedup stops without opening a duplicate PR', () => {
+    expect(content).toMatch(/already opened a Cast PR[\s\S]*\*\*Cast PR:\*\* \{pr_url\}/i);
     expect(content).toMatch(/No duplicate PR opened|do not run Cast mode/i);
   });
 
-  it('Cast PR body includes squad-cast-pr-v1 origin reference', () => {
-    expect(content).toMatch(/squad-cast-pr-v1.*origin-issue|origin-issue.*squad-cast-pr-v1/i);
+  it('no open Cast PR always retries Cast, including after a closed or failed PR', () => {
+    expect(content).toMatch(/If no open Cast PR found.*Execute Cast Mode/s);
+    expect(content).toMatch(/closed or failed Cast PR is not durable team state/i);
+  });
+
+  it('Cast PR instructions forbid issue-closing keywords', () => {
+    expect(content).toMatch(/MUST NOT contain.*Fixes.*Closes.*Resolves/i);
   });
 
   it('normal-flow recovery never instructs user to run /squad cast separately', () => {
@@ -741,18 +827,6 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     expect(content).toMatch(/Never surface.*safe-output cap|never surface.*create-issue.*cap/i);
   });
 
-  it('squad-pending-intent-v1 is registered in planning-ontology.md', () => {
-    expect(ontologyContent).toContain('<!-- squad-pending-intent-v1 -->');
-  });
-
-  it('squad-cast-opened-v1 is registered in planning-ontology.md', () => {
-    expect(ontologyContent).toContain('<!-- squad-cast-opened-v1 -->');
-  });
-
-  it('squad-cast-pr-v1 is registered in planning-ontology.md', () => {
-    expect(ontologyContent).toContain('<!-- squad-cast-pr-v1 -->');
-  });
-
   it('safe-output caps (75 create-issue / 20 add-comment) are not conflated with plan limits', () => {
     // The workflow frontmatter must declare max=75 for create-issue and max=20 for add-comment
     const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
@@ -766,7 +840,7 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
 // Test: Team Guard roster-row detection — git-committed state coverage (#1689 revision 3)
 //
 // These tests replicate the exact TG-1 shell command from workflows/squad.md against
-// a real temporary git repository. This validates the committed-HEAD contract: only a
+// a real project-local scratch git repository. This validates the committed-HEAD contract: only a
 // team.md that is committed to HEAD can produce TEAM_PRESENT. Local working-tree files
 // (e.g., from activation pre-steps like `squad init --preset default`) are invisible to
 // the guard, preventing false TEAM_PRESENT in fresh repos.
@@ -788,13 +862,11 @@ describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo cov
     ).trim();
   }
 
-  // Creates a temp git repo, runs the provided setup callback, then returns the dir.
+  // Creates a project-local scratch git repo, runs the setup callback, then returns the dir.
   // Caller must call cleanup() when done.
   function makeGitRepo(setup: (dir: string) => void): { dir: string; cleanup: () => void } {
-    const dir = execSync('mktemp -d', { encoding: 'utf8' }).trim();
-    execSync('git init', { cwd: dir, shell: '/bin/sh' });
-    execSync('git config user.email "test@squad.test"', { cwd: dir, shell: '/bin/sh' });
-    execSync('git config user.name "Squad Test"', { cwd: dir, shell: '/bin/sh' });
+    const dir = createTestWorkspace('team-guard-');
+    execFileSync('git', ['init', '--quiet'], { cwd: dir });
     setup(dir);
     return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
   }
@@ -803,8 +875,17 @@ describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo cov
     const fullPath = join(dir, relPath);
     mkdirSync(dirname(fullPath), { recursive: true });
     writeFileSync(fullPath, content);
-    execSync(`git add "${relPath}"`, { cwd: dir, shell: '/bin/sh' });
-    execSync('git commit -m "test"', { cwd: dir, shell: '/bin/sh' });
+    execFileSync('git', ['add', '--', relPath], { cwd: dir });
+    execFileSync('git', ['commit', '--quiet', '-m', 'test'], {
+      cwd: dir,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Squad Test',
+        GIT_AUTHOR_EMAIL: 'squad-test',
+        GIT_COMMITTER_NAME: 'Squad Test',
+        GIT_COMMITTER_EMAIL: 'squad-test',
+      },
+    });
   }
 
   function addWorkingTree(dir: string, relPath: string, content: string): void {
@@ -918,30 +999,18 @@ describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo cov
 });
 
 // ---------------------------------------------------------------------------
-// Test: Canonical marker fields — no raw user input in HTML attributes (#1689 revision)
+// Test: Auto-Cast prompt hygiene (#1689 revision)
 // ---------------------------------------------------------------------------
 
-describe('gh-aw: canonical marker fields and no raw input interpolation (#1689 revision)', () => {
+describe('gh-aw: Auto-Cast prompt hygiene (#1689 revision)', () => {
   const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
-
-  it('pending-intent-v1 marker attributes must not contain raw {original_command} input', () => {
-    expect(content).not.toMatch(/pending-intent-v1[^>]*command="?\{original_command/);
-  });
-
-  it('pending-intent-v1 marker must use mode= canonical field', () => {
-    expect(content).toMatch(/pending-intent-v1[^>]*mode=/);
-  });
-
-  it('cast-pr-v1 marker must not contain raw {original_command} in origin-command attribute', () => {
-    expect(content).not.toMatch(/cast-pr-v1[^>]*origin-command="?\{original_command/);
-  });
-
-  it('cast-pr-v1 marker must use origin-mode= canonical field', () => {
-    expect(content).toMatch(/cast-pr-v1[^>]*origin-mode=/);
-  });
 
   it('{original_command} does not appear anywhere in workflow — only canonical command variables are used', () => {
     expect(content).not.toMatch(/\{original_command\}/);
+  });
+
+  it('contains no source-only assertion that Squad HTML comments survive gh-aw', () => {
+    expect(content).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
   });
 });
 
@@ -990,6 +1059,21 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
     ]);
     const result = runJqFilter(prs, filter);
     expect(result).toBe('null');
+  });
+
+  it('a closed Cast PR is absent from the open-PR scan, allowing additive retry', () => {
+    const filter = extractJqFilter();
+    const allPrs = [
+      {
+        headRefName: 'squad/cast-myrepo',
+        number: 41,
+        state: 'CLOSED',
+        url: 'https://github.com/org/repo/pull/41',
+      },
+    ];
+    const openPrs = allPrs.filter(pr => pr.state === 'OPEN');
+    expect(runJqFilter(JSON.stringify(openPrs), filter)).toBe('null');
+    expect(squadContent).toMatch(/If no open Cast PR found.*Execute Cast Mode/s);
   });
 
   it('Cast branch is selected and Cast Member branch is excluded when both are open', () => {

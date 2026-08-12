@@ -1,4 +1,3 @@
-<!-- squad-implementation-v1 -->
 ## Implementation Plan
 
 ### Tasks
@@ -47,3 +46,13 @@
   - `M2: Platform & Persistence` → Tasks 8, 9, 10, 11
   - `M3: Integration & Observability` → Tasks 12, 13, 14
 - **Labels:** `size:S`, `size:M`, `size:L` + `squad` + `squad:{agent}` _(label mode — see README for size_representation note)_
+
+Structured data:
+```json
+{
+  "squad_artifact": "implementation",
+  "schema_version": "1",
+  "origin_issue": 8,
+  "phases": []
+}
+```

@@ -3,27 +3,27 @@
 Machine-checkable assertions for validating the planning lifecycle fixture.
 A test harness should verify ALL assertions pass against the fixture files.
 
-## Marker Presence
+## Structured Artifact Presence
 
-- [ ] `research-output.md` contains exactly one `<!-- squad-research-v1 -->` marker
-- [ ] `triage-output.md` contains exactly one `<!-- squad-triage-v1 -->` marker
-- [ ] `program-plan-output.md` contains exactly one `<!-- squad-program-v1 -->` marker
-- [ ] `implementation-plan-output.md` contains exactly one `<!-- squad-implementation-v1 -->` marker
-- [ ] `validation-output.md` contains exactly one `<!-- squad-validation-v1 -->` marker
-- [ ] `acceptance-outputs.md` contains exactly one `<!-- squad-scope-accepted-v1 -->` marker
-- [ ] `acceptance-outputs.md` contains exactly one `<!-- squad-impl-accepted-v1 -->` marker
-- [ ] `acceptance-outputs.md` contains exactly one `<!-- squad-activated-v1 -->` marker
-- [ ] `lifecycle-state.md` contains exactly one `<!-- squad-lifecycle-state -->` marker
+- [ ] `research-output.md` contains exactly one structured artifact with `squad_artifact: research`
+- [ ] `triage-output.md` contains exactly one structured artifact with `squad_artifact: triage`
+- [ ] `program-plan-output.md` contains exactly one structured artifact with `squad_artifact: program`
+- [ ] `implementation-plan-output.md` contains exactly one structured artifact with `squad_artifact: implementation`
+- [ ] `validation-output.md` contains exactly one structured artifact with `squad_artifact: validation` and a human-readable `RESULT: PASS`
+- [ ] `acceptance-outputs.md` contains one each of `scope-accepted`, `impl-accepted`, and `activated`
+- [ ] `lifecycle-state.md` contains exactly one structured artifact with `squad_artifact: lifecycle-state`
+- [ ] Every structured artifact uses `schema_version: "1"`, `origin_issue: 8`, and `phases: []`
+- [ ] No fixture relies on a Squad HTML comment for machine state
 
-## Marker Ordering (Lifecycle Sequence)
+## Artifact Ordering (Lifecycle Sequence)
 
-- [ ] Research marker precedes Triage marker (by file creation order or embedded timestamps)
-- [ ] Triage marker precedes Program Plan marker
-- [ ] Program Plan marker precedes Implementation Plan marker
-- [ ] Implementation Plan marker precedes Validation marker
-- [ ] Validation marker precedes Scope Accepted marker
-- [ ] Scope Accepted marker precedes Impl Accepted marker
-- [ ] Impl Accepted marker precedes Activated marker
+- [ ] Research artifact precedes Triage artifact (by file creation order or embedded timestamps)
+- [ ] Triage artifact precedes Program Plan artifact
+- [ ] Program Plan artifact precedes Implementation Plan artifact
+- [ ] Implementation Plan artifact precedes Validation artifact
+- [ ] Validation artifact precedes Scope Accepted artifact
+- [ ] Scope Accepted artifact precedes Impl Accepted artifact
+- [ ] Impl Accepted artifact precedes Activated artifact
 - [ ] Lifecycle state shows all phases as `✅ Done` with monotonically increasing timestamps
 
 ## Traceability — No Orphaned Triage Items
