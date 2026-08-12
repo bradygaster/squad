@@ -124,10 +124,10 @@ The activation job ran `squad init --preset default` producing generic `.squad/`
 ### Step TG-1: Check Team Presence
 
 ```bash
-awk '/^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\|/&&!/^\|[-: |]*\|$/&&!/\| *Name *\|/' .squad/team.md 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
+awk '{sub(/\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\|/&&!/^\|[-: |]*\|$/&&!/\| *Name *\|/' .squad/team.md 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
 ```
 
-`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section — neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`). A missing file, empty file, header-only scaffold, or zero-member table all yield `TEAM_ABSENT`.
+`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section — neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`). A missing file, empty file, header-only scaffold, or zero-member table all yield `TEAM_ABSENT`. The leading `sub(/\r$/,"")` normalizes CRLF line endings so Windows-formatted team.md files are classified correctly.
 
 - `TEAM_PRESENT` → proceed to the original mode's section.
 - `TEAM_ABSENT` → execute **Auto-Cast Pivot** below; do not proceed with the original mode this run.
@@ -154,7 +154,7 @@ Scan ALL issue comments for `<!-- squad-pending-intent-v1 -->` as the first non-
 #### TG-3: Dedup Open Cast PR
 
 ```bash
-gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headRefName | startswith("squad/cast-"))] | first'
+gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headRefName | (startswith("squad/cast-") and (startswith("squad/cast-member-") | not)))] | first'
 ```
 
 **If an open Cast PR is found (rerun before merge):**

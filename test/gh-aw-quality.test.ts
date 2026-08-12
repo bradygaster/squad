@@ -699,6 +699,8 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     expect(content).toMatch(/open Cast PR.*found|cast PR.*found|Cast PR is found/i);
     // Exact --head matching truncates the branch name and never finds squad/cast-{repo}; must be forbidden
     expect(content).not.toMatch(/--head "squad\/cast-"/);
+    // squad/cast-member-* must be excluded so Cast Member PRs cannot satisfy Cast dedup
+    expect(content).toMatch(/startswith\("squad\/cast-member-"\).*\| not|\| not.*startswith\("squad\/cast-member-"\)/);
   });
 
   it('Cast PR dedup stops without opening a duplicate PR', () => {
@@ -755,11 +757,10 @@ describe('gh-aw: Team Guard roster-row detection logic (conceptual fixture cover
   const TEAM_GUARD_FIXTURES = join(process.cwd(), 'test', 'fixtures', 'team-guard');
 
   // Duplicate of the exact TG-1 shell snippet from workflows/squad.md (kept in sync).
-  // The snippet checks for a real member data row inside the ## Members section —
-  // neither the header row nor the separator row counts as TEAM_PRESENT.
+  // sub(/\r$/,"") normalizes CRLF so Windows-formatted team.md files are classified correctly.
   function runRosterCheck(filePath: string): string {
     return execSync(
-      `awk '/^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\\|/&&!/^\\|[-: |]*\\|$/&&!/\\| *Name *\\|/' '${filePath}' 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT`,
+      `awk '{sub(/\\r$/,"")} /^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\\|/&&!/^\\|[-: |]*\\|$/&&!/\\| *Name *\\|/' '${filePath}' 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT`,
       { shell: '/bin/sh', encoding: 'utf8' }
     ).trim();
   }
@@ -778,6 +779,14 @@ describe('gh-aw: Team Guard roster-row detection logic (conceptual fixture cover
 
   it('one real member data row → TEAM_PRESENT', () => {
     expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'one-member.md'))).toBe('TEAM_PRESENT');
+  });
+
+  it('CRLF scaffold/header-only (no data rows, Windows line endings) → TEAM_ABSENT', () => {
+    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'scaffold-crlf.md'))).toBe('TEAM_ABSENT');
+  });
+
+  it('CRLF one real member data row (Windows line endings) → TEAM_PRESENT', () => {
+    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'one-member-crlf.md'))).toBe('TEAM_PRESENT');
   });
 });
 
@@ -806,5 +815,64 @@ describe('gh-aw: canonical marker fields and no raw input interpolation (#1689 r
 
   it('{original_command} does not appear anywhere in workflow — only canonical command variables are used', () => {
     expect(content).not.toMatch(/\{original_command\}/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Cast PR dedup jq filter — behavioral coverage (#1689 revision)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', () => {
+  const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  // Extract the exact --jq expression from squad.md so this test stays in sync.
+  function extractJqFilter(): string {
+    const m = squadContent.match(/--jq '([^']+)'/);
+    if (!m) throw new Error('Could not extract --jq filter from squad.md TG-3');
+    return m[1];
+  }
+
+  function runJqFilter(jsonInput: string, filter: string): string {
+    return execSync(
+      `echo '${jsonInput.replace(/'/g, "'\\''")}' | jq -r '${filter}'`,
+      { shell: '/bin/sh', encoding: 'utf8' }
+    ).trim();
+  }
+
+  it('extracts a jq filter from squad.md TG-3 block', () => {
+    expect(() => extractJqFilter()).not.toThrow();
+    const filter = extractJqFilter();
+    expect(filter).toMatch(/startswith/);
+    expect(filter).toMatch(/headRefName/);
+  });
+
+  it('real Cast branch (squad/cast-{repo}) satisfies the filter and returns the PR', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/cast-myrepo', number: 42, url: 'https://github.com/org/repo/pull/42' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toContain('"headRefName": "squad/cast-myrepo"');
+    expect(result).toContain('"number": 42');
+  });
+
+  it('Cast Member branch (squad/cast-member-*) is excluded and returns null', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toBe('null');
+  });
+
+  it('Cast branch is selected and Cast Member branch is excluded when both are open', () => {
+    const filter = extractJqFilter();
+    const prs = JSON.stringify([
+      { headRefName: 'squad/cast-member-dev', number: 43, url: 'https://github.com/org/repo/pull/43' },
+      { headRefName: 'squad/cast-myrepo', number: 42, url: 'https://github.com/org/repo/pull/42' },
+    ]);
+    const result = runJqFilter(prs, filter);
+    expect(result).toContain('"headRefName": "squad/cast-myrepo"');
+    expect(result).not.toContain('squad/cast-member-dev');
   });
 });
