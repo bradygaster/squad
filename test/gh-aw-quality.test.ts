@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { minimatch } from 'minimatch';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
@@ -656,10 +657,14 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     expect(content).toMatch(/Exempt:.*Implement/i);
   });
 
-  it('Team Guard uses a bash file check that emits TEAM_PRESENT or TEAM_ABSENT', () => {
+  it('Team Guard uses a roster-row detection check that emits TEAM_PRESENT or TEAM_ABSENT', () => {
     expect(content).toMatch(/TEAM_PRESENT/);
     expect(content).toMatch(/TEAM_ABSENT/);
-    expect(content).toMatch(/test -s .squad\/team\.md/);
+    // Must inspect ## Members section for real data rows — not just file size
+    expect(content).toMatch(/## Members/);
+    expect(content).toMatch(/awk.*## Members.*TEAM_PRESENT.*TEAM_ABSENT|TEAM_ABSENT.*awk.*## Members/s);
+    // Must NOT use the shallow `test -s` check that treats scaffold-only files as TEAM_PRESENT
+    expect(content).not.toMatch(/test -s \.squad\/team\.md/);
   });
 
   it('Auto-Cast Pivot stops and does not run original mode when TEAM_ABSENT', () => {
@@ -686,9 +691,14 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     expect(castOpenedBlock).not.toMatch(/PR:.*#\d{1,6}/);
   });
 
-  it('rerun path reads actual GitHub state via gh pr list before posting link', () => {
-    expect(content).toMatch(/gh pr list.*--head.*squad\/cast|gh pr list.*squad\/cast/i);
+  it('rerun path reads actual GitHub state via gh pr list with headRefName + startsWith filter', () => {
+    // Must use headRefName field and startsWith to match squad/cast-{repo} patterns
+    expect(content).toMatch(/gh pr list/i);
+    expect(content).toMatch(/headRefName/);
+    expect(content).toMatch(/startswith\("squad\/cast-"\)/);
     expect(content).toMatch(/open Cast PR.*found|cast PR.*found|Cast PR is found/i);
+    // Exact --head matching truncates the branch name and never finds squad/cast-{repo}; must be forbidden
+    expect(content).not.toMatch(/--head "squad\/cast-"/);
   });
 
   it('Cast PR dedup stops without opening a duplicate PR', () => {
@@ -734,5 +744,67 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
     const safeOutputs = extractSafeOutputs(frontmatter);
     expect((safeOutputs['create-issue'] as { max: number })?.max).toBe(75);
     expect((safeOutputs['add-comment'] as { max: number })?.max).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Team Guard roster-row detection — conceptual fixture coverage (#1689 revision)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: Team Guard roster-row detection logic (conceptual fixture coverage)', () => {
+  const TEAM_GUARD_FIXTURES = join(process.cwd(), 'test', 'fixtures', 'team-guard');
+
+  // Duplicate of the exact TG-1 shell snippet from workflows/squad.md (kept in sync).
+  // The snippet checks for a real member data row inside the ## Members section —
+  // neither the header row nor the separator row counts as TEAM_PRESENT.
+  function runRosterCheck(filePath: string): string {
+    return execSync(
+      `awk '/^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\\|/&&!/^\\|[-: |]*\\|$/&&!/\\| *Name *\\|/' '${filePath}' 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT`,
+      { shell: '/bin/sh', encoding: 'utf8' }
+    ).trim();
+  }
+
+  it('missing file → TEAM_ABSENT', () => {
+    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'nonexistent-fixture-file.md'))).toBe('TEAM_ABSENT');
+  });
+
+  it('empty file → TEAM_ABSENT', () => {
+    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'empty.md'))).toBe('TEAM_ABSENT');
+  });
+
+  it('scaffold/header-only (## Members with header + separator, no data rows) → TEAM_ABSENT', () => {
+    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'scaffold.md'))).toBe('TEAM_ABSENT');
+  });
+
+  it('one real member data row → TEAM_PRESENT', () => {
+    expect(runRosterCheck(join(TEAM_GUARD_FIXTURES, 'one-member.md'))).toBe('TEAM_PRESENT');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Canonical marker fields — no raw user input in HTML attributes (#1689 revision)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: canonical marker fields and no raw input interpolation (#1689 revision)', () => {
+  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  it('pending-intent-v1 marker attributes must not contain raw {original_command} input', () => {
+    expect(content).not.toMatch(/pending-intent-v1[^>]*command="?\{original_command/);
+  });
+
+  it('pending-intent-v1 marker must use mode= canonical field', () => {
+    expect(content).toMatch(/pending-intent-v1[^>]*mode=/);
+  });
+
+  it('cast-pr-v1 marker must not contain raw {original_command} in origin-command attribute', () => {
+    expect(content).not.toMatch(/cast-pr-v1[^>]*origin-command="?\{original_command/);
+  });
+
+  it('cast-pr-v1 marker must use origin-mode= canonical field', () => {
+    expect(content).toMatch(/cast-pr-v1[^>]*origin-mode=/);
+  });
+
+  it('{original_command} does not appear anywhere in workflow — only canonical command variables are used', () => {
+    expect(content).not.toMatch(/\{original_command\}/);
   });
 });

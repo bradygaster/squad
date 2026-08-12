@@ -124,13 +124,20 @@ The activation job ran `squad init --preset default` producing generic `.squad/`
 ### Step TG-1: Check Team Presence
 
 ```bash
-test -s .squad/team.md && echo TEAM_PRESENT || echo TEAM_ABSENT
+awk '/^## Members/{f=1;next} f&&/^#/{f=0} f&&/^\|/&&!/^\|[-: |]*\|$/&&!/\| *Name *\|/' .squad/team.md 2>/dev/null | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
 ```
+
+`TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section — neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`). A missing file, empty file, header-only scaffold, or zero-member table all yield `TEAM_ABSENT`.
 
 - `TEAM_PRESENT` → proceed to the original mode's section.
 - `TEAM_ABSENT` → execute **Auto-Cast Pivot** below; do not proceed with the original mode this run.
 
 ### Auto-Cast Pivot
+
+**Canonical command variables** (derived from Parse Command output — never from raw input):
+- `{canonical_mode}` — the parsed mode enum (e.g., `research`, `plan`, `plan-activate`)
+- `{canonical_command}` — reconstructed user-safe command: `/squad {canonical_mode}` with optional `phase {N}` suffix
+- `{phase_n}` — numeric phase if present; omit the field otherwise
 
 **Universal response invariant:** current state · result · one primary next action · recovery on ⚠️/🔴.
 
@@ -140,13 +147,14 @@ Scan ALL issue comments for `<!-- squad-pending-intent-v1 -->` as the first non-
 - Found → skip to TG-3 (never write a second pending-intent comment).
 - Not found → `add-comment` (immutable; never edited):
   ```
-  <!-- squad-pending-intent-v1 issue={issue_number} command="{original_command}" -->
+  <!-- squad-pending-intent-v1 issue={issue_number} mode={canonical_mode} -->
   ```
+  (Include `phase={phase_n}` only when a phase was parsed. Never embed raw user input in marker attributes.)
 
 #### TG-3: Dedup Open Cast PR
 
 ```bash
-gh pr list --head "squad/cast-" --state open --json number,url,title
+gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headRefName | startswith("squad/cast-"))] | first'
 ```
 
 **If an open Cast PR is found (rerun before merge):**
@@ -156,7 +164,7 @@ gh pr list --head "squad/cast-" --state open --json number,url,title
 
   **Current state:** Cast PR open — your team is ready for review.
   **Result:** No duplicate PR opened.
-  **Next action:** Merge the Cast PR, then return to this issue and rerun: `{original_command}`
+  **Next action:** Merge the Cast PR, then return to this issue and rerun: `{canonical_command}`
 
   **Cast PR:** {pr_url}
   ```
@@ -164,21 +172,21 @@ gh pr list --head "squad/cast-" --state open --json number,url,title
 
 **If no open Cast PR found (first run or Cast PR was merged/closed):**
 - Scan ALL issue comments for `<!-- squad-cast-opened-v1 -->` as the first non-empty line.
-- If `<!-- squad-cast-opened-v1 -->` found but no open PR → Cast PR may have been closed without merging. `add-comment` with recovery guidance: "The previous Cast PR appears to be closed. Rerun `{original_command}` to open a new one."  Stop.
-- If `<!-- squad-cast-opened-v1 -->` not found → **FIRST RUN**: execute Cast Mode Steps 0–6 using this issue as the casting brief. In the Cast PR body, include: `<!-- squad-cast-pr-v1 origin-issue={issue_number} origin-command="{original_command}" -->`. Then `add-comment` (immutable; never edited):
+- If `<!-- squad-cast-opened-v1 -->` found but no open PR → Cast PR may have been closed without merging. `add-comment` with recovery guidance: "The previous Cast PR appears to be closed. Rerun `{canonical_command}` to open a new one."  Stop.
+- If `<!-- squad-cast-opened-v1 -->` not found → **FIRST RUN**: execute Cast Mode Steps 0–6 using this issue as the casting brief. In the Cast PR body, include: `<!-- squad-cast-pr-v1 origin-issue={issue_number} origin-mode={canonical_mode} -->`. Then `add-comment` (immutable; never edited):
   ```
   <!-- squad-cast-opened-v1 -->
   🤖 Squad is assembling your team.
 
   **Current state:** No team detected — Squad auto-pivoted to Cast.
   **Result:** A Cast PR has been opened. Check the **Pull Requests** tab to find and review it.
-  **Next action:** Merge the Cast PR, then return to this issue and rerun: `{original_command}`
+  **Next action:** Merge the Cast PR, then return to this issue and rerun: `{canonical_command}`
 
   ⚠️ The PR link is not available in this comment — find it in the **Pull Requests** tab.
   ```
 - Stop. Do not run the original command this run.
 
-**Recovery (Cast step failure):** Report the exact error in plain language. Tell the user to rerun `{original_command}` on this issue to retry. Never instruct the user to run `/squad cast` separately.
+**Recovery (Cast step failure):** Report the exact error in plain language. Tell the user to rerun `{canonical_command}` on this issue to retry. Never instruct the user to run `/squad cast` separately.
 
 ---
 
