@@ -254,9 +254,18 @@ When all features are enabled, each round follows this cycle:
 ### Advanced: `--agent-cmd` (Hidden Flag)
 For advanced users who know what they're doing:
 ```bash
-squad watch --execute --agent-cmd "custom-agent-wrapper"
+squad watch --execute \
+  --agent-cmd "custom-agent run --task {prompt}"
 ```
-This fully overrides the agent command. The default is `gh copilot --message "<prompt>"` plus any `--copilot-flags`. Use this to plug in custom agent wrappers or alternative Copilot entry points.
+Use one standalone `{prompt}` token to place the complete generated prompt as a
+single argument. Embedded forms such as `--task={prompt}` are not replaced. If
+the token is absent, Squad preserves the legacy contract and appends
+`-p <prompt>`.
+
+This fully overrides the default `copilot -p "<prompt>"` command. Custom
+commands do not receive `--copilot-flags`, Squad's automatic
+`--additional-mcp-config` injection, or `squad_state_*` MCP tools; the custom
+runner must provide its own policy and tool configuration.
 ### Azure DevOps Support
 Ralph supports Azure DevOps repos and work items via the SDK's PlatformAdapter. When your git remote points to `dev.azure.com` or `visualstudio.com`, Ralph auto-detects ADO — no flag needed.
 **Setup:**

@@ -173,10 +173,9 @@ npx @bradygaster/squad-cli watch
 # Monitor and auto-execute against actionable issues
 npx @bradygaster/squad-cli watch --execute --interval 5
 
-# With custom agent runner and copilot flags
+# With a custom agent runner that uses --task instead of -p
 npx @bradygaster/squad-cli watch --execute \
-  --agent-cmd "agency copilot" \
-  --copilot-flags "--yolo --autopilot --mcp mail --agent squad" \
+  --agent-cmd "custom-agent run --task {prompt} --autopilot" \
   --auth-user myaccount
 
 # Run watch with diagnostics
@@ -192,8 +191,8 @@ npx @bradygaster/squad-cli watch --health
 |------|-------------|
 | `--execute` | Enable agent execution (spawn Copilot sessions for actionable issues) |
 | `--interval N` | Poll every N minutes (default: 10) |
-| `--agent-cmd` | Custom agent command (default: `gh copilot`) |
-| `--copilot-flags` | Flags passed to the agent runner (e.g., `--yolo --autopilot`) |
+| `--agent-cmd` | Custom agent command; use one standalone `{prompt}` token to place the prompt, or Squad appends `-p <prompt>` |
+| `--copilot-flags` | Flags passed to the default Copilot runner (e.g., `--yolo --autopilot`) |
 | `--auth-user` | GitHub/Azure DevOps account to use for agent auth |
 | `--log-file` | Mirror output to file for later review and diagnostics |
 | `--verbose` | Show extra diagnostic output (auth probes, callbacks, pulls) |

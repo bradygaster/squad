@@ -38,6 +38,7 @@ import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
 import { createVerboseLogger, type VerboseLogger } from './verbose.js';
+import { buildCustomAgentCommand } from './agent-spawn.js';
 
 const storage = new FSStorageProvider();
 const execFileAsync = promisify(execFile);
@@ -606,8 +607,7 @@ export function buildAgentCommand(
 ): { cmd: string; args: string[] } {
   const prompt = `Work on issue #${issue.number}: ${issue.title}. Read the issue body for full details.`;
   if (options.agentCmd) {
-    const parts = options.agentCmd.trim().split(/\s+/);
-    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+    return buildCustomAgentCommand(options.agentCmd, prompt);
   }
   const args = ['-p', prompt];
   if (options.copilotFlags) args.push(...options.copilotFlags.trim().split(/\s+/));

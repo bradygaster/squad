@@ -141,7 +141,7 @@ squad loop --file scripts/monitor.md     # Run a custom loop file
 - `--interval <N>` — Override loop interval in minutes (default: from frontmatter)
 - `--timeout <N>` — Override cycle timeout in minutes (default: from frontmatter)
 - `--copilot-flags "..."` — Pass extra flags to Copilot CLI
-- `--agent-cmd <cmd>` — Custom agent command (advanced)
+- `--agent-cmd <cmd>` — Custom agent command; use one standalone `{prompt}` token to place the prompt (advanced)
 - `--monitor-email` — Scan email for alerts each cycle (requires WorkIQ MCP)
 - `--monitor-teams` — Scan Teams for action items each cycle (requires WorkIQ MCP)
 - `--self-pull` — Run `git fetch && git pull` before each cycle
