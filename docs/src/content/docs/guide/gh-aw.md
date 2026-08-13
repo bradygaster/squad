@@ -61,7 +61,7 @@ and opens a PR with the result.
 
 | Requirement | Details |
 |-------------|---------|
-| GitHub repo with Copilot | Copilot must be enabled for the repository |
+| GitHub repo with Copilot | Copilot must be enabled **and configured for use in GitHub Actions** for the repository. gh-aw uses `copilot-requests: write` to install and invoke the Copilot runtime in the activation job — if Copilot is not enabled for Actions, the run fails before Squad starts. Enable it under **Settings → Copilot → Copilot in GitHub Actions**. |
 | `gh` CLI | [Install the GitHub CLI](https://cli.github.com/) and authenticate with `gh auth login` |
 | `gh aw` extension | `gh extension install github/gh-aw` |
 
@@ -179,14 +179,15 @@ time.
 
 ### Optional: PAT fallback
 
-If you don't want to use a GitHub App but need more than the default token, set
-a Personal Access Token:
+Squad CLI's `init` step runs in the activation job and uses `github.token` by default. If your use case requires elevated access for Squad CLI operations (for example, initializing against a private registry or cross-repo reads), you can supply a Personal Access Token:
 
 | Setting | Type | Purpose |
 |---------|------|---------|
-| `SQUAD_GITHUB_TOKEN` | Secret | Fallback PAT when no GitHub App is configured |
+| `SQUAD_GITHUB_TOKEN` | Secret | PAT for Squad CLI `init` — not used by gh-aw's Copilot runtime |
 
 **Auth precedence:** GitHub App token → `SQUAD_GITHUB_TOKEN` → `github.token`.
+
+This token is **not** what gh-aw uses to invoke Copilot. The Copilot runtime bootstrap is a gh-aw platform concern driven by `copilot-requests: write` and requires Copilot to be enabled for Actions — see [Prerequisites](#prerequisites).
 
 ---
 
@@ -873,6 +874,7 @@ gh aw compile
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `missing /usr/local/bin/copilot` in activation log | Copilot is not enabled for GitHub Actions in this repository — a gh-aw platform requirement, not a Squad requirement | Enable **Copilot in GitHub Actions** under **Settings → Copilot**. `SQUAD_GITHUB_TOKEN` does not fix this error. |
 | "Nothing to cast from" comment | Both repo and issue are empty | Add a README or write a casting brief in the issue body |
 | Cast produces a generic team | Issue body was empty, repo was analyzed alone | Write a detailed casting brief (see [example](#example-writing-a-casting-brief)) |
 | "Could not access" error on Connect/Adopt | Source repo is private or doesn't exist | Verify the source repo is accessible and contains a `.squad/` directory |
