@@ -613,29 +613,49 @@ describe('gh-aw: prompt budget & planning import regression', () => {
 describe('gh-aw: compiled workflow contract', () => {
   const ghAwAvailable = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' }).status === 0;
 
+  // Explicit timeout: this test shells out to the real `gh aw compile` binary,
+  // which reliably finishes in ~2-3s in isolation but can exceed the 5s vitest
+  // default under full-suite parallel load/contention. Bumping this avoids
+  // spurious CI flakiness unrelated to the assertions themselves.
   it.skipIf(!ghAwAvailable)('strict-compiles and preserves prompt/config behavior', () => {
     const workspace = createTestWorkspace('gh-aw-compile-');
     try {
       execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-      cpSync(WORKFLOWS_DIR, join(workspace, 'workflows'), { recursive: true });
-      execFileSync('gh', ['aw', 'compile', 'workflows/squad.md', '--strict'], {
+      // gh-aw's dispatch-workflow validation (added alongside #1682's
+      // safe-outputs.dispatch-workflow config) resolves its dispatch target against
+      // a `.github/workflows/` directory that it locates relative to the compiled
+      // file's path, assuming the standard `<repo-root>/.github/workflows/<file>.md`
+      // layout. This repo distributes the gh-aw *source* one level shallower, from a
+      // top-level `workflows/` directory (see docs/src/content/docs/guide/gh-aw.md),
+      // which downstream consumers install into their own `.github/workflows/` via
+      // `gh aw add owner/squad/workflows/squad-implement-worker.md@dev
+      // owner/squad/workflows/squad.md@dev` — landing both files side-by-side there.
+      // Mirror that real deployment layout in the ephemeral test workspace (instead
+      // of a bare `workflows/` copy) so the dispatch target `squad-implement-worker`
+      // resolves the same way it will for every real downstream install.
+      cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
+      execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict'], {
         cwd: workspace,
         encoding: 'utf8',
         stdio: 'pipe',
       });
 
-      const compiled = readFileSync(join(workspace, 'workflows', 'squad.lock.yml'), 'utf8');
+      const compiled = readFileSync(join(workspace, '.github', 'workflows', 'squad.lock.yml'), 'utf8');
       expect(compiled).toContain('"auto_close_issue":false');
       expect(compiled).toContain('"data_enabled":true');
       expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
       expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
-      expect(compiled).toContain('{{#runtime-import shared/planning-ontology.md}}');
-      expect(compiled).toContain('{{#runtime-import squad.md}}');
+      // gh-aw records runtime-import paths relative to the repo root (not the
+      // compiled file's own directory), so with the real `.github/workflows/`
+      // deployment layout these are prefixed accordingly — verified against an
+      // isolated compile outside this repo/worktree entirely.
+      expect(compiled).toContain('{{#runtime-import .github/workflows/shared/planning-ontology.md}}');
+      expect(compiled).toContain('{{#runtime-import .github/workflows/squad.md}}');
       expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
-  });
+  }, 20000);
 });
 
 // ---------------------------------------------------------------------------
