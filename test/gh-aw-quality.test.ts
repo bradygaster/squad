@@ -1130,3 +1130,40 @@ describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body r
     expect(squadContent).toMatch(/return to the originating issue and rerun.*\{canonical_command\}/s);
   });
 });
+
+// ---------------------------------------------------------------------------
+// gh-aw: Threat detection taxonomy regression (#1701)
+//
+// Verifies that Squad's label registry correctly distinguishes detection
+// infrastructure failures (`agentic-detection-failed`) from confirmed content
+// threats (`agentic-threat-detected`).  The former is Squad-owned; the latter
+// is applied by the upstream gh-aw framework and MUST NOT be defined here.
+// ---------------------------------------------------------------------------
+describe('gh-aw: threat detection taxonomy — parse_error must not map to agentic-threat-detected (#1701)', () => {
+  const LABEL_SYNC = join(process.cwd(), '.github/workflows/sync-squad-labels.yml');
+  const labelSyncContent = readFileSync(LABEL_SYNC, 'utf8');
+
+  it('sync-squad-labels.yml defines agentic-detection-failed for infrastructure failures', () => {
+    expect(labelSyncContent).toContain('agentic-detection-failed');
+  });
+
+  it('agentic-detection-failed label has a non-empty description that mentions infrastructure failure', () => {
+    expect(labelSyncContent).toMatch(/agentic-detection-failed.*infrastructure failure|infrastructure failure.*agentic-detection-failed/s);
+  });
+
+  it('agentic-detection-failed is distinct from agentic-threat-detected (Squad must not define the threat label)', () => {
+    // agentic-threat-detected is applied by the upstream process_safe_outputs.cjs on genuine threats.
+    // Squad must not redefine it here to avoid ambiguity in the taxonomy.
+    expect(labelSyncContent).not.toContain('agentic-threat-detected');
+  });
+
+  it('agentic-detection-failed is present in SIGNAL_LABELS array (high-visibility, not buried)', () => {
+    // Verify the label appears after the SIGNAL_LABELS declaration, confirming it is
+    // placed in the high-signal group rather than a lower-priority type:* group.
+    const signalStart = labelSyncContent.indexOf('SIGNAL_LABELS');
+    expect(signalStart).toBeGreaterThan(-1);
+    const signalEnd = labelSyncContent.indexOf('];', signalStart);
+    const signalBlock = labelSyncContent.slice(signalStart, signalEnd);
+    expect(signalBlock).toContain('agentic-detection-failed');
+  });
+});
