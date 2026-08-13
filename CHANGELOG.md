@@ -20,6 +20,9 @@ All notable changes to this project will be documented in this file.
 - Docs: add Azure hosting guides (Dockerfile contract, ACA, AKS), a production security-hardening guide (threat model, prompt-injection defense, credential hygiene), a production-operations runbook (observability, state-backend selection, troubleshooting), and a Microsoft Agent Framework integration guide (#1574, #1575, #1578, #1579).
 - (cli) Add `gh aw init` tooling — skills, MCP config, and setup/maintenance workflows — for consuming gh-aw from a project (#1592).
 - (sdk) Expose `memory.*` tools (classify, write, search, promote, delete, audit) through the `squad_state` MCP server so agents can manage tiered memory directly.
+- (cli) Add a Squad implementation mode: `/squad implement` dispatches regular issues and ready epic tasks to an isolated implementation worker workflow, guarding dependency handling, duplicate-PR detection, concurrency, and PR file scope (#1682).
+- (cli) Ship an Auto-Cast pivot for gh-aw: when a repo has no team yet, workflows write a pending-intent marker, dedupe in-flight Cast PRs, and resume the original request once casting completes, so a single issue can guide resumable work end-to-end (#1690).
+- (sdk) Add `"max"` to `SquadReasoningEffort` and `VALID_REASONING_EFFORTS`, matching Copilot SDK 1.0.9's `ReasoningEffort = "max"` (#1693).
 
 ### Changed
 - (cli) Harden the Squad coordinator workflow prompt for gh-aw reliability: hard completion gates, atomic task-call contracts, configurable model selection, forward-ported safe-output hardening, and prompt-size compression (135KB → under the 100KB gh-aw limit) (#1669, #1678, #1680, #1683, #1685).
@@ -28,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - (cli) CI: pin GitHub Actions references to immutable commit SHAs across shipped workflow templates, and fail CI when unreleased changesets accumulate (#1475, #1481).
 - Docs: restructure navigation and do a voice pass across get-started, concepts, and issue-truth content; add the agentic-SDLC demo walkthrough (#1570-#1573).
 - Refresh dependencies across the workspace, including TypeScript, Vitest 4, Ink 7, `@github/copilot-sdk`, `@github/copilot`, and OpenTelemetry, plus routine security/patch bumps.
+- Bump `@hono/node-server` to 2.1.0 and the workspace's minor-patch dependency group (`@typescript-eslint/eslint-plugin`, `@typescript-eslint/parser`, `eslint`, `eslint-plugin-n`, `@types/node`, `@github/copilot-sdk`, `ws`) (#1692, #1694).
 
 ### Fixed
 - (cli) Pin the CLI's `squad-sdk` dependency to the exact published version in `publish-cli` so installs can no longer resolve a stale SDK (#1638).
