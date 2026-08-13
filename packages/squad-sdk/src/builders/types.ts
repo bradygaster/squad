@@ -9,7 +9,7 @@
  * @module builders/types
  */
 
-import type { SquadReasoningEffort } from '../adapter/types.js';
+import type { SquadReasoningEffort, SquadContextTier } from '../adapter/types.js';
 
 // ---------------------------------------------------------------------------
 // Shared primitives
@@ -71,6 +71,9 @@ export interface DefaultsDefinition {
   /** Default reasoning effort for agents that don't specify one. */
   readonly reasoningEffort?: SquadReasoningEffort;
 
+  /** Default context tier for agents that don't specify one. */
+  readonly contextTier?: SquadContextTier;
+
   /** Default budget limits applied to agents that don't specify one. */
   readonly budget?: BudgetDefinition;
 }
@@ -124,6 +127,9 @@ export interface AgentDefinition {
 
   /** Reasoning effort level for models that support it. */
   readonly reasoningEffort?: SquadReasoningEffort;
+
+  /** Context tier (context window size) for models that support it. */
+  readonly contextTier?: SquadContextTier;
 
   /** Optional token budget for this agent. */
   readonly budget?: BudgetDefinition;

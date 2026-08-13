@@ -6,7 +6,7 @@
 import path from 'node:path';
 import { FSStorageProvider, exportToRepo, parseRepoString } from '@bradygaster/squad-sdk';
 import type { RepoSpec } from '@bradygaster/squad-sdk';
-import { detectSquadDir } from '../core/detect-squad-dir.js';
+import { effectiveSquadDir } from '../core/effective-squad-dir.js';
 import { success, warn, info } from '../core/output.js';
 import { fatal } from '../core/errors.js';
 import { getPackageVersion } from '../core/version.js';
@@ -32,7 +32,8 @@ export interface ExportRepoOptions {
 }
 
 /**
- * Build the export manifest from a local squad directory.
+ * Build the export manifest from the effective squad state directory
+ * (the external state dir when state is externalized, otherwise local .squad/).
  */
 function buildManifest(dest: string, storage: FSStorageProvider, squadInfo: { path: string }): ExportManifest {
   const manifest: ExportManifest = {
@@ -129,14 +130,14 @@ function buildManifest(dest: string, storage: FSStorageProvider, squadInfo: { pa
  */
 export async function runExport(dest: string, outPath?: string, repoOptions?: ExportRepoOptions): Promise<void> {
   const storage = new FSStorageProvider();
-  const squadInfo = detectSquadDir(dest);
-  const teamMd = path.join(squadInfo.path, 'team.md');
+  const { stateDir } = effectiveSquadDir(dest);
+  const teamMd = path.join(stateDir, 'team.md');
   
   if (!storage.existsSync(teamMd)) {
     fatal('No squad found — run init first');
   }
 
-  const manifest = buildManifest(dest, storage, squadInfo);
+  const manifest = buildManifest(dest, storage, { path: stateDir });
   const bundleJson = JSON.stringify(manifest, null, 2) + '\n';
 
   // Export to GitHub repo if --repo is specified

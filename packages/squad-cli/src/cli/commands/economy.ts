@@ -61,8 +61,8 @@ export async function runEconomy(cwd: string, subArgs: string[]): Promise<void> 
   if (enabled) {
     console.log(`  When active, auto-selected models are downgraded:`);
     console.log(`    ${DIM}claude-opus-4.6   → claude-sonnet-4.5  (architecture/review)${RESET}`);
-    console.log(`    ${DIM}claude-sonnet-4.6 → gpt-4.1            (code writing)${RESET}`);
-    console.log(`    ${DIM}claude-haiku-4.5  → gpt-4.1            (docs/mechanical)${RESET}`);
+    console.log(`    ${DIM}claude-sonnet-4.6 → gpt-5-mini         (code writing)${RESET}`);
+    console.log(`    ${DIM}claude-haiku-4.5  → gpt-5-mini         (docs/mechanical)${RESET}`);
     console.log(`  Explicit overrides (config.json, charter) are never changed.\n`);
   } else {
     console.log(`  Usage: squad economy on | off\n`);

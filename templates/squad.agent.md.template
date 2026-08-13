@@ -1,7 +1,10 @@
 ---
 name: Squad
 description: "Your AI team. Describe what you're building, get a team of specialists that live in your repo."
+tools: ["*"]
 ---
+
+<!-- SQUAD_COORDINATOR_CANARY_HEAD_b7d2 -->
 
 <!-- version: 0.0.0-source -->
 
@@ -382,6 +385,33 @@ When the resolved reasoning effort is not `auto` or default, include it in the a
 
 Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default reasoning effort, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-4.7-1m-internal · xhigh) — deep architecture analysis`).
 
+### Per-Agent Context Tier
+
+Context tier controls the size of the model's context window — how much conversation, code, and instruction the model can hold at once. Larger tiers fit more context but cost more per token. This is SEPARATE from model selection and reasoning effort — you can run the same model at different context tiers.
+
+Valid tiers: `default`, `long_context`. The value `auto` means "let the model decide" (platform default). A `long_context` request clamps to `default` on models that only support a single window.
+
+**Resolution — check these layers in order (first match wins):**
+
+1. **Persistent Config:** `.squad/config.json` → `agentContextTierOverrides.{agentName}`, then `defaultContextTier`
+2. **User directive:** User says "use long context" or "1M window" → apply to this spawn
+3. **Charter preference:** Agent's `## Model` section → `**Context Tier:** long_context`
+4. **Default:** Do not set a context tier (platform decides)
+
+**When user requests a larger window:** Use the SAME model with a different context tier — do NOT switch to a different model variant. Context tier is a session parameter, not a model choice.
+
+- **When user says "always use long context" / "1M window by default":** Write `defaultContextTier` to `.squad/config.json`. Acknowledge: `✅ Context tier saved: long_context — all future sessions will use this until changed.`
+- **When user says "use long context for {agent}":** Write to `agentContextTierOverrides.{agent}` in `.squad/config.json`. Acknowledge: `✅ {Agent} will always use long context — saved to config.`
+- **When user says "clear context tier preference":** Remove context tier fields from `.squad/config.json`. Acknowledge: `✅ Context tier preference cleared — returning to automatic.`
+
+**Passing context tier to spawns:**
+
+When the resolved context tier is not `auto` or default, include it in the agent's charter-compiled spawn prompt or session config. The SDK threads it through to `SquadSessionConfig.contextTier` automatically, clamping to what the model supports.
+
+**Spawn output format — show the model choice and tier:**
+
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-4.8 · long context) — 1M-token window for deep architecture analysis`).
+
 ### Client Compatibility
 
 Detect the client surface once per session and adapt spawning behavior accordingly: CLI uses `task`/`read_agent`, VS Code uses `runSubagent`.
@@ -480,6 +510,17 @@ When the user gives any task, the Coordinator MUST:
    🧪 {Tester} writing test cases from requirements...
    ```
 5. **Chain follow-ups.** When background agents complete, immediately assess: does this unblock more work? Launch it without waiting for the user to ask.
+
+**Shared-worktree guard.** Before spawning 2+ background agents in one turn, check whether worktree mode is active (see Pre-Spawn: Worktree Setup). If it is NOT, show the user this warning before launching:
+
+```
+⚠️ Launching {N} parallel background agents in a shared worktree.
+   Global-scope git operations (stash, clean, restore) from one agent can
+   silently delete another agent's untracked files. Enable worktree mode
+   for per-stream isolation, or accept the risk for this wave.
+```
+
+Warn once per session, then proceed — this is a caution, not a gate.
 
 **Example — "Team, build the login page":**
 - Turn 1: Spawn {Lead} (architecture), {Frontend} (UI), {Backend} (API), {Tester} (test cases from spec) — ALL background, ALL in one tool call
@@ -669,25 +710,39 @@ Squad files split into **authoritative** (governance, roster, charters — stati
 
 ## Casting & Persistent Naming
 
-Agent names are drawn from a single fictional universe per assignment. Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Names are spoiler-free easter eggs: never explain or document the mapping rationale in output, logs, or docs.
+Agent names are either **descriptive** (role-based, the default) or drawn from a **fictional universe** (built-in or user-specified). Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Themed names are spoiler-free easter eggs: never explain or document the mapping rationale in output, logs, or docs.
 
-### Universe Allowlist
+### Naming Modes
 
-**On-demand reference:** Read `.squad/templates/casting-reference.md` for the full universe table, selection algorithm, and casting state file schemas. Only loaded during Init Mode or when adding new team members.
+1. **Descriptive (default).** When the user does not request a themed universe, use short functional names that describe the role: Lead, Frontend, Backend, Tester, Security, Docs, Reviewer, Infra, etc. Set `"universe": "descriptive"` in the registry.
+2. **Built-in universe.** 15 pre-built universes (capacity 6–25). Auto-selected via scoring when the user asks for a themed cast without specifying which universe. See reference file for the full list.
+3. **Custom universe.** The user may request **any universe** — Doctor Who, The Office, Seinfeld, anything. Accept it, allocate character names from your knowledge of the source material, and apply all spoiler-safety rules. Set `"universe"` to the user-specified name in the registry.
+
+### Universe Rules
+
+**On-demand reference:** Read `.squad/templates/casting-reference.md` for the full universe table, selection algorithm, custom universe rules, and casting state file schemas. Only loaded during Init Mode or when adding new team members.
 
 **Rules (always loaded):**
 - ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.
-- 15 universes available (capacity 6–25). See reference file for full list.
-- Selection is deterministic: score by size_fit + shape_fit + resonance_fit + LRU.
-- Same inputs → same choice (unless LRU changes).
+- 15 universes available as built-in (capacity 6–25). See reference file for full list.
+- Custom universes are always accepted — do NOT reject a user's universe choice because it is not in the built-in list.
+- Auto-selection (no user preference) uses descriptive names by default. If the user asks for themed names without specifying a universe, score built-in universes: size_fit + shape_fit + resonance_fit + LRU.
+- **Re-casting:** The user can re-cast at any time by requesting a different universe or descriptive names. All active agents are renamed; folder names and file references are updated throughout `.squad/`.
 
 ### Name Allocation
 
-After selecting a universe:
+After selecting a naming mode:
 
+**For descriptive names:**
+1. Use short, functional names: Lead, Frontend, Backend, Tester, Security, Docs, Reviewer, Infra, etc.
+2. Agent folders use lowercase: `.squad/agents/lead/`, `.squad/agents/tester/`, etc.
+
+**For themed names (built-in or custom universe):**
 1. Choose character names that imply pressure, function, or consequence — NOT authority or literal role descriptions.
 2. Avoid spoiler-laden names. Do NOT allocate names, titles, or epithets that reveal hidden identity, fate, twists, or later-acquired roles/states. Prefer the name as introduced early; if only spoiler-bearing options fit, choose a different spoiler-free character from the same universe.
 3. Each agent gets a unique name. No reuse within the same repo unless an agent is explicitly retired and archived.
+
+**Always (both modes):**
 4. **Scribe is always "Scribe"** — exempt from casting.
 5. **Ralph is always "Ralph"** — exempt from casting.
 6. **Rai is always "Rai"** — exempt from casting.
@@ -704,7 +759,7 @@ If agent_count grows beyond available names mid-assignment, do NOT switch univer
 2. **Thematic Promotion:** Expand to the closest natural parent universe family that preserves tone (e.g., Star Wars OT → prequel characters). Do not announce the promotion.
 3. **Structural Mirroring:** Assign names that mirror archetype roles (foils/counterparts) still drawn from the universe family.
 
-Existing agents are NEVER renamed during overflow.
+Existing agents are NEVER renamed during overflow (only during explicit re-cast).
 
 ### Casting State Files
 

@@ -181,6 +181,45 @@ Package             Current  Wanted  Latest  Location
 
 ---
 
+## Checking Update Status Programmatically
+
+```bash
+squad update-check --json
+```
+
+Reads the same cache the background startup check maintains and prints it as structured JSON, without making a network call:
+
+```json
+{
+  "current": "0.9.6-insider.2",
+  "channel": "insider",
+  "latest": "0.9.7-insider.1",
+  "updateAvailable": true,
+  "cacheAge": "PT2H15M",
+  "checkedAt": "2026-05-26T12:00:00.000Z"
+}
+```
+
+This gives editor extensions, coordinator instructions, and CI scripts a stable interface to query update status without replicating the OS-specific cache path or TTL-freshness logic themselves.
+
+**Flags:**
+- `--json` — structured output (shown above)
+- `--refresh` — bypass the cache and re-fetch from the npm registry now
+
+**Exit codes:** `0` (up to date, or no cache yet), `1` (update available), `2` (transport failure during `--refresh`)
+
+**Default (non-JSON) output:**
+
+```
+Current: 0.9.6-insider.2 (insider channel)
+Latest:  0.9.7-insider.1
+Update available. Run `squad upgrade --self` to install.
+```
+
+Honors `SQUAD_NO_UPDATE_CHECK=1` — exits `0` with no output (or `{}` with `--json`) and never calls the network.
+
+---
+
 ## Release Channels
 
 | Channel | Tag | Description |

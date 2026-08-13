@@ -11,6 +11,7 @@
 
 import { execFile, execFileSync } from 'node:child_process';
 import type { WatchContext } from './types.js';
+import { withAdditionalMcpConfig } from '../../core/copilot-invocation.js';
 
 /** True when running on Windows — used to gate `shell: true`. */
 export const IS_WINDOWS = process.platform === 'win32';
@@ -117,6 +118,29 @@ export function buildAgentCommand(
 }
 
 /**
+ * Build the command + args array for a Copilot session, with the
+ * `--additional-mcp-config`/`--yolo` workaround injected so `squad_state_*`
+ * MCP tools register (see {@link withAdditionalMcpConfig}).
+ *
+ * Unlike {@link buildAgentCommand}, this always defaults to the bare
+ * `copilot` binary rather than probing for a `gh copilot` fallback — used
+ * by capabilities that spawn a full agent session against the repo
+ * (execute, wave-dispatch).
+ */
+export function buildCopilotCommand(
+  prompt: string,
+  context: WatchContext,
+): { cmd: string; args: string[] } {
+  if (context.agentCmd) {
+    const parts = context.agentCmd.trim().split(/\s+/);
+    return { cmd: parts[0]!, args: [...parts.slice(1), '-p', prompt] };
+  }
+  const args = ['-p', prompt];
+  if (context.copilotFlags) args.push(...context.copilotFlags.trim().split(/\s+/));
+  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, context.teamRoot) };
+}
+
+/**
  * Spawn an agent command with a timeout.
  *
  * Uses `shell: true` on Windows so that `.cmd`/`.bat` wrappers and
@@ -155,16 +179,21 @@ export function spawnWithTimeout(
  * Spawn an agent command with a timeout, resolving with success/error
  * instead of rejecting.  Used by execute and wave-dispatch where the
  * caller wants to handle failure without try/catch.
+ *
+ * Pass `pidTracking` when the caller wants the child process registered
+ * with a {@link WatchContext.pidTracker} for cleanup on exit/crash (e.g.
+ * the `execute` capability, which spawns long-running sessions).
  */
 export function spawnAgent(
   cmd: string,
   args: string[],
   cwd: string,
   timeoutMs: number,
+  pidTracking?: { tracker: NonNullable<WatchContext['pidTracker']>; label: string },
 ): Promise<{ success: boolean; error?: string }> {
   const safeArgs = escapeArgs(args);
   return new Promise<{ success: boolean; error?: string }>((resolve) => {
-    execFile(
+    const cp = execFile(
       cmd,
       safeArgs,
       {
@@ -183,5 +212,10 @@ export function spawnAgent(
         }
       },
     );
+
+    if (pidTracking && cp.pid) {
+      pidTracking.tracker.track(cp.pid, pidTracking.label);
+      cp.on('exit', () => pidTracking.tracker.untrack(cp.pid!));
+    }
   });
 }

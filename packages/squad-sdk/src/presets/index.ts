@@ -90,7 +90,7 @@ export function loadPreset(name: string): PresetManifest | null {
 export function applyPreset(
   presetName: string,
   targetDir: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; overwriteRouting?: boolean } = {},
 ): PresetApplyResult[] {
   try { validateName(presetName, 'preset'); } catch (err) {
     return [{ agent: presetName, status: 'error', reason: String(err) }];
@@ -138,6 +138,24 @@ export function applyPreset(
       results.push({ agent: agent.name, status: 'installed' });
     } catch (err) {
       results.push({ agent: agent.name, status: 'error', reason: String(err) });
+    }
+  }
+
+  // Restore saved routing.md from the preset if present (#1412). This must
+  // happen before scaffolding so that writeOrMergeRouting sees the full custom
+  // routing content and only appends any missing agent rows rather than
+  // regenerating a skeleton.
+  const savedRoutingPath = path.join(presetDir, 'routing.md');
+  if (storage.existsSync(savedRoutingPath)) {
+    const squadDir = path.dirname(targetDir);
+    const destRoutingPath = path.join(squadDir, 'routing.md');
+    // Only overwrite if explicitly requested or routing.md doesn't exist yet
+    if (options.force || options.overwriteRouting || !storage.existsSync(destRoutingPath)) {
+      const content = storage.readSync(savedRoutingPath);
+      if (content !== undefined) {
+        storage.mkdirSync(squadDir, { recursive: true });
+        storage.writeSync(destRoutingPath, content);
+      }
     }
   }
 
@@ -272,6 +290,15 @@ export function savePreset(
   storage.mkdirSync(destDir, { recursive: true });
   storage.writeSync(path.join(destDir, 'preset.json'), JSON.stringify(manifest, null, 2));
   copyDirRecursive(agentsDir, path.join(destDir, 'agents'));
+
+  // Capture routing.md so custom routing configuration round-trips (#1412)
+  const routingPath = path.join(squadDir, 'routing.md');
+  if (storage.existsSync(routingPath)) {
+    const routingContent = storage.readSync(routingPath);
+    if (routingContent !== undefined) {
+      storage.writeSync(path.join(destDir, 'routing.md'), routingContent);
+    }
+  }
 
   return destDir;
 }

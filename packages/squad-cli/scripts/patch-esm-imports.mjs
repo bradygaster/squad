@@ -18,7 +18,7 @@
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -36,8 +36,12 @@ const SEARCH_ROOTS = [
  * This is the canonical fix: once the package has proper exports, Node's
  * ESM resolver handles every subpath ('vscode-jsonrpc/node', '/browser', etc.)
  * without needing per-file patches.
+ *
+ * Patches EVERY root that contains a copy, not just the first one found:
+ * stopping at the first (already-patched) copy left repo-local node_modules
+ * unpatched on global installs (#1190).
  */
-function patchVscodeJsonrpcExports() {
+export function patchVscodeJsonrpcExports(searchRoots = SEARCH_ROOTS) {
   const exportsField = {
     '.': { types: './lib/common/api.d.ts', default: './lib/node/main.js' },
     './node': { node: './lib/node/main.js', types: './lib/node/main.d.ts' },
@@ -45,7 +49,8 @@ function patchVscodeJsonrpcExports() {
     './browser': { types: './lib/browser/main.d.ts', browser: './lib/browser/main.js' },
   };
 
-  for (const root of SEARCH_ROOTS) {
+  let patchedAny = false;
+  for (const root of searchRoots) {
     const pkgPath = join(root, 'vscode-jsonrpc', 'package.json');
     if (!existsSync(pkgPath)) continue;
 
@@ -54,29 +59,30 @@ function patchVscodeJsonrpcExports() {
       const pkg = JSON.parse(raw);
 
       if (pkg.exports && pkg.exports['./node.js']) {
-        console.log('⏭️  vscode-jsonrpc already has complete exports field — skipping');
-        return false;
+        console.log(`⏭️  vscode-jsonrpc already has complete exports field — skipping (${pkgPath})`);
+        continue;
       }
 
       pkg.exports = exportsField;
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-      console.log('✅ Patched vscode-jsonrpc/package.json with exports field (Node 22/24+ ESM fix)');
-      return true;
+      console.log(`✅ Patched vscode-jsonrpc/package.json with exports field (${pkgPath})`);
+      patchedAny = true;
     } catch (err) {
       console.warn('⚠️  Failed to patch vscode-jsonrpc exports:', err.message);
-      return false;
     }
   }
 
-  return false;
+  return patchedAny;
 }
 
 /**
  * Layer 2 — Patch copilot-sdk session.js import (defense-in-depth).
  * Rewrites extensionless 'vscode-jsonrpc/node' to 'vscode-jsonrpc/node.js'.
+ * Same all-roots semantics as Layer 1 (#1190).
  */
-function patchCopilotSdkSessionJs() {
-  for (const root of SEARCH_ROOTS) {
+export function patchCopilotSdkSessionJs(searchRoots = SEARCH_ROOTS) {
+  let patchedAny = false;
+  for (const root of searchRoots) {
     const sessionJsPath = join(root, '@github', 'copilot-sdk', 'dist', 'session.js');
     if (!existsSync(sessionJsPath)) continue;
 
@@ -90,19 +96,20 @@ function patchCopilotSdkSessionJs() {
 
       if (patched !== content) {
         writeFileSync(sessionJsPath, patched, 'utf8');
-        console.log('✅ Patched @github/copilot-sdk session.js ESM imports');
-        return true;
+        console.log(`✅ Patched @github/copilot-sdk session.js ESM imports (${sessionJsPath})`);
+        patchedAny = true;
       }
-      return false;
     } catch (err) {
       console.warn('⚠️  Failed to patch copilot-sdk session.js:', err.message);
-      return false;
     }
   }
 
-  return false;
+  return patchedAny;
 }
 
-// Run both layers
-patchVscodeJsonrpcExports();
-patchCopilotSdkSessionJs();
+// Run both layers when executed directly (postinstall). `squad upgrade` imports
+// the functions above and points them at the consumer repo's node_modules (#1190).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  patchVscodeJsonrpcExports();
+  patchCopilotSdkSessionJs();
+}

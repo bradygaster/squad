@@ -467,27 +467,28 @@ describe('Compat v0.4.1: Event Bus Shape', () => {
 describe('Compat v0.4.1: Model Catalog', () => {
   it('catalog contains expected premium models', () => {
     expect(isModelAvailable('claude-opus-4.6')).toBe(true);
-    expect(isModelAvailable('claude-opus-4.5')).toBe(true);
+    expect(isModelAvailable('claude-opus-4.8')).toBe(true);
   });
 
   it('catalog contains expected standard models', () => {
     expect(isModelAvailable('claude-sonnet-4.5')).toBe(true);
-    expect(isModelAvailable('claude-sonnet-4')).toBe(true);
-    expect(isModelAvailable('gpt-5.2-codex')).toBe(true);
+    expect(isModelAvailable('claude-sonnet-4.6')).toBe(true);
+    expect(isModelAvailable('gpt-5.4')).toBe(true);
   });
 
   it('catalog contains expected fast models', () => {
     expect(isModelAvailable('claude-haiku-4.5')).toBe(true);
-    expect(isModelAvailable('gpt-5.1-codex-mini')).toBe(true);
-    expect(isModelAvailable('gpt-4.1')).toBe(true);
+    expect(isModelAvailable('gpt-5.4-mini')).toBe(true);
+    expect(isModelAvailable('gpt-5-mini')).toBe(true);
   });
 
   it('premium fallback chain starts with opus', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.6');
+    expect(DEFAULT_FALLBACK_CHAINS.premium[0]).toBe('claude-opus-4.8');
   });
 
   it('standard fallback chain starts with sonnet', () => {
-    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-4.6');
+    // Reordered to prefer newest Sonnet series first (PR #1444 follow-up, tamirdresher request).
+    expect(DEFAULT_FALLBACK_CHAINS.standard[0]).toBe('claude-sonnet-5');
   });
 
   it('fast fallback chain starts with haiku', () => {
@@ -630,5 +631,27 @@ describe('Compat v0.4.1: Version Comparison', () => {
 
   it('parseSemVer rejects invalid format', () => {
     expect(() => parseSemVer('not-a-version')).toThrow();
+  });
+});
+
+// ============================================================================
+// 12. Removed model IDs degrade safely through fallback chains
+// ============================================================================
+
+describe('Compat v0.4.1: Removed Model Fallback Degradation', () => {
+  it('getNextFallback for removed "gpt-4.1" resolves to a live catalog model without throwing', () => {
+    const registry = new ModelRegistry();
+    let result: string | null;
+    expect(() => { result = registry.getNextFallback('gpt-4.1', 'standard'); }).not.toThrow();
+    expect(result!).not.toBeNull();
+    expect(isModelAvailable(result!)).toBe(true);
+  });
+
+  it('getNextFallback for removed "claude-sonnet-4" resolves to a live catalog model without throwing', () => {
+    const registry = new ModelRegistry();
+    let result: string | null;
+    expect(() => { result = registry.getNextFallback('claude-sonnet-4', 'standard'); }).not.toThrow();
+    expect(result!).not.toBeNull();
+    expect(isModelAvailable(result!)).toBe(true);
   });
 });

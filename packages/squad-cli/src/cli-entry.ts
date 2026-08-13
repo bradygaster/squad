@@ -158,6 +158,7 @@ async function main(): Promise<void> {
     console.log(`                    --roles (use base roles)`);
     console.log(`                    --global (personal squad dir)`);
     console.log(`                    --no-workflows (skip CI setup)`);
+    console.log(`                    --no-vscode-default (skip .vscode/settings.json update)`);
     console.log(`                    --preset <name> (apply a preset after init)`);
     console.log(`                    --state-backend <type> (local|orphan|two-layer)`);
     console.log(`             Usage: init --mode remote <team-repo-path>`);
@@ -168,6 +169,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --global (upgrade personal squad)`);
     console.log(`                    --migrate-directory (rename .ai-team/ → .squad/)`);
     console.log(`                    --state-backend <type> (migrate to orphan|two-layer)`);
+    console.log(`  ${BOLD}update-check${RESET} Report cached CLI update status (for tooling/CI)`);
+    console.log(`             Flags: --json (structured output), --refresh (bypass cache)`);
     console.log(`  ${BOLD}migrate${RESET}    Convert between markdown and SDK-First squad formats`);
     console.log(`             Flags: --to sdk|markdown, --from ai-team, --dry-run`);
     console.log(`  ${BOLD}sync${RESET}       Sync squad-state branch(es) with remote (push/pull/both)`);
@@ -204,8 +207,8 @@ async function main(): Promise<void> {
     console.log(`             Flags: --init (generate boilerplate loop.md)`);
     console.log(`                    --file <path> (custom loop file)`);
     console.log(`                    --monitor-email, --monitor-teams (add monitoring)`);
-    console.log(`  ${BOLD}cast${RESET}       Show roster, or add a new agent (alias: hire)`);
-    console.log(`             Usage: cast [--name <name>] [--role <role>]`);
+    console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
+    console.log(`             Usage: cast [--name <name>] [--role <role>] (alias: hire)`);
     console.log(`  ${BOLD}copilot${RESET}    Add/remove the Copilot coding agent (@copilot)`);
     console.log(`             Usage: copilot [--off] [--auto-assign]`);
     console.log(`  ${BOLD}plugin${RESET}     Manage plugin marketplaces`);
@@ -220,7 +223,7 @@ async function main(): Promise<void> {
     console.log(`             Usage: start [--tunnel] [--port <n>] [--command <cmd>]`);
     console.log(`                    [copilot flags...]`);
     console.log(`             Examples: start --tunnel --yolo`);
-    console.log(`                       start --tunnel --model claude-sonnet-4`);
+    console.log(`                       start --tunnel --model claude-sonnet-4.6`);
     console.log(`                       start --tunnel --command "gh copilot"`);
     console.log(`  ${BOLD}nap${RESET}        Context hygiene (compress, prune, archive .squad/ state)`);
     console.log(`             Usage: nap [--deep] [--dry-run]`);
@@ -255,7 +258,6 @@ async function main(): Promise<void> {
     console.log(`             Usage: preset list | show <name>`);
     console.log(`                    apply <name> [--force] | save <name>`);
     console.log(`                    init [--remote]`);
-    console.log(`  ${BOLD}cast${RESET}       Show current session cast (project + personal agents)`);
     console.log(`  ${BOLD}rc${RESET}         Start Remote Control bridge (phone/browser → Copilot)`);
     console.log(`             Usage: rc [--tunnel] [--port <n>] [--path <dir>]`);
     console.log(`  ${BOLD}copilot-bridge${RESET}  Check Copilot ACP stdio compatibility`);
@@ -352,6 +354,7 @@ async function main(): Promise<void> {
     const sdkMod = hasGlobal ? await lazySquadSdk() : null;
     const dest = hasGlobal ? sdkMod!.resolveGlobalSquadPath() : process.cwd();
     const noWorkflows = args.includes('--no-workflows');
+    const noVscodeDefault = args.includes('--no-vscode-default');
     const mcpFrontmatter = args.includes('--mcp-frontmatter');
     const sdk = args.includes('--sdk');
     const roles = args.includes('--roles');
@@ -361,7 +364,7 @@ async function main(): Promise<void> {
     const sbIdx = args.indexOf('--state-backend');
     const initStateBackend = (sbIdx !== -1 && args[sbIdx + 1]) ? args[sbIdx + 1] : undefined;
     // Global init: suppress workflows (no GitHub CI in ~/.config/squad/) and bootstrap personal squad
-    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter }).then(async () => {
+    runInit(dest, { includeWorkflows: !noWorkflows && !hasGlobal, sdk, roles, isGlobal: hasGlobal, stateBackend: initStateBackend, mcpFrontmatter, includeVscodeDefault: !noVscodeDefault }).then(async () => {
       if (presetName) {
         const { seedBuiltinPresets, applyPreset } = await import('@bradygaster/squad-sdk/presets');
         const { resolvePresetsDir, ensureSquadHome } = await import('@bradygaster/squad-sdk/resolution');
@@ -502,6 +505,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === 'update-check') {
+    const { runUpdateCheckCommand } = await import('./cli/commands/update-check.js');
+    const exitCode = await runUpdateCheckCommand(args.slice(1));
+    process.exit(exitCode);
+  }
+
   if (cmd === 'memory') {
     const { runMemoryCommand } = await import('./cli/commands/memory.js');
     await runMemoryCommand(getSquadStartDir(), args.slice(1));
@@ -639,11 +648,12 @@ async function main(): Promise<void> {
     const rawStateBackend = (stateBackendIdx !== -1 && args[stateBackendIdx + 1])
       ? args[stateBackendIdx + 1]
       : undefined;
-    const validBackends = ['local', 'orphan', 'two-layer', 'external'] as const;
+    const validBackends = ['local', 'orphan', 'two-layer', 'external', 'external-stub'] as const;
     if (rawStateBackend && !(validBackends as readonly string[]).includes(rawStateBackend)) {
       console.error(`\u26a0\ufe0f Invalid --state-backend "${rawStateBackend}". Valid: ${validBackends.join(', ')}.`);
       process.exit(1);
     }
+    // Legacy 'external' is normalized (with a deprecation warning) inside resolveStateBackend.
     const mappedBackend = rawStateBackend as StateBackendType | undefined;
 
     // Resolve the full state context (paths + backend) once at entry.
@@ -1120,6 +1130,12 @@ async function main(): Promise<void> {
   if (cmd === 'economy') {
     const { runEconomy } = await import('./cli/commands/economy.js');
     await runEconomy(getSquadStartDir(), args.slice(1));
+    return;
+  }
+
+  if (cmd === 'models') {
+    const { runModels } = await import('./cli/commands/models.js');
+    await runModels(getSquadStartDir(), args.slice(1));
     return;
   }
 

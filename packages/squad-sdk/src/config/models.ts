@@ -11,7 +11,7 @@ import { join } from 'path';
 import type { StorageProvider } from '../storage/index.js';
 import { FSStorageProvider } from '../storage/index.js';
 import type { ModelId, ModelTier } from '../runtime/config.js';
-import type { SquadReasoningEffort } from '../adapter/types.js';
+import type { SquadReasoningEffort, SquadContextTier } from '../adapter/types.js';
 
 /**
  * Per-token pricing in USD.
@@ -24,13 +24,83 @@ export interface ModelPricing {
 }
 
 /**
+ * GitHub Copilot billing cost-ceiling category (`model_picker_category`).
+ *
+ * This is a COST axis and is intentionally SEPARATE from {@link ModelTier}
+ * (the quality axis). A model may be standard-tier (quality) yet
+ * powerful-category (cost) — e.g. `gpt-5.4`. Do not conflate the two.
+ * Source: GitHub Copilot models API `model_picker_category` (canonical),
+ * with the public `github/docs` models-and-pricing.yml as fallback.
+ */
+export type GitHubModelCategory = 'lightweight' | 'versatile' | 'powerful';
+
+/**
+ * Ordering of GitHub billing cost-ceiling categories, cheapest → most costly.
+ * "Within ceiling" ⇔ `CATEGORY_ORDER[model] <= CATEGORY_ORDER[maxCategory]`.
+ */
+export const CATEGORY_ORDER: Record<GitHubModelCategory, number> = {
+  lightweight: 0,
+  versatile: 1,
+  powerful: 2,
+};
+
+/**
+ * Persistent (config-level) cost policy.
+ *
+ * This is the COST-CEILING axis, kept deliberately separate from the quality
+ * {@link ModelTier} axis (issue #1080 / #1183). It intentionally does NOT
+ * carry per-token pricing or an `included`/zero-credit flag — both were dropped
+ * as unsourceable/stale-prone (NG2/NG3).
+ */
+export interface CostPolicyConfig {
+  /**
+   * Maximum GitHub billing category permitted for automatic model selection.
+   * When undefined the policy is a no-op (passthrough).
+   */
+  maxCategory?: GitHubModelCategory;
+}
+
+/**
+ * Per-session cost policy override, supplied at spawn time. Takes precedence
+ * over the persistent {@link CostPolicyConfig}.
+ */
+export interface SessionCostPolicyOverride {
+  maxCategory?: GitHubModelCategory;
+}
+
+/**
+ * The action a cost policy took while finalizing a resolved model.
+ * - `none`: model was within ceiling (or chain merely pruned).
+ * - `downgraded-to-ceiling`: an implicit over-ceiling pick was replaced.
+ * - `warn-allow-explicit`: an explicit over-ceiling pick was honored + warned.
+ * - `no-compliant-model`: fail-closed — no in-ceiling model exists anywhere.
+ */
+export type CostPolicyAction =
+  | 'none'
+  | 'downgraded-to-ceiling'
+  | 'warn-allow-explicit'
+  | 'no-compliant-model';
+
+/**
+ * Outcome of applying a cost policy to a resolved model. Surfaced (not
+ * swallowed — this was the #1089 bug) so the lifecycle can emit `warning`.
+ */
+export interface CostPolicyOutcome {
+  action: CostPolicyAction;
+  originalModel: string;
+  finalModel: string;
+  /** Human-readable warning to surface via EventBus/log; present when action ≠ 'none'. */
+  warning?: string;
+}
+
+/**
  * Model capability information.
  */
 export interface ModelInfo {
   /** Model identifier */
   id: ModelId;
   
-  /** Model tier */
+  /** Model tier (quality axis) */
   tier: ModelTier;
   
   /** Provider (anthropic, openai, google) */
@@ -38,6 +108,12 @@ export interface ModelInfo {
   
   /** Model family */
   family: 'claude' | 'gpt' | 'gemini';
+
+  /**
+   * GitHub Copilot billing cost-ceiling category (cost axis).
+   * Separate from {@link tier}; optional so out-of-catalog IDs still pass through.
+   */
+  githubCategory?: GitHubModelCategory;
   
   /** Supports vision/multimodal input */
   vision?: boolean;
@@ -56,50 +132,78 @@ export interface ModelInfo {
 }
 
 /**
- * Full model catalog from squad.agent.md.
+ * Full model catalog.
+ *
+ * Restricted to model IDs verified reachable from the GitHub Copilot CLI
+ * surface (the `copilot-cli` integration subset, 13 enabled models, verified
+ * 2026-07-04). Each entry carries an optional {@link ModelInfo.githubCategory}
+ * (cost axis) sourced from the models API `model_picker_category`, kept
+ * separate from {@link ModelInfo.tier} (quality axis).
+ *
+ * Notes:
+ * - No hardcoded per-token pricing is added for models whose pricing is not
+ *   already known; pricing is sourced out-of-band and is intentionally absent
+ *   on newer entries rather than guessed.
+ * - Out-of-catalog IDs still pass through the selector (0-cost estimate +
+ *   default chain); this catalog drives routing quality/cost, not correctness.
+ *
+ * Refs: #1080, #1183.
  */
 export const MODEL_CATALOG: ModelInfo[] = [
-  // Premium tier - highest quality, slowest, most expensive
+  // Premium tier (quality) — powerful category (cost)
+  {
+    id: 'claude-opus-4.8',
+    tier: 'premium',
+    provider: 'anthropic',
+    family: 'claude',
+    githubCategory: 'powerful',
+    vision: true,
+    useCases: ['architecture proposals', 'security audits', 'complex design'],
+    cost: 10,
+    speed: 3,
+  },
+  {
+    id: 'claude-opus-4.7',
+    tier: 'premium',
+    provider: 'anthropic',
+    family: 'claude',
+    githubCategory: 'powerful',
+    vision: true,
+    useCases: ['architecture proposals', 'security audits', 'complex design'],
+    cost: 10,
+    speed: 3,
+  },
   {
     id: 'claude-opus-4.6',
     tier: 'premium',
     provider: 'anthropic',
     family: 'claude',
+    githubCategory: 'powerful',
     vision: true,
     useCases: ['architecture proposals', 'security audits', 'complex design'],
     cost: 10,
     speed: 3,
     pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
   },
+
+  // Standard tier (quality) — versatile/powerful category (cost)
   {
-    id: 'claude-opus-4.6-fast',
-    tier: 'premium',
+    id: 'claude-sonnet-5',
+    tier: 'standard',
     provider: 'anthropic',
     family: 'claude',
+    githubCategory: 'versatile',
     vision: true,
-    useCases: ['architecture proposals', 'urgent reviews'],
-    cost: 9,
-    speed: 6,
-    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
+    useCases: ['code generation', 'test writing', 'refactoring'],
+    cost: 5,
+    speed: 7,
   },
-  {
-    id: 'claude-opus-4.5',
-    tier: 'premium',
-    provider: 'anthropic',
-    family: 'claude',
-    vision: true,
-    useCases: ['architecture proposals', 'reviewer gates'],
-    cost: 9,
-    speed: 3,
-    pricing: { inputPerToken: 0.000015, outputPerToken: 0.000075 },
-  },
-  
-  // Standard tier - balanced quality, speed, cost
   {
     id: 'claude-sonnet-4.6',
     tier: 'standard',
     provider: 'anthropic',
     family: 'claude',
+    githubCategory: 'versatile',
     vision: true,
     useCases: ['code generation', 'test writing', 'refactoring', 'prompt engineering'],
     cost: 5,
@@ -111,6 +215,7 @@ export const MODEL_CATALOG: ModelInfo[] = [
     tier: 'standard',
     provider: 'anthropic',
     family: 'claude',
+    githubCategory: 'versatile',
     vision: true,
     useCases: ['code generation', 'test writing', 'refactoring'],
     cost: 5,
@@ -118,20 +223,54 @@ export const MODEL_CATALOG: ModelInfo[] = [
     pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
   },
   {
-    id: 'claude-sonnet-4',
+    id: 'gpt-5.5',
     tier: 'standard',
-    provider: 'anthropic',
-    family: 'claude',
-    useCases: ['code generation', 'documentation'],
-    cost: 4,
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'powerful',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 6,
     speed: 7,
-    pricing: { inputPerToken: 0.000003, outputPerToken: 0.000015 },
+  },
+  // gpt-5.6 family — CLI-observed Standard-tier reachable models (2026-07-13).
+  // Tier: standard (quality axis). githubCategory per live Copilot API (canonical billing axis):
+  //   sol=powerful, terra=versatile, luna=lightweight.
+  {
+    id: 'gpt-5.6-sol',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'powerful',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 6,
+    speed: 7,
+  },
+  {
+    id: 'gpt-5.6-terra',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'versatile',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 5,
+    speed: 8,
+  },
+  {
+    id: 'gpt-5.6-luna',
+    tier: 'standard',
+    provider: 'openai',
+    family: 'gpt',
+    githubCategory: 'lightweight',
+    useCases: ['general purpose', 'code generation', 'analysis'],
+    cost: 3,
+    speed: 9,
   },
   {
     id: 'gpt-5.4',
     tier: 'standard',
     provider: 'openai',
     family: 'gpt',
+    githubCategory: 'powerful',
     useCases: ['general purpose', 'code generation', 'analysis'],
     cost: 6,
     speed: 7,
@@ -142,132 +281,67 @@ export const MODEL_CATALOG: ModelInfo[] = [
     tier: 'standard',
     provider: 'openai',
     family: 'gpt',
+    githubCategory: 'powerful',
     useCases: ['heavy code generation', 'multi-file refactors'],
     cost: 5,
     speed: 6,
     pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
   },
   {
-    id: 'gpt-5.2-codex',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    useCases: ['heavy code generation', 'multi-file refactors'],
-    cost: 5,
-    speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
-  },
-  {
-    id: 'gpt-5.2',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    useCases: ['general coding', 'analysis'],
-    cost: 5,
-    speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
-  },
-  {
-    id: 'gpt-5.1-codex-max',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    useCases: ['complex implementation', 'large codebases'],
-    cost: 6,
-    speed: 5,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
-  },
-  {
-    id: 'gpt-5.1-codex',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    useCases: ['code generation', 'implementation'],
-    cost: 5,
-    speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
-  },
-  {
-    id: 'gpt-5.1',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    useCases: ['general purpose', 'analysis'],
-    cost: 5,
-    speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
-  },
-  {
-    id: 'gpt-5',
-    tier: 'standard',
-    provider: 'openai',
-    family: 'gpt',
-    useCases: ['general purpose'],
-    cost: 5,
-    speed: 6,
-    pricing: { inputPerToken: 0.0000025, outputPerToken: 0.00001 },
-  },
-  {
-    id: 'gemini-3-pro-preview',
+    id: 'gemini-2.5-pro',
     tier: 'standard',
     provider: 'google',
     family: 'gemini',
+    githubCategory: 'powerful',
+    vision: true,
     useCases: ['code reviews', 'second opinion', 'diversity'],
     cost: 5,
     speed: 7,
-    pricing: { inputPerToken: 0.00000125, outputPerToken: 0.00001 },
   },
-  
-  // Fast tier - lowest cost, fastest, good enough quality
+
+  // Fast tier (quality) — lightweight category (cost)
   {
     id: 'claude-haiku-4.5',
     tier: 'fast',
     provider: 'anthropic',
     family: 'claude',
+    githubCategory: 'lightweight',
     useCases: ['boilerplate', 'changelogs', 'simple fixes'],
     cost: 2,
     speed: 9,
     pricing: { inputPerToken: 0.0000008, outputPerToken: 0.000004 },
   },
   {
-    id: 'gpt-5.1-codex-mini',
+    id: 'gpt-5.4-mini',
     tier: 'fast',
     provider: 'openai',
     family: 'gpt',
-    useCases: ['scaffolding', 'test boilerplate'],
-    cost: 2,
-    speed: 9,
-    pricing: { inputPerToken: 0.0000003, outputPerToken: 0.0000012 },
+    githubCategory: 'lightweight',
+    useCases: ['scaffolding', 'test boilerplate', 'simple tasks'],
+    cost: 1,
+    speed: 10,
   },
   {
     id: 'gpt-5-mini',
     tier: 'fast',
     provider: 'openai',
     family: 'gpt',
+    githubCategory: 'lightweight',
     useCases: ['typo fixes', 'renames', 'simple tasks'],
     cost: 1,
     speed: 10,
     pricing: { inputPerToken: 0.00000015, outputPerToken: 0.0000006 },
   },
-  {
-    id: 'gpt-4.1',
-    tier: 'fast',
-    provider: 'openai',
-    family: 'gpt',
-    useCases: ['lightweight tasks', 'triage'],
-    cost: 2,
-    speed: 9,
-    pricing: { inputPerToken: 0.0000002, outputPerToken: 0.0000008 },
-  }
 ];
 
 /**
- * Default fallback chains per tier from squad.agent.md.
+ * Default fallback chains per tier — real, CLI-reachable IDs ordered by preference.
+ * Newest model in each series is first (tamirdresher PR #1444 follow-up, 2026-07-13).
  */
 export const DEFAULT_FALLBACK_CHAINS: Record<ModelTier, ModelId[]> = {
-  premium: ['claude-opus-4.6', 'claude-opus-4.6-fast', 'claude-opus-4.5', 'claude-sonnet-4.6'],
-  standard: ['claude-sonnet-4.6', 'gpt-5.4', 'claude-sonnet-4.5', 'gpt-5.3-codex', 'claude-sonnet-4', 'gpt-5.2'],
-  fast: ['claude-haiku-4.5', 'gpt-5.1-codex-mini', 'gpt-4.1', 'gpt-5-mini']
+  premium: ['claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6', 'claude-sonnet-4.6'],
+  standard: ['claude-sonnet-5', 'claude-sonnet-4.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.4', 'gpt-5.3-codex', 'claude-sonnet-4.5', 'gemini-2.5-pro'],
+  fast: ['claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
 };
 
 /**
@@ -524,14 +598,15 @@ export function estimateCost(model: string, inputTokens: number, outputTokens: n
  */
 export const ECONOMY_MODEL_MAP: Record<string, string> = {
   // Premium → standard downgrade (architecture/review tasks)
+  'claude-opus-4.8':      'claude-sonnet-4.5',
+  'claude-opus-4.7':      'claude-sonnet-4.5',
   'claude-opus-4.6':      'claude-sonnet-4.5',
-  'claude-opus-4.6-fast': 'claude-sonnet-4.5',
-  'claude-opus-4.5':      'claude-sonnet-4.5',
   // Standard → fast downgrade (code writing, docs, planning, triage)
-  'claude-sonnet-4.6':    'gpt-4.1',
-  'claude-sonnet-4.5':    'gpt-4.1',
+  'claude-sonnet-5':      'gpt-5-mini',
+  'claude-sonnet-4.6':    'gpt-5-mini',
+  'claude-sonnet-4.5':    'gpt-5-mini',
   // Fast → cheapest fast (scribe/mechanical, docs)
-  'claude-haiku-4.5':     'gpt-4.1',
+  'claude-haiku-4.5':     'gpt-5-mini',
 };
 
 /**
@@ -551,6 +626,8 @@ export interface ModelPreferenceConfig {
   economyMode?: boolean;
   defaultReasoningEffort?: string;
   agentReasoningEffortOverrides?: Record<string, string>;
+  defaultContextTier?: string;
+  agentContextTierOverrides?: Record<string, string>;
 }
 
 /**
@@ -740,7 +817,7 @@ export function writeAgentModelOverrides(
  * Canonical runtime list — import this instead of duplicating. The `satisfies`
  * clause keeps it in lock-step with the canonical {@link SquadReasoningEffort} type.
  */
-export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly SquadReasoningEffort[];
+export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly SquadReasoningEffort[];
 /** Canonical reasoning-effort union (alias of {@link SquadReasoningEffort}). */
 export type ValidReasoningEffort = SquadReasoningEffort;
 const VALID_REASONING_EFFORTS_WITH_AUTO: readonly string[] = [...VALID_REASONING_EFFORTS, 'auto'];
@@ -1059,6 +1136,307 @@ export function resolveReasoningEffort(options: {
   // Clamp to model capabilities if available
   if (options.supportedEfforts) {
     return clampReasoningEffort(resolved, options.supportedEfforts);
+  }
+
+  return resolved;
+}
+
+/**
+ * Valid context tiers.
+ * "auto" is a permitted stored sentinel that resolvers treat as "not set".
+ * Canonical runtime list — import this instead of duplicating. The `satisfies`
+ * clause keeps it in lock-step with the canonical {@link SquadContextTier} type.
+ *
+ * Unlike reasoning effort there is no ranked scale: this is a two-value enum
+ * ("default" = the model's standard window, "long_context" = its extended/1M
+ * window). Clamping is therefore membership-based, not rank-based.
+ */
+export const VALID_CONTEXT_TIERS = ['default', 'long_context'] as const satisfies readonly SquadContextTier[];
+/** Canonical context-tier union (alias of {@link SquadContextTier}). */
+export type ValidContextTier = SquadContextTier;
+const VALID_CONTEXT_TIERS_WITH_AUTO: readonly string[] = [...VALID_CONTEXT_TIERS, 'auto'];
+/** String array form for runtime `.includes()` checks with arbitrary strings. */
+const VALID_CONTEXT_TIERS_SET: readonly string[] = VALID_CONTEXT_TIERS;
+
+/**
+ * Clamp a requested context tier to what the model actually supports.
+ *
+ * Semantics deliberately differ from {@link clampReasoningEffort}: context tier
+ * is a two-value enum, not a ranked scale, so there is nothing to "clamp down"
+ * to a nearest lower level. The rules are:
+ *   - Nothing requested (undefined/null/empty) → undefined (let the runtime decide).
+ *   - Unknown / invalid tier string → the model default (or "default"). This is
+ *     the "unknown treated as default" rule from issue #1446.
+ *   - Model capabilities unknown (no supportedTiers) → trust the valid request.
+ *   - Requested tier supported → return it unchanged.
+ *   - Requested tier unsupported (e.g. "long_context" on a model without a
+ *     long-context window) → clamp to the model's default tier, or "default".
+ *
+ * @param requested - The context tier the user/charter requested
+ * @param supportedTiers - The model's supportedContextTiers from listModels()
+ * @param modelDefault - The model's defaultContextTier from listModels()
+ * @returns The clamped tier, or undefined if nothing was requested
+ */
+export function clampContextTier(
+  requested: string | undefined,
+  supportedTiers: string[] | undefined,
+  modelDefault?: string,
+): string | undefined {
+  if (!requested) return undefined;
+
+  const fallback = modelDefault && VALID_CONTEXT_TIERS_SET.includes(modelDefault)
+    ? modelDefault
+    : 'default';
+
+  // Unknown / invalid tier string → treat as default.
+  if (!VALID_CONTEXT_TIERS_SET.includes(requested)) return fallback;
+
+  // Model capabilities unknown → trust the (valid) request; the runtime validates.
+  if (!supportedTiers || supportedTiers.length === 0) return requested;
+
+  // Supported → use it; unsupported → clamp to the model's default (or "default").
+  return supportedTiers.includes(requested) ? requested : fallback;
+}
+
+/**
+ * Reads the persistent context tier preference from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns The defaultContextTier string if set, or null
+ */
+export function readContextTier(squadDir: string, storage: StorageProvider = new FSStorageProvider()): string | null {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return null;
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      typeof parsed.defaultContextTier === 'string' &&
+      parsed.defaultContextTier.length > 0 &&
+      VALID_CONTEXT_TIERS_WITH_AUTO.includes(parsed.defaultContextTier)
+    ) {
+      return parsed.defaultContextTier;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads per-agent context tier overrides from `.squad/config.json`.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @returns Record of agent name → context tier, or empty object
+ */
+export function readAgentContextTierOverrides(squadDir: string, storage: StorageProvider = new FSStorageProvider()): Record<string, string> {
+  const configPath = join(squadDir, 'config.json');
+  if (!storage.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const raw = storage.readSync(configPath);
+    if (raw === undefined) return {};
+    const parsed = JSON.parse(raw);
+    if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      typeof parsed.agentContextTierOverrides === 'object' &&
+      parsed.agentContextTierOverrides !== null
+    ) {
+      const result: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed.agentContextTierOverrides)) {
+        if (typeof value === 'string' && VALID_CONTEXT_TIERS_SET.includes(value)) {
+          result[key] = value;
+        }
+      }
+      return result;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Writes a persistent context tier preference to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param tier - Context tier to persist, or null to clear
+ */
+export function writeContextTier(squadDir: string, tier: string | null, storage: StorageProvider = new FSStorageProvider()): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (tier === null) {
+    delete config.defaultContextTier;
+  } else if (VALID_CONTEXT_TIERS_WITH_AUTO.includes(tier)) {
+    config.defaultContextTier = tier;
+  } else {
+    // Invalid value: warn and leave any existing preference untouched rather
+    // than silently clearing it (a typo shouldn't wipe a valid setting).
+    // Pass null explicitly to clear.
+    console.warn(
+      `[squad] writeContextTier: ignoring invalid context tier "${tier}" `
+      + `(expected ${VALID_CONTEXT_TIERS.join(', ')}, auto, or null to clear); `
+      + `existing preference left unchanged.`,
+    );
+    return;
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Writes per-agent context tier overrides to `.squad/config.json`.
+ * Merges with existing config — does not overwrite other fields.
+ *
+ * @param squadDir - Path to the `.squad/` directory
+ * @param overrides - Record of agent name → context tier, or null to clear
+ */
+export function writeAgentContextTierOverrides(
+  squadDir: string,
+  overrides: Record<string, string> | null,
+  storage: StorageProvider = new FSStorageProvider()
+): void {
+  const configPath = join(squadDir, 'config.json');
+  let config: Record<string, unknown> = {};
+  if (storage.existsSync(configPath)) {
+    try {
+      const raw = storage.readSync(configPath);
+      const parsed = raw !== undefined ? JSON.parse(raw) : null;
+      config = (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed))
+        ? parsed as Record<string, unknown>
+        : { version: 1 };
+    } catch {
+      config = { version: 1 };
+    }
+  } else {
+    config = { version: 1 };
+  }
+
+  if (overrides === null || Object.keys(overrides).length === 0) {
+    delete config.agentContextTierOverrides;
+  } else {
+    // Filter out invalid tier values, warning about any dropped so a typo
+    // isn't silently discarded.
+    const validated: Record<string, string> = {};
+    const dropped: string[] = [];
+    for (const [agent, tier] of Object.entries(overrides)) {
+      if (VALID_CONTEXT_TIERS_WITH_AUTO.includes(tier)) {
+        validated[agent] = tier;
+      } else {
+        dropped.push(`${agent}="${tier}"`);
+      }
+    }
+    if (dropped.length > 0) {
+      console.warn(
+        `[squad] writeAgentContextTierOverrides: ignoring invalid context tier `
+        + `value(s) ${dropped.join(', ')} (expected ${VALID_CONTEXT_TIERS.join(', ')}, or auto).`,
+      );
+    }
+    if (Object.keys(validated).length > 0) {
+      config.agentContextTierOverrides = validated;
+    } else {
+      delete config.agentContextTierOverrides;
+    }
+  }
+
+  storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
+}
+
+/**
+ * Resolves the effective context tier for an agent spawn.
+ * Uses a layered priority system matching the reasoning-effort resolution pattern:
+ *   Layer 0a: Per-agent persistent override (.squad/config.json agentContextTierOverrides)
+ *   Layer 0b: Global persistent config (.squad/config.json defaultContextTier)
+ *   Layer 1: Spawn-time override (caller-provided)
+ *   Layer 2: Charter preference (agent's ## Model → **Context Tier:** field)
+ *   Layer 3: Default (undefined — let SDK/runtime decide)
+ *
+ * The value "auto" at any layer is treated as "not set" and falls through.
+ *
+ * When `supportedContextTiers` is provided (from the model's capabilities via
+ * listModels()), the resolved tier is clamped to what the model supports. This
+ * prevents errors when a user requests "long_context" on a model that only
+ * exposes a default window.
+ *
+ * @param options - Resolution inputs
+ * @returns Resolved context tier string, or undefined if unset
+ */
+export function resolveContextTier(options: {
+  agentName?: string;
+  squadDir?: string;
+  spawnOverride?: string | null;
+  charterPreference?: string | null;
+  /** Model's supportedContextTiers from listModels(). When provided, clamps the result. */
+  supportedContextTiers?: string[];
+  /** Model's defaultContextTier from listModels(). Used as the clamp fallback. */
+  defaultContextTier?: string;
+  storage?: StorageProvider;
+}): string | undefined {
+  const { agentName, squadDir, spawnOverride, charterPreference } = options;
+  const storage = options.storage ?? new FSStorageProvider();
+
+  let resolved: string | undefined;
+
+  // Helper: only accept valid tier values (reject invalid strings and "auto")
+  const isValid = (v: string | null | undefined): v is string =>
+    typeof v === 'string' && v !== 'auto' && VALID_CONTEXT_TIERS_SET.includes(v);
+
+  // Layer 0a: Per-agent persistent override
+  if (!resolved && squadDir && agentName) {
+    const agentOverrides = readAgentContextTierOverrides(squadDir, storage);
+    const agentTier = agentOverrides[agentName];
+    if (isValid(agentTier)) {
+      resolved = agentTier;
+    }
+  }
+
+  // Layer 0b: Global persistent config
+  if (!resolved && squadDir) {
+    const persistedTier = readContextTier(squadDir, storage);
+    if (isValid(persistedTier)) {
+      resolved = persistedTier;
+    }
+  }
+
+  // Layer 1: Spawn-time override
+  if (!resolved && isValid(spawnOverride)) {
+    resolved = spawnOverride;
+  }
+
+  // Layer 2: Charter preference
+  if (!resolved && isValid(charterPreference)) {
+    resolved = charterPreference;
+  }
+
+  // Layer 3: Default — undefined (let SDK/runtime decide)
+  if (!resolved) return undefined;
+
+  // Clamp to model capabilities if available
+  if (options.supportedContextTiers) {
+    return clampContextTier(resolved, options.supportedContextTiers, options.defaultContextTier);
   }
 
   return resolved;

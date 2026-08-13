@@ -1,0 +1,10 @@
+{
+  "artifact": ".github/agents/squad.agent.md",
+  "mode": "report-only",
+  "regression_ceiling_bytes": 80000,
+  "regression_ceiling_o200k_tokens": 19000,
+  "reduction_target_bytes": 40000,
+  "reduction_target_o200k_tokens": 9500,
+  "reviewed_overrides": [],
+  "note": "Report-only. Regression ceiling is an anti-regrowth fence only, not success criteria. Reduction targets are provisional stretch goals pending the peer squad's live curve; 40KB/9.5K o200k approximates the original slim-agent intent."
+}

@@ -236,6 +236,7 @@ function createNoopAdapter(): ReturnType<typeof createPlatformAdapter> {
     addTag: async () => {},
     removeTag: async () => {},
     addComment: async () => {},
+    setAssignee: async () => {},
     listPullRequests: async () => [],
     createPullRequest: async () => { throw new Error(msg); },
     mergePullRequest: async () => {},

@@ -171,6 +171,37 @@ describe('Integration: LocalAgentSource discovery', () => {
     expect(manifests).toEqual([]);
   });
 
+  it('uses an explicit agentsDir override instead of probing .squad/agents (#1399)', async () => {
+    const base = fixture('project-external');
+    // Decoy in the probed location — must lose when the override is set
+    const probedDir = join(base, '.squad', 'agents');
+    mkdirSync(probedDir, { recursive: true });
+    setupAgentDir(probedDir, 'decoy', MINIMAL_CHARTER);
+    // External-state layout: agents directly under the state dir, no .squad nesting
+    const externalAgents = join(base, 'external-state', 'agents');
+    mkdirSync(externalAgents, { recursive: true });
+    setupAgentDir(externalAgents, 'fenster', SAMPLE_CHARTER);
+
+    const source = new LocalAgentSource(base, undefined, undefined, externalAgents);
+    const manifests = await source.listAgents();
+
+    expect(manifests.length).toBe(1);
+    expect(manifests[0].name).toBe('Fenster');
+  });
+
+  it('returns empty array when the agentsDir override does not exist', async () => {
+    const base = fixture('project-external-missing');
+    const probedDir = join(base, '.squad', 'agents');
+    mkdirSync(probedDir, { recursive: true });
+    setupAgentDir(probedDir, 'decoy', MINIMAL_CHARTER);
+
+    // Override points at a missing dir — must not fall back to probing
+    const source = new LocalAgentSource(base, undefined, undefined, join(base, 'nope', 'agents'));
+    const manifests = await source.listAgents();
+
+    expect(manifests).toEqual([]);
+  });
+
   it('skips agents with missing charter.md', async () => {
     const base = fixture('project-missing-charter');
     const agentsDir = join(base, '.squad', 'agents');
@@ -695,6 +726,19 @@ describe('Integration: Config validation error paths', () => {
     expect(result.warnings?.some(w => w.includes('Duplicate'))).toBe(true);
   });
 
+  it('validateConfigDetailed warns when defaultModel is not in MODEL_CATALOG', () => {
+    const result = validateConfigDetailed({
+      ...RUNTIME_DEFAULT,
+      models: {
+        ...RUNTIME_DEFAULT.models,
+        defaultModel: 'gpt-4.1',
+      },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.errors.length).toBe(0);
+    expect(result.warnings?.some(w => w.includes('gpt-4.1') && w.includes('not in the current model catalog'))).toBe(true);
+  });
+
   it('schema validateConfig rejects non-object', () => {
     expect(validateSchemaConfig(null)).toBe(false);
     expect(validateSchemaConfig(42)).toBe(false);
@@ -906,7 +950,7 @@ describe('Integration: Full pipeline — discover → compile → resolve → fi
 
     expect(config.team.name).toBe('Integration Squad');
     expect(config.agents.length).toBe(1);
-    expect(config.models.default).toBe('claude-sonnet-4');
+    expect(config.models.default).toBe('claude-sonnet-4.6');
   });
 });
 

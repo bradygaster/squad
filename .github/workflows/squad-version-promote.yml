@@ -1,0 +1,185 @@
+name: Squad Version Promote
+
+# Automatically bumps the dev branch base version after an official release from main.
+# Triggered when a GitHub Release is published (which squad-release.yml creates after a push to main).
+# Reads the released version, computes the next minor version, and commits updated
+# package.json files to dev so the branch is always prepared for the next release cycle.
+#
+# Example: release v0.11.0 is published → dev is bumped to 0.12.0
+#
+# Safety: the bump is skipped when dev is already ahead of the released version,
+# so manually pre-bumped branches are never overwritten.
+
+on:
+  release:
+    types: [published]
+
+  # Manual trigger for testing / recovery — supports dry_run and version override
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — show what would happen without pushing'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      released_version:
+        description: 'Override released version (for testing, e.g. 0.11.0)'
+        required: false
+        default: ''
+
+# Prevent two concurrent runs so version bumps never interleave
+concurrency:
+  group: squad-version-promote
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bump-dev-version:
+    name: Bump dev branch base version
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout & git setup ────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch all branches
+        run: git fetch --all
+
+      # ── Determine released version ──────────────────────────────────────────
+      - name: Read released version
+        id: released
+        run: |
+          if [ -n "${{ inputs.released_version }}" ]; then
+            RELEASED_VERSION="${{ inputs.released_version }}"
+            echo "Using manual override: $RELEASED_VERSION"
+          else
+            # Strip leading 'v' from the release tag name (e.g. v0.11.0 → 0.11.0)
+            RELEASED_VERSION="${{ github.event.release.tag_name }}"
+            RELEASED_VERSION="${RELEASED_VERSION#v}"
+            echo "Using release tag: $RELEASED_VERSION"
+          fi
+          echo "version=$RELEASED_VERSION" >> "$GITHUB_OUTPUT"
+
+      # ── Compute next minor version ──────────────────────────────────────────
+      - name: Compute next minor version
+        id: next
+        run: |
+          RELEASED="${{ steps.released.outputs.version }}"
+          MAJOR=$(echo "$RELEASED" | cut -d. -f1)
+          MINOR=$(echo "$RELEASED" | cut -d. -f2)
+          NEXT_MINOR=$((MINOR + 1))
+          NEXT_VERSION="${MAJOR}.${NEXT_MINOR}.0"
+          echo "Released: $RELEASED  →  Next: $NEXT_VERSION"
+          echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+
+      # ── Switch to dev and read its current version ──────────────────────────
+      - name: Checkout dev branch
+        run: git checkout dev
+
+      - name: Read current dev version
+        id: dev
+        run: |
+          DEV_VERSION=$(node -e "console.log(require('./package.json').version)")
+          echo "version=$DEV_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Dev branch version: $DEV_VERSION"
+
+      # ── Decide whether a bump is necessary ──────────────────────────────────
+      - name: Check if bump is needed
+        id: check
+        run: |
+          DEV="${{ steps.dev.outputs.version }}"
+          RELEASED="${{ steps.released.outputs.version }}"
+
+          # Bump is needed only when dev version <= released version
+          NEEDS_BUMP=$(node -e "
+            const semver = (v) => v.split('.').map(Number);
+            const cmp = (a, b) => {
+              const [aMaj, aMin, aPat] = semver(a);
+              const [bMaj, bMin, bPat] = semver(b);
+              if (aMaj !== bMaj) return aMaj - bMaj;
+              if (aMin !== bMin) return aMin - bMin;
+              return aPat - bPat;
+            };
+            console.log(cmp('$DEV', '$RELEASED') <= 0 ? 'true' : 'false');
+          ")
+
+          echo "needs_bump=$NEEDS_BUMP" >> "$GITHUB_OUTPUT"
+
+          if [ "$NEEDS_BUMP" = "true" ]; then
+            echo "✅ Bump needed: dev($DEV) <= released($RELEASED)"
+          else
+            echo "⏭️  Skipping: dev($DEV) is already ahead of released($RELEASED)"
+          fi
+
+      # ── Update all package.json files ───────────────────────────────────────
+      - name: Bump version in all package.json files
+        if: steps.check.outputs.needs_bump == 'true'
+        run: |
+          NEW_VERSION="${{ steps.next.outputs.version }}"
+          echo "Bumping all package.json files to $NEW_VERSION"
+
+          update_version() {
+            local FILE="$1"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('$FILE', 'utf8'));
+              pkg.version = '$NEW_VERSION';
+              fs.writeFileSync('$FILE', JSON.stringify(pkg, null, 2) + '\n');
+              console.log('Updated $FILE → ' + pkg.version);
+            "
+          }
+
+          update_version "package.json"
+          update_version "packages/squad-cli/package.json"
+          update_version "packages/squad-sdk/package.json"
+
+      - name: Show diff
+        if: steps.check.outputs.needs_bump == 'true'
+        run: git diff
+
+      # ── Commit and push (skipped on dry run) ─────────────────────────────────
+      - name: Commit and push to dev
+        if: >-
+          steps.check.outputs.needs_bump == 'true' &&
+          (github.event_name != 'workflow_dispatch' || inputs.dry_run == 'false')
+        run: |
+          RELEASED="${{ steps.released.outputs.version }}"
+          NEW_VERSION="${{ steps.next.outputs.version }}"
+
+          git add package.json packages/squad-cli/package.json packages/squad-sdk/package.json
+
+          if git diff --cached --quiet; then
+            echo "ℹ️  No changes to commit — files already at $NEW_VERSION"
+          else
+            git commit -m "chore: bump dev base version to ${NEW_VERSION} after v${RELEASED} release"
+            git push origin dev
+            echo "✅ Pushed version bump to dev: ${NEW_VERSION}"
+          fi
+
+      # ── Summary steps ────────────────────────────────────────────────────────
+      - name: Dry run summary
+        if: inputs.dry_run == 'true'
+        run: |
+          echo "🔍 Dry run complete — no changes pushed."
+          echo "  Released version : ${{ steps.released.outputs.version }}"
+          echo "  Dev version      : ${{ steps.dev.outputs.version }}"
+          echo "  Next version     : ${{ steps.next.outputs.version }}"
+          echo "  Bump needed      : ${{ steps.check.outputs.needs_bump }}"
+
+      - name: Skip summary
+        if: steps.check.outputs.needs_bump != 'true'
+        run: |
+          echo "⏭️  Version bump skipped."
+          echo "  Dev (${{ steps.dev.outputs.version }}) is already ahead of released (${{ steps.released.outputs.version }})."

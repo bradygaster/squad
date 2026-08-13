@@ -240,3 +240,130 @@ Triaged 14 untriaged issues (3 docs, 6 community features, 3 bugs, 2 questions).
 - #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
 - #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
 
+---
+
+### 2026-03-26: CI deletion guard and source tree canary
+**By:** Booster (CI/CD)
+**What:** Added two safety checks to squad-ci.yml: (1) source tree canary verifying critical files exist, (2) large deletion guard failing PRs that delete >50 files without 'large-deletion-approved' label. Branch protection on dev requested (may need manual setup).
+**Why:** Incident #631 — @copilot deleted 361 files on dev with no CI gate catching it.
+
+### 2026-03-26: Copilot git safety rules
+**By:** RETRO (Security)
+**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits `git add .`, requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
+**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
+
+### 2026-03-29: Versioning Policy — No Prerelease Versions on dev/main
+**By:** Flight (Lead)
+**Confidence:** Medium (confirmed by PR #640 incident, PR #116 prerelease leak, CI gate implementation)
+
+**Decision:**
+1. All packages use strict semver (`MAJOR.MINOR.PATCH`). No prerelease suffixes on `dev` or `main`.
+2. Prerelease versions are ephemeral. `bump-build.mjs` creates `-build.N` for local testing only — never committed.
+3. SDK and CLI versions must stay in sync. Divergence silently breaks npm workspace resolution.
+4. Surgeon owns version bumps. Other agents must not modify `version` fields in `package.json` unless fixing a prerelease leak.
+5. CI enforcement via `prerelease-version-guard` blocks PRs with prerelease versions. `skip-version-check` label is Surgeon-only.
+
+**Why:** The repo had no documented versioning policy. PR #640 prerelease version `0.9.1-build.4` silently broke workspace resolution. The semver range `>=0.9.0` does not match prerelease versions, causing npm to install a stale registry package. PR #116 Surgeon set versions to `0.9.1-build.1` instead of `0.9.1` on a release branch due to lack of guidance.
+
+**Impact:** All agents must follow the versioning policy when touching `package.json`. Surgeon charter should reference `.squad/skills/versioning-policy/SKILL.md` for release procedures. CI pipeline enforces the policy via automated gate.
+
+### 2026-04-25: Release Process Skill Update — v0.9.4 Learnings
+**By:** Booster (CI/CD Engineer)
+**Status:** Implemented
+**Requested by:** Brady
+
+**Summary:** Updated both release-process skill files with critical learnings from the v0.9.4 release session. The v0.9.4 release was delayed by three distinct issues, each fixed by a separate PR.
+
+**Files Updated:**
+1. `.squad/skills/release-process/SKILL.md` (team-level skill)
+2. `.copilot/skills/release-process/SKILL.md` (copilot-level skill)
+3. `.squad/agents/booster/history.md` (learnings log)
+
+**Known Gotchas (Root Cause, Fix PR, Skill Section):**
+- Root package.json version drift: squad-release.yml reads from root, not sub-packages (#1043)
+- CHANGELOG missing `## [$VERSION]`: Workflow validates version entry exists (#1042)
+- Lockfile integrity check rejects workspace packages: Check didn't filter for registry-only packages (#1044)
+- GITHUB_TOKEN can't trigger downstream workflows: GitHub security feature prevents event propagation (design decision)
+- Prebuild bump breaks workspace linking: bump-build.mjs mutates versions breaking exact match
+
+**Rationale:** These are high-impact, recurring failure modes. Documenting them in the skill files ensures every agent (human or AI) working on releases has the knowledge to avoid repeating v0.9.4 delays. The GITHUB_TOKEN limitation in particular is non-obvious and would catch any future release.
+
+### 2026-06-24: Restore always-on coordinator inline-dispatch gate (v0.10.0 regression)
+**By:** Procedures (Prompt Engineer)
+**Requested by:** Tamir Dresher
+**Branch:** squad/fix-coordinator-inline-dispatch-gate (worktree)
+**Status:** Proposed — applied in working tree, awaiting Lead (Flight) review; NOT committed.
+
+**Context:** Matthew Wan reported the main Squad coordinator "does a lot of work on its own instead of using his roster of agents." Worked in v0.9.4, broke in v0.10.0. Commit `afe78188` (#1035, "context overflow sentinel + coordinator size reduction") cut the coordinator template and moved the concrete inline-dispatch gate out of the always-on prompt into lazy-loaded reference files. The leftover inline guidance was too soft.
+
+**Decision:** Re-establish a strong, always-on dispatch gate without breaking legitimate Direct/Lightweight response modes. Three minimal edits (~14 lines) to the canonical template `.squad-templates/squad.agent.md`:
+1. Inline-dispatch gate: inline permitted ONLY in Direct Mode, or when NEITHER `task` NOR `runSubagent` exists; otherwise MUST dispatch.
+2. STOP gate: about to emit a domain artifact with no spawn call this turn → STOP and dispatch (exceptions: Direct Mode / no spawn tool).
+3. VS Code `runSubagent` micro-playbook re-inlined (~5 lines) so how-to-dispatch is always-on.
+
+**Synced Copies (canonical first):**
+1. `.squad-templates/squad.agent.md` (canonical)
+2. `templates/squad.agent.md.template`
+3. `.github/agents/squad.agent.md`
+4. `packages/squad-cli/templates/squad.agent.md.template`
+5. `packages/squad-sdk/templates/squad.agent.md.template`
+
+**Validation:** Regression test `test/coordinator-inline-dispatch-gate.test.ts` is RED before (8/8 fail), GREEN after (8/8 pass). Full `npm run test` passes deterministic checks. `npm run lint` clean.
+
+**Changeset:** Required. Added `.changeset/fix-coordinator-inline-dispatch-gate.md` (patch, squad-cli + squad-sdk).
+
+**Rollout:** Existing installs require `squad upgrade` to pick up the regenerated coordinator agent.
+
+
+---
+
+### 2026-03-26: CI deletion guard and source tree canary
+
+**By:** Booster (CI/CD)
+**What:** Added two safety checks to squad-ci.yml: (1) source tree canary verifying critical files exist, (2) large deletion guard failing PRs that delete >50 files without 'large-deletion-approved' label. Branch protection on dev requested (may need manual setup).
+**Why:** Incident #631 — @copilot deleted 361 files on dev with no CI gate catching it.
+
+---
+
+### 2026-03-26: Copilot git safety rules
+
+**By:** RETRO (Security)
+**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits broad repo-root staging commands, requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
+**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
+
+---
+
+### 2026-03-29: Versioning policy — no prerelease versions on dev/main
+
+**By:** Flight (Lead)
+**What:** (1) All packages use strict semver (MAJOR.MINOR.PATCH) — no prerelease suffixes on dev or main. (2) Prerelease versions (`-build.N`) are local-only, never committed. (3) SDK and CLI versions must stay in sync. (4) Surgeon owns version bumps. (5) CI gate `prerelease-version-guard` blocks PRs with prerelease versions; `skip-version-check` label is Surgeon-only.
+**Why:** PR #640 — prerelease `0.9.1-build.4` silently broke workspace resolution; PR #116 — Surgeon set wrong prerelease version on release branch. No documented policy caused both incidents. Full policy in `.squad/skills/versioning-policy/SKILL.md`.
+
+---
+
+### 2026-04-25: Release process skill update — v0.9.4 learnings
+
+**By:** Booster (CI/CD)
+**What:** Updated `.squad/skills/release-process/SKILL.md` and `.copilot/skills/release-process/SKILL.md` with v0.9.4 incident learnings: root package.json version drift (read by squad-release.yml, not sub-packages), CHANGELOG must include `## [$VERSION]` entry, lockfile integrity check must filter registry-only packages, GITHUB_TOKEN cannot trigger downstream workflows, prebuild bump breaks workspace linking.
+**Why:** v0.9.4 release was delayed by three distinct issues (PRs #1042, #1043, #1044). Documenting prevents recurrence.
+
+---
+
+### 2026-06-24: Restore always-on coordinator inline-dispatch gate
+
+**By:** Procedures (Prompt Engineer)
+**What:** Re-established a strong always-on dispatch gate in `.squad-templates/squad.agent.md`, synced to all 5 copies: (1) inline-dispatch gate — inline only in Direct Mode or when neither `task` nor `runSubagent` exists; (2) STOP gate before emitting domain artifacts without a spawn call; (3) VS Code `runSubagent` micro-playbook re-inlined. Changeset added. Regression test `test/coordinator-inline-dispatch-gate.test.ts` (8/8 pass).
+**Why:** Commit `afe78188` (#1035) moved the inline-dispatch gate to lazy-loaded reference files, causing the coordinator to execute domain work itself instead of dispatching. Reported by Matthew Wan; workaround by Dina Berry.
+
+---
+
+### 2026-07-29: Workflow templates linted via explicit actionlint file paths
+
+**By:** Booster (CI/CD)
+**What:** Templates under `packages/squad-cli/templates/workflows/` and `packages/squad-sdk/templates/workflows/` are now linted by actionlint via explicit file path arguments in the new `squad-workflow-lint.yml` CI job. SC2086 findings fixed across all `>> $GITHUB_OUTPUT` / `>> $GITHUB_STEP_SUMMARY` redirects in `.squad-templates/workflows/`, `templates/workflows/`, `.github/workflows/squad-heartbeat.yml`, `squad-repo-health.yml`, and `squad-ci.yml`. Actionlint pinned to tag `v1.7.12`; shellcheck 0.10.0 installed explicitly.
+**Why:** Downstream repos running actionlint in their CI saw SC2086 errors in files generated by `squad upgrade` because Squad's own CI did not lint templates. The fix must live in Squad's templates — `squad upgrade` overwrites any downstream patches on every run. PR #1557.
+## Deferred
+
+- #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
+- #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
+

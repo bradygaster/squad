@@ -1,0 +1,137 @@
+name: Workflow Lint
+
+# Lints Squad's own workflows AND the bundled workflow templates that get
+# shipped to downstream repos via `squad upgrade`.  Templates live in
+# packages/squad-cli/templates/workflows/ and packages/squad-sdk/templates/workflows/
+# (both mirrored from .squad-templates/ at build time).  Because templates are
+# NOT under .github/workflows/, actionlint won't pick them up by default — we
+# pass them as explicit file arguments so they receive the same shellcheck
+# scrutiny as live workflows.
+
+on:
+  pull_request:
+    branches: [dev, preview, main]
+    paths:
+      - '.github/workflows/**'
+      - 'packages/squad-cli/templates/workflows/**'
+      - 'packages/squad-sdk/templates/workflows/**'
+      - '.squad-templates/workflows/**'
+      - 'templates/workflows/**'
+      - 'workflows/**'
+  push:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/**'
+      - 'packages/squad-cli/templates/workflows/**'
+      - 'packages/squad-sdk/templates/workflows/**'
+      - '.squad-templates/workflows/**'
+      - 'templates/workflows/**'
+      - 'workflows/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: Lint workflows and templates
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+
+      - name: Install actionlint 1.7.12 and shellcheck 0.10.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Installer pinned to v1.7.12 tag — not `main` — to avoid moving-ref RCE surface.
+          # Download to a named file before executing: curl -f hard-fails on non-200 so
+          # an unavailable URL aborts the step rather than silently feeding error HTML to bash.
+          # A named file is also inspectable on failure (vs opaque process substitution).
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash \
+            > install-actionlint.bash
+          bash install-actionlint.bash 1.7.12
+          rm install-actionlint.bash
+          sudo mv actionlint /usr/local/bin/actionlint
+          # ubuntu-latest ships shellcheck 0.9.0 (via apt); install 0.10.0 explicitly
+          # to match the version that surfaced the original SC2086 reports.
+          # pipefail (set above) ensures a failed curl is not masked by tar's exit status.
+          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz \
+            | tar -xJf - --strip-components=1 shellcheck-v0.10.0/shellcheck
+          sudo mv shellcheck /usr/local/bin/shellcheck
+          echo "✅ actionlint $(actionlint --version)"
+          echo "✅ shellcheck $(shellcheck --version | grep 'version:')"
+
+      - name: Lint .github/workflows/*.yml
+        run: |
+          # Why we skip machine-generated files:
+          #
+          # actionlint v1.7.12 is the current latest release and CANNOT be upgraded to fix
+          # these; the tool simply lags GitHub's evolving feature set.  Two known gaps:
+          #
+          #   • "copilot-requests: write" — a real, current GitHub Actions permission scope
+          #     used by GitHub's own gh-aw (Agentic Workflows) toolchain.
+          #   • "concurrency.queue: max" — a newer real Actions concurrency feature.
+          #
+          # The files that trigger these errors are DO-NOT-EDIT compiler output produced by
+          # gh-aw's `gh aw compile` toolchain (*.lock.yml files) or by gh-aw's own code
+          # generators (e.g. agentics-maintenance.yml).  They carry a header identifying them
+          # as generated and are validated upstream by gh-aw's own toolchain.  Editing them
+          # is NOT acceptable — they will be clobbered on the next compile/generate cycle.
+          #
+          # Detection strategy: skip any workflow whose first 5 lines contain "automatically
+          # generated" or "DO NOT EDIT".  This is header-based rather than filename-based so
+          # it automatically covers future gh-aw generated files without manual maintenance.
+          # Hand-authored workflows never carry such a header, so they always get linted.
+
+          echo "--- Linting .github/workflows/ (skipping DO-NOT-EDIT generated files) ---"
+          skipped=()
+          to_lint=()
+          for f in .github/workflows/*.yml; do
+            if head -5 "$f" | grep -qiE "(automatically generated|DO NOT EDIT)"; then
+              skipped+=("$f")
+            else
+              to_lint+=("$f")
+            fi
+          done
+
+          if [ ${#skipped[@]} -gt 0 ]; then
+            echo "⏭  Skipped (DO-NOT-EDIT generated files — validated by upstream toolchain):"
+            for f in "${skipped[@]}"; do echo "     $f"; done
+          fi
+
+          if [ ${#to_lint[@]} -gt 0 ]; then
+            echo "🔍 Linting ${#to_lint[@]} hand-authored workflow(s):"
+            for f in "${to_lint[@]}"; do echo "     $f"; done
+            actionlint "${to_lint[@]}"
+          else
+            echo "⚠️  No hand-authored workflows found to lint."
+          fi
+
+      - name: Lint squad-cli template workflows
+        run: |
+          echo "--- Linting packages/squad-cli/templates/workflows/ ---"
+          actionlint packages/squad-cli/templates/workflows/*.yml
+
+      - name: Lint squad-sdk template workflows
+        run: |
+          echo "--- Linting packages/squad-sdk/templates/workflows/ ---"
+          actionlint packages/squad-sdk/templates/workflows/*.yml
+
+      # Lint the canonical source and root mirror independently from their committed state.
+      # All five directories contain tracked files; we lint what is actually committed rather
+      # than running sync-then-lint, because:
+      #   (a) a bug introduced in .squad-templates/ is caught here before sync propagates it, and
+      #   (b) mirror drift is already enforced by template-sync.test.ts as a separate gate.
+      - name: Lint canonical template source (.squad-templates/workflows/)
+        run: |
+          echo "--- Linting .squad-templates/workflows/ (canonical source) ---"
+          actionlint .squad-templates/workflows/*.yml
+
+      - name: Lint root mirror template workflows (templates/workflows/)
+        run: |
+          echo "--- Linting templates/workflows/ (root mirror) ---"
+          actionlint templates/workflows/*.yml

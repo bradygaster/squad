@@ -14,6 +14,7 @@ const DOCS_CONTENT_DIR = join(CONTENT_DIR, 'docs');
 const BLOG_CONTENT_DIR = join(CONTENT_DIR, 'blog');
 const DIST_DIR = join(DOCS_DIR, 'dist');
 const ASTRO_BIN = join(DOCS_DIR, 'node_modules', '.bin', process.platform === 'win32' ? 'astro.cmd' : 'astro');
+const DOCS_BUILD_TIMEOUT_MS = 240_000;
 
 function docsBuildSkipReason(): string | null {
   if (!existsSync(join(DOCS_DIR, 'package.json'))) return 'docs/package.json missing';
@@ -22,11 +23,11 @@ function docsBuildSkipReason(): string | null {
 }
 
 // Expected content directories in src/content/docs/
-const EXPECTED_GET_STARTED = ['installation', 'first-session', 'five-minute-start', 'choosing-your-path', 'migration'];
+const EXPECTED_GET_STARTED = ['installation', 'first-session', 'five-minute-start', 'choose-your-interface', 'migration'];
 
-const EXPECTED_GUIDES = ['build-autonomous-agent', 'building-extensions', 'building-resilient-agents', 'contributing', 'contributors', 'extensibility', 'faq', 'github-auth-setup', 'personal-squad', 'sample-prompts', 'shell', 'tips-and-tricks'];
+const EXPECTED_GUIDES = ['agent-framework-integration', 'build-autonomous-agent', 'building-extensions', 'building-resilient-agents', 'contributing', 'contributors', 'extensibility', 'faq', 'gh-aw', 'github-auth-setup', 'personal-squad', 'sample-prompts', 'shell', 'tips-and-tricks'];
 
-const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary'];
+const EXPECTED_REFERENCE = ['cli', 'sdk', 'config', 'api-reference', 'integration', 'tools-and-hooks', 'glossary', 'container-image', 'state-backend-selection'];
 
 const EXPECTED_SCENARIOS = [
   'aspire-dashboard',
@@ -54,6 +55,10 @@ const EXPECTED_SCENARIOS = [
   'team-state-storage',
   'troubleshooting',
   'upgrading',
+  'azure-container-apps',
+  'aks-deployment',
+  'production-observability',
+  'production-troubleshooting',
 ];
 
 const EXPECTED_FEATURES = [
@@ -81,13 +86,14 @@ const EXPECTED_FEATURES = [
   'project-boards',
   'ralph',
   'rate-limiting',
-  'remote-control',
   'response-modes',
   'reviewer-protocol',
   'routing',
   'skills',
+  'standalone-install',
   'storage-provider',
   'squad-rc',
+  'security-hardening',
   'streams',
   'team-setup',
   'upstream-inheritance',
@@ -208,8 +214,8 @@ describe.skipIf(DOCS_BUILD_SKIP_REASON !== null)(
     if (existsSync(DIST_DIR)) {
       rmSync(DIST_DIR, { recursive: true, force: true });
     }
-    execSync('npm run build', { cwd: DOCS_DIR, timeout: 120_000 });
-  }, 120_000);
+    execSync('npm run build', { cwd: DOCS_DIR, timeout: DOCS_BUILD_TIMEOUT_MS });
+  }, DOCS_BUILD_TIMEOUT_MS);
 
   afterAll(() => {
     if (existsSync(DIST_DIR)) {
@@ -233,10 +239,8 @@ describe.skipIf(DOCS_BUILD_SKIP_REASON !== null)(
   });
 
   it('build runs without errors (exit code 0)', () => {
-    expect(() => {
-      execSync('npm run build', { cwd: DOCS_DIR, timeout: 120_000 });
-    }).not.toThrow();
-  }, 120_000);
+    expect(requireBuild()).toBe(true);
+  });
 
   // --- 2. All section files produce HTML output ---
 

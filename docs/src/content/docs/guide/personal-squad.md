@@ -327,12 +327,12 @@ We're building in the open. If something feels off, [open an issue](https://gith
   - Accidental deletions may be unrecoverable
   - Cross-project context could vanish
   
-  Think of git as your insurance policy for your project's local state. It's a good habit: after a session ends, run `git add .squad/ && git commit -m "squad: project state"`. (Agent histories, skills, and team identity are stored in your personal squad directory — not in project repos.)
+  Think of git as your insurance policy for your project's local state. It's a good habit: after a session ends, run `git add -- .squad/ && git commit -m "squad: project state"`. (Agent histories, skills, and team identity are stored in your personal squad directory — not in project repos.)
 
 - **Commit project `.squad/` but not personal squad directory.** The project-local state (decisions, logs) belongs in version control. Your global identity (agents, skills, casting) is personal — keep it out of repos.
   ```bash
   # DO THIS
-  git add .squad/
+  git add -- .squad/
   git commit -m "squad: project state"
   
   # DON'T commit your personal squad directory (~/.config/squad/ or similar) — it's machine-specific

@@ -539,7 +539,7 @@ describe('CLI: upgrade command', () => {
     const registry = JSON.parse(readFileSync(join(dir, '.squad', 'casting', 'registry.json'), 'utf8'));
     expect(registry).toHaveProperty('agents');
     const policy = JSON.parse(readFileSync(join(dir, '.squad', 'casting', 'policy.json'), 'utf8'));
-    expect(policy).toHaveProperty('casting_policy_version', '1.1');
+    expect(policy).toHaveProperty('casting_policy_version', '1.2');
     const history = JSON.parse(readFileSync(join(dir, '.squad', 'casting', 'history.json'), 'utf8'));
     expect(history).toHaveProperty('universe_usage_history');
     rmSync(dir, { recursive: true, force: true });

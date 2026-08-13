@@ -263,11 +263,12 @@ function validateMutableStateToolKey(key: string): void {
     key.startsWith('log/') ||
     key.startsWith('orchestration-log/') ||
     key.startsWith('sessions/') ||
-    key.startsWith('.scratch/');
+    key.startsWith('.scratch/') ||
+    key.startsWith('identity/');
 
   if (!isMutable) {
     throw new Error(
-      'State mutations are limited to mutable runtime state (decisions, inbox, logs, sessions, scratch files, and agent history). Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
+      'State mutations are limited to mutable runtime state (decisions, inbox, logs, sessions, scratch files, agent history, and identity). Static config such as config.json, team.md, routing.md, charters, templates, and skills must not be changed with state tools.',
     );
   }
 }
@@ -475,8 +476,8 @@ export class ToolRegistry {
         required: ['author', 'summary', 'body'],
       },
       handler: async (args) => {
-        if (!/^[a-zA-Z0-9_-]+$/.test(args.author)) {
-          return { textResultForLlm: 'Invalid author name: must contain only letters, numbers, hyphens, and underscores', resultType: 'failure', error: 'Invalid author' };
+        if (!/^[\x20-\x7E]+$/.test(args.author) || args.author.length > 200) {
+          return { textResultForLlm: 'Invalid author name: must contain only printable ASCII characters and be at most 200 characters long', resultType: 'failure', error: 'Invalid author' };
         }
         try {
           const inboxDir = path.join(this.squadRoot, 'decisions', 'inbox');
@@ -488,7 +489,16 @@ export class ToolRegistry {
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '')
             .slice(0, 50);
-          const filename = path.join(inboxDir, `${args.author}-${slug}.md`);
+          const authorSlug = args.author
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/-{2,}/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 60);
+          if (!authorSlug) {
+            return { textResultForLlm: 'Invalid author name: must contain at least one letter or digit', resultType: 'failure', error: 'Invalid author' };
+          }
+          const filename = path.join(inboxDir, `${authorSlug}-${slug}.md`);
 
           const content = [
             `### ${timestamp}: ${args.summary}`,
@@ -506,7 +516,7 @@ export class ToolRegistry {
           this.storage.writeSync(filename, content);
 
           return {
-            textResultForLlm: `Decision written: ${args.author}-${slug}.md (ID: ${decisionId})`,
+            textResultForLlm: `Decision written: ${authorSlug}-${slug}.md (ID: ${decisionId})`,
             resultType: 'success',
             toolTelemetry: { decisionId, filename, slug },
           };

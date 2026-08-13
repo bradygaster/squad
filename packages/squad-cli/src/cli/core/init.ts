@@ -15,7 +15,8 @@ import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, ensurePersonalSquad
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { resolveSquadStateMcpSpec } from './mcp-spec.js';
-import { describeMcpSpec } from './upgrade.js';
+import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
+import { getTemplatesDir } from './templates.js';
 import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
 import {
   readTeamMd,
@@ -23,10 +24,50 @@ import {
   hasCopilot,
   insertCopilotSection,
 } from './team-md.js';
+import { modify, applyEdits, parse as parseJsonc } from 'jsonc-parser';
 
 const storage = new FSStorageProvider();
 
 const CYAN = '\x1b[36m';
+
+/**
+ * Applies "chat.newSession.defaultMode": "Squad" to .vscode/settings.json.
+ * JSONC-aware: preserves existing comments, trailing commas, and formatting.
+ * Idempotent: if the key already exists (any value), leaves it untouched.
+ * On parse failure of an existing file, warns and skips without corruption.
+ */
+async function applyVscodeDefaultMode(dest: string): Promise<void> {
+  const settingsPath = path.join(dest, '.vscode', 'settings.json');
+  const KEY = 'chat.newSession.defaultMode';
+  const VALUE = 'Squad';
+
+  if (!storage.existsSync(settingsPath)) {
+    // Create new file with just the one key
+    storage.writeSync(settingsPath, `{\n  "${KEY}": "${VALUE}"\n}\n`);
+    success(`.vscode/settings.json created — ${KEY}: "${VALUE}"`);
+    return;
+  }
+
+  const content = storage.readSync(settingsPath) ?? '';
+  const parseErrors: Array<{ error: number; offset: number; length: number }> = [];
+  const parsed = parseJsonc(content, parseErrors, { allowTrailingComma: true });
+
+  if (parseErrors.length > 0) {
+    console.warn(`${YELLOW}⚠ .vscode/settings.json could not be parsed — skipping VS Code default mode setup${RESET}`);
+    return;
+  }
+
+  if (parsed && Object.prototype.hasOwnProperty.call(parsed, KEY)) {
+    // Already set — respect user ownership, no change
+    return;
+  }
+
+  const edits = modify(content, [KEY], VALUE, {
+    formattingOptions: { tabSize: 2, insertSpaces: true, eol: '\n' },
+  });
+  storage.writeSync(settingsPath, applyEdits(content, edits));
+  success(`.vscode/settings.json updated — ${KEY}: "${VALUE}"`);
+}
 
 /**
  * Detect if the target directory is inside a parent git repo.
@@ -123,6 +164,8 @@ export interface RunInitOptions {
   stateBackend?: string;
   /** If true, write MCP server config into squad.agent.md frontmatter instead of .copilot/mcp-config.json */
   mcpFrontmatter?: boolean;
+  /** If false, skip writing "chat.newSession.defaultMode": "Squad" to .vscode/settings.json (default: true) */
+  includeVscodeDefault?: boolean;
 }
 
 /**
@@ -284,6 +327,17 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   // immediately instead of after the 5-second TTL.
   clearResolveSquadCache();
 
+  // Install user-owned template files that are not yet present on disk.
+  // These were not created by sdkInitSquad (which owns ceremonies.md, routing.md, etc.
+  // via the SDK templates path).  ensureUserOwnedTemplates reads TEMPLATE_MANIFEST
+  // entries with overwriteOnUpgrade: false and copies each one only if absent.
+  try {
+    const templatesDir = getTemplatesDir();
+    ensureUserOwnedTemplates(dest, templatesDir);
+  } catch {
+    // Non-fatal: if templates dir is not found (unusual install), skip silently.
+  }
+
   // ── Personal squad linking ─────────────────────────────────────────
   // When a personal squad directory exists and this is a repo init (not global),
   // set teamRoot in config.json to point to the global squad root that contains
@@ -320,17 +374,20 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
 
   // Configure state backend if specified at init time
   if (options.stateBackend) {
-    const validBackends = ['local', 'orphan', 'two-layer', 'external'];
+    const validBackends = ['local', 'orphan', 'two-layer', 'external', 'external-stub'];
     if (validBackends.includes(options.stateBackend)) {
+      // 'external' is the legacy name for the 'external-stub' placeholder —
+      // write the canonical name so configs don't trip the deprecation warning.
+      const backendValue = options.stateBackend === 'external' ? 'external-stub' : options.stateBackend;
       const configPath = path.join(squadDir, 'config.json');
       let config: Record<string, unknown> = {};
       try {
         const raw = storage.readSync(configPath);
         if (raw) config = JSON.parse(raw);
       } catch { /* start fresh */ }
-      config['stateBackend'] = options.stateBackend;
+      config['stateBackend'] = backendValue;
       storage.writeSync(configPath, JSON.stringify(config, null, 2) + '\n');
-      success(`state backend: ${options.stateBackend}`);
+      success(`state backend: ${backendValue}`);
 
       // Auto-create orphan branch for orphan/two-layer backends
       // Uses git plumbing (mktree + commit-tree + update-ref) so the working tree is never touched.
@@ -435,6 +492,15 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     }
   } catch {
     // best-effort: .mcp.json write failure does not block init
+  }
+
+  // Apply VS Code default chat session mode (opt-out: --no-vscode-default)
+  if (options.includeVscodeDefault !== false && !options.isGlobal) {
+    try {
+      await applyVscodeDefaultMode(dest);
+    } catch {
+      console.warn(`${YELLOW}⚠ could not apply VS Code default mode setting${RESET}`);
+    }
   }
 
   // Report .init-prompt storage

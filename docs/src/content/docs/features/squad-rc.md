@@ -35,7 +35,7 @@ squad rc --tunnel
 
 **When to use `squad start`:** You want to mirror a terminal session to your phone (demos, pairing, watching long-running processes).
 
-> 💡 **Looking for terminal mirroring?** See [squad start](./remote-control.md).
+> 💡 **Looking for terminal mirroring?** See [squad start](./squad-rc.md).
 
 ---
 
@@ -471,7 +471,7 @@ squad rc --port 8080  # Specific port
 
 ## See Also
 
-- [squad start](./remote-control.md) — PTY mirror mode for terminal streaming
+- squad start — PTY mirror mode for terminal streaming
 - [CLI Reference](../reference/cli.md) — All squad commands
 - [Remote Control Protocol](https://github.com/bradygaster/squad/blob/main/packages/squad-sdk/src/remote/protocol.ts) — Wire protocol types
 - [RemoteBridge SDK](https://github.com/bradygaster/squad/blob/main/packages/squad-sdk/src/remote/bridge.ts) — Server implementation

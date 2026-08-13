@@ -63,6 +63,18 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--force${RESET}                     Overwrite files without prompting\n`);
   },
 
+  'update-check': (version) => {
+    header('update-check', version, 'Report cached CLI update status');
+    console.log(`Usage: squad update-check [options]\n`);
+    console.log(`Reads the update-check cache maintained in the background by the CLI`);
+    console.log(`and reports it without making a network call, unless --refresh is used.\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--json${RESET}                      Emit structured JSON instead of text`);
+    console.log(`  ${BOLD}--refresh${RESET}                   Bypass the cache and re-fetch from npm\n`);
+    console.log(`Exit codes: 0 (up to date / no cache yet), 1 (update available),`);
+    console.log(`            2 (transport failure during --refresh)\n`);
+  },
+
   migrate: (version) => {
     header('migrate', version, 'Convert between markdown and SDK-First squad formats');
     console.log(`Usage: squad migrate --to sdk|markdown [options]\n`);
@@ -186,7 +198,7 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
     console.log(`  ${BOLD}--command <cmd>${RESET}             Override the agent command (default: copilot)\n`);
     console.log(`Examples:`);
     console.log(`  squad start --tunnel --yolo`);
-    console.log(`  squad start --tunnel --model claude-sonnet-4`);
+    console.log(`  squad start --tunnel --model claude-sonnet-4.6`);
     console.log(`  squad start --tunnel --command "gh copilot"\n`);
   },
 

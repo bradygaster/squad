@@ -229,7 +229,7 @@ export function installGitHooks(cwd: string, options: InstallHooksOptions = {}):
     }
   } catch { /* proceed anyway */ }
 
-  if (backend === 'local' || backend === 'external' || backend === null) {
+  if (backend === 'local' || backend === 'external' || backend === 'external-stub' || backend === null) {
     console.log(`${DIM}squad install-hooks: backend is '${backend || 'local'}' — hooks not needed (state syncs with normal git operations).${RESET}`);
     return;
   }

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-standalone/
 .env
 *.tsbuildinfo
 coverage/
@@ -10,6 +11,7 @@ coverage/
 packages/**/*.tgz
 # Squad: ignore runtime state (logs, inbox, sessions)
 .squad/orchestration-log/
+.squad/orchestration-log/dispatchguard/
 .squad/log/
 .squad/decisions/inbox/
 .squad/sessions/
@@ -50,3 +52,8 @@ artifacts/
 
 # NOTE: .squad/casting/* is AUTHORITATIVE IDENTITY and MUST be committed to main.
 # Do not add .squad/casting/ to this ignore list.
+
+# gh-aw run artifacts (generated output, not committed)
+/run-artifacts/
+# Local MCP configuration (machine-specific, not committed)
+/.mcp.json

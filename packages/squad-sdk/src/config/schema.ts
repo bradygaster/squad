@@ -3,6 +3,8 @@
  * Typed configuration interface for Squad teams
  */
 
+import type { CostPolicyConfig } from './models.js';
+
 export interface SquadConfig {
   version: string;
   team: TeamConfig;
@@ -31,6 +33,7 @@ export interface AgentConfig {
   charter?: string;
   model?: string;
   reasoningEffort?: string;
+  contextTier?: string;
   tools?: string[];
   status?: 'active' | 'inactive' | 'retired';
 }
@@ -52,10 +55,14 @@ export interface ModelConfig {
   default: string;
   defaultTier: 'premium' | 'standard' | 'fast';
   defaultReasoningEffort?: string;
+  defaultContextTier?: string;
   tiers: Record<string, string[]>;
   agentOverrides?: Record<string, string>;
   agentReasoningEffortOverrides?: Record<string, string>;
+  agentContextTierOverrides?: Record<string, string>;
   taskTypeMapping?: Record<string, string>;
+  /** Cost-ceiling policy (cost axis, separate from tier). Issue #1080/#1183. */
+  costPolicy?: CostPolicyConfig;
 }
 
 export interface HooksConfig {
@@ -90,12 +97,12 @@ export const DEFAULT_CONFIG: SquadConfig = {
     fallbackBehavior: 'coordinator',
   },
   models: {
-    default: 'claude-sonnet-4',
+    default: 'claude-sonnet-4.6',
     defaultTier: 'standard',
     tiers: {
-      premium: ['claude-opus-4', 'claude-opus-4.5'],
-      standard: ['claude-sonnet-4', 'claude-sonnet-4.5', 'gpt-5.1-codex'],
-      fast: ['claude-haiku-4.5', 'gpt-5.1-codex-mini'],
+      premium: ['claude-opus-4.8', 'claude-opus-4.7', 'claude-opus-4.6'],
+      standard: ['claude-sonnet-4.6', 'claude-sonnet-5', 'gpt-5.4', 'gpt-5.3-codex'],
+      fast: ['claude-haiku-4.5', 'gpt-5.4-mini', 'gpt-5-mini'],
     },
   },
   agents: [],

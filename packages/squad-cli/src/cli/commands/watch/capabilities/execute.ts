@@ -2,14 +2,14 @@
  * Execute capability — spawns Copilot sessions for eligible issues.
  */
 
-import { execFile, type ChildProcess } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import { createVerboseLogger } from '../verbose.js';
 import { loadAgentCharter } from '../../../shell/spawn.js';
-import { withAdditionalMcpConfig } from '../../../core/copilot-invocation.js';
+import { buildCopilotCommand, spawnAgent } from '../agent-spawn.js';
 
 /** Normalized work item for execution. */
 export interface ExecutableWorkItem {
@@ -45,24 +45,6 @@ export function classifyIssue(title: string): 'read' | 'write' {
   const isWrite = WRITE_KEYWORDS.some(k => lower.includes(k));
   if (isRead && !isWrite) return 'read';
   return 'write'; // default to write (safer — gets full agent session)
-}
-
-/** Build agent command for a prompt. */
-function buildAgentCommand(
-  prompt: string,
-  context: WatchContext,
-): { cmd: string; args: string[] } {
-  if (context.agentCmd) {
-    const parts = context.agentCmd.trim().split(/\s+/);
-    const cmd = parts[0]!;
-    const args = [...parts.slice(1), '-p', prompt];
-    return { cmd, args };
-  }
-  const args = ['-p', prompt];
-  if (context.copilotFlags) {
-    args.push(...context.copilotFlags.trim().split(/\s+/));
-  }
-  return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, context.teamRoot) };
 }
 
 /** Labels that indicate an issue should not be auto-executed. */
@@ -162,36 +144,15 @@ async function executeAll(
   }
 
   const fullPrompt = charterPrefix + prompt;
-  const { cmd, args } = buildAgentCommand(fullPrompt, context);
+  const { cmd, args } = buildCopilotCommand(fullPrompt, context);
 
-  return new Promise<{ success: boolean; error?: string }>((resolve) => {
-    const cp: ChildProcess = execFile(
-      cmd,
-      args,
-      { cwd: context.teamRoot, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 },
-      (err) => {
-        if (err) {
-          const execErr = err as Error & { killed?: boolean };
-          const msg = execErr.killed ? `Timed out` : execErr.message;
-          resolve({ success: false, error: msg });
-        } else {
-          resolve({ success: true });
-        }
-      },
-    );
+  // Track child PID for cleanup on exit/crash
+  const issueNums = issues.map(i => `#${i.number}`).join(',');
+  const pidTracking = context.pidTracker
+    ? { tracker: context.pidTracker, label: `copilot-session-${issueNums}` }
+    : undefined;
 
-    // Track child PID for cleanup on exit/crash
-    if (context.pidTracker && cp.pid) {
-      const issueNums = issues.map(i => `#${i.number}`).join(',');
-      context.pidTracker.track(cp.pid, `copilot-session-${issueNums}`);
-    }
-
-    cp.on('exit', () => {
-      if (context.pidTracker && cp.pid) {
-        context.pidTracker.untrack(cp.pid);
-      }
-    });
-  });
+  return spawnAgent(cmd, args, context.teamRoot, timeoutMs, pidTracking);
 }
 
 export class ExecuteCapability implements WatchCapability {

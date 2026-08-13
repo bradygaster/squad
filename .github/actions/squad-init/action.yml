@@ -1,0 +1,189 @@
+# Composite action: install Squad from a standalone bundle and initialize a team.
+#
+# Installs the Squad CLI from a GitHub Release asset rather than npm, so this
+# works on runners that cannot reach registry.npmjs.org — self-hosted agents
+# behind a corporate firewall, locked-down build machines, air-gapped mirrors.
+#
+# This is the npm-free replacement for the `npx @bradygaster/squad-cli init`
+# step in the gh-aw activation job (see the limitation documented in #1587,
+# and the RFC in #1593).
+#
+# Usage:
+#   - uses: bradygaster/squad/.github/actions/squad-init@<sha>
+#     with:
+#       version: 'v0.11.0'          # default: latest release
+#       preset: 'default'           # default: default
+#       state-backend: 'local'      # default: local
+#
+# Every input is optional; the defaults match what the gh-aw shared component
+# runs today.
+
+name: 'Squad Init (npm-free)'
+description: 'Install Squad from a standalone release bundle and run squad init — no npm registry access required'
+
+inputs:
+  version:
+    description: 'Squad release tag to install (e.g. v0.11.0). Defaults to the latest release.'
+    required: false
+    default: 'latest'
+  preset:
+    description: 'Preset passed to squad init'
+    required: false
+    default: 'default'
+  state-backend:
+    description: 'State backend passed to squad init: local, or a backend supported by your Squad version'
+    required: false
+    default: 'local'
+  install-prefix:
+    description: 'Install prefix for the bundle. The launcher is linked into <prefix>/bin.'
+    required: false
+    default: ''
+  repository:
+    description: 'Repository to download release assets from. Point this at an internal mirror when github.com is unreachable.'
+    required: false
+    default: 'bradygaster/squad'
+  skip-init:
+    description: 'Install the CLI but do not run squad init'
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Directory to run squad init in'
+    required: false
+    default: '.'
+
+outputs:
+  squad-path:
+    description: 'Absolute path to the installed squad launcher'
+    value: ${{ steps.install.outputs.squad-path }}
+  version:
+    description: 'Squad version that was installed'
+    value: ${{ steps.install.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PRESET: ${{ inputs.preset }}
+        INPUT_BACKEND: ${{ inputs.state-backend }}
+        INPUT_REPO: ${{ inputs.repository }}
+        INPUT_SKIP_INIT: ${{ inputs.skip-init }}
+      run: |
+        set -euo pipefail
+        # These values reach a shell command below, so constrain them tightly.
+        if ! echo "${INPUT_VERSION}" | LC_ALL=C grep -qE '^(latest|v?[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.-]*)$'; then
+          echo "::error::version must be 'latest' or a semver tag (e.g. v0.11.0)"
+          exit 1
+        fi
+        for pair in "preset:${INPUT_PRESET}" "state-backend:${INPUT_BACKEND}"; do
+          name="${pair%%:*}"; value="${pair#*:}"
+          if ! echo "${value}" | LC_ALL=C grep -qE '^[A-Za-z0-9_.-]+$'; then
+            echo "::error::${name} contains invalid characters (only alphanumeric, ., -, _ allowed)"
+            exit 1
+          fi
+        done
+        if ! echo "${INPUT_REPO}" | LC_ALL=C grep -qE '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'; then
+          echo "::error::repository must be in owner/repo form"
+          exit 1
+        fi
+        if [ "${INPUT_SKIP_INIT}" != "true" ] && [ "${INPUT_SKIP_INIT}" != "false" ]; then
+          echo "::error::skip-init must be 'true' or 'false'"
+          exit 1
+        fi
+
+    - name: Install Squad from release bundle
+      id: install
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PREFIX: ${{ inputs.install-prefix }}
+        INPUT_REPO: ${{ inputs.repository }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        prefix="${INPUT_PREFIX:-${HOME}/.squad-standalone}"
+
+        # Run the installer that shipped with this action rather than fetching
+        # it from a branch head. Consumers pin this action to a SHA, so the
+        # installer is pinned with it — no unpinned remote code execution, and
+        # no drift between the installer and the release it is installing.
+        #
+        # github.action_path is <checkout>/.github/actions/squad-init when the
+        # action is used from a repo reference, so the repo root is three
+        # levels up. Resolve it explicitly and verify rather than trusting the
+        # relative walk.
+        repo_root="$(cd "${ACTION_PATH}/../../.." && pwd)"
+        installer="${repo_root}/scripts/install.sh"
+        if [ ! -f "${installer}" ]; then
+          echo "::error::install.sh not found at ${installer}. Resolved repo root '${repo_root}' from action path '${ACTION_PATH}'."
+          exit 1
+        fi
+
+        VERSION="${INPUT_VERSION}" PREFIX="${prefix}" REPO="${INPUT_REPO}" \
+          sh "${installer}"
+
+        squad_bin="${prefix}/bin/squad"
+        if [ ! -x "${squad_bin}" ]; then
+          echo "::error::squad was not installed at ${squad_bin}"
+          exit 1
+        fi
+
+        echo "${prefix}/bin" >> "${GITHUB_PATH}"
+        echo "squad-path=${squad_bin}" >> "${GITHUB_OUTPUT}"
+        echo "version=$("${squad_bin}" --version)" >> "${GITHUB_OUTPUT}"
+
+    - name: Verify no npm registry dependency
+      shell: bash
+      env:
+        SQUAD_BIN: ${{ steps.install.outputs.squad-path }}
+      run: |
+        set -euo pipefail
+        # The whole point of this action is that the installed CLI runs without
+        # the npm registry. Prove the binary is self-contained before we rely
+        # on it, rather than discovering it mid-init.
+        "${SQUAD_BIN}" --version > /dev/null
+        echo "Squad $("${SQUAD_BIN}" --version) installed and runnable without npm"
+
+    - name: Run squad init
+      if: inputs.skip-init != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SQUAD_BIN: ${{ steps.install.outputs.squad-path }}
+        INPUT_PRESET: ${{ inputs.preset }}
+        INPUT_BACKEND: ${{ inputs.state-backend }}
+      run: |
+        set -euo pipefail
+        "${SQUAD_BIN}" init --preset "${INPUT_PRESET}" --state-backend "${INPUT_BACKEND}"
+
+    - name: Verify npm-free MCP wiring
+      if: inputs.skip-init != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SQUAD_VERSION: ${{ steps.install.outputs.version }}
+      run: |
+        set -euo pipefail
+        if [ ! -f .squad/team.md ]; then
+          echo "::error::squad init completed but .squad/team.md is missing"
+          exit 1
+        fi
+
+        # An npx-based squad_state entry is unrunnable on the firewalled
+        # runners this action exists for, and it fails at Copilot start rather
+        # than here — so fail the build now instead of warning.
+        if [ -f .mcp.json ] && grep -q '"npx"' .mcp.json; then
+          echo "::error::.mcp.json references npx — squad_state will not start without npm registry access. Expected the standalone launcher path."
+          cat .mcp.json
+          exit 1
+        fi
+
+        {
+          echo "### Squad ${SQUAD_VERSION} initialized"
+          echo ""
+          echo "Installed from a standalone release bundle — no npm registry access used."
+          echo ""
+          echo "\`.mcp.json\` points at the bundled launcher (no npx)."
+        } >> "${GITHUB_STEP_SUMMARY}"

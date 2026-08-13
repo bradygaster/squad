@@ -167,7 +167,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       expect(result.model).toBe('claude-opus-4.6');
       expect(result.tier).toBe('premium');
-      expect(result.fallbackChain).toContain('claude-opus-4.6-fast');
+      expect(result.fallbackChain).toContain('claude-opus-4.7');
     });
 
     it('should infer fast tier for haiku models', () => {
@@ -180,7 +180,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       expect(result.model).toBe('claude-haiku-4.5');
       expect(result.tier).toBe('fast');
-      expect(result.fallbackChain).toContain('gpt-5.1-codex-mini');
+      expect(result.fallbackChain).toContain('gpt-5.4-mini');
     });
   });
 
@@ -325,9 +325,9 @@ describe('Per-Agent Model Selection (M1-9)', () => {
       const result = resolveModel(options);
 
       expect(result.fallbackChain).toEqual([
+        'claude-opus-4.8',
+        'claude-opus-4.7',
         'claude-opus-4.6',
-        'claude-opus-4.6-fast',
-        'claude-opus-4.5',
         'claude-sonnet-4.6',
       ]);
     });
@@ -339,13 +339,17 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       const result = resolveModel(options);
 
+      // Chain reordered to prefer newest per series first (PR #1444 follow-up, tamirdresher request).
       expect(result.fallbackChain).toEqual([
+        'claude-sonnet-5',
         'claude-sonnet-4.6',
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
         'gpt-5.4',
-        'claude-sonnet-4.5',
         'gpt-5.3-codex',
-        'claude-sonnet-4',
-        'gpt-5.2',
+        'claude-sonnet-4.5',
+        'gemini-2.5-pro',
       ]);
     });
 
@@ -358,8 +362,7 @@ describe('Per-Agent Model Selection (M1-9)', () => {
 
       expect(result.fallbackChain).toEqual([
         'claude-haiku-4.5',
-        'gpt-5.1-codex-mini',
-        'gpt-4.1',
+        'gpt-5.4-mini',
         'gpt-5-mini',
       ]);
     });

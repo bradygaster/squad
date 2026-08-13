@@ -12,6 +12,8 @@
 // Re-export core types and classes from adapter layer
 export {
   SquadClient,
+  normalizeToolNameForCopilot,
+  normalizeToolsInConfig,
   type SquadClientOptions,
   type SquadConnectionState,
 } from '../adapter/client.js';

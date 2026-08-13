@@ -23,7 +23,7 @@ const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const FETCH_TIMEOUT_MS = 3000; // 3 seconds
 
-interface CacheData {
+export interface CacheData {
   latestVersion: string;
   checkedAt: number;
 }
@@ -37,7 +37,8 @@ function getCacheDir(): string {
   return path.join(base, 'squad-cli');
 }
 
-function getCachePath(): string {
+/** Path to the update-check cache file (shared with `squad update-check`). */
+export function getCachePath(): string {
   return path.join(getCacheDir(), 'update-check.json');
 }
 
@@ -57,7 +58,7 @@ function readCache(): CacheData | null {
 }
 
 /** Write version check result to cache. */
-function writeCache(data: CacheData): void {
+export function writeCache(data: CacheData): void {
   try {
     const dir = getCacheDir();
     storage.mkdirSync(dir, { recursive: true });
@@ -68,7 +69,7 @@ function writeCache(data: CacheData): void {
 }
 
 /** Fetch latest version from npm registry with timeout. */
-async function fetchLatestVersion(): Promise<string | null> {
+export async function fetchLatestVersion(): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

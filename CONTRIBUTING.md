@@ -343,6 +343,8 @@ This:
 
 You don't need to manually version — changesets handle it.
 
+CI watches for drift: `scripts/check-changeset-drift.mjs` warns on PRs and fails on `dev` pushes when more than 25 fragments are pending or the oldest is over 30 days old — a signal that `changeset version` needs to run.
+
 ## Branch Strategy
 
 - **main** — Stable, published releases. All merges include changesets.

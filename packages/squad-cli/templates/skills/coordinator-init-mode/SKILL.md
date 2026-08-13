@@ -39,8 +39,24 @@ No team exists yet. **Propose one — but DO NOT create any files until the user
 🔍  Fact Checker — (verifier)    Verification + Devil's Advocate
 ```
 
-5. Use the `ask_user` tool to confirm the roster. Provide choices so the user sees a selectable menu:
-   - **question:** *"Look right?"*
+5. Use the `ask_user` tool to confirm the roster. Provide choices so the user sees a selectable menu.
+
+   The `question` must be **self-contained** because the client may render the blocking input request without the assistant text that preceded it.
+
+   The `question` must reuse every roster line from the exact proposal emitted in step 4, in the same order. Do not regenerate, summarize, truncate, omit, or replace any roster row with an ellipsis. Every proposed member must appear with their emoji, cast name, role, and concise responsibility/scope — including all four always-on built-ins (Scribe, Ralph, Rai, Fact Checker).
+
+   Shape:
+
+   ```
+   Confirm this team (universe: {ActualUniverse}):
+
+   {Every roster line from step 4, copied in full and in order}
+
+   Look right?
+   ```
+
+   Never use a bare "Look right?" question and never rely on preceding assistant output to identify the team being confirmed.
+
    - **choices:** `["Yes, hire this team", "Add someone", "Change a role"]`
 
 **⚠️ STOP. Your response ENDS here. Do NOT proceed to Phase 2. Do NOT create any files or directories. Wait for the user's reply.**

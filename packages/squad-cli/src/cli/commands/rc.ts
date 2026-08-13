@@ -13,6 +13,7 @@ import { FSStorageProvider, RemoteBridge } from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 import type { RemoteBridgeConfig } from '@bradygaster/squad-sdk';
+import { resolveStateDir } from '../core/effective-squad-dir.js';
 import {
   isDevtunnelAvailable,
   createTunnel,
@@ -32,6 +33,25 @@ export interface RCOptions {
   tunnel: boolean;
   port: number;
   path?: string;
+}
+
+/**
+ * Load the agent roster from team.md, following the externalized state
+ * marker when present (#1398). The passed `squadDir` stays the local
+ * working-tree dir — only the team.md read is redirected.
+ */
+export function loadRosterAgents(squadDir: string): Array<{ name: string; role: string }> {
+  const agents: Array<{ name: string; role: string }> = [];
+  const stateDir = resolveStateDir(squadDir);
+  const teamMd = storage.readSync(path.join(stateDir, 'team.md')) ?? '';
+  const memberLines = teamMd.split('\n').filter(l => l.startsWith('|') && l.includes('Active'));
+  for (const line of memberLines) {
+    const cols = line.split('|').map(c => c.trim()).filter(Boolean);
+    if (cols.length >= 2 && cols[0] !== 'Name') {
+      agents.push({ name: cols[0]!, role: cols[1]! });
+    }
+  }
+  return agents;
 }
 
 export async function runRC(cwd: string, options: RCOptions): Promise<void> {
@@ -55,14 +75,7 @@ export async function runRC(cwd: string, options: RCOptions): Promise<void> {
   const agents: Array<{name: string; role: string}> = [];
   if (squadDir) {
     try {
-      const teamMd = storage.readSync(path.join(squadDir, 'team.md')) ?? '';
-      const memberLines = teamMd.split('\n').filter(l => l.startsWith('|') && l.includes('Active'));
-      for (const line of memberLines) {
-        const cols = line.split('|').map(c => c.trim()).filter(Boolean);
-        if (cols.length >= 2 && cols[0] !== 'Name') {
-          agents.push({ name: cols[0]!, role: cols[1]! });
-        }
-      }
+      agents.push(...loadRosterAgents(squadDir));
       console.log(`  ${GREEN}✓${RESET} Loaded ${agents.length} agents from team.md\n`);
     } catch {
       console.log(`  ${YELLOW}⚠${RESET} Could not read team.md\n`);

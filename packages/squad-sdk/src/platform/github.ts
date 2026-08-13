@@ -67,7 +67,7 @@ export class GitHubAdapter implements PlatformAdapter {
   async getWorkItem(id: number): Promise<WorkItem> {
     const output = this.gh([
       'issue', 'view', String(id), '--repo', this.repoFlag,
-      '--json', 'number,title,state,labels,assignees,url',
+      '--json', 'number,title,state,labels,assignees,url,body',
     ]);
     const issue = parseJson<{
       number: number;
@@ -76,6 +76,7 @@ export class GitHubAdapter implements PlatformAdapter {
       labels: Array<{ name: string }>;
       assignees: Array<{ login: string }>;
       url: string;
+      body?: string;
     }>(output);
 
     return {
@@ -84,6 +85,7 @@ export class GitHubAdapter implements PlatformAdapter {
       state: issue.state.toLowerCase(),
       tags: issue.labels.map((l) => l.name),
       assignedTo: issue.assignees[0]?.login,
+      body: issue.body,
       url: issue.url,
     };
   }
@@ -145,6 +147,19 @@ export class GitHubAdapter implements PlatformAdapter {
 
   async addComment(workItemId: number, comment: string): Promise<void> {
     this.gh(['issue', 'comment', String(workItemId), '--repo', this.repoFlag, '--body', comment]);
+  }
+
+  async setAssignee(workItemId: number, assignee: string | undefined): Promise<void> {
+    const args = ['issue', 'edit', String(workItemId), '--repo', this.repoFlag];
+    if (assignee) {
+      args.push('--add-assignee', assignee);
+    } else {
+      // Unassign: remove the current assignee (if any).
+      const wi = await this.getWorkItem(workItemId);
+      if (!wi.assignedTo) return;
+      args.push('--remove-assignee', wi.assignedTo);
+    }
+    this.gh(args);
   }
 
   async listPullRequests(options: { status?: string; limit?: number }): Promise<PullRequest[]> {

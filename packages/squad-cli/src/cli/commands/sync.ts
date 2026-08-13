@@ -245,7 +245,7 @@ export async function runSync(options: SyncOptions): Promise<void> {
     const quiet = options.quiet ?? false;
 
     // Skip sync for backends that don't need it
-    if (backend === 'local' || backend === 'external' || backend === null) {
+    if (backend === 'local' || backend === 'external' || backend === 'external-stub' || backend === null) {
       if (!quiet) console.log(`squad sync: backend is '${backend || 'local'}' — no remote sync needed.`);
       return;
     }

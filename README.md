@@ -141,6 +141,7 @@ Say **"squad commands"** in chat to see a categorized menu of common operations 
 | `squad init` | **Init** — scaffold Squad in the current directory (idempotent — safe to run multiple times); alias: `cast`; use `--global` to init in personal squad directory, `--mode remote <path>` for dual-root mode |
 | `squad upgrade` | Update Squad-owned files to latest; never touches your team state; use `--global` to upgrade personal squad, `--migrate-directory` to rename `.ai-team/` → `.squad/` |
 | `squad upgrade --self` | Update the Squad CLI package itself; add `--insider` for dev-channel prerelease builds |
+| `squad update-check` | Report cached CLI update status for tooling/CI; use `--json` for structured output, `--refresh` to bypass the cache |
 | `squad status` | Show which squad is active and why |
 | `squad triage` | **Watch mode** — poll for issues and auto-triage to team (aliases: `watch`, `loop`); use `--interval <minutes>` to set polling frequency (default: 10); with `--execute` dispatch Copilot agents; use `--agent-cmd`, `--copilot-flags`, `--auth-user` to customize agent execution; `--health` shows watch status; `--log-file` for diagnostics |
 | `squad copilot` | Add/remove the Copilot coding agent (@copilot); use `--off` to remove, `--auto-assign` to enable auto-assignment |
@@ -522,6 +523,48 @@ The SDK provides programmatic control over agent orchestration — custom tools,
 - [Samples](samples/README.md) — eight working examples from beginner to advanced
 
 For SDK installation: `npm install @bradygaster/squad-sdk`
+
+---
+
+## GitHub Agentic Workflows
+
+Cast a Squad for any repo — right from a GitHub issue.
+
+If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-github-agentic-workflows-public-preview/), you can install Squad as a reusable workflow and manage your team with slash commands in issue comments.
+
+### Install
+
+```bash
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
+gh aw compile
+git add -- \
+  .github/workflows/ \
+  .gitattributes
+git commit -m "Add Squad workflow"
+git push
+```
+
+> `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
+
+### Slash commands
+
+| Command | What it does |
+|---------|-------------|
+| `/squad` | Cast a fresh team from repo analysis |
+| `/squad connect org/repo` | Link to an external squad |
+| `/squad adopt org/repo` | Fork a squad locally |
+| `/squad cast-member <spec>` | Add a team member |
+| `/squad retire <name>` | Remove a team member |
+| `/squad status` | Check current team |
+| `/squad implement` | Implement an issue or dispatch ready tasks from an epic |
+
+### Casting brief tip
+
+Write a detailed team description in the issue body, then comment `/squad cast` — the issue becomes your casting brief. The more context you give, the better Squad tailors your team.
+
+📖 See [GitHub Agentic Workflows guide](https://bradygaster.github.io/squad/docs/guide/gh-aw/) for the complete setup, configuration, and usage reference.
 
 ---
 

@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
       - name: "Scan for file: references in package.json files"
@@ -119,10 +119,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
           cache: 'npm'
@@ -191,10 +191,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -265,10 +265,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -341,6 +341,23 @@ jobs:
             echo "::error::Cannot verify SDK dependency is resolvable — aborting CLI publish to prevent #1203"
             exit 1
           fi
+      - name: "Pin squad-sdk dependency to the exact published version (#1588)"
+        run: |
+          # Source keeps a floor range (">=x.y.z") so local workspace installs
+          # still resolve the in-repo SDK. That range is unbounded upward
+          # though, so a CLI version pinned by a downstream consumer silently
+          # picks up whatever SDK version is newest at their install time.
+          # Rewrite the published package.json to an exact pin so a given CLI
+          # version always resolves the same SDK version it shipped with.
+          PKG_VERSION="${{ steps.version.outputs.version }}"
+          node -e "
+            const fs = require('fs');
+            const path = 'packages/squad-cli/package.json';
+            const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+            pkg.dependencies['@bradygaster/squad-sdk'] = '$PKG_VERSION';
+            fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+            console.log('Pinned @bradygaster/squad-sdk dependency to ' + '$PKG_VERSION');
+          "
       - name: Build squad-sdk (required for CLI project references)
         run: npm -w packages/squad-sdk run build
       - name: Build squad-cli
@@ -368,3 +385,64 @@ jobs:
             sleep 15
           done
           echo "Registry propagation slow but package was published successfully"
+  # --- Issue #1491 -------------------------------------------------------
+  # After a stable release publishes to `latest`, ensure the `insider`
+  # dist-tag is not left semver-lower than `latest`. A stale `insider` tag
+  # pins insider-channel users below stable. This job promotes `insider`
+  # to the newly-published stable version if (and only if) insider is
+  # strictly semver-behind. A subsequent manual insider workflow run will
+  # normally re-point `insider` to a real prerelease build.
+  promote-insider-tag:
+    name: Promote insider dist-tag if behind latest
+    needs: [publish-sdk, publish-cli]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - name: Validate npm token
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::error::NPM_TOKEN secret is not configured; cannot promote insider dist-tag"
+            exit 1
+          fi
+          echo "NPM_TOKEN is set"
+      - name: Determine and validate version
+        id: version
+        env:
+          # Read release-tag / dispatch inputs into env to avoid `${{ }}`
+          # interpolation inside a shell script (script-injection hardening).
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "release" ]; then
+            RAW="${RELEASE_TAG#v}"
+          else
+            RAW="$INPUT_VERSION"
+          fi
+          # Strict semver-only regex (defense in depth: script re-validates too).
+          if ! printf '%s' "$RAW" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Invalid version format: $RAW"
+            exit 1
+          fi
+          echo "version=$RAW" >> "$GITHUB_OUTPUT"
+          echo "Promotion candidate: $RAW"
+      - name: Promote insider dist-tag for squad-sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/promote-insider-tag.mjs @bradygaster/squad-sdk "$NEW_VERSION"
+      - name: Promote insider dist-tag for squad-cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NEW_VERSION: ${{ steps.version.outputs.version }}
+        run: node scripts/promote-insider-tag.mjs @bradygaster/squad-cli "$NEW_VERSION"

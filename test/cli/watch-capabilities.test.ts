@@ -194,6 +194,26 @@ describe('Watch Capabilities', () => {
         expect(prompt).not.toContain('Ralph, Go!');
       });
 
+      it('checks .squad/ralph-instructions.md inside teamRoot', () => {
+        // Verify that existsSync is called with the correct path so that the
+        // TEMPLATE_MANIFEST destination ('ralph-instructions.md' under .squad/)
+        // matches the lookup in execute.ts.
+        mockFsExistsSync.mockImplementation((p: unknown) => {
+          return typeof p === 'string' && p.endsWith('.squad/ralph-instructions.md');
+        });
+        const issues: ExecutableWorkItem[] = [
+          { number: 1, title: 'Task', labels: [{ name: 'squad' }], assignees: [] },
+        ];
+        const prompt = buildAgentPrompt(issues, '/some/repo');
+        expect(mockFsExistsSync).toHaveBeenCalledWith(
+          expect.stringContaining('.squad/ralph-instructions.md'),
+        );
+        // Path must be constructed from teamRoot, not a global path
+        const [calledPath] = mockFsExistsSync.mock.calls[0] as [string];
+        expect(calledPath).toContain('/some/repo');
+        expect(prompt).toContain('Ralph, Go!');
+      });
+
       it('formats labels and assignees in issue list', () => {
         const issues: ExecutableWorkItem[] = [{
           number: 42,
@@ -360,6 +380,34 @@ describe('Watch Capabilities', () => {
           expect.any(Object),
           expect.any(Function),
         );
+      });
+
+      it('tracks and untracks the spawned pid via context.pidTracker', async () => {
+        let exitHandler: (() => void) | undefined;
+        mockExecFile.mockImplementation((...args: unknown[]) => {
+          const cb = findCallback(args);
+          if (cb) cb(null, '', '');
+          return {
+            pid: 4242,
+            on: (event: string, handler: () => void) => {
+              if (event === 'exit') exitHandler = handler;
+            },
+          };
+        });
+        const track = vi.fn();
+        const untrack = vi.fn();
+        const cap = new ExecuteCapability();
+        const ctx = makeContext({
+          pidTracker: { track, untrack },
+          adapter: mockAdapter([{ id: 1, title: 'Fix', tags: ['squad'] }]),
+        });
+
+        await cap.execute(ctx);
+
+        expect(track).toHaveBeenCalledWith(4242, expect.stringContaining('#1'));
+        expect(untrack).not.toHaveBeenCalled();
+        exitHandler?.();
+        expect(untrack).toHaveBeenCalledWith(4242);
       });
     });
   });
@@ -621,7 +669,7 @@ describe('Watch Capabilities', () => {
         );
       });
 
-      it('handles stash pop failure gracefully (merge conflict)', async () => {
+      it('reports failure (not success) when stash pop conflicts — local changes stay stashed', async () => {
         mockExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
           const a = args as string[];
           if (a[0] === 'stash' && a[1] === 'pop') throw new Error('merge conflict');
@@ -634,11 +682,75 @@ describe('Watch Capabilities', () => {
         const consoleSpy = vi.spyOn(console, 'log');
         const cap = new SelfPullCapability();
         const result = await cap.execute(makeContext());
-        expect(result.success).toBe(true);
+        // A stash that can't be restored is a failure the round report must
+        // surface, not a silent success — the user's local changes are
+        // sitting in `git stash` with no indication anywhere else.
+        expect(result.success).toBe(false);
+        expect(result.summary).toContain('left local changes stashed');
         expect(consoleSpy).toHaveBeenCalledWith(
-          expect.stringContaining('stash pop failed'),
+          expect.stringContaining('left local changes stashed'),
         );
         consoleSpy.mockRestore();
+      });
+
+      // Regression (critical): before the fix, a fetch/pull failure threw
+      // past the stash-pop step entirely — `git stash pop` was never even
+      // attempted, so a dirty working tree got silently stashed and
+      // abandoned while the capability reported success. Fails on
+      // unfixed code (stashCalls never contains a 'pop' call here);
+      // passes with the fix (pop is always attempted after fetch/pull).
+      it('still attempts stash pop after a fetch/pull failure, and restores it when possible', async () => {
+        const stashCalls: string[][] = [];
+        mockExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+          const a = args as string[];
+          if (a[0] === 'stash') stashCalls.push([...a]);
+          if (a.includes('rev-parse')) return 'abc123\n';
+          if (a.includes('--porcelain')) return 'M file.txt\n';
+          return '';
+        });
+        mockExecFile.mockImplementation((...args: unknown[]) => {
+          const cb = findCallback(args);
+          if (cb) cb(new Error('not a fast-forward'));
+          return {};
+        });
+
+        const cap = new SelfPullCapability();
+        const result = await cap.execute(makeContext());
+
+        expect(stashCalls).toContainEqual(
+          expect.arrayContaining(['stash', 'pop']),
+        );
+        // Stash was successfully restored, so this is the same benign
+        // "pull skipped" outcome as a clean tree hitting the same pull
+        // failure — the user's local changes are back, nothing lost.
+        expect(result.success).toBe(true);
+        expect(result.summary).toContain('skipped');
+      });
+
+      // Regression (critical): the failure-safety invariant — if the stash
+      // genuinely cannot be restored after a pull failure, that must be a
+      // visible failure, not folded into the same "skipped" success message
+      // as the benign case above.
+      it('reports failure when both pull and stash pop fail — does not mask a stuck stash as "skipped"', async () => {
+        mockExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+          const a = args as string[];
+          if (a[0] === 'stash' && a[1] === 'pop') throw new Error('conflict after failed pull');
+          if (a[0] === 'stash') return '';
+          if (a.includes('rev-parse')) return 'abc123\n';
+          if (a.includes('--porcelain')) return 'M file.txt\n';
+          return '';
+        });
+        mockExecFile.mockImplementation((...args: unknown[]) => {
+          const cb = findCallback(args);
+          if (cb) cb(new Error('not a fast-forward'));
+          return {};
+        });
+
+        const cap = new SelfPullCapability();
+        const result = await cap.execute(makeContext());
+        expect(result.success).toBe(false);
+        expect(result.summary).toContain('pull failed');
+        expect(result.summary).toContain('left local changes stashed');
       });
 
       it('detects source changes and recommends restart', async () => {

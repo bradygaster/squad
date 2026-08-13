@@ -1,6 +1,6 @@
 {
   "name": "@bradygaster/squad-cli",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Squad CLI — Command-line interface for the Squad multi-agent runtime",
   "type": "module",
   "bin": {
@@ -109,6 +109,10 @@
       "types": "./dist/cli/commands/doctor.d.ts",
       "import": "./dist/cli/commands/doctor.js"
     },
+    "./commands/update-check": {
+      "types": "./dist/cli/commands/update-check.d.ts",
+      "import": "./dist/cli/commands/update-check.js"
+    },
     "./commands/aspire": {
       "types": "./dist/cli/commands/aspire.d.ts",
       "import": "./dist/cli/commands/aspire.js"
@@ -187,15 +191,16 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@bradygaster/squad-sdk": "*",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "ink": "^7.1.0",
-    "react": "^19.2.7",
-    "vscode-jsonrpc": "^9.0.0"
+    "@bradygaster/squad-sdk": ">=0.11.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ink": "^7.1.1",
+    "react": "^19.2.8",
+    "jsonc-parser": "^3.3.1",
+    "vscode-jsonrpc": "^9.0.1"
   },
   "devDependencies": {
-    "@types/node": "^26.0.0",
-    "@types/react": "^19.2.17",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
     "typescript": "^6.0.3",
     "ink-testing-library": "^4.0.0"
   },

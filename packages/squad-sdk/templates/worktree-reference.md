@@ -71,7 +71,7 @@ When worktree mode is enabled, the coordinator creates dedicated worktrees for i
 - Before creating a new worktree, check if one exists for the same issue
 - `git worktree list` shows all active worktrees
 - If found, reuse it (cd to the path, verify branch is correct, `git pull` to sync)
-- Multiple agents can work in the same worktree concurrently if they modify different files
+- Multiple agents can work in the same worktree concurrently if they modify different files. Untracked files are still at risk: a global `git stash` / `git clean` from one agent can delete another agent's not-yet-committed files — prefer per-issue worktrees for parallel background work
 
 **Cleanup:**
 - After a PR is merged, the worktree should be removed

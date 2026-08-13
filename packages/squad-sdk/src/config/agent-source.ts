@@ -103,12 +103,22 @@ export class LocalAgentSource implements AgentSource {
     private basePath: string,
     private storage: StorageProvider = new FSStorageProvider(),
     private state?: SquadState,
+    /**
+     * Explicit agents directory — skips the `<basePath>/.squad/agents`
+     * probing. Needed for externalized state, where agents live at
+     * `<externalStateDir>/agents` with no `.squad` nesting (#1399).
+     */
+    private agentsDir?: string,
   ) {}
 
   /**
    * Resolve the agents directory, preferring .squad/agents over .ai-team/agents.
+   * An explicit `agentsDir` from the constructor wins over probing.
    */
   private async resolveAgentsDir(): Promise<string | null> {
+    if (this.agentsDir) {
+      return (await this.storage.isDirectory(this.agentsDir)) ? this.agentsDir : null;
+    }
     for (const dir of AGENT_DIRS) {
       const fullPath = path.join(this.basePath, dir);
       if (await this.storage.isDirectory(fullPath)) return fullPath;

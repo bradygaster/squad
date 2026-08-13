@@ -112,6 +112,39 @@ See [Getting Started](../get-started/first-session.md) for your first VS Code se
 
 ---
 
+## Default Chat Session Mode
+
+When you run `squad init`, Squad automatically configures VS Code to open new chat
+sessions in Squad mode by adding the following to `.vscode/settings.json`:
+
+```json
+{
+  "chat.newSession.defaultMode": "Squad"
+}
+```
+
+**Behavior:**
+
+- If `.vscode/settings.json` does not exist, Squad creates it (and the `.vscode/` directory
+  if needed) with this single setting.
+- If the file already exists and `chat.newSession.defaultMode` is absent, Squad adds the key
+  while preserving all existing settings, comments, and formatting (JSONC-safe edit).
+- If `chat.newSession.defaultMode` already has **any** value, Squad leaves it untouched —
+  your setting always takes precedence.
+- The operation is **idempotent**: running `squad init` again produces no changes.
+
+**Opt out:**
+
+Pass `--no-vscode-default` to skip this step entirely:
+
+```bash
+squad init --no-vscode-default
+```
+
+With this flag, Squad will not create or modify `.vscode/settings.json` at all.
+
+---
+
 ## Extension Developer Guide
 
 If you're building a VS Code extension that integrates with Squad, follow these patterns.
@@ -208,5 +241,5 @@ const decision = await coordinator.route(userTask, {
 - [Getting Started](../get-started/installation.md) — Installation and setup guide
 - [Parallel Execution](parallel-execution.md) — How Squadron fan-outs agents
 - [Model Selection](model-selection.md) — Cost-first routing strategy
-- [Interactive Shell](../guide/shell.md) — Shell commands and features
+- [CLI Reference](../reference/cli.md) — Shell commands and features
 - [SDK API Reference](../reference/api-reference.md) — Full SDK type and function reference

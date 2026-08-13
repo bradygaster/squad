@@ -228,6 +228,7 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
       state: (fields['System.State'] as string) ?? '',
       tags,
       assignedTo: assignedTo?.displayName ?? assignedTo?.uniqueName,
+      body: typeof fields['System.Description'] === 'string' ? (fields['System.Description'] as string) : undefined,
       url: wi._links?.html?.href ?? wi.url,
     };
   }
@@ -338,6 +339,17 @@ export class AzureDevOpsAdapter implements PlatformAdapter {
     this.az([
       'boards', 'work-item', 'update', '--id', String(workItemId),
       '--discussion', comment, ...this.workItemArgs, '--output', 'json',
+    ]);
+  }
+
+  async setAssignee(workItemId: number, assignee: string | undefined): Promise<void> {
+    // ADO has no '@me' token; the az CLI can't resolve current user, so skip it
+    // (matches prior behavior). undefined/empty unassigns; a name assigns.
+    if (assignee === '@me') return;
+    const value = assignee ?? '';
+    this.az([
+      'boards', 'work-item', 'update', '--id', String(workItemId),
+      '--fields', `System.AssignedTo=${value}`, ...this.workItemArgs, '--output', 'json',
     ]);
   }
 

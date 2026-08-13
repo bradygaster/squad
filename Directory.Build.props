@@ -1,0 +1,65 @@
+<Project>
+  <!--
+    Repo-wide MSBuild defaults for the Squad.Agents.AI .NET package (src/Squad.Agents.AI,
+    test/Squad.Agents.AI.Tests, src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample).
+    This file currently only exists to fix Copilot CLI native-payload propagation; see
+    below. It applies to every project in the repo, but today those three are the only
+    .csproj files that exist.
+  -->
+  <PropertyGroup>
+    <!--
+      Single source of truth for the GitHub.Copilot.SDK version Squad.Agents.AI targets.
+      Squad.Agents.AI.csproj's PackageReference uses this value, and the override right
+      below keeps the Microsoft.Agents.AI.GitHub.Copilot native-payload bridge in sync
+      with it, so bumping this one property is enough to move both together.
+    -->
+    <SquadCopilotSdkVersion>1.0.8</SquadCopilotSdkVersion>
+
+    <!--
+      Why this override is required:
+      Microsoft.Agents.AI.GitHub.Copilot ships GitHub.Copilot.SDK's CLI-download build/
+      targets to transitive consumers via a buildTransitive/ bridge file
+      (Microsoft.Agents.AI.GitHub.Copilot.targets), because GitHub.Copilot.SDK itself only
+      ships those targets under build/ (which NuGet auto-imports solely for projects with
+      a DIRECT PackageReference to it). That bridge file imports
+      "$(NuGetPackageRoot)/github.copilot.sdk/$(_MicrosoftAgentsAICopilotSdkVersion)/build/GitHub.Copilot.SDK.targets"
+      and, when $(_MicrosoftAgentsAICopilotSdkVersion) is unset, defaults it to the SDK
+      version the adapter itself was packed against, its nuspec's dependency FLOOR
+      (still 1.0.5 in Microsoft.Agents.AI.GitHub.Copilot 1.15.0-rc1), NOT the version this repo
+      actually depends on ($(SquadCopilotSdkVersion)). Left unset, any project
+      that pulls in the adapter WITHOUT a direct PackageReference to GitHub.Copilot.SDK
+      (test/Squad.Agents.AI.Tests, src/Squad.Agents.AI/samples/Squad.Agents.AI.Sample here,
+      and any real external NuGet consumer of Squad.Agents.AI) downloads and bundles the
+      OLDER Copilot CLI build pinned to SDK 1.0.5 (Copilot CLI 1.0.67) instead of the CLI
+      pinned to this repo's requested SDK / CLI pair; verified against the repo's own CI logs
+      for PR #1519 (run 29856026557): "Build package" (src/Squad.Agents.AI, which DOES have
+      the direct PackageReference) downloaded the requested CLI, while "Build tests" and
+      "Build sample" (no direct PackageReference) downloaded CLI 1.0.67, on both
+      ubuntu-latest and windows-latest.
+
+      Setting the property here (Directory.Build.props is imported before NuGet's
+      per-project generated props/targets) makes every project in this repo resolve the
+      SAME SDK version, and therefore the same native Copilot CLI/runtime.node payload,
+      whether or not it has a direct PackageReference to GitHub.Copilot.SDK. This is the
+      exact override contract Microsoft.Agents.AI.GitHub.Copilot.targets documents in its
+      own comments ("consumers may override the SDK version path by setting
+      $(_MicrosoftAgentsAICopilotSdkVersion) before this file is imported"), so it works
+      regardless of NuGet's props/targets import ordering between packages: if this file's
+      value is seen first, the adapter's own conditional default (guarded by
+      Condition="'$(_MicrosoftAgentsAICopilotSdkVersion)' == ''") never fires; if it is
+      seen after, Squad.Agents.AI's own packed buildTransitive/Squad.Agents.AI.props
+      (generated at pack time from this same property, see Squad.Agents.AI.csproj)
+      unconditionally overwrites it again for real external consumers.
+
+      This override is applied to the package project itself too because the MAF buildTransitive bridge otherwise
+      imports the SDK targets a second time using its packaged floor (1.0.5), which can override the direct
+      reference during target execution. A duplicate-import warning is acceptable; the
+      important invariant is that every project resolves the same SDK-backed native payload rather than the
+      adapter's stale floor.
+
+
+    -->
+    <_MicrosoftAgentsAICopilotSdkVersion>$(SquadCopilotSdkVersion)</_MicrosoftAgentsAICopilotSdkVersion>
+  </PropertyGroup>
+</Project>
+
