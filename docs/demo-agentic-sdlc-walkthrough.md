@@ -33,7 +33,7 @@ Merge the PR to activate your team. Run `/squad status` afterward to verify.
 
 **Screen shows:** The PR merges. The casting issue remains open until the user closes it.
 
-**Key point:** Casting is a one-time setup action — it gets its own issue that the user closes after merge. Your actual work intent goes in a separate issue that stays open throughout the SDLC lifecycle.
+**Key point:** This two-issue setup — a dedicated Cast issue followed by a separate work issue — is a deliberate **presenter variant** that makes each stage explicit. In everyday use you don't need to pre-cast: if you run a work command such as `/squad research` on a repo with no committed team, Squad auto-Casts on that same issue, pauses the original command, and tells you to merge the Cast PR and rerun. Either path works; the demo uses the explicit variant so each step is visible on screen.
 
 ---
 

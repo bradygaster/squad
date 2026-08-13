@@ -219,8 +219,8 @@ The leading `sub(/\r$/,"")` normalizes CRLF line endings so Windows-formatted te
 ### Auto-Cast Pivot
 
 **Canonical command variables** (derived from Parse Command output — never from raw input):
-- `{canonical_mode}` — the parsed mode enum (e.g., `research`, `plan`, `plan-activate`)
-- `{canonical_command}` — reconstructed user-safe command: `/squad {canonical_mode}` with optional `phase {N}` suffix
+- `{canonical_mode}` — the parsed mode enum (e.g., `research`, `plan`, `plan-activate`); if the mode cannot be determined, substitute the literal string `squad` in prose
+- `{canonical_command}` — reconstructed user-safe command: `/squad {canonical_mode}` with optional `phase {N}` suffix; if `{canonical_mode}` cannot be determined, use `/squad` as the safe fallback
 - `{phase_n}` — numeric phase if present; omit the field otherwise
 
 **Universal response invariant:** current state · result · one primary next action · recovery on ⚠️/🔴.
@@ -249,13 +249,13 @@ gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headR
 - The Cast PR body may reference the originating issue and canonical command in plain language, but MUST NOT contain `Fixes`, `Closes`, or `Resolves` closing keywords for the originating work issue.
 - Then `add-comment`:
   ```
-  🤖 Squad is assembling your team.
+  🤖 Your `{canonical_mode}` command found no team yet — Squad has automatically opened a Cast PR to assemble one.
 
   **Current state:** No team detected — Squad auto-pivoted to Cast.
-  **Result:** A Cast PR has been opened. Check the **Pull Requests** tab to find and review it.
+  **Result:** A Cast PR has been opened. Your `{canonical_mode}` command is paused this run — resume it after merging.
   **Next action:** Merge the Cast PR, then return to this issue and rerun: `{canonical_command}`
 
-  ⚠️ The PR link is not available in this comment — find it in the **Pull Requests** tab.
+  ⚠️ A direct Cast PR link is not available in this comment. Find it in the **Pull Requests** tab.
   ```
 - A closed or failed Cast PR is not durable team state. A later rerun with no committed roster and no open Cast PR MUST attempt Cast again.
 - Stop. Do not run the original command this run.
@@ -353,7 +353,7 @@ Create `meet-the-squad.md` at repo root with: title, universe name, team table (
 
 ##### Step 6: Open PR
 
-`create-pull-request`: branch `squad/cast-{repo}`, title `[squad] Cast your Squad — {description}`, body with team summary. Files: `.squad/`, `.github/agents/squad.agent.md`, `meet-the-squad.md`. Stage only these.
+`create-pull-request`: branch `squad/cast-{repo}`, title `[squad] Cast your Squad — {description}`, body with team summary. Append to the PR body: "After merging, return to the originating issue and rerun `{canonical_command}` to resume your work." Files: `.squad/`, `.github/agents/squad.agent.md`, `meet-the-squad.md`. Stage only these.
 
 ##### Step 7: Post Completion
 

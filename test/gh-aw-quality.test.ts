@@ -1107,3 +1107,26 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
     expect(result).not.toContain('squad/cast-member-dev');
   });
 });
+
+// ---------------------------------------------------------------------------
+// gh-aw: Auto-Cast UX guidance — canonical fallback, paused-run wording,
+// and Cast PR body return/rerun instruction (#1700)
+//
+// Focused contract assertions for the UX guidance added in #1700.
+// Complements the broader auto-Cast coverage in the '#1689' describe blocks above.
+// ---------------------------------------------------------------------------
+describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body return instruction (#1700)', () => {
+  const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
+
+  it('canonical_mode definition includes safe fallback for unresolvable mode', () => {
+    expect(squadContent).toMatch(/if.*canonical_mode.*cannot be determined.*safe fallback|safe fallback.*\/squad/i);
+  });
+
+  it('first-run Auto-Cast comment tells user their command is paused this run', () => {
+    expect(squadContent).toMatch(/command.*paused this run|paused this run/i);
+  });
+
+  it('Cast PR body instructs user to return to originating issue and rerun canonical command', () => {
+    expect(squadContent).toMatch(/return to the originating issue and rerun.*\{canonical_command\}/s);
+  });
+});
