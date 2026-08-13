@@ -427,6 +427,8 @@ Squad performs a deep analysis of your repository in context of the issue, then
 posts structured findings as a comment. This is the discovery phase — no issues
 or PRs are created.
 
+> **No team yet?** If you run `/squad research` (or any other work command) on a repo with no committed team, Squad automatically opens a Cast PR on the same issue, pauses your command for that run, and posts instructions to merge the Cast PR and rerun the original command. You don't need to pre-cast on a separate issue — Squad handles it inline.
+
 The research comment includes:
 - **Current state** — architecture, patterns, dependency versions, code health
 - **Gap analysis** — what's missing or incomplete relative to the issue/goal
