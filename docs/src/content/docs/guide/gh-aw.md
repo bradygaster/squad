@@ -48,17 +48,12 @@ git add -- \
 git commit -m "ci: add Squad agentic workflow"
 git push
 
-# 6. (Recommended) Verify your token configuration before continuing
-gh api repos/{owner}/{repo}/actions/secrets --jq '.secrets[].name' | grep SQUAD_GITHUB
-
-# 7. Open an issue and type /squad cast — done!
+# 6. Open an issue and type /squad cast — done!
 ```
 
 After pushing, open an issue in your repo and write `/squad cast` in the body or
 a comment. Squad analyzes your codebase, composes a team of specialist agents,
 and opens a PR with the result.
-
-If your first run fails at the bootstrap step (missing `/usr/local/bin/copilot`), set `SQUAD_GITHUB_TOKEN` before retrying. See [Configure SQUAD_GITHUB_TOKEN](#configure-squad_github_token) for minimum required permissions.
 
 ---
 
@@ -158,43 +153,6 @@ normally create `.github/aw/logs/.gitignore`; if it is missing, add:
 
 Once pushed, the `/squad` slash command is live on your repo.
 
-### Pre-flight token check
-
-Before running your first `/squad` command, verify that the workflow's token has
-enough permission to complete the Copilot runtime bootstrap step. The bootstrap
-runs in the activation job and invokes the Squad CLI via `npx`. If it fails with
-a message such as `missing /usr/local/bin/copilot`, the cause is almost always
-an insufficient token.
-
-**Quick check — run this in any terminal authenticated to your repo:**
-
-```bash
-gh api repos/{owner}/{repo}/actions/secrets --jq '.secrets[].name' | grep SQUAD_GITHUB
-```
-
-If `SQUAD_GITHUB_TOKEN` appears in the output, the secret is set and the
-bootstrap will use it. If the command returns nothing, the workflow falls back to
-the built-in `github.token`.
-
-**When `github.token` is sufficient:**
-
-- The repo is personal (not an organization repo).
-- Copilot is enabled for the repository.
-- The first `/squad` run succeeds end-to-end.
-
-**When `SQUAD_GITHUB_TOKEN` is required:**
-
-- The run fails with `missing /usr/local/bin/copilot` or `Resource not accessible by integration`.
-- The repository is in an organization with restricted default workflow permissions.
-- You see the bootstrap step pass but the agent step fail with a Copilot permission error.
-
-In these cases, set `SQUAD_GITHUB_TOKEN` before running `/squad` for the first time.
-See [Configure SQUAD_GITHUB_TOKEN](#configure-squad_github_token) below.
-
-:::caution[Set the token before your first /squad run]
-A run that fails at the bootstrap step does not retry automatically. Set `SQUAD_GITHUB_TOKEN` **before** posting `/squad cast`, then trigger a new run.
-:::
-
 ### Optional: pin a CLI version
 
 Set a repository variable to control which Squad CLI version the workflow uses:
@@ -219,36 +177,14 @@ or elevated permissions, configure a GitHub App:
 The workflow mints an installation token from these credentials at activation
 time.
 
-### Configure SQUAD_GITHUB_TOKEN
+### Optional: PAT fallback
 
-If `github.token` is insufficient for your setup (see [Pre-flight token check](#pre-flight-token-check)
-above), set a Personal Access Token. Use a **fine-grained PAT** with the minimum
-required permissions — avoid classic PATs with broad scopes.
-
-**Minimum permissions for a fine-grained PAT:**
-
-| Permission | Access |
-|-----------|--------|
-| **Contents** | Read |
-| **Issues** | Read and write |
-| **Pull requests** | Read and write |
-| **Workflows** | Read and write |
-| **Metadata** | Read (always required) |
-
-Create the PAT at **GitHub → Settings → Developer settings → Personal access
-tokens → Fine-grained tokens**. Scope it to the target repository only.
-
-Then add it as a repository secret:
-
-```bash
-gh secret set SQUAD_GITHUB_TOKEN --body "<your-pat>" --repo {owner}/{repo}
-```
-
-Or via **Settings → Secrets and variables → Actions → Secrets → New repository secret**.
+If you don't want to use a GitHub App but need more than the default token, set
+a Personal Access Token:
 
 | Setting | Type | Purpose |
 |---------|------|---------|
-| `SQUAD_GITHUB_TOKEN` | Secret | PAT used when `github.token` is insufficient |
+| `SQUAD_GITHUB_TOKEN` | Secret | Fallback PAT when no GitHub App is configured |
 
 **Auth precedence:** GitHub App token → `SQUAD_GITHUB_TOKEN` → `github.token`.
 
