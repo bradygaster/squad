@@ -19,7 +19,8 @@
  *   - Package names and versions are validated with strict regex before any
  *     child_process invocation. No shell interpolation of untrusted input.
  *   - We use spawnSync with argv arrays (never shell: true).
- *   - We only ever call `npm view <pkg> dist-tags --json` (read) and
+ *   - We only ever call `npm view <pkg>@<version> version --json`,
+ *     `npm view <pkg> dist-tags --json` (reads), and
  *     `npm dist-tag add <pkg>@<version> insider` (write). No arbitrary
  *     command execution.
  *
@@ -126,12 +127,43 @@ function assertValid(pkg, version) {
   }
 }
 
-/** Read the current `insider` dist-tag for a package. Returns '' when absent. */
-function readInsiderTag(pkg) {
-  const res = spawnSync(NPM_BIN, ['view', pkg, 'dist-tags', '--json'], NPM_SPAWN_OPTS);
+function runNpm(args, opts = NPM_SPAWN_OPTS) {
+  const res = spawnSync(NPM_BIN, args, opts);
   if (res.error) {
     throw new Error(`failed to spawn npm: ${res.error.code || res.error.message}`);
   }
+  return res;
+}
+
+function parseJsonString(raw, label) {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  let parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error(`npm view returned non-JSON for ${label}: ${trimmed.slice(0, 200)}`);
+  }
+  return typeof parsed === 'string' ? parsed : '';
+}
+
+/** Verify that pkg@version exists on npm before moving any dist-tags. */
+function readPublishedVersion(pkg, version) {
+  const spec = `${pkg}@${version}`;
+  const res = runNpm(['view', spec, 'version', '--json']);
+  if (res.status !== 0) {
+    throw new Error(`npm view failed for ${spec} (status=${res.status}): ${res.stderr || res.stdout}`);
+  }
+  const publishedVersion = parseJsonString(res.stdout, spec);
+  if (publishedVersion !== version) {
+    throw new Error(`npm view returned ${publishedVersion || '(empty)'} for ${spec}`);
+  }
+  return publishedVersion;
+}
+
+/** Read the current `insider` dist-tag for a package. Returns '' when absent. */
+function readInsiderTag(pkg) {
+  const res = runNpm(['view', pkg, 'dist-tags', '--json']);
   if (res.status !== 0) {
     // A missing package or transient network issue: surface stderr and fail.
     throw new Error(
@@ -152,27 +184,19 @@ function readInsiderTag(pkg) {
 
 /** Point the `insider` dist-tag at pkg@version. */
 function setInsiderTag(pkg, version) {
-  const res = spawnSync(
-    NPM_BIN,
+  const res = runNpm(
     ['dist-tag', 'add', `${pkg}@${version}`, 'insider'],
     { ...NPM_SPAWN_OPTS, stdio: ['ignore', 'inherit', 'inherit'] },
   );
-  if (res.error) {
-    throw new Error(`failed to spawn npm: ${res.error.code || res.error.message}`);
-  }
   if (res.status !== 0) {
     throw new Error(`npm dist-tag add failed for ${pkg}@${version} (status=${res.status})`);
   }
 }
 
-async function main() {
-  const [pkg, newVersion] = process.argv.slice(2);
-  if (!pkg || !newVersion) {
-    console.error('usage: promote-insider-tag.mjs <package> <newVersion>');
-    process.exit(1);
-  }
+export function promoteInsiderTag(pkg, newVersion) {
   assertValid(pkg, newVersion);
 
+  readPublishedVersion(pkg, newVersion);
   const insider = readInsiderTag(pkg);
   console.log(`${pkg}: insider=${insider || '(unset)'}  new=${newVersion}`);
 
@@ -189,6 +213,15 @@ async function main() {
   console.log(`→ promoting insider dist-tag: ${insider || '(unset)'} → ${newVersion}`);
   setInsiderTag(pkg, newVersion);
   console.log(`✓ promoted insider → ${pkg}@${newVersion}`);
+}
+
+async function main() {
+  const [pkg, newVersion] = process.argv.slice(2);
+  if (!pkg || !newVersion) {
+    console.error('usage: promote-insider-tag.mjs <package> <newVersion>');
+    process.exit(1);
+  }
+  promoteInsiderTag(pkg, newVersion);
 }
 
 // Run when invoked directly, but stay import-safe for tests.
