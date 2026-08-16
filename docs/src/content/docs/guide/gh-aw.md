@@ -35,16 +35,7 @@ gh aw add \
 gh aw compile
 
 # 5. Commit and push the workflow sources and generated files
-git add -- \
-  .gitattributes \
-  .github/aw/actions-lock.json \
-  .github/workflows/squad.md \
-  .github/workflows/squad.lock.yml \
-  .github/workflows/squad-implement-worker.md \
-  .github/workflows/squad-implement-worker.lock.yml \
-  .github/workflows/shared/squad.md \
-  .github/workflows/shared/planning-ontology.md \
-  .github/workflows/shared/planning-policy.md
+git add -- .gitattributes .github/aw/ .github/workflows/
 git commit -m "ci: add Squad agentic workflow"
 git push
 
@@ -121,23 +112,12 @@ actually executes.
 ### Commit the workflow files
 
 ```bash
-git add -- \
-  .gitattributes \
-  .github/aw/actions-lock.json \
-  .github/workflows/squad.md \
-  .github/workflows/squad.lock.yml \
-  .github/workflows/squad-implement-worker.md \
-  .github/workflows/squad-implement-worker.lock.yml \
-  .github/workflows/shared/squad.md \
-  .github/workflows/shared/planning-ontology.md \
-  .github/workflows/shared/planning-policy.md
+git add -- .gitattributes .github/aw/ .github/workflows/
 git commit -m "ci: add Squad agentic workflow"
 git push
 ```
 
-The source and imported shared workflow must be present so `gh aw` can verify
-that the compiled lock file is current. The action lock and attributes files
-keep compilation reproducible and identify generated workflow files.
+This stages everything under `.github/aw/` and `.github/workflows/` so new shared imports, additional lock files, or updated shared workflow files are all captured automatically — no need to update the command as Squad's shipped files evolve.
 
 Downloaded workflow audit data under `.github/aw/logs/` is local diagnostic
 output and should not be committed. The `gh aw logs` and `gh aw audit` commands
@@ -195,32 +175,52 @@ a Personal Access Token:
 Every command starts with `/squad`. Type it in an issue body, issue comment, or
 PR review comment.
 
-| Command | What it does |
-|---------|-------------|
-| `/squad` | Cast a new team (same as `/squad cast`) |
-| `/squad cast` | Analyze your repo and generate a tailored team of AI agents |
-| `/squad connect <owner/repo>` | Link to an external squad source (remote-managed) |
-| `/squad adopt <owner/repo>` | Copy a squad from another repo and own it locally |
-| `/squad cast-member <description>` | Add a single specialist to an existing team |
-| `/squad cast-member rename <name> to <new-focus>` | Change an existing member's specialty |
-| `/squad retire <name>` | Remove a team member (archived, not deleted) |
-| `/squad status` | Report current team composition (read-only, no PR) |
-| `/squad research` | Deep-dive analysis of the repo and issue; posts findings as a comment |
-| `/squad triage` | Classify research findings as work, decision, or excluded |
-| `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback |
-| `/squad plan` | Fast path: program plan + implementation plan in one step |
-| `/squad plan program` | Create a program plan with initiatives, epics, and milestones |
-| `/squad plan implementation` | Decompose a program plan into PR-sized tasks |
-| `/squad plan validate` | Validate plan readiness before acceptance |
-| `/squad plan accept` | Fast path: accept all phases of scope + implementation + activate |
-| `/squad plan accept phase {N}` | Accept only Phase N of a plan (incremental, in order) |
-| `/squad plan accept scope` | Approve the program plan scope |
-| `/squad plan accept implementation` | Approve all phases of the implementation plan |
-| `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan |
-| `/squad plan activate` | Create GitHub issues from an accepted plan |
-| `/squad plan activate phase {N}` | Create GitHub issues for only Phase N of the accepted plan |
-| `/squad plan revise <feedback>` | Revise the current plan based on your feedback |
-| `/squad implement` | Implement an issue, or start the next ready wave of an epic |
+### Team management
+
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `/squad` | Cast a new team | Same as `/squad cast` |
+| `/squad cast` | Analyze your repo and generate a tailored team of AI agents | Replaces existing team |
+| `/squad cast [brief]` | Cast with an inline brief | Include your team spec in the same comment |
+| `/squad connect <owner/repo>` | Link to an external squad source | Remote-managed; syncs at activation |
+| `/squad adopt <owner/repo>` | Copy a squad from another repo | One-time copy; you own it after |
+| `/squad cast-member <description>` | Add a single specialist to an existing team | Allocates a name from the existing universe |
+| `/squad cast-member rename <name> to <new-focus>` | Change an existing member's specialty | Keeps identity; regenerates charter |
+| `/squad retire <name>` | Remove a team member | Archived to `_alumni/`; not deleted |
+| `/squad status` | Report current team composition | Read-only; no PR created |
+
+### Research and planning
+
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `/squad research` | Deep-dive repo + issue analysis; posts findings as a comment | No issues or PRs created |
+| `/squad research <focus>` | Scoped research (e.g., "focus on auth gaps") | Focuses analysis on the specified area |
+| `/squad triage` | Classify research findings as work, decision, or excluded | Requires a research comment first |
+| `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback | Updates the triage classification comment |
+| `/squad plan` | **Fast path:** program plan + implementation plan in one step | Skips separate triage and scope review |
+| `/squad plan program` | Create a program plan with initiatives, epics, and milestones | Strategic structure only; no tasks |
+| `/squad plan program revise <feedback>` | Revise the program plan based on feedback | Updates the program plan comment |
+| `/squad plan implementation` | Decompose a program plan into PR-sized tasks | Requires a program plan first |
+| `/squad plan validate` | Validate plan readiness before acceptance | Checks dependencies, decisions, sizing |
+| `/squad plan revise <feedback>` | Revise the current plan based on feedback | Works at any planning stage |
+
+### Acceptance and activation
+
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `/squad plan accept` | **Fast path:** accept all phases of scope + implementation + activate | Creates GitHub issues immediately |
+| `/squad plan accept phase {N}` | Accept only Phase N of a plan (incremental, in order) | Combines scope + impl + activate for that phase |
+| `/squad plan accept scope` | Approve the program plan scope | Locks strategic structure before decomposition |
+| `/squad plan accept implementation` | Approve all phases of the implementation plan | Issues are not created until activate |
+| `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan | Also auto-activates when prior phases are ready |
+| `/squad plan activate` | Create GitHub issues from an accepted plan | Terminal step; creates real GitHub issues |
+| `/squad plan activate phase {N}` | Create GitHub issues for only Phase N | Use when accept didn't auto-activate |
+
+### Implementation
+
+| Command | Purpose | Notes |
+|---------|---------|-------|
+| `/squad implement` | Implement an issue, or start the next ready wave of an epic | Dispatches an isolated implementation worker |
 
 ### Where you can use slash commands
 
@@ -408,10 +408,26 @@ issue thread always shows what's next.
 
 You don't have to use every step. Fast-path commands combine multiple stages:
 
-| Fast path | Equivalent to |
-|-----------|---------------|
-| `/squad plan` | `/squad plan program` + `/squad plan implementation` |
-| `/squad plan accept` | `/squad plan accept scope` + `/squad plan accept implementation` + `/squad plan activate` |
+| Fast path | Equivalent to | Stages skipped |
+|-----------|---------------|----------------|
+| `/squad plan` | `/squad plan program` + `/squad plan implementation` | Separate triage classification; separate scope review gate |
+| `/squad plan accept` | `/squad plan accept scope` + `/squad plan accept implementation` + `/squad plan activate` | Separate scope lock step; separate implementation approval step; issues created immediately |
+
+#### What you give up with each fast path
+
+**`/squad plan` (skipping triage and separate scope review)**
+
+- **Skips:** `/squad triage` — no explicit classification of findings into work/decision/excluded before planning
+- **Skips:** Separate `/squad plan accept scope` gate — the strategic structure (initiatives, epics, milestones) is never independently locked before task decomposition proceeds
+- **Risk:** Scope may be broader or narrower than intended because exclusions were never explicitly classified. Triage is where you tell Squad "don't plan that" — without it, Squad infers scope from research findings alone.
+- **Good for:** Small, well-understood features where you already know the scope and trust Squad's decomposition without a formal review gate.
+
+**`/squad plan accept` (skipping separate scope lock and implementation review)**
+
+- **Skips:** Separate `/squad plan accept scope` — you cannot review and approve strategic structure before decomposition runs
+- **Skips:** Separate `/squad plan accept implementation` — the task breakdown goes directly to GitHub issue creation without a standalone review step
+- **Risk:** GitHub issues are created immediately. If the plan needs revision, you'll need to close issues manually. There is no undo.
+- **Good for:** Small projects where one review pass is sufficient and you're comfortable with immediate issue creation.
 
 Use the granular commands when you need tighter review gates (large projects,
 cross-team coordination). Use the fast paths for smaller work where one
@@ -637,17 +653,25 @@ After `/squad plan activate` creates the implementation backlog, run:
 
 ### Regular issues
 
-On a regular issue, Squad:
+On a regular issue, the main Squad workflow dispatches an isolated
+`squad-implement-worker` run. The worker:
 
-1. Dispatches an isolated implementation worker
-2. Checks that every issue listed in `Depends on:` is closed
-3. Routes the work using the issue's `squad:{member}` label
-4. Implements and validates the acceptance criteria
-5. Opens a focused pull request that closes the issue
+1. Stops immediately if the issue is already closed
+2. Checks that every issue listed in `Depends on:` is closed — posts a blocker comment and stops if any dependency is still open
+3. Checks for an existing open PR whose branch starts with `squad/implement-{N}-` or whose body closes the issue — posts the PR URL and stops if one is found
+4. Routes work to the squad member named by the `squad:{member}` label, or lets the Lead choose specialists when no label is present
+5. Inspects the repository and implements the smallest complete change that satisfies every acceptance criterion
+6. Runs the smallest existing build, test, and lint commands covering the change
+7. Reviews the final diff against the issue acceptance criteria
+8. Opens one focused pull request on branch `squad/implement-{N}-{slug}` that closes the issue
 
-The main Squad workflow retains its narrow cast and planning permissions. Only
-the private implementation worker can edit repository files, and it delivers
-changes through gh-aw's guarded `create-pull-request` safe output.
+The main Squad workflow retains its narrow cast and planning permissions and
+**cannot edit repository files**. Only the implementation worker has `edit`
+tool access, and it delivers changes through gh-aw's guarded
+`create-pull-request` safe output. Workflow, agent, and Squad configuration
+paths (`.github/workflows/`, `.github/agents/`, `.github/aw/`, `.squad/`) are
+prohibited from modification; files flagged as protected trigger a review
+request rather than a direct commit.
 
 ### Epics
 
@@ -655,26 +679,27 @@ On an epic, Squad finds its open child issues through native sub-issue
 relationships and `Parent: #N` metadata. It then:
 
 1. Excludes tasks with open dependencies
-2. Excludes tasks that already have an implementation pull request
-3. Keeps up to three implementation pull requests active
-4. Comments with the dispatched, blocked, existing, and deferred tasks
+2. Excludes tasks that already have an open implementation pull request
+3. Calculates available slots: `max(0, 3 − active-implementation-count)`
+4. Dispatches one worker per selected ready child, up to three concurrent implementation PRs
+5. Posts a summary listing dispatched, blocked, active, and deferred tasks
 
 Each worker creates its own branch and pull request. When one of those pull
-requests merges, the existing worker resolves the parent epic and dispatches
-the main Squad workflow in implement mode. Squad then dispatches enough ready
-children to refill the three active slots. This continues until no open
-children remain, without installing a third workflow.
+requests merges, the worker resolves the parent epic and dispatches the main
+Squad workflow in implement mode. Squad then dispatches enough ready children
+to refill the three active slots. This continues until no open children remain,
+without requiring a third workflow.
 
-Both workflows accept gh-aw's propagated `aw_context` and allow the repository's
-`github-actions[bot]` to pass the workflow-dispatch activation gate. Human
-slash commands retain the normal repository-role checks. The merge relay
-targets the repository's default branch so deleting a merged implementation
-branch cannot prevent the continuation dispatch.
+Both workflows accept gh-aw's propagated `aw_context` and allow the
+repository's `github-actions[bot]` to pass the workflow-dispatch activation
+gate. Human slash commands retain the normal repository-role checks. The merge
+relay targets the repository's default branch so deleting a merged
+implementation branch cannot prevent the continuation dispatch.
 
-For example, an epic with ten independent tasks starts three workers. Each merge
-automatically starts one replacement, keeping three implementation pull requests
-active until the final task is dispatched. Dependencies may temporarily reduce
-the active count when no additional child is ready.
+For example, an epic with ten independent tasks starts three workers. Each
+merge automatically starts one replacement, keeping three implementation pull
+requests active until the final task is dispatched. Dependencies may
+temporarily reduce the active count when no additional child is ready.
 
 `/squad implement` remains available as a manual recovery command if a run is
 cancelled or an external change requires the epic to be reevaluated.
@@ -694,6 +719,82 @@ implementation pull requests must start repository CI automatically.
 From **Actions → Squad → Run workflow**, enter `implement` as the command and
 provide the target issue number.
 :::
+
+---
+
+## `/squad implement` vs. assigning to the GitHub Copilot coding agent
+
+These are two separate mechanisms. Understanding the difference helps you
+choose the right tool for each task.
+
+| | `/squad implement` | GitHub Copilot coding agent (`@copilot`) |
+|---|---|---|
+| **What it is** | A gh-aw agentic workflow that dispatches an isolated Squad worker | A separate GitHub product that picks up issues assigned to `copilot-swe-agent[bot]` |
+| **How it's triggered** | `/squad implement` slash command or workflow dispatch | Assigning the issue to `@copilot` (via `squad:copilot` label + auto-assign workflow, or manually) |
+| **Routing** | Uses `squad:{member}` label and `.squad/routing.md` to select the right specialist | Reads `.github/copilot-instructions.md` for context; not routed by Squad labels |
+| **Orchestration** | Squad coordinator fans out up to 3 parallel workers for epic children; merge relay auto-refills slots | Each assignment is independent; no Squad-level fan-out or slot management |
+| **Repository editing** | Worker runs inside gh-aw sandbox; file writes go through `create-pull-request` safe output with allowlisted paths | Coding agent creates a `copilot/*` branch and opens a draft PR directly |
+| **PR branch** | `squad/implement-{N}-{slug}` | `copilot/{slug}` |
+| **PR behavior** | PR closes the issue; protected-file changes trigger a review request | Draft PR opened immediately; requires human promotion |
+| **Squad awareness** | Full: reads team roster, routing rules, acceptance criteria | Partial: reads `copilot-instructions.md` if present; not integrated with Squad planning state |
+| **Best for** | Issues created by `/squad plan activate`; work that should follow Squad routing and epic fan-out | Standalone tasks (bug fixes, test coverage, lint) that don't require Squad orchestration |
+
+### Does `/squad implement` use the GitHub Copilot coding agent?
+
+No. `/squad implement` dispatches the `squad-implement-worker` gh-aw workflow,
+which is a Copilot-powered agentic workflow running in the GitHub Actions
+sandbox. It does **not** assign issues to `copilot-swe-agent[bot]` or
+interact with the GitHub Copilot coding agent product in any way.
+
+The `@copilot` entry in `.squad/team.md` (added by `squad copilot`) is a
+roster slot with `copilot-auto-assign: false` by default. No Squad workflow
+reads that flag to dispatch the coding agent. Auto-assignment is handled by a
+separate `squad-issue-assign` GitHub Actions workflow that watches for the
+`squad:copilot` label — it is entirely independent of `/squad implement`.
+
+See [Copilot coding agent](../features/copilot-coding-agent.md) for setup and
+capability profiles.
+
+---
+
+## Review lifecycle and current gaps
+
+### What review happens during and after `/squad implement`
+
+The implementation worker performs an internal self-review before opening a PR:
+
+1. **Dependency check** — refuses to start if any `Depends on:` issue is open
+2. **Duplicate check** — refuses to create a second PR if one already exists
+3. **Build / test / lint** — runs the smallest existing commands covering the change
+4. **Diff review** — the worker reviews its own final diff against the issue acceptance criteria before calling `create-pull-request`
+5. **Protected-file guard** — changes to protected paths trigger a review request on the PR rather than a direct commit
+
+After the PR is opened, review follows the standard GitHub flow: human
+reviewers, required status checks (CI), and merge by a repository maintainer.
+If you configured `GH_AW_CI_TRIGGER_TOKEN`, implementation PRs will trigger
+your CI workflows automatically; without it, the default `GITHUB_TOKEN`-created
+PRs do not start other workflow runs.
+
+### There is no separate `/squad review` command
+
+Squad does not currently have a post-implementation review command. There is no
+`/squad review` slash command, and no workflow runs automatically to review PRs
+after `/squad implement` opens them.
+
+This is a **current lifecycle gap**: the path from an open implementation PR to
+merge relies entirely on human review, your existing CI, and normal GitHub PR
+processes. If you have a squad member designated as a reviewer, you can ask
+them to review the PR in a Copilot Chat session, but that is not an automated
+Squad workflow.
+
+The lifecycle today is:
+
+```
+/squad implement → implementation PR opened → human review + CI → merge → epic relay (next wave)
+```
+
+If a dedicated automated review phase is added in a future release, it will
+appear as a new slash command in this guide.
 
 ---
 
@@ -879,7 +980,7 @@ gh aw compile
 | `/squad` command is ignored | Lock file not committed or workflow not compiled | Run `gh aw compile`, commit the lock file, and push |
 | Universe is full on cast-member | All character names in the universe are allocated | Retire an unused member first, or re-cast with `/squad cast` |
 | "No plan found" on plan accept | No `/squad plan` comment exists yet | Run `/squad plan` first to generate a plan for review |
-| Plan accept creates fewer issues than expected | `create-issue` safe-output has a max of 30 | Split into multiple plan/accept cycles for very large decompositions |
+| Plan accept creates fewer issues than expected | `create-issue` safe-output has a max of 75 | Re-run the identical activation command — it is idempotent and picks up where it left off |
 | `/squad implement` cannot create a PR | Actions is not allowed to create pull requests | Enable **Allow GitHub Actions to create and approve pull requests** in repository Actions settings |
 | Epic implementation dispatches no workers | Every child is blocked or already has an open implementation PR | Merge dependency PRs, then run `/squad implement` on the epic again |
 
