@@ -35,16 +35,7 @@ gh aw add \
 gh aw compile
 
 # 5. Commit and push the workflow sources and generated files
-git add -- \
-  .gitattributes \
-  .github/aw/actions-lock.json \
-  .github/workflows/squad.md \
-  .github/workflows/squad.lock.yml \
-  .github/workflows/squad-implement-worker.md \
-  .github/workflows/squad-implement-worker.lock.yml \
-  .github/workflows/shared/squad.md \
-  .github/workflows/shared/planning-ontology.md \
-  .github/workflows/shared/planning-policy.md
+git add -- .gitattributes .github/aw/ .github/workflows/
 git commit -m "ci: add Squad agentic workflow"
 git push
 
@@ -121,23 +112,12 @@ actually executes.
 ### Commit the workflow files
 
 ```bash
-git add -- \
-  .gitattributes \
-  .github/aw/actions-lock.json \
-  .github/workflows/squad.md \
-  .github/workflows/squad.lock.yml \
-  .github/workflows/squad-implement-worker.md \
-  .github/workflows/squad-implement-worker.lock.yml \
-  .github/workflows/shared/squad.md \
-  .github/workflows/shared/planning-ontology.md \
-  .github/workflows/shared/planning-policy.md
+git add -- .gitattributes .github/aw/ .github/workflows/
 git commit -m "ci: add Squad agentic workflow"
 git push
 ```
 
-The source and imported shared workflow must be present so `gh aw` can verify
-that the compiled lock file is current. The action lock and attributes files
-keep compilation reproducible and identify generated workflow files.
+This stages everything under `.github/aw/` and `.github/workflows/` so new shared imports, additional lock files, or updated shared workflow files are all captured automatically — no need to update the command as Squad's shipped files evolve.
 
 Downloaded workflow audit data under `.github/aw/logs/` is local diagnostic
 output and should not be committed. The `gh aw logs` and `gh aw audit` commands
