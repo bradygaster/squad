@@ -36,8 +36,8 @@ network:
     - defaults
 imports:
   - shared/squad.md
-  - shared/planning-ontology.md
-  - shared/planning-policy.md
+  - shared/squad-planning-ontology.md
+  - shared/squad-planning-policy.md
 tools:
   bash: true
   github:
@@ -190,9 +190,38 @@ Repository owners must configure Copilot setup steps separately when needed.
 
 ## Execute Mode
 
-**MODE ISOLATION:** Execute ONLY the active mode's section. Other mode instructions do not apply.
+Each mode's playbook ships as a **skill**. Load only the one skill for the parsed mode, then follow it verbatim.
+
+**MODE ISOLATION:** Execute ONLY the active mode's skill. Other modes' instructions do not apply — do not load more than one mode skill.
 
 **BREADCRUMB ≠ DELIVERABLE:** Every mode posts an acknowledgment first. This is never the deliverable — always complete ALL subsequent steps.
+
+| Parsed mode | Skill to load |
+|---|---|
+| `cast` | `squad-cast` |
+| `connect` | `squad-connect` |
+| `adopt` | `squad-adopt` |
+| `cast-member` | `squad-cast-member` |
+| `retire` | `squad-retire` |
+| `status` | `squad-status` |
+| `research` | `squad-research` |
+| `plan` | `squad-plan` |
+| `plan revise` | `squad-plan-revise` |
+| `triage` | `squad-triage` |
+| `triage revise` | `squad-triage-revise` |
+| `plan program` | `squad-plan-program` |
+| `plan program revise` | `squad-plan-program-revise` |
+| `plan implementation` | `squad-plan-implementation` |
+| `plan validate` | `squad-plan-validate` |
+| `plan accept` | `squad-plan-accept` |
+| `plan accept scope` | `squad-plan-accept-scope` |
+| `plan accept implementation` | `squad-plan-accept-implementation` |
+| `plan activate` | `squad-plan-activate` |
+| `implement` | `squad-implement` |
+
+**Planning modes only** — before running the mode skill, also load `squad-planning-policy` (policy resolution) and `squad-planning-ontology` (artifact schemas and the lifecycle state machine). The non-planning modes (Cast, Connect, Adopt, Cast Member, Retire, Status, Implement) must not load them.
+
+If the parsed mode's skill cannot be loaded, report the failure in plain language and stop. Never improvise a mode playbook from memory.
 
 ---
 
@@ -264,7 +293,10 @@ gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headR
 
 ---
 
-#### Cast Mode
+## skill: `squad-cast`
+---
+description: Cast a Squad team: analyze the repo, compose agents, assign character names, scaffold .squad/, open the Cast PR.
+---
 
 Analyze repo, compose team, assign character names from a fictional universe, generate `.squad/` scaffolding, open PR.
 
@@ -359,9 +391,10 @@ Create `meet-the-squad.md` at repo root with: title, universe name, team table (
 
 `add-comment`: `🧑‍🤝‍🧑 Your Squad is ready for review.\n\n**PR:** #{pr_number}\n\nMerge the PR to activate your team. Run /squad status afterward to verify.`
 
+## skill: `squad-connect`
 ---
-
-#### Connect Mode
+description: Connect an existing external team source into Squad.
+---
 
 Link repo to an external Squad source. Commits only a config pointer.
 
@@ -374,9 +407,10 @@ Link repo to an external Squad source. Commits only a config pointer.
 5. **Open PR:** `create-pull-request`: branch `squad/connect-{repo}`, files: `.squad/config.json`, `meet-the-squad.md` only.
 6. **Post:** `🔗 Squad connection configured.\n\n**PR:** #{pr_number}`
 
+## skill: `squad-adopt`
 ---
-
-#### Adopt Mode
+description: Adopt a team definition from a URL into .squad/.
+---
 
 Fetch complete squad from remote, commit locally. No ongoing sync.
 
@@ -390,9 +424,10 @@ Fetch complete squad from remote, commit locally. No ongoing sync.
 6. **Open PR:** `create-pull-request`: branch `squad/adopt-{repo}`, files: `.squad/`, `.github/agents/squad.agent.md`, `meet-the-squad.md`.
 7. **Post:** `📥 Squad adopted from remote source.\n\n**PR:** #{pr_number}`
 
+## skill: `squad-cast-member`
 ---
-
-#### Cast Member Mode
+description: Add a single new member to an existing Squad team.
+---
 
 Add/modify/rename a single team member within an existing squad.
 
@@ -407,9 +442,10 @@ Subcommands: `/squad cast-member <description>` (add), `/squad cast-member renam
 7. **Open PR:** On Squad PR: follow-up PR targeting existing branch. On issue: `create-pull-request` branch `squad/cast-member-{id}`, title `[squad] Add/Modify {Name}`.
 8. **Post:** `👤 {Name} ({Role}) has been added to the team.\n\n**PR:** #{pr_number}`
 
+## skill: `squad-retire`
 ---
-
-#### Retire Mode
+description: Retire a named member from the Squad team.
+---
 
 Remove a member from active roster, archive charter.
 
@@ -419,9 +455,10 @@ Remove a member from active roster, archive charter.
 4. **Open PR:** Same context-aware behavior as Cast Member. Branch: `squad/retire-{id}`.
 5. **Post:** `👋 {Name} has been retired from the team.\n\n**PR:** #{pr_number}`
 
+## skill: `squad-status`
 ---
-
-#### Status Mode
+description: Report current Squad team and planning lifecycle status.
+---
 
 Read-only team composition report.
 
@@ -431,9 +468,10 @@ Read-only team composition report.
 2. Read team.md + registry.json.
 3. Post comment: team name, universe, member count, active members table, link to team.md.
 
+## skill: `squad-implement`
 ---
-
-#### Implement Mode
+description: Dispatch implementation work to the squad-implement-worker workflow.
+---
 
 Implement mode dispatches an isolated implementation worker for a regular issue.
 When invoked on an epic, it dispatches workers for up to three currently
@@ -498,9 +536,10 @@ After each implementation pull request merges, this workflow runs again and
 fills newly available slots. Continue until the epic has no open children.
 `/squad implement` remains available as a manual recovery command.
 
+## skill: `squad-research`
 ---
-
-#### Research Mode
+description: Produce the research artifact that seeds planning for an issue.
+---
 
 Deep analysis → structured findings comment. Read-only + comment. Works on open/closed issues.
 
@@ -531,9 +570,10 @@ Must be ≥200 chars of substantive findings. Tailor sections to scope.
 
 Confirm: structured artifact data posted, heading present, ≥200 chars substantive content, ≥1 recommendation. If ANY fails, go back and post now.
 
+## skill: `squad-plan`
 ---
-
-#### Plan Mode
+description: Produce the plan artifact from research for an issue.
+---
 
 Decompose issue into sub-issues as a comment. Does NOT create issues. Works on open/closed issues.
 
@@ -560,9 +600,10 @@ Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables 
 
 Do NOT create issues.
 
+## skill: `squad-plan-accept`
 ---
-
-#### Plan Accept Mode (Fast Path)
+description: Accept a plan (whole plan or a single phase) and record the accepted artifact.
+---
 
 `/squad plan accept` [phase {N}] — combines scope+impl+activation for simple workflows.
 
@@ -607,9 +648,10 @@ Artifact data varies:
 - Phase-specific: `data: {"squad_artifact":"phases-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[{accumulated}]}` → Phase accepted table + remaining phases table
 - Full (no phases): `data: {"squad_artifact":"plan-accepted","schema_version":"1","origin_issue":{issue_number},"phases":[]}` → All issues table
 
+## skill: `squad-plan-revise`
 ---
-
-#### Plan Revise Mode
+description: Revise an existing plan artifact from reviewer feedback.
+---
 
 **Acknowledge:** `🤖 Squad is revising the plan…`
 
@@ -619,9 +661,10 @@ Artifact data varies:
 4. **EDIT the existing artifact comment** (never post a duplicate).
 5. Prepend revision note.
 
+## skill: `squad-triage`
 ---
-
-#### Triage Mode
+description: Triage a plan into classified work items and update lifecycle state.
+---
 
 Classify research findings as work/decision/excluded. Bridge between research and planning. Works on open/closed issues.
 
@@ -655,9 +698,10 @@ Structure: `## 🔍 Squad Triage — Dispositions` → Intent + reference lines 
 
 Find/create the `lifecycle-state` artifact comment. Include `data: {"squad_artifact":"lifecycle-state","schema_version":"1","origin_issue":{issue_number},"phases":[]}`. Set Triage = `✅ Done`, state = Triaged, next = `/squad plan program`.
 
+## skill: `squad-triage-revise`
 ---
-
-#### Triage Revise Mode
+description: Revise triage dispositions from reviewer feedback.
+---
 
 **Acknowledge:** `🤖 Squad is revising triage dispositions…`
 
@@ -667,25 +711,27 @@ Find/create the `lifecycle-state` artifact comment. Include `data: {"squad_artif
 4. **EDIT the existing artifact comment** (one current artifact per issue). Prepend revision note.
 5. Update lifecycle.
 
+## skill: `squad-planning-policy`
 ---
-
-#### Planning Policy Resolution
+description: Resolve the active planning policy profile and overrides. Load before any planning mode executes.
+---
 
 All planning modes resolve policy before executing.
 
 The planning policy schema is imported — follow it directly.
 
 Steps:
-1. Check issue body HTML-comment content for a line beginning `squad-policy:` or `squad-setting:`. Match the comment content, not the HTML delimiters.
+1. Scan the issue body for a line beginning `Squad-Policy:` or `Squad-Setting:` (case-insensitive, one directive per line). These are plain visible Markdown lines — never HTML comments, which gh-aw strips before you see the body.
 2. Check repo for `.squad/planning-policy.md` with YAML frontmatter.
 3. Match profile (`default`, `lean`, `enterprise`, `spike`, or custom).
 4. Fall back to defaults for unset values.
 
 Apply: artifact limits, sizing constraints, hierarchy rules, GitHub representation, validation strictness. Report active policy in every plan output: `Policy: {profile} ({overrides or "no overrides"})`.
 
+## skill: `squad-plan-program`
 ---
-
-#### Plan Program Mode
+description: Build the high-level program plan (initiatives, epics, stories, milestones, dependencies).
+---
 
 High-level program plan (the WHAT). Transforms triage work items into initiatives/epics/stories/milestones/dependencies. Works on open/closed issues.
 
@@ -729,9 +775,10 @@ Structure: `## 📋 Squad Program Plan` → Intent + triage ref → Milestones t
 
 Set Program Plan = `✅ Done`, state = Program Planned, next = `/squad plan accept scope`.
 
+## skill: `squad-plan-program-revise`
 ---
-
-#### Plan Program Revise Mode
+description: Revise the program plan from reviewer feedback.
+---
 
 **Acknowledge:** `🤖 Squad is revising the program plan…`
 
@@ -744,9 +791,10 @@ Works on open/closed issues.
 5. **EDIT existing comment**. Prepend revision note.
 6. Update lifecycle. If scope was invalidated (override), set Scope back to `⬚ Pending`.
 
+## skill: `squad-plan-implementation`
 ---
-
-#### Plan Implementation Mode
+description: Build the implementation plan (the HOW) from an accepted program plan.
+---
 
 Decompose program plan into PR-sized tasks with deps, sizing, agent assignments. Works on open/closed issues.
 
@@ -780,9 +828,10 @@ Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables 
 
 Set Implementation Plan = `✅ Done`, state = Implementation planned, next = `/squad plan validate`.
 
+## skill: `squad-plan-validate`
 ---
-
-#### Plan Validate Mode
+description: Validate the implementation plan and emit a PASS/FAIL validation artifact.
+---
 
 Readiness gate checking plan artifacts for structural issues.
 
@@ -828,9 +877,10 @@ Set Validation = `✅ Done` or `❌ Failed`. Next on pass: `/squad plan accept i
 
 Pass: suggest accept. Fail: suggest fix + re-validate.
 
+## skill: `squad-plan-accept-scope`
 ---
-
-#### Plan Accept Scope Mode
+description: Accept the program-plan scope and record the scope-accepted artifact.
+---
 
 `/squad plan accept scope` — locks the program plan (the WHAT).
 
@@ -856,9 +906,10 @@ Content: `## ✅ Scope Accepted` → program plan version link, accepted by, dat
 
 Set Scope = `✅ Done`, next = `/squad plan implementation`.
 
+## skill: `squad-plan-accept-implementation`
 ---
-
-#### Plan Accept Implementation Mode
+description: Accept the implementation plan (whole or per phase) and lock it for activation.
+---
 
 `/squad plan accept implementation` [phase {N}] — locks the implementation plan (the HOW). Supports incremental phase acceptance.
 
@@ -903,9 +954,10 @@ After phase acceptance, check if ready for automatic activation:
 3. If prior phases not activated: tell user to activate them first.
 4. Update lifecycle to reflect both acceptance and activation.
 
+## skill: `squad-plan-activate`
 ---
-
-#### Plan Activate Mode
+description: Activate an accepted plan by creating the epic and task issues on GitHub.
+---
 
 `/squad plan activate` [phase {N}] — creates real GitHub issues/milestones. Irreversible.
 

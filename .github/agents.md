@@ -222,17 +222,21 @@ Squad's planning behavior is configurable through policy profiles.
 
 ### Selecting a Profile
 
-Add an HTML comment to the issue body:
+Add a policy directive line to the issue body:
 
-```html
-<!-- squad-policy: lean -->
+```markdown
+Squad-Policy: lean
 ```
+
+Use a plain visible line — **not** an HTML comment. gh-aw strips HTML comments
+from issue bodies before the agent sees them, so a commented directive is
+silently ignored.
 
 Or configure at the repo level in `.squad/planning-policy.md` with YAML frontmatter.
 
 ### Priority Order
 
-1. Issue body (`<!-- squad-policy: ... -->`) — highest
+1. Issue body (`Squad-Policy: ...`) — highest
 2. Repository file (`.squad/planning-policy.md`)
 3. Profile name (built-in)
 4. Default — fallback
