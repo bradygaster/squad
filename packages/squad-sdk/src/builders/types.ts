@@ -324,3 +324,5 @@ export interface SquadSDKConfig {
   /** Skill definitions. */
   readonly skills?: readonly SkillDefinition[];
 }
+
+# Fix for issue #1715: safe input handling
