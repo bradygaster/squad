@@ -2,9 +2,7 @@
 
 > ⚠️ **Experimental** — Squad is alpha software. APIs, commands, and behavior may change between releases.
 
-:::tip[Git helps protect your project state]
-We strongly recommend using git to version-control your project `.squad/` directory. Every session writes to it — decisions, logs, orchestration history. Agent charters, skills, and casting histories live in your personal squad directory (not committed to projects). Without version control, context window resets, crashes, or accidental deletions could be unrecoverable. If git isn't an option, regular manual backups to external storage or cloud sync can help protect your work.
-:::
+> **Tip — Git helps protect your project state:** We strongly recommend using git to version-control your project `.squad/` directory. Every session writes to it — decisions, logs, orchestration history. Agent charters, skills, and casting histories live in your personal squad directory (not committed to projects). Without version control, context window resets, crashes, or accidental deletions could be unrecoverable. If git isn't an option, regular manual backups to external storage or cloud sync can help protect your work.
 
 **Try this:**
 ```bash

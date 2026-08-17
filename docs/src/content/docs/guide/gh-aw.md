@@ -92,9 +92,7 @@ gh aw add \
 The single command installs the dedicated worker first, then the main workflow
 that dispatches it.
 
-:::note[Branch note]
-`@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
-:::
+> **Branch note:** `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
 
 This registers the Squad workflow in your repository's agentic workflow
 configuration.
@@ -704,21 +702,17 @@ temporarily reduce the active count when no additional child is ready.
 `/squad implement` remains available as a manual recovery command if a run is
 cancelled or an external change requires the epic to be reevaluated.
 
-:::note[Repository setting]
-Pull-request delivery requires **Settings → Actions → General → Workflow
-permissions → Allow GitHub Actions to create and approve pull requests**.
-:::
+> **Repository setting:** Pull-request delivery requires **Settings → Actions →
+> General → Workflow permissions → Allow GitHub Actions to create and approve
+> pull requests**.
 
-:::note[Pull request CI]
-Pull requests created with the default `GITHUB_TOKEN` do not trigger other
-workflow runs. Set `GH_AW_CI_TRIGGER_TOKEN` to a suitable fine-grained PAT if
-implementation pull requests must start repository CI automatically.
-:::
+> **Pull request CI:** Pull requests created with the default `GITHUB_TOKEN` do
+> not trigger other workflow runs. Set `GH_AW_CI_TRIGGER_TOKEN` to a suitable
+> fine-grained PAT if implementation pull requests must start repository CI
+> automatically.
 
-:::note[Manual runs]
-From **Actions → Squad → Run workflow**, enter `implement` as the command and
-provide the target issue number.
-:::
+> **Manual runs:** From **Actions → Squad → Run workflow**, enter `implement` as
+> the command and provide the target issue number.
 
 ---
 
