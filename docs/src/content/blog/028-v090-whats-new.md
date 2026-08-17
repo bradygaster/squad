@@ -42,9 +42,8 @@ Ralph's dispatcher reads these labels and routes the work to the machine in your
 - ML agents tagged `needs:gpu` route to GPU-equipped machines
 - Docker-based agents route to machines with Docker daemon running
 - Multi-region squads balance load based on capabilities
-:::note
-Capability Discovery works with Ralph's mesh routing. If you're not running Ralph, this is aspirational.
-:::
+
+> **Note:** Capability Discovery works with Ralph's mesh routing. If you're not running Ralph, this is aspirational.
 
 ---
 ### 3. Cooperative Rate Limiting — Predictive Circuit Breaker (#515)
