@@ -35,7 +35,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Squad.Agents.AI.Tests" />
-    <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" Version="1.16.0" />
+    <PackageReference Include="Microsoft.Agents.AI.GitHub.Copilot" Version="1.17.0" />
     <!--
       Direct reference to GitHub.Copilot.SDK so its build/ targets fire during our build.
       Without this, the SDK's MSBuild download/copy targets only flow to projects with a
