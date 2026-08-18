@@ -168,6 +168,21 @@ safe-outputs:
       - "tools/**"
       - "web/**"
     protected-files: request_review
+    excluded-files:
+      # The nested `**/*.md`, `**/*.yml`, and `**/*.json` patterns above would
+      # otherwise let this worker rewrite its own workflow definition, agent
+      # charters, or squad configuration -- paths the prompt forbids in prose
+      # ("Do not change ...") but which were previously blocked structurally,
+      # because root-anchored `*.md` never matched them. Stripping them from the
+      # patch keeps that enforcement structural rather than instruction-following.
+      - ".github/workflows/**"
+      - "**/.github/workflows/**"
+      - ".github/agents/**"
+      - "**/.github/agents/**"
+      - ".github/aw/**"
+      - "**/.github/aw/**"
+      - ".squad/**"
+      - "**/.squad/**"
     max-patch-files: 500
     expires: 14d
   add-comment:
