@@ -32,6 +32,14 @@ concurrency:
 network:
   allowed:
     - defaults
+    - containers
+    - dotnet
+    - go
+    - java
+    - node
+    - python
+    - ruby
+    - rust
 imports:
   - shared/squad.md
 tools:
@@ -51,48 +59,93 @@ safe-outputs:
       - "squad/implement-*"
     allowed-files:
       - "*.c"
+      - "**/*.c"
       - "*.cc"
+      - "**/*.cc"
       - "*.cjs"
+      - "**/*.cjs"
       - "*.cpp"
+      - "**/*.cpp"
       - "*.cs"
+      - "**/*.cs"
       - "*.csproj"
+      - "**/*.csproj"
       - "*.css"
+      - "**/*.css"
       - "*.fs"
+      - "**/*.fs"
       - "*.fsproj"
+      - "**/*.fsproj"
       - "*.go"
+      - "**/*.go"
       - "*.gradle"
+      - "**/*.gradle"
       - "*.h"
+      - "**/*.h"
       - "*.hpp"
+      - "**/*.hpp"
       - "*.html"
+      - "**/*.html"
       - "*.java"
+      - "**/*.java"
       - "*.js"
-      - "*.jsx"
+      - "**/*.js"
       - "*.json"
+      - "**/*.json"
+      - "*.jsx"
+      - "**/*.jsx"
       - "*.kt"
+      - "**/*.kt"
       - "*.kts"
+      - "**/*.kts"
       - "*.md"
+      - "**/*.md"
       - "*.mjs"
+      - "**/*.mjs"
       - "*.php"
+      - "**/*.php"
       - "*.props"
+      - "**/*.props"
       - "*.py"
+      - "**/*.py"
+      - "*.razor"
+      - "**/*.razor"
       - "*.rb"
+      - "**/*.rb"
       - "*.rs"
+      - "**/*.rs"
       - "*.sh"
+      - "**/*.sh"
       - "*.sln"
+      - "**/*.sln"
       - "*.slnx"
+      - "**/*.slnx"
       - "*.sql"
+      - "**/*.sql"
       - "*.svelte"
+      - "**/*.svelte"
       - "*.swift"
+      - "**/*.swift"
       - "*.targets"
+      - "**/*.targets"
       - "*.toml"
+      - "**/*.toml"
       - "*.ts"
+      - "**/*.ts"
       - "*.tsx"
+      - "**/*.tsx"
       - "*.vue"
+      - "**/*.vue"
       - "*.yaml"
+      - "**/*.yaml"
       - "*.yml"
+      - "**/*.yml"
       - "Dockerfile*"
+      - "**/Dockerfile*"
       - "LICENSE*"
+      - "**/LICENSE*"
       - "Makefile"
+      - "**/Makefile"
       - "api/**"
       - "app/**"
       - "bin/**"
@@ -115,6 +168,21 @@ safe-outputs:
       - "tools/**"
       - "web/**"
     protected-files: request_review
+    excluded-files:
+      # The nested `**/*.md`, `**/*.yml`, and `**/*.json` patterns above would
+      # otherwise let this worker rewrite its own workflow definition, agent
+      # charters, or squad configuration -- paths the prompt forbids in prose
+      # ("Do not change ...") but which were previously blocked structurally,
+      # because root-anchored `*.md` never matched them. Stripping them from the
+      # patch keeps that enforcement structural rather than instruction-following.
+      - ".github/workflows/**"
+      - "**/.github/workflows/**"
+      - ".github/agents/**"
+      - "**/.github/agents/**"
+      - ".github/aw/**"
+      - "**/.github/aw/**"
+      - ".squad/**"
+      - "**/.squad/**"
     max-patch-files: 500
     expires: 14d
   add-comment:
