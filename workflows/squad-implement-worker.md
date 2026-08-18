@@ -142,7 +142,8 @@ For a merged pull request:
    `squad/implement-{issue-number}-` head branch.
 2. Read the child issue and resolve its parent epic using the native parent
    relationship, falling back to its `Parent: #N` body line.
-3. If no parent epic exists, emit `noop` and stop.
+3. If no parent epic exists, comment on the merged pull request saying its issue
+   is standalone and that no further work was queued, then stop.
 4. Call the workflow-specific `squad` safe-output tool exactly once:
 
 ```json
@@ -154,6 +155,18 @@ For a merged pull request:
 
 Never call the generic `dispatch_workflow` tool. Never edit files or create a
 pull request in this mode. Stop after the `squad` workflow is dispatched.
+
+**Always leave a visible next step.** Every merge continuation ends with a
+comment — never a silent exit. Cover both terminal cases:
+
+- Parent epic resolved → name the epic and state that its next children were
+  queued.
+- No parent epic → state that the pull request's issue is standalone and that
+  nothing further was queued.
+
+Never emit `noop` for a merge continuation. `noop` is not reported as a comment,
+so it strands a merged pull request with no signal about what happens next — the
+exact failure this procedure exists to prevent.
 
 The remaining instructions apply only to `workflow_dispatch`.
 

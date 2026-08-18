@@ -132,14 +132,32 @@ When locating artifacts:
 
 ## Trigger Context
 
-Read slash command from: `github.event.comment.body` (issue/PR comment), `github.event.issue.body` (issue body), or `github.event.inputs.command` (workflow_dispatch, default: `cast`).
+The dispatch inputs for this run are interpolated below. Treat a non-empty value
+as authoritative; an empty value means this run was not started by a workflow
+dispatch.
 
-- **Issue body:** `github.event.issue.body` — the full issue description
-- **Issue comment:** `github.event.comment.body` — the full comment text
-- **PR review comment:** `github.event.comment.body` — the full comment text
-- **Workflow dispatch:** `github.event.inputs.command` — manual input (default: `cast`)
-- **Manual issue target:** `github.event.inputs.issue_number` — issue number for
-  `/squad implement` runs started from the Actions tab
+- **Dispatched command:** `${{ github.event.inputs.command }}`
+- **Dispatched issue number:** `${{ github.event.inputs.issue_number }}`
+
+Resolve the slash command in this order:
+
+1. **Dispatched command** (above) — when non-empty, this run is a workflow
+   dispatch. Use this value as the command and skip the remaining sources.
+2. **Issue comment / PR review comment:** `github.event.comment.body` — the full
+   comment text.
+3. **Issue body:** `github.event.issue.body` — the full issue description.
+4. Otherwise default to `cast`.
+
+Resolve the target issue in this order:
+
+1. **Dispatched issue number** (above) — when non-empty, this is the target
+   issue, including for merge-driven epic continuations.
+2. The triggering issue or pull request number from the event payload.
+
+**Never emit `noop` when the dispatched command is non-empty.** A workflow
+dispatch is always actionable: run the named mode against the dispatched issue
+number. If the dispatched command is non-empty but the dispatched issue number
+is empty, post a comment naming the missing input rather than exiting silently.
 
 The activation job already ran `squad init --preset default`, which produced a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
@@ -483,10 +501,10 @@ to this mode so it can automatically refill the parent epic's available slots.
 
 ##### Step 1: Validate and Gather Context
 
-1. Resolve the target issue number from `github.event.inputs.issue_number` for a
-   workflow dispatch, otherwise from the triggering issue. If invoked from a
-   pull request review comment, explain that `/squad implement` must be run from
-   the target issue.
+1. Resolve the target issue number using the Trigger Context resolution order:
+   the interpolated dispatched issue number when non-empty, otherwise the
+   triggering issue. If invoked from a pull request review comment, explain that
+   `/squad implement` must be run from the target issue.
 2. Read the target issue title, body, labels, state, and relevant comments.
 3. Find open child issues using native GitHub sub-issue relationships. Also
    include open issues whose body contains a
@@ -531,6 +549,18 @@ Post a comment on the epic listing the dispatched children, blocked children,
 children with existing implementation pull requests, and any ready children
 deferred because all three slots are occupied. If no child is ready or no slot
 is available, post the status summary and do not dispatch a workflow.
+
+**Always leave a visible next step.** Every Implement run against an epic ends
+with a comment on that epic — never a silent exit. Cover each terminal case:
+
+- Children dispatched → name them and state how many children remain open.
+- All remaining children blocked → name the blocking dependencies.
+- All three slots occupied → name the in-flight pull requests.
+- No open children left → state that the epic's implementation is complete.
+
+Never emit `noop` for an Implement run. `noop` is not reported as a comment, so
+it strands the epic with no signal about what to do next — the exact failure
+this procedure exists to prevent.
 
 After each implementation pull request merges, this workflow runs again and
 fills newly available slots. Continue until the epic has no open children.
