@@ -173,52 +173,38 @@ a Personal Access Token:
 Every command starts with `/squad`. Type it in an issue body, issue comment, or
 PR review comment.
 
-### Team management
+Commands are matched longest-prefix-first, so `/squad plan accept scope` resolves
+to the scope-acceptance mode rather than to `/squad plan`.
 
-| Command | Purpose | Notes |
-|---------|---------|-------|
-| `/squad` | Cast a new team | Same as `/squad cast` |
-| `/squad cast` | Analyze your repo and generate a tailored team of AI agents | Replaces existing team |
-| `/squad cast [brief]` | Cast with an inline brief | Include your team spec in the same comment |
-| `/squad connect <owner/repo>` | Link to an external squad source | Remote-managed; syncs at activation |
-| `/squad adopt <owner/repo>` | Copy a squad from another repo | One-time copy; you own it after |
-| `/squad cast-member <description>` | Add a single specialist to an existing team | Allocates a name from the existing universe |
-| `/squad cast-member rename <name> to <new-focus>` | Change an existing member's specialty | Keeps identity; regenerates charter |
-| `/squad retire <name>` | Remove a team member | Archived to `_alumni/`; not deleted |
-| `/squad status` | Report current team composition | Read-only; no PR created |
-
-### Research and planning
-
-| Command | Purpose | Notes |
-|---------|---------|-------|
-| `/squad research` | Deep-dive repo + issue analysis; posts findings as a comment | No issues or PRs created |
-| `/squad research <focus>` | Scoped research (e.g., "focus on auth gaps") | Focuses analysis on the specified area |
-| `/squad triage` | Classify research findings as work, decision, or excluded | Requires a research comment first |
-| `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback | Updates the triage classification comment |
-| `/squad plan` | **Fast path:** program plan + implementation plan in one step | Skips separate triage and scope review |
-| `/squad plan program` | Create a program plan with initiatives, epics, and milestones | Strategic structure only; no tasks |
-| `/squad plan program revise <feedback>` | Revise the program plan based on feedback | Updates the program plan comment |
-| `/squad plan implementation` | Decompose a program plan into PR-sized tasks | Requires a program plan first |
-| `/squad plan validate` | Validate plan readiness before acceptance | Checks dependencies, decisions, sizing |
-| `/squad plan revise <feedback>` | Revise the current plan based on feedback | Works at any planning stage |
-
-### Acceptance and activation
-
-| Command | Purpose | Notes |
-|---------|---------|-------|
-| `/squad plan accept` | **Fast path:** accept all phases of scope + implementation + activate | Creates GitHub issues immediately |
-| `/squad plan accept phase {N}` | Accept only Phase N of a plan (incremental, in order) | Combines scope + impl + activate for that phase |
-| `/squad plan accept scope` | Approve the program plan scope | Locks strategic structure before decomposition |
-| `/squad plan accept implementation` | Approve all phases of the implementation plan | Issues are not created until activate |
-| `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan | Also auto-activates when prior phases are ready |
-| `/squad plan activate` | Create GitHub issues from an accepted plan | Terminal step; creates real GitHub issues |
-| `/squad plan activate phase {N}` | Create GitHub issues for only Phase N | Use when accept didn't auto-activate |
-
-### Implementation
-
-| Command | Purpose | Notes |
-|---------|---------|-------|
-| `/squad implement` | Implement an issue, or start the next ready wave of an epic | Dispatches an isolated implementation worker |
+| Category | Command | Purpose | Notes |
+|----------|---------|---------|-------|
+| Team | `/squad` | Cast a new team | Same as `/squad cast` |
+| Team | `/squad cast` | Analyze your repo and generate a tailored team of AI agents | Replaces existing team |
+| Team | `/squad cast [brief]` | Cast with an inline brief | Include your team spec in the same comment |
+| Team | `/squad connect <owner/repo>` | Link to an external squad source | Remote-managed; syncs at activation |
+| Team | `/squad adopt <owner/repo>` | Copy a squad from another repo | One-time copy; you own it after |
+| Team | `/squad cast-member <description>` | Add a single specialist to an existing team | Allocates a name from the existing universe |
+| Team | `/squad cast-member rename <name> to <new-focus>` | Change an existing member's specialty | Keeps identity; regenerates charter |
+| Team | `/squad retire <name>` | Remove a team member | Archived to `_alumni/`; not deleted |
+| Team | `/squad status` | Report current team composition | Read-only; no PR created |
+| Research | `/squad research` | Deep-dive repo + issue analysis; posts findings as a comment | No issues or PRs created |
+| Research | `/squad research <focus>` | Scoped research (e.g., "focus on auth gaps") | Focuses analysis on the specified area |
+| Research | `/squad triage` | Classify research findings as work, decision, or excluded | Requires a research comment first |
+| Research | `/squad triage revise <feedback>` | Adjust triage dispositions based on feedback | Updates the triage classification comment |
+| Planning | `/squad plan` | **Fast path:** program plan + implementation plan in one step | Skips separate triage and scope review |
+| Planning | `/squad plan program` | Create a program plan with initiatives, epics, and milestones | Strategic structure only; no tasks |
+| Planning | `/squad plan program revise <feedback>` | Revise the program plan based on feedback | Updates the program plan comment |
+| Planning | `/squad plan implementation` | Decompose a program plan into PR-sized tasks | Requires a program plan first |
+| Planning | `/squad plan validate` | Validate plan readiness before acceptance | Checks dependencies, decisions, sizing |
+| Planning | `/squad plan revise <feedback>` | Revise the current plan based on feedback | Works at any planning stage |
+| Acceptance | `/squad plan accept` | **Fast path:** accept all phases of scope + implementation + activate | Creates GitHub issues immediately |
+| Acceptance | `/squad plan accept phase {N}` | Accept only Phase N of a plan (incremental, in order) | Combines scope + impl + activate for that phase |
+| Acceptance | `/squad plan accept scope` | Approve the program plan scope | Locks strategic structure before decomposition |
+| Acceptance | `/squad plan accept implementation` | Approve all phases of the implementation plan | Issues are not created until activate |
+| Acceptance | `/squad plan accept implementation phase {N}` | Accept only Phase N of the implementation plan | Also auto-activates when prior phases are ready |
+| Activation | `/squad plan activate` | Create GitHub issues from an accepted plan | Terminal step; creates real GitHub issues |
+| Activation | `/squad plan activate phase {N}` | Create GitHub issues for only Phase N | Use when accept didn't auto-activate |
+| Implementation | `/squad implement` | Implement an issue, or start the next ready wave of an epic | Dispatches an isolated implementation worker |
 
 ### Where you can use slash commands
 
