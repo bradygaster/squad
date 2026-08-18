@@ -658,9 +658,71 @@ const SKILL_START_RE = /^##[ \t]+skill:[ \t]+`([a-z][a-z0-9_-]*)`[ \t]*$/gm;
 
 interface ExtractionResult {
   ambient: string;
-  skills: { name: string; bytes: number }[];
+  skills: { name: string; bytes: number; body: string }[];
   discardedBytes: number;
   markerBytes: number;
+}
+
+/**
+ * Report why a skill's frontmatter would fail to parse as YAML, or null if it is fine.
+ *
+ * gh-aw's extractor (setup/js/extract_inline_skills.cjs) filters skill frontmatter
+ * LINE BY LINE and never parses it, so a malformed `description:` is written to
+ * .github/skills/<name>/SKILL.md verbatim and surfaces only when the agent tries to
+ * load that skill. `gh aw compile --strict` does not catch it either: at compile time
+ * a skill block is still ordinary markdown. This check closes that gap.
+ *
+ * Deliberately hand-rolled rather than delegating to a YAML library: this repo has no
+ * YAML parser in its dependency tree (frontmatter elsewhere is validated by actionlint,
+ * which only reads real workflow YAML), and a lint this narrow does not justify adding
+ * one. It targets the plain-scalar hazards that actually bite in a one-line description.
+ */
+function findFrontmatterScalarError(body: string): { key: string; value: string; reason: string } | null {
+  if (!body.startsWith('\n---\n') && !body.startsWith('---\n')) return null;
+  const opened = body.slice(body.indexOf('---\n') + 4);
+  const closeIdx = opened.indexOf('\n---');
+  if (closeIdx === -1) return null;
+
+  for (const line of opened.slice(0, closeIdx).split('\n')) {
+    const m = /^([A-Za-z_][A-Za-z0-9_-]*):[ \t]+(.*)$/.exec(line);
+    if (!m) continue;
+    const [, key, raw] = m;
+    const value = raw.trim();
+    if (!value) continue;
+
+    // A quoted scalar escapes every hazard below.
+    const quoted =
+      (value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+      (value.startsWith("'") && value.endsWith("'") && value.length > 1);
+    if (quoted) continue;
+
+    // Block scalars (`|`, `>`) carry their value on following lines.
+    if (/^[|>][-+0-9]*$/.test(value)) continue;
+
+    // `[` and `{` open YAML flow collections, which are valid unquoted and parse
+    // fine -- `[a, b]` and `{a: b}` are not errors. Only an unterminated one is.
+    // Checked before the ": " rule below so a flow mapping is not mistaken for a
+    // nested mapping.
+    if (/^[[{]/.test(value)) {
+      const opens = (value.match(/[[{]/g) ?? []).length;
+      const closes = (value.match(/[\]}]/g) ?? []).length;
+      if (opens !== closes) {
+        return { key, value, reason: 'unquoted value opens a YAML flow collection that is never closed' };
+      }
+      continue;
+    }
+
+    if (/:\s/.test(value)) {
+      return { key, value, reason: 'unquoted value contains ": " and parses as a nested mapping' };
+    }
+    if (/\s#/.test(value)) {
+      return { key, value, reason: 'unquoted value contains " #" and would be truncated as a comment' };
+    }
+    if (/^[&*!%@`]/.test(value)) {
+      return { key, value, reason: `unquoted value starts with the YAML indicator "${value[0]}"` };
+    }
+  }
+  return null;
 }
 
 /** Mirror of gh-aw's inline-skill extraction, including its discard behaviour. */
@@ -678,7 +740,7 @@ function extractInlineSkills(content: string): ExtractionResult {
   let cursor = 0;
   let discardedBytes = 0;
   let markerBytes = 0;
-  const skills: { name: string; bytes: number }[] = [];
+  const skills: { name: string; bytes: number; body: string }[] = [];
 
   for (const start of starts) {
     const startIdx = start.index!;
@@ -695,7 +757,11 @@ function extractInlineSkills(content: string): ExtractionResult {
 
     if (endMarker) {
       const bodyEnd = bodyStart + endMarker.index;
-      skills.push({ name: start[1], bytes: Buffer.byteLength(content.slice(bodyStart, bodyEnd), 'utf8') });
+      skills.push({
+        name: start[1],
+        bytes: Buffer.byteLength(content.slice(bodyStart, bodyEnd), 'utf8'),
+        body: content.slice(bodyStart, bodyEnd),
+      });
       markerBytes += Buffer.byteLength(endMarker[0], 'utf8');
       cursor = bodyEnd + endMarker[0].length;
       continue;
@@ -704,7 +770,11 @@ function extractInlineSkills(content: string): ExtractionResult {
     // Implicit close: next H2 after the start marker, else EOF.
     const nextH2 = h2Positions.find(p => p > startIdx);
     const bodyEnd = nextH2 ?? content.length;
-    skills.push({ name: start[1], bytes: Buffer.byteLength(content.slice(bodyStart, bodyEnd), 'utf8') });
+    skills.push({
+      name: start[1],
+      bytes: Buffer.byteLength(content.slice(bodyStart, bodyEnd), 'utf8'),
+      body: content.slice(bodyStart, bodyEnd),
+    });
 
     // Everything from here to the next start marker is dropped on the floor.
     const nextStart = starts.find(s => s.index! > startIdx)?.index ?? content.length;
@@ -787,6 +857,46 @@ describe('gh-aw: inline skill extraction', () => {
       `Ambient prompt is ${(ambientBytes / 1024).toFixed(1)} KB. Mode playbooks and planning ` +
         `reference material belong in inline skills, not the always-loaded prompt.`
     ).toBeLessThan(AMBIENT_BUDGET_BYTES);
+  });
+
+  it('gives every skill parseable YAML frontmatter', () => {
+    const offenders = result.skills
+      .map(s => ({ name: s.name, err: findFrontmatterScalarError(s.body) }))
+      .filter((s): s is { name: string; err: NonNullable<ReturnType<typeof findFrontmatterScalarError>> } => s.err !== null);
+
+    expect(
+      offenders.map(o => `${o.name}: ${o.err.key} — ${o.err.reason}\n    ${o.err.value}`).join('\n  '),
+      'Skill frontmatter must be valid YAML. Nothing upstream catches this: the extractor ' +
+        'filters frontmatter line-by-line without parsing it, and `gh aw compile --strict` ' +
+        'sees skill blocks as plain markdown. A broken value reaches the agent as a skill ' +
+        'that cannot load. Quote the value.'
+    ).toBe('');
+  });
+
+  it('flags real frontmatter scalar hazards without flagging valid YAML', () => {
+    const wrap = (line: string) => `\n---\n${line}\nname: x\n---\nbody`;
+
+    // Valid unquoted plain scalars and flow collections must not be flagged.
+    for (const ok of [
+      'description: Cast a squad',
+      'description: "Cast a squad: from a repo"',
+      "description: 'already quoted'",
+      'allowed: [read, write]',
+      'options: {mode: fast}',
+      'description: |',
+    ]) {
+      expect(findFrontmatterScalarError(wrap(ok)), `false positive on: ${ok}`).toBeNull();
+    }
+
+    // Genuine hazards must still be caught.
+    for (const bad of [
+      'description: Cast a squad: from a repo',
+      'description: Cast a squad #1',
+      'description: &anchor',
+      'allowed: [read, write',
+    ]) {
+      expect(findFrontmatterScalarError(wrap(bad)), `missed hazard in: ${bad}`).not.toBeNull();
+    }
   });
 
   it('gives every dispatchable mode a skill to load', () => {

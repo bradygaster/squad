@@ -295,7 +295,7 @@ gh pr list --state open --json number,url,headRefName --jq '[.[] | select(.headR
 
 ## skill: `squad-cast`
 ---
-description: Cast a Squad team: analyze the repo, compose agents, assign character names, scaffold .squad/, open the Cast PR.
+description: "Cast a Squad team: analyze the repo, compose agents, assign character names, scaffold .squad/, open the Cast PR."
 ---
 
 Analyze repo, compose team, assign character names from a fictional universe, generate `.squad/` scaffolding, open PR.
