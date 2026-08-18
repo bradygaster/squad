@@ -24,7 +24,7 @@
 // structural guarantee.
 //
 // Exit 0 when clean, exit 1 with file:line details otherwise.
-// Uses only Node.js built-ins (fs, path).
+// Uses only Node.js built-ins (fs, path, url).
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { resolve, join, dirname, relative } from 'node:path';
