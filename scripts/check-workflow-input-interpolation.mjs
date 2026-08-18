@@ -14,10 +14,14 @@
 //
 //   * Frontmatter -- `run-name`, `if`, `concurrency` and friends are evaluated by
 //     Actions itself, not by the agent.
-//   * Other `github.event.*` paths (notably `comment.body` and `issue.body`) -- these
-//     carry untrusted user text. gh-aw supplies them to the agent through sanitized
-//     trigger context; interpolating them straight into the prompt would be a
-//     prompt-injection vector, so bare prose references are correct there.
+//   * Other `github.event.*` paths -- see the INPUT_REF comment below.
+//
+// This scans whole files, including `## skill:` blocks, and that matters: mode
+// playbooks are now extracted into inline skills and restored in isolation, with no
+// guarantee about what precedes them. A skill body that needs a dispatch input must
+// interpolate it itself -- it cannot lean on `## Trigger Context` having resolved the
+// value into scope. Scanning skill bodies turns that from a convention into a
+// structural guarantee.
 //
 // Exit 0 when clean, exit 1 with file:line details otherwise.
 // Uses only Node.js built-ins (fs, path).
@@ -37,6 +41,13 @@ const SCAN_DIRS = [
   'packages/squad-sdk/templates/workflows',
 ];
 
+// Scoped to `inputs.*` deliberately. Do NOT widen this to all `github.event.*`:
+// `comment.body` and `issue.body` are attacker-controlled. gh-aw delivers them to the
+// agent through sanitized trigger context, so interpolating them here would splice
+// untrusted text straight into the prompt ahead of the sanitizer -- a prompt-injection
+// vector. A bare prose reference to those paths is CORRECT and must not be "fixed".
+// An earlier draft of this check flagged them; the gate was right and the tempting fix
+// was wrong.
 const INPUT_REF = /github\.event\.inputs\.[A-Za-z0-9_]+/g;
 const INTERPOLATION = /\$\{\{[^}]*\}\}/g;
 
