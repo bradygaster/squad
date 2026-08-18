@@ -699,13 +699,26 @@ function findFrontmatterScalarError(body: string): { key: string; value: string;
     // Block scalars (`|`, `>`) carry their value on following lines.
     if (/^[|>][-+0-9]*$/.test(value)) continue;
 
+    // `[` and `{` open YAML flow collections, which are valid unquoted and parse
+    // fine -- `[a, b]` and `{a: b}` are not errors. Only an unterminated one is.
+    // Checked before the ": " rule below so a flow mapping is not mistaken for a
+    // nested mapping.
+    if (/^[[{]/.test(value)) {
+      const opens = (value.match(/[[{]/g) ?? []).length;
+      const closes = (value.match(/[\]}]/g) ?? []).length;
+      if (opens !== closes) {
+        return { key, value, reason: 'unquoted value opens a YAML flow collection that is never closed' };
+      }
+      continue;
+    }
+
     if (/:\s/.test(value)) {
       return { key, value, reason: 'unquoted value contains ": " and parses as a nested mapping' };
     }
     if (/\s#/.test(value)) {
       return { key, value, reason: 'unquoted value contains " #" and would be truncated as a comment' };
     }
-    if (/^[[{&*!%@`]/.test(value)) {
+    if (/^[&*!%@`]/.test(value)) {
       return { key, value, reason: `unquoted value starts with the YAML indicator "${value[0]}"` };
     }
   }
@@ -858,6 +871,32 @@ describe('gh-aw: inline skill extraction', () => {
         'sees skill blocks as plain markdown. A broken value reaches the agent as a skill ' +
         'that cannot load. Quote the value.'
     ).toBe('');
+  });
+
+  it('flags real frontmatter scalar hazards without flagging valid YAML', () => {
+    const wrap = (line: string) => `\n---\n${line}\nname: x\n---\nbody`;
+
+    // Valid unquoted plain scalars and flow collections must not be flagged.
+    for (const ok of [
+      'description: Cast a squad',
+      'description: "Cast a squad: from a repo"',
+      "description: 'already quoted'",
+      'allowed: [read, write]',
+      'options: {mode: fast}',
+      'description: |',
+    ]) {
+      expect(findFrontmatterScalarError(wrap(ok)), `false positive on: ${ok}`).toBeNull();
+    }
+
+    // Genuine hazards must still be caught.
+    for (const bad of [
+      'description: Cast a squad: from a repo',
+      'description: Cast a squad #1',
+      'description: &anchor',
+      'allowed: [read, write',
+    ]) {
+      expect(findFrontmatterScalarError(wrap(bad)), `missed hazard in: ${bad}`).not.toBeNull();
+    }
   });
 
   it('gives every dispatchable mode a skill to load', () => {
