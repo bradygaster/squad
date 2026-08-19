@@ -22,7 +22,7 @@ const toneReviewer = defineAgent({
   name: 'tone-reviewer',
   role: 'Tone & Voice Analyst',
   description: 'Evaluates content for audience fit, tone consistency, and emotional resonance.',
-  model: 'claude-sonnet-4',
+  model: 'claude-sonnet-5',
   tools: ['grep', 'view'],
   capabilities: [
     { name: 'content-analysis', level: 'expert' },
@@ -35,7 +35,7 @@ const technicalReviewer = defineAgent({
   name: 'technical-reviewer',
   role: 'Technical Accuracy Checker',
   description: 'Validates technical claims, code snippets, and factual accuracy.',
-  model: 'claude-sonnet-4',
+  model: 'claude-sonnet-5',
   tools: ['grep', 'view', 'powershell'],
   capabilities: [
     { name: 'code-review', level: 'expert' },
@@ -48,7 +48,7 @@ const copyEditor = defineAgent({
   name: 'copy-editor',
   role: 'Copy Editor',
   description: 'Checks grammar, clarity, structure, and readability.',
-  model: 'claude-sonnet-4',
+  model: 'claude-sonnet-5',
   tools: ['grep', 'view'],
   capabilities: [
     { name: 'grammar-check', level: 'expert' },

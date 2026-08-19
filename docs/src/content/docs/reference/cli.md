@@ -95,7 +95,7 @@ Start Copilot with optional remote access via phone. Spawns Copilot in a PTY and
 - `--tunnel` — Create a devtunnel for remote access (shows QR code for phone scanning). Requires `devtunnel` CLI installed and authenticated (`devtunnel user login`).
 - `--port <N>` — Specific WebSocket port (default: random). Example: `--port 3456`
 - `--command <cmd>` — Run a custom command instead of copilot. Example: `--command powershell`
-- All copilot flags pass through. Example: `squad start --tunnel --yolo` or `squad start --tunnel --model gpt-4`
+- All copilot flags pass through. Example: `squad start --tunnel --yolo` or `squad start --tunnel --model gpt-5.6-luna`
 
 **Examples:**
 
@@ -115,7 +115,7 @@ squad start --tunnel --command powershell
 
 # Copilot flags pass through
 squad start --tunnel --yolo
-squad start --tunnel --model gpt-4 --no-config
+squad start --tunnel --model gpt-5.6-luna --no-config
 ```
 
 For details on architecture, security, mobile keyboard, and troubleshooting, see [Remote Control Guide](../features/squad-rc.md).
@@ -176,7 +176,7 @@ squad loop --monitor-email --monitor-teams
 squad loop --file scripts/ci-monitor.md
 
 # Run with custom Copilot model
-squad loop --copilot-flags "--model gpt-4"
+squad loop --copilot-flags "--model gpt-5.6-luna"
 ```
 
 **Example loop.md:**

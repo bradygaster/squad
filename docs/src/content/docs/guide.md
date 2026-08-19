@@ -228,7 +228,7 @@ export default defineSquad({
     defineAgent({
       name: 'edie',
       role: 'TypeScript Engineer',
-      model: 'claude-sonnet-4',
+      model: 'claude-sonnet-5',
       capabilities: [{ name: 'type-system', level: 'expert' }],
     }),
   ],

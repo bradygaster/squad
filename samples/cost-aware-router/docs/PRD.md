@@ -1,7 +1,7 @@
 # Cost-Aware Router — SDK Sample PRD
 
 ## Overview
-Route work to the right model tier based on task complexity and budget. Expensive tasks go to Full (o1, Claude 3.5 Sonnet). Simple tasks go to Lightweight (GPT-4o mini). Track every decision, aggregate cost, and report savings. This is the cost-first principle in action — prove that routing optimizes dollars.
+Route work to the right model tier based on task complexity and budget. Expensive tasks go to Full (Claude Opus 5). Simple tasks go to Lightweight (GPT-5.6 Luna). Track every decision, aggregate cost, and report savings. This is the cost-first principle in action — prove that routing optimizes dollars.
 
 ## Target Audience
 Team leads managing AI spend. Engineering managers who need cost visibility. Anyone building Squad deployments with budget constraints.
@@ -26,10 +26,10 @@ const costTracker = new CostTracker();
 const budget = 100.00; // USD
 
 const tiers = {
-  direct: getTier('direct'),      // Fastest, no thinking (GPT-4o)
-  lightweight: getTier('lightweight'), // Fast, cheap (GPT-4o mini, Claude Haiku)
-  standard: getTier('standard'),   // Balanced (Claude 3.5 Sonnet)
-  full: getTier('full'),           // Expensive thinking (o1, o1-preview)
+  direct: getTier('direct'),      // Fastest, no thinking (GPT-5.6 Luna)
+  lightweight: getTier('lightweight'), // Fast, cheap (GPT-5.6 Luna, Claude Haiku)
+  standard: getTier('standard'),   // Balanced (Claude Sonnet 5)
+  full: getTier('full'),           // Expensive thinking (Claude Opus 5)
 };
 
 console.log('📊 Available Tiers:');
@@ -83,8 +83,8 @@ for (const task of tasks) {
   const outputTokens = 1200;
   const costPerInputToken = model.inputCost / 1_000_000;
   const costPerOutputToken = model.outputCost / 1_000_000;
-  const estimatedCost = 
-    (inputTokens * costPerInputToken) + 
+  const estimatedCost =
+    (inputTokens * costPerInputToken) +
     (outputTokens * costPerOutputToken);
 
   costTracker.recordUsage({
@@ -142,7 +142,7 @@ console.log(`  Savings: ${(((summary.totalEstimatedCost * 2.5) - summary.totalEs
 6. Terminal shows:
    ```
    📝 Task: Fix typo in README
-      Tier: lightweight (GPT-4o mini)
+      Tier: lightweight (GPT-5.6 Luna)
       Cost: $0.0008 (Budget remaining: $99.99)
 
    📝 Task: Design API authentication flow
@@ -186,13 +186,13 @@ npm start
 
 # Expected output:
 # 📝 Task: Fix typo in README
-#    Tier: lightweight (GPT-4o mini)
+#    Tier: lightweight (GPT-5.6 Luna)
 #    Cost: $0.0008
-# 
+#
 # 📝 Task: Design API authentication flow
 #    Tier: standard (Claude 3.5 Sonnet)
 #    Cost: $0.0045
-# 
+#
 # ...
 #
 # 💰 Final Cost Report

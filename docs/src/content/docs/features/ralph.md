@@ -176,7 +176,7 @@ If the file is missing, Ralph falls back to the built-in execution prompt.
   🔴 Untriaged:         2
   🟡 Assigned:          5
   🚀 Executed:          3
-  
+
 ▶ [14:23:10] Executing #42 "Fix auth redirect bug" → gh copilot --message "Work on issue #42..."
 ✓ [14:25:43] #42 completed
 ▶ [14:25:44] Executing #45 "Add retry logic" → gh copilot --message "Work on issue #45..."
@@ -191,7 +191,7 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--execute` | Enable work execution (spawn Copilot to work on issues) | `squad watch --execute` |
 | `--max-concurrent N` | Max parallel issues per round (default: 1) | `squad watch --execute --max-concurrent 3` |
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
-| `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-4"` |
+| `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-5.6-luna"` |
 
 #### Issue Scanning
 

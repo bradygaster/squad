@@ -150,7 +150,7 @@ export default defineSquad({
 
   defaults: defineDefaults({
     model: {
-      preferred: 'claude-sonnet-4',
+      preferred: 'claude-sonnet-5',
       rationale: 'Good balance of speed and quality for docs generation',
       fallback: 'claude-haiku-4.5',
     },
@@ -319,7 +319,7 @@ async function runLoop(
       costTracker.recordUsage({
         sessionId: agent.sessionId,
         agentName: agent.member.name,
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-5',
         inputTokens: 1200,
         outputTokens: 800,
         estimatedCost: 0.006,
@@ -399,7 +399,7 @@ recordTokenUsage({
   type: 'usage',
   sessionId: 'session-lori-0',
   agentName: 'lori',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-5',
   inputTokens: 1200,
   outputTokens: 800,
   estimatedCost: 0.006,
@@ -506,7 +506,7 @@ while (tasks.some(t => t.status !== 'done')) {
     costTracker.recordUsage({
       sessionId: agent.sessionId,
       agentName: agent.member.name,
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-5',
       inputTokens: 1000,
       outputTokens: 600,
       estimatedCost: 0.005,

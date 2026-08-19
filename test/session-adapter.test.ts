@@ -160,7 +160,7 @@ describe('CopilotSessionAdapter (via SquadClient)', () => {
       parentId: null,
       ephemeral: true,
       type: 'assistant.usage',
-      data: { model: 'gpt-4', inputTokens: 100, outputTokens: 50 },
+      data: { model: 'gpt-5.6-luna', inputTokens: 100, outputTokens: 50 },
     };
     mockSession._emit('assistant.usage', sdkEvent);
 
@@ -271,7 +271,7 @@ describe('CopilotSessionAdapter (via SquadClient)', () => {
     mockSession._emit('assistant.usage', {
       id: 'e2', timestamp: 'ts', parentId: null, ephemeral: true,
       type: 'assistant.usage',
-      data: { model: 'gpt-4', inputTokens: 200, outputTokens: 80 },
+      data: { model: 'gpt-5.6-luna', inputTokens: 200, outputTokens: 80 },
     });
 
     expect(captured).not.toBeNull();

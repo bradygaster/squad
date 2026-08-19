@@ -25,3 +25,5 @@
 Dockerfile text eol=lf
 Dockerfile.* text eol=lf
 .dockerignore text eol=lf
+# Squad: union merge for append-only team state files
+.squad/fact-checker/audit-trail.md merge=union

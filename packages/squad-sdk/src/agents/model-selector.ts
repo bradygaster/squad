@@ -140,7 +140,7 @@ function resolveBaseModel(options: ModelResolutionOptions): ResolvedModel {
 
 /**
  * Select model based on task type, with optional economy mode substitution.
- * 
+ *
  * @param taskType - Type of task being performed
  * @param economyMode - When true, downgrade model to cheaper alternative
  * @returns Resolved model or undefined if no match
@@ -151,21 +151,21 @@ function selectModelForTask(taskType: TaskType, economyMode?: boolean): Resolved
 
   switch (taskType) {
     case 'code':
-      model = 'claude-sonnet-4.6';
+      model = 'gpt-5.6-terra';
       tier = 'standard';
       break;
     case 'prompt':
-      model = 'claude-sonnet-4.6';
+      model = 'gpt-5.6-terra';
       tier = 'standard';
       break;
     case 'visual':
-      model = 'claude-opus-4.6';
+      model = 'gpt-5.6-sol';
       tier = 'premium';
       break;
     case 'docs':
     case 'planning':
     case 'mechanical':
-      model = 'claude-haiku-4.5';
+      model = 'gpt-5.6-luna';
       tier = 'fast';
       break;
     default:
@@ -187,16 +187,21 @@ function selectModelForTask(taskType: TaskType, economyMode?: boolean): Resolved
 
 export function inferTierFromModel(model: string): ModelTier {
   const lowerModel = model.toLowerCase();
-  
+  const catalogModel = MODEL_CATALOG.find(modelInfo => modelInfo.id === lowerModel);
+
+  if (catalogModel) {
+    return catalogModel.tier;
+  }
+
   if (lowerModel.includes('opus')) {
     return 'premium';
   }
-  
+
   if (lowerModel.includes('haiku') || lowerModel.includes('mini')) {
     return 'fast';
   }
-  
-  // Default to standard for sonnet, gpt-5.x, etc.
+
+  // Default to standard for unknown sonnet, gpt-5.x, and other models.
   return 'standard';
 }
 
