@@ -34,6 +34,18 @@ Squad publishes two npm packages: `@bradygaster/squad-sdk` and `@bradygaster/squ
 
 ## Rules (Non-Negotiable)
 
+### 0. Verify `dev` and `main` Share Ancestry BEFORE Starting Any Release-Prep Work
+
+> Source: 2026-08-13 orphaned-history incident, PR #1699. `dev`'s history was silently reset on 2026-07-13 (a dependabot bump became a brand-new root commit with zero shared history with `main`). Nothing in normal release-prep work (version bump, CHANGELOG entry, changeset consolidation, CI) surfaces this — `dev` builds and tests green the whole time because none of it touches `main`'s history. The break is invisible until the very last step: opening the `dev` → `main` promotion PR, which GitHub then reports as flatly unmergeable, with `git merge-tree` refusing outright and no reviewable diff.
+
+**Before touching version numbers or the CHANGELOG, run:**
+
+```bash
+git merge-base upstream/dev upstream/main
+```
+
+If this returns a commit SHA (exit 0), proceed normally. **If it returns nothing (exit 1), STOP.** The promotion PR will be unmergeable no matter how clean `dev`'s own release content is — fix ancestry first via a separate `chore: restore shared ancestry` PR (merge `main` into `dev` with `--allow-unrelated-histories`; do not rebase if `dev` has a `non_fast_forward` ruleset, since rebase requires a force-push and rewrites every commit under every open PR). See `.squad/decisions/inbox/data-restore-dev-main-ancestry.md` for the full worked example and the diff-based verification technique used to prove a dev-wins conflict resolution was safe.
+
 ### 1. Coordinator Does NOT Publish
 
 The coordinator routes work and manages agents. It does NOT run `npm publish`, trigger release workflows, or make release decisions. Brady owns the release trigger. If an agent or the coordinator is asked to publish, escalate to Brady.
@@ -132,6 +144,7 @@ Set this environment variable in all CI build steps to prevent the build script 
 | GITHUB_TOKEN can't trigger downstream workflows (v0.9.4) | squad-npm-publish.yml never fires | Manual `gh workflow run` or use PAT/GitHub App token (see below) |
 | Lockfile integrity check rejects workspace packages (v0.9.4) | False failures in squad-npm-publish.yml | Only validate packages resolved from npm registry (`startsWith('https://')`) (PR #1044) |
 | `prebuild` version bump breaks workspace linking (v0.9.4) | Local builds fail after bump-build.mjs runs | `git checkout -- package.json packages/*/package.json` then fresh install |
+| `dev` and `main` silently drift to unrelated histories (2026-08-13) | `dev` → `main` promotion PR is flatly unmergeable, no reviewable diff | Run `git merge-base upstream/dev upstream/main` BEFORE starting release-prep; see Rule 0 above |
 
 ## v0.9.4 Incident Learnings
 
