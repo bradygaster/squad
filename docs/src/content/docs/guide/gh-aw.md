@@ -173,8 +173,8 @@ a Personal Access Token:
 Every command starts with `/squad`. Type it in an issue body, issue comment, or
 PR review comment.
 
-Commands are matched longest-prefix-first, so `/squad plan accept scope` resolves
-to the scope-acceptance mode rather than to `/squad plan`.
+Commands are matched longest-prefix-first, so the most specific command string
+wins: `/squad plan accept scope` is not treated as `/squad plan`.
 
 | Category | Command | Purpose | Notes |
 |----------|---------|---------|-------|
