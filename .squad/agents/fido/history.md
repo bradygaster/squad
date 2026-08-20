@@ -3,6 +3,14 @@
 Summarized by Scribe on 2026-08-19T13:11:34.130-07:00 because this history exceeded 15KB.
 Full pre-summary history archived at `.squad/agents/fido/history-archive-2026-08-19T13-11-34.130-07-00.md`.
 
+## 2026-08-20 — #1732 compile gate shipped
+
+- **Defect confirmed:** `gh aw compile` was never a real CI gate. `test/gh-aw-quality.test.ts:978` uses `it.skipIf(!ghAwAvailable)` and `squad-ci.yml` never installed `gh-aw`, so the test always skipped in CI.
+- **Fix:** Added `gh extension install github/gh-aw` step to the `test` job in `.github/workflows/squad-ci.yml`, immediately before Build. Reason: the test lives in `npm test` — wiring it into `squad-workflow-lint.yml` (which never runs `npm test`) would accomplish nothing.
+- **Non-skippability verified locally:** (1) passing case: `gh aw compile --strict` on intact workflows exits 0; (2) break test: removed `squad-implement-worker.md` from temp workspace → compile exited 1 with "dispatch-workflow validation failed: workflow 'squad-implement-worker' not found" → gate fails as expected.
+- **Issue split noted:** Prompt-budget gate already shipped (test:637-669). String-assertion replacement too vague — both closed without implementing.
+- **Rule 5:** This gate fails if `gh aw compile --strict` exits non-zero — e.g., missing dispatch target, invalid frontmatter, or any `gh-aw` strict validation error.
+
 ## Condensed signals
 
 - Quality gate authority for all PRs. Test assertion arrays (EXPECTED_GUIDES, EXPECTED_FEATURES, EXPECTED_SCENARIOS, etc.) MUST stay in sync with files on disk. When reviewing PRs with CI failures, always check if dev branch has the same failures — don't block PRs for pre-existing issues. 3,931 tests passing, 149 test files, ~89s runtime.
