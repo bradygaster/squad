@@ -80,6 +80,20 @@ Also updated: examples section (showing `name` + `description` pairs), anti-patt
 
 **Proposal filed:** `.squad/decisions/inbox/procedures-vscode-routing-fix.md`
 
+### 2026-08-20: Long-path lifecycle repairs (#1758, #1759, #1756)
+
+Fixed three defects in `workflows/squad.md`, all gating the 2026-08-21 e2e series. Every touched stage was in Sims' "NEVER EXERCISED" bucket, so I anchored each fix in a readable source of truth rather than inference.
+
+- **#1758.1 (dead-code routing):** `squad-plan-accept` Step 1 unconditionally hard-failed "No plan found" on a missing `plan` artifact, so the Behavior note's `program`/`implementation` routing could never run. Rewrote Step 1 as "Find Plan and Route": check `program`/`implementation` first → run Accept Scope → Accept Impl → Activate; only reply "No plan found" when none of `program`/`implementation`/`plan` exist.
+- **#1758.2 (epics dispatched as tasks):** Implement mode found immediate children of root — Epics in a 3-level hierarchy — and dispatched implementation workers on them. Changed Step 1 + Epic Dispatch to descend the sub-issue hierarchy recursively and dispatch only **leaf tasks** (open issues with no open sub-issues). Kept the 3-slot cap and worker contract intact (I do NOT own `squad-implement-worker.md`).
+- **#1758.3 (validate ordering):** PROVABLE, not speculative. The planning ontology (`shared/squad-planning-ontology.md:48-87`) is the authoritative state machine and sequences `program → implementation → validate → accept scope → accept implementation → activate`. `squad.md`'s `next=` hints had drifted (program→accept-scope, validate→accept-impl, accept-scope→implementation). Corrected all hints to match the ontology, so validate precedes BOTH accept steps.
+- **#1759 (Role strings in Owner/Agent):** Added an explicit Owner/Agent binding rule (resolve to the `Name` column of `.squad/team.md`, never a Role string) at every emission site (squad-plan Step 1/Step 3, squad-plan-implementation Step 2/3/4) and made `squad:{owner}` label minting use the lowercased cast Name, forbidding `squad:lead`.
+- **#1756 (char floor → structural contract):** Replaced the research artifact's `≥200-char` floor with a structural contract (required sections: Evidence table, Goals, Non-goals, Load-bearing assumptions, Open decisions, Acceptance framing; `Rn` traceability IDs; one citation token per evidence row) enforced via the MANDATORY verify step. Shipped ONLY the structural half — the "well-formatted bad plan should FAIL" taste-judgment (#1757) stays deferred.
+
+Tests: `test/gh-aw-plan-lifecycle.test.ts` (23 assertions), incl. a role-leak detector that parses a plan's Owner column against team.md and flags Role strings (`lead`) while passing cast Names (`Procedures`). Build green; gh-aw-quality suite unaffected. No changeset (no `packages/*/src/` touched).
+
+**Proposal filed:** `.squad/decisions/inbox/procedures-long-path-lifecycle-fix.md`
+
 ### 2026-07: VS Code routing enforcement — Fix 1 + Fix 2 shipped (#613)
 
 **Implemented** P0 fixes from the VS Code routing proposal:

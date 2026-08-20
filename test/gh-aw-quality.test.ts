@@ -1034,10 +1034,14 @@ describe('gh-aw: merge continuation dispatch contract', () => {
     expect(squadInputs.command.default).toBeUndefined();
   });
 
-  it('documents missing workflow_dispatch issue_number as a visible failure', () => {
-    expect(readText(SQUAD_WORKFLOW)).toMatch(/missing issue_number/i);
-    expect(readText(SQUAD_WORKFLOW)).toMatch(/workflow_dispatch\.inputs\.issue_number/i);
-    expect(readText(SQUAD_WORKFLOW)).toMatch(/create a visible issue/i);
+  it('documents missing workflow_dispatch issue_number as a guarded halt, not a junk issue', () => {
+    const squadText = readText(SQUAD_WORKFLOW);
+    expect(squadText).toMatch(/missing issue_number/i);
+    // The activation guard halts the run with a visible log annotation instead of
+    // minting a junk issue for an empty/malformed dispatch probe (see PR #1777).
+    expect(squadText).toMatch(/::warning::/);
+    expect(squadText).toMatch(/halting with no side effects/i);
+    expect(squadText).not.toMatch(/Squad workflow dispatch missing issue_number/);
   });
 
   it('worker continuation dispatch payload nests keys that Squad declares', () => {
