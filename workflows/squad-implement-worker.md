@@ -223,8 +223,15 @@ For a merged pull request:
    relationship, falling back to its `Parent: #N` body line.
 3. If no parent epic exists, comment on the merged pull request saying its issue
    is standalone and that no further work was queued, then stop.
-4. Call the prompt-listed `dispatch_workflow` safe-output tool exactly once with
-   the workflow inputs nested under `inputs`:
+4. WRITE-ONCE: call the prompt-listed `dispatch_workflow` safe-output tool
+   exactly once, and only when the complete payload is ready. NEVER call
+   `dispatch_workflow` with empty, partial, or placeholder arguments to probe or
+   discover its schema. The full schema is already given in this prompt; there
+   is nothing to discover. If you are not ready to dispatch, or there is no next
+   wave to dispatch, call `noop` instead of `dispatch_workflow`. The FIRST
+   `dispatch_workflow` call wins and all later calls are silently discarded, so
+   a probe destroys the real dispatch. When dispatching, nest the workflow
+   inputs under `inputs`:
 
 ```json
 {
@@ -250,9 +257,10 @@ comment — never a silent exit. Cover both terminal cases:
 - No parent epic → state that the pull request's issue is standalone and that
   nothing further was queued.
 
-Never emit `noop` for a merge continuation. `noop` is not reported as a comment,
-so it strands a merged pull request with no signal about what happens next — the
-exact failure this procedure exists to prevent.
+Never emit `noop` for a merge continuation as a substitute for the visible
+continuation comment. `noop` is not reported as a comment, so it strands a
+merged pull request with no signal about what happens next — the exact failure
+this procedure exists to prevent.
 
 The remaining instructions apply only to `workflow_dispatch`.
 
