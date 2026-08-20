@@ -122,14 +122,33 @@ describe('gh-aw implement workflows', () => {
 
   it('continues epic execution after implementation PRs merge', () => {
     const workerDispatch = yamlBlock(workerFrontmatter, 'dispatch-workflow');
+    const continuation = continuationSection(worker);
+    const payloadBlock = continuation.match(/```json\r?\n([\s\S]*?)\r?\n```/)?.[1];
+    expect(payloadBlock, 'continuation dispatch JSON payload should be present').toBeDefined();
+    const payload = JSON.parse(payloadBlock!) as {
+      workflow_name?: string;
+      inputs?: Record<string, string>;
+      command?: string;
+      issue_number?: string;
+    };
 
     expect(dispatcher).not.toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
     expect(worker).toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
     expect(worker).toContain("startsWith(github.event.pull_request.head.ref, 'squad/implement-')");
     expect(listInBlock(workerDispatch, 'workflows')).toContain('squad');
     expect(scalarInBlock(workerDispatch, 'target-ref')).toContain('github.event.repository.default_branch');
-    expect(worker).toContain('"command": "implement"');
-    expect(worker).toContain('Never call the generic `dispatch_workflow` tool');
+    expect(payload).toMatchObject({
+      workflow_name: 'squad',
+      inputs: {
+        command: 'implement',
+        issue_number: '{parent-epic-number}',
+      },
+    });
+    expect(payload.command).toBeUndefined();
+    expect(payload.issue_number).toBeUndefined();
+    expect(continuation).toMatch(/Never edit files or create a\s+pull request in this mode/);
+    expect(continuation).toContain('Always leave a visible next step');
+    expect(continuation).toContain('Never emit `noop` for a merge continuation');
     expect(dispatcher).toMatch(/available-slots = max\(0, \d+ - active-implementation-count\)/);
     expect(dispatcher).toContain('fills newly available slots');
   });

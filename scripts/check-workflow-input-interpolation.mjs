@@ -50,6 +50,17 @@ const SCAN_DIRS = [
 // was wrong.
 const INPUT_REF = /github\.event\.inputs\.[A-Za-z0-9_]+/g;
 const INTERPOLATION = /\$\{\{[^}]*\}\}/g;
+const ACTION_INPUT_NAMES = new Set(['command', 'action', 'mode', 'operation']);
+const DESTRUCTIVE_DEFAULTS = new Set([
+  'adopt',
+  'cast',
+  'cast-member',
+  'connect',
+  'implement',
+  'plan accept',
+  'plan activate',
+  'retire',
+]);
 
 /** Collect .md files from a directory tree, skipping nothing -- these trees are small. */
 function collectMarkdown(dir) {
@@ -78,6 +89,64 @@ function bodyStartLine(lines) {
   return 0;
 }
 
+function frontmatterEndLine(lines) {
+  if (lines[0]?.trim() !== '---') return -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '---') return i;
+  }
+  return -1;
+}
+
+function parseScalar(value) {
+  return value
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .trim();
+}
+
+function checkWorkflowDispatchActionDefaults(file, lines) {
+  const end = frontmatterEndLine(lines);
+  if (end < 0) return;
+
+  const workflowDispatchIndent = lines.findIndex((line, idx) =>
+    idx < end && /^ {2}workflow_dispatch:\s*$/.test(line)
+  );
+  if (workflowDispatchIndent < 0) return;
+
+  const inputsLine = lines.findIndex((line, idx) =>
+    idx > workflowDispatchIndent && idx < end && /^ {4}inputs:\s*$/.test(line)
+  );
+  if (inputsLine < 0) return;
+
+  let currentInput = null;
+  for (let i = inputsLine + 1; i < end; i++) {
+    const line = lines[i];
+    if (/^ {0,3}\S/.test(line)) break;
+
+    const inputMatch = line.match(/^ {6}([A-Za-z0-9_-]+):\s*$/);
+    if (inputMatch) {
+      currentInput = inputMatch[1];
+      continue;
+    }
+
+    if (!currentInput || !ACTION_INPUT_NAMES.has(currentInput)) continue;
+
+    const defaultMatch = line.match(/^ {8}default:\s*(.+)$/);
+    if (!defaultMatch) continue;
+
+    const defaultValue = parseScalar(defaultMatch[1]).toLowerCase();
+    if (!DESTRUCTIVE_DEFAULTS.has(defaultValue)) continue;
+
+    violations.push({
+      file: relative(REPO_ROOT, file).replace(/\\/g, '/'),
+      line: i + 1,
+      ref: `${currentInput}.default`,
+      text: line.trim(),
+      kind: 'destructive-default',
+    });
+  }
+}
+
 const violations = [];
 let scannedFiles = 0;
 
@@ -89,6 +158,7 @@ for (const relDir of SCAN_DIRS) {
     scannedFiles++;
     const lines = readFileSync(file, 'utf8').split(/\r?\n/);
     const start = bodyStartLine(lines);
+    checkWorkflowDispatchActionDefaults(file, lines);
 
     for (let i = start; i < lines.length; i++) {
       const line = lines[i];
@@ -105,6 +175,7 @@ for (const relDir of SCAN_DIRS) {
           line: i + 1,
           ref,
           text: line.trim(),
+          kind: 'bare-input-reference',
         });
       }
     }
@@ -119,21 +190,23 @@ if (violations.length === 0) {
 }
 
 console.error(
-  `Workflow input interpolation check FAILED: ${violations.length} bare github.event.inputs.* reference(s) in prompt bodies.\n`,
+  `Workflow input interpolation check FAILED: ${violations.length} workflow input issue(s).\n`,
 );
 console.error(
-  'These name an expression without resolving it, so the agent receives the literal text',
+  'Bare prompt references name an expression without resolving it, so the agent receives the literal text',
 );
-console.error('instead of the dispatched value -- and silently no-ops.\n');
+console.error('instead of the dispatched value -- and silently no-ops.');
+console.error('Destructive action defaults let missing dispatch inputs silently run the wrong mode.\n');
 
-for (const { file, line, ref, text } of violations) {
+for (const { file, line, ref, text, kind } of violations) {
   console.error(`  ${file}:${line}`);
-  console.error(`    reference: ${ref}`);
+  console.error(`    ${kind === 'destructive-default' ? 'default' : 'reference'}: ${ref}`);
   console.error(`    line:      ${text}\n`);
 }
 
-console.error('To fix: wrap the reference in an interpolation, e.g.');
+console.error('To fix bare references: wrap the reference in an interpolation, e.g.');
 console.error('  - **Dispatched command:** `${{ github.event.inputs.command }}`');
 console.error('If the prompt genuinely needs to discuss the input rather than its value,');
 console.error('describe it without the literal `github.event.inputs.` prefix.');
+console.error('To fix destructive defaults: make the action input required, or use an inert default.');
 process.exit(1);

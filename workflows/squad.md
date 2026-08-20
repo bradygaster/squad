@@ -15,9 +15,8 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: 'Squad command (e.g., cast, connect org/repo, adopt org/repo, status)'
+        description: 'Squad command (e.g., cast, implement, connect org/repo, adopt org/repo, status)'
         required: false
-        default: 'cast'
       issue_number:
         description: 'Issue number to implement when run manually'
         required: false
@@ -133,20 +132,26 @@ When locating artifacts:
 ## Trigger Context
 
 The dispatch inputs for this run are interpolated below. Treat a non-empty value
-as authoritative; an empty value means this run was not started by a workflow
-dispatch.
+as authoritative. For `workflow_dispatch`, empty expected values are activation
+failures, not commands to reinterpret as Cast.
 
+- **Event name:** `${{ github.event_name }}`
 - **Dispatched command:** `${{ github.event.inputs.command }}`
 - **Dispatched issue number:** `${{ github.event.inputs.issue_number }}`
 
 Resolve the slash command in this order:
 
-1. **Dispatched command** (above) — when non-empty, this run is a workflow
-   dispatch. Use this value as the command and skip the remaining sources.
+1. **Dispatched command** (above) — when the event name is
+   `workflow_dispatch`, this input must be present for the run to proceed. If it
+   is empty, create a visible issue titled
+   `Squad workflow dispatch missing command`, explain that the run cannot
+   continue without `workflow_dispatch.inputs.command`, and stop. When it is
+   non-empty, use this value as the command and skip the remaining sources.
 2. **Issue comment / PR review comment:** `github.event.comment.body` — the full
    comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
-4. Otherwise default to `cast`.
+4. Otherwise default to `cast` only for an explicit `/squad` slash command with
+   no arguments.
 
 Resolve the target issue in this order:
 
@@ -156,8 +161,11 @@ Resolve the target issue in this order:
 
 **Never emit `noop` when the dispatched command is non-empty.** A workflow
 dispatch is always actionable: run the named mode against the dispatched issue
-number. If the dispatched command is non-empty but the dispatched issue number
-is empty, post a comment naming the missing input rather than exiting silently.
+number. If the dispatched command is non-empty and names an issue-bound mode
+(`research`, `triage`, `plan*`, or `implement`) but no dispatched or triggering
+issue number exists, create a visible issue titled
+`Squad workflow dispatch missing issue_number`, explain that the run cannot
+continue without `workflow_dispatch.inputs.issue_number`, and stop.
 
 The activation job already ran `squad init --preset default`, which produced a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast

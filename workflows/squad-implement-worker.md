@@ -223,22 +223,29 @@ For a merged pull request:
    relationship, falling back to its `Parent: #N` body line.
 3. If no parent epic exists, comment on the merged pull request saying its issue
    is standalone and that no further work was queued, then stop.
-4. Call the workflow-specific `squad` safe-output tool exactly once:
+4. Call the prompt-listed `dispatch_workflow` safe-output tool exactly once with
+   the workflow inputs nested under `inputs`:
 
 ```json
 {
-  "command": "implement",
-  "issue_number": "{parent-epic-number}"
+  "workflow_name": "squad",
+  "inputs": {
+    "command": "implement",
+    "issue_number": "{parent-epic-number}"
+  }
 }
 ```
 
-Never call the generic `dispatch_workflow` tool. Never edit files or create a
-pull request in this mode. Stop after the `squad` workflow is dispatched.
+Do not pass `command` or `issue_number` as top-level `dispatch_workflow`
+arguments; gh-aw only forwards workflow inputs from the nested `inputs` object.
+Never edit files or create a pull request in this mode. Stop after the `squad`
+workflow is dispatched and the visible continuation comment is queued.
 
 **Always leave a visible next step.** Every merge continuation ends with a
 comment — never a silent exit. Cover both terminal cases:
 
-- Parent epic resolved → name the epic and state that its next children were
+- Parent epic resolved → comment on the parent epic (`item_number` set to the
+  parent epic number), name the epic, and state that its next children were
   queued.
 - No parent epic → state that the pull request's issue is standalone and that
   nothing further was queued.
