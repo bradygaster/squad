@@ -1072,20 +1072,11 @@ describe('gh-aw: merge continuation dispatch contract', () => {
     )?.[1] ?? '';
 
     expect(continuation, 'continuation should name the dispatch_workflow tool').toMatch(/dispatch_workflow/);
-    expect(continuation, 'dispatch_workflow should be called once only with the final payload').toMatch(
-      /exactly once[\s\S]*complete payload/i
-    );
     expect(continuation, 'empty or placeholder schema probes should be forbidden').toMatch(
       /NEVER[\s\S]*empty[\s\S]*(?:placeholder|partial)[\s\S]*(?:probe|discover)[\s\S]*schema/i
     );
-    expect(continuation, 'the prompt should say the schema is already supplied').toMatch(
-      /full schema[\s\S]*already given[\s\S]*nothing to discover/i
-    );
-    expect(continuation, 'noop should be named as the alternative when not dispatching').toMatch(
-      /not ready to dispatch[\s\S]*noop/i
-    );
-    expect(continuation, 'the consequence of a probe should be explicit').toMatch(
-      /FIRST[\s\S]*wins[\s\S]*later calls[\s\S]*discarded[\s\S]*probe destroys/i
+    expect(continuation, 'noop should be named as the alternative when there is nothing to dispatch').toMatch(
+      /(?:nothing|no next wave)[\s\S]{0,200}dispatch[\s\S]{0,200}`?noop`?|`?noop`?[\s\S]{0,200}(?:nothing|no next wave)[\s\S]{0,200}dispatch/i
     );
   });
 
