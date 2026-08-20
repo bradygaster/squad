@@ -881,3 +881,8 @@ This repo uses changesets, so Squad should normally write `.changeset/*.md`, not
 ## Follow-up
 
 When implementation happens, update the workflow source and recompile the installed `.lock.yml` in any consuming/test repo used for validation. Keep the existing `excluded-files` rules; they solve a different problem and remain independent of this decision.
+
+### 2026-03-26: Copilot git safety rules
+**By:** RETRO (Security)
+**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits staging the entire working tree with a bare-dot `git add` (i.e. `git add` followed by just `.`), requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
+**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
