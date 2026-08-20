@@ -55,3 +55,21 @@ Decision written to `.squad/decisions/inbox/flight-triage-session-plan.md`.
 
 Flight's protected-files policy decision is now canonical: Squad's worker default should use `protected-files` object form with `policy: fallback-to-issue` and `exclude: [README.md]`. The guard protects reviewers from high-leverage changes becoming routine agent output; `CHANGELOG.md` remains protected by default. Adoption-time repo configuration should later expose this choice alongside the Actions preflight.
 
+
+## 2026-08-20 — gh-aw pre-E2E scope cut (READ-ONLY triage)
+
+- Audited my 5 gh-aw issues (#1729, #1734, #1738, #1762, #1764). Verdicts: DEFER #1729 (epic tracker, phases wave:2/3), DEFER #1734 (Phase 2 enforcement, blocked on #1733 soak, post-E2E), CLOSE #1738 (speculative RFC, second invocation surface, premature), CLOSE #1762 (decision made: docs suffice, preflight deferred to #1605), CLOSE #1764 (decision made: delete all 3 branches).
+- Verified #1764 branches: all 5 substantive files from copilot/1592-review-fixes already on origin/dev; other two branches are symmetric CRLF/reformatting churn. Delete all three.
+- Scope call: E2E-readiness gate = #1772/#1758/#1759/#1730/#1732/#1768 (correctness + honest fixtures + CI gate). Recommend wave:1 hard cap of 6; demote #1731 to wave:2, treat #1761 as non-gating.
+- Core finding: workstream has two axes bleeding together — (a) making the existing SDLC path correct/reliable (tomorrow's real goal) and (b) NEW capabilities on top (#1729 review gate, #1738 app-chat). Tomorrow tests (a); everything in (b) must stay out of wave:1.
+- Wrote decision to .squad/decisions/inbox/flight-gh-aw-e2e-scope-cut.md.
+
+## 📌 Team update — 2026-08-20T11:59:44-07:00
+
+gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
+
+
+## 📌 Team update — 2026-08-20T13:20:20-07:00
+
+Batch 2: pre-merge gate review of PRs #1775/#1776/#1777/#1778 in progress. All four are green and mergeable. Key validation points: (1) #1777 and #1778 tests verified to fail against pre-fix state; (2) #1778 scope covers #1759+#1756+#1758 all three; (3) `max: 2` and activation guard are complementary not redundant. Board is clean: M1-M5 created, wave labels corrected, #1779 filed to M3.
+
