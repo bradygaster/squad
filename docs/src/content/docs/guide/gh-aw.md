@@ -15,7 +15,7 @@ This guide covers setup, every slash command, and daily usage patterns.
 
 ## Quick start
 
-Six steps from zero to a working Squad team:
+Five steps from zero to a working Squad team:
 
 ```bash
 # 1. Install the gh-aw extension (one-time)
@@ -31,15 +31,12 @@ gh aw add \
   bradygaster/squad/workflows/squad-implement-worker.md@dev \
   bradygaster/squad/workflows/squad.md@dev
 
-# 4. Compile the workflows to lock files
-gh aw compile
-
-# 5. Commit and push the workflow sources and generated files
-git add -- .gitattributes .github/aw/ .github/workflows/
+# 4. Commit and push the workflow sources and generated files
+git add -- .gitattributes .github/workflows/ .github/skills/
 git commit -m "ci: add Squad agentic workflow"
 git push
 
-# 6. Open an issue and type /squad cast — done!
+# 5. Open an issue and type /squad cast — done!
 ```
 
 After pushing, open an issue in your repo and write `/squad cast` in the body or
@@ -95,31 +92,39 @@ that dispatches it.
 > **Branch note:** `@dev` pulls from the latest development branch where new modes and fixes land first. Stay on `@dev` to get improvements as they ship. Once gh-aw support reaches stable, you can switch to `@main` or drop the ref entirely for the default branch.
 
 This registers the Squad workflow in your repository's agentic workflow
-configuration.
+configuration and automatically compiles the workflow definitions into
+deterministic `.lock.yml` files — no separate compile step is needed.
 
-### Compile to lock files
-
-```bash
-gh aw compile
-```
-
-Compiling resolves both workflow definitions and their shared imports into
-deterministic `.lock.yml` files. These lock files are what GitHub Actions
-actually executes.
+> **Restricted secrets prompt:** During `gh aw add`, you may see a safe-update-mode
+> warning listing new restricted secrets (`SQUAD_GITHUB_APP_PRIVATE_KEY`,
+> `SQUAD_GITHUB_TOKEN`). This is expected. Run with `--approve` to accept the changes:
+>
+> ```bash
+> gh aw add --approve \
+>   bradygaster/squad/workflows/squad-implement-worker.md@dev \
+>   bradygaster/squad/workflows/squad.md@dev
+> ```
 
 ### Commit the workflow files
 
 ```bash
-git add -- .gitattributes .github/aw/ .github/workflows/
+git add -- .gitattributes .github/workflows/ .github/skills/
 git commit -m "ci: add Squad agentic workflow"
 git push
 ```
 
-This stages everything under `.github/aw/` and `.github/workflows/` so new shared imports, additional lock files, or updated shared workflow files are all captured automatically — no need to update the command as Squad's shipped files evolve.
+This stages everything `gh aw add` wrote — workflow source files and their
+compiled `.lock.yml` files under `.github/workflows/`, the agentic-workflows
+skill under `.github/skills/`, and the `.gitattributes` entry that marks lock
+files as generated. No need to update this command as Squad's shipped files
+evolve.
 
-Downloaded workflow audit data under `.github/aw/logs/` is local diagnostic
-output and should not be committed. The `gh aw logs` and `gh aw audit` commands
-normally create `.github/aw/logs/.gitignore`; if it is missing, add:
+> **Troubleshooting:** If the lock files are missing or you need to regenerate
+> them manually, run `gh aw compile`. This is only needed if something went wrong
+> during `gh aw add`.
+
+Downloaded workflow audit data is local diagnostic output and should not be
+committed. If a `.gitignore` is missing from your workflow logs directory, add:
 
 ```gitignore
 # Ignore all downloaded workflow logs
