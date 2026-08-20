@@ -500,9 +500,10 @@ description: Dispatch implementation work to the squad-implement-worker workflow
 ---
 
 Implement mode dispatches an isolated implementation worker for a regular issue.
-When invoked on an epic, it dispatches workers for up to three currently
-unblocked children. The worker relays merged implementation pull requests back
-to this mode so it can automatically refill the parent epic's available slots.
+When invoked on a parent (initiative or epic), it descends the sub-issue
+hierarchy to the **leaf tasks** and dispatches workers for up to three currently
+unblocked leaf tasks. The worker relays merged implementation pull requests back
+to this mode so it can automatically refill the parent's available slots.
 
 **Acknowledge:** Post `🤖 Squad is preparing implementation…` using the
 `add-comment` safe-output.
@@ -514,64 +515,70 @@ to this mode so it can automatically refill the parent epic's available slots.
    triggering issue. If invoked from a pull request review comment, explain that
    `/squad implement` must be run from the target issue.
 2. Read the target issue title, body, labels, state, and relevant comments.
-3. Find open child issues using native GitHub sub-issue relationships. Also
-   include open issues whose body contains a
-   `Parent: #{target-issue-number}` line for compatibility with older plans.
-4. If child issues exist, treat the target as an epic and follow the Epic
-   Dispatch procedure below. Do not implement the epic body directly.
-5. If no child issues exist, call the workflow-specific
-   `squad_implement_worker` safe-output tool with `issue_number` set to the
-   target issue number.
-6. Post a comment linking the dispatched worker run. The worker performs
+3. Discover the target's open descendant issues using native GitHub sub-issue
+   relationships, descending recursively through **every** level of the
+   hierarchy (initiative → epic → task), not just immediate children. Also
+   include open issues whose body contains a `Parent: #{ancestor-issue-number}`
+   line for any ancestor, for compatibility with older plans.
+4. Identify the **leaf tasks**: open descendants that themselves have no open
+   sub-issues. Intermediate parents (initiatives and epics that only group other
+   issues) are never dispatched to a worker — only leaf tasks are implemented.
+5. If the target has one or more open leaf descendants, treat the target as a
+   parent and follow the Epic Dispatch procedure below over the leaf-task set.
+   Do not implement the parent body directly.
+6. If the target has no open descendants (it is itself a leaf), call the
+   workflow-specific `squad_implement_worker` safe-output tool with `issue_number`
+   set to the target issue number.
+7. Post a comment linking the dispatched worker run. The worker performs
    dependency, duplicate pull request, routing, implementation, and validation
    checks.
 
 ##### Epic Dispatch
 
-For each open child issue:
+For each open leaf task in the target's descendant set:
 
 1. Parse its `Depends on:` line and check the state of every referenced issue.
-2. Exclude children with any open dependency.
-3. Find children that already have an open pull request whose branch starts
-   with `squad/implement-{child-number}-` or whose body closes that child.
-   These are active implementation children.
+2. Exclude leaf tasks with any open dependency.
+3. Find leaf tasks that already have an open pull request whose branch starts
+   with `squad/implement-{leaf-number}-` or whose body closes that leaf task.
+   These are active implementation tasks.
 4. Calculate `available-slots = max(0, 3 - active-implementation-count)`.
-5. Exclude active implementation children from the ready set.
-6. Sort ready children by issue number and select at most `available-slots`.
+5. Exclude active implementation tasks from the ready set.
+6. Sort ready leaf tasks by issue number and select at most `available-slots`.
 
-For each selected child, call the workflow-specific `squad_implement_worker`
+For each selected leaf task, call the workflow-specific `squad_implement_worker`
 safe-output tool with this input:
 
 ```json
 {
-  "issue_number": "{child-issue-number}"
+  "issue_number": "{leaf-issue-number}"
 }
 ```
 
 Never call the generic `dispatch_workflow` tool. Never emit a dispatch without a
 non-empty numeric `issue_number`. Emit exactly one workflow-specific dispatch
-per selected child, and only report a child as dispatched after the tool returns
-success.
+per selected leaf task, and only report a leaf task as dispatched after the tool
+returns success.
 
-Post a comment on the epic listing the dispatched children, blocked children,
-children with existing implementation pull requests, and any ready children
-deferred because all three slots are occupied. If no child is ready or no slot
-is available, post the status summary and do not dispatch a workflow.
+Post a comment on the target listing the dispatched leaf tasks, blocked leaf
+tasks, leaf tasks with existing implementation pull requests, and any ready leaf
+tasks deferred because all three slots are occupied. If no leaf task is ready or
+no slot is available, post the status summary and do not dispatch a workflow.
 
-**Always leave a visible next step.** Every Implement run against an epic ends
-with a comment on that epic — never a silent exit. Cover each terminal case:
+**Always leave a visible next step.** Every Implement run against a parent ends
+with a comment on that parent — never a silent exit. Cover each terminal case:
 
-- Children dispatched → name them and state how many children remain open.
-- All remaining children blocked → name the blocking dependencies.
+- Leaf tasks dispatched → name them and state how many leaf tasks remain open.
+- All remaining leaf tasks blocked → name the blocking dependencies.
 - All three slots occupied → name the in-flight pull requests.
-- No open children left → state that the epic's implementation is complete.
+- No open leaf tasks left → state that the parent's implementation is complete.
 
 Never emit `noop` for an Implement run. `noop` is not reported as a comment, so
-it strands the epic with no signal about what to do next — the exact failure
+it strands the parent with no signal about what to do next — the exact failure
 this procedure exists to prevent.
 
 After each implementation pull request merges, this workflow runs again and
-fills newly available slots. Continue until the epic has no open children.
+fills newly available slots. Continue until the parent has no open leaf tasks.
 `/squad implement` remains available as a manual recovery command.
 
 ## skill: `squad-research`
@@ -600,13 +607,19 @@ Budget-aware breadth-first investigation: architecture mapping, technology audit
 
 `add-comment` with `data: {"squad_artifact":"research","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
-Structure: `## 🔬 Squad Research — {Title}` → Summary (2-3 sentences) → Current State → Gap Analysis → Risk & Complexity table (Area|Risk 🟢/🟡/🔴|Complexity S/M/L/XL|Notes) → Key Findings (with evidence) → Recommendations → Next Step (`/squad triage` or `/squad plan`).
+Structure: `## 🔬 Squad Research — {Title}` → Summary (2-3 sentences) → **Goals** → **Non-goals** → **Evidence table** (columns `Rn` | Finding | Risk 🟢/🟡/🔴 | Complexity S/M/L/XL | Citation) → **Load-bearing assumptions** → **Open decisions** → **Acceptance framing** → Recommendations (each referencing the `Rn` IDs it rests on) → Next Step (`/squad triage` or `/squad plan`).
 
-Must be ≥200 chars of substantive findings. Tailor sections to scope.
+**Structural contract (not a length floor).** The artifact MUST contain every one of these labeled sections: **Evidence table**, **Goals**, **Non-goals**, **Load-bearing assumptions**, **Open decisions**, **Acceptance framing**. Every evidence row carries a stable `Rn` traceability ID (`R1`, `R2`, …) and exactly one citation token — a file path, `path:line`, URL, or `#issue`/`#pr` reference — so each finding is independently checkable. Recommendations and load-bearing assumptions reference the `Rn` IDs they rest on. Assert structure, not length: never pad to hit a size target.
 
 ##### Step 4: Verify Completion [MANDATORY]
 
-Confirm: structured artifact data posted, heading present, ≥200 chars substantive content, ≥1 recommendation. If ANY fails, go back and post now.
+Confirm ALL of the following, each independently checkable from the posted comment without re-running research. If ANY fails, fix and re-post now:
+
+1. Structured artifact `data` posted.
+2. `## 🔬 Squad Research` heading present.
+3. Every required section present: **Evidence table**, **Goals**, **Non-goals**, **Load-bearing assumptions**, **Open decisions**, **Acceptance framing**.
+4. Every evidence row has a unique `Rn` ID and exactly one citation token.
+5. ≥1 recommendation, each tracing to ≥1 `Rn` ID.
 
 ## skill: `squad-plan`
 ---
@@ -623,7 +636,15 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 1. Read issue body (the epic/brief).
 2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
-3. Read `.squad/team.md` if exists for agent assignments.
+3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:** every
+   `Owner` and `Agent` value MUST be a cast **Name** taken verbatim from the
+   `## Members` table's `Name` column of `.squad/team.md` (e.g. `Flight`,
+   `Procedures`, `EECOM`) — never a Role string (`Lead`, `Prompt Engineer`,
+   `DevRel`) and never a lowercased role (`lead`, `devrel`, `reviewer`). Map each
+   work item's domain to an owner via `.squad/routing.md`, then resolve that
+   owner to its exact `Name`. If no cast member fits, use `@copilot`. This
+   binding governs every `Owner`/`Agent` column and every `squad:{owner}` label
+   emitted downstream.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -635,6 +656,8 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 `add-comment` with `data: {"squad_artifact":"plan","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
+
+The `Owner` column MUST be a cast **Name** per the Owner/Agent binding rule (Step 1) — a value from the `Name` column of `.squad/team.md`, never a Role string.
 
 Do NOT create issues.
 
@@ -649,9 +672,21 @@ description: Accept a plan (whole plan or a single phase) and record the accepte
 
 **Acknowledge:** `🤖 Squad is creating the planned issues…`
 
-##### Step 1: Find Plan
+##### Step 1: Find Plan and Route
 
-Find latest `plan` artifact comment for this issue. If none: reply "No plan found. Run `/squad plan` first."
+Resolve which planning path this issue is on, in this order:
+
+1. Find the latest `program` and `implementation` artifacts for this issue. If
+   **either** exists, this is a granular (long-path) plan. Run the granular
+   sequence in this exact order — **Accept Scope** (`squad-plan-accept-scope`) →
+   **Accept Implementation** (`squad-plan-accept-implementation`) → **Activate**
+   (`squad-plan-activate`) — each honoring its own preconditions (e.g. Accept
+   Implementation requires a `validation` PASS). Then stop; do NOT run the
+   legacy fast-path steps below.
+2. Otherwise, find the latest `plan` artifact. If found, continue with the
+   legacy fast-path behavior in the steps below.
+3. If none of `program`, `implementation`, or `plan` exist, reply "No plan found.
+   Run `/squad plan` first." and stop.
 
 ##### Step 1a: Phase Resolution
 
@@ -667,7 +702,7 @@ If plan has phases: Root → Phase issues → Task issues. Flat plan: tasks dire
 
 For each work item, `create-issue`:
 - Title: work item title
-- Labels: `squad` (color `9B8FCC`), `squad:{owner}` (color `9B8FCC`)
+- Labels: `squad` (color `9B8FCC`), `squad:{owner}` (color `9B8FCC`), where `{owner}` is the work item's cast **Name** lowercased (e.g. Owner `Flight` → `squad:flight`). It MUST resolve to a `Name` row in `.squad/team.md`; never mint a role-derived label such as `squad:lead` or `squad:reviewer`.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat)
 - Size: set Project field if available, else body `**Size:**` line
@@ -807,11 +842,11 @@ Not created yet — describes what activation will produce.
 
 `add-comment` with `data: {"squad_artifact":"program","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
-Structure: `## 📋 Squad Program Plan` → Intent + triage ref → Milestones table (Milestone|Outcome|Contains) → Initiatives & Epics (per initiative: outcome, epic table with Description|Stories|Milestone|Depends On, details per epic with Outcome/Stories/Acceptance criteria) → Unresolved Decisions table → Program Metadata → Dependency Graph → Next: `/squad plan accept scope` or `/squad plan program revise`.
+Structure: `## 📋 Squad Program Plan` → Intent + triage ref → Milestones table (Milestone|Outcome|Contains) → Initiatives & Epics (per initiative: outcome, epic table with Description|Stories|Milestone|Depends On, details per epic with Outcome/Stories/Acceptance criteria) → Unresolved Decisions table → Program Metadata → Dependency Graph → Next: `/squad plan implementation` or `/squad plan program revise`.
 
 ##### Step 6: Update Lifecycle
 
-Set Program Plan = `✅ Done`, state = Program Planned, next = `/squad plan accept scope`.
+Set Program Plan = `✅ Done`, state = Program Planned, next = `/squad plan implementation`.
 
 ## skill: `squad-plan-program-revise`
 ---
@@ -850,17 +885,21 @@ Search in order: `scope-accepted` artifact (use as authoritative) → `program` 
 
 Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Rollout notes.
 
+**Agent binding rule:** every `Agent` value MUST be a cast **Name** from the `Name` column of `.squad/team.md` (resolved via `.squad/routing.md`), never a Role string (`Lead`, `DevRel`) or lowercased role (`lead`, `reviewer`). If no cast member fits, use `@copilot`.
+
 Rules: no task > max_task_size. DAG only. Every task traces to program item. Every epic has ≥1 task. Vertical slices. Group into phases by dependency order (Phase 1 = no deps).
 
 ##### Step 3: Validate Structure
 
-Check: sizes ≤ L, no cycles, traceability, coverage, agent validity. Fix before posting.
+Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` resolves to a `Name` row in `.squad/team.md`, never a Role string). Fix before posting.
 
 ##### Step 4: Post Implementation Plan
 
 `add-comment` with `data: {"squad_artifact":"implementation","schema_version":"1","origin_issue":{issue_number},"phases":[]}`.
 
-Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Validation Pre-check → Next: `/squad plan validate` or `/squad plan accept implementation`.
+Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Validation Pre-check → Next: `/squad plan validate`.
+
+The `Agent` column MUST be a cast **Name** per the Agent binding rule (Step 2) — a value from the `Name` column of `.squad/team.md`, never a Role string.
 
 ##### Step 5: Update Lifecycle
 
@@ -909,11 +948,11 @@ Rules: any ❌ = FAILED heading+verdict. Warnings alone ≠ failure.
 
 ##### Step 4: Update Lifecycle
 
-Set Validation = `✅ Done` or `❌ Failed`. Next on pass: `/squad plan accept implementation`. On fail: fix + re-run.
+Set Validation = `✅ Done` or `❌ Failed`. Next on pass: `/squad plan accept scope`. On fail: fix + re-run.
 
 ##### Step 5: Surface Next Action
 
-Pass: suggest accept. Fail: suggest fix + re-validate.
+Pass: suggest `/squad plan accept scope`. Fail: suggest fix + re-validate.
 
 ## skill: `squad-plan-accept-scope`
 ---
@@ -942,7 +981,7 @@ Content: `## ✅ Scope Accepted` → program plan version link, accepted by, dat
 
 ##### Step 4: Update Lifecycle
 
-Set Scope = `✅ Done`, next = `/squad plan implementation`.
+Set Scope = `✅ Done`, next = `/squad plan accept implementation`.
 
 ## skill: `squad-plan-accept-implementation`
 ---
