@@ -167,7 +167,18 @@ safe-outputs:
       - "tests/**"
       - "tools/**"
       - "web/**"
-    protected-files: request_review
+    # `request_review` is unusable here: the PR handler logs it as a soft action,
+    # then the signed-push path re-validates the payload and rejects anything but
+    # `allow`, failing with "Signed-commit payload violates file-protection policy".
+    # `fallback-to-issue` routes a protected write to a review issue instead.
+    # README.md is excluded because it is high-frequency, low-control-plane work
+    # that ordinary PR review already covers; leaving it protected would turn every
+    # docs task into an issue rather than a PR. Manifests, lockfiles, CODEOWNERS,
+    # SECURITY.md, CONTRIBUTING.md, and CHANGELOG.md stay protected.
+    protected-files:
+      policy: fallback-to-issue
+      exclude:
+        - README.md
     excluded-files:
       # The nested `**/*.md`, `**/*.yml`, and `**/*.json` patterns above would
       # otherwise let this worker rewrite its own workflow definition, agent
