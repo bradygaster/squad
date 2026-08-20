@@ -34,3 +34,88 @@ gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: C
 
 Batch 2 complete. Shipped #1759 (cast name binding), structural contract for #1756, all 3 #1758 defects, and empty-dispatch guard in PR #1778. Key pattern: before deferring a fix as unverifiable, look for a spec the code should already conform to — `squad-planning-ontology.md:48-87` was that spec for #1758.3. Empty-probe failure uses `::warning::` annotation (not a comment) because there is no triggering issue to post to. PR #1778 green, awaiting Flight gate.
 
+📌 **Team update (2026-03-25T18:11Z):** Model catalog updated to current platform offerings — removed 2 stale models (claude-opus-4.6-fast, gpt-5), added 5 new models (claude-sonnet-4.6, claude-opus-4.6-1m, gpt-5.4, gpt-5.3-codex, gpt-5.4-mini), bumped defaults (code: claude-sonnet-4.6, specialist: gpt-5.3-codex), restructured fallbacks. All 5 squad.agent.md template copies synchronized. Merged in #588.
+
+### 2025-07: Model catalog refresh (#588)
+
+**Problem:** The valid models catalog, fallback chains, role-to-model mappings, and default model references in `squad.agent.md` were stale — missing `claude-sonnet-4.6`, `gpt-5.4`, `gpt-5.3-codex`, `gpt-5.4-mini`, `claude-opus-4.6-1m` and still referencing removed models `claude-opus-4.6-fast` and standalone `gpt-5`.
+
+**Fix:** Full catalog refresh across all model-referencing sections:
+- Catalog: added 5 new models, removed 2 stale ones
+- Defaults: code-writing tasks bumped to `claude-sonnet-4.6` (newest standard); code specialist bumped to `gpt-5.3-codex`
+- Fallback chains: restructured with new models in sensible positions (e.g., `gpt-5.4-mini` in fast tier, `gpt-5.4` in standard)
+- All 5 copies synced via `sync-templates.mjs`
+
+**Pattern:** Model catalogs drift. When the platform adds/removes models, every section referencing models needs updating — not just the catalog list. Search for all model name strings before considering the refresh complete.
+### 2026-03-25: VS Code routing enforcement investigation (#613)
+
+**Problem:** In VS Code, the coordinator reads routing rules but doesn't enforce them — continues working inline instead of dispatching via `runSubagent`. Andreas (andikrueger) reproduced and the agent itself admitted it violated the rules.
+
+**Root cause (dominant):** CLI-centric enforcement language. The CRITICAL RULE says "MUST use the `task` tool" — but in VS Code the dispatch tool is `runSubagent`. When `task` isn't available, the coordinator falls through Platform Detection's "Fallback mode" (work inline) instead of using `runSubagent`. The VS Code adaptations section is buried 360 lines below the CRITICAL RULE and reads as optional, not mandatory.
+
+**Amplifying factors:**
+1. Prompt saturation: 950 lines / 80KB. Routing constraint competes with 900+ lines of governance, lifecycle, and reference material. Core dispatch loop is ~200 lines; rest is noise.
+2. Template duplication: CLI 1.0.11 discovers all `*.agent.md` from cwd to git root. Squad has 5 copies — only `.github/agents/squad.agent.md` should be discoverable.
+
+**Proposed fixes (5 total, prioritized):**
+- P0: Rewrite enforcement language to be platform-neutral ("dispatch tool" not "`task` tool")
+- P0: Add routing reinforcement at bottom of prompt (LLMs weight start/end more than middle)
+- P1: Rename template copies to `.agent.md.template` to prevent CLI discovery
+- P1: Extract ~350 lines to lazy-loaded reference files (worktree, Ralph, casting, MCP)
+- P1: Move VS Code dispatch block immediately after CRITICAL RULE
+
+**Key pattern learned:** Enforcement language must name ALL dispatch mechanisms, not just the CLI one. Platform-specific instructions buried deep in a long prompt get lost — they need to be co-located with the constraint they modify. LLM attention patterns favor prompt boundaries (top/bottom) over the middle.
+
+**Proposal filed:** `.squad/decisions/inbox/procedures-vscode-routing-fix.md`
+
+### 2026-08-20: Long-path lifecycle repairs (#1758, #1759, #1756)
+
+Fixed three defects in `workflows/squad.md`, all gating the 2026-08-21 e2e series. Every touched stage was in Sims' "NEVER EXERCISED" bucket, so I anchored each fix in a readable source of truth rather than inference.
+
+- **#1758.1 (dead-code routing):** `squad-plan-accept` Step 1 unconditionally hard-failed "No plan found" on a missing `plan` artifact, so the Behavior note's `program`/`implementation` routing could never run. Rewrote Step 1 as "Find Plan and Route": check `program`/`implementation` first → run Accept Scope → Accept Impl → Activate; only reply "No plan found" when none of `program`/`implementation`/`plan` exist.
+- **#1758.2 (epics dispatched as tasks):** Implement mode found immediate children of root — Epics in a 3-level hierarchy — and dispatched implementation workers on them. Changed Step 1 + Epic Dispatch to descend the sub-issue hierarchy recursively and dispatch only **leaf tasks** (open issues with no open sub-issues). Kept the 3-slot cap and worker contract intact (I do NOT own `squad-implement-worker.md`).
+- **#1758.3 (validate ordering):** PROVABLE, not speculative. The planning ontology (`shared/squad-planning-ontology.md:48-87`) is the authoritative state machine and sequences `program → implementation → validate → accept scope → accept implementation → activate`. `squad.md`'s `next=` hints had drifted (program→accept-scope, validate→accept-impl, accept-scope→implementation). Corrected all hints to match the ontology, so validate precedes BOTH accept steps.
+- **#1759 (Role strings in Owner/Agent):** Added an explicit Owner/Agent binding rule (resolve to the `Name` column of `.squad/team.md`, never a Role string) at every emission site (squad-plan Step 1/Step 3, squad-plan-implementation Step 2/3/4) and made `squad:{owner}` label minting use the lowercased cast Name, forbidding `squad:lead`.
+- **#1756 (char floor → structural contract):** Replaced the research artifact's `≥200-char` floor with a structural contract (required sections: Evidence table, Goals, Non-goals, Load-bearing assumptions, Open decisions, Acceptance framing; `Rn` traceability IDs; one citation token per evidence row) enforced via the MANDATORY verify step. Shipped ONLY the structural half — the "well-formatted bad plan should FAIL" taste-judgment (#1757) stays deferred.
+
+Tests: `test/gh-aw-plan-lifecycle.test.ts` (23 assertions), incl. a role-leak detector that parses a plan's Owner column against team.md and flags Role strings (`lead`) while passing cast Names (`Procedures`). Build green; gh-aw-quality suite unaffected. No changeset (no `packages/*/src/` touched).
+
+**Proposal filed:** `.squad/decisions/inbox/procedures-long-path-lifecycle-fix.md`
+
+### 2026-07: VS Code routing enforcement — Fix 1 + Fix 2 shipped (#613)
+
+**Implemented** P0 fixes from the VS Code routing proposal:
+
+- **Fix 1 (Platform-Neutral Enforcement):** Rewrote CRITICAL RULE from CLI-specific "`task` tool" language to dispatcher-identity framing ("You are a DISPATCHER, not a DOER") with explicit dispatch mechanism table (CLI → `task`, VS Code → `runSubagent`, fallback → inline as last resort). Updated all 7 enforcement-context references throughout squad.agent.md: anti-patterns #1/#2/#3, constraints block, and spawn template header.
+
+- **Fix 2 (Top-and-Bottom Reinforcement):** Added `## ⚠️ Routing Enforcement Reminder` as final section, exploiting LLM prompt-boundary attention bias. Reinforces dispatcher identity at both top and bottom of the prompt.
+
+**Branch:** `squad/613-vscode-routing-enforcement` — canonical source edited, synced to all 5 copies via `scripts/sync-templates.mjs`, build verified clean.
+
+**Remaining P1 fixes** (template renaming, prompt slimming, VS Code block relocation) deferred to separate PRs per the proposal's ship order.
+
+### 2026-07: PR #619 rebase and merge — model catalog final sync
+
+**Problem:** PR #619 (model catalog update, #588) was the last of 6 PRs in the pre-crash triage merge plan. It had accumulated old dev merge commits and was behind after PRs #620, #627, #624, #611, and #617 merged first. Template renames from #624 (`.agent.md` → `.agent.md.template`) changed which files needed updating.
+
+**Fix:** Used targeted `git rebase --onto dev <base>` to replay only the 2 actual PR commits (skipping accumulated dev merge noise). Rebase applied cleanly — one commit landed, one was auto-dropped as already upstream. After rebase, only `packages/squad-sdk/templates/squad.agent.md.template` and `templates/squad.agent.md.template` needed changes since the canonical and other copies already had the model updates from earlier merges.
+
+**Pattern:** When a PR branch has accumulated merge commits from dev, use `git rebase --onto dev <parent-of-first-PR-commit>` to cherry-pick only the relevant commits. This avoids conflict noise from old merge commits that are already in dev. Also: after template renames, the sync script may overwrite version stamps in the canonical file — revert those before pushing.
+
+### 2026-04-17: Trim copilot-instructions.md (#999)
+
+**Task:** Reduce `.github/copilot-instructions.md` from ~1,300 words / 9KB to ≤750 words / ≤4KB to reduce attention dilution for the Copilot coding agent.
+
+**Key decisions:**
+- Extracted Protected Files (file list, rules, SDK/CLI boundary, anti-patterns) to `.copilot/skills/protected-files/SKILL.md` — replaced with 2-sentence pointer
+- Consolidated Git Safety from 4 sub-sections (Staging, Pushing, Pre-Push Checklist, Branch Contamination Prevention) into a single 7-item flat list; resolved contradictory `git fetch upstream` vs `git fetch origin` (kept `origin`)
+- Compacted Changeset Requirement from 7 lines + code block to 2 sentences
+- Reordered: Team Context, Capability Self-Check, Branch Naming now appear before Git Safety (essential workflow first, safety rules second)
+- Removed duplication with `.squad/copilot-instructions.md` (5 sections were verbatim copies; kept compact versions since both files load)
+- Sweeping Refactor Rules condensed from 5-step list to 2-sentence pointer
+
+**Result:** 397 words / 3KB — well within target. PR #1002.
+
+**Files modified:** `.github/copilot-instructions.md`, `.copilot/skills/protected-files/SKILL.md` (new).
+
+**Pattern:** When trimming agent instructions, extract domain-specific reference content to skills (lazy-loaded on demand) and keep the main instructions file as a routing/workflow document. Skills are the right abstraction for "read this when you touch X" — they don't consume tokens until needed.

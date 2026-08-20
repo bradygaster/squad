@@ -201,7 +201,7 @@ safe-outputs:
     target: "*"
   dispatch-workflow:
     workflows: [squad]
-    max: 1
+    max: 2
     target-ref: ${{ github.event.repository.default_branch }}
 ---
 

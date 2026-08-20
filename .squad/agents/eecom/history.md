@@ -3,6 +3,18 @@
 Summarized by Scribe on 2026-08-20T11:59:44-07:00 because this history exceeded 15KB.
 Full pre-summary history archived at `.squad/agents/eecom/history-archive-2026-08-20T11-59-44-0700.md`.
 Prior archive at `.squad/agents/eecom/history-archive-2026-08-19T13-11-34.130-07-00.md`.
+## 2026-08-20 — #1772 dispatch probe gate fix
+
+- Root cause confirmed: dispatch-workflow: max: 1 causes first-wins semantics; LLM empty probe consumes slot; real dispatch silently dropped.
+- Prior fix #1766 (prompt wording) confirmed insufficient via live run evidence.
+- Fix: raised max to 2 (squad-implement-worker.md) + extended check-workflow-input-interpolation.mjs with checkDispatchWorkflowSchemas() static gate.
+- Static gate validates JSON dispatch examples adjacent to dispatch_workflow references: requires non-empty workflow_name, non-empty inputs, inputs.issue_number.
+- Added 6 new tests in test/gh-aw-quality.test.ts; key structural test fails against max:1 state, passes after fix.
+- Build passes. Decision recorded at .squad/decisions/inbox/eecom-1772-dispatch-probe-gate.md.
+- Coordination needed: Procedures to add squad.md empty-command guard (separate PR).
+
+Summarized by Scribe on 2026-08-19T13:11:34.130-07:00 because this history exceeded 15KB.
+Full pre-summary history archived at `.squad/agents/eecom/history-archive-2026-08-19T13-11-34.130-07-00.md`.
 
 ## Condensed index
 

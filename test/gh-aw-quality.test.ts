@@ -1034,10 +1034,14 @@ describe('gh-aw: merge continuation dispatch contract', () => {
     expect(squadInputs.command.default).toBeUndefined();
   });
 
-  it('documents missing workflow_dispatch issue_number as a visible failure', () => {
-    expect(readText(SQUAD_WORKFLOW)).toMatch(/missing issue_number/i);
-    expect(readText(SQUAD_WORKFLOW)).toMatch(/workflow_dispatch\.inputs\.issue_number/i);
-    expect(readText(SQUAD_WORKFLOW)).toMatch(/create a visible issue/i);
+  it('documents missing workflow_dispatch issue_number as a guarded halt, not a junk issue', () => {
+    const squadText = readText(SQUAD_WORKFLOW);
+    expect(squadText).toMatch(/missing issue_number/i);
+    // The activation guard halts the run with a visible log annotation instead of
+    // minting a junk issue for an empty/malformed dispatch probe (see PR #1777).
+    expect(squadText).toMatch(/::warning::/);
+    expect(squadText).toMatch(/halting with no side effects/i);
+    expect(squadText).not.toMatch(/Squad workflow dispatch missing issue_number/);
   });
 
   it('worker continuation dispatch payload nests keys that Squad declares', () => {
@@ -1086,6 +1090,217 @@ describe('gh-aw: merge continuation dispatch contract', () => {
     )?.[1] ?? '';
     expect(continuation).toMatch(/comment on the parent epic/i);
     expect(continuation).toMatch(/item_number[\s\S]*parent epic number/i);
+  });
+
+  // -------------------------------------------------------------------------
+  // Structural gate: max >= 2 (#1772)
+  // -------------------------------------------------------------------------
+  // The `dispatch-workflow: max: 1` constraint means the FIRST safe-output entry
+  // wins and all later entries are silently discarded.  When the LLM emits an empty
+  // probe first, `max: 1` causes it to consume the only slot and the real dispatch
+  // never fires -- confirmed across three aspiregregator-squad-e2e runs
+  // (32324473906, 32394811753, 32316227601).
+  //
+  // Raising max to 2 gives the real dispatch a second slot even when the LLM
+  // probes first, breaking the silent-discard failure mode without requiring any
+  // change to gh-aw itself.
+  //
+  // This test FAILS against the pre-fix state (max: 1) and PASSES after the fix
+  // (max: 2).  It is the structural test that the wording-only approach (#1766)
+  // lacked: prompt text can be present and the live run still broken; this test
+  // directly asserts the frontmatter value that governs runtime behavior.
+  it('worker dispatch-workflow max is at least 2 to survive a probe + real dispatch', () => {
+    const safeOutputs = extractSafeOutputs(extractFrontmatter(SQUAD_IMPLEMENT_WORKER));
+    const dispatchWorkflow = safeOutputs['dispatch-workflow'];
+    expect(dispatchWorkflow, 'squad-implement-worker.md must declare dispatch-workflow safe-output').toBeDefined();
+    const max = dispatchWorkflow?.max as number | undefined;
+    expect(max, 'dispatch-workflow max must be >= 2 so a probe does not silently discard the real dispatch').toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Dispatch workflow schema static gate (#1772)
+// ---------------------------------------------------------------------------
+// The static gate (scripts/check-workflow-input-interpolation.mjs) now validates
+// dispatch_workflow JSON examples in workflow prompts.  A malformed example --
+// missing `workflow_name`, missing `inputs`, or top-level `command`/`issue_number` --
+// causes gh-aw to run the wrong workflow or dispatch with no inputs.
+//
+// This suite:
+//   (a) verifies the gate passes against current workflow files
+//   (b) verifies the gate FAILS against a fixture with a malformed dispatch schema
+//       (the broken state that caused aspiregregator-squad-e2e failures)
+
+describe('gh-aw: dispatch_workflow schema static gate (#1772)', () => {
+  const scriptPath = join(process.cwd(), 'scripts', 'check-workflow-input-interpolation.mjs');
+  const fixturesDir = join(TEST_WORKSPACES_DIR, 'dispatch-schema-gate');
+
+  function runGate(scanDir: string): { exitCode: number; stderr: string; stdout: string } {
+    // The script resolves SCAN_DIRS relative to repo root via import.meta.url.
+    // We invoke it with a patched environment variable so the fixture directory is
+    // scanned instead of the real workflows directory.
+    const result = spawnSync(
+      process.execPath,
+      [scriptPath],
+      {
+        env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: scanDir },
+        encoding: 'utf8',
+        cwd: process.cwd(),
+      }
+    );
+    return {
+      exitCode: result.status ?? 1,
+      stderr: result.stderr ?? '',
+      stdout: result.stdout ?? '',
+    };
+  }
+
+  function writeFixture(name: string, content: string): string {
+    mkdirSync(fixturesDir, { recursive: true });
+    const path = join(fixturesDir, name);
+    writeFileSync(path, content, 'utf8');
+    return path;
+  }
+
+  it('passes against current workflow files (regression guard)', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, `Gate should exit 0; stderr: ${result.stderr}`).toBe(0);
+  });
+
+  it('fails when dispatch_workflow example is missing workflow_name', () => {
+    // This is failure shape (3) confirmed in run 32316227601: dispatch schema
+    // without workflow_name caused the squad workflow to run the wrong skill.
+    const fixture = writeFixture('missing-workflow-name.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Dispatch workflow using the dispatch_workflow safe-output tool:
+
+\`\`\`json
+{
+  "inputs": {
+    "command": "implement",
+    "issue_number": "42"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must exit 1 when dispatch_workflow JSON lacks workflow_name').toBe(1);
+    expect(result.stderr).toMatch(/dispatch-schema|workflow_name/i);
+    // Cleanup
+    rmSync(fixture);
+  });
+
+  it('fails when dispatch_workflow example has top-level command instead of inputs object', () => {
+    // This is failure shape (1) confirmed in runs 32324473906, 32394811753:
+    // top-level command/issue_number are silently dropped by gh-aw; the receiving
+    // workflow runs with no inputs and creates junk issues.
+    const fixture = writeFixture('top-level-inputs.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Call dispatch_workflow to continue the relay:
+
+\`\`\`json
+{
+  "workflow_name": "squad",
+  "command": "implement",
+  "issue_number": "42"
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must exit 1 when dispatch_workflow JSON has top-level command').toBe(1);
+    expect(result.stderr).toMatch(/dispatch-schema|top-level/i);
+    rmSync(fixture);
+  });
+
+  it('fails when dispatch_workflow example is missing inputs.issue_number', () => {
+    const fixture = writeFixture('missing-issue-number.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Use dispatch_workflow to queue the next wave:
+
+\`\`\`json
+{
+  "workflow_name": "squad",
+  "inputs": {
+    "command": "implement"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must exit 1 when dispatch_workflow JSON inputs lacks issue_number').toBe(1);
+    expect(result.stderr).toMatch(/dispatch-schema|issue_number/i);
+    rmSync(fixture);
+  });
+
+  it('passes for a well-formed dispatch_workflow example', () => {
+    const fixture = writeFixture('valid-dispatch.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Use dispatch_workflow to continue the relay:
+
+\`\`\`json
+{
+  "workflow_name": "squad",
+  "inputs": {
+    "command": "implement",
+    "issue_number": "{parent-epic-number}"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, `Gate should exit 0 for valid schema; stderr: ${result.stderr}`).toBe(0);
+    rmSync(fixture);
   });
 });
 
