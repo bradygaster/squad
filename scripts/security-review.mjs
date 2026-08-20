@@ -177,6 +177,8 @@ for (const file of jstsFiles) {
 //
 // Excluded paths: append-only memory/log files that document history and prohibitions.
 // These are never executed — they record what happened, not what to do.
+// Rotated agent history archives inherit the same exclusion because they contain
+// the same prose as the active history.md file.
 // Instruction surfaces (.github/copilot-instructions.md, agent charters, squad.agent.md,
 // team.md, routing.md) are deliberately kept in scope: a malicious PR could replace a
 // prohibition with an instruction, and we want the scanner to catch that.
@@ -185,6 +187,7 @@ for (const file of jstsFiles) {
 const UNSAFE_GIT_EXCLUDED_PATHS = [
   /^\.squad\/decisions\.md$/,
   /^\.squad\/agents\/.+\/history\.md$/,
+  /^\.squad\/agents\/[^/]+\/history-archive-.+\.md$/,
   /^\.squad\/log\//,
   /^\.squad\/orchestration-log\//,
 ];

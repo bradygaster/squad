@@ -1066,6 +1066,20 @@ describe('gh-aw: merge continuation dispatch contract', () => {
     }
   });
 
+  it('worker continuation warns dispatch_workflow is write-once and not schema-probed', () => {
+    const continuation = workerContent.match(
+      /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/
+    )?.[1] ?? '';
+
+    expect(continuation, 'continuation should name the dispatch_workflow tool').toMatch(/dispatch_workflow/);
+    expect(continuation, 'empty or placeholder schema probes should be forbidden').toMatch(
+      /NEVER[\s\S]*empty[\s\S]*(?:placeholder|partial)[\s\S]*(?:probe|discover)[\s\S]*schema/i
+    );
+    expect(continuation, 'noop should be named as the alternative when there is nothing to dispatch').toMatch(
+      /(?:nothing|no next wave)[\s\S]{0,200}dispatch[\s\S]{0,200}`?noop`?|`?noop`?[\s\S]{0,200}(?:nothing|no next wave)[\s\S]{0,200}dispatch/i
+    );
+  });
+
   it('worker continuation comments on the parent epic instead of auto-targeting the merged PR', () => {
     const continuation = workerContent.match(
       /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/
