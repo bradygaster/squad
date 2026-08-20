@@ -16,6 +16,7 @@ import { minimatch } from 'minimatch';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
+const SQUAD_IMPLEMENT_WORKER = join(WORKFLOWS_DIR, 'squad-implement-worker.md');
 const SHARED_DIR = join(WORKFLOWS_DIR, 'shared');
 const TEST_WORKSPACES_DIR = join(process.cwd(), '.test-workspaces');
 
@@ -141,6 +142,7 @@ function extractImports(frontmatter: string): string[] {
       inImports = true;
       continue;
     }
+
     if (inImports) {
       const itemMatch = line.match(/^\s+-\s+(.+)$/);
       if (itemMatch) {
@@ -152,6 +154,40 @@ function extractImports(frontmatter: string): string[] {
   }
 
   return imports;
+}
+
+function extractWorkflowDispatchInputs(frontmatter: string): Record<string, Record<string, string>> {
+  const inputs: Record<string, Record<string, string>> = {};
+  const lines = frontmatter.split('\n');
+  const workflowDispatchLine = lines.findIndex(line => /^  workflow_dispatch:\s*$/.test(line));
+  if (workflowDispatchLine === -1) return inputs;
+
+  const inputsLine = lines.findIndex((line, index) =>
+    index > workflowDispatchLine && /^    inputs:\s*$/.test(line)
+  );
+  if (inputsLine === -1) return inputs;
+
+  let currentInput: string | null = null;
+  for (let i = inputsLine + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^ {0,3}\S/.test(line)) break;
+
+    const inputMatch = line.match(/^      ([A-Za-z0-9_-]+):\s*$/);
+    if (inputMatch) {
+      currentInput = inputMatch[1];
+      inputs[currentInput] = {};
+      continue;
+    }
+
+    if (!currentInput) continue;
+
+    const propertyMatch = line.match(/^        ([A-Za-z0-9_-]+):\s*(.+)$/);
+    if (propertyMatch) {
+      inputs[currentInput][propertyMatch[1]] = propertyMatch[2].replace(/^['"]|['"]$/g, '');
+    }
+  }
+
+  return inputs;
 }
 
 /** Extract mode table rows from the "## Modes" section of the workflow body. */
@@ -978,6 +1014,65 @@ describe('gh-aw: compiled workflow contract', () => {
       rmSync(workspace, { recursive: true, force: true });
     }
   }, 20000);
+});
+
+// ---------------------------------------------------------------------------
+// Test: Merge continuation dispatch contract (#1751)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: merge continuation dispatch contract', () => {
+  const squadFrontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+  const squadInputs = extractWorkflowDispatchInputs(squadFrontmatter);
+  const workerContent = readText(SQUAD_IMPLEMENT_WORKER);
+
+  it('does not silently default workflow_dispatch command to a mutating mode', () => {
+    expect(squadInputs.command, 'Squad workflow_dispatch.command should exist').toBeDefined();
+    // gh-aw forbids required workflow_dispatch inputs when the same workflow also
+    // has slash_command triggers, so the safety contract is "no mutating default"
+    // plus explicit missing-input handling in the prompt.
+    expect(squadInputs.command.required).toBe('false');
+    expect(squadInputs.command.default).toBeUndefined();
+  });
+
+  it('documents missing workflow_dispatch issue_number as a visible failure', () => {
+    expect(readText(SQUAD_WORKFLOW)).toMatch(/missing issue_number/i);
+    expect(readText(SQUAD_WORKFLOW)).toMatch(/workflow_dispatch\.inputs\.issue_number/i);
+    expect(readText(SQUAD_WORKFLOW)).toMatch(/create a visible issue/i);
+  });
+
+  it('worker continuation dispatch payload nests keys that Squad declares', () => {
+    const continuation = workerContent.match(
+      /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/
+    )?.[1] ?? '';
+    const payloadBlock = continuation.match(/```json\n([\s\S]*?)\n```/)?.[1];
+    expect(payloadBlock, 'continuation dispatch JSON payload should be present').toBeDefined();
+
+    const payload = JSON.parse(payloadBlock!) as {
+      workflow_name?: string;
+      inputs?: Record<string, string>;
+      command?: string;
+      issue_number?: string;
+    };
+    expect(payload.workflow_name).toBe('squad');
+    expect(payload.command, 'command must not be a top-level dispatch_workflow argument').toBeUndefined();
+    expect(payload.issue_number, 'issue_number must not be a top-level dispatch_workflow argument').toBeUndefined();
+    expect(payload.inputs).toEqual({
+      command: 'implement',
+      issue_number: '{parent-epic-number}',
+    });
+
+    for (const key of Object.keys(payload.inputs ?? {})) {
+      expect(squadInputs, `Squad workflow_dispatch input "${key}" should exist`).toHaveProperty(key);
+    }
+  });
+
+  it('worker continuation comments on the parent epic instead of auto-targeting the merged PR', () => {
+    const continuation = workerContent.match(
+      /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/
+    )?.[1] ?? '';
+    expect(continuation).toMatch(/comment on the parent epic/i);
+    expect(continuation).toMatch(/item_number[\s\S]*parent epic number/i);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,12 @@ function read(relativePath: string): string {
   return readFileSync(resolve(ROOT, relativePath), 'utf-8');
 }
 
+function continuationSection(worker: string): string {
+  return worker.match(
+    /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/,
+  )?.[1] ?? '';
+}
+
 describe('gh-aw implement workflows', () => {
   const dispatcher = read('workflows/squad.md');
   const worker = read('workflows/squad-implement-worker.md');
@@ -38,13 +44,33 @@ describe('gh-aw implement workflows', () => {
   });
 
   it('continues epic execution after implementation PRs merge', () => {
+    const continuation = continuationSection(worker);
+    const payloadBlock = continuation.match(/```json\r?\n([\s\S]*?)\r?\n```/)?.[1];
+    expect(payloadBlock, 'continuation dispatch JSON payload should be present').toBeDefined();
+    const payload = JSON.parse(payloadBlock!) as {
+      workflow_name?: string;
+      inputs?: Record<string, string>;
+      command?: string;
+      issue_number?: string;
+    };
+
     expect(dispatcher).not.toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
     expect(worker).toMatch(/pull_request:\r?\n\s+types: \[closed\]/);
     expect(worker).toContain("startsWith(github.event.pull_request.head.ref, 'squad/implement-')");
     expect(worker).toContain('workflows: [squad]');
     expect(worker).toContain('target-ref: ${{ github.event.repository.default_branch }}');
-    expect(worker).toContain('"command": "implement"');
-    expect(worker).toContain('Never call the generic `dispatch_workflow` tool');
+    expect(payload).toMatchObject({
+      workflow_name: 'squad',
+      inputs: {
+        command: 'implement',
+        issue_number: '{parent-epic-number}',
+      },
+    });
+    expect(payload.command).toBeUndefined();
+    expect(payload.issue_number).toBeUndefined();
+    expect(continuation).toMatch(/Never edit files or create a\s+pull request in this mode/);
+    expect(continuation).toContain('Always leave a visible next step');
+    expect(continuation).toContain('Never emit `noop` for a merge continuation');
     expect(dispatcher).toContain('available-slots = max(0, 3 - active-implementation-count)');
     expect(dispatcher).toContain('fills newly available slots');
   });
