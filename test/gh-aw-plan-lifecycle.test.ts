@@ -283,3 +283,37 @@ describe('#1756: research uses a structural contract, not a length floor', () =>
     expect(verify).not.toContain('≥200 chars');
   });
 });
+
+// ---------------------------------------------------------------------------
+// #1772 (defense-in-depth) — empty workflow_dispatch probe is guarded, not
+// turned into a junk issue. Pairs with EECOM's dispatch-workflow max fix
+// (PR #1777).
+// ---------------------------------------------------------------------------
+
+describe('#1772: empty workflow_dispatch probe halts without junk issues', () => {
+  const guard =
+    squad.match(/### Workflow-dispatch activation guard[\s\S]*?(?=\nResolve the slash command)/)?.[0] ??
+    '';
+
+  it('declares a MANDATORY activation guard that runs before any skill', () => {
+    expect(guard, 'activation guard section must exist').not.toBe('');
+    expect(guard).toMatch(/\[MANDATORY — run before any skill\]/);
+  });
+
+  it('halts an empty-command probe with a log annotation and no side effects', () => {
+    expect(guard).toMatch(/Dispatched command\*\*\s+above is empty or missing/);
+    expect(guard).toContain('::warning::');
+    // The empty probe must STOP without creating an issue, comment, or skill entry.
+    expect(guard).toMatch(/Do NOT create an issue, do NOT post a comment, do NOT/);
+  });
+
+  it('no longer instructs creating a junk "missing command/issue_number" issue', () => {
+    // The old junk-issue generators (fixture #12/#14 root cause) must be gone.
+    expect(squad).not.toContain('Squad workflow dispatch missing command');
+    expect(squad).not.toContain('Squad workflow dispatch missing issue_number');
+  });
+
+  it('references EECOM PR #1777 so the paired fixes are traceable', () => {
+    expect(guard).toContain('PR #1777');
+  });
+});

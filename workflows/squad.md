@@ -139,14 +139,42 @@ failures, not commands to reinterpret as Cast.
 - **Dispatched command:** `${{ github.event.inputs.command }}`
 - **Dispatched issue number:** `${{ github.event.inputs.issue_number }}`
 
+### Workflow-dispatch activation guard [MANDATORY — run before any skill]
+
+`workflow_dispatch` inputs `command` and `issue_number` are both
+`required: false`, so an empty activation probe can reach this workflow. The
+`squad-implement-worker` relay fires such a probe before its real dispatch (see
+EECOM's `dispatch-workflow` `max` fix in PR #1777). That probe arrives here as a
+`workflow_dispatch` with empty inputs. It is NOT a command. Guard against it as
+the FIRST action of the run, before resolving any command or entering any skill:
+
+- When `github.event_name` is `workflow_dispatch` AND the **Dispatched command**
+  above is empty or missing: this is an empty activation probe, not a real run.
+  Emit exactly one diagnostic annotation via bash —
+  `echo "::warning::Squad workflow_dispatch fired with empty command input — empty activation probe (see PR #1777); halting with no side effects"`
+  — and STOP immediately. Do NOT create an issue, do NOT post a comment, do NOT
+  enter any skill. Creating an issue here is the junk-issue defect that produced
+  fixture issues #12 and #14; never do it.
+- When `github.event_name` is `workflow_dispatch`, the **Dispatched command** is
+  non-empty and names an issue-bound mode (`research`, `triage`, `plan*`, or
+  `implement`), but neither a dispatched nor a triggering `issue_number` is
+  available: emit
+  `echo "::warning::Squad workflow_dispatch for the named command is missing issue_number; halting with no side effects"`
+  and STOP. Do NOT create an issue.
+
+This guard is defense-in-depth: PR #1777's `max` bump keeps the real relay
+dispatch alive, and this guard makes the surviving probe harmless and visible
+(a log annotation that survives the run) instead of silently minting junk
+issues. If the LLM ever emits a third dispatch entry, `max` alone fails again —
+this guard still holds.
+
 Resolve the slash command in this order:
 
 1. **Dispatched command** (above) — when the event name is
    `workflow_dispatch`, this input must be present for the run to proceed. If it
-   is empty, create a visible issue titled
-   `Squad workflow dispatch missing command`, explain that the run cannot
-   continue without `workflow_dispatch.inputs.command`, and stop. When it is
-   non-empty, use this value as the command and skip the remaining sources.
+   is empty, the activation guard above has already halted the run; never reach
+   this step with an empty dispatched command. When it is non-empty, use this
+   value as the command and skip the remaining sources.
 2. **Issue comment / PR review comment:** `github.event.comment.body` — the full
    comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
@@ -160,12 +188,9 @@ Resolve the target issue in this order:
 2. The triggering issue or pull request number from the event payload.
 
 **Never emit `noop` when the dispatched command is non-empty.** A workflow
-dispatch is always actionable: run the named mode against the dispatched issue
-number. If the dispatched command is non-empty and names an issue-bound mode
-(`research`, `triage`, `plan*`, or `implement`) but no dispatched or triggering
-issue number exists, create a visible issue titled
-`Squad workflow dispatch missing issue_number`, explain that the run cannot
-continue without `workflow_dispatch.inputs.issue_number`, and stop.
+dispatch with a non-empty command is always actionable: run the named mode
+against the dispatched issue number. The missing-`issue_number` case is handled
+by the activation guard above — halt with a log annotation, never an issue.
 
 The activation job already ran `squad init --preset default`, which produced a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
