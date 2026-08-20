@@ -166,6 +166,14 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Install gh-aw extension
+        # Required so `gh aw --version` succeeds and the compile-gate test in
+        # test/gh-aw-quality.test.ts is NOT skipped. Without this step the test
+        # uses `it.skipIf(!ghAwAvailable)` and always skips — which is
+        # indistinguishable from having no gate at all. See #1732.
+        run: gh extension install github/gh-aw
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Build
         run: npm run build
       - name: Run tests
