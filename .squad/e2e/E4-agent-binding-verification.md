@@ -2,15 +2,92 @@
 
 > **Author:** Sims (E2E Test Engineer)
 > **Written:** 2026-08-21, from the E3 long-path rehearsal
-> **Status:** ⛔ **NOT YET EXECUTED — this is a post-merge procedure.**
+> **Status:** ✅ **EXECUTED 2026-08-21 — result recorded below.**
+
+---
+
+## ✅ Executed — 2026-08-21 · verdict PASS (n=1)
+
+Run against fixture `bradygaster/aspiregregator-squad-e2e`, seed issue **#22**,
+`$E4_START` = `2026-08-21T09:18:32Z`. **8 gates, 8 green, zero interventions, ~55 min.**
+
+| # | Condition | Result |
+|---|---|---|
+| 0 | ≥1 issue created by `activate` (excl. seed #22) | ✅ 15 squad-authored (#23–#37) |
+| 1 | `Agent` column = verbatim roster names | ✅ **11/11**, zero role-derived tokens |
+| 2 | No `squad:lead`/`devrel`/`reviewer` in timeline `labeled` events | ✅ 15 events, all `squad` |
+| 3 | Activation summary reports missing-label prerequisite gap | ✅ reported verbatim |
+
+Same-fixture control: **E3 produced `lead, lead, devrel` on this exact column**; E4 produced
+`McManus, Keaton, Fenster, Hockney…`. One prompt change (#1789) between them.
+
+> 🛑 **Scope bound.** Green means *"the `Agent` column is clean on one artifact, n=1, salience
+> path."* It does **not** mean #1784 is retired — see the two qualifications below.
+
+### 🔴 Qualification 1 — the roster read at `activate` is still wrong
+
+The activation summary claims it read `.squad/team.md` `## Members` → `Name` and got
+`lead, reviewer, devrel, security, docs`. **That file's Name column is
+`Keaton, McManus, Fenster, Hockney, Kint`**, and `devrel`/`security`/`docs` do not appear
+anywhere in it. The cited set is the generic **uncast** Squad role vocabulary and matches no
+single file's Name column.
+
+Consequently `activate` declared the *correct* Agent values "non-roster", and advises the
+operator to *"recast the team or update the implementation plan"* — i.e. **to break the one part
+of the pipeline that is working.** That advice is the operationally dangerous part.
+
+**The defect is stage-local to `activate`.** `plan validate` in the *same walk*, 23 minutes
+earlier, read the *same* file/section/column correctly:
+
+> **Roster set (`.squad/team.md` → `## Members` → `Name` column):** `Keaton`, `McManus`,
+> `Fenster`, `Hockney`, `Kint` — and Check 10 verified all four Agent values verbatim.
+
+So this is not a wrong path, not a hardcoded default, and not a shared component. A working
+reference implementation exists one stage earlier; the fix is to make `activate` do what
+`validate` already does.
+
+| Phase | E3 (pre-#1789) | E4 (post-#1789) |
+|---|---|---|
+| `validate` | `Agent assignments valid (cast Names) ✅ (lead, lead, devrel)` — **no roster enumerated**, no Check 10 ⇒ **false accept by omission** | roster echoed **correctly**, Check 10 verbatim ⇒ **true accept** |
+| `activate` | minted `squad:lead` ×3 + `squad:devrel` | roster read **wrong** ⇒ **false reject** |
+
+**#1789 fixed the implementation-plan column *and* the `validate` gate — both confirmed — and
+left the `activate` roster read untouched.** File that separately from #1784.
+
+> ⚠️ **Corrected claim.** An earlier draft asserted that with `create-label` enabled this run
+> would have minted `squad:lead` again. **That is refuted.** `activate` applies what the plan
+> hands it; E4's plan contains no role token, so there is nothing to mint. `create-label` is
+> required for the *correct* behaviour, not what suppressed the defect. Condition 2's green is
+> still structural — the structure is the roster mismatch, not the missing permission.
+
+### Qualification 2 — the fixture cannot express a correct owner label at all
+
+Absence of `squad:keaton` is **expected and correct**: the lock has zero `create-label`
+references. Closing #1784's user-visible symptom needs an `issues: write` + `create-label`
+workflow permissions change, **not** a prompt change. Separate from the deferred deterministic
+enforcement item.
+
+### 🟢 Free result — #1787 sibling-epic dispatch, first live observation
+
+`plan program` produced the 4-sibling-epic shape #1787 had never had a fixture for. After
+`activate`: **all 15 issues parent to root #22; every epic has 0 sub-issues.** The hierarchy is
+flat, so **refill necessarily draws from the root, not the parent epic.** Corroborated by the
+summary's own gap note that `parent` is wired for epic→root only.
+
+Full evidence: `squad-e4-20260821/E4-RESULT.md` (operator's machine, out of repo).
+
+---
+
+## Original pre-execution framing (retained)
 
 ---
 
 ## ⛔ Read this before anything else
 
-**This procedure has not been run. #1784 is NOT verified.**
+**Superseded by the executed result above (2026-08-21).** Retained because the reasoning still
+governs any *re-run*. The bar below is the bar that was met.
 
-State confirmed at time of writing:
+State at time of writing:
 
 | Item | State |
 |---|---|
@@ -184,6 +261,26 @@ per `:913` when no cast member fits).
 **Invalid — any of these is a finding:** `Lead`, `DevRel`, `Reviewer`, `Architect`, `Backend`,
 `Frontend`, `Test`, `DevOps`, `Platform`, or any lowercased/`squad:`-prefixed form thereof.
 
+### 🛑 Known gap — this criterion detects wrong *vocabulary*, not wrong *assignment*
+
+The `Agent`-column check asks whether every value **is** a roster name. It does **not** ask
+whether the **right** roster name got the row. An infrastructure task bound to the Backend
+engineer produces a fully verbatim column and scores green.
+
+Role-appropriateness requires a **manual read of each task's text against its binding** and is
+**not** established by this criterion. Phrase results accordingly:
+
+> *"N/N bound to roster names; assignments role-appropriate on manual read"*
+
+— with the second clause explicitly marked as a **human check the gate did not perform**.
+
+> ⚠️ **Never let an absence carry the claim.** "Agent X appears zero times because there is no
+> work of that kind" is circular unless you separately confirm no such task exists — the zero is
+> otherwise both the evidence and the thing it explains. Two states produce an identical
+> artifact: a genuine zero, and work of that kind misbound to someone else. **Lead with the
+> positive bindings** — each is falsifiable by reading its own row — and record any zero only as
+> *corroborated by manual confirmation that no task is of that shape*.
+
 ---
 
 ## Budget
@@ -288,21 +385,34 @@ The byte comparison proves *currency*, not *content*. Assert the fix text direct
 ```powershell
 # PowerShell gotcha: -like "*$key*" treats BACKTICKS as escape characters and yields
 # false negatives on prompt text (which is full of backticks). Use .Contains().
-$b = gh api "repos/$FIXTURE/contents/.github/workflows/squad.md" --jq '.content' 2>$null
+$b = (gh api "repos/$FIXTURE/contents/.github/workflows/squad.md?ref=main" --jq '.content' 2>$null) -join '' -replace '\s',''
 $txt = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b))
-Write-Host "main squad.md length: $($txt.Length)"    # sanity: ~56 KB, NOT ~6.6 KB
+Write-Host "main squad.md length: $($txt.Length)"    # expect ~60,589 chars, NOT ~6.6 KB
 
-# Confirm the OLD concrete-token prohibition is gone (whatever Procedures replaced it with,
-# the literal forbidden tokens should no longer appear verbatim in the prohibition).
-Write-Host "contains literal 'DevRel' : $($txt.Contains('DevRel'))"
-Write-Host "contains literal 'squad:lead' : $($txt.Contains('squad:lead'))"
+# #1789 REPLACED the old prohibition rather than appending to it, so assert BOTH directions.
+foreach ($k in 'Check 10','sole source of truth','Non-roster') {
+  Write-Host ("ADD {0,-24} {1}" -f $k, $txt.Contains($k))          # all must be True
+}
+Write-Host ("REM {0,-24} {1}" -f 'never mint a role-derived', $txt.Contains('never mint a role-derived'))   # must be False
 ```
 
-> Interpretation: if the fix works by **removing the concrete tokens** from the prohibition,
-> both should read `False`. If Procedures chose a different strategy (e.g. restructuring the
-> instruction while keeping examples), these may still read `True` — that is not itself a
-> failure. **Read the actual fix in the PR before interpreting this check.** The authoritative
-> criterion remains the live output in Phase 3, not the prompt text.
+> **Assert the removal, not only the addition.** A sync that appends without replacing leaves the
+> file carrying *both* the old prohibition and the new `Check 10` machinery — two overlapping rules
+> about the same thing, which is a plausible mechanism for the original disobedience. That is worse
+> than either alone and it passes an addition-only check.
+
+> ⚠️ **Assert against `squad.md`, NOT `squad.lock.yml`.** The lock does **not** inline the prompt
+> body — it emits `GH_AW_PROMPT_CONTENT_0008: "{{#runtime-import .github/workflows/squad.md}}"`,
+> resolved at runtime against the fixture's own committed copy. The markers **cannot** appear in
+> the lock, so asserting there returns a guaranteed false FAIL. What the lock *does* carry is a
+> `body_hash` in its first-line metadata; a changed `body_hash` is the proof that a recompile
+> actually ingested the new source. Check the markers in the `.md` and the `body_hash` in the lock —
+> each artifact for what it can actually represent.
+
+**Status — this was performed on 2026-08-21 (fixture commit `1b11c5f`).** All five prompt sources
+verified byte-identical to `dev` by blob SHA; recompiled with `gh aw compile --strict` v0.86.2,
+exit 0; `body_hash` moved `98f0dbd7…` → `d0e504a2…` (squad) and `95183cda…` → `e4ddc844…` (worker).
+Re-run the assertions above anyway before E4 — `dev` may have moved again.
 
 ---
 
