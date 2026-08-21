@@ -171,11 +171,17 @@ async function runWorkflowScript(step: Step, values: Record<string, string>) {
 // Every hostile character that has ever shown up in a real finding message:
 // a backtick pair (quoted code), a bare `${` (template substitution opener),
 // an apostrophe, a double quote, and an embedded newline.
+//
+// The quoted command below is deliberately one the security scanner does NOT
+// flag. These fixtures are added lines in the PR diff, so quoting a command on
+// the scanner's unsafe-git denylist makes it emit a real finding against this
+// very file — and that finding is itself backtick-wrapped, which crashes the
+// base-branch reporter. Keep the backticks; keep the command boring.
 const HOSTILE_MESSAGE =
-  'Unsafe git operation: `git push --force-with-lease` — quoting `code` here, ' +
+  'Unsafe git operation: `git cherry-pick --no-commit` — quoting `code` here, ' +
   'plus a bare ${ opener, an apostrophe \' and a "double quote".\nSecond line of the message.';
 
-const HOSTILE_PATH = 'docs/using-`git add .`-and-${-in-a-name.md';
+const HOSTILE_PATH = 'docs/using-`git cherry-pick`-and-${-in-a-name.md';
 
 function securityReport() {
   const payload = {
