@@ -45,3 +45,10 @@ test-fixtures/dogfood/node-monorepo/packages/cli/src/cli.ts text eol=lf
 Dockerfile text eol=lf
 Dockerfile.* text eol=lf
 .dockerignore text eol=lf
+
+# Squad: vitest writes snapshots with LF unconditionally. Without a rule these
+# check out as CRLF on Windows, so `npm test` dirties a tracked file on every
+# run -- and a broad `git add` then commits pure line-ending noise. Same CRLF
+# class as the .mjs rule above, different symptom: not a load failure, a
+# perpetually dirty tree (#1788).
+*.snap text eol=lf

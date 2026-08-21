@@ -13,6 +13,23 @@
 // committed blob's first line does not end in \r) independently -- a rule that
 // was added without renormalizing is still a broken repo.
 //
+// SCOPE BOUNDARY -- read this before assuming a green run means "no EOL bugs".
+// There are two CRLF failure classes and this lint covers exactly one:
+//
+//   1. STRICT PARSE (covered). The file fails to load. `#!` is a cheap, exact,
+//      static signature, so the check is sound and has no false negatives.
+//
+//   2. TOOL REWRITE (NOT covered). A tool writes the file with LF, the checkout
+//      has CRLF, and the tree is perpetually dirty -- so a broad `git add`
+//      commits line-ending noise, or worse, sweeps in an unrelated real change
+//      sitting in the same file. Vitest snapshots (`*.snap`) are the known case;
+//      pinned by an explicit .gitattributes rule, NOT found by this lint.
+//
+// Class 2 has no cheap static signature -- "files some tool writes with LF" is
+// not detectable by reading the file. Extending this lint to guess would trade a
+// sound check for an unsound one, so the boundary is deliberate. New generated
+// or tool-written file types must be pinned in .gitattributes by hand.
+//
 // Uses only Node.js built-ins (child_process, path, url).
 
 import { execFileSync } from 'node:child_process';
