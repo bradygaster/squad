@@ -122,7 +122,12 @@ export function resolveTrackedDestination(options: {
 // ---------------------------------------------------------------------------
 
 const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
-const HEADING_RE = /^(#{1,6})(\s+)(.*)$/;
+// The trailing `\r` is captured rather than matched by `.` — JS's `.` excludes
+// `\r`, so a naive `(.*)$` matches ZERO headings in a CRLF file. `.squad/decisions.md`
+// is CRLF on Windows, where this repo is developed, so getting this wrong makes
+// demotion a silent no-op and makes append-verification pass vacuously.
+// Capturing the line ending also lets demotion rebuild a line byte-for-byte.
+const HEADING_RE = /^(#{1,6})([ \t]+)(.*?)(\r?)$/;
 
 interface ScannedLine {
   readonly text: string;
@@ -194,7 +199,7 @@ export function demoteHeadings(markdown: string, by = 2): string {
       const match = HEADING_RE.exec(line.text);
       if (!match?.[1]) return line.text;
       const level = Math.min(6, match[1].length + by);
-      return `${'#'.repeat(level)}${match[2] ?? ' '}${match[3] ?? ''}`;
+      return `${'#'.repeat(level)}${match[2] ?? ' '}${match[3] ?? ''}${match[4] ?? ''}`;
     })
     .join('\n');
 }
@@ -224,7 +229,16 @@ export interface DecisionEntry {
   readonly text: string;
 }
 
-/** Split a decisions document into a preamble plus its `###` entries. */
+/**
+ * Split a decisions document into a preamble plus its `###` entries.
+ *
+ * Boundaries are drawn **only** at `level` headings. A shallower heading does
+ * NOT close an entry: `.squad/decisions.md` carries ~60 stray `##`/`#` headings
+ * spliced under `###` entries (#1760), and treating those as boundaries would
+ * push the rest of the entry into the preamble and reorder the document on
+ * rebuild. Splitting only at `level` makes the split lossless by construction —
+ * `[preamble, ...entries.map(e => e.text)].join('\n')` reproduces the input.
+ */
 export function splitEntries(
   markdown: string,
   level = 3,
@@ -235,17 +249,10 @@ export function splitEntries(
   let current: { heading: string; lines: string[] } | null = null;
 
   for (const line of lines) {
-    if (line.headingLevel !== null && line.headingLevel <= level) {
-      if (line.headingLevel === level) {
-        if (current) entries.push({ heading: current.heading, text: current.lines.join('\n') });
-        current = { heading: line.text.trim(), lines: [line.text] };
-        continue;
-      }
-      // A heading shallower than an entry closes the current entry.
-      if (current) {
-        entries.push({ heading: current.heading, text: current.lines.join('\n') });
-        current = null;
-      }
+    if (line.headingLevel === level) {
+      if (current) entries.push({ heading: current.heading, text: current.lines.join('\n') });
+      current = { heading: line.text.trim(), lines: [line.text] };
+      continue;
     }
     if (current) current.lines.push(line.text);
     else preamble.push(line.text);
@@ -254,6 +261,15 @@ export function splitEntries(
   if (current) entries.push({ heading: current.heading, text: current.lines.join('\n') });
 
   return { preamble: preamble.join('\n'), entries };
+}
+
+/**
+ * Preserve the document's dominant line ending. `.squad/decisions.md` is CRLF
+ * on Windows; rebuilding it with LF separators would render the archival diff
+ * as a whole-file rewrite and bury the real change.
+ */
+function detectEol(markdown: string): string {
+  return markdown.includes('\r\n') ? '\r\n' : '\n';
 }
 
 /** Measured outcome of an archival run. Counts only — never sizes. */
@@ -349,11 +365,13 @@ export function archiveEntries(options: ArchiveEntriesOptions): ArchivalResult {
   const headings = selected.map((e) => e.heading);
   const before = io.exists(destination) ? io.readFile(destination) : '';
   const beforeCount = countEntries(before, level);
+  const destEol = detectEol(before || sourceMarkdown);
+  const srcEol = detectEol(sourceMarkdown);
 
   // Rule 2, step 1 — append.
-  const payload = `${before.endsWith('\n') || before === '' ? '' : '\n'}\n${selected
-    .map((e) => e.text.replace(/\s+$/, ''))
-    .join('\n\n')}\n`;
+  const payload =
+    `${before.endsWith('\n') || before === '' ? '' : destEol}${destEol}` +
+    `${selected.map((e) => e.text.replace(/\s+$/, '')).join(destEol + destEol)}${destEol}`;
   io.appendFile(destination, payload);
 
   // Rule 2, step 2 — verify by re-reading. Every heading must literally be
@@ -381,8 +399,8 @@ export function archiveEntries(options: ArchiveEntriesOptions): ArchivalResult {
   const kept = entries.filter((e) => !select(e));
   const rebuilt = [preamble.replace(/\s+$/, ''), ...kept.map((e) => e.text.replace(/\s+$/, ''))]
     .filter((part) => part.length > 0)
-    .join('\n\n');
-  io.writeFile(sourcePath, `${rebuilt}\n`);
+    .join(srcEol + srcEol);
+  io.writeFile(sourcePath, `${rebuilt}${srcEol}`);
 
   return {
     removedFromSource: selected.length,

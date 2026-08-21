@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, appendFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -356,6 +356,131 @@ describe('archival integrity', () => {
       const { entries } = splitEntries(md);
       expect(entries.map((e) => e.heading)).toEqual(['### One', '### Two']);
       expect(entries[0].text).toContain('### Not an entry');
+    });
+  });
+
+  // `.squad/decisions.md` is CRLF on Windows, where this repo is developed.
+  // JS's `.` does not match `\r`, so a heading regex ending in `(.*)$` matches
+  // ZERO headings in a CRLF document. That failure mode is silent and total:
+  // demotion becomes a no-op, and append-verification "passes" having checked
+  // nothing. These tests pin the behaviour on real CRLF input.
+  describe('CRLF documents must behave identically to LF', () => {
+    const crlf = (s: string) => s.replace(/\n/g, '\r\n');
+
+    it('counts entries in a CRLF document', () => {
+      const md = crlf('# Decisions\n\n### One\nbody\n\n### Two\nbody\n');
+      expect(countEntries(md)).toBe(2);
+      expect(extractHeadings(md, 3)).toEqual(['### One', '### Two']);
+    });
+
+    it('splits entries in a CRLF document', () => {
+      const md = crlf('# Decisions\n\n### One\nbody\n\n### Two\nbody\n');
+      const { entries } = splitEntries(md);
+      expect(entries.map((e) => e.heading)).toEqual(['### One', '### Two']);
+    });
+
+    it('demotes CRLF inbox headings and preserves the line endings', () => {
+      const inbox = crlf('## Context\nWhy.\n\n## Decision\nWhat.\n');
+      const merged = prepareInboxBodyForMerge(inbox);
+
+      expect(merged).toContain('#### Context');
+      expect(merged).toContain('#### Decision');
+      expect(merged).toBe(crlf('#### Context\nWhy.\n\n#### Decision\nWhat.\n'));
+      expect(merged).not.toMatch(/\r\r/);
+    });
+
+    it('stays fence-aware in a CRLF document', () => {
+      const inbox = crlf('## Context\n\n```bash\n# In workflows/squad.md:\n```\n\n## Decision\n');
+      const merged = prepareInboxBodyForMerge(inbox);
+
+      expect(merged).toContain('# In workflows/squad.md:');
+      expect(merged).not.toContain('### In workflows/squad.md:');
+      expect(merged).toContain('#### Context');
+    });
+
+    it('does not silently report "no archival required" for a CRLF source', () => {
+      // The pre-fix regex found no `###` headings here, so archiveEntries
+      // short-circuited to a 0/0 result — reproducing the exact false
+      // "no archival required" gate report from #1783.
+      writeFileSync(source, crlf('# Decisions\n\n### Old entry\nbody\n\n### Keep me\nbody\n'), 'utf8');
+
+      const result = archiveEntries({
+        sourcePath: source,
+        destinationPath: trackedArchive,
+        repoRoot: repo,
+        select: (e) => e.heading.includes('Old entry'),
+      });
+
+      expect(result.removedFromSource).toBe(1);
+      expect(result.addedToDestination).toBe(1);
+      expect(formatArchivalReport(result)).not.toContain('measured 0 entries eligible');
+      expect(readFileSync(trackedArchive, 'utf8')).toContain('### Old entry');
+      expect(readFileSync(source, 'utf8')).toContain('### Keep me');
+      expect(readFileSync(source, 'utf8')).not.toContain('### Old entry');
+    });
+
+    it('preserves CRLF line endings rather than rewriting the whole file', () => {
+      writeFileSync(source, crlf('# Decisions\n\n### Old entry\nbody\n\n### Keep me\nbody\n'), 'utf8');
+      writeFileSync(trackedArchive, crlf('# Decisions Archive\n'), 'utf8');
+
+      archiveEntries({
+        sourcePath: source,
+        destinationPath: trackedArchive,
+        repoRoot: repo,
+        select: (e) => e.heading.includes('Old entry'),
+      });
+
+      // No bare LF may survive: every \n must be preceded by \r.
+      for (const file of [source, trackedArchive]) {
+        const text = readFileSync(file, 'utf8');
+        expect(text.replace(/\r\n/g, '')).not.toContain('\n');
+      }
+    });
+  });
+
+  // A split that is not lossless is a data-loss bug wearing a parser costume.
+  // `.squad/decisions.md` carries ~60 stray `##`/`#` headings spliced under
+  // `###` entries (#1760); if those act as entry boundaries, everything after
+  // them is re-homed into the preamble and the rebuild reorders the document.
+  describe('splitEntries must be lossless', () => {
+    const roundTrip = (md: string) => {
+      const { preamble, entries } = splitEntries(md);
+      return [preamble, ...entries.map((e) => e.text)].join('\n');
+    };
+
+    it('round-trips a document whose entries contain stray shallower headings', () => {
+      const md = [
+        '# Decisions',
+        '',
+        '### 2026-01-01: First',
+        '## Context',
+        'why',
+        '## Decision',
+        'what',
+        '',
+        '### 2026-02-02: Second',
+        '# Stray h1 inside an entry',
+        'tail that must stay with Second',
+        '',
+      ].join('\n');
+
+      expect(roundTrip(md)).toBe(md);
+
+      const { entries } = splitEntries(md);
+      expect(entries.map((e) => e.heading)).toEqual([
+        '### 2026-01-01: First',
+        '### 2026-02-02: Second',
+      ]);
+      expect(entries[1]?.text).toContain('tail that must stay with Second');
+    });
+
+    it('round-trips the real .squad/decisions.md byte-for-byte', () => {
+      const real = path.join(process.cwd(), '.squad', 'decisions.md');
+      if (!existsSync(real)) return; // not present in a consumer checkout
+      const md = readFileSync(real, 'utf8');
+
+      expect(countEntries(md)).toBeGreaterThan(0);
+      expect(roundTrip(md)).toBe(md);
     });
   });
 });
