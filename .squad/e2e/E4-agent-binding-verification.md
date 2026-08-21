@@ -11,6 +11,7 @@
 | 2026-08-21 (initial) | Executed, PASS at n=1, two qualifications recorded | see result below |
 | 2026-08-21 (post-run) | Phase 2 extended by one command (`plan activate`); new Phase 3e roster-provenance gate; contamination-table growth note; Condition 0 dual-role justification; `squad-e2e-runbook.md` citations replaced with self-contained text; scope-limitation section updated | #1811, #1812 — the n=1 PASS was structurally silent on the `plan activate` roster-read defect, and Condition 0's timing guarantee was undocumented |
 | 2026-08-21 (review followup) | Two caveats rewritten to correctly describe fail-closed routing (empty comment / anchor-mismatch → `A: FAIL` → INCONCLUSIVE for #1812, not "scores green"); gate 3e (B) hardened against `gh api` fetch failure and empty-set collapse (SetEquals(∅,∅) → True); Phase 3c roster fetch guarded the same way; verdict-interpretation table gained a `(A) PASS, (B) INCONCLUSIVE` row | PR #1819 review by Flight + Coordinator — the caveats overstated the risk, the code understated one |
+| 2026-08-21 (review followup, 2nd pass) | Phase 0b fixture-freshness gate hardened: added third `UNREADABLE` state so double-`gh` failure no longer collapses into MATCH via `$null -eq $null`; Phase 0c post-condition updated to require both "all four MATCH" *and* "none UNREADABLE"; Phase 0d fix-presence check guarded (the `REM` sub-check inverts against an empty string — `.Contains(x)` returns False, which is the pass condition) | PR #1820 review by Coordinator — I claimed "exactly one 3c exposure and it's fixed" without enumerating; ten `2>$null` sites in file, the fixture-freshness gate was the higher-severity one I missed. Enumerated all ten before this pass |
 
 > ⚠️ **The n=1 PASS below scored the procedure that stopped at `plan implementation`.** The
 > amended procedure (Phase 2 now includes `plan activate`; Phase 3 now includes a
@@ -393,7 +394,15 @@ $pairs = @(
 foreach ($p in $pairs) {
     $s = gh api "repos/$SOURCE/contents/$($p.src)?ref=dev" --jq '.size' 2>$null
     $d = gh api "repos/$FIXTURE/contents/$($p.dst)"        --jq '.size' 2>$null
-    $state = if ($s -eq $d) { "MATCH" } else { "STALE" }
+    # UNREADABLE if either side didn't return a size. Do NOT collapse this into MATCH
+    # ($null -eq $null is $true — a double gh failure would print MATCH and green-light
+    # the whole run on an unverified fixture) and do NOT collapse into STALE either
+    # (STALE prescribes a refresh, which will not fix a broken credential and burns a
+    # cycle before anyone notices).
+    $state =
+      if ([string]::IsNullOrWhiteSpace($s) -or [string]::IsNullOrWhiteSpace($d)) { "UNREADABLE" }
+      elseif ($s -eq $d) { "MATCH" }
+      else               { "STALE" }
     Write-Host ("{0,-52} src={1,-7} fixture={2,-7} {3}" -f $p.dst, $s, $d, $state)
 }
 ```
@@ -407,7 +416,10 @@ foreach ($p in $pairs) {
 | `shared/squad-planning-ontology.md` | 16,839 | 16,420 | STALE |
 | `shared/squad-planning-policy.md` | 4,676 | 4,538 | STALE |
 
-All four were stale. Expect all four to read `MATCH` **after** a successful refresh.
+All four were stale. Expect all four to read `MATCH` **after** a successful refresh — and
+none to read `UNREADABLE`. `UNREADABLE` is a fetch failure, not a fixture problem: fix the
+credential or network before refreshing (a refresh does not repair a broken `gh` auth, and
+running one will burn a cycle before anyone notices the readings were never taken).
 
 ### 0c. Refresh both surfaces, then re-assert
 
@@ -415,9 +427,15 @@ Pull each source file from `dev` into the fixture, commit, then recompile the lo
 runtime-imports resolve against the refreshed copies.
 
 ```powershell
-# Re-run the 0b comparison loop. Required post-condition: all four report MATCH.
-# If any still reports STALE, the refresh did not take — stop and fix it.
-# Do NOT proceed on a STALE surface; every downstream result would be meaningless.
+# Re-run the 0b comparison loop. Required post-condition: all four report MATCH,
+# AND none report UNREADABLE. "All four MATCH" alone is NOT sufficient — the loop
+# must also assert the comparison was actually readable. A double gh failure prints
+# MATCH otherwise (both sides $null; $null -eq $null is $true).
+# If any reports STALE, the refresh did not take — stop and fix it.
+# If any reports UNREADABLE, the fetch never happened — fix the credential/network,
+# do NOT run the refresh (it will not help), then re-run this loop.
+# Do NOT proceed on a STALE or UNREADABLE surface; every downstream result would be
+# either meaningless (STALE) or unverified (UNREADABLE).
 ```
 
 ### 0d. Confirm the fix is actually present in the fixture
@@ -428,14 +446,24 @@ The byte comparison proves *currency*, not *content*. Assert the fix text direct
 # PowerShell gotcha: -like "*$key*" treats BACKTICKS as escape characters and yields
 # false negatives on prompt text (which is full of backticks). Use .Contains().
 $b = (gh api "repos/$FIXTURE/contents/.github/workflows/squad.md?ref=main" --jq '.content' 2>$null) -join '' -replace '\s',''
-$txt = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b))
-Write-Host "main squad.md length: $($txt.Length)"    # expect ~60,589 chars, NOT ~6.6 KB
-
-# #1789 REPLACED the old prohibition rather than appending to it, so assert BOTH directions.
-foreach ($k in 'Check 10','sole source of truth','Non-roster') {
-  Write-Host ("ADD {0,-24} {1}" -f $k, $txt.Contains($k))          # all must be True
+if ([string]::IsNullOrWhiteSpace($b)) {
+    Write-Host "0d fix-presence: INCONCLUSIVE — could not fetch $FIXTURE/.github/workflows/squad.md"
+} else {
+    $txt = $null
+    try { $txt = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)) }
+    catch { Write-Host "0d fix-presence: INCONCLUSIVE — base64 decode failed ($($_.Exception.GetType().Name))" }
+    if ($txt) {
+        Write-Host "main squad.md length: $($txt.Length)"    # expect ~60,589 chars, NOT ~6.6 KB
+        # #1789 REPLACED the old prohibition rather than appending to it, so assert BOTH directions.
+        foreach ($k in 'Check 10','sole source of truth','Non-roster') {
+          Write-Host ("ADD {0,-24} {1}" -f $k, $txt.Contains($k))          # all must be True
+        }
+        # NB: the REM check inverts against an empty string — .Contains(x) returns False,
+        # and False is the pass condition. The IsNullOrWhiteSpace guard above prevents
+        # that path from ever being reached; do not remove it.
+        Write-Host ("REM {0,-24} {1}" -f 'never mint a role-derived', $txt.Contains('never mint a role-derived'))   # must be False
+    }
 }
-Write-Host ("REM {0,-24} {1}" -f 'never mint a role-derived', $txt.Contains('never mint a role-derived'))   # must be False
 ```
 
 > **Assert the removal, not only the addition.** A sync that appends without replacing leaves the
