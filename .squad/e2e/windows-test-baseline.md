@@ -16,6 +16,12 @@
 
 ## 1. The number
 
+**⚠️ SUPERSEDED — read §"the count is not stable run-to-run" below before using this
+number.** The figure below was a single measurement presented as a constant. It is
+not one. Three later runs at the same commit gave 9, 8 and 7. **Treat the failing
+*set* as the signal, not the total.** A single-number baseline would have sent the
+first anomaly tomorrow on an hour-long phantom chase.
+
 **On Windows at commit `369bba8f`, in a git worktree, on a non-Windows-Terminal console:**
 
 ```
@@ -40,6 +46,138 @@ independent modifiers change the count *without any code changing*:
 | **#1790 merged AND working tree renormalized** | 3 suites go green → **6 failed** | ✅ measured (see §4) |
 
 If you see a count other than 9, **check these three before declaring a regression.**
+
+### ⚠️ CORRECTION — the count is not stable run-to-run
+
+Added after three additional full runs. **The failing *set* varies between identical
+runs on the same commit.** Measured:
+
+| Run | Files failed | Set |
+| --- | --- | --- |
+| Baseline (§1) | **9** | incl. `promote-insider-tag`, `patch-esm-imports` |
+| With #1794 fix applied | **8** | `scheduler` gone (fixed); `template-sync` + `consumer-imports` **appeared** |
+| Control, #1794 stashed | **7** | `template-sync`, `consumer-imports`, `promote-insider-tag`, `patch-esm-imports` all absent |
+
+`template-sync`, `consumer-imports`, `promote-insider-tag` and `patch-esm-imports`
+move in and out between runs. **All of them pass in isolation** (340 passed when the
+first two are run alone).
+
+So the honest baseline for tomorrow is a **range conditioned on tree state**, not a
+number:
+
+> **On an un-renormalized tree: expect 7–9 failed files.**
+> **On a renormalized tree against merged `dev`: expect 7 files / 10 tests** (→ **6**
+> once #1802 merges).
+> **Anything ≥ 10, or any file outside the known set below, is new.**
+> Treat the *set* as the signal, not the count.
+
+Known-to-move set (re-run before believing a delta here): `template-sync`,
+`consumer-imports`, `promote-insider-tag`, `patch-esm-imports`.
+
+EOL-dependent — **fail only on an un-renormalized tree**, and are *not* noise:
+`check-changeset-drift`, `mjs-shebang-loadable`. See the red block below.
+
+Stable set: `cli-packaging-smoke`, `plugin-extensibility`, `repl-ux`, `acceptance`,
+`cli/watch-capabilities`, `init-scaffolding` (the #1796 guard, see §7)
+(+ `scheduler` until #1802 merges).
+
+**`template-sync` — retracted prediction, and it is NOT fixed.**
+
+⚠️ **An earlier revision of this document predicted #1798 would stabilise
+`template-sync`. That prediction was wrong. It is retracted.**
+
+Flight ran the full suite with #1798 applied and `template-sync` still failed, with a
+mechanism unrelated to the writer #1798 removed:
+
+```
+FAIL  test/template-sync.test.ts > dynamic template enumeration (all synced files)
+Error: Command failed: node scripts/sync-templates.mjs
+Error: EBUSY: resource busy or locked, open
+  'packages\squad-sdk\templates\skills\nap\SKILL.md'
+  at copyFile (scripts/sync-templates.mjs:76:3)
+```
+
+**I then confirmed it independently against merged `dev`** (#1798 is merged —
+`TEST_ROOT` is `tmpdir()` on `dev`). `template-sync` failed on one full run and
+**passed** on the next, with no code change between them. So it is not a branch
+artifact and not deterministic: the writer #1798 removed is gone and the flake remains.
+
+The confirmed mechanism is `template-sync.test.ts`'s **own** `beforeAll`, which shells
+out to `scripts/sync-templates.mjs`. That script writes **65 files into the live
+working tree** — verified locally, `📋 Synced 65 file(s) from .squad-templates/` —
+while 273 other test files run in parallel workers, and collides with `EBUSY` on
+whichever template another suite happens to hold open. **The suite is its own
+counterparty.**
+
+The #1796 byte-compare race is retained as a *possible second* contributor, but as a
+**hypothesis with its evidence, not a closed case**. Two independent races in one
+suite is entirely consistent with a suite that writes 65 files into a shared tree.
+
+> **Do not read this as "fixed."** `template-sync` remains in the moving set.
+
+This correction is worded carefully on purpose. The original `beforeAll` comment in
+that file *diagnosed a race, named the wrong counterparty, and closed the case* — and
+that is precisely why the bug survived. A correction that repeats the shape of the
+thing it corrects is worth nothing.
+
+The other three movers remain **UNKNOWN** — likely parallel-worker interaction, not
+verified. Filed as #1803.
+
+This is the most operationally important line in the document: **a flaky suite is
+indistinguishable from a real regression at 9am.** Do not chase a single-file delta
+inside the known-to-move set; re-run first.
+
+### 🔴 READ THIS FIRST TOMORROW — the #1788 guard fails on an un-renormalized tree
+
+Measured on merged `dev` (post-#1790, post-#1798), in this existing worktree:
+
+```
+FAIL test/scripts/mjs-shebang-loadable.test.ts  (18 tests | 13 failed)
+FAIL test/scripts/check-changeset-drift.test.ts [ load error — 0 tests ]
+```
+
+**This is #1793 manifesting, and it will look exactly like "the #1788 fix is broken."
+It is not.** Booster's guard landed and is working correctly — it is *supposed* to go
+red on a tree whose `.mjs` files are still CRLF. Verified state on disk:
+
+```
+git ls-files --eol scripts/check-changeset-drift.mjs
+  i/lf  w/crlf  attr/text eol=lf     ← attribute merged, working tree still CRLF
+  113 CRLF pairs in the first 4KB
+```
+
+**Controlled proof — one variable flipped, nothing else:**
+
+| | Before renormalize | After forced re-checkout |
+| --- | --- | --- |
+| `mjs-shebang-loadable` | **13 failed** / 5 passed | **18 passed** |
+| `check-changeset-drift` | **load error, 0 tests** | **8 passed** |
+
+26 tests recovered by changing only the bytes on disk. `w/crlf` → `w/lf`.
+
+**Remediation (do this before the first run tomorrow):**
+
+```powershell
+git ls-files -- '*.mjs' | % { Remove-Item -LiteralPath $_ -Force }
+git checkout -- .
+git ls-files --eol scripts/check-changeset-drift.mjs   # must show w/lf
+```
+
+A plain `git checkout --` on an unmodified file is a **no-op** and does nothing; the
+file must be deleted first to force re-checkout. This is the single most likely
+source of a false alarm tomorrow morning.
+
+### Post-renormalize numbers on merged `dev`
+
+Same tree, immediately after the renormalize above:
+
+```
+Test Files   7 failed | 269 passed | 1 skipped (277)
+Tests       10 failed | 7508 passed
+```
+
+So against **merged `dev`, renormalized**: expect **7 failed files / 10 failed tests**.
+`#1802` will remove `scheduler`'s 4 → expect **6 files** once it merges.
 
 ---
 
@@ -187,12 +325,62 @@ CI. It was **not** re-run in a plain Windows clone. Confidence high, proof parti
 ## 7. Working-tree side effects of `npm test`
 
 Running the suite **mutates tracked files**. Check `git status --short` after every
-run and restore before committing.
+run and restore before committing. These are **two different bugs** with different
+mechanisms, owners and risk levels — do not treat them as one.
 
-| File | Mutation |
-| --- | --- |
-| `.github/agents/squad.agent.md` | Version stamp rewritten `0.0.0-source` → `0.13.0` |
-| `test/__snapshots__/parser-contracts.test.ts.snap` | CRLF/LF churn |
+| File | Mutation | Mechanism | Risk | Owner |
+| --- | --- | --- | --- | --- |
+| `.github/agents/squad.agent.md` | Version stamp rewritten `0.0.0-source` → `0.13.0` | **Content change.** Init walks up to the real git root and `stampVersion()` rewrites the tracked file | 🔴 **High** — a broad `git add` commits a spurious version bump | #1796 — **PARTIALLY fixed, see below** |
+| `test/__snapshots__/parser-contracts.test.ts.snap` | Working copy flips CRLF → LF | **Pure EOL, zero content lines.** File is `i/lf w/crlf`; vitest writes LF. The #1793 CRLF class | 🟡 Cosmetic — no content risk | folded into **#1790** |
+| `docs/pagefind.yml`, `samples/**/*.sh`, `templates/**/*.ps1` | CRLF ↔ LF churn | **Pure EOL** — confirmed via `git diff --ignore-cr-at-eol` returning empty | 🟡 Cosmetic — but noisy; never stage | #1793 class |
+
+### ⚠️ #1796 is NOT fully fixed — verified on merged `dev`
+
+PR #1798 removed **one** writer (`init-scaffolding.test.ts`'s in-repo sandbox). The
+mutation still happens. Measured on merged `dev`, after a full `npm test`:
+
+```
+git status --short
+ M .github/agents/squad.agent.md
+
+git diff -- .github/agents/squad.agent.md
+-<!-- version: 0.0.0-source -->
++<!-- version: 0.13.0 -->
+-- **Version:** 0.0.0-source (see HTML comment above ...
++- **Version:** 0.13.0 (see HTML comment above ...
+```
+
+**The guard I added in #1798 is the detector, and it is correctly red:**
+
+```
+FAIL test/init-scaffolding.test.ts > repository working tree is not mutated
+     by this suite (#1796) > tracked squad.agent.md files are byte-unchanged
+```
+
+Decisive discriminator: that guard **passes in isolation** (`26 passed`) and **fails
+in the full suite**. So the remaining writer is a *different suite* running in a
+parallel worker — not `init-scaffolding` itself.
+
+**The pattern is far wider than one file.** At least **16** suites build their sandbox
+inside the repo via `join(process.cwd(), ...)` — `cli/cast`, `cli-global`,
+`dual-root-resolver`, `effective-squad-dir`, `cli/doctor`, `memory-governance`,
+`memory-providers`, `personal-squad`, `presets`, `resolution`, `cli/remote-mode`,
+`cli/state-mcp`, `real-cli-ab`, `init`, `sharing`, `state-backend`. Any of them that
+runs `init`/`upgrade` in a sandbox lacking its own `.git` will walk up to the real
+repository and stamp it. #1798 fixed one instance of a recurring pattern.
+
+**Filed as #1807.** Not closed by #1798.
+
+> **Practical rule for tomorrow: after any `npm test`, run `git status --short` and
+> restore `.github/agents/squad.agent.md` before staging anything. Never `git add -A`.**
+
+Note both suites **pass while doing it**. A fully green suite silently mutating
+tracked source is the seventh instance of the silent-success class tonight.
+
+The `.snap` fix (`*.snap text eol=lf`) is deliberately **not** in #1798: per §4 the
+attribute repairs no existing checkout, so shipping it separately would strand a
+second file needing a second remediation. Folded into #1790 it rides the same
+renormalize.
 
 `npm run build` additionally rewrites to `-build.N` versions:
 `package.json`, `package-lock.json`, both `packages/*/package.json`, and both
