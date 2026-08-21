@@ -210,6 +210,36 @@ describe('Nap archival — #1774: never trim the source without a verified appen
   });
 });
 
+describe('Nap archival — the tree must not be mutated unexpectedly', () => {
+  it('leaves git status completely clean when it refuses to archive', () => {
+    const { repoRoot, squadDir } = createRepo({ excludeSquad: true, archiveExists: false });
+
+    runNap({ squadDir });
+
+    // A refusal must write NOTHING. Pre-fix this path trimmed the tracked
+    // decisions.md (which shows as modified) and created an excluded archive
+    // file (which does NOT show — that invisibility is what made the loss
+    // survive review). An empty status is the only honest proof of no-op.
+    expect(git(['status', '--porcelain'], repoRoot).trim()).toBe('');
+  });
+
+  it('mutates only the two archival files during a normal archive', () => {
+    const { repoRoot, squadDir } = createRepo({ excludeSquad: false, archiveExists: true });
+
+    runNap({ squadDir });
+
+    const dirty = git(['status', '--porcelain'], repoRoot)
+      .split('\n')
+      .map((l) => l.slice(3).trim())
+      .filter(Boolean)
+      .sort();
+
+    // Green suites silently mutating unrelated tracked files is its own defect
+    // class; assert the blast radius rather than assuming it.
+    expect(dirty).toEqual(['.squad/decisions-archive.md', '.squad/decisions.md']);
+  });
+});
+
 describe('Nap archival — #1760: `###` inside a fence is not a record boundary', () => {
   it('does not split a record at a fenced code sample', () => {
     const { squadDir } = createRepo({ excludeSquad: false, archiveExists: true, entries: 24 });
