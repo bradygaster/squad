@@ -10,6 +10,7 @@
 |---|---|---|
 | 2026-08-21 (initial) | Executed, PASS at n=1, two qualifications recorded | see result below |
 | 2026-08-21 (post-run) | Phase 2 extended by one command (`plan activate`); new Phase 3e roster-provenance gate; contamination-table growth note; Condition 0 dual-role justification; `squad-e2e-runbook.md` citations replaced with self-contained text; scope-limitation section updated | #1811, #1812 — the n=1 PASS was structurally silent on the `plan activate` roster-read defect, and Condition 0's timing guarantee was undocumented |
+| 2026-08-21 (review followup) | Two caveats rewritten to correctly describe fail-closed routing (empty comment / anchor-mismatch → `A: FAIL` → INCONCLUSIVE for #1812, not "scores green"); gate 3e (B) hardened against `gh api` fetch failure and empty-set collapse (SetEquals(∅,∅) → True); Phase 3c roster fetch guarded the same way; verdict-interpretation table gained a `(A) PASS, (B) INCONCLUSIVE` row | PR #1819 review by Flight + Coordinator — the caveats overstated the risk, the code understated one |
 
 > ⚠️ **The n=1 PASS below scored the procedure that stopped at `plan implementation`.** The
 > amended procedure (Phase 2 now includes `plan activate`; Phase 3 now includes a
@@ -618,13 +619,23 @@ Every `squad:{x}` on a **newly created** issue must have `{x}` = a lowercased ro
 
 ```powershell
 $b = gh api "repos/$FIXTURE/contents/.squad/team.md" --jq '.content' 2>$null
-$roster = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b))
-Write-Host "roster contains 'DevRel' : $($roster.Contains('DevRel'))"   # expect False
-Write-Host "roster contains 'devrel' : $($roster.Contains('devrel'))"   # expect False
+if ([string]::IsNullOrWhiteSpace($b)) {
+    Write-Host "roster fetch: INCONCLUSIVE — gh api could not read $FIXTURE/.squad/team.md"
+} else {
+    $roster = $null
+    try { $roster = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)) }
+    catch { Write-Host "roster fetch: INCONCLUSIVE — team.md base64 decode failed" }
+    if ($roster) {
+        Write-Host "roster contains 'DevRel' : $($roster.Contains('DevRel'))"   # expect False
+        Write-Host "roster contains 'devrel' : $($roster.Contains('devrel'))"   # expect False
+    }
+}
 ```
 
 If either reads `True`, the roster changed since 2026-08-21 and **the `devrel`-is-dispositive
-argument no longer holds** — re-derive the criterion before judging the run.
+argument no longer holds** — re-derive the criterion before judging the run. If the fetch
+prints INCONCLUSIVE, do not treat the two `False` values as absent: they were never read.
+Fix the fetch and re-check before scoring.
 
 ### 3d. Safe-outputs
 
@@ -675,24 +686,38 @@ if (-not $claim.Success) {
 
     # (B) set-equality.
     $b = gh api "repos/$FIXTURE/contents/.squad/team.md" --jq '.content' 2>$null
-    $roster = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b))
+    $roster = $null
+    if ([string]::IsNullOrWhiteSpace($b)) {
+        Write-Host "GATE 3e (B): INCONCLUSIVE — gh api could not read $FIXTURE/.squad/team.md (empty/null response); investigate before scoring #1812"
+    } else {
+        try { $roster = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)) }
+        catch { Write-Host "GATE 3e (B): INCONCLUSIVE — team.md base64 decode failed ($($_.Exception.GetType().Name)); investigate before scoring #1812" }
+    }
 
-    # Extract the ## Members → Name column. Trim to that section only.
-    $members = [regex]::Match($roster, '(?ms)^##\s*Members\s*\r?\n(?<body>.*?)(?=^##|\z)').Groups['body'].Value
-    # Take the first non-header cell of each row; the Name column is convention position 1.
-    $realNames = [regex]::Matches($members, '(?m)^\|\s*([^|`\s][^|]*?)\s*\|') |
-                 ForEach-Object { $_.Groups[1].Value.Trim('` ').ToLower() } |
-                 Where-Object { $_ -notin @('name','---',':---',':---:','---:') }
+    if ($roster) {
+        # Extract the ## Members → Name column. Trim to that section only.
+        $members = [regex]::Match($roster, '(?ms)^##\s*Members\s*\r?\n(?<body>.*?)(?=^##|\z)').Groups['body'].Value
+        # Take the first non-header cell of each row; the Name column is convention position 1.
+        $realNames = [regex]::Matches($members, '(?m)^\|\s*([^|`\s][^|]*?)\s*\|') |
+                     ForEach-Object { $_.Groups[1].Value.Trim('` ').ToLower() } |
+                     Where-Object { $_ -notin @('name','---',':---',':---:','---:') }
 
-    $reportedRaw = $claim.Groups['set'].Value
-    $reportedNames = ($reportedRaw -split '[,`]') |
-                     ForEach-Object { $_.Trim('` ,').Trim().ToLower() } |
-                     Where-Object { $_.Length -gt 0 }
+        $reportedRaw = $claim.Groups['set'].Value
+        $reportedNames = ($reportedRaw -split '[,`]') |
+                         ForEach-Object { $_.Trim('` ,').Trim().ToLower() } |
+                         Where-Object { $_.Length -gt 0 }
 
-    $real = [System.Collections.Generic.HashSet[string]]::new([string[]]$realNames)
-    $reported = [System.Collections.Generic.HashSet[string]]::new([string[]]$reportedNames)
-    $eq = $real.SetEquals($reported)
-    Write-Host "GATE 3e (B): $(if ($eq) {'PASS'} else {'FAIL'}) — reported=[$($reportedNames -join ',')] real=[$($realNames -join ',')]"
+        # An empty set on either side is an infrastructure failure, not a verdict.
+        # SetEquals(∅, ∅) is True — do NOT let two failures cancel into a green.
+        if ($realNames.Count -eq 0 -or $reportedNames.Count -eq 0) {
+            Write-Host "GATE 3e (B): INCONCLUSIVE — parsed empty set (real=$($realNames.Count) reported=$($reportedNames.Count)); investigate before scoring #1812"
+        } else {
+            $real = [System.Collections.Generic.HashSet[string]]::new([string[]]$realNames)
+            $reported = [System.Collections.Generic.HashSet[string]]::new([string[]]$reportedNames)
+            $eq = $real.SetEquals($reported)
+            Write-Host "GATE 3e (B): $(if ($eq) {'PASS'} else {'FAIL'}) — reported=[$($reportedNames -join ',')] real=[$($realNames -join ',')]"
+        }
+    }
 }
 ```
 
@@ -704,16 +729,27 @@ if (-not $claim.Success) {
   claim is the strongest evidence: the activate step *cited* the fixture's `team.md` and
   produced a set that isn't in it. Do not accept an argument that the mismatch is cosmetic —
   cite this section back.
-- **(A) FAIL** → separate silent-success bug filed against Procedures. Do not proceed to score
-  this run for #1812 either way — you have no readable signal.
+- **(A) PASS, (B) INCONCLUSIVE** → infrastructure failure, not a verdict for #1812. The
+  fixture roster couldn't be read or parsed to a non-empty set, so there is nothing to
+  compare against. Do NOT score this run for #1812. Investigate the fetch/parse failure and
+  re-run once resolved.
+- **(A) FAIL** → separate silent-success bug filed against Procedures. Do not proceed to
+  score this run for #1812 either way — you have no readable signal.
 
 **Read this by eye too.** As with the `Agent` column, the automated set comparison is a
-double-check, not the judgement. A regex that "finds no mismatch" against an empty comment
-scores green. **Confirm the activate comment actually rendered a summary first.**
+double-check, not the judgement. If the activate comment failed to render at all, the (A)
+regex fails first, gate 3e prints `A: FAIL`, and the run scores **INCONCLUSIVE for #1812** —
+that is the correct routing (fail-closed), but it silently costs you the ability to
+distinguish "activate rendered a bad summary" from "activate didn't render a summary."
+**Confirm the activate comment actually rendered a summary first**, so the recorded A-FAIL
+captures the right defect and isn't mistaken for a #1812 signal.
 
 > ⚠️ **This gate assumes the activation summary's phrasing is stable.** The regex anchors on
 > `"Roster set read from"` and `"team.md"` and `"Name"`. If Procedures changes the phrasing,
-> update the anchor **before** re-running; a silently non-matching anchor scores green.
+> the (A) regex fails and gate 3e prints `A: FAIL` — the gate fails **closed** and the run
+> scores **INCONCLUSIVE for #1812** rather than falsely PASSing. That routing is correct, but
+> it costs a scored E4 run. **Update the anchors before re-running** so a Procedures rewording
+> doesn't silently burn a run.
 
 ---
 
