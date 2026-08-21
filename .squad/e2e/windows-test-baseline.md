@@ -41,6 +41,41 @@ independent modifiers change the count *without any code changing*:
 
 If you see a count other than 9, **check these three before declaring a regression.**
 
+### ⚠️ CORRECTION — the count is not stable run-to-run
+
+Added after three additional full runs. **The failing *set* varies between identical
+runs on the same commit.** Measured:
+
+| Run | Files failed | Set |
+| --- | --- | --- |
+| Baseline (§1) | **9** | incl. `promote-insider-tag`, `patch-esm-imports` |
+| With #1794 fix applied | **8** | `scheduler` gone (fixed); `template-sync` + `consumer-imports` **appeared** |
+| Control, #1794 stashed | **7** | `template-sync`, `consumer-imports`, `promote-insider-tag`, `patch-esm-imports` all absent |
+
+`template-sync`, `consumer-imports`, `promote-insider-tag` and `patch-esm-imports`
+move in and out between runs. **All of them pass in isolation** (340 passed when the
+first two are run alone).
+
+So the honest baseline for tomorrow is a **range, not a number**:
+
+> **Expect 7–9 failed files. Anything ≥ 10, or any file outside the known set below,
+> is new.** Treat the *set* as the signal, not the count.
+
+Known-to-move set: `template-sync`, `consumer-imports`, `promote-insider-tag`,
+`patch-esm-imports`.
+Stable set: `check-changeset-drift`, `cli-packaging-smoke`, `plugin-extensibility`,
+`repl-ux`, `acceptance`, `cli/watch-capabilities` (+ `scheduler` until #1802 merges).
+
+**Partly explained, partly unknown.** `template-sync`'s instability *is* the #1796
+race — it byte-compares `.github/agents/squad.agent.md` against the template while
+`init-scaffolding` is concurrently rewriting it, so whether it fails depends on
+worker scheduling. **PR #1798 should stabilise it.** The other three are
+**UNKNOWN** — most likely parallel-worker interaction, not verified. Filed as #1803.
+
+This is the most operationally important line in the document: **a flaky suite is
+indistinguishable from a real regression at 9am.** Do not chase a single-file delta
+inside the known-to-move set; re-run first.
+
 ---
 
 ## 2. Load failures vs assertion failures — read this first
@@ -187,12 +222,28 @@ CI. It was **not** re-run in a plain Windows clone. Confidence high, proof parti
 ## 7. Working-tree side effects of `npm test`
 
 Running the suite **mutates tracked files**. Check `git status --short` after every
-run and restore before committing.
+run and restore before committing. These are **two different bugs** with different
+mechanisms, owners and risk levels — do not treat them as one.
 
-| File | Mutation |
-| --- | --- |
-| `.github/agents/squad.agent.md` | Version stamp rewritten `0.0.0-source` → `0.13.0` |
-| `test/__snapshots__/parser-contracts.test.ts.snap` | CRLF/LF churn |
+| File | Mutation | Mechanism | Risk | Owner |
+| --- | --- | --- | --- | --- |
+| `.github/agents/squad.agent.md` | Version stamp rewritten `0.0.0-source` → `0.13.0` | **Content change.** `test/init-scaffolding.test.ts` sandboxed itself *inside* the repo; init walks up to the real git root and `stampVersion()` rewrites the tracked file | 🔴 **High** — a broad `git add` commits a spurious version bump | #1796 → **PR #1798** |
+| `test/__snapshots__/parser-contracts.test.ts.snap` | Working copy flips CRLF → LF | **Pure EOL, zero content lines.** File is `i/lf w/crlf`; vitest writes LF. The #1793 CRLF class | 🟡 Cosmetic — no content risk | folded into **#1790** |
+
+Both reproduced in isolation from a clean tree:
+
+```
+npx vitest run test/init-scaffolding.test.ts   → 24 passed, then: M .github/agents/squad.agent.md
+npx vitest run test/parser-contracts.test.ts   → 16 passed, then: M test/__snapshots__/...snap
+```
+
+Note both suites **pass while doing it**. A fully green suite silently mutating
+tracked source is the seventh instance of the silent-success class tonight.
+
+The `.snap` fix (`*.snap text eol=lf`) is deliberately **not** in #1798: per §4 the
+attribute repairs no existing checkout, so shipping it separately would strand a
+second file needing a second remediation. Folded into #1790 it rides the same
+renormalize.
 
 `npm run build` additionally rewrites to `-build.N` versions:
 `package.json`, `package-lock.json`, both `packages/*/package.json`, and both
