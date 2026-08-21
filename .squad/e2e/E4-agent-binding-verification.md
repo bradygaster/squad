@@ -2,15 +2,72 @@
 
 > **Author:** Sims (E2E Test Engineer)
 > **Written:** 2026-08-21, from the E3 long-path rehearsal
-> **Status:** ⛔ **NOT YET EXECUTED — this is a post-merge procedure.**
+> **Status:** ✅ **EXECUTED 2026-08-21 — result recorded below.**
+
+---
+
+## ✅ Executed — 2026-08-21 · verdict PASS (n=1)
+
+Run against fixture `bradygaster/aspiregregator-squad-e2e`, seed issue **#22**,
+`$E4_START` = `2026-08-21T09:18:32Z`. **8 gates, 8 green, zero interventions, ~55 min.**
+
+| # | Condition | Result |
+|---|---|---|
+| 0 | ≥1 issue created by `activate` (excl. seed #22) | ✅ 15 squad-authored (#23–#37) |
+| 1 | `Agent` column = verbatim roster names | ✅ **11/11**, zero role-derived tokens |
+| 2 | No `squad:lead`/`devrel`/`reviewer` in timeline `labeled` events | ✅ 15 events, all `squad` |
+| 3 | Activation summary reports missing-label prerequisite gap | ✅ reported verbatim |
+
+Same-fixture control: **E3 produced `lead, lead, devrel` on this exact column**; E4 produced
+`McManus, Keaton, Fenster, Hockney…`. One prompt change (#1789) between them.
+
+> 🛑 **Scope bound.** Green means *"the `Agent` column is clean on one artifact, n=1, salience
+> path."* It does **not** mean #1784 is retired — see the two qualifications below.
+
+### 🔴 Qualification 1 — the roster read at `activate` is still wrong
+
+The activation summary claims it read `.squad/team.md` `## Members` → `Name` and got
+`lead, reviewer, devrel, security, docs`. **That file's Name column is
+`Keaton, McManus, Fenster, Hockney, Kint`**, and `devrel`/`security`/`docs` do not appear
+anywhere in it. The cited set is the generic **uncast** Squad role vocabulary and matches no
+single file's Name column.
+
+Consequently `activate` declared the *correct* Agent values "non-roster", and advises the
+operator to *"recast the team or update the implementation plan"* — i.e. to break correct data.
+
+**Condition 2's green is therefore structural, not earned:** the intent to bind to
+`lead`/`devrel` is still present at `activate` and was only prevented from being expressed
+because `create-label` is unconfigured. Likely a **separate live defect from #1784**; file
+separately rather than folding it in.
+
+### Qualification 2 — the fixture cannot express a correct owner label at all
+
+Absence of `squad:keaton` is **expected and correct**: the lock has zero `create-label`
+references. Closing #1784's user-visible symptom needs an `issues: write` + `create-label`
+workflow permissions change, **not** a prompt change. Separate from the deferred deterministic
+enforcement item.
+
+### 🟢 Free result — #1787 sibling-epic dispatch, first live observation
+
+`plan program` produced the 4-sibling-epic shape #1787 had never had a fixture for. After
+`activate`: **all 15 issues parent to root #22; every epic has 0 sub-issues.** The hierarchy is
+flat, so **refill necessarily draws from the root, not the parent epic.** Corroborated by the
+summary's own gap note that `parent` is wired for epic→root only.
+
+Full evidence: `squad-e4-20260821/E4-RESULT.md` (operator's machine, out of repo).
+
+---
+
+## Original pre-execution framing (retained)
 
 ---
 
 ## ⛔ Read this before anything else
 
-**This procedure has not been run. #1784 is NOT verified.**
+**Superseded by the executed result above (2026-08-21).** Retained because the reasoning still
+governs any *re-run*. The bar below is the bar that was met.
 
-State confirmed at time of writing:
+State at time of writing:
 
 | Item | State |
 |---|---|
@@ -183,6 +240,26 @@ per `:913` when no cast member fits).
 
 **Invalid — any of these is a finding:** `Lead`, `DevRel`, `Reviewer`, `Architect`, `Backend`,
 `Frontend`, `Test`, `DevOps`, `Platform`, or any lowercased/`squad:`-prefixed form thereof.
+
+### 🛑 Known gap — this criterion detects wrong *vocabulary*, not wrong *assignment*
+
+The `Agent`-column check asks whether every value **is** a roster name. It does **not** ask
+whether the **right** roster name got the row. An infrastructure task bound to the Backend
+engineer produces a fully verbatim column and scores green.
+
+Role-appropriateness requires a **manual read of each task's text against its binding** and is
+**not** established by this criterion. Phrase results accordingly:
+
+> *"N/N bound to roster names; assignments role-appropriate on manual read"*
+
+— with the second clause explicitly marked as a **human check the gate did not perform**.
+
+> ⚠️ **Never let an absence carry the claim.** "Agent X appears zero times because there is no
+> work of that kind" is circular unless you separately confirm no such task exists — the zero is
+> otherwise both the evidence and the thing it explains. Two states produce an identical
+> artifact: a genuine zero, and work of that kind misbound to someone else. **Lead with the
+> positive bindings** — each is falsifiable by reading its own row — and record any zero only as
+> *corroborated by manual confirmation that no task is of that shape*.
 
 ---
 
