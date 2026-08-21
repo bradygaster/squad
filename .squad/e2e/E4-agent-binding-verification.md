@@ -1,8 +1,21 @@
-# E4 — Agent-Binding Verification (#1784)
+# E4 — Agent-Binding Verification (#1784, #1812)
 
 > **Author:** Sims (E2E Test Engineer)
 > **Written:** 2026-08-21, from the E3 long-path rehearsal
-> **Status:** ✅ **EXECUTED 2026-08-21 — result recorded below.**
+> **Status:** ✅ **EXECUTED 2026-08-21 (n=1) — result recorded below. Amended 2026-08-21 (post-run) for #1811 and #1812; re-run required for n=2.**
+
+## Amendment log
+
+| Date | Change | Reason |
+|---|---|---|
+| 2026-08-21 (initial) | Executed, PASS at n=1, two qualifications recorded | see result below |
+| 2026-08-21 (post-run) | Phase 2 extended by one command (`plan activate`); new Phase 3e roster-provenance gate; contamination-table growth note; Condition 0 dual-role justification; `squad-e2e-runbook.md` citations replaced with self-contained text; scope-limitation section updated | #1811, #1812 — the n=1 PASS was structurally silent on the `plan activate` roster-read defect, and Condition 0's timing guarantee was undocumented |
+
+> ⚠️ **The n=1 PASS below scored the procedure that stopped at `plan implementation`.** The
+> amended procedure (Phase 2 now includes `plan activate`; Phase 3 now includes a
+> roster-provenance gate) has **not yet been executed**. Any claim about #1812 requires a fresh
+> live run against the amended procedure — do not cite the n=1 record as evidence of the
+> provenance gate's behaviour.
 
 ---
 
@@ -17,6 +30,20 @@ Run against fixture `bradygaster/aspiregregator-squad-e2e`, seed issue **#22**,
 | 1 | `Agent` column = verbatim roster names | ✅ **11/11**, zero role-derived tokens |
 | 2 | No `squad:lead`/`devrel`/`reviewer` in timeline `labeled` events | ✅ 15 events, all `squad` |
 | 3 | Activation summary reports missing-label prerequisite gap | ✅ reported verbatim |
+
+> 🛑 **Condition 0 does three jobs, not one — evaluate it first (#1811).** It is a **liveness
+> floor**, a **seed-exclusion census**, and — the reason it must come first — the
+> **premature-read guard**. The #1784 measurement is a `safe_outputs` effect: **job 5 of 6**
+> in the gh-aw pipeline (`pre_activation`, `activation`, `agent`, `detection`, `safe_outputs`,
+> `conclusion`). `agent ✅` lands *before* the label state is written. Reading at that moment
+> fails **in both directions**: a label census returns a **false RED** (the three pre-existing
+> `squad:lead/devrel/reviewer` labels look like a fresh reproduction), and a timeline `labeled`
+> query returns a **vacuous GREEN** (empty event list). Switching instruments does not help —
+> the hazard is temporal, not instrumental. Condition 0 catches both because a premature read
+> yields zero Squad-authored issues → INCONCLUSIVE → stop before 1–3 are scored. **Wait for
+> all six jobs, including `conclusion`; `agent ✅` is not sufficient.** Do not refactor Condition
+> 0 into "just a liveness floor" and move it later — it looks harmless because the guard is
+> silent when it works.
 
 Same-fixture control: **E3 produced `lead, lead, devrel` on this exact column**; E4 produced
 `McManus, Keaton, Fenster, Hockney…`. One prompt change (#1789) between them.
@@ -180,26 +207,34 @@ appeared. The root cause reproducing itself precisely.
 
 ---
 
-## ⚠️ Scope limitation — what E4 does NOT cover
+## ⚠️ Scope — what E4 covers, and what it does NOT
 
-**E4 verifies the task-level `Agent` binding only.**
+**As amended, E4 verifies two things:**
 
-Epic **#17** received `squad:lead`, but the `plan program` artifact (run `32433011339`) contains
-**no owner or agent assignment whatsoever** — verified by direct read. The epic's owner is
-therefore minted at **`plan activate`**, which is **downstream of where E4 stops**.
+1. **Task-level `Agent` binding at `plan implementation`** (#1784). Historical scope, unchanged.
+2. **Roster provenance at `plan activate`** (#1812). Added post-#1811. The gate compares the
+   activation summary's `"Roster set read from …"` line against the fixture's actual
+   `.squad/team.md → ## Members → Name` column, as a set.
 
-⇒ **A green E4 does not mean "no owner label leaks anywhere."** It means *"the `Agent` column at
-`plan implementation` is clean."* Epic-level owner minting is a **separate, unverified surface**
-requiring its own check on a full-path run.
+**E4 does NOT cover:**
 
-E4's scope remains correct and sufficient for its purpose — `devrel` appears **in the Agent
-column**, so the dispositive signal is present where E4 looks. But do not overstate the result
-when reporting it.
+- **`plan validate` / `plan accept …` / `implement` / merge / post-merge relay.** Those add
+  ~27 min and are on E1's beat (the merge-continuation relay path), plus follow-on paths that
+  are **not** unattended-safe (see the E4 Follow-on section for #1787 sibling-epic refill).
+- **Rule D — epic closure after last leaf merges.** That is a formal gate on E1.
+- **Every label surface downstream of `plan activate`.** E4 stops immediately after `plan
+  activate` runs.
 
-**The leak originates in the `Agent` column at `plan implementation`** (`:913`), and propagates
-into minted labels at `plan activate` (`:730`). That's why this procedure stops at
-`plan implementation` — it catches the defect at its source rather than at its symptom, which
-is what makes a ~27 min run sufficient instead of a ~54 min one.
+**Why the boundary is drawn at `plan activate`.** The two defects E4 is engineered to catch —
+role-token leakage in the `Agent` column (#1784) and roster-provenance falsehood in the
+activation summary (#1812) — both surface no later than the `plan activate` job's own
+comment. Continuing past it does not improve E4's signal for either defect and does bring in
+the autonomy blockers documented in the Follow-on section.
+
+**Historical note (n=1 record only).** The original procedure stopped at `plan implementation`
+and produced a PASS at n=1. That record is preserved because it is real evidence for its own
+scope. It is **not** evidence for the amended procedure — the roster-provenance gate has
+never been executed as a formal gate. Re-run required.
 
 ---
 
@@ -285,15 +320,19 @@ Role-appropriateness requires a **manual read of each task's text against its bi
 
 ## Budget
 
-**~27 minutes**, derived from E3 rather than estimated: E3's
+**~31 minutes**, adapted from E3's measurement: E3's
 `research → triage → plan program → plan implementation` sub-window ran 00:18:10 → 00:44:54 =
-**26.7 min** (runs `32432129404` → `32433493989`), plus fixture refresh.
+**26.7 min** (runs `32432129404` → `32433493989`), plus fixture refresh. **Add ~4 min for the
+`plan activate` step** appended in this amendment; E4 (n=1) measured `plan activate` at
+`~2m43s` (run `32471509974`, 2026-08-21 10:11:53Z → 10:14:36Z). Round up to ~4 min to cover
+between-step gh-aw pickup latency.
 
-Add ~12 min if you enter out of order — see *Required entry sequence* in the runbook.
+Add ~12 min if you enter out of order — see *Ordering — mandatory, not stylistic* in Phase 2.
 
-**E4 is unattended-safe.** It stays entirely on the planning path, so it creates no worker PR
-and therefore hits neither the `action_required` approval gate nor the `detection` hang.
-E3 needed **zero** human interventions across 8 runs.
+**E4 is unattended-safe.** All five commands are on the planning track, so E4 creates no
+worker PR and therefore hits neither the `action_required` approval gate nor the `detection`
+hang. E3 needed **zero** human interventions across 8 runs. The `plan activate` step mints
+labels on the fixture; that is expected fixture state change, not an intervention.
 
 ---
 
@@ -330,9 +369,11 @@ So the compiled lock **and** the committed source markdown are separately stale.
 the workflow came from. It does **not** mean the fixture is current. **Never** treat it as
 evidence of freshness.
 
-**④ Do not trust `gh aw update`.** It has a 3-day cooldown that silently skips the source pull,
-then compiles happily and exits 0 (runbook gotcha #1 — an instance of the silent-success
-pattern, gotcha #10). Fetch via `gh api`, then `gh aw compile`.
+**④ Do not trust `gh aw update`.** It has a 3-day cooldown that **silently skips** the source
+pull, then compiles happily and exits 0. This is an instance of the silent-success pattern that
+runs through this document: **a tool that returns success without doing the requested work is
+worse than one that fails loudly**, because the operator has no signal to investigate. Fetch
+via `gh api`, then `gh aw compile`.
 
 ### 0b. Establish the staleness baseline — compare, never hardcode
 
@@ -467,23 +508,30 @@ If no: what seed shape would have been needed —
 
 ## Phase 2 — Run the short path
 
-**Run exactly these four commands, in this order, and stop.**
+**Run exactly these five commands, in this order, and stop.**
 
 ```
 /squad research
 /squad triage
 /squad plan program
-/squad plan implementation      ← the leak site; STOP HERE
+/squad plan implementation      ← the #1784 leak site
+/squad plan activate            ← the #1812 provenance site; STOP HERE
 ```
 
-> **Do not continue to `plan validate` / `accept` / `activate`.** Those add ~27 min and
-> verify nothing additional for #1784 — the `Agent` column is already emitted at
-> `plan implementation`.
+> **Do not continue to `plan validate` / `plan accept …` / `implement`.** Those add ~27 min and
+> verify nothing additional for E4 — the `Agent` column is emitted at `plan implementation`
+> and the roster-provenance line is emitted at `plan activate`.
 
 **The ordering is mandatory, not stylistic.** The long path enforces preconditions: `plan
 program` on a fresh issue halts and tells you to run `triage` first; `triage` halts and demands
-`research` first. **Those halts are correct behaviour, not bugs** — but they cost ~12 min if
-you trip them.
+`research` first; `plan activate` refuses to run without `plan accept` in later revisions, but
+at the time of writing runs directly after `plan implementation`. **Those halts are correct
+behaviour, not bugs** — but they cost ~12 min if you trip them.
+
+> ⚠️ **After each command, wait for all six pipeline jobs to complete** (`pre_activation`,
+> `activation`, `agent`, `detection`, `safe_outputs`, `conclusion`). **`agent ✅` is not
+> sufficient** — see the Condition 0 justification at the top of this document. A run where
+> `conclusion` has not yet completed is a **premature-read hazard** on the very next command.
 
 Capture the run ID after each command:
 
@@ -519,7 +567,7 @@ Write-Host "`n=== Agent column values ==="
 
 Read the `Agent` column by eye against the accepted-values list above. Do not automate the
 judgement — a regex that "finds no forbidden tokens" in a plan that failed to render is a
-silent-success trap (gotcha #10). **Confirm the plan actually contains a task table first.**
+silent-success trap. **Confirm the plan actually contains a task table first.**
 
 > 🛑 **Ignore Squad's own "Validation Pre-check" table.** In E3 it printed
 > `Agent assignments valid (cast Names) | ✅ (lead, lead, devrel)` — asserting three role
@@ -559,11 +607,12 @@ Every `squad:{x}` on a **newly created** issue must have `{x}` = a lowercased ro
 | `squad:devrel` | E1 + E3 | #8, #20 |
 | `squad:reviewer` | **E1 only** | #9 |
 
-> Note: at `plan implementation` the plan is only *proposed* — labels are minted later, at
-> `plan activate`. So E4 may legitimately create **no new labelled issues at all**. That is
-> expected, and it means the label check is **weak corroboration only**.
-> **The `Agent` column is authoritative for E4.** If labels look clean but the `Agent` column
-> is dirty, that is a **FAIL** — the leak simply hasn't propagated yet.
+> ⚠️ **This table grows.** Every E4 run mints labels at `plan activate` (that step is now part
+> of E4 as of the 2026-08-21 amendment). **After running E4, append the newly-minted labels to
+> this table before the next run** — otherwise the second run's contamination filter is stale
+> and either passes labels it should catch or catches labels it should ignore. If unsure,
+> re-derive the table from the fixture: `gh label list --repo $FIXTURE` gives repo-global
+> presence; scope by issue via the same `E4_START`-cutoff query used above.
 
 ### 3c. Roster cross-check
 
@@ -583,17 +632,102 @@ argument no longer holds** — re-derive the criterion before judging the run.
 gh aw logs squad --repo $FIXTURE --artifacts all --count 1 --output $EVIDENCE
 ```
 
+### 3e. Roster-provenance gate at `plan activate` (#1812)
+
+**This is the gate added in the 2026-08-21 amendment. It has never been executed as a formal
+gate.** The n=1 PASS above scored the pre-amendment procedure that stopped at
+`plan implementation`; that procedure was structurally silent on #1812.
+
+**The claim under test.** The `plan activate` summary posts a line of the shape:
+
+> *"Roster set read from `.squad/team.md` (`## Members` → `Name` column): `<items>`"*
+
+**What #1812 measured (2026-08-21, run `32471509974`, seed #22):** the summary reported
+`{lead, reviewer, devrel, security, docs}` while the fixture's actual `Name` column is
+`{Keaton, McManus, Fenster, Hockney, Kint}`. Five-for-five mismatch, and the minted labels
+were a strict subset of the *false* set — i.e. the code acted on the falsely-reported roster.
+This is not a mere reporting bug; the false provenance is the tell for a hardcoded lookup.
+
+**The gate is two-part. Both parts must pass.**
+
+- **(A) Provenance line exists.** The activation summary must contain the line above.
+  **Absence is a FAIL** — a summary that no longer makes the claim is a different bug we still
+  want to catch (silent-success class: an activate that stopped reporting where it read from is
+  indistinguishable from an activate that stopped reading anything).
+- **(B) Reported set equals fixture set.** Normalize both sides: trim whitespace, lowercase,
+  drop backticks and commas, treat as an unordered set. The reported set must equal the set
+  extracted from the fixture's `.squad/team.md → ## Members → Name` column.
+
+```powershell
+# Grab the plan activate summary comment on the seed issue.
+gh issue view $ISSUE --repo $FIXTURE --json comments `
+    --jq '.comments[-1].body' 2>$null |
+    Set-Content (Join-Path $EVIDENCE "plan-activate-comment.md")
+
+$summary = [IO.File]::ReadAllText((Join-Path $EVIDENCE "plan-activate-comment.md"))
+
+# (A) presence — the exact phrasing may vary; anchor on the two invariants.
+$claim = [regex]::Match($summary, '(?im)Roster set read from.*?team\.md.*?Name.*?:\s*(?<set>.+?)\r?\n')
+if (-not $claim.Success) {
+    Write-Host "GATE 3e (A): FAIL — no 'Roster set read from …' line in activation summary"
+} else {
+    Write-Host "GATE 3e (A): PASS — provenance line present"
+
+    # (B) set-equality.
+    $b = gh api "repos/$FIXTURE/contents/.squad/team.md" --jq '.content' 2>$null
+    $roster = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b))
+
+    # Extract the ## Members → Name column. Trim to that section only.
+    $members = [regex]::Match($roster, '(?ms)^##\s*Members\s*\r?\n(?<body>.*?)(?=^##|\z)').Groups['body'].Value
+    # Take the first non-header cell of each row; the Name column is convention position 1.
+    $realNames = [regex]::Matches($members, '(?m)^\|\s*([^|`\s][^|]*?)\s*\|') |
+                 ForEach-Object { $_.Groups[1].Value.Trim('` ').ToLower() } |
+                 Where-Object { $_ -notin @('name','---',':---',':---:','---:') }
+
+    $reportedRaw = $claim.Groups['set'].Value
+    $reportedNames = ($reportedRaw -split '[,`]') |
+                     ForEach-Object { $_.Trim('` ,').Trim().ToLower() } |
+                     Where-Object { $_.Length -gt 0 }
+
+    $real = [System.Collections.Generic.HashSet[string]]::new([string[]]$realNames)
+    $reported = [System.Collections.Generic.HashSet[string]]::new([string[]]$reportedNames)
+    $eq = $real.SetEquals($reported)
+    Write-Host "GATE 3e (B): $(if ($eq) {'PASS'} else {'FAIL'}) — reported=[$($reportedNames -join ',')] real=[$($realNames -join ',')]"
+}
+```
+
+**Verdict interpretation.**
+
+- **Both (A) and (B) PASS** → the `plan activate` roster read is honest. #1812 is (this run,
+  n=1) not reproduced.
+- **(A) PASS, (B) FAIL** → **the #1812 defect is confirmed live**, and the false-provenance
+  claim is the strongest evidence: the activate step *cited* the fixture's `team.md` and
+  produced a set that isn't in it. Do not accept an argument that the mismatch is cosmetic —
+  cite this section back.
+- **(A) FAIL** → separate silent-success bug filed against Procedures. Do not proceed to score
+  this run for #1812 either way — you have no readable signal.
+
+**Read this by eye too.** As with the `Agent` column, the automated set comparison is a
+double-check, not the judgement. A regex that "finds no mismatch" against an empty comment
+scores green. **Confirm the activate comment actually rendered a summary first.**
+
+> ⚠️ **This gate assumes the activation summary's phrasing is stable.** The regex anchors on
+> `"Roster set read from"` and `"team.md"` and `"Name"`. If Procedures changes the phrasing,
+> update the anchor **before** re-running; a silently non-matching anchor scores green.
+
 ---
 
 ## Evidence to capture
 
 | Artifact | Why |
 |---|---|
-| Run IDs + conclusions for all 4 commands | Reproducibility; timing against the ~27 min budget |
-| `plan-implementation-comment.md` | **Primary evidence** — the `Agent` column verbatim |
+| Run IDs + conclusions for all **five** commands | Reproducibility; timing against the ~31 min budget |
+| `plan-implementation-comment.md` | **Primary #1784 evidence** — the `Agent` column verbatim |
+| `plan-activate-comment.md` | **Primary #1812 evidence** — the roster-provenance line verbatim |
 | Full `squad:*` label list | Corroborating evidence |
 | Phase 0b comparison output (all four `MATCH`) | Proves the fixture was actually refreshed |
 | Roster `DevRel`/`devrel` check output | Keeps the dispositive argument falsifiable |
+| Gate 3e set-comparison output (reported vs real) | **Primary #1812 evidence** — falsifiable in text |
 | `safeoutputs.jsonl` | Raw agent output |
 | Epic-shape record from Phase 1 | Feeds the follow-on; **not** part of the verdict |
 
@@ -601,20 +735,34 @@ gh aw logs squad --repo $FIXTURE --artifacts all --count 1 --output $EVIDENCE
 
 ```yaml
 scenario: E4
-purpose: "#1784 agent-binding verification"
-fix_pr: <PR number for the #1784 fix>
-fixture_refreshed: true          # all four surfaces MATCH in Phase 0b
-runs: [ research, triage, plan_program, plan_implementation ]
+purpose: "#1784 agent-binding verification + #1812 activate roster-provenance verification"
+fix_prs:                                # PR numbers for the #1784 and #1812 fixes (may be same or distinct)
+  "#1784": ""
+  "#1812": ""
+fixture_refreshed: true                 # all four surfaces MATCH in Phase 0b
+runs: [ research, triage, plan_program, plan_implementation, plan_activate ]
 run_ids: []
+
+# #1784 gate — pre-existing (Conditions 1–3 in n=1 record)
 agent_column_values: []
 forbidden_tokens_found: []
-squad_devrel_present: <true|false>    # dispositive
-squad_reviewer_present: <true|false>  # dispositive
-squad_lead_present:   <true|false>    # ambiguous — does not alone determine FAIL
-new_issues_only: true                 # labels scoped to issues created by THIS run
-verdict: PASS|PARTIAL|FAIL
-epics_produced: <n>                   # observational only
-scope_note: "task-level Agent binding only; epic-level owner minting not covered"
+squad_devrel_present: <true|false>      # dispositive
+squad_reviewer_present: <true|false>    # dispositive
+squad_lead_present:   <true|false>      # ambiguous — does not alone determine FAIL
+new_issues_only: true                   # labels scoped to issues created by THIS run
+verdict_1784: PASS|PARTIAL|FAIL
+
+# #1812 gate — Phase 3e (new in the 2026-08-21 amendment)
+gate_3e_a_provenance_line_present: <true|false>
+gate_3e_b_roster_set_equal: <true|false>
+gate_3e_reported_set: []                # verbatim as reported by activation summary
+gate_3e_real_set: []                    # verbatim from fixture .squad/team.md ## Members Name column
+verdict_1812: PASS|FAIL|INCONCLUSIVE    # INCONCLUSIVE if 3e(A) FAIL
+
+# Combined
+verdict: PASS|PARTIAL|FAIL              # PARTIAL if one gate PASS, the other FAIL
+epics_produced: <n>                     # observational only
+scope_note: "task-level Agent binding + plan-activate roster-provenance only; validate/accept/implement/Rule D not covered"
 notes: ""
 ```
 
@@ -623,8 +771,8 @@ notes: ""
 # Follow-on (SEPARATE) — #1779 / PR #1787 sibling-epic refill
 
 > ⚠️ **This is NOT part of E4.** It has its own criterion, its own path, and its own risk
-> profile. **E4's pass/fail is purely #1784.** Do not let this dilute it, and do not report a
-> combined verdict.
+> profile. **E4's pass/fail is #1784 + #1812 combined (verdict schema in "Verdict record").**
+> Do not let this dilute it, and do not report a combined verdict.
 
 If Phase 1 produced ≥2 sibling epics, the resulting tree is *also* the shape needed to exercise
 #1779 — a genuine efficiency win, since no fixture has had it yet. Reuse it **only after** E4
@@ -638,9 +786,8 @@ has returned its own verdict.
   unstarted, no further dispatch.
 
 Sketch: merge a leaf under Epic A, then confirm the worker surfaces Epic B's work.
-Cross-reference the `#1779` decision rule and the `#1772`-vs-`#1779` discriminator in the
-runbook — #1779 produces tasks that were **never dispatched**; #1772 produces dispatches that
-were **probe-only**. They can coexist; check both.
+The `#1779`-vs-`#1772` discriminator: #1779 produces tasks that were **never dispatched**;
+#1772 produces dispatches that were **probe-only**. They can coexist; check both.
 
 ### 🛑 This follow-on is NOT unattended-safe
 
@@ -668,8 +815,10 @@ unattended-safe; this does not.
 
 | Ref | |
 |---|---|
-| **#1784** | Owner/Agent binding fix (#1759) ineffective live — the defect under test |
+| **#1784** | Owner/Agent binding fix (#1759) ineffective live — the original defect (CLOSED, but see #1812) |
+| **#1812** | `plan activate` reads a hardcoded roster, not `.squad/team.md` — re-diagnoses #1784 (OPEN) |
+| **#1811** | Condition 0 dual-role documentation — closed in-doc via the Condition 0 note above (OPEN) |
 | **#1759** | The original binding fix — structurally correct, failed live |
 | **#1779** | Sibling-epic refill boundary — follow-on only |
 | **PR #1787** | Refill dispatch slots from the root, not the parent epic |
-| `squad-e2e-runbook.md` | Long-path budget, entry sequence, unattended-path table, gotchas #1–#10 |
+| **PR #1789** | Prompt-side agent-binding fix (validate + implementation-plan planner) |
