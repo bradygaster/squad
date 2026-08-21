@@ -33,12 +33,32 @@ anywhere in it. The cited set is the generic **uncast** Squad role vocabulary an
 single file's Name column.
 
 Consequently `activate` declared the *correct* Agent values "non-roster", and advises the
-operator to *"recast the team or update the implementation plan"* — i.e. to break correct data.
+operator to *"recast the team or update the implementation plan"* — i.e. **to break the one part
+of the pipeline that is working.** That advice is the operationally dangerous part.
 
-**Condition 2's green is therefore structural, not earned:** the intent to bind to
-`lead`/`devrel` is still present at `activate` and was only prevented from being expressed
-because `create-label` is unconfigured. Likely a **separate live defect from #1784**; file
-separately rather than folding it in.
+**The defect is stage-local to `activate`.** `plan validate` in the *same walk*, 23 minutes
+earlier, read the *same* file/section/column correctly:
+
+> **Roster set (`.squad/team.md` → `## Members` → `Name` column):** `Keaton`, `McManus`,
+> `Fenster`, `Hockney`, `Kint` — and Check 10 verified all four Agent values verbatim.
+
+So this is not a wrong path, not a hardcoded default, and not a shared component. A working
+reference implementation exists one stage earlier; the fix is to make `activate` do what
+`validate` already does.
+
+| Phase | E3 (pre-#1789) | E4 (post-#1789) |
+|---|---|---|
+| `validate` | `Agent assignments valid (cast Names) ✅ (lead, lead, devrel)` — **no roster enumerated**, no Check 10 ⇒ **false accept by omission** | roster echoed **correctly**, Check 10 verbatim ⇒ **true accept** |
+| `activate` | minted `squad:lead` ×3 + `squad:devrel` | roster read **wrong** ⇒ **false reject** |
+
+**#1789 fixed the implementation-plan column *and* the `validate` gate — both confirmed — and
+left the `activate` roster read untouched.** File that separately from #1784.
+
+> ⚠️ **Corrected claim.** An earlier draft asserted that with `create-label` enabled this run
+> would have minted `squad:lead` again. **That is refuted.** `activate` applies what the plan
+> hands it; E4's plan contains no role token, so there is nothing to mint. `create-label` is
+> required for the *correct* behaviour, not what suppressed the defect. Condition 2's green is
+> still structural — the structure is the roster mismatch, not the missing permission.
 
 ### Qualification 2 — the fixture cannot express a correct owner label at all
 
