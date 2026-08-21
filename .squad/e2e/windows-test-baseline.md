@@ -173,13 +173,25 @@ $pinned | ForEach-Object { Remove-Item -LiteralPath $_ -Force -ErrorAction Silen
 $pinned | ForEach-Object { git checkout -- $_ }
 
 # 3. Assert the artifact. This must print 0.
+#    `w/mixed` is NOT a simplification target: a file with a single CRLF line
+#    (e.g. docs/src/pages/rss.xml.js) is reported `w/mixed`, not `w/crlf`, and a
+#    crlf-only filter drops it silently while reporting completeness.
 (git ls-files --eol |
   Where-Object { $_ -match 'attr/text eol=lf' } |
-  Where-Object { $_ -match '^i/lf\s+w/crlf' }).Count
+  Where-Object { $_ -match '^i/lf\s+w/(crlf|mixed)' }).Count
 ```
 
 **Measured on `dev`:** 173 files pinned, **26** of them CRLF on disk before → **0**
 after, tree clean, and the two EOL suites go `13 failed`/`0 tests` → **26 passed**.
+
+> **Caveat on that 26.** It was counted with a `w/crlf`-only filter and therefore
+> **undercounts** — it silently excludes files git reports as `w/mixed`. Booster
+> measured **34** on his tree using `w/(crlf|mixed)`. Part of that 8-file gap is this
+> counting artifact, part is genuine worktree difference. **The repair is unaffected
+> either way**, because step 1 enumerates by attribute and sweeps all 173
+> unconditionally rather than selecting the ones that look broken. This is precisely
+> why the sweep is unconditional: the count is an unreliable oracle, so it is never
+> used to choose what to repair — only to confirm the result.
 
 **Sweep all 173 unconditionally — do not try to repair only the broken ones.** Every
 oracle that could tell you *which* files are affected is blind (see the table below),
@@ -204,7 +216,8 @@ remediation is unreliable"* rather than *"the selector was wrong."*
 | `git checkout --force -- <path>` | **Also silently fails**, then reports clean |
 | `git status` | **Structurally cannot see it.** Once the blob is LF, a CRLF worktree is invisible |
 | A green test suite | #1788 loaded **0 tests** and looked like a pass |
-| `git ls-files --eol` | ✅ **The one working oracle.** Use it |
+| A `w/crlf`-only filter | **Silently drops `w/mixed`** — one CRLF line in an otherwise-LF file. Never simplify the alternation |
+| `git ls-files --eol` | ✅ **The one working oracle.** Use it — with `w/(crlf\|mixed)` |
 
 The file must be **deleted first** to force re-checkout. This is the single most
 likely source of a false alarm tomorrow morning — and note that `git checkout -- .`
