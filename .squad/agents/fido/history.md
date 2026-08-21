@@ -26,6 +26,36 @@ Full pre-summary history archived at `.squad/agents/fido/history-archive-2026-08
 - cli-command-wiring.test.ts prevents "unwired command" bug: verifies every .ts file in commands/ is imported in cli-entry.ts. Bidirectional validation.
 - `test/init-scaffolding.test.ts` — 15 tests: casting directory scaffolding (verifies .squad/casting/ + all 3 JSON files), no-remote resilience (init succeeds without git remote), doctor validation after init (zero failures). Follows existing test conventions — vitest, randomBytes temp dirs in cwd, compiled dist imports.
 
+## 2026-08-20: #1732 triage + E2E readiness gate analysis
+
+- Audited #1732 ("Make gh aw compile non-skippable, add prompt-budget gate, replace string-assertion workflow tests") as part of gh-aw wave cleanup before E2E day.
+- **Compile gate gap confirmed:** `gh aw compile` is completely absent from CI. The test at `test/gh-aw-quality.test.ts:978` uses `it.skipIf(!ghAwAvailable)` — `gh aw` is not installed in the CI `test` job, so this test always skips in CI. Zero lock.yml files exist in the repo.
+- **Prompt-budget gate already done:** `test/gh-aw-quality.test.ts:637-669` enforces 100 KB ceiling + >5 KB headroom guard via `npm test`.
+- **String-assertion concern is mostly resolved:** Tests use parser helpers (extractFrontmatter, extractSafeOutputs, extractModeTable, extractInlineSkills) throughout. Some `.toContain()` calls exist but target specific contract values, not fragile substrings.
+- **`gh aw compile --no-emit --dir workflows` exits 1** (expected: dispatch-workflow cross-references require `.github/workflows/` layout; the test correctly mirrors that in a temp workspace).
+- Verdict: Split #1732. Ship only the CI install step. Close prompt-budget item. Defer/close string-assertion item.
+- Decision record filed: `.squad/decisions/inbox/fido-1732-compile-gate-triage.md`
+
+## 2026-08-20 (second follow-up): Runbook corrected for post-#1777 dispatch semantics
+
+- EECOM landed PR #1777 fixing #1772 via `dispatch-workflow: max: 2` in `squad-implement-worker.md`.
+- Post-fix, **2 dispatch_workflow entries is the EXPECTED healthy state** — empty probe + real dispatch.
+  Previous runbook said "2 entries = bug". That was inverted. Fixed.
+- Verified empirically against real runs:
+  - run 32394811753 (post-#1777): `{ "type": "dispatch_workflow" }` (empty probe) + `{ ..., "workflow_name": "squad", "inputs": { "command": "implement", "issue_number": "5" } }` → 1 well-formed, 1 malformed → ✅ PASS
+  - run 32316227601 (wrong-schema failure): `{ "type": "dispatch_workflow", "command": "implement", "issue_number": "5" }` (fields at top level, no `inputs` wrapper, no `workflow_name`) → 0 well-formed, 1 malformed → ❌ FAIL
+- Three empirically observed malformed shapes: empty probe (no fields besides `type`), wrong schema (top-level fields), 0 entries.
+- Updated `e2e-capture-runbook.md` Step 3 to use well-formed/malformed classification instead of raw count.
+- Conditional note added: if Procedures ships a guard in squad.md that rejects empty dispatches, a "dispatch rejected" comment will appear on the triggering issue — Brady should check for it, but it may not exist yet.
+- All PowerShell one-liners smoke-tested against real downloaded artifacts; both verdicts printed correctly.
+
+- Verified `gh aw logs` artifact sets: activation, agent, all, detection, evals, experiment, firewall, github-api, mcp, usage. Default (`usage`) is compact summary only — `--artifacts all` needed for full diagnostic.
+- `gh aw audit <run-url> --parse` generates Markdown reports from agent logs. Key command for post-run diagnosis.
+- `safe_output.jsonl` is the canonical artifact for verifying gh-aw structured data contracts. It's uploaded as a GH Actions artifact with default 90-day retention — survives but requires `gh run download` to persist locally.
+- Confirmed: `gh run list` JSON fields are `databaseId`, `conclusion`, `url`, `startedAt`, `workflowName`. Flag is `--json fields` not `--json`.
+- Wrote Part 2 (evidence capture protocol), Part 1 (what survives vs evaporates), Part 3 (measurability rubric + #1606 rewrite).
+- Rubric: 5 rules for measurable criteria in this system. Anti-patterns named: floor-without-semantics, vibe assertions, non-binary criteria, tautological criteria, missing "compared to what."
+
 ## Recent preserved tail
 
 - **PRs #607 / #605** overlap on retrospective ceremony — both add weekly retro ceremony with Ralph enforcement. #607 adds ceremony + enforcement skill + guide (444 lines), #605 modifies existing templates/ceremonies.md + ralph-reference.md (217 lines). Both solve the same problem (retro enforcement) with different file structures. #607 is more comprehensive (includes enforcement guide + pseudocode), #605 is more concise (inline in existing templates). **Verdict: Pick one** — recommend #607 (standalone ceremony file is more discoverable).
@@ -63,3 +93,13 @@ Reviewed 9 community PRs (8 from tamirdresher, 1 from eric-vanartsdalen). Key fi
 3. **Verdicts:** ✅ MERGE: #625 (notification-routing), #603 (Challenger agent), #608 (SECURITY.md). ⚠️ NEEDS CHANGES: #623, #622, #621, #614 (changeset fix), #607, #606 (path restructuring).
 
 **Learning:** Community contributors consistently struggle with two things: (a) scoped npm package names in changesets, and (b) monorepo file placement. Both are preventable with better contributor docs.
+
+## 📌 Team update — 2026-08-20T11:59:44-07:00
+
+gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
+
+
+## 📌 Team update — 2026-08-20T13:20:20-07:00
+
+Batch 2 complete. (1) PR #1775: added `gh extension install github/gh-aw` to squad-ci.yml test job. CI run 32410579973 confirmed compile test ran 894ms, not skipped. (2) Runbook corrections: OneDrive path fixed, 9 `\` paths converted to Join-Path, `>` redirects replaced with Set-Content. Test bar principle applied: tests must fail against the pre-fix state — derived from #1766 incident.
+

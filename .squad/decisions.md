@@ -168,133 +168,6 @@ FIDO should own the test scenario. GUIDO should validate the VS Code runtime beh
 3. Is `runSubagent` still the correct tool name, or has it changed?
 ---
 
-# Decision: PR Review Batch — Overlap Resolution
-
-**Date:** 2026-03-25  
-**Reviewer:** FIDO (Quality Owner)  
-**Context:** 10 open PRs reviewed, 3 duplicate/overlap pairs identified
-
-## Problem
-
-tamirdresher opened 6 PRs addressing related concerns (retro enforcement, challenger agent, tiered memory). Three pairs have significant overlap:
-
-1. **#607 vs #605** — Both add weekly retro ceremony with Ralph enforcement
-2. **#604 vs #603** — Both add Challenger agent template (complete duplicates)
-3. **#606 vs #602** — Both add tiered memory/history skills (superset/subset)
-
-## Decision
-
-**Merge these:**
-- **#607** (retro enforcement) — comprehensive, standalone ceremony file
-- **#603** (Challenger + fact-checking) — correct file locations, follows project conventions
-- **#606** (tiered memory) — superset of #602, 3-tier model vs 2-tier
-
-**Close as duplicate:**
-- **#605** — same scope as #607, less comprehensive
-- **#604** — duplicate of #603, different file locations
-- **#602** — subset of #606, narrower scope
-
-## Rationale
-
-- **#607 vs #605:** #607 provides standalone ceremony file (`ceremonies/retrospective.md`) + enforcement guide + skill, while #605 inlines into existing templates. Standalone file is more discoverable and modular.
-- **#604 vs #603:** Functionally identical. #603 uses `.squad/` paths matching project conventions; #604 uses `templates/` (non-standard for agents).
-- **#606 vs #602:** #606 is a superset — 3-tier model (hot/cold/wiki) vs 2-tier (hot/cold). Both cite same production data. Broader scope is more useful.
-
-## Impact
-
-- Reduces PR count from 10 to 7 (close 3 duplicates)
-- Eliminates conflicting file changes (e.g., both #607 and #605 modify `templates/ceremonies.md`)
-- Preserves all unique value (no functionality lost)
-
-## Affected PRs
-
-| PR  | Action | Reason |
-|-----|--------|--------|
-| 607 | Merge  | Comprehensive retro enforcement |
-| 605 | Close  | Duplicate of #607 (less comprehensive) |
-| 604 | Close  | Duplicate of #603 (wrong file paths) |
-| 603 | Merge  | Challenger template (correct paths) |
-| 606 | Merge  | Tiered memory (superset) |
-| 602 | Close  | Subset of #606 (narrower scope) |
-
-## Next Steps
-
-1. Comment on #605, #604, #602 explaining they are duplicates/subsets and will be closed
-2. Merge #607, #603, #606 after author confirms deduplication is acceptable
-3. All other PRs (#611, #608, #592, #567) can proceed independently
-
----
-
-# Decision: Triage + Work Session Plan
-
-**By:** Flight  
-**Date:** 2026-03-25
-
-## Context
-
-Triaged 14 untriaged issues (3 docs, 6 community features, 3 bugs, 2 questions). Multiple overlap with existing P1 work. 10 open PRs (5 from tamirdresher, 2 from diberry, 1 from joniba, 1 from eric-vanartsdalen, 1 draft).
-
-## Triage Decisions
-
-### High-Value Quick Wins (P1)
-- **#610** (docs broken link) → squad:pao, P1 — 5-minute fix blocking diberry's PR #611 CI
-- **#590** (getPersonalSquadRoot bug) → squad:eecom, P0 — personal squad init broken for all users since v0.9.1
-- **#591** (hiring wiring docs) → squad:procedures, P1 — matches PR #592 (joniba), docs-only, high clarity
-
-### Community Feature Contributions (Defer to Review)
-- **#601, #600, #598, #596, #595** (tamirdresher proposals) — all have matching PRs (#607, #606, #604, #602). Priority: review PRs first, triage issues after PR decisions.
-
-### Maintenance Items (P2)
-- **#597** (upgrade CLI docs) → squad:pao + squad:network, P2 — user confusion, docs fix + UX improvement
-- **#588** (model list update) → squad:procedures, P2 — hardcoded model list in squad.agent.md + templates
-- **#554** (broken external links) → squad:pao, P2 — automated link checker output, investigate failures
-
-### Questions (No Squad Assignment)
-- **#589** (skills placement) → community reply — clarify `.copilot/skills` vs `.github/skills` vs `.claude/skills`
-- **#494** (model vs squad model) → community reply — clarify Copilot CLI `/models` vs squad.agent.md model preference
-
-### Long-Horizon Feature Work (P2-P3)
-- **#581** (ADO Support PRD) → squad:flight, P2 — comprehensive PRD, but blocked until SDK-first parity (#341) ships
-
-## Work Session Priority (Top 5)
-
-1. **#610** → PAO — fix broken link (5 min), unblocks #611
-2. **#590** → EECOM — fix getPersonalSquadRoot(), critical user-facing bug
-3. **PR #592** → Flight review — matches #591, validate joniba's wiring guide
-4. **PR #611** → Flight review — diberry TypeDoc API reference (blocked on #610 fix)
-5. **#588** → Procedures — update model lists in templates
-
-## PR Review Strategy
-
-**Merge-ready (after minimal validation):**
-- #611 (diberry) — blocked on #610, then merge
-- #592 (joniba) — high-quality wiring guide
-
-**Tamir PRs (defer until proposal-first validated):**
-- #607, #606, #605, #604, #603, #602 — all substantive feature proposals without prior proposals in `docs/proposals/`. Apply proposal-first policy: request `docs/proposals/{slug}.md` before reviewing implementation.
-
-**Draft (not ready):**
-- #567 (diberry) — explicitly marked DRAFT
-
-## Patterns Noted
-
-- **Tamir contributions:** High technical quality, but needs proposal-first discipline (6 PRs without proposals).
-- **Joniba contributions:** Consistently high-quality, matches team standards (wiring guide is excellent).
-- **Diberry contributions:** MSFT-level quality, merge-ready on delivery.
-
-## Deferred
-
-- #357, #336, #335, #334, #333, #332, #316 (A2A) — stays shelved per existing decision
-- #581 (ADO PRD) — P2, blocked until #341 (SDK-first parity) ships
-
----
-
-### 2026-07-29: Workflow templates linted via explicit actionlint file paths
-
-**By:** Booster (CI/CD)
-**What:** Templates under `packages/squad-cli/templates/workflows/` and `packages/squad-sdk/templates/workflows/` are now linted by actionlint via explicit file path arguments in the new `squad-workflow-lint.yml` CI job. SC2086 findings fixed across all `>> $GITHUB_OUTPUT` / `>> $GITHUB_STEP_SUMMARY` redirects in `.squad-templates/workflows/`, `templates/workflows/`, `.github/workflows/squad-heartbeat.yml`, `squad-repo-health.yml`, and `squad-ci.yml`. Actionlint pinned to tag `v1.7.12`; shellcheck 0.10.0 installed explicitly.
-**Why:** Downstream repos running actionlint in their CI saw SC2086 errors in files generated by `squad upgrade` because Squad's own CI did not lint templates. The fix must live in Squad's templates — `squad upgrade` overwrites any downstream patches on every run. PR #1557.
-
 ### 2026-08-19: Finding D: slash_command plus bots concurrency warning
 **Date:** 2026-08-19T13:30:18.326-07:00  
 **By:** Booster  
@@ -426,214 +299,6 @@ The recommendation does not weaken the no-write zones covered by `excluded-files
 
 These are high-impact, recurring failure modes. Documenting them in the skill files ensures every agent (human or AI) working on releases has the knowledge to avoid repeating the v0.9.4 delays. The GITHUB_TOKEN limitation in particular is non-obvious and would catch any future release.
 
-### 2026-08-08: `/squad plan` Workflow Design
-**Date:** 2026-08-08
-**Raised by:** bradygaster (via Copilot session)
-**Status:** Open
-**Related:** `.squad/decisions/inbox/copilot-sdlc-workflows.md`
-
-## Context
-
-After casting (#8 → PR #9 on Aspiregregator), the natural next step is decomposing the issue into actionable sub-issues. Today this requires manual work. A `/squad plan` command would let the squad generate a plan from an issue, get approval, then create sub-issues.
-
-## UX Flow (Proposed)
-
-```
-User writes issue #8 (big feature/epic)
-  ↓
-/squad cast → PR with team (already works ✅)
-  ↓
-/squad plan → Squad reads issue, posts structured plan as comment
-  ↓
-User reviews plan comment
-  ↓
-/squad plan accept → Squad creates sub-issues from the plan
-```
-
-## UX Options for the Accept Step
-
-### Option A: `/squad plan accept` (recommended)
-
-```
-/squad plan              → generates plan comment
-/squad plan accept       → creates sub-issues from last plan comment
-/squad plan revise ...   → revises plan based on feedback, posts new comment
-```
-
-- **Pro:** Explicit, discoverable, follows the existing `/squad <mode>` pattern
-- **Pro:** Feedback loop — user can `/squad plan revise "split the React work into 3 phases"` before accepting
-- **Con:** User must type another comment to accept
-
-### Option B: Checkbox-based acceptance
-
-The plan comment includes GitHub task-list checkboxes:
-```markdown
-## Proposed Plan
-- [x] Issue: Platform modernization (auto-checked = will be created)
-- [x] Issue: Orleans architecture completion
-- [ ] Issue: Security hardening (unchecked = skip)
-
-Reply `/squad plan accept` to create the checked items.
-```
-
-- **Pro:** User can selectively approve individual items before accepting
-- **Con:** More complex — agent must re-read the edited comment and parse checkbox state
-- **Con:** Editing someone else's comment (bot's) feels weird; user would need to quote/copy
-
-### Option C: Reaction-based acceptance (👍 on plan comment)
-
-- **Pro:** Zero typing — just react to accept
-- **Con:** gh-aw likely can't trigger on reactions (not in the events list)
-- **Con:** Too easy to accidentally accept
-
-### Option D: Draft PR as plan artifact
-
-`/squad plan` creates a draft PR containing a `PLAN.md` with the proposed issues in markdown. Merge = accept.
-
-- **Pro:** Native review workflow (comments, suggestions, approvals)
-- **Con:** Plans aren't code — feels wrong to use a PR
-- **Con:** Adds merge noise to the repo
-
-## Workflow Architecture Options
-
-### Option 1: Extend existing `squad.md` workflow (minimal)
-
-Add `plan`, `plan accept`, `plan revise` to the existing modes table. No new workflow needed.
-
-```yaml
-# Just add to the Modes table:
-| `/squad plan`          | Plan         | Decompose issue into sub-issues (proposes, doesn't create) |
-| `/squad plan accept`   | Plan Accept  | Create sub-issues from last plan comment |
-| `/squad plan revise`   | Plan Revise  | Revise plan based on feedback |
-```
-
-- **Pro:** Zero additional install — anyone with `/squad` already has planning
-- **Pro:** Shares the same team context (squad state restored from activation)
-- **Con:** `safe-outputs.create-issue.max: 5` is too low for planning decomposition
-- **Con:** Workflow grows in complexity; permissions are shared across modes
-- **Mitigation:** Bump `create-issue.max` to 20
-
-### Option 2: Separate `workflows/plan.md` (composable)
-
-New top-level workflow: `/plan` slash command, imports `shared/squad.md` for team state.
-
-```yaml
-name: Plan
-on:
-  slash_command:
-    name: plan
-    events: [issues, issue_comment]
-permissions:
-  contents: read
-  copilot-requests: write
-  issues: write          # needs write to create sub-issues
-safe-outputs:
-  create-issue:
-    labels: [squad, planned]
-    max: 20
-  add-comment:
-    max: 10
-imports:
-  - shared/squad.md
-```
-
-- **Pro:** Dedicated permissions (issues: write only when planning)
-- **Pro:** Clean separation — cast and plan are independent workflows
-- **Pro:** Users opt-in to planning separately: `gh aw add bradygaster/squad/workflows/plan.md@dev`
-- **Con:** Extra install step for users
-- **Con:** `/plan` is a separate namespace from `/squad` (less discoverable)
-
-### Option 3: Hybrid — `shared/plan.md` component imported by `squad.md`
-
-```yaml
-# In workflows/squad.md:
-imports:
-  - shared/squad.md
-  - shared/plan.md
-```
-
-- **Pro:** Single install, single `/squad` namespace, but planning logic lives in its own shared component
-- **Pro:** Others can also import `shared/plan.md` into their own workflows
-- **Con:** Permissions must cover both casting and planning in one workflow
-
-## Recommendation
-
-**Option A (UX) + Option 3 (architecture)** — Keep `/squad plan` under the existing `/squad` namespace (discoverability), implement planning logic in `shared/plan.md` (composability), and bump `create-issue.max` to 20.
-
-The flow becomes:
-1. `/squad plan` → reads issue body + repo context, generates structured plan comment with sub-issues, effort estimates, dependencies, and agent assignments
-2. User reviews, optionally replies `/squad plan revise "merge items 3 and 4, add a migration step"`
-3. `/squad plan accept` → creates sub-issues with labels, assignments, and dependency references
-
-Plan comments should be structured with:
-- Numbered work items with titles and scope descriptions
-- Dependency order (which items block which)
-- Agent assignments (which squad member owns each item)
-- Effort signals (S/M/L)
-- A summary of what `/squad plan accept` will create
-
-## State Between Runs
-
-gh-aw runs are stateless. The plan comment IS the state:
-- `/squad plan` → posts a comment with a specific marker (e.g., `<!-- squad-plan-v1 -->`)
-- `/squad plan accept` → searches issue comments for the latest plan marker, parses it, creates issues
-- `/squad plan revise` → finds the latest plan, revises it, posts a new plan comment (supersedes the old one)
-
-## Open Questions
-
-1. Should `/squad plan accept` also assign the created issues to squad members (via labels like `squad:lead`)?
-2. Should plan comments include task-list checkboxes for selective acceptance?
-3. Should the plan reference the team from PR #9's `.squad/team.md`, or work without a cast team?
-4. Max issues to create in one plan — 20? 30?
-
-## Decision
-
-*(Pending — to be resolved by the team)*
-
-### 2026-08-08: Should Squad ship pre-baked SDLC workflows?
-**Date:** 2026-08-08
-**Raised by:** bradygaster (via Copilot session)
-**Status:** Open
-
-## Context
-
-Squad currently owns team formation and coordination (`workflows/squad.md` + `shared/squad.md`). Once a squad is cast, the actual SDLC — plan, implement, test, review — happens through the agents but there's no pre-built gh-aw workflow for those phases. Users go from "I have a squad" to "now what?" with a gap.
-
-The question: should Squad ship optional SDLC workflows (plan, implement, review), or leave that space to other tools/integrations?
-
-## Options
-
-### A — Squad stays team-only (status quo)
-
-- Squad owns casting, coordination, and routing
-- SDLC workflows are the user's responsibility or come from third parties
-- Other tools can `imports: - shared/squad.md` to compose Squad into their own pipelines
-- **Pro:** Tight scope, easier to maintain, no opinions on how teams should work
-- **Con:** Biggest friction point ("I cast a squad… now what?") remains unsolved
-
-### B — Ship optional SDLC workflows under `workflows/shared/`
-
-- Add composable shared components: `shared/plan.md`, `shared/implement.md`, `shared/review.md`
-- Each imports `shared/squad.md` for team state
-- Ship a top-level `workflows/sdlc.md` that composes all phases as a batteries-included option
-- Users who only want casting still use `workflows/squad.md` alone
-- **Pro:** Closes the adoption gap, composable (not mandatory), demonstrates the `shared/` pattern
-- **Con:** More surface area to maintain, risk of being too opinionated
-
-### C — Ship a single "do work" workflow, not a full SDLC
-
-- One additional workflow (e.g., `workflows/work.md`) that takes an issue and delegates it to the squad
-- Lighter than a full SDLC pipeline — just "give an issue to the squad and let them figure it out"
-- **Pro:** Minimal scope increase, high value, lets the squad's routing/coordination handle the rest
-- **Con:** Doesn't cover structured SDLC phases (planning, review gates)
-
-## Recommendation
-
-Option B with a phased rollout — start with a single `shared/implement.md` component (the highest-value gap), then add plan and review later based on usage. This keeps the composable `shared/` pattern intact while solving the immediate "now what?" problem.
-
-## Decision
-
-*(Pending — to be resolved by the team)*
 
 ### 2026-08-13: Restore shared ancestry between dev and main via merge, dev-wins conflict policy
 
@@ -726,100 +391,6 @@ prevents the same failure on future promotions, provided the new release-process
 skill gate (verify `git merge-base dev main` before starting release-prep) is
 followed going forward.
 
-### 2026-07-27: Dispatch Enforcement — Stop Coordinator From Doing Domain Work Inline
-**Status:** ACCEPTED (empirically validated in tamresearch1 worktree; ported to bradygaster/squad)
-**Proposed by:** Picard, Data, Q (review chain)
-**Validated by:** Ralph (E2E test report, 2026-07-27)
-**PR:** See squad/dispatch-enforcement branch on tamirdresher_microsoft:squad-squad
-
-## Decision
-
-Squad coordinators MUST dispatch all domain work to specialist agents. Inline work by the coordinator is a contract violation. Three enforcement layers are being shipped:
-
-### Layer A — Coordinator Tool Profile Restriction
-
-Apply a `tools:` allowlist in the coordinator agent's frontmatter (`.github/agents/squad.agent.md`). The allowlist contains only dispatch-safe tools:
-
-```yaml
-tools:
-  - agent
-  - read
-  - search
-  - skill
-  - squad_state/*
-  - squad_state_c3c25b85/*
-  - squad_state_e7f10a1f/*
-  - github-mcp-server/*
-```
-
-**Effect:** Physical prevention — the Copilot runtime blocks any tool call outside this list with a hard error (`Unknown tool name in the tool allowlist: "create"`). Empirically verified across all 3 Test 1 turns.
-
-**Meta-gap (accepted):** Because `create` and `edit` are blocked at the coordinator level, the DispatchGuard ledger (Layer B) cannot be written by the coordinator itself. Layer B becomes opt-in observation mode when Layer A is active. This is an accepted trade-off per Q Recommendation #6: unverifiable compliance ≠ free pass.
-
-### Layer B — Scribe DispatchGuard Mechanical Audit
-
-Scribe is spawned in DispatchGuard mode at every session start. It reads the coordinator's turn ledger (`.squad/orchestration-log/dispatchguard/ledger-{SESSION_ID}.jsonl`) and audits each turn via `.squad/hooks/dispatch-audit.ps1` / `.squad/hooks/dispatch-audit.sh`. Verdicts are appended to a verdicts file consumed by Ralph.
-
-**Enforcement mode:** `dispatchEnforcement: "warn"` (see `.squad/config.json`). Can be escalated to `"block"` to halt coordinator work on violation.
-
-**Infrastructure:** `.squad/hooks/dispatch-audit.ps1` (Windows/PowerShell 7+), `.squad/hooks/dispatch-audit.sh` (Linux/macOS, requires jq ≥ 1.6), test fixtures in `.squad/hooks/tests/`.
-
-### Layer C v2 — Dispatch Contract Wording
-
-The coordinator prompt (`squad.agent.md`) includes:
-- An explicit **Direct-Mode whitelist** (5 exhaustive cases where inline work is permitted)
-- The **Domain-Artifact rule** (everything not on the whitelist must dispatch)
-- The **Narrow inbox exemption** (≤500-word `.squad/decisions/inbox/*.md` files only)
-- **Verb triggers** (explicit list of verbs requiring dispatch when paired with domain-artifact objects)
-- The **Read-Only Probe Budget** (max 2 reads before dispatch is required)
-- The **Anti-pattern prohibition** (enumerated rationalizations that are explicitly NOT valid overrides)
-- The **Session Init DispatchGuard Auto-Bootstrap** (mandatory Scribe spawn every session, first ack turn)
-- The **Bootstrap Verification** (coordinator must confirm Scribe DispatchGuard is live before proceeding)
-
-## Empirical Evidence
-
-Tested in tamresearch1 worktree, 2026-07-27 (Ralph report `ralph-e2e-post-layer-a-report.md`):
-
-| Turn | Verb | Pre-Layer-C | Layer-C only | Layer-A+B+C | Result |
-|------|------|-------------|--------------|-------------|--------|
-| 1 | analyze | drift | drift | DISPATCHED | ✅ Fixed |
-| 2 | propose | drift | drift | DISPATCHED | ✅ Fixed |
-| 3 | apply | dispatched | drift REGRESSED | DISPATCHED | ✅ Regression reversed |
-
-Verbatim tool-block errors confirming Layer A enforcement:
-```
-● Unknown tool name in the tool allowlist: "create"
-● Unknown tool name in the tool allowlist: "edit"
-● Unknown tool name in the tool allowlist: "grep"
-```
-
-## Known Limitations
-
-1. **Audit meta-gap** (HIGH): Layer A blocks `create`/`edit` → coordinator can't write DispatchGuard ledger → `dispatch-audit.ps1` always returns `indeterminate` for real sessions. Layer B and Layer A are mutually incompatible in Phase 1. Accepted trade-off.
-2. **`grep` tool unintended casualty** (MED): `grep` is the CLI-native search tool, not in the allowlist. `read` and `search` are allowed. Scribe/sub-agents use `grep` from their own (unrestricted) tool context — not blocked.
-3. **Coverage gap** (INFO): Layer A only applies when the coordinator is invoked via `agent` tool. External repos without squad routing labels don't trigger SquadShort/Squad coordinator → Layer A doesn't apply.
-4. **Verbal override NOT supported**: `dispatchEnforcement: "off"` in `.squad/config.json` (committed diff) is the only valid override. Verbal in-turn overrides are NOT a supported path.
-
-## Override Path
-
-To disable enforcement: commit `dispatchEnforcement: "off"` in `.squad/config.json`. This is the ONLY valid override — a committed, reviewable diff, not a verbal in-session request.
-
-## Files Added/Modified
-
-- `.squad/config.json` — added `dispatchEnforcement: "warn"`
-- `.squad/agents/scribe/charter.md` — added Tool Access section + DispatchGuard section
-- `.squad/agents/ralph/charter.md` — replaced stub with full charter including Verdict Consumer + Skills
-- `.squad/hooks/dispatch-audit.ps1` — 410-line PowerShell audit script
-- `.squad/hooks/dispatch-audit.sh` — bash port (parity-verified)
-- `.squad/hooks/README.md` — platform guide
-- `.squad/hooks/tests/` — 7 JSONL fixtures + 2 parity test runners
-- `.squad/templates/orchestration-log.md` — appended DispatchGuard ledger schema
-- `.squad/routing.md` — extended Routing Principles with DispatchGuard notes
-- `.github/copilot-instructions.md` — added identity lock + routing guard + adversarial input handling
-- `.github/instructions/squad-routing-guard.instructions.md` — new file: explicit routing rules
-- `.gitignore` — added `.squad/orchestration-log/dispatchguard/`
-- `.github/agents/squad.agent.md` — Layer A frontmatter + Layer C v2 body prose
-
 ### 2026-08-19: Squad protected-files policy
 **Date:** 2026-08-19T13:11:34.130-07:00  
 **By:** Flight  
@@ -882,12 +453,85 @@ This repo uses changesets, so Squad should normally write `.changeset/*.md`, not
 
 When implementation happens, update the workflow source and recompile the installed `.lock.yml` in any consuming/test repo used for validation. Keep the existing `excluded-files` rules; they solve a different problem and remain independent of this decision.
 
-### 2026-03-26: Copilot git safety rules
-**By:** RETRO (Security)
-**What:** Added mandatory Git Safety section to copilot-instructions.md: prohibits staging the entire working tree with a bare-dot `git add` (i.e. `git add` followed by just `.`), requires feature branches and PRs, adds pre-push checklist, defines red-flag stop conditions.
-**Why:** Incident #631 — @copilot used destructive staging on an incomplete working tree, deleting 361 files.
 ### 2026-08-20: Merge continuation dispatch inputs
 **By:** Booster (CI/Workflows)
 **What:** Squad must not rely on a destructive default to mask missing workflow-dispatch inputs. `workflows/squad.md` must not default `workflow_dispatch.inputs.command` to `cast`; missing dispatch inputs must be surfaced visibly. Merge continuation must use the prompt-visible generic dispatch tool shape, with workflow inputs nested under `inputs` rather than passed as top-level keys, and the continuation comment must target the parent epic rather than auto-targeting the merged pull request.
 **Why:** Run `32316227601` in `bradygaster/aspiregregator-squad-e2e` accepted the agent's safe-output call but dispatched Squad with no inputs. The agent had called the generic `dispatch_workflow` safe-job with `{"command":"implement","issue_number":"5"}` as top-level keys, while the compiled tool schema expected `workflow_name` plus a nested `inputs` object. The workflow-specific `squad` dynamic tool also existed, but the compiled prompt's safe-output tool summary listed the generic `dispatch_workflow`, so the prompt and the visible schema disagreed.
 **Guardrail:** Static gates should check both sides of this contract — action-like workflow-dispatch inputs must not carry destructive defaults, and continuation dispatch payload keys must be nested under `inputs` and match the receiving workflow's declared input names. See #1772, where a later run showed a different failure mode against the same single-slot dispatch budget.
+
+### 2026-08-19: Finding D — slash_command plus bots concurrency warning — DECIDED
+**By:** Booster + Flight (consensus during triage)
+**What:** Keep `bots: ["github-actions[bot]"]` in both `workflows/squad.md` and `workflows/squad-implement-worker.md`. Accept the compiler warning as a known, documented trade-off. The concurrency hazard is narrow: no current workflow posts a bot comment beginning with `/squad`. Merge-continuation uses `workflow_dispatch`, not slash-command comments. Tests at `test/gh-aw-implement-workflow.test.ts` lines 102-115 assert `bots:` present. Close #1763.
+**Why:** Removing `bots:` breaks a tested expectation with zero functional benefit. Wave-5 dependency: defer until #1772 is fixed and a continuation run is green.
+
+### 2026-08-20: gh-aw pre-E2E scope cut — #1762, #1764, wave:1 cap
+**By:** Flight (Lead)
+**What:** (1) Close #1762 — docs suffice for PR-creation setting; preflight probe deferred to `squad health` (#1605). (2) Close #1764 — delete all 3 copilot/* branches (all content already on dev; others are pure CRLF churn). (3) Wave:1 hard cap = 6 issues: #1772, #1758, #1759, #1730, #1732, #1768. #1731 demoted to wave:2. #1761 non-gating ride-along. (4) Close #1738 — speculative RFC, premature until core SDLC path proven.
+**Why:** More than six load-bearing changes the night before an E2E turns the test into a debugging session for our own diffs. Workstream has two axes: (a) make existing path correct/reliable (tomorrow's goal), (b) new capabilities on top. Tomorrow tests (a) only.
+**Workstream goal:** Make the `/squad` SDLC lifecycle run reliably end-to-end as gh-aw workflows — plan → accept → activate → implement → merge-relay — with trustworthy dispatch and honest fixtures, so an epic decomposes into children that implement and merge without manual intervention.
+
+### 2026-08-20: P0 triage — #1772 and #1758 still real
+**By:** EECOM (Core Dev)
+**What:** Both P0s verified structurally unresolved. #1772: commit b6804305 added prompt wording only; `max: 1` at `squad-implement-worker.md:204` still silently drops the real dispatch if a probe fires first. Fix must be structural (extend `scripts/check-workflow-input-interpolation.mjs` or add runtime rejection for empty dispatch). #1758: all 3 defects confirmed (squad-plan-accept Step 1 hardcodes plan lookup; Epic Dispatch at L529-554 dispatches Epics not tasks in 3-level tree; validate at L867 is after accept-scope, not before both accepts). Both SHIP-NOW. Close #1604, #1609. Defer #1730, #1731, #1733, #1735, #1606.
+**Why:** Prompt text cannot prevent structural misbehavior. #1758 is wave:3 (depends on #1759) but code work can proceed now; live E2E proof deferred until #1772 fixed.
+
+### 2026-08-20: #1732 split — compile gate SHIP-NOW, prompt-budget and string-assertion CLOSE
+**By:** FIDO (Quality Owner)
+**What:** `gh aw compile` is absent from CI — test at `test/gh-aw-quality.test.ts:978` uses `it.skipIf(!ghAwAvailable)` and the extension is never installed in the CI `test` job (`squad-ci.yml`). Prompt-budget gate already done (lines 637-669). String-assertion item too vague. Split: SHIP-NOW = add `gh extension install github/gh-aw` to `squad-ci.yml` so compile test actually runs. CLOSE prompt-budget and string-assertion portions.
+**Why:** CI should never silently skip the compile check on every run.
+
+### 2026-08-20: Fixture repo fate — aspiregregator-squad-e2e is the sole E2E fixture
+**By:** Sims (E2E Test Engineer)
+**What:** Close #1768 — decision already executed. `aspiregregator-squad-test` retired; hand-created issues already closed (runs 32297494287-32297512862). `aspiregregator-squad-e2e` is the sole primary E2E fixture going forward; contains honest Squad-decomposed issues. Close `aspiregregator-squad-e2e` #12 and #14 before tomorrow's run (failure artifacts from #1772 dispatch bug). No new fixture repo needed.
+**Why:** Hand-created fixtures prove dispatch mechanics but not Squad's ability to decompose and continue through its own children.
+
+### 2026-08-20: #1759 SHIP-NOW; #1756 SHARPEN structural contract; #1757 and #1608 DEFER
+**By:** Procedures (Prompt Engineer)
+**What:** #1759 confirmed live bug — squad.md squad-plan Step 3 (L637) emits Owner column and squad-plan-implementation Steps 2/4 (L851, L863) emit Agent column, but neither instructs values MUST be cast names from `.squad/team.md`; model falls back to role strings (`lead`, `devrel`) breaking `squad:{owner}` labels at L670. SHIP-NOW. #1756: ship structural contract only (emitted-artifact sections: evidence table, goals+non-goals, load-bearing assumptions, open decisions, traceability IDs R1..Rn); defer insight tuning. #1757: DEFER wave:4 — value is taste-based, E2E should inform. #1608: DEFER wave:3.
+**Why:** #1759 is small, isolated, and visible during tomorrow's plan review. Shorter list that ships.
+
+### 2026-08-20: #1761 SHIP-NOW — 3 doc errors in gh-aw.md; #1736 DEFER wave:3
+**By:** PAO (DevRel)
+**What:** #1761 SHIP-NOW — 3 verified errors in `docs/src/content/docs/guide/gh-aw.md`: (1) stale `.github/aw/` in `git add` (L38, L113 — could cause FALSE E2E failure); (2) redundant `gh aw compile` step (L34-35, L100-108); (3) missing restricted-secrets prompt callout (absent entirely). #1736: DEFER wave:3, blocked on #1733; current text accurate.
+**Why:** Stale git add path could cause a false E2E failure independent of any code bug.
+
+### 2026-08-20: Issue clarity bar — goal + success criteria or close it
+**By:** brady gaster (via Copilot coordinator)
+**What:** Every open issue must have (1) a clear goal and (2) clear, observable success criteria. If an issue cannot meet that bar, close it rather than carry it. Work should be crisp, targeted, and goal-oriented — prefer a short list that ships over a complete list that thrashes.
+**Why:** Stated during gh-aw workstream triage ahead of a full-day end-to-end test series. Direct quote: `i want our work to be very, very crisp, targeted, and goal-oriented ... make sure the goals of each are clear, make sure the success criteria for each is clear, and if not, close the issues and ship the thing.`
+**Scope:** Applies to issue triage generally, not just the gh-aw workstream.
+
+### 2026-08-20: Board cleanup execution — 7 issues closed, 3 branches deleted, milestones M1-M5 created
+**By:** Ralph (Work Monitor)
+**What:** Executed gh-aw triage decisions. Closed #1738, #1762, #1764, #1768, #1763, #1604, #1609 with rationale comments. Deleted 3 copilot/* branches (all already on dev or pure CRLF churn). Wave labels corrected: #1756 promoted to wave:1, #1730/#1731/#1729 demoted to wave:3/4. All 6 wave:1 issues updated with explicit Goal + Success Criteria blocks. Filed #1779. Created milestones M1-M5 (Pre-E2E stabilization, E2E verdict, Harden proven path, Review gate, Adoption & durability).
+**Why:** Brady's issue clarity bar: every open issue must have a clear goal and observable success criteria, or it gets closed.
+
+### 2026-08-20: max:2 and the activation guard are complementary, not redundant
+**By:** EECOM + Procedures (batch 2)
+**What:** `max: 1` → `max: 2` in `squad-implement-worker.md` is the *worker's* outbound dispatch budget (#1777). `checkDispatchWorkflowSchemas()` in `squad.md` is *squad.md's* inbound validation gate (#1778). They operate at different layers. Both shipped. The empty-dispatch guard replaced an instruction that **created an issue** on empty dispatch input — that instruction was the generator behind junk fixture issues #12 and #14 in aspiregregator-squad-e2e.
+**Why:** Separate concerns; removing either would reopen a different failure mode.
+
+### 2026-08-20: Empty-probe failure signal is a ::warning:: annotation, not a comment
+**By:** Procedures (batch 2)
+**What:** When the dispatch guard detects an empty dispatch probe, it emits a `::warning::` GitHub Actions log annotation rather than posting an issue comment.
+**Why:** The empty probe has no triggering issue to post to; a log annotation survives the run and is visible in the Actions UI without creating noise in issue threads.
+
+### 2026-08-20: #1758 shipped whole — validate-ordering fix anchored to squad-planning-ontology.md
+**By:** Procedures + EECOM (batch 2)
+**What:** The validate-ordering defect (#1758.3) was fixable because `workflows/shared/squad-planning-ontology.md:48-87` is the authoritative state machine and `squad.md`'s `next=` hints had drifted from it. The fix was a repair against a spec, not an inference. Pinned by test `#1758.3`. All three defects shipped in #1778.
+**Why:** Before deferring a fix as unverifiable, look for a spec the code should already conform to. If a spec exists and the code has drifted, the fix is a repair, not a guess.
+
+### 2026-08-20: When a bug is only reachable above a scope threshold, constrain the experiment rather than rush the fix
+**By:** Sims + Flight (batch 2)
+**What:** #1779 (epic-scope dispatcher collision) deferred to M3. Rationale: a third same-night change to `squad-implement-worker.md` — already under concurrent edit by #1777 — hours before a full-day run was judged a worse confound than the bug itself. Constraining the E2E experiment to a single-epic scope eliminates the bug's trigger condition without touching contended code.
+**Why:** Generalizable principle for contended files near a test window.
+
+### 2026-08-20: #1779 trigger is epic scope, not fixture shape
+**By:** Sims (batch 2)
+**What:** The bug in #1779 is triggered by two or more sibling epics under a common root, each with leaf tasks, where one exhausts before another starts. It is live and reachable on any realistically-sized epic. It is not a fixture-design problem — aspiregregator-squad-e2e with a single epic avoids the trigger.
+**Why:** Distinguishes the fixture workaround (valid for tomorrow) from the real product constraint (M3).
+
+### 2026-08-20: Test bar for the gh-aw workstream — a test must fail against the pre-fix state
+**By:** Flight + FIDO (batch 2)
+**What:** A test that passes while the system is broken is decoration, not a gate. Derived from #1766, which shipped prompt-wording-only with a test that passed throughout the broken period. Applied to #1777 and #1778: each test was verified to fail against the pre-fix state. Also applies to pinning tests: a pin that reads one side as ground truth and regenerates from it is decoration, not a gate.
+**Why:** Establishes a reusable quality bar for this workstream going forward.
