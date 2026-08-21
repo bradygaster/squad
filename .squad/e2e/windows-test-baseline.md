@@ -155,17 +155,60 @@ git ls-files --eol scripts/check-changeset-drift.mjs
 
 26 tests recovered by changing only the bytes on disk. `w/crlf` → `w/lf`.
 
-**Remediation (do this before the first run tomorrow):**
+**Remediation — the single authoritative procedure. Run before the first test run.**
+
+> ⚠️ **This block is the one source of truth for the renormalize.** The card and the
+> runbook point *here*; they must not restate the command. An earlier revision of this
+> doc carried a `*.mjs`-scoped version that drifted out of date **within 40 minutes**
+> of merging — see "why not a glob" below.
 
 ```powershell
-git ls-files -- '*.mjs' | % { Remove-Item -LiteralPath $_ -Force }
-git checkout -- .
-git ls-files --eol scripts/check-changeset-drift.mjs   # must show w/lf
+# 1. Enumerate PINNED files by attribute — never by glob.
+$pinned = git ls-files --eol |
+  Where-Object { $_ -match 'attr/text eol=lf' } |
+  ForEach-Object { ($_ -split "`t")[-1].Trim() }
+
+# 2. Delete, then restore scoped to that list. Sweep ALL of them, unconditionally.
+$pinned | ForEach-Object { Remove-Item -LiteralPath $_ -Force -ErrorAction SilentlyContinue }
+$pinned | ForEach-Object { git checkout -- $_ }
+
+# 3. Assert the artifact. This must print 0.
+(git ls-files --eol |
+  Where-Object { $_ -match 'attr/text eol=lf' } |
+  Where-Object { $_ -match '^i/lf\s+w/crlf' }).Count
 ```
 
-A plain `git checkout --` on an unmodified file is a **no-op** and does nothing; the
-file must be deleted first to force re-checkout. This is the single most likely
-source of a false alarm tomorrow morning.
+**Measured on `dev`:** 173 files pinned, **26** of them CRLF on disk before → **0**
+after, tree clean, and the two EOL suites go `13 failed`/`0 tests` → **26 passed**.
+
+**Sweep all 173 unconditionally — do not try to repair only the broken ones.** Every
+oracle that could tell you *which* files are affected is blind (see the table below),
+so selection is guesswork. The sweep is idempotent and costs seconds.
+
+**Why not a glob.** The `*.mjs` selector was correct against the *known-affected* set
+and wrong against the *pinned* set. Of the 26 files actually needing repair, **only
+about 6 were `.mjs`** — it would have missed **20**, including `cli.js`, `index.cjs`,
+`lib/rework.cjs`, and every `.ps1`. Any glob-shaped selector regenerates this bug the
+next time a non-matching extension gets pinned; the attribute-driven enumeration
+tracks `.gitattributes` automatically and cannot drift.
+
+This is why a partial repair is **worse than none**: it produces a third distinct
+failure set that matches neither the doc nor the card, which reads as *"the
+remediation is unreliable"* rather than *"the selector was wrong."*
+
+### Every oracle here is blind — this is why the sweep is unconditional
+
+| Thing you would naturally reach for | What it does |
+| --- | --- |
+| `git checkout -- <path>` on an unmodified file | **Silent no-op.** Reports success, changes nothing |
+| `git checkout --force -- <path>` | **Also silently fails**, then reports clean |
+| `git status` | **Structurally cannot see it.** Once the blob is LF, a CRLF worktree is invisible |
+| A green test suite | #1788 loaded **0 tests** and looked like a pass |
+| `git ls-files --eol` | ✅ **The one working oracle.** Use it |
+
+The file must be **deleted first** to force re-checkout. This is the single most
+likely source of a false alarm tomorrow morning — and note that `git checkout -- .`
+is prohibited by repo convention, which is why step 2 restores a scoped list.
 
 ### Post-renormalize numbers on merged `dev`
 
