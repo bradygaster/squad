@@ -288,21 +288,34 @@ The byte comparison proves *currency*, not *content*. Assert the fix text direct
 ```powershell
 # PowerShell gotcha: -like "*$key*" treats BACKTICKS as escape characters and yields
 # false negatives on prompt text (which is full of backticks). Use .Contains().
-$b = gh api "repos/$FIXTURE/contents/.github/workflows/squad.md" --jq '.content' 2>$null
+$b = (gh api "repos/$FIXTURE/contents/.github/workflows/squad.md?ref=main" --jq '.content' 2>$null) -join '' -replace '\s',''
 $txt = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b))
-Write-Host "main squad.md length: $($txt.Length)"    # sanity: ~56 KB, NOT ~6.6 KB
+Write-Host "main squad.md length: $($txt.Length)"    # expect ~60,589 chars, NOT ~6.6 KB
 
-# Confirm the OLD concrete-token prohibition is gone (whatever Procedures replaced it with,
-# the literal forbidden tokens should no longer appear verbatim in the prohibition).
-Write-Host "contains literal 'DevRel' : $($txt.Contains('DevRel'))"
-Write-Host "contains literal 'squad:lead' : $($txt.Contains('squad:lead'))"
+# #1789 REPLACED the old prohibition rather than appending to it, so assert BOTH directions.
+foreach ($k in 'Check 10','sole source of truth','Non-roster') {
+  Write-Host ("ADD {0,-24} {1}" -f $k, $txt.Contains($k))          # all must be True
+}
+Write-Host ("REM {0,-24} {1}" -f 'never mint a role-derived', $txt.Contains('never mint a role-derived'))   # must be False
 ```
 
-> Interpretation: if the fix works by **removing the concrete tokens** from the prohibition,
-> both should read `False`. If Procedures chose a different strategy (e.g. restructuring the
-> instruction while keeping examples), these may still read `True` — that is not itself a
-> failure. **Read the actual fix in the PR before interpreting this check.** The authoritative
-> criterion remains the live output in Phase 3, not the prompt text.
+> **Assert the removal, not only the addition.** A sync that appends without replacing leaves the
+> file carrying *both* the old prohibition and the new `Check 10` machinery — two overlapping rules
+> about the same thing, which is a plausible mechanism for the original disobedience. That is worse
+> than either alone and it passes an addition-only check.
+
+> ⚠️ **Assert against `squad.md`, NOT `squad.lock.yml`.** The lock does **not** inline the prompt
+> body — it emits `GH_AW_PROMPT_CONTENT_0008: "{{#runtime-import .github/workflows/squad.md}}"`,
+> resolved at runtime against the fixture's own committed copy. The markers **cannot** appear in
+> the lock, so asserting there returns a guaranteed false FAIL. What the lock *does* carry is a
+> `body_hash` in its first-line metadata; a changed `body_hash` is the proof that a recompile
+> actually ingested the new source. Check the markers in the `.md` and the `body_hash` in the lock —
+> each artifact for what it can actually represent.
+
+**Status — this was performed on 2026-08-21 (fixture commit `1b11c5f`).** All five prompt sources
+verified byte-identical to `dev` by blob SHA; recompiled with `gh aw compile --strict` v0.86.2,
+exit 0; `body_hash` moved `98f0dbd7…` → `d0e504a2…` (squad) and `95183cda…` → `e4ddc844…` (worker).
+Re-run the assertions above anyway before E4 — `dev` may have moved again.
 
 ---
 
