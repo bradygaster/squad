@@ -10,7 +10,7 @@
 **Raised by:** bradygaster (via Copilot session)
 **Status:** Decided
 
-## Context
+#### Context
 
 During follow-up planning after a live end-to-end Squad test, the coordinator
 repeatedly proposed opening a pull request against `github/gh-aw` to refresh
@@ -22,7 +22,7 @@ Brady rejected this three times. The proposal came from misreading the
 evidence of a vendoring relationship that obligated us to keep their copy
 current.
 
-## Decision
+#### Decision
 
 **All Squad work happens in `bradygaster/squad`.** We do not push code or
 changes to `gh-aw` or any other external repository. The only work that
@@ -32,7 +32,7 @@ The gh-aw copy of `squad.md` is where some of their experimentation happens.
 It is not ours to maintain, and no work item should be opened against it
 until further notice.
 
-## Relationship framing (corrected)
+#### Relationship framing (corrected)
 
 Squad and gh-aw are **not** vendors of each other's code in either direction.
 
@@ -43,7 +43,7 @@ Squad and gh-aw are **not** vendors of each other's code in either direction.
 - A `source:` pin appearing in another repo is their provenance metadata. It
   does not create an obligation on us.
 
-## Consequences
+#### Consequences
 
 - No follow-up item may be framed as "refresh / upstream / sync to gh-aw."
 - Findings that appear to be gh-aw defects are theirs to triage. We may still
@@ -52,7 +52,7 @@ Squad and gh-aw are **not** vendors of each other's code in either direction.
 - Test repos (e.g. `bradygaster/aspiregregator-squad-test`) remain in scope
   for verification work.
 
-## Foundational Directives (carried from beta, updated for Mission Control)
+#### Foundational Directives (carried from beta, updated for Mission Control)
 
 ### Type safety — strict mode non-negotiable
 **By:** CONTROL (formerly Edie)
@@ -173,7 +173,7 @@ FIDO should own the test scenario. GUIDO should validate the VS Code runtime beh
 **By:** Booster  
 **Area:** Squad workflow trigger/concurrency behavior
 
-## Finding
+#### Finding
 
 Compiling `workflows/squad.md` with `gh aw compile workflows\squad.md --no-emit --no-check-update` reproduces the warning:
 
@@ -185,7 +185,7 @@ The compile also fails afterward because the local worktree does not have the re
 
 gh-aw emits the warning in `pkg/workflow/compiler_validators.go` from `emitGeneralToolWarnings` when both `len(workflowData.Command) > 0` and `len(workflowData.Bots) > 0`.
 
-## Mechanism
+#### Mechanism
 
 `workflows/squad.md` configures:
 
@@ -202,13 +202,13 @@ The workflow has no explicit concurrency block, so gh-aw auto-generates command/
 
 GitHub Actions permits one running and one pending run per concurrency group by default. If the bot run is running, the human run is delayed as pending. If another run in the same group queues while the human run is pending, the older pending run can be canceled and replaced. The failure can be effectively silent from the issue thread; the signal is in Actions UI/logs, not necessarily a Squad comment.
 
-## Assessment
+#### Assessment
 
 This is a real but narrow hazard. Our current `bots:` entry is only `github-actions[bot]`. Our own gh-aw/Squad failure and status comments can be authored by that bot, but the observed `[aw]` failure-report class does not begin with `/squad`, so it does not match the slash-command predicate.
 
 For the e2e chain we care about — `/squad implement` → epic → child PR → merge → worker dispatches Squad continuation — this warning is unlikely to bite unless one of our bot-authored comments begins with `/squad`. The continuation hop uses `dispatch-workflow` / `workflow_dispatch` inputs, not a bot issue comment, so it does not require `bots:` and does not depend on bot-authored slash-command comments.
 
-## Options
+#### Options
 
 1. **Remove `bots:` from `workflows/squad.md`.** Clears the warning and prevents bot-authored `/squad` comments from occupying the human command slot. Cost: any intentional GitHub Actions bot slash-command automation stops working. I found no evidence the implement continuation needs that.
 2. **Narrow `bots:`.** Already as narrow as possible for this use case (`github-actions[bot]` only). No practical improvement unless there is a more specific bot identity.
@@ -216,7 +216,7 @@ For the e2e chain we care about — `/squad implement` → epic → child PR →
 4. **Restructure triggers / split bot handling.** Viable only if we need bot slash-command support. More complexity than warranted for the e2e path.
 5. **Suppress or ignore.** Leaves warning noise and a narrow real hazard. Acceptable for immediate e2e only if no bot comments start with `/squad`.
 
-## Recommendation
+#### Recommendation
 
 Address it, but do not block the immediate e2e rerun on it. The clean product configuration is to remove `bots:` from `workflows/squad.md` unless Flight identifies a required bot-authored slash-command scenario. The continuation hop we are proving uses workflow dispatch, so removing `bots:` should not weaken that path. If the team wants zero churn before the e2e rerun, doing nothing is operationally acceptable as long as the rerun issue avoids bot comments beginning with `/squad`.
 
@@ -225,13 +225,13 @@ Address it, but do not block the immediate e2e rerun on it. The clean product co
 **By:** Booster  
 **Area:** gh-aw safe-output protection for Squad Implement Worker
 
-## Verdict
+#### Verdict
 
 The hard refusal is real signed-commit behavior, not a missing protected-files lookup. gh-aw first classifies `protected-files: request_review` as a soft protected-file action, but the signed-commit replay path revalidates the synthesized GraphQL payload and rejects every file-protection action except `allow`.
 
 That makes `request_review` effectively incompatible with signed `create-pull-request` writes that touch protected files. The user-visible soft-log/hard-fail sequence is an integration/documentation bug in gh-aw, but the signed path is deliberately fail-closed.
 
-## Mechanism
+#### Mechanism
 
 1. `create_pull_request.cjs` calls `checkFileProtection(...)` with the configured policy defaulting to `request_review`.
 2. For `request_review`, it logs that it will create the pull request with a caution and request-changes review.
@@ -242,7 +242,7 @@ That makes `request_review` effectively incompatible with signed `create-pull-re
 
 `fallback-to-issue` follows a different route: the same signed-push validation still rejects the protected payload, but the PR handler has `manifestProtectionFallback` set, catches the push failure, and creates the protected-file review issue instead of trying to create the PR.
 
-## Worker recommendation
+#### Worker recommendation
 
 For `workflows/squad-implement-worker.md`, keep the existing `excluded-files` list for structural no-write zones:
 
@@ -266,13 +266,13 @@ protected-files: fallback-to-issue
 
 Do not set `protected-files: allowed` unless the worker is intentionally allowed to rewrite protected manifests, security docs, and other top-level dot folders. `excluded-files` and `protected-files` overlap only for the excluded protected directories. `excluded-files` strips those paths from the patch before commit creation; `protected-files` still protects package manifests, lockfiles, `CODEOWNERS`, `README.md`, `SECURITY.md`, `CHANGELOG.md`, and other non-excluded protected files.
 
-## E2E rerun viability
+#### E2E rerun viability
 
 This should unblock the e2e rerun for the worker path. A protected-file write will no longer produce the misleading `request_review` soft path followed by a signed-payload hard failure; it will be routed to the protected-file review issue path. Writes under `.github/workflows/`, `.github/agents/`, `.github/aw/`, and `.squad/` should be stripped before protected-file evaluation because of `excluded-files`.
 
 Any workflow-source change must be recompiled into the installed `.lock.yml` used by `bradygaster/aspiregregator-squad-test`; editing this repo's Markdown source alone will not affect an already-compiled test workflow.
 
-## Risk
+#### Risk
 
 The recommendation does not weaken the no-write zones covered by `excluded-files`; those files remain absent from the generated patch. It does change the protected-file outcome from failed/contradictory `request_review` to review-issue fallback. The worker does not gain ability to commit excluded directories, but it can still propose normal allowed source files. Protected non-excluded files will require manual review through an issue instead of being opened as a PR with requested changes.
 
@@ -295,14 +295,14 @@ The recommendation does not weaken the no-write zones covered by `excluded-files
 - Added bidirectional cross-references between team-level and copilot-level skill files
 - Added PR references (#1042, #1043, #1044) as source evidence throughout
 
-## Rationale
+#### Rationale
 
 These are high-impact, recurring failure modes. Documenting them in the skill files ensures every agent (human or AI) working on releases has the knowledge to avoid repeating the v0.9.4 delays. The GITHUB_TOKEN limitation in particular is non-obvious and would catch any future release.
 
 
 ### 2026-08-13: Restore shared ancestry between dev and main via merge, dev-wins conflict policy
 
-## Context
+#### Context
 
 `dev` and `main` had unrelated git histories. `dev`'s root commit (`4c5772c5`, a
 dependabot bump dated 2026-07-13) shares no ancestor with `main`'s root
@@ -313,7 +313,7 @@ unmergeable, with no way to review a normal diff. The v0.11.0 promotion
 (2026-06-29) predates the July 13 reset, which is why it worked and why
 #1698 was the first to hit this wall.
 
-## Decision
+#### Decision
 
 Merge `upstream/main` into `dev` with `--allow-unrelated-histories`, resolving
 every one of the 275 conflicts in `dev`'s favor, on a new branch
@@ -324,7 +324,7 @@ Rejected alternative: rebasing `dev` onto `main`. `dev` carries a
 rebase would rewrite all 196 commits on `dev`, invalidating every PR currently
 open against it. A merge is additive only and needs no force-push.
 
-## Why dev-wins conflict resolution is safe
+#### Why dev-wins conflict resolution is safe
 
 All 275 conflicts were `add/add` (identical path on both branches, no common
 base to 3-way merge from). Resolved every one with `git checkout --ours` (dev's
@@ -340,7 +340,7 @@ files deliberately kept (see below). Confirmed unchanged post-merge:
 `test/gh-aw-quality.test.ts` (#1697 fix intact), `workflows/squad.md` and
 `workflows/squad-implement-worker.md` (#1682 feature intact).
 
-## What was restored (kept from main, lost in the July 13 reset)
+#### What was restored (kept from main, lost in the July 13 reset)
 
 7 docs pages:
 - docs/src/content/blog/015-wave-2-the-repl-moment.md
@@ -363,7 +363,7 @@ conflict), appending older history from main onto dev's existing content with
 no loss on either side: `.squad/agents/{eecom,fido,flight,pao,procedures}/history.md`
 and `.squad/decisions.md`.
 
-## What was dropped
+#### What was dropped
 
 48 `.changeset/*.md` files that arrived from `main`. These are spent: their
 content is already consumed into `CHANGELOG.md`'s `[0.12.0]` entry, and
@@ -371,7 +371,7 @@ re-adding them risked tripping the Changeset Drift check. `.changeset/` after
 this merge contains exactly what `dev` had before: `README.md`,
 `config.json`, `max-reasoning-effort.md`.
 
-## Validation
+#### Validation
 
 Static/diff verification was thorough (see above). Dynamic validation
 (`npm run build`, `npx vitest run`) could **not** be executed in this sandbox:
@@ -383,7 +383,7 @@ HEAD, and this exact dependency/version was already in dev's lockfile before
 any of this work. CI (which has full registry access) is the source of truth
 for build/test validation on PR #1699.
 
-## Outcome
+#### Outcome
 
 `git merge-base <this-branch> upstream/main` now succeeds, confirming `dev`
 has a real common ancestor with `main` again. This unblocks PR #1698 and
@@ -396,7 +396,7 @@ followed going forward.
 **By:** Flight  
 **Area:** Squad Implement Worker protected-file policy
 
-## Recommendation
+#### Recommendation
 
 Choose **B**:
 
@@ -411,7 +411,7 @@ This should be Squad's shipped worker default for now. It fixes the `request_rev
 
 Do not choose plain `fallback-to-issue` as the product default. It is mechanically safe but creates the wrong default UX for a core Squad use case: docs improvement by PAO. Do not choose the broader docs exclusion yet. `README.md` is special because it is both high-frequency and low-control-plane. `CONTRIBUTING.md` and `CHANGELOG.md` can be process/release-control files in adopting repositories.
 
-## Threat model
+#### Threat model
 
 The protected-file guard is not primarily protecting `dev` from an unreviewed merge; the PR review gate already does that. It is protecting reviewers and repo owners from high-leverage changes being normalized into routine agent output.
 
@@ -427,7 +427,7 @@ For those files, `fallback-to-issue` forces a human to explicitly acknowledge th
 
 `README.md` does not carry the same default threat. It can mislead users, but that risk is visible in ordinary review and is exactly the kind of work Squad should handle. Protecting every basename `README.md` at every depth is inherited from gh-aw's generic manifest-safety model, not from Squad's product model.
 
-## Unit of configuration
+#### Unit of configuration
 
 Ship B as the worker default, then surface protected-file policy as an adopting-repo configuration choice in the connect/adopt path.
 
@@ -435,7 +435,7 @@ The worker needs a safe, opinionated default because every adopter starts somewh
 
 The default should not wait for that surface. The current `request_review` value is broken with signed create-pull-request writes.
 
-## User experience of fallback-to-issue
+#### User experience of fallback-to-issue
 
 `fallback-to-issue` is acceptable as a policy-boundary escape hatch, not as the normal happy path.
 
@@ -443,13 +443,13 @@ For a legitimate manifest task such as "add the Serilog package," an issue inste
 
 For README work, the same experience is bad product behavior. It blocks common successful work, creates coordinator churn, and trains users that Squad cannot do basic docs tasks. That is why README should be excluded from protected-file defaults.
 
-## CHANGELOG.md
+#### CHANGELOG.md
 
 Do not exclude `CHANGELOG.md` in the shipped default.
 
 This repo uses changesets, so Squad should normally write `.changeset/*.md`, not `CHANGELOG.md`. Adopting repos may not. In many projects `CHANGELOG.md` is release provenance, may be generated, and may be validated by release automation. A false changelog entry can be materially worse than a README edit because it can misstate shipped behavior or satisfy a release gate. Repos that intentionally maintain changelogs by hand can opt out later through the adoption configuration surface.
 
-## Follow-up
+#### Follow-up
 
 When implementation happens, update the workflow source and recompile the installed `.lock.yml` in any consuming/test repo used for validation. Keep the existing `excluded-files` rules; they solve a different problem and remain independent of this decision.
 
