@@ -27,6 +27,20 @@
 # tests. Green on Linux CI, silently dead on Windows checkouts (#1788).
 *.mjs text eol=lf
 
+# Squad: same hazard, remaining shebanged file types (#1788). A CRLF shebang is
+# never correct -- the \r joins the interpreter argument on POSIX ("env: node\r:
+# No such file or directory"). Enforced by scripts/check-shebang-eol.mjs.
+*.js text eol=lf
+*.cjs text eol=lf
+*.ps1 text eol=lf
+
+# Deliberately NOT "*.ts text eol=lf": only 3 tracked .ts files carry a shebang,
+# but a blanket rule would renormalize 95 CRLF-storing .ts blobs in one commit.
+# Pinning the shebanged entrypoints by path keeps the invariant without the churn.
+packages/squad-cli/src/cli-entry.ts text eol=lf
+samples/autonomous-pipeline/index.ts text eol=lf
+test-fixtures/dogfood/node-monorepo/packages/cli/src/cli.ts text eol=lf
+
 # Squad: CRLF breaks RUN line-continuations when the image builds on Linux.
 Dockerfile text eol=lf
 Dockerfile.* text eol=lf
