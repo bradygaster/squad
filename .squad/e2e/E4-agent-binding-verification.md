@@ -43,6 +43,82 @@ model copied them verbatim out of the parenthetical that forbids them.
 
 The two tokens that leaked are the two tokens named in those prohibitions.
 
+> **Update 2026-08-21 — this is no longer a relayed observation.** The artifact was read
+> directly. See *Observed directly* below for the verbatim `Agent` column, the exact label
+> counts, and three additional findings, one of which changes a check in Phase 3.
+
+---
+
+## ✅ Observed directly — 2026-08-21, run `32433493989`
+
+**Verified against the artifact rather than relayed**, so no downstream claim rests on an
+inference.
+
+### `Agent` column, verbatim (`plan implementation`, run `32433493989`, seed issue #16)
+
+| # | Title | Size | Depends On | **Agent** | Epic |
+|---|-------|------|------------|-----------|------|
+| 1 | Parse OPML into subscription records | S | — | **`lead`** | 1.1 |
+| 2 | Import parsed feeds as subscriptions (dedupe + summary) | M | 1 | **`lead`** | 1.1 |
+| 3 | OPML upload UI with results panel | M | 2 | **`devrel`** | 1.1 |
+
+⇒ **`lead` ×2, `devrel` ×1** in the Agent column.
+
+### Labels minted at `plan activate` (run `32435055598`)
+
+| Issue | Label | Source |
+|---|---|---|
+| #18 Parse OPML… | `squad:lead` | Agent column task 1 |
+| #19 Import parsed feeds… | `squad:lead` | Agent column task 2 |
+| #20 OPML upload UI… | `squad:devrel` | Agent column task 3 |
+| **#17 [Epic] OPML Upload & Import** | **`squad:lead`** | ⚠️ **not from the Agent column** |
+
+⇒ **`squad:lead` ×3, `squad:devrel` ×1. The briefed count is confirmed exactly.**
+
+### 🔴 Squad's own validation row is fooled too
+
+The plan's self-check printed:
+
+> `| Agent assignments valid (cast Names) | ✅ (lead, lead, devrel) |`
+
+It asserted three role strings **are** cast Names. **Never treat Squad's validation pre-check
+as evidence** — it passes on exactly the input it should reject.
+
+### 🔴 Zero legitimate labels have EVER been minted
+
+All five roster names checked: `squad:keaton`, `squad:mcmanus`, `squad:fenster`,
+`squad:hockney`, `squad:kint` — **all ABSENT**. Every owner label that has ever existed in this
+fixture is role-derived. The binding has never once worked.
+
+### All three prohibition tokens have leaked — across runs
+
+| Token | Named at | Seen |
+|---|---|---|
+| `squad:lead` | `:730` | E1 (#6, #7) **and** E3 (#17, #18, #19) |
+| `squad:devrel` | `:913` (`DevRel`) | E1 (#8) **and** E3 (#20) |
+| **`squad:reviewer`** | `:730` | **E1 only (#9)**, created 2026-08-19 — **not** minted by E3 |
+
+The leaked set is exactly the set named in the two prohibitions — nothing outside it has ever
+appeared. The root cause reproducing itself precisely.
+
+---
+
+## ⚠️ Scope limitation — what E4 does NOT cover
+
+**E4 verifies the task-level `Agent` binding only.**
+
+Epic **#17** received `squad:lead`, but the `plan program` artifact (run `32433011339`) contains
+**no owner or agent assignment whatsoever** — verified by direct read. The epic's owner is
+therefore minted at **`plan activate`**, which is **downstream of where E4 stops**.
+
+⇒ **A green E4 does not mean "no owner label leaks anywhere."** It means *"the `Agent` column at
+`plan implementation` is clean."* Epic-level owner minting is a **separate, unverified surface**
+requiring its own check on a full-path run.
+
+E4's scope remains correct and sufficient for its purpose — `devrel` appears **in the Agent
+column**, so the dispositive signal is present where E4 looks. But do not overstate the result
+when reporting it.
+
 **The leak originates in the `Agent` column at `plan implementation`** (`:913`), and propagates
 into minted labels at `plan activate` (`:730`). That's why this procedure stops at
 `plan implementation` — it catches the defect at its source rather than at its symptom, which
@@ -73,17 +149,27 @@ String check on that file: `DevRel` → **False**. `devrel` → **False**.
   Name, not as a Role, not in any charter. Its **only** possible source is the prohibition text
   at `:913`. If it appears, the model copied it out of the prohibition. There is no other
   explanation.
+- **`squad:reviewer` is also dispositive**, for the same reason — "Reviewer" is not a roster
+  Role either. It is named at `:730`. *(Observed in E1 on issue #9; not minted by E3.)*
 - **`squad:lead` is ambiguous.** Keaton's Role column literally reads "Lead / Architect". So
   `squad:lead` could be **role-column derivation** *or* prohibition-copying. It does not
   discriminate between the two failure modes.
+
+**Measured baseline to compare against — what E3 actually produced (run `32433493989`):**
+
+| | Agent column | Verdict if repeated |
+|---|---|---|
+| Task 1 | `lead` | ambiguous |
+| Task 2 | `lead` | ambiguous |
+| Task 3 | **`devrel`** | ❌ **dispositive FAIL** |
 
 ### ⇒ Verdict is three-way, not binary
 
 | Verdict | Condition | Meaning |
 |---|---|---|
-| ✅ **PASS** | No `squad:devrel` **and** no `squad:lead` (or any other role-derived token). Every `Agent` value is a roster **Name** or `@copilot`. | Fix is effective. |
-| ⚠️ **PARTIAL** | No `squad:devrel`, but `squad:lead` (or another role-column token) still appears. | Prohibition-copying **is fixed**. A second, distinct defect — role-column derivation — remains. **File it separately. Do not revert the fix.** |
-| ❌ **FAIL** | `squad:devrel` appears anywhere in `Agent` values or minted labels. | Prohibition-copying is **not** fixed. #1784 stands. |
+| ✅ **PASS** | No `squad:devrel` / `squad:reviewer` **and** no `squad:lead` (or any other role-derived token). Every `Agent` value is a roster **Name** or `@copilot`. | Fix is effective. |
+| ⚠️ **PARTIAL** | No `squad:devrel` / `squad:reviewer`, but `squad:lead` (or another role-column token) still appears. | Prohibition-copying **is fixed**. A second, distinct defect — role-column derivation — remains. **File it separately. Do not revert the fix.** |
+| ❌ **FAIL** | `squad:devrel` or `squad:reviewer` appears in `Agent` values, or on an issue **newly created by this run**. | Prohibition-copying is **not** fixed. #1784 stands. |
 
 > 🛑 **Why three-way matters:** a binary criterion scores PARTIAL as FAIL, which would argue for
 > reverting a fix that genuinely worked. The `devrel`/`lead` asymmetry is the only thing that
@@ -325,21 +411,49 @@ Read the `Agent` column by eye against the accepted-values list above. Do not au
 judgement — a regex that "finds no forbidden tokens" in a plan that failed to render is a
 silent-success trap (gotcha #10). **Confirm the plan actually contains a task table first.**
 
+> 🛑 **Ignore Squad's own "Validation Pre-check" table.** In E3 it printed
+> `Agent assignments valid (cast Names) | ✅ (lead, lead, devrel)` — asserting three role
+> strings *are* cast Names. **It passes on exactly the input it should reject.** Judge the
+> `Agent` column yourself; never accept the self-check as the result.
+
 ### 3b. Minted labels — corroborating evidence
 
+> 🛑 **DO NOT check repo-global label existence. It is a guaranteed false FAIL.**
+>
+> GitHub labels **persist once created**. `squad:lead`, `squad:devrel`, and `squad:reviewer`
+> **already exist in the fixture** — minted by E1 on 2026-08-19 and E3 on 2026-08-21. They will
+> still be there during E4 no matter how well the fix works. A check of the form
+> "does `squad:devrel` exist in this repo?" returns **true forever** and would fail a perfect run.
+>
+> **Scope the check to the issues E4 itself created.**
+
 ```powershell
-Write-Host "`n=== All squad: labels in fixture ==="
-gh label list --repo $FIXTURE --limit 200 --json name `
-    --jq '.[] | select(.name | startswith("squad:")) | .name' 2>$null
+# Record this BEFORE running Phase 2 — it is the cutoff for "new" issues.
+$E4_START = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+
+# After Phase 2: labels on issues created by THIS run only.
+gh issue list --repo $FIXTURE --state all --limit 100 `
+    --json number,title,labels,createdAt `
+    --jq --arg t "$E4_START" '.[] | select(.createdAt > $t) |
+         [(.number|tostring), ([.labels[].name]|join(",")), (.title|.[0:50])] | join("  |  ")' 2>$null
 ```
 
-Compare against the roster. **Every `squad:{x}` must have `{x}` = a lowercased roster Name**
+Every `squad:{x}` on a **newly created** issue must have `{x}` = a lowercased roster Name
 (`keaton`, `mcmanus`, `fenster`, `hockney`, `kint`).
 
-> Note: at `plan implementation` the plan is proposed but labels are typically minted later,
-> at `plan activate`. A clean label list here is **weaker** evidence than a clean `Agent`
-> column. **The `Agent` column is authoritative for E4.** If the label list is clean but the
-> `Agent` column is dirty, that is a **FAIL** — the leak just hasn't propagated yet.
+**Known pre-existing contamination — ignore these unless they appear on a NEW issue:**
+
+| Label | Minted by | On issues |
+|---|---|---|
+| `squad:lead` | E1 + E3 | #6, #7, #17, #18, #19 |
+| `squad:devrel` | E1 + E3 | #8, #20 |
+| `squad:reviewer` | **E1 only** | #9 |
+
+> Note: at `plan implementation` the plan is only *proposed* — labels are minted later, at
+> `plan activate`. So E4 may legitimately create **no new labelled issues at all**. That is
+> expected, and it means the label check is **weak corroboration only**.
+> **The `Agent` column is authoritative for E4.** If labels look clean but the `Agent` column
+> is dirty, that is a **FAIL** — the leak simply hasn't propagated yet.
 
 ### 3c. Roster cross-check
 
@@ -385,9 +499,12 @@ run_ids: []
 agent_column_values: []
 forbidden_tokens_found: []
 squad_devrel_present: <true|false>    # dispositive
+squad_reviewer_present: <true|false>  # dispositive
 squad_lead_present:   <true|false>    # ambiguous — does not alone determine FAIL
+new_issues_only: true                 # labels scoped to issues created by THIS run
 verdict: PASS|PARTIAL|FAIL
 epics_produced: <n>                   # observational only
+scope_note: "task-level Agent binding only; epic-level owner minting not covered"
 notes: ""
 ```
 
