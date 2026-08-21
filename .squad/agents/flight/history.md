@@ -73,3 +73,5 @@ gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: C
 
 Batch 2: pre-merge gate review of PRs #1775/#1776/#1777/#1778 in progress. All four are green and mergeable. Key validation points: (1) #1777 and #1778 tests verified to fail against pre-fix state; (2) #1778 scope covers #1759+#1756+#1758 all three; (3) `max: 2` and activation guard are complementary not redundant. Board is clean: M1-M5 created, wave labels corrected, #1779 filed to M3.
 
+
+- 📌 **Team update (2026-08-21 — Agentic-Workflows Audit):** Reviewed PR #1815. Independently re-verified all five of Booster's claims. Resolved git-negation-semantics question (* + !.gitignore correct for flat-file dirs). Judged .github/aw/logs/.gitignore correct placement over root .gitignore rule (colocation beats surviving directory deletion). Squash-merged at 2026-08-21T16:23:46Z. Decision captured in decisions.md: gitignore-colocation. PR #1815 APPROVED + MERGED ✅.

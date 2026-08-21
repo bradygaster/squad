@@ -142,3 +142,5 @@ Post-e2e follow-up triage recorded Booster findings D and F. Finding F confirmed
 
 gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
 
+
+- 📌 **Team update (2026-08-21 — Agentic-Workflows Audit):** Authored PR #1815 chore(gh-aw): ignore downloaded workflow logs under .github/aw/logs. Created .github/aw/logs/.gitignore (* + !.gitignore). LF-only blob verified via hex inspection. Correctly requested reviewer pass; Flight approved and squash-merged at 2026-08-21T16:23:46Z. PR #1815 MERGED ✅.

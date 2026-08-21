@@ -5,6 +5,74 @@
 
 ---
 
+### 2026-08-21: E4 conflict was add/add, not a divergence
+**Date:** 2026-08-21
+**Raised by:** Coordinator
+**Status:** Decided
+
+#### Context
+
+The conflict on PR #1813 for `.squad/e2e/E4-agent-binding-verification.md` was an add/add, not a content divergence. The file did not exist at the merge base. `dev` added the procedure via #1791 with `⛔ NOT YET EXECUTED`; the branch added the same file updated to `✅ EXECUTED` with results.
+
+#### Decision
+
+Resolution kept the executed version plus dev's sibling files.
+
+---
+
+### 2026-08-21: Git plumbing merge pattern for dirty working trees
+**Date:** 2026-08-21
+**Raised by:** Sims / Coordinator
+**Status:** Decided
+
+#### Context
+
+When CRLF normalization (or other `.gitattributes` fallout) makes the working tree dirty enough that `git merge` refuses to start, a conflict must be resolved via plumbing.
+
+#### Decision
+
+Established pattern:
+1. `git merge-tree --write-tree` to analyse the merge and identify conflicts.
+2. `git mktree` to rebuild the affected subtree with the resolved blob SHAs.
+3. Walk the tree hierarchy replacing SHAs up to the root tree.
+4. `git commit-tree` with two parents and a ref update to land the merge commit.
+
+#### Risk — mandatory pairing
+
+Hand-building trees can silently drop sibling entries. This technique MUST be paired with a tree-inventory diff before and after to verify nothing was lost. The coordinator verified PR #1813's plumbing merge: 1 file changed (+124/−14), `.squad/e2e/` and `.squad/` inventories identical, all 47 markdown headings present before the merge survive after it. The 14 deletions were the status banner and the Phase 0d correction — intentional, not loss.
+
+---
+
+### 2026-08-21: gitignore placement — colocation over root rules
+**Date:** 2026-08-21
+**Raised by:** Flight
+**Status:** Decided
+
+#### Decision
+
+When adding a `.gitignore` to exclude files written by a tool under a specific subdirectory (e.g., `.github/aw/logs/`), the correct placement is a `.gitignore` inside that directory — not a rule in the root `.gitignore`.
+
+#### Rationale
+
+Colocation with the artifact directory improves discoverability, and the ignore rule survives even if someone cleans the root `.gitignore`. Nested-directory re-inclusion semantics (`*` + `!.gitignore`) work correctly for flat-file directories; subdirectories within an excluded directory remain ignored, which is the desired behavior for tool-generated log dumps.
+
+---
+
+### 2026-08-21: scaling-tribble session produced no work — intent unrecorded
+**Date:** 2026-08-21
+**Raised by:** Coordinator
+**Status:** Noted / Open
+
+#### Finding
+
+The `bradygaster-scaling-tribble` worktree ("Custom runners for agentic workflows") produced absolutely no work: single reset in reflog, no commits, no stash.
+
+#### Action
+
+The intent behind that session is unrecorded. This may need to be re-opened as a fresh session or issue.
+
+---
+
 ### 2026-08-19: Squad's responsibility matrix stops at this repo
 **Date:** 2026-08-19
 **Raised by:** bradygaster (via Copilot session)
