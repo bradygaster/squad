@@ -12,6 +12,7 @@
 | 2026-08-21 (post-run) | Phase 2 extended by one command (`plan activate`); new Phase 3e roster-provenance gate; contamination-table growth note; Condition 0 dual-role justification; `squad-e2e-runbook.md` citations replaced with self-contained text; scope-limitation section updated | #1811, #1812 — the n=1 PASS was structurally silent on the `plan activate` roster-read defect, and Condition 0's timing guarantee was undocumented |
 | 2026-08-21 (review followup) | Two caveats rewritten to correctly describe fail-closed routing (empty comment / anchor-mismatch → `A: FAIL` → INCONCLUSIVE for #1812, not "scores green"); gate 3e (B) hardened against `gh api` fetch failure and empty-set collapse (SetEquals(∅,∅) → True); Phase 3c roster fetch guarded the same way; verdict-interpretation table gained a `(A) PASS, (B) INCONCLUSIVE` row | PR #1819 review by Flight + Coordinator — the caveats overstated the risk, the code understated one |
 | 2026-08-21 (review followup, 2nd pass) | Phase 0b fixture-freshness gate hardened: added third `UNREADABLE` state so double-`gh` failure no longer collapses into MATCH via `$null -eq $null`; Phase 0c post-condition updated to require both "all four MATCH" *and* "none UNREADABLE"; Phase 0d fix-presence check guarded (the `REM` sub-check inverts against an empty string — `.Contains(x)` returns False, which is the pass condition) | PR #1820 review by Coordinator — I claimed "exactly one 3c exposure and it's fixed" without enumerating; ten `2>$null` sites in file, the fixture-freshness gate was the higher-severity one I missed. Enumerated all ten before this pass |
+| 2026-08-21 (P0 + rule sweep) | **Phase 3b was structurally incapable of scoring** — `gh` has no `--arg` flag; the flag was consumed by `--jq` and `gh` exited 1 with empty stdout every run. The pass condition "every `squad:{x}` must be a lowercased roster Name" is universally quantified and **vacuously true over the empty set**, so a broken query would have written the passing values into the two `# dispositive` schema fields (`squad_devrel_present` / `squad_reviewer_present`). Rewrote the query to interpolate `$E4_START` in PowerShell, added an `$E4_START`-empty precheck (otherwise `select(.createdAt > "")` matches every issue and drags all 8 pre-existing contaminated issues into the FAIL evidence), added an `$LASTEXITCODE` + zero-row guard printing `3b labels extract: INCONCLUSIVE`, added an operator instruction to confirm rows returned (the guard Phase 3a already has), and stated that INCONCLUSIVE must not be recorded as `false` on the two dispositive fields. **House rule swept:** every `gh … 2>$null` call site in E4 (9 code sites: L395, L396, L448, L570, L588, L625, L649, L703, L716 in `cbf90813`; the L574 grep hit is a prose reference to the pattern, not a call — Flight's "10 sites" count included it) and E1 (2 code sites: L143, L147) is now followed by an explicit `$LASTEXITCODE` assertion. Null-guards test the symptom; the exit code tests the cause. Applied to cleared sites too — "cleared" meant *empty is readable by eye*, not *failure is detectable* | PR #1820 second-pass review (post-merge) by Flight — L625 was cleared as listing/echo but the pass condition below it is universally quantified over the returned rows, so the `--arg t` bug turned Phase 3b into a silent fail-open. This is a third instance of the "vacuously true over empty set" hazard already fixed at Phase 0b (`$null -eq $null`) and 3e (B) (`SetEquals(∅,∅)`). Also: **Do NOT retract or annotate the n=1 executed verdict at L24-60** — that PASS scored a different instrument (Condition 2's `labeled`-timeline-events query, which returned 15 events), not this broken 3b query. The exposure is prospective; the fix is prospective |
 
 > ⚠️ **The n=1 PASS below scored the procedure that stopped at `plan implementation`.** The
 > amended procedure (Phase 2 now includes `plan activate`; Phase 3 now includes a
@@ -393,14 +394,20 @@ $pairs = @(
 
 foreach ($p in $pairs) {
     $s = gh api "repos/$SOURCE/contents/$($p.src)?ref=dev" --jq '.size' 2>$null
+    $sExit = $LASTEXITCODE
     $d = gh api "repos/$FIXTURE/contents/$($p.dst)"        --jq '.size' 2>$null
-    # UNREADABLE if either side didn't return a size. Do NOT collapse this into MATCH
-    # ($null -eq $null is $true — a double gh failure would print MATCH and green-light
-    # the whole run on an unverified fixture) and do NOT collapse into STALE either
-    # (STALE prescribes a refresh, which will not fix a broken credential and burns a
-    # cycle before anyone notices).
+    $dExit = $LASTEXITCODE
+    # UNREADABLE if either gh call failed OR either side didn't return a size. Do
+    # NOT collapse this into MATCH ($null -eq $null is $true — a double gh failure
+    # would print MATCH and green-light the whole run on an unverified fixture)
+    # and do NOT collapse into STALE either (STALE prescribes a refresh, which
+    # will not fix a broken credential and burns a cycle before anyone notices).
+    # Test the CAUSE (exit code) alongside the SYMPTOM (empty response): a null
+    # guard alone cannot distinguish "gh crashed" from "gh returned nothing",
+    # and only the first is fixable by re-authenticating.
     $state =
-      if ([string]::IsNullOrWhiteSpace($s) -or [string]::IsNullOrWhiteSpace($d)) { "UNREADABLE" }
+      if ($sExit -ne 0 -or $dExit -ne 0 -or
+          [string]::IsNullOrWhiteSpace($s) -or [string]::IsNullOrWhiteSpace($d)) { "UNREADABLE" }
       elseif ($s -eq $d) { "MATCH" }
       else               { "STALE" }
     Write-Host ("{0,-52} src={1,-7} fixture={2,-7} {3}" -f $p.dst, $s, $d, $state)
@@ -446,8 +453,11 @@ The byte comparison proves *currency*, not *content*. Assert the fix text direct
 # PowerShell gotcha: -like "*$key*" treats BACKTICKS as escape characters and yields
 # false negatives on prompt text (which is full of backticks). Use .Contains().
 $b = (gh api "repos/$FIXTURE/contents/.github/workflows/squad.md?ref=main" --jq '.content' 2>$null) -join '' -replace '\s',''
-if ([string]::IsNullOrWhiteSpace($b)) {
-    Write-Host "0d fix-presence: INCONCLUSIVE — could not fetch $FIXTURE/.github/workflows/squad.md"
+$bExit = $LASTEXITCODE
+if ($bExit -ne 0) {
+    Write-Host "0d fix-presence: INCONCLUSIVE — gh api exited $bExit reading $FIXTURE/.github/workflows/squad.md; do NOT record the ADD/REM checks as False (they never ran). Fix auth/network before scoring."
+} elseif ([string]::IsNullOrWhiteSpace($b)) {
+    Write-Host "0d fix-presence: INCONCLUSIVE — gh api returned empty response for $FIXTURE/.github/workflows/squad.md (exit=0 but empty payload is a schema drift, not a match)"
 } else {
     $txt = $null
     try { $txt = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)) }
@@ -568,10 +578,15 @@ Capture the run ID after each command:
 gh run list --repo $FIXTURE --limit 1 `
     --json databaseId,name,conclusion,startedAt,updatedAt `
     --jq '.[] | [(.databaseId|tostring),.conclusion,.name] | join("  |  ")' 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "run-list: INCONCLUSIVE — gh run list exited $LASTEXITCODE. The line above is silence, not 'no run'; re-run before capturing the run ID."
+}
 ```
 
 > PowerShell gotcha: piping `gh --json` into `ConvertFrom-Json` breaks on warning lines.
-> Prefer `--jq` with `2>$null`, as above.
+> Prefer `--jq` with `2>$null`, as above. **The `2>$null` swallows the failure message
+> but not the failure signal** — every `gh … 2>$null` in this document is followed by
+> an `$LASTEXITCODE` assertion. Do not remove either half of the pair.
 
 ---
 
@@ -587,6 +602,9 @@ $ISSUE = <seed issue number>
 gh issue view $ISSUE --repo $FIXTURE --json comments `
     --jq '.comments[-1].body' 2>$null |
     Set-Content (Join-Path $EVIDENCE "plan-implementation-comment.md")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "plan-implementation-comment extract: INCONCLUSIVE — gh issue view exited $LASTEXITCODE. plan-implementation-comment.md may be empty or missing; DO NOT read the ``Agent`` column from a file that never rendered — the eyeball read below would report 'no forbidden tokens' against an empty file."
+}
 
 # Pull every Agent cell out of the plan's task table
 $plan = [IO.File]::ReadAllText((Join-Path $EVIDENCE "plan-implementation-comment.md"))
@@ -619,11 +637,47 @@ silent-success trap. **Confirm the plan actually contains a task table first.**
 $E4_START = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
 
 # After Phase 2: labels on issues created by THIS run only.
-gh issue list --repo $FIXTURE --state all --limit 100 `
-    --json number,title,labels,createdAt `
-    --jq --arg t "$E4_START" '.[] | select(.createdAt > $t) |
-         [(.number|tostring), ([.labels[].name]|join(",")), (.title|.[0:50])] | join("  |  ")' 2>$null
+#
+# NB: `gh` has NO `--arg` flag — an earlier draft passed `--jq --arg t "$E4_START" '…'`
+# which made `--jq` consume `--arg` as its expression and turned the rest into stray
+# positionals. `gh` exited 1 with empty stdout every single run and `2>$null` swallowed
+# it. The pass condition below ("every squad:{x} must be a lowercased roster Name") is
+# universally quantified over the returned rows, so empty output is **vacuously true**
+# — the same shape of hazard as `$null -eq $null` at Phase 0b and `SetEquals(∅,∅)` at
+# gate 3e (B). A silently broken filter would have written the passing values into the
+# two `# dispositive` verdict fields (squad_devrel_present / squad_reviewer_present)
+# where `true` is the FAIL evidence. Interpolate $E4_START in PowerShell instead.
+if ([string]::IsNullOrWhiteSpace($E4_START)) {
+    Write-Host "3b labels extract: INCONCLUSIVE — `$E4_START not set. With an empty cutoff, ``select(.createdAt > `"`"`")`` matches every issue in the fixture and drags all pre-existing squad-labeled contamination (#6-9, #17-20 as of 2026-08-21) into the FAIL evidence. Record `$E4_START` BEFORE Phase 2 and re-run this cell. DO NOT record `false` on ``squad_devrel_present`` / ``squad_reviewer_present`` — the query never ran with a valid cutoff."
+} else {
+    $jq = ".[] | select(.createdAt > `"$E4_START`") | " +
+          "[(.number|tostring), ([.labels[].name]|join(`",`")), (.title|.[0:50])] | " +
+          "join(`"  |  `")"
+    $rows = gh issue list --repo $FIXTURE --state all --limit 100 `
+        --json number,title,labels,createdAt --jq $jq 2>$null
+    $rowsExit = $LASTEXITCODE
+    if ($rowsExit -ne 0) {
+        Write-Host "3b labels extract: INCONCLUSIVE — gh issue list exited $rowsExit. DO NOT record ``false`` on ``squad_devrel_present`` / ``squad_reviewer_present`` — those fields are dispositive and the query never ran. Fix auth/network and re-check before scoring #1812."
+    } elseif (-not $rows -or $rows.Count -eq 0) {
+        # Zero rows with exit=0 is a real state, not an error state — but it is ALSO a
+        # #1812 signal in its own right: Phase 2 should have minted labels at
+        # `plan activate`. Score it as INCONCLUSIVE (not FAIL) so the operator investigates
+        # whether Phase 2 actually ran, rather than letting the vacuously-true universal
+        # quantifier below write `false` into the dispositive fields.
+        Write-Host "3b labels extract: INCONCLUSIVE — zero rows returned with `$E4_START=$E4_START and gh exit=0. Either Phase 2 minted no labels at all (a #1812-adjacent signal — investigate before scoring), or the `$E4_START` cutoff excluded them (check the seed-issue creation timestamp). DO NOT record ``false`` on the dispositive fields."
+    } else {
+        $rows | ForEach-Object { Write-Host $_ }
+        Write-Host "3b labels extract: returned $($rows.Count) row(s) — read them by eye against the accepted-values rule below."
+    }
+}
 ```
+
+**Confirm the query actually returned rows.** If the block printed `INCONCLUSIVE`
+above, do NOT proceed to score the two `squad_devrel_present` / `squad_reviewer_present`
+fields — an unscored query is not a passing query, and the pass condition below is
+universally quantified over the returned set (vacuously true over empty). This is the
+same operator instruction Phase 3a carries for the `Agent` column; 3b needs it for the
+same reason.
 
 Every `squad:{x}` on a **newly created** issue must have `{x}` = a lowercased roster Name
 (`keaton`, `mcmanus`, `fenster`, `hockney`, `kint`).
@@ -647,8 +701,11 @@ Every `squad:{x}` on a **newly created** issue must have `{x}` = a lowercased ro
 
 ```powershell
 $b = gh api "repos/$FIXTURE/contents/.squad/team.md" --jq '.content' 2>$null
-if ([string]::IsNullOrWhiteSpace($b)) {
-    Write-Host "roster fetch: INCONCLUSIVE — gh api could not read $FIXTURE/.squad/team.md"
+$bExit = $LASTEXITCODE
+if ($bExit -ne 0) {
+    Write-Host "roster fetch: INCONCLUSIVE — gh api exited $bExit reading $FIXTURE/.squad/team.md; the `False` expectations below cannot be scored"
+} elseif ([string]::IsNullOrWhiteSpace($b)) {
+    Write-Host "roster fetch: INCONCLUSIVE — gh api returned empty response for $FIXTURE/.squad/team.md (exit=0 but empty payload)"
 } else {
     $roster = $null
     try { $roster = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)) }
@@ -702,6 +759,9 @@ This is not a mere reporting bug; the false provenance is the tell for a hardcod
 gh issue view $ISSUE --repo $FIXTURE --json comments `
     --jq '.comments[-1].body' 2>$null |
     Set-Content (Join-Path $EVIDENCE "plan-activate-comment.md")
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "GATE 3e: INCONCLUSIVE — gh issue view (plan-activate-comment) exited $LASTEXITCODE. plan-activate-comment.md may be empty or missing; the (A) regex below would fail against an empty file and read as a genuine A-FAIL, which is the WRONG defect. Do not proceed to score #1812 until the fetch succeeds."
+}
 
 $summary = [IO.File]::ReadAllText((Join-Path $EVIDENCE "plan-activate-comment.md"))
 
@@ -714,9 +774,12 @@ if (-not $claim.Success) {
 
     # (B) set-equality.
     $b = gh api "repos/$FIXTURE/contents/.squad/team.md" --jq '.content' 2>$null
+    $bExit = $LASTEXITCODE
     $roster = $null
-    if ([string]::IsNullOrWhiteSpace($b)) {
-        Write-Host "GATE 3e (B): INCONCLUSIVE — gh api could not read $FIXTURE/.squad/team.md (empty/null response); investigate before scoring #1812"
+    if ($bExit -ne 0) {
+        Write-Host "GATE 3e (B): INCONCLUSIVE — gh api exited $bExit reading $FIXTURE/.squad/team.md; investigate before scoring #1812"
+    } elseif ([string]::IsNullOrWhiteSpace($b)) {
+        Write-Host "GATE 3e (B): INCONCLUSIVE — gh api returned empty response for $FIXTURE/.squad/team.md (exit=0 but empty payload); investigate before scoring #1812"
     } else {
         try { $roster = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)) }
         catch { Write-Host "GATE 3e (B): INCONCLUSIVE — team.md base64 decode failed ($($_.Exception.GetType().Name)); investigate before scoring #1812" }

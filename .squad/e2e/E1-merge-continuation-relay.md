@@ -137,14 +137,24 @@ $FIXTURE = "bradygaster/aspiregregator-squad-e2e"
 $EPIC = <epic issue number>
 
 # The relay run's success timestamp — the start of the observation window.
+# Rule D house rule: every `gh … 2>$null` in this document is followed by an
+# `$LASTEXITCODE` assertion. The stderr suppression keeps the terminal clean;
+# the exit-code check keeps a silent failure from being scored as "no matching
+# run" (which for this cell would zero out `window_started_utc`).
 gh run list --repo $FIXTURE --workflow "Squad" --limit 20 `
     --json databaseId,name,conclusion,updatedAt `
     --jq '.[] | select(.conclusion=="success" and (.name|test("implement|relay"; "i"))) |
          [(.databaseId|tostring),.name,.updatedAt] | join("  |  ")' 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "relay-timestamp extract: INCONCLUSIVE — gh run list exited $LASTEXITCODE. The line above is silence, not 'no matching run'. Do NOT set `window_started_utc` from this output; fix auth/network and re-run before scoring Rule D."
+}
 
 # Epic state at the end of the observation window.
 gh issue view $EPIC --repo $FIXTURE --json state,closedAt,timelineItems `
     --jq '{state,closedAt,closer:(.timelineItems[]|select(.__typename=="ClosedEvent")|.actor.login)}' 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "epic-state extract: INCONCLUSIVE — gh issue view exited $LASTEXITCODE. This cell is DISPOSITIVE for Rule D: an empty response is not 'epic OPEN' and not 'epic CLOSED'. Do NOT score the verdict from silence; fix the fetch and re-run before assigning PASS / FAIL / NOT VERIFIED."
+}
 ```
 
 **PASS attribution rule.** `closer` must be a Squad-owned actor (`app/github-actions` posting a Squad workflow closure, or the coordinator's Squad-authored PR merging). A closure attributed to a human operator during the observation window is **not** a Rule D PASS — it is a Rule D FAIL that was manually papered over, and E1's whole point is that closure was supposed to be autonomous.
