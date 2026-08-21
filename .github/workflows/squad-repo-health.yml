@@ -99,16 +99,21 @@ jobs:
           echo "result<<EOF" >> "$GITHUB_OUTPUT"
           echo "$OUTPUT" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
+      # Report content is passed through the environment, never interpolated into
+      # the script body — findings legitimately contain backticks and `${`, which
+      # would terminate a template literal and corrupt the parsed script (#1770).
       - name: Comment on leakage
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
+        env:
+          REPO_HEALTH_OUTPUT: ${{ steps.leakage.outputs.result }}
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
             await run({
               github,
               context,
-              output: `${{ steps.leakage.outputs.result }}`,
+              output: process.env.REPO_HEALTH_OUTPUT || '',
               job: 'leakage',
             });
 
@@ -136,16 +141,19 @@ jobs:
           echo "result<<EOF" >> "$GITHUB_OUTPUT"
           echo "$OUTPUT" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
+      # See #1770 — report content must never be spliced into the script source.
       - name: Comment on findings
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
+        env:
+          REPO_HEALTH_OUTPUT: ${{ steps.arch.outputs.result }}
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
             await run({
               github,
               context,
-              output: `${{ steps.arch.outputs.result }}`,
+              output: process.env.REPO_HEALTH_OUTPUT || '',
               job: 'architectural',
             });
 
@@ -173,15 +181,18 @@ jobs:
           echo "result<<EOF" >> "$GITHUB_OUTPUT"
           echo "$OUTPUT" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
+      # See #1770 — report content must never be spliced into the script source.
       - name: Comment on findings
         if: always()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
+        env:
+          REPO_HEALTH_OUTPUT: ${{ steps.security.outputs.result }}
         with:
           script: |
             const { run } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/repo-health-comment.mjs`);
             await run({
               github,
               context,
-              output: `${{ steps.security.outputs.result }}`,
+              output: process.env.REPO_HEALTH_OUTPUT || '',
               job: 'security',
             });
