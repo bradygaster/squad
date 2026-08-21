@@ -113,6 +113,36 @@ export function resolveTrackedDestination(options: {
   throw new UntrackedArchiveDestinationError(destination);
 }
 
+/**
+ * Rule 1, applied to a destination that may not exist yet.
+ *
+ * `resolveTrackedDestination` demands an already-tracked path, which is right
+ * for a merge into an existing archive but wrong for the first archival in a
+ * repository, where the destination legitimately does not exist yet.
+ *
+ * The narrower hazard is a destination git has been told to ignore. Content
+ * moved there is removed from a tracked source — which commits — and written to
+ * a file that never can, so the move lands as a net deletion (#1783). A path
+ * that is merely absent is safe: it stages normally.
+ *
+ * @returns `true` when writing to `filePath` can survive a commit.
+ */
+export function isCommittableDestination(
+  filePath: string,
+  repoRoot: string,
+  git: GitRunner = defaultGitRunner,
+): boolean {
+  // Outside a repository there is no commit boundary to lose content across.
+  if (git(['rev-parse', '--git-dir'], repoRoot) !== 0) return true;
+
+  // Already tracked — edits stage with `git add -u` even under an exclude rule.
+  if (isTrackedInGit(filePath, repoRoot, git)) return true;
+
+  // Untracked *and* ignored: this is the trap. `git add` refuses it, `git add -u`
+  // silently skips it, and the source's deletion commits without it.
+  return git(['check-ignore', '-q', '--', filePath], repoRoot) !== 0;
+}
+
 // ---------------------------------------------------------------------------
 // Fence-aware markdown scanning
 //
@@ -168,8 +198,23 @@ function scanLines(markdown: string): ScannedLine[] {
   return out;
 }
 
-/** Fence-aware heading text extraction, e.g. `### 2026-03-26: Copilot git safety rules`. */
-export function extractHeadings(markdown: string, level?: number): string[] {
+/**
+ * Fence-aware line indices of every heading at `level`.
+ *
+ * Callers that slice a document into records on a heading delimiter must not
+ * treat a `###` inside a fenced code sample as a record boundary — doing so
+ * mis-associates content across records (#1760). Exported so those callers
+ * reuse this fence tracking instead of re-implementing `/^###\s/`.
+ */
+export function findHeadingLineIndices(markdown: string, level: number): number[] {
+  const out: number[] = [];
+  scanLines(markdown).forEach((line, i) => {
+    if (line.headingLevel === level) out.push(i);
+  });
+  return out;
+}
+
+/** Fence-aware heading text extraction, e.g. `### 2026-03-26: Copilot git safety rules`. */export function extractHeadings(markdown: string, level?: number): string[] {
   return scanLines(markdown)
     .filter((l) => l.headingLevel !== null && (level === undefined || l.headingLevel === level))
     .map((l) => l.text.trim());
