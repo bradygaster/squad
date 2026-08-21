@@ -26,3 +26,24 @@ export type { ParsedRoutingRule, ParsedRouting } from './routing-io.js';
 // Team I/O
 export { parseTeam, serializeTeam } from './team-io.js';
 export type { ParsedAgent, TeamMetadata, ParsedTeam } from './team-io.js';
+
+// Archival integrity
+export {
+  archiveEntries,
+  countEntries,
+  demoteHeadings,
+  extractHeadings,
+  formatArchivalReport,
+  isTrackedInGit,
+  prepareInboxBodyForMerge,
+  resolveTrackedDestination,
+  splitEntries,
+  ArchiveVerificationError,
+  UntrackedArchiveDestinationError,
+} from './archival.js';
+export type {
+  ArchivalResult,
+  ArchiveEntriesOptions,
+  DecisionEntry,
+  GitRunner,
+} from './archival.js';
