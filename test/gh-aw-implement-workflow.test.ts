@@ -141,7 +141,7 @@ describe('gh-aw implement workflows', () => {
       workflow_name: 'squad',
       inputs: {
         command: 'implement',
-        issue_number: '{parent-epic-number}',
+        issue_number: '{root-issue-number}',
       },
     });
     expect(payload.command).toBeUndefined();
@@ -168,5 +168,241 @@ describe('gh-aw implement workflows', () => {
     expect(workerIndex).toBeGreaterThan(-1);
     expect(dispatcherIndex).toBeGreaterThan(workerIndex);
     expect(guide).toContain('The single command installs the dedicated worker first');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cross-sibling refill traversal (#1779)
+// ---------------------------------------------------------------------------
+// The worker refills a freed dispatch slot by asking `squad`'s implement mode to
+// re-scan a sub-tree.  WHICH sub-tree it names is the whole defect: naming the
+// completing task's immediate parent epic scopes the refill to that epic, so
+// once the epic drains the run exits green while sibling epics still hold
+// unstarted leaf tasks (#1779).  Naming the root makes the scan cover every
+// sibling epic.
+//
+// These tests do NOT assert that the prompt contains particular wording -- a
+// substring check cannot prove a prompt is obeyed, as #1784 demonstrated
+// empirically.  Instead they parse the machine-readable dispatch payload the
+// worker ships, bind its `issue_number` placeholder to the traversal it names,
+// and RUN that traversal over a fixture tree using `squad.md`'s own leaf-only
+// descent and slot budget.  The assertion is on where traversal lands.
+//
+// Against the pre-fix payload (`{parent-epic-number}`) the traversal returns an
+// empty dispatch set for the drained-epic fixture and these tests go red.
+
+interface FixtureIssue {
+  number: number;
+  parent: number | null;
+  state: 'open' | 'closed';
+  /** Leaf already has an open implementation PR -- occupies a concurrency slot. */
+  active?: boolean;
+}
+
+/**
+ * Root #100
+ *   ├─ Epic A #110            (open)
+ *   │    ├─ #111 closed        merged earlier
+ *   │    └─ #112 closed        <- the task whose PR just merged; Epic A is now drained
+ *   └─ Epic B #120            (open)
+ *        ├─ #121 open
+ *        └─ #122 open
+ */
+const TWO_EPIC_TREE: FixtureIssue[] = [
+  { number: 100, parent: null, state: 'open' },
+  { number: 110, parent: 100, state: 'open' },
+  { number: 111, parent: 110, state: 'closed' },
+  { number: 112, parent: 110, state: 'closed' },
+  { number: 120, parent: 100, state: 'open' },
+  { number: 121, parent: 120, state: 'open' },
+  { number: 122, parent: 120, state: 'open' },
+];
+
+function byNumber(tree: FixtureIssue[], number: number): FixtureIssue {
+  const issue = tree.find(candidate => candidate.number === number);
+  if (!issue) throw new Error(`fixture has no issue #${number}`);
+  return issue;
+}
+
+function parentOf(tree: FixtureIssue[], number: number): number | null {
+  return byNumber(tree, number).parent;
+}
+
+/** Walk the parent chain to the topmost ancestor, guarding against cycles. */
+function rootOf(tree: FixtureIssue[], number: number): number {
+  const seen = new Set<number>([number]);
+  let current = number;
+  for (;;) {
+    const parent = parentOf(tree, current);
+    if (parent === null || seen.has(parent)) return current;
+    seen.add(parent);
+    current = parent;
+  }
+}
+
+function openChildren(tree: FixtureIssue[], number: number): FixtureIssue[] {
+  return tree.filter(issue => issue.parent === number && issue.state === 'open');
+}
+
+function anyChildren(tree: FixtureIssue[], number: number): FixtureIssue[] {
+  return tree.filter(issue => issue.parent === number);
+}
+
+/**
+ * `squad.md` Step 1.3/1.4: descend recursively through every level and keep the
+ * open descendants that group nothing at all.  Intermediate parents (epics, the
+ * root) are never returned -- that is the leaf-only rule from #1758 defect 2,
+ * modeled here so a regression in it fails these tests.
+ *
+ * Leafness is "has no sub-issues at all", not "has no OPEN sub-issues".  A
+ * drained epic -- every child implemented and closed, the epic itself still
+ * open -- passes the open-children-only test and would be dispatched as if it
+ * were implementable.  Root-scoped refill walks straight into exactly that
+ * state, so the distinction is load-bearing here rather than academic.
+ */
+function openLeafDescendants(tree: FixtureIssue[], target: number): number[] {
+  const leaves: number[] = [];
+  const walk = (number: number): void => {
+    for (const child of openChildren(tree, number)) {
+      if (anyChildren(tree, child.number).length === 0) leaves.push(child.number);
+      else walk(child.number);
+    }
+  };
+  walk(target);
+  return leaves.sort((a, b) => a - b);
+}
+
+/**
+ * Bind the shipped payload's `issue_number` placeholder to the traversal it
+ * names.  An unrecognized placeholder is a hard failure rather than a silent
+ * pass -- the whole point is that this token determines runtime scope.
+ */
+function resolveRefillTarget(placeholder: string, tree: FixtureIssue[], mergedIssue: number): number {
+  switch (placeholder) {
+    case '{root-issue-number}':
+      return rootOf(tree, mergedIssue);
+    case '{parent-epic-number}':
+      return parentOf(tree, mergedIssue) ?? mergedIssue;
+    default:
+      throw new Error(
+        `Unrecognized continuation dispatch placeholder "${placeholder}". ` +
+          'Update resolveRefillTarget() to model the traversal it names, ' +
+          'and prove the model still reaches sibling-epic leaves.',
+      );
+  }
+}
+
+/** `squad.md` Epic Dispatch: exclude active leaves, then fill available slots in issue order. */
+function simulateRefill(
+  placeholder: string,
+  tree: FixtureIssue[],
+  mergedIssue: number,
+  slotCap: number,
+): { target: number; dispatched: number[] } {
+  const target = resolveRefillTarget(placeholder, tree, mergedIssue);
+  const leaves = openLeafDescendants(tree, target);
+  const activeCount = leaves.filter(number => byNumber(tree, number).active).length;
+  const availableSlots = Math.max(0, slotCap - activeCount);
+  const ready = leaves.filter(number => !byNumber(tree, number).active);
+  return { target, dispatched: ready.slice(0, availableSlots) };
+}
+
+describe('gh-aw implement worker: cross-sibling refill traversal (#1779)', () => {
+  const dispatcher = read('workflows/squad.md');
+  const worker = read('workflows/squad-implement-worker.md');
+
+  const continuation = continuationSection(worker);
+  const payloadBlock = continuation.match(/```json\r?\n([\s\S]*?)\r?\n```/)?.[1];
+  const placeholder = (JSON.parse(payloadBlock ?? '{}') as { inputs?: { issue_number?: string } }).inputs
+    ?.issue_number;
+  const slotCap = Number(
+    dispatcher.match(/available-slots = max\(0, (\d+) - active-implementation-count\)/)?.[1],
+  );
+
+  it('exposes a parseable refill scope and slot budget', () => {
+    expect(payloadBlock, 'continuation must ship a JSON dispatch payload').toBeDefined();
+    expect(placeholder, 'continuation payload must name the refill target').toBeTruthy();
+    expect(Number.isFinite(slotCap) && slotCap > 0, 'squad.md must declare a numeric slot cap').toBe(true);
+  });
+
+  // SC-2: after Epic A drains, the refill must reach Epic B's leaves.
+  it('reaches a sibling epic once the completing task drains its own epic', () => {
+    const { target, dispatched } = simulateRefill(placeholder!, TWO_EPIC_TREE, 112, slotCap);
+
+    expect(
+      openLeafDescendants(TWO_EPIC_TREE, 110),
+      'fixture precondition: Epic A must be drained so only a wider scan can find work',
+    ).toEqual([]);
+    expect(target, 'refill must scan from the root, not the drained parent epic').toBe(100);
+    expect(
+      dispatched,
+      'sibling Epic B still holds unstarted leaf tasks; the freed slot must not sit idle',
+    ).toContain(121);
+    expect(dispatched.length).toBeGreaterThan(0);
+  });
+
+  // SC-1 corollary: the traversal is full-subtree, not immediate-children.
+  it('never dispatches an epic or the root itself (leaf-only rule, #1758 defect 2)', () => {
+    const { dispatched } = simulateRefill(placeholder!, TWO_EPIC_TREE, 112, slotCap);
+
+    for (const number of dispatched) {
+      expect(
+        openChildren(TWO_EPIC_TREE, number),
+        `#${number} has open sub-issues and must never be dispatched as implementable`,
+      ).toEqual([]);
+    }
+    expect(dispatched).not.toContain(100);
+    expect(dispatched).not.toContain(110);
+    expect(dispatched).not.toContain(120);
+  });
+
+  it('never dispatches a drained-but-open epic as if it were implementable', () => {
+    // Epic A #110 is open with every child closed. It has no *open* sub-issues,
+    // so an open-children-only leaf test reclassifies it as implementable. Root-
+    // scoped refill descends straight past it, which is why this case is now
+    // reachable and must stay excluded.
+    const { dispatched } = simulateRefill(placeholder!, TWO_EPIC_TREE, 112, slotCap);
+
+    expect(openChildren(TWO_EPIC_TREE, 110), 'fixture precondition: #110 has no open children').toEqual([]);
+    expect(anyChildren(TWO_EPIC_TREE, 110).length, 'fixture precondition: #110 still groups issues').toBeGreaterThan(0);
+    expect(dispatched, 'a drained epic groups issues and is never a leaf task').not.toContain(110);
+  });
+
+  it('still refills within the completing epic before it drains', () => {
+    // #111 merges while #112 is still open: the near case must not regress.
+    const tree = TWO_EPIC_TREE.map(issue =>
+      issue.number === 112 ? { ...issue, state: 'open' as const } : issue,
+    );
+    const { dispatched } = simulateRefill(placeholder!, tree, 111, slotCap);
+
+    expect(dispatched, 'same-epic refill must still happen').toContain(112);
+  });
+
+  it('respects the existing slot budget instead of widening it', () => {
+    // Epic B's #121 is already in flight, so it occupies one of the slots.
+    const tree = TWO_EPIC_TREE.map(issue =>
+      issue.number === 121 ? { ...issue, active: true } : issue,
+    );
+    const { dispatched } = simulateRefill(placeholder!, tree, 112, slotCap);
+
+    expect(dispatched).not.toContain(121);
+    expect(dispatched.length).toBeLessThanOrEqual(slotCap - 1);
+
+    const workerDispatch = yamlBlock(frontmatter(worker), 'dispatch-workflow');
+    const dispatchMax = Number(scalarInBlock(workerDispatch, 'max'));
+    expect(dispatchMax, 'refill scope is the fix; do not paper over it by raising max').toBe(2);
+    expect(dispatchMax).toBeLessThanOrEqual(slotCap);
+  });
+
+  // Negative control: documents the pre-fix scope and proves the model above is
+  // discriminating rather than vacuously green.
+  it('control: scoping the refill to the immediate parent epic strands sibling work', () => {
+    const { target, dispatched } = simulateRefill('{parent-epic-number}', TWO_EPIC_TREE, 112, slotCap);
+
+    expect(target).toBe(110);
+    expect(dispatched, 'this is the #1779 defect: drained epic yields no dispatch').toEqual([]);
+    expect(placeholder, 'the shipped payload must not use the stranding scope').not.toBe(
+      '{parent-epic-number}',
+    );
   });
 });

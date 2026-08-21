@@ -545,9 +545,16 @@ to this mode so it can automatically refill the parent's available slots.
    hierarchy (initiative → epic → task), not just immediate children. Also
    include open issues whose body contains a `Parent: #{ancestor-issue-number}`
    line for any ancestor, for compatibility with older plans.
-4. Identify the **leaf tasks**: open descendants that themselves have no open
-   sub-issues. Intermediate parents (initiatives and epics that only group other
-   issues) are never dispatched to a worker — only leaf tasks are implemented.
+4. Identify the **leaf tasks**: open descendants that have **no sub-issues at
+   all** — neither open nor closed — and are not labeled `epic` or `initiative`.
+   Intermediate parents (initiatives and epics that only group other issues)
+   are never dispatched to a worker — only leaf tasks are implemented. Use "no
+   sub-issues at all" rather than "no *open* sub-issues": an epic whose children
+   have all been implemented and closed stays open until someone closes it, and
+   an open-children-only test would reclassify that drained epic as a leaf and
+   dispatch a worker against a grouping issue. That is the #1758 defect 2
+   failure shape reappearing at the end of an epic's life, and it is reachable
+   whenever a refill scan descends from the root across sibling epics.
 5. If the target has one or more open leaf descendants, treat the target as a
    parent and follow the Epic Dispatch procedure below over the leaf-task set.
    Do not implement the parent body directly.

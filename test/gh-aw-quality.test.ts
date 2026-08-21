@@ -1062,7 +1062,7 @@ describe('gh-aw: merge continuation dispatch contract', () => {
     expect(payload.issue_number, 'issue_number must not be a top-level dispatch_workflow argument').toBeUndefined();
     expect(payload.inputs).toEqual({
       command: 'implement',
-      issue_number: '{parent-epic-number}',
+      issue_number: '{root-issue-number}',
     });
 
     for (const key of Object.keys(payload.inputs ?? {})) {
