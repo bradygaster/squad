@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-// check-shebang-eol.mjs -- Every tracked file starting with `#!` must be pinned to LF.
+// check-shebang-eol.mjs -- Two EOL invariants over the git index.
+//
+//   UNPINNED   Every tracked file starting with `#!` must be pinned to LF.
+//   CRLF-BLOB  Every file pinned to LF must actually store an LF blob.
 //
 // A CRLF shebang is never correct. The trailing \r becomes part of the
 // interpreter argument on POSIX ("env: node\r: No such file or directory"), and
@@ -7,28 +10,31 @@
 // first token, so a vitest suite importing the file loads ZERO tests while still
 // looking like ordinary noise (#1788).
 //
-// This lint exists because .gitattributes encoded that lesson for `*.sh` in one
-// PR and for `*.mjs` in another without ever generalizing, so we paid for it
-// twice. It checks the RULE (git check-attr says eol=lf) and the REALITY (the
-// committed blob's first line does not end in \r) independently -- a rule that
-// was added without renormalizing is still a broken repo.
+// A rule over a CRLF blob is its own defect: git normalizes the working tree to
+// LF while the blob never moves, so the diff can NEVER close. The file shows
+// modified in every worktree forever, `git restore` does not stick, and a broad
+// `git add` sweeps it -- along with whatever real change happens to share the
+// tree. Only `git add --renormalize` clears it. This is the failure that
+// survives for years unnoticed, because nothing about it is fatal.
+//
+// This lint exists because .gitattributes encoded the shebang lesson for `*.sh`
+// in one PR and for `*.mjs` in another without ever generalizing, so we paid for
+// it twice.
+//
+// THE TWO INVARIANTS USE DIFFERENT ENUMERATIONS, AND THAT IS THE POINT.
+// The shebang set and the eol=lf set overlap; neither contains the other.
+// Checking blobs over the shebang set -- as the first version of this lint did
+// -- is blind to every pinned file without a `#!`, which is most of them. That
+// gap was real: adding `*.js text eol=lf` without renormalizing left two CRLF
+// blobs churning while this gate reported green.
 //
 // SCOPE BOUNDARY -- read this before assuming a green run means "no EOL bugs".
-// There are two CRLF failure classes and this lint covers exactly one:
-//
-//   1. STRICT PARSE (covered). The file fails to load. `#!` is a cheap, exact,
-//      static signature, so the check is sound and has no false negatives.
-//
-//   2. TOOL REWRITE (NOT covered). A tool writes the file with LF, the checkout
-//      has CRLF, and the tree is perpetually dirty -- so a broad `git add`
-//      commits line-ending noise, or worse, sweeps in an unrelated real change
-//      sitting in the same file. Vitest snapshots (`*.snap`) are the known case;
-//      pinned by an explicit .gitattributes rule, NOT found by this lint.
-//
-// Class 2 has no cheap static signature -- "files some tool writes with LF" is
-// not detectable by reading the file. Extending this lint to guess would trade a
-// sound check for an unsound one, so the boundary is deliberate. New generated
-// or tool-written file types must be pinned in .gitattributes by hand.
+// Not covered: a file that OUGHT to be pinned, has no shebang, and has no rule
+// yet. Vitest snapshots were exactly this until `*.snap text eol=lf` was added.
+// There is no cheap static signature for "some tool writes this file with LF" --
+// it cannot be determined by reading the file -- so guessing would trade a sound
+// check for an unsound one. New tool-written file types get pinned by hand;
+// from the moment a rule exists, CRLF-BLOB takes over and enforces it.
 //
 // Uses only Node.js built-ins (child_process, path, url).
 
@@ -114,10 +120,37 @@ export function listShebangFiles(cwd, files = listTrackedFiles(cwd)) {
   return found;
 }
 
-/** `git check-attr eol` for each path, as a Map<path, value>. */
+/**
+ * Paths whose staged blob contains a CRLF anywhere.
+ *
+ * Unlike `listShebangFiles` this looks at the whole blob, not the first line:
+ * for a file pinned to LF, any CRLF in the blob is the defect.
+ */
+export function listCrlfBlobs(cwd, files) {
+  const blobs = batchReadBlobs(cwd, files);
+  const found = [];
+  for (let i = 0; i < files.length; i += 1) {
+    if (blobs[i] && blobs[i].includes('\r\n')) found.push(files[i]);
+  }
+  return found;
+}
+
+/**
+ * `git check-attr eol` for each path, as a Map<path, value>.
+ *
+ * Paths go over stdin, not argv. This is called with every tracked file
+ * (~1800 here, well over 70KB of paths), which blows the 32767-character
+ * Windows command-line limit if passed as arguments.
+ */
 export function eolAttributes(cwd, files) {
   if (files.length === 0) return new Map();
-  const out = git(['check-attr', '-z', 'eol', '--', ...files], cwd).split(NUL);
+  const out = execFileSync('git', ['check-attr', '--stdin', '-z', 'eol'], {
+    cwd,
+    input: files.join(NUL),
+    encoding: 'utf8',
+    maxBuffer: 1 << 28,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }).split(NUL);
   const map = new Map();
   // -z output is a flat stream of (path, attr, value) triples.
   for (let i = 0; i + 2 < out.length; i += 3) {
@@ -129,9 +162,21 @@ export function eolAttributes(cwd, files) {
 /**
  * Pure decision step, separated so tests can drive it with synthetic input.
  * Returns one violation per problem, not per file, so a file can report both.
+ *
+ * Two invariants, each over its OWN enumeration -- the sets overlap but neither
+ * contains the other, which is the bug this signature exists to prevent:
+ *
+ *   UNPINNED   over shebang files: a `#!` file must have an eol=lf rule.
+ *   CRLF-BLOB  over eol=lf files:  a pinned file's blob must not store CRLF.
+ *
+ * `crlfBlobs` is the list of eol=lf-pinned paths whose blob contains a CRLF.
+ * A shebang file with a CRLF first line is reported too even when it is not
+ * pinned, because that is independently broken regardless of any rule.
  */
-export function findViolations(shebangFiles, attrs) {
+export function findViolations(shebangFiles, attrs, crlfBlobs = []) {
   const violations = [];
+  const flaggedCrlf = new Set();
+
   for (const { file, crlf } of shebangFiles) {
     const eol = attrs.get(file);
     if (eol !== 'lf') {
@@ -142,6 +187,7 @@ export function findViolations(shebangFiles, attrs) {
       });
     }
     if (crlf) {
+      flaggedCrlf.add(file);
       violations.push({
         file,
         kind: 'crlf-blob',
@@ -149,22 +195,38 @@ export function findViolations(shebangFiles, attrs) {
       });
     }
   }
+
+  for (const file of crlfBlobs) {
+    if (flaggedCrlf.has(file)) continue; // already reported via the shebang pass
+    violations.push({
+      file,
+      kind: 'crlf-blob',
+      detail: 'pinned to LF by .gitattributes but the committed blob stores CRLF',
+    });
+  }
+
   return violations;
 }
 
 /** Full scan of a repository. */
 export function scan(cwd) {
-  const shebangFiles = listShebangFiles(cwd);
-  const attrs = eolAttributes(cwd, shebangFiles.map((entry) => entry.file));
-  return { shebangFiles, violations: findViolations(shebangFiles, attrs) };
+  const files = listTrackedFiles(cwd);
+  const shebangFiles = listShebangFiles(cwd, files);
+  const attrs = eolAttributes(cwd, files);
+  const pinned = files.filter((file) => attrs.get(file) === 'lf');
+  const crlfBlobs = listCrlfBlobs(cwd, pinned);
+  return { shebangFiles, pinned, crlfBlobs, violations: findViolations(shebangFiles, attrs, crlfBlobs) };
 }
 
 function main() {
   const cwd = process.cwd();
-  const { shebangFiles, violations } = scan(cwd);
+  const { shebangFiles, pinned, violations } = scan(cwd);
 
   if (violations.length === 0) {
-    console.log(`Shebang EOL check passed: all ${shebangFiles.length} shebanged files are pinned to LF.`);
+    console.log(
+      `EOL check passed: ${shebangFiles.length} shebanged file(s) all pinned to LF, ` +
+        `${pinned.length} LF-pinned file(s) all storing LF blobs.`,
+    );
     process.exit(0);
   }
 
@@ -172,9 +234,11 @@ function main() {
   const crlfBlobs = violations.filter((v) => v.kind === 'crlf-blob');
 
   console.error(
-    `Shebang EOL check FAILED: ${violations.length} problem(s) across ${new Set(violations.map((v) => v.file)).size} of ${shebangFiles.length} shebanged file(s).`,
+    `EOL check FAILED: ${violations.length} problem(s) across ${new Set(violations.map((v) => v.file)).size} file(s) ` +
+      `(scanned ${shebangFiles.length} shebanged, ${pinned.length} LF-pinned).`,
   );
-  console.error('A CRLF shebang breaks POSIX execution and bundler shebang stripping.\n');
+  console.error('A CRLF shebang breaks POSIX execution and bundler shebang stripping.');
+  console.error('An LF rule over a CRLF blob makes the file churn forever -- the diff can never close.\n');
   for (const { file, kind, detail } of violations) {
     console.error(`  ${kind.toUpperCase().padEnd(10)} ${file} -- ${detail}`);
   }
