@@ -39,7 +39,7 @@ const DECISIONS = `# Decisions
 
 ### 2026-03-26: Copilot git safety rules
 **By:** EECOM
-Never \`git add .\`.
+Never stage with a bare pathspec.
 
 ### 2026-07-27: Dispatch Enforcement
 **By:** Procedures
@@ -210,7 +210,7 @@ describe('archival integrity', () => {
         expect(remaining).not.toContain(heading);
       }
       // Bodies travel with their headings — not just the heading lines.
-      expect(archive).toContain('Never `git add .`.');
+      expect(archive).toContain('Never stage with a bare pathspec.');
       expect(archive).toContain('Stop the coordinator doing domain work inline.');
     });
 
