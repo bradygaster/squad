@@ -103,7 +103,7 @@ Rule D is now a formal gate on E1 (see next section). It is **not** getting its 
 **Rule D verdict — three possible outcomes:**
 
 - ✅ **PASS** — the epic issue is CLOSED within a stated observation window (default: 10 minutes after the last leaf's merge-continuation relay run reaches `success`). The closure is attributed to Squad (either commented by the coordinator or effected via a Squad-authored PR/dispatch), not a manual close.
-- ❌ **FAIL** — all leaves are CLOSED, the observation window has expired, the epic is still OPEN, and no `Squad —` workflow run in that window shows a closure attempt. This is a real Rule D defect: closure logic exists but did not fire, or fired against the wrong target.
+- ❌ **FAIL** — the epic is OPEN at window expiry. Full stop. Whether a closure was never attempted, fired against the wrong target, or fired and errored is *evidence recorded on the FAIL*, not a precondition for reaching it. A **late closure** (epic transitions to CLOSED after window expiry) is also a FAIL: the verdict is fixed at expiry and does not retroactively flip to PASS. Record the late-closure fact, run URL, and delay in the finding — the score is still FAIL because E1's whole point is that closure was supposed to be autonomous *and* on-time.
 - ⚠️ **NOT VERIFIED** — the observation was blocked by an infrastructure hang (`detection` on `Install ripgrep` is the known offender). Record the observation-blocking job's URL and step and the exact minute the run was cancelled. A NOT VERIFIED verdict is *not* a green: it is a documented absence of signal, and it does not close #1758.2 or any successor.
 
 ### The escape hatch (required text on any NOT VERIFIED result)
@@ -121,6 +121,14 @@ rule_d:
 ```
 
 **Do not omit any of these fields on a NOT VERIFIED.** An escape hatch that accepts blank fields becomes a way to score anything as NOT VERIFIED. If any of the required text is missing, treat the result as **FAIL** (blocked-observation is a claim; unsubstantiated blocked-observation is silence).
+
+**Cross-checks (completeness is not veracity).** Each of these must hold; otherwise the NOT VERIFIED verdict itself is invalid and the run scores **FAIL**:
+
+- `blocked_by_job_url` MUST target the fixture repo. Concretely: the URL path MUST contain `/<fixture-repo>/actions/runs/` where `<fixture-repo>` matches E1's fixture (as of 2026-08-21: `aspiregregator-squad-e2e`). A cancelled run from an unrelated repo satisfies the field type but does not support the claim.
+- `cancelled_at_utc` MUST fall within `[window_started_utc, window_ended_utc]`. A cancellation *before* the window opened wasn't blocking Rule D observation; a cancellation *after* the window closed didn't cause the NOT VERIFIED — the window already ended.
+- `blocked_by_step` MUST name a step visible on the linked run and MUST still be `in_progress` (not `completed`) at cancellation time. A step that had already returned before the run was cancelled didn't hang.
+
+These cross-checks are the difference between "documented absence of signal" (this hatch's whole point) and "any convenient cancelled run around the same time will do."
 
 ### PASS observation (the mandatory extractions)
 
