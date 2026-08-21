@@ -34,9 +34,9 @@ function makeRepo(files: Record<string, string | Buffer>, followUp?: Record<stri
       mkdirSync(dirname(full), { recursive: true });
       writeFileSync(full, content);
     }
-    // Stage only the named paths, never `-A`: once the rule exists, `git add -A`
-    // re-examines every file and would silently renormalize the very blob this
-    // fixture needs to keep as CRLF.
+    // Stage only the named paths, never the whole tree: once the rule exists,
+    // a repo-wide stage re-examines every file and would silently renormalize
+    // the very blob this fixture needs to keep as CRLF.
     execFileSync('git', ['add', '--', ...Object.keys(batch)], { cwd: dir });
     execFileSync('git', ['commit', '-qm', message, '--no-gpg-sign'], { cwd: dir });
   };
