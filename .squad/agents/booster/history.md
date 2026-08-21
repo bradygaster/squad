@@ -114,7 +114,31 @@ Full pre-summary history archived at `.squad/agents/booster/history-archive-2026
 
 **Validation:** `bash -n` passes on the new run block. Self-linting property holds — actionlint + shellcheck will lint this exact `run:` block on the next CI run, catching any quoting or syntax issues we introduce. Amended and force-pushed to `serbrech/squad` as a single commit.
 
+### gh-aw Issue Triage — 2026-08-20 Pre-E2E Audit
+
+**Issues reviewed:** #1748 (Allow dependency additions without bypassing protected-file safety), #1763 (Decide whether to drop `bots:` from squad.md)
+
+**#1763 — Decision recorded, issue CLOSE:**
+- `bots: ["github-actions[bot]"]` lives at `workflows/squad.md:8` and `workflows/squad-implement-worker.md:7`
+- Merge-continuation uses `pull_request: types: [closed]` — NOT a slash-command bot comment. Removing `bots:` would not affect continuation at all.
+- Warning is compile-time only (`gh aw add`), not runtime. The concurrency scenario it describes (bot-posted `/squad` comment) does not occur in current workflows.
+- Tests at `test/gh-aw-implement-workflow.test.ts` lines 102–115 assert `bots:` is present.
+- Issue sequencing note places this at Wave 5, depends on #1772 being fixed first.
+- Decision written to `.squad/decisions/inbox/booster-bots-field-squad-md.md`: keep `bots:`, accept the warning.
+- **Does NOT block tomorrow's E2E.**
+
+**#1748 — DEFER (still thrashing, Wave 2 but depends on #1762):**
+- 3 comments show active design discussion, not convergence. Brady inverted Option 2 to default-on (allow dependency additions, deny is opt-out). Third commenter introduced a diff-classification axis (new-dependency vs version-bump vs removed) that is not resolved.
+- Protected-files SKILL.md covers Squad CLI bootstrap files (zero-dependency Node core files) — different concern from gh-aw manifest protection. No conflict.
+- Issue has `Depends on: #1762` per sequencing comment. #1762 not yet resolved.
+- Safe to defer past tomorrow's E2E.
+
 ## 📌 Team update — 2026-08-19T13:11:34.130-07:00
 
 Post-e2e follow-up triage recorded Booster findings D and F. Finding F confirmed `protected-files: request_review` is incompatible with signed create-pull-request writes that touch protected files; `fallback-to-issue` is the safe fail-closed path. Finding D confirmed the `slash_command` + `bots:` concurrency warning is real but narrow and does not block the continuation e2e because the continuation hop uses `workflow_dispatch`.
+
+
+## 📌 Team update — 2026-08-20T11:59:44-07:00
+
+gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
 

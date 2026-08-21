@@ -46,13 +46,15 @@ jobs:
 
       - name: Post impact report
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #v9
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         with:
           script: |
             const fs = require('fs');
             const marker = '<!-- squad-impact-report -->';
             const report = fs.readFileSync('impact-report.md', 'utf8');
             const body = `${marker}\n${report}`;
-            const prNumber = ${{ github.event.pull_request.number }};
+            const prNumber = Number(process.env.PR_NUMBER);
 
             // Upsert: find existing comment by marker, update or create.
             // paginate() follows Link headers so we never miss an existing marker.
