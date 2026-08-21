@@ -1,5 +1,5 @@
 ---
-'@bradygaster/squad-sdk': patch
+'@bradygaster/squad-sdk': minor
 ---
 
 Fix scheduler script tasks failing on the default Windows Node install path
