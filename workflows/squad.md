@@ -668,15 +668,27 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 1. Read issue body (the epic/brief).
 2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
-3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:** every
-   `Owner` and `Agent` value MUST be a cast **Name** taken verbatim from the
-   `## Members` table's `Name` column of `.squad/team.md` (e.g. `Flight`,
-   `Procedures`, `EECOM`) — never a Role string (`Lead`, `Prompt Engineer`,
-   `DevRel`) and never a lowercased role (`lead`, `devrel`, `reviewer`). Map each
-   work item's domain to an owner via `.squad/routing.md`, then resolve that
-   owner to its exact `Name`. If no cast member fits, use `@copilot`. This
-   binding governs every `Owner`/`Agent` column and every `squad:{owner}` label
-   emitted downstream.
+3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:**
+
+   a. Locate the `## Members` table in **this repository's** `.squad/team.md`.
+      Read its `Name` column and build the **allowed-owner set**: every `Name`
+      cell value copied verbatim, plus `@copilot`.
+   b. Before assigning any owner, write the allowed-owner set out explicitly in
+      your working notes, so the binding is grounded in the roster you actually
+      read rather than recalled. Use only values read from this repository's
+      `.squad/team.md` — never a name carried over from another roster, an
+      example, or a previous task.
+   c. Every `Owner` and `Agent` value you emit MUST be a member of the
+      allowed-owner set, character-for-character as it appears in the `Name`
+      column. The `Name` column is the sole source of these values; no other
+      column of `.squad/team.md` — the `Role` column included — supplies a valid
+      owner, in any casing.
+   d. Map each work item's domain to a member via `.squad/routing.md`, then
+      resolve that member to its exact `Name` cell value. If no cast member fits,
+      use `@copilot`.
+
+   This binding governs every `Owner`/`Agent` column and every `squad:{owner}`
+   label emitted downstream.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -689,7 +701,7 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
 
-The `Owner` column MUST be a cast **Name** per the Owner/Agent binding rule (Step 1) — a value from the `Name` column of `.squad/team.md`, never a Role string.
+Every `Owner` cell MUST be a member of the allowed-owner set built in Step 1 — a verbatim value from the `Name` column of the `## Members` table in `.squad/team.md`, or `@copilot`. Re-check each `Owner` cell against that column before posting; a value that does not appear there is invalid and must be re-resolved.
 
 Do NOT create issues.
 
@@ -734,7 +746,7 @@ If plan has phases: Root → Phase issues → Task issues. Flat plan: tasks dire
 
 For each work item, `create-issue`:
 - Title: work item title
-- Labels: `squad` (color `9B8FCC`), `squad:{owner}` (color `9B8FCC`), where `{owner}` is the work item's cast **Name** lowercased (e.g. Owner `Flight` → `squad:flight`). It MUST resolve to a `Name` row in `.squad/team.md`; never mint a role-derived label such as `squad:lead` or `squad:reviewer`.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`), where `{owner}` is the work item's `Owner` value lowercased. Before minting each `squad:{owner}` label, confirm the `Owner` value appears verbatim in the `Name` column of the `## Members` table in `.squad/team.md`. The `Name` column is the only permitted source for this label — no other column of `.squad/team.md` supplies one. If the `Owner` value is not present in that column, do not mint the label: re-resolve the owner against the `Name` column, or fall back to `@copilot` and apply only the `squad` label.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat)
 - Size: set Project field if available, else body `**Size:**` line
@@ -917,13 +929,13 @@ Search in order: `scope-accepted` artifact (use as authoritative) → `program` 
 
 Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Rollout notes.
 
-**Agent binding rule:** every `Agent` value MUST be a cast **Name** from the `Name` column of `.squad/team.md` (resolved via `.squad/routing.md`), never a Role string (`Lead`, `DevRel`) or lowercased role (`lead`, `reviewer`). If no cast member fits, use `@copilot`.
+**Agent binding rule:** before assigning any agent, read the `## Members` table in **this repository's** `.squad/team.md` and list its `Name` column values verbatim in your working notes. That list, plus `@copilot`, is the complete set of permitted `Agent` values — ground your assignments in the roster you just read rather than recalling one. Every `Agent` value MUST be one of those values, character-for-character. Resolve each task's domain to a member via `.squad/routing.md`, then emit that member's exact `Name` cell value. The `Name` column is the sole source of `Agent` values; no other column of `.squad/team.md` — the `Role` column included — supplies a valid one, in any casing. If no cast member fits, use `@copilot`.
 
 Rules: no task > max_task_size. DAG only. Every task traces to program item. Every epic has ≥1 task. Vertical slices. Group into phases by dependency order (Phase 1 = no deps).
 
 ##### Step 3: Validate Structure
 
-Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` resolves to a `Name` row in `.squad/team.md`, never a Role string). Fix before posting.
+Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value appears verbatim in the `Name` column of the `## Members` table in `.squad/team.md`, or is `@copilot`). Fix before posting.
 
 ##### Step 4: Post Implementation Plan
 
@@ -931,7 +943,7 @@ Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Ag
 
 Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Validation Pre-check → Next: `/squad plan validate`.
 
-The `Agent` column MUST be a cast **Name** per the Agent binding rule (Step 2) — a value from the `Name` column of `.squad/team.md`, never a Role string.
+Every `Agent` cell MUST be a permitted value per the Agent binding rule (Step 2) — a verbatim value from the `Name` column of the `## Members` table in `.squad/team.md`, or `@copilot`. Re-check each `Agent` cell against that column before posting.
 
 ##### Step 5: Update Lifecycle
 
@@ -967,8 +979,31 @@ Find the latest `program`, `implementation`, and `triage` artifacts. At minimum 
 | 7 | Incomplete metadata | Both | Missing sizes/agents/criteria |
 | 8 | Orphaned items | Both | Triage items not in program |
 | 9 | Milestone gaps | Program | Epics not in any milestone |
+| 10 | Non-roster owner/agent | Both | An `Owner`/`Agent` value is absent from the roster (see below) |
 
-Severity: ❌ Critical (blocks acceptance): 1–6, 8. ⚠️ Warning: 7, 9, borderline 5.
+Severity: ❌ Critical (blocks acceptance): 1–6, 8, 10. ⚠️ Warning: 7, 9, borderline 5.
+
+###### Check 10 — roster binding (the `Name` column is the sole source of truth)
+
+Run this check mechanically. Do not judge whether a value "looks like" a
+teammate, and do not accept a value because it seems plausible or was used
+earlier in the plan.
+
+1. Read the `## Members` table in **this repository's** `.squad/team.md`. Collect
+   its `Name` column cell values verbatim into the **roster set**. If
+   `.squad/team.md` is missing or its `## Members` table has no data rows, report
+   Check 10 as ❌ Critical and stop — a plan cannot bind owners without a roster.
+2. Quote the roster set in the validation output, so the reader can see exactly
+   which values were treated as valid.
+3. For every `Owner` cell in the program artifact and every `Agent` cell in the
+   implementation artifact: the value is valid **only** if it matches a roster-set
+   entry ignoring case, or is exactly `@copilot`. Every other value — including
+   any value drawn from a different column of `.squad/team.md`, such as the
+   `Role` column — is invalid.
+4. Every invalid value is a ❌ **Critical** finding, which makes the run
+   `RESULT: FAIL`. Report each one as: the artifact, the row, the offending
+   value, and the roster set it must be drawn from. Never report a value as a
+   valid roster name unless you found it in the `Name` column in step 1.
 
 ##### Step 3: Post Result
 
@@ -1093,7 +1128,25 @@ Count expected issues before starting. If total > 50: recommend phased activatio
 
 ##### Label Pre-flight
 
-Before the first `create-issue`, verify labels `squad` and any `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
+**Roster binding gate — run this before any `create-issue` call.**
+
+1. Read the `## Members` table in **this repository's** `.squad/team.md` and
+   collect its `Name` column cell values verbatim into the **roster set**.
+2. List the roster set in the activation summary, so the labels applied can be
+   traced back to the roster that was actually read.
+3. For every `Agent` value in the implementation plan, confirm it matches a
+   roster-set entry ignoring case, or is exactly `@copilot`. The `Name` column is
+   the only permitted source; a value taken from any other column of
+   `.squad/team.md`, such as the `Role` column, does not qualify.
+4. A value that fails step 3 MUST NOT be turned into a `squad:{agent}` label.
+   Apply only the `squad` label for that issue and record the value in the
+   activation summary under a `Non-roster agent values` heading, naming the
+   roster set it should have been drawn from.
+
+`{agent}` in `squad:{agent}` is a roster-set value lowercased — never anything
+else.
+
+Then verify labels `squad` and each roster-bound `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
 
 ##### Transient Failure Handling
 

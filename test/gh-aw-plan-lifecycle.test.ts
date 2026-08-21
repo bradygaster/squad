@@ -72,8 +72,43 @@ function isRoleStringLeak(ownerCell: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// #1759 — Owner/Agent columns must resolve to cast Names, never Role strings
+// #1759 / #1784 — Owner/Agent columns must resolve to cast Names, and the
+// binding sites must not seed the model with the tokens they forbid.
 // ---------------------------------------------------------------------------
+
+/**
+ * #1784: the binding rules used to enumerate their own counter-examples —
+ * `` never a Role string (`Lead`, `DevRel`) `` — and live run E3 showed the model
+ * emitting `lead`/`devrel` verbatim, including `devrel` for a roster that has no
+ * DevRel role. The concrete token is salient; the negation is not.
+ *
+ * A backticked code span is the most copyable form a token can take in the
+ * prompt, so the binding blocks must contain none that name a Role rather than a
+ * Name. Roles come from team.md's `Role` column, so this stays honest as the
+ * roster changes; the extra literals are the values E3 actually leaked.
+ */
+const FORBIDDEN_TOKENS = [
+  ...castRoles().map(r => r.toLowerCase()),
+  'devrel',
+  'reviewer',
+];
+
+/** Backticked code spans in `text`, lowercased. */
+function codeSpans(text: string): string[] {
+  return [...text.matchAll(/`([^`\n]+)`/g)].map(m => m[1].trim().toLowerCase());
+}
+
+/**
+ * Code spans in `text` that name a Role (or a known leaked value), in bare or
+ * `squad:`-prefixed form. These are the tokens #1784 proved get copied out.
+ */
+function leakedRoleTokens(text: string): string[] {
+  return codeSpans(text).filter(span => {
+    const bare = span.startsWith('squad:') ? span.slice('squad:'.length) : span;
+    if (NAMES_LC.has(bare)) return false; // a cast Name is a legitimate value
+    return FORBIDDEN_TOKENS.includes(bare);
+  });
+}
 
 describe('#1759: Owner/Agent bind to the cast Name column', () => {
   it('team.md exposes distinct Name and Role columns to bind against', () => {
@@ -114,23 +149,86 @@ describe('#1759: Owner/Agent bind to the cast Name column', () => {
     const block = skillBlock(squad, 'squad-plan');
     expect(block).toMatch(/Owner\/Agent binding rule/i);
     expect(block).toContain('`Name` column');
-    // Explicitly forbids the leaking values named in #1759.
-    expect(block).toMatch(/never a Role string/i);
-    expect(block).toMatch(/`lead`, `devrel`, `reviewer`/);
+    expect(block).toContain('@copilot');
   });
 
   it('squad-plan-accept mints squad:{owner} from the cast Name, not a role', () => {
     const block = skillBlock(squad, 'squad-plan-accept');
-    expect(block).toContain('cast **Name** lowercased');
-    expect(block).toContain('squad:flight');
-    expect(block).toMatch(/never mint a role-derived label such as `squad:lead`/);
+    expect(block).toContain('`Name` column');
+    expect(block).toContain('`squad:{owner}`');
   });
 
   it('squad-plan-implementation binds the Agent column to the cast Name', () => {
     const block = skillBlock(squad, 'squad-plan-implementation');
     expect(block).toMatch(/Agent binding rule/i);
     expect(block).toContain('`Name` column');
-    expect(block).toMatch(/agent validity \(every `Agent` resolves to a `Name` row/);
+    expect(block).toMatch(/appears verbatim in the `Name` column/);
+  });
+});
+
+describe('#1784: binding sites never name the tokens they forbid', () => {
+  it('the leak detector recognizes a prohibition that enumerates Role tokens', () => {
+    // The pre-fix text from workflows/squad.md:913 — this MUST be flagged, or
+    // the assertions below prove nothing.
+    const preFix =
+      'every `Agent` value MUST be a cast **Name** from the `Name` column of ' +
+      '`.squad/team.md`, never a Role string (`Lead`, `DevRel`) or lowercased ' +
+      'role (`lead`, `reviewer`).';
+    expect(leakedRoleTokens(preFix)).toEqual(
+      expect.arrayContaining(['lead', 'devrel', 'reviewer'])
+    );
+
+    // The pre-fix label text from workflows/squad.md:730.
+    const preFixLabel =
+      'never mint a role-derived label such as `squad:lead` or `squad:reviewer`.';
+    expect(leakedRoleTokens(preFixLabel)).toEqual(
+      expect.arrayContaining(['squad:lead', 'squad:reviewer'])
+    );
+
+    // A positive-only rule carries no forbidden token.
+    const postFix =
+      'Every `Agent` value MUST appear verbatim in the `Name` column of the ' +
+      '`## Members` table in `.squad/team.md`, or be `@copilot`.';
+    expect(leakedRoleTokens(postFix)).toEqual([]);
+  });
+
+  for (const skill of [
+    'squad-plan',
+    'squad-plan-accept',
+    'squad-plan-implementation',
+    'squad-plan-validate',
+    'squad-plan-activate',
+  ]) {
+    it(`${skill} states the binding positively, without naming a Role token`, () => {
+      expect(leakedRoleTokens(skillBlock(squad, skill))).toEqual([]);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// #1784 — /squad plan validate must fail a non-roster Owner/Agent value
+// ---------------------------------------------------------------------------
+
+describe('#1784: squad-plan-validate treats the Name column as sole truth', () => {
+  const block = skillBlock(squad, 'squad-plan-validate');
+
+  it('declares a roster-binding check in the checks table', () => {
+    expect(block).toMatch(/Non-roster owner\/agent/i);
+  });
+
+  it('scores a non-roster value as Critical, not a warning', () => {
+    const severity = block.match(/^Severity:.*$/m)?.[0] ?? '';
+    // Check 10 is the roster check; it must sit on the Critical side.
+    expect(severity).toMatch(/Critical[^.]*\b10\b/);
+    expect(severity).not.toMatch(/Warning[^.]*\b10\b/);
+  });
+
+  it('binds the check to the Name column and forbids attesting validity otherwise', () => {
+    const check = block.match(/###### Check 10[\s\S]*?(?=\n##### )/)?.[0] ?? '';
+    expect(check).not.toEqual('');
+    expect(check).toContain('`Name` column');
+    expect(check).toMatch(/Critical/);
+    expect(check).toMatch(/Never report a value as a\s+valid roster name unless/);
   });
 });
 
