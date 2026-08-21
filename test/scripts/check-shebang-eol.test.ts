@@ -138,6 +138,41 @@ describe('check-shebang-eol lint (#1788)', () => {
     );
     expect(violations.map((v) => v.kind).sort()).toEqual(['crlf-blob', 'unpinned']);
   });
+
+  // The regression that motivated widening the enumeration. Adding
+  // "*.js text eol=lf" without renormalizing left two CRLF blobs churning in
+  // this repo (packages/squad-cli/src/remote-ui/app.js, docs/src/pages/rss.xml.js)
+  // while the gate reported "all 45 shebanged files are pinned to LF", exit 0.
+  // Enumerating by `#!` can never see them: they have no shebang.
+  it('flags a NON-shebang file pinned to LF whose blob stores CRLF', () => {
+    const dir = repo(
+      {
+        // No `#!` anywhere. Committed before the rule exists so CRLF reaches the blob.
+        'web/app.js': Buffer.from('const a = 1;\r\nconst b = 2;\r\n', 'utf-8'),
+      },
+      { '.gitattributes': '*.js text eol=lf\n' },
+    );
+
+    const { violations, shebangFiles } = scan(dir);
+
+    // Proves the file is genuinely outside the shebang enumeration, so this
+    // test cannot pass by accident if someone narrows the scan back down.
+    expect(shebangFiles.map((f) => f.file)).not.toContain('web/app.js');
+    expect(violations).toEqual([
+      expect.objectContaining({ file: 'web/app.js', kind: 'crlf-blob' }),
+    ]);
+  });
+
+  it('does not flag a CRLF file that no rule pins to LF', () => {
+    const dir = repo({
+      '.gitattributes': '*.js text eol=lf\n',
+      // CRLF, but nothing claims it should be LF -- scanning every tracked file
+      // must not turn "stored as CRLF" into a violation on its own.
+      'notes/raw.txt': Buffer.from('line one\r\nline two\r\n', 'utf-8'),
+    });
+
+    expect(scan(dir).violations).toEqual([]);
+  });
 });
 
 describe('this repository satisfies the lint', () => {
@@ -149,6 +184,12 @@ describe('this repository satisfies the lint', () => {
 
   it('finds a non-trivial number of shebanged files (guards against a vacuous pass)', () => {
     expect(result.shebangFiles.length).toBeGreaterThan(20);
+  });
+
+  it('scans far more LF-pinned files than shebanged ones (guards the widened enumeration)', () => {
+    // If someone re-narrows the blob check to the shebang set, this collapses.
+    expect(result.pinned.length).toBeGreaterThan(100);
+    expect(result.pinned.length).toBeGreaterThan(result.shebangFiles.length * 2);
   });
 
   it('has zero shebang EOL violations', () => {
