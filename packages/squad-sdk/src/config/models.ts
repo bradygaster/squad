@@ -817,7 +817,7 @@ export function writeAgentModelOverrides(
  * Canonical runtime list — import this instead of duplicating. The `satisfies`
  * clause keeps it in lock-step with the canonical {@link SquadReasoningEffort} type.
  */
-export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly SquadReasoningEffort[];
+export const VALID_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const satisfies readonly SquadReasoningEffort[];
 /** Canonical reasoning-effort union (alias of {@link SquadReasoningEffort}). */
 export type ValidReasoningEffort = SquadReasoningEffort;
 const VALID_REASONING_EFFORTS_WITH_AUTO: readonly string[] = [...VALID_REASONING_EFFORTS, 'auto'];

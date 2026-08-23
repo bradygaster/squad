@@ -45,12 +45,20 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-#   Default is 0.11.0.
+#   Default is 0.12.0.
+#
+# Optional model override:
+#   vars.SQUAD_MODEL
+#   Set to a model name or alias (e.g., 'agent', 'opus', 'gpt-5.6-sol',
+#   'claude-opus-4.6'). Omit or set to 'auto' for engine default. The gh-aw
+#   proxy resolves aliases based on model availability, so if the chosen model
+#   is unavailable the proxy walks a fallback chain automatically.
 #
 # State backend is pinned to `local`: the compiled agent invocation passes
 # `--disable-builtin-mcps`, so Squad's `state-mcp` bridge does not load. A non-local
-# backend would fail silently. Cross-run state does NOT persist — every run starts
-# from a fresh `squad init`.
+# backend would fail silently. If a committed .squad/team.md with roster entries
+# exists (e.g. from a previous /squad cast), init is skipped to preserve it.
+model: ${{ vars.SQUAD_MODEL || 'auto' }}
 engine:
   id: copilot
   version: 1.0.78
@@ -70,9 +78,17 @@ jobs:
 
       - name: Initialize Squad team
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.11.0' }}
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.12.0' }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
-        run: npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.11.0}" init --preset default --state-backend local
+        run: |
+          # Preserve committed cast state: if .squad/team.md already exists with
+          # roster entries, skip init to avoid overwriting a merged cast (#1657).
+          if [ -f ".squad/team.md" ] && grep -q '^[|]' <(sed -n '/^## Members/,/^## /p' .squad/team.md | tail -n +2); then
+            echo "✓ Existing squad team detected with roster entries — skipping init."
+          else
+            echo "No existing squad team found — running squad init."
+            npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.12.0}" init --preset default --state-backend local
+          fi
 
       - name: Upload Squad state artifact
         if: success()
@@ -104,10 +120,11 @@ agent sandbox:
 
 1. **`jobs.activation.pre-steps`** — the repository is already checked out by the
    activation job. This step optionally mints a GitHub App installation token (or
-   uses a supplied PAT), runs the pinned `@bradygaster/squad-cli` package, and
-   uploads the resulting `.squad/` team state plus
-   `.github/agents/squad.agent.md` as a `squad-state` artifact — all inside the
-   activation job with unrestricted egress.
+   uses a supplied PAT), checks whether `.squad/team.md` already exists with
+   roster entries (preserving any previously committed cast), and only runs
+   `squad init` if no usable team is found. The resulting `.squad/` team state
+   plus `.github/agents/squad.agent.md` are uploaded as a `squad-state` artifact
+   — all inside the activation job with unrestricted egress.
 
 2. **`steps:`** (agent job) — downloads the `squad-state` artifact and restores it
    into the workspace. The Squad CLI is never installed here; only the files it
@@ -130,5 +147,6 @@ yourself.
 - This run uses the `local` state backend, and the Squad `state-mcp` bridge is
   **not** available (the agent runs with `--disable-builtin-mcps`). Treat `.squad/`
   as plain files on disk.
-- State does **not** carry over between runs. The casting registry, session logs,
-  and any output produced live only for this run.
+- State does **not** carry over between runs unless a committed `.squad/team.md`
+  with roster entries exists — in that case, the bootstrap preserves it. The
+  casting registry, session logs, and any output produced live only for this run.
