@@ -230,14 +230,61 @@ Repository owners must configure Copilot setup steps separately when needed.
 
 ## Parse Command
 
-1. Read trigger body from event payload.
-2. Strip `/squad` prefix, trim whitespace.
-3. Match **longest-prefix-first**:
+**The command may appear anywhere in the body — not only at the start.** A body
+that opens with a greeting, a sentence of context, or a blank line and *then*
+carries the command is the normal shape of a first-run issue. Never assume the
+body begins with `/squad`, and never decide by eye whether a command is present.
+
+### Step PC-1: Extract the command argument [MANDATORY]
+
+Assign the resolved trigger body (the dispatched command, comment body, or issue
+body chosen above) to `SQUAD_TRIGGER_BODY`, then run exactly this:
+
+```bash
+printf '%s\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\r$/,"")} !f && /(^|[[:space:]])\/squad([[:space:]]|$)/ {f=1; sub(/^.*\/squad/,""); sub(/^[[:space:]]+/,""); sub(/[[:space:]]+$/,""); print} END{if(!f) print "NO_COMMAND"}'
+```
+
+It scans **every** line, takes the first `/squad` token wherever it sits, and
+prints the argument text that followed it. Empty output means a bare `/squad`.
+Exactly `NO_COMMAND` means no `/squad` token exists anywhere in the body.
+
+### Step PC-2: Route on the extracted text
+
+1. `NO_COMMAND` → go to **Step PC-3**. Do **not** fall back to `cast`, do not
+   enter a skill, do not finish the run reporting success.
+2. Empty → mode is `cast` (bare `/squad`).
+3. Otherwise match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
    - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `research`, `triage`, `implement`
-4. Default to `cast` if empty.
+4. No prefix matches → go to **Step PC-3**.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
+
+### Step PC-3: No recognized command [MANDATORY — a no-op run must never report success]
+
+Reaching this step means the run matched no mode: it cast nothing, planned
+nothing, changed nothing. Reporting success here is the #1824 defect — a green
+check and a real cast were indistinguishable, so a first-run user got an empty
+team and no signal that anything had gone wrong.
+
+1. Show the text actually present in the body:
+
+   ```bash
+   printf '%s\n' "$SQUAD_TRIGGER_BODY" | tr -d '\r' | grep -n -i -m 3 -F -- '/squad' || echo 'NO_SQUAD_TEXT_IN_BODY'
+   ```
+
+2. Emit `echo "::error::Squad parsed no recognized command. Text seen: <verbatim
+   output of the command above>"`. Quote the observed text — never a generic
+   "unrecognized command" message with the offending input omitted.
+3. Post one comment on the triggering issue reproducing that same text verbatim
+   and listing the valid commands from the Modes table.
+4. **Fail the run** — exit non-zero. Never call `noop`, never post a success
+   summary, never let the run finish green.
+
+Deliberate widening: this scan also matches `/squad` inside a quoted line or a
+fenced block. Excluding those would reintroduce a silent-skip path, which is the
+exact bug class this step exists to eliminate. Parsing them and surfacing the
+result is preferred over ignoring them without a trace.
 
 ## Execute Mode
 
