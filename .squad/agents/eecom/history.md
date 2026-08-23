@@ -1,8 +1,7 @@
-# Eecom history
-
+﻿# Eecom history
 Summarized by Scribe on 2026-08-20T11:59:44-07:00 because this history exceeded 15KB.
-Full pre-summary history archived at `.squad/agents/eecom/history-archive-2026-08-20T11-59-44-0700.md`.
-Prior archive at `.squad/agents/eecom/history-archive-2026-08-19T13-11-34.130-07-00.md`.
+Full pre-summary history archived at .squad/agents/eecom/history-archive-2026-08-20T11-59-44-0700.md.
+Prior archive at .squad/agents/eecom/history-archive-2026-08-19T13-11-34.130-07-00.md.
 ## 2026-08-20 — #1772 dispatch probe gate fix
 
 - Root cause confirmed: dispatch-workflow: max: 1 causes first-wins semantics; LLM empty probe consumes slot; real dispatch silently dropped.
@@ -57,3 +56,20 @@ Batch 2 complete. Fixed #1772 (P0): `max: 1` → `max: 2` in squad-implement-wor
 ## 📌 Team update — 2026-08-22T18:25:00-07:00
 
 PR #1831 merged as `9378a379` for #1793. EECOM shipped local CRLF working-tree detection/repair, resolved three Copilot review threads, and captured the follow-on principle that gate remediation/verification instructions must cover the same artifact set as the check itself.
+## 📌 Team update — 2026-08-22T19:42:25-07:00
+
+Rework of PR #1832 under Reviewer Rejection Protocol (Procedures locked out after FIDO Pass 2 found BLOCKING dispatch regression).
+
+**Problem:** Bare workflow_dispatch commands (implement, esearch, etc.) regress to loud failure. PC-1 requires /squad token; dispatch sends bare command value. Pre-fix worked; post-fix: NO_COMMAND → PC-3 hard fail.
+
+**Solution:** Commit 6e7628c5 — add Step PC-0 normalization layer before PC-1:
+- workflow_dispatch bare command → synthesize /squad  prefix
+- Idempotent: already-prefixed text unchanged
+- All 6 documented dispatch modes resolve
+- PC-1 NOT loosened (guard fires on mutation)
+- Greedy last-token defect fixed (Finding 3)
+- Tests 15 → 27 (all pass, all mutations red-and-naming)
+
+FIDO Pass 3 verified all measurements. CI green. PC-0 NR==1 leading-newline edge case noted as latent nit (unreachable via real producers).
+
+PR merged; issue closed.
