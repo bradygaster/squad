@@ -1,218 +1,63 @@
-# FIDO
+# Fido history
+
+Summarized by Scribe on 2026-08-19T13:11:34.130-07:00 because this history exceeded 15KB.
+Full pre-summary history archived at `.squad/agents/fido/history-archive-2026-08-19T13-11-34.130-07-00.md`.
+
+## 2026-08-20 — #1732 compile gate shipped
+
+- **Defect confirmed:** `gh aw compile` was never a real CI gate. `test/gh-aw-quality.test.ts:978` uses `it.skipIf(!ghAwAvailable)` and `squad-ci.yml` never installed `gh-aw`, so the test always skipped in CI.
+- **Fix:** Added `gh extension install github/gh-aw` step to the `test` job in `.github/workflows/squad-ci.yml`, immediately before Build. Reason: the test lives in `npm test` — wiring it into `squad-workflow-lint.yml` (which never runs `npm test`) would accomplish nothing.
+- **Non-skippability verified locally:** (1) passing case: `gh aw compile --strict` on intact workflows exits 0; (2) break test: removed `squad-implement-worker.md` from temp workspace → compile exited 1 with "dispatch-workflow validation failed: workflow 'squad-implement-worker' not found" → gate fails as expected.
+- **Issue split noted:** Prompt-budget gate already shipped (test:637-669). String-assertion replacement too vague — both closed without implementing.
+- **Rule 5:** This gate fails if `gh aw compile --strict` exits non-zero — e.g., missing dispatch target, invalid frontmatter, or any `gh-aw` strict validation error.
+
+## Condensed signals
+
+- Quality gate authority for all PRs. Test assertion arrays (EXPECTED_GUIDES, EXPECTED_FEATURES, EXPECTED_SCENARIOS, etc.) MUST stay in sync with files on disk. When reviewing PRs with CI failures, always check if dev branch has the same failures — don't block PRs for pre-existing issues. 3,931 tests passing, 149 test files, ~89s runtime.
+- 📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution & Community PR Review):** Post-CLI crash recovery completed: Round 1 baseline verified (5,038 tests ✅ green), Round 2 executed duplicate closures (#605/#604/#602) and 9-PR community batch review. FIDO approved 3 PRs (#625 notification-routing, #603 Challenger agent, #608 security policy—merged via Coordinator) and issued change requests on 6 PRs identifying systemic issues: changeset package naming (4 PRs used unscoped `squad-cli` instead of `@bradygaster/squad-cli`); file paths (2 PRs placed files at root instead of correct package structure). Quality gate result: high-bar community acceptance—approved 3/9 (33%), change-request 6/9 (67%), 0 rejections. PR #592 (legacy, high-quality) also merged. All actions complete; dev branch remains green.
+- 📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review Batch):** FIDO reviewed 10 open PRs for quality and merge readiness. Identified 3 duplicate/overlap pairs consolidating 6 PRs into 4: #607 (retro enforcement, comprehensive) approved for merge, #605 closed as duplicate. #603 (Challenger agent, correct paths) approved, #604 closed as duplicate. #606 (tiered memory superset) approved, #602 closed as duplicate. Merge-ready: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). Decisions merged.
+- ### Test Assertion Sync Discipline
+- EXPECTED_* arrays in docs-build.test.ts must match filesystem reality. When PRs add new content files, verify the corresponding test arrays are updated. Consider dynamic discovery pattern (used for blog posts) for resilience against content additions. Stale assertions that block CI are FIDO's responsibility. **Fixed PR #331:** EXPECTED_SCENARIOS expanded to 25 entries, EXPECTED_FEATURES array created with 32 entries (commit 6599db6).
+- 📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution & Community PR Review):** Post-CLI crash recovery completed: Round 1 baseline verified (5,038 tests ✅ green), Round 2 executed duplicate closures (#605/#604/#602) and 9-PR community batch review. FIDO approved 3 PRs (#625 notification-routing, #603 Challenger agent, #608 security policy—merged via Coordinator) and issued change requests on 6 PRs identifying systemic issues: changeset package naming (4 PRs used unscoped `squad-cli` instead of `@bradygaster/squad-cli`); file paths (2 PRs placed files at root instead of correct package structure). Quality gate result: high-bar community acceptance—approved 3/9 (33%), change-request 6/9 (67%), 0 rejections. PR #592 (legacy, high-quality) also merged. All actions complete; dev branch remains green. Decision inbox merged and deleted. Next: Monitor 6 change-request PRs for author responses.
+- 📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review Batch):** FIDO reviewed 10 open PRs for quality and merge readiness. Identified 3 duplicate/overlap pairs consolidating 6 PRs into 4: #607 (retro enforcement, comprehensive) approved for merge, #605 closed as duplicate (less comprehensive). #603 (Challenger agent, correct paths) approved for merge, #604 closed as duplicate (wrong file paths). #606 (tiered memory superset, 3-tier model) approved for merge, #602 closed as duplicate (narrower 2-tier scope). Merge-ready PRs identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). Draft #567 not ready. Impact: reduces PR count from 10 to 7, eliminates file conflicts, preserves unique value. All other PRs (#611, #608, #592, #567) can proceed independently. Decisions merged to decisions.md and decisions inbox deleted.
+- EXPECTED_* arrays in docs-build.test.ts must match filesystem reality. When PRs add new content files, verify the corresponding test arrays are updated. Consider dynamic discovery pattern (used for blog posts) for resilience against content additions. Stale assertions that block CI are FIDO's responsibility.
+- Verdict scale: GO (merge), FAIL (block until fixed), NO-GO (reject). Always verify: test discipline (assertions synced), CI status (distinguish pre-existing vs new failures), content accuracy, cross-reference validity. When detecting CI failures, run baseline comparison (dev branch vs PR branch) to isolate regressions.
+- Tests reading live .squad/ files must assert structure/behavior, not specific agent names. Names change during team rebirths. Two test classes: live-file tests (survive rebirths, property checks) and inline-fixture tests (self-contained, can hardcode).
+- cli-command-wiring.test.ts prevents "unwired command" bug: verifies every .ts file in commands/ is imported in cli-entry.ts. Bidirectional validation.
+- `test/init-scaffolding.test.ts` — 15 tests: casting directory scaffolding (verifies .squad/casting/ + all 3 JSON files), no-remote resilience (init succeeds without git remote), doctor validation after init (zero failures). Follows existing test conventions — vitest, randomBytes temp dirs in cwd, compiled dist imports.
+
+## 2026-08-20: #1732 triage + E2E readiness gate analysis
+
+- Audited #1732 ("Make gh aw compile non-skippable, add prompt-budget gate, replace string-assertion workflow tests") as part of gh-aw wave cleanup before E2E day.
+- **Compile gate gap confirmed:** `gh aw compile` is completely absent from CI. The test at `test/gh-aw-quality.test.ts:978` uses `it.skipIf(!ghAwAvailable)` — `gh aw` is not installed in the CI `test` job, so this test always skips in CI. Zero lock.yml files exist in the repo.
+- **Prompt-budget gate already done:** `test/gh-aw-quality.test.ts:637-669` enforces 100 KB ceiling + >5 KB headroom guard via `npm test`.
+- **String-assertion concern is mostly resolved:** Tests use parser helpers (extractFrontmatter, extractSafeOutputs, extractModeTable, extractInlineSkills) throughout. Some `.toContain()` calls exist but target specific contract values, not fragile substrings.
+- **`gh aw compile --no-emit --dir workflows` exits 1** (expected: dispatch-workflow cross-references require `.github/workflows/` layout; the test correctly mirrors that in a temp workspace).
+- Verdict: Split #1732. Ship only the CI install step. Close prompt-budget item. Defer/close string-assertion item.
+- Decision record filed: `.squad/decisions/inbox/fido-1732-compile-gate-triage.md`
+
+## 2026-08-20 (second follow-up): Runbook corrected for post-#1777 dispatch semantics
+
+- EECOM landed PR #1777 fixing #1772 via `dispatch-workflow: max: 2` in `squad-implement-worker.md`.
+- Post-fix, **2 dispatch_workflow entries is the EXPECTED healthy state** — empty probe + real dispatch.
+  Previous runbook said "2 entries = bug". That was inverted. Fixed.
+- Verified empirically against real runs:
+  - run 32394811753 (post-#1777): `{ "type": "dispatch_workflow" }` (empty probe) + `{ ..., "workflow_name": "squad", "inputs": { "command": "implement", "issue_number": "5" } }` → 1 well-formed, 1 malformed → ✅ PASS
+  - run 32316227601 (wrong-schema failure): `{ "type": "dispatch_workflow", "command": "implement", "issue_number": "5" }` (fields at top level, no `inputs` wrapper, no `workflow_name`) → 0 well-formed, 1 malformed → ❌ FAIL
+- Three empirically observed malformed shapes: empty probe (no fields besides `type`), wrong schema (top-level fields), 0 entries.
+- Updated `e2e-capture-runbook.md` Step 3 to use well-formed/malformed classification instead of raw count.
+- Conditional note added: if Procedures ships a guard in squad.md that rejects empty dispatches, a "dispatch rejected" comment will appear on the triggering issue — Brady should check for it, but it may not exist yet.
+- All PowerShell one-liners smoke-tested against real downloaded artifacts; both verdicts printed correctly.
+
+- Verified `gh aw logs` artifact sets: activation, agent, all, detection, evals, experiment, firewall, github-api, mcp, usage. Default (`usage`) is compact summary only — `--artifacts all` needed for full diagnostic.
+- `gh aw audit <run-url> --parse` generates Markdown reports from agent logs. Key command for post-run diagnosis.
+- `safe_output.jsonl` is the canonical artifact for verifying gh-aw structured data contracts. It's uploaded as a GH Actions artifact with default 90-day retention — survives but requires `gh run download` to persist locally.
+- Confirmed: `gh run list` JSON fields are `databaseId`, `conclusion`, `url`, `startedAt`, `workflowName`. Flag is `--json fields` not `--json`.
+- Wrote Part 2 (evidence capture protocol), Part 1 (what survives vs evaporates), Part 3 (measurability rubric + #1606 rewrite).
+- Rubric: 5 rules for measurable criteria in this system. Anti-patterns named: floor-without-semantics, vibe assertions, non-binary criteria, tautological criteria, missing "compared to what."
+
+## Recent preserved tail
 
-> Flight Dynamics Officer
-
-## Core Context
-
-Quality gate authority for all PRs. Test assertion arrays (EXPECTED_GUIDES, EXPECTED_FEATURES, EXPECTED_SCENARIOS, etc.) MUST stay in sync with files on disk. When reviewing PRs with CI failures, always check if dev branch has the same failures — don't block PRs for pre-existing issues. 3,931 tests passing, 149 test files, ~89s runtime.
-
-📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution & Community PR Review):** Post-CLI crash recovery completed: Round 1 baseline verified (5,038 tests ✅ green), Round 2 executed duplicate closures (#605/#604/#602) and 9-PR community batch review. FIDO approved 3 PRs (#625 notification-routing, #603 Challenger agent, #608 security policy—merged via Coordinator) and issued change requests on 6 PRs identifying systemic issues: changeset package naming (4 PRs used unscoped `squad-cli` instead of `@bradygaster/squad-cli`); file paths (2 PRs placed files at root instead of correct package structure). Quality gate result: high-bar community acceptance—approved 3/9 (33%), change-request 6/9 (67%), 0 rejections. PR #592 (legacy, high-quality) also merged. All actions complete; dev branch remains green.
-
-📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review Batch):** FIDO reviewed 10 open PRs for quality and merge readiness. Identified 3 duplicate/overlap pairs consolidating 6 PRs into 4: #607 (retro enforcement, comprehensive) approved for merge, #605 closed as duplicate. #603 (Challenger agent, correct paths) approved, #604 closed as duplicate. #606 (tiered memory superset) approved, #602 closed as duplicate. Merge-ready: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). Decisions merged.
-
-## Key Learnings
-
-### Test Assertion Sync Discipline
-EXPECTED_* arrays in docs-build.test.ts must match filesystem reality. When PRs add new content files, verify the corresponding test arrays are updated. Consider dynamic discovery pattern (used for blog posts) for resilience against content additions. Stale assertions that block CI are FIDO's responsibility. **Fixed PR #331:** EXPECTED_SCENARIOS expanded to 25 entries, EXPECTED_FEATURES array created with 32 entries (commit 6599db6).
-📌 **Team update (2026-03-26T06:41:00Z — Crash Recovery Execution & Community PR Review):** Post-CLI crash recovery completed: Round 1 baseline verified (5,038 tests ✅ green), Round 2 executed duplicate closures (#605/#604/#602) and 9-PR community batch review. FIDO approved 3 PRs (#625 notification-routing, #603 Challenger agent, #608 security policy—merged via Coordinator) and issued change requests on 6 PRs identifying systemic issues: changeset package naming (4 PRs used unscoped `squad-cli` instead of `@bradygaster/squad-cli`); file paths (2 PRs placed files at root instead of correct package structure). Quality gate result: high-bar community acceptance—approved 3/9 (33%), change-request 6/9 (67%), 0 rejections. PR #592 (legacy, high-quality) also merged. All actions complete; dev branch remains green. Decision inbox merged and deleted. Next: Monitor 6 change-request PRs for author responses.
-
-📌 **Team update (2026-03-25T15:23Z — Triage Session & PR Review Batch):** FIDO reviewed 10 open PRs for quality and merge readiness. Identified 3 duplicate/overlap pairs consolidating 6 PRs into 4: #607 (retro enforcement, comprehensive) approved for merge, #605 closed as duplicate (less comprehensive). #603 (Challenger agent, correct paths) approved for merge, #604 closed as duplicate (wrong file paths). #606 (tiered memory superset, 3-tier model) approved for merge, #602 closed as duplicate (narrower 2-tier scope). Merge-ready PRs identified: #611 (blocked on #610), #592 (joniba wiring guide, high-quality). Draft #567 not ready. Impact: reduces PR count from 10 to 7, eliminates file conflicts, preserves unique value. All other PRs (#611, #608, #592, #567) can proceed independently. Decisions merged to decisions.md and decisions inbox deleted.
-
-## Learnings
-
-### Test Assertion Sync Discipline
-EXPECTED_* arrays in docs-build.test.ts must match filesystem reality. When PRs add new content files, verify the corresponding test arrays are updated. Consider dynamic discovery pattern (used for blog posts) for resilience against content additions. Stale assertions that block CI are FIDO's responsibility.
-
-### PR Quality Gate Pattern
-Verdict scale: GO (merge), FAIL (block until fixed), NO-GO (reject). Always verify: test discipline (assertions synced), CI status (distinguish pre-existing vs new failures), content accuracy, cross-reference validity. When detecting CI failures, run baseline comparison (dev branch vs PR branch) to isolate regressions.
-
-### Name-Agnostic Testing
-Tests reading live .squad/ files must assert structure/behavior, not specific agent names. Names change during team rebirths. Two test classes: live-file tests (survive rebirths, property checks) and inline-fixture tests (self-contained, can hardcode).
-
-### Dynamic Content Discovery
-Blog tests use filesystem discovery (readdirSync) instead of hardcoded arrays. Pattern: discover from disk, sort, validate build output exists.
-
-### Command Wiring Regression Test
-cli-command-wiring.test.ts prevents "unwired command" bug: verifies every .ts file in commands/ is imported in cli-entry.ts. Bidirectional validation.
-
-### CLI Packaging Smoke Test
-cli-packaging-smoke.test.ts validates packaged CLI artifact (npm pack → install → execute). Tests 27 commands + 3 aliases. Catches: missing imports, broken exports, bin misconfiguration, ESM resolution failures. Windows cleanup requires retry logic (EBUSY errors) — use rmSync with maxRetries + retryDelay, wrap in try/catch.
-
-### Agent Name Extraction Test Coverage (#577)
-Extracted inline regex-based agent name parsing from `shell/index.ts` into testable pure function `parseAgentFromDescription` in `shell/agent-name-parser.ts`. 30 tests across 7 categories. 3-tier matching: (1) leading emoji+name+colon regex, (2) name+colon anywhere, (3) fuzzy word-boundary match. Shell index.ts delegates to this function.
-
-### Init Scaffolding Completeness Tests (#579)
-`test/init-scaffolding.test.ts` — 15 tests: casting directory scaffolding (verifies .squad/casting/ + all 3 JSON files), no-remote resilience (init succeeds without git remote), doctor validation after init (zero failures). Follows existing test conventions — vitest, randomBytes temp dirs in cwd, compiled dist imports.
-
-### Personal Squad Init Discovery Tests (#576)
-`test/personal-squad-init.test.ts` — 35 tests, 10 describe blocks. Key finding: `resolvePersonalSquadDir()` is install-method-agnostic — resolves from env vars and `os.homedir()`, never from `process.argv`. npx issue #576 is NOT in path resolution but in CLI command wiring or `--global` flag routing. SDK layer works correctly.
-
-### Publish Policy CI Gate (#557)
-Added `publish-policy` job to squad-ci.yml: scans `.github/workflows/*.yml` for bare `npm publish` commands missing `-w`/`--workspace`. `test/publish-policy.test.ts` (36 tests). Meta-references (echo, grep, YAML name keys) must be excluded from lint.
-
-### PR Review Batch — Community PRs
-Community contributors consistently struggle with: (a) scoped npm package names in changesets (use `@bradygaster/squad-cli` not `squad-cli`), (b) monorepo file placement (skills in `packages/squad-cli/templates/skills/`). Both preventable with better contributor docs. Changeset package name mismatch is most common error (4/9 Tamir PRs).
-
-📌 **Team update (2026-07-29T17:11:56+10:00 — Issue #1556 / PR #1557):** A new required CI check `squad-workflow-lint` now exists in `.github/workflows/squad-workflow-lint.yml`. It runs actionlint 1.7.12 + shellcheck 0.10.0 against all 5 workflow/template directories, including the canonical `.squad-templates/workflows/` sources. FIDO should treat this as a required gate alongside existing CI checks — PRs that introduce SC2086, unquoted variables, or invalid action syntax in workflow files will fail this check. All known SC2086 findings across Squad's own workflows were fixed in PR #1557.
-cli-packaging-smoke.test.ts validates packaged CLI artifact (npm pack → install → execute). Tests 27 commands + 3 aliases. Catches: missing imports, broken exports, bin misconfiguration, ESM resolution failures. Complements source-level wiring test.
-
-### CastingEngine Integration Review
-CastingEngine augments LLM casting with curated names for recognized universes. Unrecognized universes preserve LLM names. Import from `@bradygaster/squad-sdk/casting`, use casting-engine.ts AgentRole type (9 roles). Partial mapping: unmapped roles skip engine casting.
-
-### PR #331 Quality Gate Review — NO-GO (Blocking Issues Found) (2026-03-10T14:13:00Z)
-
-**CRITICAL VIOLATIONS DETECTED:**
-
-1. **Stale Test Assertions (Hard Rule Violation)** — EXPECTED_SCENARIOS array in test/docs-build.test.ts contains only 7 values ['issue-driven-dev', 'existing-repo', 'ci-cd-integration', 'solo-dev', 'monorepo', 'team-of-humans', 'cross-org-auth'], but 25 scenario files exist on disk (aspire-dashboard, client-compatibility, disaster-recovery, keep-my-squad, large-codebase, mid-project, multi-codespace, multiple-squads, new-project, open-source, private-repos, release-process, scaling-workstreams, switching-models, team-portability, team-state-storage, troubleshooting, upgrading, + 7 in array). My charter: "When I add test count assertions, I MUST keep them in sync with the actual files on disk. Stale assertions that block CI are MY responsibility to prevent." This is MY responsibility to catch.
-
-2. **Missing EXPECTED_FEATURES Array** — PR adds 'features' to the sections list in test/docs-build.test.ts (line 46), but NO EXPECTED_FEATURES array exists. Test line 171 "all expected doc pages produce HTML in dist/" will skip features entirely. 32 feature files exist (.md files in docs/src/content/docs/features/).
-
-📌 **Team update (2026-03-11T01:27:57Z):** PR #331 quality gate resolved. FIDO fixed test assertion sync in docs-build.test.ts: EXPECTED_SCENARIOS updated to 25 entries, EXPECTED_FEATURES array created with 32 entries, test assertions updated for features validation. Tests: 6/6 passing. Commit: 6599db6. Blocking NO-GO converted to approval gate cleared. Lesson reinforced: test assertions must be synced to filesystem state; CI passing ≠ coverage.
-
-3. **Incomplete Test Coverage Sync** — PAO's history (line 41) states "Updated EXPECTED_SCENARIOS in docs-build.test.ts to match remaining files" after deleting ralph-operations.md and proactive-communication.md. But the diff shows ONLY a single-line change (adding 'features' to sections array). The full test update was not committed.
-
-**POSITIVE FINDINGS:**
-- ✅ CI passed (test run completed successfully on GitHub)
-- ✅ Markdown structure tests pass (6/6 syntax checks)
-- ✅ Docs are well-written: sentence-case headings, active voice, present tense, second person
-- ✅ Cross-references valid (labels.md link verified)
-- ✅ No duplicate "How It Works" heading in reviewer-protocol.md
-- ✅ Content intact (no accidental loss)
-- ✅ Microsoft Style Guide compliance confirmed
-
-**ROOT CAUSE:** PAO staged the boundary review changes but the test update commit was incomplete. The assertion arrays must be synchronized before merge.
-
-**REQUIRED FIX:** Update test/docs-build.test.ts:
-1. EXPECTED_SCENARIOS = [ all 25 actual scenario files, sorted ]
-2. EXPECTED_FEATURES = [ all 32 actual feature files, sorted ]
-3. Regenerate to match disk reality (use filesystem discovery if the project wants test-resilience)
-
-**VERDICT:** 🔴 **NO-GO** — Merge blocked until test assertions sync with disk state. This is a quality gate violation.
-
-### Test Assertion Sync Fix (2026-03-10T14:20:00Z)
-
-**Issue resolved:** Fixed stale test assertions in test/docs-build.test.ts identified during PR #331 review.
-
-**Changes made:**
-1. Expanded EXPECTED_SCENARIOS from 7 to 25 entries (matched all .md files in docs/src/content/docs/scenarios/)
-2. Added EXPECTED_FEATURES array with 32 entries (matched all .md files in docs/src/content/docs/features/)
-3. Updated test logic to include features section in HTML build validation
-
-**Validation:** All structure validation tests passing (6/6). Build tests skipped as expected (Astro not installed). Arrays now accurately reflect disk state.
-
-**Commit:** 6599db6 on branch squad/289-squad-dir-explainer
-
-**Learning:** When test assertions reference file counts, they MUST be kept in sync with disk reality. The principle applies to ALL assertion arrays (EXPECTED_SCENARIOS, EXPECTED_FEATURES, EXPECTED_GUIDES, EXPECTED_REFERENCE, etc.). Consider dynamic discovery pattern (used in EXPECTED_BLOG) for resilience against content additions.
-
-📌 **Team update (2026-03-10T14-44-23Z):** PR #310 scroll flicker fix merged. 4 root causes identified: Ink clearTerminal issue, timer amplification, log-update trailing newline, unstable Static keys. Postinstall patch pattern adopted for Ink internals. Version pin recommended for stability gate. Build: 3,931 tests pass, zero regressions.
-### PR #331 Quality Gate Review — NO-GO (Blocking Issues Found) (2026-03-10T14:13:00Z)
-
-**CRITICAL VIOLATIONS DETECTED:**
-
-1. **Stale Test Assertions (Hard Rule Violation)** — EXPECTED_SCENARIOS array in test/docs-build.test.ts contains only 7 values ['issue-driven-dev', 'existing-repo', 'ci-cd-integration', 'solo-dev', 'monorepo', 'team-of-humans', 'cross-org-auth'], but 25 scenario files exist on disk (aspire-dashboard, client-compatibility, disaster-recovery, keep-my-squad, large-codebase, mid-project, multi-codespace, multiple-squads, new-project, open-source, private-repos, release-process, scaling-workstreams, switching-models, team-portability, team-state-storage, troubleshooting, upgrading, + 7 in array). My charter: "When I add test count assertions, I MUST keep them in sync with the actual files on disk. Stale assertions that block CI are MY responsibility to prevent." This is MY responsibility to catch.
-
-2. **Missing EXPECTED_FEATURES Array** — PR adds 'features' to the sections list in test/docs-build.test.ts (line 46), but NO EXPECTED_FEATURES array exists. Test line 171 "all expected doc pages produce HTML in dist/" will skip features entirely. 32 feature files exist (.md files in docs/src/content/docs/features/).
-
-📌 **Team update (2026-03-11T01:27:57Z):** PR #331 quality gate resolved. FIDO fixed test assertion sync in docs-build.test.ts: EXPECTED_SCENARIOS updated to 25 entries, EXPECTED_FEATURES array created with 32 entries, test assertions updated for features validation. Tests: 6/6 passing. Commit: 6599db6. Blocking NO-GO converted to approval gate cleared. Lesson reinforced: test assertions must be synced to filesystem state; CI passing ≠ coverage.
-
-3. **Incomplete Test Coverage Sync** — PAO's history (line 41) states "Updated EXPECTED_SCENARIOS in docs-build.test.ts to match remaining files" after deleting ralph-operations.md and proactive-communication.md. But the diff shows ONLY a single-line change (adding 'features' to sections array). The full test update was not committed.
-
-**POSITIVE FINDINGS:**
-- ✅ CI passed (test run completed successfully on GitHub)
-- ✅ Markdown structure tests pass (6/6 syntax checks)
-- ✅ Docs are well-written: sentence-case headings, active voice, present tense, second person
-- ✅ Cross-references valid (labels.md link verified)
-- ✅ No duplicate "How It Works" heading in reviewer-protocol.md
-- ✅ Content intact (no accidental loss)
-- ✅ Microsoft Style Guide compliance confirmed
-
-**ROOT CAUSE:** PAO staged the boundary review changes but the test update commit was incomplete. The assertion arrays must be synchronized before merge.
-
-**REQUIRED FIX:** Update test/docs-build.test.ts:
-1. EXPECTED_SCENARIOS = [ all 25 actual scenario files, sorted ]
-2. EXPECTED_FEATURES = [ all 32 actual feature files, sorted ]
-3. Regenerate to match disk reality (use filesystem discovery if the project wants test-resilience)
-
-**VERDICT:** 🔴 **NO-GO** — Merge blocked until test assertions sync with disk state. This is a quality gate violation.
-
-### Test Assertion Sync Fix (2026-03-10T14:20:00Z)
-
-**Issue resolved:** Fixed stale test assertions in test/docs-build.test.ts identified during PR #331 review.
-
-**Changes made:**
-1. Expanded EXPECTED_SCENARIOS from 7 to 25 entries (matched all .md files in docs/src/content/docs/scenarios/)
-2. Added EXPECTED_FEATURES array with 32 entries (matched all .md files in docs/src/content/docs/features/)
-3. Updated test logic to include features section in HTML build validation
-
-**Validation:** All structure validation tests passing (6/6). Build tests skipped as expected (Astro not installed). Arrays now accurately reflect disk state.
-
-**Commit:** 6599db6 on branch squad/289-squad-dir-explainer
-
-**Learning:** When test assertions reference file counts, they MUST be kept in sync with disk reality. The principle applies to ALL assertion arrays (EXPECTED_SCENARIOS, EXPECTED_FEATURES, EXPECTED_GUIDES, EXPECTED_REFERENCE, etc.). Consider dynamic discovery pattern (used in EXPECTED_BLOG) for resilience against content additions.
-
-### Issue Triage (2026-03-22T06:44:01Z)
-
-**Flight triaged 6 unlabeled issues and filed 1 new issue.**
-
-FIDO assigned:
-- **#477 (Code Quality Linting PRD)** → squad:fido (monorepo async/promise quality, ESLint 9 PoC ready)
-
-Pattern: Quality tooling gap identified. ESLint 9 modernization + async/promise pattern enforcement for monorepo.
-
-📌 **Team update (2026-03-22T06:44:01Z):** Flight issued comprehensive triage. FIDO owns Code Quality Linting PRD (#477). ESLint 9 PoC already drafted; ready for implementation planning.
-
-### Agent Name Extraction Test Coverage (#577)
-
-Extracted inline regex-based agent name parsing from `shell/index.ts` into a testable pure function `parseAgentFromDescription` in `shell/agent-name-parser.ts`. Created 30 tests across 7 categories: happy path, emoji variations, case insensitivity, fuzzy fallback, no-match, edge cases, and adversarial inputs. The function uses a 3-tier matching strategy: (1) leading emoji+name+colon regex, (2) name+colon anywhere regex, (3) fuzzy word-boundary match against known agent names. Shell index.ts now imports and delegates to this function. Build and tests green.
-
-**Learning:** Inline regex logic in UI code is untestable and fragile. Extracting to a pure function with explicit inputs (description string + known names array) makes it trivially testable and enables VOX's parallel fix to land cleanly.
-
-📌 **Team update (2026-03-23T23:15Z):** Orchestration complete. Agent name extraction refactor shipped: FIDO's parser module (30 tests, all passing), VOX's 3-tier cascading patterns, Procedures' spawn template standardization. All decisions merged to decisions.md. Agent IDs now display correctly in Copilot CLI. Canonical patterns: `agent-name-parser.ts` is source of truth for extraction logic.
-### Init Scaffolding Completeness Tests (#579)
-
-Added `test/init-scaffolding.test.ts` — 15 tests covering three gaps exposed by issue #579:
-
-1. **Casting directory scaffolding** — After `initSquad()` and `runInit()`, verifies `.squad/casting/` directory and all three JSON files (registry.json, policy.json, history.json) exist and parse as valid JSON. Also confirms re-init does not overwrite existing casting files.
-
-2. **No-remote resilience** — Confirms init succeeds without errors when: git repo has no remote configured, brand-new `git init` repo, or no git at all. Uses `execFileSync` to create isolated git repos in temp dirs.
-
-3. **Doctor validation after init** — Runs `runDoctor()` against a freshly-initialized directory and asserts zero failures, specifically that `casting/registry.json exists` check passes. Also tests negative cases (missing file → fail, corrupt JSON → fail).
-
-Pattern: Tests follow existing `test/cli/init.test.ts` and `test/cli/doctor.test.ts` conventions — vitest, `randomBytes` temp dirs in cwd, imports from compiled dist via package exports (`@bradygaster/squad-cli/core/init`, `@bradygaster/squad-cli/commands/doctor`, `@bradygaster/squad-sdk`).
-
-Commit: 7660a27 on branch squad/579-init-scaffolding-hardening.
-
-### Personal Squad Init Discovery Tests (#576)
-
-**Task:** Write tests for personal squad discovery and init flows (Issue #576 — npx init --global not discovering personal squad).
-
-**Test file:** `test/personal-squad-init.test.ts` — 35 tests, 10 describe blocks, all passing.
-
-**Coverage areas:**
-1. `resolveGlobalSquadPath()` — platform-specific path resolution (Windows APPDATA, Linux XDG_CONFIG_HOME, consistency)
-2. `resolvePersonalSquadDir()` — kill-switch (SQUAD_NO_PERSONAL), directory existence, npx-agnostic discovery
-3. `personalInit` contract — directory structure creation, config.json shape, idempotency
-4. `resolveSquadPaths()` — personalDir field inclusion, null when disabled
-5. Edge: empty personal-squad dir (exists but no agents/)
-6. Edge: partial state (agent dirs without charter.md, missing Role metadata defaults to "personal", stray files skipped)
-7. `mergeSessionCast()` — project-wins precedence, case-insensitive collision, empty inputs
-8. `ensureSquadPathTriple()` — personal dir in allowed roots, null personalDir graceful handling
-9. Charter metadata parsing edge cases (whitespace trimming, sourceDir correctness, multi-agent discovery)
-
-**Key finding:** `resolvePersonalSquadDir()` is install-method-agnostic — it resolves from env vars and `os.homedir()`, never from `process.argv`. The npx issue (#576) is therefore NOT in path resolution but likely in the CLI command wiring or the `--global` flag routing. Tests confirm the SDK layer works correctly.
-
-**Commit:** c307187 on branch squad/576-personal-squad-init-npx
-### Publish Policy CI Gate (#557)
-
-Added `publish-policy` job to squad-ci.yml — lightweight lint that scans all `.github/workflows/*.yml` for bare `npm publish` commands missing `-w`/`--workspace`. Catches the incident class where root package.json gets published instead of a workspace package. Also wrote `test/publish-policy.test.ts` (36 tests) covering: workspace-scoped passes, bare publish fails, comment/echo/grep/YAML-name line skipping, findViolations line numbering, and live validation of all 15 workflow files. Key pattern: meta-references (echo, grep, YAML name keys containing "npm publish") must be excluded from lint — the CI script's own text would otherwise self-trigger.
-
-📌 **Team update (2026-03-24T06-release-hardening):** Publish policy CI gate (#557) implemented. Added `publish-policy` job to squad-ci.yml: lightweight lint scans `.github/workflows/*.yml` for bare `npm publish` commands, rejects non-workspace-scoped invocations. Wrote test/publish-policy.test.ts (36 tests) validating: workspace-scoped passes, bare publish fails, meta-reference (echo/grep/YAML-name) skipping, live validation of 15 workflow files. Pattern: catch "publish root package.json" incident class before merge. Both lint + playbook docs create enforcement + education loop.
-
-### PR Review Batch — 10 Open PRs (2026-03-24)
-
-Reviewed all 10 open PRs for quality, test coverage, and merge readiness.
-
-**Critical finding — Duplicate/overlapping PRs (tamirdresher):**
 - **PRs #607 / #605** overlap on retrospective ceremony — both add weekly retro ceremony with Ralph enforcement. #607 adds ceremony + enforcement skill + guide (444 lines), #605 modifies existing templates/ceremonies.md + ralph-reference.md (217 lines). Both solve the same problem (retro enforcement) with different file structures. #607 is more comprehensive (includes enforcement guide + pseudocode), #605 is more concise (inline in existing templates). **Verdict: Pick one** — recommend #607 (standalone ceremony file is more discoverable).
 - **PRs #604 / #603** are complete duplicates — both add Challenger agent template + fact-checking skill. #604 has `templates/challenger.md` (153 lines), #603 has `.squad/templates/agents/challenger.md` + `.squad/skills/fact-checking/SKILL.md` (133 lines). File locations differ but content is nearly identical. **Verdict: Close one as duplicate** — recommend #603 (file locations match project conventions).
 - **PRs #606 / #602** overlap on tiered memory/history — #606 adds tiered-memory skill (hot/cold/wiki tiers, 370 lines), #602 adds tiered-history skill (hot/cold split, 158 lines). #606 is broader (3 tiers, scribe integration, spawn templates), #602 is narrower (2 tiers, history.md only). Both cite same production data source. **Verdict: #606 supersedes #602** — recommend closing #602 as subset.
@@ -248,4 +93,13 @@ Reviewed 9 community PRs (8 from tamirdresher, 1 from eric-vanartsdalen). Key fi
 3. **Verdicts:** ✅ MERGE: #625 (notification-routing), #603 (Challenger agent), #608 (SECURITY.md). ⚠️ NEEDS CHANGES: #623, #622, #621, #614 (changeset fix), #607, #606 (path restructuring).
 
 **Learning:** Community contributors consistently struggle with two things: (a) scoped npm package names in changesets, and (b) monorepo file placement. Both are preventable with better contributor docs.
+
+## 📌 Team update — 2026-08-20T11:59:44-07:00
+
+gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
+
+
+## 📌 Team update — 2026-08-20T13:20:20-07:00
+
+Batch 2 complete. (1) PR #1775: added `gh extension install github/gh-aw` to squad-ci.yml test job. CI run 32410579973 confirmed compile test ran 894ms, not skipped. (2) Runbook corrections: OneDrive path fixed, 9 `\` paths converted to Join-Path, `>` redirects replaced with Set-Content. Test bar principle applied: tests must fail against the pre-fix state — derived from #1766 incident.
 

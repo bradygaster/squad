@@ -592,6 +592,100 @@ export function checkGitSyncHooks(cwd: string, squadDir: string): DoctorCheck | 
   };
 }
 
+// ── working-tree EOL check ───────────────────────────────────────────
+
+/** Repair command surfaced to the developer when the check fails. */
+const CRLF_FIX_COMMAND = 'npm run fix:crlf';
+
+/**
+ * Parse one `git ls-files --eol -z` record.
+ *
+ * Shape is `i/<eol>` `w/<eol>` `attr/<value>` TAB `<path>`. The first three
+ * fields are space-padded to fixed columns and the attr value itself contains
+ * a space ("text eol=lf"), so the path is everything after the first TAB and
+ * the field block is split on whitespace runs rather than by column.
+ */
+function parseEolRecord(record: string): { worktree: string; attr: string; file: string } | undefined {
+  const tab = record.indexOf('\t');
+  if (tab === -1) return undefined;
+  const match = /^i\/(\S*)\s+w\/(\S*)\s+attr\/(.*)$/.exec(record.slice(0, tab));
+  if (!match) return undefined;
+  return { worktree: match[2] ?? '', attr: (match[3] ?? '').trim(), file: record.slice(tab + 1) };
+}
+
+/**
+ * Check that every LF-pinned file is actually LF *on disk*.
+ *
+ * `.gitattributes` governs checkout, not files already on disk: git only
+ * re-smudges a working file when the pull also changes that file's index
+ * content. So adding an `eol=lf` rule leaves every already-LF-in-index path
+ * still CRLF on disk in existing Windows checkouts, indefinitely (#1793).
+ * The symptom is not an error — a CRLF shebang survives Vite's shebang
+ * stripping as a bare `#`, the module fails to parse, and the vitest suite
+ * importing it reports "no tests". A green-looking zero (#1788).
+ *
+ * DELIBERATELY A SEPARATE IMPLEMENTATION FROM scripts/check-shebang-eol.mjs,
+ * which owns the same invariant family for repo tooling. That script is a repo
+ * script and is not published inside this package, so `dist/` cannot import it
+ * without breaking every installed copy of the CLI. Do not "deduplicate" these
+ * by adding an import across that boundary. What they must keep in sync is the
+ * record-parsing shape above, which is pinned by tests on both sides.
+ *
+ * Returns undefined when the check does not apply (not a git repo, git absent,
+ * or no LF-pinned files at all), matching the other conditional checks.
+ */
+export function checkWorktreeEol(cwd: string): DoctorCheck | undefined {
+  let records: string[];
+  try {
+    records = execFileSync('git', ['ls-files', '--eol', '-z'], {
+      cwd,
+      encoding: 'utf-8',
+      maxBuffer: 1 << 28,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+      .split('\0')
+      .filter(Boolean);
+  } catch {
+    return undefined; // not a git repo, or git unavailable — not applicable
+  }
+
+  const stale: string[] = [];
+  let pinned = 0;
+  for (const record of records) {
+    const parsed = parseEolRecord(record);
+    if (!parsed) continue;
+    if (!/(^|\s)eol=lf(\s|$)/.test(parsed.attr)) continue;
+    pinned += 1;
+    // `mixed` is the same defect partially applied: under an eol=lf pin any CR
+    // in the working file is wrong.
+    if (parsed.worktree === 'crlf' || parsed.worktree === 'mixed') stale.push(parsed.file);
+  }
+
+  if (pinned === 0) return undefined; // no eol=lf rules — nothing to assert
+
+  if (stale.length > 0) {
+    const sample = stale.slice(0, 5).join(', ');
+    const more = stale.length > 5 ? `, +${stale.length - 5} more` : '';
+    return {
+      name: 'working tree line endings',
+      status: 'fail',
+      message:
+        `${stale.length} of ${pinned} LF-pinned file(s) still have CRLF on disk (${sample}${more}). ` +
+        `A .gitattributes eol=lf rule does not rewrite files that were already checked out, so pulling the ` +
+        `fix does not repair an existing checkout. A CRLF shebang makes a vitest suite silently load zero ` +
+        `tests. Run '${CRLF_FIX_COMMAND}' to repair, then re-run 'squad doctor' to confirm. To inspect ` +
+        `the raw state: 'git ls-files --eol' — every entry whose attr includes eol=lf should read w/lf ` +
+        `(the pin is not limited to *.mjs, and neither is this check).`,
+    };
+  }
+
+  return {
+    name: 'working tree line endings',
+    status: 'pass',
+    message: `${pinned} LF-pinned file(s) all LF on disk`,
+  };
+}
+
 // ── public API ──────────────────────────────────────────────────────
 
 /**
@@ -648,6 +742,11 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
 
   // 13. Copilot CLI availability (needed by watch capabilities)
   checks.push(await checkCopilotCli());
+
+  // 14. Working-tree line endings (#1793) — an eol=lf rule does not repair a
+  //     checkout that predates it, and the failure mode is a silent zero-test run.
+  const worktreeEol = checkWorktreeEol(resolvedCwd);
+  if (worktreeEol) checks.push(worktreeEol);
 
   return checks;
 }

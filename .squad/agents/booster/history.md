@@ -1,151 +1,42 @@
-# BOOSTER
+# Booster history
 
-> Booster Systems Engineer
+Summarized by Scribe on 2026-08-19T13:11:34.130-07:00 because this history exceeded 15KB.
+Full pre-summary history archived at `.squad/agents/booster/history-archive-2026-08-19T13-11-34.130-07-00.md`.
 
-## Learnings
+## Condensed index
 
-### CI Workflow Audit & Preflight Patterns (2026-03-23 Release Incident)
-**Context:** v0.9.0 shipped with broken dependency reference (`file:../squad-sdk` in CLI package.json). Required hotfix. Used incident as opportunity to audit entire CI/CD system.
+- Preserved 229 original line(s) in the archive.
+- Detected 17 heading(s) and 4 dated reference line(s).
+- This file now keeps a compact index plus the most recent tail so active context remains visible.
 
-**Audit findings:** 15 total workflow files. 7 load-bearing (ci, publish, release, preview, promote, insider variants). 7 administrative (triage, assign, labels, heartbeat, docs, link-check). 1 ghost (publish-npm.yml, deleted but GitHub index cached). No duplication. Authorship: 65% Brady, 10% Copilot (v0.9.1 scramble), 25% team.
+## Notable retained signals
 
-**Key patterns identified:**
+- ### CI Workflow Audit & Preflight Patterns (2026-03-23 Release Incident)
+- **Context:** v0.9.0 shipped with broken dependency reference (`file:../squad-sdk` in CLI package.json). Required hotfix. Used incident as opportunity to audit entire CI/CD system.
+- **Audit findings:** 15 total workflow files. 7 load-bearing (ci, publish, release, preview, promote, insider variants). 7 administrative (triage, assign, labels, heartbeat, docs, link-check). 1 ghost (publish-npm.yml, deleted but GitHub index cached). No duplication. Authorship: 65% Brady, 10% Copilot (v0.9.1 scramble), 25% team.
 - Preflight gate (dependency scanning + semver validation) prevents dependency defects
 - Implicit ordering risk: squad-release and squad-npm-publish both trigger on `release: published` with no explicit job dependency (works but fragile)
 - Ghost workflow cleanup: GitHub's workflow index caches file names; deletion doesn't immediately invalidate; must wait 15+ minutes or manually refresh
-
-**Preflight job pattern:** Scans `packages/*/package.json` for:
-1. `file:` references (breaks published packages)
-2. Invalid semver versions (rejects malformed versions)
-Runs before smoke-test and all publish operations. Zero-cost gate (JSON reads only). Clear error messages with remediation instructions.
-
-### CI Pipeline Status
-149 test files, 3,931 tests passing, ~89s runtime. Only failure: aspire-integration.test.ts (needs Docker daemon — pre-existing, expected). publish.yml triggers on `release: published` event with retry logic for npm registry propagation (5 attempts, 15s sleep).
-
-### Known CI Patterns
-SKIP_BUILD_BUMP=1 environment variable intended to prevent version mutation during CI builds. Currently unreliable — bump-build.mjs ignores it in some code paths. NPM_TOKEN must be Automation type (not user token with 2FA) to avoid EOTP errors in publish workflow.
-
-### Workflow Inventory
-9 load-bearing workflows (215 min/month) must stay as GitHub Actions. 5 migration candidates (12 min/month) could move to CLI: sync-labels, triage, assign, heartbeat, validate-labels.
-
-### Container Smoke Test Patterns
-`npm pack` generates tarballs installable in clean containers for pre-publish validation. GitHub Actions containers (node:20-slim, node:22) suitable for smoke tests. No devcontainer config exists yet. Current CI budget: ~227 min/month. Container smoke test adds ~2-5 min per run. Tier 1 smoke test commands: `--version`, `--help`, `doctor`, `status`, `export`. CLI has 31 commands; 15 are user-facing smoke test candidates. cli-command-wiring.test.ts catches unwired commands at build time (issues #224, #236, #237).
-
-### Smoke Test Gating in Publish Pipeline
-Smoke tests now run as a dedicated `smoke-test` job in publish.yml before any npm publish operations. Both publish-sdk and publish-cli jobs depend on smoke-test passing. Prevents publishing broken CLI packages to npm. Smoke test runs `npx vitest run test/cli-packaging-smoke.test.ts` after a full build. Test takes ~30-60s for pack+install validation.
-
-### CI Pipeline Hardening — March 20, 2026
-
-**Changes shipped in commit 6cbabb5 (dev branch):**
-
-1. **`edited` trigger added** — `pull_request` event types now include `edited`. Previously, retargeting a PR from `main→dev` would not refire CI because the base branch change uses the `edited` event type. Six PRs (#470, #469, #468, #467, #454, #451) were manually close/reopened to compensate.
-
-2. **Lockfile lint step added** — New step `Lint lockfile for stale workspace entries` runs before `npm ci` in the `test` job. Uses Node inline script to detect any `packages/*/node_modules/@bradygaster/squad-*` entries in `package-lock.json` that have an `https://` resolved URL (indicating a stale nested registry copy shadowing the workspace symlink). Exits with error code + remediation instructions if found. This catches the TypeScript type-mismatch class of failures at the lockfile level, not at build time.
-
-3. **Default branch changed to `dev`** — Repo default branch switched from `main` to `dev` via GitHub API. Community PRs now naturally target `dev`.
-
-**Pattern confirmed:** The `edited` event gap was the exact reason retargeted PRs were not getting CI runs. Any future PR base-branch change will now trigger a fresh CI run automatically.
-
-### CI Failure Pattern Analysis — March 15, 2026
-Analyzed 20 CI runs from March 15. Identified 3 distinct failure categories:
-
-**1. TypeScript Build Failures — SDK/CLI Type Mismatches (Most Critical)**
+- ### CI Pipeline Status
+- ### Known CI Patterns
+- SKIP_BUILD_BUMP=1 environment variable intended to prevent version mutation during CI builds. Currently unreliable — bump-build.mjs ignores it in some code paths. NPM_TOKEN must be Automation type (not user token with 2FA) to avoid EOTP errors in publish workflow.
+- ### Workflow Inventory
+- 9 load-bearing workflows (215 min/month) must stay as GitHub Actions. 5 migration candidates (12 min/month) could move to CLI: sync-labels, triage, assign, heartbeat, validate-labels.
+- `npm pack` generates tarballs installable in clean containers for pre-publish validation. GitHub Actions containers (node:20-slim, node:22) suitable for smoke tests. No devcontainer config exists yet. Current CI budget: ~227 min/month. Container smoke test adds ~2-5 min per run. Tier 1 smoke test commands: `--version`, `--help`, `doctor`, `status`, `export`. CLI has 31 commands; 15 are user-facing smoke test candidates. cli-command-wiring.test.ts catches unwired commands at build time (issues #224, #236, #237).
+- Smoke tests now run as a dedicated `smoke-test` job in publish.yml before any npm publish operations. Both publish-sdk and publish-cli jobs depend on smoke-test passing. Prevents publishing broken CLI packages to npm. Smoke test runs `npx vitest run test/cli-packaging-smoke.test.ts` after a full build. Test takes ~30-60s for pack+install validation.
+- ### CI Pipeline Hardening — March 20, 2026
+- 1. **`edited` trigger added** — `pull_request` event types now include `edited`. Previously, retargeting a PR from `main→dev` would not refire CI because the base branch change uses the `edited` event type. Six PRs (#470, #469, #468, #467, #454, #451) were manually close/reopened to compensate.
+- 2. **Lockfile lint step added** — New step `Lint lockfile for stale workspace entries` runs before `npm ci` in the `test` job. Uses Node inline script to detect any `packages/*/node_modules/@bradygaster/squad-*` entries in `package-lock.json` that have an `https://` resolved URL (indicating a stale nested registry copy shadowing the workspace symlink). Exits with error code + remediation instructions if found. This catches the TypeScript type-mismatch class of failures at the lockfile level, not at build time.
+- **Pattern confirmed:** The `edited` event gap was the exact reason retargeted PRs were not getting CI runs. Any future PR base-branch change will now trigger a fresh CI run automatically.
+- ### CI Failure Pattern Analysis — March 15, 2026
+- Analyzed 20 CI runs from March 15. Identified 3 distinct failure categories:
 - 7+ consecutive failures on `squad/fix-ci-build` branch (14:00-14:11 UTC)
-- Root cause: Stale nested SDK entry in package-lock.json causing TypeScript module resolution errors
-- Error: "Module '@bradygaster/squad-sdk' has no exported member 'listRoles'" (and 6 other missing exports)
-- Impact: Build failures blocked all PRs attempting to fix roles/cast features
-- Fix: Removing stale lockfile entry resolved TypeScript resolution
 - Pattern: Workspace dependency mismatches not caught until CI build phase
-
-**2. Documentation Quality Gate Failures — New Validation Rules**
+- **2. Documentation Quality Gate Failures — New Validation Rules**
 - 3 failures on `squad/docs-quality-ci` branch (14:32, 15:26, 15:51 UTC)
-- Issue 1: Broken anchor link `../guide.md#troubleshooting` (anchor doesn't exist)
-- Issue 2: Spell check failure for username "benleane" in notifications.md (not in cspell dictionary)
 - Impact: New docs-quality job blocked merges when introducing new validation gates
-- Pattern: Adding stricter CI gates without pre-validation of existing content creates immediate failures
 
-**3. Test Failures — ES Module Migration Side Effects (Legacy)**
-- 1 failure on main branch (13:59 UTC) — "deleted images" commit
-- Root cause: 8 test files using `require()` in ES module context
-- Error: "require is not defined in ES module scope" (node:test imports)
-- Impact: Old test files incompatible with `"type": "module"` in package.json
-- Pattern: Incomplete ESM migration left test files in CommonJS syntax
-
-**Key Observations:**
-- **Failure clusters**: Multiple consecutive failures trying to fix same root issue (TypeScript build: 7 attempts, docs-quality: 3 attempts)
-- **Validation timing**: New validation gates (docs-quality CI) introduced without pre-testing against current codebase state
-- **Workspace complexity**: Monorepo TypeScript workspace dependencies prone to lockfile staleness
-- **Branch health**: dev branch had 2 failures (last failure: spell check), currently yellow/orange status
-
-**Recommended CI Improvements:**
-1. Pre-merge lockfile validation check (detect stale nested dependencies)
-2. Docs validation dry-run before adding new quality gates
-3. TypeScript workspace reference health check (catch SDK/CLI type mismatches early)
-4. Better failure grouping/attribution in CI UI (distinguish "new gate" vs "regression")
-5. Spell check dictionary maintenance workflow (easier to add known-good usernames/terms)
-
-### CI Workflow Audit — March 23, 2026
-
-**Status:** Conducted full audit of 15 workflow files. Brady's perception ("complete nightmare, 12,000 workflows") is not accurate — the codebase is lean, well-organized, and 99% authored by Brady (bradygaster + Copilot).
-
-**Key Findings:**
-- **Total workflows:** 15 (7 load-bearing core, 7 admin/automation, 1 ghost)
-- **Authorship:** bradygaster 46 commits (65%), Copilot 7 (10%), team 17 (24%)
-- **v0.9.1 Scramble:** Copilot made 4 commits on 2026-03-23 trying to work around GitHub platform bug (workflow_dispatch returns 422 after file renames/deletes)
-- **Ghost file identified:** `publish-npm.yml` (deleted but still in GitHub's workflow cache) → requires manual deletion via API
-- **Zero duplication:** Each workflow has clear, non-overlapping responsibility
-- **One optional cleanup:** `ci-rerun.yml` (useful but not essential)
-
-**Release Pipeline Quality:**
-- Core pipeline (squad-ci → squad-release → squad-npm-publish → insider-*) is solid
-- Smoke tests run before any npm publish (good safety gate)
-- Implicit ordering works but fragile (squad-npm-publish depends on release: published event)
-
-**Triage Automation Quality:**
-- Label routing (squad-triage, squad-issue-assign, squad-label-enforce) well-integrated
-- Ralph heartbeat has cron disabled (event-driven only)
-- Works correctly with @copilot assignment
-
-**Recommendation:** Delete ghost publish-npm.yml file, optionally keep ci-rerun for fork PR debugging, keep everything else. CI health is good.
-
-**Report written to:** `.squad/decisions/inbox/booster-ci-audit.md`
-
-### CI Cleanup & Hardening — Post-Audit
-
-**Changes shipped:**
-
-1. **Ghost workflow disabled** — `publish-npm.yml` (workflow ID 250121956) disabled via GitHub API (`PUT /actions/workflows/{id}/disable`). GitHub doesn't support DELETE on workflow entries; disable is the permanent fix.
-
-2. **Pre-publish `preflight` job added** to `squad-npm-publish.yml`:
-   - Scans ALL `packages/*/package.json` for `file:` references across all dependency sections (dependencies, devDependencies, optionalDependencies, peerDependencies)
-   - Validates all package versions are valid semver
-   - Runs BEFORE smoke-test and all publish jobs — blocks the entire pipeline if violations found
-   - This is the gate that would have caught the v0.9.1 incident
-
-3. **Smoke test enhanced** — Added `npm pack --dry-run` validation step for both SDK and CLI packages before the vitest smoke tests run
-
-4. **ci-rerun.yml retained** — Added purpose documentation comment. Still useful for fork PR re-testing and infrastructure flake recovery.
-
-5. **YAML fix** — Quoted `file:` in step names that were causing YAML parse ambiguity (both new and pre-existing)
-
-**Pipeline dependency chain:** `preflight → smoke-test → publish-sdk → publish-cli`
-
-### Release Process Skill Update — v0.9.4 Learnings (2026-04-25)
-
-Updated both release-process skill files (`.squad/skills/release-process/SKILL.md` and `.copilot/skills/release-process/SKILL.md`) with critical learnings from the v0.9.4 release session. Added 5 new Known Gotchas, a full `v0.9.4 Incident Learnings` section, GITHUB_TOKEN propagation workaround, CHANGELOG/root-package.json validation rules, lockfile integrity fix documentation, local dev recovery steps, and cross-references between skill files. Source PRs: #1042, #1043, #1044.
-
-### CI Cleanup — Issue #1000 (2026-04-17)
-
-**Changes shipped in PR #1001:**
-
-1. **Deleted `ci-rerun.yml`** — Redundant fork PR workflow with 100% failure rate (5/5 runs). GitHub's native "Approve and Run" handles fork PR CI. Removed reference from `setup-squad-node` comment header.
-
-2. **Streamlined `squad-ci.yml`** — 852 → 585 lines, 9 → 6 jobs:
-   - **Merged** `exports-map-check` + `export-smoke-test` → single `sdk-exports-validation` job (saves one runner boot, deduplicates checkout/setup/change-detection)
-   - **Folded** `publish-policy` + `scope-check` into `policy-gates` as additional gate steps (saves two runner boots)
-   - **Added** `workflows` output to `changes` path filter (policy-gates now properly skips on docs-only PRs)
-   - **Trimmed** verbose local-testing instruction comments and skip-labels reference block
-   - **Preserved** all genuine safety checks — no gates removed, only consolidated
+## Recent preserved tail
 
 **Key decisions:**
 - Merging exports-map-check + export-smoke-test is safe because they share identical prerequisites (SDK change detection, feature flags, skip labels) and both only need SDK build
@@ -159,7 +50,7 @@ Updated both release-process skill files (`.squad/skills/release-process/SKILL.m
 
 ### Workflow Shellcheck SC2086 Fix + Actionlint CI Gate (2026-07-29T17:11:56+10:00)
 
-**Context:** Issue #1556 (bradygaster/squad) reported SC2086 failures in downstream repos using actionlint after `squad upgrade`. The unquoted `>> $GITHUB_OUTPUT` redirects in `squad-heartbeat.yml` were the reported trigger; audit revealed matching issues in `squad-repo-health.yml` and `squad-ci.yml` too.
+**Context:** Issue #1556 (bradygaster/squad) reported SC2086 failures in other repos using actionlint after `squad upgrade`. The unquoted `>> $GITHUB_OUTPUT` redirects in `squad-heartbeat.yml` were the reported trigger; audit revealed matching issues in `squad-repo-health.yml` and `squad-ci.yml` too.
 
 **Changes shipped:**
 
@@ -223,3 +114,33 @@ Updated both release-process skill files (`.squad/skills/release-process/SKILL.m
 
 **Validation:** `bash -n` passes on the new run block. Self-linting property holds — actionlint + shellcheck will lint this exact `run:` block on the next CI run, catching any quoting or syntax issues we introduce. Amended and force-pushed to `serbrech/squad` as a single commit.
 
+### gh-aw Issue Triage — 2026-08-20 Pre-E2E Audit
+
+**Issues reviewed:** #1748 (Allow dependency additions without bypassing protected-file safety), #1763 (Decide whether to drop `bots:` from squad.md)
+
+**#1763 — Decision recorded, issue CLOSE:**
+- `bots: ["github-actions[bot]"]` lives at `workflows/squad.md:8` and `workflows/squad-implement-worker.md:7`
+- Merge-continuation uses `pull_request: types: [closed]` — NOT a slash-command bot comment. Removing `bots:` would not affect continuation at all.
+- Warning is compile-time only (`gh aw add`), not runtime. The concurrency scenario it describes (bot-posted `/squad` comment) does not occur in current workflows.
+- Tests at `test/gh-aw-implement-workflow.test.ts` lines 102–115 assert `bots:` is present.
+- Issue sequencing note places this at Wave 5, depends on #1772 being fixed first.
+- Decision written to `.squad/decisions/inbox/booster-bots-field-squad-md.md`: keep `bots:`, accept the warning.
+- **Does NOT block tomorrow's E2E.**
+
+**#1748 — DEFER (still thrashing, Wave 2 but depends on #1762):**
+- 3 comments show active design discussion, not convergence. Brady inverted Option 2 to default-on (allow dependency additions, deny is opt-out). Third commenter introduced a diff-classification axis (new-dependency vs version-bump vs removed) that is not resolved.
+- Protected-files SKILL.md covers Squad CLI bootstrap files (zero-dependency Node core files) — different concern from gh-aw manifest protection. No conflict.
+- Issue has `Depends on: #1762` per sequencing comment. #1762 not yet resolved.
+- Safe to defer past tomorrow's E2E.
+
+## 📌 Team update — 2026-08-19T13:11:34.130-07:00
+
+Post-e2e follow-up triage recorded Booster findings D and F. Finding F confirmed `protected-files: request_review` is incompatible with signed create-pull-request writes that touch protected files; `fallback-to-issue` is the safe fail-closed path. Finding D confirmed the `slash_command` + `bots:` concurrency warning is real but narrow and does not block the continuation e2e because the continuation hop uses `workflow_dispatch`.
+
+
+## 📌 Team update — 2026-08-20T11:59:44-07:00
+
+gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
+
+
+- 📌 **Team update (2026-08-21 — Agentic-Workflows Audit):** Authored PR #1815 chore(gh-aw): ignore downloaded workflow logs under .github/aw/logs. Created .github/aw/logs/.gitignore (* + !.gitignore). LF-only blob verified via hex inspection. Correctly requested reviewer pass; Flight approved and squash-merged at 2026-08-21T16:23:46Z. PR #1815 MERGED ✅.

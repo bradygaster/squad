@@ -45,7 +45,7 @@
 #
 # Optional custom Squad CLI version:
 #   vars.SQUAD_CLI_VERSION
-#   Default is 0.11.0.
+#   Default is 0.12.0.
 #
 # Optional model override:
 #   vars.SQUAD_MODEL
@@ -78,7 +78,7 @@ jobs:
 
       - name: Initialize Squad team
         env:
-          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.11.0' }}
+          SQUAD_CLI_VERSION: ${{ vars.SQUAD_CLI_VERSION || '0.12.0' }}
           GH_TOKEN: ${{ steps.squad-app-token.outputs.token || secrets.SQUAD_GITHUB_TOKEN || github.token }}
         run: |
           # Preserve committed cast state: if .squad/team.md already exists with
@@ -87,7 +87,7 @@ jobs:
             echo "✓ Existing squad team detected with roster entries — skipping init."
           else
             echo "No existing squad team found — running squad init."
-            npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.11.0}" init --preset default --state-backend local
+            npx --yes "@bradygaster/squad-cli@${SQUAD_CLI_VERSION:-0.12.0}" init --preset default --state-backend local
           fi
 
       - name: Upload Squad state artifact
