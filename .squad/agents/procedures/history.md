@@ -119,3 +119,25 @@ Tests: `test/gh-aw-plan-lifecycle.test.ts` (23 assertions), incl. a role-leak de
 **Files modified:** `.github/copilot-instructions.md`, `.copilot/skills/protected-files/SKILL.md` (new).
 
 **Pattern:** When trimming agent instructions, extract domain-specific reference content to skills (lazy-loaded on demand) and keep the main instructions file as a routing/workflow document. Skills are the right abstraction for "read this when you touch X" — they don't consume tokens until needed.
+
+## 2026-08-22 — gh-aw triage team update
+
+📌 Team update (2026-08-22T17:10:52-07:00): Procedures completed Tier 3 #1729 prompt-architecture triage: sequence #1730+#1731 → #1733 → #1734 → #1736, with #1735 optional. Tier 1 false-green work blocks #1734 and enforcement-facing #1736. Prompt budget remains under the 100 KB ceiling.
+
+## 📌 Team update — 2026-08-22T19:42:25-07:00
+
+Issue #1824 closed. Authored /squad parser hardening (PR #1832) with explicit NO_COMMAND → fail contract. Mutation tests proved load-bearing cases (indented command, mid-sentence). Mutation 2 proved status-only gates miss bad diagnostics.
+
+FIDO's Pass 2 found BLOCKING dispatch regression (bare command:"implement" → NO_COMMAND → fail; pre-fix worked). Reviewer Rejection Protocol applied: Procedures locked out, EECOM revised. Commit 6e7628c5 added PC-0 normalization layer before PC-1. FIDO Pass 3 verified all mutations green.
+
+**Lesson:** Mutation testing in isolation can miss callers. FIDO's first pass shared the same frame; the blind spot was enumeration of all parser call paths (command-dispatch path was unexercised in new suite).
+
+PR #1832 merged; issue #1824 closed. Decision records merged to .squad/decisions.md.
+
+## 📌 Team update — 2026-08-22T21:20:17-07:00
+
+**#1812 — Roster provenance fix shipped.** Implemented Team Guard Step TG-2 in `workflows/squad.md`: reads git-committed HEAD `.squad/team.md`, finds `Name` column by header, emits `ROSTER_MEMBER: {name}` per row (lowercased) or `ROSTER_UNREADABLE: {reason}`. All five minting/binding sites rewired to TG-2's certified stdout — provenance true by construction, not prose. 7 mutations (M1–M7) proven RED and naming input. 172 tests passed / 13 skipped. PR #1837 +531/−61 across 3 files, squash-merged as `4b32f7be`.
+
+FIDO adversarial review: APPROVE WITH NITS. Found L1117 nit (Step 3 validator still named `.squad/team.md`). Fixed in follow-up commit `ab8649e3` — validator now TG-2-bound, consistent with L1111 and Check 10. Issue #1812 auto-closed.
+
+Decision record merged to `.squad/decisions.md`.

@@ -75,3 +75,7 @@ Batch 2: pre-merge gate review of PRs #1775/#1776/#1777/#1778 in progress. All f
 
 
 - 📌 **Team update (2026-08-21 — Agentic-Workflows Audit):** Reviewed PR #1815. Independently re-verified all five of Booster's claims. Resolved git-negation-semantics question (* + !.gitignore correct for flat-file dirs). Judged .github/aw/logs/.gitignore correct placement over root .gitignore rule (colocation beats surviving directory deletion). Squash-merged at 2026-08-21T16:23:46Z. Decision captured in decisions.md: gitignore-colocation. PR #1815 APPROVED + MERGED ✅.
+
+## 2026-08-22 — gh-aw triage team update
+
+📌 Team update (2026-08-22T17:10:52-07:00): Flight completed Tier 1 gh-aw false-green triage: #1824 #1812 #1801 #1822 #1827 #1825 labeled. Architectural ruling: keep #1801/#1812 independent; do not absorb #1801 into #1757; re-scope #1757 after #1801 lands.
