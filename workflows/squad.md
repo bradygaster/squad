@@ -312,12 +312,12 @@ command** to `SQUAD_DISPATCH_COMMAND` per hop 1 and run exactly this. Its output
 is the `SQUAD_TRIGGER_BODY` PC-1 consumes:
 
 ```bash
-printf '%s\n' "$SQUAD_DISPATCH_COMMAND" | awk 'NR==1{sub(/\r$/,""); sub(/^[[:space:]]+/,""); sub(/[[:space:]]+$/,""); if($0==""){print "EMPTY_DISPATCH"; exit} if($0 ~ /^\/squad([[:space:]]|$)/) print; else print "/squad " $0}'
+printf '%s\n' "$SQUAD_DISPATCH_COMMAND" | awk '{sub(/\r$/,"");sub(/^[[:space:]]+/,"");sub(/[[:space:]]+$/,"");if($0=="")next;f=1;if($0~/^\/squad([[:space:]]|$)/)print;else print "/squad " $0;exit}END{if(!f)print "EMPTY_DISPATCH"}'
 ```
 
 Normalization is idempotent: `implement` and `/squad implement` both yield
 `/squad implement`, so typing the slash prefix into the dispatch box is not
-penalized.
+penalized. It scans the first non-empty line (#1835).
 
 `EMPTY_DISPATCH` means the activation guard above should already have halted the
 run. Halt with that guard's `::warning::`; never route it to PC-3, which posts a

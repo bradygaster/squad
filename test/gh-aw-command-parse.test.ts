@@ -197,6 +197,49 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       expect(normalize('')).not.toBe('NO_COMMAND');
     });
 
+    // #1835: PC-0 anchored on NR==1, so a value whose first character is a
+    // newline put an EMPTY string on the scanned record and a structurally
+    // valid command halted silently. Silent-loss-of-a-valid-command is the
+    // defect class #1824 and #1832 exist to close, so it is closed here too.
+    describe('leading blank lines are skipped, not read as an empty command (#1835)', () => {
+      const leading: Array<{ input: string; expected: string }> = [
+        { input: '\nimplement', expected: 'implement' },
+        { input: '\n\n\ncast', expected: 'cast' },
+        { input: '\n  connect org/repo  ', expected: 'connect org/repo' },
+        { input: '\n/squad status', expected: 'status' },
+      ];
+
+      it.each(leading)('dispatching $input reaches its mode', ({ input, expected }) => {
+        expect(
+          normalize(input),
+          `PC-0 must skip leading blank lines and normalize ${JSON.stringify(input)} ` +
+            `to "/squad ${expected}". Scanning only record 1 reads the leading newline ` +
+            'as an empty command and emits EMPTY_DISPATCH, halting a valid dispatch ' +
+            'silently via the activation guard.'
+        ).toBe(`/squad ${expected}`);
+
+        expect(
+          parseDispatch(input),
+          `The full dispatch path (PC-0 then PC-1) must resolve ${JSON.stringify(input)} ` +
+            `to ${JSON.stringify(expected)}.`
+        ).toBe(expected);
+      });
+
+      it.each(['', '   ', '\n', '\n\n', ' \n \t \n '])(
+        'genuinely empty input %j still yields EMPTY_DISPATCH',
+        blank => {
+          // The fix must not overshoot: whitespace-only input carries no command,
+          // so it must still reach the silent activation-guard halt rather than
+          // being normalized into a bogus "/squad " with an empty argument.
+          expect(
+            normalize(blank),
+            `${JSON.stringify(blank)} carries no command, so PC-0 must still yield ` +
+              'EMPTY_DISPATCH for the silent activation-guard halt (PR #1777).'
+          ).toBe('EMPTY_DISPATCH');
+        }
+      );
+    });
+
     it('PC-1 is NOT loosened — a bare token still fails on the comment path', () => {
       // The tempting wrong fix is to teach PC-1 to accept bare words. That reopens
       // #1824: prose merely containing "cast" would silently mint a team. The
