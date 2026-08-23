@@ -1,4 +1,4 @@
-﻿# RETRO
+# RETRO
 
 > Retrofire Officer
 

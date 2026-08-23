@@ -1,4 +1,4 @@
-﻿# Eecom history
+# Eecom history
 Summarized by Scribe on 2026-08-20T11:59:44-07:00 because this history exceeded 15KB.
 Full pre-summary history archived at .squad/agents/eecom/history-archive-2026-08-20T11-59-44-0700.md.
 Prior archive at .squad/agents/eecom/history-archive-2026-08-19T13-11-34.130-07-00.md.
@@ -60,7 +60,7 @@ PR #1831 merged as `9378a379` for #1793. EECOM shipped local CRLF working-tree d
 
 Rework of PR #1832 under Reviewer Rejection Protocol (Procedures locked out after FIDO Pass 2 found BLOCKING dispatch regression).
 
-**Problem:** Bare workflow_dispatch commands (implement, esearch, etc.) regress to loud failure. PC-1 requires /squad token; dispatch sends bare command value. Pre-fix worked; post-fix: NO_COMMAND → PC-3 hard fail.
+**Problem:** Bare workflow_dispatch commands (implement, research, etc.) regress to loud failure. PC-1 requires /squad token; dispatch sends bare command value. Pre-fix worked; post-fix: NO_COMMAND → PC-3 hard fail.
 
 **Solution:** Commit 6e7628c5 — add Step PC-0 normalization layer before PC-1:
 - workflow_dispatch bare command → synthesize /squad  prefix

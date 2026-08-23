@@ -685,7 +685,7 @@ Both deliberate non-actions are sound:
 
 ### 2026-08-22: FIDO review — PR #1832 (closes #1824): fail loudly when /squad parses no command
 
-### FIDO review — PR #1832 (closes #1824): fail loudly when `/squad` parses no command
+#### FIDO review — PR #1832 (closes #1824): fail loudly when `/squad` parses no command
 
 **Reviewer:** FIDO (Quality Owner) · **Author:** Procedures · **Date:** 2026-08-22
 **Verdict:** ✅ **APPROVE WITH NITS** (posted as `COMMENTED` — GitHub blocks a formal Approve on an own-account PR)
@@ -773,7 +773,7 @@ for the real `/bin/sh` 102-skip cleanup (out of scope here per Diff Size Guard).
 
 ---
 
-### ADDENDUM — 2026-08-22 (adjudicating the automated reviewer's findings)
+#### ADDENDUM — 2026-08-22 (adjudicating the automated reviewer's findings)
 
 Coordinator asked me to adjudicate two findings my first pass did not cover (injection; a
 `workflow_dispatch` regression) plus confirm one convergence. Measured, not reasoned. Where I could not
@@ -972,7 +972,7 @@ worth a follow-up test + first-non-empty-line scan, not a merge blocker.
 
 ### 2026-08-22: RETRO security contract — /squad shell input channel
 
-### RETRO security contract — `/squad` shell input channel
+#### RETRO security contract — `/squad` shell input channel
 
 **Scope:** PR #1832 / issue #1824, the `/squad` command parser in `workflows/squad.md`, and the gh-aw compiled workflow YAML produced from it.
 
@@ -1129,7 +1129,7 @@ I could measure POSIX shell behavior for the command shapes above. I could not d
 
 ### 2026-08-22: Decision — /squad command parsing must fail loudly (#1824)
 
-### Decision — `/squad` command parsing must fail loudly (#1824)
+#### Decision — `/squad` command parsing must fail loudly (#1824)
 
 **By:** Procedures (Prompt Architecture)
 **Date:** 2026-08-22

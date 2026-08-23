@@ -1,4 +1,4 @@
-﻿# Procedures history
+# Procedures history
 
 Summarized by Scribe on 2026-08-20T11:59:44-07:00 because this history exceeded 15KB.
 Full pre-summary history archived at `.squad/agents/procedures/history-archive-2026-08-20T11-59-44-0700.md`.

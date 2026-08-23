@@ -1,4 +1,4 @@
-﻿# Fido history
+# Fido history
 
 Summarized by Scribe on 2026-08-22T18:25:00-07:00 because this history exceeded 15KB.
 Full pre-summary history appended to `.squad/agents/fido/history-archive-2026-08-19T13-11-34.130-07-00.md`.
