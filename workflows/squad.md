@@ -173,13 +173,18 @@ Resolve the slash command in this order:
 1. **Dispatched command** (above) — when the event name is
    `workflow_dispatch`, this input must be present for the run to proceed. If it
    is empty, the activation guard above has already halted the run; never reach
-   this step with an empty dispatched command. When it is non-empty, use this
-   value as the command and skip the remaining sources.
+   this step with an empty dispatched command. When it is non-empty, it is the
+   trigger source; skip the remaining sources.
 2. **Issue comment / PR review comment:** `github.event.comment.body` — the full
    comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
 4. Otherwise default to `cast` only for an explicit `/squad` slash command with
    no arguments.
+
+Choosing a source never skips parsing: every source is parsed by **Parse
+Command** below, so mode resolution has one implementation. The dispatched
+command arrives **bare** (`implement`, not `/squad implement`) and MUST be
+normalized by **Step PC-0** before PC-1 sees it.
 
 Resolve the target issue in this order:
 
@@ -189,8 +194,10 @@ Resolve the target issue in this order:
 
 **Never emit `noop` when the dispatched command is non-empty.** A workflow
 dispatch with a non-empty command is always actionable: run the named mode
-against the dispatched issue number. The missing-`issue_number` case is handled
-by the activation guard above — halt with a log annotation, never an issue.
+against the dispatched issue number. If the dispatched command names no mode in
+the Modes table, that is a loud failure via Step PC-3 — still never `noop`. The
+missing-`issue_number` case is handled by the activation guard above — halt with
+a log annotation, never an issue.
 
 The activation job already ran `squad init --preset default`, which produced a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
@@ -235,18 +242,110 @@ that opens with a greeting, a sentence of context, or a blank line and *then*
 carries the command is the normal shape of a first-run issue. Never assume the
 body begins with `/squad`, and never decide by eye whether a command is present.
 
-### Step PC-1: Extract the command argument [MANDATORY]
+### Shell input security contract [MANDATORY]
 
-Assign the resolved trigger body (the dispatched command, comment body, or issue
-body chosen above) to `SQUAD_TRIGGER_BODY`, then run exactly this:
+Issue and comment bodies, issue/PR titles, and any other GitHub event text are
+**attacker-controlled**.
+
+**Mandatory channel:** event text MUST reach the shell only through named
+step/job `env:` variables, read only by quoted parameter expansion:
+
+```yaml
+env:
+  # Angle brackets stand in for Actions expression delimiters; literal ones
+  # fail gh-aw's allowlist and break `gh aw compile`.
+  SQUAD_TRIGGER_BODY: <github.event.comment.body || github.event.issue.body>
+run: |
+  body="${SQUAD_TRIGGER_BODY-}"
+  printf '%s\n' "$body" | awk '...' | grep -F -- '/squad'
+```
+
+**Forbidden:**
+
+- `UNTRUSTED_TEMPLATE_IN_RUN` — never place an event-text expression, or anything
+  derived from one, inside a `run:` block. Actions expansion happens *before* the
+  shell starts, so shell quoting cannot protect it.
+- `UNTRUSTED_COMMAND_STRING` — never build shell syntax from that text: no
+  `eval`, `source`, generated script text, or `bash -c`/`sh -c` string.
+- `UNTRUSTED_PRINTF_FORMAT` — never pass it as `printf`'s first argument; that
+  slot is the format. The body belongs in an argument slot: `printf '%s\n' "$body"`.
+- `UNTRUSTED_AWK_PROGRAM_OR_VAR` — never interpolate it into an awk program, and
+  never pass the raw body through `awk -v`, which applies escape processing and
+  can mutate parser input. Use stdin.
+
+**Per-hop requirements:**
+
+1. **Actions assignment** — event text in YAML `env:` only; no such expression
+   may appear in any compiled `run:` block.
+2. **Shell variable** — plain assignment only. No `eval`, command substitution,
+   here-doc generation, or `bash -c`.
+3. **`printf`** — literal format string; body always an argument.
+4. **Pipe** — stdin bytes between stages; never re-materialized as shell syntax.
+5. **`awk`** — static single-quoted program, body on stdin; awk variables carry
+   trusted constants only.
+6. **`grep`** — `grep -F -- "$pattern"`, quoted: `-F` forces fixed-string, `--`
+   ends option parsing so `-e` or `--version` stay data.
+
+**Verification requirement:** the gate must inspect **compiled** gh-aw output,
+not just this markdown, and fail when a compiled `run:` block carries event
+expressions, or when parser code passes a body variable as a `printf` format,
+into `eval`/`bash -c`, or into an awk program/`awk -v`. A gate that cannot turn
+red on a fixture whose `run:` prints a raw issue-body expression is not valid.
+
+That gate is **not implemented**; it is tracked in #1834. This contract is
+normative today but reviewed by hand, not enforced by CI. The steps below
+satisfy hops 2–6 as written; hop 1 is unverifiable here, since this repository
+ships no compiled gh-aw output.
+
+### Step PC-0: Normalize a dispatched command [MANDATORY on `workflow_dispatch`]
+
+`workflow_dispatch` delivers a **bare** command — its input schema documents
+`cast`, `implement`, `connect org/repo`, never `/squad implement`. PC-1 scans for
+a literal `/squad` token, so a bare token yields `NO_COMMAND` and routes a valid
+manual or relayed run into the PC-3 failure path. Normalize here rather than
+loosening PC-1: on the comment and issue-body paths a missing token *is* the
+error condition and must keep failing loudly (#1824). Only dispatch is
+structurally guaranteed a command, so only it is normalized.
+
+When `github.event_name` is `workflow_dispatch`, assign the **Dispatched
+command** to `SQUAD_DISPATCH_COMMAND` per hop 1 and run exactly this. Its output
+is the `SQUAD_TRIGGER_BODY` PC-1 consumes:
 
 ```bash
-printf '%s\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\r$/,"")} !f && /(^|[[:space:]])\/squad([[:space:]]|$)/ {f=1; sub(/^.*\/squad/,""); sub(/^[[:space:]]+/,""); sub(/[[:space:]]+$/,""); print} END{if(!f) print "NO_COMMAND"}'
+printf '%s\n' "$SQUAD_DISPATCH_COMMAND" | awk 'NR==1{sub(/\r$/,""); sub(/^[[:space:]]+/,""); sub(/[[:space:]]+$/,""); if($0==""){print "EMPTY_DISPATCH"; exit} if($0 ~ /^\/squad([[:space:]]|$)/) print; else print "/squad " $0}'
+```
+
+Normalization is idempotent: `implement` and `/squad implement` both yield
+`/squad implement`, so typing the slash prefix into the dispatch box is not
+penalized.
+
+`EMPTY_DISPATCH` means the activation guard above should already have halted the
+run. Halt with that guard's `::warning::`; never route it to PC-3, which posts a
+comment and fails the run. An empty activation probe must stay silent and
+side-effect free (PR #1777; junk issues #12 and #14).
+
+On the comment and issue-body paths there is no PC-0: assign the raw body
+directly to `SQUAD_TRIGGER_BODY`.
+
+### Step PC-1: Extract the command argument [MANDATORY]
+
+Assign the trigger body chosen above — PC-0's output on `workflow_dispatch`, the
+raw comment or issue body otherwise — to `SQUAD_TRIGGER_BODY` per hop 1, then
+run exactly this:
+
+```bash
+printf '%s\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\r$/,"")} !f && match($0, /(^|[[:space:]])\/squad([[:space:]]|$)/) {f=1; rest=substr($0, RSTART+RLENGTH); sub(/^[[:space:]]+/,"",rest); sub(/[[:space:]]+$/,"",rest); print rest} END{if(!f) print "NO_COMMAND"}'
 ```
 
 It scans **every** line, takes the first `/squad` token wherever it sits, and
 prints the argument text that followed it. Empty output means a bare `/squad`.
 Exactly `NO_COMMAND` means no `/squad` token exists anywhere in the body.
+
+`match()`/`substr()` extract the remainder of the **first** token. Greedy
+`sub(/^.*\/squad/,"")` strips through the *last* token on the line, so
+`/squad cast, then /squad status` resolves to `status` — a different mode than
+requested. First-token-wins is the contract; keep extraction anchored to
+`RSTART`/`RLENGTH`.
 
 ### Step PC-2: Route on the extracted text
 
@@ -285,6 +384,17 @@ Deliberate widening: this scan also matches `/squad` inside a quoted line or a
 fenced block. Excluding those would reintroduce a silent-skip path, which is the
 exact bug class this step exists to eliminate. Parsing them and surfacing the
 result is preferred over ignoring them without a trace.
+
+**Known limitation — step 4 is an instruction, not an enforced exit code.** This
+file is an LLM prompt, so "fail the run" is a directive the runtime agent is
+asked to obey, not a branch CI can execute. `test/gh-aw-command-parse.test.ts`
+proves the *declared* commands emit `NO_COMMAND` and a diagnostic quoting the
+offending text; it cannot prove the agent then exits non-zero. That gap is
+inherent to gh-aw, not an oversight — two independent reviews have flagged it.
+Steps 1–3 are load-bearing precisely because their output is observable: an
+`::error::` annotation and an issue comment survive whatever exit status the
+agent chooses. Do not drop them in favor of step 4, and do not call step 4 a
+guarantee.
 
 ## Execute Mode
 

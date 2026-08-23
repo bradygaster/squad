@@ -58,20 +58,25 @@ function bashBlockAfter(heading: string): string {
     .trim();
 }
 
+const PC0_HEADING = '### Step PC-0: Normalize a dispatched command';
 const PC1_HEADING = '### Step PC-1: Extract the command argument';
 const PC3_HEADING = '### Step PC-3: No recognized command';
 
-/** Run a command extracted from the workflow with the issue body in the env. */
-function runDeclared(command: string, body: string): string {
+/** Run a command extracted from the workflow with a value in the environment. */
+function runDeclared(command: string, value: string, varName = 'SQUAD_TRIGGER_BODY'): string {
   if (!POSIX_SHELL) throw new Error('no POSIX shell resolved');
   return execFileSync(POSIX_SHELL, ['-c', command], {
     encoding: 'utf8',
-    env: { ...process.env, SQUAD_TRIGGER_BODY: body },
+    env: { ...process.env, [varName]: value },
   }).replace(/\r/g, '').replace(/\n+$/, '');
 }
 
 const parse = (body: string) => runDeclared(bashBlockAfter(PC1_HEADING), body);
 const diagnose = (body: string) => runDeclared(bashBlockAfter(PC3_HEADING), body);
+const normalize = (command: string) =>
+  runDeclared(bashBlockAfter(PC0_HEADING), command, 'SQUAD_DISPATCH_COMMAND');
+/** The dispatch path exactly as the workflow runs it: PC-0, then PC-1. */
+const parseDispatch = (command: string) => parse(normalize(command));
 
 describe('gh-aw: /squad command parsing (#1824)', () => {
   // A skipped behavioral suite is a permanently-green gate. Fail loudly instead of
@@ -112,13 +117,99 @@ describe('gh-aw: /squad command parsing (#1824)', () => {
       },
       { name: 'CRLF body', body: 'Hello\r\n\r\n/squad cast\r\n', expected: 'cast' },
       { name: 'bare /squad after prose', body: 'context first\n\n/squad', expected: '' },
+      // Two tokens on one line. A greedy `sub(/^.*\/squad/,"")` strips through the
+      // LAST token and resolves these to `status` / `implement` — a different mode
+      // than the user asked for, silently. First-token-wins is the declared
+      // contract, so extraction stays anchored to match()'s RSTART/RLENGTH.
+      // Both positions are kept: `(^|[[:space:]])` matches empty at position 0 and
+      // a real space mid-line, so RLENGTH differs by one between them.
+      {
+        name: 'two commands on one line, first mid-line — the first wins',
+        body: 'Please /squad cast, then /squad status',
+        expected: 'cast, then /squad status',
+      },
+      {
+        name: 'two commands on one line, first at position 0 — the first wins',
+        body: '/squad research and later /squad implement',
+        expected: 'research and later /squad implement',
+      },
       // The no-op cases — these are the ones that matter.
       { name: 'no command anywhere', body: 'We should improve the docs.', expected: 'NO_COMMAND' },
       { name: 'empty body', body: '', expected: 'NO_COMMAND' },
     ];
 
     it.each(cases)('$name', ({ body, expected }) => {
-      expect(parse(body)).toBe(expected);
+      // Name the offending input in the failure message. A bare `toBe` reports the
+      // values but not which fixture produced them, and a diagnostic that omits the
+      // input is the same non-signal #1824 was filed about.
+      expect(
+        parse(body),
+        `PC-1 must extract ${JSON.stringify(expected)} from ${JSON.stringify(body)}.`
+      ).toBe(expected);
+    });
+  });
+
+  describe('the workflow_dispatch relay path carries a bare command (PC-0)', () => {
+    // The absent assertion that let a working path break. `workflow_dispatch`
+    // delivers a BARE token: squad-implement-worker.md dispatches
+    // {"command": "implement"}, and squad.md's own input schema documents
+    // `cast`, `implement`, `connect org/repo`. None carry a `/squad` prefix, so
+    // PC-1 alone returns NO_COMMAND and PC-3 hard-fails a run that worked before.
+    const dispatched = [
+      'implement', // squad-implement-worker.md relay, and the schema's examples
+      'research',
+      'cast',
+      'status',
+      'connect org/repo',
+      'plan accept implementation phase 2',
+    ];
+
+    it.each(dispatched)('dispatching %j reaches its mode instead of failing the run', cmd => {
+      expect(
+        parseDispatch(cmd),
+        `A workflow_dispatch of ${JSON.stringify(cmd)} must resolve to that command. ` +
+          'Both manual dispatch and the squad-implement-worker relay send a bare ' +
+          'token; NO_COMMAND here routes a structurally valid run into PC-3 and ' +
+          'hard-fails it — a regression on the autonomous relay.'
+      ).toBe(cmd);
+    });
+
+    it('normalization is idempotent for a human-typed slash prefix', () => {
+      // Someone typing `/squad implement` into the Actions dispatch box must not
+      // be punished with a doubled prefix that then matches no mode.
+      expect(normalize('/squad implement')).toBe('/squad implement');
+      expect(parseDispatch('/squad implement')).toBe('implement');
+    });
+
+    it('trims whitespace around the dispatched input', () => {
+      expect(parseDispatch('  implement  ')).toBe('implement');
+    });
+
+    it('an empty dispatch halts via the activation guard, never via PC-3', () => {
+      // PR #1777 / junk issues #12 and #14: the empty activation probe must stay
+      // silent and side-effect free. Routing it to PC-3 would post a comment and
+      // fail the run — the exact side effect the activation guard exists to stop.
+      expect(
+        normalize(''),
+        'An empty dispatch must yield EMPTY_DISPATCH so it routes to the activation ' +
+          'guard halt, not to PC-3.'
+      ).toBe('EMPTY_DISPATCH');
+      expect(normalize('')).not.toBe('NO_COMMAND');
+    });
+
+    it('PC-1 is NOT loosened — a bare token still fails on the comment path', () => {
+      // The tempting wrong fix is to teach PC-1 to accept bare words. That reopens
+      // #1824: prose merely containing "cast" would silently mint a team. The
+      // asymmetry is deliberate — dispatch is schema-guaranteed a command, a
+      // comment is not, so absence stays an error there.
+      for (const bare of ['implement', 'cast', 'please cast the team']) {
+        expect(
+          parse(bare),
+          `PC-1 must still reject ${JSON.stringify(bare)}, which carries no /squad ` +
+            'token. Loosening PC-1 instead of normalizing in PC-0 reopens #1824 on ' +
+            'the issue-body and comment paths.'
+        ).toBe('NO_COMMAND');
+      }
     });
   });
 
