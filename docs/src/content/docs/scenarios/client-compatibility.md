@@ -48,12 +48,12 @@ Squad's **primary platform**. All features are fully supported.
 - **4-layer hierarchy:**
   1. User override ("use opus")
   2. Agent charter preference (`## Model` section)
-  3. Task-aware auto-select (cost-first: haiku for docs, sonnet for code, opus for design)
-  4. Default: `claude-haiku-4.5`
-- **Fallback chains:** 3 retries + nuclear (omit parameter → platform default)
-  - Premium: `claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.5 → (omit)`
-  - Standard: `claude-sonnet-4.5 → gpt-5.2-codex → claude-sonnet-4 → gpt-5.2 → (omit)`
-  - Fast: `claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini → (omit)`
+  3. Task-aware auto-select (Luna for non-code work, Terra for code and prompts, Sol for visual work)
+  4. Default: `gpt-5.6-luna`
+- **Fallback chains:** 3 retries + platform default fallback (omit parameter)
+  - Premium: `gpt-5.6-sol → claude-opus-5 → claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6 → (omit)`
+  - Standard: `gpt-5.6-terra → claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-3.1-pro → (omit)`
+  - Fast: `gpt-5.6-luna → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini → (omit)`
 
 ### Background/Async Execution
 
@@ -102,7 +102,7 @@ Squad runs on VS Code with **conditional support**. Key differences from CLI:
 
 - **Mechanism B (Phase 2 — Future):** Custom agent frontmatter
   - Define `model` in `.agent.md` files: `model: "Claude Haiku 4.5 (copilot)"`
-  - Supports prioritized lists: `model: ['Claude Haiku 4.5 (copilot)', 'GPT-5.1-Codex-Mini (copilot)']`
+  - Supports prioritized lists: `model: ['GPT-5.6 Luna (copilot)', 'Claude Haiku 4.5 (copilot)']`
   - Static per-agent, not per-spawn dynamic
   - Requires experimental setting: `chat.customAgentInSubagent.enabled: true`
 

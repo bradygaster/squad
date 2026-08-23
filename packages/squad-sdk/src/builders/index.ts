@@ -193,7 +193,7 @@ const CAPABILITY_LEVELS = ['expert', 'proficient', 'basic'] as const;
  *   name: 'edie',
  *   role: 'TypeScript Engineer',
  *   charter: '.squad/agents/edie/charter.md',
- *   model: 'claude-sonnet-4',
+ *   model: 'claude-sonnet-5',
  *   tools: ['grep', 'edit', 'powershell'],
  *   capabilities: [{ name: 'type-system', level: 'expert' }],
  *   status: 'active',
@@ -468,7 +468,7 @@ export function defineSkill(config: SkillDefinition): SkillDefinition {
  *
  * ```ts
  * const defaults = defineDefaults({
- *   model: { preferred: 'claude-sonnet-4', rationale: 'Good balance of speed and quality', fallback: 'claude-haiku-4.5' },
+ *   model: { preferred: 'claude-sonnet-5', rationale: 'Good balance of speed and quality', fallback: 'claude-haiku-4.5' },
  * });
  * ```
  */
@@ -500,7 +500,7 @@ export function defineDefaults(config: DefaultsDefinition): DefaultsDefinition {
  *   team: defineTeam({ name: 'Core', members: ['@edie'] }),
  *   agents: [defineAgent({ name: 'edie', role: 'TypeScript Engineer' })],
  *   routing: defineRouting({ rules: [...] }),
- *   defaults: defineDefaults({ model: 'claude-sonnet-4' }),
+ *   defaults: defineDefaults({ model: 'claude-sonnet-5' }),
  * });
  * ```
  */

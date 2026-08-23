@@ -34,7 +34,7 @@ export default defineSquad({
     defineAgent({
       name: 'edie',
       role: 'TypeScript Engineer',
-      model: 'claude-sonnet-4',
+      model: 'claude-sonnet-5',
       tools: ['grep', 'edit', 'view'],
     }),
     defineAgent({
@@ -162,16 +162,16 @@ routing: {
 
 | Tier | Models | Use Case |
 |------|--------|----------|
-| **premium** | claude-opus-4, gpt-4.1 | Architecture, code review |
-| **standard** | claude-sonnet-4, gpt-4.1 | Most work |
-| **fast** | claude-haiku-3.5, gpt-4.1-mini | Triage, logging, quick tasks |
+| **premium** | gpt-5.6-sol, claude-opus-5, claude-opus-4.8, claude-opus-4.7, claude-opus-4.6 | Architecture, code review |
+| **standard** | gpt-5.6-terra, claude-sonnet-5, claude-sonnet-4.6, gpt-5.5, gpt-5.4, gpt-5.3-codex, claude-sonnet-4.5, gemini-3.1-pro | Most work |
+| **fast** | gpt-5.6-luna, claude-haiku-4.5, gpt-5.4-mini, gpt-5-mini | Triage, logging, quick tasks |
 
 Per-agent overrides in `model-config.json`:
 
 ```json
 {
-  "neo": "claude-opus-4",
-  "tank": "claude-haiku-3.5"
+  "neo": "claude-opus-5",
+  "tank": "claude-haiku-4.5"
 }
 ```
 

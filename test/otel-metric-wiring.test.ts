@@ -66,7 +66,7 @@ describe('OTel Metric Wiring — Streaming Pipeline', () => {
       type: 'usage' as const,
       sessionId: 'sess-1',
       agentName: 'fenster',
-      model: 'gpt-4',
+      model: 'gpt-5.6-luna',
       inputTokens: 100,
       outputTokens: 50,
       estimatedCost: 0.003,

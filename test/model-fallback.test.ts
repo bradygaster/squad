@@ -1,6 +1,6 @@
 /**
  * Model fallback tests — cross-tier fallback, tier ceiling,
- * provider preference, nuclear fallback.
+ * provider preference, platform default fallback.
  *
  * Expands on models.test.ts (audit gap: advanced fallback logic).
  *
@@ -45,9 +45,9 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
     expect(visitedSet).toEqual(chainSet);
   });
 
-  it('premium chain starts with opus and walks through all premium options', () => {
+  it('premium chain starts with GPT Sol and walks through all premium options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.premium;
-    expect(chain[0]).toBe('claude-opus-4.8');
+    expect(chain[0]).toBe('gpt-5.6-sol');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -68,7 +68,7 @@ describe('Cross-tier fallback — standard chain exhaustion', () => {
 
   it('fast chain walks through all fast options', () => {
     const chain = DEFAULT_FALLBACK_CHAINS.fast;
-    expect(chain[0]).toBe('claude-haiku-4.5');
+    expect(chain[0]).toBe('gpt-5.6-luna');
 
     const attempted = new Set<string>();
     let count = 0;
@@ -195,10 +195,10 @@ describe('Provider preference — Claude family preference', () => {
 });
 
 // ============================================================================
-// Nuclear fallback: all models fail → null (omit model param)
+// Platform default fallback: all models fail → null (omit model param)
 // ============================================================================
 
-describe('Nuclear fallback — all models exhausted', () => {
+describe('Platform default fallback — all models exhausted', () => {
   const registry = new ModelRegistry();
 
   it('getNextFallback returns null when all premium models attempted', () => {
@@ -261,7 +261,7 @@ describe('Model fallback — edge cases', () => {
   it('getNextFallback with empty attempted set returns second in chain', () => {
     const next = registry.getNextFallback('claude-opus-4.8', 'premium');
     // With no attempted set, it should return the next in chain after current
-    expect(next).toBe('claude-opus-4.7');
+    expect(next).toBe('claude-opus-5');
   });
 
   it('getNextFallback for unknown model returns null', () => {

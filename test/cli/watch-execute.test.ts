@@ -40,13 +40,13 @@ describe('CLI: watch execute mode', () => {
         assignees: [],
       };
       const teamRoot = '/path/to/squad';
-      const options = { intervalMinutes: 10, copilotFlags: '--model gpt-4 --yolo' };
+      const options = { intervalMinutes: 10, copilotFlags: '--model gpt-5.6-luna --yolo' };
 
       const { cmd, args } = buildAgentCommand(issue, teamRoot, options);
 
       expect(cmd).toBe('copilot');
       expect(args).toContain('--model');
-      expect(args).toContain('gpt-4');
+      expect(args).toContain('gpt-5.6-luna');
       expect(args).toContain('--yolo');
     });
 

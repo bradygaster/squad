@@ -47,18 +47,19 @@ const DEAD_MODEL_IDS = [
 
 /**
  * The exact set of CLI-reachable seed model IDs.
- * gpt-5.6-sol/terra/luna added 2026-07-13 (env-observed as Standard-tier
- * reachable via Copilot CLI; tamirdresher follow-up request on PR #1444).
+ * gpt-5.6-sol/terra/luna added 2026-07-13 (env-observed as reachable via
+ * Copilot CLI; tamirdresher follow-up request on PR #1444).
  */
 const EXPECTED_CATALOG_IDS = [
   'claude-haiku-4.5',
+  'claude-opus-5',
   'claude-opus-4.6',
   'claude-opus-4.7',
   'claude-opus-4.8',
   'claude-sonnet-4.5',
   'claude-sonnet-4.6',
   'claude-sonnet-5',
-  'gemini-2.5-pro',
+  'gemini-3.1-pro',
   'gpt-5-mini',
   'gpt-5.3-codex',
   'gpt-5.4',
@@ -122,20 +123,20 @@ describe('catalog refresh invariants (#1080/#1183)', () => {
   // ── Ordering invariants (tamirdresher PR #1444 follow-up) ──────────────────
   // Prefer the NEWEST model in each series at [0]. Verified 2026-07-13.
 
-  it('config premium chain[0] is claude-opus-4.8 (newest Opus series)', () => {
-    expect(CONFIG_CHAINS.premium[0]).toBe('claude-opus-4.8');
+  it('config premium chain[0] is gpt-5.6-sol (GPT-first premium routing)', () => {
+    expect(CONFIG_CHAINS.premium[0]).toBe('gpt-5.6-sol');
   });
 
-  it('config standard chain[0] is claude-sonnet-5 (newest Sonnet series)', () => {
-    expect(CONFIG_CHAINS.standard[0]).toBe('claude-sonnet-5');
+  it('config standard chain[0] is gpt-5.6-terra (Terra-first standard routing)', () => {
+    expect(CONFIG_CHAINS.standard[0]).toBe('gpt-5.6-terra');
   });
 
-  it('runtime premium chain[0] is claude-opus-4.8 (newest Opus series)', () => {
-    expect(RUNTIME_CHAINS.premium[0]).toBe('claude-opus-4.8');
+  it('runtime premium chain[0] is gpt-5.6-sol (GPT-first premium routing)', () => {
+    expect(RUNTIME_CHAINS.premium[0]).toBe('gpt-5.6-sol');
   });
 
-  it('runtime standard chain[0] is claude-sonnet-5 (newest Sonnet series)', () => {
-    expect(RUNTIME_CHAINS.standard[0]).toBe('claude-sonnet-5');
+  it('runtime standard chain[0] is gpt-5.6-terra (Terra-first standard routing)', () => {
+    expect(RUNTIME_CHAINS.standard[0]).toBe('gpt-5.6-terra');
   });
 
   // ── GPT-5.6 catalog membership (tamirdresher PR #1444 follow-up) ──────────
@@ -152,12 +153,12 @@ describe('catalog refresh invariants (#1080/#1183)', () => {
     expect(catalogIds.has('gpt-5.6-luna')).toBe(true);
   });
 
-  it('gpt-5.6-sol appears in config standard fallback chain', () => {
-    expect(CONFIG_CHAINS.standard).toContain('gpt-5.6-sol');
+  it('gpt-5.6-sol appears in config premium fallback chain', () => {
+    expect(CONFIG_CHAINS.premium).toContain('gpt-5.6-sol');
   });
 
-  it('gpt-5.6-sol appears in runtime standard fallback chain', () => {
-    expect(RUNTIME_CHAINS.standard).toContain('gpt-5.6-sol');
+  it('gpt-5.6-sol appears in runtime premium fallback chain', () => {
+    expect(RUNTIME_CHAINS.premium).toContain('gpt-5.6-sol');
   });
 });
 

@@ -144,7 +144,7 @@ describe('normalizeDisplayName', () => {
     expect(normalizeDisplayName('GPT-5.6 Luna')).toBe('gpt-5.6-luna');
     expect(normalizeDisplayName('GPT-5 mini')).toBe('gpt-5-mini');
     expect(normalizeDisplayName('Claude Haiku 4.5')).toBe('claude-haiku-4.5');
-    expect(normalizeDisplayName('Gemini 2.5 Pro')).toBe('gemini-2.5-pro');
+    expect(normalizeDisplayName('Gemini 3.1 Pro')).toBe('gemini-3.1-pro');
     expect(normalizeDisplayName('GPT-5.3-Codex')).toBe('gpt-5.3-codex');
     expect(normalizeDisplayName('GPT-5.6 Sol')).toBe('gpt-5.6-sol');
     expect(normalizeDisplayName('GPT-5.6 Terra')).toBe('gpt-5.6-terra');

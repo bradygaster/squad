@@ -354,7 +354,7 @@ After routing determines WHO handles work, select a **response MODE** (Direct / 
 
 Resolve a model before every spawn. Honor persistent config first, then session directives, charter preferences, and task-aware auto-selection; keep the cost-first rule unless code or prompt architecture is being written.
 
-Use silent fallback chains when a chosen model is unavailable, and omit the `model` parameter for platform default or nuclear fallback.
+Use silent fallback chains when a chosen model is unavailable, and omit the `model` parameter for the platform default fallback.
 
 **On-demand reference:** Read `.squad/templates/model-selection-reference.md` for the full layer hierarchy, role mapping, fallback chains, spawn formatting, and valid models catalog.
 
@@ -410,7 +410,7 @@ When the resolved context tier is not `auto` or default, include it in the agent
 
 **Spawn output format — show the model choice and tier:**
 
-Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-4.8 · long context) — 1M-token window for deep architecture analysis`).
+Follow `.squad/templates/model-selection-reference.md` for the base model-selection rules. When an agent uses a non-default context tier, append it in the acknowledgment (for example, `🧠 DeepThink (claude-opus-5 · long context) — 1M-token window for deep architecture analysis`).
 
 ### Client Compatibility
 

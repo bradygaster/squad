@@ -53,12 +53,12 @@ Model selection uses a layered system. First match wins:
 
 | Task Output | Model | Tier |
 |-------------|-------|------|
-| Writing code (implementation, refactoring, tests, bug fixes) | `claude-sonnet-4.6` | Standard |
-| Writing prompts or agent designs | `claude-sonnet-4.6` | Standard |
-| Non-code work (docs, planning, triage, changelogs) | `claude-haiku-4.5` | Fast |
-| Visual/design work requiring image analysis | `claude-opus-4.6` | Premium |
+| Writing code (implementation, refactoring, tests, bug fixes) | `gpt-5.6-terra` | Standard |
+| Writing prompts or agent designs | `gpt-5.6-terra` | Standard |
+| Non-code work (docs, planning, triage, changelogs) | `gpt-5.6-luna` | Fast |
+| Visual/design work requiring image analysis | `gpt-5.6-sol` | Premium |
 
-5. **Default** — If nothing matched, `claude-haiku-4.5`. Cost wins when in doubt.
+5. **Default** — If nothing matched, `gpt-5.6-luna`. Cost wins when in doubt.
 
 ## Persistent Model Preferences
 
@@ -67,10 +67,10 @@ Squad stores your model preferences in `.squad/config.json`:
 ```json
 {
   "version": 1,
-  "defaultModel": "claude-opus-4.6",
+  "defaultModel": "gpt-5.6-terra",
   "agentModelOverrides": {
-    "fenster": "claude-sonnet-4.6",
-    "mcmanus": "claude-haiku-4.5"
+    "fenster": "gpt-5.6-terra",
+    "mcmanus": "gpt-5.6-luna"
   }
 }
 ```
@@ -83,31 +83,31 @@ Squad stores your model preferences in `.squad/config.json`:
 
 | Role | Default Model | Why |
 |------|--------------|-----|
-| Core Dev / Backend / Frontend | `claude-sonnet-4.6` | Writes code — quality first |
-| Tester / QA | `claude-sonnet-4.6` | Writes test code |
+| Core Dev / Backend / Frontend | `gpt-5.6-terra` | Writes code — quality first |
+| Tester / QA | `gpt-5.6-terra` | Writes test code |
 | Lead / Architect | auto (per-task) | Mixed: code review vs. planning |
 | Prompt Engineer | auto (per-task) | Prompt design is like code |
-| DevRel / Writer | `claude-haiku-4.5` | Docs — not code |
-| Scribe / Logger | `claude-haiku-4.5` | Mechanical file ops |
-| Git / Release | `claude-haiku-4.5` | Changelogs, tags, version bumps |
-| Designer / Visual | `claude-opus-4.6` | Vision capability required |
+| DevRel / Writer | `gpt-5.6-luna` | Docs — not code |
+| Scribe / Logger | `gpt-5.6-luna` | Mechanical file ops |
+| Git / Release | `gpt-5.6-luna` | Changelogs, tags, version bumps |
+| Designer / Visual | `gpt-5.6-sol` | Vision capability required |
 
-## 18-Model Catalog
+## 17-Model Catalog
 
-Squad supports 18 models across three tiers:
+Squad supports 17 models across three tiers:
 
-- **Premium:** claude-opus-4.6, claude-opus-4.6-fast, claude-opus-4.5
-- **Standard:** claude-sonnet-4.6, gpt-5.4, gpt-5.3-codex, gpt-5.2-codex, claude-sonnet-4, gpt-5.2, gpt-5.1-codex, gpt-5.1, gpt-5, gemini-3-pro-preview
-- **Fast/Cheap:** claude-haiku-4.5, gpt-5.1-codex-mini, gpt-4.1, gpt-5-mini
+- **Premium:** gpt-5.6-sol, claude-opus-5, claude-opus-4.8, claude-opus-4.7, claude-opus-4.6
+- **Standard:** gpt-5.6-terra, claude-sonnet-5, claude-sonnet-4.6, claude-sonnet-4.5, gpt-5.5, gpt-5.4, gpt-5.3-codex, gemini-3.1-pro
+- **Fast/Cheap:** gpt-5.6-luna, claude-haiku-4.5, gpt-5.4-mini, gpt-5-mini
 
 ## Fallback Chains
 
 If a model is unavailable (plan restriction, rate limit, deprecation), Squad silently retries with the next in chain:
 
 ```
-Premium:  claude-opus-4.6 → claude-opus-4.6-fast → claude-opus-4.5 → claude-sonnet-4.6
-Standard: claude-sonnet-4.6 → gpt-5.3-codex → gpt-5.4 → claude-sonnet-4 → gpt-5.2
-Fast:     claude-haiku-4.5 → gpt-5.1-codex-mini → gpt-4.1 → gpt-5-mini
+Premium: gpt-5.6-sol → claude-opus-5 → claude-opus-4.8 → claude-opus-4.7 → claude-opus-4.6 → claude-sonnet-4.6
+Standard: gpt-5.6-terra → claude-sonnet-5 → claude-sonnet-4.6 → gpt-5.5 → gpt-5.4 → gpt-5.3-codex → claude-sonnet-4.5 → gemini-3.1-pro
+Fast:     gpt-5.6-luna → claude-haiku-4.5 → gpt-5.4-mini → gpt-5-mini
 ```
 
 Never falls back UP in tier — a fast task won't land on a premium model.
@@ -118,7 +118,7 @@ Tell the coordinator what you want:
 
 - `"use opus for this"` — one-off premium for current task
 - `"always use opus"` — **persistent** preference saved to `.squad/config.json` (survives sessions)
-- `"use gpt-5.2-codex for Fenster"` — **persistent** per-agent override
+- `"use gpt-5.3-codex for Fenster"` — **persistent** per-agent override
 - `"switch back to automatic"` — clears persistent preference
 
 ## Economy Mode
@@ -139,10 +139,10 @@ When economy mode is active, Squad remaps models using the `ECONOMY_MODEL_MAP`:
 
 | Normal Tier | Economy Model |
 |-------------|--------------|
-| Standard (Sonnet) | `gpt-4.1` |
-| Fast (Haiku) | `gpt-4.1` |
+| Standard (Terra) | `gpt-5.6-luna` |
+| Fast (Luna) | `gpt-5.6-luna` |
 
-**Fallback chains in economy mode** run the same logic as normal fallback chains, but start one tier lower. A code task that would normally use `claude-sonnet-4.6` uses `claude-haiku-4.5` instead.
+**Fallback chains in economy mode** run the same logic as normal fallback chains, but start one tier lower. A code task that would normally use `gpt-5.6-terra` uses `gpt-5.6-luna` instead.
 
 **Cost tradeoffs:** Economy mode trades output quality for lower cost and reduced rate limit pressure. Use it for bulk triage, log analysis, or changelog generation — not for architecture work or complex refactors where quality matters.
 
@@ -177,7 +177,7 @@ what model did Kane use for that last task?
 Check which model was actually used for a completed task.
 
 ```
-use gpt-5.2-codex for all backend work
+use gpt-5.3-codex for all backend work
 ```
 
 Set a specific model for tasks in a particular domain.

@@ -64,10 +64,10 @@ The sample casts four agents from The Usual Suspects universe: Keyser (Lead), Mc
 
   Agent           Model                    Tokens In    Cost
   ──────────────────────────────────────────────────────────
-  McManus         gpt-4o-mini                 18,240  $0.0274
-  Fenster         gpt-4o                      12,540  $0.0628
-  Keyser          gpt-4o-turbo                 8,320  $0.0834
-  Verbal          gpt-4o-mini                  5,120  $0.0077
+  McManus         gpt-5.6-luna                 18,240  $0.0274
+  Fenster         gpt-5.3-codex                12,540  $0.0628
+  Keyser          claude-opus-5                 8,320  $0.0834
+  Verbal          gpt-5.6-luna                  5,120  $0.0077
   ──────────────────────────────────────────────────────────
   TOTAL                                       44,220  $0.1813
 

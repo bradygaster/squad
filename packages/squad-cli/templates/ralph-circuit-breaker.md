@@ -15,7 +15,7 @@ but they are still billed:
 | Model | Category | Cost profile |
 |-------|----------|--------------|
 | `claude-sonnet-5` | versatile | Moderate — standard-tier default |
-| `claude-opus-4.8` | powerful | Higher — reserve for premium work |
+| `claude-opus-5` | powerful | Higher — reserve for premium work |
 | `gpt-5.4` | powerful | Higher — standard-tier specialist |
 | `gpt-5.4-mini` | lightweight | Lower-cost — preferred fallback |
 | `gpt-5-mini` | lightweight | Lowest-cost — final fallback |

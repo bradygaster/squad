@@ -274,7 +274,7 @@ costTracker.recordUsage({
 costTracker.recordUsage({
   sessionId: 'frontend-ui-001',
   agentName: 'Frontend',
-  model: 'gpt-4.1-mini',
+  model: 'gpt-5.6-luna',
   inputTokens: 8000,
   outputTokens: 1500,
   estimatedCost: 0.0089,

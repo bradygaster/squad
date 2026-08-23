@@ -52,3 +52,6 @@ Dockerfile.* text eol=lf
 # class as the .mjs rule above, different symptom: not a load failure, a
 # perpetually dirty tree (#1788).
 *.snap text eol=lf
+
+# Squad: union merge for append-only team state files
+.squad/fact-checker/audit-trail.md merge=union

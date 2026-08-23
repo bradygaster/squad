@@ -10,23 +10,23 @@ Complete reference for all public exports from `@bradygaster/squad-sdk`. Each se
 import {
   // Resolution
   resolveSquad, resolveGlobalSquadPath, ensureSquadPath,
-  
+
   // Runtime
   MODELS, TIMEOUTS, AGENT_ROLES,
   loadConfig, loadConfigSync,
-  
+
   // Agents
   onboardAgent,
-  
+
   // Casting
   CastingEngine, CastingHistory,
-  
+
   // Coordinator
   SquadCoordinator, selectResponseTier, getTier,
-  
+
   // Tools
   defineTool, ToolRegistry,
-  
+
   // OTel
   initializeOTel, shutdownOTel, getTracer, getMeter,
   bridgeEventBusToOTel, createOTelTransport,
@@ -66,9 +66,9 @@ Like `resolveSquad()`, but creates the directory if it doesn't exist.
 All supported models, organized by tier.
 
 ```typescript
-MODELS.premium;   // ['claude-opus-4.6', 'gpt-5.2', ...]
-MODELS.standard;  // ['claude-sonnet-4.5', 'gpt-5.1', ...]
-MODELS.fast;      // ['claude-haiku-4.5', 'gpt-5-mini', ...]
+MODELS.FALLBACK_CHAINS.premium;  // ['gpt-5.6-sol', 'claude-opus-5', ...]
+MODELS.FALLBACK_CHAINS.standard; // ['gpt-5.6-terra', 'claude-sonnet-5', ...]
+MODELS.FALLBACK_CHAINS.fast;     // ['gpt-5.6-luna', 'claude-haiku-4.5', 'gpt-5.4-mini', ...]
 ```
 
 ### `TIMEOUTS: TimeoutConfig`

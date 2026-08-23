@@ -68,7 +68,7 @@ export default defineSquad({
     defineAgent({
       name: 'edie',
       role: 'TypeScript Engineer',
-      model: 'claude-sonnet-4',
+      model: 'claude-sonnet-5',
       tools: ['grep', 'edit', 'powershell'],
       capabilities: [{ name: 'type-system', level: 'expert' }],
     }),
@@ -222,7 +222,7 @@ const edie = defineAgent({
   name: 'edie',
   role: 'TypeScript Engineer',
   charter: 'Expert in type systems and test-driven development',
-  model: 'claude-sonnet-4',
+  model: 'claude-sonnet-5',
   tools: ['grep', 'edit', 'powershell', 'view'],
   capabilities: [
     { name: 'type-system', level: 'expert' },
@@ -237,7 +237,7 @@ const edie = defineAgent({
 | `name` | string | ✅ | Unique identifier (kebab-case, no `@`) |
 | `role` | string | ✅ | Human-readable title |
 | `charter` | string | ❌ | Character description or link to charter |
-| `model` | string | ❌ | Model preference (e.g., `"claude-sonnet-4"`, `"claude-haiku-4.5"`) |
+| `model` | string | ❌ | Model preference (e.g., `"claude-sonnet-5"`, `"claude-haiku-4.5"`) |
 | `tools` | string[] | ❌ | Allowed tools (e.g., `["grep", "edit", "view"]`) |
 | `capabilities` | `AgentCapability[]` | ❌ | Capability list with proficiency levels (see Common Types) |
 | `status` | `AgentStatus` | ❌ | Lifecycle: `'active'` (default), `'inactive'`, `'retired'` |
@@ -550,7 +550,7 @@ export default defineSquad({
     defineAgent({
       name: 'edie',
       role: 'TypeScript Engineer',
-      model: 'claude-sonnet-4',
+      model: 'claude-sonnet-5',
       tools: ['grep', 'edit', 'powershell', 'view'],
       capabilities: [
         { name: 'type-system', level: 'expert' },
@@ -573,7 +573,7 @@ export default defineSquad({
     defineAgent({
       name: 'fenster',
       role: 'Test Lead',
-      model: 'claude-sonnet-4',
+      model: 'claude-sonnet-5',
       capabilities: [
         { name: 'testing', level: 'expert' },
         { name: 'qa', level: 'proficient' },
@@ -583,7 +583,7 @@ export default defineSquad({
     defineAgent({
       name: 'hockney',
       role: 'Frontend Specialist',
-      model: 'claude-opus-4.6',
+      model: 'claude-opus-5',
       capabilities: [
         { name: 'frontend', level: 'expert' },
         { name: 'ui-ux', level: 'proficient' },
