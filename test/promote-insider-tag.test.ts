@@ -4,14 +4,29 @@
  * Covers Issue #1491: the pure decision logic that keeps the `insider`
  * npm dist-tag from lagging `latest` after a stable release.
  *
- * We test only the pure helpers (compareVersions, shouldPromote,
- * parseVersion). The child_process calls are intentionally not exercised
- * here - those are covered by the workflow itself invoking the script.
+ * This file keeps the pure helper coverage (compareVersions, shouldPromote,
+ * parseVersion) and adds a static workflow-graph regression for release CI.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error - .mjs script imported by test
 import { compareVersions, parseVersion, shouldPromote } from '../scripts/promote-insider-tag.mjs';
+
+function workflowJobBlock(jobName: string) {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/squad-npm-publish.yml', import.meta.url),
+    'utf8',
+  ).replace(/\r\n/g, '\n');
+  const marker = `  ${jobName}:\n`;
+  const start = workflow.indexOf(marker);
+  if (start === -1) {
+    throw new Error(`missing workflow job: ${jobName}`);
+  }
+  const rest = workflow.slice(start + marker.length);
+  const nextJob = rest.search(/\n  [A-Za-z0-9_-]+:\n/);
+  return nextJob === -1 ? rest : rest.slice(0, nextJob);
+}
 
 describe('parseVersion', () => {
   it('parses a stable version', () => {
@@ -96,5 +111,22 @@ describe('shouldPromote (Issue #1491 decision matrix)', () => {
 
   it('does NOT downgrade insider across a major boundary', () => {
     expect(shouldPromote('1.0.0-insider.1', '0.11.0')).toBe(false);
+  });
+});
+
+describe('publish workflow insider promotion graph (Issue #1497)', () => {
+  it('promotes squad-sdk independently of squad-cli publish success', () => {
+    const sdkPromotion = workflowJobBlock('promote-insider-tag-sdk');
+
+    expect(sdkPromotion).toContain('needs: publish-sdk');
+    expect(sdkPromotion).not.toContain('publish-cli');
+    expect(sdkPromotion).toContain('@bradygaster/squad-sdk');
+  });
+
+  it('promotes squad-cli after its own publish succeeds', () => {
+    const cliPromotion = workflowJobBlock('promote-insider-tag-cli');
+
+    expect(cliPromotion).toContain('needs: publish-cli');
+    expect(cliPromotion).toContain('@bradygaster/squad-cli');
   });
 });

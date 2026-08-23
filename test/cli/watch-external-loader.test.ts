@@ -238,3 +238,82 @@ describe('loadExternalCapabilities', () => {
     expect(warnLog).toBeDefined();
   });
 });
+
+// Regression (#1490): the loader always scanned {teamRoot}/.squad/capabilities/,
+// so after `squad externalize` moves capabilities/ out of the local .squad/,
+// custom capabilities silently stopped loading. The optional capabilitiesDir
+// override lets the caller point at the resolved state dir instead — kept
+// as an override rather than changing the default so every existing test
+// above (all of which rely on the {teamRoot}/.squad/capabilities/ default)
+// keeps working unchanged.
+describe('loadExternalCapabilities — capabilitiesDir override (#1490)', () => {
+  let tmpDir: string;
+  let externalDir: string;
+  let registry: CapabilityRegistry;
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'squad-ext-cap-team-'));
+    externalDir = await mkdtemp(join(tmpdir(), 'squad-ext-cap-external-'));
+    registry = new CapabilityRegistry();
+    consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    consoleSpy.mockRestore();
+    for (const d of [tmpDir, externalDir]) {
+      if (existsSync(d)) await rm(d, { recursive: true, force: true });
+    }
+  });
+
+  const capCode = `
+    export default {
+      name: 'external-cap',
+      description: 'A capability living in the externalized state dir',
+      configShape: 'boolean',
+      requires: [],
+      phase: 'housekeeping',
+      async preflight() { return { ok: true }; },
+      async execute() { return { success: true, summary: 'done' }; },
+    };
+  `;
+
+  it('loads from capabilitiesDir when given, ignoring {teamRoot}/.squad/capabilities/', async () => {
+    // A decoy under the local .squad/ — must NOT be loaded, since a real
+    // externalized project's local .squad/ holds only the marker config.json.
+    const localCapDir = join(tmpDir, '.squad', 'capabilities');
+    mkdirSync(localCapDir, { recursive: true });
+    await writeFile(join(localCapDir, 'decoy.js'), capCode.replace('external-cap', 'decoy-cap'), 'utf-8');
+
+    const externalCapDir = join(externalDir, 'capabilities');
+    mkdirSync(externalCapDir, { recursive: true });
+    await writeFile(join(externalCapDir, 'external-cap.js'), capCode, 'utf-8');
+
+    const loadExternalCapabilities = await getLoader();
+    const count = await loadExternalCapabilities(tmpDir, registry, externalCapDir);
+
+    expect(count).toBe(1);
+    expect(registry.names()).toContain('external-cap');
+    expect(registry.names()).not.toContain('decoy-cap');
+  });
+
+  it('falls back to {teamRoot}/.squad/capabilities/ when capabilitiesDir is omitted', async () => {
+    const capDir = join(tmpDir, '.squad', 'capabilities');
+    mkdirSync(capDir, { recursive: true });
+    await writeFile(join(capDir, 'external-cap.js'), capCode, 'utf-8');
+
+    const loadExternalCapabilities = await getLoader();
+    const count = await loadExternalCapabilities(tmpDir, registry);
+
+    expect(count).toBe(1);
+    expect(registry.names()).toContain('external-cap');
+  });
+
+  it('returns 0 when capabilitiesDir is given but does not exist', async () => {
+    const loadExternalCapabilities = await getLoader();
+    const count = await loadExternalCapabilities(tmpDir, registry, join(externalDir, 'capabilities'));
+
+    expect(count).toBe(0);
+    expect(registry.all()).toHaveLength(0);
+  });
+});

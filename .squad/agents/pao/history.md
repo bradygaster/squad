@@ -1,59 +1,38 @@
 # Pao history
 
-Summarized by Scribe on 2026-08-19T13:11:34.130-07:00 because this history exceeded 15KB.
-Full pre-summary history archived at `.squad/agents/pao/history-archive-2026-08-19T13-11-34.130-07-00.md`.
+Summarized by Scribe on 2026-08-20T11:59:44-07:00 because this history exceeded 15KB.
+Full pre-summary history archived at `.squad/agents/pao/history-archive-2026-08-20T11-59-44-0700.md`.
+Prior archive at `.squad/agents/pao/history-archive-2026-08-19T13-11-34.130-07-00.md`.
 
 ## Condensed index
 
-- Preserved 315 original line(s) in the archive.
-- Detected 41 heading(s) and 17 dated reference line(s).
-- This file now keeps a compact index plus the most recent tail so active context remains visible.
+- **PUBLISH-README.md rewrite (#564):** 58-line stub → 232-line living playbook (11 sections). Microsoft Style Guide enforced; version-agnostic (`<VERSION>` placeholder); all commands copy-pasteable. Living playbook absorbs #558, #559, #560.
+- **JSDoc API Reference PRD (2026-03-24):** TypeDoc + typedoc-plugin-markdown chosen (not Starlight, not api-extractor). Output → `docs/src/content/docs/reference/api/`. Astro hook auto-runs on build. JSDoc priority: config/schema.ts (8%→100%), state/io/ @param/@return tags. Effort: 13-18 hrs.
+- **Discussion triage patterns:** 6 discussions closed after v0.9.1 shipped features. Teams MCP critical: Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor.
+- **Boundary review:** "Squad Ships It" litmus test — if Squad doesn't ship the code, it's IRL content. Delete external infra docs; reframe platform integration docs; keep Squad behavior/config docs.
+- **npx purge:** `npm install -g @bradygaster/squad-cli` is the only supported install path. Remove all user-facing `npx` references. Keep `npx` only for dev tools.
+- **PR #11 TypeDoc review (2026-03-24):** Generated docs require crosslinks from curated guides. Missing sdk.md crosslink banner and navigation URL inconsistency (`reference/api/index` → `reference/api`) are blocking issues.
+- **Link validation pattern:** Automated link validation should be a CI gate. Broken internal links = friction and SEO harm.
+- **Broken internal links:** When PRs add new content files, verify corresponding test arrays in docs-build.test.ts are updated (EXPECTED_GUIDES, EXPECTED_FEATURES, EXPECTED_SCENARIOS arrays must match filesystem).
 
-## Notable retained signals
+## Recent preserved tail — gh-aw Issue Audit (2026-08-20)
 
-- Rewrote PUBLISH-README.md from v0.8.22 stub (58 lines) to living 232-line version-agnostic playbook with 11 sections: Overview, Pre-Flight Checklist, Publish via CI (recommended), workflow_dispatch fallback, Insider Channel, Workspace Publish Policy, Manual Local Publish, 422 Race Condition & npm Errors, Post-Publish Verification, Version Bump, Legacy Scripts. Pattern: living playbook absorbs multiple issues (#558, #559, #560) into unified decision tree. Microsoft Style Guide enforced; `<VERSION>` placeholder; all commands copy-pasteable.
-- 📌 **Team update (2026-03-24T06-release-hardening):** Release playbook rewrite (#564) completed. Absorbed issues #558, #559, #560 into unified decision tree.
-- Full PRD at `docs/research/jsdoc-api-reference-prd.md`. Key decisions: TypeDoc + typedoc-plugin-markdown (not Starlight, not api-extractor) — zero migration, Markdown-first, Pagefind-compatible. Astro integration hook auto-runs TypeDoc on build. Output → `docs/src/content/docs/reference/api/`. JSDoc improvement priority: config/schema.ts (8%→100%), state/io/ @param/@return tags. Total effort: 13–18 hours. PRD structure: chosen path + tactical roadmap (not advisory — directive).
-- 6 discussions closed as resolved (features shipped in v0.9.1: per-agent models #463/#402, local-only #324, CLI vs agent #299, human members #143, skills system #169). 8 discussions kept open with substantive replies. Pattern: feature-release timing + follow-up responses critical for community trust. **Teams MCP critical:** Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor. Purge all old connector references.
-- **Boundary review:** "Squad Ships It" litmus test — if Squad doesn't ship the code, it's IRL content. Platform features: clarify whose feature it is. Delete external infrastructure docs; reframe platform integration docs; keep Squad behavior/config docs. Pattern from PR #331.
-- **npx purge:** `npm install -g @bradygaster/squad-cli` is only supported install path. Remove all user-facing `npx` references. Keep `npx` only for dev tools (changeset, vitest, astro, pagefind). Agency copilot example → `gh copilot`.
-- **PR #11 TypeDoc review (2026-03-24):** Generated docs require crosslinks from curated guides. When adding new docs section, ensure old curated page has a visible pointer to the new section. Blocking issues: missing sdk.md crosslink banner, navigation URL inconsistency (`reference/api/index` → `reference/api`).
-- ### Discussion Triage Patterns (2026-03-23 Release Incident)
-- **Triage workflow:**
-- **Critical finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024. Docs must purge old connector references and document Power Automate Workflows path (new successor).
-- ### Chinese README Workflow (2026-03-23 Release Incident)
-- Community contributor (PR #572) provided Chinese README translation. Approved and merged as part of v0.9.1 release. Pattern: accept community translations; list contributors in CONTRIBUTORS.md; acknowledge in release notes.
-- External tool integrations deprecate. Office 365 Connectors retired Dec 2024. Docs mentioning deprecated tools create support burden and user confusion. Action: audit all external tool integration docs for deprecation; update with successor guidance (Power Automate Workflows for Teams).
-- Explicitly state what a skill produces and does NOT produce. Deterministic skills prevent agents from generating unnecessary code when templates exist.
-- External tool integrations require explicit "where to get it" guidance. Placeholder paths need clarification that users must provide actual MCP server implementations.
-- When rebasing doc PRs with conflicts from other merged doc PRs, the main branch version (already merged) should generally take priority. For Node.js version references, maintain LTS terminology when present (e.g., `nvm install --lts` over specific version numbers like `nvm install 20`). Conflict resolution pattern: preserve new content from PR branch only where it doesn't duplicate or contradict already-merged changes. Use `git -c core.editor=true rebase --continue` to bypass interactive editor issues on Windows.
-- Two-way communication layer between Squad and work environment. Outbound: Teams webhook notifications (breaking, briefings, recaps, flashes) sent via Adaptive Cards — only when newsworthy. Inbound: WorkIQ/Playwright scanning of Teams channels and email → auto-create GitHub issues with teams-bridge label, anti-duplicate logic enforced. Loop: inbound creates issues → Ralph dispatches → agents work → outbound notifies results. Human stays informed on mobile. Prerequisites are enhancements, not requirements.
-- 📌 **Team update (2026-03-11T01:27:57Z):** Proactive communication patterns and PR trust levels (full/selective/self-managing spectrum) documented in decisions.md. Pattern rationale reinforced: Ralph 24/7 autonomous deployment requires awareness loop (Teams webhooks for outbound) and external work integration (WorkIQ scanning for inbound). Trust levels enable context-appropriate oversight without bottlenecking teams.
-- ### PR #487 Review & Merge — CLI Docs Expansion (2026-03-22)
-- Reviewed and merged PR #487 (CLI documentation expansion + broken docs link fix). Improved CLI command reference coverage and fixed internal link validation.
-- **Pattern identified:** Broken internal links hurt user navigation and SEO. Recommendations: (1) add link validation to docs build pipeline (crawl all internal references, report 404s), (2) make validation a CI gate (fail build on broken links), (3) maintain link checklist when refactoring docs structure.
-- **Key learning:** Documentation maintenance requires systematic link validation. A single broken link creates friction for users following guides. Automated validation should be non-negotiable in CI/CD.
-- ### PR #482 Review & Merge — Pagefind Search Integration (2026-03-22)
-- Reviewed and merged PR #482. Search functionality integrated into docs site for improved discoverability.
+Audited #1761 and #1736 against `docs/src/content/docs/guide/gh-aw.md`.
 
-## Recent preserved tail
+- **#1761 — SHIP-NOW.** All 3 errors confirmed:
+  1. Stale `.github/aw/` in `git add` at lines 38 and 113 — could cause a **false E2E failure** for literal followers.
+  2. Redundant `gh aw compile` step at lines 34-35 and 100-108 — `gh aw add` compiles automatically.
+  3. Missing restricted-secrets prompt callout — absent entirely from the guide.
+- **#1736 — DEFER (wave:3).** Depends on #1733 (still open); current text is accurate. Do not touch until #1733 ships.
+- E2E safety verdict: Guide is safe for Brady (expert level). Stale `git add` path is the only instruction that could produce a wrong result for fresh setup consumers following literally.
 
-- #143 (Human team members now first-class feature)
-- #169 (Skills system shipped as core infrastructure)
+## 📌 Team update — 2026-08-20T11:59:44-07:00
 
-**8 discussions kept open with substantive replies:**
-- #534 (enterprise features) — asked clarifying questions on scope
-- #499 (Brady's v1.0 announcement) — explained `.squad/` regenerability plan
-- #440 (branch naming change) — acknowledged disruption, offered migration guidance
-- #401 (mobile/async control) — acknowledged use case, roadmap signal
-- #376 (best practices) — provided triage and routing patterns
-- #306 (multi-root support) — acknowledged limitation, kept open for feedback
-- #95 (casting system) — explained mature re-casting flow
-- #140 (Teams MCP) — critical guidance on Office 365 Connectors retirement → Power Automate Workflows
+gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
 
-**Pattern observed:** Feature-release timing + follow-up responses critical for community trust. v0.9.1 directly addressed 5+ discussions (models, skills, human members) that were open 2-4 weeks. Community triage now operational: 14 discussions reviewed, 6 closed, 8 kept active = 43% closure rate on resolved items.
+## 📌 Team update — 2026-08-20T13:20:20-07:00
 
-**Key insight:** Retirement of Microsoft Office 365 Connectors (Dec 2024) caught users mid-setup. Proactive notification of Teams Workflows alternative + Power Automate guidance essential for Teams MCP users.
+Batch 2 complete. PR #1776: corrected 3 errors in `docs/src/content/docs/guide/gh-aw.md` — removed stale `.github/aw/` from git add (L38, L113), removed redundant compile step (L34-35, L100-108), added restricted-secrets callout. PR #1776 green, awaiting Flight gate. Stale git add path was the highest-risk correction.
 
 ### Release Playbook Rewrite (#564, 2026-07-22)
 

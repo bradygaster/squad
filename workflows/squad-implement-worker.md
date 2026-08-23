@@ -211,7 +211,7 @@ This workflow has two modes:
 
 1. A `workflow_dispatch` implements issue
    `${{ github.event.inputs.issue_number }}` and opens a focused pull request.
-2. A merged `pull_request` continues the parent epic.
+2. A merged `pull_request` continues the root issue's remaining sub-tree.
 
 ## Continue Parent Epic After Merge
 
@@ -223,7 +223,26 @@ For a merged pull request:
    relationship, falling back to its `Parent: #N` body line.
 3. If no parent epic exists, comment on the merged pull request saying its issue
    is standalone and that no further work was queued, then stop.
-4. WRITE-ONCE: call the prompt-listed `dispatch_workflow` safe-output tool
+4. RESOLVE THE ROOT, NOT THE PARENT. Keep walking the parent chain upward from
+   the parent epic — native parent relationship first, `Parent: #N` body line as
+   fallback — until you reach an issue with no parent. That topmost ancestor is
+   the **root issue**, and it is the dispatch target. Do not stop at the
+   immediate parent epic. A three-level tree (root → epics → leaf tasks) puts
+   sibling epics beside the completing task's epic; dispatching the immediate
+   parent scopes the refill to that one epic, so once it drains the run exits
+   green while sibling epics still hold unstarted leaf tasks and the
+   concurrency slots sit idle. Dispatching the root makes `squad`'s implement
+   mode descend the **entire** remaining sub-tree, which is what refills the
+   freed slot from wherever work actually remains. Guard the walk against
+   cycles: track visited issue numbers and treat a repeat as the root. If the
+   parent chain cannot be walked past the parent epic, use the parent epic as
+   the root rather than skipping the dispatch.
+5. Selection and budget stay where they already are. `squad`'s implement mode
+   dispatches only **leaf tasks** — open descendants with no open sub-issues —
+   and never an epic or the root itself, and it caps concurrent work with its
+   own available-slots calculation. Do not pre-select tasks, widen any cap, or
+   dispatch a worker directly from here to compensate for a drained epic.
+6. WRITE-ONCE: call the prompt-listed `dispatch_workflow` safe-output tool
    exactly once, and only when the complete payload is ready. NEVER call
    `dispatch_workflow` with empty, partial, or placeholder arguments to probe or
    discover its schema. The full schema is already given in this prompt; there
@@ -238,7 +257,7 @@ For a merged pull request:
   "workflow_name": "squad",
   "inputs": {
     "command": "implement",
-    "issue_number": "{parent-epic-number}"
+    "issue_number": "{root-issue-number}"
   }
 }
 ```
@@ -252,8 +271,11 @@ workflow is dispatched and the visible continuation comment is queued.
 comment — never a silent exit. Cover both terminal cases:
 
 - Parent epic resolved → comment on the parent epic (`item_number` set to the
-  parent epic number), name the epic, and state that its next children were
-  queued.
+  parent epic number), name the epic, name the root issue the refill was
+  dispatched against, and state which next leaf tasks were queued. When the
+  parent epic itself has no open leaf tasks left, say so and state that the
+  refill was widened to the root's remaining sub-tree — never report the epic
+  as drained without naming that wider scan.
 - No parent epic → state that the pull request's issue is standalone and that
   nothing further was queued.
 

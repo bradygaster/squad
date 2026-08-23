@@ -29,6 +29,13 @@ export interface CapabilityResult {
 /** Runtime context passed to every capability during each round. */
 export interface WatchContext {
   teamRoot: string;
+  /**
+   * Effective state directory — the local `.squad/` dir, or the external
+   * state dir when `squad externalize` is active (#1490). Capabilities
+   * must read/write squad state (decisions, log, ralph-instructions.md,
+   * etc.) through this, not by joining `.squad/` onto `teamRoot`.
+   */
+  stateRoot: string;
   adapter: PlatformAdapter;
   round: number;
   roster: Array<{ name: string; label: string; expertise: string[] }>;

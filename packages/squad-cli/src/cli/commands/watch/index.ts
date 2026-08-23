@@ -395,10 +395,15 @@ async function runCheck(
 
 // ── SubSquad Discovery ───────────────────────────────────────────
 
-interface SubSquad { name: string; dir: string; labels: string[] }
+export interface SubSquad { name: string; dir: string; labels: string[] }
 
-function discoverSubSquads(teamRoot: string): SubSquad[] {
-  const subsquadDir = path.join(teamRoot, '.squad', 'subsquads');
+/**
+ * Discover subsquads under `{stateRoot}/subsquads/`. `subsquads/` is not in
+ * externalize's KEEP_LOCAL set, so after `squad externalize` it lives at the
+ * external state dir — pass the effective state dir here, not teamRoot (#1490).
+ */
+export function discoverSubSquads(stateRoot: string): SubSquad[] {
+  const subsquadDir = path.join(stateRoot, 'subsquads');
   if (!storage.existsSync(subsquadDir)) return [];
   try {
     const entries = storage.listSync?.(subsquadDir) ?? [];
@@ -779,9 +784,10 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   // ── Capability system setup ────────────────────────────────────
   const registry = createDefaultRegistry();
 
-  // Load external capabilities from .squad/capabilities/
+  // Load external capabilities — from the external state dir's
+  // capabilities/ when externalized, otherwise .squad/capabilities/ (#1490)
   const { loadExternalCapabilities } = await import('./external-loader.js');
-  await loadExternalCapabilities(teamRoot, registry);
+  await loadExternalCapabilities(teamRoot, registry, path.join(stateDir, 'capabilities'));
 
   // PID tracking for child process cleanup
   const { PidTracker } = await import('./pid-tracker.js');
@@ -798,6 +804,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
   const baseContext: WatchContext = {
     teamRoot,
+    stateRoot: stateDir,
     adapter,
     round: 0,
     roster: roster.map(r => ({ name: r.name, label: r.label, expertise: [] as string[] })),
@@ -908,7 +915,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     await runPhase('pre-scan', enabledCapabilities, roundContext, config);
 
     // SubSquad discovery (informational, not a capability)
-    const subSquads = discoverSubSquads(teamRoot);
+    const subSquads = discoverSubSquads(stateDir);
     if (subSquads.length > 0 && round === 1) {
       console.log(`${DIM}📂 Discovered ${subSquads.length} subsquad(s): ${subSquads.map(s => s.name).join(', ')}${RESET}`);
     }

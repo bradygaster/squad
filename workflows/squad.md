@@ -173,13 +173,18 @@ Resolve the slash command in this order:
 1. **Dispatched command** (above) — when the event name is
    `workflow_dispatch`, this input must be present for the run to proceed. If it
    is empty, the activation guard above has already halted the run; never reach
-   this step with an empty dispatched command. When it is non-empty, use this
-   value as the command and skip the remaining sources.
+   this step with an empty dispatched command. When it is non-empty, it is the
+   trigger source; skip the remaining sources.
 2. **Issue comment / PR review comment:** `github.event.comment.body` — the full
    comment text.
 3. **Issue body:** `github.event.issue.body` — the full issue description.
 4. Otherwise default to `cast` only for an explicit `/squad` slash command with
    no arguments.
+
+Choosing a source never skips parsing: every source is parsed by **Parse
+Command** below, so mode resolution has one implementation. The dispatched
+command arrives **bare** (`implement`, not `/squad implement`) and MUST be
+normalized by **Step PC-0** before PC-1 sees it.
 
 Resolve the target issue in this order:
 
@@ -189,8 +194,10 @@ Resolve the target issue in this order:
 
 **Never emit `noop` when the dispatched command is non-empty.** A workflow
 dispatch with a non-empty command is always actionable: run the named mode
-against the dispatched issue number. The missing-`issue_number` case is handled
-by the activation guard above — halt with a log annotation, never an issue.
+against the dispatched issue number. If the dispatched command names no mode in
+the Modes table, that is a loud failure via Step PC-3 — still never `noop`. The
+missing-`issue_number` case is handled by the activation guard above — halt with
+a log annotation, never an issue.
 
 The activation job already ran `squad init --preset default`, which produced a
 generic 5-agent team (lead, reviewer, devrel, security, docs) in `.squad/`. Cast
@@ -230,14 +237,164 @@ Repository owners must configure Copilot setup steps separately when needed.
 
 ## Parse Command
 
-1. Read trigger body from event payload.
-2. Strip `/squad` prefix, trim whitespace.
-3. Match **longest-prefix-first**:
+**The command may appear anywhere in the body — not only at the start.** A body
+that opens with a greeting, a sentence of context, or a blank line and *then*
+carries the command is the normal shape of a first-run issue. Never assume the
+body begins with `/squad`, and never decide by eye whether a command is present.
+
+### Shell input security contract [MANDATORY]
+
+Issue and comment bodies, issue/PR titles, and any other GitHub event text are
+**attacker-controlled**.
+
+**Mandatory channel:** event text MUST reach the shell only through named
+step/job `env:` variables, read only by quoted parameter expansion:
+
+```yaml
+env:
+  # Angle brackets stand in for Actions expression delimiters; literal ones
+  # fail gh-aw's allowlist and break `gh aw compile`.
+  SQUAD_TRIGGER_BODY: <github.event.comment.body || github.event.issue.body>
+run: |
+  body="${SQUAD_TRIGGER_BODY-}"
+  printf '%s\n' "$body" | awk '...' | grep -F -- '/squad'
+```
+
+**Forbidden:**
+
+- `UNTRUSTED_TEMPLATE_IN_RUN` — never place an event-text expression, or anything
+  derived from one, inside a `run:` block. Actions expansion happens *before* the
+  shell starts, so shell quoting cannot protect it.
+- `UNTRUSTED_COMMAND_STRING` — never build shell syntax from that text: no
+  `eval`, `source`, generated script text, or `bash -c`/`sh -c` string.
+- `UNTRUSTED_PRINTF_FORMAT` — never pass it as `printf`'s first argument; that
+  slot is the format. The body belongs in an argument slot: `printf '%s\n' "$body"`.
+- `UNTRUSTED_AWK_PROGRAM_OR_VAR` — never interpolate it into an awk program, and
+  never pass the raw body through `awk -v`, which applies escape processing and
+  can mutate parser input. Use stdin.
+
+**Per-hop requirements:**
+
+1. **Actions assignment** — event text in YAML `env:` only; no such expression
+   may appear in any compiled `run:` block.
+2. **Shell variable** — plain assignment only. No `eval`, command substitution,
+   here-doc generation, or `bash -c`.
+3. **`printf`** — literal format string; body always an argument.
+4. **Pipe** — stdin bytes between stages; never re-materialized as shell syntax.
+5. **`awk`** — static single-quoted program, body on stdin; awk variables carry
+   trusted constants only.
+6. **`grep`** — `grep -F -- "$pattern"`, quoted: `-F` forces fixed-string, `--`
+   ends option parsing so `-e` or `--version` stay data.
+
+**Verification requirement:** the gate must inspect **compiled** gh-aw output,
+not just this markdown, and fail when a compiled `run:` block carries event
+expressions, or when parser code passes a body variable as a `printf` format,
+into `eval`/`bash -c`, or into an awk program/`awk -v`. A gate that cannot turn
+red on a fixture whose `run:` prints a raw issue-body expression is not valid.
+
+That gate is **not implemented**; it is tracked in #1834. This contract is
+normative today but reviewed by hand, not enforced by CI. The steps below
+satisfy hops 2–6 as written; hop 1 is unverifiable here, since this repository
+ships no compiled gh-aw output.
+
+### Step PC-0: Normalize a dispatched command [MANDATORY on `workflow_dispatch`]
+
+`workflow_dispatch` delivers a **bare** command — its input schema documents
+`cast`, `implement`, `connect org/repo`, never `/squad implement`. PC-1 scans for
+a literal `/squad` token, so a bare token yields `NO_COMMAND` and routes a valid
+manual or relayed run into the PC-3 failure path. Normalize here rather than
+loosening PC-1: on the comment and issue-body paths a missing token *is* the
+error condition and must keep failing loudly (#1824). Only dispatch is
+structurally guaranteed a command, so only it is normalized.
+
+When `github.event_name` is `workflow_dispatch`, assign the **Dispatched
+command** to `SQUAD_DISPATCH_COMMAND` per hop 1 and run exactly this. Its output
+is the `SQUAD_TRIGGER_BODY` PC-1 consumes:
+
+```bash
+printf '%s\n' "$SQUAD_DISPATCH_COMMAND" | awk '{sub(/\r$/,"");sub(/^[[:space:]]+/,"");sub(/[[:space:]]+$/,"");if($0=="")next;f=1;if($0~/^\/squad([[:space:]]|$)/)print;else print "/squad " $0;exit}END{if(!f)print "EMPTY_DISPATCH"}'
+```
+
+Normalization is idempotent: `implement` and `/squad implement` both yield
+`/squad implement`, so typing the slash prefix into the dispatch box is not
+penalized. It scans the first non-empty line (#1835).
+
+`EMPTY_DISPATCH` means the activation guard above should already have halted the
+run. Halt with that guard's `::warning::`; never route it to PC-3, which posts a
+comment and fails the run. An empty activation probe must stay silent and
+side-effect free (PR #1777; junk issues #12 and #14).
+
+On the comment and issue-body paths there is no PC-0: assign the raw body
+directly to `SQUAD_TRIGGER_BODY`.
+
+### Step PC-1: Extract the command argument [MANDATORY]
+
+Assign the trigger body chosen above — PC-0's output on `workflow_dispatch`, the
+raw comment or issue body otherwise — to `SQUAD_TRIGGER_BODY` per hop 1, then
+run exactly this:
+
+```bash
+printf '%s\n' "$SQUAD_TRIGGER_BODY" | awk '{sub(/\r$/,"")} !f && match($0, /(^|[[:space:]])\/squad([[:space:]]|$)/) {f=1; rest=substr($0, RSTART+RLENGTH); sub(/^[[:space:]]+/,"",rest); sub(/[[:space:]]+$/,"",rest); print rest} END{if(!f) print "NO_COMMAND"}'
+```
+
+It scans **every** line, takes the first `/squad` token wherever it sits, and
+prints the argument text that followed it. Empty output means a bare `/squad`.
+Exactly `NO_COMMAND` means no `/squad` token exists anywhere in the body.
+
+`match()`/`substr()` extract the remainder of the **first** token. Greedy
+`sub(/^.*\/squad/,"")` strips through the *last* token on the line, so
+`/squad cast, then /squad status` resolves to `status` — a different mode than
+requested. First-token-wins is the contract; keep extraction anchored to
+`RSTART`/`RLENGTH`.
+
+### Step PC-2: Route on the extracted text
+
+1. `NO_COMMAND` → go to **Step PC-3**. Do **not** fall back to `cast`, do not
+   enter a skill, do not finish the run reporting success.
+2. Empty → mode is `cast` (bare `/squad`).
+3. Otherwise match **longest-prefix-first**:
    - `plan accept implementation` (3), `plan accept scope` (3), `plan program revise` (3)
    - `plan implementation` (2), `plan program` (2), `plan activate` (2), `plan validate` (2), `plan accept` (2), `plan revise` (2), `triage revise` (2)
    - `cast-member` (1), `plan` (1), `cast`, `connect`, `adopt`, `retire`, `status`, `research`, `triage`, `implement`
-4. Default to `cast` if empty.
+4. No prefix matches → go to **Step PC-3**.
 5. **Phase selector:** If remaining args contain `phase {N}`, extract N.
+
+### Step PC-3: No recognized command [MANDATORY — a no-op run must never report success]
+
+Reaching this step means the run matched no mode: it cast nothing, planned
+nothing, changed nothing. Reporting success here is the #1824 defect — a green
+check and a real cast were indistinguishable, so a first-run user got an empty
+team and no signal that anything had gone wrong.
+
+1. Show the text actually present in the body:
+
+   ```bash
+   printf '%s\n' "$SQUAD_TRIGGER_BODY" | tr -d '\r' | grep -n -i -m 3 -F -- '/squad' || echo 'NO_SQUAD_TEXT_IN_BODY'
+   ```
+
+2. Emit `echo "::error::Squad parsed no recognized command. Text seen: <verbatim
+   output of the command above>"`. Quote the observed text — never a generic
+   "unrecognized command" message with the offending input omitted.
+3. Post one comment on the triggering issue reproducing that same text verbatim
+   and listing the valid commands from the Modes table.
+4. **Fail the run** — exit non-zero. Never call `noop`, never post a success
+   summary, never let the run finish green.
+
+Deliberate widening: this scan also matches `/squad` inside a quoted line or a
+fenced block. Excluding those would reintroduce a silent-skip path, which is the
+exact bug class this step exists to eliminate. Parsing them and surfacing the
+result is preferred over ignoring them without a trace.
+
+**Known limitation — step 4 is an instruction, not an enforced exit code.** This
+file is an LLM prompt, so "fail the run" is a directive the runtime agent is
+asked to obey, not a branch CI can execute. `test/gh-aw-command-parse.test.ts`
+proves the *declared* commands emit `NO_COMMAND` and a diagnostic quoting the
+offending text; it cannot prove the agent then exits non-zero. That gap is
+inherent to gh-aw, not an oversight — two independent reviews have flagged it.
+Steps 1–3 are load-bearing precisely because their output is observable: an
+`::error::` annotation and an issue comment survive whatever exit status the
+agent chooses. Do not drop them in favor of step 4, and do not call step 4 a
+guarantee.
 
 ## Execute Mode
 
@@ -289,12 +446,48 @@ git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\r$/,"")} /^## Members/{f=
 
 `TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section of the **git-committed HEAD revision** of `.squad/team.md`. Neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`) qualifies. A path absent from HEAD, an empty committed file, a header-only scaffold, or zero member rows all yield `TEAM_ABSENT`.
 
-**Why committed HEAD, not local files:** The activation pre-step (e.g., `squad init --preset default`) may restore a local `.squad/` scaffold before the agent job runs. Reading the local filesystem would return TEAM_PRESENT for that scaffold even though no team has been cast and committed. `git show HEAD:.squad/team.md` reads only what is in the repository's committed state — activation-restored local files are intentionally invisible to this guard. Local activation state is preserved for Cast generation (TG-3 onward); only the guard decision reads committed HEAD.
+**Why committed HEAD, not local files:** an activation pre-step (e.g. `squad init --preset default`) can restore a local `.squad/` scaffold before the job runs; reading the local filesystem would return TEAM_PRESENT for that uncast scaffold. `git show HEAD:.squad/team.md` reads only committed state, so activation-restored local files are invisible to the guard.
 
-The leading `sub(/\r$/,"")` normalizes CRLF line endings so Windows-formatted team.md files are classified correctly. If the repo has no commits yet, `git show HEAD:...` exits non-zero and the pipe produces no output → TEAM_ABSENT.
+The leading `sub(/\r$/,"")` normalizes CRLF so Windows-formatted team.md classifies correctly. No commits → `git show` exits non-zero → TEAM_ABSENT.
 
 - `TEAM_PRESENT` → proceed to the original mode's section.
 - `TEAM_ABSENT` → execute **Auto-Cast Pivot** below; do not proceed with the original mode this run.
+
+### Step TG-2: Certify the Roster Set [MANDATORY when TEAM_PRESENT]
+
+Every step that mints a `squad:{name}` label or binds an `Owner`/`Agent` value binds **only** to this command's stdout. Run once.
+
+```bash
+TEAM_MD="$(git show HEAD:.squad/team.md 2>/dev/null)"
+if [ -z "$TEAM_MD" ]; then
+  echo "ROSTER_UNREADABLE: .squad/team.md absent from HEAD"
+elif ! printf '%s\n' "$TEAM_MD" | awk '{sub(/\r$/,"")} /^## Members/{f=1} END{exit !f}'; then
+  echo "ROSTER_UNREADABLE: no ## Members section in .squad/team.md"
+else
+  ROSTER="$(printf '%s\n' "$TEAM_MD" | awk -F'|' '
+    {sub(/\r$/,"")}
+    /^## Members/{f=1;next}
+    f&&/^#/{f=0}
+    f&&/^\|/{
+      if(col==0){for(i=1;i<=NF;i++){h=$i;gsub(/^[ \t]+|[ \t]+$/,"",h);if(h=="Name")col=i}next}
+      if($0 ~ /^\|[-: |]*\|$/)next
+      if(col==0)next
+      n=$col;gsub(/^[ \t]+|[ \t]+$/,"",n);if(n!="")print tolower(n)}
+    END{if(col==0)print "__NOCOL__"}')"
+  if printf '%s\n' "$ROSTER" | grep -q "__NOCOL__"; then
+    echo "ROSTER_UNREADABLE: no Name column in ## Members table"
+  elif [ -z "$ROSTER" ]; then
+    echo "ROSTER_UNREADABLE: ## Members has no data rows in .squad/team.md"
+  else
+    printf '%s\n' "$ROSTER" | awk '{print "ROSTER_MEMBER: " $0}'
+  fi
+fi
+```
+
+Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); finds the `Name` column by header and emits one lowercased `ROSTER_MEMBER: {name}` per `## Members` data row, else a `ROSTER_UNREADABLE: {reason}`.
+
+- **`ROSTER_MEMBER:` lines** are the **certified roster set** — bind only to these, reproduce them verbatim as provenance; a name outside them (bar `@copilot`) must never become a `squad:{name}` label.
+- **`ROSTER_UNREADABLE:`** halts binding with its named reason — never a provenance sentence for a read that did not happen, never a preset fallback; treat as `TEAM_ABSENT`.
 
 ### Auto-Cast Pivot
 
@@ -545,9 +738,16 @@ to this mode so it can automatically refill the parent's available slots.
    hierarchy (initiative → epic → task), not just immediate children. Also
    include open issues whose body contains a `Parent: #{ancestor-issue-number}`
    line for any ancestor, for compatibility with older plans.
-4. Identify the **leaf tasks**: open descendants that themselves have no open
-   sub-issues. Intermediate parents (initiatives and epics that only group other
-   issues) are never dispatched to a worker — only leaf tasks are implemented.
+4. Identify the **leaf tasks**: open descendants that have **no sub-issues at
+   all** — neither open nor closed — and are not labeled `epic` or `initiative`.
+   Intermediate parents (initiatives and epics that only group other issues)
+   are never dispatched to a worker — only leaf tasks are implemented. Use "no
+   sub-issues at all" rather than "no *open* sub-issues": an epic whose children
+   have all been implemented and closed stays open until someone closes it, and
+   an open-children-only test would reclassify that drained epic as a leaf and
+   dispatch a worker against a grouping issue. That is the #1758 defect 2
+   failure shape reappearing at the end of an epic's life, and it is reachable
+   whenever a refill scan descends from the root across sibling epics.
 5. If the target has one or more open leaf descendants, treat the target as a
    parent and follow the Epic Dispatch procedure below over the leaf-task set.
    Do not implement the parent body directly.
@@ -661,15 +861,13 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 1. Read issue body (the epic/brief).
 2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
-3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:** every
-   `Owner` and `Agent` value MUST be a cast **Name** taken verbatim from the
-   `## Members` table's `Name` column of `.squad/team.md` (e.g. `Flight`,
-   `Procedures`, `EECOM`) — never a Role string (`Lead`, `Prompt Engineer`,
-   `DevRel`) and never a lowercased role (`lead`, `devrel`, `reviewer`). Map each
-   work item's domain to an owner via `.squad/routing.md`, then resolve that
-   owner to its exact `Name`. If no cast member fits, use `@copilot`. This
-   binding governs every `Owner`/`Agent` column and every `squad:{owner}` label
-   emitted downstream.
+3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:** permitted
+   `Owner`/`Agent` values are Team Guard Step TG-2's certified roster set — the
+   `Name` column of `## Members` in **this repository's** `.squad/team.md` — plus
+   `@copilot`. Map each item's domain to a member via `.squad/routing.md` and emit
+   that member's exact `Name` cell — never a recalled name, never another column
+   (the `Role` column included). If none fits, use `@copilot`. Governs every
+   `Owner`/`Agent` column and `squad:{owner}` label downstream.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -682,7 +880,7 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
 
-The `Owner` column MUST be a cast **Name** per the Owner/Agent binding rule (Step 1) — a value from the `Name` column of `.squad/team.md`, never a Role string.
+Re-check every `Owner` against the Step 1 permitted set before posting; a value absent from it is invalid and must be re-resolved.
 
 Do NOT create issues.
 
@@ -727,7 +925,7 @@ If plan has phases: Root → Phase issues → Task issues. Flat plan: tasks dire
 
 For each work item, `create-issue`:
 - Title: work item title
-- Labels: `squad` (color `9B8FCC`), `squad:{owner}` (color `9B8FCC`), where `{owner}` is the work item's cast **Name** lowercased (e.g. Owner `Flight` → `squad:flight`). It MUST resolve to a `Name` row in `.squad/team.md`; never mint a role-derived label such as `squad:lead` or `squad:reviewer`.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the `Owner` lowercased. Mint `squad:{owner}` **only** when that value matches a `ROSTER_MEMBER:` line from Team Guard Step TG-2 — its stdout (the certified roster set, from the `Name` column of `## Members` in `.squad/team.md`) is the sole source; never re-read team.md or recall a name. Uncertified `Owner`: apply only `squad`, fall back to `@copilot`. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat)
 - Size: set Project field if available, else body `**Size:**` line
@@ -910,13 +1108,13 @@ Search in order: `scope-accepted` artifact (use as authoritative) → `program` 
 
 Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Rollout notes.
 
-**Agent binding rule:** every `Agent` value MUST be a cast **Name** from the `Name` column of `.squad/team.md` (resolved via `.squad/routing.md`), never a Role string (`Lead`, `DevRel`) or lowercased role (`lead`, `reviewer`). If no cast member fits, use `@copilot`.
+**Agent binding rule:** permitted `Agent` values are Team Guard Step TG-2's certified roster set (the `Name` column of `## Members` in **this repository's** `.squad/team.md`), plus `@copilot`. Resolve each task's domain via `.squad/routing.md` and emit that member's exact `Name` cell; no other column, the `Role` column included, supplies a valid `Agent`. If none fits, use `@copilot`.
 
 Rules: no task > max_task_size. DAG only. Every task traces to program item. Every epic has ≥1 task. Vertical slices. Group into phases by dependency order (Phase 1 = no deps).
 
 ##### Step 3: Validate Structure
 
-Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` resolves to a `Name` row in `.squad/team.md`, never a Role string). Fix before posting.
+Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value matches a Team Guard Step TG-2 `ROSTER_MEMBER:` line — appears verbatim in the `Name` column — or is `@copilot`). Fix before posting.
 
 ##### Step 4: Post Implementation Plan
 
@@ -924,7 +1122,7 @@ Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Ag
 
 Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Validation Pre-check → Next: `/squad plan validate`.
 
-The `Agent` column MUST be a cast **Name** per the Agent binding rule (Step 2) — a value from the `Name` column of `.squad/team.md`, never a Role string.
+Re-check every `Agent` against the Step 2 binding rule before posting.
 
 ##### Step 5: Update Lifecycle
 
@@ -960,8 +1158,25 @@ Find the latest `program`, `implementation`, and `triage` artifacts. At minimum 
 | 7 | Incomplete metadata | Both | Missing sizes/agents/criteria |
 | 8 | Orphaned items | Both | Triage items not in program |
 | 9 | Milestone gaps | Program | Epics not in any milestone |
+| 10 | Non-roster owner/agent | Both | An `Owner`/`Agent` value is absent from the roster (see below) |
 
-Severity: ❌ Critical (blocks acceptance): 1–6, 8. ⚠️ Warning: 7, 9, borderline 5.
+Severity: ❌ Critical (blocks acceptance): 1–6, 8, 10. ⚠️ Warning: 7, 9, borderline 5.
+
+###### Check 10 — roster binding (the `Name` column is the sole source of truth)
+
+Run mechanically; never accept a value because it "looks like" a teammate.
+
+1. The **roster set** is the certified output of Team Guard Step TG-2 — the
+   `ROSTER_MEMBER:` names from the `Name` column of `## Members`. If TG-2 emitted
+   `ROSTER_UNREADABLE:`, report Check 10 ❌ Critical and stop — no roster, no binding.
+2. Quote the roster set in the validation output.
+3. Every `Owner`/`Agent` cell is valid **only** if it matches a roster-set entry
+   ignoring case, or is exactly `@copilot`; any other value — including one from a
+   different column, such as the `Role` column — is invalid.
+4. Every invalid value is a ❌ **Critical** finding (`RESULT: FAIL`), reported with
+   artifact, row, offending value, and the roster set it must be drawn from.
+   Never report a value as a valid roster name unless TG-2 emitted it as a
+   `ROSTER_MEMBER:`.
 
 ##### Step 3: Post Result
 
@@ -1086,7 +1301,28 @@ Count expected issues before starting. If total > 50: recommend phased activatio
 
 ##### Label Pre-flight
 
-Before the first `create-issue`, verify labels `squad` and any `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
+**Roster binding gate — run this before any `create-issue` call.**
+
+1. Run Team Guard Step TG-2; its `ROSTER_MEMBER:` lines are the **certified roster
+   set** — the only valid source for a `squad:{agent}` label this run. Do not re-read
+   team.md or recall a name.
+2. If TG-2 emitted a `ROSTER_UNREADABLE:` line, STOP: report that named reason in the
+   activation summary and mint no `squad:{agent}` label. Never print a roster-provenance
+   sentence for a read that did not happen, and never fall back to a preset or
+   remembered roster.
+3. Reproduce the certified `ROSTER_MEMBER:` lines verbatim in the summary as the
+   provenance of the labels applied — the summary may name only values TG-2 emitted.
+4. For every `Agent` value, mint `squad:{agent}` only when its lowercased form matches
+   a certified `ROSTER_MEMBER:` name, or the value is exactly `@copilot`.
+5. A value matching no certified name and not `@copilot` MUST NOT become a
+   `squad:{agent}` label: apply only `squad` for that issue and record the value under a
+   `Non-roster agent values` heading, naming the certified set it should come from.
+6. Completeness: when the plan names at least one roster `Agent`, at least one
+   `squad:{agent}` label MUST be applied across the created issues. Zero labels on a
+   plan with roster owners is a binding failure, not a pass — report it, don't proceed
+   silently.
+
+Then verify labels `squad` and each roster-bound `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
 
 ##### Transient Failure Handling
 
