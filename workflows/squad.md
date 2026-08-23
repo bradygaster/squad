@@ -446,12 +446,48 @@ git show HEAD:.squad/team.md 2>/dev/null | awk '{sub(/\r$/,"")} /^## Members/{f=
 
 `TEAM_PRESENT` requires at least one Markdown table data row inside the `## Members` section of the **git-committed HEAD revision** of `.squad/team.md`. Neither the header row (`| Name | Role | … |`) nor the separator row (`|---|---|`) qualifies. A path absent from HEAD, an empty committed file, a header-only scaffold, or zero member rows all yield `TEAM_ABSENT`.
 
-**Why committed HEAD, not local files:** The activation pre-step (e.g., `squad init --preset default`) may restore a local `.squad/` scaffold before the agent job runs. Reading the local filesystem would return TEAM_PRESENT for that scaffold even though no team has been cast and committed. `git show HEAD:.squad/team.md` reads only what is in the repository's committed state — activation-restored local files are intentionally invisible to this guard. Local activation state is preserved for Cast generation (TG-3 onward); only the guard decision reads committed HEAD.
+**Why committed HEAD, not local files:** an activation pre-step (e.g. `squad init --preset default`) can restore a local `.squad/` scaffold before the job runs; reading the local filesystem would return TEAM_PRESENT for that uncast scaffold. `git show HEAD:.squad/team.md` reads only committed state, so activation-restored local files are invisible to the guard.
 
-The leading `sub(/\r$/,"")` normalizes CRLF line endings so Windows-formatted team.md files are classified correctly. If the repo has no commits yet, `git show HEAD:...` exits non-zero and the pipe produces no output → TEAM_ABSENT.
+The leading `sub(/\r$/,"")` normalizes CRLF so Windows-formatted team.md classifies correctly. No commits → `git show` exits non-zero → TEAM_ABSENT.
 
 - `TEAM_PRESENT` → proceed to the original mode's section.
 - `TEAM_ABSENT` → execute **Auto-Cast Pivot** below; do not proceed with the original mode this run.
+
+### Step TG-2: Certify the Roster Set [MANDATORY when TEAM_PRESENT]
+
+Every step that mints a `squad:{name}` label or binds an `Owner`/`Agent` value binds **only** to this command's stdout. Run once.
+
+```bash
+TEAM_MD="$(git show HEAD:.squad/team.md 2>/dev/null)"
+if [ -z "$TEAM_MD" ]; then
+  echo "ROSTER_UNREADABLE: .squad/team.md absent from HEAD"
+elif ! printf '%s\n' "$TEAM_MD" | awk '{sub(/\r$/,"")} /^## Members/{f=1} END{exit !f}'; then
+  echo "ROSTER_UNREADABLE: no ## Members section in .squad/team.md"
+else
+  ROSTER="$(printf '%s\n' "$TEAM_MD" | awk -F'|' '
+    {sub(/\r$/,"")}
+    /^## Members/{f=1;next}
+    f&&/^#/{f=0}
+    f&&/^\|/{
+      if(col==0){for(i=1;i<=NF;i++){h=$i;gsub(/^[ \t]+|[ \t]+$/,"",h);if(h=="Name")col=i}next}
+      if($0 ~ /^\|[-: |]*\|$/)next
+      if(col==0)next
+      n=$col;gsub(/^[ \t]+|[ \t]+$/,"",n);if(n!="")print tolower(n)}
+    END{if(col==0)print "__NOCOL__"}')"
+  if printf '%s\n' "$ROSTER" | grep -q "__NOCOL__"; then
+    echo "ROSTER_UNREADABLE: no Name column in ## Members table"
+  elif [ -z "$ROSTER" ]; then
+    echo "ROSTER_UNREADABLE: ## Members has no data rows in .squad/team.md"
+  else
+    printf '%s\n' "$ROSTER" | awk '{print "ROSTER_MEMBER: " $0}'
+  fi
+fi
+```
+
+Reuses TG-1's committed-HEAD read (working-tree presets cannot leak); finds the `Name` column by header and emits one lowercased `ROSTER_MEMBER: {name}` per `## Members` data row, else a `ROSTER_UNREADABLE: {reason}`.
+
+- **`ROSTER_MEMBER:` lines** are the **certified roster set** — bind only to these, reproduce them verbatim as provenance; a name outside them (bar `@copilot`) must never become a `squad:{name}` label.
+- **`ROSTER_UNREADABLE:`** halts binding with its named reason — never a provenance sentence for a read that did not happen, never a preset fallback; treat as `TEAM_ABSENT`.
 
 ### Auto-Cast Pivot
 
@@ -825,27 +861,13 @@ Decompose issue into sub-issues as a comment. Does NOT create issues. Works on o
 
 1. Read issue body (the epic/brief).
 2. Find latest `research` artifact comment for this issue. If found, use as primary context. If not, do lightweight repo analysis.
-3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:**
-
-   a. Locate the `## Members` table in **this repository's** `.squad/team.md`.
-      Read its `Name` column and build the **allowed-owner set**: every `Name`
-      cell value copied verbatim, plus `@copilot`.
-   b. Before assigning any owner, write the allowed-owner set out explicitly in
-      your working notes, so the binding is grounded in the roster you actually
-      read rather than recalled. Use only values read from this repository's
-      `.squad/team.md` — never a name carried over from another roster, an
-      example, or a previous task.
-   c. Every `Owner` and `Agent` value you emit MUST be a member of the
-      allowed-owner set, character-for-character as it appears in the `Name`
-      column. The `Name` column is the sole source of these values; no other
-      column of `.squad/team.md` — the `Role` column included — supplies a valid
-      owner, in any casing.
-   d. Map each work item's domain to a member via `.squad/routing.md`, then
-      resolve that member to its exact `Name` cell value. If no cast member fits,
-      use `@copilot`.
-
-   This binding governs every `Owner`/`Agent` column and every `squad:{owner}`
-   label emitted downstream.
+3. Read `.squad/team.md` if it exists. **Owner/Agent binding rule:** permitted
+   `Owner`/`Agent` values are Team Guard Step TG-2's certified roster set — the
+   `Name` column of `## Members` in **this repository's** `.squad/team.md` — plus
+   `@copilot`. Map each item's domain to a member via `.squad/routing.md` and emit
+   that member's exact `Name` cell — never a recalled name, never another column
+   (the `Role` column included). If none fits, use `@copilot`. Governs every
+   `Owner`/`Agent` column and `squad:{owner}` label downstream.
 4. Text after `/squad plan` = planning guidance.
 
 ##### Step 2: Decompose
@@ -858,7 +880,7 @@ Break into discrete work items. **Minimum 3 items** unless genuinely atomic (exp
 
 Structure: `## 📋 Squad Plan — {Title}` → reference line → Phase tables (# | Title | Owner | Size | Depends On) → Details per item (Scope, Acceptance criteria, Notes) → Dependency Graph → Execution Notes → Next Steps (`/squad plan accept`, `/squad plan accept phase 1`, `/squad plan revise`, `/squad plan`).
 
-Every `Owner` cell MUST be a member of the allowed-owner set built in Step 1 — a verbatim value from the `Name` column of the `## Members` table in `.squad/team.md`, or `@copilot`. Re-check each `Owner` cell against that column before posting; a value that does not appear there is invalid and must be re-resolved.
+Re-check every `Owner` against the Step 1 permitted set before posting; a value absent from it is invalid and must be re-resolved.
 
 Do NOT create issues.
 
@@ -903,7 +925,7 @@ If plan has phases: Root → Phase issues → Task issues. Flat plan: tasks dire
 
 For each work item, `create-issue`:
 - Title: work item title
-- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`), where `{owner}` is the work item's `Owner` value lowercased. Before minting each `squad:{owner}` label, confirm the `Owner` value appears verbatim in the `Name` column of the `## Members` table in `.squad/team.md`. The `Name` column is the only permitted source for this label — no other column of `.squad/team.md` supplies one. If the `Owner` value is not present in that column, do not mint the label: re-resolve the owner against the `Name` column, or fall back to `@copilot` and apply only the `squad` label.
+- Labels: `squad` (color `9B8FCC`), plus `squad:{owner}` (color `9B8FCC`) where `{owner}` is the `Owner` lowercased. Mint `squad:{owner}` **only** when that value matches a `ROSTER_MEMBER:` line from Team Guard Step TG-2 — its stdout (the certified roster set, from the `Name` column of `## Members` in `.squad/team.md`) is the sole source; never re-read team.md or recall a name. Uncertified `Owner`: apply only `squad`, fall back to `@copilot`. On `ROSTER_UNREADABLE:`, stop and report that reason; never mint from a preset or remembered roster.
 - Body: scope, acceptance criteria, context (parent, phase, size, depends on, owner), notes, footer
 - Parent: phase issue (hierarchical) or root (flat)
 - Size: set Project field if available, else body `**Size:**` line
@@ -1086,13 +1108,13 @@ Search in order: `scope-accepted` artifact (use as authoritative) → `program` 
 
 Per task specify: Title, Scope (files/modules/APIs), Acceptance criteria, Size (XS <1h, S 1-3h, M 3-8h, L 1-2d; max per policy default L), Dependencies (task numbers), Agent, Rollout notes.
 
-**Agent binding rule:** before assigning any agent, read the `## Members` table in **this repository's** `.squad/team.md` and list its `Name` column values verbatim in your working notes. That list, plus `@copilot`, is the complete set of permitted `Agent` values — ground your assignments in the roster you just read rather than recalling one. Every `Agent` value MUST be one of those values, character-for-character. Resolve each task's domain to a member via `.squad/routing.md`, then emit that member's exact `Name` cell value. The `Name` column is the sole source of `Agent` values; no other column of `.squad/team.md` — the `Role` column included — supplies a valid one, in any casing. If no cast member fits, use `@copilot`.
+**Agent binding rule:** permitted `Agent` values are Team Guard Step TG-2's certified roster set (the `Name` column of `## Members` in **this repository's** `.squad/team.md`), plus `@copilot`. Resolve each task's domain via `.squad/routing.md` and emit that member's exact `Name` cell; no other column, the `Role` column included, supplies a valid `Agent`. If none fits, use `@copilot`.
 
 Rules: no task > max_task_size. DAG only. Every task traces to program item. Every epic has ≥1 task. Vertical slices. Group into phases by dependency order (Phase 1 = no deps).
 
 ##### Step 3: Validate Structure
 
-Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value appears verbatim in the `Name` column of the `## Members` table in `.squad/team.md`, or is `@copilot`). Fix before posting.
+Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value matches a Team Guard Step TG-2 `ROSTER_MEMBER:` line — appears verbatim in the `Name` column — or is `@copilot`). Fix before posting.
 
 ##### Step 4: Post Implementation Plan
 
@@ -1100,7 +1122,7 @@ Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Ag
 
 Structure: `## 🔧 Squad Implementation Plan` → Program ref → Phase tables (Title|Size|Depends On|Agent|Epic) → Details per task (Scope, Acceptance criteria, Dependencies, Rollout, Traces to) → Dependency Graph → Sizing Summary table → Validation Pre-check → Next: `/squad plan validate`.
 
-Every `Agent` cell MUST be a permitted value per the Agent binding rule (Step 2) — a verbatim value from the `Name` column of the `## Members` table in `.squad/team.md`, or `@copilot`. Re-check each `Agent` cell against that column before posting.
+Re-check every `Agent` against the Step 2 binding rule before posting.
 
 ##### Step 5: Update Lifecycle
 
@@ -1142,25 +1164,19 @@ Severity: ❌ Critical (blocks acceptance): 1–6, 8, 10. ⚠️ Warning: 7, 9, 
 
 ###### Check 10 — roster binding (the `Name` column is the sole source of truth)
 
-Run this check mechanically. Do not judge whether a value "looks like" a
-teammate, and do not accept a value because it seems plausible or was used
-earlier in the plan.
+Run mechanically; never accept a value because it "looks like" a teammate.
 
-1. Read the `## Members` table in **this repository's** `.squad/team.md`. Collect
-   its `Name` column cell values verbatim into the **roster set**. If
-   `.squad/team.md` is missing or its `## Members` table has no data rows, report
-   Check 10 as ❌ Critical and stop — a plan cannot bind owners without a roster.
-2. Quote the roster set in the validation output, so the reader can see exactly
-   which values were treated as valid.
-3. For every `Owner` cell in the program artifact and every `Agent` cell in the
-   implementation artifact: the value is valid **only** if it matches a roster-set
-   entry ignoring case, or is exactly `@copilot`. Every other value — including
-   any value drawn from a different column of `.squad/team.md`, such as the
-   `Role` column — is invalid.
-4. Every invalid value is a ❌ **Critical** finding, which makes the run
-   `RESULT: FAIL`. Report each one as: the artifact, the row, the offending
-   value, and the roster set it must be drawn from. Never report a value as a
-   valid roster name unless you found it in the `Name` column in step 1.
+1. The **roster set** is the certified output of Team Guard Step TG-2 — the
+   `ROSTER_MEMBER:` names from the `Name` column of `## Members`. If TG-2 emitted
+   `ROSTER_UNREADABLE:`, report Check 10 ❌ Critical and stop — no roster, no binding.
+2. Quote the roster set in the validation output.
+3. Every `Owner`/`Agent` cell is valid **only** if it matches a roster-set entry
+   ignoring case, or is exactly `@copilot`; any other value — including one from a
+   different column, such as the `Role` column — is invalid.
+4. Every invalid value is a ❌ **Critical** finding (`RESULT: FAIL`), reported with
+   artifact, row, offending value, and the roster set it must be drawn from.
+   Never report a value as a valid roster name unless TG-2 emitted it as a
+   `ROSTER_MEMBER:`.
 
 ##### Step 3: Post Result
 
@@ -1287,21 +1303,24 @@ Count expected issues before starting. If total > 50: recommend phased activatio
 
 **Roster binding gate — run this before any `create-issue` call.**
 
-1. Read the `## Members` table in **this repository's** `.squad/team.md` and
-   collect its `Name` column cell values verbatim into the **roster set**.
-2. List the roster set in the activation summary, so the labels applied can be
-   traced back to the roster that was actually read.
-3. For every `Agent` value in the implementation plan, confirm it matches a
-   roster-set entry ignoring case, or is exactly `@copilot`. The `Name` column is
-   the only permitted source; a value taken from any other column of
-   `.squad/team.md`, such as the `Role` column, does not qualify.
-4. A value that fails step 3 MUST NOT be turned into a `squad:{agent}` label.
-   Apply only the `squad` label for that issue and record the value in the
-   activation summary under a `Non-roster agent values` heading, naming the
-   roster set it should have been drawn from.
-
-`{agent}` in `squad:{agent}` is a roster-set value lowercased — never anything
-else.
+1. Run Team Guard Step TG-2; its `ROSTER_MEMBER:` lines are the **certified roster
+   set** — the only valid source for a `squad:{agent}` label this run. Do not re-read
+   team.md or recall a name.
+2. If TG-2 emitted a `ROSTER_UNREADABLE:` line, STOP: report that named reason in the
+   activation summary and mint no `squad:{agent}` label. Never print a roster-provenance
+   sentence for a read that did not happen, and never fall back to a preset or
+   remembered roster.
+3. Reproduce the certified `ROSTER_MEMBER:` lines verbatim in the summary as the
+   provenance of the labels applied — the summary may name only values TG-2 emitted.
+4. For every `Agent` value, mint `squad:{agent}` only when its lowercased form matches
+   a certified `ROSTER_MEMBER:` name, or the value is exactly `@copilot`.
+5. A value matching no certified name and not `@copilot` MUST NOT become a
+   `squad:{agent}` label: apply only `squad` for that issue and record the value under a
+   `Non-roster agent values` heading, naming the certified set it should come from.
+6. Completeness: when the plan names at least one roster `Agent`, at least one
+   `squad:{agent}` label MUST be applied across the created issues. Zero labels on a
+   plan with roster owners is a binding failure, not a pass — report it, don't proceed
+   silently.
 
 Then verify labels `squad` and each roster-bound `squad:{agent}` exist. If missing, record them in the activation summary as a prerequisite gap (label creation requires `issues: write` + `create-label` safe-output — not configured in this workflow). Continue activation — `create-issue` will apply any existing labels normally; unavailable labels are omitted and reported, not silently applied.
 
