@@ -187,6 +187,16 @@ describe('parseAzureDevOpsRemote', () => {
     const result = parseAzureDevOpsRemote('https://contoso.visualstudio.com/WebApp/_git/api.service.git');
     expect(result).toEqual({ org: 'contoso', project: 'WebApp', repo: 'api.service' });
   });
+
+  it('decodes URL-encoded spaces in a legacy visualstudio.com project name', () => {
+    const result = parseAzureDevOpsRemote('https://mycomp.visualstudio.com/Pref%20Proj/_git/pref.proj');
+    expect(result).toEqual({ org: 'mycomp', project: 'Pref Proj', repo: 'pref.proj' });
+  });
+
+  it('decodes URL-encoded spaces in a dev.azure.com project name', () => {
+    const result = parseAzureDevOpsRemote('https://dev.azure.com/myorg/My%20Project/_git/myrepo');
+    expect(result).toEqual({ org: 'myorg', project: 'My Project', repo: 'myrepo' });
+  });
 });
 
 // ─── WorkItem Type Shape ───────────────────────────────────────────────
