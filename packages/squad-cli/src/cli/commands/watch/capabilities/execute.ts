@@ -90,13 +90,20 @@ function formatIssueList(issues: ExecutableWorkItem[]): string {
   }).join('\n');
 }
 
-/** Build the rich agent prompt matching PS1 ralph-watch design. */
+/**
+ * Build the rich agent prompt matching PS1 ralph-watch design.
+ *
+ * `stateDir` — where to look for ralph-instructions.md — defaults to
+ * `{teamRoot}/.squad` when omitted; pass the effective state dir directly
+ * to follow externalized state (#1490).
+ */
 export function buildAgentPrompt(
   issues: ExecutableWorkItem[],
   teamRoot: string,
+  stateDir?: string,
 ): string {
   const issueList = formatIssueList(issues);
-  const hasInstructions = existsSync(path.join(teamRoot, '.squad', 'ralph-instructions.md'));
+  const hasInstructions = existsSync(path.join(stateDir ?? path.join(teamRoot, '.squad'), 'ralph-instructions.md'));
 
   if (hasInstructions) {
     return [
@@ -132,7 +139,7 @@ async function executeAll(
   context: WatchContext,
   timeoutMs: number,
 ): Promise<{ success: boolean; error?: string }> {
-  const prompt = buildAgentPrompt(issues, context.teamRoot);
+  const prompt = buildAgentPrompt(issues, context.teamRoot, context.stateRoot);
 
   // Load Ralph's charter to give the spawned session full specialist context.
   let charterPrefix = '';

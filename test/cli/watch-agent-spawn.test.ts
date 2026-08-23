@@ -34,6 +34,7 @@ import { buildCopilotCommand, spawnAgent } from '../../packages/squad-cli/src/cl
 function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
   return {
     teamRoot: '/fake/team',
+    stateRoot: '/fake/team/.squad',
     adapter: {} as WatchContext['adapter'],
     round: 1,
     roster: [],

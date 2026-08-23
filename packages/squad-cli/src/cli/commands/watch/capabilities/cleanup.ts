@@ -74,8 +74,7 @@ export class CleanupCapability implements WatchCapability {
   readonly phase = 'housekeeping' as const;
 
   async preflight(context: WatchContext): Promise<PreflightResult> {
-    const squadDir = path.join(context.teamRoot, '.squad');
-    if (!storage.existsSync(squadDir)) {
+    if (!storage.existsSync(context.stateRoot)) {
       return { ok: false, reason: '.squad/ directory not found' };
     }
     return { ok: true };
@@ -90,7 +89,7 @@ export class CleanupCapability implements WatchCapability {
       return { success: true, summary: `cleanup: skipped (runs every ${everyN} rounds)` };
     }
 
-    const squadDir = path.join(context.teamRoot, '.squad');
+    const squadDir = context.stateRoot;
     const maxAge = config.maxAgeDays ?? DEFAULT_MAX_AGE_DAYS;
     const actions: string[] = [];
 

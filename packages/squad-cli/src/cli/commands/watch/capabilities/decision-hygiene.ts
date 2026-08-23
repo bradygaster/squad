@@ -17,7 +17,7 @@ export class DecisionHygieneCapability implements WatchCapability {
   readonly phase = 'housekeeping' as const;
 
   async preflight(context: WatchContext): Promise<PreflightResult> {
-    const inboxDir = path.join(context.teamRoot, '.squad', 'decisions', 'inbox');
+    const inboxDir = path.join(context.stateRoot, 'decisions', 'inbox');
     if (!storage.existsSync(inboxDir)) {
       return { ok: false, reason: 'no decision inbox directory found' };
     }
@@ -26,7 +26,7 @@ export class DecisionHygieneCapability implements WatchCapability {
 
   async execute(context: WatchContext): Promise<CapabilityResult> {
     try {
-      const inboxDir = path.join(context.teamRoot, '.squad', 'decisions', 'inbox');
+      const inboxDir = path.join(context.stateRoot, 'decisions', 'inbox');
       if (!storage.existsSync(inboxDir)) {
         return { success: true, summary: 'no decision inbox' };
       }

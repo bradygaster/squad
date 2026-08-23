@@ -26,7 +26,7 @@ export class RetroCapability implements WatchCapability {
       const isFriday = now.getUTCDay() === 5;
       const isAfternoon = now.getUTCHours() >= 14;
 
-      const logDir = path.join(context.teamRoot, '.squad', 'log');
+      const logDir = path.join(context.stateRoot, 'log');
       let lastRetroAge = Infinity;
       try {
         const files = storage.listSync?.(logDir) ?? [];
