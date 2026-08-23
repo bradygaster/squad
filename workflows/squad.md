@@ -1114,7 +1114,7 @@ Rules: no task > max_task_size. DAG only. Every task traces to program item. Eve
 
 ##### Step 3: Validate Structure
 
-Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value appears verbatim in the `Name` column of the `## Members` table in `.squad/team.md`, or is `@copilot`). Fix before posting.
+Check: sizes ≤ L, no cycles, traceability, coverage, agent validity (every `Agent` value matches a Team Guard Step TG-2 `ROSTER_MEMBER:` line — appears verbatim in the `Name` column — or is `@copilot`). Fix before posting.
 
 ##### Step 4: Post Implementation Plan
 
