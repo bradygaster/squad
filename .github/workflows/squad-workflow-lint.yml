@@ -18,6 +18,7 @@ on:
       - '.squad-templates/workflows/**'
       - 'templates/workflows/**'
       - 'workflows/**'
+      - 'scripts/check-workflow-input-interpolation.mjs'
   push:
     branches: [dev, main]
     paths:
@@ -27,6 +28,7 @@ on:
       - '.squad-templates/workflows/**'
       - 'templates/workflows/**'
       - 'workflows/**'
+      - 'scripts/check-workflow-input-interpolation.mjs'
 
 permissions:
   contents: read
@@ -135,3 +137,10 @@ jobs:
         run: |
           echo "--- Linting templates/workflows/ (root mirror) ---"
           actionlint templates/workflows/*.yml
+
+      # actionlint only reads YAML. Agentic workflow prompts are Markdown, where a
+      # `github.event.inputs.x` reference written as prose is silently inert: the
+      # dispatched value never reaches the agent, the run still reports success, and
+      # the workflow no-ops with no visible signal. See #1740.
+      - name: Check agentic prompt input interpolation
+        run: node scripts/check-workflow-input-interpolation.mjs
