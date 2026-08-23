@@ -29,7 +29,11 @@ vi.mock('node:fs', () => ({
   existsSync: mockFsExistsSync,
 }));
 
-import { buildCopilotCommand, spawnAgent } from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
+import {
+  buildAgentCommand,
+  buildCopilotCommand,
+  spawnAgent,
+} from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
 
 function makeContext(overrides: Partial<WatchContext> = {}): WatchContext {
   return {
@@ -72,6 +76,42 @@ describe('agent-spawn: buildCopilotCommand', () => {
     expect(args).toContain('--additional-mcp-config');
     expect(args).toContain('-p');
     expect(args).toContain('hello');
+  });
+});
+
+describe('agent-spawn: custom agent prompt placement', () => {
+  it.each([
+    ['buildAgentCommand', buildAgentCommand],
+    ['buildCopilotCommand', buildCopilotCommand],
+  ])('%s replaces a standalone {prompt} token with one argv element', (_name, build) => {
+    const prompt = 'work on every actionable issue';
+    const ctx = makeContext({ agentCmd: 'boundary run --task {prompt} --verbose' });
+
+    expect(build(prompt, ctx)).toEqual({
+      cmd: 'boundary',
+      args: ['run', '--task', prompt, '--verbose'],
+    });
+  });
+
+  it.each([
+    ['buildAgentCommand', buildAgentCommand],
+    ['buildCopilotCommand', buildCopilotCommand],
+  ])('%s rejects multiple standalone {prompt} tokens', (_name, build) => {
+    const ctx = makeContext({ agentCmd: 'custom-agent {prompt} --retry {prompt}' });
+
+    expect(() => build('hello', ctx)).toThrow(/at most one.*\{prompt\}/i);
+  });
+
+  it.each([
+    ['buildAgentCommand', buildAgentCommand],
+    ['buildCopilotCommand', buildCopilotCommand],
+  ])('%s ignores embedded placeholders and preserves legacy -p behavior', (_name, build) => {
+    const ctx = makeContext({ agentCmd: 'custom-agent --task={prompt}' });
+
+    expect(build('hello world', ctx)).toEqual({
+      cmd: 'custom-agent',
+      args: ['--task={prompt}', '-p', 'hello world'],
+    });
   });
 });
 

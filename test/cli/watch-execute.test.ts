@@ -68,6 +68,28 @@ describe('CLI: watch execute mode', () => {
       expect(args).toContain('value');
       expect(args).toContain('-p');
     });
+
+    it('places the prompt at a standalone custom agent placeholder', () => {
+      const issue: WatchWorkItem = {
+        number: 51,
+        title: 'Bounded custom task',
+        body: '',
+        labels: [{ name: 'squad:custom' }],
+        assignees: [],
+      };
+
+      const { cmd, args } = buildAgentCommand(issue, '/path/to/squad', {
+        intervalMinutes: 10,
+        agentCmd: 'boundary run --task {prompt}',
+      });
+
+      expect(cmd).toBe('boundary');
+      expect(args).toEqual([
+        'run',
+        '--task',
+        'Work on issue #51: Bounded custom task. Read the issue body for full details.',
+      ]);
+    });
   });
 
   describe('findExecutableIssues', () => {

@@ -12,6 +12,7 @@ import { execFile } from 'node:child_process';
 import {
   parseLoopFile,
   generateLoopFile,
+  buildLoopAgentCommand,
   runLoop,
   type LoopConfig,
 } from '../../packages/squad-cli/src/cli/commands/loop.js';
@@ -243,6 +244,19 @@ describe('generateLoopFile', () => {
     expect(frontmatter.configured).toBe(false);
     expect(frontmatter.interval).toBe(10);
     expect(frontmatter.timeout).toBe(30);
+  });
+});
+
+describe('buildLoopAgentCommand', () => {
+  it('places the prompt at a standalone custom agent placeholder', () => {
+    const prompt = 'run the configured work loop';
+
+    expect(buildLoopAgentCommand(prompt, {
+      agentCmd: 'boundary run --task {prompt}',
+    })).toEqual({
+      cmd: 'boundary',
+      args: ['run', '--task', prompt],
+    });
   });
 });
 
