@@ -1,254 +1,38 @@
-# PAO
+# Pao history
 
-> Public Affairs Officer
+Summarized by Scribe on 2026-08-20T11:59:44-07:00 because this history exceeded 15KB.
+Full pre-summary history archived at `.squad/agents/pao/history-archive-2026-08-20T11-59-44-0700.md`.
+Prior archive at `.squad/agents/pao/history-archive-2026-08-19T13-11-34.130-07-00.md`.
 
-## Core Context
+## Condensed index
 
-Docs live in docs/ with blog/, concepts/, cookbook/, getting-started/, guide/, features/, scenarios/ sections. Blog tests use filesystem discovery (dynamic); other sections use hardcoded expected arrays. Microsoft Style Guide enforced: sentence-case headings, active voice, second person, present tense. Docs format: plain markdown, H1 title, experimental warning, "Try this" code blocks, overview, HR, H2 content sections. Scannability framework: paragraphs for narrative, bullets for scannable items, tables for comparisons.
+- **PUBLISH-README.md rewrite (#564):** 58-line stub → 232-line living playbook (11 sections). Microsoft Style Guide enforced; version-agnostic (`<VERSION>` placeholder); all commands copy-pasteable. Living playbook absorbs #558, #559, #560.
+- **JSDoc API Reference PRD (2026-03-24):** TypeDoc + typedoc-plugin-markdown chosen (not Starlight, not api-extractor). Output → `docs/src/content/docs/reference/api/`. Astro hook auto-runs on build. JSDoc priority: config/schema.ts (8%→100%), state/io/ @param/@return tags. Effort: 13-18 hrs.
+- **Discussion triage patterns:** 6 discussions closed after v0.9.1 shipped features. Teams MCP critical: Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor.
+- **Boundary review:** "Squad Ships It" litmus test — if Squad doesn't ship the code, it's IRL content. Delete external infra docs; reframe platform integration docs; keep Squad behavior/config docs.
+- **npx purge:** `npm install -g @bradygaster/squad-cli` is the only supported install path. Remove all user-facing `npx` references. Keep `npx` only for dev tools.
+- **PR #11 TypeDoc review (2026-03-24):** Generated docs require crosslinks from curated guides. Missing sdk.md crosslink banner and navigation URL inconsistency (`reference/api/index` → `reference/api`) are blocking issues.
+- **Link validation pattern:** Automated link validation should be a CI gate. Broken internal links = friction and SEO harm.
+- **Broken internal links:** When PRs add new content files, verify corresponding test arrays in docs-build.test.ts are updated (EXPECTED_GUIDES, EXPECTED_FEATURES, EXPECTED_SCENARIOS arrays must match filesystem).
 
-## Recent Learnings
+## Recent preserved tail — gh-aw Issue Audit (2026-08-20)
 
-### Release Playbook Rewrite (#564, 2026-07-22)
-Rewrote PUBLISH-README.md from v0.8.22 stub (58 lines) to living 232-line version-agnostic playbook with 11 sections: Overview, Pre-Flight Checklist, Publish via CI (recommended), workflow_dispatch fallback, Insider Channel, Workspace Publish Policy, Manual Local Publish, 422 Race Condition & npm Errors, Post-Publish Verification, Version Bump, Legacy Scripts. Pattern: living playbook absorbs multiple issues (#558, #559, #560) into unified decision tree. Microsoft Style Guide enforced; `<VERSION>` placeholder; all commands copy-pasteable.
+Audited #1761 and #1736 against `docs/src/content/docs/guide/gh-aw.md`.
 
-📌 **Team update (2026-03-24T06-release-hardening):** Release playbook rewrite (#564) completed. Absorbed issues #558, #559, #560 into unified decision tree.
+- **#1761 — SHIP-NOW.** All 3 errors confirmed:
+  1. Stale `.github/aw/` in `git add` at lines 38 and 113 — could cause a **false E2E failure** for literal followers.
+  2. Redundant `gh aw compile` step at lines 34-35 and 100-108 — `gh aw add` compiles automatically.
+  3. Missing restricted-secrets prompt callout — absent entirely from the guide.
+- **#1736 — DEFER (wave:3).** Depends on #1733 (still open); current text is accurate. Do not touch until #1733 ships.
+- E2E safety verdict: Guide is safe for Brady (expert level). Stale `git add` path is the only instruction that could produce a wrong result for fresh setup consumers following literally.
 
-### JSDoc API Reference PRD (2026-03-24)
-Full PRD at `docs/research/jsdoc-api-reference-prd.md`. Key decisions: TypeDoc + typedoc-plugin-markdown (not Starlight, not api-extractor) — zero migration, Markdown-first, Pagefind-compatible. Astro integration hook auto-runs TypeDoc on build. Output → `docs/src/content/docs/reference/api/`. JSDoc improvement priority: config/schema.ts (8%→100%), state/io/ @param/@return tags. Total effort: 13–18 hours. PRD structure: chosen path + tactical roadmap (not advisory — directive).
+## 📌 Team update — 2026-08-20T11:59:44-07:00
 
-### Community Engagement Wave (2026-03-24)
-6 discussions closed as resolved (features shipped in v0.9.1: per-agent models #463/#402, local-only #324, CLI vs agent #299, human members #143, skills system #169). 8 discussions kept open with substantive replies. Pattern: feature-release timing + follow-up responses critical for community trust. **Teams MCP critical:** Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor. Purge all old connector references.
+gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: CLOSE 7 issues (#1738,#1762,#1764,#1768,#1763,#1604,#1609); SHIP-NOW 5 (#1772,#1758,#1759,#1732-compile,#1761); 2 contested (#1730,#1756); 12 deferred. Both P0s (#1772,#1758) still real — structural defects unresolved. Wave:1 cap=6. Tomorrow is a full-day E2E series against aspiregregator-squad-e2e. E2E will break at S3 if #1772 is not fixed first.
 
-## Historical Learnings Summary (condensed)
+## 📌 Team update — 2026-08-20T13:20:20-07:00
 
-- **Discussion triage pattern:** When you ship features, search discussions for matching feature-requests → respond + close proactively. Map new features to open discussions; respond with version + docs link; close as resolved; consolidate duplicates; convert bugs/roadmap items to issues. 43% closure rate on resolved items.
-- **Docs-test sync:** When adding docs pages, update test assertions in docs-build.test.ts in the SAME commit. When rebasing doc PRs, main branch (already merged) takes priority.
-- **Boundary review:** "Squad Ships It" litmus test — if Squad doesn't ship the code, it's IRL content. Platform features: clarify whose feature it is. Delete external infrastructure docs; reframe platform integration docs; keep Squad behavior/config docs. Pattern from PR #331.
-- **Astro docs format:** Plain markdown, H1 title, experimental warning callout, "Try this" code blocks at top, overview paragraph, HR, then H2 sections. No Astro frontmatter. DOCS-TEST SYNC mandatory.
-- **Scannability framework:** Paragraphs for narrative (3-4 sentences max). Bullets for scannable items. Tables for comparisons. If reader hunts for one item in a paragraph → convert to bullets/table.
-- **npx purge:** `npm install -g @bradygaster/squad-cli` is only supported install path. Remove all user-facing `npx` references. Keep `npx` only for dev tools (changeset, vitest, astro, pagefind). Agency copilot example → `gh copilot`.
-- **README slimming:** README cut from 512 to 331 lines. SDK deep-dive → compact pointer to docs site. README = discovery/orientation; docs site = full reference.
-- **Docs catalog audit:** 15 orphaned pages (exist but not in navigation.ts). Stale content: whatsnew.md, insider-program.md. Duplicate/overlap pairs. Booster added automated version sync for whatsnew.md. Nav structure: zero dead links, all orphans reachable internally.
-- **PR Trust Model:** Three levels: Full review (default), Selective review (personal projects), Self-managing (solo personal repos only). Self-managing ≠ unmonitored — use Ralph + Teams notifications.
-- **JSDoc API Reference Research:** TypeDoc + typedoc-plugin-markdown. Squad SDK 60-80% JSDoc coverage. Research at `docs/research/jsdoc-api-reference-research.md`. Configuration templates, 4-phase roadmap, tool comparison matrix.
-- **v0.9.0 blog post format:** YAML frontmatter (title/date/author/wave/tags/status/hero) → experimental warning → "What Shipped" (H2 sections + callout boxes) → "Quick Stats" → "Breaking Changes" → "Upgrading" → "What's Next". 200-400 words for infrastructure releases. EXPECTED_BLOG uses filesystem scan — no test changes needed.
-- **PR #11 TypeDoc review (2026-03-24):** Generated docs require crosslinks from curated guides. When adding new docs section, ensure old curated page has a visible pointer to the new section. Blocking issues: missing sdk.md crosslink banner, navigation URL inconsistency (`reference/api/index` → `reference/api`).
-- **Contributor recognition:** CONTRIBUTORS.md tracks team roster + community contributors. Each release includes recognition updates. Append PR counts, don't replace.
-## Learnings
-
-### Discussion Triage Patterns (2026-03-23 Release Incident)
-**Context:** v0.9.1 release completed; 15 open discussions analyzing whether community response patterns matched feature releases.
-
-**Pattern identified:** Feature releases without follow-up discussion closes = missed trust opportunity. When you ship features (personal squad, worktrees, economy mode, rate limiting), search discussions for matching feature-requests → respond + close proactively. This signals to community that you listen.
-
-**Triage workflow:**
-1. Map new features to open discussions (which discussions are solved by this release?)
-2. Respond: "This feature is now available in v0.9.1. See docs link."
-3. Close as resolved
-4. Consolidate: if discussion #463 is duplicate of #402, merge responses into #402, close #463
-5. Convert: if discussion reveals a bug or roadmap item, convert to issue with label (e.g., squad:eecom)
-6. Keep: if discussion is feedback or edge case, keep open; respond substantively
-
-**For v0.9.1 release:** 4 closed, 1 consolidated, 2 converted to issue, 8 kept. Result: community sees responsiveness; discussions become productivity tool, not backlog.
-
-**Critical finding:** Teams MCP docs need urgent update — Office 365 Connectors deprecated Dec 2024. Docs must purge old connector references and document Power Automate Workflows path (new successor).
-
-### Chinese README Workflow (2026-03-23 Release Incident)
-Community contributor (PR #572) provided Chinese README translation. Approved and merged as part of v0.9.1 release. Pattern: accept community translations; list contributors in CONTRIBUTORS.md; acknowledge in release notes.
-
-### Teams MCP Urgency Pattern (2026-03-23)
-External tool integrations deprecate. Office 365 Connectors retired Dec 2024. Docs mentioning deprecated tools create support burden and user confusion. Action: audit all external tool integration docs for deprecation; update with successor guidance (Power Automate Workflows for Teams).
-
-### Blog Post Format
-YAML frontmatter: title, date, author, wave, tags, status, hero. Body: experimental warning, What Shipped, Why This Matters, Quick Stats, What's Next. 200-400 words for infrastructure releases. No hype — explain value.
-
-### Boundary Review Heuristic
-"Squad Ships It" litmus test: if Squad doesn't ship the code/config, it's IRL content. Platform features used alongside Squad: clarify whose feature it is. Squad behavior/config docs stay. External infrastructure docs (ralph-operations, proactive-communication) → IRL.
-
-### DOCS-TEST SYNC
-When adding docs pages, update test assertions in docs-build.test.ts in the SAME commit. When rebasing doc PRs, main branch (already merged) takes priority.
-
-### Contributor Recognition
-CONTRIBUTORS.md tracks team roster and community contributors. Each release includes recognition updates. Append PR counts, don't replace.
-
-### Skill Scope Documentation Pattern
-Explicitly state what a skill produces and does NOT produce. Deterministic skills prevent agents from generating unnecessary code when templates exist.
-
-### Teams MCP Audit
-External tool integrations require explicit "where to get it" guidance. Placeholder paths need clarification that users must provide actual MCP server implementations.
-
-### Cross-Org Authentication Docs
-Problem/solution structure for multi-account auth: gh auth switch, Copilot instructions, Squad skill pattern. Cover credential helpers, EMU variations, common error messages. Cross-reference in troubleshooting and enterprise-platforms pages.
-
-### Roster & Contributor Recognition (v0.8.25)
-Squad moved to Apollo 13/NASA Mission Control naming scheme (Flight, Procedures, EECOM, FIDO, PAO, CAPCOM, CONTROL, Surgeon, Booster, GNC, Network, RETRO, INCO, GUIDO, Telemetry, VOX, DSKY, Sims, Handbook). CONTRIBUTORS.md tracks both team roster and community contributors; contributor table entries grow with PRs (append PR counts rather than replace, maintaining attribution history).
-
-### Git Rebase for Doc Merges
-When rebasing doc PRs with conflicts from other merged doc PRs, the main branch version (already merged) should generally take priority. For Node.js version references, maintain LTS terminology when present (e.g., `nvm install --lts` over specific version numbers like `nvm install 20`). Conflict resolution pattern: preserve new content from PR branch only where it doesn't duplicate or contradict already-merged changes. Use `git -c core.editor=true rebase --continue` to bypass interactive editor issues on Windows.
-
-### Astro Docs Format (v0.8.26)
-Squad docs use plain markdown without Astro frontmatter. Structure: title (H1), experimental warning callout, "Try this" code blocks at top, overview paragraph, horizontal rule, then content sections with H2 headings. Microsoft Style Guide enforced: sentence-case headings, active voice, second person ("you"), present tense, no ampersands except in code/brand names. Features and scenarios directories added to test coverage in docs-build.test.ts. Reference implementations linked where available (e.g., ralph-watch.ps1 for operational patterns).
-
-### Proactive Communication Patterns (v0.8.26)
-Two-way communication layer between Squad and work environment. Outbound: Teams webhook notifications (breaking, briefings, recaps, flashes) sent via Adaptive Cards — only when newsworthy. Inbound: WorkIQ/Playwright scanning of Teams channels and email → auto-create GitHub issues with teams-bridge label, anti-duplicate logic enforced. Loop: inbound creates issues → Ralph dispatches → agents work → outbound notifies results. Human stays informed on mobile. Prerequisites are enhancements, not requirements.
-
-📌 **Team update (2026-03-11T01:27:57Z):** Proactive communication patterns and PR trust levels (full/selective/self-managing spectrum) documented in decisions.md. Pattern rationale reinforced: Ralph 24/7 autonomous deployment requires awareness loop (Teams webhooks for outbound) and external work integration (WorkIQ scanning for inbound). Trust levels enable context-appropriate oversight without bottlenecking teams.
-
-### PR #487 Review & Merge — CLI Docs Expansion (2026-03-22)
-
-Reviewed and merged PR #487 (CLI documentation expansion + broken docs link fix). Improved CLI command reference coverage and fixed internal link validation.
-
-**Pattern identified:** Broken internal links hurt user navigation and SEO. Recommendations: (1) add link validation to docs build pipeline (crawl all internal references, report 404s), (2) make validation a CI gate (fail build on broken links), (3) maintain link checklist when refactoring docs structure.
-
-**Key learning:** Documentation maintenance requires systematic link validation. A single broken link creates friction for users following guides. Automated validation should be non-negotiable in CI/CD.
-
-### PR #482 Review & Merge — Pagefind Search Integration (2026-03-22)
-
-Reviewed and merged PR #482. Search functionality integrated into docs site for improved discoverability.
-
-### PR #11 Docs Quality Review — TypeDoc API Reference (2026-03-24)
-
-**Status:** REQUEST CHANGES (3 fixes required, 2 recommended)
-
-**Key findings:**
-- **Research + PRD:** Excellent quality. Clear problem statement, realistic effort estimate, pragmatic tool choice (TypeDoc over Starlight/api-extractor). Scannability framework applied correctly (tables for audit data, bullets for findings, paragraphs for narrative).
-- **Navigation strategy:** Collapsible `<details>` approach for 395-page API reference is sound UX. Sidebar nav plan well-structured with clear open questions about CI/CD safety.
-- **Microsoft Style compliance:** Mostly strong; discovered 3 minor issues.
-
-**Issues found:**
-1. **🔴 Blocking:** sdk.md crosslink banner missing. Users navigating from curated "SDK" guide have no callout to the auto-generated "API Reference". Add "See Also" link in sdk.md before "## Resolution" section.
-2. **🔴 Blocking:** Navigation URL inconsistency. `navigation.ts` hardcodes `reference/api/index` when it should be `reference/api` — Astro resolves `/api/` to `/api/index` automatically. Simplify slug.
-3. **🟡 Blocking:** Nav plan's "Open Questions" section asks about CI/CD fallback (generated JSON missing). Plan should either specify build order (`docs:api` before `docs build`) or provide fallback empty nav for fresh clones.
-4. **🟡 Recommended:** 2–3 test descriptions need more specificity (e.g., "class page renders heading and content" → "class page renders method signatures and definition source").
-5. **🟡 Recommended:** Screenshot filenames don't align with skill convention. Use semantic names: `api-reference-landing`, `api-class-detail`, `api-function-detail`.
-
-**Pattern identified:** Generated documentation requires crosslinks from curated guides. When adding a new docs section (API reference, CLI reference, etc.), ensure the *old* curated page (SDK Guide) has a visible pointer to the new section. This prevents users from stopping at the curated version and missing the comprehensive auto-generated reference.
-
-**Effort to fix:** < 2 hours. All issues are surgical edits to existing content; no architectural changes needed.
-
-### PR #484 Review & Merge — Sample READMEs (2026-03-22)
-
-Reviewed and merged PR #484. Sample README templates added to improve consistency across documentation examples.
-
-### PR Trust Model Documentation (v0.8.26)
-Three trust levels for PR management: (1) Full review (default, team repos) — human gate on every merge; (2) Selective review (personal projects with patterns) — human reviews only critical paths; (3) Self-managing (solo personal repos only) — Squad merges own PRs, human reviews retroactively. Added to reviewer-protocol.md as new section. Important: self-managing ≠ unmonitored; use Ralph work monitoring and Teams notifications for awareness. Decision matrix included for when to use each level.
-
-### Final Docs Review Pattern (v0.8.26)
-Pre-PR quality reviews check: (1) Microsoft Style Guide compliance (sentence-case headings, active voice, no ampersands, present tense, second person); (2) Tone consistency (practical, developer-focused, no hype); (3) Technical accuracy (code examples, file paths, commands); (4) Cross-reference integrity (valid links between pages); (5) DOCS-TEST SYNC (test assertions match new pages); (6) Privacy directive compliance (no individual repos without consent). Fixed duplicate section heading in reviewer-protocol.md (merge artifact). All staged docs passed review and are ready to commit.
-
-### Squad vs IRL Boundary Review (v0.8.26)
-Evaluated four docs pages from PR #331 (Tamir's blog analysis) against Squad-specificity criterion: does content document Squad features/patterns (belongs in Squad docs) or community implementation examples (belongs in Squad IRL)? Key distinction: Squad docs = "how the feature works + universal best practices" vs IRL = "how one person built an amazing setup." Results: ralph-operations.md borderline (deployment wrappers are external infrastructure, not Squad features — trim "outer loop" framing), issue-templates.md borderline (GitHub feature documented for Squad context, not Squad code — clarify scope), proactive-communication.md does not belong (community extension pattern using WorkIQ/Playwright, not built into Squad), reviewer-protocol.md trust levels section belongs (documents user choice spectrum within Squad's existing review system). Pattern: if Squad doesn't ship the code, it's IRL content; if it's a GitHub platform feature used alongside Squad, clarify that distinction; if it documents actual Squad behavior/configuration, it belongs.
-
-### Boundary Review Execution (v0.8.26)
-Executed boundary review findings from PR #331: (1) Deleted ralph-operations.md (infrastructure around Squad, not Squad itself — moved to IRL); (2) Deleted proactive-communication.md (external tools/webhooks — moved to IRL); (3) Reframed issue-templates.md intro to clarify "GitHub feature configured for Squad" not "Squad feature"; (4) Updated EXPECTED_SCENARIOS in docs-build.test.ts to match remaining files. Pattern reinforced: boundary review = remove external infrastructure docs, reframe platform integration docs to clarify whose feature it is, keep Squad behavior/config docs. Changes staged for commit.
-
-### Cross-Org Authentication Docs (v0.8.26)
-Created docs/src/content/docs/scenarios/cross-org-auth.md covering GitHub personal + Enterprise Managed Users (EMU) multi-account auth. Three solutions documented: (1) gh auth switch for manual account toggling; (2) Copilot instructions (.github/copilot-instructions.md) for account mapping documentation; (3) Squad skill pattern for auth error detection and recovery. Covered git credential helpers (per-host and per-org), EMU hostname variations (github.com vs dedicated instances), and common error messages (HTTP 401, authentication required). Added cross-references in troubleshooting.md (new section), enterprise-platforms.md (authentication section), and navigation.ts. Updated test/docs-build.test.ts with 'cross-org-auth' in EXPECTED_SCENARIOS. Pattern: Microsoft Style Guide (sentence-case), "Try this" prompts at top, problem/solution structure, practical examples over abstractions, links to related pages at bottom.
-
-### Scannability Framework (v0.8.25)
-Format selection is a scannability decision, not style preference. Paragraphs for narrative/concepts (3-4 sentences max). Bullets for scannable items (features, options, non-sequential steps). Tables for comparisons or structured reference data (config, API params). Quotes/indents for callouts/warnings. Decision test: if reader hunts for one item in a paragraph, convert to bullets/table. This framework is now a hard rule in charter under SCANNABILITY REVIEW.
-
-### Docs Catalog Audit (2026)
-Full audit of the Astro-based docs site. Key patterns and findings:
-
-**Orphaned pages (exist but not in navigation.ts):** 15 total — `get-started/choose-your-interface.md`, `guide/faq.md`, `guide/build-autonomous-agent.md`, `guide/github-auth-setup.md`, `features/built-in-roles.md`, `features/context-hygiene.md`, `features/cost-tracking.md`, `features/issue-templates.md`, `reference/vscode-troubleshooting.md`, and 6 root-level legacy files (`guide.md`, `sample-prompts.md`, `tips-and-tricks.md`, `tour-first-session.md`, `tour-github-issues.md`, `tour-gitlab-issues.md`).
-
-**Stale content:** `whatsnew.md` reports v0.8.2 as current; actual is v0.8.26+. `insider-program.md` uses deprecated `npx github:` install format and references old `.ai-team/` directory name throughout.
-
-**Duplicate/overlap pairs:** `choosing-your-path.md` (in nav) vs `choose-your-interface.md` (orphan, more complete); root-level `sample-prompts.md` vs `guide/sample-prompts.md`; root-level `tips-and-tricks.md` vs `guide/tips-and-tricks.md`; root-level `tour-first-session.md` vs `get-started/first-session.md`.
-
-**Content quality:** All actively-navved pages are well-written, follow Microsoft Style Guide, and use correct install commands. Format standards (H1, experimental callout, "Try this" block, HR, H2 sections) are inconsistently applied — some orphaned pages like `built-in-roles.md` and `cost-tracking.md` lack the standard header/callout pattern.
-
-**Structural issues:** `features/team-setup.md` has a duplicate `## How Init Works` heading (merge artifact). `features/streams.md` nav title is "Streams" but H1 is "Squad SubSquads" (mismatch). `guide/faq.md` is a high-value page completely invisible from the sidebar. `features/built-in-roles.md` is a comprehensive roles reference also invisible from nav.
-
-**Gap:** No dedicated FAQ entry point, no changelog page, cookbook section is thin (one page), no user-facing explanation of the NASA Mission Control naming scheme for agents.
-
-**Navigation:** Zero dead nav links (every nav slug has a matching file). All orphan pages are linked internally from other pages so they are reachable — but not browseable via sidebar.
-
-📌 **Team update (2026-03-22T12:46:00Z):** Booster implemented automated version sync for `whatsnew.md` (finding #1). Script reads `package.json` version, updates "Current Release" heading on every prebuild, with Vitest test gate. Heading now correct (v0.8.25+), will stay in sync automatically on all future builds. Finding #1 resolved.
-
-### JSDoc API Reference Research (2026-03-23)
-
-Completed research on generating JSDoc-based API reference documentation for Squad SDK. Key findings:
-
-**Current State:** Squad SDK has 60–80% JSDoc coverage across major modules (state: 81%, config: 8%). 136 TypeScript source files, no existing TypeDoc config.
-
-**Tool Recommendation:** **TypeDoc + typedoc-plugin-markdown** — no Starlight migration needed. Seamless integration with existing Astro 5 + Tailwind 4 + Pagefind. Markdown output drops directly into content collections. Auto-generates via Astro integration hook on `npm run build`.
-
-**Alternatives Evaluated:** 
-- ❌ Starlight migration: would break existing docs structure and custom branding
-- ❌ api-extractor: overkill for open-source SDK; designed for strict monorepo contracts
-
-**Effort Estimate:** 5–6 hours (setup only) → 13–18 hours (setup + JSDoc improvements) → 15–22 hours (with CI/CD automation).
-
-**StorageProvider & State Module:** Phase 2 state layer is API-docs ready (81% coverage, well-structured types, clear interface contract). Gaps: add @param/@return tags to state/io functions.
-
-**URL Structure:** `/api/classes/squad-coordinator/`, `/api/interfaces/storage-provider/`, etc. Pagefind indexes automatically.
-
-**Deliverable:** Full research at `docs/research/jsdoc-api-reference-research.md` with configuration templates, implementation roadmap (4 phases), and tool comparison matrix. Decision summary at `.squad/decisions/inbox/pao-jsdoc-research.md`.
-
-### Issue Triage (2026-03-22T06:44:01Z)
-
-**Flight triaged 6 unlabeled issues and filed 1 new issue.**
-
-PAO assigned:
-- **#488 (GitHub auth setup for project boards)** → squad:pao (documentation, newly filed)
-- **#478 (Polish REPL)** → squad:vox + squad:pao (shell UX readiness + README documentation gate)
-- **#476 (Guide v0.4.1 update)** → squad:handbook + squad:pao (SDK patterns + documentation)
-
-New issue #488 is documentation-focused; Fleet relabeled from squad:fido → squad:pao for proper domain ownership.
-
-📌 **Team update (2026-03-22T06:44:01Z):** Flight issued comprehensive triage. PAO owns GitHub auth docs (#488), REPL documentation gate (#478), and Guide v0.4.1 refresh (#476). High community value on Guide update. Ready to begin documentation work on next sprint.
-### npx Purge + Agency Audit
-Brady's distribution directive: `npm install -g @bradygaster/squad-cli` is the only supported install path. Remove ALL user-facing `npx @bradygaster/squad-cli` and `npx github:bradygaster/squad` references from docs. Replace with either `npm install -g` (for install steps) or `squad <command>` (for usage steps). Keep `npx` only for dev tools (changeset, vitest, astro, pagefind). Keep historical blog posts as-is. Migration.md "Before" column and CI/CD "OLD" examples are valid historical context — keep them. Insider program: `npm install -g @bradygaster/squad-cli@insider` and `squad upgrade` replace the old `npx github:bradygaster/squad#insider`. Agency audit: all "agency-agents" references in source files and docs are MIT attribution for the upstream open-source project — legally required, never touch them. The `agency copilot` example in cli-entry.ts help text was a competing-product reference — changed to `gh copilot`.
-
-### README Slimming + Upgrade Section (v0.8.x)
-Brady directive: README was too long at 512 lines. Cut the SDK deep-dive block (custom tools, hook pipeline, Ralph API code) and replaced it with a compact pointer to the docs site. Added a dedicated "Upgrading" section (two-step: `npm install -g` then `squad upgrade`) after Quick Start. Final length: 331 lines. SDK internals live in `docs/src/content/docs/reference/sdk.md` and `tools-and-hooks.md`. The README is now discovery/orientation; the docs site is the full reference.
-
-### v0.9.0 Release Blog Post (2026-03-23)
-Created `docs/src/content/blog/028-v090-whats-new.md` documenting Squad's biggest release: Personal Squad (ambient agent discovery + Ghost Protocol), Worktree Spawning (isolated branches per issue), Machine Capability Discovery (needs:* label routing), Cooperative Rate Limiting (predictive circuit breaker), Economy Mode (budget-aware model selection), Auto-Wired Telemetry, P0 upgrade fixes, and docs refresh. Blog format: frontmatter (title/date/author/wave/tags/status/hero) → experimental warning → "What Shipped" (10 features with H2 sections + callout boxes) → "Quick Stats" → "Breaking Changes" (none) → "Upgrading" → "What's Next". Messaging: clear, engaging, factual (no marketing fluff). Demonstrated: Personal Squad governance layer, worktree isolation, capability declaration, RAAS traffic-light pattern, economy fallback logic. Docs refresh section emphasized: README from 512→218 lines, dedicated upgrade guide, npx purged, Astro features, Teams MCP refresh, autonomous agents guide. Contributors: diberry (worktree tests + docs), wiisaacs (security review), community. No breaking changes — all additive opt-in features. Test discovery is dynamic (EXPECTED_BLOG uses filesystem scan), so new post auto-discovered; no test file changes needed. Pattern reinforced: each feature needs a story — if you can't explain it, it's not ready. Demos over descriptions (concrete code examples, YAML config blocks, Bash CLI examples).
-
-### Discussion Triage (2026-03-23)
-
-Analyzed 15 open discussions for response strategy:
-- **4 close-as-resolved** (#143, #169 — features now shipped; #402, #299 — answered with docs links)
-- **1 close-as-duplicate** (#463 → #402)
-- **2 convert-to-issue** (#161 root-copilot-hijack → bug/UX track; #534 enterprise-features → ongoing roadmap signal)
-- **8 keep-open** (ongoing feedback, feature signals, edge cases, follow-up potential)
-
-Key pattern: 15 discussions = 7 feature-request/feedback signals, 4 answered-by-feature-release, 4 documentation-clarity gaps. Community is engaged; v0.9.1 (per-agent models, skills system, human team members, watch mode) directly addressed 5+ discussions that were open for 2-4 weeks. Timing of releases + follow-up responses critical for community trust.
-
-**Documentation gaps identified:**
-- #440 (branch naming convention change) — needs migration guide in upgrade docs
-- #306 (multi-root workspaces) → future feature; docs should clarify current limitation
-- #140 (Teams MCP + Office 365 Connectors retirement) → docs refresh needed; Power Automate Workflows is the new path
-- #401 (mobile/remote control) → feature exploration, keep on radar
-- #161 (Coordinator hijacking) → document workarounds, prioritize UX fix for v1.0
-
-Teams MCP critical update: Office 365 Connectors retired Dec 2024 → Power Automate Workflows is successor. Docs mention of old Connectors should be purged; Teams webhook examples should link to Power Automate Workflow guide.
-
-### Community Engagement Wave (2026-03-24)
-
-**6 discussions closed as resolved:**
-- #463, #402 (per-agent model selection — shipped v0.9.1)
-- #324 (local-only operation without GitHub integration)
-- #299 (CLI vs Copilot agent — both viable)
-- #143 (Human team members now first-class feature)
-- #169 (Skills system shipped as core infrastructure)
-
-**8 discussions kept open with substantive replies:**
-- #534 (enterprise features) — asked clarifying questions on scope
-- #499 (Brady's v1.0 announcement) — explained `.squad/` regenerability plan
-- #440 (branch naming change) — acknowledged disruption, offered migration guidance
-- #401 (mobile/async control) — acknowledged use case, roadmap signal
-- #376 (best practices) — provided triage and routing patterns
-- #306 (multi-root support) — acknowledged limitation, kept open for feedback
-- #95 (casting system) — explained mature re-casting flow
-- #140 (Teams MCP) — critical guidance on Office 365 Connectors retirement → Power Automate Workflows
-
-**Pattern observed:** Feature-release timing + follow-up responses critical for community trust. v0.9.1 directly addressed 5+ discussions (models, skills, human members) that were open 2-4 weeks. Community triage now operational: 14 discussions reviewed, 6 closed, 8 kept active = 43% closure rate on resolved items.
-
-**Key insight:** Retirement of Microsoft Office 365 Connectors (Dec 2024) caught users mid-setup. Proactive notification of Teams Workflows alternative + Power Automate guidance essential for Teams MCP users.
+Batch 2 complete. PR #1776: corrected 3 errors in `docs/src/content/docs/guide/gh-aw.md` — removed stale `.github/aw/` from git add (L38, L113), removed redundant compile step (L34-35, L100-108), added restricted-secrets callout. PR #1776 green, awaiting Flight gate. Stale git add path was the highest-risk correction.
 
 ### Release Playbook Rewrite (#564, 2026-07-22)
 
@@ -313,3 +97,18 @@ Completed full PRD based on research findings. **Document:** `docs/research/jsdo
 - Four-phase approach breaks large effort into digestible increments (Phase 0 validation before JSDoc audit helps mitigate risk of TypeDoc setup failing)
 
 **Decision:** PRD approved for handoff to implementation team. Ready for execution on next sprint.
+
+### gh-aw Guide Fix — Issue #1761 (2026-08-20)
+
+**Task:** Fix three verified errors in `docs/src/content/docs/guide/gh-aw.md` before Brady's end-to-end test series on 2026-08-21.
+
+**Verification:** Created scratch git repo in `$env:TEMP`, ran `gh aw add` against the two Squad workflow sources (`@dev`), inspected all created paths, cleaned up. **Finding: `.github/aw/` is NOT created by `gh aw add`.** All files land under `.github/workflows/` and `.github/skills/`.
+
+**Changes made:**
+1. **`git add` path corrected** (Quick Start step 4, Setup "Commit the workflow files"): `.github/aw/` → `.github/workflows/ .github/skills/`. This was the critical error that could cause false E2E failures.
+2. **`gh aw compile` demoted** from required step to troubleshooting note. Quick Start reduced from 6 to 5 steps. Lock files are generated automatically by `gh aw add`. Upgrading section left unchanged (correct there).
+3. **Restricted secrets callout added** in Setup immediately after the `gh aw add` block, with `--approve` flag workaround.
+
+**Decision record:** `.squad/decisions/inbox/pao-1761-gh-aw-path-verification.md`
+
+**PR:** Closes #1761

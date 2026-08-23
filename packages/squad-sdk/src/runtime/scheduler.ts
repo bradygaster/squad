@@ -12,6 +12,7 @@
  */
 
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FSStorageProvider } from '../storage/fs-storage-provider.js';
@@ -86,6 +87,15 @@ export interface TaskConfig {
   type: 'workflow' | 'script' | 'copilot' | 'webhook';
   ref: string;
   args?: Record<string, string>;
+  /**
+   * Explicit argument vector for `script` tasks (#1794).
+   *
+   * When present, `ref` is used verbatim as the executable path and is never
+   * parsed. This is the unambiguous form and should be preferred for any
+   * command path that contains spaces — e.g. the default Windows Node install
+   * at `C:\Program Files\nodejs\node.exe`.
+   */
+  argv?: string[];
 }
 
 export interface RetryConfig {
@@ -117,6 +127,13 @@ export interface TaskResult {
   stderr?: string;
   /** Process exit code if known (rejection-only). */
   code?: number;
+  /**
+   * Non-numeric failure code from the OS when the child could not be spawned
+   * at all — e.g. `ENOENT` for a missing executable (#1794). Distinct from
+   * `code`, which is the child's own exit status and only exists if the child
+   * actually ran.
+   */
+  spawnError?: string;
   /** Signal that terminated the process if known (rejection-only). */
   signal?: string;
   /** True iff the process was killed because it exceeded the timeout. */
@@ -397,6 +414,96 @@ function cronFieldMatches(field: string, value: number): boolean {
  * can cause issues even without shell interpretation.
  * The structural protection comes from execFileSync (shell: false).
  */
+/**
+ * Split a script `task.ref` into argv, honouring single and double quotes.
+ *
+ * Quotes only *group* when they open at a token boundary. A quote character
+ * appearing mid-token is a literal, so refs like
+ * `node -e console.log('hi')` keep passing the inner quotes straight through
+ * to the child exactly as they did when this function split on whitespace.
+ *
+ * Backslash is NOT an escape character: Windows paths are full of them
+ * (`C:\Program Files\nodejs\node.exe`) and treating them as escapes would
+ * mangle the modal case this exists to support (#1794).
+ *
+ * Returns whether the first token was quoted, because that removes all
+ * ambiguity about where the command ends and the arguments begin.
+ */
+export function tokenizeTaskRef(ref: string): { tokens: string[]; firstQuoted: boolean } {
+  const tokens: string[] = [];
+  let current = '';
+  let hasCurrent = false;
+  let quote: '"' | "'" | null = null;
+  let firstQuoted = false;
+
+  for (const ch of ref.trim()) {
+    if (quote !== null) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+    if ((ch === '"' || ch === "'") && !hasCurrent) {
+      // Opening quote at a token boundary — this one groups.
+      if (tokens.length === 0) firstQuoted = true;
+      quote = ch;
+      hasCurrent = true;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      if (hasCurrent) {
+        tokens.push(current);
+        current = '';
+        hasCurrent = false;
+      }
+      continue;
+    }
+    // Includes quote characters encountered mid-token: literal.
+    current += ch;
+    hasCurrent = true;
+  }
+
+  if (quote !== null) {
+    throw new ScheduleValidationError(`Task ref has an unterminated ${quote} quote`);
+  }
+  if (hasCurrent) tokens.push(current);
+
+  return { tokens, firstQuoted };
+}
+
+/**
+ * Decide which leading tokens form the executable path.
+ *
+ * A quoted first token is authoritative. Otherwise the plain first token is
+ * tried first, so every previously-working ref keeps its exact behaviour
+ * (including bare names resolved via PATH, which are not files on disk).
+ * Only when that fails do we widen across spaces, longest match first —
+ * mirroring how Windows CreateProcess resolves an unquoted path such as
+ * `C:\Program Files\nodejs\node.exe` (#1794).
+ */
+export function resolveScriptCommand(
+  tokens: string[],
+  firstQuoted: boolean,
+  exists: (p: string) => boolean = existsSync,
+): { command: string; args: string[] } {
+  const first = tokens[0] ?? '';
+  if (firstQuoted || tokens.length === 1) {
+    return { command: first, args: tokens.slice(1) };
+  }
+  if (exists(first)) {
+    return { command: first, args: tokens.slice(1) };
+  }
+  for (let i = tokens.length; i >= 2; i--) {
+    const candidate = tokens.slice(0, i).join(' ');
+    if (exists(candidate)) {
+      return { command: candidate, args: tokens.slice(i) };
+    }
+  }
+  return { command: first, args: tokens.slice(1) };
+}
+
 export function validateTaskRef(ref: string): void {
   if (!ref || ref.trim().length === 0) {
     throw new ScheduleValidationError('Task ref must be a non-empty string');
@@ -487,9 +594,18 @@ export class LocalPollingProvider implements ScheduleProvider {
         // loop and OpenTelemetry exporters.
         try {
           validateTaskRef(entry.task.ref);
-          const argv = entry.task.ref.trim().split(/\s+/);
-          const command = argv[0]!;
-          const args = argv.slice(1);
+          // An explicit argv is unambiguous: `ref` is the executable, verbatim.
+          // Otherwise parse the ref with quote awareness and resolve a command
+          // path that may contain spaces (#1794).
+          let command: string;
+          let args: string[];
+          if (entry.task.argv) {
+            command = entry.task.ref.trim();
+            args = entry.task.argv;
+          } else {
+            const { tokens, firstQuoted } = tokenizeTaskRef(entry.task.ref);
+            ({ command, args } = resolveScriptCommand(tokens, firstQuoted));
+          }
           const { stdout } = await execFileAsync(command, args, {
             encoding: 'utf8',
             timeout: SCRIPT_DEFAULT_TIMEOUT_MS,
@@ -514,6 +630,14 @@ export class LocalPollingProvider implements ScheduleProvider {
           if (e.stdout !== undefined) result.output = e.stdout.toString().trim();
           if (e.stderr !== undefined) result.stderr = e.stderr.toString().trim();
           if (typeof e.code === 'number') result.code = e.code;
+          // A spawn failure (ENOENT/EACCES/...) carries a *string* code and no
+          // stdout/stderr at all — the child never ran. Previously this fell
+          // through every branch and produced `code: undefined, stderr: ''`,
+          // telling an operator nothing about what failed to spawn (#1794).
+          if (typeof e.code === 'string') {
+            result.spawnError = e.code;
+            result.error = `${e.code}: failed to spawn '${entry.task.ref}' — ${e.message}`;
+          }
           if (e.signal) result.signal = e.signal;
           // execFile sets `killed=true` AND `signal='SIGTERM'` when the
           // configured `timeout` fires. Either flag is sufficient evidence.

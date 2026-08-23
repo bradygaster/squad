@@ -156,3 +156,26 @@ export type {
   AgentHandle,
   CollectionPathResolver,
 } from './state/index.js';
+
+// Archival integrity — see state/io/archival.ts
+export {
+  archiveEntries,
+  countEntries,
+  demoteHeadings,
+  extractHeadings,
+  findHeadingLineIndices,
+  formatArchivalReport,
+  isCommittableDestination,
+  isTrackedInGit,
+  prepareInboxBodyForMerge,
+  resolveTrackedDestination,
+  splitEntries,
+  ArchiveVerificationError,
+  UntrackedArchiveDestinationError,
+} from './state/io/index.js';
+export type {
+  ArchivalResult,
+  ArchiveEntriesOptions,
+  DecisionEntry,
+  GitRunner,
+} from './state/io/index.js';
