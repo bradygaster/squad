@@ -68,8 +68,53 @@ jobs:
 
             // Define label color palette for squad labels
             const SQUAD_COLOR = '9B8FCC';
-            const MEMBER_COLOR = '9B8FCC';
             const COPILOT_COLOR = '10b981';
+
+            // Curated palette of visually distinct colors for squad member labels.
+            // These have good contrast with white text and avoid colors used by
+            // other label groups (go:*, release:*, type:*, priority:*, status:*).
+            const SQUAD_MEMBER_PALETTE = [
+              'E06C75', // soft red
+              'E5C07B', // gold
+              '56B6C2', // teal
+              'C678DD', // purple
+              '61AFEF', // blue
+              '98C379', // green
+              'D19A66', // orange
+              'BE5046', // rust
+              '7EC8E3', // sky blue
+              '9ECE6A', // lime
+              'F7768E', // pink
+              'FF9E64', // tangerine
+              '7AA2F7', // periwinkle
+              'BB9AF7', // lavender
+              '73DACA', // mint
+              '2AC3DE', // cyan
+              'DB4B4B', // crimson
+              'E0AF68', // amber
+              '449DAB', // dark teal
+              'A9DC76', // chartreuse
+            ];
+
+            // Deterministic color from palette based on agent slug hash
+            const usedColors = new Set();
+
+            function getAgentColor(slug) {
+              let hash = 0;
+              for (const char of slug) {
+                hash = ((hash << 5) - hash) + char.charCodeAt(0);
+                hash = hash & hash;
+              }
+              let index = Math.abs(hash) % SQUAD_MEMBER_PALETTE.length;
+              // Linear probe to avoid collisions
+              let attempts = 0;
+              while (usedColors.has(SQUAD_MEMBER_PALETTE[index]) && attempts < SQUAD_MEMBER_PALETTE.length) {
+                index = (index + 1) % SQUAD_MEMBER_PALETTE.length;
+                attempts++;
+              }
+              usedColors.add(SQUAD_MEMBER_PALETTE[index]);
+              return SQUAD_MEMBER_PALETTE[index];
+            }
 
             // Define go: and release: labels (static)
             const GO_LABELS = [
@@ -98,7 +143,11 @@ jobs:
             // High-signal labels — these MUST visually dominate all others
             const SIGNAL_LABELS = [
               { name: 'bug', color: 'FF0422', description: 'Something isn\'t working' },
-              { name: 'feedback', color: '00E5FF', description: 'User feedback — high signal, needs attention' }
+              { name: 'feedback', color: '00E5FF', description: 'User feedback — high signal, needs attention' },
+              // Detection taxonomy: gh-aw threat detection infrastructure failure.
+              // Applied by upstream process_safe_outputs when conclusion=warning/parse_error.
+              // Distinct from the upstream threat label (genuine content threat) — see issue #1701.
+              { name: 'agentic-detection-failed', color: 'E8B84B', description: 'gh-aw detection infrastructure failure — threat content was not evaluated' }
             ];
 
             const PRIORITY_LABELS = [
@@ -115,9 +164,10 @@ jobs:
             ];
 
             for (const member of members) {
+              const slug = slugify(member.name);
               labels.push({
-                name: `squad:${slugify(member.name)}`,
-                color: MEMBER_COLOR,
+                name: `squad:${slug}`,
+                color: getAgentColor(slug),
                 description: `Assigned to ${member.name} (${member.role})`
               });
             }

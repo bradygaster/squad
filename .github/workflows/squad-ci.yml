@@ -166,6 +166,14 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Install gh-aw extension
+        # Required so `gh aw --version` succeeds and the compile-gate test in
+        # test/gh-aw-quality.test.ts is NOT skipped. Without this step the test
+        # uses `it.skipIf(!ghAwAvailable)` and always skips — which is
+        # indistinguishable from having no gate at all. See #1732.
+        run: gh extension install github/gh-aw
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Build
         run: npm run build
       - name: Run tests
@@ -192,6 +200,23 @@ jobs:
           node-version: 22
       - name: Check changeset drift
         run: node scripts/check-changeset-drift.mjs --mode=${{ github.event_name == 'push' && 'fail' || 'warn' }}
+
+  # ── Shebang line-ending guard ───────────────────────────────────────────
+  # A CRLF shebang breaks POSIX execution and defeats bundler shebang stripping,
+  # which silently zeroes out any vitest suite importing the file (#1788). Linux
+  # runners check out LF, so this class is invisible here unless the committed
+  # blob itself is inspected -- which is what the script does.
+  shebang-eol:
+    name: Shebang EOL
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 #v6
+        with:
+          node-version: 22
+      - name: Check shebang line endings
+        run: node scripts/check-shebang-eol.mjs
 
   # ── Consolidated policy gates ───────────────────────────────────────────
   # Runs changelog, changelog-protection, workspace-integrity,

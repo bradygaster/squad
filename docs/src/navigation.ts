@@ -91,6 +91,8 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { title: 'GitHub Agentic Workflows', slug: 'guide/gh-aw' },
       { title: 'Choose Your Interface', slug: 'get-started/choose-your-interface' },
+      { title: 'Your Personal Squad', slug: 'guide/personal-squad' },
+      { title: 'Interactive Shell Guide', slug: 'guide/shell' },
       { title: 'Tips & Tricks', slug: 'guide/tips-and-tricks' },
       { title: 'Sample Prompts', slug: 'guide/sample-prompts' },
       { title: 'Recipes', slug: 'cookbook/recipes' },

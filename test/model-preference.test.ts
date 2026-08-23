@@ -463,6 +463,13 @@ describe('writeReasoningEffort', () => {
     const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf-8'));
     expect(raw).not.toHaveProperty('defaultReasoningEffort');
   });
+
+  it('accepts max as a valid effort level', () => {
+    writeReasoningEffort(squadDir, 'max');
+    const raw = JSON.parse(readFileSync(join(squadDir, 'config.json'), 'utf-8'));
+    expect(raw.defaultReasoningEffort).toBe('max');
+    expect(readReasoningEffort(squadDir)).toBe('max');
+  });
 });
 
 // ============================================================================
@@ -641,6 +648,16 @@ describe('clampReasoningEffort', () => {
   it('treats max and xhigh as equivalent', () => {
     // xhigh requested, model supports max
     expect(clampReasoningEffort('xhigh', ['low', 'medium', 'high', 'max'])).toBe('xhigh');
+    // max requested, model supports xhigh
+    expect(clampReasoningEffort('max', ['low', 'medium', 'high', 'xhigh'])).toBe('xhigh');
+  });
+
+  it('passes through max when model directly supports max', () => {
+    expect(clampReasoningEffort('max', ['low', 'medium', 'high', 'max'])).toBe('max');
+  });
+
+  it('clamps max to xhigh for models that use that name at the top tier', () => {
+    expect(clampReasoningEffort('max', ['low', 'medium', 'high', 'xhigh'])).toBe('xhigh');
   });
 
   it('returns undefined for unrecognized effort value', () => {

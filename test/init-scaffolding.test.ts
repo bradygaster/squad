@@ -6,10 +6,11 @@
  * Also confirms init works without errors in repos that have no remote.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { mkdir, rm, readFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve, relative, isAbsolute } from 'path';
 import { existsSync } from 'fs';
+import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 import { execFileSync } from 'child_process';
 import { initSquad } from '@bradygaster/squad-sdk';
@@ -18,7 +19,35 @@ import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runDoctor } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 
-const TEST_ROOT = join(process.cwd(), `.test-init-scaffold-${randomBytes(4).toString('hex')}`);
+// Sandbox lives in the OS temp dir, NOT inside the repository (#1796).
+// runInit()/initSquad() walk upward to find the enclosing git root when the
+// target directory is not itself a repo. A sandbox under process.cwd() therefore
+// resolves to the *real* repository and stampVersion() rewrites the tracked
+// .github/agents/squad.agent.md — a passing test silently mutating source.
+const TEST_ROOT = join(tmpdir(), `.test-init-scaffold-${randomBytes(4).toString('hex')}`);
+
+/** Repository root — used only by the working-tree guard below. */
+const REPO_ROOT = resolve(__dirname, '..');
+
+/** Files this suite must never touch. Relative to REPO_ROOT. */
+const GUARDED_PATHS = ['.github/agents/squad.agent.md', '.squad-templates/squad.agent.md'];
+
+/** Porcelain status of the guarded paths, so pre-existing local edits don't skew the guard. */
+function guardedStatus(): string {
+  return execFileSync('git', ['status', '--porcelain', '--', ...GUARDED_PATHS], {
+    cwd: REPO_ROOT,
+    encoding: 'utf-8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
+}
+
+/** Captured before any test in this file runs. */
+let guardedStatusBefore = '';
+
+beforeAll(() => {
+  guardedStatusBefore = guardedStatus();
+});
+
 
 /** Create a bare git repo at the given path (no remote). */
 function gitInit(dir: string): void {
@@ -498,3 +527,24 @@ describe('.gitignore state-backend marker block — initSquad()', () => {
     expect(occurrences).toBe(1);
   });
 });
+
+// ─── Working-tree containment guard (#1796) ────────────────────────────────
+
+describe('repository working tree is not mutated by this suite (#1796)', () => {
+  it('sandbox root is outside the repository working tree', () => {
+    const rel = relative(REPO_ROOT, TEST_ROOT);
+    // A path inside REPO_ROOT produces a relative path that neither escapes
+    // upward nor is absolute. Anything else means the sandbox is contained.
+    const isInsideRepo = rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+    expect(isInsideRepo, `TEST_ROOT (${TEST_ROOT}) must not live under ${REPO_ROOT}`).toBe(false);
+  });
+
+  it('tracked squad.agent.md files are byte-unchanged after init runs', () => {
+    // Pre-fix this is red: initSquad()/runInit() on a sandbox that has no git
+    // root of its own walk upward, find the real repository, and stampVersion()
+    // rewrites .github/agents/squad.agent.md from 0.0.0-source to the package
+    // version. The suite still passes — the mutation is silent.
+    expect(guardedStatus()).toBe(guardedStatusBefore);
+  });
+});
+
