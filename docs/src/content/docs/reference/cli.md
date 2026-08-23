@@ -39,7 +39,7 @@ squad init
 | `squad start [--tunnel] [--port N] [--command cmd]` | Start Copilot with remote phone access via PTY and WebSocket | No |
 | `squad status` | Show which squad is active and why | Yes |
 | `squad doctor` | Validate squad setup integrity and diagnose issues (alias: `heartbeat`) | Yes |
-| `squad upgrade` | Upgrade Squad-owned files to latest version | Yes |
+| `squad upgrade` | Upgrade Squad-owned files to latest version; locally customized files are saved as `<file>.local-backup` | Yes |
 | `squad upgrade --state-backend <type>` | Migrate state backend (`orphan`, `two-layer`); installs git hooks automatically | Yes |
 | `squad upgrade --migrate-directory` | Rename legacy `.ai-team/` directory to `.squad/` | Yes |
 | `squad triage` | Auto-triage issues and assign to team (primary name; `watch` is an alias) | Yes |
