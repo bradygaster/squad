@@ -1,3 +1,7 @@
+## skill: `squad-planning-ontology`
+---
+description: Squad planning ontology — artifact schemas, lifecycle state machine, and the structured artifact registry. Load for any planning mode before producing or reading a planning artifact.
+---
 # Planning Ontology & Artifact Schemas
 
 > **Version:** 2.0 · **Owner:** Procedures · **Status:** Active
@@ -411,3 +415,5 @@ All commands work identically under both execution models:
 6. **Postcondition validation** — acceptance checks structure before creating real artifacts.
 7. **Idempotent commands** — re-running updates rather than duplicates.
 8. **Path independence** — fast path and granular path coexist without conflict.
+
+## end skill: `squad-planning-ontology`

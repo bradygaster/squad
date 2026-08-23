@@ -18,14 +18,50 @@
 - Decision archival — **HARD GATE**: enforce two-tier ceiling on decisions.md before every merge:
   - **Tier 1 (30-day):** If >20KB, archive entries older than 30 days
   - **Tier 2 (7-day):** If still >50KB after Tier 1, archive entries older than 7 days
-  - Emit HEALTH REPORT to session log after archival runs
+  - Every archival obeys the **Archival Safety Rules** below — no exceptions
+  - Emit HEALTH REPORT to session log after archival runs, in **entry counts, never file sizes**
+
+## Archival Safety Rules
+
+Applies to **every** operation that moves content out of a file — decision archival *and* history
+summarization. Archival is a two-half operation (append to a destination, trim from a source).
+When the halves come apart, archival silently becomes deletion.
+
+**1. The destination must be git-tracked — check before writing.**
+`git ls-files --error-unmatch <destination>`. Exit 0 → proceed. Non-zero → redirect to an existing
+**tracked** archive, or **abort**. `.squad/` is git-excluded in this repo: already-tracked files
+still commit, but **new files silently never do**, so the trim commits while the destination never
+does. Never create a new timestamped archive file and assume it will commit.
+
+**2. Append first, verify, then delete.** Append, re-read the destination, confirm every moved
+heading is literally present **and** the entry count grew by exactly the number moved. Only then
+trim the source. If the append cannot be verified, **do not trim**. A duplicate in the archive is
+recoverable; lost history is not.
+
+**3. Count entries, never bytes.** Size is not an integrity signal — a merge and an archive in the
+same pass move it in opposite directions. Report `N removed from source / N added to destination`
+and require the numbers to match.
+
+**4. Demote inbox headings on merge.** Shift an inbox body's headings so its shallowest lands at
+`####` before splicing beneath an `###` entry. Preserve relative structure. **Fence-aware** — `#`
+lines inside fenced code blocks are comments, never headings.
+
+**5. Never report a gate outcome you did not measure.** "No archival required" must come from a
+measurement. A gate that reports without measuring is worse than no gate — it suppresses
+inspection. If a tool cannot perform these checks, **stop and report**.
+
+> Enforced in code by `archiveEntries()`, `prepareInboxBodyForMerge()`, and
+> `formatArchivalReport()` in `@bradygaster/squad-sdk` (`state/io/archival`). Prefer them over
+> hand-rolled moves.
 
 After substantial work:
 1. Log session to `.squad/log/{timestamp}-{topic}.md` (who, what, outcomes)
 2. Merge `.squad/decisions/inbox/` → `.squad/decisions.md`, delete inbox files
    - **IMPORTANT — Date Format Mandate:** All merged entries MUST use the format `### YYYY-MM-DD: Topic` for decision headings.
+   - **Demote the inbox body's headings** so its shallowest lands at `####` (Rule 4). Never leave an `##` under an `###`.
    - If an inbox file is missing a date, add today's date (`YYYY-MM-DD`).
    - If an entry cannot be dated (missing context, ambiguous age), log a warning, skip it, and report.
+   - Delete an inbox file only after confirming its content is literally present in `decisions.md`.
 3. Deduplicate decisions.md by `### ` blocks (exact duplicates, overlapping topics)
 4. Propagate: append `📌 Team update` to affected agents' history.md
 5. Commit: cd to team root, `git add .squad/`, temp file, `git commit -F` (Windows: no `-C`, no `-m` newlines)

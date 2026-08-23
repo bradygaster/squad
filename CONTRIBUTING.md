@@ -241,6 +241,36 @@ Keep every change as small and focused as the task requires. Incidental formatti
 - **Separate genuine reformats:** if a file genuinely needs reformatting, do it in a dedicated PR so it can be reviewed independently of functional changes.
 - **Sanity-check the diff before pushing:** run `git diff --stat` / `git diff --numstat`. If a small change shows a whole-file delta, investigate (usually whitespace or line endings) before committing.
 
+### Repairing a working tree that predates a `.gitattributes` rule
+
+`.gitattributes` governs **checkout**, not files already on disk. Git only rewrites a working file when a pull also changes that file's *index* content — so adding a rule like `*.mjs text eol=lf` leaves every already-LF-in-index path **still CRLF on disk** in checkouts that already exist. Pulling the fix does not repair your tree (#1793).
+
+This does not present as an error. A CRLF shebang survives Vite's shebang stripping as a bare `#`, the module fails to parse, and every vitest suite importing it reports **`no tests`** — a zero that reads as green (#1788).
+
+If `squad doctor` reports `working tree line endings — N ... still have CRLF on disk`, run:
+
+```bash
+npm run fix:crlf
+```
+
+Then confirm — `squad doctor` re-runs the same check the repair is scoped to:
+
+```bash
+squad doctor
+```
+
+To inspect the raw state, list every tracked path and its line endings:
+
+```bash
+git ls-files --eol
+```
+
+Every entry whose `attr` includes `eol=lf` should read `w/lf`. Don't scope that to `"*.mjs"` — `.mjs` is simply where the symptom is loudest, but the pin (and the doctor check) covers every path `.gitattributes` pins, so an `*.mjs` filter can report all-clear while a pinned file elsewhere is still CRLF.
+
+The repair rewrites the affected files from the index with `git checkout-index -f`. It is safe: it only touches paths git reports as having **no content difference** from the index, and it skips (never overwrites) any file with real uncommitted edits. `git checkout -- <path>` is *not* a substitute — in this state the file is content-clean, so git has nothing to restore and the command can silently no-op.
+
+Do **not** fix this with `git add --renormalize .`. That rewrites the index — the opposite side of the defect — and in this repo it would sweep nearly every CRLF-storing `.ts` blob into a single line-ending churn commit. `.gitattributes` documents that exclusion deliberately. This is a local repair that should produce no commit at all.
+
 ## Documentation
 
 - **README.md** — User-facing guide, quick start, architecture overview

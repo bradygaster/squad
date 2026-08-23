@@ -1,3 +1,7 @@
+## skill: `squad-planning-policy-schema`
+---
+description: Squad planning policy schema — profiles, artifact limits, sizing, and precedence rules. Load together with squad-planning-policy when resolving policy for a planning mode.
+---
 # Planning Policy
 
 ## Purpose
@@ -90,7 +94,7 @@ cycle_detection: warn
 
 ## How Policy is Resolved (precedence order)
 
-1. **Issue body** — HTML comment `<!-- squad-policy: lean -->` or inline settings
+1. **Issue body** — a `Squad-Policy:` directive line (see [Policy in Issue Body](#policy-in-issue-body))
 2. **Repository file** — `.squad/planning-policy.md` with YAML frontmatter
 3. **Profile name** — Matches a built-in or custom profile
 4. **Default** — All defaults apply
@@ -112,15 +116,23 @@ settings:
 
 ## Policy in Issue Body
 
-Embed policy inline for per-issue customization:
+Embed policy inline for per-issue customization by adding a `Squad-Policy:` line
+on its own line anywhere in the issue body:
 
 ```markdown
-<!-- squad-policy: lean -->
+Squad-Policy: lean
 ```
 
 Or override specific settings:
 
 ```markdown
-<!-- squad-policy: default -->
-<!-- squad-setting: max_issues=30, require_milestones=false -->
+Squad-Policy: default
+Squad-Setting: max_issues=30, require_milestones=false
 ```
+
+> **Do not use HTML comments** (for example `<!-- squad-policy: lean -->`) for
+> this. GitHub Agentic Workflows strips HTML comments before the agent sees the
+> issue body, so a policy hidden in a comment is silently ignored. The directive
+> must be visible Markdown text.
+
+## end skill: `squad-planning-policy-schema`

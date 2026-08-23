@@ -16,8 +16,18 @@ import { minimatch } from 'minimatch';
 
 const WORKFLOWS_DIR = join(process.cwd(), 'workflows');
 const SQUAD_WORKFLOW = join(WORKFLOWS_DIR, 'squad.md');
+const SQUAD_IMPLEMENT_WORKER = join(WORKFLOWS_DIR, 'squad-implement-worker.md');
 const SHARED_DIR = join(WORKFLOWS_DIR, 'shared');
 const TEST_WORKSPACES_DIR = join(process.cwd(), '.test-workspaces');
+
+/**
+ * Some suites execute the workflow's own `bash`/`jq` snippets through
+ * `shell: '/bin/sh'` to prove the shipped one-liners behave as documented.
+ * That shell does not exist on a stock Windows dev box, so gate those suites
+ * instead of reporting spurious ENOENT failures. CI runs on Linux, where they
+ * always execute.
+ */
+const HAS_POSIX_SHELL = existsSync('/bin/sh');
 
 afterAll(() => {
   rmSync(TEST_WORKSPACES_DIR, { recursive: true, force: true });
@@ -27,9 +37,22 @@ afterAll(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Read a text file with line endings normalized to LF.
+ *
+ * Markdown in this repo is not pinned to LF in .gitattributes, so Windows
+ * checkouts (core.autocrlf=true) materialize CRLF. Every assertion here — and
+ * gh-aw itself on the Linux runner — reasons in LF, so normalize on read rather
+ * than making each regex CRLF-aware. This also makes byte-budget measurements
+ * platform-independent.
+ */
+function readText(filePath: string): string {
+  return readFileSync(filePath, 'utf8').replace(/\r\n/g, '\n');
+}
+
 /** Extract YAML frontmatter from a markdown file (between --- delimiters). */
 function extractFrontmatter(filePath: string): string {
-  const content = readFileSync(filePath, 'utf8');
+  const content = readText(filePath);
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) throw new Error(`No frontmatter found in ${filePath}`);
   return match[1];
@@ -119,6 +142,7 @@ function extractImports(frontmatter: string): string[] {
       inImports = true;
       continue;
     }
+
     if (inImports) {
       const itemMatch = line.match(/^\s+-\s+(.+)$/);
       if (itemMatch) {
@@ -132,6 +156,40 @@ function extractImports(frontmatter: string): string[] {
   return imports;
 }
 
+function extractWorkflowDispatchInputs(frontmatter: string): Record<string, Record<string, string>> {
+  const inputs: Record<string, Record<string, string>> = {};
+  const lines = frontmatter.split('\n');
+  const workflowDispatchLine = lines.findIndex(line => /^  workflow_dispatch:\s*$/.test(line));
+  if (workflowDispatchLine === -1) return inputs;
+
+  const inputsLine = lines.findIndex((line, index) =>
+    index > workflowDispatchLine && /^    inputs:\s*$/.test(line)
+  );
+  if (inputsLine === -1) return inputs;
+
+  let currentInput: string | null = null;
+  for (let i = inputsLine + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^ {0,3}\S/.test(line)) break;
+
+    const inputMatch = line.match(/^      ([A-Za-z0-9_-]+):\s*$/);
+    if (inputMatch) {
+      currentInput = inputMatch[1];
+      inputs[currentInput] = {};
+      continue;
+    }
+
+    if (!currentInput) continue;
+
+    const propertyMatch = line.match(/^        ([A-Za-z0-9_-]+):\s*(.+)$/);
+    if (propertyMatch) {
+      inputs[currentInput][propertyMatch[1]] = propertyMatch[2].replace(/^['"]|['"]$/g, '');
+    }
+  }
+
+  return inputs;
+}
+
 /** Extract mode table rows from the "## Modes" section of the workflow body. */
 function extractModeTable(content: string): Array<{ command: string; mode: string; description: string }> {
   const rows: Array<{ command: string; mode: string; description: string }> = [];
@@ -142,13 +200,16 @@ function extractModeTable(content: string): Array<{ command: string; mode: strin
 
   const section = modesSection[1];
 
-  // Match 3-column table rows: | `command` | Mode | Description |
-  const tableRowRegex = /^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*([^|]*?)\s*\|/gm;
+  // Match table rows with 2 or 3 columns: | `command` | Mode | [Description] |
+  // The shipped table is 2-column; a 3-column-only pattern silently matched
+  // every other row (the trailing `|` of one row doubling as the opening `|`
+  // of the next), which under-reported coverage by half.
+  const tableRowRegex = /^\|\s*`([^`]+)`\s*\|\s*([^|\n]+?)\s*\|(?:\s*([^|\n]*?)\s*\|)?[ \t]*$/gm;
   let match: RegExpExecArray | null;
   while ((match = tableRowRegex.exec(section)) !== null) {
     const command = match[1].trim();
     const mode = match[2].trim();
-    const description = match[3].trim();
+    const description = (match[3] ?? '').trim();
     // Skip table headers
     if (command === 'Command' || mode === 'Mode') continue;
     rows.push({ command, mode, description });
@@ -281,7 +342,7 @@ describe('gh-aw: safe-output configuration', () => {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: mode dispatch completeness', () => {
-  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const content = readText(SQUAD_WORKFLOW);
   const modeTable = extractModeTable(content);
 
   it('mode table has entries', () => {
@@ -301,7 +362,9 @@ describe('gh-aw: mode dispatch completeness', () => {
     const uniqueModes = [...new Set(modeTable.map(r => r.mode))];
 
     for (const mode of uniqueModes) {
-      const normalized = mode.toLowerCase();
+      // Strip qualifiers like "(fast-path)" — they annotate the table entry,
+      // they are not part of the section/skill name.
+      const normalized = mode.replace(/\([^)]*\)/g, '').trim().toLowerCase();
       // Check if any heading contains the mode name (flexible match)
       // For multi-word modes like "Plan Accept", check for "plan accept" or "plan-accept"
       // Also check if the base mode has a section (e.g., "Cast" for "Cast Mode")
@@ -370,7 +433,7 @@ describe('gh-aw: shared component imports', () => {
       const fullPath = join(WORKFLOWS_DIR, importPath);
       if (!existsSync(fullPath)) continue;
 
-      const content = readFileSync(fullPath, 'utf8');
+      const content = readText(fullPath);
       expect(content.length, `${importPath} should not be empty`).toBeGreaterThan(0);
       expect(content, `${importPath} should contain at least one heading`).toMatch(/^#+\s+.+/m);
     }
@@ -381,7 +444,7 @@ describe('gh-aw: shared component imports', () => {
       const fullPath = join(WORKFLOWS_DIR, importPath);
       if (!existsSync(fullPath)) continue;
 
-      const content = readFileSync(fullPath, 'utf8');
+      const content = readText(fullPath);
       // Check for markdown links to local files (not URLs)
       const localLinks = content.match(/\[.*?\]\((?!https?:\/\/|#)([^)]+)\)/g) || [];
       for (const link of localLinks) {
@@ -403,8 +466,8 @@ describe('gh-aw: shared component imports', () => {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: planning state machine', () => {
-  const ontologyContent = readFileSync(join(SHARED_DIR, 'planning-ontology.md'), 'utf8');
-  const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const ontologyContent = readText(join(SHARED_DIR, 'squad-planning-ontology.md'));
+  const squadContent = readText(SQUAD_WORKFLOW);
 
   function registryArtifactKinds(): string[] {
     const registry = ontologyContent.match(/## 4\. Structured Artifact Registry([\s\S]*?)(?=\n---|\n## \d)/);
@@ -455,7 +518,7 @@ describe('gh-aw: planning state machine', () => {
 
   it('Research fixture data supports downstream Triage discovery', () => {
     const fixtures = join(process.cwd(), 'test-fixtures', 'planning', 'aspiregregator');
-    const researchBody = readFileSync(join(fixtures, 'research-output.md'), 'utf8');
+    const researchBody = readText(join(fixtures, 'research-output.md'));
     const wrongOrigin = researchBody.replace('"origin_issue": 8', '"origin_issue": 999');
     const discovered = findLatestArtifact(
       ['No structured artifact here', wrongOrigin, researchBody],
@@ -485,7 +548,7 @@ describe('gh-aw: planning state machine', () => {
     ]);
 
     for (const [file, artifactKinds] of expected) {
-      const artifacts = extractStructuredData(readFileSync(join(fixtures, file), 'utf8'));
+      const artifacts = extractStructuredData(readText(join(fixtures, file)));
       expect(artifacts.map(item => item.squad_artifact), file).toEqual(artifactKinds);
       for (const artifact of artifacts) {
         expect(artifact.schema_version, file).toBe('1');
@@ -550,25 +613,25 @@ describe('gh-aw: workflow frontmatter schema', () => {
 describe('gh-aw: prompt budget & planning import regression', () => {
   const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
   const imports = extractImports(frontmatter);
-  const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const squadContent = readText(SQUAD_WORKFLOW);
 
   // gh-aw enforces a hard 100 KB prompt ceiling (102 400 bytes)
   const GH_AW_PROMPT_CEILING_KB = 100;
   const GH_AW_PROMPT_CEILING_BYTES = GH_AW_PROMPT_CEILING_KB * 1024;
 
-  it('planning-ontology.md is in the imports list', () => {
-    expect(imports, 'shared/planning-ontology.md must be imported').toContain('shared/planning-ontology.md');
+  it('squad-planning-ontology.md is in the imports list', () => {
+    expect(imports, 'shared/squad-planning-ontology.md must be imported').toContain('shared/squad-planning-ontology.md');
   });
 
-  it('planning-policy.md is in the imports list', () => {
-    expect(imports, 'shared/planning-policy.md must be imported').toContain('shared/planning-policy.md');
+  it('squad-planning-policy.md is in the imports list', () => {
+    expect(imports, 'shared/squad-planning-policy.md must be imported').toContain('shared/squad-planning-policy.md');
   });
 
   it('no runtime cat of planning files remains in squad.md', () => {
     expect(
       squadContent,
-      'squad.md must not contain runtime `cat .github/workflows/shared/planning-*.md` instructions'
-    ).not.toMatch(/cat .github\/workflows\/shared\/planning-[\w-]+\.md/);
+      'squad.md must not contain runtime `cat .github/workflows/shared/*planning-*.md` instructions'
+    ).not.toMatch(/cat .github\/workflows\/shared\/[\w-]*planning-[\w-]+\.md/);
   });
 
   it(`combined prompt (workflow + all imports) is under ${GH_AW_PROMPT_CEILING_KB} KB`, () => {
@@ -577,7 +640,7 @@ describe('gh-aw: prompt budget & planning import regression', () => {
     for (const importPath of imports) {
       const fullPath = join(WORKFLOWS_DIR, importPath);
       if (existsSync(fullPath)) {
-        const content = readFileSync(fullPath, 'utf8');
+        const content = readText(fullPath);
         totalBytes += Buffer.byteLength(content, 'utf8');
       }
     }
@@ -595,7 +658,7 @@ describe('gh-aw: prompt budget & planning import regression', () => {
     let totalBytes = Buffer.byteLength(squadContent, 'utf8');
     for (const importPath of imports) {
       const fullPath = join(WORKFLOWS_DIR, importPath);
-      if (existsSync(fullPath)) totalBytes += Buffer.byteLength(readFileSync(fullPath, 'utf8'), 'utf8');
+      if (existsSync(fullPath)) totalBytes += Buffer.byteLength(readText(fullPath), 'utf8');
     }
     const headroomBytes = GH_AW_PROMPT_CEILING_BYTES - totalBytes;
     // Informational — log bytes/headroom; fail only if headroom < 5 KB (regression guard)
@@ -607,34 +670,637 @@ describe('gh-aw: prompt budget & planning import regression', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Test: inline skill extraction semantics (gh-aw setup step)
+//
+// The shipped workflow moves its mode playbooks and planning reference material
+// into gh-aw inline `## skill:` blocks so they load on demand instead of
+// sitting in every run's ambient prompt.
+//
+// This models the real extractor (gh-aw-actions setup/js/extract_inline_skills.cjs)
+// so the invariants are enforced here rather than discovered at runtime:
+//
+//   * a block runs from its start marker to a matching "## end skill: `name`"
+//     if one exists, otherwise to the next H2 heading or EOF;
+//   * when a block closes IMPLICITLY at an H2, everything between that boundary
+//     and the next start marker is DISCARDED — not extracted, not kept.
+//
+// That discard rule is the sharp edge: a skill marker placed above a body whose
+// own sections are H2s silently drops the rest of the file (and, because the
+// imports are concatenated ahead of the workflow body, potentially the router
+// itself). Conservation is asserted below so that can never ship unnoticed.
+// ---------------------------------------------------------------------------
+
+const SKILL_START_RE = /^##[ \t]+skill:[ \t]+`([a-z][a-z0-9_-]*)`[ \t]*$/gm;
+
+interface ExtractionResult {
+  ambient: string;
+  skills: { name: string; bytes: number; body: string }[];
+  discardedBytes: number;
+  markerBytes: number;
+}
+
+/**
+ * Report why a skill's frontmatter would fail to parse as YAML, or null if it is fine.
+ *
+ * gh-aw's extractor (setup/js/extract_inline_skills.cjs) filters skill frontmatter
+ * LINE BY LINE and never parses it, so a malformed `description:` is written to
+ * .github/skills/<name>/SKILL.md verbatim and surfaces only when the agent tries to
+ * load that skill. `gh aw compile --strict` does not catch it either: at compile time
+ * a skill block is still ordinary markdown. This check closes that gap.
+ *
+ * Deliberately hand-rolled rather than delegating to a YAML library: this repo has no
+ * YAML parser in its dependency tree (frontmatter elsewhere is validated by actionlint,
+ * which only reads real workflow YAML), and a lint this narrow does not justify adding
+ * one. It targets the plain-scalar hazards that actually bite in a one-line description.
+ */
+function findFrontmatterScalarError(body: string): { key: string; value: string; reason: string } | null {
+  if (!body.startsWith('\n---\n') && !body.startsWith('---\n')) return null;
+  const opened = body.slice(body.indexOf('---\n') + 4);
+  const closeIdx = opened.indexOf('\n---');
+  if (closeIdx === -1) return null;
+
+  for (const line of opened.slice(0, closeIdx).split('\n')) {
+    const m = /^([A-Za-z_][A-Za-z0-9_-]*):[ \t]+(.*)$/.exec(line);
+    if (!m) continue;
+    const [, key, raw] = m;
+    const value = raw.trim();
+    if (!value) continue;
+
+    // A quoted scalar escapes every hazard below.
+    const quoted =
+      (value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+      (value.startsWith("'") && value.endsWith("'") && value.length > 1);
+    if (quoted) continue;
+
+    // Block scalars (`|`, `>`) carry their value on following lines.
+    if (/^[|>][-+0-9]*$/.test(value)) continue;
+
+    // `[` and `{` open YAML flow collections, which are valid unquoted and parse
+    // fine -- `[a, b]` and `{a: b}` are not errors. Only an unterminated one is.
+    // Checked before the ": " rule below so a flow mapping is not mistaken for a
+    // nested mapping.
+    if (/^[[{]/.test(value)) {
+      const opens = (value.match(/[[{]/g) ?? []).length;
+      const closes = (value.match(/[\]}]/g) ?? []).length;
+      if (opens !== closes) {
+        return { key, value, reason: 'unquoted value opens a YAML flow collection that is never closed' };
+      }
+      continue;
+    }
+
+    if (/:\s/.test(value)) {
+      return { key, value, reason: 'unquoted value contains ": " and parses as a nested mapping' };
+    }
+    if (/\s#/.test(value)) {
+      return { key, value, reason: 'unquoted value contains " #" and would be truncated as a comment' };
+    }
+    if (/^[&*!%@`]/.test(value)) {
+      return { key, value, reason: `unquoted value starts with the YAML indicator "${value[0]}"` };
+    }
+  }
+  return null;
+}
+
+/** Mirror of gh-aw's inline-skill extraction, including its discard behaviour. */
+function extractInlineSkills(content: string): ExtractionResult {
+  const starts = [...content.matchAll(SKILL_START_RE)];
+  if (starts.length === 0) {
+    return { ambient: content, skills: [], discardedBytes: 0, markerBytes: 0 };
+  }
+
+  const h2Positions = [...content.matchAll(/^## .*$/gm)]
+    .map(m => m.index!)
+    .filter(i => i !== undefined);
+
+  let ambient = '';
+  let cursor = 0;
+  let discardedBytes = 0;
+  let markerBytes = 0;
+  const skills: { name: string; bytes: number; body: string }[] = [];
+
+  for (const start of starts) {
+    const startIdx = start.index!;
+    if (startIdx < cursor) continue;
+
+    ambient += content.slice(cursor, startIdx);
+    markerBytes += Buffer.byteLength(start[0], 'utf8');
+
+    const bodyStart = startIdx + start[0].length;
+    const endMarker = new RegExp(
+      `^##[ \\t]+end[ \\t]+skill:[ \\t]+\`${start[1]}\`[ \\t]*$`,
+      'm'
+    ).exec(content.slice(bodyStart));
+
+    if (endMarker) {
+      const bodyEnd = bodyStart + endMarker.index;
+      skills.push({
+        name: start[1],
+        bytes: Buffer.byteLength(content.slice(bodyStart, bodyEnd), 'utf8'),
+        body: content.slice(bodyStart, bodyEnd),
+      });
+      markerBytes += Buffer.byteLength(endMarker[0], 'utf8');
+      cursor = bodyEnd + endMarker[0].length;
+      continue;
+    }
+
+    // Implicit close: next H2 after the start marker, else EOF.
+    const nextH2 = h2Positions.find(p => p > startIdx);
+    const bodyEnd = nextH2 ?? content.length;
+    skills.push({
+      name: start[1],
+      bytes: Buffer.byteLength(content.slice(bodyStart, bodyEnd), 'utf8'),
+      body: content.slice(bodyStart, bodyEnd),
+    });
+
+    // Everything from here to the next start marker is dropped on the floor.
+    const nextStart = starts.find(s => s.index! > startIdx)?.index ?? content.length;
+    discardedBytes += Buffer.byteLength(content.slice(bodyEnd, Math.max(bodyEnd, nextStart)), 'utf8');
+    cursor = Math.max(bodyEnd, nextStart);
+  }
+
+  ambient += content.slice(cursor);
+  return { ambient, skills, discardedBytes, markerBytes };
+}
+
+describe('gh-aw: inline skill extraction', () => {
+  const frontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+  const imports = extractImports(frontmatter);
+
+  // Reproduce the prompt a real run assembles: imports first, then the body.
+  const assembled = [
+    ...imports
+      .map(rel => join(WORKFLOWS_DIR, rel))
+      .filter(existsSync)
+      .map(readText),
+    readText(SQUAD_WORKFLOW).replace(/^---\n[\s\S]*?\n---\n/, ''),
+  ].join('\n');
+
+  const result = extractInlineSkills(assembled);
+
+  // Sections that must stay in the ambient prompt — without these the agent
+  // cannot parse a command or route to a skill in the first place.
+  const REQUIRED_AMBIENT_SECTIONS = [
+    'Planning Artifact Data Contract',
+    'Trigger Context',
+    'Modes',
+    'Parse Command',
+    'Execute Mode',
+    'Team Guard',
+  ];
+
+  const AMBIENT_BUDGET_BYTES = 40 * 1024;
+
+  it('extracts every declared skill block', () => {
+    expect(result.skills.length, 'expected inline skill blocks to be extracted').toBeGreaterThan(20);
+  });
+
+  it('discards no content during extraction', () => {
+    const offenders = result.skills.filter(s => s.bytes < 200).map(s => s.name);
+    expect(
+      result.discardedBytes,
+      `${result.discardedBytes} bytes were silently dropped. A skill block closed at an H2 ` +
+        `instead of an explicit "## end skill:" marker. Suspiciously small skills: ` +
+        `${offenders.join(', ') || '(none)'}. Add an explicit end marker to any skill whose ` +
+        `body contains H2 headings.`
+    ).toBe(0);
+  });
+
+  it('keeps the router sections in the ambient prompt', () => {
+    for (const section of REQUIRED_AMBIENT_SECTIONS) {
+      expect(
+        result.ambient,
+        `"${section}" must remain in the ambient prompt — it is required to dispatch a mode`
+      ).toContain(section);
+    }
+  });
+
+  it('loses no bytes overall (ambient + skills + markers == source)', () => {
+    const accounted =
+      Buffer.byteLength(result.ambient, 'utf8') +
+      result.skills.reduce((n, s) => n + s.bytes, 0) +
+      result.markerBytes;
+    const source = Buffer.byteLength(assembled, 'utf8');
+    // Marker lines carry trailing newlines that fall on either side of a split.
+    expect(Math.abs(source - accounted), 'byte conservation check failed').toBeLessThan(
+      result.skills.length * 4
+    );
+  });
+
+  it(`keeps the ambient prompt under ${AMBIENT_BUDGET_BYTES / 1024} KB`, () => {
+    const ambientBytes = Buffer.byteLength(result.ambient, 'utf8');
+    expect(
+      ambientBytes,
+      `Ambient prompt is ${(ambientBytes / 1024).toFixed(1)} KB. Mode playbooks and planning ` +
+        `reference material belong in inline skills, not the always-loaded prompt.`
+    ).toBeLessThan(AMBIENT_BUDGET_BYTES);
+  });
+
+  it('gives every skill parseable YAML frontmatter', () => {
+    const offenders = result.skills
+      .map(s => ({ name: s.name, err: findFrontmatterScalarError(s.body) }))
+      .filter((s): s is { name: string; err: NonNullable<ReturnType<typeof findFrontmatterScalarError>> } => s.err !== null);
+
+    expect(
+      offenders.map(o => `${o.name}: ${o.err.key} — ${o.err.reason}\n    ${o.err.value}`).join('\n  '),
+      'Skill frontmatter must be valid YAML. Nothing upstream catches this: the extractor ' +
+        'filters frontmatter line-by-line without parsing it, and `gh aw compile --strict` ' +
+        'sees skill blocks as plain markdown. A broken value reaches the agent as a skill ' +
+        'that cannot load. Quote the value.'
+    ).toBe('');
+  });
+
+  it('flags real frontmatter scalar hazards without flagging valid YAML', () => {
+    const wrap = (line: string) => `\n---\n${line}\nname: x\n---\nbody`;
+
+    // Valid unquoted plain scalars and flow collections must not be flagged.
+    for (const ok of [
+      'description: Cast a squad',
+      'description: "Cast a squad: from a repo"',
+      "description: 'already quoted'",
+      'allowed: [read, write]',
+      'options: {mode: fast}',
+      'description: |',
+    ]) {
+      expect(findFrontmatterScalarError(wrap(ok)), `false positive on: ${ok}`).toBeNull();
+    }
+
+    // Genuine hazards must still be caught.
+    for (const bad of [
+      'description: Cast a squad: from a repo',
+      'description: Cast a squad #1',
+      'description: &anchor',
+      'allowed: [read, write',
+    ]) {
+      expect(findFrontmatterScalarError(wrap(bad)), `missed hazard in: ${bad}`).not.toBeNull();
+    }
+  });
+
+  it('gives every dispatchable mode a skill to load', () => {
+    const skillNames = new Set(result.skills.map(s => s.name));
+    const modes = extractModeTable(readText(SQUAD_WORKFLOW));
+    expect(modes.length, 'mode table should parse').toBeGreaterThan(15);
+
+    const dispatchTable = readText(SQUAD_WORKFLOW);
+    for (const { mode } of modes) {
+      const slug =
+        'squad-' +
+        mode
+          .replace(/\([^)]*\)/g, '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)/g, '');
+
+      const hasSkill = skillNames.has(slug);
+      // Some modes legitimately share a playbook; accept an explicit mapping row.
+      const hasMapping = new RegExp(`\\|[^|\\n]*${mode.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}[^|\\n]*\\|[^|\\n]*squad-`, 'i').test(dispatchTable);
+
+      expect(
+        hasSkill || hasMapping,
+        `Mode "${mode}" has no "## skill: \`${slug}\`" block and no row in the Execute Mode ` +
+          `dispatch table pointing at a skill. It would have no playbook at runtime.`
+      ).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Test: gh-aw compilation retains durable state and Auto-Cast contracts
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: compiled workflow contract', () => {
   const ghAwAvailable = spawnSync('gh', ['aw', '--version'], { encoding: 'utf8' }).status === 0;
 
+  // Explicit timeout: this test shells out to the real `gh aw compile` binary,
+  // which reliably finishes in ~2-3s in isolation but can exceed the 5s vitest
+  // default under full-suite parallel load/contention. Bumping this avoids
+  // spurious CI flakiness unrelated to the assertions themselves.
   it.skipIf(!ghAwAvailable)('strict-compiles and preserves prompt/config behavior', () => {
     const workspace = createTestWorkspace('gh-aw-compile-');
     try {
       execFileSync('git', ['init', '--quiet'], { cwd: workspace });
-      cpSync(WORKFLOWS_DIR, join(workspace, 'workflows'), { recursive: true });
-      execFileSync('gh', ['aw', 'compile', 'workflows/squad.md', '--strict'], {
+      // gh-aw's dispatch-workflow validation (added alongside #1682's
+      // safe-outputs.dispatch-workflow config) resolves its dispatch target against
+      // a `.github/workflows/` directory that it locates relative to the compiled
+      // file's path, assuming the standard `<repo-root>/.github/workflows/<file>.md`
+      // layout. This repo distributes the gh-aw *source* one level shallower, from a
+      // top-level `workflows/` directory (see docs/src/content/docs/guide/gh-aw.md),
+      // which downstream consumers install into their own `.github/workflows/` via
+      // `gh aw add owner/squad/workflows/squad-implement-worker.md@dev
+      // owner/squad/workflows/squad.md@dev` — landing both files side-by-side there.
+      // Mirror that real deployment layout in the ephemeral test workspace (instead
+      // of a bare `workflows/` copy) so the dispatch target `squad-implement-worker`
+      // resolves the same way it will for every real downstream install.
+      cpSync(WORKFLOWS_DIR, join(workspace, '.github', 'workflows'), { recursive: true });
+      execFileSync('gh', ['aw', 'compile', '.github/workflows/squad.md', '--strict'], {
         cwd: workspace,
         encoding: 'utf8',
         stdio: 'pipe',
       });
 
-      const compiled = readFileSync(join(workspace, 'workflows', 'squad.lock.yml'), 'utf8');
+      const compiled = readText(join(workspace, '.github', 'workflows', 'squad.lock.yml'));
       expect(compiled).toContain('"auto_close_issue":false');
       expect(compiled).toContain('"data_enabled":true');
       expect(compiled).toContain('"required":["origin_issue","phases","schema_version","squad_artifact"]');
       expect(compiled).toContain('"enum":["research","plan","plan-accepted"');
-      expect(compiled).toContain('{{#runtime-import shared/planning-ontology.md}}');
-      expect(compiled).toContain('{{#runtime-import squad.md}}');
+      // gh-aw records runtime-import paths relative to the repo root (not the
+      // compiled file's own directory), so with the real `.github/workflows/`
+      // deployment layout these are prefixed accordingly — verified against an
+      // isolated compile outside this repo/worktree entirely.
+      expect(compiled).toContain('{{#runtime-import .github/workflows/shared/squad-planning-ontology.md}}');
+      expect(compiled).toContain('{{#runtime-import .github/workflows/squad.md}}');
       expect(compiled).not.toMatch(/<!-- squad-[\w-]+(?:-v\d+)? -->/);
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }
+  }, 20000);
+});
+
+// ---------------------------------------------------------------------------
+// Test: Merge continuation dispatch contract (#1751)
+// ---------------------------------------------------------------------------
+
+describe('gh-aw: merge continuation dispatch contract', () => {
+  const squadFrontmatter = extractFrontmatter(SQUAD_WORKFLOW);
+  const squadInputs = extractWorkflowDispatchInputs(squadFrontmatter);
+  const workerContent = readText(SQUAD_IMPLEMENT_WORKER);
+
+  it('does not silently default workflow_dispatch command to a mutating mode', () => {
+    expect(squadInputs.command, 'Squad workflow_dispatch.command should exist').toBeDefined();
+    // gh-aw forbids required workflow_dispatch inputs when the same workflow also
+    // has slash_command triggers, so the safety contract is "no mutating default"
+    // plus explicit missing-input handling in the prompt.
+    expect(squadInputs.command.required).toBe('false');
+    expect(squadInputs.command.default).toBeUndefined();
+  });
+
+  it('documents missing workflow_dispatch issue_number as a guarded halt, not a junk issue', () => {
+    const squadText = readText(SQUAD_WORKFLOW);
+    expect(squadText).toMatch(/missing issue_number/i);
+    // The activation guard halts the run with a visible log annotation instead of
+    // minting a junk issue for an empty/malformed dispatch probe (see PR #1777).
+    expect(squadText).toMatch(/::warning::/);
+    expect(squadText).toMatch(/halting with no side effects/i);
+    expect(squadText).not.toMatch(/Squad workflow dispatch missing issue_number/);
+  });
+
+  it('worker continuation dispatch payload nests keys that Squad declares', () => {
+    const continuation = workerContent.match(
+      /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/
+    )?.[1] ?? '';
+    const payloadBlock = continuation.match(/```json\n([\s\S]*?)\n```/)?.[1];
+    expect(payloadBlock, 'continuation dispatch JSON payload should be present').toBeDefined();
+
+    const payload = JSON.parse(payloadBlock!) as {
+      workflow_name?: string;
+      inputs?: Record<string, string>;
+      command?: string;
+      issue_number?: string;
+    };
+    expect(payload.workflow_name).toBe('squad');
+    expect(payload.command, 'command must not be a top-level dispatch_workflow argument').toBeUndefined();
+    expect(payload.issue_number, 'issue_number must not be a top-level dispatch_workflow argument').toBeUndefined();
+    expect(payload.inputs).toEqual({
+      command: 'implement',
+      issue_number: '{root-issue-number}',
+    });
+
+    for (const key of Object.keys(payload.inputs ?? {})) {
+      expect(squadInputs, `Squad workflow_dispatch input "${key}" should exist`).toHaveProperty(key);
+    }
+  });
+
+  it('worker continuation warns dispatch_workflow is write-once and not schema-probed', () => {
+    const continuation = workerContent.match(
+      /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/
+    )?.[1] ?? '';
+
+    expect(continuation, 'continuation should name the dispatch_workflow tool').toMatch(/dispatch_workflow/);
+    expect(continuation, 'empty or placeholder schema probes should be forbidden').toMatch(
+      /NEVER[\s\S]*empty[\s\S]*(?:placeholder|partial)[\s\S]*(?:probe|discover)[\s\S]*schema/i
+    );
+    expect(continuation, 'noop should be named as the alternative when there is nothing to dispatch').toMatch(
+      /(?:nothing|no next wave)[\s\S]{0,200}dispatch[\s\S]{0,200}`?noop`?|`?noop`?[\s\S]{0,200}(?:nothing|no next wave)[\s\S]{0,200}dispatch/i
+    );
+  });
+
+  it('worker continuation comments on the parent epic instead of auto-targeting the merged PR', () => {
+    const continuation = workerContent.match(
+      /## Continue Parent Epic After Merge([\s\S]*?)The remaining instructions apply only to `workflow_dispatch`/
+    )?.[1] ?? '';
+    expect(continuation).toMatch(/comment on the parent epic/i);
+    expect(continuation).toMatch(/item_number[\s\S]*parent epic number/i);
+  });
+
+  // -------------------------------------------------------------------------
+  // Structural gate: max >= 2 (#1772)
+  // -------------------------------------------------------------------------
+  // The `dispatch-workflow: max: 1` constraint means the FIRST safe-output entry
+  // wins and all later entries are silently discarded.  When the LLM emits an empty
+  // probe first, `max: 1` causes it to consume the only slot and the real dispatch
+  // never fires -- confirmed across three aspiregregator-squad-e2e runs
+  // (32324473906, 32394811753, 32316227601).
+  //
+  // Raising max to 2 gives the real dispatch a second slot even when the LLM
+  // probes first, breaking the silent-discard failure mode without requiring any
+  // change to gh-aw itself.
+  //
+  // This test FAILS against the pre-fix state (max: 1) and PASSES after the fix
+  // (max: 2).  It is the structural test that the wording-only approach (#1766)
+  // lacked: prompt text can be present and the live run still broken; this test
+  // directly asserts the frontmatter value that governs runtime behavior.
+  it('worker dispatch-workflow max is at least 2 to survive a probe + real dispatch', () => {
+    const safeOutputs = extractSafeOutputs(extractFrontmatter(SQUAD_IMPLEMENT_WORKER));
+    const dispatchWorkflow = safeOutputs['dispatch-workflow'];
+    expect(dispatchWorkflow, 'squad-implement-worker.md must declare dispatch-workflow safe-output').toBeDefined();
+    const max = dispatchWorkflow?.max as number | undefined;
+    expect(max, 'dispatch-workflow max must be >= 2 so a probe does not silently discard the real dispatch').toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test: Dispatch workflow schema static gate (#1772)
+// ---------------------------------------------------------------------------
+// The static gate (scripts/check-workflow-input-interpolation.mjs) now validates
+// dispatch_workflow JSON examples in workflow prompts.  A malformed example --
+// missing `workflow_name`, missing `inputs`, or top-level `command`/`issue_number` --
+// causes gh-aw to run the wrong workflow or dispatch with no inputs.
+//
+// This suite:
+//   (a) verifies the gate passes against current workflow files
+//   (b) verifies the gate FAILS against a fixture with a malformed dispatch schema
+//       (the broken state that caused aspiregregator-squad-e2e failures)
+
+describe('gh-aw: dispatch_workflow schema static gate (#1772)', () => {
+  const scriptPath = join(process.cwd(), 'scripts', 'check-workflow-input-interpolation.mjs');
+  const fixturesDir = join(TEST_WORKSPACES_DIR, 'dispatch-schema-gate');
+
+  function runGate(scanDir: string): { exitCode: number; stderr: string; stdout: string } {
+    // The script resolves SCAN_DIRS relative to repo root via import.meta.url.
+    // We invoke it with a patched environment variable so the fixture directory is
+    // scanned instead of the real workflows directory.
+    const result = spawnSync(
+      process.execPath,
+      [scriptPath],
+      {
+        env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: scanDir },
+        encoding: 'utf8',
+        cwd: process.cwd(),
+      }
+    );
+    return {
+      exitCode: result.status ?? 1,
+      stderr: result.stderr ?? '',
+      stdout: result.stdout ?? '',
+    };
+  }
+
+  function writeFixture(name: string, content: string): string {
+    mkdirSync(fixturesDir, { recursive: true });
+    const path = join(fixturesDir, name);
+    writeFileSync(path, content, 'utf8');
+    return path;
+  }
+
+  it('passes against current workflow files (regression guard)', () => {
+    const result = spawnSync(process.execPath, [scriptPath], {
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, `Gate should exit 0; stderr: ${result.stderr}`).toBe(0);
+  });
+
+  it('fails when dispatch_workflow example is missing workflow_name', () => {
+    // This is failure shape (3) confirmed in run 32316227601: dispatch schema
+    // without workflow_name caused the squad workflow to run the wrong skill.
+    const fixture = writeFixture('missing-workflow-name.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Dispatch workflow using the dispatch_workflow safe-output tool:
+
+\`\`\`json
+{
+  "inputs": {
+    "command": "implement",
+    "issue_number": "42"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must exit 1 when dispatch_workflow JSON lacks workflow_name').toBe(1);
+    expect(result.stderr).toMatch(/dispatch-schema|workflow_name/i);
+    // Cleanup
+    rmSync(fixture);
+  });
+
+  it('fails when dispatch_workflow example has top-level command instead of inputs object', () => {
+    // This is failure shape (1) confirmed in runs 32324473906, 32394811753:
+    // top-level command/issue_number are silently dropped by gh-aw; the receiving
+    // workflow runs with no inputs and creates junk issues.
+    const fixture = writeFixture('top-level-inputs.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Call dispatch_workflow to continue the relay:
+
+\`\`\`json
+{
+  "workflow_name": "squad",
+  "command": "implement",
+  "issue_number": "42"
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must exit 1 when dispatch_workflow JSON has top-level command').toBe(1);
+    expect(result.stderr).toMatch(/dispatch-schema|top-level/i);
+    rmSync(fixture);
+  });
+
+  it('fails when dispatch_workflow example is missing inputs.issue_number', () => {
+    const fixture = writeFixture('missing-issue-number.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Use dispatch_workflow to queue the next wave:
+
+\`\`\`json
+{
+  "workflow_name": "squad",
+  "inputs": {
+    "command": "implement"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, 'Gate must exit 1 when dispatch_workflow JSON inputs lacks issue_number').toBe(1);
+    expect(result.stderr).toMatch(/dispatch-schema|issue_number/i);
+    rmSync(fixture);
+  });
+
+  it('passes for a well-formed dispatch_workflow example', () => {
+    const fixture = writeFixture('valid-dispatch.md', `---
+safe-outputs:
+  dispatch-workflow:
+    workflows: [squad]
+    max: 2
+---
+
+# Test Worker
+
+Use dispatch_workflow to continue the relay:
+
+\`\`\`json
+{
+  "workflow_name": "squad",
+  "inputs": {
+    "command": "implement",
+    "issue_number": "{parent-epic-number}"
+  }
+}
+\`\`\`
+`);
+
+    const result = spawnSync(process.execPath, [scriptPath], {
+      env: { ...process.env, SQUAD_GATE_SCAN_OVERRIDE: fixturesDir },
+      encoding: 'utf8',
+      cwd: process.cwd(),
+    });
+    expect(result.status, `Gate should exit 0 for valid schema; stderr: ${result.stderr}`).toBe(0);
+    rmSync(fixture);
   });
 });
 
@@ -643,7 +1309,7 @@ describe('gh-aw: compiled workflow contract', () => {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: Plan Activate hardening behaviors', () => {
-  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const content = readText(SQUAD_WORKFLOW);
 
   it('includes output budget awareness guidance', () => {
     expect(content).toContain('Output Budget Awareness');
@@ -688,7 +1354,7 @@ describe('gh-aw: Plan Activate hardening behaviors', () => {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: Plan Activate atomic task-call contract', () => {
-  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const content = readText(SQUAD_WORKFLOW);
 
   it('2c contains explicit ATOMIC CONTRACT heading', () => {
     expect(content).toMatch(/ATOMIC CONTRACT/i);
@@ -726,7 +1392,7 @@ describe('gh-aw: Plan Activate atomic task-call contract', () => {
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
-  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const content = readText(SQUAD_WORKFLOW);
 
   it('Team Guard section exists and lists covered modes', () => {
     expect(content).toMatch(/## Team Guard/);
@@ -772,7 +1438,7 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
 
   it('does not require unsupported Auto-Cast HTML markers', () => {
     expect(content).not.toMatch(/squad-(pending-intent|cast-opened|cast-pr)-v1/);
-    expect(readFileSync(join(SHARED_DIR, 'planning-ontology.md'), 'utf8'))
+    expect(readText(join(SHARED_DIR, 'squad-planning-ontology.md')))
       .not.toMatch(/squad-(pending-intent|cast-opened|cast-pr)-v1/);
   });
 
@@ -846,7 +1512,7 @@ describe('gh-aw: auto-cast pivot and resumable work (#1689)', () => {
 // the guard, preventing false TEAM_PRESENT in fresh repos.
 // ---------------------------------------------------------------------------
 
-describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo coverage (#1689 revision 3)', () => {
+describe.skipIf(!HAS_POSIX_SHELL)('gh-aw: Team Guard roster-row detection — committed-HEAD git repo coverage (#1689 revision 3)', () => {
   // Content shared across test cases
   const SCAFFOLD_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n`;
   const ONE_MEMBER_CONTENT = `# Squad Team\n\n## Members\n| Name | Role | Charter path | Status |\n|------|------|--------------|--------|\n| Eecom | Core Dev | .squad/agents/eecom/charter.md | active |\n`;
@@ -1003,7 +1669,7 @@ describe('gh-aw: Team Guard roster-row detection — committed-HEAD git repo cov
 // ---------------------------------------------------------------------------
 
 describe('gh-aw: Auto-Cast prompt hygiene (#1689 revision)', () => {
-  const content = readFileSync(SQUAD_WORKFLOW, 'utf8');
+  const content = readText(SQUAD_WORKFLOW);
 
   it('{original_command} does not appear anywhere in workflow — only canonical command variables are used', () => {
     expect(content).not.toMatch(/\{original_command\}/);
@@ -1018,8 +1684,8 @@ describe('gh-aw: Auto-Cast prompt hygiene (#1689 revision)', () => {
 // Test: Cast PR dedup jq filter — behavioral coverage (#1689 revision)
 // ---------------------------------------------------------------------------
 
-describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', () => {
-  const squadContent = readFileSync(SQUAD_WORKFLOW, 'utf8');
+describe.skipIf(!HAS_POSIX_SHELL)('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
 
   // Extract the exact --jq expression from squad.md so this test stays in sync.
   function extractJqFilter(): string {
@@ -1085,5 +1751,65 @@ describe('gh-aw: Cast PR dedup jq filter behavioral coverage (#1689 revision)', 
     const result = runJqFilter(prs, filter);
     expect(result).toContain('"headRefName": "squad/cast-myrepo"');
     expect(result).not.toContain('squad/cast-member-dev');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gh-aw: Auto-Cast UX guidance — canonical fallback, paused-run wording,
+// and Cast PR body return/rerun instruction (#1700)
+//
+// Focused contract assertions for the UX guidance added in #1700.
+// Complements the broader auto-Cast coverage in the '#1689' describe blocks above.
+// ---------------------------------------------------------------------------
+describe('gh-aw: Auto-Cast UX guidance — canonical fallback and Cast PR body return instruction (#1700)', () => {
+  const squadContent = readText(SQUAD_WORKFLOW);
+
+  it('canonical_mode definition includes safe fallback for unresolvable mode', () => {
+    expect(squadContent).toMatch(/if.*canonical_mode.*cannot be determined.*safe fallback|safe fallback.*\/squad/i);
+  });
+
+  it('first-run Auto-Cast comment tells user their command is paused this run', () => {
+    expect(squadContent).toMatch(/command.*paused this run|paused this run/i);
+  });
+
+  it('Cast PR body instructs user to return to originating issue and rerun canonical command', () => {
+    expect(squadContent).toMatch(/return to the originating issue and rerun.*\{canonical_command\}/s);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gh-aw: Threat detection taxonomy regression (#1701)
+//
+// Verifies that Squad's label registry correctly distinguishes detection
+// infrastructure failures (`agentic-detection-failed`) from confirmed content
+// threats (`agentic-threat-detected`).  The former is Squad-owned; the latter
+// is applied by the upstream gh-aw framework and MUST NOT be defined here.
+// ---------------------------------------------------------------------------
+describe('gh-aw: threat detection taxonomy — parse_error must not map to agentic-threat-detected (#1701)', () => {
+  const LABEL_SYNC = join(process.cwd(), '.github/workflows/sync-squad-labels.yml');
+  const labelSyncContent = readText(LABEL_SYNC);
+
+  it('sync-squad-labels.yml defines agentic-detection-failed for infrastructure failures', () => {
+    expect(labelSyncContent).toContain('agentic-detection-failed');
+  });
+
+  it('agentic-detection-failed label has a non-empty description that mentions infrastructure failure', () => {
+    expect(labelSyncContent).toMatch(/agentic-detection-failed.*infrastructure failure|infrastructure failure.*agentic-detection-failed/s);
+  });
+
+  it('agentic-detection-failed is distinct from agentic-threat-detected (Squad must not define the threat label)', () => {
+    // agentic-threat-detected is applied by the upstream process_safe_outputs.cjs on genuine threats.
+    // Squad must not redefine it here to avoid ambiguity in the taxonomy.
+    expect(labelSyncContent).not.toContain('agentic-threat-detected');
+  });
+
+  it('agentic-detection-failed is present in SIGNAL_LABELS array (high-visibility, not buried)', () => {
+    // Verify the label appears after the SIGNAL_LABELS declaration, confirming it is
+    // placed in the high-signal group rather than a lower-priority type:* group.
+    const signalStart = labelSyncContent.indexOf('SIGNAL_LABELS');
+    expect(signalStart).toBeGreaterThan(-1);
+    const signalEnd = labelSyncContent.indexOf('];', signalStart);
+    const signalBlock = labelSyncContent.slice(signalStart, signalEnd);
+    expect(signalBlock).toContain('agentic-detection-failed');
   });
 });

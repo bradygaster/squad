@@ -21,7 +21,34 @@
 # Squad: shell scripts must stay LF — CRLF breaks the shebang on Linux/macOS.
 *.sh text eol=lf
 
+# Squad: ESM scripts must stay LF — a CRLF shebang survives Vite's shebang
+# stripping as a bare `#`, so any .mjs imported by a vitest suite fails to parse
+# ("SyntaxError: Invalid or unexpected token") and the whole suite loads zero
+# tests. Green on Linux CI, silently dead on Windows checkouts (#1788).
+*.mjs text eol=lf
+
+# Squad: same hazard, remaining shebanged file types (#1788). A CRLF shebang is
+# never correct -- the \r joins the interpreter argument on POSIX ("env: node\r:
+# No such file or directory"). Enforced by scripts/check-shebang-eol.mjs.
+*.js text eol=lf
+*.cjs text eol=lf
+*.ps1 text eol=lf
+
+# Deliberately NOT "*.ts text eol=lf": only 3 tracked .ts files carry a shebang,
+# but a blanket rule would renormalize 95 CRLF-storing .ts blobs in one commit.
+# Pinning the shebanged entrypoints by path keeps the invariant without the churn.
+packages/squad-cli/src/cli-entry.ts text eol=lf
+samples/autonomous-pipeline/index.ts text eol=lf
+test-fixtures/dogfood/node-monorepo/packages/cli/src/cli.ts text eol=lf
+
 # Squad: CRLF breaks RUN line-continuations when the image builds on Linux.
 Dockerfile text eol=lf
 Dockerfile.* text eol=lf
 .dockerignore text eol=lf
+
+# Squad: vitest writes snapshots with LF unconditionally. Without a rule these
+# check out as CRLF on Windows, so `npm test` dirties a tracked file on every
+# run -- and a broad `git add` then commits pure line-ending noise. Same CRLF
+# class as the .mjs rule above, different symptom: not a load failure, a
+# perpetually dirty tree (#1788).
+*.snap text eol=lf
