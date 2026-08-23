@@ -144,3 +144,7 @@ gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: C
 
 
 - 📌 **Team update (2026-08-21 — Agentic-Workflows Audit):** Authored PR #1815 chore(gh-aw): ignore downloaded workflow logs under .github/aw/logs. Created .github/aw/logs/.gitignore (* + !.gitignore). LF-only blob verified via hex inspection. Correctly requested reviewer pass; Flight approved and squash-merged at 2026-08-21T16:23:46Z. PR #1815 MERGED ✅.
+
+## 2026-08-22 — gh-aw triage team update
+
+📌 Team update (2026-08-22T17:10:52-07:00): Booster completed Tier 2 gh-aw CI/release-surface triage: #1556 and #1493 are p1/wave:1-next/spec-ready, #1502 is p2/wave:2-soon/needs-research. PR #1709 only partially addresses #1493; #1827 and #1556 are separate generated-YAML code paths.

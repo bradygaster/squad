@@ -119,3 +119,7 @@ Tests: `test/gh-aw-plan-lifecycle.test.ts` (23 assertions), incl. a role-leak de
 **Files modified:** `.github/copilot-instructions.md`, `.copilot/skills/protected-files/SKILL.md` (new).
 
 **Pattern:** When trimming agent instructions, extract domain-specific reference content to skills (lazy-loaded on demand) and keep the main instructions file as a routing/workflow document. Skills are the right abstraction for "read this when you touch X" — they don't consume tokens until needed.
+
+## 2026-08-22 — gh-aw triage team update
+
+📌 Team update (2026-08-22T17:10:52-07:00): Procedures completed Tier 3 #1729 prompt-architecture triage: sequence #1730+#1731 → #1733 → #1734 → #1736, with #1735 optional. Tier 1 false-green work blocks #1734 and enforcement-facing #1736. Prompt budget remains under the 100 KB ceiling.

@@ -49,3 +49,11 @@ gh-aw workstream triage complete (7-agent read-only pass). Reconciled outcome: C
 
 Batch 2 complete. Fixed #1772 (P0): `max: 1` → `max: 2` in squad-implement-worker.md + `checkDispatchWorkflowSchemas()` static gate + 6 tests. All tests verified to fail against pre-fix state. CI run 32410579973 confirms gate active. PR #1777 green, awaiting Flight gate. `max: 2` is the worker's outbound budget; Procedures' guard is squad.md's inbound validation — complementary layers.
 
+
+## 2026-08-22 — gh-aw triage team update
+
+📌 Team update (2026-08-22T17:10:52-07:00): EECOM is in flight on #1793 phantom CRLF diffs causing stuck sessions in sub-session 5cba11df-facd-44c9-a1d9-437259728019. Related context: coordinator must avoid broad staging while the CRLF issue exists.
+
+## 📌 Team update — 2026-08-22T18:25:00-07:00
+
+PR #1831 merged as `9378a379` for #1793. EECOM shipped local CRLF working-tree detection/repair, resolved three Copilot review threads, and captured the follow-on principle that gate remediation/verification instructions must cover the same artifact set as the check itself.
