@@ -1,8 +1,14 @@
 #!/usr/bin/env node
-// check-shebang-eol.mjs -- Two EOL invariants over the git index.
+// check-shebang-eol.mjs -- EOL invariants over a git repository.
 //
-//   UNPINNED   Every tracked file starting with `#!` must be pinned to LF.
-//   CRLF-BLOB  Every file pinned to LF must actually store an LF blob.
+//   UNPINNED       Every tracked file starting with `#!` must be pinned to LF.
+//   CRLF-BLOB      Every file pinned to LF must actually store an LF blob.
+//   WORKTREE-CRLF  Every file pinned to LF must also BE LF on disk. (#1793)
+//
+// The first two read the index and are enforced by main() as a CI gate. The
+// third reads the working tree, is local-only by nature, and is exported for
+// `squad doctor` / scripts/fix-crlf-worktree.mjs rather than gated here -- see
+// listWorktreeCrlf below for why putting it in CI would be a no-op gate.
 //
 // A CRLF shebang is never correct. The trailing \r becomes part of the
 // interpreter argument on POSIX ("env: node\r: No such file or directory"), and
@@ -157,6 +163,71 @@ export function eolAttributes(cwd, files) {
     map.set(out[i], out[i + 2]);
   }
   return map;
+}
+
+/**
+ * Parse one `git ls-files --eol -z` record into `{ index, worktree, attr, file }`.
+ *
+ * Record shape is `i/<eol>` `w/<eol>` `attr/<value>` then a TAB then the path;
+ * the first three fields are space-padded to fixed columns and the attr value
+ * itself contains a space ("text eol=lf"), so the path is everything after the
+ * first TAB and the field block is split by whitespace runs, not by column.
+ */
+function parseEolRecord(record) {
+  const tab = record.indexOf('\t');
+  if (tab === -1) return undefined;
+  const match = /^i\/(\S*)\s+w\/(\S*)\s+attr\/(.*)$/.exec(record.slice(0, tab));
+  if (!match) return undefined;
+  return { index: match[1], worktree: match[2], attr: match[3].trim(), file: record.slice(tab + 1) };
+}
+
+/**
+ * WORKTREE-CRLF -- paths pinned to LF whose file ON DISK still has CRLF.
+ *
+ * THIS IS A THIRD INVARIANT, AND IT IS NOT REDUNDANT WITH THE TWO ABOVE.
+ * UNPINNED and CRLF-BLOB both read the *index*. This one reads the *working
+ * tree*, and the gap between them is exactly #1793: `.gitattributes` governs
+ * checkout, not files already on disk. Adding `*.mjs text eol=lf` (#1790) only
+ * rewrites a working file when the merge also changes that file's index
+ * content. For a path already stored LF, the index does not move, so git never
+ * re-smudges it and it stays CRLF on disk forever. Vite's shebang stripping
+ * then leaves a bare `#`, the module fails to parse, and the importing vitest
+ * suite reports "no tests" -- a green-looking zero (#1788).
+ *
+ * DELIBERATELY NOT WIRED INTO main() BELOW. This lint runs in CI, where the
+ * checkout is always fresh, so a working-tree assertion there could never
+ * observe the failure it is meant to catch -- a permanently green gate is
+ * equivalent to no gate. The condition is local-only by nature, so it is
+ * surfaced by `squad doctor` and repaired by scripts/fix-crlf-worktree.mjs,
+ * both of which run on the developer's actual disk.
+ *
+ * `w/mixed` counts too: under an eol=lf pin, any CR in the working file is the
+ * same defect, just partially applied.
+ */
+export function listWorktreeCrlf(cwd) {
+  const out = git(['ls-files', '--eol', '-z'], cwd).split(NUL).filter(Boolean);
+  const found = [];
+  for (const record of out) {
+    const parsed = parseEolRecord(record);
+    if (!parsed) continue;
+    if (!/(^|\s)eol=lf(\s|$)/.test(parsed.attr)) continue;
+    if (parsed.worktree !== 'crlf' && parsed.worktree !== 'mixed') continue;
+    found.push(parsed);
+  }
+  return found;
+}
+
+/**
+ * Paths whose working-tree content differs from the index in more than line
+ * endings. Git's checkin filter normalizes CRLF away before comparing, so a
+ * pure EOL mismatch produces NO entry here while a genuine edit does.
+ *
+ * This is the safety gate for any repair that overwrites from the index:
+ * `git checkout-index -f` is destructive to real uncommitted work, and this is
+ * what makes it safe to point at a path.
+ */
+export function listContentModified(cwd) {
+  return new Set(git(['diff', '--name-only', '-z'], cwd).split(NUL).filter(Boolean));
 }
 
 /**

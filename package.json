@@ -26,6 +26,7 @@
     "experiment:real-cli-ab": "node scripts/real-cli-ab.js",
     "bench:cold-start": "node scripts/measure-cold-start.mjs",
     "lint": "tsc --noEmit -p packages/squad-sdk/tsconfig.json && tsc --noEmit -p packages/squad-cli/tsconfig.json",
+    "fix:crlf": "node scripts/fix-crlf-worktree.mjs",
     "lint:eslint": "eslint packages/ test/",
     "lint:docs": "markdownlint-cli2 && cspell --no-progress --dot \"docs/src/content/**/*.md\" \"README.md\"",
     "dev:link": "npm run build && cd packages/squad-sdk && npm link && cd ../squad-cli && npm link",
