@@ -23,9 +23,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
 // Re-sync templates before any byte-comparison checks.
-// Other test files (e.g., acceptance tests) may run `squad init` in the
-// repo root, overwriting .github/agents/squad.agent.md from the CLI
-// template and making it diverge from .squad-templates/squad.agent.md.
+//
+// Historically this existed because test/init-scaffolding.test.ts sandboxed
+// itself *inside* the repo, so init() walked up to the real git root and
+// stampVersion() rewrote .github/agents/squad.agent.md mid-run (#1796). That
+// sandbox now lives in the OS temp dir and can no longer reach the repository,
+// so this sync is defence-in-depth rather than active repair — it is kept so a
+// future suite that reintroduces the escape fails loudly here instead of
+// leaving a silently mutated working tree.
 beforeAll(() => {
   execSync('node scripts/sync-templates.mjs', {
     cwd: ROOT,
@@ -118,13 +123,12 @@ const CASTING_POLICY_LOCATIONS = [
 // ---------------------------------------------------------------------------
 
 describe('dynamic template enumeration (all synced files)', () => {
-  // Re-sync immediately before byte comparisons to guard against a race
-  // condition with test/init-scaffolding.test.ts.  That suite runs runInit()
-  // with a subdirectory of the repo root as cwd; in monorepo mode the init
-  // command places squad.agent.md at the real git root (.github/agents/) via
-  // stampVersion(), which races with the file-level beforeAll sync.  A
-  // describe-scoped beforeAll runs synchronously, right before any test in
-  // this suite, minimising the window to near-zero.
+  // Re-sync immediately before byte comparisons as a second layer of defence.
+  // The original race — test/init-scaffolding.test.ts running runInit() against
+  // a sandbox under the repo root, so monorepo resolution stamped the real
+  // .github/agents/squad.agent.md — was fixed in #1796 by moving that sandbox
+  // to the OS temp dir. This describe-scoped beforeAll is retained to keep the
+  // window closed if any future suite reintroduces an in-repo sandbox.
   beforeAll(() => {
     execSync('node scripts/sync-templates.mjs', {
       cwd: ROOT,

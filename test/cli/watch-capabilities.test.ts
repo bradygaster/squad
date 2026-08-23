@@ -669,7 +669,7 @@ describe('Watch Capabilities', () => {
         );
       });
 
-      it('handles stash pop failure gracefully (merge conflict)', async () => {
+      it('reports failure (not success) when stash pop conflicts — local changes stay stashed', async () => {
         mockExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
           const a = args as string[];
           if (a[0] === 'stash' && a[1] === 'pop') throw new Error('merge conflict');
@@ -682,11 +682,75 @@ describe('Watch Capabilities', () => {
         const consoleSpy = vi.spyOn(console, 'log');
         const cap = new SelfPullCapability();
         const result = await cap.execute(makeContext());
-        expect(result.success).toBe(true);
+        // A stash that can't be restored is a failure the round report must
+        // surface, not a silent success — the user's local changes are
+        // sitting in `git stash` with no indication anywhere else.
+        expect(result.success).toBe(false);
+        expect(result.summary).toContain('left local changes stashed');
         expect(consoleSpy).toHaveBeenCalledWith(
-          expect.stringContaining('stash pop failed'),
+          expect.stringContaining('left local changes stashed'),
         );
         consoleSpy.mockRestore();
+      });
+
+      // Regression (critical): before the fix, a fetch/pull failure threw
+      // past the stash-pop step entirely — `git stash pop` was never even
+      // attempted, so a dirty working tree got silently stashed and
+      // abandoned while the capability reported success. Fails on
+      // unfixed code (stashCalls never contains a 'pop' call here);
+      // passes with the fix (pop is always attempted after fetch/pull).
+      it('still attempts stash pop after a fetch/pull failure, and restores it when possible', async () => {
+        const stashCalls: string[][] = [];
+        mockExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+          const a = args as string[];
+          if (a[0] === 'stash') stashCalls.push([...a]);
+          if (a.includes('rev-parse')) return 'abc123\n';
+          if (a.includes('--porcelain')) return 'M file.txt\n';
+          return '';
+        });
+        mockExecFile.mockImplementation((...args: unknown[]) => {
+          const cb = findCallback(args);
+          if (cb) cb(new Error('not a fast-forward'));
+          return {};
+        });
+
+        const cap = new SelfPullCapability();
+        const result = await cap.execute(makeContext());
+
+        expect(stashCalls).toContainEqual(
+          expect.arrayContaining(['stash', 'pop']),
+        );
+        // Stash was successfully restored, so this is the same benign
+        // "pull skipped" outcome as a clean tree hitting the same pull
+        // failure — the user's local changes are back, nothing lost.
+        expect(result.success).toBe(true);
+        expect(result.summary).toContain('skipped');
+      });
+
+      // Regression (critical): the failure-safety invariant — if the stash
+      // genuinely cannot be restored after a pull failure, that must be a
+      // visible failure, not folded into the same "skipped" success message
+      // as the benign case above.
+      it('reports failure when both pull and stash pop fail — does not mask a stuck stash as "skipped"', async () => {
+        mockExecFileSync.mockImplementation((_cmd: unknown, args: unknown) => {
+          const a = args as string[];
+          if (a[0] === 'stash' && a[1] === 'pop') throw new Error('conflict after failed pull');
+          if (a[0] === 'stash') return '';
+          if (a.includes('rev-parse')) return 'abc123\n';
+          if (a.includes('--porcelain')) return 'M file.txt\n';
+          return '';
+        });
+        mockExecFile.mockImplementation((...args: unknown[]) => {
+          const cb = findCallback(args);
+          if (cb) cb(new Error('not a fast-forward'));
+          return {};
+        });
+
+        const cap = new SelfPullCapability();
+        const result = await cap.execute(makeContext());
+        expect(result.success).toBe(false);
+        expect(result.summary).toContain('pull failed');
+        expect(result.summary).toContain('left local changes stashed');
       });
 
       it('detects source changes and recommends restart', async () => {

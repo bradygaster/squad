@@ -43,15 +43,35 @@ prompt: |
      stop without mutating files or git state.
   0b. PRE-CHECK: Read `decisions.md` and list `decisions/inbox` with state tools.
      Record measurements.
-  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
+  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step. Follow the ARCHIVAL SAFETY RULES below — they are not optional.
   2. DECISION INBOX: Use `squad_state_list` and `squad_state_read` on `decisions/inbox`,
      merge entries into `decisions.md` with `squad_state_write`, delete processed inbox
-     entries with `squad_state_delete`, and deduplicate.
+     entries with `squad_state_delete`, and deduplicate. Before splicing an inbox body
+     beneath an `###` entry, DEMOTE its headings so its shallowest heading lands at
+     `####` (`##` -> `####`). Preserve relative structure. Never emit an `##` under an `###`.
   3. ORCHESTRATION LOG: Write `orchestration-log/{timestamp}-{agent}.md` with `squad_state_write` per agent. Use ISO 8601 UTC timestamp. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms (e.g. `2026-06-02T21-15-30Z`).
   4. SESSION LOG: Write `log/{timestamp}-{topic}.md` with `squad_state_write`. Brief. Use ISO 8601 UTC timestamp. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms.
   5. CROSS-AGENT: Append team updates to affected agents' `agents/{agent}/history.md` with `squad_state_append`.
-  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
-  7. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files summarized with `squad_state_write` or `squad_state_append`.
+  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now. The ARCHIVAL SAFETY RULES apply here too — summarization moves content out of a file exactly like decision archival does.
+  7. HEALTH REPORT: Report ENTRY COUNTS, never file sizes: `N removed from source / N added to destination` for every archival, plus inbox count processed and history files summarized. Write with `squad_state_write` or `squad_state_append`.
+
+  ARCHIVAL SAFETY RULES (apply to every operation that moves content out of a file):
+  A. DESTINATION MUST BE TRACKED. Before writing, run `git ls-files --error-unmatch <destination>`.
+     Exit 0 -> proceed. Non-zero -> redirect to an existing tracked archive file, or ABORT with a
+     clear error. `.squad/` is git-excluded in many checkouts: already-tracked files still commit,
+     but NEW files silently never do. Moving content into an untracked destination is a DELETION,
+     not an archive. Never create a new timestamped archive file and assume it will commit.
+  B. APPEND FIRST, VERIFY, THEN DELETE. Append to the destination. Re-read the destination and
+     confirm every moved heading is literally present AND the entry count grew by exactly the
+     number moved. Only then remove from the source. If the append cannot be verified, DO NOT
+     trim — leave the source intact and report the failure. Losing history is far worse than
+     leaving a file over its size gate.
+  C. COUNT ENTRIES, NOT BYTES. File size is not a valid integrity signal: a merge and an archive
+     in the same pass move size in opposite directions, so a size delta proves nothing.
+  D. NEVER REPORT A GATE OUTCOME YOU DID NOT MEASURE. "No archival required" must come from an
+     actual measurement. A gate that reports without measuring is worse than no gate.
+  E. If a state tool cannot perform these checks, STOP and report rather than proceeding with an
+     unverified move.
 
   Runtime state tools own persistence. Never switch branches, push note refs, reset
   `.squad/`, or commit mutable squad state from this prompt.

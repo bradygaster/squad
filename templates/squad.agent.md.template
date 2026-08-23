@@ -615,14 +615,21 @@ prompt: |
   Tasks (in order):
   0. PRE-CHECK: Run `squad_state_health` when available. If state tools are unavailable, stop without mutating files or git state.
   0b. PRE-CHECK: Read `decisions.md` and list `decisions/inbox` with state tools. Record measurements.
-  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step.
-  2. DECISION INBOX: Use `squad_state_list` and `squad_state_read` on `decisions/inbox`, merge entries into `decisions.md` with `squad_state_write`, delete processed inbox entries with `squad_state_delete`, and deduplicate.
+  1. DECISIONS ARCHIVE [HARD GATE]: If decisions.md >= 20480 bytes, archive entries older than 30 days NOW. If >= 51200 bytes, archive entries older than 7 days. Do not skip this step. Follow the ARCHIVAL SAFETY RULES below — they are not optional.
+  2. DECISION INBOX: Use `squad_state_list` and `squad_state_read` on `decisions/inbox`, merge entries into `decisions.md` with `squad_state_write`, delete processed inbox entries with `squad_state_delete`, and deduplicate. Before splicing an inbox body beneath an `###` entry, DEMOTE its headings so its shallowest heading lands at `####` (`##` -> `####`). Preserve relative structure. Never emit an `##` under an `###`.
   3. ORCHESTRATION LOG: Write `orchestration-log/{timestamp}-{agent}.md` with `squad_state_write` per agent. Use the literal CURRENT_DATETIME value. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms (e.g. `2026-06-02T21-15-30Z`).
   4. SESSION LOG: Write `log/{timestamp}-{topic}.md` with `squad_state_write`. Brief. Use the literal CURRENT_DATETIME value. Replace `:` with `-` in `{timestamp}` so filenames are valid on all platforms.
   5. CROSS-AGENT: Append team updates to affected agents' `agents/{agent}/history.md` with `squad_state_append`.
-  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now.
+  6. HISTORY SUMMARIZATION [HARD GATE]: If any history.md >= 15360 bytes (15KB), summarize now. The ARCHIVAL SAFETY RULES apply here too — summarization moves content out of a file exactly like decision archival does.
   7. GIT COMMIT: Do not commit mutable squad state. If non-state repo files changed, report them for coordinator handling.
-  8. HEALTH REPORT: Log decisions.md before/after size, inbox count processed, history files summarized with `squad_state_write` or `squad_state_append`.
+  8. HEALTH REPORT: Report ENTRY COUNTS, never file sizes: `N removed from source / N added to destination` for every archival, plus inbox count processed and history files summarized. Write with `squad_state_write` or `squad_state_append`.
+
+  ARCHIVAL SAFETY RULES (apply to every operation that moves content out of a file):
+  A. DESTINATION MUST BE TRACKED. Before writing, run `git ls-files --error-unmatch <destination>`. Exit 0 -> proceed. Non-zero -> redirect to an existing tracked archive file, or ABORT with a clear error. `.squad/` is git-excluded in many checkouts: already-tracked files still commit, but NEW files silently never do. Moving content into an untracked destination is a DELETION, not an archive. Never create a new timestamped archive file and assume it will commit.
+  B. APPEND FIRST, VERIFY, THEN DELETE. Append to the destination. Re-read the destination and confirm every moved heading is literally present AND the entry count grew by exactly the number moved. Only then remove from the source. If the append cannot be verified, DO NOT trim — leave the source intact and report the failure. Losing history is far worse than leaving a file over its size gate.
+  C. COUNT ENTRIES, NOT BYTES. File size is not a valid integrity signal: a merge and an archive in the same pass move size in opposite directions, so a size delta proves nothing. Verify and report by entry count only.
+  D. NEVER REPORT A GATE OUTCOME YOU DID NOT MEASURE. "No archival required" must come from an actual measurement. A gate that reports without measuring is worse than no gate — it suppresses inspection.
+  E. If a state tool cannot perform these checks, STOP and report rather than proceeding with an unverified move.
 
   Runtime state tools own persistence. Never switch branches, push note refs, reset `.squad/`, or commit mutable squad state from this prompt.
 
@@ -710,25 +717,39 @@ Squad files split into **authoritative** (governance, roster, charters — stati
 
 ## Casting & Persistent Naming
 
-Agent names are drawn from a single fictional universe per assignment. Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Names are spoiler-free easter eggs: never explain or document the mapping rationale in output, logs, or docs.
+Agent names are either **descriptive** (role-based, the default) or drawn from a **fictional universe** (built-in or user-specified). Names are persistent identifiers — they do NOT change tone, voice, or behavior. No role-play. No catchphrases. No character speech patterns. Themed names are spoiler-free easter eggs: never explain or document the mapping rationale in output, logs, or docs.
 
-### Universe Allowlist
+### Naming Modes
 
-**On-demand reference:** Read `.squad/templates/casting-reference.md` for the full universe table, selection algorithm, and casting state file schemas. Only loaded during Init Mode or when adding new team members.
+1. **Descriptive (default).** When the user does not request a themed universe, use short functional names that describe the role: Lead, Frontend, Backend, Tester, Security, Docs, Reviewer, Infra, etc. Set `"universe": "descriptive"` in the registry.
+2. **Built-in universe.** 15 pre-built universes (capacity 6–25). Auto-selected via scoring when the user asks for a themed cast without specifying which universe. See reference file for the full list.
+3. **Custom universe.** The user may request **any universe** — Doctor Who, The Office, Seinfeld, anything. Accept it, allocate character names from your knowledge of the source material, and apply all spoiler-safety rules. Set `"universe"` to the user-specified name in the registry.
+
+### Universe Rules
+
+**On-demand reference:** Read `.squad/templates/casting-reference.md` for the full universe table, selection algorithm, custom universe rules, and casting state file schemas. Only loaded during Init Mode or when adding new team members.
 
 **Rules (always loaded):**
 - ONE UNIVERSE PER ASSIGNMENT. NEVER MIX.
-- 15 universes available (capacity 6–25). See reference file for full list.
-- Selection is deterministic: score by size_fit + shape_fit + resonance_fit + LRU.
-- Same inputs → same choice (unless LRU changes).
+- 15 universes available as built-in (capacity 6–25). See reference file for full list.
+- Custom universes are always accepted — do NOT reject a user's universe choice because it is not in the built-in list.
+- Auto-selection (no user preference) uses descriptive names by default. If the user asks for themed names without specifying a universe, score built-in universes: size_fit + shape_fit + resonance_fit + LRU.
+- **Re-casting:** The user can re-cast at any time by requesting a different universe or descriptive names. All active agents are renamed; folder names and file references are updated throughout `.squad/`.
 
 ### Name Allocation
 
-After selecting a universe:
+After selecting a naming mode:
 
+**For descriptive names:**
+1. Use short, functional names: Lead, Frontend, Backend, Tester, Security, Docs, Reviewer, Infra, etc.
+2. Agent folders use lowercase: `.squad/agents/lead/`, `.squad/agents/tester/`, etc.
+
+**For themed names (built-in or custom universe):**
 1. Choose character names that imply pressure, function, or consequence — NOT authority or literal role descriptions.
 2. Avoid spoiler-laden names. Do NOT allocate names, titles, or epithets that reveal hidden identity, fate, twists, or later-acquired roles/states. Prefer the name as introduced early; if only spoiler-bearing options fit, choose a different spoiler-free character from the same universe.
 3. Each agent gets a unique name. No reuse within the same repo unless an agent is explicitly retired and archived.
+
+**Always (both modes):**
 4. **Scribe is always "Scribe"** — exempt from casting.
 5. **Ralph is always "Ralph"** — exempt from casting.
 6. **Rai is always "Rai"** — exempt from casting.
@@ -745,7 +766,7 @@ If agent_count grows beyond available names mid-assignment, do NOT switch univer
 2. **Thematic Promotion:** Expand to the closest natural parent universe family that preserves tone (e.g., Star Wars OT → prequel characters). Do not announce the promotion.
 3. **Structural Mirroring:** Assign names that mirror archetype roles (foils/counterparts) still drawn from the universe family.
 
-Existing agents are NEVER renamed during overflow.
+Existing agents are NEVER renamed during overflow (only during explicit re-cast).
 
 ### Casting State Files
 

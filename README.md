@@ -526,6 +526,48 @@ For SDK installation: `npm install @bradygaster/squad-sdk`
 
 ---
 
+## GitHub Agentic Workflows
+
+Cast a Squad for any repo — right from a GitHub issue.
+
+If you use [GitHub Agentic Workflows](https://github.blog/changelog/2025-05-19-github-agentic-workflows-public-preview/), you can install Squad as a reusable workflow and manage your team with slash commands in issue comments.
+
+### Install
+
+```bash
+gh aw add \
+  bradygaster/squad/workflows/squad-implement-worker.md@dev \
+  bradygaster/squad/workflows/squad.md@dev
+gh aw compile
+git add -- \
+  .github/workflows/ \
+  .gitattributes
+git commit -m "Add Squad workflow"
+git push
+```
+
+> `@dev` pulls the latest modes and fixes; switch to `@main` once gh-aw support is stable.
+
+### Slash commands
+
+| Command | What it does |
+|---------|-------------|
+| `/squad` | Cast a fresh team from repo analysis |
+| `/squad connect org/repo` | Link to an external squad |
+| `/squad adopt org/repo` | Fork a squad locally |
+| `/squad cast-member <spec>` | Add a team member |
+| `/squad retire <name>` | Remove a team member |
+| `/squad status` | Check current team |
+| `/squad implement` | Implement an issue or dispatch ready tasks from an epic |
+
+### Casting brief tip
+
+Write a detailed team description in the issue body, then comment `/squad cast` — the issue becomes your casting brief. The more context you give, the better Squad tailors your team.
+
+📖 See [GitHub Agentic Workflows guide](https://bradygaster.github.io/squad/docs/guide/gh-aw/) for the complete setup, configuration, and usage reference.
+
+---
+
 ## Requirements
 
 - **Node.js** ≥22.5.0

@@ -6,7 +6,11 @@
 
 // Raw fs imports removed — Wave 3a migrated all stat/append/delete to StorageProvider.
 import path from 'node:path';
-import { FSStorageProvider } from '@bradygaster/squad-sdk';
+import {
+  FSStorageProvider,
+  findHeadingLineIndices,
+  isCommittableDestination,
+} from '@bradygaster/squad-sdk';
 
 const storage = new FSStorageProvider();
 
@@ -347,19 +351,16 @@ function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
   const content = storage.readSync(decisionsFile) ?? '';
   const lines = content.split('\n');
 
-  // Find entry boundaries (### headings)
+  // Find entry boundaries (### headings).
+  // Fence-aware: a `###` inside a fenced code sample is NOT a record boundary.
+  // Treating it as one splits a record in half and re-homes its tail under the
+  // wrong parent (#1760). Reuses the SDK scanner so the fence rules cannot drift.
+  const entryStarts = findHeadingLineIndices(content, 3);
   const entries: { start: number; end: number; daysAgo: number | null }[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i]!.match(/^###\s/)) {
-      const entryStart = i;
-      let entryEnd = lines.length;
-      for (let j = i + 1; j < lines.length; j++) {
-        if (lines[j]!.match(/^###\s/)) { entryEnd = j; break; }
-      }
-      const age = daysAgoFromLine(lines[i]!);
-      entries.push({ start: entryStart, end: entryEnd, daysAgo: age });
-      i = entryEnd - 1;
-    }
+  for (let k = 0; k < entryStarts.length; k++) {
+    const entryStart = entryStarts[k]!;
+    const entryEnd = k + 1 < entryStarts.length ? entryStarts[k + 1]! : lines.length;
+    entries.push({ start: entryStart, end: entryEnd, daysAgo: daysAgoFromLine(lines[entryStart]!) });
   }
 
   // Split: keep entries from last 30 days
@@ -426,21 +427,76 @@ function archiveDecisions(squadDir: string, dryRun: boolean): NapAction | null {
   const archiveContent = old.map(e => lines.slice(e.start, e.end).join('\n')).join('\n') + '\n';
 
   const saved = size - Buffer.byteLength(recentContent, 'utf8');
+  const archivePath = path.join(squadDir, 'decisions-archive.md');
 
   if (!dryRun) {
-    const archivePath = path.join(squadDir, 'decisions-archive.md');
-    if (archiveContent.trim()) {
-      storage.appendSync(archivePath, archiveContent);
+    // Rule 2 — nothing to append means nothing to remove. The previous code
+    // skipped the append on empty content but trimmed the source regardless,
+    // which is delete-without-append by construction (#1774).
+    if (!archiveContent.trim()) {
+      return {
+        type: 'archive',
+        target: decisionsFile,
+        description:
+          `Archival skipped: ${old.length} entries selected but produced no content to append. ` +
+          'Source left intact.',
+        bytesSaved: 0,
+      };
     }
+
+    // Rule 1 — never move content out of a tracked source into a destination
+    // that cannot be committed. `.squad/` is git-excluded in this repo, so a
+    // brand-new archive file never commits while the trim of decisions.md does,
+    // landing the "move" as a net deletion (#1783).
+    const repoRoot = path.dirname(squadDir);
+    if (!isCommittableDestination(archivePath, repoRoot)) {
+      return {
+        type: 'archive',
+        target: decisionsFile,
+        description:
+          `Archival refused: ${archivePath} is untracked and git-ignored, so archived content ` +
+          `could never be committed. ${old.length} entries left in place.`,
+        bytesSaved: 0,
+      };
+    }
+
+    const before = storage.readSync(archivePath) ?? '';
+    storage.appendSync(archivePath, archiveContent);
+
+    // Rule 2 — verify the append landed BEFORE removing anything from the
+    // source. Rule 3 — verify by entry count, never by byte delta; in #1774 the
+    // source shrank while the destination was byte-identical, so size proved
+    // nothing.
+    const after = storage.readSync(archivePath) ?? '';
+    const expected = countEntryHeadings(before) + old.length;
+    const actual = countEntryHeadings(after);
+    if (actual !== expected) {
+      return {
+        type: 'archive',
+        target: decisionsFile,
+        description:
+          `Archival aborted: expected ${expected} entries in archive after append, measured ${actual}. ` +
+          'Source left intact.',
+        bytesSaved: 0,
+      };
+    }
+
     storage.writeSync(decisionsFile, recentContent);
   }
 
   return {
     type: 'archive',
     target: decisionsFile,
+    // Rule 3 — report entry counts, not bytes. The counts are the integrity
+    // signal; bytesSaved remains only as nap's generic reclaimed-space metric.
     description: `Archived ${old.length} old decision entries, kept ${recent.length} recent`,
     bytesSaved: Math.max(0, saved),
   };
+}
+
+/** Fence-aware count of `###` decision records. */
+function countEntryHeadings(markdown: string): number {
+  return markdown.trim() ? findHeadingLineIndices(markdown, 3).length : 0;
 }
 
 // ─── Journal safety ─────────────────────────────────────────────────────
