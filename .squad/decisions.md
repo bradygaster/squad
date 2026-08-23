@@ -1,4 +1,4 @@
-# Decisions
+﻿# Decisions
 
 > Team decisions that all agents must respect. Managed by Scribe.
 
@@ -679,3 +679,534 @@ Both deliberate non-actions are sound:
 **Concrete instance:** `squad doctor`'s working-tree check counted all 174 `eol=lf`-pinned paths, but printed `git ls-files --eol "*.mjs"` — which covers only 42 of them. A pinned non-`.mjs` file left CRLF would have verified all-clear.
 
 **Why:** Verification and remediation hints must cover the same artifact set as the check. Otherwise the team has built a check that can fail while teaching developers to run a narrower command that proves nothing.
+
+
+---
+
+### 2026-08-22: FIDO review — PR #1832 (closes #1824): fail loudly when /squad parses no command
+
+### FIDO review — PR #1832 (closes #1824): fail loudly when `/squad` parses no command
+
+**Reviewer:** FIDO (Quality Owner) · **Author:** Procedures · **Date:** 2026-08-22
+**Verdict:** ✅ **APPROVE WITH NITS** (posted as `COMMENTED` — GitHub blocks a formal Approve on an own-account PR)
+
+This was an adversarial re-derivation, not a read-through. I reproduced every claim independently in the PR worktree
+(`bradygaster-silver-engine`) and record measured-vs-assumed below.
+
+---
+
+#### Measured
+
+##### Baseline
+- New suite `test/gh-aw-command-parse.test.ts`: **15/15 pass** on clean branch (Git Bash resolved).
+- `gh pr checks 1832`: **all gates green**, including the CI `test` job (5m39s) and `Diff Size Guard`.
+
+##### Claim 1 — Mutation 1 (reintroduce position-0 line anchoring: `/^\/squad/`) — VERIFIED, load-bearing
+- Applied the mutation (awk regex only). Result: **2 failed / 13 passed.**
+- **Headline #1824 case ("prose, blank line, then command") PASSED under the reintroduced bug** — confirms the
+  diagnosis: awk `^` anchors per *record*; `printf` feeds awk line-by-line, so a line-anchored parser still handles a
+  command on its own line after prose. **The obvious test for #1824 is structurally blind to #1824's own bug.**
+- The only catchers were the **indented** and **mid-sentence** cases (2 failures, each naming its specific input).
+- **Inverse check:** removed those two cases, kept the mutation → **13/13 GREEN, mutation escapes entirely.**
+  So the two cases are the *sole* catchers. (I measured **0** catch without them — marginally stronger than the
+  PR body's "1 of 14"; the exact scalar is bookkeeping, the substance is that they are singularly load-bearing.)
+
+##### Claim 2 — Mutation 2 (generic diagnostic: `echo 'unrecognized command'`) — VERIFIED (#1793 shape)
+- Applied. Result: **3 failed / 12 passed.**
+- The three catchers all require the diagnostic to **contain the offending text** / match the sentinel.
+- Crucially, the **status-shaped assertions stayed GREEN** — "sends NO_COMMAND to PC-3 and forbids fallback" and
+  "PC-3 fails the run" both passed against the gutted diagnostic. That is exactly the #1793 failure mode: a status-only
+  gate cannot observe a diagnostic that reports nothing. Content-requiring assertions are what close it.
+
+##### Claim 3 — Independence — VERIFIED, not circular
+- The test extracts the fenced `bash` block after each PC heading (`bashBlockAfter`) and **executes** it via
+  `execFileSync(shell, ['-c', cmd])` with the body in env. Mutations 1 & 2 prove it: altering the *declared parser* in
+  the markdown flipped behavioral verdicts. A broken declared parser makes behavioral cases fail. The test does not
+  re-read prose to confirm prose.
+
+##### Claim 4 — the `/bin/sh` false-green and the new suite's hard-assert
+- `HAS_POSIX_SHELL = existsSync('/bin/sh')` is false on Windows; the two `describe.skipIf(!HAS_POSIX_SHELL)` blocks in
+  `gh-aw-quality.test.ts` skip. Measured on this host: **13 skipped tests / 28 literal `expect()` / 22 `it` decls** in
+  those blocks (`it.each` expands further on a POSIX host). **Mechanism confirmed real** — a permanently-green gate on
+  Windows. I could not reproduce the exact figure **102**; that is an expansion/counting convention, not a substantive
+  disagreement.
+- **The important half — forced red:** I hard-forced `resolvePosixShell()` to return `null`. New suite went
+  **13 FAILED / 2 passed**, with the guard test failing loudly ("No POSIX shell found…"). It reports **RED, not a
+  green skip**, when no shell resolves. Verified by force, not inferred. (The 2 still-green are pure static-markdown
+  PC-2 checks that need no shell — expected.)
+
+##### Claim 5b — #1812 separation — spot-checked
+- The diff touches only the Parse Command routing section. The `plan activate` hardcoded roster lives in a separate
+  skill, downstream of routing. No shared code path. This PR does not modify #1812's surface.
+
+##### My own acceptance test for #1824 — could I construct a silent no-op / green-with-no-cast?
+Ran the **exact PC-1 and PC-3 commands** from the markdown against hostile bodies (empty, only-fenced-block, HTML
+comment, `/squad` in a URL, Cyrillic look-alike, two-per-line, `squadify` near-miss, leading tab, CRLF, quoted,
+bare-with-trailing-space, zero-width space, no-slash):
+- **Every zero-action body → `NO_COMMAND` → PC-3 loud fail.** No silent no-op, no green-with-no-cast constructible.
+- The acceptance bar ("a run that cast no agents must not report success") **holds at the parser layer.**
+
+---
+
+#### Nits (non-blocking)
+1. **HTML comment `<!-- /squad cast -->` parses `cast` and would cast.** Documented "deliberate widening" (surface,
+   don't silently skip). Defensible, but invisible-in-render comment text triggering a real cast is worth a follow-up
+   thought. Not a #1824 defect — it acts loudly, the opposite of the bug.
+2. **Two `/squad` tokens on one line → greedy `sub(/^.*\/squad/,"")` picks the LAST** (`/squad cast … /squad plan`
+   yields `plan`). An ordering surprise, still a loud action, not a no-op. Rare. Low severity.
+3. The `102` skip figure in the PR body isn't reproducible as-stated (I measure 13 skipped tests / 28 expects). Cosmetic.
+
+#### Residual I cannot close (stated plainly)
+PC-2/PC-3's "exit non-zero / never `noop` / comment on the issue" are **prose instructions to an LLM**, not executed
+code. The suite verifies (a) the diagnostic *command* emits correct verbatim text and (b) the markdown *declares* the
+fail contract. It cannot verify the runtime LLM actually exits non-zero. This is inherent to gh-aw (the parser is a
+prompt) and Procedures acknowledged it. The mitigation is that the *observable* diagnostic is now content-bearing and
+mutation-sensitive, which is the strongest guarantee available at this layer.
+
+#### Why APPROVE WITH NITS
+Every load-bearing claim reproduced. The suite is mutation-sensitive where it matters (content, not status), fails red
+when it cannot run, and is independent of the prose it guards. I tried to build a bypass and could not. The nits are
+observations under a documented design decision, not regressions. Ship it; consider a follow-up issue for nit #1/#2 and
+for the real `/bin/sh` 102-skip cleanup (out of scope here per Diff Size Guard).
+
+*— FIDO. If it can break, I'll find how. This time I mostly couldn't, and I said so.*
+
+---
+
+### ADDENDUM — 2026-08-22 (adjudicating the automated reviewer's findings)
+
+Coordinator asked me to adjudicate two findings my first pass did not cover (injection; a
+`workflow_dispatch` regression) plus confirm one convergence. Measured, not reasoned. Where I could not
+measure, I say so.
+
+#### FINDING 1 — shell injection ("verbatim issue text interpolated unsafely") → **NON-BLOCKING as stated; real hardening gap**
+
+I ran 8 hostile payloads through the EXACT PC-1 and PC-3 pipelines with the body delivered via the
+environment (the channel the tests use and the natural reading of `"$SQUAD_TRIGGER_BODY"`):
+`$(touch)`, `` `touch` ``, `"; touch x; echo "`, `/squad cast; touch x`, `%s%s%s%n`, `/squad %n%n%n`,
+`-e /squad`, `--version`.
+
+- **Measured: zero side effects. No marker file ever created.** The pipeline is injection-safe.
+  - `printf '%s\n' "$VAR"` — `%s` is a fixed literal in the *script*; the body is an **argument** to
+    printf, never a **format** slot. Body `%n`/`%s` is inert data (payload `%s%s%s%n` → `NO_COMMAND`;
+    `/squad %n%n%n` → extracted literally as `%n%n%n`, no crash, no write).
+  - `grep -n -i -m 3 -F -- '/squad'` — `-F` fixed-string, `--` terminates options, `/squad` is the
+    literal pattern; the body is **stdin**, so `-e`/`--version` in the body are data, not grep args.
+  - Every hop is double-quoted; no word-splitting, no glob, no substitution.
+- The reviewer's specific mechanism — *"verbatim issue text is interpolated into shell commands"* — is
+  **not reproducible against the code in the diff.** The body is *referenced* (`"$VAR"`), not
+  interpolated, and I could not turn it into an RCE.
+- **The real residual, stated plainly:** line 240 says *"Assign the resolved trigger body ... to
+  `SQUAD_TRIGGER_BODY`"* without specifying HOW. If a runtime agent implements that by pasting the body
+  into a bash assignment (`SQUAD_TRIGGER_BODY="<body>"`), that channel IS an RCE — I demonstrated it:
+  body `hello"; touch pwned; echo "` created the marker. Whether the gh-aw runtime uses the safe channel
+  (pre-set env var) or the unsafe one (interpolation) is **decided by the gh-aw compiler + LLM, and there
+  is no compiled `squad.lock.yml` in this repo to inspect. I cannot measure the runtime channel from
+  here, and I will not infer it.**
+- **Adjudication: NON-BLOCKING** — the demonstrated, reviewable pipeline is safe. But this must not stay
+  at LLM discretion. **Required hardening (own follow-up):** pin the assignment to a named
+  gh-aw-provided env var and add one line forbidding interpolation of body text into any script. Also
+  note a one-hop-later exposure: PC-2 extracts `cast; touch pwned_env` as the *argument string*; harmless
+  in PC-1/PC-3, but any downstream step that ever interpolates parsed args into a shell reopens it.
+
+#### FINDING 2 — `workflow_dispatch` bare command regresses to a loud failure → **BLOCKING**
+
+- **Measured (deterministic):** `PC1("implement")` = `NO_COMMAND`; `PC1("research")` = `NO_COMMAND`.
+  Bare mode names carry no `/squad` token, and PC-1 returns the sentinel for anything lacking one.
+- **This is exactly what dispatch sends.** `workflows/squad-implement-worker.md:259`:
+  `"command": "implement"` (bare, nested under `inputs`). The activation guard (`squad.md:158-160`) itself
+  lists `research`, `triage`, `plan*`, `implement` as valid bare dispatched commands.
+- **Does it flow through PC-1?** `squad.md:240` names *"the dispatched command"* as a `SQUAD_TRIGGER_BODY`
+  source, and PC-1 is `[MANDATORY]`. Literal reading: `implement` → PC-1 → `NO_COMMAND` → PC-2 →
+  PC-3 → **exit non-zero.** The pre-fix flow ("strip `/squad` prefix, match longest-prefix-first, default
+  to cast") matched `implement` and **worked** — so the PR converts a working relay into a guaranteed
+  false failure.
+- **The contradiction is the defect.** `squad.md:176-177` ("use this value as the command, skip remaining
+  sources") treats the dispatched command as a pre-resolved mode; PC-1 requires a `/squad` token none of
+  them carry. Either the agent obeys `[MANDATORY]` PC-1 and hard-fails the core autonomous path, or it
+  ignores a `[MANDATORY]` step and behavior is undefined. Both are bad.
+- **Untested:** the new suite never feeds a bare dispatched command; it only exercises `/squad`-bearing
+  bodies and prose. Dispatch resolution has zero coverage. Confirmed by grep.
+- **Adjudication: BLOCKING.** The implement relay is the highest-traffic non-interactive path.
+  **Fix shape:** normalize dispatch input *before* PC-1 — when `event_name == workflow_dispatch` and
+  `inputs.command` is a non-empty bare mode, treat it as already-resolved (bypass the `/squad` scan) or
+  synthesize `SQUAD_TRIGGER_BODY="/squad ${command}"` ahead of PC-1. Normalize the input; do not loosen
+  PC-1's scan (loosening reopens #1824).
+
+#### FINDING 3 — greedy `sub(/^.*\/squad/,"")` picks the LAST token → **NON-BLOCKING, but a real defect (confirmed)**
+
+- **Measured:** `PC1("Please run /squad cast, then /squad status")` = `status`. Declared contract
+  (`squad.md:247`, "takes the **first** `/squad` token") says `cast`. **Contract violated.**
+- Cause: `!f` stops at the first matching *line*, but within it the greedy `.*` strips through the LAST
+  `/squad`, so the second command's argument wins.
+- Two independent reviewers (me, then `copilot-pull-request-reviewer`) landed on the same line — promotes
+  it from nit to real defect. **On its own: NON-BLOCKING** (needs two `/squad` on one line; still yields a
+  loud valid action, not the silent-no-op #1824 class). But it lives on the same awk line as no other
+  defect, so it should be fixed in this PR, not deferred. Fix shape: extract only up to the FIRST bounded
+  `/squad` on the matched line (awk has no non-greedy; use `index()`/`match()` from the token position).
+
+#### FINDING 4 (their 4th item) — PC-3 emission/exit untested: closable or inherent?
+
+- **Partly closable, mostly inherent — and the two framings are the same residual.**
+  - The PC-3 **diagnostic command** (the `grep` one-liner) IS extracted and executed by the suite, and
+    Mutation 2 proved it content-sensitive. That half is closed.
+  - The **`echo "::error::…"` emission** is prose with a `<verbatim output>` placeholder the agent fills,
+    not a standalone command — only its *declaration* is assertable (the test already does
+    `expect(pc3).toContain('::error::')`). Making the interpolated annotation itself executable/tested is
+    marginally possible but low-value.
+  - **"Post one comment"** (safe-output tool call) and **"fail the run — exit non-zero"** (the agent's
+    control-flow choice) are gh-aw *runtime* behaviors. **Not reachable from a Vitest unit test.**
+    Genuinely inherent.
+- So the reviewer ("test gap") and my first pass ("inherent LLM-prompt limit") describe the same boundary.
+  **This needs to be written down as a known limitation** so every future reviewer doesn't re-discover it:
+  *the PC-3 contract is verified as declared and its diagnostic is verified behaviorally; the actual
+  non-zero exit and issue comment are gh-aw runtime actions and are not unit-testable at this layer.*
+
+---
+
+#### VERDICT BLOCK
+
+| # | Finding | Adjudication | Basis (measured) |
+|---|---------|-------------|------------------|
+| 1 | Shell injection | **NON-BLOCKING** (as stated) + required hardening | 8 payloads through the real pipeline via env → 0 side effects; interpolation channel is RCE but is the unspecified assignment step, and no lock exists here to confirm the runtime channel |
+| 2 | Dispatch bare-command regression | **BLOCKING** | `PC1("implement")`/`PC1("research")` = `NO_COMMAND`; dispatch sends bare `command:"implement"` (worker:259); line 240 routes it through `[MANDATORY]` PC-1 → PC-3 hard fail; pre-fix worked; untested |
+| 3 | Greedy last-token | **NON-BLOCKING** (real defect, fix in-PR) | `PC1("…/squad cast, then /squad status")` = `status`, contract says `cast` |
+| 4 | PC-3 emission/exit test gap | Inherent (record as known limit); diagnostic half already closed | Suite executes the grep diagnostic; comment + non-zero exit are gh-aw runtime, not unit-testable |
+
+**Overall: MERGE AFTER FIXES (rework the dispatch path).** Finding 2 is a net regression on the core
+autonomous relay and blocks. Finding 3 rides the same awk line and should be fixed here. Finding 1 is not
+a demonstrated exploit in the diff but leaves a security-critical step to LLM discretion — pin a safe
+channel. My original #1824 assessment is unchanged and still stands: the issue-path fix is sound; the
+dispatch-path handling introduced alongside it is not.
+
+*— FIDO. Measured what I could; named what I couldn't.*
+
+---
+
+#### Addendum 3 — Pass 3 re-review of rework commit `6e7628c5` (2026-08-22T19:20-07:00, FIDO)
+
+Re-reviewed EECOM's rework "fix(gh-aw): normalize bare workflow_dispatch commands before PC-1".
+All measurements run in `bradygaster-animated-guacamole` (on branch, HEAD `6e7628c5`, `node_modules` present).
+Method: extract the **declared** bash from `workflows/squad.md`, execute it, mutate the markdown, observe.
+
+##### Claims — verified by measurement
+
+1. **PC-0 fixes the BLOCKING dispatch regression (my Finding 2) — VERIFIED / resolved.**
+   `PC0("implement")→"/squad implement"`; idempotent on `"/squad implement"`; `"  implement  "→"/squad implement"`;
+   `""→"EMPTY_DISPATCH"`. Full relay `PC1(PC0(x))` resolves all six documented dispatch modes
+   (`implement, research, cast, status, connect org/repo, plan accept implementation phase 2`) to their mode.
+   The prior BLOCKING regression is closed.
+
+2. **PC-1 deliberately NOT loosened; guard fires under mutation — VERIFIED.**
+   Mutation (c) below fires the dedicated guard `PC-1 is NOT loosened …` naming the input, AND reopens the
+   #1824 headline `no command anywhere`. The guard is load-bearing, not decorative.
+
+3. **Greedy last-token fix (my Finding 3) — VERIFIED.**
+   `PC1("Please /squad cast, then /squad status")→"cast, then /squad status"` (first `/squad` wins, remainder starts
+   with `cast`); `PC1("/squad research and later /squad implement")→"research and later /squad implement"`.
+   No longer returns the last token (`status`/`implement`).
+
+4. **Text contradiction resolved — VERIFIED.**
+   Only `squad.md:177` retains "skip the remaining sources", now scoped to *source selection*; `:184-187` state
+   "Choosing a source never skips parsing: every source is parsed by **Parse Command** below … MUST be normalized by
+   **Step PC-0** before PC-1 sees it." End-to-end unambiguous; PC-1 stays `[MANDATORY]`.
+
+5. **Three mutations red-AND-naming — VERIFIED (standing bar met on all three).**
+   - (a) PC-0 pass-through (`else print $0`): 7 red. Names input:
+     `A workflow_dispatch of "implement" must resolve to that command … expected 'NO_COMMAND' to be 'implement'`.
+   - (b) greedy `sub(/^.*\/squad/,"")` restored: 2 red. Names input:
+     `PC-1 must extract "cast, then /squad status" from "Please /squad cast, then /squad status" … expected 'status'`.
+   - (c) PC-1 loosened (accept first non-empty line): 9 red incl. the guard
+     `PC-1 must still reject "implement" … expected 'implement' to be 'NO_COMMAND'` and the #1824 headline
+     `We should improve the docs.` returned as prose.
+   File restored via `git checkout --` after each; final tree clean.
+
+6. **Tests 15 → 27 — VERIFIED.** `27 passed (27)`, clean.
+
+7. **RETRO security contract, hop-1 UNMEASURED, gate deferred to #1834 — VERIFIED (by reading).**
+   Text: "That gate is **not implemented**; it is tracked in #1834. This contract is normative today but reviewed by
+   hand, not enforced by CI … hop 1 is unverifiable here, since this repository ships no compiled gh-aw output."
+   Cannot be read as claiming enforcement that does not exist.
+
+8. **PC-3 exit-non-zero recorded as a known limitation (my Finding 4) — VERIFIED (by reading).**
+   "Known limitation — step 4 is an instruction, not an enforced exit code … That gap is inherent to gh-aw, not an
+   oversight." Written down; no longer needs re-discovery.
+
+##### The two probes the coordinator raised
+
+- **Probe A — PC-0 `NR==1` leading-newline: MEASURED, mechanism REAL, NON-BLOCKING (nit).**
+  `PC0($'\nimplement')→"EMPTY_DISPATCH"` and `PC0($' \nimplement')→"EMPTY_DISPATCH"` — a value that *carries*
+  `implement` silent-halts. `PC0($'implement\nfoo')→"/squad implement"` (line 2 silently dropped);
+  `PC0($'implement\r')→"/squad implement"` (CRLF handled). So the concern is real: `NR==1` + empty-first-line →
+  `EMPTY_DISPATCH` → activation-guard silent halt, the exact defect class this PR closes.
+  **Reachability (measured against the schema):** `command` is a `workflow_dispatch` string input
+  (`squad.md:17-19`, `required:false`). Producers are (1) `squad-implement-worker.md:259` literal
+  `"command": "implement"` — no newline; (2) the "Run workflow" UI — single-line field, cannot enter a newline;
+  (3) a crafted REST/`gh api` dispatch with an embedded `\n` — possible but requires `actions:write` (a privileged
+  actor). **Not reachable via either real producer or the UI; only via a hand-crafted privileged API payload.**
+  **Untested** (no leading-newline fixture among the 27). Verdict: NON-BLOCKING (low severity, privileged + malformed
+  surface), but a genuine latent silent-halt. Recommend closing cheaply: pin the behavior with a leading-newline test
+  and/or have PC-0 scan the first *non-empty* line rather than hard-binding `NR==1`, so the halt is a deliberate choice.
+
+- **Probe B — enumerate every caller: MEASURED, clean.**
+  `grep` across `workflows/*.md` for JSON `"command":` producers → exactly **one**: `squad-implement-worker.md:259`
+  (`"command": "implement"`). The only consumers of `inputs.command` are `squad.md:3` (run-name display) and
+  `squad.md:139` (the value fed to PC-0). `squad-implement-worker.md`'s own `workflow_dispatch` inputs are
+  `issue_number`/`aw_context` only — no `command`. **No third bare-command caller exists**; the "hardened in
+  isolation" bug class has no other instance.
+
+##### CI
+All green: Diff Size Guard, Architectural Review, Security Review — Permissions & Secrets, test (4m51s), Policy Gates,
+Changeset Drift, etc. `docs-quality` and `Scope Boundary` skipping. `MERGEABLE`/`CLEAN`.
+
+##### Pass-3 verdict — APPROVE (merge as-is)
+The pass-2 BLOCKING regression (Finding 2) is fixed **and** regression-guarded by input-naming tests; Finding 3 fixed;
+the text contradiction resolved; all three mutations go red and name the offending input; the two inherent limits
+(PC-3 exit; compiler-channel hop-1, #1834) are now written down rather than re-discovered. One NON-BLOCKING nit
+remains: the PC-0 `NR==1` leading-newline silent-halt (Probe A) — latent, unreachable via known producers, untested;
+worth a follow-up test + first-non-empty-line scan, not a merge blocker.
+(Posted as `COMMENTED` — GitHub blocks a formal Approve from the PR-owning account.)
+
+
+---
+
+### 2026-08-22: RETRO security contract — /squad shell input channel
+
+### RETRO security contract — `/squad` shell input channel
+
+**Scope:** PR #1832 / issue #1824, the `/squad` command parser in `workflows/squad.md`, and the gh-aw compiled workflow YAML produced from it.
+
+**Threat model:** issue bodies, issue-comment bodies, issue titles, PR titles/bodies, and any other event field influenced by an external GitHub user are fully attacker-controlled. They may contain command substitutions, quotes, newlines, options, printf formats, awk escape sequences, and delimiter-looking text.
+
+#### Normative text for `workflows/squad.md`
+
+Paste the following block into `workflows/squad.md` as normative parser requirements.
+
+````markdown
+### Shell input security contract [MANDATORY]
+
+The `/squad` parser treats issue bodies, issue-comment bodies, issue titles, PR titles/bodies, and any other GitHub event text as attacker-controlled.
+
+**Mandatory channel:** attacker-controlled GitHub event text MUST cross from the GitHub Actions expression layer into shell only through named step/job environment variables. The shell MUST read those values only through quoted shell parameter expansion, for example:
+
+```yaml
+env:
+  SQUAD_TRIGGER_BODY: ${{ github.event.comment.body || github.event.issue.body || '' }}
+  SQUAD_TRIGGER_TITLE: ${{ github.event.issue.title || '' }}
+run: |
+  body="${SQUAD_TRIGGER_BODY-}"
+  printf '%s\n' "$body" | awk '...' | grep -F -- '/squad'
+```
+
+**Forbidden anti-patterns:**
+
+- `UNTRUSTED_TEMPLATE_IN_RUN`: never place `${{ github.event.comment.body }}`, `${{ github.event.issue.body }}`, `${{ github.event.issue.title }}`, PR title/body expressions, or expressions derived from them directly inside a `run:` block. This is unsafe even inside shell quotes because GitHub Actions template expansion happens before the shell starts.
+- `UNTRUSTED_COMMAND_STRING`: never build shell syntax from attacker-controlled text. No `eval`, no `source`, no generated script text containing the body, and no `bash -c`/`sh -c` command string containing the body.
+- `UNTRUSTED_PRINTF_FORMAT`: never pass attacker-controlled text as the first argument to `printf`. The first argument is the format slot and must be a literal such as `'%s\n'`; the body belongs only in an argument slot such as `printf '%s\n' "$body"`.
+- `UNTRUSTED_AWK_PROGRAM_OR_VAR`: never interpolate attacker-controlled text into an `awk` program string. Do not pass the raw body through `awk -v`; `awk -v` performs escape-sequence processing on values and can mutate parser input. The raw body must reach `awk` on stdin, with a static single-quoted awk program.
+
+**Per-hop requirements:**
+
+1. **Actions assignment:** event text is assigned in YAML `env:` only. The compiled gh-aw workflow must not contain attacker-controlled `${{ github.event... }}` expressions in any `run:` block.
+2. **Shell local variable:** if copied to a local variable, use ordinary assignment only, e.g. `body="${SQUAD_TRIGGER_BODY-}"`. Do not use `eval`, command substitution, here-doc script generation, or `bash -c` with the body.
+3. **`printf`:** use `printf '%s\n' "$body"` or equivalent literal format. The body must be an argument slot, never the format slot.
+4. **Pipe:** move the body between parser stages as stdin bytes. Do not re-materialize it into shell syntax between stages.
+5. **`awk`:** keep the awk program static and single-quoted; receive the body from stdin. Use `awk` variables only for trusted parser constants, not the raw body.
+6. **`grep`:** when matching attacker-controlled or user-derived literal text, use `grep -F -- "$pattern"` with the pattern quoted. `-F` makes the pattern fixed-string, not regex; `--` terminates grep option parsing so values like `-e` and `--version` are data, not flags.
+
+**Verification requirement:** the repository gate must inspect the compiled gh-aw workflow output, not just this markdown. It must fail if any compiled `run:` block contains attacker-controlled GitHub event expressions, or if parser code passes a body variable as a `printf` format, into `eval`/`bash -c`, or into an awk program/`awk -v`. A gate that cannot turn red on a fixture containing `run: printf '%s\n' "${{ github.event.issue.body }}"` is not a valid gate.
+````
+
+End of pasteable block.
+
+#### Evidence measured locally
+
+Measurements were run with Git Bash in a scratch directory outside the repository and the scratch directory was deleted afterward.
+
+##### Safe environment-variable channel
+
+Payloads containing `$(touch owned)`, backticks, `"; touch owned #`, `%s%n`, `-e`, `--version`, and a no-command body were passed through:
+
+```bash
+cmd=$(printf "%s\n" "$SQUAD_TRIGGER_BODY" |
+  awk '/\/squad/ { sub(/^.*\/squad[[:space:]]*/, "", $0); print; found=1; exit }
+       END { if (!found) print "NO_COMMAND" }')
+printf "%s\n" "$SQUAD_TRIGGER_BODY" | grep -F -- "/squad" >/dev/null
+```
+
+Measured result: `SAFE_PIPELINE_SIDE_EFFECT=NO`. No `owned` file was created.
+
+##### Direct `run:` interpolation channel
+
+A generated shell script equivalent to Actions template interpolation into `run:` was executed:
+
+```bash
+printf '%s\n' "/squad $(touch owned)" >/dev/null
+```
+
+Measured result: `DIRECT_INTERPOLATION_SIDE_EFFECT=YES`. The command substitution executed before `printf` received an argument. Shell quoting around the already-interpolated text did not protect it.
+
+##### `printf` format slot
+
+Measured:
+
+```bash
+BODY='literal\n%s%n'
+printf '%s\n' "$BODY"
+printf "$BODY"
+
+BODY='prefix%n suffix'
+target=before
+printf "$BODY" target >/dev/null
+printf '%s\n' "$target"
+```
+
+Results: argument-slot printing preserved the body literally; format-slot printing interpreted backslash and percent sequences. Bash `printf` `%n` assigned `target=6`. This is not the same as command execution, but it is a real parser-integrity bug and proves the body must never occupy the format slot.
+
+##### `grep -F --`
+
+Measured:
+
+```bash
+printf '%s\n' 'needle --version' | grep -F -- '--version'
+printf '%s\n' 'needle -e'        | grep -F -- '-e'
+printf '%s\n' 'literal .* [abc]' | grep -F -- '.* [abc]'
+```
+
+Results: all patterns matched as literal text. `--version` and `-e` were not treated as options, and `.* [abc]` was not treated as a regex. FIDO's claim is confirmed for the measured grep invocation shape: quoted pattern, `-F`, and `--` before the pattern.
+
+##### `awk -v` and awk program interpolation
+
+Measured:
+
+```bash
+awk -v body='line1\nline2' 'BEGIN { print body }'
+printf '%s\n' 'line1\nline2' | awk '{ print }'
+```
+
+Result: `awk -v` converted `\n` into a newline; stdin preserved the literal backslash-n bytes. This is input mutation, distinct from shell injection.
+
+Measured awk program injection with a generated program containing attacker syntax:
+
+```bash
+printf '%s\n' 'input' | awk '{ print ""; system("touch owned"); "" }'
+```
+
+Result: `AWK_PROGRAM_INTERPOLATION_SIDE_EFFECT=YES`. If attacker text is allowed to become awk program text, awk can execute commands through `system(...)`.
+
+#### Verification shape
+
+A compliant gate should run against the compiled gh-aw YAML. Source markdown checks are useful, but not sufficient.
+
+Minimum static assertions:
+
+1. Extract every compiled YAML `run:` block and fail on:
+   - `\$\{\{[^}]*github\.event\.(comment\.body|issue\.body|issue\.title|pull_request\.body|pull_request\.title)[^}]*\}\}`
+   - `printf[[:space:]]+["']?\$[{]?(SQUAD_TRIGGER_BODY|SQUAD_TRIGGER_TITLE|body|title)\b`
+   - `\b(eval|source)\b.*\$(SQUAD_TRIGGER_BODY|SQUAD_TRIGGER_TITLE|body|title)\b`
+   - `\b(bash|sh)[[:space:]]+-c\b.*\$(SQUAD_TRIGGER_BODY|SQUAD_TRIGGER_TITLE|body|title)\b`
+   - `awk[^\n]*-v[^\n]*(SQUAD_TRIGGER_BODY|SQUAD_TRIGGER_TITLE|body|title)`
+2. Include a positive-control fixture that must fail the gate:
+
+   ```yaml
+   run: |
+     printf '%s\n' "${{ github.event.issue.body }}"
+   ```
+
+3. Include a dynamic parser test that executes the compiled parser path with payloads `$(touch owned)`, backticks, `"; touch owned #`, `%s%n`, `-e`, and `--version`, then asserts:
+   - no sentinel side-effect file exists;
+   - no `NO_COMMAND` path falls back to `cast`;
+   - diagnostics do not cause additional command execution.
+
+The instructions printed by the gate must identify the exact rule name above, for example `UNTRUSTED_TEMPLATE_IN_RUN`, so the failure is searchable and actionable.
+
+#### Residual risk
+
+I could measure POSIX shell behavior for the command shapes above. I could not determine whether the real gh-aw compiler currently emits a safe `env:` channel because no compiled gh-aw workflow lock/output for PR #1832 exists in this repository. The compiled output is where GitHub Actions template interpolation becomes executable shell text, so compliance remains unmeasured until a gate inspects that compiled artifact.
+
+
+---
+
+### 2026-08-22: Decision — /squad command parsing must fail loudly (#1824)
+
+### Decision — `/squad` command parsing must fail loudly (#1824)
+
+**By:** Procedures (Prompt Architecture)
+**Date:** 2026-08-22
+**Issue:** #1824
+**Files:** `workflows/squad.md` (Parse Command), `test/gh-aw-command-parse.test.ts`
+
+#### Context
+
+`/squad cast` silently no-opped with a green check unless the command started the
+issue body. The `## Parse Command` section said *"Strip `/squad` prefix, trim
+whitespace"* — a position-0 assumption — and had **no failure branch at all**.
+There was no state in which the router reported "I did not understand this."
+Success and no-op were byte-identical to a first-run user.
+
+#### Decision
+
+Two changes, in priority order.
+
+1. **A no-op run must fail.** `Parse Command` now has an explicit `NO_COMMAND`
+   outcome routed to a mandatory `Step PC-3` that emits `::error::`, posts a
+   comment quoting the offending text, and exits non-zero. Defaulting to `cast`
+   on an unparsed body is now explicitly forbidden. This is the load-bearing
+   half: it converts every future variant of the bug from silent to visible.
+2. **The scan reads the whole body.** The command is found wherever it sits.
+
+#### Method — an executable contract, not prose
+
+The parser is an LLM prompt, so there is no function to unit-test. Instead the
+parse is expressed as two concrete shell commands embedded in the markdown, and
+the test **extracts those exact commands from `workflows/squad.md` and executes
+them** against real issue bodies. The two sources compared are the declared
+contract and its observed behavior — neither re-reads the other. This follows the
+existing TG-1 precedent in `test/gh-aw-quality.test.ts`.
+
+#### What the mutation tests actually proved
+
+**Mutation 1 — reintroduce position-0 anchoring, headings and prose untouched.**
+Only **1 of 14** assertions caught it. The headline case — prose, blank line,
+then the command, i.e. the literal #1824 scenario — **passed under the
+reintroduced bug**. Cause: `^` in awk anchors per *record*, so a line-anchored
+parser still handles a command sitting on its own line further down the body. The
+blank-line case cannot distinguish a body-wide scan from a line-anchored one.
+
+Two cases were added whose only job is to carry that weight: an **indented**
+command and a **mid-sentence** command. Both are invisible to a line-anchored
+scan. Re-running the mutation then produced 2 failures naming the specific input.
+These cases look redundant with the blank-line case and are not; there is a
+comment in the test saying so.
+
+**Mutation 2 — replace PC-3's diagnostic with `echo 'unrecognized command'`.**
+Every status-shaped signal stayed intact: `::error::` still present, PC-2 still
+forbids the cast fallback, the run still fails. A status-only assertion passes
+this clean — the exact shape that let a truncating parser through on #1793. It
+was caught by 3 assertions, because they assert the diagnostic **contains the
+offending text** rather than merely that a diagnostic exists.
+
+#### Generalizable lessons
+
+- **A red transcript is not automatically a good one.** Against pre-fix state the
+  suite went 13/14 red, but on *"heading missing"* — structural, not behavioral.
+  That proves coupling to the new contract, not sensitivity to a wrong parser.
+  Only the mutations tested sensitivity, and they found the blind spot.
+- **Test the anchor semantics you actually rely on.** A per-line `^` and a
+  per-body scan agree on most realistic inputs. Pick cases where they disagree.
+- **A skipped test is a permanently-green gate.** `HAS_POSIX_SHELL =
+  existsSync('/bin/sh')` silently skips 102 behavioral assertions in
+  `gh-aw-quality.test.ts` on every Windows machine. The new suite resolves Git
+  Bash instead of skipping, and asserts that it found a shell — so a suite that
+  could not run reports red rather than green.
+
+#### Deliberate non-actions
+
+- **The scan matches `/squad` inside quoted lines and fenced code blocks.**
+  Excluding them would reintroduce a silent-skip path, which is the bug class
+  being removed. gh-aw's `slash_command` trigger has already decided the run is a
+  squad command by the time this prompt sees the body. Documented in-file.
+- **The 102 `/bin/sh` skips in `gh-aw-quality.test.ts` were not fixed.** Real and
+  worth a separate issue; out of scope for #1824 and would blow the diff budget.
+- **#1812 not touched.** Confirmed separate: #1812 is in `plan activate`'s roster
+  source, downstream of routing. It shares no code path with Parse Command.

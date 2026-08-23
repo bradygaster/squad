@@ -1,4 +1,4 @@
-# RETRO
+﻿# RETRO
 
 > Retrofire Officer
 
@@ -51,3 +51,13 @@ Fixed a false-positive regression in PR #1559 (`squad/fix-security-scanner-prose
 - PR #1558 diff (`squad/state-sync-2026-07-29`) — scanner returned no findings after fix.
 
 **Known follow-up (not fixed here):** `/git\s+add\s+\./` also matches safe scoped dot-prefixed add commands. Separate issue documented in PR body.
+
+## 📌 Team update — 2026-08-22T19:42:25-07:00
+
+Authored normative security contract for PR #1832 (/squad shell input channel). Threat model: GitHub event text fully attacker-controlled. Mandatory channel: env variables + quoted parameter expansion.
+
+Measured 8 hostile payloads through environment channel (result: injection-safe). Demonstrated direct-interpolation anti-pattern (RCE). Documented forbidden patterns: untrusted command strings, printf format-slot usage, awk program interpolation, awk -v mutation.
+
+Hop-1 (GitHub Actions template → shell) implementation is LLM discretion; no compiled gh-aw output exists in this repo to verify. Gate verification deferred to #1834.
+
+Decision record merged to .squad/decisions.md.

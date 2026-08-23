@@ -1,4 +1,4 @@
-# Procedures history
+﻿# Procedures history
 
 Summarized by Scribe on 2026-08-20T11:59:44-07:00 because this history exceeded 15KB.
 Full pre-summary history archived at `.squad/agents/procedures/history-archive-2026-08-20T11-59-44-0700.md`.
@@ -123,3 +123,13 @@ Tests: `test/gh-aw-plan-lifecycle.test.ts` (23 assertions), incl. a role-leak de
 ## 2026-08-22 — gh-aw triage team update
 
 📌 Team update (2026-08-22T17:10:52-07:00): Procedures completed Tier 3 #1729 prompt-architecture triage: sequence #1730+#1731 → #1733 → #1734 → #1736, with #1735 optional. Tier 1 false-green work blocks #1734 and enforcement-facing #1736. Prompt budget remains under the 100 KB ceiling.
+
+## 📌 Team update — 2026-08-22T19:42:25-07:00
+
+Issue #1824 closed. Authored /squad parser hardening (PR #1832) with explicit NO_COMMAND → fail contract. Mutation tests proved load-bearing cases (indented command, mid-sentence). Mutation 2 proved status-only gates miss bad diagnostics.
+
+FIDO's Pass 2 found BLOCKING dispatch regression (bare command:"implement" → NO_COMMAND → fail; pre-fix worked). Reviewer Rejection Protocol applied: Procedures locked out, EECOM revised. Commit 6e7628c5 added PC-0 normalization layer before PC-1. FIDO Pass 3 verified all mutations green.
+
+**Lesson:** Mutation testing in isolation can miss callers. FIDO's first pass shared the same frame; the blind spot was enumeration of all parser call paths (command-dispatch path was unexercised in new suite).
+
+PR #1832 merged; issue #1824 closed. Decision records merged to .squad/decisions.md.
