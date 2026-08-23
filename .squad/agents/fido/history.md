@@ -30,3 +30,13 @@ Three-turn review of PR #1832 (issue #1824).
 **Pattern:** Test incomplete in isolation (dispatch path missed). Reviewer's domain context caught it. New coverage added in revision.
 
 PR merged; issue closed.
+
+## 📌 Team update — 2026-08-22T21:20:17-07:00
+
+**Adversarial review of PR #1837 (Closes #1812, roster false-provenance).** VERDICT: APPROVE WITH NITS.
+
+Confirmed all 7 mutations RED and naming input. Verified M8 (CR-strip) genuinely unreddable on Windows git-bash: CR lands in post-last-pipe field ($4), never read. Verified postcondition `applied_labels ⊆ emitted_roster_members` not shell-assertable: agent job has `issues: read`; labels applied by separate executor job via safe-output — confirmed from actual frontmatter L28–32, not reasoning. Both honesty claims verified by measurement.
+
+Found **one real non-blocking gap at L1117**: Step 3 validator still named `.squad/team.md` while binder (L1111) and Check 10 both TG-2-bound. Adjudicated non-blocking (Check 10 is the authoritative gate); recommended merge as-is with tracked follow-up. Fixed by Procedures in `ab8649e3`.
+
+Reusable technique: always verify architectural claims against actual file contents, not memory or reasoning. Proved `issues: read` from frontmatter bytes, not inferred from context.

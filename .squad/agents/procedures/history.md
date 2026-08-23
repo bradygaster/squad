@@ -133,3 +133,11 @@ FIDO's Pass 2 found BLOCKING dispatch regression (bare command:"implement" → N
 **Lesson:** Mutation testing in isolation can miss callers. FIDO's first pass shared the same frame; the blind spot was enumeration of all parser call paths (command-dispatch path was unexercised in new suite).
 
 PR #1832 merged; issue #1824 closed. Decision records merged to .squad/decisions.md.
+
+## 📌 Team update — 2026-08-22T21:20:17-07:00
+
+**#1812 — Roster provenance fix shipped.** Implemented Team Guard Step TG-2 in `workflows/squad.md`: reads git-committed HEAD `.squad/team.md`, finds `Name` column by header, emits `ROSTER_MEMBER: {name}` per row (lowercased) or `ROSTER_UNREADABLE: {reason}`. All five minting/binding sites rewired to TG-2's certified stdout — provenance true by construction, not prose. 7 mutations (M1–M7) proven RED and naming input. 172 tests passed / 13 skipped. PR #1837 +531/−61 across 3 files, squash-merged as `4b32f7be`.
+
+FIDO adversarial review: APPROVE WITH NITS. Found L1117 nit (Step 3 validator still named `.squad/team.md`). Fixed in follow-up commit `ab8649e3` — validator now TG-2-bound, consistent with L1111 and Check 10. Issue #1812 auto-closed.
+
+Decision record merged to `.squad/decisions.md`.

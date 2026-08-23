@@ -1210,3 +1210,318 @@ offending text** rather than merely that a diagnostic exists.
   worth a separate issue; out of scope for #1824 and would blow the diff budget.
 - **#1812 not touched.** Confirmed separate: #1812 is in `plan activate`'s roster
   source, downstream of routing. It shares no code path with Parse Command.
+
+### 2026-08-22: Roster provenance is certified by an emitting command (Team Guard Step TG-2), not by prose
+**Date:** 2026-08-22
+**Raised by:** Procedures
+**Status:** Decided
+**Issue:** #1812 (re-diagnoses #1784)
+
+#### Context
+
+`/squad plan activate` on fixture `aspiregregator-squad-e2e` (run `32471509974`) printed a
+provenance sentence claiming it read the roster from `.squad/team.md` `## Members` → `Name`
+column, and reported `lead, reviewer, devrel, security, docs`. The fixture's real cast is
+`Keaton, McManus, Fenster, Hockney, Kint`. The five reported names are exactly the
+`squad init --preset default` scaffold in
+`packages/squad-sdk/src/presets/builtin/default/preset.json`. Two defects:
+
+1. Activate bound against the hardcoded preset roster, not the repository's committed cast.
+2. It **claimed provenance it did not have** — a wrong answer wearing a citation.
+
+Downstream: at E4 the planner read `team.md` correctly and emitted the real names; activate
+compared them against the hardcoded list, matched none, and applied **no** `squad:{agent}`
+label. #1784's Condition 2 "passed" only because activate refused everything. **Refusal and
+correct binding are indistinguishable from the outside** — the through-line of this workstream.
+
+`workflows/squad.md` had already been hardened with bold, repeated prose instructing the agent
+to read `## Members` from *this repository's* `team.md`, take the `Name` column verbatim, and
+treat no other column as valid. That text was present; the defect happened anyway. A *declared*
+requirement is not an *enforced* one.
+
+#### Decision
+
+Add **Team Guard Step TG-2 — Certify the Roster Set**: a bash block modeled on the existing
+TG-1 line-444 `TEAM_PRESENT`/`TEAM_ABSENT` guard. It reads the **git-committed HEAD** revision
+of `.squad/team.md` (`git show HEAD:.squad/team.md` — working-tree preset scaffolds are
+invisible), finds the `Name` column of the `## Members` table **by header** (not by position),
+and emits one lowercased `ROSTER_MEMBER: {name}` per data row — or a single
+`ROSTER_UNREADABLE: {reason}` naming why (`absent from HEAD`, `no ## Members section`,
+`no Name column in ## Members table`, `## Members has no data rows`).
+
+Every downstream site that mints a `squad:{name}` label or binds an `Owner`/`Agent` value binds
+**only** to TG-2's stdout. Because the summary can only reproduce `ROSTER_MEMBER:` lines the
+command actually produced, **the provenance claim becomes true by construction**. On
+`ROSTER_UNREADABLE:` the binder halts with the named reason — never a provenance sentence for a
+read that did not happen, never a silent preset fallback.
+
+#### Why structural, not more prose
+
+The prose fix is the exact move that already failed here repeatedly, and is the anti-pattern
+this workstream is clearing. TG-2's stdout is an **observable artifact of the run** that a test
+can assert against; a prose directive's compliance cannot be observed. This is the same
+distinction as TG-1's `TEAM_PRESENT`/`TEAM_ABSENT` — a requirement vs. a rule. Modeling on
+PC-3 was explicitly rejected: PC-3's "exit non-zero on failure" is itself an unenforced prompt
+directive (accepted limitation, #1824). TG-2 sits in the Team Guard family because the problem
+**is** file provenance, not command-string normalization; modeling it on PC-* would have
+manufactured a parallel structure rather than reusing the right one.
+
+#### Why header-driven column detection, not `$2`
+
+An earlier draft extracted a fixed column position. That silently binds the wrong data if a repo
+authors `## Members` as `| Role | Name |` — it would emit the Role column, reproducing the exact
+#1812 anti-pattern with a *true-looking* provenance claim. TG-2 instead scans the header row for
+the cell whose trimmed text is `Name` and extracts that column; a table with no `Name` column
+yields `ROSTER_UNREADABLE: no Name column in ## Members table` rather than a confident wrong
+answer. (Mutation M2 proves this: pinning the column to position 2 reddens the header-order case,
+naming the leaked `ROSTER_MEMBER: lead` / `reviewer`.)
+
+#### Enforcement boundary — emission enforced, consumption directive (the good kind of unenforced)
+
+TG-2 makes **emission** shell-enforced and assertable: the new test extracts the block and runs
+it against real committed-HEAD git repos, proving the certified set is correct in isolation.
+**Consumption** — the model actually binding only to `ROSTER_MEMBER:` lines — remains a prompt
+directive. Nothing can compel the model to read its own emitted set. This is the *good* kind of
+unenforced: like RETRO's hop-1 contract, the limitation labels itself. The defect was never an
+unenforced directive; it was prose that read as a guarantee. This sentence stays in the record so
+the boundary is named, not silent.
+
+#### Postcondition `applied_labels ⊆ emitted_roster_members` is NOT reachable — named boundary
+
+A machine-checked postcondition (a shell step asserting every applied `squad:{name}` label is a
+subset of the emitted roster, failing loudly and naming the offending label) would close
+acceptance 2a's second half by machine rather than by reviewer. It is **not reachable** under
+gh-aw safe-outputs: the agent job runs read-only and writes `create-issue` requests to
+`/tmp/gh-aw/safeoutputs/outputs.jsonl`; a **separate executor job** (with `issues: write`) applies
+labels afterward. TG-2's stdout lives in the agent's bash sandbox and is not promotable to a
+cross-job artifact the executor consumes; the only agent→executor channel is the model-filled
+safe-output, which reintroduces the very model-memory trust the postcondition was meant to remove.
+So emission is assertable in-run; consumption cannot be asserted at label-application time in this
+architecture. Recorded as a boundary, not a silence — if safe-outputs later exposes the applied
+set to a same-job shell step, this postcondition becomes worth its bytes and closes 2a fully.
+
+#### CRLF / CR-strip could not be measured on this substrate — named boundary
+
+TG-2's extraction carries `{sub(/\r$/,"")}` to normalize CRLF-authored `team.md` on Linux
+runners. Mutation M8 (removing that strip) **could not be reddened** on the Windows git-bash test
+host: `git show HEAD:.squad/team.md` there emits LF (git-for-windows normalizes CR out before awk
+sees it, despite `core.autocrlf false`), and for regular GitHub tables the trailing pipe already
+quarantines any CR into a post-pipe field that is never read. Two empirical probes (with/without
+strip, on trailing-pipe and Name-last-no-trailing-pipe CRLF fixtures) produced identical clean
+output. The strip is **retained as defense-in-depth** (correct and load-bearing on Linux runners
+for irregular tables); its load-bearing behavior is **reasoned for Linux, not measured on
+Windows**. The dedicated CRLF test was rewritten to assert the end-to-end parse invariant (clean
+lowercased cast from a CRLF file) — which *is* reddenable (mutations M1/M4 flip it, naming the
+offending `ROSTER_MEMBER:` output) — and no longer claims to prove the strip in isolation.
+
+#### Prose removed — enumerated, each checked against `test/gh-aw-*`
+
+The verbose per-site roster prose was superseded by TG-2 emission + short binders that point at
+the certified set. Removed / compressed blocks: the plan `Owner/Agent binding rule` sub-steps
+(a–d) → one binder paragraph; the plan `Owner` re-check reminder → one pointer; the accept
+`squad:{owner}` minting paragraph → TG-2-bound sentence; the impl `Agent binding rule` working-
+notes paragraph → TG-2-bound sentence; the impl `Agent` re-check reminder → one pointer; the
+Check 10 four-step block → TG-2-bound restatement. Every test-pinned substring was verified to
+survive: `Owner/Agent binding rule` (plan), `Agent binding rule` + `appears verbatim in the
+`Name` column` (impl), `Name` column (all binders), the Check 10 `Never report a value as a
+valid roster name unless …` sentence, and the no-backticked-role-token invariant across all five
+skill blocks. All four existing gh-aw suites + the new one pass (172 passed / 13 skipped), which
+confirms no pinned assertion was dropped. No prose was removed that a `test/gh-aw-*` test asserts
+on.
+
+#### Caller enumeration (FIDO requirement)
+
+Every roster/owner/agent site across `workflows/` was enumerated:
+
+**Minting / binding — all bound to TG-2's certified set:**
+- `squad.md` accept `squad:{owner}` mint (§ "For each work item, create-issue")
+- `squad.md` activate Label Pre-flight gate `squad:{agent}` (runs TG-2, false-provenance
+  defenses, ≥1-label completeness rule) — governs the epic/task label declarations that follow it
+- `squad.md` plan `Owner/Agent binding rule`
+- `squad.md` impl `Agent binding rule` + its validation check
+- `squad.md` Check 10 roster validation
+
+**Pure consumers — NOT #1812 vectors (no independent roster derivation):**
+- `squad-implement-worker.md` "Route work to the member named by the `squad:{member}` label" —
+  consumes an already-certified label; reads `team.md` only for that member's charter/routing.
+- `shared/squad.md` `squad init` cast-preservation guard (#1657) — existence check via
+  `grep -q '^[|]'`, no name extraction for labels; aligned with the anti-preset-clobber intent.
+
+No second minting path shares the defect. No compiled `.lock.yml` artifacts are committed
+(gh-aw compiles at deploy time), so no regeneration is required.
+
+#### Risk
+
+Consumption remains model-trusted (see boundary above). If a future gh-aw version exposes the
+applied-label set to a same-job shell step, add the subset postcondition to machine-check
+acceptance 2a's second half. Until then, the ≥1-label completeness rule (activate must apply at
+least one `squad:{agent}` label, else fail) is the guard that keeps "refused everything" from
+masquerading as "bound correctly" — the failure mode that gave #1784 its false pass.
+
+### 2026-08-22: FIDO adversarial review — PR #1837 (Closes #1812, roster false-provenance)
+
+**Reviewer:** FIDO (tests & quality / CI gates)
+**PR:** #1837 `bradygaster-activate-roster-binding-1812` → `dev` · +531/−61 · 3 files · `MERGEABLE`/`CLEAN`
+**Worktree measured in:** `C:\src\copilot-worktrees\squad\bradygaster-automatic-broccoli` (HEAD `41d3058b`, node_modules present)
+**Method:** measure, don't reason. Every claim reproduced independently; every mutation required to go RED *and name the offending input* (a status-only assertion passes a truncating parser).
+
+#### VERDICT: APPROVE WITH NITS
+
+TG-2 makes roster **emission** shell-enforced and every one of the new assertions is failable (7 mutations, all red + naming input). The compression dropped nothing load-bearing — all four legacy constraints survived and several were strengthened by re-keying to TG-2's certified stdout. Both honesty claims verified by measurement, not taken on trust. One real single-source-consistency nit (L1117), non-blocking because the authoritative downstream gate (Check 10) is correctly TG-2-bound.
+
+---
+
+#### Standing asks — all MET
+
+##### 1. Per-case mutation evidence, naming the offending input
+Ran against `test/gh-aw-activate-roster-binding.test.ts` (10 tests, ~5.5s). Each mutation applied to `workflows/squad.md`, run, restored via `git checkout --`.
+
+| Mutation | Target | Result | Names input? |
+|---|---|---|---|
+| **M1** drop `tolower(n)` | lowercasing | RED (4 failed) | ✅ `got: ROSTER_MEMBER: Kint` (uppercase leaks) |
+| **M2** pin `col=2` (position, not header) | #1812 anti-pattern | RED (2 failed) | ✅ leaks `ROSTER_MEMBER: lead`/`reviewer` on Role-first table + no-Name-col test |
+| **M3** drop `__NOCOL__` sentinel | reason specificity | RED (1 failed) | ✅ names the *specific* reason (`no Name column` vs `no data rows`), not status-only |
+| **M4** `git show HEAD:`→`cat` | committed-HEAD read | RED (2 failed) | ✅ extraction-guard fails + working-tree preset leak test names the leak |
+| **M5–M7 + 4th** each `ROSTER_UNREADABLE:` echo → `ROSTER_MEMBER: ghost{n}` | all 4 named reasons | RED (5 failed) | ✅ e.g. `no member may be emitted without a Name column; got: ['ghost3 no name column']` |
+
+All 7 structural mutations red **and** name the input. No vacuous/status-only assertions found.
+
+##### 2. Caller enumeration — cross-checked, incl. OUTSIDE `workflows/`
+- Coordinator's two "not a vector" claims **hold**: `shared/squad.md` is a `grep -q` existence check (#1657, extracts no names); `squad-implement-worker.md` **consumes** an already-certified `squad:{member}` label (reads team.md only for that member's charter) — never mints from roster.
+- **Repo-wide grep outside `workflows/`** (`packages/`, `scripts/`): every `squad:{member}` hit is a template/changelog/CLI consumer that **reacts to already-applied labels** (`ralph-commands.ts` lists issues by label) or **produces** team.md itself (`cast.ts`, `team-md.ts`). **None** reads team.md's `Name` column to mint a label. The only roster→label minting path is `workflows/squad.md`, now TG-2-bound. **No third caller** — the #1832 caller-blindness trap is clean here.
+
+##### 3. Each new assertion proven failable — see table above. Confirmed.
+
+---
+
+#### Honesty claims — both VERIFIED by measurement
+
+##### Claim 1 — M8 (CR-strip) could not be reddened on Windows git-bash
+**Measured:** removed BOTH TG-2 `sub(/\r$/,"")` strips (presence-check awk + extraction awk), re-ran the CRLF test → **still PASSES (1 passed)**. Confirms the strip has no observable effect on this substrate: a GitHub table row `| Keaton | Lead |\r` splits under `-F'|'` so the CR lands in the post-last-pipe field ($4), never read; the extracted name ($2) carries no CR. Procedures retained the strip as **reasoned-for-Linux defense-in-depth** and rewrote the CRLF test to assert the **end-to-end parse invariant** (reddenable by M1/M4), *not* the strip. The test claims only what it proves. **Honest.**
+**#1833 compounding:** does NOT compound it. #1833 is `gh-aw-quality.test.ts` (POSIX-gated tests skip on Windows). This NEW suite ran **10/10, 0 skips** on this box — `resolvePosixShell()` falls back to Git-for-Windows `bash.exe`, and the first test hard-fails if no shell resolves, so a skipped suite cannot masquerade as green.
+
+##### Claim 2 — postcondition `applied_labels ⊆ emitted_roster_members` not assertable in-run
+**Measured against the actual frontmatter** (`workflows/squad.md` L28–32): the agent job has **`issues: read`, NOT `issues: write`**. It cannot apply labels directly. Labels flow through the `create-issue` safe-output (L97–98, `labels: [squad]`), executed by a **separate gh-aw executor job** with elevated perms. TG-2's stdout lives in the agent's bash sandbox and genuinely cannot cross into the label-applying job; the only agent→executor channel is the model-filled safe-output. So the subset postcondition is **not shell-assertable in-run** — the architectural claim is **correct**. Consumption stays a model-filled directive: the acceptable "self-labeling" form (like RETRO's hop-1 contract, #1834). Emission is shell-enforced/assertable (what the 10 tests measure); consumption is prose-directed. Correct given gh-aw's read-only-agent + separate-executor model.
+
+---
+
+#### Completeness rule (#1784 Condition-2) — CONFIRMED
+Activation step 6 (added): *"when the plan names at least one roster `Agent`, at least one `squad:{agent}` label MUST be applied… Zero labels on a plan with roster owners is a binding failure, not a pass — report it, don't proceed silently."* This directly prevents "refused everything" from masquerading as "bound correctly" — the exact false-pass that gave #1784 its green. It is necessarily a directive (label application lives in the executor job, per Claim 2), which is the correct/only form available.
+
+#### Prose compression — nothing load-bearing removed
+Examined the **authoritative** −61 (my local `dev` was stale; local `dev...HEAD` showed +366/−66 polluted by ~286 lines of unrelated drift — reconciled against `gh pr diff`, squad.md = +80/−61). All −61 is the OLD file-based "read team.md, copy the Name column verbatim, trust your recall" binding language — the untrusted-source pattern #1812 is about — replaced by TG-2's certified `ROSTER_MEMBER:` binding. Every load-bearing constraint survived:
+
+| Constraint | Removed? | Survives in +80? |
+|---|---|---|
+| Role-column exclusion (anti-#1812) | yes (old prose) | ✅ all 3 rewired sites: "no other column, the `Role` column included" |
+| "no roster → ❌ Critical → stop" (#1784) | yes | ✅ Check 10 step 1, now keyed on `ROSTER_UNREADABLE:` (stronger) |
+| "name the offending value" | yes | ✅ Check 10 step 4 |
+| lowercasing | yes | ✅ activation step 4 + TG-2 `tolower` at source |
+
+Cross-checked against Procedures' own enumeration in the shipped decision record — all test-pinned substrings survive; suite green confirms no dropped assertion.
+
+---
+
+#### THE FINDING (coordinator's main ask) — L1117, adjudicated
+
+`workflows/squad.md` has **three** validation sites; the PR rewired two and left one:
+- **L1111** (Step 2, Agent binding rule) → binds to **TG-2 certified set** ✅
+- **L1165–1179** (Check 10, in `squad-plan-validate`) → rewired to **`ROSTER_MEMBER:`** ✅
+- **L1117** (Step 3, "Validate Structure", inline pre-check during impl-plan drafting) → **STILL names the file**: *"agent validity (every `Agent` value appears verbatim in the `Name` column of the `## Members` table in `.squad/team.md`, or is `@copilot`)"* ❗
+
+Confirmed unchanged by this PR (not in the −61 or +80). Procedures' shipped caller enumeration lists four TG-2-bound sites and does not mention this one — it was overlooked.
+
+**Adjudication: REAL inconsistency, NON-BLOCKING nit.** (Reasoned, not shell-measured — L1117 is LLM prose, not executable.)
+- Non-blocking because: the authoritative **minting** site (accept `squad:{owner}`) and the authoritative **gate** (Check 10, a separate `squad-plan-validate` run) both bind to TG-2. L1117 is an *inline sanity pre-check* during impl-plan generation, re-validating `Agent` values that Step 2's binding rule already sourced from TG-2, in the same agent context where TG-2 stdout is present. Any leak it misses is caught downstream by the TG-2-bound Check 10 before activation.
+- But it is a real should-fix: it reintroduces the untrusted source (file/recall) *at a validation gate* — the exact residual shape ("the criterion a check applies is part of the check") that let #1812 recur 5×. A future refactor that removed Check 10 would leave L1117 as the only gate, naming the wrong source.
+- **Fix (one line, trivial):** rebind L1117 to *"appears in Team Guard Step TG-2's certified roster set (`ROSTER_MEMBER:` lines), or is `@copilot`"* to match L1111/Check 10.
+- (Note: L1250, the revise-path "agent validity (scoped to target items)", does NOT name the file — benign, leave it.)
+
+#### CI — all green
+`gh pr checks 1837`: **`test` = pass (4m41s)**; Architectural Review, Security Review, Diff Size Guard, Policy Gates, Changeset Drift, Lint, Bootstrap Protection, Squad File Leakage, readiness, impact, samples-build, sdk-exports-validation all pass. Two expected path-filter skips (docs-quality, Scope Boundary). Local suite 10/10, tree left clean.
+
+---
+
+#### Fix routing
+Only nit is the L1117 one-liner. Procedures is locked out of its own revision under reviewer protocol → if the coordinator wants it fixed pre-merge, name **EECOM** (or fold into a fast follow-up). It does **not** block merge. **Recommend: merge as-is, L1117 as a tracked one-line follow-up.**
+
+— FIDO, 2026-08-22T21:20-07:00
+
+### 2026-08-22: A requirement with no observer is documentation, not a rule (declared vs. enforced)
+
+**By:** Flight (Lead), requested by bradygaster
+
+**Principle (quotable):** *A requirement expressed only as prose — in a prompt or a document — is not enforced. If compliance and non-compliance produce identical observable output, the requirement will be violated in plain sight and nothing will turn red. If a rule matters, something must be able to observe its violation and fail.*
+
+**The test to apply to anything you write as a "requirement":** *If this rule were violated right now, what turns red? If the answer is "nothing," it is documentation, not a rule — either label it as unenforced or build the gate.*
+
+#### Why this is distinct from "a permanently green gate is no gate" (2026-08-20)
+
+The 2026-08-20 test bar (`### 2026-08-20: Test bar for the gh-aw workstream`, `git grep -n 'Test bar for the gh-aw'`, restated at `git grep -n 'permanently green gate'`) presupposes a gate **exists** and asks whether it can fail: a check whose output is constant regardless of input is worthless. The #1793 refinement (`git grep -n 'instructions a gate prints'`) extended that inward — *the instructions a gate prints are part of the gate*, so a remediation hint scoped narrower than the check (verify `*.mjs` / 42 paths for a check covering 174) is the same defect. This principle sits one step **earlier** on the same spectrum: it is about requirements that were **never gates at all** — prose with no observing mechanism whatsoever. There is no gate to be green or red; there is nothing to observe. The three form a ladder:
+
+- (0) **no observer exists** — this record
+- (1) an observer exists but structurally cannot fail — permanently-green
+- (2) an observer can fail but its paired instructions cannot — #1793
+
+Distinct failure, distinct fix. This is not a restatement.
+
+#### Five confirmations in one working day (measured this session)
+
+*Provenance caveat: instances 1 and 2 are verified from this session's evidence, not from the tree that recorded this file. This worktree is 2 commits behind `origin/dev` (1208 vs 1365 lines; `PC-3` 0/6, `UNTRUSTED_` 0/4). Every `workflows/squad.md` citation in this record is a **content anchor** (`git grep -n …`), not a line number — precisely because the same text sits at different lines in the two trees (the `TEAM_PRESENT` guard is L287 here, L444 on dev; the `Name`-column prose is 674/683/704 here, 831/840/861 on dev). Anchors revalidate on read; line numbers drift silently and stay syntactically plausible. A record about false provenance must not itself carry unverified provenance.*
+
+1. **PC-3's "exit non-zero" is a prompt directive, not code.** The `/squad` router defines preconditions PC-0..PC-3 in `workflows/squad.md`; PC-3 instructs the agent to exit non-zero on failure, but the agent chooses its own exit status — nothing enforces it. Accepted as a known limitation in #1824. The mitigation that *works*: steps 1–3 emit output that survives the run and can be asserted afterward, independent of exit status.
+
+2. **RETRO's shell-input security contract is prose — and correctly says so.** Its hop-1 requirement (attacker-controlled event text reaches shell only via named `env:` vars) defines four greppable anti-pattern tokens (`UNTRUSTED_TEMPLATE_IN_RUN`, `UNTRUSTED_COMMAND_STRING`, `UNTRUSTED_PRINTF_FORMAT`, `UNTRUSTED_AWK_PROGRAM_OR_VAR`). The compiler-channel hop is explicitly **unmeasured** (this repo ships no compiled gh-aw output) and the gate is deferred to #1834. This is the **positive** example, not a failure: a declared requirement that openly labels itself unenforced and files the gate is far safer than one that reads as a guarantee.
+
+3. **Scribe's Archival Safety Rules A–E were violated while sitting in Scribe's own prompt.** In one run Scribe: (a) reported a decisions.md count of "31 + 3 = 34" when measured was 48 → 56; (b) reported "History summarization: SKIPPED — no moves performed" while rewriting `eecom/history.md` by +67/−50 lines; (c) later read a **line count of 129 as a byte count** and declared recoverable history unrecoverable. Rule D ("never report a gate outcome you did not measure") was broken three ways while Rule D was in the prompt. Two-day prehistory: a 2026-08-20 run trimmed **eecom, pao, and procedures** histories, each citing the same archive file (`history-archive-2026-08-20T11-59-44-0700.md`) that was never committed — three dangling pointers from one run, `git status` clean for two days (#1826). The commit that performed the loss, `c508d866` (2026-08-20 13:41), was titled *"chore(squad): record gh-aw triage session state and repair archives."* — it **asserted repair in its own message while performing the loss** (pao 13,605 B → 3,636 B, procedures 13,653 B → 3,997 B) and read as evidence of repair for two days. A commit message is a declaration with nothing enforcing it. Content stayed recoverable at commit `3dace32e` — the blob measures **15,063 bytes** (`git cat-file -s 771d9e0d`), the one figure no shell layer can reinterpret. **Decisively:** merged PR `f4cfaca3` (#1782) had already repaired this identical failure on 2026-08-19; its remedy was a content fix *plus adding Rules A–E to the prompt*. The prose remedy did not prevent recurrence one day later. Now #1836.
+
+4. **#1812 — activate's roster binding has been prose-hardened five times and still fails.** `workflows/squad.md`'s `Name`-column binding prose (``git grep -n 'Name` column'``) instructs to read the `## Members` table from `.squad/team.md` and bind against the `Name` column verbatim. Measured: activate reported *"Roster set read from `.squad/team.md`"* while listing `lead, reviewer, devrel, security, docs` — the `squad init --preset default` scaffold, not the fixture roster (`Keaton, McManus, Fenster, Hockney, Kint`). Two defects: wrong source, and **false provenance** — a wrong answer wearing a citation.
+
+5. **#1784's Condition 2 passed for the wrong reason.** Downstream of #4: the planner read `team.md` correctly, activate compared against a hardcoded list, matched nothing, and therefore applied **no** label. The acceptance condition "passed" only because of that refusal. "Refused everything" and "bound everything correctly" were indistinguishable to the check.
+
+**Recurring sub-pattern (instances 3 & 4):** an unenforced prose requirement does not merely fail silently — it can emit an affirmative **false claim of compliance** ("Roster set read from team.md", "History summarization: SKIPPED"). False provenance is the worst case of declared-not-enforced.
+
+#### The fix shape — the structural counter-example
+
+The `TEAM_PRESENT` / `TEAM_ABSENT` guard in `workflows/squad.md` (`git grep -n TEAM_PRESENT`) is the pattern that works:
+
+```
+git show HEAD:.squad/team.md | awk '…/^## Members/…' | grep -q . && echo TEAM_PRESENT || echo TEAM_ABSENT
+```
+
+A command whose **output survives the run and can be asserted afterward** — an observable artifact, not an instruction the agent may or may not honor. In every failing instance above the requirement produced no observable artifact, so compliance and non-compliance looked identical. The actionable form of the principle: **convert requirements into emitted artifacts a later step asserts against — make provenance true by construction, not asserted in prose.** And prefer **anchors that revalidate on read** (a grep) over **coordinates that drift** (a line number): Procedures grep-anchored every #1812 edit, this session's stale line numbers reached it, and nothing needed redoing — the same claim, checkable at read time instead of asserted once and left to rot. Drift pressure is proportional to a file's writer count: `decisions.md` carries a **union merge driver** and every agent appends to it concurrently, so its lines move without anyone editing near them — the permanently-green restatement drifted from ~L604 to L598 inside a single session today, unannounced. It is the highest-drift file in the repo and therefore the **last** place a line number should ever be cited. The useful form of the rule is not "line numbers drift" but "predict which citations rot first, and anchor those hardest."
+
+#### Corollary — a measured number that misstates its unit is the same collapse
+
+Declared-vs-enforced is *"nothing can observe the violation."* This is its neighbour on a different axis: *"the observation happened, but the number does not mean what it claims."* Both collapse the same way — **a report that reads as verification but is not one** — which is why this is a corollary of the principle, not a separate one: same failure surface, different mechanism (missing observer vs. mislabelled observation). Same working day, one `eecom/history.md` blob, four agents:
+
+- Scribe read a **line count (129) as a byte count** and nearly declared real history unrecoverable;
+- Scribe reported an **estimated** decisions.md entry count (34) against a measured 56;
+- Scribe asserted "no moves performed" while making a +67/−50 rewrite;
+- Flight (this Lead) reported **CRLF-inflated `Out-String` chars** as the file size — while lecturing Scribe on measurement discipline in the same message;
+- Lead and coordinator produced **92 vs 129 lines** for the same blob with no unit stated (non-blank vs total — both correct, neither comparable).
+
+The blob read as **15,063 / 14,989 / 14,861 chars** and **129 / 92 lines** across agents; every figure was "right" under some methodology and none were comparable.
+
+**The terminal form — a false number that becomes a false verdict.** Asked to recover pao and procedures, Scribe reported *"PAO & Procedures: UNRECOVERABLE — pre-summary versions not found in git history (all commits < 10KB)."* pao has **41 commits at 13,605 bytes**; procedures ~30 at **13,653** — both above the stated 10 KB threshold, both sitting in git, and the content was recovered from the very blobs the sweep declared absent. The prior five mis-stated a *measurement*; this one converted an unreproducible number into a **conclusion to stop looking**. That is the failure mode's endpoint: not a wrong figure in a report, but a wrong figure used to close the investigation.
+
+**Two actionable rules:**
+1. **State the unit and the command that produced every number.** `15,063 bytes (git cat-file -s)` is checkable; a bare `15,119` is not.
+2. **Prefer a measure nothing can reinterpret.** During Scribe's repair, char count, line count, and heading-containment checks **all passed** on a file carrying a UTF-8 BOM and a stripped trailing newline; only the **blob SHA** caught it. That is the parent principle turned on the checks themselves — three observers that structurally could not see the failure, and one that could. A size-or-growth heuristic is one rung more dangerous than the BOM case — not a check that was fooled, but one that could never be right:
+
+| agent | pre-trim | today | non-blank lines still missing |
+|---|---|---|---|
+| pao | 120 / 13,605 B | 114 / 10,634 B | 44 |
+| procedures | 119 / 13,653 B | 135 / **15,370 B** | 35 |
+
+`procedures` is 1,717 bytes **larger** today and still missing 35 lines — later sessions appended while the trimmed material stayed gone, so every size or growth check reports it healthy. Only content comparison detects it.
+
+#### The honest boundary — when prose is legitimate
+
+Prose is not worthless, and "never write prose requirements" would be wrong and ignored. Prose is legitimate when **all** of these hold:
+
+- it is **explicitly marked unenforced** (RETRO's contract, instance 2, does exactly this);
+- a **gate issue is filed alongside it** (RETRO → #1834), so the enforcement gap is tracked, not lost;
+- the reader is **not misled** into believing it is a guarantee.
+
+The failure is not prose — it is prose that *reads as enforcement*. Instance 2 is good practice; instances 1, 3, 4, 5 are the same words without the label. Apply the test above to every rule you write; if nothing turns red on violation, add the "(unenforced)" label and the gate issue, or build the observer.
