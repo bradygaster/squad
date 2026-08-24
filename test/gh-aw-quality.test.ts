@@ -574,6 +574,113 @@ describe('gh-aw: planning state machine', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Test: Validation schema must not ship its own verdict (#1801)
+// ---------------------------------------------------------------------------
+
+/**
+ * The planning ontology's Validation Result schema (§3.6) once listed five named
+ * checks, each pre-filled with a literal `✅`. The model was therefore not asked
+ * to determine a verdict — it was handed a table whose verdict was already PASS
+ * and asked to reproduce it. It did, including on a run where every agent binding
+ * was invalid: `| Agent assignments valid | ✅ (lead, lead, devrel) |`. The check
+ * passed on precisely the input it exists to reject.
+ *
+ * That is #1784's mechanism aimed at the verdict instead of the value — a concrete
+ * literal in the prompt gets copied verbatim, and here the salient literal was the
+ * pass mark. The ontology's own convention already said how to avoid it: angle
+ * brackets mean "you fill this in", which §3.6's final row obeyed while the five
+ * above it did not.
+ *
+ * Scope note: this deliberately targets the *validation* schema rather than every
+ * status literal in the file. §5's Lifecycle Summary legitimately ships a worked
+ * snapshot with mixed `✅ Done` / `⬚ Pending` rows plus an icon legend — that is
+ * bookkeeping recorded from which command ran, not a judgment determined from
+ * evidence, and a blanket rule would fail it for no benefit. A precise gate that
+ * provably catches the real defect beats a general one that misfires.
+ */
+describe('gh-aw: validation schema ships no pre-filled verdict (#1801)', () => {
+  const ontology = readText(join(SHARED_DIR, 'squad-planning-ontology.md'));
+
+  /** The fenced `## Plan Validation` template from ontology §3.6. */
+  function validationSchema(): string {
+    const match = ontology.match(/```markdown\n(## Plan Validation[\s\S]*?)```/);
+    if (!match) {
+      throw new Error(
+        'Could not locate the fenced `## Plan Validation` schema in ' +
+          'squad-planning-ontology.md. If §3.6 was renamed, update this test — ' +
+          'do not delete it.',
+      );
+    }
+    return match[1];
+  }
+
+  /** Rows of a markdown table, minus header and separator. */
+  function dataRows(block: string): string[][] {
+    return block
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.startsWith('|') && !/^\|[\s\-:|]+\|$/.test(l))
+      .map((l) =>
+        l
+          .replace(/^\||\|$/g, '')
+          .split('|')
+          .map((c) => c.trim()),
+      )
+      .filter((cells) => cells[0] !== 'Check');
+  }
+
+  it('locates the validation schema', () => {
+    // Guards the assertions below against silently evaluating an empty set —
+    // the same vacuous-pass failure this suite exists to prevent.
+    expect(dataRows(validationSchema()).length).toBeGreaterThan(0);
+  });
+
+  it('supplies no literal verdict in a cell the model must determine', () => {
+    const offenders = dataRows(validationSchema())
+      .filter((cells) => cells.slice(1).some((c) => /^(✅|❌)/.test(c)))
+      .map((cells) => `| ${cells.join(' | ')} |`);
+
+    expect(
+      offenders,
+      'A named check paired with a literal verdict hands the model its answer, ' +
+        'and it will be copied verbatim (#1784). Use <placeholder> syntax for ' +
+        `every cell the model must determine:\n${offenders.join('\n')}`,
+    ).toEqual([]);
+  });
+
+  it('defers to one check vocabulary instead of naming its own', () => {
+    // Three surfaces once disagreed on what the checks were: this schema listed
+    // five names, `squad-plan-validate` Step 2 numbered ten different ones, and
+    // the implementation plan specified none at all. The ambiguity resolved
+    // toward the pre-filled template. One vocabulary, named in one place.
+    expect(
+      validationSchema(),
+      'The Validation Result schema must point at squad-plan-validate Step 2 ' +
+        'as the sole check vocabulary rather than restating check names.',
+    ).toMatch(/Step 2/);
+  });
+
+  it('does not restate a pass threshold that Step 2 owns', () => {
+    // The removed rows carried `Sizing within bounds (no >XL)` while Step 2
+    // Check 5 fails a task `> L`. Two surfaces, two thresholds, one silent
+    // contradiction — duplication is how they drifted apart.
+    expect(validationSchema()).not.toMatch(/>\s*XL/);
+  });
+
+  it('keeps the self-assessed pre-check out of the implementation plan', () => {
+    // Surface 1: the implementation plan named a `Validation Pre-check` section
+    // with zero rows specified, so the model reached for the pre-cleared
+    // template in §3.6. A pass claimed by the skill that authored the plan is
+    // not evidence.
+    expect(
+      readText(SQUAD_WORKFLOW),
+      'squad.md must not reintroduce a self-assessed Validation Pre-check; ' +
+        'validation is /squad plan validate\'s artifact.',
+    ).not.toMatch(/→\s*Validation Pre-check/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Test: Frontmatter Schema
 // ---------------------------------------------------------------------------
 
