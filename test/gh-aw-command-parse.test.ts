@@ -16,31 +16,18 @@
 
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { POSIX_SHELL } from './posix-shell';
 
 const SQUAD_WORKFLOW = join(process.cwd(), 'workflows', 'squad.md');
 const workflow = readFileSync(SQUAD_WORKFLOW, 'utf8');
 
 /**
- * Resolve a POSIX shell. Checking only `/bin/sh` (as the older gh-aw suites do)
- * silently skips every behavioral case on Windows, and a check that never runs is
- * indistinguishable from a check that always passes. Git ships a POSIX shell on
- * Windows, so fall back to it rather than skipping.
+ * POSIX-shell resolution lives in `./posix-shell` so the gh-aw suites share one
+ * implementation. It used to live here, and `gh-aw-quality.test.ts` grew its own
+ * `/bin/sh`-only variant that silently skipped 13 tests on Windows (#1833).
  */
-function resolvePosixShell(): string | null {
-  if (existsSync('/bin/sh')) return '/bin/sh';
-  if (process.platform !== 'win32') return null;
-  const roots = [
-    process.env['ProgramFiles'] ?? 'C:\\Program Files',
-    process.env['ProgramW6432'] ?? 'C:\\Program Files',
-    process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)',
-    join(process.env['LOCALAPPDATA'] ?? 'C:\\', 'Programs'),
-  ];
-  return roots.map(r => join(r, 'Git', 'bin', 'bash.exe')).find(existsSync) ?? null;
-}
-
-const POSIX_SHELL = resolvePosixShell();
 
 /** Pull the first fenced bash block that follows `heading`, dedented. */
 function bashBlockAfter(heading: string): string {
